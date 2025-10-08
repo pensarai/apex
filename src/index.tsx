@@ -9,6 +9,9 @@ import Footer from "./components /footer";
 import CommandInput from "./command-input";
 import AlertDialog from "./components /alert-dialog";
 import { CommandProvider, useCommand } from "./command-provider";
+import HelpDialog from "./components /help-dialog";
+import ConfigDialog from "./components /config-dialog";
+import PentestAgentDisplay from "./components /pentest-agent-display";
 
 // Configuration
 const CONFIG = {
@@ -35,15 +38,57 @@ console.log(
   } columns (scale: ${CONFIG.scale * 100}%)`
 );
 
-function AppContent() {
+function App() {
   const [focusIndex, setFocusIndex] = useState(0);
   const [cwd, setCwd] = useState(process.cwd());
   const [ctrlCPressTime, setCtrlCPressTime] = useState<number | null>(null);
   const [showExitWarning, setShowExitWarning] = useState(false);
   const [inputKey, setInputKey] = useState(0); // Force input remount on clear
-  const { helpOpen, closeHelp } = useCommand();
 
   const navigableItems = ["command-input"]; // List of items that can be focused
+
+  return (
+    <CommandProvider>
+      <AppContent
+        focusIndex={focusIndex}
+        setFocusIndex={setFocusIndex}
+        cwd={cwd}
+        ctrlCPressTime={ctrlCPressTime}
+        setCtrlCPressTime={setCtrlCPressTime}
+        showExitWarning={showExitWarning}
+        setShowExitWarning={setShowExitWarning}
+        inputKey={inputKey}
+        setInputKey={setInputKey}
+        navigableItems={navigableItems}
+      />
+    </CommandProvider>
+  );
+}
+
+function AppContent({
+  focusIndex,
+  setFocusIndex,
+  cwd,
+  ctrlCPressTime,
+  setCtrlCPressTime,
+  showExitWarning,
+  setShowExitWarning,
+  inputKey,
+  setInputKey,
+  navigableItems,
+}: {
+  focusIndex: number;
+  setFocusIndex: (fn: (prev: number) => number) => void;
+  cwd: string;
+  ctrlCPressTime: number | null;
+  setCtrlCPressTime: (time: number | null) => void;
+  showExitWarning: boolean;
+  setShowExitWarning: (show: boolean) => void;
+  inputKey: number;
+  setInputKey: (fn: (prev: number) => number) => void;
+  navigableItems: string[];
+}) {
+  const { pentestOpen, closePentest } = useCommand();
 
   // Auto-clear the exit warning after 1 second
   useEffect(() => {
@@ -73,8 +118,11 @@ function AppContent() {
       return;
     }
 
-    // If help dialog is open, let its handler manage Escape; ignore other keys here
-    if (helpOpen) return;
+    // Escape - Close pentest display if open
+    if (key.name === "escape" && pentestOpen) {
+      closePentest();
+      return;
+    }
 
     // Tab - Next item
     if (key.name === "tab" && !key.shift) {
@@ -98,46 +146,47 @@ function AppContent() {
   });
 
   return (
-    <CommandOverlay helpOpen={helpOpen} closeHelp={closeHelp}>
-      <box flexDirection="column" alignItems="center" flexGrow={1} gap={1}>
-        <ColoredAsciiArt ascii={coloredAscii} />
-        <Header />
-        <CommandInput focused={focusIndex === 0} inputKey={inputKey} />
-        <Footer cwd={cwd} showExitWarning={showExitWarning} />
-      </box>
-    </CommandOverlay>
+    <CommandProvider>
+      <CommandOverlay>
+        <box flexDirection="column" alignItems="center" flexGrow={1} gap={1}>
+          <ColoredAsciiArt ascii={coloredAscii} />
+          <Header />
+          <CommandDisplay focusIndex={focusIndex} inputKey={inputKey} />
+          <Footer cwd={cwd} showExitWarning={showExitWarning} />
+        </box>
+      </CommandOverlay>
+    </CommandProvider>
   );
 }
 
-function CommandOverlay({
-  children,
-  helpOpen,
-  closeHelp,
+function CommandDisplay({
+  focusIndex,
+  inputKey,
 }: {
-  children: React.ReactNode;
-  helpOpen: boolean;
-  closeHelp: () => void;
+  focusIndex: number;
+  inputKey: number;
 }) {
+  const { pentestOpen } = useCommand();
+
+  return (
+    <box flexDirection="column" width={60} flexGrow={1} gap={2}>
+      {!pentestOpen && (
+        <CommandInput focused={focusIndex === 0} inputKey={inputKey} />
+      )}
+      {pentestOpen && <PentestAgentDisplay />}
+    </box>
+  );
+}
+
+function CommandOverlay({ children }: { children: React.ReactNode }) {
+  const { helpOpen, closeHelp, configOpen, closeConfig } = useCommand();
+
   return (
     <>
       {children}
-      <AlertDialog
-        title="Help"
-        message={
-          "Commands:\n - /help: Show this dialog\n\nShortcuts:\n - [TAB] Next  - [SHIFT+TAB] Prev  - [CTRL+C] Clear/Exit"
-        }
-        open={helpOpen}
-        onClose={closeHelp}
-      />
+      <HelpDialog helpOpen={helpOpen} closeHelp={closeHelp} />
+      <ConfigDialog configOpen={configOpen} closeConfig={closeConfig} />
     </>
-  );
-}
-
-function App() {
-  return (
-    <CommandProvider>
-      <AppContent />
-    </CommandProvider>
   );
 }
 

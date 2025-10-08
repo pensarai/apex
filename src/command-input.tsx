@@ -15,14 +15,8 @@ export default function CommandInput({
   const { autocompleteOptions, executeCommand } = useCommand();
 
   const handleSubmit = async (value: string) => {
-    console.log("=== handleSubmit called ===");
-    console.log("value:", JSON.stringify(value));
-    console.log("type:", typeof value);
-
     const raw = value ?? "";
-    const handled = await executeCommand(raw);
-    console.log("command handled:", handled);
-
+    await executeCommand(raw);
     setCommand("");
   };
 

@@ -1,11 +1,11 @@
-import type { CommandContext } from "./command-registry";
+import type { AppCommandContext } from "./command-registry";
 
-export type CommandHandler<TContext = CommandContext> = (
+export type CommandHandler<TContext = AppCommandContext> = (
   args: string[],
   ctx: TContext
 ) => void | Promise<void>;
 
-export interface Command<TContext = CommandContext> {
+export interface Command<TContext = AppCommandContext> {
   name: string;
   aliases?: string[];
   description?: string;
@@ -13,13 +13,13 @@ export interface Command<TContext = CommandContext> {
 }
 
 // Command definition that accepts context
-export type CommandDefinition<TContext = CommandContext> = (
+export type CommandDefinition<TContext = AppCommandContext> = (
   ctx: TContext
 ) => Omit<Command<TContext>, "handler"> & {
   handler: (args: string[]) => void | Promise<void>;
 };
 
-export class CommandRouter<TContext = CommandContext> {
+export class CommandRouter<TContext = AppCommandContext> {
   private nameToCommand: Map<string, Command<TContext>> = new Map();
   private commands: Command<TContext>[] = [];
 
@@ -61,25 +61,11 @@ export class CommandRouter<TContext = CommandContext> {
   }
 
   async execute(input: string, ctx: TContext): Promise<boolean> {
-    console.log("[CommandRouter] execute called with input:", input);
     const { name, args } = this.parse(input);
-    console.log("[CommandRouter] parsed - name:", name, "args:", args);
-    if (!name) {
-      console.log("[CommandRouter] no name, returning false");
-      return false;
-    }
+    if (!name) return false;
     const cmd = this.nameToCommand.get(name);
-    console.log("[CommandRouter] found command:", cmd ? cmd.name : "NOT FOUND");
-    if (!cmd) {
-      console.log(
-        "[CommandRouter] command not found, available:",
-        Array.from(this.nameToCommand.keys())
-      );
-      return false;
-    }
-    console.log("[CommandRouter] executing handler for:", cmd.name);
+    if (!cmd) return false;
     await cmd.handler(args, ctx);
-    console.log("[CommandRouter] handler executed successfully");
     return true;
   }
 }

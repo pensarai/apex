@@ -4,19 +4,31 @@ import {
   useState,
   useMemo,
   useCallback,
+  useEffect,
 } from "react";
 import type { ReactNode } from "react";
 import { CommandRouter } from "./command-router";
-import { commandRegistry, type CommandContext } from "./command-registry";
+import {
+  commandRegistry,
+  commands,
+  type AppCommandContext,
+} from "./command-registry";
 import type { AutocompleteOption } from "./components /autocomplete";
 
 interface CommandContextValue {
-  router: CommandRouter<CommandContext>;
+  router: CommandRouter<AppCommandContext>;
   autocompleteOptions: AutocompleteOption[];
   executeCommand: (input: string) => Promise<boolean>;
   helpOpen: boolean;
   openHelp: () => void;
   closeHelp: () => void;
+  configOpen: boolean;
+  openConfig: () => void;
+  closeConfig: () => void;
+  pentestOpen: boolean;
+  openPentest: () => void;
+  closePentest: () => void;
+  commands: typeof commands;
 }
 
 const CommandContext = createContext<CommandContextValue | null>(null);
@@ -35,27 +47,24 @@ interface CommandProviderProps {
 
 export function CommandProvider({ children }: CommandProviderProps) {
   const [helpOpen, setHelpOpen] = useState(false);
+  const [configOpen, setConfigOpen] = useState(false);
+  const [pentestOpen, setPentestOpen] = useState(false);
 
   // Create router with context - initialized once
   const router = useMemo(() => {
-    const router = new CommandRouter<CommandContext>();
+    const router = new CommandRouter<AppCommandContext>();
 
     // Create context with stable references to state setters
-    const ctx: CommandContext = {
-      openHelp: () => {
-        console.log("openHelp called from registered command context");
-        setHelpOpen(true);
-      },
+    const ctx: AppCommandContext = {
+      openHelp: () => setHelpOpen(true),
+      openConfig: () => setConfigOpen(true),
+      openPentest: () => setPentestOpen(true),
     };
 
-    console.log("[CommandProvider] Registering commands...");
     // Register all commands from the registry
     for (const commandDef of commandRegistry) {
-      const command = commandDef(ctx);
-      console.log("[CommandProvider] Registering command:", command.name);
       router.registerWithContext(commandDef, ctx);
     }
-    console.log("[CommandProvider] All commands registered");
 
     return router;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -91,17 +100,13 @@ export function CommandProvider({ children }: CommandProviderProps) {
 
   const executeCommand = useCallback(
     async (input: string): Promise<boolean> => {
-      console.log("executeCommand called with input:", input);
-      const ctx: CommandContext = {
-        openHelp: () => {
-          console.log("openHelp called from executeCommand ctx");
-          setHelpOpen(true);
-        },
+      const ctx: AppCommandContext = {
+        openHelp: () => setHelpOpen(true),
+        openConfig: () => setConfigOpen(true),
+        openPentest: () => setPentestOpen(true),
       };
 
-      const result = await router.execute(input, ctx);
-      console.log("execute result:", result);
-      return result;
+      return await router.execute(input, ctx);
     },
     [router]
   );
@@ -112,13 +117,24 @@ export function CommandProvider({ children }: CommandProviderProps) {
       autocompleteOptions,
       executeCommand,
       helpOpen,
-      openHelp: () => {
-        console.log("openHelp called from context value");
-        setHelpOpen(true);
-      },
+      openHelp: () => setHelpOpen(true),
       closeHelp: () => setHelpOpen(false),
+      configOpen,
+      openConfig: () => setConfigOpen(true),
+      closeConfig: () => setConfigOpen(false),
+      pentestOpen,
+      openPentest: () => setPentestOpen(true),
+      closePentest: () => setPentestOpen(false),
+      commands,
     }),
-    [router, autocompleteOptions, executeCommand, helpOpen]
+    [
+      router,
+      autocompleteOptions,
+      executeCommand,
+      helpOpen,
+      configOpen,
+      pentestOpen,
+    ]
   );
 
   return (

@@ -15,8 +15,10 @@
     "typescript": "^5"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^2.0.23",
     "@opentui/core": "^0.1.25",
     "@opentui/react": "^0.1.25",
+    "ai": "^5.0.60",
     "react": "^19.1.1",
     "sharp": "^0.34.4"
   },

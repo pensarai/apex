@@ -4,9 +4,10 @@ import type { JSX } from "react";
 
 export interface AlertDialogProps {
   title?: string;
-  message: string;
+  message?: string;
   open: boolean;
   onClose: () => void;
+  children?: React.ReactNode;
 }
 
 export default function AlertDialog({
@@ -14,6 +15,7 @@ export default function AlertDialog({
   message,
   open,
   onClose,
+  children,
 }: AlertDialogProps) {
   useKeyboard((key) => {
     if (!open) return;
@@ -49,8 +51,8 @@ export default function AlertDialog({
             <text fg="green">{title}</text>
           </box>
         ) : null}
-        <box>
-          <text fg="white">{message}</text>
+        <box flexDirection="column">
+          {message ? <text fg="white">{message}</text> : children}
         </box>
         <box marginTop={1}>
           <text fg="gray">Press Esc to close</text>
