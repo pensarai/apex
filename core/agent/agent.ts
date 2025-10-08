@@ -1,4 +1,4 @@
-import { stepCountIs } from "ai";
+import { stepCountIs, type StreamTextResult, type ToolSet } from "ai";
 import { streamResponse, type AIModel } from "../ai";
 import { SYSTEM } from "./prompts";
 
@@ -8,9 +8,11 @@ export interface RunAgentProps {
   model: AIModel;
 }
 
-export function runAgent(opts: RunAgentProps) {
+export function runAgent(
+  opts: RunAgentProps
+): StreamTextResult<ToolSet, never> {
   const { target, objective, model } = opts;
-  const response = streamResponse({
+  return streamResponse({
     prompt: objective,
     system: SYSTEM,
     model,
