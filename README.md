@@ -1,15 +1,56 @@
-# react
+# Apex - OpenTUI Application
 
-To install dependencies:
+A terminal UI application built with [OpenTUI](https://github.com/thecodrr/opentui) and React.
+
+## Setup
+
+Install dependencies:
 
 ```bash
 bun install
 ```
 
-To run:
+## Development
+
+Run with hot reloading (auto-restarts on file changes):
 
 ```bash
-bun run src/index.tsx
+bun run dev
 ```
 
-This project was created using `bun init` in bun v1.2.20. [Bun](https://bun.com) is a fast all-in-one JavaScript runtime.
+Run once (no hot reloading):
+
+```bash
+bun start
+```
+
+## Features
+
+- **Command System**: Extensible command router with autocomplete
+- **Hotkeys**:
+  - `Tab` / `Shift+Tab`: Navigate between UI elements
+  - `Ctrl+C`: Clear input (press twice to exit)
+  - `↑` / `↓`: Navigate autocomplete suggestions
+  - `Esc`: Close dialogs
+- **Commands**:
+  - `/help` or `?`: Show help dialog
+  - Autocomplete shows available commands as you type
+
+## Project Structure
+
+```
+src/
+├── index.tsx           # Main application
+├── components/         # UI components
+│   ├── alert-dialog.tsx
+│   ├── autocomplete.tsx
+│   ├── footer.tsx
+│   ├── header.tsx
+│   └── input.tsx
+├── command-router.ts   # Command system
+└── ascii-art.tsx       # ASCII art utilities
+```
+
+---
+
+Built with [Bun](https://bun.com) and [OpenTUI](https://github.com/thecodrr/opentui).

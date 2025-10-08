@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useKeyboard } from "@opentui/react";
-import Input from "../input";
+import Input from "./input";
 import type { InputProps } from "@opentui/react";
 
 export interface AutocompleteOption {
