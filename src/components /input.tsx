@@ -1,6 +1,8 @@
 import type { InputProps } from "@opentui/react";
 
 export default function Input(opts: InputProps & { label: string }) {
+  const { label, focused = true, ...inputProps } = opts;
+
   return (
     <box
       border={true}
@@ -11,15 +13,13 @@ export default function Input(opts: InputProps & { label: string }) {
       flexDirection="column"
       justifyContent="center"
     >
-      <text fg="green">{opts.label}</text>
+      <text fg="green">{label}</text>
       <input
         paddingLeft={1}
-        focused={true}
         backgroundColor="black"
-        value={opts.value}
-        placeholder={opts.placeholder}
         width={60}
-        {...opts}
+        focused={focused}
+        {...inputProps}
       />
     </box>
   );
