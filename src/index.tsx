@@ -148,7 +148,7 @@ function AppContent({
   return (
     <CommandProvider>
       <CommandOverlay>
-        <box flexDirection="column" alignItems="center" flexGrow={1} gap={1}>
+        <box flexDirection="column" alignItems="center" flexGrow={1}>
           <ColoredAsciiArt ascii={coloredAscii} />
           <Header />
           <CommandDisplay focusIndex={focusIndex} inputKey={inputKey} />
@@ -169,7 +169,14 @@ function CommandDisplay({
   const { pentestOpen } = useCommand();
 
   return (
-    <box flexDirection="column" width={60} flexGrow={1} gap={2}>
+    <box
+      flexDirection="column"
+      width="100%"
+      alignItems="center"
+      justifyContent="center"
+      flexGrow={1}
+      gap={2}
+    >
       {!pentestOpen && (
         <CommandInput focused={focusIndex === 0} inputKey={inputKey} />
       )}

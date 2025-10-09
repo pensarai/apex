@@ -6,7 +6,11 @@
   "scripts": {
     "dev": "bun run scripts/watch.ts",
     "dev:debug": "SHOW_CONSOLE=true bun run scripts/watch.ts",
-    "start": "bun run src/index.tsx"
+    "start": "bun run src/index.tsx",
+    "test:scroll": "bun run test.tsx",
+    "test:scroll:basic": "bun run test-scroll-basic.tsx",
+    "test:scroll:sticky": "bun run test-scroll-sticky.tsx",
+    "test:scroll:horizontal": "bun run test-scroll-horizontal.tsx"
   },
   "devDependencies": {
     "@types/bun": "latest"
@@ -16,8 +20,8 @@
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^2.0.23",
-    "@opentui/core": "^0.1.25",
-    "@opentui/react": "^0.1.25",
+    "@opentui/core": "0.1.26",
+    "@opentui/react": "0.1.26",
     "ai": "^5.0.60",
     "react": "^19.1.1",
     "sharp": "^0.34.4",
