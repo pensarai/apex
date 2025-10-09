@@ -1,3 +1,5 @@
+import os from "os";
+
 interface FooterProps {
   cwd?: string;
   showExitWarning?: boolean;
@@ -7,13 +9,9 @@ export default function Footer({
   cwd = process.cwd(),
   showExitWarning = false,
 }: FooterProps) {
-  cwd = "~/" + cwd.split("/").pop() || "";
+  cwd = "~" + cwd.split(os.homedir()).pop() || "";
 
-  const hotkeys = [
-    { key: "Tab", label: "Next" },
-    { key: "Shift+Tab", label: "Prev" },
-    { key: "Ctrl+C", label: "Clear/Exit" },
-  ];
+  const hotkeys = [{ key: "Ctrl+C", label: "Clear/Exit" }];
 
   return (
     <box
@@ -26,7 +24,6 @@ export default function Footer({
       borderColor="green"
     >
       <box flexDirection="row" gap={1}>
-        <text fg="green">[CWD]</text>
         <text fg="gray">{cwd}</text>
       </box>
       {showExitWarning ? (

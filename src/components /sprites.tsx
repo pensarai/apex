@@ -1,66 +1,8 @@
 import { RGBA } from "@opentui/core";
 import { useState, useEffect } from "react";
 
-/**
- * Example component demonstrating animated terminal sprite icons using OpenTUI
- * Showcases various animation techniques for terminal UIs
- */
-export default function AnimatedSpritesExample() {
-  return (
-    <box
-      flexDirection="column"
-      width="100%"
-      height="100%"
-      padding={2}
-      gap={2}
-      backgroundColor={RGBA.fromInts(20, 20, 20, 255)}
-    >
-      <text fg="cyan" content="🎨 Animated Terminal Sprite Icons Demo" bold />
-
-      <box flexDirection="column" gap={1}>
-        <text fg="yellow" content="Spinners:" />
-        <box flexDirection="row" gap={4}>
-          <SpinnerDots />
-          <SpinnerLine />
-          <SpinnerCircle />
-          <SpinnerBraille />
-        </box>
-      </box>
-
-      <box flexDirection="column" gap={1}>
-        <text fg="yellow" content="Progress Indicators:" />
-        <box flexDirection="column" gap={1}>
-          <ProgressBar />
-          <PulsingDot />
-          <LoadingWave />
-        </box>
-      </box>
-
-      <box flexDirection="column" gap={1}>
-        <text fg="yellow" content="Animated Icons:" />
-        <box flexDirection="row" gap={4}>
-          <HeartBeat />
-          <BlinkingEye />
-          <TypingIndicator />
-          <RocketLaunch />
-        </box>
-      </box>
-
-      <box flexDirection="column" gap={1}>
-        <text fg="yellow" content="Status Indicators:" />
-        <box flexDirection="row" gap={4}>
-          <StatusPulse status="success" />
-          <StatusPulse status="warning" />
-          <StatusPulse status="error" />
-          <StatusPulse status="info" />
-        </box>
-      </box>
-    </box>
-  );
-}
-
 /** Animated spinner with rotating dots */
-function SpinnerDots() {
+export function SpinnerDots() {
   const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
   const [frame, setFrame] = useState(0);
 
@@ -75,7 +17,7 @@ function SpinnerDots() {
 }
 
 /** Horizontal line spinner */
-function SpinnerLine() {
+export function SpinnerLine() {
   const frames = ["-", "\\", "|", "/"];
   const [frame, setFrame] = useState(0);
 
@@ -90,7 +32,7 @@ function SpinnerLine() {
 }
 
 /** Circle spinner animation */
-function SpinnerCircle() {
+export function SpinnerCircle() {
   const frames = ["◐", "◓", "◑", "◒"];
   const [frame, setFrame] = useState(0);
 
@@ -120,7 +62,7 @@ export function SpinnerBraille({ label }: { label?: string }) {
 }
 
 /** Animated progress bar */
-function ProgressBar() {
+export function ProgressBar() {
   const [progress, setProgress] = useState(0);
 
   useEffect(() => {
@@ -139,7 +81,7 @@ function ProgressBar() {
 }
 
 /** Pulsing dot indicator */
-function PulsingDot() {
+export function PulsingDot() {
   const frames = ["⚫", "⚪", "⚫", "⚪"];
   const [frame, setFrame] = useState(0);
 
@@ -154,7 +96,7 @@ function PulsingDot() {
 }
 
 /** Wave loading animation */
-function LoadingWave() {
+export function LoadingWave() {
   const [offset, setOffset] = useState(0);
 
   useEffect(() => {
@@ -173,7 +115,7 @@ function LoadingWave() {
 }
 
 /** Beating heart animation */
-function HeartBeat() {
+export function HeartBeat() {
   const frames = ["💙", "💚", "💙", "💛"];
   const [frame, setFrame] = useState(0);
 
@@ -188,7 +130,7 @@ function HeartBeat() {
 }
 
 /** Blinking eye */
-function BlinkingEye() {
+export function BlinkingEye() {
   const frames = ["👁️", "👁️", "👁️", "👁️", "👁️", "😑"];
   const [frame, setFrame] = useState(0);
 
@@ -203,7 +145,7 @@ function BlinkingEye() {
 }
 
 /** Typing indicator with dots */
-function TypingIndicator() {
+export function TypingIndicator() {
   const frames = ["   ", ".  ", ".. ", "..."];
   const [frame, setFrame] = useState(0);
 
@@ -218,7 +160,7 @@ function TypingIndicator() {
 }
 
 /** Rocket launch animation */
-function RocketLaunch() {
+export function RocketLaunch() {
   const frames = ["🚀", "🚀 ", "🚀  ", " 🚀 ", "  🚀", "   🚀"];
   const [frame, setFrame] = useState(0);
 
@@ -233,7 +175,7 @@ function RocketLaunch() {
 }
 
 /** Pulsing status indicator */
-function StatusPulse({
+export function StatusPulse({
   status,
 }: {
   status: "success" | "warning" | "error" | "info";
@@ -262,11 +204,3 @@ function StatusPulse({
 
   return <text fg={config.color} content={`${displayIcon} ${config.label}`} />;
 }
-
-/**
- * Usage example:
- *
- * import AnimatedSpritesExample from "./components /animated-sprites-example";
- *
- * <AnimatedSpritesExample />
- */

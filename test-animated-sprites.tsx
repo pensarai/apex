@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { render } from "@opentui/react";
-import AnimatedSpritesExample from "./src/components /animated-sprites-example";
+import AnimatedSpritesExample from "./src/components /sprites";
 
 /**
  * Test file for animated terminal sprites

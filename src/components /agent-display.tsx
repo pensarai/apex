@@ -1,7 +1,7 @@
 import { RGBA } from "@opentui/core";
 import type { ModelMessage } from "ai";
 import { randomUUIDv5 } from "bun";
-import { SpinnerBraille } from "./animated-sprites-example";
+import { SpinnerBraille } from "./sprites";
 
 interface ToolMessage {
   role: "tool";
@@ -13,11 +13,13 @@ type Message = ModelMessage | ToolMessage;
 interface AgentDisplayProps {
   messages: Message[];
   isStreaming?: boolean;
+  children?: React.ReactNode;
 }
 
 export default function AgentDisplay({
   messages,
   isStreaming = false,
+  children,
 }: AgentDisplayProps) {
   return (
     <scrollbox
@@ -60,6 +62,7 @@ export default function AgentDisplay({
           <SpinnerBraille label="Thinking..." />
         </box>
       )}
+      {children}
     </scrollbox>
   );
 }

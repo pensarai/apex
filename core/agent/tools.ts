@@ -2,7 +2,13 @@ import { tool } from "ai";
 import { z } from "zod";
 import { exec } from "child_process";
 import { promisify } from "util";
-import { writeFileSync, appendFileSync } from "fs";
+import {
+  writeFileSync,
+  appendFileSync,
+  readdirSync,
+  readFileSync,
+  existsSync,
+} from "fs";
 import { join } from "path";
 import type { Session } from "./sessions";
 
@@ -438,6 +444,343 @@ Provides guidance on:
   },
 });
 
+/**
+ * Generate comprehensive report - Create final pentest report
+ */
+function createGenerateReportTool(session: Session) {
+  return tool({
+    name: "generate_report",
+    description: `Generate a comprehensive penetration testing report for the session.
+
+This tool creates a detailed report including:
+- Executive summary with key findings
+- Test scope and objectives
+- Methodology used
+- Detailed findings organized by severity
+- Statistics and metrics
+- Recommendations and remediation guidance
+- Testing timeline and activities
+
+Use this tool when:
+- The penetration test is complete
+- You want to generate a final deliverable
+- You need to summarize all findings and activities
+
+The report will be saved as 'pentest-report.md' in the session root directory.`,
+    inputSchema: z.object({
+      executiveSummary: z
+        .string()
+        .describe("High-level summary of the assessment for executives"),
+      methodology: z
+        .string()
+        .describe("Description of the testing methodology and approach used"),
+      scopeDetails: z
+        .string()
+        .optional()
+        .describe("Additional details about the scope and limitations"),
+      keyFindings: z
+        .array(z.string())
+        .describe("List of the most critical findings"),
+      recommendations: z
+        .string()
+        .describe("Overall recommendations and next steps"),
+      testingActivities: z
+        .string()
+        .optional()
+        .describe("Summary of testing activities performed"),
+    }),
+    execute: async ({
+      executiveSummary,
+      methodology,
+      scopeDetails,
+      keyFindings,
+      recommendations,
+      testingActivities,
+    }) => {
+      try {
+        const endTime = new Date().toISOString();
+        const startDate = new Date(session.startTime);
+        const endDate = new Date(endTime);
+        const duration = Math.round(
+          (endDate.getTime() - startDate.getTime()) / (1000 * 60)
+        ); // minutes
+
+        // Read all findings from the findings directory
+        const findings: any[] = [];
+        const severityCounts = {
+          CRITICAL: 0,
+          HIGH: 0,
+          MEDIUM: 0,
+          LOW: 0,
+          INFORMATIONAL: 0,
+        };
+
+        if (existsSync(session.findingsPath)) {
+          const findingFiles = readdirSync(session.findingsPath).filter((f) =>
+            f.endsWith(".md")
+          );
+
+          for (const file of findingFiles) {
+            const filePath = join(session.findingsPath, file);
+            const content = readFileSync(filePath, "utf-8");
+
+            // Extract severity from the markdown
+            const severityMatch = content.match(
+              /\*\*Severity:\*\*\s+(CRITICAL|HIGH|MEDIUM|LOW|INFORMATIONAL)/
+            );
+            const titleMatch = content.match(/^#\s+(.+)$/m);
+
+            if (severityMatch && titleMatch) {
+              const severity = severityMatch[1] as keyof typeof severityCounts;
+              severityCounts[severity]++;
+              findings.push({
+                title: titleMatch[1],
+                severity,
+                file,
+                content,
+              });
+            }
+          }
+        }
+
+        // Sort findings by severity
+        const severityOrder = {
+          CRITICAL: 0,
+          HIGH: 1,
+          MEDIUM: 2,
+          LOW: 3,
+          INFORMATIONAL: 4,
+        };
+        findings.sort(
+          (a, b) =>
+            severityOrder[a.severity as keyof typeof severityOrder] -
+            severityOrder[b.severity as keyof typeof severityOrder]
+        );
+
+        const totalFindings = findings.length;
+        const criticalAndHigh = severityCounts.CRITICAL + severityCounts.HIGH;
+
+        // Read scratchpad notes if they exist
+        let scratchpadNotes = "";
+        const scratchpadFile = join(session.scratchpadPath, "notes.md");
+        if (existsSync(scratchpadFile)) {
+          scratchpadNotes = readFileSync(scratchpadFile, "utf-8");
+        }
+
+        // Generate the comprehensive report
+        const report = `# Penetration Testing Report
+
+**Target:** ${session.target}  
+**Session ID:** ${session.id}  
+**Test Period:** ${new Date(
+          session.startTime
+        ).toLocaleString()} - ${endDate.toLocaleString()}  
+**Duration:** ${duration} minutes  
+**Report Generated:** ${endTime}
+
+---
+
+## Executive Summary
+
+${executiveSummary}
+
+### Key Statistics
+
+- **Total Findings:** ${totalFindings}
+- **Critical:** ${severityCounts.CRITICAL}
+- **High:** ${severityCounts.HIGH}
+- **Medium:** ${severityCounts.MEDIUM}
+- **Low:** ${severityCounts.LOW}
+- **Informational:** ${severityCounts.INFORMATIONAL}
+
+### Risk Level
+
+${
+  criticalAndHigh > 0
+    ? `⚠️ **HIGH RISK** - ${criticalAndHigh} critical or high severity findings require immediate attention.`
+    : severityCounts.MEDIUM > 0
+    ? `⚠️ **MEDIUM RISK** - ${severityCounts.MEDIUM} medium severity findings should be addressed.`
+    : `✓ **LOW RISK** - No critical or high severity findings identified.`
+}
+
+---
+
+## Scope and Objectives
+
+**Target:** ${session.target}  
+**Objective:** ${session.objective}
+
+${scopeDetails ? `\n${scopeDetails}\n` : ""}
+
+---
+
+## Methodology
+
+${methodology}
+
+${testingActivities ? `\n### Testing Activities\n\n${testingActivities}\n` : ""}
+
+---
+
+## Key Findings
+
+${keyFindings.map((finding, idx) => `${idx + 1}. ${finding}`).join("\n")}
+
+---
+
+## Detailed Findings
+
+${
+  totalFindings === 0
+    ? "No security findings were documented during this assessment."
+    : findings
+        .map(
+          (finding, idx) => `
+### ${idx + 1}. [${finding.severity}] ${finding.title}
+
+**Reference:** \`findings/${finding.file}\`
+
+${
+  finding.content.split("## Description")[1]?.split("---")[0]?.trim() ||
+  "See detailed finding document for full information."
+}
+
+`
+        )
+        .join("\n")
+}
+
+---
+
+## Recommendations
+
+${recommendations}
+
+### Priority Actions
+
+${
+  severityCounts.CRITICAL > 0
+    ? `
+**Critical Priority:**
+- Address all ${severityCounts.CRITICAL} critical findings immediately
+- These vulnerabilities pose an immediate risk to system security
+`
+    : ""
+}
+
+${
+  severityCounts.HIGH > 0
+    ? `
+**High Priority:**
+- Remediate ${severityCounts.HIGH} high severity findings within 30 days
+- These issues significantly increase attack surface
+`
+    : ""
+}
+
+${
+  severityCounts.MEDIUM > 0
+    ? `
+**Medium Priority:**
+- Plan remediation for ${severityCounts.MEDIUM} medium severity findings within 90 days
+- These weaknesses should be addressed in the next security cycle
+`
+    : ""
+}
+
+---
+
+## Appendices
+
+### Appendix A: Findings Summary
+
+${findings
+  .map((f) => `- [${f.severity}] ${f.title} - \`findings/${f.file}\``)
+  .join("\n")}
+
+### Appendix B: Session Information
+
+- **Session Directory:** \`${session.rootPath}\`
+- **Findings Directory:** \`findings/\`
+- **Scratchpad:** \`scratchpad/\`
+- **Logs:** \`logs/\`
+
+${
+  scratchpadNotes
+    ? `\n### Appendix C: Testing Notes\n\nExtracted from scratchpad:\n\n${scratchpadNotes.substring(
+        0,
+        5000
+      )}${
+        scratchpadNotes.length > 5000
+          ? "\n\n[Truncated - see scratchpad/notes.md for full notes]"
+          : ""
+      }\n`
+    : ""
+}
+
+---
+
+## Disclaimer
+
+This penetration testing report is provided for informational purposes only. The findings documented herein are based on the testing performed during the specified timeframe and scope. Security vulnerabilities not identified in this report may still exist. 
+
+This report should be treated as confidential and distributed only to authorized personnel.
+
+---
+
+*Report generated by Pensar Penetration Testing Agent*  
+*Session: ${session.id}*
+`;
+
+        // Save the report
+        const reportPath = join(session.rootPath, "pentest-report.md");
+        writeFileSync(reportPath, report);
+
+        // Update the session README to mark completion
+        const readmePath = join(session.rootPath, "README.md");
+        if (existsSync(readmePath)) {
+          let readme = readFileSync(readmePath, "utf-8");
+          readme = readme.replace(
+            "Testing in progress...",
+            `Testing completed on ${endDate.toLocaleString()}\n\n**Final Report:** \`pentest-report.md\``
+          );
+          writeFileSync(readmePath, readme);
+        }
+
+        // Update session metadata
+        const metadataPath = join(session.rootPath, "session.json");
+        if (existsSync(metadataPath)) {
+          const metadata = JSON.parse(readFileSync(metadataPath, "utf-8"));
+          metadata.endTime = endTime;
+          metadata.duration = duration;
+          metadata.status = "completed";
+          metadata.totalFindings = totalFindings;
+          metadata.severityCounts = severityCounts;
+          writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
+        }
+
+        return {
+          success: true,
+          reportPath,
+          statistics: {
+            totalFindings,
+            severityCounts,
+            duration,
+            criticalAndHigh,
+          },
+          message: `Comprehensive report generated successfully at ${reportPath}`,
+        };
+      } catch (error: any) {
+        return {
+          success: false,
+          error: error.message,
+          message: `Failed to generate report: ${error.message}`,
+        };
+      }
+    },
+  });
+}
+
 // Export tools creator function that accepts a session
 export function createPentestTools(session: Session) {
   return {
@@ -446,5 +789,6 @@ export function createPentestTools(session: Session) {
     document_finding: createDocumentFindingTool(session),
     analyze_scan: analyzeScan,
     scratchpad: createScratchpadTool(session),
+    generate_report: createGenerateReportTool(session),
   };
 }
