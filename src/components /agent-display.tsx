@@ -30,15 +30,10 @@ export default function AgentDisplay({
       gap={1}
       flexGrow={1}
     >
-      <text fg="cyan">Agent Output</text>
-      <box
-        flexDirection="column"
-        gap={1}
-        flexGrow={1}
-        style={{ overflow: "scroll" }}
-      >
+      <text fg="cyan" content="Agent Output" />
+      <box flexDirection="column" gap={1} flexGrow={1}>
         {messages.length === 0 ? (
-          <text fg="gray">Waiting for messages...</text>
+          <text fg="gray" content="Waiting for messages..." />
         ) : (
           messages.map((message, index) => {
             let content = "";
@@ -59,16 +54,22 @@ export default function AgentDisplay({
             }
 
             return (
-              <box key={index} flexDirection="column" width="100%">
+              <box
+                key={`${message.role}-${index}`}
+                flexDirection="column"
+                width="100%"
+              >
                 <text fg="green">
                   {message.role === "user" ? "→ User" : "← Assistant"}
                 </text>
-                <text fg="white">{content}</text>
+                <text fg={message.role === "user" ? "yellow" : "white"}>
+                  {content}
+                </text>
               </box>
             );
           })
         )}
-        {isStreaming && <text fg="yellow">● Streaming...</text>}
+        {isStreaming && <text fg="yellow" content="● Streaming..." />}
       </box>
     </box>
   );
