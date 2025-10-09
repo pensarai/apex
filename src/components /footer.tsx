@@ -20,6 +20,8 @@ export default function Footer({
       flexDirection="row"
       justifyContent="space-between"
       width="100%"
+      maxWidth="100%"
+      flexShrink={0}
       border={true}
       borderColor="green"
     >

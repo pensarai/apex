@@ -16,7 +16,13 @@ export default function AgentDisplay({
       style={{
         rootOptions: {
           width: "100%",
+          maxWidth: "100%",
           flexGrow: 1,
+          flexShrink: 1,
+          overflow: "hidden",
+        },
+        wrapperOptions: {
+          overflow: "hidden",
         },
         contentOptions: {
           paddingLeft: 8,
@@ -56,13 +62,27 @@ function AgentMessage({ message }: { message: ModelMessage }) {
     content = message.content
       .map((part: any) => {
         if (typeof part === "string") return part;
-        if (part.type === "text") return part.text;
-        return JSON.stringify(part);
+        if (part.type === "text" && part.text) return part.text;
+        if (part.type === "tool-call") {
+          return `🔧 Tool: ${part.toolName}\nArgs: ${JSON.stringify(
+            part.args,
+            null,
+            2
+          )}`;
+        }
+        if (part.type === "tool-result") {
+          return `✓ Result: ${JSON.stringify(part.result, null, 2)}`;
+        }
+        // Fallback for unknown content types
+        return JSON.stringify(part, null, 2);
       })
-      .join("");
-  } else {
+      .join("\n\n");
+  } else if (message.content && typeof message.content === "object") {
     content = JSON.stringify(message.content, null, 2);
+  } else {
+    content = "(empty message)";
   }
+
   return (
     <box
       key={`${message.role}-${Math.random()}`}
@@ -80,7 +100,7 @@ function AgentMessage({ message }: { message: ModelMessage }) {
           <box width={1} backgroundColor={RGBA.fromInts(30, 30, 30, 255)} />
         )}
         <box padding={1} backgroundColor={RGBA.fromInts(40, 40, 40, 255)}>
-          <text fg="white" content={content} />
+          <text fg="white" content={content || "(no content)"} />
         </box>
         {message.role === "user" && (
           <box width={1} backgroundColor={RGBA.fromInts(30, 30, 30, 255)} />
