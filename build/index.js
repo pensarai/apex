@@ -59955,23 +59955,12 @@ function AgentMessage({ message }) {
     content = message.content.map((part) => {
       if (typeof part === "string")
         return part;
-      if (part.type === "text" && part.text)
+      if (part.type === "text")
         return part.text;
-      if (part.type === "tool-call") {
-        return `\uD83D\uDD27 Tool: ${part.toolName}
-Args: ${JSON.stringify(part.args, null, 2)}`;
-      }
-      if (part.type === "tool-result") {
-        return `✓ Result: ${JSON.stringify(part.result, null, 2)}`;
-      }
-      return JSON.stringify(part, null, 2);
-    }).join(`
-
-`);
-  } else if (message.content && typeof message.content === "object") {
-    content = JSON.stringify(message.content, null, 2);
+      return JSON.stringify(part);
+    }).join("");
   } else {
-    content = "(empty message)";
+    content = JSON.stringify(message.content, null, 2);
   }
   return /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("box", {
     flexDirection: "column",
@@ -59996,7 +59985,7 @@ Args: ${JSON.stringify(part.args, null, 2)}`;
             backgroundColor: RGBA.fromInts(40, 40, 40, 255),
             children: /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
               fg: "white",
-              content: content || "(no content)"
+              content
             }, undefined, false, undefined, this)
           }, undefined, false, undefined, this),
           message.role === "user" && /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("box", {
@@ -60061,50 +60050,47 @@ Objective: ${objective}
 Session: ${result.session.id}
 Path: ${result.session.rootPath}`
         };
-        let currentMessages = [userMessage];
-        setMessages(currentMessages);
-        let assistantContent = "";
+        const allMessages = [userMessage];
+        let currentAssistantText = "";
+        let messageIdCounter = 0;
         for await (const delta of result.fullStream) {
           if (delta.type === "text-delta") {
-            assistantContent += delta.text;
-            currentMessages = [
-              userMessage,
-              {
+            currentAssistantText += delta.text;
+            const lastMessage = allMessages[allMessages.length - 1];
+            const lastContent = typeof lastMessage?.content === "string" ? lastMessage.content : "";
+            const isToolMessage = lastContent.startsWith("\uD83D\uDD27") || lastContent.startsWith("✓");
+            if (lastMessage && lastMessage.role === "assistant" && !isToolMessage) {
+              lastMessage.content = currentAssistantText;
+            } else {
+              allMessages.push({
                 role: "assistant",
-                content: assistantContent
-              }
-            ];
-            setMessages(currentMessages);
-          }
-          if (delta.type === "tool-call") {
-            const toolMessage = `
+                content: currentAssistantText
+              });
+            }
+            setMessages([...allMessages]);
+          } else if (delta.type === "tool-call") {
+            if (currentAssistantText) {
+              currentAssistantText = "";
+            }
+            const toolName = delta.toolName;
+            const input = JSON.stringify(delta.input, null, 2);
+            allMessages.push({
+              role: "assistant",
+              content: `\uD83D\uDD27 Calling tool: ${toolName}
 
-\uD83D\uDD27 Executing: ${delta.toolName}
-${JSON.stringify(delta.input, null, 2)}`;
-            assistantContent += toolMessage;
-            currentMessages = [
-              userMessage,
-              {
-                role: "assistant",
-                content: assistantContent
-              }
-            ];
-            setMessages(currentMessages);
-          }
-          if (delta.type === "tool-result") {
-            const resultMessage = `
-✓ Result:
-${JSON.stringify(delta.output, null, 2)}
-`;
-            assistantContent += resultMessage;
-            currentMessages = [
-              userMessage,
-              {
-                role: "assistant",
-                content: assistantContent
-              }
-            ];
-            setMessages(currentMessages);
+${input}`
+            });
+            setMessages([...allMessages]);
+          } else if (delta.type === "tool-result") {
+            const toolName = delta.toolName;
+            const output = typeof delta.output === "string" ? delta.output : JSON.stringify(delta.output, null, 2);
+            allMessages.push({
+              role: "assistant",
+              content: `✓ Tool ${toolName} completed:
+
+${output}`
+            });
+            setMessages([...allMessages]);
           }
         }
         setIsStreaming(false);

@@ -1,9 +1,17 @@
 import { RGBA } from "@opentui/core";
 import type { ModelMessage } from "ai";
 import { randomUUIDv5 } from "bun";
+import { SpinnerBraille } from "./animated-sprites-example";
+
+interface ToolMessage {
+  role: "tool";
+  content: string;
+}
+
+type Message = ModelMessage | ToolMessage;
 
 interface AgentDisplayProps {
-  messages: ModelMessage[];
+  messages: Message[];
   isStreaming?: boolean;
 }
 
@@ -47,12 +55,16 @@ export default function AgentDisplay({
       ) : (
         messages.map((message) => <AgentMessage message={message} />)
       )}
-      {isStreaming && <text fg="green" content="✴ Thinking..." />}
+      {isStreaming && (
+        <box flexDirection="row" alignItems="center">
+          <SpinnerBraille label="Thinking..." />
+        </box>
+      )}
     </scrollbox>
   );
 }
 
-function AgentMessage({ message }: { message: ModelMessage }) {
+function AgentMessage({ message }: { message: Message }) {
   let content = "";
 
   if (typeof message.content === "string") {
@@ -62,25 +74,12 @@ function AgentMessage({ message }: { message: ModelMessage }) {
     content = message.content
       .map((part: any) => {
         if (typeof part === "string") return part;
-        if (part.type === "text" && part.text) return part.text;
-        if (part.type === "tool-call") {
-          return `🔧 Tool: ${part.toolName}\nArgs: ${JSON.stringify(
-            part.args,
-            null,
-            2
-          )}`;
-        }
-        if (part.type === "tool-result") {
-          return `✓ Result: ${JSON.stringify(part.result, null, 2)}`;
-        }
-        // Fallback for unknown content types
-        return JSON.stringify(part, null, 2);
+        if (part.type === "text") return part.text;
+        return JSON.stringify(part);
       })
-      .join("\n\n");
-  } else if (message.content && typeof message.content === "object") {
-    content = JSON.stringify(message.content, null, 2);
+      .join("");
   } else {
-    content = "(empty message)";
+    content = JSON.stringify(message.content, null, 2);
   }
 
   return (
@@ -91,16 +90,23 @@ function AgentMessage({ message }: { message: ModelMessage }) {
       gap={1}
       alignItems={message.role === "user" ? "flex-end" : "flex-start"}
     >
-      <text
-        fg="green"
-        content={message.role === "user" ? "→ User" : "← Assistant"}
-      />
+      {message.role !== "tool" && (
+        <text
+          fg="green"
+          content={message.role === "user" ? "→ User" : "← Assistant"}
+        />
+      )}
       <box flexDirection="row" gap={1}>
         {message.role === "assistant" && (
           <box width={1} backgroundColor={RGBA.fromInts(30, 30, 30, 255)} />
         )}
-        <box padding={1} backgroundColor={RGBA.fromInts(40, 40, 40, 255)}>
-          <text fg="white" content={content || "(no content)"} />
+        <box
+          padding={message.role !== "tool" ? 1 : 0}
+          backgroundColor={
+            message.role !== "tool" ? RGBA.fromInts(40, 40, 40, 255) : undefined
+          }
+        >
+          <text fg="white" content={content} />
         </box>
         {message.role === "user" && (
           <box width={1} backgroundColor={RGBA.fromInts(30, 30, 30, 255)} />
