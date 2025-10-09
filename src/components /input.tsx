@@ -11,7 +11,6 @@ export default function Input(opts: InputProps & { label: string }) {
       backgroundColor="black"
       borderColor="green"
       flexDirection="column"
-      justifyContent="center"
     >
       <text fg="green">{label}</text>
       <input
