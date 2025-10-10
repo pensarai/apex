@@ -6,7 +6,7 @@ import {
 } from "@opentui/core";
 import { SpinnerDots } from "./sprites";
 import type { Message, ToolMessage } from "../../core/messages";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { marked } from "marked";
 import type { Subagent } from "./hooks/pentestAgent";
 
@@ -132,9 +132,12 @@ export default function AgentDisplay({
   children,
   subagents,
 }: AgentDisplayProps) {
-  const messagesAndSubagents = [...messages, ...(subagents ?? [])].sort(
-    (a, b) => a.createdAt.getTime() - b.createdAt.getTime()
-  );
+  // Memoize the sorted array to avoid re-sorting on every render
+  const messagesAndSubagents = useMemo(() => {
+    return [...messages, ...(subagents ?? [])].sort(
+      (a, b) => a.createdAt.getTime() - b.createdAt.getTime()
+    );
+  }, [messages, subagents]);
 
   return (
     <scrollbox
@@ -167,11 +170,27 @@ export default function AgentDisplay({
       stickyStart="bottom"
       focused
     >
-      {messagesAndSubagents.map((item) => {
+      {messagesAndSubagents.map((item, index) => {
+        // Create stable key based on item properties
+        const itemKey =
+          "messages" in item
+            ? `subagent-${item.id}`
+            : item.role === "tool" && "toolCallId" in item
+            ? `tool-${(item as ToolMessage).toolCallId}`
+            : `${item.role}-${item.createdAt.getTime()}-${index}`;
+
         if ("messages" in item) {
-          return <SubAgentDisplay subagent={item} />;
+          return (
+            <box key={itemKey}>
+              <SubAgentDisplay subagent={item} />
+            </box>
+          );
         } else {
-          return <AgentMessage message={item} />;
+          return (
+            <box key={itemKey}>
+              <AgentMessage message={item} />
+            </box>
+          );
         }
       })}
 
@@ -195,7 +214,7 @@ function SubAgentDisplay({ subagent }: { subagent: Subagent }) {
       width="100%"
       border={true}
       borderColor="green"
-      backgroundColor={RGBA.fromInts(21, 21, 21, 255)}
+      backgroundColor={RGBA.fromInts(10, 10, 10, 255)}
     >
       <box flexDirection="row" alignItems="center" gap={1}>
         <SpinnerDots label={subagent.name} fg="green" />
@@ -234,7 +253,6 @@ function AgentMessage({ message }: { message: Message }) {
 
   return (
     <box
-      key={`${message.role}-${Math.random()}`}
       flexDirection="column"
       width="100%"
       gap={1}
@@ -248,7 +266,12 @@ function AgentMessage({ message }: { message: Message }) {
       )}
       <box flexDirection="row" gap={1}>
         {message.role === "assistant" && (
-          <box width={1} backgroundColor={RGBA.fromInts(30, 30, 30, 255)} />
+          <box
+            width={0}
+            borderStyle="heavy"
+            border={["right"]}
+            borderColor={RGBA.fromInts(30, 30, 30, 255)}
+          />
         )}
         <box
           padding={message.role !== "tool" ? 1 : 0}
