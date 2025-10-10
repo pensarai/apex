@@ -310,12 +310,9 @@ function CommandDisplay({
       overflow="hidden"
       gap={2}
     >
-      {!pentestOpen &&
-        !thoroughPentestOpen &&
-        !sessionsOpen &&
-        !modelsOpen && (
-          <CommandInput focused={focusIndex === 0} inputKey={inputKey} />
-        )}
+      {!pentestOpen && !thoroughPentestOpen && !sessionsOpen && !modelsOpen && (
+        <CommandInput focused={focusIndex === 0} inputKey={inputKey} />
+      )}
       {pentestOpen && <PentestAgentDisplay />}
       {thoroughPentestOpen && <ThoroughPentestAgentDisplay />}
       {sessionsOpen && <SessionsDisplay closeSessions={closeSessions} />}
