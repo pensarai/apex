@@ -31,6 +31,9 @@ interface CommandContextValue {
   sessionsOpen: boolean;
   openSessions: () => void;
   closeSessions: () => void;
+  modelsOpen: boolean;
+  openModels: () => void;
+  closeModels: () => void;
   commands: typeof commands;
 }
 
@@ -53,6 +56,7 @@ export function CommandProvider({ children }: CommandProviderProps) {
   const [configOpen, setConfigOpen] = useState(false);
   const [pentestOpen, setPentestOpen] = useState(false);
   const [sessionsOpen, setSessionsOpen] = useState(false);
+  const [modelsOpen, setModelsOpen] = useState(false);
 
   // Create router with context - initialized once
   const router = useMemo(() => {
@@ -64,6 +68,7 @@ export function CommandProvider({ children }: CommandProviderProps) {
       openConfig: () => setConfigOpen(true),
       openPentest: () => setPentestOpen(true),
       openSessions: () => setSessionsOpen(true),
+      openModels: () => setModelsOpen(true),
     };
 
     // Register all commands from the registry
@@ -110,6 +115,7 @@ export function CommandProvider({ children }: CommandProviderProps) {
         openConfig: () => setConfigOpen(true),
         openPentest: () => setPentestOpen(true),
         openSessions: () => setSessionsOpen(true),
+        openModels: () => setModelsOpen(true),
       };
 
       return await router.execute(input, ctx);
@@ -134,6 +140,9 @@ export function CommandProvider({ children }: CommandProviderProps) {
       sessionsOpen,
       openSessions: () => setSessionsOpen(true),
       closeSessions: () => setSessionsOpen(false),
+      modelsOpen,
+      openModels: () => setModelsOpen(true),
+      closeModels: () => setModelsOpen(false),
       commands,
     }),
     [
@@ -144,6 +153,7 @@ export function CommandProvider({ children }: CommandProviderProps) {
       configOpen,
       pentestOpen,
       sessionsOpen,
+      modelsOpen,
     ]
   );
 

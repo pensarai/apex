@@ -8,6 +8,7 @@ export interface AppCommandContext {
   openConfig: () => void;
   openPentest: () => void;
   openSessions: () => void;
+  openModels: () => void;
   // Add more context methods here as needed
   // clearScreen?: () => void;
   // showMessage?: (msg: string) => void;
@@ -58,6 +59,14 @@ export const commands: CommandConfig[] = [
     category: "General",
     handler: async (args, ctx) => {
       ctx.openSessions();
+    },
+  },
+  {
+    name: "models",
+    description: "Show available AI models",
+    category: "General",
+    handler: async (args, ctx) => {
+      ctx.openModels();
     },
   },
 
