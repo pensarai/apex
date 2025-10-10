@@ -4,6 +4,7 @@ import {
   streamText,
   type ModelMessage,
   type StopCondition,
+  type StreamTextOnStepFinishCallback,
   type ToolChoice,
   type ToolSet,
 } from "ai";
@@ -81,10 +82,20 @@ export interface GetResponseProps {
     | StopCondition<NoInfer<ToolSet>>[];
   toolChoice?: ToolChoice<ToolSet>;
   tools?: ToolSet;
+  onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
 }
 
 export function streamResponse(opts: GetResponseProps) {
-  const { prompt, system, model, messages, stopWhen, toolChoice, tools } = opts;
+  const {
+    prompt,
+    system,
+    model,
+    messages,
+    stopWhen,
+    toolChoice,
+    tools,
+    onStepFinish,
+  } = opts;
   const anthropic = createAnthropic({
     apiKey: process.env.ANTHROPIC_API_KEY,
   });
@@ -96,6 +107,7 @@ export function streamResponse(opts: GetResponseProps) {
     stopWhen,
     toolChoice,
     tools,
+    onStepFinish,
   });
 
   return response;

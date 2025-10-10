@@ -1,4 +1,5 @@
 import os from "os";
+import { useAgent } from "../agentProvider";
 
 interface FooterProps {
   cwd?: string;
@@ -10,8 +11,18 @@ export default function Footer({
   showExitWarning = false,
 }: FooterProps) {
   cwd = "~" + cwd.split(os.homedir()).pop() || "";
+  const { model, tokenCount } = useAgent();
 
   const hotkeys = [{ key: "Ctrl+C", label: "Clear/Exit" }];
+
+  function formatTokenCount(count: number): string {
+    if (count >= 1000000) {
+      return `${(count / 1000000).toFixed(1)}M`;
+    } else if (count >= 1000) {
+      return `${(count / 1000).toFixed(1)}K`;
+    }
+    return count.toString();
+  }
 
   return (
     <box
@@ -25,6 +36,18 @@ export default function Footer({
     >
       <box flexDirection="row" gap={1}>
         <text fg="gray">{cwd}</text>
+        <box border={["right"]} borderColor="green" />
+        <text fg="gray">
+          <span fg="white">{model.name}</span>
+        </text>
+        {tokenCount > 0 && (
+          <>
+            <box border={["right"]} borderColor="green" />
+            <text fg="gray">
+              ■ <span fg="white">{formatTokenCount(tokenCount)}</span>
+            </text>
+          </>
+        )}
       </box>
       {showExitWarning ? (
         <box flexDirection="row" gap={1}>

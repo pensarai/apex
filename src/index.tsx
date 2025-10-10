@@ -8,6 +8,7 @@ import Header from "./components/header";
 import Footer from "./components/footer";
 import CommandInput from "./command-input";
 import { CommandProvider, useCommand } from "./command-provider";
+import { AgentProvider } from "./agentProvider";
 import HelpDialog from "./components/commands/help-dialog";
 import ConfigDialog from "./components/commands/config-dialog";
 import PentestAgentDisplay from "./components/commands/pentest-agent-display";
@@ -49,20 +50,22 @@ function App() {
   const navigableItems = ["command-input"]; // List of items that can be focused
 
   return (
-    <CommandProvider>
-      <AppContent
-        focusIndex={focusIndex}
-        setFocusIndex={setFocusIndex}
-        cwd={cwd}
-        ctrlCPressTime={ctrlCPressTime}
-        setCtrlCPressTime={setCtrlCPressTime}
-        showExitWarning={showExitWarning}
-        setShowExitWarning={setShowExitWarning}
-        inputKey={inputKey}
-        setInputKey={setInputKey}
-        navigableItems={navigableItems}
-      />
-    </CommandProvider>
+    <AgentProvider>
+      <CommandProvider>
+        <AppContent
+          focusIndex={focusIndex}
+          setFocusIndex={setFocusIndex}
+          cwd={cwd}
+          ctrlCPressTime={ctrlCPressTime}
+          setCtrlCPressTime={setCtrlCPressTime}
+          showExitWarning={showExitWarning}
+          setShowExitWarning={setShowExitWarning}
+          inputKey={inputKey}
+          setInputKey={setInputKey}
+          navigableItems={navigableItems}
+        />
+      </CommandProvider>
+    </AgentProvider>
   );
 }
 
