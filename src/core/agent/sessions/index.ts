@@ -40,7 +40,7 @@ export function getExecutionsDir(): string {
 /**
  * Create a new session for a pentest run
  */
-export function createSession(target: string, objective: string): Session {
+export function createSession(target: string, objective?: string): Session {
   const sessionId = generateSessionId();
   const rootPath = join(getExecutionsDir(), sessionId);
   const findingsPath = join(rootPath, "findings");
@@ -60,7 +60,7 @@ export function createSession(target: string, objective: string): Session {
     scratchpadPath,
     logsPath,
     target,
-    objective,
+    objective: objective ?? "",
     startTime: new Date().toISOString(),
   };
 

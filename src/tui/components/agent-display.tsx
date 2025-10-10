@@ -8,11 +8,13 @@ import { SpinnerDots } from "./sprites";
 import type { Message, ToolMessage } from "../../core/messages";
 import { useState } from "react";
 import { marked } from "marked";
+import type { Subagent } from "./hooks/pentestAgent";
 
 interface AgentDisplayProps {
   messages: Message[];
   isStreaming?: boolean;
   children?: React.ReactNode;
+  subagents?: Subagent[];
 }
 
 // Utility function to convert markdown to StyledText
@@ -128,7 +130,12 @@ export default function AgentDisplay({
   messages,
   isStreaming = false,
   children,
+  subagents,
 }: AgentDisplayProps) {
+  const messagesAndSubagents = [...messages, ...(subagents ?? [])].sort(
+    (a, b) => a.createdAt.getTime() - b.createdAt.getTime()
+  );
+
   return (
     <scrollbox
       style={{
@@ -163,13 +170,37 @@ export default function AgentDisplay({
       {messages.map((message) => (
         <AgentMessage message={message} />
       ))}
+      {subagents?.map((subagent) => (
+        <SubAgentDisplay subagent={subagent} />
+      ))}
       {isStreaming && (
         <box flexDirection="row" alignItems="center">
           <SpinnerDots label="Thinking..." fg="green" />
         </box>
       )}
+
       {children}
     </scrollbox>
+  );
+}
+
+function SubAgentDisplay({ subagent }: { subagent: Subagent }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <box
+      onMouseDown={() => setOpen(!open)}
+      height={open ? 40 : "auto"}
+      width="100%"
+      border={true}
+      borderColor="green"
+      backgroundColor={RGBA.fromInts(21, 21, 21, 255)}
+    >
+      <box flexDirection="row" alignItems="center" gap={1}>
+        <SpinnerDots label={subagent.name} fg="green" />
+        <text fg="gray">{open ? "▼" : "▶"}</text>
+      </box>
+      {open && <AgentDisplay messages={subagent.messages} />}
+    </box>
   );
 }
 
