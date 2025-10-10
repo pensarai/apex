@@ -120,6 +120,7 @@ export default function ModelsDisplay({
                   {isSelected ? " ✓" : ""}
                 </text>
                 <text fg="gray"> {model.id}</text>
+                <text fg="gray"> {model.provider}</text>
               </box>
             );
           })}

@@ -67,22 +67,19 @@ export function SpinnerBraille({ label }: { label?: string }) {
 }
 
 /** Animated progress bar */
-export function ProgressBar() {
-  const [progress, setProgress] = useState(0);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setProgress((prev) => (prev >= 100 ? 0 : prev + 2));
-    }, 100);
-    return () => clearInterval(interval);
-  }, []);
-
-  const barWidth = 30;
-  const filled = Math.floor((progress / 100) * barWidth);
+export function ProgressBar({
+  value,
+  width,
+}: {
+  value: number;
+  width?: number;
+}) {
+  const barWidth = width || 15;
+  const filled = Math.floor((value / 100) * barWidth);
   const empty = barWidth - filled;
   const bar = "█".repeat(filled) + "░".repeat(empty);
 
-  return <text fg="green" content={`[${bar}] ${progress}%`} />;
+  return <text fg="green" content={`[${bar}] ${value}%`} />;
 }
 
 /** Pulsing dot indicator */
