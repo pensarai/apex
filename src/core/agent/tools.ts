@@ -75,6 +75,9 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
       .number()
       .optional()
       .describe("Timeout in milliseconds (default: 30000)"),
+    toolCallDescription: z
+      .string()
+      .describe("Concise description of this tool call"),
   }),
   execute: async ({ command, timeout = 30000 }) => {
     try {
@@ -136,6 +139,9 @@ COMMON TESTING PATTERNS:
     body: z.string().optional().describe("Request body (for POST, PUT, PATCH)"),
     followRedirects: z.boolean().default(true),
     timeout: z.number().default(10000),
+    toolCallDescription: z
+      .string()
+      .describe("Concise description of this tool call"),
   }),
   execute: async ({ url, method, headers, body, followRedirects, timeout }) => {
     try {
@@ -220,6 +226,9 @@ FINDING STRUCTURE:
         .string()
         .optional()
         .describe("CVE, CWE, or related references"),
+      toolCallDescription: z
+        .string()
+        .describe("Concise description of this tool call"),
     }),
     execute: async (finding) => {
       try {
@@ -327,6 +336,9 @@ The scratchpad is session-specific and helps maintain context during long assess
       category: z
         .enum(["observation", "todo", "hypothesis", "result", "general"])
         .default("general"),
+      toolCallDescription: z
+        .string()
+        .describe("Concise description of this tool call"),
     }),
     execute: async ({ note, category }) => {
       try {
@@ -488,6 +500,9 @@ The report will be saved as 'pentest-report.md' in the session root directory.`,
         .string()
         .optional()
         .describe("Summary of testing activities performed"),
+      toolCallDescription: z
+        .string()
+        .describe("Concise description of this tool call"),
     }),
     execute: async ({
       executiveSummary,

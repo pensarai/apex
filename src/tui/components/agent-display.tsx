@@ -1,15 +1,7 @@
 import { RGBA } from "@opentui/core";
 import type { ModelMessage } from "ai";
 import { SpinnerDots } from "./sprites";
-
-export interface ToolMessage {
-  role: "tool";
-  status: "pending" | "completed";
-  toolCallId: string;
-  content: string;
-}
-
-type Message = ModelMessage | ToolMessage;
+import type { Message, ToolMessage } from "../../core/messages";
 
 interface AgentDisplayProps {
   messages: Message[];
@@ -53,11 +45,9 @@ export default function AgentDisplay({
       stickyStart="bottom"
       focused
     >
-      {messages.length === 0 ? (
-        <text fg="gray" content="Waiting for messages..." />
-      ) : (
-        messages.map((message) => <AgentMessage message={message} />)
-      )}
+      {messages.map((message) => (
+        <AgentMessage message={message} />
+      ))}
       {isStreaming && (
         <box flexDirection="row" alignItems="center">
           <SpinnerDots label="Thinking..." fg="green" />
