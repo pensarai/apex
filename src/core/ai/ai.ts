@@ -359,6 +359,7 @@ export interface GetResponseProps {
   tools?: ToolSet;
   onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
   abortSignal?: AbortSignal;
+  activeTools?: string[];
 }
 
 export function streamResponse(opts: GetResponseProps) {
@@ -372,6 +373,7 @@ export function streamResponse(opts: GetResponseProps) {
     tools,
     onStepFinish,
     abortSignal,
+    activeTools,
   } = opts;
 
   // Find the model info to determine the provider
@@ -423,6 +425,7 @@ export function streamResponse(opts: GetResponseProps) {
     tools,
     onStepFinish,
     abortSignal,
+    activeTools,
   });
 
   return response;

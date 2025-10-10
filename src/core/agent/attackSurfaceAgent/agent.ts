@@ -363,6 +363,14 @@ Document all discovered assets and potential attack vectors using the document_f
     system: SYSTEM,
     model,
     tools: { ...tools, answer },
+    activeTools: [
+      "execute_command",
+      "http_request",
+      "document_finding",
+      "analyze_scan",
+      "scratchpad",
+      "answer",
+    ],
     stopWhen: stepCountIs(10000),
     toolChoice: "auto", // Let the model decide when to use tools vs respond
     onStepFinish,
