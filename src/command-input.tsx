@@ -32,7 +32,7 @@ export default function CommandInput({
         key={inputKey}
         label="Command"
         value={command}
-        placeholder="Enter a command..."
+        placeholder="Enter a command or / for suggestions..."
         focused={focused}
         options={autocompleteOptions}
         onInput={(value) => setCommand(value)}

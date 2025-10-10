@@ -1,0 +1,30 @@
+# Source files (we only need the built version)
+src/
+scripts/
+core/
+
+# Development files
+*.log
+*.test.*
+test*.tsx
+tsconfig.json
+bun.lock
+
+# Documentation (except README.md)
+SESSIONS.md
+
+# IDE
+.vscode/
+.idea/
+
+# Environment
+.env
+.env.*
+
+# Node
+node_modules/
+package-lock.json
+
+# Test files
+test-*.tsx
+

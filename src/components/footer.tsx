@@ -1,5 +1,6 @@
 import os from "os";
 import { useAgent } from "../agentProvider";
+import { SpinnerDots } from "./sprites";
 
 interface FooterProps {
   cwd?: string;
@@ -11,7 +12,7 @@ export default function Footer({
   showExitWarning = false,
 }: FooterProps) {
   cwd = "~" + cwd.split(os.homedir()).pop() || "";
-  const { model, tokenCount } = useAgent();
+  const { model, tokenCount, thinking } = useAgent();
 
   const hotkeys = [{ key: "Ctrl+C", label: "Clear/Exit" }];
 
@@ -46,6 +47,12 @@ export default function Footer({
             <text fg="gray">
               ■ <span fg="white">{formatTokenCount(tokenCount)}</span>
             </text>
+          </>
+        )}
+        {thinking && (
+          <>
+            <box border={["right"]} borderColor="green" />
+            <SpinnerDots label="Thinking" fg="green" />
           </>
         )}
       </box>

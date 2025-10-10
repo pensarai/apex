@@ -1,56 +1,85 @@
-# Apex - OpenTUI Application
+# Pensar Apex
 
-A terminal UI application built with [OpenTUI](https://github.com/thecodrr/opentui) and React.
+<p align="center">
+  <img src="screenshot.png" alt="Pensar Apex Screenshot" width="800">
+</p>
 
-## Setup
+**Pensar Apex** is an AI-powered penetration testing CLI tool that enables you to use an AI agent to perform comprehensive black box testing.
 
-Install dependencies:
+## Quick Start
+
+### Prerequisites
+
+- **Bun** v1.0+ (required - [install from bun.sh](https://bun.sh))
+- **Anthropic API Key** (get one at [console.anthropic.com](https://console.anthropic.com/))
+
+### Installation
+
+#### Install Bun First
+
+If you don't have Bun installed:
 
 ```bash
+curl -fsSL https://bun.sh/install | bash
+```
+
+#### Option 1: Global Installation (Recommended)
+
+```bash
+# Install globally with bun
+bun install -g @pensar/apex
+
+# Or with npm (still requires bun to run)
+npm install -g @pensar/apex
+```
+
+#### Option 2: Local Development
+
+```bash
+# Clone the repository
+git clone https://github.com/your-org/apex.git
+cd apex
+
+# Install dependencies
+npm install
+# or
 bun install
+
+# Build the project
+npm run build
+# or
+bun run build
 ```
 
-## Development
+### Configuration
 
-Run with hot reloading (auto-restarts on file changes):
+Set your Anthropic API key as an environment variable:
 
 ```bash
-bun run dev
+export ANTHROPIC_API_KEY="your-api-key-here"
 ```
 
-Run once (no hot reloading):
+To make it permanent, add it to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.):
 
 ```bash
+echo 'export ANTHROPIC_API_KEY="your-api-key-here"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+## Usage
+
+### Running Pensar
+
+If installed globally:
+
+```bash
+pensar
+```
+
+If running locally:
+
+```bash
+npm start
+# or
 bun start
 ```
-
-## Features
-
-- **Command System**: Extensible command router with autocomplete
-- **Hotkeys**:
-  - `Tab` / `Shift+Tab`: Navigate between UI elements
-  - `Ctrl+C`: Clear input (press twice to exit)
-  - `↑` / `↓`: Navigate autocomplete suggestions
-  - `Esc`: Close dialogs
-- **Commands**:
-  - `/help` or `?`: Show help dialog
-  - Autocomplete shows available commands as you type
-
-## Project Structure
-
-```
-src/
-├── index.tsx           # Main application
-├── components/         # UI components
-│   ├── alert-dialog.tsx
-│   ├── autocomplete.tsx
-│   ├── footer.tsx
-│   ├── header.tsx
-│   └── input.tsx
-├── command-router.ts   # Command system
-└── ascii-art.tsx       # ASCII art utilities
-```
-
----
-
-Built with [Bun](https://bun.com) and [OpenTUI](https://github.com/thecodrr/opentui).

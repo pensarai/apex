@@ -2,8 +2,10 @@ import { RGBA } from "@opentui/core";
 import type { ModelMessage } from "ai";
 import { SpinnerDots } from "./sprites";
 
-interface ToolMessage {
+export interface ToolMessage {
   role: "tool";
+  status: "pending" | "completed";
+  toolCallId: string;
   content: string;
 }
 
@@ -84,6 +86,10 @@ function AgentMessage({ message }: { message: Message }) {
     content = JSON.stringify(message.content, null, 2);
   }
 
+  // Check if this is a pending tool message
+  const isPendingTool =
+    message.role === "tool" && (message as ToolMessage).status === "pending";
+
   return (
     <box
       key={`${message.role}-${Math.random()}`}
@@ -108,7 +114,11 @@ function AgentMessage({ message }: { message: Message }) {
             message.role !== "tool" ? RGBA.fromInts(40, 40, 40, 255) : undefined
           }
         >
-          <text fg="white" content={content} />
+          {isPendingTool ? (
+            <SpinnerDots label={content} fg="green" />
+          ) : (
+            <text fg="white" content={content} />
+          )}
         </box>
         {message.role === "user" && (
           <box width={1} backgroundColor={RGBA.fromInts(30, 30, 30, 255)} />

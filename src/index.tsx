@@ -180,7 +180,6 @@ function AppContent({
           overflow="hidden"
         >
           <ColoredAsciiArt ascii={coloredAscii} />
-          <Header />
           <CommandDisplay focusIndex={focusIndex} inputKey={inputKey} />
           <Footer cwd={cwd} showExitWarning={showExitWarning} />
         </box>
