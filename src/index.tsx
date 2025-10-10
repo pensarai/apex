@@ -11,6 +11,7 @@ import { CommandProvider, useCommand } from "./command-provider";
 import HelpDialog from "./components/commands/help-dialog";
 import ConfigDialog from "./components/commands/config-dialog";
 import PentestAgentDisplay from "./components/commands/pentest-agent-display";
+import SessionsDisplay from "./components/commands/sessions-display";
 
 // Configuration
 const CONFIG = {
@@ -87,7 +88,8 @@ function AppContent({
   setInputKey: (fn: (prev: number) => number) => void;
   navigableItems: string[];
 }) {
-  const { pentestOpen, closePentest } = useCommand();
+  const { pentestOpen, closePentest, sessionsOpen, closeSessions } =
+    useCommand();
 
   // Auto-clear the exit warning after 1 second
   useEffect(() => {
@@ -120,6 +122,12 @@ function AppContent({
     // Escape - Close pentest display if open
     if (key.name === "escape" && pentestOpen) {
       closePentest();
+      return;
+    }
+
+    // Escape - Close sessions display if open
+    if (key.name === "escape" && sessionsOpen) {
+      closeSessions();
       return;
     }
 
@@ -172,7 +180,7 @@ function CommandDisplay({
   focusIndex: number;
   inputKey: number;
 }) {
-  const { pentestOpen } = useCommand();
+  const { pentestOpen, sessionsOpen, closeSessions } = useCommand();
 
   return (
     <box
@@ -186,10 +194,11 @@ function CommandDisplay({
       overflow="hidden"
       gap={2}
     >
-      {!pentestOpen && (
+      {!pentestOpen && !sessionsOpen && (
         <CommandInput focused={focusIndex === 0} inputKey={inputKey} />
       )}
       {pentestOpen && <PentestAgentDisplay />}
+      {sessionsOpen && <SessionsDisplay closeSessions={closeSessions} />}
     </box>
   );
 }

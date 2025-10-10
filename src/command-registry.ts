@@ -7,6 +7,7 @@ export interface AppCommandContext {
   openHelp: () => void;
   openConfig: () => void;
   openPentest: () => void;
+  openSessions: () => void;
   // Add more context methods here as needed
   // clearScreen?: () => void;
   // showMessage?: (msg: string) => void;
@@ -49,6 +50,14 @@ export const commands: CommandConfig[] = [
     category: "General",
     handler: async (args, ctx) => {
       ctx.openPentest();
+    },
+  },
+  {
+    name: "sessions",
+    description: "Show available sessions",
+    category: "General",
+    handler: async (args, ctx) => {
+      ctx.openSessions();
     },
   },
 

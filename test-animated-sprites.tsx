@@ -1,6 +1,19 @@
 #!/usr/bin/env bun
 import { render } from "@opentui/react";
-import AnimatedSpritesExample from "./src/components/sprites";
+import {
+  SpinnerCircle,
+  HeartBeat,
+  LoadingWave,
+  ProgressBar,
+  PulsingDot,
+  SpinnerBraille,
+  SpinnerDots,
+  SpinnerLine,
+  BlinkingEye,
+  TypingIndicator,
+  RocketLaunch,
+  StatusPulse,
+} from "./src/components/sprites";
 
 /**
  * Test file for animated terminal sprites
@@ -16,7 +29,21 @@ function App() {
       alignItems="center"
       justifyContent="center"
     >
-      <AnimatedSpritesExample />
+      <SpinnerDots />
+      <SpinnerLine />
+      <SpinnerCircle />
+      <SpinnerBraille />
+      <ProgressBar />
+      <PulsingDot />
+      <LoadingWave />
+      <HeartBeat />
+      <BlinkingEye />
+      <TypingIndicator />
+      <RocketLaunch />
+      <StatusPulse status="success" />
+      <StatusPulse status="warning" />
+      <StatusPulse status="error" />
+      <StatusPulse status="info" />
     </box>
   );
 }

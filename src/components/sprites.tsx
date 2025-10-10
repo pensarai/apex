@@ -2,7 +2,7 @@ import { RGBA } from "@opentui/core";
 import { useState, useEffect } from "react";
 
 /** Animated spinner with rotating dots */
-export function SpinnerDots() {
+export function SpinnerDots({ label, fg }: { label?: string; fg?: string }) {
   const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
   const [frame, setFrame] = useState(0);
 
@@ -13,7 +13,12 @@ export function SpinnerDots() {
     return () => clearInterval(interval);
   }, []);
 
-  return <text fg="blue" content={`${frames[frame]} Loading`} />;
+  return (
+    <text
+      fg={fg || "blue"}
+      content={`${frames[frame]} ${label || "Loading"}`}
+    />
+  );
 }
 
 /** Horizontal line spinner */

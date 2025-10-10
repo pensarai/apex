@@ -1,7 +1,6 @@
 import { RGBA } from "@opentui/core";
 import type { ModelMessage } from "ai";
-import { randomUUIDv5 } from "bun";
-import { SpinnerBraille } from "./sprites";
+import { SpinnerDots } from "./sprites";
 
 interface ToolMessage {
   role: "tool";
@@ -59,7 +58,7 @@ export default function AgentDisplay({
       )}
       {isStreaming && (
         <box flexDirection="row" alignItems="center">
-          <SpinnerBraille label="Thinking..." />
+          <SpinnerDots label="Thinking..." fg="green" />
         </box>
       )}
       {children}
