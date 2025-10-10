@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import AlertDialog from "./alert-dialog";
-import { useCommand } from "../command-provider";
-import Input from "./input";
-import { config } from "../../core/config";
-import type { Config } from "../../core/config/config";
+import AlertDialog from "../alert-dialog";
+import { useCommand } from "../../command-provider";
+import { config } from "../../../core/config";
+import type { Config } from "../../../core/config/config";
 
 export default function ConfigDialog({
   configOpen,

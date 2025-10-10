@@ -1,6 +1,6 @@
 import { useMemo } from "react";
-import AlertDialog from "./alert-dialog";
-import { useCommand } from "../command-provider";
+import AlertDialog from "../alert-dialog";
+import { useCommand } from "../../command-provider";
 
 export default function HelpDialog({
   helpOpen,

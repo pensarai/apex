@@ -1,5 +1,5 @@
 import { useState } from "react";
-import Autocomplete from "./components /autocomplete";
+import Autocomplete from "./components/autocomplete";
 import { useCommand } from "./command-provider";
 
 interface CommandInputProps {

@@ -13,7 +13,7 @@ import {
   commands,
   type AppCommandContext,
 } from "./command-registry";
-import type { AutocompleteOption } from "./components /autocomplete";
+import type { AutocompleteOption } from "./components/autocomplete";
 
 interface CommandContextValue {
   router: CommandRouter<AppCommandContext>;

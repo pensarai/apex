@@ -2,16 +2,15 @@ import { render, useKeyboard } from "@opentui/react";
 import {
   convertImageToColoredAscii,
   ColoredAsciiArt,
-} from "./components /ascii-art";
+} from "./components/ascii-art";
 import { useState, useEffect } from "react";
-import Header from "./components /header";
-import Footer from "./components /footer";
+import Header from "./components/header";
+import Footer from "./components/footer";
 import CommandInput from "./command-input";
-import AlertDialog from "./components /alert-dialog";
 import { CommandProvider, useCommand } from "./command-provider";
-import HelpDialog from "./components /help-dialog";
-import ConfigDialog from "./components /config-dialog";
-import PentestAgentDisplay from "./components /pentest-agent-display";
+import HelpDialog from "./components/commands/help-dialog";
+import ConfigDialog from "./components/commands/config-dialog";
+import PentestAgentDisplay from "./components/commands/pentest-agent-display";
 
 // Configuration
 const CONFIG = {
