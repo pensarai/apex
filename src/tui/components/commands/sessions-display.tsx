@@ -246,18 +246,20 @@ export default function SessionsDisplay({
                       <text fg={isSelected ? "green" : "white"}>
                         {isSelected ? "▶ " : "  "} {session.id}
                       </text>
-                      <text fg="gray">
-                        {"  "}Target: {session.target}
-                      </text>
-                      <text fg="gray">
-                        {"  "}Objective: {session.objective}
-                      </text>
-                      <text fg="gray">
-                        {"  "}Started: {formattedDate}
-                      </text>
-                      <text fg="gray">
-                        {"  "}Path: {session.rootPath}
-                      </text>
+                      <box paddingLeft={1} flexDirection="column" gap={0}>
+                        <text paddingLeft={4} fg="gray">
+                          {"  "}Target: {session.target}
+                        </text>
+                        <text paddingLeft={4} fg="gray">
+                          {"  "}Objective: {session.objective}
+                        </text>
+                        <text paddingLeft={4} fg="gray">
+                          {"  "}Started: {formattedDate}
+                        </text>
+                        <text paddingLeft={4} fg="gray">
+                          {"  "}Path: {session.rootPath}
+                        </text>
+                      </box>
                     </box>
                   );
                 })}
