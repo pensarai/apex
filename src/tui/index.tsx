@@ -12,6 +12,7 @@ import { AgentProvider } from "./agentProvider";
 import HelpDialog from "./components/commands/help-dialog";
 import ConfigDialog from "./components/commands/config-dialog";
 import PentestAgentDisplay from "./components/commands/pentest-agent-display";
+import ThoroughPentestAgentDisplay from "./components/commands/thorough-pentest-agent-display";
 import SessionsDisplay from "./components/commands/sessions-display";
 import ModelsDisplay from "./components/commands/models-display";
 import type { Config } from "../core/config/config";
@@ -180,6 +181,8 @@ function AppContent({
   const {
     pentestOpen,
     closePentest,
+    thoroughPentestOpen,
+    closeThoroughPentest,
     sessionsOpen,
     closeSessions,
     modelsOpen,
@@ -217,6 +220,12 @@ function AppContent({
     // Escape - Close pentest display if open
     if (key.name === "escape" && pentestOpen) {
       closePentest();
+      return;
+    }
+
+    // Escape - Close thorough pentest display if open
+    if (key.name === "escape" && thoroughPentestOpen) {
+      closeThoroughPentest();
       return;
     }
 
@@ -280,8 +289,14 @@ function CommandDisplay({
   focusIndex: number;
   inputKey: number;
 }) {
-  const { pentestOpen, sessionsOpen, closeSessions, modelsOpen, closeModels } =
-    useCommand();
+  const {
+    pentestOpen,
+    thoroughPentestOpen,
+    sessionsOpen,
+    closeSessions,
+    modelsOpen,
+    closeModels,
+  } = useCommand();
 
   return (
     <box
@@ -295,10 +310,14 @@ function CommandDisplay({
       overflow="hidden"
       gap={2}
     >
-      {!pentestOpen && !sessionsOpen && !modelsOpen && (
-        <CommandInput focused={focusIndex === 0} inputKey={inputKey} />
-      )}
+      {!pentestOpen &&
+        !thoroughPentestOpen &&
+        !sessionsOpen &&
+        !modelsOpen && (
+          <CommandInput focused={focusIndex === 0} inputKey={inputKey} />
+        )}
       {pentestOpen && <PentestAgentDisplay />}
+      {thoroughPentestOpen && <ThoroughPentestAgentDisplay />}
       {sessionsOpen && <SessionsDisplay closeSessions={closeSessions} />}
       {modelsOpen && <ModelsDisplay closeModels={closeModels} />}
     </box>

@@ -11,6 +11,8 @@ import {
 } from "fs";
 import { join } from "path";
 import type { Session } from "./sessions";
+import { runAgent } from "./pentestAgent";
+import type { AIModel } from "../ai";
 
 const execAsync = promisify(exec);
 
@@ -796,8 +798,48 @@ This report should be treated as confidential and distributed only to authorized
   });
 }
 
+function getAttackSurfaceAgent() {
+  return tool({
+    name: "get_attack_surface",
+    description:
+      "Get the attack surface of a target using the attack surface agent",
+    inputSchema: z.object({
+      target: z.string().describe("The target to get the attack surface of"),
+    }),
+    execute: async ({ target }) => {},
+  });
+}
+
+function runPentestAgents(model: AIModel = "claude-4-sonnet-20240229") {
+  return tool({
+    name: "pentest_agents",
+    description: "Perform a pentest on a target using the pentest agent",
+    inputSchema: z.object({
+      targets: z
+        .array(
+          z.object({
+            target: z.string().describe("The target to perform a pentest on"),
+            objective: z.string().describe("The objective of the pentest"),
+          })
+        )
+        .describe("The targets to perform a pentest on"),
+    }),
+    execute: async ({ targets }) => {
+      const promises = targets.map((target) => {
+        return runAgent({
+          target: target.target,
+          objective: target.objective,
+          model: model,
+        });
+      });
+      const results = await Promise.all(promises);
+      return results;
+    },
+  });
+}
+
 // Export tools creator function that accepts a session
-export function createPentestTools(session: Session) {
+export function createPentestTools(session: Session, model?: AIModel) {
   return {
     execute_command: executeCommand,
     http_request: httpRequest,
@@ -805,5 +847,7 @@ export function createPentestTools(session: Session) {
     analyze_scan: analyzeScan,
     scratchpad: createScratchpadTool(session),
     generate_report: createGenerateReportTool(session),
+    get_attack_surface: getAttackSurfaceAgent(),
+    pentest_agents: runPentestAgents(model),
   };
 }

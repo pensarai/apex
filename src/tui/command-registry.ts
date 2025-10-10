@@ -7,6 +7,7 @@ export interface AppCommandContext {
   openHelp: () => void;
   openConfig: () => void;
   openPentest: () => void;
+  openThoroughPentest: () => void;
   openSessions: () => void;
   openModels: () => void;
   // Add more context methods here as needed
@@ -51,6 +52,15 @@ export const commands: CommandConfig[] = [
     category: "General",
     handler: async (args, ctx) => {
       ctx.openPentest();
+    },
+  },
+  {
+    name: "thorough",
+    aliases: ["thorough-pentest", "comprehensive"],
+    description: "Show thorough pentest agent (orchestrator)",
+    category: "General",
+    handler: async (args, ctx) => {
+      ctx.openThoroughPentest();
     },
   },
   {

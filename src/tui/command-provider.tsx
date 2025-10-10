@@ -28,6 +28,9 @@ interface CommandContextValue {
   pentestOpen: boolean;
   openPentest: () => void;
   closePentest: () => void;
+  thoroughPentestOpen: boolean;
+  openThoroughPentest: () => void;
+  closeThoroughPentest: () => void;
   sessionsOpen: boolean;
   openSessions: () => void;
   closeSessions: () => void;
@@ -55,6 +58,7 @@ export function CommandProvider({ children }: CommandProviderProps) {
   const [helpOpen, setHelpOpen] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
   const [pentestOpen, setPentestOpen] = useState(false);
+  const [thoroughPentestOpen, setThoroughPentestOpen] = useState(false);
   const [sessionsOpen, setSessionsOpen] = useState(false);
   const [modelsOpen, setModelsOpen] = useState(false);
 
@@ -67,6 +71,7 @@ export function CommandProvider({ children }: CommandProviderProps) {
       openHelp: () => setHelpOpen(true),
       openConfig: () => setConfigOpen(true),
       openPentest: () => setPentestOpen(true),
+      openThoroughPentest: () => setThoroughPentestOpen(true),
       openSessions: () => setSessionsOpen(true),
       openModels: () => setModelsOpen(true),
     };
@@ -114,6 +119,7 @@ export function CommandProvider({ children }: CommandProviderProps) {
         openHelp: () => setHelpOpen(true),
         openConfig: () => setConfigOpen(true),
         openPentest: () => setPentestOpen(true),
+        openThoroughPentest: () => setThoroughPentestOpen(true),
         openSessions: () => setSessionsOpen(true),
         openModels: () => setModelsOpen(true),
       };
@@ -137,6 +143,9 @@ export function CommandProvider({ children }: CommandProviderProps) {
       pentestOpen,
       openPentest: () => setPentestOpen(true),
       closePentest: () => setPentestOpen(false),
+      thoroughPentestOpen,
+      openThoroughPentest: () => setThoroughPentestOpen(true),
+      closeThoroughPentest: () => setThoroughPentestOpen(false),
       sessionsOpen,
       openSessions: () => setSessionsOpen(true),
       closeSessions: () => setSessionsOpen(false),
@@ -152,6 +161,7 @@ export function CommandProvider({ children }: CommandProviderProps) {
       helpOpen,
       configOpen,
       pentestOpen,
+      thoroughPentestOpen,
       sessionsOpen,
       modelsOpen,
     ]
