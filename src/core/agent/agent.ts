@@ -14,6 +14,7 @@ export interface RunAgentProps {
   objective: string;
   model: AIModel;
   onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
+  abortSignal?: AbortSignal;
 }
 
 export interface RunAgentResult extends StreamTextResult<ToolSet, never> {
@@ -21,7 +22,7 @@ export interface RunAgentResult extends StreamTextResult<ToolSet, never> {
 }
 
 export function runAgent(opts: RunAgentProps): RunAgentResult {
-  const { target, objective, model, onStepFinish } = opts;
+  const { target, objective, model, onStepFinish, abortSignal } = opts;
 
   // Create a new session for this pentest run
   const session = createSession(target, objective);
@@ -60,6 +61,7 @@ Remember to follow a systematic methodology and explain your reasoning for each 
     stopWhen: stepCountIs(10000),
     toolChoice: "auto", // Let the model decide when to use tools vs respond
     onStepFinish,
+    abortSignal,
   });
 
   // Attach the session directly to the stream result object

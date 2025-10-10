@@ -83,6 +83,7 @@ export interface GetResponseProps {
   toolChoice?: ToolChoice<ToolSet>;
   tools?: ToolSet;
   onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
+  abortSignal?: AbortSignal;
 }
 
 export function streamResponse(opts: GetResponseProps) {
@@ -95,6 +96,7 @@ export function streamResponse(opts: GetResponseProps) {
     toolChoice,
     tools,
     onStepFinish,
+    abortSignal,
   } = opts;
   const anthropic = createAnthropic({
     apiKey: process.env.ANTHROPIC_API_KEY,
@@ -108,6 +110,7 @@ export function streamResponse(opts: GetResponseProps) {
     toolChoice,
     tools,
     onStepFinish,
+    abortSignal,
   });
 
   return response;

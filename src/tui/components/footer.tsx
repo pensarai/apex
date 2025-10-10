@@ -12,9 +12,11 @@ export default function Footer({
   showExitWarning = false,
 }: FooterProps) {
   cwd = "~" + cwd.split(os.homedir()).pop() || "";
-  const { model, tokenCount, thinking } = useAgent();
+  const { model, tokenCount, thinking, isExecuting } = useAgent();
 
-  const hotkeys = [{ key: "Ctrl+C", label: "Clear/Exit" }];
+  const hotkeys = isExecuting
+    ? [{ key: "Ctrl+C", label: "Stop Execution" }]
+    : [{ key: "Ctrl+C", label: "Clear/Exit" }];
 
   function formatTokenCount(count: number): string {
     if (count >= 1000000) {

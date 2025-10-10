@@ -9,6 +9,8 @@ interface AgentContextValue {
   addTokens: (tokens: number) => void;
   thinking: boolean;
   setThinking: (thinking: boolean) => void;
+  isExecuting: boolean;
+  setIsExecuting: (isExecuting: boolean) => void;
 }
 
 const AgentContext = createContext<AgentContextValue | null>(null);
@@ -29,6 +31,7 @@ export function AgentProvider({ children }: AgentProviderProps) {
   const [model, setModel] = useState<ModelInfo>(AVAILABLE_MODELS[0]!); // Default to first model
   const [tokenCount, setTokenCount] = useState<number>(0);
   const [thinking, setThinking] = useState<boolean>(false);
+  const [isExecuting, setIsExecuting] = useState<boolean>(false);
 
   const addTokens = (tokens: number) => {
     setTokenCount((prev) => prev + tokens);
@@ -44,6 +47,8 @@ export function AgentProvider({ children }: AgentProviderProps) {
         addTokens,
         thinking,
         setThinking,
+        isExecuting,
+        setIsExecuting,
       }}
     >
       {children}
