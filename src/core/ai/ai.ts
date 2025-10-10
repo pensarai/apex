@@ -5,10 +5,12 @@ import type { OpenAIChatModelId } from "@ai-sdk/openai/internal";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { createAmazonBedrock } from "@ai-sdk/amazon-bedrock";
 import {
+  generateObject,
   streamText,
   type ModelMessage,
   type StopCondition,
   type StreamTextOnStepFinishCallback,
+  type ToolCallRepairFunction,
   type ToolChoice,
   type ToolSet,
 } from "ai";
@@ -426,6 +428,27 @@ export function streamResponse(opts: GetResponseProps) {
     onStepFinish,
     abortSignal,
     activeTools,
+    experimental_repairToolCall: async ({
+      toolCall,
+      inputSchema,
+      tools,
+      error,
+    }) => {
+      const { object: repairedArgs } = await generateObject({
+        model: providerModel,
+        schema: inputSchema.arguments,
+        prompt: [
+          `The model tried to call the tool "${toolCall.toolName}"` +
+            ` with the following inputs:`,
+          JSON.stringify(inputSchema.arguments),
+          `The tool accepts the following schema:`,
+          JSON.stringify(inputSchema.arguments),
+          "Please fix the inputs.",
+        ].join("\n"),
+      });
+
+      return { ...toolCall, input: JSON.stringify(repairedArgs) };
+    },
   });
 
   return response;

@@ -167,12 +167,14 @@ export default function AgentDisplay({
       stickyStart="bottom"
       focused
     >
-      {messages.map((message) => (
-        <AgentMessage message={message} />
-      ))}
-      {subagents?.map((subagent) => (
-        <SubAgentDisplay subagent={subagent} />
-      ))}
+      {messagesAndSubagents.map((item) => {
+        if ("messages" in item) {
+          return <SubAgentDisplay subagent={item} />;
+        } else {
+          return <AgentMessage message={item} />;
+        }
+      })}
+
       {isStreaming && (
         <box flexDirection="row" alignItems="center">
           <SpinnerDots label="Thinking..." fg="green" />
