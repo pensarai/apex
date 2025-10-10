@@ -2,17 +2,43 @@ import { useKeyboard } from "@opentui/react";
 import { RGBA } from "@opentui/core";
 import { AVAILABLE_MODELS, type ModelInfo } from "../../../core/ai";
 import { useAgent } from "../../agentProvider";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import type { Config } from "../../../core/config/config";
+import { config } from "../../../core/config";
 
 export default function ModelsDisplay({
   closeModels,
 }: {
   closeModels: () => void;
 }) {
+  const [appConfig, setAppConfig] = useState<Config | null>(null);
+  const [models, setModels] = useState<ModelInfo[]>([]);
   const { model: selectedModel, setModel } = useAgent();
+
   const [highlightedIndex, setHighlightedIndex] = useState(() =>
-    AVAILABLE_MODELS.findIndex((m) => m.id === selectedModel.id)
+    models.findIndex((m) => m.id === selectedModel.id)
   );
+
+  useEffect(() => {
+    async function getConfig() {
+      const _config = await config.get();
+      setAppConfig(_config);
+      const openAiConfigured = !!_config.openAiAPIKey;
+      const anthropicConfigured = !!_config.anthropicAPIKey;
+      const bedrockConfigured = !!_config.bedrockAPIKey;
+      const openRouterConfigured = !!_config.openRouterAPIKey;
+      const _models = AVAILABLE_MODELS.filter((m) => {
+        if (m.provider === "openai") return openAiConfigured;
+        if (m.provider === "anthropic") return anthropicConfigured;
+        if (m.provider === "bedrock") return bedrockConfigured;
+        if (m.provider === "openrouter") return openRouterConfigured;
+        return false;
+      });
+
+      setModels(_models);
+    }
+    getConfig();
+  }, []);
 
   useKeyboard((key) => {
     // Escape - Close models display
@@ -22,24 +48,20 @@ export default function ModelsDisplay({
     }
 
     // Arrow Up - Previous model
-    if (key.name === "up" && AVAILABLE_MODELS.length > 0) {
-      setHighlightedIndex((prev) =>
-        prev > 0 ? prev - 1 : AVAILABLE_MODELS.length - 1
-      );
+    if (key.name === "up" && models.length > 0) {
+      setHighlightedIndex((prev) => (prev > 0 ? prev - 1 : models.length - 1));
       return;
     }
 
     // Arrow Down - Next model
-    if (key.name === "down" && AVAILABLE_MODELS.length > 0) {
-      setHighlightedIndex((prev) =>
-        prev < AVAILABLE_MODELS.length - 1 ? prev + 1 : 0
-      );
+    if (key.name === "down" && models.length > 0) {
+      setHighlightedIndex((prev) => (prev < models.length - 1 ? prev + 1 : 0));
       return;
     }
 
     // Enter - Select model
-    if (key.name === "return" && AVAILABLE_MODELS.length > 0) {
-      const selectedModel = AVAILABLE_MODELS[highlightedIndex];
+    if (key.name === "return" && models.length > 0) {
+      const selectedModel = models[highlightedIndex];
       if (selectedModel) {
         setModel(selectedModel);
         closeModels();
@@ -98,7 +120,7 @@ export default function ModelsDisplay({
           }}
           focused
         >
-          {AVAILABLE_MODELS.map((model, index) => {
+          {models.map((model, index) => {
             const isSelected = model.id === selectedModel.id;
             const isHighlighted = index === highlightedIndex;
 

@@ -14,6 +14,9 @@ import ConfigDialog from "./components/commands/config-dialog";
 import PentestAgentDisplay from "./components/commands/pentest-agent-display";
 import SessionsDisplay from "./components/commands/sessions-display";
 import ModelsDisplay from "./components/commands/models-display";
+import type { Config } from "../core/config/config";
+import { config } from "../core/config";
+import AlertDialog from "./components/alert-dialog";
 
 // Configuration
 const CONFIG = {
@@ -41,6 +44,7 @@ console.log(
 );
 
 function App() {
+  const [appConfig, setAppConfig] = useState<Config | null>(null);
   const [focusIndex, setFocusIndex] = useState(0);
   const [cwd, setCwd] = useState(process.cwd());
   const [ctrlCPressTime, setCtrlCPressTime] = useState<number | null>(null);
@@ -49,9 +53,27 @@ function App() {
 
   const navigableItems = ["command-input"]; // List of items that can be focused
 
+  useEffect(() => {
+    async function getConfig() {
+      const _config = await config.get();
+      setAppConfig(_config);
+    }
+    getConfig();
+  }, []);
+
+  const handleAcceptPolicy = async () => {
+    await config.update({ responsibleUseAccepted: true });
+    const updatedConfig = await config.get();
+    setAppConfig(updatedConfig);
+  };
+
   return (
     <AgentProvider>
       <CommandProvider>
+        <ResponsibleUseWarning
+          config={appConfig}
+          onAccept={handleAcceptPolicy}
+        />
         <AppContent
           focusIndex={focusIndex}
           setFocusIndex={setFocusIndex}
@@ -66,6 +88,69 @@ function App() {
         />
       </CommandProvider>
     </AgentProvider>
+  );
+}
+
+function ResponsibleUseWarning({
+  config: appConfig,
+  onAccept,
+}: {
+  config: Config | null;
+  onAccept: () => void;
+}) {
+  if (!appConfig) return null;
+
+  useKeyboard((key) => {
+    if (!appConfig || appConfig.responsibleUseAccepted) return;
+
+    // Enter key accepts the policy
+    if (key.name === "return" || key.name === "enter") {
+      onAccept();
+    }
+  });
+
+  return (
+    <AlertDialog
+      disableEscape={true}
+      open={!appConfig.responsibleUseAccepted}
+      title="⚠️  Responsible Penetration Testing Policy"
+      onClose={() => {}}
+    >
+      <box flexDirection="column" gap={1}>
+        <text fg="yellow">IMPORTANT: Read Before Use</text>
+        <text fg="white">
+          This penetration testing tool is designedfor AUTHORIZED security
+          testing only.
+        </text>
+        <box flexDirection="column" marginBottom={1}>
+          <text fg="red">
+            You MUST have explicit written permission to test any systems,
+            networks, or applications
+          </text>
+        </box>
+        <text fg="white">By accepting, you agree to:</text>
+        <box flexDirection="column" marginLeft={2}>
+          <text>• Only test systems you own or have authorization</text>
+          <text fg="white">
+            • Comply with all applicable laws and regulations
+          </text>
+          <text fg="white">• Use this tool ethically and responsibly</text>
+          <text fg="white">• Not cause harm or disruption to services</text>
+          <text fg="white">• Document and report findings appropriately</text>
+        </box>
+        <box flexDirection="column">
+          <text fg="red">
+            Unauthorized access to computer systems is illegaland may result in
+            criminal prosecution.
+          </text>
+        </box>
+        <box>
+          <text fg="white">
+            Press <span fg="green">ENTER</span> to accept and continue
+          </text>
+        </box>
+      </box>
+    </AlertDialog>
   );
 }
 

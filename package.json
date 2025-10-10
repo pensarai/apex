@@ -42,7 +42,10 @@
     "typescript": "^5"
   },
   "dependencies": {
+    "@ai-sdk/amazon-bedrock": "^3.0.33",
     "@ai-sdk/anthropic": "^2.0.23",
+    "@ai-sdk/openai": "^2.0.46",
+    "@openrouter/ai-sdk-provider": "^1.2.0",
     "@opentui/core": "0.1.26",
     "@opentui/react": "0.1.26",
     "ai": "^5.0.60",

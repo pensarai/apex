@@ -8,6 +8,7 @@ export interface AlertDialogProps {
   open: boolean;
   onClose: () => void;
   children?: React.ReactNode;
+  disableEscape?: boolean;
 }
 
 export default function AlertDialog({
@@ -16,11 +17,12 @@ export default function AlertDialog({
   open,
   onClose,
   children,
+  disableEscape = false,
 }: AlertDialogProps) {
   useKeyboard((key) => {
     if (!open) return;
     // Escape closes dialog
-    if (key.name === "escape") {
+    if (key.name === "escape" && !disableEscape) {
       onClose();
     }
   });
@@ -54,9 +56,11 @@ export default function AlertDialog({
         <box flexDirection="column">
           {message ? <text fg="white">{message}</text> : children}
         </box>
-        <box marginTop={1}>
-          <text fg="gray">Press Esc to close</text>
-        </box>
+        {!disableEscape ? (
+          <box marginTop={1}>
+            <text fg="gray">Press Esc to close</text>
+          </box>
+        ) : null}
       </box>
     </box>
   );

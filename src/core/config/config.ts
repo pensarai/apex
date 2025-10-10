@@ -2,13 +2,16 @@ import os from "os";
 import path from "path";
 import fs from "fs/promises";
 
-const DEFAULT_CONFIG: Config = {};
+const DEFAULT_CONFIG: Config = {
+  responsibleUseAccepted: false,
+};
 
 export interface Config {
   openAiAPIKey?: string | null;
   anthropicAPIKey?: string | null;
   openRouterAPIKey?: string | null;
   bedrockAPIKey?: string | null;
+  responsibleUseAccepted: boolean;
 }
 
 export async function init() {
@@ -52,4 +55,12 @@ export async function get(): Promise<Config> {
     openRouterAPIKey: process.env.OPENROUTER_API_KEY,
     bedrockAPIKey: process.env.BEDROCK_API_KEY,
   };
+}
+
+export async function update(config: Partial<Config>) {
+  const currentConfig = await get();
+  const newConfig = { ...currentConfig, ...config };
+  const folder = path.join(os.homedir(), ".pensar");
+  const file = path.join(folder, "config.json");
+  await fs.writeFile(file, JSON.stringify(newConfig));
 }
