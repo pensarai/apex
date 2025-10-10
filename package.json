@@ -2,8 +2,8 @@
   "name": "@pensar/apex",
   "version": "1.0.0",
   "description": "AI-powered penetration testing CLI tool with terminal UI",
-  "module": "src/index.tsx",
-  "main": "build/index.js",
+  "module": "src/tui/index.tsx",
+  "main": "build/tui/index.js",
   "type": "module",
   "bin": {
     "pensar": "./bin/pensar.js"
@@ -14,16 +14,12 @@
     "pensar.svg"
   ],
   "scripts": {
-    "build": "bun build src/index.tsx --outdir build --target node --format esm",
+    "build": "bun build src/tui/index.tsx --outdir build --target node --format esm",
     "dev": "bun run scripts/watch.ts",
     "dev:debug": "SHOW_CONSOLE=true bun run scripts/watch.ts",
-    "start": "bun run src/index.tsx",
+    "start": "bun run src/tui/index.tsx",
     "pensar": "node bin/pensar.js",
-    "prepublishOnly": "npm run build",
-    "test:scroll": "bun run test.tsx",
-    "test:scroll:basic": "bun run test-scroll-basic.tsx",
-    "test:scroll:sticky": "bun run test-scroll-sticky.tsx",
-    "test:scroll:horizontal": "bun run test-scroll-horizontal.tsx"
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
     "penetration-testing",

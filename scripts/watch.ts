@@ -3,7 +3,7 @@ import { watch } from "fs";
 import { spawn, type Subprocess } from "bun";
 import { resolve, join } from "path";
 
-const TARGET_FILE = "src/index.tsx";
+const TARGET_FILE = "src/tui/index.tsx";
 const WATCH_DIRS = ["src"];
 
 let currentProcess: Subprocess | null = null;
