@@ -2,6 +2,7 @@ import { RGBA } from "@opentui/core";
 import type { ModelMessage } from "ai";
 import { SpinnerDots } from "./sprites";
 import type { Message, ToolMessage } from "../../core/messages";
+import { useState } from "react";
 
 interface AgentDisplayProps {
   messages: Message[];
@@ -114,6 +115,25 @@ function AgentMessage({ message }: { message: Message }) {
           <box width={1} backgroundColor={RGBA.fromInts(30, 30, 30, 255)} />
         )}
       </box>
+      <ToolArgs message={message} />
+    </box>
+  );
+}
+
+function ToolArgs({ message }: { message: Message }) {
+  const [open, setOpen] = useState(false);
+  if (message.role !== "tool" || !("args" in message)) {
+    return null;
+  }
+
+  const args = message.args;
+
+  return (
+    <box onMouseDown={() => setOpen(!open)}>
+      <box flexDirection="row" alignItems="center" gap={1}>
+        <text>{open ? "▼ Hide args" : "▶ Show args"}</text>
+      </box>
+      {open && <text>{JSON.stringify(args, null, 2)}</text>}
     </box>
   );
 }

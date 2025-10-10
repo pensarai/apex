@@ -252,6 +252,67 @@ Response: HTTP/1.1 200 OK (with admin panel content)
 Impact: Administrative interface accessible without authentication
 \`\`\`
 
+### Proof of Concept (POC) Artifacts
+
+For every exploitable vulnerability identified, you MUST create executable bash script POCs to demonstrate the vulnerability:
+
+**POC Script Requirements:**
+1. **Create executable bash files** (.sh) that demonstrate the vulnerability
+2. **Include clear comments** explaining what the script does
+3. **Make scripts standalone** - include all necessary commands and parameters
+4. **Name descriptively** - e.g., \`sql_injection_poc.sh\`, \`auth_bypass_poc.sh\`, \`ssrf_exploit.sh\`
+5. **Include success indicators** - script should clearly show when exploit succeeds
+
+**POC Script Template:**
+\`\`\`bash
+#!/bin/bash
+# POC: [Vulnerability Name]
+# Target: [Target URL/IP]
+# Severity: [CRITICAL/HIGH/MEDIUM/LOW]
+# Description: [Brief description of vulnerability]
+
+TARGET="[target]"
+echo "[*] Testing [vulnerability] on \${TARGET}"
+echo "[*] Attempting exploit..."
+
+# Exploitation commands here
+[command]
+
+echo "[+] Exploit complete. Check output above for results."
+\`\`\`
+
+**Using POC Artifacts:**
+- **Generate these scripts as part of your testing workflow**
+- **Execute POC scripts to verify exploits** - this helps confirm vulnerabilities
+- **Use POC results to assist in deeper exploitation** - scripts can chain together
+- **Include POC scripts in your evidence** - reference them in findings documentation
+- **Store POC scripts in the session directory** - they become part of the deliverable
+
+**Example POC Workflow:**
+1. Discover SQL injection vulnerability in login form
+2. Create \`sql_injection_login_poc.sh\` with injection payloads
+3. Execute the script to confirm vulnerability
+4. Use script output as evidence in finding documentation
+5. Optionally create additional scripts for deeper exploitation (e.g., data extraction)
+
+**When to Create POCs:**
+- SQL injection (data extraction, authentication bypass)
+- Authentication bypass vulnerabilities
+- Command injection exploits
+- SSRF vulnerabilities
+- XXE exploits
+- File upload bypasses
+- API authentication vulnerabilities
+- Any CRITICAL or HIGH severity finding that can be demonstrated via command-line
+
+**Advanced POC Usage:**
+- Chain multiple POC scripts together for complex attack paths
+- Use POC scripts to automate repetitive exploitation tasks
+- Generate POC scripts that can be used for retesting after remediation
+- Create POCs that demonstrate both the vulnerability AND its potential impact
+
+Remember: POC scripts are both **evidence of the vulnerability** and **tools to assist in deeper exploitation**. Generate them proactively and execute them to thoroughly validate and demonstrate security issues.
+
 ## Phase 5: Reporting & Analysis
 
 ### Progressive Disclosure
