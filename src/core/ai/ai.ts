@@ -17,7 +17,12 @@ import {
 
 export type AIModel = AnthropicMessagesModelId | OpenAIChatModelId | string; // For OpenRouter and Bedrock models
 
-export type AIModelProvider = "anthropic" | "openai" | "openrouter" | "bedrock";
+export type AIModelProvider =
+  | "anthropic"
+  | "openai"
+  | "openrouter"
+  | "bedrock"
+  | "local";
 
 // Available models with names
 export interface ModelInfo {
@@ -380,7 +385,7 @@ export function streamResponse(opts: GetResponseProps) {
 
   // Find the model info to determine the provider
   const modelInfo = AVAILABLE_MODELS.find((m) => m.id === model);
-  const provider = modelInfo?.provider || "anthropic";
+  const provider = modelInfo?.provider || "local";
 
   // Create the appropriate provider instance
   let providerModel;
@@ -410,6 +415,14 @@ export function streamResponse(opts: GetResponseProps) {
       break;
 
     case "anthropic":
+
+    case "local":
+      providerModel = createOpenAI({
+        baseURL: process.env.LOCAL_MODEL_URL,
+        apiKey: "",
+      }).chat(model);
+      break;
+
     default:
       const anthropic = createAnthropic({
         apiKey: process.env.ANTHROPIC_API_KEY,
