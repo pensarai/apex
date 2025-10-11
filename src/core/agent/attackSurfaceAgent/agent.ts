@@ -13,6 +13,7 @@ import { createSession, type Session } from "../sessions";
 import { z } from "zod";
 import { join } from "path";
 import { writeFileSync } from "fs";
+import { detectOSAndEnhancePrompt } from "../utils";
 
 export interface RunAgentProps {
   target: string;
@@ -53,14 +54,13 @@ export function runAgent(opts: RunAgentProps): RunAgentResult {
 Call this at the END of your analysis with:
 - Summary statistics
 - Discovered assets (simple list)
-- High-value targets for deep testing with objectives
+- ALL targets for deep testing with objectives. Do not prioritize any targets, optimize for breadth of testing.
 - Key findings`,
     inputSchema: z.object({
       summary: z
         .object({
           totalAssets: z.number(),
           totalDomains: z.number(),
-          highValueTargets: z.number(),
           analysisComplete: z.boolean(),
         })
         .describe("Summary statistics"),
@@ -94,17 +94,11 @@ Call this at the END of your analysis with:
       const resultsPath = join(session.rootPath, "attack-surface-results.json");
       writeFileSync(resultsPath, JSON.stringify(results, null, 2));
 
-      console.log(`Attack surface results saved to: ${resultsPath}`);
-      console.log(`Total assets discovered: ${results.summary.totalAssets}`);
-      console.log(
-        `High-value targets for pentesting: ${results.summary.highValueTargets}`
-      );
-
       return {
         success: true,
         resultsPath,
         summary: results.summary,
-        message: `Attack surface analysis complete. ${results.summary.highValueTargets} high-value targets identified for penetration testing.`,
+        message: `Attack surface analysis complete. ${results.summary.totalAssets} assets identified for penetration testing.`,
       };
     },
   });
@@ -134,9 +128,11 @@ Document all discovered assets and potential attack vectors using the document_f
 You MUST provide the details final report using create_attack_surface_report tool.
 `.trim();
 
+  const systemPrompt = detectOSAndEnhancePrompt(SYSTEM);
+
   const streamResult = streamResponse({
     prompt: enhancedPrompt,
-    system: SYSTEM,
+    system: systemPrompt,
     model,
     tools: {
       analyze_scan,

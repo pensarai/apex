@@ -11,7 +11,32 @@
 ### Prerequisites
 
 - **Bun** v1.0+ (required - [install from bun.sh](https://bun.sh))
+- **nmap** (required for network scanning)
 - **Anthropic API Key** (get one at [console.anthropic.com](https://console.anthropic.com/))
+
+#### Install nmap
+
+macOS:
+
+```bash
+brew install nmap
+```
+
+Debian/Ubuntu:
+
+```bash
+sudo apt-get update && sudo apt-get install -y nmap
+```
+
+Fedora/RHEL:
+
+```bash
+sudo dnf install -y nmap
+```
+
+Windows:
+
+Download installer from `https://nmap.org/download.html` and ensure `nmap` is on your PATH.
 
 ### Installation
 
@@ -83,3 +108,30 @@ npm start
 # or
 bun start
 ```
+
+### Run in Container (Kali-based)
+
+If you prefer a preconfigured environment with `nmap` and common pentest tools, use the included container setup.
+
+```bash
+cd container
+cp env.example .env # add your ANTHROPIC_API_KEY and others
+docker compose up --build -d
+docker compose exec kali-apex bash
+```
+
+Inside the container:
+
+```bash
+cd ~/app
+bun install
+bun run build
+node build/index.js
+# or
+pensar
+```
+
+Notes:
+
+- The host repo is mounted into the container at `/home/ctf/app`.
+- On Linux, consider `network_mode: host` in `container/docker-compose.yml` for comprehensive scanning.

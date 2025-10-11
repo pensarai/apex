@@ -1,0 +1,24 @@
+version: "3.8"
+services:
+  kali-apex:
+    build: .
+    image: kali-apex:latest
+    container_name: kali-apex
+    tty: true
+    stdin_open: true
+    network_mode: "bridge" # consider "host" on Linux for full network access
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    security_opt:
+      - seccomp:unconfined
+    env_file:
+      - .env
+    environment:
+      - DISABLE_TELEMETRY=1
+      - DISABLE_AUTOUPDATER=1
+      - DISABLE_ERROR_REPORTING=1
+    volumes:
+      - ../:/home/pentest/app
+      - ./workspace:/home/pentest/workspace
+    working_dir: /home/pentest/app

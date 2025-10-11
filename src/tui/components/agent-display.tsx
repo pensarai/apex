@@ -15,6 +15,8 @@ interface AgentDisplayProps {
   isStreaming?: boolean;
   children?: React.ReactNode;
   subagents?: Subagent[];
+  paddingLeft?: number;
+  paddingRight?: number;
 }
 
 // Utility function to convert markdown to StyledText
@@ -131,6 +133,8 @@ export default function AgentDisplay({
   isStreaming = false,
   children,
   subagents,
+  paddingLeft = 8,
+  paddingRight = 8,
 }: AgentDisplayProps) {
   // Memoize the sorted array to avoid re-sorting on every render
   const messagesAndSubagents = useMemo(() => {
@@ -153,8 +157,8 @@ export default function AgentDisplay({
           overflow: "hidden",
         },
         contentOptions: {
-          paddingLeft: 8,
-          paddingRight: 8,
+          paddingLeft: paddingLeft,
+          paddingRight: paddingRight,
           gap: 1,
           flexGrow: 1,
           flexDirection: "column",
@@ -209,18 +213,32 @@ function SubAgentDisplay({ subagent }: { subagent: Subagent }) {
   const [open, setOpen] = useState(false);
   return (
     <box
-      onMouseDown={() => setOpen(!open)}
       height={open ? 40 : "auto"}
+      onMouseDown={() => setOpen(!open)}
       width="100%"
       border={true}
       borderColor="green"
       backgroundColor={RGBA.fromInts(10, 10, 10, 255)}
     >
       <box flexDirection="row" alignItems="center" gap={1}>
-        <SpinnerDots label={subagent.name} fg="green" />
+        {subagent.status === "pending" && (
+          <SpinnerDots label={subagent.name} fg="green" />
+        )}
+        {subagent.status === "completed" && (
+          <text fg="green"> ✓ {subagent.name}</text>
+        )}
+        {subagent.status === "failed" && (
+          <text fg="red">✗ {subagent.name}</text>
+        )}
         <text fg="gray">{open ? "▼" : "▶"}</text>
       </box>
-      {open && <AgentDisplay messages={subagent.messages} />}
+      {open && (
+        <AgentDisplay
+          paddingLeft={2}
+          paddingRight={2}
+          messages={subagent.messages}
+        />
+      )}
     </box>
   );
 }
