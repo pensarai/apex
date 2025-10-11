@@ -5,6 +5,7 @@ import { useAgent } from "../../agentProvider";
 import { useEffect, useState } from "react";
 import type { Config } from "../../../core/config/config";
 import { config } from "../../../core/config";
+import Input from "../input";
 
 export default function ModelsDisplay({
   closeModels,
@@ -14,6 +15,8 @@ export default function ModelsDisplay({
   const [appConfig, setAppConfig] = useState<Config | null>(null);
   const [models, setModels] = useState<ModelInfo[]>([]);
   const { model: selectedModel, setModel } = useAgent();
+  const [customModel, setCustomModel] = useState<string>("");
+  const [focusArea, setFocusArea] = useState<"custom" | "list">("custom");
 
   const [highlightedIndex, setHighlightedIndex] = useState(() =>
     models.findIndex((m) => m.id === selectedModel.id)
@@ -47,26 +50,43 @@ export default function ModelsDisplay({
       return;
     }
 
-    // Arrow Up - Previous model
-    if (key.name === "up" && models.length > 0) {
-      setHighlightedIndex((prev) => (prev > 0 ? prev - 1 : models.length - 1));
+    // Tab focus switching between custom input and list
+    if (key.name === "tab" && !key.shift) {
+      setFocusArea((prev) => (prev === "custom" ? "list" : "custom"));
+      return;
+    }
+    if (key.name === "tab" && key.shift) {
+      setFocusArea((prev) => (prev === "list" ? "custom" : "list"));
       return;
     }
 
-    // Arrow Down - Next model
-    if (key.name === "down" && models.length > 0) {
-      setHighlightedIndex((prev) => (prev < models.length - 1 ? prev + 1 : 0));
-      return;
-    }
-
-    // Enter - Select model
-    if (key.name === "return" && models.length > 0) {
-      const selectedModel = models[highlightedIndex];
-      if (selectedModel) {
-        setModel(selectedModel);
-        closeModels();
+    // When list is focused, handle navigation and selection
+    if (focusArea === "list") {
+      // Arrow Up - Previous model
+      if (key.name === "up" && models.length > 0) {
+        setHighlightedIndex((prev) =>
+          prev > 0 ? prev - 1 : models.length - 1
+        );
+        return;
       }
-      return;
+
+      // Arrow Down - Next model
+      if (key.name === "down" && models.length > 0) {
+        setHighlightedIndex((prev) =>
+          prev < models.length - 1 ? prev + 1 : 0
+        );
+        return;
+      }
+
+      // Enter - Select model
+      if (key.name === "return" && models.length > 0) {
+        const sel = models[highlightedIndex];
+        if (sel) {
+          setModel(sel);
+          closeModels();
+        }
+        return;
+      }
     }
   });
 
@@ -88,6 +108,30 @@ export default function ModelsDisplay({
         <text fg="white">
           Current: <span fg="green">{selectedModel.name}</span>
         </text>
+
+        <box flexDirection="column" gap={1}>
+          <Input
+            label="Custom local model (vLLM)"
+            description="Requires LOCAL_MODEL_URL env var. Press Enter to set."
+            value={customModel}
+            focused={focusArea === "custom"}
+            onChange={(value) =>
+              setCustomModel(typeof value === "string" ? value : "")
+            }
+            onPaste={(text: string) => {
+              const cleaned = String(text);
+              setCustomModel((prev) => `${prev}${cleaned}`);
+            }}
+            onSubmit={() => {
+              const id = customModel.trim();
+              if (!id) return;
+              const localModel: ModelInfo = { id, name: id, provider: "local" };
+              setModel(localModel);
+              setCustomModel("");
+              closeModels();
+            }}
+          />
+        </box>
 
         <scrollbox
           style={{
@@ -118,7 +162,7 @@ export default function ModelsDisplay({
               },
             },
           }}
-          focused
+          focused={focusArea === "list"}
         >
           {models.map((model, index) => {
             const isSelected = model.id === selectedModel.id;
@@ -150,7 +194,8 @@ export default function ModelsDisplay({
 
         <box flexDirection="row" width="100%" gap={1}>
           <text fg="gray">
-            <span fg="green">[↑↓]</span> Navigate ·{" "}
+            <span fg="green">[TAB]</span> Focus input/list ·{" "}
+            <span fg="green">[↑↓]</span> Navigate list ·{" "}
             <span fg="green">[ENTER]</span> Select ·{" "}
             <span fg="green">[ESC]</span> Close
           </text>

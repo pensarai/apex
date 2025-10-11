@@ -135,3 +135,17 @@ Notes:
 
 - The host repo is mounted into the container at `/home/ctf/app`.
 - On Linux, consider `network_mode: host` in `container/docker-compose.yml` for comprehensive scanning.
+
+### vLLM (Local model) Support
+
+You can run against a local vLLM server by setting a custom model and a base URL:
+
+1. Set `LOCAL_MODEL_URL` to your vLLM HTTP endpoint (e.g., `http://localhost:8000/v1`):
+
+```bash
+export LOCAL_MODEL_URL="http://localhost:8000/v1"
+```
+
+2. In the Models screen, enter your model name in the "Custom local model (vLLM)" input and press Enter. This will select a local provider model with the ID you entered.
+
+That’s it—no other keys required for local. The app will route via OpenAI-compatible API to `LOCAL_MODEL_URL` when the selected provider is `local`.
