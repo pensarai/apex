@@ -385,10 +385,13 @@ export function streamResponse(opts: GetResponseProps) {
 
   // Find the model info to determine the provider
   const modelInfo = AVAILABLE_MODELS.find((m) => m.id === model);
-  const provider = modelInfo?.provider || "local";
+
+  const provider = modelInfo?.provider ?? "local";
 
   // Create the appropriate provider instance
   let providerModel;
+
+  console.log("provider", provider);
 
   switch (provider) {
     case "openai":
@@ -415,6 +418,10 @@ export function streamResponse(opts: GetResponseProps) {
       break;
 
     case "anthropic":
+      providerModel = createAnthropic({
+        apiKey: process.env.ANTHROPIC_API_KEY,
+      }).chat(model);
+      break;
 
     case "local":
       providerModel = createOpenAI({
