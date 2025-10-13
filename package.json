@@ -58,15 +58,20 @@
     "@ai-sdk/amazon-bedrock": "^3.0.34",
     "@ai-sdk/anthropic": "^2.0.26",
     "@ai-sdk/openai": "^2.0.48",
+    "@layered/dns-records": "^2.3.0",
     "@openrouter/ai-sdk-provider": "^1.2.0",
     "@opentui/core": "0.1.26",
     "@opentui/react": "0.1.26",
     "ai": "^5.0.68",
     "marked": "^16.4.0",
     "p-limit": "^7.2.0",
+    "nanoid": "^5.1.6",
     "react": "^19.2.0",
     "sharp": "^0.34.4",
     "zod": "^4.1.12"
   },
-  "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
+  "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e",
+  "patchedDependencies": {
+    "@opentui/core@0.1.26": "patches/@opentui%2Fcore@0.1.26.patch"
+  }
 }
