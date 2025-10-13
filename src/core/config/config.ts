@@ -2,6 +2,9 @@ import os from "os";
 import path from "path";
 import fs from "fs/promises";
 
+const CONFIG_DIR_PATH = path.join(os.homedir(), ".pensar");
+const CONFIG_FILE_PATH = path.join(CONFIG_DIR_PATH, "config.json");
+
 const DEFAULT_CONFIG: Config = {
   responsibleUseAccepted: false,
 };
@@ -15,36 +18,32 @@ export interface Config {
 }
 
 export async function init() {
-  const folder = path.join(os.homedir(), ".pensar");
-  const file = path.join(folder, "config.json");
   const dirExists = await fs
-    .access(folder)
+    .access(CONFIG_DIR_PATH)
     .then(() => true)
     .catch(() => false);
   if (!dirExists) {
-    await fs.mkdir(folder, { recursive: true });
+    await fs.mkdir(CONFIG_DIR_PATH, { recursive: true });
   }
   const fileExists = await fs
-    .access(file)
+    .access(CONFIG_FILE_PATH)
     .then(() => true)
     .catch(() => false);
   if (!fileExists) {
-    await fs.writeFile(file, JSON.stringify(DEFAULT_CONFIG));
+    await fs.writeFile(CONFIG_FILE_PATH, JSON.stringify(DEFAULT_CONFIG));
   }
   return DEFAULT_CONFIG;
 }
 
 export async function get(): Promise<Config> {
-  const folder = path.join(os.homedir(), ".pensar");
-  const file = path.join(folder, "config.json");
   const exists = await fs
-    .access(file)
+    .access(CONFIG_FILE_PATH)
     .then(() => true)
     .catch(() => false);
   if (!exists) {
     return await init();
   }
-  const config = await fs.readFile(file, "utf8");
+  const config = await fs.readFile(CONFIG_FILE_PATH, "utf8");
 
   const parsedConfig = JSON.parse(config);
 
@@ -60,7 +59,10 @@ export async function get(): Promise<Config> {
 export async function update(config: Partial<Config>) {
   const currentConfig = await get();
   const newConfig = { ...currentConfig, ...config };
-  const folder = path.join(os.homedir(), ".pensar");
-  const file = path.join(folder, "config.json");
-  await fs.writeFile(file, JSON.stringify(newConfig));
+  await fs.writeFile(CONFIG_FILE_PATH, JSON.stringify(newConfig));
 }
+
+export {
+  CONFIG_DIR_PATH,
+  CONFIG_FILE_PATH
+};

@@ -64,6 +64,8 @@ export function createSession(target: string, objective?: string): Session {
     startTime: new Date().toISOString(),
   };
 
+  // TODO: check if remote target and perform dns ownership check
+
   // Write session metadata
   const metadataPath = join(rootPath, "session.json");
   writeFileSync(metadataPath, JSON.stringify(session, null, 2));
