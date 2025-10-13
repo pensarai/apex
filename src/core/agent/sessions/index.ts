@@ -10,6 +10,7 @@ import {
 import { join } from "path";
 import { homedir } from "os";
 import { randomBytes } from "crypto";
+import { runDnsOwnershipCheck } from "./ownershipCheck";
 
 export interface Session {
   id: string;
@@ -63,6 +64,12 @@ export function createSession(
   ensureDirectoryExists(findingsPath);
   ensureDirectoryExists(scratchpadPath);
   ensureDirectoryExists(logsPath);
+
+  const isDomainAllowed = await runDnsOwnershipCheck(target);
+
+  if(!isDomainAllowed) {
+    throw new Error(`Cannot create session: ownership check did not pass for target: ${target}`);
+  }
 
   const session: Session = {
     id: sessionId,

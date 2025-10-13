@@ -191,7 +191,6 @@ export default function AgentDisplay({
         scrollbarOptions: {
           trackOptions: {
             foregroundColor: "green",
-            backgroundColor: RGBA.fromInts(40, 40, 40, 255),
           },
         },
       }}
@@ -255,7 +254,6 @@ const SubAgentDisplay = memo(function SubAgentDisplay({ subagent }: { subagent: 
       width="100%"
       border={true}
       borderColor="green"
-      backgroundColor={RGBA.fromInts(10, 10, 10, 255)}
     >
       <box flexDirection="row" alignItems="center" gap={1}>
         {subagent.status === "pending" && (
@@ -343,9 +341,6 @@ const AgentMessage = memo(function AgentMessage({ message }: { message: Message 
         )}
         <box
           padding={message.role !== "tool" ? 1 : 0}
-          backgroundColor={
-            message.role !== "tool" ? RGBA.fromInts(40, 40, 40, 255) : undefined
-          }
         >
           {isPendingTool ? (
             <SpinnerDots

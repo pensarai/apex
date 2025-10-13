@@ -70,7 +70,7 @@ const generateTxtRecordContent = async (domain: string) => {
 
 async function runDnsOwnershipCheck(target: string) {
     if(!isTargetRemote(target)) {
-        return;
+        return true;
     }
 
     const _url = new URL(target);
