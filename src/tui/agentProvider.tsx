@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
 import { AVAILABLE_MODELS, type ModelInfo } from "../core/ai";
+import { useRenderer } from "@opentui/react";
 
 interface AgentContextValue {
   model: ModelInfo;

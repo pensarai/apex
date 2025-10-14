@@ -10,7 +10,6 @@ export default function Input(
       border={true}
       width="100%"
       borderStyle="heavy"
-      backgroundColor="black"
       borderColor="green"
       flexDirection="column"
     >
@@ -18,7 +17,6 @@ export default function Input(
       {description && <text fg="gray">{description}</text>}
       <input
         paddingLeft={1}
-        backgroundColor="black"
         width={60}
         focused={focused}
         {...inputProps}

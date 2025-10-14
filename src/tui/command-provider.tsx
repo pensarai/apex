@@ -14,6 +14,7 @@ import {
   type AppCommandContext,
 } from "./command-registry";
 import type { AutocompleteOption } from "./components/autocomplete";
+import { useRenderer } from "@opentui/react";
 
 interface CommandContextValue {
   router: CommandRouter<AppCommandContext>;

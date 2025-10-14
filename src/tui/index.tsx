@@ -1,4 +1,4 @@
-import { render, useKeyboard } from "@opentui/react";
+import { render, useKeyboard, useRenderer } from "@opentui/react";
 import {
   convertImageToColoredAscii,
   ColoredAsciiArt,
@@ -18,6 +18,8 @@ import ModelsDisplay from "./components/commands/models-display";
 import type { Config } from "../core/config/config";
 import { config } from "../core/config";
 import AlertDialog from "./components/alert-dialog";
+import ResponsibleUseDisclosure from "./components/responsible-use-disclosure";
+import { RGBA } from "@opentui/core";
 
 // Configuration
 const CONFIG = {
@@ -45,6 +47,7 @@ console.log(
 );
 
 function App() {
+  const renderer = useRenderer();
   const [appConfig, setAppConfig] = useState<Config | null>(null);
   const [focusIndex, setFocusIndex] = useState(0);
   const [cwd, setCwd] = useState(process.cwd());
@@ -57,7 +60,11 @@ function App() {
   useEffect(() => {
     async function getConfig() {
       const _config = await config.get();
-      setAppConfig(_config);
+      // setAppConfig(_config);
+      setAppConfig({
+        ..._config,
+        responsibleUseAccepted: true
+      });
     }
     getConfig();
   }, []);
@@ -68,27 +75,32 @@ function App() {
     setAppConfig(updatedConfig);
   };
 
+  if(!appConfig?.responsibleUseAccepted) {
+    return (
+      <ResponsibleUseDisclosure onAccept={handleAcceptPolicy}/>
+    )
+  }
+
+
+
   return (
-    <AgentProvider>
-      <CommandProvider>
-        <ResponsibleUseWarning
-          config={appConfig}
-          onAccept={handleAcceptPolicy}
-        />
-        <AppContent
-          focusIndex={focusIndex}
-          setFocusIndex={setFocusIndex}
-          cwd={cwd}
-          ctrlCPressTime={ctrlCPressTime}
-          setCtrlCPressTime={setCtrlCPressTime}
-          showExitWarning={showExitWarning}
-          setShowExitWarning={setShowExitWarning}
-          inputKey={inputKey}
-          setInputKey={setInputKey}
-          navigableItems={navigableItems}
-        />
-      </CommandProvider>
-    </AgentProvider>
+       <AgentProvider>
+         <CommandProvider>
+                 <AppContent
+                  focusIndex={focusIndex}
+                  setFocusIndex={setFocusIndex}
+                  cwd={cwd}
+                  ctrlCPressTime={ctrlCPressTime}
+                  setCtrlCPressTime={setCtrlCPressTime}
+                  showExitWarning={showExitWarning}
+                  setShowExitWarning={setShowExitWarning}
+                  inputKey={inputKey}
+                  setInputKey={setInputKey}
+                  navigableItems={navigableItems}
+                />
+        </CommandProvider>
+     </AgentProvider>
+
   );
 }
 
@@ -114,13 +126,13 @@ function ResponsibleUseWarning({
     <AlertDialog
       disableEscape={true}
       open={!appConfig.responsibleUseAccepted}
-      title="⚠️  Responsible Penetration Testing Policy"
+      title="⚠️ Responsible Penetration Testing Policy"
       onClose={() => {}}
     >
       <box flexDirection="column" gap={1}>
         <text fg="yellow">IMPORTANT: Read Before Use</text>
         <text fg="white">
-          This penetration testing tool is designedfor AUTHORIZED security
+          This penetration testing tool is designed for AUTHORIZED security
           testing only.
         </text>
         <box flexDirection="column" marginBottom={1}>
@@ -141,7 +153,7 @@ function ResponsibleUseWarning({
         </box>
         <box flexDirection="column">
           <text fg="red">
-            Unauthorized access to computer systems is illegaland may result in
+            Unauthorized access to computer systems is illegal and may result in
             criminal prosecution.
           </text>
         </box>
@@ -187,6 +199,10 @@ function AppContent({
     closeSessions,
     modelsOpen,
     closeModels,
+    helpOpen,
+    closeHelp,
+    configOpen,
+    closeConfig
   } = useCommand();
 
   // Auto-clear the exit warning after 1 second
@@ -263,22 +279,21 @@ function AppContent({
   });
 
   return (
-    <CommandProvider>
-      <CommandOverlay>
-        <box
-          flexDirection="column"
-          alignItems="center"
-          flexGrow={1}
-          width="100%"
-          maxHeight="100%"
-          overflow="hidden"
-        >
-          <ColoredAsciiArt ascii={coloredAscii} />
-          <CommandDisplay focusIndex={focusIndex} inputKey={inputKey} />
-          <Footer cwd={cwd} showExitWarning={showExitWarning} />
-        </box>
-      </CommandOverlay>
-    </CommandProvider>
+    <box
+     width="100%"
+     height="100%"
+     justifyContent="center"
+     alignItems="center"
+     backgroundColor={"transparent"}
+    >
+      <ColoredAsciiArt ascii={coloredAscii} />
+      <CommandDisplay focusIndex={focusIndex} inputKey={inputKey} />
+      <Footer cwd={cwd} showExitWarning={showExitWarning} />
+      <HelpDialog helpOpen={helpOpen} closeHelp={closeHelp} />
+      <ConfigDialog configOpen={configOpen} closeConfig={closeConfig} />
+      {/* <CommandProvider>
+      </CommandProvider>  */}
+    </box>
   );
 }
 
@@ -334,5 +349,6 @@ function CommandOverlay({ children }: { children: React.ReactNode }) {
 }
 
 render(<App />, {
+  backgroundColor: "transparent",
   exitOnCtrlC: false, // We'll handle Ctrl+C manually
 });
