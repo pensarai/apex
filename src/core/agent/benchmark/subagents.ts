@@ -3,18 +3,23 @@ import { promisify } from "util";
 import { existsSync } from "fs";
 import { join } from "path";
 import type { DevEnvironmentInfo } from "./types";
+import { runDevEnvironmentAgent } from "./devEnvironmentAgent";
+import type { AIModel } from "../../ai";
 
 const exec = promisify(nodeExec);
 
 /**
- * Start the development environment using docker compose
+ * Start the development environment using an AI agent that can fix issues
  */
 export async function startDevEnvironment(
   repoPath: string,
-  branch?: string
+  branch: string,
+  model: AIModel,
+  abortSignal?: AbortSignal
 ): Promise<DevEnvironmentInfo> {
   // Verify repo path exists
   if (!existsSync(repoPath)) {
+    console.log(`[Benchmark] Repository path does not exist: ${repoPath}`);
     throw new Error(`Repository path does not exist: ${repoPath}`);
   }
 
@@ -31,6 +36,7 @@ export async function startDevEnvironment(
         await exec(`git checkout ${branch}`, { cwd: repoPath });
         console.log(`[Benchmark] Checked out branch: ${branch}`);
       } catch (error: any) {
+        console.log(`[Benchmark] Error: ${error.message}`);
         throw new Error(
           `Branch directory ${branchDir} not found and git checkout failed: ${error.message}`
         );
@@ -38,68 +44,48 @@ export async function startDevEnvironment(
     }
   }
 
-  // Look for docker-compose file
-  const composeFiles = [
-    "docker-compose.yml",
-    "docker-compose.yaml",
-    "compose.yml",
-    "compose.yaml",
-  ];
+  // Use the AI agent to start the environment
+  console.log(`[Benchmark] Spawning dev environment agent for: ${workingDir}`);
+  const agentResult = await runDevEnvironmentAgent(
+    workingDir,
+    model,
+    abortSignal
+  );
 
-  let composeFile: string | null = null;
-  for (const file of composeFiles) {
-    const fullPath = join(workingDir, file);
-    if (existsSync(fullPath)) {
-      composeFile = file;
-      break;
-    }
-  }
-
-  if (!composeFile) {
+  if (!agentResult.success) {
+    console.log(
+      `[Benchmark] Failed to start development environment: ${agentResult.error}`
+    );
     throw new Error(
-      `No docker-compose file found in ${workingDir} (tried: docker-compose.yml, compose.yml)`
+      `Failed to start development environment: ${
+        agentResult.error || "Unknown error"
+      }`
     );
   }
 
-  // Start docker compose
-  try {
-    console.log(`[Benchmark] Starting docker compose in: ${workingDir}`);
-    const { stdout, stderr } = await exec(
-      `docker compose -f ${composeFile} up -d`,
-      {
-        cwd: workingDir,
-      }
+  console.log(`[Benchmark] Dev environment ready at: ${agentResult.targetUrl}`);
+  if (agentResult.changes && agentResult.changes.length > 0) {
+    console.log(
+      `[Benchmark] Agent made ${agentResult.changes.length} change(s) to docker-compose`
     );
-
-    console.log("Docker compose output:", stdout);
-    if (stderr) console.error("Docker compose stderr:", stderr);
-
-    // Wait for services to be ready
-    await new Promise((resolve) => setTimeout(resolve, 5000));
-
-    // Try to determine the target URL
-    // Default to localhost:3000, but could be configured
-    const targetUrl =
-      process.env.BENCHMARK_TARGET_URL || "http://localhost:3000";
-
-    return {
-      repoPath: workingDir,
-      branch: branch || "current",
-      composeFile,
-      targetUrl,
-      started: true,
-    };
-  } catch (error: any) {
-    throw new Error(`Failed to start docker compose: ${error.message}`);
   }
+
+  return {
+    repoPath: workingDir,
+    branch: branch || "current",
+    composeFile: agentResult.composeFile!,
+    targetUrl: agentResult.targetUrl!,
+    started: true,
+  };
 }
 
 /**
- * Stop the development environment
+ * Stop the development environment and commit any changes
  */
 export async function stopDevEnvironment(
   repoPath: string,
-  composeFile: string
+  composeFile: string,
+  commitChanges: boolean = true
 ): Promise<void> {
   try {
     console.log(`[Benchmark] Stopping docker compose in: ${repoPath}`);
@@ -112,6 +98,43 @@ export async function stopDevEnvironment(
 
     console.log("Docker compose down output:", stdout);
     if (stderr) console.error("Docker compose down stderr:", stderr);
+
+    // Commit and push any changes made by the dev environment agent
+    if (commitChanges) {
+      try {
+        // Check if there are any changes
+        const { stdout: statusOutput } = await exec("git status --porcelain", {
+          cwd: repoPath,
+        });
+
+        if (statusOutput.trim()) {
+          console.log(
+            `[Benchmark] Committing changes made by dev environment agent`
+          );
+
+          // Add all changes
+          await exec("git add .", { cwd: repoPath });
+
+          // Commit with descriptive message
+          await exec(
+            'git commit -m "fix: docker-compose changes from benchmark agent"',
+            { cwd: repoPath }
+          );
+
+          // Push changes
+          await exec("git push", { cwd: repoPath });
+
+          console.log(`[Benchmark] Changes committed and pushed successfully`);
+        } else {
+          console.log(`[Benchmark] No changes to commit`);
+        }
+      } catch (gitError: any) {
+        console.error(
+          `[Benchmark] Failed to commit/push changes: ${gitError.message}`
+        );
+        // Don't throw - cleanup should continue even if git fails
+      }
+    }
   } catch (error: any) {
     console.error(`Failed to stop docker compose: ${error.message}`);
     // Don't throw - we want to continue even if cleanup partially fails

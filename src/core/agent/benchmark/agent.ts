@@ -32,7 +32,8 @@ export function runAgent(opts: RunAgentProps): {
   const branchName = branch || "main";
   const session = createSession(
     repoPath,
-    `Benchmark testing for ${repoPath} on branch ${branchName}`
+    `Benchmark testing for ${repoPath} on branch ${branchName}`,
+    `benchmark-${branchName}`
   );
 
   console.log(`[Benchmark] Created session: ${session.id}`);
@@ -53,7 +54,7 @@ Session Information:
 You are the BENCHMARK ORCHESTRATOR agent for automated security testing evaluation.
 
 Your mission:
-1. Load expected results from the repository (expected_results.json)
+1. Locate and load expected results from the repository (expected_results/*.json)
 2. Start the development environment using docker compose
 3. Run the thoroughPentestAgent on the running application
 4. Extract findings from the completed pentest session

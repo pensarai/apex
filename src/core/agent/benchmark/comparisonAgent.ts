@@ -1,4 +1,4 @@
-import { tool } from "ai";
+import { stepCountIs, tool } from "ai";
 import { z } from "zod";
 import { streamResponse, type AIModel } from "../../ai";
 import { existsSync, readFileSync, readdirSync } from "fs";
@@ -61,13 +61,29 @@ export async function runComparisonAgent(
 ): Promise<ComparisonResult> {
   const { repoPath, sessionPath, model, abortSignal } = props;
 
-  // Load expected results
-  const expectedResultsPath = join(repoPath, "expected_results.json");
-  if (!existsSync(expectedResultsPath)) {
+  // Load expected results from expected_results folder
+  const expectedResultsDir = join(repoPath, "expected_results");
+  if (!existsSync(expectedResultsDir)) {
     throw new Error(
-      `Expected results file not found at: ${expectedResultsPath}`
+      `Expected results directory not found at: ${expectedResultsDir}`
     );
   }
+
+  // Find the first JSON file in the expected_results directory
+  const expectedFiles = readdirSync(expectedResultsDir);
+  const jsonFiles = expectedFiles.filter((f) => f.endsWith(".json"));
+
+  if (jsonFiles.length === 0) {
+    throw new Error(
+      `No JSON file found in expected_results directory: ${expectedResultsDir}`
+    );
+  }
+
+  const expectedResultsFile = jsonFiles[0]!;
+  const expectedResultsPath = join(expectedResultsDir, expectedResultsFile);
+  console.log(
+    `[ComparisonAgent] Loading expected results from: ${expectedResultsPath}`
+  );
 
   const expectedData = readFileSync(expectedResultsPath, "utf-8");
   const expectedResults = JSON.parse(expectedData);
@@ -80,9 +96,9 @@ export async function runComparisonAgent(
 
   // Concatenate all markdown files
   let actualFindingsMarkdown = "";
-  const files = readdirSync(findingsPath);
+  const findingFiles = readdirSync(findingsPath);
 
-  for (const file of files) {
+  for (const file of findingFiles) {
     if (!file.endsWith(".md")) continue;
 
     try {
@@ -246,6 +262,7 @@ Be thorough in your analysis and provide clear explanations for your matches.
     model,
     tools: { provide_comparison_results },
     toolChoice: "auto",
+    stopWhen: stepCountIs(10000),
     abortSignal,
   });
 

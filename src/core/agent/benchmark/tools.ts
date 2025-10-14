@@ -32,14 +32,19 @@ This tool:
 Use this as the FIRST step in the benchmark workflow.`,
     inputSchema: z.object({
       repoPath: z.string().describe("Path to the repository"),
-      branch: z.string().optional().describe("Git branch to checkout and test"),
+      branch: z.string().describe("Git branch to checkout and test"),
       toolCallDescription: z
         .string()
         .describe("Concise description of this tool call"),
     }),
     execute: async ({ repoPath, branch }) => {
       try {
-        const devInfo = await startDevEnvironment(repoPath, branch);
+        const devInfo = await startDevEnvironment(
+          repoPath,
+          branch,
+          model,
+          abortSignal
+        );
 
         return {
           success: true,
@@ -72,7 +77,9 @@ This tool:
 
 This is the MAIN TESTING PHASE. Wait for it to complete before proceeding.`,
     inputSchema: z.object({
-      target: z.string().describe("Target URL to test (e.g., http://localhost:3000)"),
+      target: z
+        .string()
+        .describe("Target URL to test (e.g., http://localhost:3000)"),
       description: z
         .string()
         .describe("Brief description of what is being tested"),
@@ -86,18 +93,53 @@ This is the MAIN TESTING PHASE. Wait for it to complete before proceeding.`,
           `[Benchmark] Starting thorough pentest agent for target: ${target}`
         );
 
-        // Run the thorough pentest agent
+        // Run the thorough pentest agent with subagent callbacks
         const { streamResult, session: pentestSession } =
           runThoroughPentestAgent({
             target,
             model,
             abortSignal,
+            session,
+            onSubagentSpawn: (info) => {
+              console.log(`\n${"┌".repeat(80)}`);
+              console.log(`┃ SUBAGENT SPAWNED: ${info.name}`);
+              console.log(`┃ Type: ${info.type}`);
+              console.log(`┃ Target: ${info.target}`);
+              console.log(`┃ ID: ${info.id}`);
+              console.log(`${"└".repeat(80)}\n`);
+            },
+            onSubagentComplete: (subagentId, success) => {
+              const status = success ? "✓ COMPLETED" : "✗ FAILED";
+              console.log(`\n${"┌".repeat(80)}`);
+              console.log(`┃ SUBAGENT ${status}: ${subagentId}`);
+              console.log(`${"└".repeat(80)}\n`);
+            },
           });
 
-        // Consume the stream
-        for await (const _delta of streamResult.fullStream) {
-          // Just consume the stream to completion
+        // Consume the stream and log progress
+        console.log(`\n${"=".repeat(80)}`);
+        console.log(`THOROUGH PENTEST AGENT - ${target}`);
+        console.log(`${"=".repeat(80)}\n`);
+
+        for await (const delta of streamResult.fullStream) {
+          if (delta.type === "text-delta") {
+            process.stdout.write(delta.text);
+          } else if (delta.type === "tool-call") {
+            console.log(
+              `\n\n[Tool] ${delta.toolName}${
+                delta.input?.toolCallDescription
+                  ? `: ${delta.input.toolCallDescription}`
+                  : ""
+              }`
+            );
+          } else if (delta.type === "tool-result") {
+            console.log(`[Tool Complete]\n`);
+          }
         }
+
+        console.log(`\n${"=".repeat(80)}`);
+        console.log(`PENTEST COMPLETE`);
+        console.log(`${"=".repeat(80)}\n`);
 
         console.log(
           `[Benchmark] Thorough pentest completed. Session: ${pentestSession.id}`
@@ -127,7 +169,7 @@ This is the MAIN TESTING PHASE. Wait for it to complete before proceeding.`,
     
 This tool:
 - Spawns an intelligent comparison agent
-- Agent reads expected_results.json from the repository
+- Agent reads expected_results from the repository
 - Agent reads all findings from the session's findings directory
 - Agent performs semantic matching of findings
 - Provides detailed comparison with matched, missed, and extra findings
@@ -138,8 +180,12 @@ not just string matching. This provides more accurate results.
 
 Use this AFTER the pentest completes to evaluate testing accuracy.`,
     inputSchema: z.object({
-      repoPath: z.string().describe("Path to the repository with expected_results.json"),
-      sessionPath: z.string().describe("Path to the pentest session with findings"),
+      repoPath: z
+        .string()
+        .describe("Path to the repository with expected_results"),
+      sessionPath: z
+        .string()
+        .describe("Path to the pentest session with findings"),
       toolCallDescription: z
         .string()
         .describe("Concise description of this tool call"),
@@ -172,7 +218,11 @@ Use this AFTER the pentest completes to evaluate testing accuracy.`,
             f1Score: Math.round(f1Score * 100),
             accuracy: Math.round(comparison.accuracy * 100),
           },
-          message: `Comparison complete. Matched: ${comparison.matched.length}/${comparison.totalExpected}, Precision: ${Math.round(comparison.precision * 100)}%, Recall: ${Math.round(comparison.recall * 100)}%`,
+          message: `Comparison complete. Matched: ${
+            comparison.matched.length
+          }/${comparison.totalExpected}, Precision: ${Math.round(
+            comparison.precision * 100
+          )}%, Recall: ${Math.round(comparison.recall * 100)}%`,
         };
       } catch (error: any) {
         console.error(`[Benchmark] Comparison failed:`, error);
@@ -211,7 +261,8 @@ Use this AFTER results are collected to clean up properly. Always call this even
 
         return {
           success: true,
-          message: "Development environment stopped and cleaned up successfully.",
+          message:
+            "Development environment stopped and cleaned up successfully.",
         };
       } catch (error: any) {
         return {
@@ -291,4 +342,3 @@ Use this as the FINAL step after all testing and comparison is complete.`,
     generate_benchmark_report,
   };
 }
-
