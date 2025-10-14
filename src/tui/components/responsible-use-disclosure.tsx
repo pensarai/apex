@@ -1,4 +1,4 @@
-import { useTerminalDimensions } from "@opentui/react";
+import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { RGBA } from "@opentui/core";
 
 export default function ResponsibleUseDisclosure({
@@ -7,6 +7,13 @@ export default function ResponsibleUseDisclosure({
     onAccept: () => void
 }) {
     const { width } = useTerminalDimensions();
+    
+    useKeyboard((key) => {
+        // Enter key accepts the policy
+     if (key.name === "return" || key.name === "enter") {
+        onAccept();
+     }
+    });
 
     // ASCII art is 127 characters wide - only show if terminal is wide enough
     const showAsciiArt = false;
