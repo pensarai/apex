@@ -1,15 +1,21 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import AlertDialog from "../alert-dialog";
 import { useCommand } from "../../command-provider";
+import { useRoute } from "../../context/route";
 
-export default function HelpDialog({
-  helpOpen,
-  closeHelp,
-}: {
-  helpOpen: boolean;
-  closeHelp: () => void;
-}) {
+export default function HelpDialog() {
   const { commands } = useCommand();
+  const route = useRoute();
+
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if(route.data.type === "base" && route.data.path === "help") {
+      setOpen(true);
+    } else {
+      setOpen(false);
+    }
+  }, [route]);
 
   const message = useMemo(() => {
     // Generate commands list
@@ -31,8 +37,8 @@ export default function HelpDialog({
     <AlertDialog
       title="Help"
       message={message}
-      open={helpOpen}
-      onClose={closeHelp}
+      open={open}
+      onClose={() => setOpen(false)}
     />
   );
 }

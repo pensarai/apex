@@ -46,6 +46,7 @@ export default function AlertDialog({
         borderColor="green"
         flexDirection="column"
         padding={1}
+        backgroundColor={"#18181b"}
       >
         {title ? (
           <box marginBottom={1}>

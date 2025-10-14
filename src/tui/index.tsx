@@ -20,6 +20,8 @@ import { config } from "../core/config";
 import AlertDialog from "./components/alert-dialog";
 import ResponsibleUseDisclosure from "./components/responsible-use-disclosure";
 import { RGBA } from "@opentui/core";
+import { RouteProvider, useRoute, type RoutePath } from "./context/route";
+import Switch, { createSwitch } from "./components/switch";
 
 // Configuration
 const CONFIG = {
@@ -83,6 +85,7 @@ function App() {
 
 
   return (
+    <RouteProvider>
        <AgentProvider>
          <CommandProvider>
                  <AppContent
@@ -99,6 +102,7 @@ function App() {
                 />
         </CommandProvider>
      </AgentProvider>
+    </RouteProvider>
 
   );
 }
@@ -126,20 +130,7 @@ function AppContent({
   setInputKey: (fn: (prev: number) => number) => void;
   navigableItems: string[];
 }) {
-  const {
-    pentestOpen,
-    closePentest,
-    thoroughPentestOpen,
-    closeThoroughPentest,
-    sessionsOpen,
-    closeSessions,
-    modelsOpen,
-    closeModels,
-    helpOpen,
-    closeHelp,
-    configOpen,
-    closeConfig
-  } = useCommand();
+  const route = useRoute();
 
   // Auto-clear the exit warning after 1 second
   useEffect(() => {
@@ -170,26 +161,11 @@ function AppContent({
     }
 
     // Escape - Close pentest display if open
-    if (key.name === "escape" && pentestOpen) {
-      closePentest();
-      return;
-    }
-
-    // Escape - Close thorough pentest display if open
-    if (key.name === "escape" && thoroughPentestOpen) {
-      closeThoroughPentest();
-      return;
-    }
-
-    // Escape - Close sessions display if open
-    if (key.name === "escape" && sessionsOpen) {
-      closeSessions();
-      return;
-    }
-
-    // Escape - Close models display if open
-    if (key.name === "escape" && modelsOpen) {
-      closeModels();
+    if (key.name === "escape") {
+      route.navigate({
+        type: "base",
+        path: "home"
+      });
       return;
     }
 
@@ -225,13 +201,11 @@ function AppContent({
       <ColoredAsciiArt ascii={coloredAscii} />
       <CommandDisplay focusIndex={focusIndex} inputKey={inputKey} />
       <Footer cwd={cwd} showExitWarning={showExitWarning} />
-      <HelpDialog helpOpen={helpOpen} closeHelp={closeHelp} />
-      <ConfigDialog configOpen={configOpen} closeConfig={closeConfig} />
-      {/* <CommandProvider>
-      </CommandProvider>  */}
     </box>
   );
 }
+
+const RouteSwitch = createSwitch<RoutePath>();
 
 function CommandDisplay({
   focusIndex,
@@ -240,48 +214,54 @@ function CommandDisplay({
   focusIndex: number;
   inputKey: number;
 }) {
-  const {
-    pentestOpen,
-    thoroughPentestOpen,
-    sessionsOpen,
-    closeSessions,
-    modelsOpen,
-    closeModels,
-  } = useCommand();
 
-  return (
-    <box
-      flexDirection="column"
-      width="100%"
-      maxHeight="100%"
-      alignItems="center"
-      justifyContent="center"
-      flexGrow={1}
-      flexShrink={1}
-      overflow="hidden"
-      gap={2}
-    >
-      {!pentestOpen && !thoroughPentestOpen && !sessionsOpen && !modelsOpen && (
-        <CommandInput focused={focusIndex === 0} inputKey={inputKey} />
-      )}
-      {pentestOpen && <PentestAgentDisplay />}
-      {thoroughPentestOpen && <ThoroughPentestAgentDisplay />}
-      {sessionsOpen && <SessionsDisplay closeSessions={closeSessions} />}
-      {modelsOpen && <ModelsDisplay closeModels={closeModels} />}
-    </box>
-  );
-}
+  const route = useRoute();
 
-function CommandOverlay({ children }: { children: React.ReactNode }) {
-  const { helpOpen, closeHelp, configOpen, closeConfig } = useCommand();
+  if(route.data.type === "base") {
+    const routePath = route.data.path;
+    return (
+      <box
+        flexDirection="column"
+        width="100%"
+        maxHeight="100%"
+        alignItems="center"
+        justifyContent="center"
+        flexGrow={1}
+        flexShrink={1}
+        overflow="hidden"
+        gap={2}
+      >
+        <RouteSwitch condition={routePath}>
+          <RouteSwitch.Case when="home">
+            <CommandInput focused={focusIndex === 0} inputKey={inputKey}/>
+          </RouteSwitch.Case>
+          <RouteSwitch.Case when="pentest">
+            <PentestAgentDisplay/>
+          </RouteSwitch.Case>
+          <RouteSwitch.Case when="thorough">
+            <ThoroughPentestAgentDisplay/>
+          </RouteSwitch.Case>
+          <RouteSwitch.Case when="sessions">
+            <SessionsDisplay/>
+          </RouteSwitch.Case>
+          <RouteSwitch.Case when="models">
+            <ModelsDisplay/>
+          </RouteSwitch.Case>
+          <RouteSwitch.Case when="config">
+            <ConfigDialog/>
+          </RouteSwitch.Case>
+          <RouteSwitch.Case when="help">
+            <HelpDialog/>
+          </RouteSwitch.Case>
+          <RouteSwitch.Default>
+            <CommandInput focused={focusIndex === 0} inputKey={inputKey}/>
+          </RouteSwitch.Default>
+        </RouteSwitch>
+      </box>
+    );
+  }
 
-  return (
-    <>
-      {children}
-      <HelpDialog helpOpen={helpOpen} closeHelp={closeHelp} />
-      <ConfigDialog configOpen={configOpen} closeConfig={closeConfig} />
-    </>
-  );
+  return null;
 }
 
 render(<App />, {
