@@ -1,15 +1,12 @@
 import type { CommandDefinition } from "./command-router";
+import type { Route } from "./context/route";
 
 /**
  * Define your application's CommandContext type with specific methods
  */
 export interface AppCommandContext {
-  openHelp: () => void;
-  openConfig: () => void;
-  openPentest: () => void;
-  openThoroughPentest: () => void;
-  openSessions: () => void;
-  openModels: () => void;
+  route: Route;
+  navigate: (route: Route) => void;
   // Add more context methods here as needed
   // clearScreen?: () => void;
   // showMessage?: (msg: string) => void;
@@ -35,7 +32,10 @@ export const commands: CommandConfig[] = [
     description: "Show help dialog",
     category: "General",
     handler: async (args, ctx) => {
-      ctx.openHelp();
+      ctx.navigate({
+        type: "base",
+        path: "help"
+      });
     },
   },
   {
@@ -43,7 +43,10 @@ export const commands: CommandConfig[] = [
     description: "Show config dialog",
     category: "General",
     handler: async (args, ctx) => {
-      ctx.openConfig();
+      ctx.navigate({
+        type: "base",
+        path: "config"
+      });
     },
   },
   {
@@ -51,7 +54,10 @@ export const commands: CommandConfig[] = [
     description: "Show quick pentest agent",
     category: "General",
     handler: async (args, ctx) => {
-      ctx.openPentest();
+      ctx.navigate({
+        type: "base",
+        path: "pentest"
+      });
     },
   },
   {
@@ -59,7 +65,10 @@ export const commands: CommandConfig[] = [
     description: "Show pentest agent",
     category: "General",
     handler: async (args, ctx) => {
-      ctx.openThoroughPentest();
+      ctx.navigate({
+        type: "base",
+        path: "thorough"
+      });
     },
   },
   {
@@ -67,7 +76,10 @@ export const commands: CommandConfig[] = [
     description: "Show available sessions",
     category: "General",
     handler: async (args, ctx) => {
-      ctx.openSessions();
+      ctx.navigate({
+        type: "base",
+        path: "sessions"
+      });
     },
   },
   {
@@ -75,9 +87,23 @@ export const commands: CommandConfig[] = [
     description: "Show available AI models",
     category: "General",
     handler: async (args, ctx) => {
-      ctx.openModels();
+      ctx.navigate({
+        type: "base",
+        path: "models"
+      });
     },
   },
+  {
+   name: "dns-config",
+   description: "Setup DNS ownership to run pentests",
+   category: "General",
+   handler: async (args, ctx) => {
+    ctx.navigate({
+        type: "base",
+        path: "dns"
+      });
+   }
+  }
 
   // Add more commands here...
   // Example:
