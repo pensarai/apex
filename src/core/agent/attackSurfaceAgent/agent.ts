@@ -28,7 +28,10 @@ export interface RunAgentResult extends StreamTextResult<ToolSet, never> {
   session: Session;
 }
 
-export function runAgent(opts: RunAgentProps): RunAgentResult {
+export function runAgent(opts: RunAgentProps): {
+  streamResult: RunAgentResult;
+  session: Session;
+} {
   const { target, model, onStepFinish, abortSignal } = opts;
 
   // Create a new session for this attack surface analysis
@@ -151,5 +154,5 @@ You MUST provide the details final report using create_attack_surface_report too
   // Attach the session directly to the stream result object
   (streamResult as any).session = session;
 
-  return streamResult as RunAgentResult;
+  return { streamResult: streamResult as RunAgentResult, session };
 }

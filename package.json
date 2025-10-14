@@ -20,6 +20,7 @@
     "dev:debug": "SHOW_CONSOLE=true bun run scripts/watch.ts",
     "start": "bun run src/tui/index.tsx",
     "pensar": "node bin/pensar.js",
+    "benchmark": "bun run scripts/benchmark.ts",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
