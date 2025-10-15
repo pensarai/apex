@@ -7,6 +7,9 @@ import { getDnsRecords, type DnsRecord } from "@layered/dns-records";
 const DNS_RECORD_KEYS_PATH = path.join(CONFIG_DIR_PATH, "keys"); // txt file containing records of all generated TXT DNS record values and associated domains
 
 const isTargetRemote = (target: string) => {
+ if(target.split(":")[0] === "localhost") {
+    return false
+ }
  const url = new URL(target);
  return !(url.hostname === "localhost" || url.hostname === "127.0.0.1");
 };

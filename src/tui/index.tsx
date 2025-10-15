@@ -22,6 +22,7 @@ import ResponsibleUseDisclosure from "./components/responsible-use-disclosure";
 import { RGBA } from "@opentui/core";
 import { RouteProvider, useRoute, type RoutePath } from "./context/route";
 import Switch, { createSwitch } from "./components/switch";
+import DebugPanel from "./components/debug-panel";
 
 // Configuration
 const CONFIG = {
@@ -201,6 +202,7 @@ function AppContent({
       <ColoredAsciiArt ascii={coloredAscii} />
       <CommandDisplay focusIndex={focusIndex} inputKey={inputKey} />
       <Footer cwd={cwd} showExitWarning={showExitWarning} />
+      <DebugPanel />
     </box>
   );
 }

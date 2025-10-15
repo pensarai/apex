@@ -415,6 +415,11 @@ export function streamResponse(opts: GetResponseProps) {
       break;
 
     case "anthropic":
+      const anthropic = createAnthropic({
+        apiKey: process.env.ANTHROPIC_API_KEY,
+      });
+      providerModel = anthropic(model);
+      break;
 
     case "local":
       providerModel = createOpenAI({
@@ -424,11 +429,7 @@ export function streamResponse(opts: GetResponseProps) {
       break;
 
     default:
-      const anthropic = createAnthropic({
-        apiKey: process.env.ANTHROPIC_API_KEY,
-      });
-      providerModel = anthropic(model);
-      break;
+      throw new Error(`Unknown provider: ${provider}. Model: ${model}`);
   }
 
   const response = streamText({
