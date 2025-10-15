@@ -1,7 +1,7 @@
-import { stepCountIs, tool } from "ai";
+import { hasToolCall, stepCountIs, tool } from "ai";
 import { z } from "zod";
-import { streamResponse, type AIModel } from "../../ai";
-import { existsSync, readFileSync, readdirSync } from "fs";
+import { consumeStream, streamResponse, type AIModel } from "../../ai";
+import { existsSync, readFileSync, readdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import type { ComparisonResult, ActualFinding } from "./types";
 import { detectOSAndEnhancePrompt } from "../utils";
@@ -46,20 +46,19 @@ You MUST call the provide_comparison_results tool with:
 - **extra**: Array of actual findings that don't match any expected findings
 - **metrics**: Calculated precision, recall, and accuracy percentages
 
-Be thorough and accurate in your assessment.
+Be thorough and accurate in your assessment. Use the provide_comparison_results tool to provide your results.
 `;
 
 interface ComparisonAgentProps {
   repoPath: string;
   sessionPath: string;
   model: AIModel;
-  abortSignal?: AbortSignal;
 }
 
 export async function runComparisonAgent(
   props: ComparisonAgentProps
 ): Promise<ComparisonResult> {
-  const { repoPath, sessionPath, model, abortSignal } = props;
+  const { repoPath, sessionPath, model } = props;
 
   // Load expected results from expected_results folder
   const expectedResultsDir = join(repoPath, "expected_results");
@@ -114,26 +113,23 @@ export async function runComparisonAgent(
     throw new Error(`No markdown findings found in ${findingsPath}`);
   }
 
-  // Create the comparison tool
-  let comparisonResult: ComparisonResult | null = null;
+  // Path for saving comparison results
+  const comparisonResultsPath = join(sessionPath, "comparison-results.json");
 
   const provide_comparison_results = tool({
     name: "provide_comparison_results",
     description: `Provide the final comparison results with matched, missed, and extra findings.
     
-This is the REQUIRED output tool - you MUST call this with your analysis.`,
+This is the REQUIRED output tool - you MUST call this with your analysis.
+
+Results will be saved to: comparison-results.json in the session directory.`,
     inputSchema: z.object({
       matched: z
         .array(
           z.object({
-            expectedId: z.string().describe("ID of the expected finding"),
+            location: z.string().describe("Location of the matched finding"),
             expectedTitle: z.string().describe("Title of the expected finding"),
             actualTitle: z.string().describe("Title of the actual finding"),
-            matchScore: z
-              .number()
-              .min(0)
-              .max(1)
-              .describe("Confidence score for this match (0-1)"),
             matchReason: z
               .string()
               .describe("Explanation for why these findings match"),
@@ -143,7 +139,6 @@ This is the REQUIRED output tool - you MUST call this with your analysis.`,
       missed: z
         .array(
           z.object({
-            id: z.string().describe("ID of the missed finding"),
             title: z.string().describe("Title of the missed finding"),
             severity: z.string().describe("Severity level"),
             reason: z
@@ -157,6 +152,7 @@ This is the REQUIRED output tool - you MUST call this with your analysis.`,
           z.object({
             title: z.string().describe("Title of the extra finding"),
             severity: z.string().describe("Severity level"),
+            location: z.string().describe("Location of the extra finding"),
             assessment: z
               .string()
               .describe(
@@ -188,47 +184,34 @@ This is the REQUIRED output tool - you MUST call this with your analysis.`,
 
       const accuracy = totalExpected > 0 ? truePositives / totalExpected : 0;
 
-      comparisonResult = {
+      // Build comparison result object
+      const result: ComparisonResult = {
         totalExpected,
         totalActual: matched.length + extra.length,
-        matched: matched.map((m) => ({
-          expected: expectedResults.find((e: any) => e.id === m.expectedId) || {
-            id: m.expectedId,
-            title: m.expectedTitle,
-          },
-          actual: {
-            title: m.actualTitle,
-          },
-          matchScore: m.matchScore,
-          matchReason: m.matchReason,
-        })),
-        missed: missed.map((m) => ({
-          ...expectedResults.find((e: any) => e.id === m.id),
-          reason: m.reason,
-        })),
-        extra: extra.map((e) => ({
-          title: e.title,
-          severity: e.severity as
-            | "CRITICAL"
-            | "HIGH"
-            | "MEDIUM"
-            | "LOW"
-            | "INFORMATIONAL"
-            | undefined,
-          assessment: e.assessment,
-        })),
+        matched,
+        missed,
+        extra,
         accuracy,
         recall,
         precision,
       };
 
+      // Save comparison results to file
+      console.log(
+        `[ComparisonAgent] Saving results to: ${comparisonResultsPath}`
+      );
+      writeFileSync(comparisonResultsPath, JSON.stringify(result, null, 2));
+
       return {
         success: true,
+        resultsPath: comparisonResultsPath,
         message: `Comparison complete. Matched: ${
           matched.length
         }/${totalExpected}, Precision: ${Math.round(
           precision * 100
-        )}%, Recall: ${Math.round(recall * 100)}%`,
+        )}%, Recall: ${Math.round(recall * 100)}%
+
+Results saved to: ${comparisonResultsPath}`,
       };
     },
   });
@@ -250,30 +233,88 @@ Please analyze these findings and call the provide_comparison_results tool with:
 
 The actual findings are documented in markdown format. Extract the key vulnerability information from the markdown to match against the expected findings.
 
-Be thorough in your analysis and provide clear explanations for your matches.
+Be thorough in your analysis and provide clear explanations for your matches. Stop when you have provided the results with provide_comparison_results tool.
 `.trim();
-
-  const systemPrompt = detectOSAndEnhancePrompt(COMPARISON_SYSTEM_PROMPT);
 
   // Run the agent
   const streamResult = streamResponse({
     prompt,
-    system: systemPrompt,
+    system: COMPARISON_SYSTEM_PROMPT,
     model,
     tools: { provide_comparison_results },
     toolChoice: "auto",
     stopWhen: stepCountIs(10000),
-    abortSignal,
   });
 
-  // Consume the stream
-  for await (const _delta of streamResult.fullStream) {
-    // Just consume to completion
+  // Consume the stream and log progress
+  console.log(`\n${"=".repeat(80)}`);
+  console.log(`COMPARISON AGENT`);
+  console.log(`${"=".repeat(80)}\n`);
+
+  for await (const delta of streamResult.fullStream) {
+    if (delta.type === "text-delta") {
+      process.stdout.write(delta.text);
+    } else if (delta.type === "tool-call") {
+      console.log(
+        `\n\n[Tool] ${delta.toolName}${
+          delta.input?.toolCallDescription
+            ? `: ${delta.input.toolCallDescription}`
+            : ""
+        }`
+      );
+    } else if (delta.type === "tool-result") {
+      console.log(`[Tool Complete]\n`);
+    }
   }
 
-  if (!comparisonResult) {
-    throw new Error("Comparison agent did not provide results");
+  // await consumeStream(streamResult, {
+  //   onTextDelta: (delta) => {
+  //     process.stdout.write(delta.text);
+  //   },
+  //   onToolCall: (delta) => {
+  //     console.log(
+  //       `\n\n[Tool] ${delta.toolName}${
+  //         delta.input?.toolCallDescription
+  //           ? `: ${delta.input.toolCallDescription}`
+  //           : ""
+  //       }`
+  //     );
+  //   },
+  //   onToolResult: (delta) => {
+  //     console.log(`[Tool Complete]\n`);
+  //   },
+  // });
+
+  console.log(`\n${"=".repeat(80)}`);
+  console.log(`COMPARISON COMPLETE`);
+  console.log(`${"=".repeat(80)}\n`);
+
+  // Read comparison results from file
+  if (!existsSync(comparisonResultsPath)) {
+    throw new Error(
+      "Comparison agent did not save results to file: " + comparisonResultsPath
+    );
   }
 
-  return comparisonResult;
+  console.log(
+    `[ComparisonAgent] Reading results from: ${comparisonResultsPath}`
+  );
+  const savedResults = readFileSync(comparisonResultsPath, "utf-8");
+  const comparisonResultFromFile = JSON.parse(savedResults) as ComparisonResult;
+
+  console.log(`[ComparisonAgent] Results loaded successfully`);
+  console.log(`  - Matched: ${comparisonResultFromFile.matched.length}`);
+  console.log(`  - Missed: ${comparisonResultFromFile.missed.length}`);
+  console.log(`  - Extra: ${comparisonResultFromFile.extra.length}`);
+  console.log(
+    `  - Accuracy: ${Math.round(comparisonResultFromFile.accuracy * 100)}%`
+  );
+  console.log(
+    `  - Precision: ${Math.round(comparisonResultFromFile.precision * 100)}%`
+  );
+  console.log(
+    `  - Recall: ${Math.round(comparisonResultFromFile.recall * 100)}%`
+  );
+
+  return comparisonResultFromFile;
 }

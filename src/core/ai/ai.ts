@@ -10,6 +10,8 @@ import {
   type ModelMessage,
   type StopCondition,
   type StreamTextOnStepFinishCallback,
+  type StreamTextResult,
+  type TextStreamPart,
   type ToolCallRepairFunction,
   type ToolChoice,
   type ToolSet,
@@ -369,7 +371,9 @@ export interface GetResponseProps {
   activeTools?: string[];
 }
 
-export function streamResponse(opts: GetResponseProps) {
+export function streamResponse(
+  opts: GetResponseProps
+): StreamTextResult<ToolSet, never> {
   const {
     prompt,
     system,
@@ -472,4 +476,33 @@ export function streamResponse(opts: GetResponseProps) {
   });
 
   return response;
+}
+
+export async function consumeStream(
+  stream: StreamTextResult<ToolSet, never>,
+  {
+    onTextDelta,
+    onToolCall,
+    onToolResult,
+  }: {
+    onTextDelta?: (
+      delta: Extract<TextStreamPart<ToolSet>, { type: "text-delta" }>
+    ) => void;
+    onToolCall?: (
+      delta: Extract<TextStreamPart<ToolSet>, { type: "tool-call" }>
+    ) => void;
+    onToolResult?: (
+      delta: Extract<TextStreamPart<ToolSet>, { type: "tool-result" }>
+    ) => void;
+  }
+) {
+  for await (const delta of stream.fullStream) {
+    if (delta.type === "text-delta") {
+      onTextDelta?.(delta);
+    } else if (delta.type === "tool-call") {
+      onToolCall?.(delta);
+    } else if (delta.type === "tool-result") {
+      onToolResult?.(delta);
+    }
+  }
 }

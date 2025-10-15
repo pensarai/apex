@@ -181,7 +181,7 @@ export default function AgentDisplay({
             ? `subagent-${item.id}`
             : item.role === "tool" && "toolCallId" in item
             ? `tool-${(item as ToolMessage).toolCallId}`
-            : `${item.role}-${item.createdAt.getTime()}-${index}`;
+            : `${item.role}-${item.createdAt.getTime()}`;
 
         if ("messages" in item) {
           return (
@@ -282,7 +282,7 @@ function AgentMessage({ message }: { message: Message }) {
           content={message.role === "user" ? "→ User" : "← Assistant"}
         />
       )}
-      <box flexDirection="row" gap={1}>
+      <box flexDirection="row" gap={0}>
         {message.role === "assistant" && (
           <box
             width={0}
@@ -309,7 +309,12 @@ function AgentMessage({ message }: { message: Message }) {
           )}
         </box>
         {message.role === "user" && (
-          <box width={1} backgroundColor={RGBA.fromInts(30, 30, 30, 255)} />
+          <box
+            width={0}
+            borderStyle="heavy"
+            border={["left"]}
+            borderColor={RGBA.fromInts(30, 30, 30, 255)}
+          />
         )}
       </box>
       <ToolArgs message={message} />

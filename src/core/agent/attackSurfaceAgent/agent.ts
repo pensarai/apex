@@ -12,7 +12,7 @@ import { createPentestTools } from "../tools";
 import { createSession, type Session } from "../sessions";
 import { z } from "zod";
 import { join } from "path";
-import { writeFileSync } from "fs";
+import { writeFileSync, mkdirSync, existsSync } from "fs";
 import { detectOSAndEnhancePrompt } from "../utils";
 
 export interface RunAgentProps {
@@ -40,14 +40,124 @@ export function runAgent(opts: RunAgentProps): {
   console.log(`Created attack surface session: ${session.id}`);
   console.log(`Session path: ${session.rootPath}`);
 
+  // Create assets directory for attack surface agent
+  const assetsPath = join(session.rootPath, "assets");
+  if (!existsSync(assetsPath)) {
+    mkdirSync(assetsPath, { recursive: true });
+  }
+
   // Create tools with session context
-  const {
-    analyze_scan,
-    document_finding,
-    execute_command,
-    http_request,
-    scratchpad,
-  } = createPentestTools(session, model);
+  const { analyze_scan, execute_command, http_request, scratchpad } =
+    createPentestTools(session, model);
+
+  // Attack Surface specific tool: document_asset
+  const document_asset = tool({
+    name: "document_asset",
+    description: `Document a discovered asset during attack surface analysis.
+    
+Assets are inventory items discovered during reconnaissance and saved to the session's assets folder.
+
+Use this tool to document:
+- Domains and subdomains
+- Web applications and APIs  
+- Infrastructure services (mail, DNS, VPN, databases)
+- Cloud resources (S3 buckets, CDN, cloud storage)
+- Development assets (dev/staging/test environments, CI/CD, repos)
+
+Each asset creates a JSON file in the assets directory for tracking and analysis.`,
+    inputSchema: z.object({
+      assetName: z
+        .string()
+        .describe(
+          "Unique name for the asset (e.g., 'example.com', 'api.example.com', 'admin-panel')"
+        ),
+      assetType: z
+        .enum([
+          "domain",
+          "subdomain",
+          "web_application",
+          "api",
+          "admin_panel",
+          "infrastructure_service",
+          "cloud_resource",
+          "development_asset",
+          "endpoint",
+        ])
+        .describe("Type of asset discovered"),
+      description: z
+        .string()
+        .describe(
+          "Detailed description of the asset including what it is and why it's relevant"
+        ),
+      details: z
+        .object({
+          url: z.string().optional().describe("URL if applicable"),
+          ip: z.string().optional().describe("IP address if known"),
+          ports: z.array(z.number()).optional().describe("Open ports"),
+          services: z
+            .array(z.string())
+            .optional()
+            .describe("Running services (e.g., 'nginx 1.18', 'SSH 8.2')"),
+          technology: z
+            .array(z.string())
+            .optional()
+            .describe(
+              "Technology stack (e.g., 'Node.js', 'Express', 'MongoDB')"
+            ),
+          endpoints: z
+            .array(z.string())
+            .optional()
+            .describe("Discovered endpoints for web apps/APIs"),
+          authentication: z
+            .string()
+            .optional()
+            .describe("Authentication type if known"),
+          status: z
+            .string()
+            .optional()
+            .describe("Status (active, inactive, redirect, error)"),
+        })
+        .describe("Additional details about the asset"),
+      riskLevel: z
+        .enum(["INFORMATIONAL", "LOW", "MEDIUM", "HIGH", "CRITICAL"])
+        .describe(
+          "Risk level: INFORMATIONAL (basic asset), LOW-CRITICAL (exposed/sensitive)"
+        ),
+      notes: z
+        .string()
+        .optional()
+        .describe("Additional notes or observations about the asset"),
+    }),
+    execute: async (asset) => {
+      // Create a sanitized filename from asset name
+      const sanitizedName = asset.assetName
+        .toLowerCase()
+        .replace(/[^a-z0-9-_.]/g, "_");
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const filename = `asset_${sanitizedName}_${timestamp}.json`;
+      const filepath = join(assetsPath, filename);
+
+      // Create asset record with metadata
+      const assetRecord = {
+        ...asset,
+        discoveredAt: new Date().toISOString(),
+        sessionId: session.id,
+        target: session.target,
+      };
+
+      // Write asset to file
+      writeFileSync(filepath, JSON.stringify(assetRecord, null, 2));
+
+      return {
+        success: true,
+        assetName: asset.assetName,
+        assetType: asset.assetType,
+        riskLevel: asset.riskLevel,
+        filepath,
+        message: `Asset '${asset.assetName}' documented successfully in assets directory`,
+      };
+    },
+  });
 
   // Simplified answer schema for orchestrator agent
   const create_attack_surface_report = tool({
@@ -112,7 +222,7 @@ TARGET: ${target}
 
 Session Information:
 - Session ID: ${session.id}
-- Findings will be saved to: ${session.findingsPath}
+- Assets will be saved to: ${assetsPath}
 - Use the scratchpad tool for notes and observations
 
 Begin your attack surface analysis by:
@@ -121,12 +231,18 @@ Begin your attack surface analysis by:
 3. Identifying all assets, services, endpoints, and potential entry points
 4. Categorizing discovered targets by type and risk level
 5. Using the scratchpad tool to track discovered assets
-6. When complete, call the create_attack_surface_report tool to generate a detailed report of the attack surface analysis
+6. Document each significant asset using the document_asset tool
+7. When complete, call the create_attack_surface_report tool to generate a detailed report of the attack surface analysis
 
 Your goal is to provide a comprehensive map of the attack surface, NOT to perform deep exploitation.
 Focus on breadth of discovery rather than depth of testing.
 
-Document all discovered assets and potential attack vectors using the document_finding tool.
+Document all discovered assets using the document_asset tool - this creates an inventory of:
+- Domains and subdomains
+- Web applications and APIs
+- Infrastructure services
+- Cloud resources
+- Development environments
 
 You MUST provide the details final report using create_attack_surface_report tool.
 `.trim();
@@ -139,7 +255,7 @@ You MUST provide the details final report using create_attack_surface_report too
     model,
     tools: {
       analyze_scan,
-      document_finding,
+      document_asset,
       execute_command,
       http_request,
       scratchpad,

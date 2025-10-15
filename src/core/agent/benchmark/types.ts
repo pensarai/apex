@@ -15,16 +15,15 @@ export interface BenchmarkResults {
 }
 
 export interface ExpectedFinding {
-  id: string;
   title: string;
-  severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "INFORMATIONAL";
-  category: string;
-  description: string;
+  severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "INFORMATIONAL" | string;
+  reason: string;
 }
 
 export interface ActualFinding {
   title: string;
-  severity?: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "INFORMATIONAL";
+  severity?: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "INFORMATIONAL" | string;
+  location: string;
   category?: string;
   description?: string;
   evidence?: string;
@@ -43,9 +42,9 @@ export interface ComparisonResult {
 }
 
 export interface MatchedFinding {
-  expected: ExpectedFinding;
-  actual: ActualFinding;
-  matchScore: number;
+  location: string;
+  expectedTitle: string;
+  actualTitle: string;
   matchReason: string;
 }
 

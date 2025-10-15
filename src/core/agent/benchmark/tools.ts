@@ -104,6 +104,7 @@ This is the MAIN TESTING PHASE. Wait for it to complete before proceeding.`,
               console.log(`\n${"┌".repeat(80)}`);
               console.log(`┃ SUBAGENT SPAWNED: ${info.name}`);
               console.log(`┃ Type: ${info.type}`);
+              console.log(`┃ Args: ${JSON.stringify(info.args)}`);
               console.log(`┃ Target: ${info.target}`);
               console.log(`┃ ID: ${info.id}`);
               console.log(`${"└".repeat(80)}\n`);
@@ -200,7 +201,6 @@ Use this AFTER the pentest completes to evaluate testing accuracy.`,
           repoPath,
           sessionPath,
           model,
-          abortSignal,
         });
 
         const f1Score =
@@ -248,16 +248,17 @@ This tool:
 Use this AFTER results are collected to clean up properly. Always call this even if testing failed.`,
     inputSchema: z.object({
       repoPath: z.string().describe("Path to the repository"),
-      composeFile: z
+      branch: z.string().describe("Branch that was tested"),
+      composePath: z
         .string()
-        .describe("Name of the docker-compose file (e.g., docker-compose.yml)"),
+        .describe("Path to the docker-compose file (e.g., docker-compose.yml)"),
       toolCallDescription: z
         .string()
         .describe("Concise description of this tool call"),
     }),
-    execute: async ({ repoPath, composeFile }) => {
+    execute: async ({ repoPath, branch, composePath }) => {
       try {
-        await stopDevEnvironment(repoPath, composeFile);
+        await stopDevEnvironment(repoPath, branch, composePath);
 
         return {
           success: true,
@@ -304,20 +305,45 @@ Use this as the FINAL step after all testing and comparison is complete.`,
       comparison,
     }) => {
       try {
+        // Collect all expected results (matched + missed)
+        const allExpectedResults = [
+          ...comparison.matched.map((m: any) => m.expected),
+          ...comparison.missed,
+        ];
+
+        // Collect all actual results (matched + extra)
+        const allActualResults = [
+          ...comparison.matched.map((m: any) => m.actual),
+          ...comparison.extra,
+        ];
+
         const results: BenchmarkResults = {
           repoPath,
           branch,
           targetUrl,
           sessionId: session.id,
           sessionPath,
-          expectedResults: comparison.matched.map((m: any) => m.expected),
-          actualResults: comparison.matched.map((m: any) => m.actual),
+          expectedResults: allExpectedResults,
+          actualResults: allActualResults,
           comparison,
           timestamp: new Date().toISOString(),
         };
 
         const reportPath = join(session.rootPath, "benchmark_results.json");
         writeFileSync(reportPath, JSON.stringify(results, null, 2));
+
+        console.log(`[Benchmark] Report saved to: ${reportPath}`);
+        console.log(`[Benchmark] Results summary:`);
+        console.log(`  - Total Expected: ${comparison.totalExpected}`);
+        console.log(`  - Total Actual: ${comparison.totalActual}`);
+        console.log(`  - Matched: ${comparison.matched.length}`);
+        console.log(`  - Missed: ${comparison.missed.length}`);
+        console.log(`  - Extra: ${comparison.extra.length}`);
+        console.log(`  - Accuracy: ${Math.round(comparison.accuracy * 100)}%`);
+        console.log(
+          `  - Precision: ${Math.round(comparison.precision * 100)}%`
+        );
+        console.log(`  - Recall: ${Math.round(comparison.recall * 100)}%`);
 
         return {
           success: true,

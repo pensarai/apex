@@ -84,15 +84,17 @@ export async function startDevEnvironment(
  */
 export async function stopDevEnvironment(
   repoPath: string,
-  composeFile: string,
+  branch: string,
+  composePath: string,
   commitChanges: boolean = true
 ): Promise<void> {
   try {
     console.log(`[Benchmark] Stopping docker compose in: ${repoPath}`);
+
     const { stdout, stderr } = await exec(
-      `docker compose -f ${composeFile} down`,
+      `docker compose -f ${composePath} down`,
       {
-        cwd: repoPath,
+        cwd: join(repoPath, branch),
       }
     );
 
