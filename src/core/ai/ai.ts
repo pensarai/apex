@@ -395,8 +395,6 @@ export function streamResponse(
   // Create the appropriate provider instance
   let providerModel;
 
-  console.log("provider", provider);
-
   switch (provider) {
     case "openai":
       const openai = createOpenAI({

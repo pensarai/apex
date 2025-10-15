@@ -759,23 +759,25 @@ Last Updated: [timestamp]
 After mapping the attack surface, identify ALL targets that warrant deeper penetration testing:
 
 1. **High-Priority Targets (CRITICAL/HIGH):**
-   - Admin interfaces and control panels
-   - Authentication systems and SSO endpoints
-   - API endpoints (especially with documentation exposed)
-   - Applications with complex functionality
-   - Services with suspected vulnerabilities
-   - Development/staging/test environments
-   - Exposed configuration files or sensitive data
-   - Services running outdated/vulnerable versions
+   - Admin interfaces and control panels → **Test for:** auth bypass, authz bypass (privilege escalation), CSRF
+   - Authentication systems and SSO endpoints → **Test for:** SQLi/NoSQLi, session management, 2FA bypass
+   - API endpoints (especially with documentation exposed) → **Test for:** IDOR, broken authentication, injection, mass assignment
+   - E-commerce/ordering/payment systems → **Test for:** business logic flaws, IDOR in orders, price manipulation
+   - Applications with complex functionality → **Test for:** business logic, workflow bypass, race conditions
+   - User portals with multiple user data → **Test for:** IDOR, horizontal privilege escalation
+   - Services with suspected vulnerabilities → **Test for:** known CVEs, default credentials
+   - Development/staging/test environments → **Test for:** exposed credentials, .git, debug modes
+   - Exposed configuration files or sensitive data → **Test for:** information disclosure impact
+   - Services running outdated/vulnerable versions → **Test for:** version-specific exploits
 
 2. **Medium-Priority Targets:**
-   - Public-facing web applications
-   - Customer portals
-   - File upload/download functionality
-   - Search and query interfaces
-   - Third-party integrations
-   - Mail servers with web interfaces
-   - VPN endpoints
+   - Public-facing web applications → **Test for:** injection, XSS, CSRF, file upload
+   - Customer portals → **Test for:** IDOR between customers, session management
+   - File upload/download functionality → **Test for:** RCE, path traversal, XXE
+   - Search and query interfaces → **Test for:** SQLi, NoSQLi, SSTI, XSS
+   - Third-party integrations → **Test for:** SSRF, XXE, API security
+   - Mail servers with web interfaces → **Test for:** auth bypass, injection
+   - VPN endpoints → **Test for:** authentication vulnerabilities, default creds
 
 3. **Lower-Priority Targets:**
    - Static websites with minimal functionality
@@ -784,15 +786,52 @@ After mapping the attack surface, identify ALL targets that warrant deeper penet
    - Status/monitoring pages (unless they leak info)
    - Marketing websites
 
-### Target Documentation Format
+**CRITICAL: Identify Testing Needs by Asset Type**
 
-For each target identified, document:
-- **Target:** The URL, IP, or domain
-- **Objective:** Specific security testing goals for this target
-- **Rationale:** Why this target needs deep testing (what makes it interesting/risky)
-- **Priority:** CRITICAL, HIGH, MEDIUM, or LOW
+When identifying targets, note what SPECIFIC vulnerability classes to test:
 
-**Track all targets in scratchpad** as you discover them, then include them ALL in your final report.
+**Asset Type → Required Tests:**
+- **APIs** → IDOR, broken auth, NoSQL injection, missing authorization, rate limiting
+- **Admin Panels** → Auth bypass, privilege escalation, CSRF, session security
+- **E-commerce** → Business logic, IDOR in orders, price manipulation, workflow bypass
+- **User Portals** → Horizontal privilege escalation, IDOR, data exposure
+- **File Uploads** → RCE, path traversal, XXE, SSRF
+- **Search/Forms** → Injection (SQL, NoSQL, SSTI), XSS
+- **Authentication** → SQLi bypass, NoSQLi bypass, session fixation, weak passwords
+
+**CRITICAL: Create Comprehensive Objectives**
+
+Objectives must specify WHAT to test to ensure complete coverage:
+
+**Good Objectives (Comprehensive):**
+- ✅ "Test for IDOR in user/order endpoints, NoSQL injection in authentication, and API authorization between users"
+- ✅ "Test for authentication bypass (SQLi, default creds), authorization flaws (privilege escalation, IDOR), and CSRF on admin actions"
+- ✅ "Test for business logic flaws (price manipulation, workflow bypass), IDOR in order system, and injection vulnerabilities"
+- ✅ "Test for horizontal privilege escalation (user data access), session management flaws, and XSS in user-generated content"
+
+**Bad Objectives (Too Vague):**
+- ❌ "Test for vulnerabilities" (what kind? this leads to incomplete testing)
+- ❌ "Security assessment" (too broad, agents may focus only on infrastructure)
+- ❌ "Check for misconfigurations" (may miss authorization/business logic flaws)
+
+**Objective Templates by Target Type:**
+
+**API Endpoints:**
+"Test [API] for: IDOR in user/resource endpoints, NoSQL/SQL injection, broken authentication, missing authorization checks, rate limiting bypass, and mass assignment vulnerabilities"
+
+**Admin Panels:**
+"Test [admin panel] for: authentication bypass (SQLi, NoSQLi, default credentials), authorization flaws (regular user accessing admin functions), CSRF on critical actions, and privilege escalation"
+
+**E-commerce/Ordering Systems:**
+"Test [e-commerce] for: business logic flaws (price manipulation, quantity tampering, workflow bypass), IDOR in orders/receipts, payment manipulation, and injection vulnerabilities"
+
+**User Portals:**
+"Test [portal] for: horizontal privilege escalation (accessing other users' data), IDOR in user resources, session management flaws, XSS in profiles, and authentication weaknesses"
+
+**File Upload Systems:**
+"Test [upload] for: RCE via file upload, path traversal, unrestricted file types, XXE in document parsing, and SSRF via image URLs"
+
+**Track all targets in scratchpad** with comprehensive objectives, then include them ALL in your final report.
 
 ## Phase 6: Final Report Generation (CRITICAL - MUST BE COMPREHENSIVE)
 

@@ -167,16 +167,12 @@ To test this POC:
         // Write POC to file
         writeFileSync(pocPath, pocContent);
 
-        console.log(`Created POC: ${relativePocPath} (${poc.pocType})`);
-
         // Execute POC only for bash scripts
         let executionResult;
 
         if (poc.pocType === "bash") {
           // Make executable
           chmodSync(pocPath, 0o755);
-
-          console.log(`Executing POC to verify: ${filename}`);
 
           try {
             const { stdout, stderr } = await execAsync(

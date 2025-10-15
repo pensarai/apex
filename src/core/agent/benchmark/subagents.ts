@@ -89,14 +89,27 @@ export async function stopDevEnvironment(
   commitChanges: boolean = true
 ): Promise<void> {
   try {
-    console.log(`[Benchmark] Stopping docker compose in: ${repoPath}`);
+    // Construct the working directory (repoPath/branch)
+    let workingDir = join(repoPath, branch);
 
-    const { stdout, stderr } = await exec(
-      `docker compose -f ${composePath} down`,
-      {
-        cwd: join(repoPath, branch),
-      }
-    );
+    if (!existsSync(workingDir)) {
+      workingDir = repoPath;
+    }
+
+    // Compose path is relative to working directory (e.g., "docker-compose.yml")
+    const fullComposePath = join(workingDir, composePath);
+
+    console.log(`[Benchmark] Stopping docker compose at: ${fullComposePath}`);
+    console.log(`[Benchmark] Working directory: ${workingDir}`);
+
+    // Verify the working directory exists
+    if (!existsSync(workingDir)) {
+      throw new Error(`Working directory does not exist: ${workingDir}`);
+    }
+
+    const { stdout, stderr } = await exec(`docker compose -f down`, {
+      cwd: workingDir,
+    });
 
     console.log("Docker compose down output:", stdout);
     if (stderr) console.error("Docker compose down stderr:", stderr);

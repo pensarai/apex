@@ -11,6 +11,7 @@ import { marked } from "marked";
 import type { Subagent } from "./hooks/pentestAgent";
 
 interface AgentDisplayProps {
+  key?: string;
   messages: Message[];
   isStreaming?: boolean;
   children?: React.ReactNode;
@@ -129,6 +130,7 @@ function markdownToStyledText(content: string): StyledText {
 }
 
 export default function AgentDisplay({
+  key,
   messages,
   isStreaming = false,
   children,
@@ -137,14 +139,18 @@ export default function AgentDisplay({
   paddingRight = 8,
 }: AgentDisplayProps) {
   // Memoize the sorted array to avoid re-sorting on every render
-  const messagesAndSubagents = useMemo(() => {
-    return [...messages, ...(subagents ?? [])].sort(
-      (a, b) => a.createdAt.getTime() - b.createdAt.getTime()
-    );
-  }, [messages, subagents]);
+  // const messagesAndSubagents = useMemo(() => {
+  //   return [...messages, ...(subagents ?? [])].sort(
+  //     (a, b) => a.createdAt.getTime() - b.createdAt.getTime()
+  //   );
+  // }, [messages, subagents]);
+  const messagesAndSubagents = [...messages, ...(subagents ?? [])].sort(
+    (a, b) => a.createdAt.getTime() - b.createdAt.getTime()
+  );
 
   return (
     <scrollbox
+      key={key}
       style={{
         rootOptions: {
           width: "100%",
@@ -180,7 +186,9 @@ export default function AgentDisplay({
           "messages" in item
             ? `subagent-${item.id}`
             : item.role === "tool" && "toolCallId" in item
-            ? `tool-${(item as ToolMessage).toolCallId}`
+            ? `tool-${(item as ToolMessage).toolCallId}-${
+                (item as ToolMessage).status
+              }`
             : `${item.role}-${item.createdAt.getTime()}`;
 
         if ("messages" in item) {
@@ -234,6 +242,7 @@ function SubAgentDisplay({ subagent }: { subagent: Subagent }) {
       </box>
       {open && (
         <AgentDisplay
+          key={subagent.id}
           paddingLeft={2}
           paddingRight={2}
           messages={subagent.messages}
