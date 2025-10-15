@@ -107,7 +107,7 @@ export async function stopDevEnvironment(
       throw new Error(`Working directory does not exist: ${workingDir}`);
     }
 
-    const { stdout, stderr } = await exec(`docker compose -f down`, {
+    const { stdout, stderr } = await exec(`docker compose down`, {
       cwd: workingDir,
     });
 
