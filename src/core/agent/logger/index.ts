@@ -14,9 +14,9 @@ export class Logger {
   private session: Session;
   private logFilePath: string;
 
-  constructor(session: Session) {
+  constructor(session: Session, fileName?: string) {
     this.session = session;
-    this.logFilePath = path.join(session.logsPath, "agent.log");
+    this.logFilePath = path.join(session.logsPath, fileName || "agent.log");
 
     // Ensure logs directory exists
     if (!existsSync(session.logsPath)) {

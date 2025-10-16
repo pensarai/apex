@@ -15,6 +15,7 @@ import {
 } from "fs";
 import { promisify } from "util";
 import { exec } from "child_process";
+import { Logger } from "../logger";
 
 const execAsync = promisify(exec);
 
@@ -38,6 +39,7 @@ export async function documentFindingAgent(
   model: AIModel,
   session: Session
 ) {
+  const logger = new Logger(session, "documentFindingAgent.log");
   // Create pocs directory for pentest agent
   const pocsPath = join(session.rootPath, "pocs");
   if (!existsSync(pocsPath)) {
@@ -191,15 +193,13 @@ To test this POC:
             };
           } catch (execError: any) {
             // Execution failed or timed out - DELETE the failed POC
-            console.log(`POC execution failed, deleting file: ${filename}`);
+            logger.log(`POC execution failed, deleting file: ${filename}`);
 
             // Delete the failed POC file
             try {
               unlinkSync(pocPath);
             } catch (deleteError: any) {
-              console.error(
-                `Failed to delete POC file: ${deleteError.message}`
-              );
+              logger.error(`Failed to delete POC file: ${deleteError.message}`);
             }
 
             executionResult = {

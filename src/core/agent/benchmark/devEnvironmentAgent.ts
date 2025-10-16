@@ -58,15 +58,16 @@ Your job is to:
 
 # Workflow
 
-1. Read docker-compose file to understand services and configuration
-2. Check for .env file or other required config files (read them if they exist)
-3. Attempt to start docker compose
-4. If it fails:
+1. Install any necessary dependencies (e.g. npm install, yarn install, etc.)
+2. Read docker-compose file to understand services and configuration
+3. Check for .env file or other required config files (read them if they exist)
+4. Attempt to start docker compose
+5. If it fails:
    - Check logs to diagnose the issue
    - Identify what's wrong (missing file? wrong config? port conflict?)
-   - Edit appropriate file (docker-compose.yml, .env, config files)
+   - Edit appropriate file (docker-compose.yml, .env, config files, etc.)
    - Try starting again
-5. Once started:
+6. Once started:
    - Check service health
    - Determine the target URL (usually http://localhost:PORT)
    - Report success
