@@ -157,6 +157,9 @@ async function main() {
     console.error(
       "  --limit <number>     Limit the number of branches to test"
     );
+    console.error(
+      "  --model <model>      Specify the AI model to use (default: claude-sonnet-4-5)"
+    );
     console.error();
     console.error("Examples:");
     console.error("  tsx scripts/benchmark.ts /path/to/vulnerable-app");
@@ -166,6 +169,10 @@ async function main() {
       "  tsx scripts/benchmark.ts /path/to/app --all-branches --limit 3"
     );
     console.error("  tsx scripts/benchmark.ts /path/to/app --limit 5");
+    console.error("  tsx scripts/benchmark.ts /path/to/app --model gpt-4o");
+    console.error(
+      "  tsx scripts/benchmark.ts /path/to/app --model claude-opus-4-1 --limit 3"
+    );
     console.error();
     console.error(
       "If no branches are specified and --all-branches is not used,"
@@ -198,13 +205,28 @@ async function main() {
     }
   }
 
+  // Check for --model flag
+  const modelIndex = args.indexOf("--model");
+  let model: AIModel | undefined;
+  if (modelIndex !== -1) {
+    const modelArg = args[modelIndex + 1];
+    if (!modelArg) {
+      console.error("Error: --model must be followed by a model name");
+      process.exit(1);
+    }
+    model = modelArg as AIModel;
+  }
+
   // Get branch arguments (excluding flags)
   let branchArgs = args.slice(1).filter((arg, index, arr) => {
-    if (arg === "--all-branches" || arg === "--limit") {
+    if (arg === "--all-branches" || arg === "--limit" || arg === "--model") {
       return false;
     }
-    // Skip the value after --limit
-    if (index > 0 && arr[index - 1] === "--limit") {
+    // Skip the value after --limit or --model
+    if (
+      index > 0 &&
+      (arr[index - 1] === "--limit" || arr[index - 1] === "--model")
+    ) {
       return false;
     }
     return true;
@@ -240,6 +262,7 @@ async function main() {
     await runBenchmark({
       repoPath,
       branches,
+      ...(model && { model }),
     });
   } catch (error: any) {
     console.error("Fatal error:", error.message);

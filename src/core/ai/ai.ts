@@ -37,6 +37,12 @@ export interface ModelInfo {
 export const AVAILABLE_MODELS: ModelInfo[] = [
   // Anthropic Models
   {
+    id: "claude-haiku-4-5",
+    name: "Claude Haiku 4.5",
+    provider: "anthropic",
+    contextLength: 200000,
+  },
+  {
     id: "claude-sonnet-4-5",
     name: "Claude Sonnet 4.5",
     provider: "anthropic",
@@ -245,18 +251,6 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
     contextLength: 64000,
   },
   {
-    id: "qwen/qwen-2.5-coder-32b-instruct",
-    name: "Qwen 2.5 Coder 32B",
-    provider: "openrouter",
-    contextLength: 32768,
-  },
-  {
-    id: "qwen/qwq-32b-preview",
-    name: "QwQ 32B Preview",
-    provider: "openrouter",
-    contextLength: 32768,
-  },
-  {
     id: "moonshot/kimi-k2-turbo",
     name: "Kimi K2 Turbo",
     provider: "openrouter",
@@ -269,30 +263,23 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
     contextLength: 128000,
   },
   {
-    id: "mistralai/codestral-latest",
-    name: "Codestral Latest",
+    id: "qwen/qwen3-8b",
+    name: "Qwen 3 8B Thinking",
     provider: "openrouter",
-    contextLength: 32000,
+    contextLength: 256000,
   },
   {
-    id: "mistralai/mistral-large",
-    name: "Mistral Large",
+    id: "qwen/qwen3-14b",
+    name: "Qwen 3 14B Instruct",
     provider: "openrouter",
-    contextLength: 128000,
+    contextLength: 256000,
   },
   {
-    id: "x-ai/grok-2",
-    name: "Grok 2",
+    id: "qwen/qwen3-32b",
+    name: "Qwen 3 32B Instruct",
     provider: "openrouter",
-    contextLength: 131072,
+    contextLength: 256000,
   },
-  {
-    id: "x-ai/grok-2-vision",
-    name: "Grok 2 Vision",
-    provider: "openrouter",
-    contextLength: 32768,
-  },
-
   // Amazon Bedrock Models
   {
     id: "anthropic.claude-3-5-sonnet-20240620-v1:0",
@@ -450,6 +437,7 @@ export function streamResponse(
     onStepFinish,
     abortSignal,
     activeTools,
+
     experimental_repairToolCall: async ({
       toolCall,
       inputSchema,

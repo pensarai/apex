@@ -6,6 +6,8 @@ import { join } from "path";
 import { exec as nodeExec } from "child_process";
 import { promisify } from "util";
 import { detectOSAndEnhancePrompt } from "../utils";
+import { createPentestTools } from "../pentestAgent";
+import type { Session } from "../sessions";
 
 const exec = promisify(nodeExec);
 
@@ -108,6 +110,8 @@ interface DevEnvironmentAgentResult {
 
 export async function runDevEnvironmentAgent(
   workingDir: string,
+  session: Session,
+  branch: string,
   model: AIModel,
   abortSignal?: AbortSignal
 ): Promise<DevEnvironmentAgentResult> {
@@ -373,6 +377,8 @@ export async function runDevEnvironmentAgent(
     },
   });
 
+  const { execute_command } = createPentestTools(session, model);
+
   // Build the prompt
   const prompt = `
 Start the development environment in: ${workingDir}
@@ -391,6 +397,8 @@ Your mission:
 You have access to read_file and edit_file - use them to read and modify ANY file in the working directory.
 
 Begin by reading the docker-compose file.
+
+Ensure the repo is on the correct branch: ${branch}. Use execute_command to check the current branch and switch to the correct branch if needed.
 `.trim();
 
   // Run the agent
@@ -405,6 +413,7 @@ Begin by reading the docker-compose file.
       check_docker_logs,
       check_service_health,
       report_environment_ready,
+      execute_command,
     },
     stopWhen: stepCountIs(10000),
     toolChoice: "auto",

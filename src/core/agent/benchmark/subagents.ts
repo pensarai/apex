@@ -5,6 +5,7 @@ import { join } from "path";
 import type { DevEnvironmentInfo } from "./types";
 import { runDevEnvironmentAgent } from "./devEnvironmentAgent";
 import type { AIModel } from "../../ai";
+import type { Session } from "../sessions";
 
 const exec = promisify(nodeExec);
 
@@ -12,6 +13,7 @@ const exec = promisify(nodeExec);
  * Start the development environment using an AI agent that can fix issues
  */
 export async function startDevEnvironment(
+  session: Session,
   repoPath: string,
   branch: string,
   model: AIModel,
@@ -48,6 +50,8 @@ export async function startDevEnvironment(
   console.log(`[Benchmark] Spawning dev environment agent for: ${workingDir}`);
   const agentResult = await runDevEnvironmentAgent(
     workingDir,
+    session,
+    branch,
     model,
     abortSignal
   );
@@ -137,7 +141,7 @@ export async function stopDevEnvironment(
           );
 
           // Push changes
-          await exec("git push", { cwd: repoPath });
+          await exec(`git push origin ${branch}`, { cwd: repoPath });
 
           console.log(`[Benchmark] Changes committed and pushed successfully`);
         } else {

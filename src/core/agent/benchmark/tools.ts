@@ -40,6 +40,7 @@ Use this as the FIRST step in the benchmark workflow.`,
     execute: async ({ repoPath, branch }) => {
       try {
         const devInfo = await startDevEnvironment(
+          session,
           repoPath,
           branch,
           model,
