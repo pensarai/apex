@@ -47,8 +47,10 @@ export function runAgent(opts: RunAgentProps): {
   }
 
   // Create tools with session context
-  const { analyze_scan, execute_command, http_request, scratchpad } =
-    createPentestTools(session, model);
+  const { analyze_scan, execute_command, http_request } = createPentestTools(
+    session,
+    model
+  );
 
   // Attack Surface specific tool: document_asset
   const document_asset = tool({
@@ -223,16 +225,14 @@ TARGET: ${target}
 Session Information:
 - Session ID: ${session.id}
 - Assets will be saved to: ${assetsPath}
-- Use the scratchpad tool for notes and observations
 
 Begin your attack surface analysis by:
 1. Understanding the target scope (is it a domain, IP, URL, network range, or organization?)
 2. Performing comprehensive reconnaissance to map the entire attack surface
 3. Identifying all assets, services, endpoints, and potential entry points
 4. Categorizing discovered targets by type and risk level
-5. Using the scratchpad tool to track discovered assets
-6. Document each significant asset using the document_asset tool
-7. When complete, call the create_attack_surface_report tool to generate a detailed report of the attack surface analysis
+5. Document each significant asset using the document_asset tool
+6. When complete, call the create_attack_surface_report tool to generate a detailed report of the attack surface analysis
 
 Your goal is to provide a comprehensive map of the attack surface, NOT to perform deep exploitation.
 Focus on breadth of discovery rather than depth of testing.
@@ -258,7 +258,6 @@ You MUST provide the details final report using create_attack_surface_report too
       document_asset,
       execute_command,
       http_request,
-      scratchpad,
       create_attack_surface_report,
     },
     stopWhen: stepCountIs(10000),

@@ -43,7 +43,7 @@ Your job is to:
 
 - **read_file**: Read any file in the working directory (docker-compose.yml, .env, config files, etc.)
 - **edit_file**: Edit any file to fix issues or add configuration
-- **start_docker_compose**: Attempt to start the environment
+- **execute_command**: Execute any command in the working directory
 - **check_docker_logs**: Read logs from failed containers
 - **check_service_health**: Verify if services are running
 - **report_environment_ready**: Report success with target URL
@@ -63,7 +63,7 @@ Your job is to:
 1. Install any necessary dependencies (e.g. npm install, yarn install, etc.)
 2. Read docker-compose file to understand services and configuration
 3. Check for .env file or other required config files (read them if they exist)
-4. Attempt to start docker compose
+4. Attempt to start docker compose. Prefer to rebuild the image to ensure the latest changes are applied.
 5. If it fails:
    - Check logs to diagnose the issue
    - Identify what's wrong (missing file? wrong config? port conflict?)
@@ -254,41 +254,6 @@ export async function runDevEnvironmentAgent(
     },
   });
 
-  const start_docker_compose = tool({
-    name: "start_docker_compose",
-    description: "Attempt to start the docker compose environment",
-    inputSchema: z.object({
-      toolCallDescription: z.string().describe("Brief description"),
-    }),
-    execute: async () => {
-      try {
-        console.log(`[DevEnvAgent] Attempting docker compose up...`);
-        const { stdout, stderr } = await exec(
-          `docker compose -f ${composeFile} up -d`,
-          { cwd: workingDir }
-        );
-
-        // Wait a bit for services to start
-        await new Promise((resolve) => setTimeout(resolve, 5000));
-
-        return {
-          success: true,
-          stdout,
-          stderr,
-          message: "Docker compose started successfully",
-        };
-      } catch (error: any) {
-        console.log(`[DevEnvAgent] Error: ${error.message}`);
-        return {
-          success: false,
-          error: error.message,
-          stdout: error.stdout || "",
-          stderr: error.stderr || "",
-        };
-      }
-    },
-  });
-
   const check_docker_logs = tool({
     name: "check_docker_logs",
     description: "Check logs from docker containers to diagnose issues",
@@ -387,7 +352,7 @@ Docker compose file: ${composeFile}
 Your mission:
 1. Read the docker-compose file (use read_file with path: "${composeFile}") to understand the setup
 2. Check if .env or other config files are referenced - read them if they exist
-3. Attempt to start the environment with start_docker_compose
+3. Attempt to start the environment with execute_command to run / build docker compose
 4. If it fails, diagnose the issue and fix it:
    - Use read_file to read any configuration files you need
    - Use edit_file to modify docker-compose.yml, .env, or any other files
@@ -409,7 +374,6 @@ Ensure the repo is on the correct branch: ${branch}. Use execute_command to chec
     tools: {
       read_file,
       edit_file,
-      start_docker_compose,
       check_docker_logs,
       check_service_health,
       report_environment_ready,
