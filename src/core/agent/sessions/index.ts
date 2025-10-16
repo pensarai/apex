@@ -2,6 +2,7 @@ import { mkdirSync, existsSync, writeFileSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 import { randomBytes } from "crypto";
+import { runDnsOwnershipCheck } from "./ownershipCheck";
 
 export interface Session {
   id: string;
@@ -40,7 +41,7 @@ export function getExecutionsDir(): string {
 /**
  * Create a new session for a pentest run
  */
-export function createSession(target: string, objective?: string): Session {
+export async function createSession(target: string, objective?: string): Promise<Session> {
   const sessionId = generateSessionId();
   const rootPath = join(getExecutionsDir(), sessionId);
   const findingsPath = join(rootPath, "findings");
@@ -52,6 +53,12 @@ export function createSession(target: string, objective?: string): Session {
   ensureDirectoryExists(findingsPath);
   ensureDirectoryExists(scratchpadPath);
   ensureDirectoryExists(logsPath);
+
+  const isDomainAllowed = await runDnsOwnershipCheck(target);
+
+  if(!isDomainAllowed) {
+    throw new Error(`Cannot create session: ownership check did not pass for target: ${target}`);
+  }
 
   const session: Session = {
     id: sessionId,

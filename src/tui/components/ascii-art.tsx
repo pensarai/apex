@@ -202,6 +202,7 @@ export function ColoredAsciiArt({ ascii, title }: ColoredAsciiArtProps) {
       height="100%"
       width="100%"
       flexGrow={1}
+      backgroundColor="transparent"
     >
       {title && <text>{title}</text>}
       {ascii.map((row, y) => (

@@ -1,0 +1,3 @@
+[submodule "vendor/opentui"]
+	path = vendor/opentui
+	url = git@github.com:KeremP/opentui.git

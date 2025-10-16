@@ -14,29 +14,13 @@ import {
   type AppCommandContext,
 } from "./command-registry";
 import type { AutocompleteOption } from "./components/autocomplete";
+import { useRenderer } from "@opentui/react";
+import { useRoute } from "./context/route";
 
 interface CommandContextValue {
   router: CommandRouter<AppCommandContext>;
   autocompleteOptions: AutocompleteOption[];
   executeCommand: (input: string) => Promise<boolean>;
-  helpOpen: boolean;
-  openHelp: () => void;
-  closeHelp: () => void;
-  configOpen: boolean;
-  openConfig: () => void;
-  closeConfig: () => void;
-  pentestOpen: boolean;
-  openPentest: () => void;
-  closePentest: () => void;
-  thoroughPentestOpen: boolean;
-  openThoroughPentest: () => void;
-  closeThoroughPentest: () => void;
-  sessionsOpen: boolean;
-  openSessions: () => void;
-  closeSessions: () => void;
-  modelsOpen: boolean;
-  openModels: () => void;
-  closeModels: () => void;
   commands: typeof commands;
 }
 
@@ -55,26 +39,19 @@ interface CommandProviderProps {
 }
 
 export function CommandProvider({ children }: CommandProviderProps) {
-  const [helpOpen, setHelpOpen] = useState(false);
-  const [configOpen, setConfigOpen] = useState(false);
-  const [pentestOpen, setPentestOpen] = useState(false);
-  const [thoroughPentestOpen, setThoroughPentestOpen] = useState(false);
-  const [sessionsOpen, setSessionsOpen] = useState(false);
-  const [modelsOpen, setModelsOpen] = useState(false);
+  const route = useRoute();
+
+  const ctx = useMemo(() => {
+    const ctx: AppCommandContext = {
+      route: route.data,
+      navigate: route.navigate
+    };
+    return ctx;
+  }, [route]);
 
   // Create router with context - initialized once
   const router = useMemo(() => {
     const router = new CommandRouter<AppCommandContext>();
-
-    // Create context with stable references to state setters
-    const ctx: AppCommandContext = {
-      openHelp: () => setHelpOpen(true),
-      openConfig: () => setConfigOpen(true),
-      openPentest: () => setPentestOpen(true),
-      openThoroughPentest: () => setThoroughPentestOpen(true),
-      openSessions: () => setSessionsOpen(true),
-      openModels: () => setModelsOpen(true),
-    };
 
     // Register all commands from the registry
     for (const commandDef of commandRegistry) {
@@ -115,18 +92,9 @@ export function CommandProvider({ children }: CommandProviderProps) {
 
   const executeCommand = useCallback(
     async (input: string): Promise<boolean> => {
-      const ctx: AppCommandContext = {
-        openHelp: () => setHelpOpen(true),
-        openConfig: () => setConfigOpen(true),
-        openPentest: () => setPentestOpen(true),
-        openThoroughPentest: () => setThoroughPentestOpen(true),
-        openSessions: () => setSessionsOpen(true),
-        openModels: () => setModelsOpen(true),
-      };
-
       return await router.execute(input, ctx);
     },
-    [router]
+    [router, ctx]
   );
 
   const value: CommandContextValue = useMemo(
@@ -134,36 +102,13 @@ export function CommandProvider({ children }: CommandProviderProps) {
       router,
       autocompleteOptions,
       executeCommand,
-      helpOpen,
-      openHelp: () => setHelpOpen(true),
-      closeHelp: () => setHelpOpen(false),
-      configOpen,
-      openConfig: () => setConfigOpen(true),
-      closeConfig: () => setConfigOpen(false),
-      pentestOpen,
-      openPentest: () => setPentestOpen(true),
-      closePentest: () => setPentestOpen(false),
-      thoroughPentestOpen,
-      openThoroughPentest: () => setThoroughPentestOpen(true),
-      closeThoroughPentest: () => setThoroughPentestOpen(false),
-      sessionsOpen,
-      openSessions: () => setSessionsOpen(true),
-      closeSessions: () => setSessionsOpen(false),
-      modelsOpen,
-      openModels: () => setModelsOpen(true),
-      closeModels: () => setModelsOpen(false),
       commands,
     }),
     [
       router,
       autocompleteOptions,
       executeCommand,
-      helpOpen,
-      configOpen,
-      pentestOpen,
-      thoroughPentestOpen,
-      sessionsOpen,
-      modelsOpen,
+      commands
     ]
   );
 

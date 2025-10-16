@@ -10,11 +10,7 @@ import type { Session } from "../../../core/agent/sessions";
 import { getMessages, type Message } from "../../../core/messages";
 import AgentDisplay from "../agent-display";
 
-export default function SessionsDisplay({
-  closeSessions,
-}: {
-  closeSessions: () => void;
-}) {
+export default function SessionsDisplay() {
   const [sessionIds, setSessionIds] = useState<string[]>([]);
   const [sessions, setSessions] = useState<(Session | null)[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -113,10 +109,7 @@ export default function SessionsDisplay({
     if (key.name === "escape") {
       if (openMessages) {
         setOpenMessages(false);
-      } else {
-        closeSessions();
       }
-      return;
     }
 
     // O - Open messages/agent display
@@ -166,7 +159,6 @@ export default function SessionsDisplay({
           alignItems="center"
           justifyContent="center"
           flexDirection="column"
-          backgroundColor={RGBA.fromInts(0, 0, 0, 100)}
           width="100%"
           maxHeight="100%"
           flexGrow={1}
@@ -211,7 +203,6 @@ export default function SessionsDisplay({
                   scrollbarOptions: {
                     trackOptions: {
                       foregroundColor: "green",
-                      backgroundColor: RGBA.fromInts(40, 40, 40, 255),
                     },
                   },
                 }}

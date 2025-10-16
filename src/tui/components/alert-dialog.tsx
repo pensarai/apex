@@ -1,6 +1,6 @@
 import { RGBA } from "@opentui/core";
-import { useKeyboard } from "@opentui/react";
-import type { JSX } from "react";
+import { useKeyboard, useRenderer } from "@opentui/react";
+import { useEffect, useReducer, type JSX } from "react";
 
 export interface AlertDialogProps {
   title?: string;
@@ -19,6 +19,7 @@ export default function AlertDialog({
   children,
   disableEscape = false,
 }: AlertDialogProps) {
+
   useKeyboard((key) => {
     if (!open) return;
     // Escape closes dialog
@@ -32,7 +33,6 @@ export default function AlertDialog({
     <box
       position="absolute"
       top={0}
-      backgroundColor={RGBA.fromInts(0, 0, 0, 150)}
       left={0}
       zIndex={1000}
       width="100%"
@@ -44,9 +44,9 @@ export default function AlertDialog({
         width={50}
         border={true}
         borderColor="green"
-        backgroundColor="black"
         flexDirection="column"
         padding={1}
+        backgroundColor={"#18181b"}
       >
         {title ? (
           <box marginBottom={1}>

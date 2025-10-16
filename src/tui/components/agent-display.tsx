@@ -166,7 +166,6 @@ export default function AgentDisplay({
         scrollbarOptions: {
           trackOptions: {
             foregroundColor: "green",
-            backgroundColor: RGBA.fromInts(40, 40, 40, 255),
           },
         },
       }}
@@ -218,7 +217,6 @@ function SubAgentDisplay({ subagent }: { subagent: Subagent }) {
       width="100%"
       border={true}
       borderColor="green"
-      backgroundColor={RGBA.fromInts(10, 10, 10, 255)}
     >
       <box flexDirection="row" alignItems="center" gap={1}>
         {subagent.status === "pending" && (
@@ -293,9 +291,6 @@ function AgentMessage({ message }: { message: Message }) {
         )}
         <box
           padding={message.role !== "tool" ? 1 : 0}
-          backgroundColor={
-            message.role !== "tool" ? RGBA.fromInts(40, 40, 40, 255) : undefined
-          }
         >
           {isPendingTool ? (
             <SpinnerDots
@@ -309,7 +304,7 @@ function AgentMessage({ message }: { message: Message }) {
           )}
         </box>
         {message.role === "user" && (
-          <box width={1} backgroundColor={RGBA.fromInts(30, 30, 30, 255)} />
+          <box width={1} />
         )}
       </box>
       <ToolArgs message={message} />

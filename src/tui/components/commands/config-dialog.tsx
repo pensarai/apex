@@ -3,15 +3,22 @@ import AlertDialog from "../alert-dialog";
 import { useCommand } from "../../command-provider";
 import { config } from "../../../core/config";
 import type { Config } from "../../../core/config/config";
+import { useRoute } from "../../context/route";
 
-export default function ConfigDialog({
-  configOpen,
-  closeConfig,
-}: {
-  configOpen: boolean;
-  closeConfig: () => void;
-}) {
+export default function ConfigDialog() {
   const { commands } = useCommand();
+  const route = useRoute();
+  
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if(route.data.type === "base" && route.data.path === "config") {
+      setOpen(true);
+    } else {
+      setOpen(false);
+    }
+  }, [route]);
+
   const [appConfig, setAppConfig] = useState<Config | null>(null);
 
   useEffect(() => {
@@ -23,7 +30,7 @@ export default function ConfigDialog({
   }, []);
 
   return (
-    <AlertDialog title="Config" open={configOpen} onClose={closeConfig}>
+    <AlertDialog title="Config" open={open} onClose={() => setOpen(false)}>
       <ConfigForm appConfig={appConfig} />
     </AlertDialog>
   );

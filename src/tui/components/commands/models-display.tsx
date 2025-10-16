@@ -6,12 +6,9 @@ import { useEffect, useState } from "react";
 import type { Config } from "../../../core/config/config";
 import { config } from "../../../core/config";
 import Input from "../input";
+import { useRoute } from "../../context/route";
 
-export default function ModelsDisplay({
-  closeModels,
-}: {
-  closeModels: () => void;
-}) {
+export default function ModelsDisplay() {
   const [appConfig, setAppConfig] = useState<Config | null>(null);
   const [models, setModels] = useState<ModelInfo[]>([]);
   const { model: selectedModel, setModel } = useAgent();
@@ -21,6 +18,8 @@ export default function ModelsDisplay({
   const [highlightedIndex, setHighlightedIndex] = useState(() =>
     models.findIndex((m) => m.id === selectedModel.id)
   );
+
+  const route = useRoute();
 
   useEffect(() => {
     async function getConfig() {
@@ -45,10 +44,6 @@ export default function ModelsDisplay({
 
   useKeyboard((key) => {
     // Escape - Close models display
-    if (key.name === "escape") {
-      closeModels();
-      return;
-    }
 
     // Tab focus switching between custom input and list
     if (key.name === "tab" && !key.shift) {
@@ -83,7 +78,10 @@ export default function ModelsDisplay({
         const sel = models[highlightedIndex];
         if (sel) {
           setModel(sel);
-          closeModels();
+          route.navigate({
+            type: "base",
+            path: "home"
+          });
         }
         return;
       }
@@ -95,7 +93,6 @@ export default function ModelsDisplay({
       alignItems="center"
       justifyContent="center"
       flexDirection="column"
-      backgroundColor={RGBA.fromInts(0, 0, 0, 100)}
       width="100%"
       maxHeight="100%"
       flexGrow={1}
@@ -128,7 +125,10 @@ export default function ModelsDisplay({
               const localModel: ModelInfo = { id, name: id, provider: "local" };
               setModel(localModel);
               setCustomModel("");
-              closeModels();
+              route.navigate({
+                type: "base",
+                path: "home"
+              });
             }}
           />
         </box>
@@ -158,7 +158,6 @@ export default function ModelsDisplay({
             scrollbarOptions: {
               trackOptions: {
                 foregroundColor: "green",
-                backgroundColor: RGBA.fromInts(40, 40, 40, 255),
               },
             },
           }}
@@ -175,7 +174,10 @@ export default function ModelsDisplay({
                 gap={0}
                 onMouseDown={() => {
                   setModel(model);
-                  closeModels();
+                  route.navigate({
+                    type: "base",
+                    path: "home"
+                  })
                 }}
               >
                 <text
