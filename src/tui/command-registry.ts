@@ -50,8 +50,8 @@ export const commands: CommandConfig[] = [
     },
   },
   {
-    name: "pentest",
-    description: "Show pentest agent",
+    name: "quicktest",
+    description: "Show quick pentest agent",
     category: "General",
     handler: async (args, ctx) => {
       ctx.navigate({
@@ -61,9 +61,8 @@ export const commands: CommandConfig[] = [
     },
   },
   {
-    name: "thorough",
-    aliases: ["thorough-pentest", "comprehensive"],
-    description: "Show thorough pentest agent (orchestrator)",
+    name: "pentest",
+    description: "Show pentest agent",
     category: "General",
     handler: async (args, ctx) => {
       ctx.navigate({
