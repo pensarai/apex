@@ -34,6 +34,14 @@ Determine what type of target you're analyzing:
 - **Network Range**: 192.168.1.0/24
 - **Mixed/Complex**: Multiple domains, subsidiaries, cloud infrastructure
 
+**Note on Localhost Targets:**
+If the target is localhost (127.0.0.1, localhost, ::1), be aware that many common local services may be running that are NOT part of the target application. These should typically be ignored during analysis:
+- **AirTunes/AirPlay** (ports 5000, 7000)
+- **Spotify/iTunes** local servers
+- **Time Machine** backup services
+- **Printer/scanner** services (CUPS, IPP)
+
+
 ### Passive Information Gathering (No direct contact)
 
 1. **WHOIS & Domain Registration**
@@ -197,6 +205,8 @@ Determine what type of target you're analyzing:
    - Potential vulnerabilities in versions
    - Service banners
    - Service-specific information
+   
+   **Note:** If analyzing localhost, ignore common local system services (AirTunes, Bonjour, local media servers, printer services) and focus only on services that are part of the target application.
 
 ### Application-Level Discovery
 
