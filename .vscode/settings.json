@@ -1,0 +1,6 @@
+{
+  "vitest.enable": true,
+  "vitest.commandLine": "bun test",
+  "vitest.nodeEnv": null,
+  "testing.automaticallyOpenPeekView": "failureInVisibleDocument"
+}

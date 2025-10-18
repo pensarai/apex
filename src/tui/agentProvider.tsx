@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
-import { AVAILABLE_MODELS, type ModelInfo } from "../core/ai";
+import { type ModelInfo } from "../core/ai";
+import { AVAILABLE_MODELS } from "../core/ai/models";
 
 interface AgentContextValue {
   model: ModelInfo;

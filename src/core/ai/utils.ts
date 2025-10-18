@@ -71,7 +71,20 @@ export async function summarizeConversation(
   opts: StreamResponseOpts,
   model: LanguageModel
 ): Promise<StreamTextResult<ToolSet, never>> {
-  const slicedMessages = messages.slice(20);
+  let slicedMessages: ModelMessage[] = [];
+  if (messages.length === 1) {
+    slicedMessages = [
+      {
+        role: "user",
+        content: (messages[0]!.content as string)
+          .split("\n")
+          .slice(-20)
+          .join("\n"),
+      },
+    ];
+  } else {
+    slicedMessages = messages.slice(20);
+  }
   const { content: summary } = await generateText({
     model,
     system: `You are a helpful assistant that summarizes conversations to pass to another agent. Review the conversation and system prompt at the end provided by the user.`,
@@ -84,13 +97,126 @@ export async function summarizeConversation(
     ],
   });
 
-  const enhancedPrompt = `${opts.prompt}\n\n The previous agent has summarized the conversation to pass to another you to coninue the task. Here is the summary: ${summary}`;
+  // For very long prompts, replace with just the summary instead of appending
+  const originalLength =
+    typeof opts.prompt === "string" ? opts.prompt.length : 0;
+  const enhancedPrompt =
+    originalLength > 100000
+      ? `Context: The previous conversation contained very long content that was summarized.\n\nSummary: ${summary}\n\nOriginal task: Please respond based on this summary.`
+      : `${opts.prompt}\n\nThe previous agent has summarized the conversation to pass to you to continue the task. Here is the summary: ${summary}`;
+
+  // streamResponse always wraps with error handling, so if this call
+  // also hits context length limits, it will recursively summarize again
   const resumed = streamResponse({
     ...opts,
     prompt: enhancedPrompt,
     messages: undefined,
   });
   return resumed;
+}
+
+// Helper function to check if an error is related to context length
+export function checkIfContextLengthError(error: any): boolean {
+  const errorMessage = error?.message?.toLowerCase() || "";
+  const errorCode = error?.code?.toLowerCase() || "";
+
+  return (
+    errorMessage.includes("context") ||
+    errorMessage.includes("too long") ||
+    errorMessage.includes("token limit") ||
+    errorMessage.includes("maximum context") ||
+    errorMessage.includes("context_length_exceeded") ||
+    errorCode === "context_length_exceeded" ||
+    errorCode === "tokens_exceeded"
+  );
+}
+
+// Helper function to create a stream that shows summarization progress
+export function createSummarizationStream(
+  messages: ModelMessage[],
+  opts: StreamResponseOpts,
+  model: LanguageModel
+): StreamTextResult<ToolSet, never> {
+  // Generate a unique tool call ID
+  const toolCallId = `summarize-${Date.now()}`;
+
+  // We need to handle this asynchronously but return synchronously
+  // Create a promise that will hold the resumed stream
+  let resumedStreamPromise: Promise<StreamTextResult<ToolSet, never>>;
+
+  // Start the summarization process
+  resumedStreamPromise = summarizeConversation(messages, opts, model);
+
+  // Create a custom async generator that wraps the resumed stream
+  const wrappedFullStream = (async function* () {
+    // First, emit a synthetic tool-call event
+    const toolCallEvent: any = {
+      type: "tool-call",
+      toolCallId,
+      toolName: "summarize_conversation",
+      input: JSON.stringify({
+        reason: "Context length exceeded, summarizing conversation to continue",
+        messageCount: messages.length,
+      }),
+    };
+    yield toolCallEvent;
+
+    // Wait for the summarization to complete
+    const resumedStream = await resumedStreamPromise;
+
+    // Emit a synthetic tool-result event
+    const toolResultEvent: any = {
+      type: "tool-result",
+      toolCallId,
+      toolName: "summarize_conversation",
+      input: JSON.stringify({
+        reason: "Context length exceeded, summarizing conversation to continue",
+        messageCount: messages.length,
+      }),
+      result:
+        "Conversation summarized successfully. Resuming with condensed context...",
+    };
+    yield toolResultEvent;
+
+    // Now yield all events from the resumed stream
+    // Note: resumedStream is already wrapped with error handling by streamResponse,
+    // so if this also hits context limits, it will recursively summarize again
+    for await (const chunk of resumedStream.fullStream) {
+      yield chunk;
+    }
+  })();
+
+  // Return a minimal StreamTextResult-like object with the wrapped stream
+  // We delegate most properties to the resumed stream once it's available
+  return {
+    fullStream: wrappedFullStream,
+    text: resumedStreamPromise.then((s) => s.text),
+    content: resumedStreamPromise.then((s) => s.content),
+    reasoning: resumedStreamPromise.then((s) => s.reasoning),
+    reasoningText: resumedStreamPromise.then((s) => s.reasoningText),
+    toolCalls: resumedStreamPromise.then((s) => s.toolCalls),
+    toolResults: resumedStreamPromise.then((s) => s.toolResults),
+    usage: resumedStreamPromise.then((s) => s.usage),
+    finishReason: resumedStreamPromise.then((s) => s.finishReason),
+    warnings: resumedStreamPromise.then((s) => s.warnings),
+    response: resumedStreamPromise.then((s) => s.response),
+    files: resumedStreamPromise.then((s) => s.files),
+    sources: resumedStreamPromise.then((s) => s.sources),
+    staticToolCalls: resumedStreamPromise.then((s) => s.staticToolCalls),
+    dynamicToolCalls: resumedStreamPromise.then((s) => s.dynamicToolCalls),
+    pipeTextStreamToResponse: async (response: any, init?: any) => {
+      const stream = await resumedStreamPromise;
+      return stream.pipeTextStreamToResponse(response, init);
+    },
+    toDataStream: (options?: any) => {
+      throw new Error("toDataStream not supported on summarization stream");
+    },
+    toDataStreamResponse: (options?: any) => {
+      throw new Error(
+        "toDataStreamResponse not supported on summarization stream"
+      );
+    },
+  } as unknown as StreamTextResult<ToolSet, never>;
 }
 
 export async function consumeStream(

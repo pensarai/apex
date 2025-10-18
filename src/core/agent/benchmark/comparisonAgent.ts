@@ -1,6 +1,6 @@
 import { hasToolCall, stepCountIs, tool } from "ai";
 import { z } from "zod";
-import { consumeStream, streamResponse, type AIModel } from "../../ai";
+import { streamResponse, type AIModel } from "../../ai";
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import type { ComparisonResult, ActualFinding } from "./types";
