@@ -6,7 +6,7 @@ import {
 } from "@opentui/core";
 import { SpinnerDots } from "./sprites";
 import type { Message, ToolMessage } from "../../core/messages";
-import { useState, useMemo } from "react";
+import { useState, useMemo, memo, useRef, useEffect, useCallback } from "react";
 import { marked } from "marked";
 import type { Subagent } from "./hooks/pentestAgent";
 
@@ -136,6 +136,22 @@ export default function AgentDisplay({
   paddingLeft = 8,
   paddingRight = 8,
 }: AgentDisplayProps) {
+  const scrollboxRef = useRef<any>(null);
+
+  const [openSubagents, setOpenSubagents] = useState<Set<string>>(new Set());
+
+  const toggleSubagent = useCallback((id: string) => {
+    setOpenSubagents(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }, []);
+
   // Separate rendering: sort messages and subagents independently
   const sortedMessages = useMemo(
     () => [...messages].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime()),
@@ -143,12 +159,56 @@ export default function AgentDisplay({
   );
 
   const sortedSubagents = useMemo(
-    () => [...(subagents ?? [])].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime()),
+    () => [...(subagents ?? [])].sort((a, b) => {
+      // Primary: sort by createdAt
+      const timeDiff = a.createdAt.getTime() - b.createdAt.getTime();
+      if (timeDiff !== 0) return timeDiff;
+
+      // Tie-breaker: sort by ID
+      return a.id.localeCompare(b.id);
+    }),
     [subagents]
   );
 
+  const contentHeight = useMemo(() => {
+    let height = sortedMessages.length * 3; 
+    sortedSubagents.forEach(sub => {
+      height += openSubagents.has(sub.id) ? 38 : 3;
+    });
+    return height;
+  }, [sortedMessages, sortedSubagents, openSubagents]);
+
+  useEffect(() => {
+    if (!scrollboxRef.current) return;
+
+    const subagentCount = subagents?.length ?? 0;
+    if (subagentCount === 0) return;
+
+    const timer = setTimeout(() => {
+      try {
+        const scrollElement = scrollboxRef.current;
+
+        if (scrollElement && typeof scrollElement.scrollTo === 'function') {
+          scrollElement.scrollTo(0, 999999); // Scroll to maximum Y position
+        } else if (scrollElement && scrollElement._viewport) {
+          const viewportHeight = 50; 
+          const maxScroll = Math.max(0, contentHeight - viewportHeight);
+
+          if (scrollElement._viewport.scrollY > maxScroll) {
+            scrollElement._viewport.scrollY = maxScroll;
+          } else {
+            scrollElement._viewport.scrollY = 999999;
+          }
+        }
+      } catch (e) {}
+    }, 10);
+
+    return () => clearTimeout(timer);
+  }, [subagents?.length, contentHeight]); 
+
   return (
     <scrollbox
+      ref={scrollboxRef}
       style={{
         rootOptions: {
           width: "100%",
@@ -164,7 +224,6 @@ export default function AgentDisplay({
           paddingLeft: paddingLeft,
           paddingRight: paddingRight,
           gap: 1,
-          flexGrow: 1,
           flexDirection: "column",
         },
         scrollbarOptions: {
@@ -174,8 +233,6 @@ export default function AgentDisplay({
           },
         },
       }}
-      stickyScroll={true}
-      stickyStart="bottom"
       focused
     >
       {/* Render messages first with stable keys */}
@@ -196,7 +253,11 @@ export default function AgentDisplay({
       {/* Render subagents separately with guaranteed stable keys */}
       {sortedSubagents.map((subagent) => (
         <box key={`subagent-${subagent.id}`}>
-          <SubAgentDisplay subagent={subagent} />
+          <SubAgentDisplay
+            subagent={subagent}
+            open={openSubagents.has(subagent.id)}
+            onToggle={() => toggleSubagent(subagent.id)}
+          />
         </box>
       ))}
 
@@ -211,24 +272,30 @@ export default function AgentDisplay({
   );
 }
 
-function SubAgentDisplay({ subagent }: { subagent: Subagent }) {
-  const [open, setOpen] = useState(false);
+const SubAgentDisplay = memo(({
+  subagent,
+  open,
+  onToggle
+}: {
+  subagent: Subagent;
+  open: boolean;
+  onToggle: () => void;
+}) => {
   return (
     <box
-      height={open ? 40 : "auto"}
       width="100%"
       border={true}
       borderColor="green"
       backgroundColor={RGBA.fromInts(10, 10, 10, 255)}
       flexDirection="column"
     >
-      {/* Click handler only on header to prevent conflict with nested elements */}
       <box
         flexDirection="row"
         alignItems="center"
         gap={1}
-        onMouseDown={() => setOpen(!open)}
+        onMouseDown={onToggle}
         padding={1}
+        flexShrink={0}
       >
         {subagent.status === "pending" && (
           <SpinnerDots label={subagent.name} fg="green" />
@@ -241,16 +308,28 @@ function SubAgentDisplay({ subagent }: { subagent: Subagent }) {
         )}
         <text fg="gray">{open ? "▼" : "▶"}</text>
       </box>
+      {/* Content constrained to fixed height so scrollbox can't capture parent events */}
       {open && (
-        <AgentDisplay
-          paddingLeft={2}
-          paddingRight={2}
-          messages={subagent.messages}
-        />
+        <box
+          height={35}
+          width="100%"
+          overflow="hidden"
+          flexShrink={0}
+        >
+          <AgentDisplay
+            paddingLeft={2}
+            paddingRight={2}
+            messages={subagent.messages}
+          />
+        </box>
       )}
     </box>
   );
-}
+}, (prevProps, nextProps) => {
+  // Re-render if subagent data OR open state changes
+  return prevProps.subagent === nextProps.subagent &&
+         prevProps.open === nextProps.open;
+});
 
 function AgentMessage({ message }: { message: Message }) {
   let content = "";
