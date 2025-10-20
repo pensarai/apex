@@ -11,6 +11,7 @@ import { marked } from "marked";
 import type { Subagent } from "./hooks/pentestAgent";
 
 interface AgentDisplayProps {
+  key?: string;
   messages: Message[];
   isStreaming?: boolean;
   children?: React.ReactNode;
@@ -129,6 +130,7 @@ function markdownToStyledText(content: string): StyledText {
 }
 
 export default function AgentDisplay({
+  key,
   messages,
   isStreaming = false,
   children,
@@ -370,7 +372,7 @@ function AgentMessage({ message }: { message: Message }) {
           content={message.role === "user" ? "→ User" : "← Assistant"}
         />
       )}
-      <box flexDirection="row" gap={1}>
+      <box flexDirection="row" gap={0}>
         {message.role === "assistant" && (
           <box
             width={0}
@@ -397,7 +399,12 @@ function AgentMessage({ message }: { message: Message }) {
           )}
         </box>
         {message.role === "user" && (
-          <box width={1} backgroundColor={RGBA.fromInts(30, 30, 30, 255)} />
+          <box
+            width={0}
+            borderStyle="heavy"
+            border={["left"]}
+            borderColor={RGBA.fromInts(30, 30, 30, 255)}
+          />
         )}
       </box>
       <ToolArgs message={message} />

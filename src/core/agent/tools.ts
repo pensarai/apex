@@ -89,7 +89,12 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
       });
       return {
         success: true,
-        stdout: stdout || "(no output)",
+        stdout:
+          `${stdout.substring(
+            0,
+            50000
+          )}... \n\n (truncated) call the command again with grep / tail to paginate the response` ||
+          "(no output)",
         stderr: stderr || "",
         command,
       };
@@ -177,7 +182,10 @@ COMMON TESTING PATTERNS:
         status: response.status,
         statusText: response.statusText,
         headers: responseHeaders,
-        body: responseBody.substring(0, 50000), // Limit to 50KB
+        body: `${responseBody.substring(
+          0,
+          5000
+        )}... \n\n (truncated) use execute_command with grep / tail to paginate the response`, // Limit to 50KB
         url: response.url,
         redirected: response.redirected,
       };
