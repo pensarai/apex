@@ -37,7 +37,7 @@ export type AIModelProvider =
 // Helper function to wrap a stream with error handling for async errors
 function wrapStreamWithErrorHandler(
   originalStream: StreamTextResult<ToolSet, never>,
-  messages: ModelMessage[],
+  messagesContainer: { current: ModelMessage[] },
   opts: StreamResponseOpts,
   model: LanguageModel
 ): StreamTextResult<ToolSet, never> {
@@ -65,10 +65,20 @@ function wrapStreamWithErrorHandler(
               const isContextLengthError = checkIfContextLengthError(error);
 
               if (isContextLengthError) {
-                console.log("Context length error, summarizing conversation");
-                // Create a summarization stream and yield its events
+                // Try to get the actual messages that were sent to the API
+                // from the stream's response property
+                let currentMessages: ModelMessage[] = messagesContainer.current;
+                try {
+                  const response = await originalStream.response;
+                  if (response.messages && response.messages.length > 0) {
+                    currentMessages = response.messages as ModelMessage[];
+                  }
+                } catch (e) {
+                  // Fall back to container messages if response is not available
+                }
+
                 const summarizationStream = createSummarizationStream(
-                  messages,
+                  currentMessages,
                   opts,
                   model
                 );
@@ -132,7 +142,8 @@ export function streamResponse(
     abortSignal,
     activeTools,
   } = opts;
-  let storedMessages: ModelMessage[] = [];
+  // Use a container object so the reference stays stable but the value can be updated
+  const messagesContainer = { current: messages || [] };
   const providerModel = getProviderModel(model);
 
   try {
@@ -144,8 +155,10 @@ export function streamResponse(
       stopWhen,
       toolChoice,
       tools,
+      maxRetries: 3,
       prepareStep: (opts) => {
-        storedMessages = opts.messages;
+        // Update the container with the latest messages
+        messagesContainer.current = opts.messages;
         return undefined;
       },
       onStepFinish,
@@ -177,7 +190,7 @@ export function streamResponse(
     // Wrap the stream to catch async errors during consumption
     return wrapStreamWithErrorHandler(
       response,
-      storedMessages,
+      messagesContainer,
       opts,
       providerModel
     );
@@ -186,12 +199,14 @@ export function streamResponse(
     const isContextLengthError = checkIfContextLengthError(error);
 
     if (isContextLengthError) {
-      console.log("Context length error, creating summarization stream");
       // Return a wrapped stream that shows summarization and then continues
-      return createSummarizationStream(storedMessages, opts, providerModel);
+      return createSummarizationStream(
+        messagesContainer.current,
+        opts,
+        providerModel
+      );
     }
 
-    console.log("Non-context length error, re-throwing");
     // Re-throw if it's not a context length error
     throw error;
   }

@@ -157,6 +157,7 @@ async function main() {
     console.error(
       "  --limit <number>     Limit the number of branches to test"
     );
+    console.error("  --skip <number>      Skip the first N branches");
     console.error(
       "  --model <model>      Specify the AI model to use (default: claude-sonnet-4-5)"
     );
@@ -169,6 +170,9 @@ async function main() {
       "  tsx scripts/benchmark.ts /path/to/app --all-branches --limit 3"
     );
     console.error("  tsx scripts/benchmark.ts /path/to/app --limit 5");
+    console.error(
+      "  tsx scripts/benchmark.ts /path/to/app --all-branches --limit 10 --skip 10"
+    );
     console.error("  tsx scripts/benchmark.ts /path/to/app --model gpt-4o");
     console.error(
       "  tsx scripts/benchmark.ts /path/to/app --model claude-opus-4-1 --limit 3"
@@ -205,6 +209,24 @@ async function main() {
     }
   }
 
+  // Check for --skip flag
+  const skipIndex = args.indexOf("--skip");
+  let skip: number | undefined;
+  if (skipIndex !== -1) {
+    const skipArg = args[skipIndex + 1];
+    if (!skipArg) {
+      console.error("Error: --skip must be followed by a number");
+      process.exit(1);
+    }
+    const skipValue = parseInt(skipArg!, 10);
+    if (!isNaN(skipValue) && skipValue >= 0) {
+      skip = skipValue;
+    } else {
+      console.error("Error: --skip must be followed by a non-negative number");
+      process.exit(1);
+    }
+  }
+
   // Check for --model flag
   const modelIndex = args.indexOf("--model");
   let model: AIModel | undefined;
@@ -219,13 +241,20 @@ async function main() {
 
   // Get branch arguments (excluding flags)
   let branchArgs = args.slice(1).filter((arg, index, arr) => {
-    if (arg === "--all-branches" || arg === "--limit" || arg === "--model") {
+    if (
+      arg === "--all-branches" ||
+      arg === "--limit" ||
+      arg === "--skip" ||
+      arg === "--model"
+    ) {
       return false;
     }
-    // Skip the value after --limit or --model
+    // Skip the value after --limit, --skip, or --model
     if (
       index > 0 &&
-      (arr[index - 1] === "--limit" || arr[index - 1] === "--model")
+      (arr[index - 1] === "--limit" ||
+        arr[index - 1] === "--skip" ||
+        arr[index - 1] === "--model")
     ) {
       return false;
     }
@@ -247,15 +276,33 @@ async function main() {
     branches = undefined;
   }
 
-  // Apply limit if specified
-  if (limit && branches) {
-    console.log(`Limiting to first ${limit} branches`);
-    branches = branches.slice(0, limit);
-  } else if (limit && !branches) {
-    // Need to fetch branches to apply limit
-    console.log(`Fetching branches to apply limit of ${limit}...`);
+  // Apply skip and limit if specified
+  if ((skip !== undefined || limit !== undefined) && branches) {
+    const startIndex = skip || 0;
+    const endIndex = limit !== undefined ? startIndex + limit : undefined;
+    if (skip !== undefined && limit !== undefined) {
+      console.log(
+        `Skipping ${skip} branches and limiting to ${limit} branches`
+      );
+    } else if (skip !== undefined) {
+      console.log(`Skipping first ${skip} branches`);
+    } else if (limit !== undefined) {
+      console.log(`Limiting to first ${limit} branches`);
+    }
+    branches = branches.slice(startIndex, endIndex);
+  } else if ((skip !== undefined || limit !== undefined) && !branches) {
+    // Need to fetch branches to apply skip/limit
+    const startIndex = skip || 0;
+    const endIndex = limit !== undefined ? startIndex + limit : undefined;
+    if (skip !== undefined && limit !== undefined) {
+      console.log(`Fetching branches to skip ${skip} and limit to ${limit}...`);
+    } else if (skip !== undefined) {
+      console.log(`Fetching branches to skip first ${skip}...`);
+    } else if (limit !== undefined) {
+      console.log(`Fetching branches to apply limit of ${limit}...`);
+    }
     const allBranches = await getRepoBranches(repoPath);
-    branches = allBranches.slice(0, limit);
+    branches = allBranches.slice(startIndex, endIndex);
   }
 
   try {

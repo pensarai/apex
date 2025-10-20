@@ -139,14 +139,12 @@ export default function AgentDisplay({
   paddingRight = 8,
 }: AgentDisplayProps) {
   // Memoize the sorted array to avoid re-sorting on every render
-  // const messagesAndSubagents = useMemo(() => {
-  //   return [...messages, ...(subagents ?? [])].sort(
-  //     (a, b) => a.createdAt.getTime() - b.createdAt.getTime()
-  //   );
-  // }, [messages, subagents]);
-  const messagesAndSubagents = [...messages, ...(subagents ?? [])].sort(
-    (a, b) => a.createdAt.getTime() - b.createdAt.getTime()
-  );
+  // FIX: Use useMemo to prevent unnecessary re-sorts and unstable ordering
+  const messagesAndSubagents = useMemo(() => {
+    return [...messages, ...(subagents ?? [])].sort(
+      (a, b) => a.createdAt.getTime() - b.createdAt.getTime()
+    );
+  }, [messages, subagents]);
 
   return (
     <scrollbox
@@ -182,14 +180,17 @@ export default function AgentDisplay({
     >
       {messagesAndSubagents.map((item, index) => {
         // Create stable key based on item properties
-        const itemKey =
-          "messages" in item
-            ? `subagent-${item.id}`
-            : item.role === "tool" && "toolCallId" in item
-            ? `tool-${(item as ToolMessage).toolCallId}-${
-                (item as ToolMessage).status
-              }`
-            : `${item.role}-${item.createdAt.getTime()}`;
+        // FIX: Remove status from tool key - status changes should update the same element
+        // FIX: Add index as fallback to prevent duplicate keys from same timestamps
+        let itemKey: string;
+        if ("messages" in item) {
+          itemKey = `subagent-${item.id}`;
+        } else if (item.role === "tool" && "toolCallId" in item) {
+          itemKey = `tool-${(item as ToolMessage).toolCallId}`;
+        } else {
+          // For non-tool messages, include index to prevent duplicate keys from same timestamps
+          itemKey = `${item.role}-${item.createdAt.getTime()}-${index}`;
+        }
 
         if ("messages" in item) {
           return (

@@ -1,17 +1,49 @@
 import { RGBA } from "@opentui/core";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
+
+// Global animation tick - shared by all spinners to avoid excessive re-renders
+let globalTick = 0;
+let globalListeners = new Set<() => void>();
+let globalInterval: NodeJS.Timeout | null = null;
+
+function startGlobalTick() {
+  if (!globalInterval) {
+    globalInterval = setInterval(() => {
+      globalTick = (globalTick + 1) % 1000;
+      globalListeners.forEach((listener) => listener());
+    }, 80);
+  }
+}
+
+function stopGlobalTick() {
+  if (globalInterval && globalListeners.size === 0) {
+    clearInterval(globalInterval);
+    globalInterval = null;
+  }
+}
+
+function useGlobalTick() {
+  const [, setTick] = useState(0);
+
+  useEffect(() => {
+    const listener = () => setTick((t) => t + 1);
+    globalListeners.add(listener);
+    startGlobalTick();
+
+    return () => {
+      globalListeners.delete(listener);
+      stopGlobalTick();
+    };
+  }, []);
+
+  return globalTick;
+}
 
 /** Animated spinner with rotating dots */
 export function SpinnerDots({ label, fg }: { label?: string; fg?: string }) {
   const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-  const [frame, setFrame] = useState(0);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setFrame((prev) => (prev + 1) % frames.length);
-    }, 80);
-    return () => clearInterval(interval);
-  }, []);
+  const tick = useGlobalTick();
+  const frame = tick % frames.length;
 
   return (
     <text

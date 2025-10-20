@@ -71,30 +71,64 @@ export async function summarizeConversation(
   opts: StreamResponseOpts,
   model: LanguageModel
 ): Promise<StreamTextResult<ToolSet, never>> {
+  // Filter and clean messages to remove tool calls/results
+  // We only want conversational content for summarization
+  const cleanMessages = messages
+    .map((msg) => {
+      // If content is an array, filter out tool-use and tool-result blocks
+      if (Array.isArray(msg.content)) {
+        const textContent = msg.content
+          .filter((part: any) => part.type === "text")
+          .map((part: any) => part.text)
+          .join("\n");
+
+        // Skip messages that have no text content
+        if (!textContent.trim()) return null;
+
+        return {
+          role: msg.role,
+          content: textContent,
+        };
+      }
+
+      // Keep string content as-is
+      return msg;
+    })
+    .filter(Boolean) as ModelMessage[];
+
   let slicedMessages: ModelMessage[] = [];
-  if (messages.length === 1) {
+  if (
+    cleanMessages.length === 1 &&
+    typeof cleanMessages[0]!.content === "string"
+  ) {
+    // For a single message with very long content, take just the last portion
+    const content = cleanMessages[0]!.content;
+    const lines = content.split("\n");
+    const truncatedContent = lines.slice(-50).join("\n"); // Last 50 lines
+
     slicedMessages = [
       {
         role: "user",
-        content: (messages[0]!.content as string)
-          .split("\n")
-          .slice(-20)
-          .join("\n"),
+        content: truncatedContent,
       },
     ];
   } else {
-    slicedMessages = messages.slice(20);
+    // Take the last 20 messages for context
+    slicedMessages = cleanMessages.slice(-20);
   }
-  const { content: summary } = await generateText({
+
+  const summarizedMessages: ModelMessage[] = [
+    ...slicedMessages,
+    {
+      role: "user",
+      content: `Summarize this conversation to pass to another agent. This was the system prompt: ${opts.system} `,
+    },
+  ];
+
+  const { text: summary } = await generateText({
     model,
     system: `You are a helpful assistant that summarizes conversations to pass to another agent. Review the conversation and system prompt at the end provided by the user.`,
-    messages: [
-      ...slicedMessages,
-      {
-        role: "user",
-        content: `Summarize this conversation to pass to another agent. This was the system prompt: ${opts.system} `,
-      },
-    ],
+    messages: summarizedMessages,
   });
 
   // For very long prompts, replace with just the summary instead of appending
@@ -104,7 +138,6 @@ export async function summarizeConversation(
     originalLength > 100000
       ? `Context: The previous conversation contained very long content that was summarized.\n\nSummary: ${summary}\n\nOriginal task: Please respond based on this summary.`
       : `${opts.prompt}\n\nThe previous agent has summarized the conversation to pass to you to continue the task. Here is the summary: ${summary}`;
-
   // streamResponse always wraps with error handling, so if this call
   // also hits context length limits, it will recursively summarize again
   const resumed = streamResponse({
