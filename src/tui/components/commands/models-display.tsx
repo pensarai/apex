@@ -1,11 +1,12 @@
 import { useKeyboard } from "@opentui/react";
 import { RGBA } from "@opentui/core";
-import { AVAILABLE_MODELS, type ModelInfo } from "../../../core/ai";
+import { type ModelInfo } from "../../../core/ai";
 import { useAgent } from "../../agentProvider";
 import { useEffect, useState } from "react";
 import type { Config } from "../../../core/config/config";
 import { config } from "../../../core/config";
 import Input from "../input";
+import { AVAILABLE_MODELS } from "../../../core/ai/models";
 
 export default function ModelsDisplay({
   closeModels,

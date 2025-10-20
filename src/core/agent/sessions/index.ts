@@ -17,10 +17,9 @@ export interface Session {
 /**
  * Generate a unique session ID
  */
-function generateSessionId(): string {
+function generateSessionId(prefix?: string): string {
   const timestamp = Date.now().toString(36);
-  const random = randomBytes(4).toString("hex");
-  return `${timestamp}-${random}`;
+  return `${prefix ? `${prefix}-` : ""}${timestamp}`;
 }
 
 /**
@@ -40,8 +39,12 @@ export function getExecutionsDir(): string {
 /**
  * Create a new session for a pentest run
  */
-export function createSession(target: string, objective?: string): Session {
-  const sessionId = generateSessionId();
+export function createSession(
+  target: string,
+  objective?: string,
+  prefix?: string
+): Session {
+  const sessionId = generateSessionId(prefix);
   const rootPath = join(getExecutionsDir(), sessionId);
   const findingsPath = join(rootPath, "findings");
   const scratchpadPath = join(rootPath, "scratchpad");
