@@ -136,12 +136,16 @@ export default function AgentDisplay({
   paddingLeft = 8,
   paddingRight = 8,
 }: AgentDisplayProps) {
-  // Memoize the sorted array to avoid re-sorting on every render
-  const messagesAndSubagents = useMemo(() => {
-    return [...messages, ...(subagents ?? [])].sort(
-      (a, b) => a.createdAt.getTime() - b.createdAt.getTime()
-    );
-  }, [messages, subagents]);
+  // Separate rendering: sort messages and subagents independently
+  const sortedMessages = useMemo(
+    () => [...messages].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime()),
+    [messages]
+  );
+
+  const sortedSubagents = useMemo(
+    () => [...(subagents ?? [])].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime()),
+    [subagents]
+  );
 
   return (
     <scrollbox
@@ -174,29 +178,27 @@ export default function AgentDisplay({
       stickyStart="bottom"
       focused
     >
-      {messagesAndSubagents.map((item, index) => {
-        // Create stable key based on item properties
-        const itemKey =
-          "messages" in item
-            ? `subagent-${item.id}`
-            : item.role === "tool" && "toolCallId" in item
-            ? `tool-${(item as ToolMessage).toolCallId}`
-            : `${item.role}-${item.createdAt.getTime()}-${index}`;
+      {/* Render messages first with stable keys */}
+      {sortedMessages.map((message) => {
+        // Generate stable key without index dependency
+        const messageKey =
+          message.role === "tool" && "toolCallId" in message
+            ? `tool-${(message as ToolMessage).toolCallId}`
+            : `msg-${message.role}-${message.createdAt.getTime()}`;
 
-        if ("messages" in item) {
-          return (
-            <box key={itemKey}>
-              <SubAgentDisplay subagent={item} />
-            </box>
-          );
-        } else {
-          return (
-            <box key={itemKey}>
-              <AgentMessage message={item} />
-            </box>
-          );
-        }
+        return (
+          <box key={messageKey}>
+            <AgentMessage message={message} />
+          </box>
+        );
       })}
+
+      {/* Render subagents separately with guaranteed stable keys */}
+      {sortedSubagents.map((subagent) => (
+        <box key={`subagent-${subagent.id}`}>
+          <SubAgentDisplay subagent={subagent} />
+        </box>
+      ))}
 
       {isStreaming && (
         <box flexDirection="row" alignItems="center">
@@ -214,13 +216,20 @@ function SubAgentDisplay({ subagent }: { subagent: Subagent }) {
   return (
     <box
       height={open ? 40 : "auto"}
-      onMouseDown={() => setOpen(!open)}
       width="100%"
       border={true}
       borderColor="green"
       backgroundColor={RGBA.fromInts(10, 10, 10, 255)}
+      flexDirection="column"
     >
-      <box flexDirection="row" alignItems="center" gap={1}>
+      {/* Click handler only on header to prevent conflict with nested elements */}
+      <box
+        flexDirection="row"
+        alignItems="center"
+        gap={1}
+        onMouseDown={() => setOpen(!open)}
+        padding={1}
+      >
         {subagent.status === "pending" && (
           <SpinnerDots label={subagent.name} fg="green" />
         )}
