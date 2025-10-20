@@ -11,6 +11,7 @@ import { marked } from "marked";
 import type { Subagent } from "./hooks/pentestAgent";
 
 interface AgentDisplayProps {
+  key?: string;
   messages: Message[];
   isStreaming?: boolean;
   children?: React.ReactNode;
@@ -129,6 +130,7 @@ function markdownToStyledText(content: string): StyledText {
 }
 
 export default function AgentDisplay({
+  key,
   messages,
   isStreaming = false,
   children,
@@ -137,6 +139,7 @@ export default function AgentDisplay({
   paddingRight = 8,
 }: AgentDisplayProps) {
   // Memoize the sorted array to avoid re-sorting on every render
+  // FIX: Use useMemo to prevent unnecessary re-sorts and unstable ordering
   const messagesAndSubagents = useMemo(() => {
     return [...messages, ...(subagents ?? [])].sort(
       (a, b) => a.createdAt.getTime() - b.createdAt.getTime()
@@ -145,6 +148,7 @@ export default function AgentDisplay({
 
   return (
     <scrollbox
+      key={key}
       style={{
         rootOptions: {
           width: "100%",
@@ -176,12 +180,17 @@ export default function AgentDisplay({
     >
       {messagesAndSubagents.map((item, index) => {
         // Create stable key based on item properties
-        const itemKey =
-          "messages" in item
-            ? `subagent-${item.id}`
-            : item.role === "tool" && "toolCallId" in item
-            ? `tool-${(item as ToolMessage).toolCallId}`
-            : `${item.role}-${item.createdAt.getTime()}-${index}`;
+        // FIX: Remove status from tool key - status changes should update the same element
+        // FIX: Add index as fallback to prevent duplicate keys from same timestamps
+        let itemKey: string;
+        if ("messages" in item) {
+          itemKey = `subagent-${item.id}`;
+        } else if (item.role === "tool" && "toolCallId" in item) {
+          itemKey = `tool-${(item as ToolMessage).toolCallId}`;
+        } else {
+          // For non-tool messages, include index to prevent duplicate keys from same timestamps
+          itemKey = `${item.role}-${item.createdAt.getTime()}-${index}`;
+        }
 
         if ("messages" in item) {
           return (
@@ -234,6 +243,7 @@ function SubAgentDisplay({ subagent }: { subagent: Subagent }) {
       </box>
       {open && (
         <AgentDisplay
+          key={subagent.id}
           paddingLeft={2}
           paddingRight={2}
           messages={subagent.messages}
@@ -282,7 +292,7 @@ function AgentMessage({ message }: { message: Message }) {
           content={message.role === "user" ? "→ User" : "← Assistant"}
         />
       )}
-      <box flexDirection="row" gap={1}>
+      <box flexDirection="row" gap={0}>
         {message.role === "assistant" && (
           <box
             width={0}
@@ -309,7 +319,12 @@ function AgentMessage({ message }: { message: Message }) {
           )}
         </box>
         {message.role === "user" && (
-          <box width={1} backgroundColor={RGBA.fromInts(30, 30, 30, 255)} />
+          <box
+            width={0}
+            borderStyle="heavy"
+            border={["left"]}
+            borderColor={RGBA.fromInts(30, 30, 30, 255)}
+          />
         )}
       </box>
       <ToolArgs message={message} />
