@@ -1,9 +1,9 @@
 {
   "name": "@pensar/apex",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "description": "AI-powered penetration testing CLI tool with terminal UI",
   "module": "src/tui/index.tsx",
-  "main": "build/tui/index.js",
+  "main": "build/index.js",
   "type": "module",
   "bin": {
     "pensar": "./bin/pensar.js"
@@ -11,8 +11,8 @@
   "files": [
     "build",
     "bin",
-    "container",
-    "pensar.svg"
+    "pensar.svg",
+    "LICENSE"
   ],
   "scripts": {
     "build": "bun build src/tui/index.tsx --outdir build --target node --format esm",
@@ -54,6 +54,7 @@
     "@openrouter/ai-sdk-provider": "^1.2.0",
     "@opentui/core": "0.1.26",
     "@opentui/react": "0.1.26",
+    "@pensar/apex": "^0.0.1",
     "ai": "^5.0.68",
     "marked": "^16.4.0",
     "react": "^19.2.0",

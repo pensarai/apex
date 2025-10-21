@@ -1,6 +1,10 @@
 # dependencies (bun install)
 node_modules
 
+# lockfiles (using bun, not npm)
+package-lock.json
+yarn.lock
+
 # output
 out
 dist

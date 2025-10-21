@@ -18,10 +18,16 @@ import ModelsDisplay from "./components/commands/models-display";
 import type { Config } from "../core/config/config";
 import { config } from "../core/config";
 import AlertDialog from "./components/alert-dialog";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
+
+// Get the directory of the current module
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 // Configuration
 const CONFIG = {
-  imagePath: "./pensar.svg",
+  imagePath: join(__dirname, "..", "pensar.svg"),
   scale: 1.0, // Scale the image (0.5 = 50%, 1.0 = 100%, 2.0 = 200%)
   maxWidth: 50, // Optional: maximum width in characters (undefined = no limit)
   aspectRatio: 0.5, // Height adjustment (0.5 = half height, good for most terminals)
