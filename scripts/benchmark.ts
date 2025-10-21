@@ -317,12 +317,11 @@ async function main() {
   }
 }
 
-// Run if called directly
-if (require.main === module) {
-  main().catch((error) => {
-    console.error("Unhandled error:", error);
-    process.exit(1);
-  });
-}
+// Run if called directly (ESM version)
+// When bundled, this will be the entry point, so we always run main
+main().catch((error) => {
+  console.error("Unhandled error:", error);
+  process.exit(1);
+});
 
 export { runBenchmark, getRepoBranches };

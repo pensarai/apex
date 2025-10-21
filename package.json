@@ -15,7 +15,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "bun build src/tui/index.tsx --outdir build --target node --format esm",
+    "build": "bun build src/tui/index.tsx --outdir build --target node --format esm && bun build scripts/benchmark.ts --outdir build --target node --format esm",
     "dev": "bun run scripts/watch.ts",
     "dev:debug": "SHOW_CONSOLE=true bun run scripts/watch.ts",
     "start": "bun run src/tui/index.tsx",
@@ -54,7 +54,7 @@
     "@openrouter/ai-sdk-provider": "^1.2.0",
     "@opentui/core": "0.1.26",
     "@opentui/react": "0.1.26",
-    "@pensar/apex": "^0.0.1",
+    "@pensar/apex": "file:pensar-apex-0.0.1.tgz",
     "ai": "^5.0.68",
     "marked": "^16.4.0",
     "react": "^19.2.0",
