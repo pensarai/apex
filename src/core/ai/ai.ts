@@ -178,20 +178,37 @@ export function streamResponse(
         tools,
         error,
       }) => {
-        const { object: repairedArgs } = await generateObject({
-          model: providerModel,
-          schema: inputSchema.arguments,
-          prompt: [
-            `The model tried to call the tool "${toolCall.toolName}"` +
-              ` with the following inputs:`,
-            JSON.stringify(inputSchema.arguments),
-            `The tool accepts the following schema:`,
-            JSON.stringify(inputSchema.arguments),
-            "Please fix the inputs.",
-          ].join("\n"),
-        });
+        try {
+          console.log(
+            "Repairing tool call:",
+            toolCall.toolName,
+            "Error:",
+            error
+          );
 
-        return { ...toolCall, input: JSON.stringify(repairedArgs) };
+          // inputSchema is a function that takes { toolName } and returns JSONSchema7
+          const schema = inputSchema({ toolName: toolCall.toolName });
+
+          const { object: repairedArgs } = await generateObject({
+            model: providerModel,
+            schema: schema,
+            prompt: [
+              `The model tried to call the tool "${toolCall.toolName}"` +
+                ` with the following inputs:`,
+              toolCall.input,
+              `The tool accepts the following schema:`,
+              JSON.stringify(schema),
+              `Error encountered: ${error}`,
+              "Please fix the inputs to match the schema.",
+            ].join("\n"),
+          });
+
+          // Return the tool call with stringified repaired arguments
+          return { ...toolCall, input: JSON.stringify(repairedArgs) };
+        } catch (repairError: any) {
+          console.error("Error repairing tool call:", repairError.message);
+          throw repairError;
+        }
       },
     });
 

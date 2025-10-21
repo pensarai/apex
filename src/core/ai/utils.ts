@@ -154,11 +154,14 @@ export function checkIfContextLengthError(error: any): boolean {
   const errorCode = error?.code?.toLowerCase() || "";
 
   return (
-    errorMessage.includes("context") ||
+    errorMessage.includes("context length") ||
+    errorMessage.includes("context_length") ||
     errorMessage.includes("too long") ||
     errorMessage.includes("token limit") ||
     errorMessage.includes("maximum context") ||
     errorMessage.includes("context_length_exceeded") ||
+    errorMessage.includes("tokens_exceeded") ||
+    errorMessage.includes("maximum token") ||
     errorCode === "context_length_exceeded" ||
     errorCode === "tokens_exceeded"
   );
