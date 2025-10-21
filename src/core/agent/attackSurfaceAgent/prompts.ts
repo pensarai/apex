@@ -733,8 +733,8 @@ session-<id>/
 - Note risk level: INFORMATIONAL, LOW, MEDIUM, HIGH, CRITICAL
 - Track which assets need deeper penetration testing
 - Use document_asset to document all assets found
+- ONLY document assets you have verified exists
 
-### Scratchpad Usage (CRITICAL - USE EXTENSIVELY)
 
 Use the \`document_asset\` tool to track EVERY discovered asset. This is your master inventory.
 
@@ -972,40 +972,9 @@ Organize your discovered assets by category:
    - Status pages
    - Logging systems
 
-**Example of Comprehensive discoveredAssets Array:**
-
-The array should contain entries like:
-  - "example.com - Main website (nginx 1.18) - Ports 80,443"
-  - "www.example.com - Redirects to main site - Port 443"
-  - "api.example.com - REST API (Express 4.17) - Port 443, Swagger UI exposed, GraphQL endpoint"
-  - "api-v2.example.com - REST API v2 - Port 443"
-  - "admin.example.com - Admin panel (nginx 1.18) - Port 443, Basic auth protected"
-  - "dev.example.com - Development environment (Apache 2.4) - Port 443, .git directory exposed"
-  - "staging.example.com - Staging environment - Port 443"
-  - "test.example.com - Test environment - Port 443"
-  - "uat.example.com - UAT environment - Port 443"
-  - "mail.example.com - Mail server (Postfix) - Ports 25,587,993"
-  - "smtp.example.com - SMTP relay - Port 587"
-  - "webmail.example.com - Webmail interface - Port 443"
-  - "vpn.example.com - VPN gateway - Port 443"
-  - "cdn.example.com - CloudFront CDN - Content delivery"
-  - "static.example.com - Static assets (nginx) - Port 443"
-  - "assets.example.com - Asset hosting - Port 443"
-  - "blog.example.com - WordPress blog (6.0) - Port 443"
-  - "shop.example.com - E-commerce (Shopify) - Port 443"
-  - "support.example.com - Support portal (Zendesk) - Port 443"
-  - "docs.example.com - Documentation (GitBook) - Port 443"
-  - "status.example.com - Status page - Port 443"
-  - "monitoring.example.com - Grafana dashboard - Port 443, Auth required"
-  - "jenkins.example.com - Jenkins CI/CD - Port 443, Auth required"
-  - "gitlab.example.com - GitLab repository - Port 443"
-  - "s3.example.com - S3 bucket - Cloud storage"
-  - "1.2.3.4 - Web server (AWS us-east-1) - Ports 22,80,443 - OpenSSH 8.2, nginx 1.18"
-  - "1.2.3.5 - Mail server (DigitalOcean) - Ports 25,587,993 - Postfix, Dovecot"
-  - "1.2.3.6 - Staging server (AWS us-west-2) - Ports 80,443 - nginx 1.18"
 
 **VERIFICATION BEFORE SUBMITTING:**
-- [ ] Does discoveredAssets have 15+ entries minimum?
+- [ ] Does discoveredAssets have comprehensive entries?
 - [ ] Are ALL subdomains from the assets folder included?
 - [ ] Are ALL endpoints documented?
 - [ ] Are ALL IPs and services listed?

@@ -62,6 +62,7 @@ function wrapStreamWithErrorHandler(
               }
             } catch (error: any) {
               // Check if it's a context length error
+
               const isContextLengthError = checkIfContextLengthError(error);
 
               if (isContextLengthError) {
@@ -76,6 +77,10 @@ function wrapStreamWithErrorHandler(
                 } catch (e) {
                   // Fall back to container messages if response is not available
                 }
+                console.warn(
+                  `Context length error in wrapper, summarizing ${messagesContainer.current.length} messages: `,
+                  error.message
+                );
 
                 const summarizationStream = createSummarizationStream(
                   currentMessages,
@@ -86,7 +91,10 @@ function wrapStreamWithErrorHandler(
                   yield chunk;
                 }
               } else {
-                console.log("Non-context length error, re-throwing");
+                console.error(
+                  "Non-context length error, re-throwing",
+                  error.message
+                );
                 // Re-throw if it's not a context length error
                 throw error;
               }
@@ -199,6 +207,10 @@ export function streamResponse(
     const isContextLengthError = checkIfContextLengthError(error);
 
     if (isContextLengthError) {
+      console.warn(
+        `Context length error, summarizing ${messagesContainer.current.length} messages: `,
+        error.message
+      );
       // Return a wrapped stream that shows summarization and then continues
       return createSummarizationStream(
         messagesContainer.current,
@@ -206,6 +218,7 @@ export function streamResponse(
         providerModel
       );
     }
+    console.error("Non-context length error, re-throwing", error.message);
 
     // Re-throw if it's not a context length error
     throw error;
