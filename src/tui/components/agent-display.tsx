@@ -10,14 +10,67 @@ import { useState, useMemo } from "react";
 import { marked } from "marked";
 import type { Subagent } from "./hooks/pentestAgent";
 
+// WeakMap to cache stable IDs for message objects per context
+// Use a Map<contextId, WeakMap> to handle different contexts
+const messageIdCacheByContext = new Map<
+  string,
+  WeakMap<Message | Subagent, string>
+>();
+let idCounter = 0;
+
+// Get or create a cache for a specific context
+function getCacheForContext(
+  contextId: string
+): WeakMap<Message | Subagent, string> {
+  let cache = messageIdCacheByContext.get(contextId);
+  if (!cache) {
+    cache = new WeakMap<Message | Subagent, string>();
+    messageIdCacheByContext.set(contextId, cache);
+  }
+  return cache;
+}
+
+// Get or create a stable unique key for any message or subagent
+function getStableKey(
+  item: Message | Subagent,
+  contextId: string = "root"
+): string {
+  const cache = getCacheForContext(contextId);
+
+  // Check if we already have a cached ID for this object in this context
+  let cachedId = cache.get(item);
+  if (cachedId) {
+    return cachedId;
+  }
+
+  // Generate a new unique ID
+  let newId: string;
+  if ("messages" in item) {
+    // It's a subagent
+    newId = `subagent-${item.id}`;
+  } else if (item.role === "tool" && "toolCallId" in item) {
+    // It's a tool message - add context to ensure uniqueness across subagents
+    newId = `${contextId}-tool-${(item as ToolMessage).toolCallId}`;
+  } else {
+    // For other messages, create a unique ID based on properties + counter
+    newId = `${contextId}-${
+      item.role
+    }-${item.createdAt.getTime()}-${idCounter++}`;
+  }
+
+  // Cache and return
+  cache.set(item, newId);
+  return newId;
+}
+
 interface AgentDisplayProps {
-  key?: string;
   messages: Message[];
   isStreaming?: boolean;
   children?: React.ReactNode;
   subagents?: Subagent[];
   paddingLeft?: number;
   paddingRight?: number;
+  contextId?: string; // Used to ensure unique keys across nested displays
 }
 
 // Utility function to convert markdown to StyledText
@@ -130,41 +183,33 @@ function markdownToStyledText(content: string): StyledText {
 }
 
 export default function AgentDisplay({
-  key,
   messages,
   isStreaming = false,
   children,
   subagents,
   paddingLeft = 8,
   paddingRight = 8,
+  contextId = "root",
 }: AgentDisplayProps) {
-  // Memoize the sorted array to avoid re-sorting on every render
-  // FIX: Use useMemo to prevent unnecessary re-sorts and unstable ordering
-  const messagesAndSubagents = useMemo(() => {
-    return [...messages, ...(subagents ?? [])].sort(
-      (a, b) => a.createdAt.getTime() - b.createdAt.getTime()
-    );
-  }, [messages, subagents]);
+  // Sort messages and subagents by creation time
+  // Don't use useMemo to ensure we always have fresh data during rapid updates
+  const messagesAndSubagents = [...messages, ...(subagents ?? [])].sort(
+    (a, b) => a.createdAt.getTime() - b.createdAt.getTime()
+  );
 
   return (
     <scrollbox
-      key={key}
       style={{
         rootOptions: {
           width: "100%",
           maxWidth: "100%",
           flexGrow: 1,
           flexShrink: 1,
-          overflow: "hidden",
-        },
-        wrapperOptions: {
-          overflow: "hidden",
         },
         contentOptions: {
           paddingLeft: paddingLeft,
           paddingRight: paddingRight,
           gap: 1,
-          flexGrow: 1,
           flexDirection: "column",
         },
         scrollbarOptions: {
@@ -178,19 +223,9 @@ export default function AgentDisplay({
       stickyStart="bottom"
       focused
     >
-      {messagesAndSubagents.map((item, index) => {
-        // Create stable key based on item properties
-        // FIX: Remove status from tool key - status changes should update the same element
-        // FIX: Add index as fallback to prevent duplicate keys from same timestamps
-        let itemKey: string;
-        if ("messages" in item) {
-          itemKey = `subagent-${item.id}`;
-        } else if (item.role === "tool" && "toolCallId" in item) {
-          itemKey = `tool-${(item as ToolMessage).toolCallId}`;
-        } else {
-          // For non-tool messages, include index to prevent duplicate keys from same timestamps
-          itemKey = `${item.role}-${item.createdAt.getTime()}-${index}`;
-        }
+      {messagesAndSubagents.map((item) => {
+        // Get stable unique key for this item, using contextId to prevent collisions
+        const itemKey = getStableKey(item, contextId);
 
         if ("messages" in item) {
           return (
@@ -243,10 +278,10 @@ function SubAgentDisplay({ subagent }: { subagent: Subagent }) {
       </box>
       {open && (
         <AgentDisplay
-          key={subagent.id}
           paddingLeft={2}
           paddingRight={2}
           messages={subagent.messages}
+          contextId={subagent.id}
         />
       )}
     </box>
