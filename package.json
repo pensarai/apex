@@ -54,7 +54,6 @@
     "@openrouter/ai-sdk-provider": "^1.2.0",
     "@opentui/core": "0.1.26",
     "@opentui/react": "0.1.26",
-    "@pensar/apex": "file:pensar-apex-0.0.1.tgz",
     "ai": "^5.0.68",
     "marked": "^16.4.0",
     "react": "^19.2.0",
