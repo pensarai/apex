@@ -6,13 +6,12 @@
 
 **Pensar Apex** is an AI-powered penetration testing CLI tool that enables you to use an AI agent to perform comprehensive black box testing.
 
-## Quick Start
+## Installation
 
 ### Prerequisites
 
-- **Bun** v1.0+ (required - [install from bun.sh](https://bun.sh))
 - **nmap** (required for network scanning)
-- **Anthropic API Key** (get one at [console.anthropic.com](https://console.anthropic.com/))
+- **API Key** for your chosen AI provider
 
 #### Install nmap
 
@@ -35,117 +34,64 @@ sudo dnf install -y nmap
 ```
 
 Windows:
-
 Download installer from `https://nmap.org/download.html` and ensure `nmap` is on your PATH.
 
-### Installation
-
-#### Install Bun First
-
-If you don't have Bun installed:
+### Install Apex
 
 ```bash
-curl -fsSL https://bun.sh/install | bash
-```
-
-#### Option 1: Global Installation (Recommended)
-
-```bash
-# Install globally with bun
-bun install -g @pensar/apex
-
-# Or with npm (still requires bun to run)
 npm install -g @pensar/apex
-```
-
-#### Option 2: Local Development
-
-```bash
-# Clone the repository
-git clone https://github.com/your-org/apex.git
-cd apex
-
-# Install dependencies
-npm install
-# or
-bun install
-
-# Build the project
-npm run build
-# or
-bun run build
 ```
 
 ### Configuration
 
-Set your Anthropic API key as an environment variable:
+Set your AI provider API key as an environment variable:
 
 ```bash
 export ANTHROPIC_API_KEY="your-api-key-here"
-```
-
-To make it permanent, add it to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.):
-
-```bash
-echo 'export ANTHROPIC_API_KEY="your-api-key-here"' >> ~/.zshrc
-source ~/.zshrc
+# or for other providers:
+# export OPENAI_API_KEY="your-api-key-here"
+# export AWS_ACCESS_KEY_ID="..." and AWS_SECRET_ACCESS_KEY="..."
 ```
 
 ## Usage
 
-### Running Pensar
-
-If installed globally:
+Run Apex:
 
 ```bash
 pensar
 ```
 
-If running locally:
+## AI Provider Support
 
-```bash
-npm start
-# or
-bun start
-```
+Apex supports **OpenAI**, **Anthropic**, **AWS Bedrock**, and **vLLM** (local models). **Anthropic models provide the best performance** and are recommended for optimal results.
 
-### Run in Container (Kali-based)
+## Kali Linux Container (Recommended)
 
-If you prefer a preconfigured environment with `nmap` and common pentest tools, use the included container setup.
+For **best performance**, run Apex in the included Kali Linux container with preconfigured pentest tools:
 
 ```bash
 cd container
-cp env.example .env # add your ANTHROPIC_API_KEY and others
+cp env.example .env  # add your API keys
 docker compose up --build -d
 docker compose exec kali-apex bash
 ```
 
-Inside the container:
+Inside the container, run:
 
 ```bash
-cd ~/app
-bun install
-bun run build
-node build/index.js
-# or
 pensar
 ```
 
-Notes:
+**Note:** On Linux hosts, consider using `network_mode: host` in `docker-compose.yml` for comprehensive network scanning.
 
-- The host repo is mounted into the container at `/home/ctf/app`.
-- On Linux, consider `network_mode: host` in `container/docker-compose.yml` for comprehensive scanning.
+## vLLM Local Model Support
 
-### vLLM (Local model) Support
+To use a local vLLM server:
 
-You can run against a local vLLM server by setting a custom model and a base URL:
-
-1. Set `LOCAL_MODEL_URL` to your vLLM HTTP endpoint (e.g., `http://localhost:8000/v1`):
+1. Set the vLLM endpoint:
 
 ```bash
 export LOCAL_MODEL_URL="http://localhost:8000/v1"
 ```
 
-2. In the Models screen, enter your model name in the "Custom local model (vLLM)" input and press Enter. This will select a local provider model with the ID you entered.
-
-That’s it—no other keys required for local. The app will route via OpenAI-compatible API to `LOCAL_MODEL_URL` when the selected provider is `local`.
+2. In the Apex Models screen, enter your model name in the "Custom local model (vLLM)" input.
