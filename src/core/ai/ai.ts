@@ -186,18 +186,26 @@ export function streamResponse(
             error
           );
 
-          // inputSchema is a function that takes { toolName } and returns JSONSchema7
-          const schema = inputSchema({ toolName: toolCall.toolName });
+          // Get the actual tool definition which contains the Zod schema
+          const tool = tools[toolCall.toolName];
+          if (!tool || !tool.inputSchema) {
+            throw new Error(
+              `Tool ${toolCall.toolName} not found or has no schema`
+            );
+          }
+
+          // Get JSONSchema7 for display purposes
+          const jsonSchema = inputSchema({ toolName: toolCall.toolName });
 
           const { object: repairedArgs } = await generateObject({
             model: providerModel,
-            schema: schema,
+            schema: tool.inputSchema, // Use the actual Zod schema from the tool
             prompt: [
               `The model tried to call the tool "${toolCall.toolName}"` +
                 ` with the following inputs:`,
               toolCall.input,
               `The tool accepts the following schema:`,
-              JSON.stringify(schema),
+              JSON.stringify(jsonSchema),
               `Error encountered: ${error}`,
               "Please fix the inputs to match the schema.",
             ].join("\n"),
