@@ -15,12 +15,14 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "bun build src/tui/index.tsx --outdir build --target node --format esm && bun build scripts/benchmark.ts --outdir build --target node --format esm",
+    "build": "bun build src/tui/index.tsx --outdir build --target node --format esm && bun build scripts/benchmark.ts --outdir build --target node --format esm && bun build scripts/quicktest.ts --outdir build --target node --format esm && bun build scripts/swarm.ts --outdir build --target node --format esm",
     "dev": "bun run scripts/watch.ts",
     "dev:debug": "SHOW_CONSOLE=true bun run scripts/watch.ts",
     "start": "bun run src/tui/index.tsx",
     "pensar": "node bin/pensar.js",
     "benchmark": "bun run scripts/benchmark.ts",
+    "quicktest": "bun run scripts/quicktest.ts",
+    "swarm": "bun run scripts/swarm.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "prepublishOnly": "npm run build"
