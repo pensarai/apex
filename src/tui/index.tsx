@@ -20,14 +20,32 @@ import { config } from "../core/config";
 import AlertDialog from "./components/alert-dialog";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
+import { existsSync } from "fs";
 
 // Get the directory of the current module
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+// Find the image path - works both in dev (src/tui) and bundled (build)
+function findImagePath(): string {
+  // Try bundled path first (build/index.js -> ../pensar.svg)
+  const bundledPath = join(__dirname, "..", "pensar.svg");
+  if (existsSync(bundledPath)) {
+    return bundledPath;
+  }
+
+  // Try dev path (src/tui/index.tsx -> ../../pensar.svg)
+  const devPath = join(__dirname, "..", "..", "pensar.svg");
+  if (existsSync(devPath)) {
+    return devPath;
+  }
+
+  throw new Error("Could not find pensar.svg");
+}
+
 // Configuration
 const CONFIG = {
-  imagePath: join(__dirname, "..", "pensar.svg"),
+  imagePath: findImagePath(),
   scale: 1.0, // Scale the image (0.5 = 50%, 1.0 = 100%, 2.0 = 200%)
   maxWidth: 50, // Optional: maximum width in characters (undefined = no limit)
   aspectRatio: 0.5, // Height adjustment (0.5 = half height, good for most terminals)
