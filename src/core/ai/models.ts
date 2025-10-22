@@ -139,13 +139,13 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
 
   // OpenRouter Models
   {
-    id: "anthropic/claude-haiku-4-5",
+    id: "anthropic/claude-haiku-4.5",
     name: "Claude Haiku 4.5 (OpenRouter)",
     provider: "openrouter",
     contextLength: 200000,
   },
   {
-    id: "anthropic/claude-sonnet-4-5",
+    id: "anthropic/claude-sonnet-4.5",
     name: "Claude Sonnet 4.5 (OpenRouter)",
     provider: "openrouter",
     contextLength: 200000,
