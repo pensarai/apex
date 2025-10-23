@@ -5,6 +5,7 @@ import { createSession, type Session } from "../src/core/agent/sessions";
 import type { AIModel } from "../src/core/ai";
 import { z } from "zod";
 import { readFileSync } from "fs";
+import pLimit from "p-limit";
 
 const TargetSchema = z.array(
   z.object({
@@ -75,63 +76,67 @@ export async function swarm(
     error?: string;
   }> = [];
 
-  // Run pentests in parallel
-  const promises = targetsArray.map(async (target, idx) => {
-    if (!silent) {
-      console.log("=".repeat(80));
-      console.log(
-        `[${idx + 1}/${targetsArray.length}] Starting pentest for: ${
-          target.target
-        }`
-      );
-      console.log("=".repeat(80));
-      console.log();
-    }
+  // Run pentests with concurrency limit of 5
+  const limit = pLimit(5);
 
-    try {
-      const { streamResult } = runAgent({
-        session,
-        target: target.target,
-        objective: target.objective,
-        model,
-        silent,
-      });
+  const promises = targetsArray.map((target, idx) =>
+    limit(async () => {
+      if (!silent) {
+        console.log("=".repeat(80));
+        console.log(
+          `[${idx + 1}/${targetsArray.length}] Starting pentest for: ${
+            target.target
+          }`
+        );
+        console.log("=".repeat(80));
+        console.log();
+      }
 
-      // Consume the stream and display progress
-      for await (const delta of streamResult.fullStream) {
-        if (delta.type === "text-delta") {
-        } else if (delta.type === "tool-call") {
-        } else if (delta.type === "tool-result") {
+      try {
+        const { streamResult } = runAgent({
+          session,
+          target: target.target,
+          objective: target.objective,
+          model,
+          silent,
+        });
+
+        // Consume the stream and display progress
+        for await (const delta of streamResult.fullStream) {
+          if (delta.type === "text-delta") {
+          } else if (delta.type === "tool-call") {
+          } else if (delta.type === "tool-result") {
+          }
         }
+
+        if (!silent) {
+          console.log();
+          console.log(`✓ Pentest completed for: ${target.target}`);
+          console.log();
+        }
+
+        results.push({
+          target: target.target,
+          success: true,
+          sessionId: session.id,
+        });
+      } catch (error: any) {
+        if (!silent) {
+          console.error(`✗ Pentest failed for: ${target.target}`);
+          console.error(`  Error: ${error.message}`);
+          console.error();
+        }
+
+        results.push({
+          target: target.target,
+          success: false,
+          error: error.message,
+        });
       }
+    })
+  );
 
-      if (!silent) {
-        console.log();
-        console.log(`✓ Pentest completed for: ${target.target}`);
-        console.log();
-      }
-
-      results.push({
-        target: target.target,
-        success: true,
-        sessionId: session.id,
-      });
-    } catch (error: any) {
-      if (!silent) {
-        console.error(`✗ Pentest failed for: ${target.target}`);
-        console.error(`  Error: ${error.message}`);
-        console.error();
-      }
-
-      results.push({
-        target: target.target,
-        success: false,
-        error: error.message,
-      });
-    }
-  });
-
-  await Promise.all(promises);
+  await Promise.allSettled(promises);
 
   if (!silent) {
     // Print summary
@@ -261,7 +266,9 @@ async function main() {
       )
     );
   } catch (error: any) {
-    console.error("Fatal error:", error.message);
+    if (!silent) {
+      console.error("Fatal error:", error.message);
+    }
     process.exit(1);
   }
 }
