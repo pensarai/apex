@@ -94,6 +94,7 @@ export async function swarm(
         target: target.target,
         objective: target.objective,
         model,
+        silent,
       });
 
       // Consume the stream and display progress

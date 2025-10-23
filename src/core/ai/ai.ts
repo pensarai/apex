@@ -39,7 +39,8 @@ function wrapStreamWithErrorHandler(
   originalStream: StreamTextResult<ToolSet, never>,
   messagesContainer: { current: ModelMessage[] },
   opts: StreamResponseOpts,
-  model: LanguageModel
+  model: LanguageModel,
+  silent?: boolean
 ): StreamTextResult<ToolSet, never> {
   // Create a lazy getter for fullStream that wraps it with error handling
   let wrappedStream: any = null;
@@ -77,10 +78,12 @@ function wrapStreamWithErrorHandler(
                 } catch (e) {
                   // Fall back to container messages if response is not available
                 }
-                console.warn(
-                  `Context length error in wrapper, summarizing ${messagesContainer.current.length} messages: `,
-                  error.message
-                );
+                if (!silent) {
+                  console.warn(
+                    `Context length error in wrapper, summarizing ${messagesContainer.current.length} messages: `,
+                    error.message
+                  );
+                }
 
                 const summarizationStream = createSummarizationStream(
                   currentMessages,
@@ -91,10 +94,12 @@ function wrapStreamWithErrorHandler(
                   yield chunk;
                 }
               } else {
-                console.error(
-                  "Non-context length error, re-throwing",
-                  error.message
-                );
+                if (!silent) {
+                  console.error(
+                    "Non-context length error, re-throwing",
+                    error.message
+                  );
+                }
                 // Re-throw if it's not a context length error
                 throw error;
               }
@@ -133,6 +138,7 @@ export interface StreamResponseOpts {
   onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
   abortSignal?: AbortSignal;
   activeTools?: string[];
+  silent?: boolean;
 }
 
 export function streamResponse(
@@ -149,6 +155,7 @@ export function streamResponse(
     onStepFinish,
     abortSignal,
     activeTools,
+    silent,
   } = opts;
   // Use a container object so the reference stays stable but the value can be updated
   const messagesContainer = { current: messages || [] };
@@ -179,12 +186,14 @@ export function streamResponse(
         error,
       }) => {
         try {
-          console.log(
-            "Repairing tool call:",
-            toolCall.toolName,
-            "Error:",
-            error
-          );
+          if (!silent) {
+            console.log(
+              "Repairing tool call:",
+              toolCall.toolName,
+              "Error:",
+              error
+            );
+          }
 
           // Get the actual tool definition which contains the Zod schema
           const tool = tools[toolCall.toolName];
@@ -214,7 +223,9 @@ export function streamResponse(
           // Return the tool call with stringified repaired arguments
           return { ...toolCall, input: JSON.stringify(repairedArgs) };
         } catch (repairError: any) {
-          console.error("Error repairing tool call:", repairError.message);
+          if (!silent) {
+            console.error("Error repairing tool call:", repairError.message);
+          }
           throw repairError;
         }
       },
@@ -225,17 +236,20 @@ export function streamResponse(
       response,
       messagesContainer,
       opts,
-      providerModel
+      providerModel,
+      silent
     );
   } catch (error: any) {
     // Check if the error is related to context length
     const isContextLengthError = checkIfContextLengthError(error);
 
     if (isContextLengthError) {
-      console.warn(
-        `Context length error, summarizing ${messagesContainer.current.length} messages: `,
-        error.message
-      );
+      if (!silent) {
+        console.warn(
+          `Context length error, summarizing ${messagesContainer.current.length} messages: `,
+          error.message
+        );
+      }
       // Return a wrapped stream that shows summarization and then continues
       return createSummarizationStream(
         messagesContainer.current,
@@ -243,7 +257,9 @@ export function streamResponse(
         providerModel
       );
     }
-    console.error("Non-context length error, re-throwing", error.message);
+    if (!silent) {
+      console.error("Non-context length error, re-throwing", error.message);
+    }
 
     // Re-throw if it's not a context length error
     throw error;
