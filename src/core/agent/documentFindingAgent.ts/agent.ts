@@ -460,55 +460,55 @@ Create this POC, test it, then retry document_finding.`,
           .substring(0, 50);
 
         const findingId = `${timestamp.split("T")[0]}-${safeTitle}`;
-        const filename = `${findingId}.md`;
+        const filename = `${findingId}.json`;
         const filepath = join(session.findingsPath, filename);
 
         // Create markdown document with POC reference
-        const markdown = `# ${finding.title}
+        //         const markdown = `# ${finding.title}
 
-**Severity:** ${finding.severity}  
-**Target:** ${session.target}  
-**Date:** ${timestamp}  
-**Session:** ${session.id}  
-**POC:** \`${finding.pocPath}\`
+        // **Severity:** ${finding.severity}
+        // **Target:** ${session.target}
+        // **Date:** ${timestamp}
+        // **Session:** ${session.id}
+        // **POC:** \`${finding.pocPath}\`
 
-## Description
+        // ## Description
 
-${finding.description}
+        // ${finding.description}
 
-## Impact
+        // ## Impact
 
-${finding.impact}
+        // ${finding.impact}
 
-## Evidence
+        // ## Evidence
 
-\`\`\`
-${finding.evidence}
-\`\`\`
+        // \`\`\`
+        // ${finding.evidence}
+        // \`\`\`
 
-## Proof of Concept
+        // ## Proof of Concept
 
-A working POC script is available at: \`${finding.pocPath}\`
+        // A working POC script is available at: \`${finding.pocPath}\`
 
-To reproduce this vulnerability, run:
-\`\`\`bash
-cd ${session.rootPath}
-./${finding.pocPath}
-\`\`\`
+        // To reproduce this vulnerability, run:
+        // \`\`\`bash
+        // cd ${session.rootPath}
+        // ./${finding.pocPath}
+        // \`\`\`
 
-## Remediation
+        // ## Remediation
 
-${finding.remediation}
+        // ${finding.remediation}
 
-${finding.references ? `## References\n\n${finding.references}` : ""}
+        // ${finding.references ? `## References\n\n${finding.references}` : ""}
 
----
+        // ---
 
-*This finding was automatically documented by the Pensar penetration testing agent.*  
-*POC verified and available at: ${finding.pocPath}*
-`;
+        // *This finding was automatically documented by the Pensar penetration testing agent.*
+        // *POC verified and available at: ${finding.pocPath}*
+        // `;
 
-        writeFileSync(filepath, markdown);
+        writeFileSync(filepath, JSON.stringify(findingWithMeta, null, 2));
 
         // Also append to a summary file
         const summaryPath = join(session.rootPath, "findings-summary.md");
