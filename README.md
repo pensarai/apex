@@ -1,4 +1,10 @@
-# Pensar Apex
+<h1 align="center">Pensar Apex</h1>
+
+<p align="center">
+  <a href="https://github.com/pensarai/apex/releases"><img src="https://img.shields.io/github/v/release/pensarai/apex" alt="GitHub Release"></a>
+  <a href="https://www.npmjs.com/package/@pensar/apex"><img src="https://img.shields.io/npm/v/@pensar/apex" alt="npm version"></a>
+  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
+</p>
 
 <p align="center">
   <img src="screenshot.png" alt="Pensar Apex Screenshot" width="800">

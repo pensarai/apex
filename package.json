@@ -5,6 +5,10 @@
   "module": "src/tui/index.tsx",
   "main": "build/index.js",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pensarai/apex.git"
+  },
   "bin": {
     "pensar": "./bin/pensar.js"
   },
