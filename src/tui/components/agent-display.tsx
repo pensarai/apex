@@ -45,6 +45,7 @@ interface AgentDisplayProps {
   paddingLeft?: number;
   paddingRight?: number;
   contextId?: string; // Used to ensure unique keys across nested displays
+  focused?: boolean; // Controls whether this scrollbox responds to scroll events
 }
 
 // Utility function to convert markdown to StyledText
@@ -164,6 +165,7 @@ export default function AgentDisplay({
   paddingLeft = 8,
   paddingRight = 8,
   contextId = "root",
+  focused = true,
 }: AgentDisplayProps) {
   // Sort messages and subagents by creation time
   // Don't use useMemo to ensure we always have fresh data during rapid updates
@@ -195,7 +197,15 @@ export default function AgentDisplay({
       }}
       stickyScroll={true}
       stickyStart="bottom"
-      focused
+      focused={focused}
+      onMouseScroll={
+        !focused
+          ? (event: any) => {
+              // Stop scroll events from propagating to parent scrollbox
+              event.stopPropagation();
+            }
+          : undefined
+      }
     >
       {messagesAndSubagents.map((item) => {
         // Get stable unique key for this item, using contextId to prevent collisions
@@ -265,6 +275,7 @@ const SubAgentDisplay = memo(function SubAgentDisplay({ subagent }: { subagent: 
           paddingRight={2}
           messages={subagent.messages}
           contextId={subagent.id}
+          focused={false}
         />
       )}
     </box>
