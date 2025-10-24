@@ -2,9 +2,6 @@
 
 <p align="center">
 <a href="https://www.npmjs.com/package/@pensar/apex"><img src="https://img.shields.io/npm/v/@pensar/apex" alt="npm version"></a>
-<a href="https://opensource.org/licenses/MIT"><img src=" https://img.shields.io/badge/License-Apache_2.0-blue" alt="License: Apache"></a>
-</p>
-
 <p align="center">
   <img src="screenshot.png" alt="Pensar Apex Screenshot" width="800">
 </p>
