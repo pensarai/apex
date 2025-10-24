@@ -6,61 +6,35 @@ import {
 } from "@opentui/core";
 import { SpinnerDots } from "./sprites";
 import type { Message, ToolMessage } from "../../core/messages";
-import { useState, useMemo } from "react";
+import { useState, memo } from "react";
 import { marked } from "marked";
 import type { Subagent } from "./hooks/pentestAgent";
+import fs from "fs";
 
-// WeakMap to cache stable IDs for message objects per context
-// Use a Map<contextId, WeakMap> to handle different contexts
-const messageIdCacheByContext = new Map<
-  string,
-  WeakMap<Message | Subagent, string>
->();
-let idCounter = 0;
-
-// Get or create a cache for a specific context
-function getCacheForContext(
-  contextId: string
-): WeakMap<Message | Subagent, string> {
-  let cache = messageIdCacheByContext.get(contextId);
-  if (!cache) {
-    cache = new WeakMap<Message | Subagent, string>();
-    messageIdCacheByContext.set(contextId, cache);
-  }
-  return cache;
+// File logger
+const LOG_FILE = "/tmp/apex-debug.log";
+function logToFile(message: string, data?: any) {
+  const timestamp = new Date().toISOString();
+  const logLine = `[${timestamp}] ${message} ${data ? JSON.stringify(data, null, 2) : ''}\n`;
+  fs.appendFileSync(LOG_FILE, logLine);
 }
 
-// Get or create a stable unique key for any message or subagent
+
 function getStableKey(
   item: Message | Subagent,
   contextId: string = "root"
 ): string {
-  const cache = getCacheForContext(contextId);
-
-  // Check if we already have a cached ID for this object in this context
-  let cachedId = cache.get(item);
-  if (cachedId) {
-    return cachedId;
-  }
-
-  // Generate a new unique ID
-  let newId: string;
   if ("messages" in item) {
-    // It's a subagent
-    newId = `subagent-${item.id}`;
+    return `subagent-${item.id}`;
   } else if (item.role === "tool" && "toolCallId" in item) {
-    // It's a tool message - add context to ensure uniqueness across subagents
-    newId = `${contextId}-tool-${(item as ToolMessage).toolCallId}`;
+    return `${contextId}-tool-${(item as ToolMessage).toolCallId}`;
   } else {
-    // For other messages, create a unique ID based on properties + counter
-    newId = `${contextId}-${
-      item.role
-    }-${item.createdAt.getTime()}-${idCounter++}`;
+    const content = typeof item.content === "string"
+      ? item.content
+      : JSON.stringify(item.content);
+    const contentHash = content.length;
+    return `${contextId}-${item.role}-${item.createdAt.getTime()}-${contentHash}`;
   }
-
-  // Cache and return
-  cache.set(item, newId);
-  return newId;
 }
 
 interface AgentDisplayProps {
@@ -253,8 +227,17 @@ export default function AgentDisplay({
   );
 }
 
-function SubAgentDisplay({ subagent }: { subagent: Subagent }) {
+const SubAgentDisplay = memo(function SubAgentDisplay({ subagent }: { subagent: Subagent }) {
   const [open, setOpen] = useState(false);
+
+  // LOG: Rendering subagent
+  logToFile(`[Render] SubAgentDisplay for ${subagent.id}:`, {
+    name: subagent.name,
+    nameLength: subagent.name?.length || 0,
+    status: subagent.status,
+    messageCount: subagent.messages.length
+  });
+
   return (
     <box
       height={open ? 40 : "auto"}
@@ -286,9 +269,9 @@ function SubAgentDisplay({ subagent }: { subagent: Subagent }) {
       )}
     </box>
   );
-}
+});
 
-function AgentMessage({ message }: { message: Message }) {
+const AgentMessage = memo(function AgentMessage({ message }: { message: Message }) {
   let content = "";
 
   if (typeof message.content === "string") {
@@ -304,6 +287,17 @@ function AgentMessage({ message }: { message: Message }) {
       .join("");
   } else {
     content = JSON.stringify(message.content, null, 2);
+  }
+
+  // LOG: Rendering message
+  if (message.role === "tool") {
+    logToFile(`[Render] AgentMessage (tool):`, {
+      toolCallId: (message as ToolMessage).toolCallId,
+      content: content.substring(0, 50),
+      contentLength: content.length,
+      isEmpty: content === "",
+      status: (message as ToolMessage).status
+    });
   }
 
   // Render markdown for assistant messages
@@ -365,7 +359,7 @@ function AgentMessage({ message }: { message: Message }) {
       <ToolArgs message={message} />
     </box>
   );
-}
+});
 
 function ToolArgs({ message }: { message: Message }) {
   const [open, setOpen] = useState(false);
@@ -376,7 +370,10 @@ function ToolArgs({ message }: { message: Message }) {
   const args = message.args;
 
   return (
-    <box onMouseDown={() => setOpen(!open)}>
+    <box onMouseDown={(e) => {
+      e.stopPropagation();
+      setOpen(!open);
+    }}>
       <box flexDirection="row" alignItems="center" gap={1}>
         <text>{open ? "▼ Hide args" : "▶ Show args"}</text>
       </box>
