@@ -376,7 +376,10 @@ function ToolArgs({ message }: { message: Message }) {
   const args = message.args;
 
   return (
-    <box onMouseDown={() => setOpen(!open)}>
+    <box onMouseDown={(e) => {
+      e.stopPropagation();
+      setOpen(!open);
+    }}>
       <box flexDirection="row" alignItems="center" gap={1}>
         <text>{open ? "▼ Hide args" : "▶ Show args"}</text>
       </box>
