@@ -1,9 +1,8 @@
 <h1 align="center">Pensar Apex</h1>
 
 <p align="center">
-  <a href="https://github.com/pensarai/apex/releases"><img src="https://img.shields.io/github/v/release/pensarai/apex" alt="GitHub Release"></a>
-  <a href="https://www.npmjs.com/package/@pensar/apex"><img src="https://img.shields.io/npm/v/@pensar/apex" alt="npm version"></a>
-  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
+<a href="https://www.npmjs.com/package/@pensar/apex"><img src="https://img.shields.io/npm/v/@pensar/apex" alt="npm version"></a>
+<a href="https://opensource.org/licenses/MIT"><img src=" https://img.shields.io/badge/License-Apache_2.0-blue" alt="License: Apache"></a>
 </p>
 
 <p align="center">
