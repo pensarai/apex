@@ -15,6 +15,7 @@ export interface Config {
   openRouterAPIKey?: string | null;
   bedrockAPIKey?: string | null;
   responsibleUseAccepted: boolean;
+  development?: boolean | null;
 }
 
 export async function init() {
@@ -53,6 +54,7 @@ export async function get(): Promise<Config> {
     anthropicAPIKey: process.env.ANTHROPIC_API_KEY,
     openRouterAPIKey: process.env.OPENROUTER_API_KEY,
     bedrockAPIKey: process.env.BEDROCK_API_KEY,
+    development: process.env.NODE_ENV === "development"
   };
 }
 

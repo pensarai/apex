@@ -220,7 +220,10 @@ function AppContent({
     >
       <ColoredAsciiArt ascii={coloredAscii} />
       <CommandDisplay focusIndex={focusIndex} inputKey={inputKey} />
-      <DebugPanel/>
+      {
+        config.data.development &&
+        <DebugPanel/>
+      }
       <Footer cwd={cwd} showExitWarning={showExitWarning} />
     </box>
   );
