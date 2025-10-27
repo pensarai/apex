@@ -8,7 +8,16 @@ const DNS_RECORD_KEYS_PATH = path.join(CONFIG_DIR_PATH, "keys"); // txt file con
 
 const isTargetRemote = (target: string) => {
  const url = new URL(target);
- return !(url.hostname === "localhost" || url.hostname === "127.0.0.1");
+ let hostname: string | undefined = url.hostname;
+ if(hostname === "") {
+    hostname = target.split(":")[0];
+ }
+
+ if(!hostname) {
+    throw new Error(`Error parsing url, no hostname was able to be parsed: ${target}`)
+ }
+
+ return !(hostname === "localhost" || hostname === "127.0.0.1");
 };
 
 const findTxtRecordForDomain = async (domain: string) => {

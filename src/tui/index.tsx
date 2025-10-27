@@ -26,6 +26,7 @@ import { RGBA } from "@opentui/core";
 import { RouteProvider, useRoute, type RoutePath } from "./context/route";
 import Switch, { createSwitch } from "./components/switch";
 import { ConfigProvider, useConfig } from "./context/config";
+import DebugPanel from "./components/debug-console";
 
 // Get the directory of the current module
 const __filename = fileURLToPath(import.meta.url);
@@ -219,6 +220,7 @@ function AppContent({
     >
       <ColoredAsciiArt ascii={coloredAscii} />
       <CommandDisplay focusIndex={focusIndex} inputKey={inputKey} />
+      <DebugPanel/>
       <Footer cwd={cwd} showExitWarning={showExitWarning} />
     </box>
   );
