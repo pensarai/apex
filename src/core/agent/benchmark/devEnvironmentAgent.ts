@@ -2,7 +2,7 @@ import { stepCountIs, tool } from "ai";
 import { z } from "zod";
 import { streamResponse, type AIModel } from "../../ai";
 import { existsSync, readFileSync, writeFileSync } from "fs";
-import { join } from "path";
+import { join, resolve } from "path";
 import { exec as nodeExec } from "child_process";
 import { promisify } from "util";
 import { detectOSAndEnhancePrompt } from "../utils";
@@ -116,9 +116,7 @@ export async function runDevEnvironmentAgent(
   abortSignal?: AbortSignal
 ): Promise<DevEnvironmentAgentResult> {
   console.log(`[DevEnvAgent] Starting in: ${workingDir}`);
-  console.log(
-    `[DevEnvAgent] Absolute path: ${require("path").resolve(workingDir)}`
-  );
+  console.log(`[DevEnvAgent] Absolute path: ${resolve(workingDir)}`);
 
   let result: DevEnvironmentAgentResult = { success: false };
 
@@ -165,8 +163,8 @@ export async function runDevEnvironmentAgent(
         const fullPath = join(workingDir, filePath);
 
         // Security check - ensure path is within workingDir
-        const resolvedPath = require("path").resolve(fullPath);
-        const resolvedWorkingDir = require("path").resolve(workingDir);
+        const resolvedPath = resolve(fullPath);
+        const resolvedWorkingDir = resolve(workingDir);
         if (!resolvedPath.startsWith(resolvedWorkingDir)) {
           return {
             success: false,
@@ -221,8 +219,8 @@ export async function runDevEnvironmentAgent(
         const fullPath = join(workingDir, filePath);
 
         // Security check - ensure path is within workingDir
-        const resolvedPath = require("path").resolve(fullPath);
-        const resolvedWorkingDir = require("path").resolve(workingDir);
+        const resolvedPath = resolve(fullPath);
+        const resolvedWorkingDir = resolve(workingDir);
         if (!resolvedPath.startsWith(resolvedWorkingDir)) {
           return {
             success: false,

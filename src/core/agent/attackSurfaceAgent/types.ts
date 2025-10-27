@@ -1,3 +1,5 @@
+import { readFileSync } from "fs";
+
 /**
  * Type definitions for Attack Surface Analysis results
  * These types match the simplified answer tool schema
@@ -29,8 +31,7 @@ export interface PentestTarget {
 export function loadAttackSurfaceResults(
   resultsPath: string
 ): AttackSurfaceAnalysisResults {
-  const fs = require("fs");
-  const data = fs.readFileSync(resultsPath, "utf-8");
+  const data = readFileSync(resultsPath, "utf-8");
   return JSON.parse(data) as AttackSurfaceAnalysisResults;
 }
 
