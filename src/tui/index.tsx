@@ -1,4 +1,4 @@
-import { render, useKeyboard } from "@opentui/react";
+import { render, useKeyboard, useRenderer } from "@opentui/react";
 import {
   convertImageToColoredAscii,
   ColoredAsciiArt,
@@ -16,12 +16,16 @@ import ThoroughPentestAgentDisplay from "./components/commands/thorough-pentest-
 import SessionsDisplay from "./components/commands/sessions-display";
 import ModelsDisplay from "./components/commands/models-display";
 import type { Config } from "../core/config/config";
-import { config } from "../core/config";
+import { config as _config } from "../core/config";
 import AlertDialog from "./components/alert-dialog";
-<<<<<<< HEAD
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { existsSync } from "fs";
+import ResponsibleUseDisclosure from "./components/responsible-use-disclosure";
+import { RGBA } from "@opentui/core";
+import { RouteProvider, useRoute, type RoutePath } from "./context/route";
+import Switch, { createSwitch } from "./components/switch";
+import { ConfigProvider, useConfig } from "./context/config";
 
 // Get the directory of the current module
 const __filename = fileURLToPath(import.meta.url);
@@ -43,12 +47,6 @@ function findImagePath(): string {
 
   throw new Error("Could not find pensar.svg");
 }
-=======
-import ResponsibleUseDisclosure from "./components/responsible-use-disclosure";
-import { RGBA } from "@opentui/core";
-import { RouteProvider, useRoute, type RoutePath } from "./context/route";
-import Switch, { createSwitch } from "./components/switch";
->>>>>>> 2030c2d (add route handler for improved ergonomics around routing)
 
 // Configuration
 const CONFIG = {
@@ -75,8 +73,12 @@ console.log(
   } columns (scale: ${CONFIG.scale * 100}%)`
 );
 
-function App() {
-  const [appConfig, setAppConfig] = useState<Config | null>(null);
+interface AppProps {
+  appConfig: Config;
+};
+
+function App(props: AppProps) {
+  const { appConfig } = props;
   const [focusIndex, setFocusIndex] = useState(0);
   const [cwd, setCwd] = useState(process.cwd());
   const [ctrlCPressTime, setCtrlCPressTime] = useState<number | null>(null);
@@ -85,39 +87,35 @@ function App() {
 
   const navigableItems = ["command-input"]; // List of items that can be focused
 
-  useEffect(() => {
-    async function getConfig() {
-      const _config = await config.get();
-      setAppConfig(_config);
-    }
-    getConfig();
-  }, []);
-
-  const handleAcceptPolicy = async () => {
-    await config.update({ responsibleUseAccepted: true });
-    const updatedConfig = await config.get();
-    setAppConfig(updatedConfig);
-  };
+  // useEffect(() => {
+  //   async function getConfig() {
+  //     const _config = await config.get();
+  //     setAppConfig(_config);
+  //   }
+  //   getConfig();
+  // }, []);
 
   return (
-    <RouteProvider>
-       <AgentProvider>
-         <CommandProvider>
-                 <AppContent
-                  focusIndex={focusIndex}
-                  setFocusIndex={setFocusIndex}
-                  cwd={cwd}
-                  ctrlCPressTime={ctrlCPressTime}
-                  setCtrlCPressTime={setCtrlCPressTime}
-                  showExitWarning={showExitWarning}
-                  setShowExitWarning={setShowExitWarning}
-                  inputKey={inputKey}
-                  setInputKey={setInputKey}
-                  navigableItems={navigableItems}
-                />
-        </CommandProvider>
-     </AgentProvider>
-    </RouteProvider>
+    <ConfigProvider config={appConfig}>
+      <RouteProvider>
+        <AgentProvider>
+          <CommandProvider>
+                  <AppContent
+                    focusIndex={focusIndex}
+                    setFocusIndex={setFocusIndex}
+                    cwd={cwd}
+                    ctrlCPressTime={ctrlCPressTime}
+                    setCtrlCPressTime={setCtrlCPressTime}
+                    showExitWarning={showExitWarning}
+                    setShowExitWarning={setShowExitWarning}
+                    inputKey={inputKey}
+                    setInputKey={setInputKey}
+                    navigableItems={navigableItems}
+                  />
+          </CommandProvider>
+      </AgentProvider>
+      </RouteProvider>
+    </ConfigProvider>
 
   );
 }
@@ -146,6 +144,12 @@ function AppContent({
   navigableItems: string[];
 }) {
   const route = useRoute();
+  const config = useConfig();
+
+  !config.data.responsibleUseAccepted && route.navigate({
+    type: "base",
+    path: "disclosure"
+  });
 
   // Auto-clear the exit warning after 1 second
   useEffect(() => {
@@ -231,6 +235,15 @@ function CommandDisplay({
 }) {
 
   const route = useRoute();
+  const config = useConfig();
+
+  const handleAcceptPolicy = async () => {
+    await config.update({ responsibleUseAccepted: true });
+    route.navigate({
+      type: "base",
+      path: "home"
+    });
+  };
 
   if(route.data.type === "base") {
     const routePath = route.data.path;
@@ -247,6 +260,9 @@ function CommandDisplay({
         gap={2}
       >
         <RouteSwitch condition={routePath}>
+          <RouteSwitch.Case when="disclosure">
+            <ResponsibleUseDisclosure onAccept={handleAcceptPolicy}/>
+          </RouteSwitch.Case>
           <RouteSwitch.Case when="home">
             <CommandInput focused={focusIndex === 0} inputKey={inputKey}/>
           </RouteSwitch.Case>
@@ -279,6 +295,12 @@ function CommandDisplay({
   return null;
 }
 
-render(<App />, {
-  exitOnCtrlC: false, // We'll handle Ctrl+C manually
-});
+async function main() {
+  const appConfig = await _config.get();
+  render(<App appConfig={appConfig}/>, {
+    exitOnCtrlC: false, // We'll handle Ctrl+C manually
+  });
+}
+
+main();
+

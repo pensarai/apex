@@ -28,14 +28,14 @@ export interface RunAgentResult extends StreamTextResult<ToolSet, never> {
   session: Session;
 }
 
-export function runAgent(opts: RunAgentProps): {
+export async function runAgent(opts: RunAgentProps): Promise<{
   streamResult: RunAgentResult;
   session: Session;
-} {
+} >{
   const { target, model, onStepFinish, abortSignal } = opts;
 
   // Create a new session for this attack surface analysis
-  const session = opts.session || createSession(target);
+  const session = opts.session || await createSession(target);
 
   console.log(`Created attack surface session: ${session.id}`);
   console.log(`Session path: ${session.rootPath}`);

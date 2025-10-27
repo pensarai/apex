@@ -48,11 +48,11 @@ export function getExecutionsDir(): string {
 /**
  * Create a new session for a pentest run
  */
-export function createSession(
+export async function createSession(
   target: string,
   objective?: string,
   prefix?: string
-): Session {
+): Promise<Session> {
   const sessionId = generateSessionId(prefix);
   const rootPath = join(getExecutionsDir(), sessionId);
   const findingsPath = join(rootPath, "findings");

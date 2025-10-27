@@ -9,7 +9,8 @@ export type RoutePath =
     | "dns"
     | "config"
     | "sessions"
-    | "models";
+    | "models"
+    | "disclosure";
 
 export type Route = 
     {
