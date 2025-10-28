@@ -17,12 +17,12 @@ export type AIAuthConfig = {
   openAiAPIKey?: string;
   anthropicAPIKey?: string;
   openRouterAPIKey?: string;
-  bedrock: {
+  bedrock?: {
     accessKeyId: string;
     secretAccessKey: string;
     region: string;
   };
-  local: {
+  local?: {
     baseURL: string;
   };
 };
