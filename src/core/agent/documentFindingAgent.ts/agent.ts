@@ -16,6 +16,7 @@ import {
 import { promisify } from "util";
 import { exec } from "child_process";
 import { Logger } from "../logger";
+import type { AIAuthConfig } from "../../ai/utils";
 
 const execAsync = promisify(exec);
 
@@ -37,7 +38,8 @@ export type Finding = z.infer<typeof FindingObject>;
 export async function documentFindingAgent(
   finding: Finding,
   model: AIModel,
-  session: Session
+  session: Session,
+  authConfig?: AIAuthConfig
 ) {
   const logger = new Logger(session, "documentFindingAgent.log");
   // Create pocs directory for pentest agent
@@ -717,28 +719,11 @@ Begin your analysis now.
       document_finding,
       finalize_documentation,
     },
+    authConfig,
     stopWhen: hasToolCall("finalize_documentation") || stepCountIs(1000),
   });
 
   for await (const delta of streamResult.fullStream) {
-    // if (delta.type === "text-delta") {
-    //   process.stdout.write(delta.text);
-    // } else if (delta.type === "tool-call") {
-    //   console.log(
-    //     `\n\n[Tool] ${delta.toolName}${
-    //       delta.input?.toolCallDescription
-    //         ? `: ${delta.input.toolCallDescription}`
-    //         : ""
-    //     }`
-    //   );
-    // } else if (delta.type === "tool-result") {
-    //   const output = (delta as any).output;
-    //   if (output?.message) {
-    //     console.log(`[Tool Result] ${output.message}`);
-    //   } else {
-    //     console.log(`[Tool Result] Complete`);
-    //   }
-    // }
   }
 
   if (!documentationResult) {
