@@ -23,6 +23,7 @@ import {
   createSummarizationStream,
   getProviderModel,
   summarizeConversation,
+  type AIAuthConfig,
 } from "./utils";
 
 export type AIModel = AnthropicMessagesModelId | OpenAIChatModelId | string; // For OpenRouter and Bedrock models
@@ -139,6 +140,7 @@ export interface StreamResponseOpts {
   abortSignal?: AbortSignal;
   activeTools?: string[];
   silent?: boolean;
+  authConfig?: AIAuthConfig;
 }
 
 export function streamResponse(
@@ -156,10 +158,11 @@ export function streamResponse(
     abortSignal,
     activeTools,
     silent,
+    authConfig,
   } = opts;
   // Use a container object so the reference stays stable but the value can be updated
   const messagesContainer = { current: messages || [] };
-  const providerModel = getProviderModel(model);
+  const providerModel = getProviderModel(model, authConfig);
 
   try {
     // Create the appropriate provider instance
