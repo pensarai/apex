@@ -151,7 +151,7 @@ export async function summarizeConversation(
 // Helper function to check if an error is related to context length
 export function checkIfContextLengthError(error: any): boolean {
   const errorMessage = error?.message?.toLowerCase() || "";
-  const errorCode = error?.code?.toLowerCase() || "";
+  const errorCode = String(error?.code || "").toLowerCase();
 
   return (
     errorMessage.includes("context length") ||
