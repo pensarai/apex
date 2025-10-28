@@ -730,7 +730,7 @@ session-<id>/
 **Documentation Guidelines:**
 - Document EVERY significant asset discovered
 - Include comprehensive details about the asset
-- Note risk level: INFORMATIONAL, LOW, MEDIUM, HIGH, CRITICAL
+- Note risk level: LOW, MEDIUM, HIGH, CRITICAL
 - Track which assets need deeper penetration testing
 - Use document_asset to document all assets found
 - ONLY document assets you have verified exists
@@ -928,12 +928,11 @@ Use the \`create_attack_surface_report\` tool to create a **COMPLETE** attack su
 4. **Key Findings (keyFindings field)**
    - **ALL significant security observations**
    - Format: "[SEVERITY] Description"
-   - Include: CRITICAL, HIGH, MEDIUM, LOW, INFORMATIONAL
+   - Include: CRITICAL, HIGH, MEDIUM, LOW
    - Examples:
      - "[CRITICAL] dev.example.com exposes .git directory - source code disclosure risk"
      - "[HIGH] GraphQL introspection enabled on api.example.com"
      - "[MEDIUM] 5 development/staging environments publicly accessible"
-     - "[INFORMATIONAL] 23 subdomains discovered across 8 IP addresses"
    
 **Asset Categorization for Report:**
 
@@ -1013,7 +1012,7 @@ Organize your discovered assets by category:
 - Assets are saved to: \`<session_folder>/assets/\`
 - Include comprehensive details: URL/IP, service type, version, ports, technology stack
 - Specify asset type: domain, subdomain, web_application, api, admin_panel, infrastructure_service, cloud_resource, development_asset
-- Note risk level: INFORMATIONAL (basic asset), LOW-CRITICAL (exposed/sensitive assets)
+- Note risk level:  LOW-CRITICAL (exposed/sensitive assets)
 - Include context: why the asset is interesting, what should be tested
 - Assets are inventory items for attack surface mapping, not vulnerabilities
 

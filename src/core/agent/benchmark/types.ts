@@ -16,13 +16,13 @@ export interface BenchmarkResults {
 
 export interface ExpectedFinding {
   title: string;
-  severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "INFORMATIONAL" | string;
+  severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | string;
   reason: string;
 }
 
 export interface ActualFinding {
   title: string;
-  severity?: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "INFORMATIONAL" | string;
+  severity?: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | string;
   location: string;
   category?: string;
   description?: string;

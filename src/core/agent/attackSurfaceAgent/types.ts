@@ -73,13 +73,10 @@ export function parseKeyFinding(finding: string): {
   severity: string;
   description: string;
 } {
-  const severityMatch = finding.match(
-    /^\[(CRITICAL|HIGH|MEDIUM|LOW|INFORMATIONAL)\]/
-  );
-  const severity: string = severityMatch?.[1] || "INFORMATIONAL";
+  const severityMatch = finding.match(/^\[(CRITICAL|HIGH|MEDIUM|LOW)\]/);
+  const severity: string = severityMatch?.[1] || "LOW";
   const description: string =
-    finding.replace(/^\[(CRITICAL|HIGH|MEDIUM|LOW|INFORMATIONAL)\]\s*/, "") ||
-    finding;
+    finding.replace(/^\[(CRITICAL|HIGH|MEDIUM|LOW)\]\s*/, "") || finding;
 
   return { severity, description };
 }
