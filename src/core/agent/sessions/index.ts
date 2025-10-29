@@ -1,4 +1,12 @@
-import { mkdirSync, existsSync, writeFileSync } from "fs";
+import {
+  mkdirSync,
+  existsSync,
+  writeFileSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  rmSync,
+} from "fs";
 import { join } from "path";
 import { homedir } from "os";
 import { randomBytes } from "crypto";
@@ -121,7 +129,7 @@ export function getSession(sessionId: string): Session | null {
     return null;
   }
 
-  const metadata = require(metadataPath);
+  const metadata = JSON.parse(readFileSync(metadataPath, "utf-8"));
   return metadata as Session;
 }
 
@@ -135,7 +143,6 @@ export function listSessions(): string[] {
     return [];
   }
 
-  const { readdirSync, statSync } = require("fs");
   const entries = readdirSync(executionsDir);
 
   return entries.filter((entry: string) => {
@@ -154,7 +161,6 @@ export function cleanupOldSessions(daysOld: number = 30): number {
     return 0;
   }
 
-  const { readdirSync, statSync, rmSync } = require("fs");
   const entries = readdirSync(executionsDir);
   const now = Date.now();
   const cutoff = now - daysOld * 24 * 60 * 60 * 1000;

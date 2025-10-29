@@ -121,10 +121,8 @@ Each asset creates a JSON file in the assets directory for tracking and analysis
         })
         .describe("Additional details about the asset"),
       riskLevel: z
-        .enum(["INFORMATIONAL", "LOW", "MEDIUM", "HIGH", "CRITICAL"])
-        .describe(
-          "Risk level: INFORMATIONAL (basic asset), LOW-CRITICAL (exposed/sensitive)"
-        ),
+        .enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"])
+        .describe("Risk level: LOW-CRITICAL (exposed/sensitive)"),
       notes: z
         .string()
         .optional()

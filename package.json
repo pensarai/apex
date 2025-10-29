@@ -1,10 +1,14 @@
 {
   "name": "@pensar/apex",
-  "version": "0.0.16",
+  "version": "0.0.17",
   "description": "AI-powered penetration testing CLI tool with terminal UI",
   "module": "src/tui/index.tsx",
   "main": "build/index.js",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pensarai/apex.git"
+  },
   "bin": {
     "pensar": "./bin/pensar.js"
   },

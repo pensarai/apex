@@ -55,6 +55,7 @@ jobs:
         with:
           tag_name: v${{ steps.package-version.outputs.version }}
           name: Release v${{ steps.package-version.outputs.version }}
+          generate_release_notes: true
           body: |
             ## Release v${{ steps.package-version.outputs.version }}
 

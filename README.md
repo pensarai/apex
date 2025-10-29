@@ -1,5 +1,7 @@
-# Pensar Apex
+<h1 align="center">Pensar Apex</h1>
 
+<p align="center">
+<a href="https://www.npmjs.com/package/@pensar/apex"><img src="https://img.shields.io/npm/v/@pensar/apex" alt="npm version"></a>
 <p align="center">
   <img src="screenshot.png" alt="Pensar Apex Screenshot" width="800">
 </p>

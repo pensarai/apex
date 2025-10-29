@@ -16,12 +16,13 @@ import {
 import { promisify } from "util";
 import { exec } from "child_process";
 import { Logger } from "../logger";
+import type { AIAuthConfig } from "../../ai/utils";
 
 const execAsync = promisify(exec);
 
 const FindingObject = z.object({
   title: z.string().describe("Finding title"),
-  severity: z.enum(["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFORMATIONAL"]),
+  severity: z.enum(["CRITICAL", "HIGH", "MEDIUM", "LOW"]),
   description: z.string().describe("Detailed description of the finding"),
   impact: z.string().describe("Potential impact if exploited"),
   evidence: z.string().describe("Evidence/proof of the vulnerability"),
@@ -37,7 +38,8 @@ export type Finding = z.infer<typeof FindingObject>;
 export async function documentFindingAgent(
   finding: Finding,
   model: AIModel,
-  session: Session
+  session: Session,
+  authConfig?: AIAuthConfig
 ) {
   const logger = new Logger(session, "documentFindingAgent.log");
   // Create pocs directory for pentest agent
@@ -372,7 +374,6 @@ SEVERITY LEVELS:
 - HIGH: Significant security risk (XSS, CSRF, sensitive data exposure, privilege escalation)
 - MEDIUM: Security weakness that could be exploited (information disclosure, weak configs)
 - LOW: Minor security concern (missing headers, verbose errors)
-- INFORMATIONAL: No immediate risk but worth noting (technology versions, endpoints discovered)
 
 FINDING STRUCTURE:
 - Title: Clear, concise description
@@ -385,7 +386,7 @@ FINDING STRUCTURE:
 - References: CVE, CWE, OWASP, or security advisories`,
     inputSchema: z.object({
       title: z.string().describe("Finding title"),
-      severity: z.enum(["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFORMATIONAL"]),
+      severity: z.enum(["CRITICAL", "HIGH", "MEDIUM", "LOW"]),
       description: z.string().describe("Detailed description of the finding"),
       impact: z.string().describe("Potential impact if exploited"),
       evidence: z.string().describe("Evidence/proof of the vulnerability"),
@@ -718,28 +719,11 @@ Begin your analysis now.
       document_finding,
       finalize_documentation,
     },
+    authConfig,
     stopWhen: hasToolCall("finalize_documentation") || stepCountIs(1000),
   });
 
   for await (const delta of streamResult.fullStream) {
-    // if (delta.type === "text-delta") {
-    //   process.stdout.write(delta.text);
-    // } else if (delta.type === "tool-call") {
-    //   console.log(
-    //     `\n\n[Tool] ${delta.toolName}${
-    //       delta.input?.toolCallDescription
-    //         ? `: ${delta.input.toolCallDescription}`
-    //         : ""
-    //     }`
-    //   );
-    // } else if (delta.type === "tool-result") {
-    //   const output = (delta as any).output;
-    //   if (output?.message) {
-    //     console.log(`[Tool Result] ${output.message}`);
-    //   } else {
-    //     console.log(`[Tool Result] Complete`);
-    //   }
-    // }
   }
 
   if (!documentationResult) {

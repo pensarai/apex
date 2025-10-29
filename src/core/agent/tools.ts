@@ -529,7 +529,6 @@ SEVERITY LEVELS:
 - HIGH: Significant security risk (XSS, CSRF, sensitive data exposure, privilege escalation)
 - MEDIUM: Security weakness that could be exploited (information disclosure, weak configs)
 - LOW: Minor security concern (missing headers, verbose errors)
-- INFORMATIONAL: No immediate risk but worth noting (technology versions, endpoints discovered)
 
 FINDING STRUCTURE:
 - Title: Clear, concise description
@@ -541,7 +540,7 @@ FINDING STRUCTURE:
 - References: CVE, CWE, OWASP, or security advisories`,
     inputSchema: z.object({
       title: z.string().describe("Finding title"),
-      severity: z.enum(["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFORMATIONAL"]),
+      severity: z.enum(["CRITICAL", "HIGH", "MEDIUM", "LOW"]),
       description: z.string().describe("Detailed description of the finding"),
       impact: z.string().describe("Potential impact if exploited"),
       evidence: z.string().describe("Evidence/proof of the vulnerability"),
@@ -851,7 +850,6 @@ The report will be saved as 'pentest-report.md' in the session root directory.`,
           HIGH: 0,
           MEDIUM: 0,
           LOW: 0,
-          INFORMATIONAL: 0,
         };
 
         if (existsSync(session.findingsPath)) {
@@ -863,22 +861,21 @@ The report will be saved as 'pentest-report.md' in the session root directory.`,
             const filePath = join(session.findingsPath, file);
             const content = readFileSync(filePath, "utf-8");
 
-            try {
-              // Parse JSON finding
-              const finding = JSON.parse(content);
+            // Extract severity from the markdown
+            const severityMatch = content.match(
+              /\*\*Severity:\*\*\s+(CRITICAL|HIGH|MEDIUM|LOW)/
+            );
+            const titleMatch = content.match(/^#\s+(.+)$/m);
 
-              if (finding.severity && finding.title) {
-                const severity = finding.severity as keyof typeof severityCounts;
-                severityCounts[severity]++;
-                findings.push({
-                  title: finding.title,
-                  severity,
-                  file,
-                  content: JSON.stringify(finding, null, 2),
-                });
-              }
-            } catch (error) {
-              console.error(`Failed to parse finding file ${file}:`, error);
+            if (severityMatch && titleMatch) {
+              const severity = severityMatch[1] as keyof typeof severityCounts;
+              severityCounts[severity]++;
+              findings.push({
+                title: titleMatch[1],
+                severity,
+                file,
+                content,
+              });
             }
           }
         }
@@ -889,7 +886,6 @@ The report will be saved as 'pentest-report.md' in the session root directory.`,
           HIGH: 1,
           MEDIUM: 2,
           LOW: 3,
-          INFORMATIONAL: 4,
         };
         findings.sort(
           (a, b) =>
@@ -972,7 +968,6 @@ ${executiveSummary}
 - **High:** ${severityCounts.HIGH}
 - **Medium:** ${severityCounts.MEDIUM}
 - **Low:** ${severityCounts.LOW}
-- **Informational:** ${severityCounts.INFORMATIONAL}
 
 ### Risk Level
 

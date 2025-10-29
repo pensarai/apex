@@ -1,3 +1,5 @@
+import { readFileSync } from "fs";
+
 /**
  * Type definitions for Attack Surface Analysis results
  * These types match the simplified answer tool schema
@@ -29,8 +31,7 @@ export interface PentestTarget {
 export function loadAttackSurfaceResults(
   resultsPath: string
 ): AttackSurfaceAnalysisResults {
-  const fs = require("fs");
-  const data = fs.readFileSync(resultsPath, "utf-8");
+  const data = readFileSync(resultsPath, "utf-8");
   return JSON.parse(data) as AttackSurfaceAnalysisResults;
 }
 
@@ -72,13 +73,10 @@ export function parseKeyFinding(finding: string): {
   severity: string;
   description: string;
 } {
-  const severityMatch = finding.match(
-    /^\[(CRITICAL|HIGH|MEDIUM|LOW|INFORMATIONAL)\]/
-  );
-  const severity: string = severityMatch?.[1] || "INFORMATIONAL";
+  const severityMatch = finding.match(/^\[(CRITICAL|HIGH|MEDIUM|LOW)\]/);
+  const severity: string = severityMatch?.[1] || "LOW";
   const description: string =
-    finding.replace(/^\[(CRITICAL|HIGH|MEDIUM|LOW|INFORMATIONAL)\]\s*/, "") ||
-    finding;
+    finding.replace(/^\[(CRITICAL|HIGH|MEDIUM|LOW)\]\s*/, "") || finding;
 
   return { severity, description };
 }

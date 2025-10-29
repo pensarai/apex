@@ -13,51 +13,82 @@ import {
   type ToolSet,
 } from "ai";
 
-export function getProviderModel(model: AIModel): LanguageModel {
+export type AIAuthConfig = {
+  openAiAPIKey?: string;
+  anthropicAPIKey?: string;
+  openRouterAPIKey?: string;
+  bedrock?: {
+    accessKeyId: string;
+    secretAccessKey: string;
+    region: string;
+  };
+  local?: {
+    baseURL: string;
+  };
+};
+
+export function getProviderModel(
+  model: AIModel,
+  authConfig?: AIAuthConfig
+): LanguageModel {
   const { provider } = getModelInfo(model);
+
+  const openAiAPIKey = authConfig?.openAiAPIKey || process.env.OPENAI_API_KEY;
+  const anthropicAPIKey =
+    authConfig?.anthropicAPIKey || process.env.ANTHROPIC_API_KEY;
+  const openRouterAPIKey =
+    authConfig?.openRouterAPIKey || process.env.OPENROUTER_API_KEY;
+  const bedrockAccessKeyId =
+    authConfig?.bedrock?.accessKeyId || process.env.AWS_ACCESS_KEY_ID;
+  const bedrockSecretAccessKey =
+    authConfig?.bedrock?.secretAccessKey || process.env.AWS_SECRET_ACCESS_KEY;
+  const bedrockRegion =
+    authConfig?.bedrock?.region || process.env.AWS_REGION || "us-east-1";
+  const localBaseURL =
+    authConfig?.local?.baseURL || process.env.LOCAL_MODEL_URL;
 
   let providerModel;
 
   switch (provider) {
     case "openai":
       const openai = createOpenAI({
-        apiKey: process.env.OPENAI_API_KEY,
+        apiKey: openAiAPIKey,
       });
       providerModel = openai(model);
       break;
 
     case "openrouter":
       const openrouter = createOpenRouter({
-        apiKey: process.env.OPENROUTER_API_KEY,
+        apiKey: openRouterAPIKey,
       });
       providerModel = openrouter(model);
       break;
 
     case "bedrock":
       const bedrock = createAmazonBedrock({
-        region: process.env.AWS_REGION || "us-east-1",
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+        region: bedrockRegion,
+        accessKeyId: bedrockAccessKeyId,
+        secretAccessKey: bedrockSecretAccessKey,
       });
       providerModel = bedrock(model);
       break;
 
     case "anthropic":
       providerModel = createAnthropic({
-        apiKey: process.env.ANTHROPIC_API_KEY,
+        apiKey: anthropicAPIKey,
       }).chat(model);
       break;
 
     case "local":
       providerModel = createOpenAI({
-        baseURL: process.env.LOCAL_MODEL_URL,
+        baseURL: localBaseURL,
         apiKey: "",
       }).chat(model);
       break;
 
     default:
       const anthropic = createAnthropic({
-        apiKey: process.env.ANTHROPIC_API_KEY,
+        apiKey: anthropicAPIKey,
       });
       providerModel = anthropic(model);
       break;
@@ -151,7 +182,7 @@ export async function summarizeConversation(
 // Helper function to check if an error is related to context length
 export function checkIfContextLengthError(error: any): boolean {
   const errorMessage = error?.message?.toLowerCase() || "";
-  const errorCode = error?.code?.toLowerCase() || "";
+  const errorCode = String(error?.code || "").toLowerCase();
 
   return (
     errorMessage.includes("context length") ||
