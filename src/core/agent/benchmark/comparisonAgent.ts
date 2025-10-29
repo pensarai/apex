@@ -93,24 +93,46 @@ export async function runComparisonAgent(
     throw new Error(`Findings directory not found at: ${findingsPath}`);
   }
 
-  // Concatenate all markdown files
+  // Concatenate all JSON findings as formatted text
   let actualFindingsMarkdown = "";
   const findingFiles = readdirSync(findingsPath);
 
   for (const file of findingFiles) {
-    if (!file.endsWith(".md")) continue;
+    if (!file.endsWith(".json")) continue;
 
     try {
       const filePath = join(findingsPath, file);
       const data = readFileSync(filePath, "utf-8");
-      actualFindingsMarkdown += `\n\n---\n**File: ${file}**\n\n${data}`;
+      const finding = JSON.parse(data);
+
+      // Format JSON finding as markdown-like text for comparison
+      const formattedFinding = `# ${finding.title}
+
+**Severity:** ${finding.severity}
+**Target:** ${finding.target || 'N/A'}
+
+## Description
+${finding.description}
+
+## Impact
+${finding.impact}
+
+## Evidence
+${finding.evidence}
+
+## Remediation
+${finding.remediation}
+
+${finding.references ? `## References\n${finding.references}` : ''}`;
+
+      actualFindingsMarkdown += `\n\n---\n**File: ${file}**\n\n${formattedFinding}`;
     } catch (error: any) {
       console.error(`Failed to read finding file ${file}:`, error.message);
     }
   }
 
   if (!actualFindingsMarkdown.trim()) {
-    throw new Error(`No markdown findings found in ${findingsPath}`);
+    throw new Error(`No JSON findings found in ${findingsPath}`);
   }
 
   // Path for saving comparison results
