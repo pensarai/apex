@@ -546,14 +546,15 @@ Create this POC, test it, then retry document_finding.`,
 
   if (existsSync(findingsPath)) {
     const findingFiles = readdirSync(findingsPath).filter((f) =>
-      f.endsWith(".md")
+      f.endsWith(".json")
     );
 
     for (const file of findingFiles) {
       try {
         const filePath = join(findingsPath, file);
         const content = readFileSync(filePath, "utf-8");
-        existingFindingsText += `\n\n---\nFile: ${file}\n${content}`;
+        const finding = JSON.parse(content);
+        existingFindingsText += `\n\n---\nFile: ${file}\nTitle: ${finding.title}\nSeverity: ${finding.severity}\nDescription: ${finding.description}`;
       } catch (error) {
         console.error(`Failed to read finding file ${file}:`, error);
       }
