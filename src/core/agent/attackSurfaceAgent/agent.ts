@@ -5,15 +5,15 @@ import {
   type StreamTextOnStepFinishCallback,
   tool,
   hasToolCall,
-} from "ai";
-import { streamResponse, type AIModel } from "../../ai";
-import { SYSTEM } from "./prompts";
-import { createPentestTools } from "../tools";
-import { createSession, type Session } from "../sessions";
-import { z } from "zod";
-import { join } from "path";
-import { writeFileSync, mkdirSync, existsSync } from "fs";
-import { detectOSAndEnhancePrompt } from "../utils";
+} from 'ai';
+import { streamResponse, type AIModel } from '../../ai';
+import { SYSTEM } from './prompts';
+import { createPentestTools } from '../tools';
+import { createSession, type Session } from '../sessions';
+import { z } from 'zod';
+import { join } from 'path';
+import { writeFileSync, mkdirSync, existsSync } from 'fs';
+import { detectOSAndEnhancePrompt } from '../utils';
 
 export interface RunAgentProps {
   target: string;
@@ -41,7 +41,7 @@ export function runAgent(opts: RunAgentProps): {
   console.log(`Session path: ${session.rootPath}`);
 
   // Create assets directory for attack surface agent
-  const assetsPath = join(session.rootPath, "assets");
+  const assetsPath = join(session.rootPath, 'assets');
   if (!existsSync(assetsPath)) {
     mkdirSync(assetsPath, { recursive: true });
   }
@@ -54,7 +54,7 @@ export function runAgent(opts: RunAgentProps): {
 
   // Attack Surface specific tool: document_asset
   const document_asset = tool({
-    name: "document_asset",
+    name: 'document_asset',
     description: `Document a discovered asset during attack surface analysis.
     
 Assets are inventory items discovered during reconnaissance and saved to the session's assets folder.
@@ -75,17 +75,17 @@ Each asset creates a JSON file in the assets directory for tracking and analysis
         ),
       assetType: z
         .enum([
-          "domain",
-          "subdomain",
-          "web_application",
-          "api",
-          "admin_panel",
-          "infrastructure_service",
-          "cloud_resource",
-          "development_asset",
-          "endpoint",
+          'domain',
+          'subdomain',
+          'web_application',
+          'api',
+          'admin_panel',
+          'infrastructure_service',
+          'cloud_resource',
+          'development_asset',
+          'endpoint',
         ])
-        .describe("Type of asset discovered"),
+        .describe('Type of asset discovered'),
       description: z
         .string()
         .describe(
@@ -93,9 +93,9 @@ Each asset creates a JSON file in the assets directory for tracking and analysis
         ),
       details: z
         .object({
-          url: z.string().optional().describe("URL if applicable"),
-          ip: z.string().optional().describe("IP address if known"),
-          ports: z.array(z.number()).optional().describe("Open ports"),
+          url: z.string().optional().describe('URL if applicable'),
+          ip: z.string().optional().describe('IP address if known'),
+          ports: z.array(z.number()).optional().describe('Open ports'),
           services: z
             .array(z.string())
             .optional()
@@ -109,31 +109,31 @@ Each asset creates a JSON file in the assets directory for tracking and analysis
           endpoints: z
             .array(z.string())
             .optional()
-            .describe("Discovered endpoints for web apps/APIs"),
+            .describe('Discovered endpoints for web apps/APIs'),
           authentication: z
             .string()
             .optional()
-            .describe("Authentication type if known"),
+            .describe('Authentication type if known'),
           status: z
             .string()
             .optional()
-            .describe("Status (active, inactive, redirect, error)"),
+            .describe('Status (active, inactive, redirect, error)'),
         })
-        .describe("Additional details about the asset"),
+        .describe('Additional details about the asset'),
       riskLevel: z
-        .enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"])
-        .describe("Risk level: LOW-CRITICAL (exposed/sensitive)"),
+        .enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'])
+        .describe('Risk level: LOW-CRITICAL (exposed/sensitive)'),
       notes: z
         .string()
         .optional()
-        .describe("Additional notes or observations about the asset"),
+        .describe('Additional notes or observations about the asset'),
     }),
     execute: async (asset) => {
       // Create a sanitized filename from asset name
       const sanitizedName = asset.assetName
         .toLowerCase()
-        .replace(/[^a-z0-9-_.]/g, "_");
-      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+        .replace(/[^a-z0-9-_.]/g, '_');
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const filename = `asset_${sanitizedName}_${timestamp}.json`;
       const filepath = join(assetsPath, filename);
 
@@ -161,7 +161,7 @@ Each asset creates a JSON file in the assets directory for tracking and analysis
 
   // Simplified answer schema for orchestrator agent
   const create_attack_surface_report = tool({
-    name: "create_attack_surface_report",
+    name: 'create_attack_surface_report',
     description: `Provide attack surface analysis results to the orchestrator agent.
     
 Call this at the END of your analysis with:
@@ -176,26 +176,23 @@ Call this at the END of your analysis with:
           totalDomains: z.number(),
           analysisComplete: z.boolean(),
         })
-        .describe("Summary statistics"),
-
+        .describe('Summary statistics'),
       discoveredAssets: z
         .array(z.string())
         .describe(
           "List of discovered assets with descriptions. Format: 'example.com - Web server (nginx) - Ports 80,443'"
         ),
-
       targets: z
         .array(
           z.object({
-            target: z.string().describe("Target URL, IP, or domain"),
-            objective: z.string().describe("Pentest objective for this target"),
+            target: z.string().describe('Target URL, IP, or domain'),
+            objective: z.string().describe('Pentest objective for this target'),
             rationale: z
               .string()
-              .describe("Why this target needs deep testing"),
+              .describe('Why this target needs deep testing'),
           })
         )
-        .describe("ALL targets for deep penetration testing"),
-
+        .describe('ALL targets for deep penetration testing'),
       keyFindings: z
         .array(z.string())
         .describe(
@@ -204,7 +201,7 @@ Call this at the END of your analysis with:
     }),
     execute: async (results) => {
       // Save the results to the session for the orchestrator to access
-      const resultsPath = join(session.rootPath, "attack-surface-results.json");
+      const resultsPath = join(session.rootPath, 'attack-surface-results.json');
       writeFileSync(resultsPath, JSON.stringify(results, null, 2));
 
       return {
@@ -259,7 +256,7 @@ You MUST provide the details final report using create_attack_surface_report too
       create_attack_surface_report,
     },
     stopWhen: stepCountIs(10000),
-    toolChoice: "auto", // Let the model decide when to use tools vs respond
+    toolChoice: 'auto', // Let the model decide when to use tools vs respond
     onStepFinish,
     abortSignal,
   });
