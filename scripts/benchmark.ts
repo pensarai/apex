@@ -149,7 +149,7 @@ async function main() {
 
   if (args.length === 0) {
     console.error(
-      "Usage: tsx scripts/benchmark.ts <repo-path> [options] [branch1 branch2 ...]"
+      "Usage: pensar benchmark <repo-path> [options] [branch1 branch2 ...]"
     );
     console.error();
     console.error("Options:");
@@ -161,27 +161,34 @@ async function main() {
     console.error(
       "  --model <model>      Specify the AI model to use (default: claude-sonnet-4-5)"
     );
+    console.error(
+      "  --execution-mode <mode>  Where to run: local, daytona, runloop (default: local)"
+    );
+    console.error();
+    console.error("Remote execution (daytona/runloop) requires:");
+    console.error(
+      "  - Repository URL (https://github.com/user/repo) instead of local path"
+    );
+    console.error("  - DAYTONA_API_KEY/RUNLOOP_API_KEY environment variable");
     console.error();
     console.error("Examples:");
-    console.error("  tsx scripts/benchmark.ts /path/to/vulnerable-app");
-    console.error("  tsx scripts/benchmark.ts /path/to/app main develop");
-    console.error("  tsx scripts/benchmark.ts /path/to/app --all-branches");
-    console.error(
-      "  tsx scripts/benchmark.ts /path/to/app --all-branches --limit 3"
-    );
-    console.error("  tsx scripts/benchmark.ts /path/to/app --limit 5");
-    console.error(
-      "  tsx scripts/benchmark.ts /path/to/app --all-branches --limit 10 --skip 10"
-    );
-    console.error("  tsx scripts/benchmark.ts /path/to/app --model gpt-4o");
-    console.error(
-      "  tsx scripts/benchmark.ts /path/to/app --model claude-opus-4-1 --limit 3"
-    );
+    console.error("");
+    console.error("Local execution:");
+    console.error("  pensar benchmark /path/to/vulnerable-app");
+    console.error("  pensar benchmark /path/to/app main develop");
+    console.error("  pensar benchmark /path/to/app --all-branches");
+    console.error("  pensar benchmark /path/to/app --model gpt-4o");
+    console.error("");
+    console.error("Remote execution (Daytona):");
+    console.error("  pensar benchmark https://github.com/user/repo --execution-mode daytona");
+    console.error("  pensar benchmark https://github.com/user/repo main --execution-mode daytona");
+    console.error("  pensar benchmark https://github.com/user/repo main develop staging --execution-mode daytona");
+    console.error("  pensar benchmark https://github.com/user/repo XBEN-001-24 --execution-mode daytona --model claude-haiku-4-5");
     console.error();
-    console.error(
-      "If no branches are specified and --all-branches is not used,"
-    );
-    console.error("all branches will be tested by default.");
+    console.error("Notes:");
+    console.error("  - Local mode: defaults to all branches if none specified");
+    console.error("  - Remote mode: defaults to 'main' if no branches specified");
+    console.error("  - Remote mode: --all-branches flag not supported (specify branches explicitly)");
     process.exit(1);
   }
 
@@ -239,22 +246,37 @@ async function main() {
     model = modelArg as AIModel;
   }
 
+  const executionModeIndex = args.indexOf("--execution-mode");
+  let executionMode: "local" | "daytona" | "runloop" = "local";
+  if (executionModeIndex !== -1) {
+    const modeArg = args[executionModeIndex + 1];
+    if (!modeArg || !["local", "daytona", "runloop"].includes(modeArg)) {
+      console.error(
+        "Error: --execution-mode must be one of: local, daytona, runloop"
+      );
+      process.exit(1);
+    }
+    executionMode = modeArg as "local" | "daytona" | "runloop";
+  }
+
   // Get branch arguments (excluding flags)
   let branchArgs = args.slice(1).filter((arg, index, arr) => {
     if (
       arg === "--all-branches" ||
       arg === "--limit" ||
       arg === "--skip" ||
-      arg === "--model"
+      arg === "--model" ||
+      arg === "--execution-mode"
     ) {
       return false;
     }
-    // Skip the value after --limit, --skip, or --model
+    // Skip the value after --limit, --skip, --model, or --execution-mode
     if (
       index > 0 &&
       (arr[index - 1] === "--limit" ||
         arr[index - 1] === "--skip" ||
-        arr[index - 1] === "--model")
+        arr[index - 1] === "--model" ||
+        arr[index - 1] === "--execution-mode")
     ) {
       return false;
     }
@@ -263,7 +285,16 @@ async function main() {
 
   // Determine which branches to test
   let branches: string[] | undefined;
+
+  // For remote execution modes, we can't auto-discover branches from a URL
+  const isRemoteMode = executionMode !== "local";
+
   if (hasAllBranchesFlag) {
+    if (isRemoteMode) {
+      console.error("Error: --all-branches flag not supported in remote execution mode");
+      console.error("Please specify branches explicitly, e.g.: main develop feature-x");
+      process.exit(1);
+    }
     // Explicitly get all branches from the repo
     console.log("Flag --all-branches detected, fetching all branches...");
     branches = await getRepoBranches(repoPath);
@@ -272,8 +303,15 @@ async function main() {
     // Use specified branches
     branches = branchArgs;
   } else {
-    // Default behavior: test all branches
-    branches = undefined;
+    // Default behavior
+    if (isRemoteMode) {
+      // For remote mode, default to 'main' if no branches specified
+      branches = ["main"];
+      console.log("No branches specified, defaulting to 'main'");
+    } else {
+      // For local mode, test all branches
+      branches = undefined;
+    }
   }
 
   // Apply skip and limit if specified
@@ -306,11 +344,38 @@ async function main() {
   }
 
   try {
-    await runBenchmark({
-      repoPath,
-      branches,
-      ...(model && { model }),
-    });
+    if (executionMode === "local") {
+      await runBenchmark({
+        repoPath,
+        branches,
+        ...(model && { model }),
+      });
+    } else if (executionMode === "daytona") {
+      // Remote execution in Daytona sandbox
+      const { runBenchmarkInDaytona } = await import(
+        "../src/core/agent/benchmark/remote/daytona-wrapper"
+      );
+
+      console.log("🌩️  Execution Mode: Daytona");
+      console.log("⚠️  This will create a cloud sandbox and incur charges");
+      console.log();
+
+      // Validate repoPath is a URL
+      if (!repoPath.startsWith("http")) {
+        console.error("Error: Daytona mode requires a git repository URL");
+        console.error("Example: https://github.com/user/repo");
+        process.exit(1);
+      }
+
+      await runBenchmarkInDaytona({
+        repoUrl: repoPath,
+        branches,
+        model: (model || "claude-sonnet-4-5") as AIModel,
+      });
+    } else if (executionMode === "runloop") {
+      // Future: Runloop implementation
+      throw new Error("Runloop execution mode not yet implemented");
+    }
   } catch (error: any) {
     console.error("Fatal error:", error.message);
     process.exit(1);
