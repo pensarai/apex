@@ -17,6 +17,7 @@ import { promisify } from "util";
 import { exec } from "child_process";
 import { Logger } from "../logger";
 import type { AIAuthConfig } from "../../ai/utils";
+import { ApexFindingObject } from "./types";
 
 const execAsync = promisify(exec);
 
@@ -384,26 +385,7 @@ FINDING STRUCTURE:
 - POC Path: Path to the proof-of-concept script (REQUIRED)
 - Remediation: Specific, actionable steps to fix
 - References: CVE, CWE, OWASP, or security advisories`,
-    inputSchema: z.object({
-      title: z.string().describe("Finding title"),
-      severity: z.enum(["CRITICAL", "HIGH", "MEDIUM", "LOW"]),
-      description: z.string().describe("Detailed description of the finding"),
-      impact: z.string().describe("Potential impact if exploited"),
-      evidence: z.string().describe("Evidence/proof of the vulnerability"),
-      pocPath: z
-        .string()
-        .describe(
-          "Path to POC script relative to session root (e.g., 'pocs/poc_sqli_login.sh')"
-        ),
-      remediation: z.string().describe("Steps to fix the issue"),
-      references: z
-        .string()
-        .optional()
-        .describe("CVE, CWE, or related references"),
-      toolCallDescription: z
-        .string()
-        .describe("Concise description of this tool call"),
-    }),
+    inputSchema: ApexFindingObject,
     execute: async (finding) => {
       try {
         // Validate POC path exists
