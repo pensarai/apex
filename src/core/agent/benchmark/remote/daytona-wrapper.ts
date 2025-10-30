@@ -84,7 +84,11 @@ export async function runBenchmarkInDaytona(
 
     console.log(`✅ Sandbox created: ${sandbox.id}`);
 
-    // Install bun first 
+    // Disable auto-stop for long-running benchmarks (prevents 502 errors)
+    await sandbox.setAutostopInterval(0);
+    console.log("✅ Auto-stop disabled for benchmark");
+
+    // Install bun first
     await installBun(sandbox);
 
     // Install Apex globally
@@ -131,11 +135,23 @@ export async function runBenchmarkInDaytona(
     if (sandbox) {
       try {
         console.log("\n🧹 Cleaning up sandbox...");
+
+        let attempts = 0;
+        while (attempts < 10) {
+          await sandbox.refreshData();
+          if (sandbox.state !== "stopping" && sandbox.state !== "starting") {
+            break;
+          }
+          console.log(`⏳ Waiting for sandbox state transition... (${sandbox.state})`);
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          attempts++;
+        }
+
         await sandbox.delete();
         console.log("✅ Cleanup complete");
       } catch (cleanupError: any) {
         console.error(`⚠️  Warning: Failed to cleanup sandbox: ${cleanupError.message}`);
-        console.error("   You may need to manually delete the sandbox from the Daytona dashboard");
+        console.error(`   Sandbox ID: ${sandbox.id} - Manual cleanup may be required`);
       }
     }
   }
@@ -155,31 +171,47 @@ async function installBun(sandbox: any): Promise<void> {
     console.log(installResult.result);
   }
 
-  // Add bun to PATH for the current session
+  // Add bun to PATH in bashrc
   await sandbox.process.executeCommand(
     'echo \'export BUN_INSTALL="$HOME/.bun"\' >> ~/.bashrc && echo \'export PATH="$BUN_INSTALL/bin:$PATH"\' >> ~/.bashrc'
   );
 
-  console.log("✅ Bun installed");
+  // Verify bun is accessible by running with explicit PATH
+  const verifyResult = await sandbox.process.executeCommand(
+    'export BUN_INSTALL="$HOME/.bun" && export PATH="$BUN_INSTALL/bin:$PATH" && bun --version'
+  );
+
+  if (!verifyResult.result || verifyResult.exitCode !== 0) {
+    throw new Error("Bun installation verification failed");
+  }
+
+  console.log(`✅ Bun installed: v${verifyResult.result.trim()}`);
 }
 
 /**
- * Install Apex from npm globally
+ * Install Apex using bun
  */
 async function installApex(sandbox: any): Promise<void> {
-  console.log("📦 Installing Apex globally via npm...");
+  console.log("📦 Installing Apex globally via bun...");
 
   try {
+    // Install using bun (ensures bun PATH is working)
     const installResult = await sandbox.process.executeCommand(
-      "npm install -g @pensar/apex"
+      'export BUN_INSTALL="$HOME/.bun" && export PATH="$BUN_INSTALL/bin:$PATH" && bun install -g @pensar/apex'
     );
 
     if (installResult.result) {
       console.log(installResult.result);
     }
 
+    if (installResult.exitCode !== 0) {
+      throw new Error(`Bun install failed with exit code ${installResult.exitCode}`);
+    }
+
     // Verify installation
-    const verifyResult = await sandbox.process.executeCommand("which pensar");
+    const verifyResult = await sandbox.process.executeCommand(
+      'export BUN_INSTALL="$HOME/.bun" && export PATH="$BUN_INSTALL/bin:$PATH" && which pensar'
+    );
     const installedPath = verifyResult.result?.trim();
 
     if (!installedPath) {
@@ -224,9 +256,8 @@ async function runBenchmarkForBranch(
   console.log("🔬 Creating benchmark session...");
   await sandbox.process.createSession("benchmark");
 
-  // Execute benchmark command with environment variables
   console.log("📊 Running benchmark...");
-  const { cmdId, stderr, stdout } =
+  const { cmdId } =
     await sandbox.process.executeSessionCommand("benchmark", {
       command: [
         `export BUN_INSTALL="$HOME/.bun"`,
@@ -235,38 +266,32 @@ async function runBenchmarkForBranch(
         `export OPENROUTER_API_KEY="${process.env.OPENROUTER_API_KEY}"`,
         `pensar benchmark ./repo --model ${model}`,
       ].join(" && "),
+      runAsync: true,  
     });
-
-  // Initial output
-  if (stdout) console.log(stdout);
-  if (stderr) console.error(stderr);
 
   if (!cmdId) {
     throw new Error("Failed to execute benchmark command");
   }
 
-  // Poll for completion and stream logs
-  let exitCode: number | undefined;
-  let command = await sandbox.process.getSessionCommand("benchmark", cmdId);
-  exitCode = command?.exitCode;
+  console.log("⏳ Streaming benchmark logs...\n");
 
-  console.log("⏳ Waiting for benchmark to complete...");
+  // Stream logs in real-time using callbacks
+  await sandbox.process.getSessionCommandLogs(
+    "benchmark",
+    cmdId,
+    (chunk: string) => {
+      // Stream stdout chunks as they arrive
+      process.stdout.write(chunk);
+    },
+    (chunk: string) => {
+      // Stream stderr chunks as they arrive
+      process.stderr.write(chunk);
+    }
+  );
 
-  while (exitCode === undefined) {
-    await new Promise((resolve) => setTimeout(resolve, 2000)); // Poll every 2 seconds
-
-    command = await sandbox.process.getSessionCommand("benchmark", cmdId);
-    const logs = await sandbox.process.getSessionCommandLogs(
-      "benchmark",
-      cmdId
-    );
-
-    // Stream new logs
-    if (logs.stdout) process.stdout.write(logs.stdout);
-    if (logs.stderr) process.stderr.write(logs.stderr);
-
-    exitCode = command?.exitCode;
-  }
+  // After streaming completes, get final command status
+  const command = await sandbox.process.getSessionCommand("benchmark", cmdId);
+  const exitCode = command?.exitCode;
 
   console.log(`\n✅ Benchmark completed with exit code: ${exitCode}`);
 
@@ -354,14 +379,26 @@ async function downloadDirectoryRecursive(
     const remoteFilePath = path.join(remotePath, file.name);
     const localFilePath = path.join(localPath, file.name);
 
-    if (file.isDirectory) {
-      // Recursively download subdirectory
-      console.log(`  📁 Downloading directory: ${file.name}`);
-      await downloadDirectoryRecursive(sandbox, remoteFilePath, localFilePath);
-    } else {
-      // Download file
-      console.log(`  📄 Downloading file: ${file.name}`);
-      await sandbox.fs.downloadFile(remoteFilePath, localFilePath);
+    try {
+      if (file.isDirectory) {
+        // Recursively download subdirectory
+        console.log(`  📁 Downloading directory: ${file.name}`);
+        await downloadDirectoryRecursive(sandbox, remoteFilePath, localFilePath);
+      } else {
+        console.log(`  📄 Downloading file: ${file.name}`);
+        await sandbox.fs.downloadFile(remoteFilePath, localFilePath);
+      }
+    } catch (error: any) {
+      if (error.message?.includes("file not found") || error.message?.includes("invalid")) {
+        console.log(`  📁 Retrying ${file.name} as directory...`);
+        try {
+          await downloadDirectoryRecursive(sandbox, remoteFilePath, localFilePath);
+        } catch (retryError: any) {
+          console.error(`  ⚠️  Skipping ${file.name}: ${retryError.message}`);
+        }
+      } else {
+        console.error(`  ⚠️  Skipping ${file.name}: ${error.message}`);
+      }
     }
   }
 }
