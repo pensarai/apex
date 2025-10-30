@@ -26,6 +26,11 @@ const FindingObject = z.object({
   severity: z.enum(["CRITICAL", "HIGH", "MEDIUM", "LOW"]),
   description: z.string().describe("Detailed description of the finding"),
   impact: z.string().describe("Potential impact if exploited"),
+  endpoint: z
+    .string()
+    .describe(
+      "The full URL Endpoint of the finding. Do not include any other text. i.e. https://example.com/endpoint"
+    ),
   evidence: z.string().describe("Evidence/proof of the vulnerability"),
   remediation: z.string().describe("Steps to fix the issue"),
   references: z.string().optional().describe("CVE, CWE, or related references"),
