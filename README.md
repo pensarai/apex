@@ -97,3 +97,10 @@ export LOCAL_MODEL_URL="http://localhost:8000/v1"
 ```
 
 2. In the Apex Models screen, enter your model name in the "Custom local model (vLLM)" input.
+
+---
+
+### ⚠️ Responsible Use
+
+This repository contains tools for **authorized security testing** only.  
+Before use, please read and agree to the [Responsible Use Disclosure](./RESPONSIBLE_USE.md).
