@@ -24,3 +24,40 @@ export const ApexFindingObject = z.object({
 });
 
 export type ApexFinding = z.infer<typeof ApexFindingObject>;
+
+export const CreatePocObject = z.object({
+  pocName: z
+    .string()
+    .describe(
+      "Name for the POC file (e.g., 'sqli_login', 'xss_stored', 'csrf_attack')"
+    ),
+  pocType: z
+    .enum(["bash", "html"])
+    .describe(
+      "Type of POC: 'bash' for executable scripts (RECOMMENDED) or 'html' for web-based exploits"
+    ),
+  pocContent: z.string().describe("Complete file content for the POC"),
+  description: z
+    .string()
+    .describe("Brief description of what this POC demonstrates"),
+  toolCallDescription: z
+    .string()
+    .describe("Concise description of this tool call"),
+});
+
+export type CreatePocOpts = z.infer<typeof CreatePocObject>;
+export type CreatePocResult = {
+  success: boolean;
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+};
+
+export type DocumentFindingResult = {
+  success: boolean;
+  error: string;
+  message: string;
+  pocPath: string;
+  expectedLocation: string;
+  filepath: string;
+};
