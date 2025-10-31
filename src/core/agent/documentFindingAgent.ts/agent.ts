@@ -1,4 +1,10 @@
-import { tool, hasToolCall, stepCountIs } from "ai";
+import {
+  tool,
+  hasToolCall,
+  stepCountIs,
+  type StreamTextOnStepFinishCallback,
+  type ToolSet,
+} from "ai";
 import { streamResponse, type AIModel } from "../../ai";
 import type { Session } from "../sessions";
 import z from "zod";
@@ -54,7 +60,8 @@ export async function documentFindingAgent(
   authConfig?: AIAuthConfig,
   toolOverride?: {
     create_poc?: (opts: CreatePocOpts) => Promise<CreatePocResult>;
-  }
+  },
+  onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>
 ) {
   const logger = new Logger(session, "documentFindingAgent.log");
   // Create pocs directory for pentest agent
@@ -427,9 +434,13 @@ Create this POC, test it, then retry document_finding.`,
         }
 
         const timestamp = new Date().toISOString();
+
+        const id = crypto.getRandomValues(new Uint8Array(6)).toString();
+
         const findingWithMeta = {
           ...finding,
           timestamp,
+          id,
           sessionId: session.id,
           target: session.target,
           pocPath: finding.pocPath,
@@ -445,51 +456,6 @@ Create this POC, test it, then retry document_finding.`,
         const findingId = `${timestamp.split("T")[0]}-${safeTitle}`;
         const filename = `${findingId}.json`;
         const filepath = join(session.findingsPath, filename);
-
-        // Create markdown document with POC reference
-        //         const markdown = `# ${finding.title}
-
-        // **Severity:** ${finding.severity}
-        // **Target:** ${session.target}
-        // **Date:** ${timestamp}
-        // **Session:** ${session.id}
-        // **POC:** \`${finding.pocPath}\`
-
-        // ## Description
-
-        // ${finding.description}
-
-        // ## Impact
-
-        // ${finding.impact}
-
-        // ## Evidence
-
-        // \`\`\`
-        // ${finding.evidence}
-        // \`\`\`
-
-        // ## Proof of Concept
-
-        // A working POC script is available at: \`${finding.pocPath}\`
-
-        // To reproduce this vulnerability, run:
-        // \`\`\`bash
-        // cd ${session.rootPath}
-        // ./${finding.pocPath}
-        // \`\`\`
-
-        // ## Remediation
-
-        // ${finding.remediation}
-
-        // ${finding.references ? `## References\n\n${finding.references}` : ""}
-
-        // ---
-
-        // *This finding was automatically documented by the Pensar penetration testing agent.*
-        // *POC verified and available at: ${finding.pocPath}*
-        // `;
 
         writeFileSync(filepath, JSON.stringify(findingWithMeta, null, 2));
 
@@ -702,6 +668,7 @@ Begin your analysis now.
       finalize_documentation,
     },
     authConfig,
+    onStepFinish,
     stopWhen: hasToolCall("finalize_documentation") || stepCountIs(1000),
   });
 
