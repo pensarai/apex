@@ -2,7 +2,7 @@ name: Publish to npm
 
 on:
   release:
-    types: [published]
+    types: [released, published]
 
 jobs:
   publish:
@@ -14,6 +14,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2

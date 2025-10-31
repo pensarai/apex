@@ -5,7 +5,11 @@ import { readFileSync } from "fs";
 import { join } from "path";
 import { z } from "zod";
 
-describe("AI Stream Response", () => {
+// Skip tests if API keys are not available (e.g., in CI)
+const hasApiKeys = process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY;
+const describeOrSkip = hasApiKeys ? describe : describe.skip;
+
+describeOrSkip("AI Stream Response", () => {
   it("should stream a basic response", async () => {
     console.log("\n=== Testing Basic Stream Response ===\n");
 
