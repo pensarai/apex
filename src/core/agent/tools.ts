@@ -1,18 +1,18 @@
-import { tool } from "ai";
-import { z } from "zod";
-import { exec } from "child_process";
-import { promisify } from "util";
+import { tool } from 'ai';
+import { z } from 'zod';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 import {
   writeFileSync,
   appendFileSync,
   readdirSync,
   readFileSync,
   existsSync,
-} from "fs";
-import { join } from "path";
-import type { Session } from "./sessions";
-import { runAgent } from "./pentestAgent";
-import type { AIModel } from "../ai";
+} from 'fs';
+import { join } from 'path';
+import type { Session } from './sessions';
+import { runAgent } from './pentestAgent';
+import type { AIModel } from '../ai';
 
 const execAsync = promisify(exec);
 
@@ -24,275 +24,275 @@ const execAsync = promisify(exec);
  */
 const ATTACK_KNOWLEDGE = {
   graphql_injection: {
-    name: "GraphQL Injection",
+    name: 'GraphQL Injection',
     description:
-      "Exploits insufficient input validation in GraphQL queries to inject malicious queries/mutations",
+      'Exploits insufficient input validation in GraphQL queries to inject malicious queries/mutations',
     objective:
-      "Access unauthorized data, expose API structure, or execute unintended operations",
+      'Access unauthorized data, expose API structure, or execute unintended operations',
     techniques: [
       {
-        name: "Schema Introspection Injection",
-        how: "Inject __schema queries to expose complete API structure",
+        name: 'Schema Introspection Injection',
+        how: 'Inject __schema queries to expose complete API structure',
         context:
           "When GraphQL introspection is enabled and input isn't properly validated",
         example:
           "Inject '} { __schema { types { name } } }' to break out and query schema",
       },
       {
-        name: "Query Injection",
-        how: "Break out of parameter context to inject unauthorized queries",
+        name: 'Query Injection',
+        how: 'Break out of parameter context to inject unauthorized queries',
         context:
-          "When user input is embedded in queries without proper parameterization",
+          'When user input is embedded in queries without proper parameterization',
         example:
           "Use '} { users { password email } }' to inject data-accessing queries",
       },
       {
-        name: "Mutation Injection",
-        how: "Inject mutations to modify or delete data",
-        context: "When mutations are accessible without authorization checks",
+        name: 'Mutation Injection',
+        how: 'Inject mutations to modify or delete data',
+        context: 'When mutations are accessible without authorization checks',
         example:
           "Inject 'mutation { deleteUser(id: 1) }' or similar data-modifying operations",
       },
       {
-        name: "Newline-based Injection",
-        how: "Use newline characters to bypass basic input validation",
-        context: "When basic string matching is used for filtering",
+        name: 'Newline-based Injection',
+        how: 'Use newline characters to bypass basic input validation',
+        context: 'When basic string matching is used for filtering',
         example: "Use '\n__schema' or '\n' + 'query' to bypass simple filters",
       },
     ],
     indicators: {
       vulnerable: [
-        "GraphQL schema structure appears in response (__schema, types, fields)",
-        "Unauthorized query successfully executes",
+        'GraphQL schema structure appears in response (__schema, types, fields)',
+        'Unauthorized query successfully executes',
         "Extra data fields that shouldn't be accessible",
-        "Error messages revealing query structure or field names",
-        "Response contains data from injected query",
+        'Error messages revealing query structure or field names',
+        'Response contains data from injected query',
       ],
       notVulnerable: [
         "Input validation error (e.g., 'Invalid characters')",
-        "Parameterized query protection (input treated as string literal)",
-        "Proper escaping applied",
-        "GraphQL syntax error from the server (query treated as data)",
-        "Authorization error (query parsed but blocked)",
+        'Parameterized query protection (input treated as string literal)',
+        'Proper escaping applied',
+        'GraphQL syntax error from the server (query treated as data)',
+        'Authorization error (query parsed but blocked)',
       ],
     },
     adaptiveStrategy:
-      "Start with schema introspection to test if injection is possible. If successful, enumerate available fields. Then test for unauthorized data queries based on discovered schema. Try newline bypasses if basic tests fail.",
+      'Start with schema introspection to test if injection is possible. If successful, enumerate available fields. Then test for unauthorized data queries based on discovered schema. Try newline bypasses if basic tests fail.',
   },
 
   sql_injection: {
-    name: "SQL Injection",
-    description: "Exploits insufficient input sanitization in SQL queries",
-    objective: "Bypass authentication, access/modify data, or execute commands",
+    name: 'SQL Injection',
+    description: 'Exploits insufficient input sanitization in SQL queries',
+    objective: 'Bypass authentication, access/modify data, or execute commands',
     techniques: [
       {
-        name: "Boolean-based Blind",
-        how: "Use boolean conditions to infer data through application behavior",
+        name: 'Boolean-based Blind',
+        how: 'Use boolean conditions to infer data through application behavior',
         context:
           "When direct output isn't visible but application behavior changes",
         example:
           "' OR '1'='1 makes condition always true, ' OR '1'='2 makes it false",
       },
       {
-        name: "Union-based",
-        how: "Use UNION to combine results from multiple queries",
-        context: "When query results are displayed in the application",
+        name: 'Union-based',
+        how: 'Use UNION to combine results from multiple queries',
+        context: 'When query results are displayed in the application',
         example:
           "' UNION SELECT username,password FROM users-- to extract data",
       },
       {
-        name: "Time-based Blind",
-        how: "Use database sleep functions to infer conditions",
-        context: "When no visible output changes occur",
+        name: 'Time-based Blind',
+        how: 'Use database sleep functions to infer conditions',
+        context: 'When no visible output changes occur',
         example: "' AND SLEEP(5)-- causes 5 second delay if vulnerable",
       },
       {
-        name: "Error-based",
-        how: "Trigger SQL errors to extract information",
-        context: "When database errors are displayed",
+        name: 'Error-based',
+        how: 'Trigger SQL errors to extract information',
+        context: 'When database errors are displayed',
         example: "' to cause syntax error revealing database structure",
       },
     ],
     indicators: {
       vulnerable: [
-        "SQL syntax errors in response",
-        "Database error messages (MySQL, PostgreSQL, MSSQL errors)",
-        "Authentication bypass (logged in without valid credentials)",
-        "Time delays matching SLEEP commands",
-        "Extra rows or columns in results",
-        "UNION query successful",
+        'SQL syntax errors in response',
+        'Database error messages (MySQL, PostgreSQL, MSSQL errors)',
+        'Authentication bypass (logged in without valid credentials)',
+        'Time delays matching SLEEP commands',
+        'Extra rows or columns in results',
+        'UNION query successful',
       ],
       notVulnerable: [
-        "Parameterized query protection (input treated as literal)",
-        "Input rejected with validation error",
-        "No behavioral changes with SQL metacharacters",
-        "WAF or input filter blocking",
+        'Parameterized query protection (input treated as literal)',
+        'Input rejected with validation error',
+        'No behavioral changes with SQL metacharacters',
+        'WAF or input filter blocking',
       ],
     },
     adaptiveStrategy:
-      "Start with single quote to test SQL context. If error, try boolean-based bypass. If successful, attempt UNION for data extraction. Fallback to time-based if no visible output.",
+      'Start with single quote to test SQL context. If error, try boolean-based bypass. If successful, attempt UNION for data extraction. Fallback to time-based if no visible output.',
   },
 
   nosql_injection: {
-    name: "NoSQL Injection",
+    name: 'NoSQL Injection',
     description:
-      "Exploits insufficient input validation in NoSQL database queries (MongoDB, CouchDB, etc.)",
+      'Exploits insufficient input validation in NoSQL database queries (MongoDB, CouchDB, etc.)',
     objective:
-      "Bypass authentication, access unauthorized data, or modify database queries",
+      'Bypass authentication, access unauthorized data, or modify database queries',
     techniques: [
       {
-        name: "Operator Injection",
-        how: "Inject NoSQL operators like $ne, $gt, $regex to manipulate queries",
-        context: "When user input is directly used in NoSQL query objects",
+        name: 'Operator Injection',
+        how: 'Inject NoSQL operators like $ne, $gt, $regex to manipulate queries',
+        context: 'When user input is directly used in NoSQL query objects',
         example:
           '{"username": "admin", "password": {"$ne": ""}} bypasses authentication',
       },
       {
-        name: "JavaScript Injection",
-        how: "Inject JavaScript code in $where clauses",
-        context: "When $where operator is used with user input",
+        name: 'JavaScript Injection',
+        how: 'Inject JavaScript code in $where clauses',
+        context: 'When $where operator is used with user input',
         example:
           '{"$where": "this.username == \'admin\' || 1==1"} to bypass logic',
       },
       {
-        name: "Array Injection",
-        how: "Send arrays instead of strings to manipulate query logic",
-        context: "When query parsers accept arrays as operator syntax",
-        example: "username=admin&password[$ne]=wrong as query parameters",
+        name: 'Array Injection',
+        how: 'Send arrays instead of strings to manipulate query logic',
+        context: 'When query parsers accept arrays as operator syntax',
+        example: 'username=admin&password[$ne]=wrong as query parameters',
       },
     ],
     indicators: {
       vulnerable: [
-        "Authentication bypass with operator injection",
-        "Unexpected data returned",
-        "MongoDB/NoSQL error messages",
-        "Successful $where clause execution",
-        "Query logic manipulation",
+        'Authentication bypass with operator injection',
+        'Unexpected data returned',
+        'MongoDB/NoSQL error messages',
+        'Successful $where clause execution',
+        'Query logic manipulation',
       ],
       notVulnerable: [
-        "Input type validation",
-        "Operator filtering",
-        "Parameterized queries",
-        "Strict schema validation",
+        'Input type validation',
+        'Operator filtering',
+        'Parameterized queries',
+        'Strict schema validation',
       ],
     },
     adaptiveStrategy:
-      "Test operator injection first ($ne, $gt). If JSON POST, try object injection. For query parameters, try array notation. Check for JavaScript injection in $where if applicable.",
+      'Test operator injection first ($ne, $gt). If JSON POST, try object injection. For query parameters, try array notation. Check for JavaScript injection in $where if applicable.',
   },
 
   xss_reflected: {
-    name: "Reflected Cross-Site Scripting (XSS)",
+    name: 'Reflected Cross-Site Scripting (XSS)',
     description: "Injecting malicious scripts that execute in victim's browser",
     objective: "Execute JavaScript in victim's browser context",
     techniques: [
       {
-        name: "Basic Script Injection",
-        how: "Inject <script> tags directly",
+        name: 'Basic Script Injection',
+        how: 'Inject <script> tags directly',
         context: "When output isn't HTML-escaped",
-        example: "<script>alert(1)</script>",
+        example: '<script>alert(1)</script>',
       },
       {
-        name: "Event Handler Injection",
-        how: "Use HTML event handlers like onerror, onload",
+        name: 'Event Handler Injection',
+        how: 'Use HTML event handlers like onerror, onload',
         context: "When <script> is filtered but other tags aren't",
-        example: "<img src=x onerror=alert(1)>",
+        example: '<img src=x onerror=alert(1)>',
       },
       {
-        name: "Attribute Breakout",
-        how: "Break out of HTML attributes to inject tags",
-        context: "When input is reflected inside HTML attributes",
+        name: 'Attribute Breakout',
+        how: 'Break out of HTML attributes to inject tags',
+        context: 'When input is reflected inside HTML attributes',
         example: '"><script>alert(1)</script>',
       },
     ],
     indicators: {
       vulnerable: [
-        "Script tags present in response HTML",
-        "Event handlers in response",
-        "JavaScript protocol in hrefs",
-        "Unescaped user input in HTML",
+        'Script tags present in response HTML',
+        'Event handlers in response',
+        'JavaScript protocol in hrefs',
+        'Unescaped user input in HTML',
       ],
       notVulnerable: [
-        "HTML entity encoding applied",
-        "Content Security Policy blocking",
-        "Input sanitization",
-        "Output escaping",
+        'HTML entity encoding applied',
+        'Content Security Policy blocking',
+        'Input sanitization',
+        'Output escaping',
       ],
     },
     adaptiveStrategy:
-      "Try basic script tag first. If filtered, try event handlers. Check for attribute context. Test various encoding bypasses.",
+      'Try basic script tag first. If filtered, try event handlers. Check for attribute context. Test various encoding bypasses.',
   },
 
   command_injection: {
-    name: "Command Injection",
+    name: 'Command Injection',
     description:
-      "Executing arbitrary system commands through vulnerable application",
-    objective: "Execute system commands on the server",
+      'Executing arbitrary system commands through vulnerable application',
+    objective: 'Execute system commands on the server',
     techniques: [
       {
-        name: "Command Chaining",
-        how: "Use semicolon to chain commands",
-        context: "When input is passed to system shell",
-        example: "; whoami or ; cat /etc/passwd",
+        name: 'Command Chaining',
+        how: 'Use semicolon to chain commands',
+        context: 'When input is passed to system shell',
+        example: '; whoami or ; cat /etc/passwd',
       },
       {
-        name: "Pipe Injection",
-        how: "Use pipe operator to redirect output",
-        context: "When command output is processed",
-        example: "| whoami",
+        name: 'Pipe Injection',
+        how: 'Use pipe operator to redirect output',
+        context: 'When command output is processed',
+        example: '| whoami',
       },
       {
-        name: "Subshell Injection",
-        how: "Use backticks or $() for command substitution",
-        context: "When shell interprets special characters",
-        example: "`whoami` or $(cat /etc/passwd)",
+        name: 'Subshell Injection',
+        how: 'Use backticks or $() for command substitution',
+        context: 'When shell interprets special characters',
+        example: '`whoami` or $(cat /etc/passwd)',
       },
     ],
     indicators: {
       vulnerable: [
-        "Command output in response",
-        "System information leaked",
-        "Delayed response from sleep commands",
-        "Error messages from system commands",
+        'Command output in response',
+        'System information leaked',
+        'Delayed response from sleep commands',
+        'Error messages from system commands',
       ],
       notVulnerable: [
-        "Input sanitization",
-        "Parameterized command execution",
-        "Shell metacharacter filtering",
-        "Restricted execution environment",
+        'Input sanitization',
+        'Parameterized command execution',
+        'Shell metacharacter filtering',
+        'Restricted execution environment',
       ],
     },
     adaptiveStrategy:
-      "Test command chaining first. Try different separators (;, |, &). Use output detection commands like whoami, id. Fallback to time-based with sleep if no output visible.",
+      'Test command chaining first. Try different separators (;, |, &). Use output detection commands like whoami, id. Fallback to time-based with sleep if no output visible.',
   },
 
   idor: {
-    name: "Insecure Direct Object Reference (IDOR)",
-    description: "Accessing unauthorized objects by manipulating references",
+    name: 'Insecure Direct Object Reference (IDOR)',
+    description: 'Accessing unauthorized objects by manipulating references',
     objective: "Access other users' data or unauthorized resources",
     techniques: [
       {
-        name: "Sequential ID Manipulation",
-        how: "Change numeric IDs to access other resources",
+        name: 'Sequential ID Manipulation',
+        how: 'Change numeric IDs to access other resources',
         context: "When authorization isn't checked on ID-based endpoints",
         example: "Change /user/123 to /user/124 to access other user's data",
       },
       {
-        name: "UUID Enumeration",
-        how: "Try predictable or enumerable UUIDs",
-        context: "When UUIDs are sequential or guessable",
-        example: "Test sequential UUIDs or common patterns",
+        name: 'UUID Enumeration',
+        how: 'Try predictable or enumerable UUIDs',
+        context: 'When UUIDs are sequential or guessable',
+        example: 'Test sequential UUIDs or common patterns',
       },
     ],
     indicators: {
       vulnerable: [
         "Different user's data returned",
-        "Unauthorized resource access",
-        "No authorization check on resource access",
+        'Unauthorized resource access',
+        'No authorization check on resource access',
       ],
       notVulnerable: [
-        "Authorization error (403 Forbidden)",
-        "Not Found for unauthorized IDs",
-        "Proper access control checks",
+        'Authorization error (403 Forbidden)',
+        'Not Found for unauthorized IDs',
+        'Proper access control checks',
       ],
     },
     adaptiveStrategy:
@@ -300,57 +300,57 @@ const ATTACK_KNOWLEDGE = {
   },
 
   business_logic: {
-    name: "Business Logic Vulnerabilities",
+    name: 'Business Logic Vulnerabilities',
     description: "Exploiting flaws in application's business logic",
     objective:
-      "Manipulate prices, quantities, workflows, or bypass business rules",
+      'Manipulate prices, quantities, workflows, or bypass business rules',
     techniques: [
       {
-        name: "Price Manipulation",
-        how: "Modify price parameters to negative or zero",
-        context: "When client-side price values are trusted",
-        example: "Set price=-100 or price=0.01",
+        name: 'Price Manipulation',
+        how: 'Modify price parameters to negative or zero',
+        context: 'When client-side price values are trusted',
+        example: 'Set price=-100 or price=0.01',
       },
       {
-        name: "Quantity Manipulation",
-        how: "Use negative quantities or overflow values",
-        context: "When quantity validation is insufficient",
-        example: "quantity=-1 or quantity=999999999",
+        name: 'Quantity Manipulation',
+        how: 'Use negative quantities or overflow values',
+        context: 'When quantity validation is insufficient',
+        example: 'quantity=-1 or quantity=999999999',
       },
       {
-        name: "Workflow Bypass",
-        how: "Skip required steps in multi-step processes",
+        name: 'Workflow Bypass',
+        how: 'Skip required steps in multi-step processes',
         context: "When step validation isn't enforced",
-        example: "Go directly to /checkout without /payment",
+        example: 'Go directly to /checkout without /payment',
       },
     ],
     indicators: {
       vulnerable: [
-        "Negative prices accepted",
-        "Zero-cost orders processed",
-        "Steps can be skipped",
-        "Race conditions exploitable",
+        'Negative prices accepted',
+        'Zero-cost orders processed',
+        'Steps can be skipped',
+        'Race conditions exploitable',
       ],
       notVulnerable: [
-        "Server-side price validation",
-        "Workflow state management",
-        "Proper business rule enforcement",
+        'Server-side price validation',
+        'Workflow state management',
+        'Proper business rule enforcement',
       ],
     },
     adaptiveStrategy:
-      "Identify business-critical parameters. Test negative values, zero values, and overflows. Check workflow sequence enforcement.",
+      'Identify business-critical parameters. Test negative values, zero values, and overflows. Check workflow sequence enforcement.',
   },
 } as const;
 
 export const ExecuteCommandInput = z.object({
-  command: z.string().describe("The shell command to execute"),
+  command: z.string().describe('The shell command to execute'),
   timeout: z
     .number()
     .optional()
-    .describe("Timeout in milliseconds (default: 30000)"),
+    .describe('Timeout in milliseconds (default: 30000)'),
   toolCallDescription: z
     .string()
-    .describe("Concise description of this tool call"),
+    .describe('Concise description of this tool call'),
 });
 
 export type ExecuteCommandOpts = z.infer<typeof ExecuteCommandInput>;
@@ -363,13 +363,13 @@ export type ExecuteCommandResult = {
 };
 
 export const HttpRequestInput = z.object({
-  url: z.string().describe("The URL to request"),
+  url: z.string().describe('The URL to request'),
   method: z
-    .enum(["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"])
-    .default("GET"),
+    .enum(['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'])
+    .default('GET'),
   headers: z
     .preprocess((val) => {
-      if (typeof val === "string") {
+      if (typeof val === 'string') {
         try {
           return JSON.parse(val);
         } catch {
@@ -378,13 +378,13 @@ export const HttpRequestInput = z.object({
       }
       return val;
     }, z.record(z.string(), z.string()).optional())
-    .describe("HTTP headers as key-value pairs (object or JSON string)"),
-  body: z.string().optional().describe("Request body (for POST, PUT, PATCH)"),
+    .describe('HTTP headers as key-value pairs (object or JSON string)'),
+  body: z.string().optional().describe('Request body (for POST, PUT, PATCH)'),
   followRedirects: z.boolean().default(true),
   timeout: z.number().default(10000),
   toolCallDescription: z
     .string()
-    .describe("Concise description of this tool call"),
+    .describe('Concise description of this tool call'),
 });
 
 export type HttpRequestOpts = z.infer<typeof HttpRequestInput>;
@@ -406,7 +406,7 @@ export type HttpRequestResult = {
  */
 function createDocumentFindingTool(session: Session) {
   return tool({
-    name: "document_finding",
+    name: 'document_finding',
     description: `Document a security finding with severity, impact, and remediation guidance.
 
 SEVERITY LEVELS:
@@ -424,19 +424,19 @@ FINDING STRUCTURE:
 - Remediation: Specific, actionable steps to fix
 - References: CVE, CWE, OWASP, or security advisories`,
     inputSchema: z.object({
-      title: z.string().describe("Finding title"),
-      severity: z.enum(["CRITICAL", "HIGH", "MEDIUM", "LOW"]),
-      description: z.string().describe("Detailed description of the finding"),
-      impact: z.string().describe("Potential impact if exploited"),
-      evidence: z.string().describe("Evidence/proof of the vulnerability"),
-      remediation: z.string().describe("Steps to fix the issue"),
+      title: z.string().describe('Finding title'),
+      severity: z.enum(['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']),
+      description: z.string().describe('Detailed description of the finding'),
+      impact: z.string().describe('Potential impact if exploited'),
+      evidence: z.string().describe('Evidence/proof of the vulnerability'),
+      remediation: z.string().describe('Steps to fix the issue'),
       references: z
         .string()
         .optional()
-        .describe("CVE, CWE, or related references"),
+        .describe('CVE, CWE, or related references'),
       toolCallDescription: z
         .string()
-        .describe("Concise description of this tool call"),
+        .describe('Concise description of this tool call'),
     }),
     execute: async (finding) => {
       try {
@@ -451,11 +451,11 @@ FINDING STRUCTURE:
         // Create a safe filename from the title
         const safeTitle = finding.title
           .toLowerCase()
-          .replace(/[^a-z0-9]+/g, "-")
-          .replace(/^-|-$/g, "")
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-|-$/g, '')
           .substring(0, 50);
 
-        const findingId = `${timestamp.split("T")[0]}-${safeTitle}`;
+        const findingId = `${timestamp.split('T')[0]}-${safeTitle}`;
         const filename = `${findingId}.md`;
         const filepath = join(session.findingsPath, filename);
 
@@ -485,7 +485,7 @@ ${finding.evidence}
 
 ${finding.remediation}
 
-${finding.references ? `## References\n\n${finding.references}` : ""}
+${finding.references ? `## References\n\n${finding.references}` : ''}
 
 ---
 
@@ -495,7 +495,7 @@ ${finding.references ? `## References\n\n${finding.references}` : ""}
         writeFileSync(filepath, markdown);
 
         // Also append to a summary file
-        const summaryPath = join(session.rootPath, "findings-summary.md");
+        const summaryPath = join(session.rootPath, 'findings-summary.md');
         const summaryEntry = `- [${finding.severity}] ${finding.title} - \`findings/${filename}\`\n`;
 
         try {
@@ -528,7 +528,7 @@ ${finding.references ? `## References\n\n${finding.references}` : ""}
  */
 function createScratchpadTool(session: Session) {
   return tool({
-    name: "scratchpad",
+    name: 'scratchpad',
     description: `Write notes, observations, or temporary data to the scratchpad during testing.
 
 Use this to:
@@ -540,18 +540,18 @@ Use this to:
 
 The scratchpad is session-specific and helps maintain context during long assessments.`,
     inputSchema: z.object({
-      note: z.string().describe("The note or observation to record"),
+      note: z.string().describe('The note or observation to record'),
       category: z
-        .enum(["observation", "todo", "hypothesis", "result", "general"])
-        .default("general"),
+        .enum(['observation', 'todo', 'hypothesis', 'result', 'general'])
+        .default('general'),
       toolCallDescription: z
         .string()
-        .describe("Concise description of this tool call"),
+        .describe('Concise description of this tool call'),
     }),
     execute: async ({ note, category }) => {
       try {
         const timestamp = new Date().toISOString();
-        const scratchpadFile = join(session.scratchpadPath, "notes.md");
+        const scratchpadFile = join(session.scratchpadPath, 'notes.md');
 
         const entry = `## ${category.toUpperCase()} - ${timestamp}\n\n${note}\n\n---\n\n`;
 
@@ -565,7 +565,7 @@ The scratchpad is session-specific and helps maintain context during long assess
 
         return {
           success: true,
-          message: "Note added to scratchpad",
+          message: 'Note added to scratchpad',
           timestamp,
         };
       } catch (error: any) {
@@ -582,7 +582,7 @@ The scratchpad is session-specific and helps maintain context during long assess
  * Port scan analyzer - Interpret nmap results
  */
 export const analyzeScan = tool({
-  name: "analyze_scan",
+  name: 'analyze_scan',
   description: `Analyze scan results and suggest next steps for penetration testing.
 
 This tool helps interpret findings from:
@@ -600,14 +600,14 @@ Provides guidance on:
 - Attack surface prioritization`,
   inputSchema: z.object({
     scanType: z.enum([
-      "port_scan",
-      "service_enum",
-      "web_scan",
-      "ssl_scan",
-      "other",
+      'port_scan',
+      'service_enum',
+      'web_scan',
+      'ssl_scan',
+      'other',
     ]),
-    results: z.string().describe("The scan results to analyze"),
-    target: z.string().describe("The target that was scanned"),
+    results: z.string().describe('The scan results to analyze'),
+    target: z.string().describe('The target that was scanned'),
   }),
   execute: async ({ scanType, results, target }) => {
     // Parse and provide intelligent analysis
@@ -615,7 +615,7 @@ Provides guidance on:
       scanType,
       target,
       timestamp: new Date().toISOString(),
-      summary: "",
+      summary: '',
       openPorts: [] as string[],
       services: [] as string[],
       recommendations: [] as string[],
@@ -623,34 +623,34 @@ Provides guidance on:
     };
 
     // Simple parsing logic (can be enhanced)
-    if (scanType === "port_scan") {
+    if (scanType === 'port_scan') {
       const portMatches = results.match(/(\d+)\/tcp\s+open/g);
       if (portMatches) {
         analysis.openPorts = portMatches
-          .map((m) => m.split("/")[0])
+          .map((m) => m.split('/')[0])
           .filter((p): p is string => p !== undefined);
         analysis.summary = `Found ${analysis.openPorts.length} open TCP ports`;
 
         // Add recommendations based on common ports
         if (
-          analysis.openPorts.includes("80") ||
-          analysis.openPorts.includes("443")
+          analysis.openPorts.includes('80') ||
+          analysis.openPorts.includes('443')
         ) {
           analysis.recommendations.push(
-            "Run web application scans (nikto, gobuster)"
+            'Run web application scans (nikto, gobuster)'
           );
         }
-        if (analysis.openPorts.includes("22")) {
+        if (analysis.openPorts.includes('22')) {
           analysis.recommendations.push(
-            "Test SSH authentication methods and banners"
+            'Test SSH authentication methods and banners'
           );
         }
         if (
-          analysis.openPorts.includes("3306") ||
-          analysis.openPorts.includes("5432")
+          analysis.openPorts.includes('3306') ||
+          analysis.openPorts.includes('5432')
         ) {
           analysis.recommendations.push(
-            "Database port exposed - test for default credentials"
+            'Database port exposed - test for default credentials'
           );
         }
       }
@@ -669,7 +669,7 @@ Provides guidance on:
  */
 function createGenerateReportTool(session: Session) {
   return tool({
-    name: "generate_report",
+    name: 'generate_report',
     description: `Generate a comprehensive penetration testing report for the session.
 
 This tool creates a detailed report including:
@@ -690,27 +690,27 @@ The report will be saved as 'pentest-report.md' in the session root directory.`,
     inputSchema: z.object({
       executiveSummary: z
         .string()
-        .describe("High-level summary of the assessment for executives"),
+        .describe('High-level summary of the assessment for executives'),
       methodology: z
         .string()
-        .describe("Description of the testing methodology and approach used"),
+        .describe('Description of the testing methodology and approach used'),
       scopeDetails: z
         .string()
         .optional()
-        .describe("Additional details about the scope and limitations"),
+        .describe('Additional details about the scope and limitations'),
       keyFindings: z
         .array(z.string())
-        .describe("List of the most critical findings"),
+        .describe('List of the most critical findings'),
       recommendations: z
         .string()
-        .describe("Overall recommendations and next steps"),
+        .describe('Overall recommendations and next steps'),
       testingActivities: z
         .string()
         .optional()
-        .describe("Summary of testing activities performed"),
+        .describe('Summary of testing activities performed'),
       toolCallDescription: z
         .string()
-        .describe("Concise description of this tool call"),
+        .describe('Concise description of this tool call'),
     }),
     execute: async ({
       executiveSummary,
@@ -739,12 +739,12 @@ The report will be saved as 'pentest-report.md' in the session root directory.`,
 
         if (existsSync(session.findingsPath)) {
           const findingFiles = readdirSync(session.findingsPath).filter((f) =>
-            f.endsWith(".json")
+            f.endsWith('.json')
           );
 
           for (const file of findingFiles) {
             const filePath = join(session.findingsPath, file);
-            const content = readFileSync(filePath, "utf-8");
+            const content = readFileSync(filePath, 'utf-8');
 
             // Extract severity from the markdown
             const severityMatch = content.match(
@@ -782,21 +782,21 @@ The report will be saved as 'pentest-report.md' in the session root directory.`,
         const criticalAndHigh = severityCounts.CRITICAL + severityCounts.HIGH;
 
         // Read scratchpad notes if they exist
-        let scratchpadNotes = "";
-        const scratchpadFile = join(session.scratchpadPath, "notes.md");
+        let scratchpadNotes = '';
+        const scratchpadFile = join(session.scratchpadPath, 'notes.md');
         if (existsSync(scratchpadFile)) {
-          scratchpadNotes = readFileSync(scratchpadFile, "utf-8");
+          scratchpadNotes = readFileSync(scratchpadFile, 'utf-8');
         }
 
         // Read test results if they exist
-        let testResultsSummary = "";
+        let testResultsSummary = '';
         const testResultsFile = join(
           session.scratchpadPath,
-          "test-results.jsonl"
+          'test-results.jsonl'
         );
         if (existsSync(testResultsFile)) {
-          const testLines = readFileSync(testResultsFile, "utf-8")
-            .split("\n")
+          const testLines = readFileSync(testResultsFile, 'utf-8')
+            .split('\n')
             .filter((l) => l.trim());
           const testResults = testLines
             .map((line) => {
@@ -823,8 +823,8 @@ The report will be saved as 'pentest-report.md' in the session root directory.`,
             if (!byAttackType[test.attackType]) {
               byAttackType[test.attackType] = { total: 0, vulnerable: 0 };
             }
-            byAttackType[test.attackType].total++;
-            if (test.vulnerable) byAttackType[test.attackType].vulnerable++;
+            byAttackType[test.attackType]!.total++;
+            if (test.vulnerable) byAttackType[test.attackType]!.vulnerable++;
           });
 
           testResultsSummary = `
@@ -837,11 +837,11 @@ The report will be saved as 'pentest-report.md' in the session root directory.`,
 ${Object.entries(byAttackType)
   .map(
     ([type, stats]) =>
-      `- ${type}: ${stats.total} test${stats.total > 1 ? "s" : ""} (${
+      `- ${type}: ${stats.total} test${stats.total > 1 ? 's' : ''} (${
         stats.vulnerable
       } vulnerable)`
   )
-  .join("\n")}
+  .join('\n')}
 
 This demonstrates systematic testing methodology and proves thoroughness beyond just vulnerability discovery.`;
         }
@@ -877,8 +877,8 @@ ${
   criticalAndHigh > 0
     ? `⚠️ **HIGH RISK** - ${criticalAndHigh} critical or high severity findings require immediate attention.`
     : severityCounts.MEDIUM > 0
-    ? `⚠️ **MEDIUM RISK** - ${severityCounts.MEDIUM} medium severity findings should be addressed.`
-    : `✓ **LOW RISK** - No critical or high severity findings identified.`
+      ? `⚠️ **MEDIUM RISK** - ${severityCounts.MEDIUM} medium severity findings should be addressed.`
+      : `✓ **LOW RISK** - No critical or high severity findings identified.`
 }
 
 ---
@@ -888,7 +888,7 @@ ${
 **Target:** ${session.target}  
 **Objective:** ${session.objective}
 
-${scopeDetails ? `\n${scopeDetails}\n` : ""}
+${scopeDetails ? `\n${scopeDetails}\n` : ''}
 
 ---
 
@@ -896,15 +896,15 @@ ${scopeDetails ? `\n${scopeDetails}\n` : ""}
 
 ${methodology}
 
-${testingActivities ? `\n### Testing Activities\n\n${testingActivities}\n` : ""}
+${testingActivities ? `\n### Testing Activities\n\n${testingActivities}\n` : ''}
 
-${testResultsSummary ? `\n### Test Coverage\n\n${testResultsSummary}\n` : ""}
+${testResultsSummary ? `\n### Test Coverage\n\n${testResultsSummary}\n` : ''}
 
 ---
 
 ## Key Findings
 
-${keyFindings.map((finding, idx) => `${idx + 1}. ${finding}`).join("\n")}
+${keyFindings.map((finding, idx) => `${idx + 1}. ${finding}`).join('\n')}
 
 ---
 
@@ -912,7 +912,7 @@ ${keyFindings.map((finding, idx) => `${idx + 1}. ${finding}`).join("\n")}
 
 ${
   totalFindings === 0
-    ? "No security findings were documented during this assessment."
+    ? 'No security findings were documented during this assessment.'
     : findings
         .map(
           (finding, idx) => `
@@ -921,13 +921,13 @@ ${
 **Reference:** \`findings/${finding.file}\`
 
 ${
-  finding.content.split("## Description")[1]?.split("---")[0]?.trim() ||
-  "See detailed finding document for full information."
+  finding.content.split('## Description')[1]?.split('---')[0]?.trim() ||
+  'See detailed finding document for full information.'
 }
 
 `
         )
-        .join("\n")
+        .join('\n')
 }
 
 ---
@@ -945,7 +945,7 @@ ${
 - Address all ${severityCounts.CRITICAL} critical findings immediately
 - These vulnerabilities pose an immediate risk to system security
 `
-    : ""
+    : ''
 }
 
 ${
@@ -955,7 +955,7 @@ ${
 - Remediate ${severityCounts.HIGH} high severity findings within 30 days
 - These issues significantly increase attack surface
 `
-    : ""
+    : ''
 }
 
 ${
@@ -965,7 +965,7 @@ ${
 - Plan remediation for ${severityCounts.MEDIUM} medium severity findings within 90 days
 - These weaknesses should be addressed in the next security cycle
 `
-    : ""
+    : ''
 }
 
 ---
@@ -976,7 +976,7 @@ ${
 
 ${findings
   .map((f) => `- [${f.severity}] ${f.title} - \`findings/${f.file}\``)
-  .join("\n")}
+  .join('\n')}
 
 ### Appendix B: Session Information
 
@@ -992,10 +992,10 @@ ${
         5000
       )}${
         scratchpadNotes.length > 5000
-          ? "\n\n[Truncated - see scratchpad/notes.md for full notes]"
-          : ""
+          ? '\n\n[Truncated - see scratchpad/notes.md for full notes]'
+          : ''
       }\n`
-    : ""
+    : ''
 }
 
 ---
@@ -1013,27 +1013,27 @@ This report should be treated as confidential and distributed only to authorized
 `;
 
         // Save the report
-        const reportPath = join(session.rootPath, "pentest-report.md");
+        const reportPath = join(session.rootPath, 'pentest-report.md');
         writeFileSync(reportPath, report);
 
         // Update the session README to mark completion
-        const readmePath = join(session.rootPath, "README.md");
+        const readmePath = join(session.rootPath, 'README.md');
         if (existsSync(readmePath)) {
-          let readme = readFileSync(readmePath, "utf-8");
+          let readme = readFileSync(readmePath, 'utf-8');
           readme = readme.replace(
-            "Testing in progress...",
+            'Testing in progress...',
             `Testing completed on ${endDate.toLocaleString()}\n\n**Final Report:** \`pentest-report.md\``
           );
           writeFileSync(readmePath, readme);
         }
 
         // Update session metadata
-        const metadataPath = join(session.rootPath, "session.json");
+        const metadataPath = join(session.rootPath, 'session.json');
         if (existsSync(metadataPath)) {
-          const metadata = JSON.parse(readFileSync(metadataPath, "utf-8"));
+          const metadata = JSON.parse(readFileSync(metadataPath, 'utf-8'));
           metadata.endTime = endTime;
           metadata.duration = duration;
-          metadata.status = "completed";
+          metadata.status = 'completed';
           metadata.totalFindings = totalFindings;
           metadata.severityCounts = severityCounts;
           writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
@@ -1066,7 +1066,7 @@ This report should be treated as confidential and distributed only to authorized
  */
 function createRecordTestResultTool(session: Session) {
   return tool({
-    name: "record_test_result",
+    name: 'record_test_result',
     description: `Record the result of a security test, including tests that did NOT find vulnerabilities.
 
 This tool is critical for:
@@ -1088,36 +1088,36 @@ Example workflow:
 3. Call record_test_result to document the test
 4. Result: You've proven the parameter is safe from SQL injection`,
     inputSchema: z.object({
-      parameter: z.string().describe("The parameter name that was tested"),
+      parameter: z.string().describe('The parameter name that was tested'),
       endpoint: z
         .string()
-        .describe("The endpoint/URL where the parameter exists"),
+        .describe('The endpoint/URL where the parameter exists'),
       attackType: z
         .enum([
-          "sql_injection",
-          "nosql_injection",
-          "graphql_injection",
-          "xss_reflected",
-          "xss_stored",
-          "xss_dom",
-          "command_injection",
-          "xxe",
-          "ssrf",
-          "idor",
-          "csrf",
-          "lfi",
-          "rfi",
-          "ssti",
-          "path_traversal",
-          "authentication_bypass",
-          "authorization_bypass",
-          "business_logic",
-          "information_disclosure",
-          "rate_limiting",
-          "session_management",
+          'sql_injection',
+          'nosql_injection',
+          'graphql_injection',
+          'xss_reflected',
+          'xss_stored',
+          'xss_dom',
+          'command_injection',
+          'xxe',
+          'ssrf',
+          'idor',
+          'csrf',
+          'lfi',
+          'rfi',
+          'ssti',
+          'path_traversal',
+          'authentication_bypass',
+          'authorization_bypass',
+          'business_logic',
+          'information_disclosure',
+          'rate_limiting',
+          'session_management',
         ])
-        .describe("The type of attack tested"),
-      vulnerable: z.boolean().describe("Whether a vulnerability was found"),
+        .describe('The type of attack tested'),
+      vulnerable: z.boolean().describe('Whether a vulnerability was found'),
       payloadsTested: z
         .array(
           z.object({
@@ -1126,16 +1126,16 @@ Example workflow:
             result: z.string(),
           })
         )
-        .describe("List of payloads tested and their results"),
-      conclusion: z.string().describe("Overall conclusion of the test"),
+        .describe('List of payloads tested and their results'),
+      conclusion: z.string().describe('Overall conclusion of the test'),
       evidence: z
         .string()
         .optional()
-        .describe("Evidence if vulnerability found"),
+        .describe('Evidence if vulnerability found'),
       confidence: z
-        .enum(["high", "medium", "low"])
+        .enum(['high', 'medium', 'low'])
         .optional()
-        .describe("Confidence level if vulnerable"),
+        .describe('Confidence level if vulnerable'),
       toolCallDescription: z.string(),
     }),
     execute: async ({
@@ -1163,16 +1163,16 @@ Example workflow:
           payloadsTested,
           totalPayloadsTested: payloadsTested.length,
           conclusion,
-          evidence: evidence || "",
-          confidence: confidence || "high",
+          evidence: evidence || '',
+          confidence: confidence || 'high',
         };
 
         // Save to scratchpad as test-results-{type}.json
         const testResultsPath = join(
           session.scratchpadPath,
-          "test-results.jsonl"
+          'test-results.jsonl'
         );
-        const resultLine = JSON.stringify(testResult) + "\n";
+        const resultLine = JSON.stringify(testResult) + '\n';
 
         appendFileSync(testResultsPath, resultLine);
 
@@ -1183,8 +1183,8 @@ Example workflow:
             ? `✓ Test recorded: VULNERABLE to ${attackType} (${payloadsTested.length} payloads tested)`
             : `✓ Test recorded: NOT vulnerable to ${attackType} (${payloadsTested.length} payloads tested)`,
           recommendation: vulnerable
-            ? "Use document_finding to create a formal vulnerability report"
-            : "Continue testing other attack types or parameters",
+            ? 'Use document_finding to create a formal vulnerability report'
+            : 'Continue testing other attack types or parameters',
         };
       } catch (error: any) {
         return {
@@ -1221,7 +1221,7 @@ Objective: ${params.knowledge.objective}
 Techniques available:
 ${params.knowledge.techniques
   .map((t: any) => `- ${t.name}: ${t.how}`)
-  .join("\n")}
+  .join('\n')}
 
 Target: ${params.endpoint} parameter "${params.parameter}"
 Context: ${JSON.stringify(params.context || {})}
@@ -1234,8 +1234,8 @@ Generate a 2-3 sentence testing strategy:
 Be tactical and specific.`;
 
   try {
-    const { generateText } = await import("ai");
-    const { createAnthropic } = await import("@ai-sdk/anthropic");
+    const { generateText } = await import('ai');
+    const { createAnthropic } = await import('@ai-sdk/anthropic');
 
     const anthropic = createAnthropic({
       apiKey: process.env.ANTHROPIC_API_KEY,
@@ -1269,7 +1269,7 @@ async function generatePayload(
 Techniques:
 ${params.knowledge.techniques
   .map((t: any) => `- ${t.name}: ${t.example}`)
-  .join("\n")}
+  .join('\n')}
 
 ${
   params.previousResults.length > 0
@@ -1277,9 +1277,9 @@ ${
 Previous attempts:
 ${params.previousResults
   .map((r: any) => `- ${r.payload}: ${r.result} (vulnerable: ${r.vulnerable})`)
-  .join("\n")}
+  .join('\n')}
 `
-    : ""
+    : ''
 }
 
 Round ${params.round + 1}/3:
@@ -1291,8 +1291,8 @@ Generate ONE specific payload. Return ONLY JSON:
 {"payload": "exact payload string", "reasoning": "why this payload in 1 sentence", "technique": "technique name"}`;
 
   try {
-    const { generateText } = await import("ai");
-    const { createAnthropic } = await import("@ai-sdk/anthropic");
+    const { generateText } = await import('ai');
+    const { createAnthropic } = await import('@ai-sdk/anthropic');
 
     const anthropic = createAnthropic({
       apiKey: process.env.ANTHROPIC_API_KEY,
@@ -1309,7 +1309,7 @@ Generate ONE specific payload. Return ONLY JSON:
       return JSON.parse(jsonMatch[0]);
     }
   } catch (error) {
-    console.error("AI payload generation failed:", error);
+    console.error('AI payload generation failed:', error);
   }
 
   // Fallback: Use first technique example
@@ -1340,17 +1340,17 @@ async function analyzeResponse(
 Attack: ${params.knowledge.name}
 Payload: ${params.payload.payload}
 HTTP Status: ${params.response.status}
-Response Body: ${params.response.body?.substring(0, 500) || "N/A"}
+Response Body: ${params.response.body?.substring(0, 500) || 'N/A'}
 
 Vulnerable indicators:
 ${params.knowledge.indicators.vulnerable
   .map((i: string) => `- ${i}`)
-  .join("\n")}
+  .join('\n')}
 
 Secure indicators:
 ${params.knowledge.indicators.notVulnerable
   .map((i: string) => `- ${i}`)
-  .join("\n")}
+  .join('\n')}
 
 Analyze: Is this vulnerable? Return ONLY JSON:
 {
@@ -1362,8 +1362,8 @@ Analyze: Is this vulnerable? Return ONLY JSON:
 }`;
 
   try {
-    const { generateText } = await import("ai");
-    const { createAnthropic } = await import("@ai-sdk/anthropic");
+    const { generateText } = await import('ai');
+    const { createAnthropic } = await import('@ai-sdk/anthropic');
 
     const anthropic = createAnthropic({
       apiKey: process.env.ANTHROPIC_API_KEY,
@@ -1379,7 +1379,7 @@ Analyze: Is this vulnerable? Return ONLY JSON:
       return JSON.parse(jsonMatch[0]);
     }
   } catch (error) {
-    console.error("AI analysis failed:", error);
+    console.error('AI analysis failed:', error);
   }
 
   // Fallback: Simple heuristic detection
@@ -1398,14 +1398,14 @@ Analyze: Is this vulnerable? Return ONLY JSON:
 
   return {
     vulnerable: foundVulnIndicator && !foundSecureIndicator,
-    confidence: foundVulnIndicator ? "medium" : "low",
+    confidence: foundVulnIndicator ? 'medium' : 'low',
     reasoning: foundVulnIndicator
-      ? "Response contains vulnerability indicators"
+      ? 'Response contains vulnerability indicators'
       : foundSecureIndicator
-      ? "Response shows secure implementation"
-      : "Inconclusive - no clear indicators",
+        ? 'Response shows secure implementation'
+        : 'Inconclusive - no clear indicators',
     certainlyNotVulnerable: foundSecureIndicator,
-    suggestedNextTest: "Try alternative payload or technique",
+    suggestedNextTest: 'Try alternative payload or technique',
   };
 }
 
@@ -1414,7 +1414,7 @@ Analyze: Is this vulnerable? Return ONLY JSON:
  */
 function createSmartTestTool(session: Session, model: AIModel) {
   return tool({
-    name: "test_parameter",
+    name: 'test_parameter',
     description: `Intelligently test a parameter for a vulnerability using AI-powered adaptive testing.
 
 This tool uses AI to:
@@ -1440,20 +1440,20 @@ test_parameter({
 })`,
 
     inputSchema: z.object({
-      parameter: z.string().describe("Parameter name to test"),
-      endpoint: z.string().describe("Endpoint URL where parameter exists"),
+      parameter: z.string().describe('Parameter name to test'),
+      endpoint: z.string().describe('Endpoint URL where parameter exists'),
       attackType: z
         .enum([
-          "sql_injection",
-          "nosql_injection",
-          "graphql_injection",
-          "xss_reflected",
-          "xss_stored",
-          "command_injection",
-          "idor",
-          "business_logic",
+          'sql_injection',
+          'nosql_injection',
+          'graphql_injection',
+          'xss_reflected',
+          'xss_stored',
+          'command_injection',
+          'idor',
+          'business_logic',
         ])
-        .describe("Type of attack to test"),
+        .describe('Type of attack to test'),
       context: z
         .object({
           parameterType: z.string().optional(),
@@ -1462,7 +1462,7 @@ test_parameter({
           observations: z.string().optional(),
         })
         .optional()
-        .describe("Additional context about the target"),
+        .describe('Additional context about the target'),
       toolCallDescription: z.string(),
     }),
 
@@ -1497,7 +1497,7 @@ test_parameter({
         // Adaptive testing loop (up to 3 rounds)
         const results = [];
         let vulnerable = false;
-        let finalConfidence = "low";
+        let finalConfidence = 'low';
 
         for (let round = 0; round < 3 && !vulnerable; round++) {
           console.log(`  Round ${round + 1}/3...`);
@@ -1521,8 +1521,8 @@ test_parameter({
           let response;
           try {
             response = await fetch(endpoint, {
-              method: context?.method || "POST",
-              headers: { "Content-Type": "application/json" },
+              method: context?.method || 'POST',
+              headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ [parameter]: payloadData.payload }),
             });
 
@@ -1570,20 +1570,21 @@ test_parameter({
 
           // Stop if high confidence or certainly not vulnerable
           if (
-            (vulnerable && analysis.confidence === "high") ||
+            (vulnerable && analysis.confidence === 'high') ||
             analysis.certainlyNotVulnerable
           ) {
             console.log(
               `  Stopping early: ${
                 analysis.certainlyNotVulnerable
-                  ? "Certainly not vulnerable"
-                  : "High confidence vulnerability found"
+                  ? 'Certainly not vulnerable'
+                  : 'High confidence vulnerability found'
               }`
             );
             break;
           }
         }
 
+        // @ts-ignore -- TODO:  clean up this whole tool
         // Record test result
         await createRecordTestResultTool(session).execute({
           parameter,
@@ -1598,7 +1599,7 @@ test_parameter({
             ? JSON.stringify(results.filter((r) => r.vulnerable))
             : undefined,
           confidence: finalConfidence as any,
-          toolCallDescription: "Recording test result",
+          toolCallDescription: 'Recording test result',
         });
 
         return {
@@ -1610,7 +1611,7 @@ test_parameter({
           recommendation: vulnerable
             ? `✓ VULNERABILITY FOUND! Use document_finding to formally document this ${knowledge.name} vulnerability.`
             : `✓ Parameter appears secure against ${knowledge.name}. Continue testing other attack types or parameters.`,
-          nextAction: vulnerable ? "document_finding" : "continue_testing",
+          nextAction: vulnerable ? 'document_finding' : 'continue_testing',
         };
       } catch (error: any) {
         return {
@@ -1625,29 +1626,29 @@ test_parameter({
 
 function getAttackSurfaceAgent() {
   return tool({
-    name: "get_attack_surface",
+    name: 'get_attack_surface',
     description:
-      "Get the attack surface of a target using the attack surface agent",
+      'Get the attack surface of a target using the attack surface agent',
     inputSchema: z.object({
-      target: z.string().describe("The target to get the attack surface of"),
+      target: z.string().describe('The target to get the attack surface of'),
     }),
     execute: async ({ target }) => {},
   });
 }
 
-function runPentestAgents(model: AIModel = "claude-4-sonnet-20240229") {
+function runPentestAgents(model: AIModel = 'claude-4-sonnet-20240229') {
   return tool({
-    name: "pentest_agents",
-    description: "Perform a pentest on a target using the pentest agent",
+    name: 'pentest_agents',
+    description: 'Perform a pentest on a target using the pentest agent',
     inputSchema: z.object({
       targets: z
         .array(
           z.object({
-            target: z.string().describe("The target to perform a pentest on"),
-            objective: z.string().describe("The objective of the pentest"),
+            target: z.string().describe('The target to perform a pentest on'),
+            objective: z.string().describe('The objective of the pentest'),
           })
         )
-        .describe("The targets to perform a pentest on"),
+        .describe('The targets to perform a pentest on'),
     }),
     execute: async ({ targets }) => {
       const promises = targets.map((target) => {
@@ -1665,7 +1666,7 @@ function runPentestAgents(model: AIModel = "claude-4-sonnet-20240229") {
 
 function createCheckTestingCoverageTool(session: Session) {
   return tool({
-    name: "check_testing_coverage",
+    name: 'check_testing_coverage',
     description: `Analyze testing coverage to understand what has been tested and identify gaps.
 
 This tool reads all recorded test results and provides:
@@ -1685,7 +1686,7 @@ Use this when:
         .string()
         .optional()
         .describe(
-          "The penetration testing objective to compare coverage against"
+          'The penetration testing objective to compare coverage against'
         ),
       toolCallDescription: z.string(),
     }),
@@ -1694,7 +1695,7 @@ Use this when:
       try {
         const testResultsPath = join(
           session.scratchpadPath,
-          "test-results.jsonl"
+          'test-results.jsonl'
         );
 
         if (!existsSync(testResultsPath)) {
@@ -1703,18 +1704,18 @@ Use this when:
             totalTests: 0,
             coverage: {},
             message:
-              "No test results recorded yet. Start testing with test_parameter tool.",
+              'No test results recorded yet. Start testing with test_parameter tool.',
             suggestions: objective
               ? `Based on objective "${objective}", consider testing relevant parameters with test_parameter tool.`
-              : "Use test_parameter to test parameters for vulnerabilities.",
+              : 'Use test_parameter to test parameters for vulnerabilities.',
           };
         }
 
         // Read all test results
-        const fileContent = readFileSync(testResultsPath, "utf-8");
+        const fileContent = readFileSync(testResultsPath, 'utf-8');
         const testResults = fileContent
           .trim()
-          .split("\n")
+          .split('\n')
           .filter((line) => line.trim())
           .map((line) => JSON.parse(line));
 
@@ -1790,7 +1791,7 @@ Use this when:
             const knowledge =
               ATTACK_KNOWLEDGE[attackType as keyof typeof ATTACK_KNOWLEDGE];
             if (
-              objectiveLower.includes(attackType.replace("_", " ")) ||
+              objectiveLower.includes(attackType.replace('_', ' ')) ||
               objectiveLower.includes(knowledge.name.toLowerCase())
             ) {
               suggestions.push(
@@ -1810,7 +1811,7 @@ Use this when:
           if (untestedForParam.length > 0) {
             suggestions.push(
               `Consider testing "${sampleParameter}" for: ${untestedForParam.join(
-                ", "
+                ', '
               )}`
             );
           }
@@ -1819,7 +1820,7 @@ Use this when:
         // Suggest thoroughness improvements
         if (testResults.length < 5) {
           suggestions.push(
-            "Coverage is low. Consider testing more parameters and attack types."
+            'Coverage is low. Consider testing more parameters and attack types.'
           );
         }
 
@@ -1845,7 +1846,7 @@ Use this when:
           suggestions:
             suggestions.length > 0
               ? suggestions
-              : ["Coverage looks good. Review findings and prepare report."],
+              : ['Coverage looks good. Review findings and prepare report.'],
           message: `Analyzed ${testResults.length} tests across ${parametersTested.size} parameters and ${attackTypesCovered.size} attack types.`,
         };
       } catch (error: any) {
@@ -1885,7 +1886,7 @@ export function createPentestTools(
    * - Web application testing (sqlmap, burp, zap)
    */
   const executeCommand = tool({
-    name: "execute_command",
+    name: 'execute_command',
     description: `Execute a shell command for penetration testing activities.
   
 COMMON COMMANDS FOR BLACK BOX TESTING:
@@ -1946,16 +1947,16 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
               0,
               50000
             )}... \n\n (truncated) call the command again with grep / tail to paginate the response` ||
-            "(no output)",
-          stderr: stderr || "",
+            '(no output)',
+          stderr: stderr || '',
           command,
         };
       } catch (error: any) {
         return {
           success: false,
           error: error.message,
-          stdout: error.stdout || "",
-          stderr: error.stderr || "",
+          stdout: error.stdout || '',
+          stderr: error.stderr || '',
           command,
         };
       }
@@ -1966,7 +1967,7 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
    * HTTP request tool - Specialized for web application testing
    */
   const httpRequest = tool({
-    name: "http_request",
+    name: 'http_request',
     description: `Make HTTP requests with detailed response analysis for web application testing.
 
 USAGE GUIDANCE:
@@ -2015,7 +2016,7 @@ COMMON TESTING PATTERNS:
           method,
           headers: headers || {},
           body: body || undefined,
-          redirect: followRedirects ? "follow" : "manual",
+          redirect: followRedirects ? 'follow' : 'manual',
           signal: controller.signal,
         });
 
@@ -2026,11 +2027,11 @@ COMMON TESTING PATTERNS:
           responseHeaders[key] = value;
         });
 
-        let responseBody = "";
+        let responseBody = '';
         try {
           responseBody = await response.text();
         } catch (e) {
-          responseBody = "(unable to read response body)";
+          responseBody = '(unable to read response body)';
         }
 
         return {
@@ -2063,7 +2064,7 @@ COMMON TESTING PATTERNS:
     record_test_result: createRecordTestResultTool(session),
     test_parameter: createSmartTestTool(
       session,
-      model || "claude-sonnet-4-20250514"
+      model || 'claude-sonnet-4-20250514'
     ),
     check_testing_coverage: createCheckTestingCoverageTool(session),
     analyze_scan: analyzeScan,
