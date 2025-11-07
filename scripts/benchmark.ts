@@ -164,6 +164,9 @@ async function main() {
     console.error(
       "  --execution-mode <mode>  Where to run: local, daytona, runloop (default: local)"
     );
+    console.error(
+      "  --max-parallel <num>     Max concurrent sandboxes for remote mode (default: 4)"
+    );
     console.error();
     console.error("Remote execution (daytona/runloop) requires:");
     console.error(
@@ -246,6 +249,24 @@ async function main() {
     model = modelArg as AIModel;
   }
 
+  // Check for --max-parallel flag
+  const maxParallelIndex = args.indexOf("--max-parallel");
+  let maxParallel: number | undefined;
+  if (maxParallelIndex !== -1) {
+    const maxParallelArg = args[maxParallelIndex + 1];
+    if (!maxParallelArg) {
+      console.error("Error: --max-parallel must be followed by a number");
+      process.exit(1);
+    }
+    const maxParallelValue = parseInt(maxParallelArg!, 10);
+    if (!isNaN(maxParallelValue) && maxParallelValue > 0) {
+      maxParallel = maxParallelValue;
+    } else {
+      console.error("Error: --max-parallel must be followed by a positive number");
+      process.exit(1);
+    }
+  }
+
   const executionModeIndex = args.indexOf("--execution-mode");
   let executionMode: "local" | "daytona" | "runloop" = "local";
   if (executionModeIndex !== -1) {
@@ -266,16 +287,18 @@ async function main() {
       arg === "--limit" ||
       arg === "--skip" ||
       arg === "--model" ||
+      arg === "--max-parallel" ||
       arg === "--execution-mode"
     ) {
       return false;
     }
-    // Skip the value after --limit, --skip, --model, or --execution-mode
+    // Skip the value after --limit, --skip, --model, --max-parallel, or --execution-mode
     if (
       index > 0 &&
       (arr[index - 1] === "--limit" ||
         arr[index - 1] === "--skip" ||
         arr[index - 1] === "--model" ||
+        arr[index - 1] === "--max-parallel" ||
         arr[index - 1] === "--execution-mode")
     ) {
       return false;
@@ -371,6 +394,7 @@ async function main() {
         repoUrl: repoPath,
         branches,
         model: (model || "claude-sonnet-4-5") as AIModel,
+        ...(maxParallel && { maxParallel }),
       });
     } else if (executionMode === "runloop") {
       // Future: Runloop implementation

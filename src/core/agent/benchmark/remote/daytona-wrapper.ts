@@ -1,7 +1,77 @@
 import { Daytona } from "@daytonaio/sdk";
 import type { AIModel } from "../../../ai";
 import path from "path";
-import { mkdirSync, readFileSync, writeFileSync } from "fs";
+import { mkdirSync, readFileSync, writeFileSync, existsSync } from "fs";
+import pLimit from "p-limit";
+import { CircuitBreaker } from "./circuit-breaker";
+
+/**
+ * Retry a function with exponential backoff
+ */
+async function retryWithBackoff<T>(
+  fn: () => Promise<T>,
+  options: {
+    maxRetries?: number;
+    initialDelay?: number;
+    maxDelay?: number;
+    retryableErrors?: string[];
+    branch?: string;
+  } = {}
+): Promise<T> {
+  const {
+    maxRetries = 3,
+    initialDelay = 1000,
+    maxDelay = 30000,
+    retryableErrors = ["502", "503", "504", "ECONNRESET", "ETIMEDOUT"],
+    branch,
+  } = options;
+
+  let lastError: Error;
+  let delay = initialDelay;
+  const prefix = branch ? `[${branch}] ` : "";
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error: any) {
+      lastError = error;
+
+      // Check if error is retryable
+      const isRetryable = retryableErrors.some(
+        (retryableError) =>
+          error.message?.includes(retryableError) ||
+          error.toString().includes(retryableError)
+      );
+
+      // Don't retry on last attempt or non-retryable error
+      if (attempt === maxRetries || !isRetryable) {
+        throw error;
+      }
+
+      console.log(
+        `${prefix}⚠️  Retry ${attempt + 1}/${maxRetries} after ${delay}ms (Error: ${error.message})`
+      );
+
+      // Wait with exponential backoff
+      await new Promise((resolve) => setTimeout(resolve, delay));
+
+      // Exponential backoff: 1s, 2s, 4s, 8s, max 30s
+      delay = Math.min(delay * 2, maxDelay);
+    }
+  }
+
+  throw lastError!;
+}
+
+/**
+ * Shared circuit breaker for all Daytona operations
+ * Prevents cascading failures when backend is down
+ */
+const daytonaCircuitBreaker = new CircuitBreaker({
+  failureThreshold: 5,    // Open after 5 consecutive failures
+  resetTimeout: 60000,    // Try again after 60 seconds
+  successThreshold: 2,    // Close after 2 consecutive successes
+});
 
 export interface DaytonaBenchmarkOptions {
   repoUrl: string; // Git URL (e.g., https://github.com/user/repo)
@@ -11,6 +81,7 @@ export interface DaytonaBenchmarkOptions {
   orgId?: string;
   anthropicKey?: string; // Pass through to sandbox
   openrouterKey?: string; // Pass through to sandbox
+  maxParallel?: number; // Max concurrent sandboxes (default: 4)
 }
 
 interface BenchmarkResults {
@@ -44,25 +115,39 @@ async function runSingleBranchBenchmark(
 
   try {
     console.log(`[${branch}] 🚀 Creating Daytona sandbox...`);
-    sandbox = await daytona.create(
-      {
-        language: "typescript",
-        envVars: {
-          ...(anthropicKey && { ANTHROPIC_API_KEY: anthropicKey }),
-          ...(openrouterKey && { OPENROUTER_API_KEY: openrouterKey }),
-        },
-        public: true,
-        networkBlockAll: false,
-      },
-      {
-        timeout: 180000,
-      }
+    sandbox = await daytonaCircuitBreaker.execute(() =>
+      retryWithBackoff(
+        () =>
+          daytona.create(
+            {
+              language: "typescript",
+              envVars: {
+                ...(anthropicKey && { ANTHROPIC_API_KEY: anthropicKey }),
+                ...(openrouterKey && { OPENROUTER_API_KEY: openrouterKey }),
+              },
+              public: true,
+              networkBlockAll: false,
+            },
+            {
+              timeout: 180000,
+            }
+          ),
+        {
+          maxRetries: 3,
+          initialDelay: 2000,
+          maxDelay: 30000,
+          branch,
+        }
+      )
     );
 
     console.log(`[${branch}] ✅ Sandbox created: ${sandbox.id}`);
 
     // Disable auto-stop for long-running benchmarks
-    await sandbox.setAutostopInterval(0);
+    await retryWithBackoff(
+      () => sandbox.setAutostopInterval(0),
+      { branch }
+    );
     console.log(`[${branch}] ✅ Auto-stop disabled`);
 
     // Install dependencies
@@ -73,7 +158,10 @@ async function runSingleBranchBenchmark(
     await cloneRepo(sandbox, repoUrl, branch);
 
     console.log(`[${branch}] 🔬 Creating benchmark session...`);
-    await sandbox.process.createSession("benchmark");
+    await retryWithBackoff(
+      () => sandbox.process.createSession("benchmark"),
+      { branch }
+    );
 
     console.log(`[${branch}] 📊 Running benchmark...\n`);
     const { cmdId } = await sandbox.process.executeSessionCommand("benchmark", {
@@ -193,12 +281,14 @@ export async function runBenchmarkInDaytona(
   }
 
   const branches = options.branches || ["main"];
+  const maxParallel = options.maxParallel || 4;
   const startTime = Date.now();
 
   console.log("🚀 Starting parallel benchmark execution");
   console.log(`   Repository: ${options.repoUrl}`);
   console.log(`   Branches: ${branches.join(", ")}`);
   console.log(`   Model: ${options.model}`);
+  console.log(`   Max Parallel: ${maxParallel}`);
   console.log();
 
   // Initialize SDK
@@ -208,16 +298,19 @@ export async function runBenchmarkInDaytona(
     apiUrl: "https://app.daytona.io/api",
   });
 
-  // Run all branches in parallel
+  // Run branches with controlled concurrency
+  const limit = pLimit(maxParallel);
   const results = await Promise.all(
     branches.map(branch =>
-      runSingleBranchBenchmark(daytona, {
-        repoUrl: options.repoUrl,
-        branch,
-        model: options.model,
-        anthropicKey,
-        openrouterKey,
-      })
+      limit(() =>
+        runSingleBranchBenchmark(daytona, {
+          repoUrl: options.repoUrl,
+          branch,
+          model: options.model,
+          anthropicKey,
+          openrouterKey,
+        })
+      )
     )
   );
 
@@ -246,7 +339,7 @@ async function installBun(sandbox: any, branch?: string): Promise<void> {
   const prefix = branch ? `[${branch}] ` : "";
   console.log(`${prefix}📦 Installing Bun...`);
 
-  const installResult = await sandbox.process.executeCommand(
+  await sandbox.process.executeCommand(
     "curl -fsSL https://bun.sh/install | bash"
   );
 
@@ -312,7 +405,10 @@ async function cloneRepo(
   console.log(`${prefix}📦 Cloning repository: ${repoUrl} (${branch})...`);
 
   // Use Daytona's git.clone() - automatically clones and checks out branch
-  await sandbox.git.clone(repoUrl, "repo", branch);
+  await retryWithBackoff(
+    () => sandbox.git.clone(repoUrl, "repo", branch),
+    { branch }
+  );
 
   console.log(`${prefix}✅ Repository cloned to ~/repo`);
 }
@@ -337,7 +433,10 @@ async function downloadResults(
   const executionsPath = path.join(userHome, ".pensar", "executions");
 
   // List all session directories
-  const files = await sandbox.fs.listFiles(executionsPath);
+  const files = await retryWithBackoff(
+    () => sandbox.fs.listFiles(executionsPath),
+    { branch }
+  );
   console.log(`${prefix}Found ${files.length} execution directories`);
 
   // Find the session for this branch (most recent)
@@ -368,6 +467,27 @@ async function downloadResults(
 
   // Read benchmark_results.json
   const resultsPath = path.join(localSessionPath, "benchmark_results.json");
+
+  if (!existsSync(resultsPath)) {
+    const sessionJsonPath = path.join(localSessionPath, "session.json");
+    const comparisonJsonPath = path.join(localSessionPath, "comparison-results.json");
+    const sessionExists = existsSync(sessionJsonPath);
+    const comparisonExists = existsSync(comparisonJsonPath);
+
+    throw new Error(
+      `[${branch}] benchmark_results.json not found at ${resultsPath}.\n` +
+      `Session directory exists: ${sessionExists}\n` +
+      `Comparison results exist: ${comparisonExists}\n` +
+      `This indicates the benchmark orchestrator failed to complete the final step.\n\n` +
+      `Possible causes:\n` +
+      `  1. Comparison step failed (check for comparison-results.json)\n` +
+      `  2. Agent skipped generate_benchmark_report tool\n` +
+      `  3. Findings consolidation failed in thoroughPentestAgent\n` +
+      `  4. Agent reached step limit before completing\n\n` +
+      `Check the session logs at ${localSessionPath}/logs/ for details.`
+    );
+  }
+
   const results = JSON.parse(readFileSync(resultsPath, "utf-8"));
 
   console.log(`${prefix}✅ Results downloaded to ${localSessionPath}`);
@@ -388,7 +508,10 @@ async function downloadDirectoryRecursive(
   mkdirSync(localPath, { recursive: true });
 
   // List files in remote directory
-  const files = await sandbox.fs.listFiles(remotePath);
+  const files = await retryWithBackoff(
+    () => sandbox.fs.listFiles(remotePath),
+    { branch }
+  );
 
   for (const file of files) {
     const remoteFilePath = path.join(remotePath, file.name);
@@ -401,7 +524,10 @@ async function downloadDirectoryRecursive(
         await downloadDirectoryRecursive(sandbox, remoteFilePath, localFilePath, branch);
       } else {
         console.log(`${prefix}  📄 Downloading file: ${file.name}`);
-        await sandbox.fs.downloadFile(remoteFilePath, localFilePath);
+        await retryWithBackoff(
+          () => sandbox.fs.downloadFile(remoteFilePath, localFilePath),
+          { branch }
+        );
       }
     } catch (error: any) {
       if (error.message?.includes("file not found") || error.message?.includes("invalid")) {
@@ -446,6 +572,7 @@ async function generateSummaryReport(
     successful: results.filter(r => !r.comparison.error).length,
     failed: results.filter(r => r.comparison.error).length,
     duration,
+    circuitBreakerState: daytonaCircuitBreaker.getState(),
     branches: results.map(r => ({
       branch: r.branch,
       status: r.comparison.error ? "failed" : "success",
@@ -459,6 +586,9 @@ async function generateSummaryReport(
   writeFileSync(jsonPath, JSON.stringify(jsonSummary, null, 2));
 
   // Generate Markdown summary
+  const cbState = daytonaCircuitBreaker.getState();
+  const cbIcon = cbState.state === "CLOSED" ? "🟢" : cbState.state === "OPEN" ? "🔴" : "🟡";
+
   const markdown = [
     "# Parallel Benchmark Results",
     `**Repository**: ${repoUrl}`,
@@ -469,6 +599,7 @@ async function generateSummaryReport(
     "## Summary",
     `- Successful: ${jsonSummary.successful}/${jsonSummary.totalBranches}`,
     `- Failed: ${jsonSummary.failed}/${jsonSummary.totalBranches}`,
+    `- Circuit Breaker: ${cbIcon} ${cbState.state} (failures: ${cbState.failures}, successes: ${cbState.successes})`,
     "",
     "## Branch Results",
     "",
