@@ -39,6 +39,4 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
 build
 
-
-# act secrets file
 .secrets
