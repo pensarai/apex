@@ -13,8 +13,26 @@ import { join } from "path";
 import type { Session } from "./sessions";
 import { runAgent } from "./pentestAgent";
 import type { AIModel } from "../ai";
+import { generateObjectResponse } from "../ai";
+import { getProviderModel } from "../ai/utils";
+import { generateText } from "ai";
 
 const execAsync = promisify(exec);
+
+// Schemas for AI-generated structured outputs
+const PayloadSchema = z.object({
+  payload: z.string(),
+  reasoning: z.string(),
+  technique: z.string(),
+});
+
+const AnalysisSchema = z.object({
+  vulnerable: z.boolean(),
+  confidence: z.enum(["high", "medium", "low"]),
+  reasoning: z.string(),
+  certainlyNotVulnerable: z.boolean(),
+  suggestedNextTest: z.string(),
+});
 
 /**
  * Attack Knowledge Base
@@ -2019,17 +2037,11 @@ Generate a 2-3 sentence testing strategy:
 Be tactical and specific.`;
 
   try {
-    const { generateText } = await import('ai');
-    const { createAnthropic } = await import('@ai-sdk/anthropic');
-
-    const anthropic = createAnthropic({
-      apiKey: process.env.ANTHROPIC_API_KEY,
-    });
+    const providerModel = getProviderModel(model);
 
     const result = await generateText({
-      model: anthropic(model),
+      model: providerModel,
       prompt,
-      maxTokens: 300,
     });
 
     return result.text;
@@ -2066,24 +2078,13 @@ Generate ONE specific payload. Return ONLY JSON:
 {"payload": "exact payload string", "reasoning": "why this payload in 1 sentence", "technique": "technique name"}`;
 
   try {
-    const { generateText } = await import('ai');
-    const { createAnthropic } = await import('@ai-sdk/anthropic');
-
-    const anthropic = createAnthropic({
-      apiKey: process.env.ANTHROPIC_API_KEY,
-    });
-
-    const result = await generateText({
-      model: anthropic(model),
+    const result = await generateObjectResponse({
+      model,
+      schema: PayloadSchema,
       prompt,
-      maxTokens: 200,
     });
 
-    // Try to parse JSON
-    const jsonMatch = result.text.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
-    }
+    return result;
   } catch (error) {
     console.error('AI payload generation failed:', error);
   }
@@ -2128,23 +2129,13 @@ Analyze: Is this vulnerable? Return ONLY JSON:
 }`;
 
   try {
-    const { generateText } = await import('ai');
-    const { createAnthropic } = await import('@ai-sdk/anthropic');
-
-    const anthropic = createAnthropic({
-      apiKey: process.env.ANTHROPIC_API_KEY,
-    });
-
-    const result = await generateText({
-      model: anthropic(model),
+    const result = await generateObjectResponse({
+      model,
+      schema: AnalysisSchema,
       prompt,
-      maxTokens: 300,
     });
 
-    const jsonMatch = result.text.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
-    }
+    return result;
   } catch (error) {
     console.error('AI analysis failed:', error);
   }
