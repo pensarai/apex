@@ -1,6 +1,6 @@
 {
   "name": "@pensar/apex",
-  "version": "0.0.19",
+  "version": "0.0.23",
   "description": "AI-powered penetration testing CLI tool with terminal UI",
   "module": "src/tui/index.tsx",
   "main": "build/index.js",
@@ -64,6 +64,7 @@
     "@opentui/react": "0.1.26",
     "ai": "^5.0.68",
     "marked": "^16.4.0",
+    "nanoid": "^5.1.6",
     "p-limit": "^7.2.0",
     "react": "^19.2.0",
     "sharp": "^0.34.4",

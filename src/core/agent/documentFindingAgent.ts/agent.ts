@@ -1,8 +1,14 @@
-import { tool, hasToolCall, stepCountIs } from "ai";
-import { streamResponse, type AIModel } from "../../ai";
-import type { Session } from "../sessions";
-import z from "zod";
-import { join } from "path";
+import {
+  tool,
+  hasToolCall,
+  stepCountIs,
+  type StreamTextOnStepFinishCallback,
+  type ToolSet,
+} from 'ai';
+import { streamResponse, type AIModel } from '../../ai';
+import type { Session } from '../sessions';
+import z from 'zod';
+import { join } from 'path';
 import {
   existsSync,
   writeFileSync,
@@ -12,25 +18,38 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
-} from "fs";
-import { promisify } from "util";
-import { exec } from "child_process";
-import { Logger } from "../logger";
-import type { AIAuthConfig } from "../../ai/utils";
+} from 'fs';
+import { promisify } from 'util';
+import { exec } from 'child_process';
+import { Logger } from '../logger';
+import type { AIAuthConfig } from '../../ai/utils';
+import {
+  ApexFindingObject,
+  CreatePocObject,
+  type CreatePocOpts,
+  type CreatePocResult,
+  type DocumentFindingResult,
+} from './types';
+import { nanoid } from 'nanoid';
 
 const execAsync = promisify(exec);
 
 const FindingObject = z.object({
-  title: z.string().describe("Finding title"),
-  severity: z.enum(["CRITICAL", "HIGH", "MEDIUM", "LOW"]),
-  description: z.string().describe("Detailed description of the finding"),
-  impact: z.string().describe("Potential impact if exploited"),
-  evidence: z.string().describe("Evidence/proof of the vulnerability"),
-  remediation: z.string().describe("Steps to fix the issue"),
-  references: z.string().optional().describe("CVE, CWE, or related references"),
+  title: z.string().describe('Finding title'),
+  severity: z.enum(['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']),
+  description: z.string().describe('Detailed description of the finding'),
+  impact: z.string().describe('Potential impact if exploited'),
+  endpoint: z
+    .string()
+    .describe(
+      'The full URL Endpoint of the finding. Do not include any other text. i.e. https://example.com/endpoint'
+    ),
+  evidence: z.string().describe('Evidence/proof of the vulnerability'),
+  remediation: z.string().describe('Steps to fix the issue'),
+  references: z.string().optional().describe('CVE, CWE, or related references'),
   toolCallDescription: z
     .string()
-    .describe("Concise description of this tool call"),
+    .describe('Concise description of this tool call'),
 });
 
 export type Finding = z.infer<typeof FindingObject>;
@@ -39,17 +58,21 @@ export async function documentFindingAgent(
   finding: Finding,
   model: AIModel,
   session: Session,
-  authConfig?: AIAuthConfig
+  authConfig?: AIAuthConfig,
+  toolOverride?: {
+    create_poc?: (opts: CreatePocOpts) => Promise<CreatePocResult>;
+  },
+  onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>
 ) {
-  const logger = new Logger(session, "documentFindingAgent.log");
+  const logger = new Logger(session, 'documentFindingAgent.log');
   // Create pocs directory for pentest agent
-  const pocsPath = join(session.rootPath, "pocs");
+  const pocsPath = join(session.rootPath, 'pocs');
   if (!existsSync(pocsPath)) {
     mkdirSync(pocsPath, { recursive: true });
   }
   // Pentest-specific tool: create_poc
   const create_poc = tool({
-    name: "create_poc",
+    name: 'create_poc',
     description: `Create a Proof-of-Concept (POC) file to demonstrate a vulnerability.
 
 **PRIMARY TYPE: bash scripts** - Most POCs should be executable bash scripts
@@ -84,35 +107,20 @@ Use this tool BEFORE document_finding to:
 - Verify the POC demonstrates the vulnerability
 
 The POC should be self-contained and demonstrate the vulnerability clearly.`,
-    inputSchema: z.object({
-      pocName: z
-        .string()
-        .describe(
-          "Name for the POC file (e.g., 'sqli_login', 'xss_stored', 'csrf_attack')"
-        ),
-      pocType: z
-        .enum(["bash", "html"])
-        .describe(
-          "Type of POC: 'bash' for executable scripts (RECOMMENDED) or 'html' for web-based exploits"
-        ),
-      pocContent: z.string().describe("Complete file content for the POC"),
-      description: z
-        .string()
-        .describe("Brief description of what this POC demonstrates"),
-      toolCallDescription: z
-        .string()
-        .describe("Concise description of this tool call"),
-    }),
+    inputSchema: CreatePocObject,
     execute: async (poc) => {
       try {
+        if (toolOverride?.create_poc) {
+          return toolOverride.create_poc(poc);
+        }
         // Determine file extension based on pocType
-        const extension = poc.pocType === "bash" ? ".sh" : ".html";
+        const extension = poc.pocType === 'bash' ? '.sh' : '.html';
 
         // Sanitize filename
         const sanitizedName = poc.pocName
           .toLowerCase()
-          .replace(/[^a-z0-9_-]/g, "_")
-          .replace(/^poc_/, ""); // Remove poc_ prefix if already there
+          .replace(/[^a-z0-9_-]/g, '_')
+          .replace(/^poc_/, ''); // Remove poc_ prefix if already there
 
         const filename = `poc_${sanitizedName}${extension}`;
         const pocPath = join(pocsPath, filename);
@@ -122,7 +130,7 @@ The POC should be self-contained and demonstrate the vulnerability clearly.`,
         if (existsSync(pocPath)) {
           return {
             success: false,
-            error: "POC_EXISTS",
+            error: 'POC_EXISTS',
             pocPath: relativePocPath,
             message: `POC already exists at: ${relativePocPath}\n\nIf you want to update it, you'll need to use a different name or modify the existing file directly.`,
           };
@@ -131,14 +139,14 @@ The POC should be self-contained and demonstrate the vulnerability clearly.`,
         let pocContent = poc.pocContent.trim();
 
         // Add headers based on POC type
-        if (poc.pocType === "bash") {
+        if (poc.pocType === 'bash') {
           // Ensure POC starts with shebang
-          if (!pocContent.startsWith("#!")) {
-            pocContent = "#!/bin/bash\n" + pocContent;
+          if (!pocContent.startsWith('#!')) {
+            pocContent = '#!/bin/bash\n' + pocContent;
           }
 
           // Add header comments if not present
-          if (!pocContent.includes("# POC:")) {
+          if (!pocContent.includes('# POC:')) {
             const header = `#!/bin/bash
 # POC: ${poc.description}
 # Target: ${session.target}
@@ -146,11 +154,11 @@ The POC should be self-contained and demonstrate the vulnerability clearly.`,
 # Session: ${session.id}
 
 `;
-            pocContent = header + pocContent.replace(/^#!\/bin\/bash\s*\n/, "");
+            pocContent = header + pocContent.replace(/^#!\/bin\/bash\s*\n/, '');
           }
-        } else if (poc.pocType === "html") {
+        } else if (poc.pocType === 'html') {
           // Add HTML comment header if not present
-          if (!pocContent.includes("<!-- POC:")) {
+          if (!pocContent.includes('<!-- POC:')) {
             const header = `<!-- 
 POC: ${poc.description}
 Target: ${session.target}
@@ -174,7 +182,7 @@ To test this POC:
         // Execute POC only for bash scripts
         let executionResult;
 
-        if (poc.pocType === "bash") {
+        if (poc.pocType === 'bash') {
           // Make executable
           chmodSync(pocPath, 0o755);
 
@@ -190,8 +198,8 @@ To test this POC:
             executionResult = {
               success: true,
               exitCode: 0,
-              stdout: stdout || "(no output)",
-              stderr: stderr || "(no errors)",
+              stdout: stdout || '(no output)',
+              stderr: stderr || '(no errors)',
             };
           } catch (execError: any) {
             // Execution failed or timed out - DELETE the failed POC
@@ -207,7 +215,7 @@ To test this POC:
             executionResult = {
               success: false,
               exitCode: execError.code || 1,
-              stdout: execError.stdout || "(no output)",
+              stdout: execError.stdout || '(no output)',
               stderr: execError.stderr || execError.message,
               error: execError.message,
               fileDeleted: true,
@@ -218,7 +226,7 @@ To test this POC:
           executionResult = {
             success: true,
             executionSkipped: true,
-            reason: "HTML POCs require manual testing in a web browser",
+            reason: 'HTML POCs require manual testing in a web browser',
             instructions: `To test this HTML POC:
 1. Open in browser: file://${pocPath}
 2. Or serve via HTTP: python3 -m http.server 8000 (in pocs/ directory)
@@ -230,7 +238,7 @@ To test this POC:
         // Build appropriate message based on POC type
         let message;
 
-        if (poc.pocType === "bash") {
+        if (poc.pocType === 'bash') {
           if (executionResult.success) {
             // POC executed successfully
             message = `POC created at: ${relativePocPath}
@@ -275,7 +283,7 @@ ${executionResult.stderr}
 ⚠️  The POC failed to execute and has been automatically deleted from the pocs/ directory.
 
 **What Went Wrong:**
-${executionResult.error || "POC script encountered an error during execution"}
+${executionResult.error || 'POC script encountered an error during execution'}
 
 **Next Steps:**
 1. Review the error output above to understand what failed
@@ -331,7 +339,7 @@ ${executionResult.instructions}
 
         // For bash POCs that failed, success = false (file was deleted)
         const overallSuccess =
-          poc.pocType === "bash" ? executionResult.success : true;
+          poc.pocType === 'bash' ? executionResult.success : true;
 
         return {
           success: overallSuccess,
@@ -340,7 +348,7 @@ ${executionResult.instructions}
           pocType: poc.pocType,
           description: poc.description,
           execution: executionResult,
-          fileDeleted: poc.pocType === "bash" && !executionResult.success,
+          fileDeleted: poc.pocType === 'bash' && !executionResult.success,
           message,
         };
       } catch (error: any) {
@@ -353,9 +361,11 @@ ${executionResult.instructions}
     },
   });
 
+  let finalId: string | null = null;
+
   // Pentest-specific tool: document_finding with POC validation
   const document_finding = tool({
-    name: "document_finding",
+    name: 'document_finding',
     description: `Document a security finding with severity, impact, and remediation guidance.
 
 **CRITICAL REQUIREMENT:** You MUST provide a valid POC path. The POC script must exist before documenting.
@@ -381,29 +391,11 @@ FINDING STRUCTURE:
 - Description: Detailed technical explanation
 - Impact: Business and technical consequences
 - Evidence: Commands run, responses received, proof of vulnerability
+- Endpoint: The full URL Endpoint of the finding. Do not include any other text. i.e. https://example.com/endpoint. If this is an application wide vulnerability, consider it apart of the root path i.e. https://example.com/
 - POC Path: Path to the proof-of-concept script (REQUIRED)
 - Remediation: Specific, actionable steps to fix
 - References: CVE, CWE, OWASP, or security advisories`,
-    inputSchema: z.object({
-      title: z.string().describe("Finding title"),
-      severity: z.enum(["CRITICAL", "HIGH", "MEDIUM", "LOW"]),
-      description: z.string().describe("Detailed description of the finding"),
-      impact: z.string().describe("Potential impact if exploited"),
-      evidence: z.string().describe("Evidence/proof of the vulnerability"),
-      pocPath: z
-        .string()
-        .describe(
-          "Path to POC script relative to session root (e.g., 'pocs/poc_sqli_login.sh')"
-        ),
-      remediation: z.string().describe("Steps to fix the issue"),
-      references: z
-        .string()
-        .optional()
-        .describe("CVE, CWE, or related references"),
-      toolCallDescription: z
-        .string()
-        .describe("Concise description of this tool call"),
-    }),
+    inputSchema: ApexFindingObject,
     execute: async (finding) => {
       try {
         // Validate POC path exists
@@ -412,7 +404,7 @@ FINDING STRUCTURE:
         if (!existsSync(fullPocPath)) {
           return {
             success: false,
-            error: "POC_NOT_FOUND",
+            error: 'POC_NOT_FOUND',
             message: `POC script not found at: ${finding.pocPath}
 
 **ACTION REQUIRED:** 
@@ -445,9 +437,13 @@ Create this POC, test it, then retry document_finding.`,
         }
 
         const timestamp = new Date().toISOString();
+
+        const id = nanoid(6);
+
         const findingWithMeta = {
           ...finding,
           timestamp,
+          id,
           sessionId: session.id,
           target: session.target,
           pocPath: finding.pocPath,
@@ -456,63 +452,18 @@ Create this POC, test it, then retry document_finding.`,
         // Create a safe filename from the title
         const safeTitle = finding.title
           .toLowerCase()
-          .replace(/[^a-z0-9]+/g, "-")
-          .replace(/^-|-$/g, "")
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-|-$/g, '')
           .substring(0, 50);
 
-        const findingId = `${timestamp.split("T")[0]}-${safeTitle}`;
+        const findingId = `${timestamp.split('T')[0]}-${safeTitle}`;
         const filename = `${findingId}.json`;
         const filepath = join(session.findingsPath, filename);
-
-        // Create markdown document with POC reference
-        //         const markdown = `# ${finding.title}
-
-        // **Severity:** ${finding.severity}
-        // **Target:** ${session.target}
-        // **Date:** ${timestamp}
-        // **Session:** ${session.id}
-        // **POC:** \`${finding.pocPath}\`
-
-        // ## Description
-
-        // ${finding.description}
-
-        // ## Impact
-
-        // ${finding.impact}
-
-        // ## Evidence
-
-        // \`\`\`
-        // ${finding.evidence}
-        // \`\`\`
-
-        // ## Proof of Concept
-
-        // A working POC script is available at: \`${finding.pocPath}\`
-
-        // To reproduce this vulnerability, run:
-        // \`\`\`bash
-        // cd ${session.rootPath}
-        // ./${finding.pocPath}
-        // \`\`\`
-
-        // ## Remediation
-
-        // ${finding.remediation}
-
-        // ${finding.references ? `## References\n\n${finding.references}` : ""}
-
-        // ---
-
-        // *This finding was automatically documented by the Pensar penetration testing agent.*
-        // *POC verified and available at: ${finding.pocPath}*
-        // `;
 
         writeFileSync(filepath, JSON.stringify(findingWithMeta, null, 2));
 
         // Also append to a summary file
-        const summaryPath = join(session.rootPath, "findings-summary.md");
+        const summaryPath = join(session.rootPath, 'findings-summary.md');
         const summaryEntry = `- [${finding.severity}] ${finding.title} - \`findings/${filename}\` - POC: \`${finding.pocPath}\`\n`;
 
         try {
@@ -522,6 +473,8 @@ Create this POC, test it, then retry document_finding.`,
           const header = `# Findings Summary\n\n**Target:** ${session.target}  \n**Session:** ${session.id}\n\n## All Findings\n\n`;
           writeFileSync(summaryPath, header + summaryEntry);
         }
+
+        finalId = id;
 
         return {
           success: true,
@@ -542,18 +495,18 @@ Create this POC, test it, then retry document_finding.`,
   });
 
   // Read all existing findings to check for duplicates
-  const findingsPath = join(session.rootPath, "findings");
-  let existingFindingsText = "";
+  const findingsPath = join(session.rootPath, 'findings');
+  let existingFindingsText = '';
 
   if (existsSync(findingsPath)) {
     const findingFiles = readdirSync(findingsPath).filter((f) =>
-      f.endsWith(".json")
+      f.endsWith('.json')
     );
 
     for (const file of findingFiles) {
       try {
         const filePath = join(findingsPath, file);
-        const content = readFileSync(filePath, "utf-8");
+        const content = readFileSync(filePath, 'utf-8');
         const finding = JSON.parse(content);
         existingFindingsText += `\n\n---\nFile: ${file}\nTitle: ${finding.title}\nSeverity: ${finding.severity}\nDescription: ${finding.description}`;
       } catch (error) {
@@ -566,19 +519,19 @@ Create this POC, test it, then retry document_finding.`,
   let documentationResult: any = null;
 
   const finalize_documentation = tool({
-    name: "finalize_documentation",
+    name: 'finalize_documentation',
     description: `Finalize the finding documentation after POC verification.
     
 Call this tool to indicate the finding has been successfully documented or should be discarded.`,
     inputSchema: z.object({
-      action: z.enum(["documented", "discarded"]).describe("Action taken"),
-      reason: z.string().describe("Reason for the action"),
-      pocPath: z.string().optional().describe("POC path if documented"),
+      action: z.enum(['documented', 'discarded']).describe('Action taken'),
+      reason: z.string().describe('Reason for the action'),
+      pocPath: z.string().optional().describe('POC path if documented'),
       findingPath: z
         .string()
         .optional()
-        .describe("Finding file path if documented"),
-      toolCallDescription: z.string().describe("Description of this action"),
+        .describe('Finding file path if documented'),
+      toolCallDescription: z.string().describe('Description of this action'),
     }),
     execute: async (result) => {
       documentationResult = result;
@@ -685,10 +638,10 @@ Description: ${finding.description}
 Impact: ${finding.impact}
 Evidence: ${finding.evidence}
 Remediation: ${finding.remediation}
-${finding.references ? `References: ${finding.references}` : ""}
+${finding.references ? `References: ${finding.references}` : ''}
 
 **EXISTING FINDINGS IN SESSION:**
-${existingFindingsText || "(No existing findings - this would be the first)"}
+${existingFindingsText || '(No existing findings - this would be the first)'}
 
 ---
 
@@ -720,21 +673,23 @@ Begin your analysis now.
       finalize_documentation,
     },
     authConfig,
-    stopWhen: hasToolCall("finalize_documentation") || stepCountIs(1000),
+    onStepFinish,
+    stopWhen: hasToolCall('finalize_documentation') || stepCountIs(1000),
   });
 
   for await (const delta of streamResult.fullStream) {
   }
 
   if (!documentationResult) {
-    throw new Error("Document finding agent did not finalize");
+    throw new Error('Document finding agent did not finalize');
   }
 
   return {
     action: documentationResult.action,
     reason: documentationResult.reason,
     pocPath: documentationResult.pocPath,
+    findingId: finalId,
     findingPath: documentationResult.findingPath,
-    success: documentationResult.action === "documented",
+    success: documentationResult.action === 'documented',
   };
 }
