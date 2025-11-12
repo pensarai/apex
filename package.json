@@ -58,6 +58,7 @@
     "@ai-sdk/amazon-bedrock": "^3.0.34",
     "@ai-sdk/anthropic": "^2.0.26",
     "@ai-sdk/openai": "^2.0.48",
+    "@daytonaio/sdk": "^0.112.1",
     "@openrouter/ai-sdk-provider": "^1.2.0",
     "@opentui/core": "0.1.26",
     "@opentui/react": "0.1.26",

@@ -223,7 +223,19 @@ When you receive a repo path and branch:
 - **USE TOOLS IN SEQUENCE**: Follow the workflow phases systematically
 - **WAIT FOR PENTEST**: The thorough pentest may take time - let it complete
 - **ALWAYS CLEANUP**: Run stop_dev_environment even if testing fails
-- **GENERATE REPORT**: Always create the final benchmark_results.json
+
+## CRITICAL FINAL STEP: Generate Benchmark Report
+
+**MANDATORY:** After comparison completes (successfully OR with errors), you MUST call generate_benchmark_report to create benchmark_results.json.
+
+**Even if comparison fails:**
+- Still call generate_benchmark_report
+- Include the error in the comparison field
+- This ensures the benchmark run is recorded
+
+**This file is REQUIRED** - the entire benchmark is marked as failed if benchmark_results.json does not exist.
+
+**DO NOT END THE SESSION** without calling generate_benchmark_report.
 
 ## Example Opening Response:
 

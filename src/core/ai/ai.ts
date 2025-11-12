@@ -17,6 +17,7 @@ import {
   type ToolChoice,
   type ToolSet,
 } from "ai";
+import { z } from "zod";
 import { getModelInfo } from "./models";
 import {
   checkIfContextLengthError,
@@ -267,4 +268,34 @@ export function streamResponse(
     // Re-throw if it's not a context length error
     throw error;
   }
+}
+
+export interface GenerateObjectOpts<T extends z.ZodType> {
+  model: AIModel;
+  schema: T;
+  prompt: string;
+  system?: string;
+  maxTokens?: number;
+  temperature?: number;
+  authConfig?: AIAuthConfig;
+}
+
+export async function generateObjectResponse<T extends z.ZodType>(
+  opts: GenerateObjectOpts<T>
+) {
+  const { model, schema, prompt, system, maxTokens, temperature, authConfig } =
+    opts;
+
+  const providerModel = getProviderModel(model, authConfig);
+
+  const { object } = await generateObject({
+    model: providerModel,
+    schema,
+    prompt,
+    system,
+    maxTokens,
+    temperature,
+  });
+
+  return object;
 }
