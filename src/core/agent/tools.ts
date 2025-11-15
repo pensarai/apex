@@ -1046,200 +1046,64 @@ Check ALL locations where tokens might be stored/transmitted!
   }
 } as const;
 
-/**
- * Execute shell command - Primary tool for penetration testing
- *
- * Use this for all command-line operations including:
- * - nmap scans
- * - curl/wget requests
- * - nikto web scans
- * - directory enumeration (gobuster, dirb, dirbuster)
- * - subdomain enumeration (sublist3r, amass)
- * - SSL/TLS testing (sslscan, testssl.sh)
- * - DNS lookups (dig, nslookup, host)
- * - Network tools (ping, traceroute, netcat)
- * - Web application testing (sqlmap, burp, zap)
- */
-export const executeCommand = tool({
-  name: "execute_command",
-  description: `Execute a shell command for penetration testing activities.
-  
-COMMON COMMANDS FOR BLACK BOX TESTING:
-
-RECONNAISSANCE:
-- nmap -sV -sC <target>              # Service version detection + default scripts
-- nmap -p- <target>                  # Scan all ports
-- nmap -sU <target>                  # UDP scan
-- nmap -A <target>                   # Aggressive scan (OS, version, scripts)
-- dig <domain>                       # DNS lookup
-- whois <domain>                     # Domain registration info
-- host <domain>                      # DNS hostname lookup
-
-WEB APPLICATION TESTING:
-- curl -i <url>                      # HTTP request with headers
-- curl -X POST -d "data" <url>       # POST request
-- curl -H "Header: value" <url>      # Custom headers
-- curl -L <url>                      # Follow redirects
-- curl -k <url>                      # Ignore SSL errors
-- nikto -h <host>                    # Web server scanner
-- gobuster dir -u <url> -w <wordlist> # Directory enumeration
-- gobuster dns -d <domain> -w <wordlist> # Subdomain enumeration
-- ffuf -u <url>/FUZZ -w <wordlist>   # Web fuzzer
-
-SSL/TLS TESTING:
-- openssl s_client -connect <host>:<port> # SSL/TLS connection test
-- nmap --script ssl-enum-ciphers -p 443 <host> # SSL cipher enumeration
-
-NETWORK ANALYSIS:
-- nc -zv <host> <port>               # Port connection test
-- traceroute <host>                  # Network path tracing
-- ping -c 4 <host>                   # ICMP connectivity test
-
-OUTPUT HANDLING:
-- Use 2>&1 to capture stderr
-- Use timeout command for long-running scans
-- Consider -oN for nmap output
-
-IMPORTANT: Always analyze results and adjust your approach based on findings.`,
-  inputSchema: z.object({
-    command: z.string().describe("The shell command to execute"),
-    timeout: z
-      .number()
-      .optional()
-      .describe("Timeout in milliseconds (default: 30000)"),
-    toolCallDescription: z
-      .string()
-      .describe("Concise description of this tool call"),
-  }),
-  execute: async ({ command, timeout = 30000 }) => {
-    try {
-      const { stdout, stderr } = await execAsync(command, {
-        timeout,
-        maxBuffer: 10 * 1024 * 1024, // 10MB buffer
-      });
-      return {
-        success: true,
-        stdout:
-          `${stdout.substring(
-            0,
-            50000
-          )}... \n\n (truncated) call the command again with grep / tail to paginate the response` ||
-          "(no output)",
-        stderr: stderr || "",
-        command,
-      };
-    } catch (error: any) {
-      return {
-        success: false,
-        error: error.message,
-        stdout: error.stdout || "",
-        stderr: error.stderr || "",
-        command,
-      };
-    }
-  },
+// Exported type definitions for tool overrides
+export const ExecuteCommandInput = z.object({
+  command: z.string().describe("The shell command to execute"),
+  timeout: z
+    .number()
+    .optional()
+    .describe("Timeout in milliseconds (default: 30000)"),
+  toolCallDescription: z
+    .string()
+    .describe("Concise description of this tool call"),
 });
 
-/**
- * HTTP request tool - Specialized for web application testing
- */
-export const httpRequest = tool({
-  name: "http_request",
-  description: `Make HTTP requests with detailed response analysis for web application testing.
+export type ExecuteCommandOpts = z.infer<typeof ExecuteCommandInput>;
+export type ExecuteCommandResult = {
+  success: boolean;
+  error: string;
+  stdout: string;
+  stderr: string;
+  command: string;
+};
 
-USAGE GUIDANCE:
-- Always check response headers for security misconfigurations
-- Look for: X-Frame-Options, X-XSS-Protection, CSP, HSTS, X-Content-Type-Options
-- Analyze cookies for HttpOnly, Secure, SameSite flags
-- Check for verbose error messages that leak information
-- Test for common web vulnerabilities (SQL injection, XSS, IDOR)
-- Monitor response times for blind injection attacks
-- Test different HTTP methods (GET, POST, PUT, DELETE, PATCH, OPTIONS)
-- Examine redirects and authentication flows
-
-COMMON TESTING PATTERNS:
-- Test with/without authentication
-- Try different user agents
-- Test for CORS misconfigurations
-- Check for API endpoints (/api/, /v1/, /graphql)
-- Look for admin panels (/admin, /administrator, /wp-admin)
-- Test for backup files (.bak, .old, ~, .swp)`,
-  inputSchema: z.object({
-    url: z.string().describe("The URL to request"),
-    method: z
-      .enum(["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"])
-      .default("GET"),
-    headers: z
-      .preprocess(
-        (val) => {
-          if (typeof val === 'string') {
-            try {
-              return JSON.parse(val);
-            } catch {
-              return {}; // Return empty object if parsing fails
-            }
-          }
-          return val;
-        },
-        z.record(z.string(), z.string()).optional()
-      )
-      .describe("HTTP headers as key-value pairs (object or JSON string)"),
-    body: z.string().optional().describe("Request body (for POST, PUT, PATCH)"),
-    followRedirects: z.boolean().default(true),
-    timeout: z.number().default(10000),
-    toolCallDescription: z
-      .string()
-      .describe("Concise description of this tool call"),
-  }),
-  execute: async ({ url, method, headers, body, followRedirects, timeout }) => {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), timeout);
-
-      const response = await fetch(url, {
-        method,
-        headers: headers || {},
-        body: body || undefined,
-        redirect: followRedirects ? "follow" : "manual",
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeoutId);
-
-      const responseHeaders: Record<string, string> = {};
-      response.headers.forEach((value, key) => {
-        responseHeaders[key] = value;
-      });
-
-      let responseBody = "";
-      try {
-        responseBody = await response.text();
-      } catch (e) {
-        responseBody = "(unable to read response body)";
+export const HttpRequestInput = z.object({
+  url: z.string().describe("The URL to request"),
+  method: z
+    .enum(["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"])
+    .default("GET"),
+  headers: z
+    .preprocess((val) => {
+      if (typeof val === "string") {
+        try {
+          return JSON.parse(val);
+        } catch {
+          return {}; // Return empty object if parsing fails
+        }
       }
-
-      return {
-        success: true,
-        status: response.status,
-        statusText: response.statusText,
-        headers: responseHeaders,
-        body: `${responseBody.substring(
-          0,
-          5000
-        )}... \n\n (truncated) use execute_command with grep / tail to paginate the response`, // Limit to 50KB
-        url: response.url,
-        redirected: response.redirected,
-      };
-    } catch (error: any) {
-      return {
-        success: false,
-        error: error.message,
-        url,
-        method,
-      };
-    }
-  },
+      return val;
+    }, z.record(z.string(), z.string()).optional())
+    .describe("HTTP headers as key-value pairs (object or JSON string)"),
+  body: z.string().optional().describe("Request body (for POST, PUT, PATCH)"),
+  followRedirects: z.boolean().default(true),
+  timeout: z.number().default(10000),
+  toolCallDescription: z
+    .string()
+    .describe("Concise description of this tool call"),
 });
+
+export type HttpRequestOpts = z.infer<typeof HttpRequestInput>;
+
+export type HttpRequestResult = {
+  success: boolean;
+  status: number;
+  statusText: string;
+  headers: Record<string, string>;
+  body: string;
+  url: string;
+  redirected: boolean;
+};
+
 
 /**
  * Analysis tool - Document findings and maintain testing state
@@ -1653,8 +1517,8 @@ The report will be saved as 'pentest-report.md' in the session root directory.`,
             if (!byAttackType[test.attackType]) {
               byAttackType[test.attackType] = { total: 0, vulnerable: 0 };
             }
-            byAttackType[test.attackType].total++;
-            if (test.vulnerable) byAttackType[test.attackType].vulnerable++;
+            byAttackType[test.attackType]!.total++;
+            if (test.vulnerable) byAttackType[test.attackType]!.vulnerable++;
           });
 
           testResultsSummary = `
@@ -1887,6 +1751,63 @@ This report should be treated as confidential and distributed only to authorized
 }
 
 /**
+ * Core logic for recording test results 
+ */
+async function recordTestResultCore(session: Session, params: {
+  parameter: string;
+  endpoint: string;
+  attackType: string;
+  vulnerable: boolean;
+  payloadsTested: Array<{payload: string; description: string; result: string}>;
+  conclusion: string;
+  evidence?: string;
+  confidence?: 'high' | 'medium' | 'low';
+}) {
+  try {
+    const timestamp = new Date().toISOString();
+    const testId = `test-${Date.now()}-${params.attackType}-${params.parameter}`;
+
+    const testResult = {
+      id: testId,
+      timestamp,
+      sessionId: session.id,
+      parameter: params.parameter,
+      endpoint: params.endpoint,
+      attackType: params.attackType,
+      vulnerable: params.vulnerable,
+      payloadsTested: params.payloadsTested,
+      totalPayloadsTested: params.payloadsTested.length,
+      conclusion: params.conclusion,
+      evidence: params.evidence || '',
+      confidence: params.confidence || 'high',
+    };
+
+    // Save to scratchpad as test-results-{type}.json
+    const testResultsPath = join(session.scratchpadPath, 'test-results.jsonl');
+    const resultLine = JSON.stringify(testResult) + '\n';
+
+    appendFileSync(testResultsPath, resultLine);
+
+    return {
+      success: true,
+      testId,
+      message: params.vulnerable
+        ? `✓ Test recorded: VULNERABLE to ${params.attackType} (${params.payloadsTested.length} payloads tested)`
+        : `✓ Test recorded: NOT vulnerable to ${params.attackType} (${params.payloadsTested.length} payloads tested)`,
+      recommendation: params.vulnerable
+        ? 'Use document_finding to create a formal vulnerability report'
+        : 'Continue testing other attack types or parameters',
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      error: error.message,
+      message: `Failed to record test result: ${error.message}`,
+    };
+  }
+}
+
+/**
  * Record test result - Track all security tests including negative results
  */
 function createRecordTestResultTool(session: Session) {
@@ -1949,59 +1870,7 @@ Example workflow:
       confidence: z.enum(['high', 'medium', 'low']).optional().describe("Confidence level if vulnerable"),
       toolCallDescription: z.string(),
     }),
-    execute: async ({
-      parameter,
-      endpoint,
-      attackType,
-      vulnerable,
-      payloadsTested,
-      conclusion,
-      evidence,
-      confidence,
-    }) => {
-      try {
-        const timestamp = new Date().toISOString();
-        const testId = `test-${Date.now()}-${attackType}-${parameter}`;
-
-        const testResult = {
-          id: testId,
-          timestamp,
-          sessionId: session.id,
-          parameter,
-          endpoint,
-          attackType,
-          vulnerable,
-          payloadsTested,
-          totalPayloadsTested: payloadsTested.length,
-          conclusion,
-          evidence: evidence || '',
-          confidence: confidence || 'high',
-        };
-
-        // Save to scratchpad as test-results-{type}.json
-        const testResultsPath = join(session.scratchpadPath, 'test-results.jsonl');
-        const resultLine = JSON.stringify(testResult) + '\n';
-
-        appendFileSync(testResultsPath, resultLine);
-
-        return {
-          success: true,
-          testId,
-          message: vulnerable
-            ? `✓ Test recorded: VULNERABLE to ${attackType} (${payloadsTested.length} payloads tested)`
-            : `✓ Test recorded: NOT vulnerable to ${attackType} (${payloadsTested.length} payloads tested)`,
-          recommendation: vulnerable
-            ? 'Use document_finding to create a formal vulnerability report'
-            : 'Continue testing other attack types or parameters',
-        };
-      } catch (error: any) {
-        return {
-          success: false,
-          error: error.message,
-          message: `Failed to record test result: ${error.message}`,
-        };
-      }
-    },
+    execute: async (params) => recordTestResultCore(session, params),
   });
 }
 
@@ -2224,6 +2093,13 @@ test_parameter({
           };
         }
 
+        if ('systematic_discovery' in knowledge) {
+          return {
+            success: false,
+            message: `methodology is not a testable attack type - use specific attack types like sql_injection, xss_reflected, etc.`,
+          };
+        }
+
         console.log(`\n[*] Testing ${parameter} for ${knowledge.name}...`);
 
         // Generate strategy (optional, for logging)
@@ -2311,7 +2187,8 @@ test_parameter({
         }
 
         // Record test result
-        await createRecordTestResultTool(session).execute({
+        const recordTool = createRecordTestResultTool(session);
+        await recordTool.execute!({
           parameter,
           endpoint,
           attackType,
@@ -2323,7 +2200,7 @@ test_parameter({
           evidence: vulnerable ? JSON.stringify(results.filter(r => r.vulnerable)) : undefined,
           confidence: finalConfidence as any,
           toolCallDescription: 'Recording test result'
-        });
+        }, {} as any);
 
         return {
           success: true,
@@ -2497,6 +2374,9 @@ Use this when:
           // Check if objective mentions specific attack types that weren't tested
           for (const attackType of untestedAttackTypes) {
             const knowledge = ATTACK_KNOWLEDGE[attackType as keyof typeof ATTACK_KNOWLEDGE];
+            // Skip methodology - it's not a testable attack type
+            if ('systematic_discovery' in knowledge) continue;
+
             if (objectiveLower.includes(attackType.replace('_', ' ')) ||
                 objectiveLower.includes(knowledge.name.toLowerCase())) {
               suggestions.push(`⚠️ Objective mentions "${knowledge.name}" but no tests performed yet`);
@@ -2580,8 +2460,8 @@ This is the difference between amateur and professional pentesting.`,
 
     execute: async ({ objective, discoveryAttempts, anomaliesInvestigated }) => {
       try {
-        // Get testing coverage
-        const coverageResult = await createCheckTestingCoverageTool(session).execute({
+        const coverageTool = createCheckTestingCoverageTool(session);
+        const coverageResult: any = await (coverageTool.execute as any)({
           objective,
           toolCallDescription: 'Checking coverage for validation'
         });
@@ -2760,11 +2640,21 @@ ${discovered.map(d => `- ${d.endpoint} [${d.method}] → HTTP ${d.status}`).join
 
 Not found: ${(range.max - range.min + 1 - discovered.length)} endpoints returned 404`;
 
-      await createScratchpadTool(session).execute({
-        note,
-        category: 'result',
-        toolCallDescription: 'Recording enumeration results'
-      });
+      // Record in scratchpad directly
+      try {
+        const timestamp = new Date().toISOString();
+        const scratchpadFile = join(session.scratchpadPath, "notes.md");
+        const entry = `## RESULT - ${timestamp}\n\n${note}\n\n---\n\n`;
+
+        try {
+          appendFileSync(scratchpadFile, entry);
+        } catch (e) {
+          const header = `# Scratchpad - Session ${session.id}\n\n**Target:** ${session.target}  \n**Objective:** ${session.objective}\n\n---\n\n`;
+          writeFileSync(scratchpadFile, header + entry);
+        }
+      } catch (err) {
+        console.error('Failed to record to scratchpad:', err);
+      }
 
       return {
         success: true,
@@ -2782,7 +2672,186 @@ Not found: ${(range.max - range.min + 1 - discovered.length)} endpoints returned
 }
 
 // Export tools creator function that accepts a session
-export function createPentestTools(session: Session, model?: AIModel) {
+export function createPentestTools(
+  session: Session,
+  model?: AIModel,
+  toolOverride?: {
+    execute_command?: (
+      opts: ExecuteCommandOpts
+    ) => Promise<ExecuteCommandResult>;
+    http_request?: (opts: HttpRequestOpts) => Promise<HttpRequestResult>;
+  }
+) {
+  const executeCommand = tool({
+    name: "execute_command",
+    description: `Execute a shell command for penetration testing activities.
+
+COMMON COMMANDS FOR BLACK BOX TESTING:
+
+RECONNAISSANCE:
+- nmap -sV -sC <target>              # Service version detection + default scripts
+- nmap -p- <target>                  # Scan all ports
+- nmap -sU <target>                  # UDP scan
+- nmap -A <target>                   # Aggressive scan (OS, version, scripts)
+- dig <domain>                       # DNS lookup
+- whois <domain>                     # Domain registration info
+- host <domain>                      # DNS hostname lookup
+
+WEB APPLICATION TESTING:
+- curl -i <url>                      # HTTP request with headers
+- curl -X POST -d "data" <url>       # POST request
+- curl -H "Header: value" <url>      # Custom headers
+- curl -L <url>                      # Follow redirects
+- curl -k <url>                      # Ignore SSL errors
+- nikto -h <host>                    # Web server scanner
+- gobuster dir -u <url> -w <wordlist> # Directory enumeration
+- gobuster dns -d <domain> -w <wordlist> # Subdomain enumeration
+- ffuf -u <url>/FUZZ -w <wordlist>   # Web fuzzer
+
+SSL/TLS TESTING:
+- openssl s_client -connect <host>:<port> # SSL/TLS connection test
+- nmap --script ssl-enum-ciphers -p 443 <host> # SSL cipher enumeration
+
+NETWORK ANALYSIS:
+- nc -zv <host> <port>               # Port connection test
+- traceroute <host>                  # Network path tracing
+- ping -c 4 <host>                   # ICMP connectivity test
+
+OUTPUT HANDLING:
+- Use 2>&1 to capture stderr
+- Use timeout command for long-running scans
+- Consider -oN for nmap output
+
+IMPORTANT: Always analyze results and adjust your approach based on findings.`,
+    inputSchema: ExecuteCommandInput,
+    execute: async ({ command, timeout = 30000, toolCallDescription }) => {
+      try {
+        if (toolOverride?.execute_command) {
+          return toolOverride.execute_command({
+            command,
+            timeout,
+            toolCallDescription,
+          });
+        }
+
+        const { stdout, stderr } = await execAsync(command, {
+          timeout,
+          maxBuffer: 10 * 1024 * 1024, // 10MB buffer
+        });
+        return {
+          success: true,
+          stdout:
+            `${stdout.substring(
+              0,
+              50000
+            )}... \n\n (truncated) call the command again with grep / tail to paginate the response` ||
+            "(no output)",
+          stderr: stderr || "",
+          command,
+          error: "",
+        };
+      } catch (error: any) {
+        return {
+          success: false,
+          error: error.message,
+          stdout: error.stdout || "",
+          stderr: error.stderr || "",
+          command,
+        };
+      }
+    },
+  });
+
+  // Define httpRequest tool with override support
+  const httpRequest = tool({
+    name: "http_request",
+    description: `Make HTTP requests with detailed response analysis for web application testing.
+
+USAGE GUIDANCE:
+- Always check response headers for security misconfigurations
+- Look for: X-Frame-Options, X-XSS-Protection, CSP, HSTS, X-Content-Type-Options
+- Analyze cookies for HttpOnly, Secure, SameSite flags
+- Check for verbose error messages that leak information
+- Test for common web vulnerabilities (SQL injection, XSS, IDOR)
+- Monitor response times for blind injection attacks
+- Test different HTTP methods (GET, POST, PUT, DELETE, PATCH, OPTIONS)
+- Examine redirects and authentication flows
+
+COMMON TESTING PATTERNS:
+- Test with/without authentication
+- Try different user agents
+- Test for CORS misconfigurations
+- Check for API endpoints (/api/, /v1/, /graphql)
+- Look for admin panels (/admin, /administrator, /wp-admin)
+- Test for backup files (.bak, .old, ~, .swp)`,
+    inputSchema: HttpRequestInput,
+    execute: async ({ url, method, headers, body, followRedirects, timeout, toolCallDescription }) => {
+      try {
+        if (toolOverride?.http_request) {
+          return toolOverride.http_request({
+            url,
+            method,
+            headers,
+            body,
+            followRedirects,
+            timeout,
+            toolCallDescription,
+          });
+        }
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+        const response = await fetch(url, {
+          method,
+          headers: headers || {},
+          body: body || undefined,
+          redirect: followRedirects ? "follow" : "manual",
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+
+        const responseHeaders: Record<string, string> = {};
+        response.headers.forEach((value, key) => {
+          responseHeaders[key] = value;
+        });
+
+        let responseBody = "";
+        try {
+          responseBody = await response.text();
+        } catch (e) {
+          responseBody = "(unable to read response body)";
+        }
+
+        return {
+          success: true,
+          status: response.status,
+          statusText: response.statusText,
+          headers: responseHeaders,
+          body: `${responseBody.substring(
+            0,
+            5000
+          )}... \n\n (truncated) use execute_command with grep / tail to paginate the response`,
+          url: response.url,
+          redirected: response.redirected,
+        };
+      } catch (error: any) {
+        return {
+          success: false,
+          error: error.message,
+          url,
+          method,
+          status: 0,
+          statusText: "",
+          headers: {},
+          body: "",
+          redirected: false,
+        };
+      }
+    },
+  });
+
   return {
     execute_command: executeCommand,
     http_request: httpRequest,

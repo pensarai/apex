@@ -13,7 +13,7 @@ import {
   TypingIndicator,
   RocketLaunch,
   StatusPulse,
-} from "./src/components/sprites";
+} from "./src/tui/components/sprites";
 
 /**
  * Test file for animated terminal sprites
@@ -33,7 +33,6 @@ function App() {
       <SpinnerLine />
       <SpinnerCircle />
       <SpinnerBraille />
-      <ProgressBar />
       <PulsingDot />
       <LoadingWave />
       <HeartBeat />

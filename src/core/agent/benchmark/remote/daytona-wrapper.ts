@@ -436,11 +436,11 @@ async function downloadResults(
   const files = await retryWithBackoff(
     () => sandbox.fs.listFiles(executionsPath),
     { branch }
-  );
+  ) as Array<{ name: string; isDirectory: boolean }>;
   console.log(`${prefix}Found ${files.length} execution directories`);
 
   // Find the session for this branch (most recent)
-  const branchSessions = files.filter((f: any) =>
+  const branchSessions = files.filter((f) =>
     f.name.includes(`benchmark-${branch}`)
   );
 
@@ -449,7 +449,7 @@ async function downloadResults(
   }
 
   // Get the most recent session (last in array)
-  const sessionDir = branchSessions[branchSessions.length - 1].name;
+  const sessionDir = branchSessions[branchSessions.length - 1]!.name;
 
   console.log(`${prefix}Downloading session: ${sessionDir}`);
 
@@ -511,7 +511,7 @@ async function downloadDirectoryRecursive(
   const files = await retryWithBackoff(
     () => sandbox.fs.listFiles(remotePath),
     { branch }
-  );
+  ) as Array<{ name: string; isDirectory: boolean }>;
 
   for (const file of files) {
     const remoteFilePath = path.join(remotePath, file.name);
