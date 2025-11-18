@@ -1,0 +1,3 @@
+# Mark benchmarks folder as generated code (exclude from GitHub language statistics)
+benchmarks/** linguist-generated=true
+
