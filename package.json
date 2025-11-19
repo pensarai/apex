@@ -1,6 +1,6 @@
 {
   "name": "@pensar/apex",
-  "version": "0.0.25",
+  "version": "0.0.26",
   "description": "AI-powered penetration testing CLI tool with terminal UI",
   "module": "src/tui/index.tsx",
   "main": "build/index.js",
@@ -19,7 +19,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "bun build src/tui/index.tsx --outdir build --target node --format esm && bun build scripts/benchmark.ts --outdir build --target node --format esm && bun build scripts/quicktest.ts --outdir build --target node --format esm && bun build scripts/swarm.ts --outdir build --target node --format esm",
+    "build": "bun build src/tui/index.tsx --outdir build --target node --format esm --external sharp && bun build scripts/benchmark.ts --outdir build --target node --format esm --external sharp && bun build scripts/quicktest.ts --outdir build --target node --format esm --external sharp && bun build scripts/swarm.ts --outdir build --target node --format esm --external sharp",
     "dev": "bun run scripts/watch.ts",
     "dev:debug": "SHOW_CONSOLE=true bun run scripts/watch.ts",
     "start": "bun run src/tui/index.tsx",
