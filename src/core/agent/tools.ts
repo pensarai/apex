@@ -11,6 +11,7 @@ import {
 } from "fs";
 import { join } from "path";
 import type { Session } from "./sessions";
+import { getOffensiveHeaders } from "./sessions";
 import { runAgent } from "./pentestAgent";
 import type { AIModel } from "../ai";
 import { generateObjectResponse } from "../ai";
@@ -2671,6 +2672,54 @@ Not found: ${(range.max - range.min + 1 - discovered.length)} endpoints returned
   });
 }
 
+/**
+ * Wraps commands with User-Agent headers for common pentesting tools
+ */
+function wrapCommandWithHeaders(command: string, headers: Record<string, string>): string {
+  const userAgent = headers['User-Agent'];
+  if (!userAgent) return command;
+
+  // Apply wrappers (defensive - won't break if pattern doesn't match)
+  let wrapped = command;
+
+  // curl - add User-Agent if not already present
+  if (command.includes('curl') && !command.includes('User-Agent') && !command.includes('-A ')) {
+    wrapped = wrapped.replace(/\bcurl\s+/, `curl -A "${userAgent}" `);
+  }
+
+  // nikto - add User-Agent if not already present
+  if (command.includes('nikto') && !command.includes('-useragent')) {
+    wrapped = wrapped.replace(/\bnikto\s+/, `nikto -useragent "${userAgent}" `);
+  }
+
+  // nmap - add User-Agent for HTTP scripts only
+  if (command.includes('nmap') && command.includes('--script') &&
+      /--script[= ](.*?http.*?)/.test(command) && !command.includes('http.useragent')) {
+    if (command.includes('--script-args')) {
+      wrapped = wrapped.replace(/--script-args\s+([^\s]+)/, `--script-args $1,http.useragent="${userAgent}"`);
+    } else {
+      wrapped = `${wrapped} --script-args http.useragent="${userAgent}"`;
+    }
+  }
+
+  // gobuster - add User-Agent if not already present
+  if (command.includes('gobuster') && !command.includes('-a ') && !command.includes('--useragent')) {
+    wrapped = wrapped.replace(/\bgobuster\s+/, `gobuster -a "${userAgent}" `);
+  }
+
+  // ffuf - add User-Agent if not already present
+  if (command.includes('ffuf') && !command.includes('User-Agent:')) {
+    wrapped = wrapped.replace(/\bffuf\s+/, `ffuf -H "User-Agent: ${userAgent}" `);
+  }
+
+  // sqlmap - add User-Agent if not already present
+  if (command.includes('sqlmap') && !command.includes('--user-agent')) {
+    wrapped = wrapped.replace(/\bsqlmap\s+/, `sqlmap --user-agent="${userAgent}" `);
+  }
+
+  return wrapped;
+}
+
 // Export tools creator function that accepts a session
 export function createPentestTools(
   session: Session,
@@ -2682,6 +2731,9 @@ export function createPentestTools(
     http_request?: (opts: HttpRequestOpts) => Promise<HttpRequestResult>;
   }
 ) {
+  // Get offensive headers from session config
+  const offensiveHeaders = getOffensiveHeaders(session);
+
   const executeCommand = tool({
     name: "execute_command",
     description: `Execute a shell command for penetration testing activities.
@@ -2734,7 +2786,12 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
           });
         }
 
-        const { stdout, stderr } = await execAsync(command, {
+        // Wrap command with User-Agent headers if offensive headers are configured
+        const finalCommand = offensiveHeaders
+          ? wrapCommandWithHeaders(command, offensiveHeaders)
+          : command;
+
+        const { stdout, stderr } = await execAsync(finalCommand, {
           timeout,
           maxBuffer: 10 * 1024 * 1024, // 10MB buffer
         });
@@ -2747,7 +2804,7 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
             )}... \n\n (truncated) call the command again with grep / tail to paginate the response` ||
             "(no output)",
           stderr: stderr || "",
-          command,
+          command: finalCommand,
           error: "",
         };
       } catch (error: any) {
@@ -2804,7 +2861,10 @@ COMMON TESTING PATTERNS:
 
         const response = await fetch(url, {
           method,
-          headers: headers || {},
+          headers: {
+            ...(offensiveHeaders || {}),  // Custom headers from session config
+            ...(headers || {}),            // User headers can override
+          },
           body: body || undefined,
           redirect: followRedirects ? "follow" : "manual",
           signal: controller.signal,
