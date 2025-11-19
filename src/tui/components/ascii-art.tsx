@@ -125,6 +125,7 @@ export async function convertImageToColoredAscii(
       width: colorBuffer.info.width,
       height: colorBuffer.info.height,
       channels: 4,
+      premultiplied: false,
     },
   })
     .grayscale()
