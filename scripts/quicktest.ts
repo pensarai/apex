@@ -2,6 +2,8 @@
 
 import { runAgent } from "../src/core/agent/pentestAgent/agent";
 import type { AIModel } from "../src/core/ai";
+import { traceAgent, flushBraintrust } from "../src/core/braintrust";
+import { config } from "../src/core/config";
 
 interface QuicktestOptions {
   target: string;
@@ -20,46 +22,100 @@ async function runQuicktest(options: QuicktestOptions): Promise<void> {
   console.log(`Model: ${model}`);
   console.log();
 
+  // Load config for Braintrust
+  const appConfig = await config.get();
+  console.log('[Braintrust Debug] Config loaded:', {
+    hasAPIKey: !!appConfig.braintrustAPIKey,
+    projectName: appConfig.braintrustProjectName,
+    environment: appConfig.braintrustEnvironment,
+  });
+
   try {
-    // Run the pentest agent
-    const { streamResult, session } = runAgent({
-      target,
-      objective,
-      model: model as AIModel,
-    });
+    console.log('[Braintrust Debug] Starting trace for pentest agent');
+    // Wrap the agent execution in Braintrust trace
+    await traceAgent(
+      appConfig,
+      'pentest',
+      {
+        agent_type: 'pentest',
+        session_id: '', // Will be updated after runAgent
+        target,
+        objective,
+        model: model as AIModel,
+      },
+      async (updateMetadata) => {
+        console.log('[Braintrust Debug] Inside trace callback');
 
-    console.log(`Session ID: ${session.id}`);
-    console.log(`Session Path: ${session.rootPath}`);
-    console.log();
-    console.log("=".repeat(80));
-    console.log("PENTEST OUTPUT");
-    console.log("=".repeat(80));
-    console.log();
+        // Run the pentest agent
+        const { streamResult, session } = runAgent({
+          target,
+          objective,
+          model: model as AIModel,
+        });
 
-    // Consume the stream and display progress
-    for await (const delta of streamResult.fullStream) {
-      if (delta.type === "text-delta") {
-        process.stdout.write(delta.text);
-      } else if (delta.type === "tool-call") {
-        console.log(
-          `\n[Tool Call] ${delta.toolName}: ${
-            delta.input.toolCallDescription || ""
-          }`
-        );
-      } else if (delta.type === "tool-result") {
-        console.log(`[Tool Result] Completed\n`);
+        // Update metadata with session ID
+        console.log('[Braintrust Debug] Updating metadata with session ID:', session.id);
+        updateMetadata({ session_id: session.id });
+
+        console.log(`Session ID: ${session.id}`);
+        console.log(`Session Path: ${session.rootPath}`);
+        console.log();
+        console.log("=".repeat(80));
+        console.log("PENTEST OUTPUT");
+        console.log("=".repeat(80));
+        console.log();
+
+        // Consume the stream and display progress
+        for await (const delta of streamResult.fullStream) {
+          if (delta.type === "text-delta") {
+            process.stdout.write(delta.text);
+          } else if (delta.type === "tool-call") {
+            console.log(
+              `\n[Tool Call] ${delta.toolName}: ${
+                delta.input.toolCallDescription || ""
+              }`
+            );
+          } else if (delta.type === "tool-result") {
+            console.log(`[Tool Result] Completed\n`);
+          }
+        }
+
+        // Count findings
+        let findingsCount = 0;
+        try {
+          const fs = await import('fs');
+          if (fs.existsSync(session.findingsPath)) {
+            findingsCount = fs.readdirSync(session.findingsPath).filter(f => f.endsWith('.json')).length;
+          }
+        } catch (err) {
+          // Ignore errors counting findings
+        }
+
+        // Update final metadata
+        console.log('[Braintrust Debug] Updating final metadata:', { success: true, findings_count: findingsCount });
+        updateMetadata({
+          success: true,
+          findings_count: findingsCount,
+        });
+
+        console.log();
+        console.log("=".repeat(80));
+        console.log("PENTEST COMPLETED");
+        console.log("=".repeat(80));
+        console.log(`✓ Pentest completed successfully`);
+        console.log(`  Session ID: ${session.id}`);
+        console.log(`  Findings: ${session.findingsPath}`);
+        console.log(`  Session Path: ${session.rootPath}`);
+        console.log();
+
+        console.log('[Braintrust Debug] Trace callback completed successfully');
       }
-    }
+    ); // End of traceAgent
 
-    console.log();
-    console.log("=".repeat(80));
-    console.log("PENTEST COMPLETED");
-    console.log("=".repeat(80));
-    console.log(`✓ Pentest completed successfully`);
-    console.log(`  Session ID: ${session.id}`);
-    console.log(`  Findings: ${session.findingsPath}`);
-    console.log(`  Session Path: ${session.rootPath}`);
-    console.log();
+    // Flush Braintrust traces
+    console.log('[Braintrust Debug] Flushing traces to Braintrust...');
+    await flushBraintrust(appConfig);
+    console.log('[Braintrust Debug] Flush completed');
   } catch (error: any) {
     console.error("=".repeat(80));
     console.error("PENTEST FAILED");

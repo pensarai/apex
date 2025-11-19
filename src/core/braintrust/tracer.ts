@@ -41,22 +41,32 @@ export async function traceAgent<T>(
 ): Promise<T> {
   // Early return if disabled to avoid overhead
   if (!isBraintrustEnabled(config)) {
+    console.log('[Braintrust Debug] Tracing disabled - no API key found');
     return await fn(() => {}); // Provide no-op updater
   }
 
+  console.log('[Braintrust Debug] Braintrust enabled, initializing logger...');
   const logger = getBraintrustLogger(config);
   if (!logger) {
+    console.log('[Braintrust Debug] Logger initialization failed');
     return await fn(() => {}); // Provide no-op updater
   }
+  console.log('[Braintrust Debug] Logger initialized successfully');
 
   try {
+    console.log('[Braintrust Debug] Creating traced span with name:', `agent:${name}`);
     return await logger.traced(
       async (span) => {
+        console.log('[Braintrust Debug] Span created, span exists:', !!span);
         // Provide metadata updater that logs to the span as metadata
         // Note: Braintrust's log() expects ExperimentLogPartialArgs, so we pass as metadata field
         const updateMetadata = (updates: Partial<AgentSpanMetadata>) => {
+          console.log('[Braintrust Debug] updateMetadata called with:', updates);
           if (span) {
             span.log({ metadata: updates } as any);
+            console.log('[Braintrust Debug] Metadata logged to span');
+          } else {
+            console.log('[Braintrust Debug] No span available to log metadata');
           }
         };
         return await fn(updateMetadata);

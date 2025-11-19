@@ -4,8 +4,8 @@
 // Uses a three-state cache (undefined/null/config) to distinguish between "not computed",
 // "computed but disabled", and "computed and enabled" states.
 //
-// The configuration is sourced exclusively from ~/.pensar/config.json via the centralized config system.
-// No environment variable fallbacks are used (following the repo pattern for optional integrations).
+// The configuration is sourced from the centralized config system (~/.pensar/config.json)
+// with environment variable overrides following the repo's standard pattern (all caps).
 
 import type { BraintrustConfig } from './types';
 import type { Config } from '../config/config';

@@ -66,7 +66,10 @@ export async function get(): Promise<Config> {
     daytonaAPIKey: process.env.DAYTONA_API_KEY,
     daytonaOrgId: process.env.DAYTONA_ORG_ID,
     runloopAPIKey: process.env.RUNLOOP_API_KEY,
-    // Braintrust config comes from file only (no env var override)
+    braintrustAPIKey: process.env.BRAINTRUST_API_KEY,
+    braintrustProjectName: process.env.BRAINTRUST_PROJECT_NAME,
+    braintrustClientId: process.env.BRAINTRUST_CLIENT_ID,
+    braintrustEnvironment: process.env.BRAINTRUST_ENVIRONMENT as 'dev' | 'staging' | 'prod' | undefined,
   };
 }
 
