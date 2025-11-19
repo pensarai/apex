@@ -16,7 +16,7 @@
 export { getBraintrustConfig, isBraintrustEnabled } from './config';
 
 // Client management
-export { getBraintrustClient, safeFlush } from './client';
+export { getBraintrustLogger, safeFlush } from './client';
 
 // Tracing utilities
 export { traceAgent, traceToolCall, traceAICall } from './tracer';
