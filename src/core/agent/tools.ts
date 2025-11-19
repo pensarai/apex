@@ -2717,6 +2717,31 @@ function wrapCommandWithHeaders(command: string, headers: Record<string, string>
     wrapped = wrapped.replace(/\bsqlmap\s+/, `sqlmap --user-agent="${userAgent}" `);
   }
 
+  // wfuzz - add User-Agent if not already present
+  if (command.includes('wfuzz') && !command.includes('-H') && !command.includes('User-Agent')) {
+    wrapped = wrapped.replace(/\bwfuzz\s+/, `wfuzz -H "User-Agent: ${userAgent}" `);
+  }
+
+  // dirb - add User-Agent if not already present
+  if (command.includes('dirb') && !command.includes('-a')) {
+    wrapped = wrapped.replace(/\bdirb\s+/, `dirb -a "${userAgent}" `);
+  }
+
+  // wpscan - add User-Agent if not already present
+  if (command.includes('wpscan') && !command.includes('--user-agent')) {
+    wrapped = wrapped.replace(/\bwpscan\s+/, `wpscan --user-agent "${userAgent}" `);
+  }
+
+  // nuclei - add User-Agent if not already present
+  if (command.includes('nuclei') && !command.includes('-H')) {
+    wrapped = wrapped.replace(/\bnuclei\s+/, `nuclei -H "User-Agent: ${userAgent}" `);
+  }
+
+  // httpx - add User-Agent if not already present
+  if (command.includes('httpx') && !command.includes('-H')) {
+    wrapped = wrapped.replace(/\bhttpx\s+/, `httpx -H "User-Agent: ${userAgent}" `);
+  }
+
   return wrapped;
 }
 
