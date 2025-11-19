@@ -11,6 +11,7 @@
 
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
+import { readFileSync } from "fs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -18,6 +19,11 @@ const __dirname = dirname(__filename);
 // Get command-line arguments (skip node/bun and script path)
 const args = process.argv.slice(2);
 const command = args[0];
+
+// Read package.json for version
+const packageJsonPath = join(__dirname, "..", "package.json");
+const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf-8"));
+const version = packageJson.version;
 
 // Handle different commands
 if (command === "benchmark") {
@@ -42,6 +48,9 @@ if (command === "benchmark") {
 
   // Import and run quicktest
   await import(quicktestPath);
+} else if (command === "--version" || command === "-v") {
+  // Show version
+  console.log(`v${version}`);
 } else if (command === "--help" || command === "-h") {
   // Show help
   console.log("Pensar - AI-Powered Penetration Testing CLI");
@@ -56,6 +65,7 @@ if (command === "benchmark") {
   console.log();
   console.log("Options:");
   console.log("  -h, --help         Show this help message");
+  console.log("  -v, --version      Show version number");
   console.log();
   console.log("Benchmark Usage:");
   console.log("  pensar benchmark <repo-path> [options] [branch1 branch2 ...]");
