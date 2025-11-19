@@ -1,31 +1,28 @@
 // Braintrust Configuration Management
 //
-// Handles initialization and caching of Braintrust configuration from environment variables.
+// Handles initialization and caching of Braintrust configuration from the centralized config system.
 // Uses a three-state cache (undefined/null/config) to distinguish between "not computed",
-// "computed but disabled", and "computed and enabled" states, avoiding repeated env var reads.
+// "computed but disabled", and "computed and enabled" states.
 //
-// Environment Variables:
-// - BRAINTRUST_API_KEY: Required API key for Braintrust authentication
-// - BRAINTRUST_ENABLED: Set to 'false' to explicitly disable even with valid API key
-// - BRAINTRUST_PROJECT_NAME: Optional project name (defaults to 'apex-pentest')
-// - BRAINTRUST_CLIENT_ID: Optional client identifier for multi-client scenarios
-// - BRAINTRUST_ENVIRONMENT: Optional environment tag ('dev', 'staging', 'prod')
+// The configuration is sourced exclusively from ~/.pensar/config.json via the centralized config system.
+// No environment variable fallbacks are used (following the repo pattern for optional integrations).
 
 import type { BraintrustConfig } from './types';
+import type { Config } from '../config/config';
 
 // Three-state cache: undefined = not computed, null = disabled, object = enabled
 let cachedConfig: BraintrustConfig | null | undefined = undefined;
 
-// Retrieves and caches Braintrust configuration from environment variables.
-// Returns null if Braintrust is disabled (no API key or explicitly disabled).
-// Subsequent calls return the cached result without re-reading environment variables.
-export function getBraintrustConfig(): BraintrustConfig | null {
+// Retrieves and caches Braintrust configuration from the centralized config system.
+// Returns null if Braintrust is disabled (no API key provided).
+// Subsequent calls return the cached result.
+export function getBraintrustConfig(config: Config): BraintrustConfig | null {
   // Return cached result if already computed
   if (cachedConfig !== undefined) {
     return cachedConfig;
   }
 
-  const apiKey = process.env.BRAINTRUST_API_KEY;
+  const apiKey = config.braintrustAPIKey;
 
   // If no API key, disable
   if (!apiKey) {
@@ -33,26 +30,14 @@ export function getBraintrustConfig(): BraintrustConfig | null {
     return null;
   }
 
-  // Check explicit disable flag
-  const explicitlyDisabled = process.env.BRAINTRUST_ENABLED === 'false';
-  if (explicitlyDisabled) {
-    cachedConfig = null;
-    return null;
-  }
-
-  // Validate environment value before casting
-  const envValue = process.env.BRAINTRUST_ENVIRONMENT;
-  const validEnvironments = ['dev', 'staging', 'prod'] as const;
-  const environment: BraintrustConfig['environment'] =
-    envValue && validEnvironments.includes(envValue as any)
-      ? (envValue as BraintrustConfig['environment'])
-      : 'dev';
+  // Use config values with defaults
+  const environment = config.braintrustEnvironment || 'dev';
 
   cachedConfig = {
     apiKey,
-    projectName: process.env.BRAINTRUST_PROJECT_NAME || 'apex-pentest',
+    projectName: config.braintrustProjectName || 'apex-pentest',
     enabled: true,
-    clientId: process.env.BRAINTRUST_CLIENT_ID,
+    clientId: config.braintrustClientId || undefined,
     environment,
   };
 
@@ -62,6 +47,6 @@ export function getBraintrustConfig(): BraintrustConfig | null {
 // Checks if Braintrust integration is enabled.
 // Returns true if configuration is valid and not explicitly disabled.
 // This is a convenience wrapper around getBraintrustConfig() for boolean checks.
-export function isBraintrustEnabled(): boolean {
-  return getBraintrustConfig() !== null;
+export function isBraintrustEnabled(config: Config): boolean {
+  return getBraintrustConfig(config) !== null;
 }

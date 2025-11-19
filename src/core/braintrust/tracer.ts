@@ -14,36 +14,52 @@
 import { getBraintrustLogger } from './client';
 import { isBraintrustEnabled } from './config';
 import type { AgentSpanMetadata, ToolSpanMetadata, AISpanMetadata } from './types';
+import type { Config } from '../config/config';
+
+// Type for metadata updater callback provided to trace functions.
+// Allows updating span metadata mid-execution (e.g., adding final metrics).
+type MetadataUpdater<T> = (updates: Partial<T>) => void;
 
 // Traces an agent execution with automatic timing and metadata capture.
 // Wraps an async function with Braintrust span tracking. If Braintrust is disabled,
 // executes the function normally without tracing overhead.
 //
+// The function receives a metadata updater callback to log additional metrics during execution.
+//
 // Example:
-//   await traceAgent('pentest-agent', { agent_type: 'pentest', model: 'gpt-4', ... }, async () => {
-//     return await runPentest();
+//   const config = await getConfig();
+//   await traceAgent(config, 'pentest-agent', { agent_type: 'pentest', model: 'gpt-4', ... }, async (updateMetadata) => {
+//     const results = await runPentest();
+//     updateMetadata({ findings_count: results.length });
+//     return results;
 //   });
 export async function traceAgent<T>(
+  config: Config,
   name: string,
   meta: AgentSpanMetadata,
-  fn: () => Promise<T>,
+  fn: (updateMetadata: MetadataUpdater<AgentSpanMetadata>) => Promise<T>,
 ): Promise<T> {
   // Early return if disabled to avoid overhead
-  if (!isBraintrustEnabled()) {
-    return await fn();
+  if (!isBraintrustEnabled(config)) {
+    return await fn(() => {}); // Provide no-op updater
   }
 
-  const logger = getBraintrustLogger();
+  const logger = getBraintrustLogger(config);
   if (!logger) {
-    return await fn();
+    return await fn(() => {}); // Provide no-op updater
   }
 
   try {
     return await logger.traced(
       async (span) => {
-        // Span is available for manual logging if needed
-        // span.log({ ... })
-        return await fn();
+        // Provide metadata updater that logs to the span as metadata
+        // Note: Braintrust's log() expects ExperimentLogPartialArgs, so we pass as metadata field
+        const updateMetadata = (updates: Partial<AgentSpanMetadata>) => {
+          if (span) {
+            span.log({ metadata: updates } as any);
+          }
+        };
+        return await fn(updateMetadata);
       },
       {
         name: `agent:${name}`,
@@ -53,7 +69,7 @@ export async function traceAgent<T>(
   } catch (err) {
     // If span creation fails, fall back to executing without tracing
     console.warn('[Braintrust] Failed to create agent span, executing without tracing:', (err as Error).message);
-    return await fn();
+    return await fn(() => {}); // Provide no-op updater
   }
 }
 
@@ -61,28 +77,43 @@ export async function traceAgent<T>(
 // Wraps an async function with Braintrust span tracking. If Braintrust is disabled,
 // executes the function normally without tracing overhead.
 //
+// The function receives a metadata updater callback to log additional metrics during execution.
+//
 // Example:
-//   await traceToolCall('nmap-scan', { tool_name: 'nmap', endpoint: '192.168.1.1', ... }, async () => {
-//     return await runNmapScan();
+//   const config = await getConfig();
+//   await traceToolCall(config, 'nmap-scan', { tool_name: 'nmap', endpoint: '192.168.1.1', ... }, async (updateMetadata) => {
+//     const result = await runNmapScan();
+//     updateMetadata({ success: true, duration_ms: 1500 });
+//     return result;
 //   });
 export async function traceToolCall<T>(
+  config: Config,
   name: string,
   meta: ToolSpanMetadata,
-  fn: () => Promise<T>,
+  fn: (updateMetadata: MetadataUpdater<ToolSpanMetadata>) => Promise<T>,
 ): Promise<T> {
   // Early return if disabled to avoid overhead
-  if (!isBraintrustEnabled()) {
-    return await fn();
+  if (!isBraintrustEnabled(config)) {
+    return await fn(() => {}); // Provide no-op updater
   }
 
-  const logger = getBraintrustLogger();
+  const logger = getBraintrustLogger(config);
   if (!logger) {
-    return await fn();
+    return await fn(() => {}); // Provide no-op updater
   }
 
   try {
     return await logger.traced(
-      async (span) => await fn(),
+      async (span) => {
+        // Provide metadata updater that logs to the span as metadata
+        // Note: Braintrust's log() expects ExperimentLogPartialArgs, so we pass as metadata field
+        const updateMetadata = (updates: Partial<ToolSpanMetadata>) => {
+          if (span) {
+            span.log({ metadata: updates } as any);
+          }
+        };
+        return await fn(updateMetadata);
+      },
       {
         name: `tool:${name}`,
         ...meta,
@@ -91,7 +122,7 @@ export async function traceToolCall<T>(
   } catch (err) {
     // If span creation fails, fall back to executing without tracing
     console.warn('[Braintrust] Failed to create tool span, executing without tracing:', (err as Error).message);
-    return await fn();
+    return await fn(() => {}); // Provide no-op updater
   }
 }
 
@@ -99,28 +130,43 @@ export async function traceToolCall<T>(
 // Wraps an async function with Braintrust span tracking. If Braintrust is disabled,
 // executes the function normally without tracing overhead.
 //
+// The function receives a metadata updater callback to log token usage and other metrics.
+//
 // Example:
-//   await traceAICall('openai-completion', { model: 'gpt-4', provider: 'openai', ... }, async () => {
-//     return await callOpenAI();
+//   const config = await getConfig();
+//   await traceAICall(config, 'openai-completion', { model: 'gpt-4', provider: 'openai', ... }, async (updateMetadata) => {
+//     const result = await callOpenAI();
+//     updateMetadata({ prompt_tokens: 100, completion_tokens: 50 });
+//     return result;
 //   });
 export async function traceAICall<T>(
+  config: Config,
   name: string,
   meta: AISpanMetadata,
-  fn: () => Promise<T>,
+  fn: (updateMetadata: MetadataUpdater<AISpanMetadata>) => Promise<T>,
 ): Promise<T> {
   // Early return if disabled to avoid overhead
-  if (!isBraintrustEnabled()) {
-    return await fn();
+  if (!isBraintrustEnabled(config)) {
+    return await fn(() => {}); // Provide no-op updater
   }
 
-  const logger = getBraintrustLogger();
+  const logger = getBraintrustLogger(config);
   if (!logger) {
-    return await fn();
+    return await fn(() => {}); // Provide no-op updater
   }
 
   try {
     return await logger.traced(
-      async (span) => await fn(),
+      async (span) => {
+        // Provide metadata updater that logs to the span as metadata
+        // Note: Braintrust's log() expects ExperimentLogPartialArgs, so we pass as metadata field
+        const updateMetadata = (updates: Partial<AISpanMetadata>) => {
+          if (span) {
+            span.log({ metadata: updates } as any);
+          }
+        };
+        return await fn(updateMetadata);
+      },
       {
         name: `ai:${name}`,
         ...meta,
@@ -129,7 +175,7 @@ export async function traceAICall<T>(
   } catch (err) {
     // If span creation fails, fall back to executing without tracing
     console.warn('[Braintrust] Failed to create AI span, executing without tracing:', (err as Error).message);
-    return await fn();
+    return await fn(() => {}); // Provide no-op updater
   }
 }
 

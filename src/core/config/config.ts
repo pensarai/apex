@@ -16,6 +16,11 @@ export interface Config {
   daytonaAPIKey?: string | null;
   daytonaOrgId?: string | null;
   runloopAPIKey?: string | null;
+  // Braintrust integration
+  braintrustAPIKey?: string | null;
+  braintrustProjectName?: string | null;
+  braintrustClientId?: string | null;
+  braintrustEnvironment?: 'dev' | 'staging' | 'prod' | null;
 }
 
 export async function init() {
@@ -61,6 +66,7 @@ export async function get(): Promise<Config> {
     daytonaAPIKey: process.env.DAYTONA_API_KEY,
     daytonaOrgId: process.env.DAYTONA_ORG_ID,
     runloopAPIKey: process.env.RUNLOOP_API_KEY,
+    // Braintrust config comes from file only (no env var override)
   };
 }
 

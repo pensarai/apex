@@ -8,6 +8,7 @@
 
 import { initLogger } from 'braintrust';
 import { getBraintrustConfig } from './config';
+import type { Config } from '../config/config';
 
 // Braintrust logger type from SDK
 type BraintrustLogger = ReturnType<typeof initLogger>;
@@ -22,19 +23,19 @@ let flushWarned = false;
 // Retrieves or initializes the Braintrust logger instance.
 // Returns null if configuration is disabled or initialization fails.
 // Logs warnings on first failure only to avoid console spam.
-export function getBraintrustLogger(): BraintrustLogger | null {
+export function getBraintrustLogger(config: Config): BraintrustLogger | null {
   if (logger !== undefined) return logger;
 
-  const config = getBraintrustConfig();
-  if (!config) {
+  const braintrustConfig = getBraintrustConfig(config);
+  if (!braintrustConfig) {
     logger = null;
     return null;
   }
 
   try {
     logger = initLogger({
-      apiKey: config.apiKey,
-      projectName: config.projectName,
+      apiKey: braintrustConfig.apiKey,
+      projectName: braintrustConfig.projectName,
       asyncFlush: true, // Batches sends for efficiency
     });
   } catch (err) {
@@ -51,8 +52,8 @@ export function getBraintrustLogger(): BraintrustLogger | null {
 // Safely flushes any pending Braintrust data with timeout.
 // Gracefully handles errors to avoid crashing the application.
 // Should be called at application shutdown or after critical operations.
-export async function safeFlush(): Promise<void> {
-  const l = getBraintrustLogger();
+export async function flushBraintrust(config: Config): Promise<void> {
+  const l = getBraintrustLogger(config);
   if (!l) return;
 
   try {

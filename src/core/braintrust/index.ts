@@ -1,41 +1,38 @@
 // Braintrust Integration Module
 //
 // Main entry point for the Braintrust observability integration.
-// Exports all public APIs for configuration, tracing, and data sanitization.
+// Provides a minimal, clean API for tracing agents, tools, and AI calls.
+//
+// Configuration is stored in ~/.pensar/config.json via the centralized config system.
+// To enable Braintrust, add your API key to the config file.
 //
 // Usage:
-//   import { traceAgent, sanitizeToolInput, isBraintrustEnabled } from '@/core/braintrust';
+//   import { traceAgent, isBraintrustEnabled } from '@/core/braintrust';
+//   import { get as getConfig } from '@/core/config';
 //
-//   if (isBraintrustEnabled()) {
-//     await traceAgent('my-agent', metadata, async () => {
+//   const config = await getConfig();
+//   if (isBraintrustEnabled(config)) {
+//     await traceAgent(config, 'my-agent', metadata, async (updateMetadata) => {
 //       // agent logic
+//       updateMetadata({ findings_count: 5 });
 //     });
 //   }
 
 // Configuration
-export { getBraintrustConfig, isBraintrustEnabled } from './config';
+export { isBraintrustEnabled } from './config';
 
 // Client management
-export { getBraintrustLogger, safeFlush } from './client';
+export { flushBraintrust } from './client';
 
 // Tracing utilities
 export { traceAgent, traceToolCall, traceAICall } from './tracer';
 
-// Data sanitization
-export {
-  sanitizeHeaders,
-  sanitizeQueryParams,
-  sanitizeBody,
-  sanitizeToolInput,
-  sanitizeToolOutput,
-} from './sanitizer';
+// Data sanitization (main entry points only)
+export { sanitizeToolInput, sanitizeToolOutput } from './sanitizer';
 
 // Type exports
 export type {
-  BraintrustConfig,
   AgentSpanMetadata,
   ToolSpanMetadata,
   AISpanMetadata,
 } from './types';
-
-export { SENSITIVE_PATTERNS } from './types';
