@@ -55,25 +55,40 @@ export async function traceAgent<T>(
 
   try {
     console.log('[Braintrust Debug] Creating traced span with name:', `agent:${name}`);
+    console.log('[Braintrust Debug] Initial metadata:', meta);
     return await logger.traced(
       async (span) => {
         console.log('[Braintrust Debug] Span created, span exists:', !!span);
-        // Provide metadata updater that logs to the span as metadata
-        // Note: Braintrust's log() expects ExperimentLogPartialArgs, so we pass as metadata field
+
+        // Log initial metadata immediately
+        if (span) {
+          console.log('[Braintrust Debug] Logging initial metadata to span');
+          span.log({
+            input: meta,
+            metadata: meta,
+          } as any);
+        }
+
+        // Provide metadata updater that logs directly to span
         const updateMetadata = (updates: Partial<AgentSpanMetadata>) => {
           console.log('[Braintrust Debug] updateMetadata called with:', updates);
           if (span) {
-            span.log({ metadata: updates } as any);
+            // Log updates as metadata
+            span.log({
+              metadata: { ...meta, ...updates },
+            } as any);
             console.log('[Braintrust Debug] Metadata logged to span');
           } else {
             console.log('[Braintrust Debug] No span available to log metadata');
           }
         };
-        return await fn(updateMetadata);
+
+        const result = await fn(updateMetadata);
+        console.log('[Braintrust Debug] Span callback completed');
+        return result;
       },
       {
         name: `agent:${name}`,
-        ...meta,
       }
     );
   } catch (err) {
