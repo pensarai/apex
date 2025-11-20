@@ -11,6 +11,28 @@ import { join } from "path";
 import { homedir } from "os";
 import { randomBytes } from "crypto";
 
+/**
+ * Configuration for offensive security testing headers
+ */
+export interface OffensiveHeadersConfig {
+  mode: 'none' | 'default' | 'custom';
+  headers?: Record<string, string>;
+}
+
+/**
+ * Session-level configuration
+ */
+export interface SessionConfig {
+  offensiveHeaders?: OffensiveHeadersConfig;
+}
+
+/**
+ * Default headers for pensar-apex
+ */
+export const DEFAULT_OFFENSIVE_HEADERS: Record<string, string> = {
+  'User-Agent': 'pensar-apex',
+};
+
 export interface Session {
   id: string;
   rootPath: string;
@@ -20,6 +42,7 @@ export interface Session {
   target: string;
   objective: string;
   startTime: string;
+  config?: SessionConfig;
 }
 
 /**
@@ -50,7 +73,8 @@ export function getExecutionsDir(): string {
 export function createSession(
   target: string,
   objective?: string,
-  prefix?: string
+  prefix?: string,
+  config?: SessionConfig
 ): Session {
   const sessionId = generateSessionId(prefix);
   const rootPath = join(getExecutionsDir(), sessionId);
@@ -73,6 +97,7 @@ export function createSession(
     target,
     objective: objective ?? "",
     startTime: new Date().toISOString(),
+    config,
   };
 
   // Write session metadata
@@ -177,4 +202,25 @@ export function cleanupOldSessions(daysOld: number = 30): number {
   }
 
   return cleaned;
+}
+
+/**
+ * Resolve offensive headers based on session config
+ */
+export function getOffensiveHeaders(session: Session): Record<string, string> | undefined {
+  const config = session.config?.offensiveHeaders;
+
+  if (!config || config.mode === 'none') {
+    return undefined;
+  }
+
+  if (config.mode === 'default') {
+    return DEFAULT_OFFENSIVE_HEADERS;
+  }
+
+  if (config.mode === 'custom' && config.headers) {
+    return config.headers;
+  }
+
+  return undefined;
 }

@@ -48,17 +48,29 @@ if (command === "benchmark") {
 
   // Import and run quicktest
   await import(quicktestPath);
-} else if (command === "--version" || command === "-v") {
+} else if (command === "pentest") {
+  // Run pentest CLI
+  const pentestPath = join(__dirname, "..", "build", "pentest.js");
+
+  // Remove "pentest" from args and pass the rest to pentest script
+  process.argv = [process.argv[0], pentestPath, ...args.slice(1)];
+
+  // Import and run pentest
+  await import(pentestPath);
+} else if (command === "version" || command === "--version" || command === "-v") {
   // Show version
   console.log(`v${version}`);
-} else if (command === "--help" || command === "-h") {
+} else if (command === "help" || command === "--help" || command === "-h") {
   // Show help
   console.log("Pensar - AI-Powered Penetration Testing CLI");
   console.log();
   console.log("Usage:");
   console.log("  pensar              Launch the TUI (Terminal User Interface)");
+  console.log("  pensar help         Show this help message");
+  console.log("  pensar version      Show version number");
   console.log("  pensar benchmark    Run the benchmark CLI");
   console.log("  pensar quicktest    Run a quick penetration test");
+  console.log("  pensar pentest      Run a comprehensive penetration test");
   console.log(
     "  pensar swarm        Run parallel pentests on multiple targets"
   );
@@ -80,7 +92,7 @@ if (command === "benchmark") {
   console.log();
   console.log("Quicktest Usage:");
   console.log(
-    "  pensar quicktest --target <target> --objective <objective> [--model <model>]"
+    "  pensar quicktest --target <target> --objective <objective> [options]"
   );
   console.log();
   console.log("Quicktest Options:");
@@ -93,9 +105,34 @@ if (command === "benchmark") {
   console.log(
     "  --model <model>          AI model to use (default: claude-sonnet-4-5)"
   );
+  console.log(
+    "  --headers <mode>         Header mode: none, default, custom (default: default)"
+  );
+  console.log(
+    "  --header <name:value>    Add custom header (requires --headers custom)"
+  );
+  console.log();
+  console.log("Pentest Usage:");
+  console.log(
+    "  pensar pentest --target <target> [options]"
+  );
+  console.log();
+  console.log("Pentest Options:");
+  console.log(
+    "  --target <target>        Target domain or organization (required)"
+  );
+  console.log(
+    "  --model <model>          AI model to use (default: claude-sonnet-4-5)"
+  );
+  console.log(
+    "  --headers <mode>         Header mode: none, default, custom (default: default)"
+  );
+  console.log(
+    "  --header <name:value>    Add custom header (requires --headers custom)"
+  );
   console.log();
   console.log("Swarm Usage:");
-  console.log("  pensar swarm <targets> [--model <model>]");
+  console.log("  pensar swarm <targets> [options]");
   console.log();
   console.log("Swarm Arguments:");
   console.log("  <targets>                JSON string or path to JSON file");
@@ -104,36 +141,43 @@ if (command === "benchmark") {
   console.log(
     "  --model <model>          AI model to use (default: claude-sonnet-4-5)"
   );
+  console.log(
+    "  --headers <mode>         Header mode: none, default, custom (default: default)"
+  );
+  console.log(
+    "  --header <name:value>    Add custom header (requires --headers custom)"
+  );
   console.log();
-  console.log("Targets format (JSON array):");
-  console.log("  [");
-  console.log("    {");
-  console.log('      "target": "api.example.com",');
-  console.log('      "objective": "Test API for injection vulnerabilities"');
-  console.log("    },");
-  console.log("    {");
-  console.log('      "target": "admin.example.com",');
-  console.log('      "objective": "Test admin panel for auth bypass"');
-  console.log("    }");
-  console.log("  ]");
+  console.log("Header Modes (for quicktest, pentest, swarm):");
+  console.log(
+    "  none                     No custom headers added to requests"
+  );
+  console.log(
+    "  default                  Add 'User-Agent: pensar-apex' to all offensive requests"
+  );
+  console.log(
+    "  custom                   Use custom headers defined with --header flag"
+  );
   console.log();
   console.log("Examples:");
   console.log("  pensar");
   console.log("  pensar benchmark /path/to/vulnerable-app");
   console.log("  pensar benchmark /path/to/app main develop");
   console.log("  pensar benchmark /path/to/app --all-branches --limit 3");
-  console.log("  pensar benchmark /path/to/app --model gpt-4o");
   console.log(
     "  pensar quicktest --target http://localhost:3000 --objective 'Find SQL injection'"
   );
   console.log(
-    "  pensar quicktest --target 192.168.1.100 --objective 'Test auth bypass' --model gpt-4o"
+    "  pensar quicktest --target api.example.com --objective 'API testing' --headers custom --header 'User-Agent: pensar_client123'"
+  );
+  console.log(
+    "  pensar pentest --target example.com"
+  );
+  console.log(
+    "  pensar pentest --target example.com --headers custom --header 'User-Agent: pensar_client123'"
   );
   console.log("  pensar swarm targets.json");
-  console.log("  pensar swarm targets.json --model gpt-4o");
-  console.log(
-    '  pensar swarm \'[{"target":"api.example.com","objective":"Test API"}]\''
-  );
+  console.log("  pensar swarm targets.json --headers none");
 } else if (args.length === 0) {
   // No command specified, run the TUI
   const appPath = join(__dirname, "..", "build", "index.js");

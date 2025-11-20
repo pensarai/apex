@@ -20,12 +20,14 @@ interface SwarmOptions {
   targets: Targets | string;
   model: AIModel;
   silent?: boolean;
+  headerMode?: 'none' | 'default' | 'custom';
+  customHeaders?: Record<string, string>;
 }
 
 export async function swarm(
   options: SwarmOptions
 ): Promise<Session | undefined> {
-  const { targets, model, silent } = options;
+  const { targets, model, silent, headerMode = 'default', customHeaders } = options;
   let targetsArray: Targets = [];
   if (typeof targets === "string") {
     const result = TargetSchema.safeParse(JSON.parse(targets));
@@ -93,12 +95,21 @@ export async function swarm(
       }
 
       try {
+        // Build session config
+        const sessionConfig = {
+          offensiveHeaders: {
+            mode: headerMode,
+            headers: headerMode === 'custom' ? customHeaders : undefined,
+          },
+        };
+
         const { streamResult } = runAgent({
           session,
           target: target.target,
           objective: target.objective,
           model,
           silent,
+          sessionConfig,
         });
 
         // Consume the stream and display progress
@@ -173,13 +184,30 @@ async function main() {
     console.error("Usage: pensar swarm <targets> [options]");
     console.error();
     console.error("Arguments:");
-    console.error("  <targets>            JSON string or path to JSON file");
+    console.error("  <targets>                JSON string or path to JSON file");
     console.error();
     console.error("Options:");
     console.error(
-      "  --model <model>      Specify the AI model to use (default: claude-sonnet-4-5)"
+      "  --model <model>          AI model to use (default: claude-sonnet-4-5)"
     );
-    console.error("  --silent             Suppress all output");
+    console.error("  --silent                 Suppress all output");
+    console.error(
+      "  --headers <mode>         Header mode: none, default, or custom (default: default)"
+    );
+    console.error(
+      "  --header <name:value>    Add custom header (requires --headers custom, can be repeated)"
+    );
+    console.error();
+    console.error("Header Modes:");
+    console.error(
+      "  none                     No custom headers added to requests"
+    );
+    console.error(
+      "  default                  Add 'User-Agent: pensar-apex' to all offensive requests"
+    );
+    console.error(
+      "  custom                   Use custom headers defined with --header flag"
+    );
     console.error();
     console.error("Targets format (JSON array):");
     console.error("  [");
@@ -198,12 +226,12 @@ async function main() {
     console.error("Examples:");
     console.error("  pensar swarm targets.json");
     console.error("  pensar swarm targets.json --model gpt-4o");
-    console.error("  pensar swarm targets.json --silent");
+    console.error("  pensar swarm targets.json --headers none");
     console.error(
-      '  pensar swarm \'[{"target":"api.example.com","objective":"Test API"}]\''
+      "  pensar swarm targets.json --headers custom --header 'User-Agent: pensar_client123'"
     );
     console.error(
-      '  pensar swarm \'[{"target":"api.example.com","objective":"Test API"}]\' --model gpt-4o'
+      '  pensar swarm \'[{"target":"api.example.com","objective":"Test API"}]\''
     );
     process.exit(1);
   }
@@ -225,6 +253,58 @@ async function main() {
   // Check for --silent flag
   const silent = args.includes("--silent");
 
+  // Parse header options
+  const headersIndex = args.indexOf("--headers");
+  let headerMode: 'none' | 'default' | 'custom' = 'default';
+  if (headersIndex !== -1) {
+    const headersArg = args[headersIndex + 1];
+    if (!headersArg || !['none', 'default', 'custom'].includes(headersArg)) {
+      console.error("Error: --headers must be 'none', 'default', or 'custom'");
+      process.exit(1);
+    }
+    headerMode = headersArg as 'none' | 'default' | 'custom';
+  }
+
+  // Parse custom headers
+  const customHeaders: Record<string, string> = {};
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--header') {
+      const headerArg = args[i + 1];
+      if (!headerArg) {
+        console.error("Error: --header must be followed by 'Name: Value'");
+        process.exit(1);
+      }
+
+      // Parse "Name: Value" format
+      const colonIndex = headerArg.indexOf(':');
+      if (colonIndex === -1) {
+        console.error("Error: --header must be in format 'Name: Value'");
+        process.exit(1);
+      }
+
+      const name = headerArg.substring(0, colonIndex).trim();
+      const value = headerArg.substring(colonIndex + 1).trim();
+
+      if (!name) {
+        console.error("Error: Header name cannot be empty");
+        process.exit(1);
+      }
+
+      customHeaders[name] = value;
+    }
+  }
+
+  // Validate custom headers usage
+  if (headerMode !== 'custom' && Object.keys(customHeaders).length > 0) {
+    console.error("Error: --header flag requires --headers custom");
+    process.exit(1);
+  }
+
+  if (headerMode === 'custom' && Object.keys(customHeaders).length === 0) {
+    console.error("Error: --headers custom requires at least one --header flag");
+    process.exit(1);
+  }
+
   // Determine if input is a file path or JSON string
   let targetsJson: string;
   if (targetsInput.startsWith("[") || targetsInput.startsWith("{")) {
@@ -245,6 +325,8 @@ async function main() {
       targets: targetsJson,
       model,
       silent,
+      headerMode,
+      ...(headerMode === 'custom' && { customHeaders }),
     });
     if (!session) {
       if (!silent) {

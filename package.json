@@ -1,6 +1,6 @@
 {
   "name": "@pensar/apex",
-  "version": "0.0.27",
+  "version": "0.0.28",
   "description": "AI-powered penetration testing CLI tool with terminal UI",
   "module": "src/tui/index.tsx",
   "main": "build/index.js",
@@ -19,13 +19,14 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "bun build src/tui/index.tsx --outdir build --target node --format esm --external sharp && bun build scripts/benchmark.ts --outdir build --target node --format esm --external sharp && bun build scripts/quicktest.ts --outdir build --target node --format esm --external sharp && bun build scripts/swarm.ts --outdir build --target node --format esm --external sharp",
+    "build": "bun build src/tui/index.tsx --outdir build --target node --format esm --external sharp && bun build scripts/benchmark.ts --outdir build --target node --format esm --external sharp && bun build scripts/quicktest.ts --outdir build --target node --format esm --external sharp && bun build scripts/pentest.ts --outdir build --target node --format esm --external sharp && bun build scripts/swarm.ts --outdir build --target node --format esm --external sharp",
     "dev": "bun run scripts/watch.ts",
     "dev:debug": "SHOW_CONSOLE=true bun run scripts/watch.ts",
     "start": "bun run src/tui/index.tsx",
     "pensar": "node bin/pensar.js",
     "benchmark": "bun run scripts/benchmark.ts",
     "quicktest": "bun run scripts/quicktest.ts",
+    "pentest": "bun run scripts/pentest.ts",
     "swarm": "bun run scripts/swarm.ts",
     "test": "vitest run",
     "test:watch": "vitest",
