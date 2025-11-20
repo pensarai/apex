@@ -35,22 +35,35 @@ function ConfigForm({ appConfig }: { appConfig: Config | null }) {
   }
   return (
     <box flexDirection="column">
+      <text>AI Providers:</text>
       <text>
-        {appConfig.openAiAPIKey ? "✓" : "✗"} OpenAI:{" "}
+        {" "}{appConfig.openAiAPIKey ? "✓" : "✗"} OpenAI:{" "}
         {appConfig.openAiAPIKey ? "Configured" : "Not set"}
       </text>
       <text>
-        {appConfig.anthropicAPIKey ? "✓" : "✗"} Anthropic:{" "}
+        {" "}{appConfig.anthropicAPIKey ? "✓" : "✗"} Anthropic:{" "}
         {appConfig.anthropicAPIKey ? "Configured" : "Not set"}
       </text>
       <text>
-        {appConfig.openRouterAPIKey ? "✓" : "✗"} OpenRouter:{" "}
+        {" "}{appConfig.openRouterAPIKey ? "✓" : "✗"} OpenRouter:{" "}
         {appConfig.openRouterAPIKey ? "Configured" : "Not set"}
       </text>
       <text>
-        {appConfig.bedrockAPIKey ? "✓" : "✗"} Bedrock:{" "}
+        {" "}{appConfig.bedrockAPIKey ? "✓" : "✗"} Bedrock:{" "}
         {appConfig.bedrockAPIKey ? "Configured" : "Not set"}
       </text>
+      <text> </text>
+      <text>Observability:</text>
+      <text>
+        {" "}{appConfig.braintrustAPIKey ? "✓" : "✗"} Braintrust:{" "}
+        {appConfig.braintrustAPIKey ? "Configured" : "Not set"}
+      </text>
+      {appConfig.braintrustAPIKey && (
+        <>
+          <text>    Project: {appConfig.braintrustProjectName || "apex-pentest"}</text>
+          <text>    Environment: {appConfig.braintrustEnvironment || "dev"}</text>
+        </>
+      )}
     </box>
   );
 }
