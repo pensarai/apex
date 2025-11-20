@@ -45,7 +45,9 @@ export function getProviderModel(
   const bedrockRegion =
     authConfig?.bedrock?.region || process.env.AWS_REGION || "us-east-1";
   const localBaseURL =
-    authConfig?.local?.baseURL || process.env.LOCAL_MODEL_URL;
+    authConfig?.local?.baseURL ||
+    process.env.LOCAL_MODEL_URL ||
+    "http://127.0.0.1:1234/v1";
 
   let providerModel;
 
