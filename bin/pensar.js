@@ -57,15 +57,17 @@ if (command === "benchmark") {
 
   // Import and run pentest
   await import(pentestPath);
-} else if (command === "--version" || command === "-v") {
+} else if (command === "version" || command === "--version" || command === "-v") {
   // Show version
   console.log(`v${version}`);
-} else if (command === "--help" || command === "-h") {
+} else if (command === "help" || command === "--help" || command === "-h") {
   // Show help
   console.log("Pensar - AI-Powered Penetration Testing CLI");
   console.log();
   console.log("Usage:");
   console.log("  pensar              Launch the TUI (Terminal User Interface)");
+  console.log("  pensar help         Show this help message");
+  console.log("  pensar version      Show version number");
   console.log("  pensar benchmark    Run the benchmark CLI");
   console.log("  pensar quicktest    Run a quick penetration test");
   console.log("  pensar pentest      Run a comprehensive penetration test");
