@@ -2683,8 +2683,9 @@ function wrapCommandWithHeaders(command: string, headers: Record<string, string>
   let wrapped = command;
 
   // curl - add User-Agent if not already present
-  if (command.includes('curl') && !command.includes('User-Agent') && !command.includes('-A ')) {
-    wrapped = wrapped.replace(/\bcurl\s+/, `curl -A "${userAgent}" `);
+  if (command.includes('curl') && !command.includes('User-Agent') && !command.includes('-A')) {
+    // Use global replace to handle multiple curl commands in one line
+    wrapped = wrapped.replace(/\bcurl(\s+)/g, `curl -A "${userAgent}" $1`);
   }
 
   // nikto - add User-Agent if not already present
