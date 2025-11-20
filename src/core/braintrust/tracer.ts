@@ -41,28 +41,19 @@ export async function traceAgent<T>(
 ): Promise<T> {
   // Early return if disabled to avoid overhead
   if (!isBraintrustEnabled(config)) {
-    console.log('[Braintrust Debug] Tracing disabled - no API key found');
     return await fn(() => {}); // Provide no-op updater
   }
 
-  console.log('[Braintrust Debug] Braintrust enabled, initializing logger...');
   const logger = getBraintrustLogger(config);
   if (!logger) {
-    console.log('[Braintrust Debug] Logger initialization failed');
     return await fn(() => {}); // Provide no-op updater
   }
-  console.log('[Braintrust Debug] Logger initialized successfully');
 
   try {
-    console.log('[Braintrust Debug] Creating traced span with name:', `agent:${name}`);
-    console.log('[Braintrust Debug] Initial metadata:', meta);
     return await logger.traced(
       async (span) => {
-        console.log('[Braintrust Debug] Span created, span exists:', !!span);
-
         // Log initial metadata immediately
         if (span) {
-          console.log('[Braintrust Debug] Logging initial metadata to span');
           span.log({
             input: meta,
             metadata: meta,
@@ -71,21 +62,15 @@ export async function traceAgent<T>(
 
         // Provide metadata updater that logs directly to span
         const updateMetadata = (updates: Partial<AgentSpanMetadata>) => {
-          console.log('[Braintrust Debug] updateMetadata called with:', updates);
           if (span) {
             // Log updates as metadata
             span.log({
               metadata: { ...meta, ...updates },
             } as any);
-            console.log('[Braintrust Debug] Metadata logged to span');
-          } else {
-            console.log('[Braintrust Debug] No span available to log metadata');
           }
         };
 
-        const result = await fn(updateMetadata);
-        console.log('[Braintrust Debug] Span callback completed');
-        return result;
+        return await fn(updateMetadata);
       },
       {
         name: `agent:${name}`,

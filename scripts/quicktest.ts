@@ -24,14 +24,8 @@ async function runQuicktest(options: QuicktestOptions): Promise<void> {
 
   // Load config for Braintrust
   const appConfig = await config.get();
-  console.log('[Braintrust Debug] Config loaded:', {
-    hasAPIKey: !!appConfig.braintrustAPIKey,
-    projectName: appConfig.braintrustProjectName,
-    environment: appConfig.braintrustEnvironment,
-  });
 
   try {
-    console.log('[Braintrust Debug] Starting trace for pentest agent');
     // Wrap the agent execution in Braintrust trace
     await traceAgent(
       appConfig,
@@ -44,8 +38,6 @@ async function runQuicktest(options: QuicktestOptions): Promise<void> {
         model: model as AIModel,
       },
       async (updateMetadata) => {
-        console.log('[Braintrust Debug] Inside trace callback');
-
         // Run the pentest agent
         const { streamResult, session } = runAgent({
           target,
@@ -54,7 +46,6 @@ async function runQuicktest(options: QuicktestOptions): Promise<void> {
         });
 
         // Update metadata with session ID
-        console.log('[Braintrust Debug] Updating metadata with session ID:', session.id);
         updateMetadata({ session_id: session.id });
 
         console.log(`Session ID: ${session.id}`);
@@ -92,7 +83,6 @@ async function runQuicktest(options: QuicktestOptions): Promise<void> {
         }
 
         // Update final metadata
-        console.log('[Braintrust Debug] Updating final metadata:', { success: true, findings_count: findingsCount });
         updateMetadata({
           success: true,
           findings_count: findingsCount,
@@ -107,15 +97,11 @@ async function runQuicktest(options: QuicktestOptions): Promise<void> {
         console.log(`  Findings: ${session.findingsPath}`);
         console.log(`  Session Path: ${session.rootPath}`);
         console.log();
-
-        console.log('[Braintrust Debug] Trace callback completed successfully');
       }
     ); // End of traceAgent
 
     // Flush Braintrust traces
-    console.log('[Braintrust Debug] Flushing traces to Braintrust...');
     await flushBraintrust(appConfig);
-    console.log('[Braintrust Debug] Flush completed');
   } catch (error: any) {
     console.error("=".repeat(80));
     console.error("PENTEST FAILED");
