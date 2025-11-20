@@ -6,6 +6,8 @@ import type { AIModel } from "../src/core/ai";
 import { z } from "zod";
 import { readFileSync } from "fs";
 import pLimit from "p-limit";
+import { traceAgent, flushBraintrust } from "../src/core/braintrust";
+import { config } from "../src/core/config";
 
 const TargetSchema = z.array(
   z.object({
@@ -69,15 +71,32 @@ export async function swarm(
   // Create a single session for all targets in the swarm
   const session = createSession("swarm", "Multi-target swarm pentest");
 
-  const results: Array<{
-    target: string;
-    success: boolean;
-    sessionId?: string;
-    error?: string;
-  }> = [];
+  const appConfig = await config.get();
 
-  // Run pentests with concurrency limit of 5
-  const limit = pLimit(5);
+  await traceAgent(
+    appConfig,
+    'swarm',
+    {
+      agent_type: 'swarm',
+      session_id: session.id,
+      target: 'multi-target',
+      model,
+    },
+    async (updateMetadata) => {
+      // Update metadata with target count
+      updateMetadata({
+        targets_count: targetsArray.length,
+      });
+
+      const results: Array<{
+        target: string;
+        success: boolean;
+        sessionId?: string;
+        error?: string;
+      }> = [];
+
+      // Run pentests with concurrency limit of 5
+      const limit = pLimit(5);
 
   const promises = targetsArray.map((target, idx) =>
     limit(async () => {
@@ -138,14 +157,25 @@ export async function swarm(
 
   await Promise.allSettled(promises);
 
+      // Update metadata with final results
+      const successfulCount = results.filter((r) => r.success).length;
+      const failedCount = results.filter((r) => !r.success).length;
+
+      updateMetadata({
+        success: true,
+        targets_tested: targetsArray.length,
+        successful_targets: successfulCount,
+        failed_targets: failedCount,
+      });
+
   if (!silent) {
     // Print summary
     console.log("=".repeat(80));
     console.log("SWARM PENTEST SUMMARY");
     console.log("=".repeat(80));
     console.log(`Total targets: ${targetsArray.length}`);
-    console.log(`Successful: ${results.filter((r) => r.success).length}`);
-    console.log(`Failed: ${results.filter((r) => !r.success).length}`);
+    console.log(`Successful: ${successfulCount}`);
+    console.log(`Failed: ${failedCount}`);
     console.log(`Session ID: ${session.id}`);
     console.log(`Session Path: ${session.rootPath}`);
     console.log();
@@ -161,6 +191,11 @@ export async function swarm(
     console.log();
     console.log("=".repeat(80));
   }
+    }
+  );
+
+  // Flush Braintrust traces
+  await flushBraintrust(appConfig);
 
   return session;
 }

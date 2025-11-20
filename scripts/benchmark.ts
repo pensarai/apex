@@ -4,6 +4,8 @@ import { exec as nodeExec } from "child_process";
 import { promisify } from "util";
 import { runAgent as runBenchmarkAgent } from "../src/core/agent/benchmark";
 import type { AIModel } from "../src/core/ai";
+import { traceAgent, flushBraintrust } from "../src/core/braintrust";
+import { config } from "../src/core/config";
 
 const exec = promisify(nodeExec);
 
@@ -33,6 +35,8 @@ async function runBenchmark(options: BenchmarkOptions): Promise<void> {
     model = "claude-sonnet-4-5" as AIModel,
   } = options;
 
+  const appConfig = await config.get();
+
   console.log("=".repeat(80));
   console.log("PENSAR BENCHMARK RUNNER");
   console.log("=".repeat(80));
@@ -53,6 +57,21 @@ async function runBenchmark(options: BenchmarkOptions): Promise<void> {
   console.log(`Total branches to test: ${branchesToTest.length}`);
   console.log(`Mode: Sequential (one at a time)`);
   console.log();
+
+  await traceAgent(
+    appConfig,
+    'benchmark',
+    {
+      agent_type: 'benchmark',
+      session_id: '',
+      target: repoPath,
+      model,
+    },
+    async (updateMetadata) => {
+      // Update metadata with branch count
+      updateMetadata({
+        branches_count: branchesToTest.length,
+      });
 
   const results: Array<{
     branch: string;
@@ -141,6 +160,22 @@ async function runBenchmark(options: BenchmarkOptions): Promise<void> {
 
   console.log();
   console.log("=".repeat(80));
+
+      // Update metadata with final results
+      const successfulCount = results.filter((r) => r.success).length;
+      const failedCount = results.filter((r) => !r.success).length;
+
+      updateMetadata({
+        success: true,
+        branches_tested: branchesToTest.length,
+        successful_branches: successfulCount,
+        failed_branches: failedCount,
+      });
+    }
+  );
+
+  // Flush Braintrust traces
+  await flushBraintrust(appConfig);
 }
 
 // CLI interface
