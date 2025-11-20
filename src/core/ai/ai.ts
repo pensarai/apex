@@ -26,6 +26,8 @@ import {
   summarizeConversation,
   type AIAuthConfig,
 } from "./utils";
+import { traceAICall, isBraintrustEnabled } from "../braintrust";
+import { config } from "../config";
 
 export type AIModel = AnthropicMessagesModelId | OpenAIChatModelId | string; // For OpenRouter and Bedrock models
 
@@ -144,6 +146,63 @@ export interface StreamResponseOpts {
   authConfig?: AIAuthConfig;
 }
 
+// Helper to wrap onStepFinish with Braintrust tracing
+function wrapOnStepFinishWithTracing(
+  originalCallback: StreamTextOnStepFinishCallback<ToolSet> | undefined,
+  model: AIModel,
+  provider: AIModelProvider
+): StreamTextOnStepFinishCallback<ToolSet> | undefined {
+  if (!originalCallback) {
+    return undefined;
+  }
+
+  // Return wrapped callback that traces each step
+  return async (step) => {
+    const appConfig = await config.get();
+
+    // If Braintrust is disabled, just call original
+    if (!isBraintrustEnabled(appConfig)) {
+      await originalCallback(step);
+      return;
+    }
+
+    await traceAICall(
+      appConfig,
+      'streamText-step',
+      {
+        model,
+        provider,
+        has_tools: step.toolCalls && step.toolCalls.length > 0,
+        tool_count: step.toolCalls ? step.toolCalls.length : 0,
+      },
+      async (updateMetadata) => {
+        // Update metadata with token usage
+        if (step.usage) {
+          updateMetadata({
+            prompt_tokens: step.usage.inputTokens ?? 0,
+            completion_tokens: step.usage.outputTokens ?? 0,
+            total_tokens: (step.usage.inputTokens ?? 0) + (step.usage.outputTokens ?? 0),
+          });
+        }
+
+        // Call original callback
+        await originalCallback(step);
+      }
+    );
+  };
+}
+
+// Helper to get provider from model string
+function getProviderFromModel(model: AIModel): AIModelProvider {
+  if (typeof model === 'string') {
+    if (model.startsWith('claude')) return 'anthropic';
+    if (model.startsWith('gpt') || model.startsWith('o1')) return 'openai';
+    if (model.includes('bedrock')) return 'bedrock';
+    return 'openrouter';
+  }
+  return 'anthropic'; // Default
+}
+
 export function streamResponse(
   opts: StreamResponseOpts
 ): StreamTextResult<ToolSet, never> {
@@ -164,6 +223,14 @@ export function streamResponse(
   // Use a container object so the reference stays stable but the value can be updated
   const messagesContainer = { current: messages || [] };
   const providerModel = getProviderModel(model, authConfig);
+  const provider = getProviderFromModel(model);
+
+  // Wrap onStepFinish with Braintrust tracing
+  const wrappedOnStepFinish = wrapOnStepFinishWithTracing(
+    onStepFinish,
+    model,
+    provider
+  );
 
   try {
     // Create the appropriate provider instance
@@ -180,7 +247,7 @@ export function streamResponse(
         messagesContainer.current = opts.messages;
         return undefined;
       },
-      onStepFinish,
+      onStepFinish: wrappedOnStepFinish,
       abortSignal,
       activeTools,
       experimental_repairToolCall: async ({
@@ -287,15 +354,52 @@ export async function generateObjectResponse<T extends z.ZodType>(
     opts;
 
   const providerModel = getProviderModel(model, authConfig);
+  const provider = getProviderFromModel(model);
+  const appConfig = await config.get();
 
-  const { object } = await generateObject({
-    model: providerModel,
-    schema,
-    prompt,
-    system,
-    maxTokens,
-    temperature,
-  });
+  // If Braintrust is disabled, just call directly
+  if (!isBraintrustEnabled(appConfig)) {
+    const { object } = await generateObject({
+      model: providerModel,
+      schema,
+      prompt,
+      system,
+      maxTokens,
+      temperature,
+    });
+    return object;
+  }
 
-  return object;
+  // Wrap with Braintrust tracing
+  return await traceAICall(
+    appConfig,
+    'generateObject',
+    {
+      model,
+      provider,
+      has_tools: false,
+      tool_count: 0,
+    },
+    async (updateMetadata) => {
+      const result = await generateObject({
+        model: providerModel,
+        schema,
+        prompt,
+        system,
+        maxTokens,
+        temperature,
+      });
+
+      // Update metadata with token usage if available
+      if (result.usage) {
+        updateMetadata({
+          prompt_tokens: result.usage.promptTokens ?? 0,
+          completion_tokens: result.usage.completionTokens ?? 0,
+          total_tokens: result.usage.totalTokens ?? 0,
+        });
+      }
+
+      return result.object;
+    }
+  );
 }
