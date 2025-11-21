@@ -43,6 +43,7 @@ async function runQuicktest(options: QuicktestOptions): Promise<void> {
           target,
           objective,
           model: model as AIModel,
+          appConfig,
         });
 
         // Update metadata with session ID

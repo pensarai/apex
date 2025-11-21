@@ -145,6 +145,7 @@ export interface StreamResponseOpts {
   activeTools?: string[];
   silent?: boolean;
   authConfig?: AIAuthConfig;
+  appConfig?: Config; // Pass config to avoid async fetching inside callbacks (breaks AsyncLocalStorage context)
 }
 
 // Helper to get provider from model string
@@ -159,37 +160,26 @@ function getProviderFromModel(model: AIModel): AIModelProvider {
 }
 
 // Helper to wrap onStepFinish with Braintrust tracing
-// Uses lazy config loading to work with synchronous streamResponse signature
+// Takes appConfig as parameter to maintain AsyncLocalStorage context for proper span nesting
 function wrapOnStepFinishWithTracing(
   originalCallback: StreamTextOnStepFinishCallback<ToolSet> | undefined,
   model: AIModel,
-  provider: AIModelProvider
+  provider: AIModelProvider,
+  appConfig: Config
 ): StreamTextOnStepFinishCallback<ToolSet> | undefined {
   if (!originalCallback) {
     return undefined;
   }
 
-  // Lazy-load config on first callback invocation
-  // This maintains the async context from the parent agent span
-  let appConfigPromise: Promise<Config> | null = null;
+  // If Braintrust is disabled, return original callback unchanged
+  if (!isBraintrustEnabled(appConfig)) {
+    return originalCallback;
+  }
 
   // Return wrapped callback that traces each step
-  // Since this callback is invoked inside the agent's traced context,
+  // Since this runs inside the parent agent's async context (no await for config),
   // spans created here will automatically nest under the parent agent span
   return async (step) => {
-    // Lazy-load config on first invocation
-    if (!appConfigPromise) {
-      appConfigPromise = config.get();
-    }
-
-    const appConfig = await appConfigPromise;
-
-    // If Braintrust is disabled, just call original
-    if (!isBraintrustEnabled(appConfig)) {
-      await originalCallback(step);
-      return;
-    }
-
     await traceAICall(
       appConfig,
       'streamText-step',
@@ -245,19 +235,18 @@ export function streamResponse(
     activeTools,
     silent,
     authConfig,
+    appConfig,
   } = opts;
   // Use a container object so the reference stays stable but the value can be updated
   const messagesContainer = { current: messages || [] };
   const providerModel = getProviderModel(model, authConfig);
   const provider = getProviderFromModel(model);
 
-  // Wrap onStepFinish with Braintrust tracing
-  // The wrapper lazily loads config on first invocation to maintain async context
-  const wrappedOnStepFinish = wrapOnStepFinishWithTracing(
-    onStepFinish,
-    model,
-    provider
-  );
+  // Wrap onStepFinish with Braintrust tracing if config is provided
+  // Config must be passed to maintain AsyncLocalStorage context for proper span nesting
+  const wrappedOnStepFinish = appConfig
+    ? wrapOnStepFinishWithTracing(onStepFinish, model, provider, appConfig)
+    : onStepFinish;
 
   try {
     // Create the appropriate provider instance

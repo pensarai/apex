@@ -7,6 +7,7 @@ import {
 } from 'ai';
 import { streamResponse, type AIModel } from '../../ai';
 import type { Session } from '../sessions';
+import type { Config } from '../../config/config';
 import z from 'zod';
 import { join } from 'path';
 import {
@@ -62,7 +63,8 @@ export async function documentFindingAgent(
   toolOverride?: {
     create_poc?: (opts: CreatePocOpts) => Promise<CreatePocResult>;
   },
-  onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>
+  onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>,
+  appConfig?: Config
 ) {
   const logger = new Logger(session, 'documentFindingAgent.log');
   // Create pocs directory for pentest agent
@@ -674,6 +676,7 @@ Begin your analysis now.
     },
     authConfig,
     onStepFinish,
+    appConfig,
     stopWhen: hasToolCall('finalize_documentation') || stepCountIs(1000),
   });
 

@@ -14,6 +14,7 @@ import { z } from 'zod';
 import { join } from 'path';
 import { writeFileSync, mkdirSync, existsSync } from 'fs';
 import { detectOSAndEnhancePrompt } from '../utils';
+import type { Config } from '../../config/config';
 
 export interface RunAgentProps {
   target: string;
@@ -22,6 +23,7 @@ export interface RunAgentProps {
   onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
   abortSignal?: AbortSignal;
   session?: Session;
+  appConfig?: Config; // For Braintrust tracing - maintains AsyncLocalStorage context
 }
 
 export interface RunAgentResult extends StreamTextResult<ToolSet, never> {
@@ -32,7 +34,7 @@ export function runAgent(opts: RunAgentProps): {
   streamResult: RunAgentResult;
   session: Session;
 } {
-  const { target, model, onStepFinish, abortSignal } = opts;
+  const { target, model, onStepFinish, abortSignal, appConfig } = opts;
 
   // Create a new session for this attack surface analysis
   const session = opts.session || createSession(target);
@@ -49,7 +51,9 @@ export function runAgent(opts: RunAgentProps): {
   // Create tools with session context
   const { analyze_scan, execute_command, http_request } = createPentestTools(
     session,
-    model
+    model,
+    undefined,
+    appConfig
   );
 
   // Attack Surface specific tool: document_asset
@@ -259,6 +263,7 @@ You MUST provide the details final report using create_attack_surface_report too
     toolChoice: 'auto', // Let the model decide when to use tools vs respond
     onStepFinish,
     abortSignal,
+    appConfig,
   });
 
   // Attach the session directly to the stream result object

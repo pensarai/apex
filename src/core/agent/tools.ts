@@ -18,6 +18,7 @@ import { getProviderModel } from "../ai/utils";
 import { generateText } from "ai";
 import { traceToolCall, isBraintrustEnabled, sanitizeToolInput, sanitizeToolOutput } from "../braintrust";
 import { config } from "../config";
+import type { Config } from "../config/config";
 
 const execAsync = promisify(exec);
 
@@ -1289,9 +1290,10 @@ The scratchpad is session-specific and helps maintain context during long assess
 /**
  * Port scan analyzer - Interpret nmap results
  */
-export const analyzeScan = tool({
-  name: "analyze_scan",
-  description: `Analyze scan results and suggest next steps for penetration testing.
+export function createAnalyzeScanTool(appConfig?: Config) {
+  return tool({
+    name: "analyze_scan",
+    description: `Analyze scan results and suggest next steps for penetration testing.
 
 This tool helps interpret findings from:
 - Port scans (nmap, masscan)
@@ -1318,10 +1320,8 @@ Provides guidance on:
     target: z.string().describe("The target that was scanned"),
   }),
   execute: async ({ scanType, results, target }) => {
-    const appConfig = await config.get();
-
     // If Braintrust disabled, execute directly
-    if (!isBraintrustEnabled(appConfig)) {
+    if (!appConfig || !isBraintrustEnabled(appConfig)) {
       // Parse and provide intelligent analysis
       const analysis = {
         scanType,
@@ -1445,7 +1445,8 @@ Provides guidance on:
       }
     );
   },
-});
+  });
+}
 
 /**
  * Generate comprehensive report - Create final pentest report
@@ -2757,7 +2758,8 @@ export function createPentestTools(
       opts: ExecuteCommandOpts
     ) => Promise<ExecuteCommandResult>;
     http_request?: (opts: HttpRequestOpts) => Promise<HttpRequestResult>;
-  }
+  },
+  appConfig?: Config // For Braintrust tracing - maintains AsyncLocalStorage context
 ) {
   const executeCommand = tool({
     name: "execute_command",
@@ -2802,10 +2804,8 @@ OUTPUT HANDLING:
 IMPORTANT: Always analyze results and adjust your approach based on findings.`,
     inputSchema: ExecuteCommandInput,
     execute: async ({ command, timeout = 30000, toolCallDescription }) => {
-      const appConfig = await config.get();
-
       // If Braintrust disabled or override present, execute directly
-      if (!isBraintrustEnabled(appConfig) || toolOverride?.execute_command) {
+      if (!appConfig || !isBraintrustEnabled(appConfig) || toolOverride?.execute_command) {
         if (toolOverride?.execute_command) {
           return toolOverride.execute_command({
             command,
@@ -2921,10 +2921,8 @@ COMMON TESTING PATTERNS:
 - Test for backup files (.bak, .old, ~, .swp)`,
     inputSchema: HttpRequestInput,
     execute: async ({ url, method, headers, body, followRedirects, timeout, toolCallDescription }) => {
-      const appConfig = await config.get();
-
       // If Braintrust disabled or override present, execute directly
-      if (!isBraintrustEnabled(appConfig) || toolOverride?.http_request) {
+      if (!appConfig || !isBraintrustEnabled(appConfig) || toolOverride?.http_request) {
         if (toolOverride?.http_request) {
           return toolOverride.http_request({
             url,
@@ -3080,7 +3078,7 @@ COMMON TESTING PATTERNS:
     check_testing_coverage: createCheckTestingCoverageTool(session),
     validate_completeness: createValidateCompletenessTool(session),
     enumerate_endpoints: createEnumerateEndpointsTool(session),
-    analyze_scan: analyzeScan,
+    analyze_scan: createAnalyzeScanTool(appConfig),
     scratchpad: createScratchpadTool(session),
     generate_report: createGenerateReportTool(session),
     get_attack_surface: getAttackSurfaceAgent(),

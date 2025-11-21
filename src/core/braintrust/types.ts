@@ -21,7 +21,7 @@ export interface BraintrustConfig {
 // Captures high-level agent operation metrics including success rate,
 // duration, and domain-specific metrics like findings and test coverage.
 export interface AgentSpanMetadata {
-    agent_type: 'thoroughPentest' | 'pentest' | 'attackSurface' | 'documentFinding'; // Type of agent being executed
+    agent_type: 'thoroughPentest' | 'pentest' | 'attackSurface' | 'documentFinding' | 'benchmark' | 'swarm'; // Type of agent being executed
     session_id: string; // Unique session identifier to group related operations
     target?: string; // Target being tested (URL, IP, hostname, etc.)
     objective?: string; // Human-readable objective or goal of the agent
@@ -31,6 +31,27 @@ export interface AgentSpanMetadata {
     findings_count?: number; // Number of security findings discovered
     tests_performed?: number; // Number of individual tests performed
     coverage_percent?: number; // Percentage of attack surface covered (0-100)
+
+    // Benchmark-specific metrics
+    branches_count?: number; // Number of branches being tested (benchmark)
+    branches_tested?: number; // Number of branches that completed testing (benchmark)
+    successful_branches?: number; // Number of branches with successful tests (benchmark)
+    failed_branches?: number; // Number of branches with failed tests (benchmark)
+
+    // Swarm-specific metrics
+    targets_count?: number; // Number of targets in swarm test (swarm)
+    targets_tested?: number; // Number of targets that completed testing (swarm)
+    successful_targets?: number; // Number of successful target tests (swarm)
+    failed_targets?: number; // Number of failed target tests (swarm)
+
+    // Pentest-specific metrics
+    finding_severity?: string; // Severity of finding being documented (pentest)
+    finding_title?: string; // Title of finding being documented (pentest)
+    poc_created?: boolean; // Whether a POC was created (pentest)
+
+    // Attack surface specific metrics
+    assets_discovered?: number; // Number of assets discovered (attackSurface)
+    high_value_targets?: number; // Number of high-value targets identified (attackSurface)
 }
 
 // Metadata interface for tool call spans in Braintrust.
@@ -46,6 +67,27 @@ export interface ToolSpanMetadata {
     duration_ms?: number; // Tool execution duration in milliseconds (set by tracer)
     truncated_input?: any; // Truncated representation of tool input (avoid PII/secrets)
     truncated_output?: any; // Truncated representation of tool output (avoid PII/secrets)
+
+    // execute_command specific metrics
+    timeout?: number; // Timeout for command execution in milliseconds
+    stdout_length?: number; // Length of stdout output
+    stderr_length?: number; // Length of stderr output
+    error_type?: string; // Type of error that occurred (e.g., 'timeout', 'non-zero-exit')
+
+    // http_request specific metrics
+    url?: string; // URL being requested (sanitized)
+    method?: string; // HTTP method (GET, POST, etc.)
+    has_body?: boolean; // Whether request has a body
+    status_code?: number; // HTTP response status code
+    redirected?: boolean; // Whether request was redirected
+    response_size?: number; // Size of response body in bytes
+
+    // analyze_scan specific metrics
+    scan_type?: string; // Type of scan being analyzed (nmap, nikto, etc.)
+    target?: string; // Target being scanned (sanitized)
+    results_length?: number; // Length of scan results
+    open_ports_found?: number; // Number of open ports found in scan
+    recommendations_count?: number; // Number of recommendations generated from analysis
 }
 
 // Metadata interface for AI model call spans in Braintrust.
