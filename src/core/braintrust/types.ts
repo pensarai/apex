@@ -60,6 +60,19 @@ export interface AISpanMetadata {
     latency_ms?: number; // Model response latency in milliseconds (set by tracer)
     temperature?: number; // Sampling temperature used (0.0-2.0 typically)
     max_tokens?: number; // Maximum tokens allowed in completion
+    has_tools?: boolean; // Whether tools were available in this step
+    tool_count?: number; // Number of tools available or called
+    text_content?: string; // Agent's reasoning/thinking text output
+    tool_calls?: Array<{ // Tool calls made in this step
+        tool_name: string;
+        tool_call_id: string;
+        args: any; // Sanitized arguments
+    }>;
+    tool_results?: Array<{ // Results from tool calls
+        tool_name: string;
+        tool_call_id: string;
+        result: any; // Sanitized result
+    }>;
 }
 
 // Sensitive data patterns for scrubbing before sending to Braintrust.

@@ -28,6 +28,7 @@ import {
 } from "./utils";
 import { traceAICall, isBraintrustEnabled, sanitizeToolInput, sanitizeToolOutput } from "../braintrust";
 import { config } from "../config";
+import type { Config } from "../config/config";
 
 export type AIModel = AnthropicMessagesModelId | OpenAIChatModelId | string; // For OpenRouter and Bedrock models
 
@@ -146,7 +147,19 @@ export interface StreamResponseOpts {
   authConfig?: AIAuthConfig;
 }
 
+// Helper to get provider from model string
+function getProviderFromModel(model: AIModel): AIModelProvider {
+  if (typeof model === 'string') {
+    if (model.startsWith('claude')) return 'anthropic';
+    if (model.startsWith('gpt') || model.startsWith('o1')) return 'openai';
+    if (model.includes('bedrock')) return 'bedrock';
+    return 'openrouter';
+  }
+  return 'anthropic'; // Default
+}
+
 // Helper to wrap onStepFinish with Braintrust tracing
+// Uses lazy config loading to work with synchronous streamResponse signature
 function wrapOnStepFinishWithTracing(
   originalCallback: StreamTextOnStepFinishCallback<ToolSet> | undefined,
   model: AIModel,
@@ -156,9 +169,20 @@ function wrapOnStepFinishWithTracing(
     return undefined;
   }
 
+  // Lazy-load config on first callback invocation
+  // This maintains the async context from the parent agent span
+  let appConfigPromise: Promise<Config> | null = null;
+
   // Return wrapped callback that traces each step
+  // Since this callback is invoked inside the agent's traced context,
+  // spans created here will automatically nest under the parent agent span
   return async (step) => {
-    const appConfig = await config.get();
+    // Lazy-load config on first invocation
+    if (!appConfigPromise) {
+      appConfigPromise = config.get();
+    }
+
+    const appConfig = await appConfigPromise;
 
     // If Braintrust is disabled, just call original
     if (!isBraintrustEnabled(appConfig)) {
@@ -174,47 +198,35 @@ function wrapOnStepFinishWithTracing(
         provider,
         has_tools: step.toolCalls && step.toolCalls.length > 0,
         tool_count: step.toolCalls ? step.toolCalls.length : 0,
-        // Capture the agent's reasoning/thinking text
-        text_content: step.text || '',
-        // Capture tool calls with reasoning
-        tool_calls: step.toolCalls ? step.toolCalls.map(tc => ({
-          tool_name: tc.toolName,
-          tool_call_id: tc.toolCallId,
-          args: sanitizeToolInput(tc.args),
-        })) : [],
-        // Capture tool results
-        tool_results: step.toolResults ? step.toolResults.map(tr => ({
-          tool_name: tr.toolName,
-          tool_call_id: tr.toolCallId,
-          result: sanitizeToolOutput(tr.result),
-        })) : [],
       },
       async (updateMetadata) => {
-        // Update metadata with token usage
-        if (step.usage) {
-          updateMetadata({
-            prompt_tokens: step.usage.inputTokens ?? 0,
-            completion_tokens: step.usage.outputTokens ?? 0,
-            total_tokens: (step.usage.inputTokens ?? 0) + (step.usage.outputTokens ?? 0),
-          });
-        }
+        // Update with the actual agent output (thinking text, tool calls, results)
+        updateMetadata({
+          // The agent's reasoning/thinking text - THIS IS CRITICAL
+          text_content: step.text || '',
+          // Tool calls the agent decided to make
+          tool_calls: step.toolCalls ? step.toolCalls.map(tc => ({
+            tool_name: tc.toolName,
+            tool_call_id: tc.toolCallId,
+            args: sanitizeToolInput((tc as any).args),
+          })) : [],
+          // Tool results that came back
+          tool_results: step.toolResults ? step.toolResults.map(tr => ({
+            tool_name: tr.toolName,
+            tool_call_id: tr.toolCallId,
+            result: sanitizeToolOutput((tr as any).result),
+          })) : [],
+          // Token usage
+          prompt_tokens: step.usage?.inputTokens ?? 0,
+          completion_tokens: step.usage?.outputTokens ?? 0,
+          total_tokens: (step.usage?.inputTokens ?? 0) + (step.usage?.outputTokens ?? 0),
+        });
 
         // Call original callback
         await originalCallback(step);
       }
     );
   };
-}
-
-// Helper to get provider from model string
-function getProviderFromModel(model: AIModel): AIModelProvider {
-  if (typeof model === 'string') {
-    if (model.startsWith('claude')) return 'anthropic';
-    if (model.startsWith('gpt') || model.startsWith('o1')) return 'openai';
-    if (model.includes('bedrock')) return 'bedrock';
-    return 'openrouter';
-  }
-  return 'anthropic'; // Default
 }
 
 export function streamResponse(
@@ -240,6 +252,7 @@ export function streamResponse(
   const provider = getProviderFromModel(model);
 
   // Wrap onStepFinish with Braintrust tracing
+  // The wrapper lazily loads config on first invocation to maintain async context
   const wrappedOnStepFinish = wrapOnStepFinishWithTracing(
     onStepFinish,
     model,
@@ -406,10 +419,11 @@ export async function generateObjectResponse<T extends z.ZodType>(
 
       // Update metadata with token usage if available
       if (result.usage) {
+        const usage = result.usage as any;
         updateMetadata({
-          prompt_tokens: result.usage.promptTokens ?? 0,
-          completion_tokens: result.usage.completionTokens ?? 0,
-          total_tokens: result.usage.totalTokens ?? 0,
+          prompt_tokens: usage.promptTokens ?? usage.inputTokens ?? 0,
+          completion_tokens: usage.completionTokens ?? usage.outputTokens ?? 0,
+          total_tokens: usage.totalTokens ?? ((usage.inputTokens ?? 0) + (usage.outputTokens ?? 0)),
         });
       }
 
