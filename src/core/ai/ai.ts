@@ -26,7 +26,7 @@ import {
   summarizeConversation,
   type AIAuthConfig,
 } from "./utils";
-import { traceAICall, isBraintrustEnabled } from "../braintrust";
+import { traceAICall, isBraintrustEnabled, sanitizeToolInput, sanitizeToolOutput } from "../braintrust";
 import { config } from "../config";
 
 export type AIModel = AnthropicMessagesModelId | OpenAIChatModelId | string; // For OpenRouter and Bedrock models
@@ -174,6 +174,20 @@ function wrapOnStepFinishWithTracing(
         provider,
         has_tools: step.toolCalls && step.toolCalls.length > 0,
         tool_count: step.toolCalls ? step.toolCalls.length : 0,
+        // Capture the agent's reasoning/thinking text
+        text_content: step.text || '',
+        // Capture tool calls with reasoning
+        tool_calls: step.toolCalls ? step.toolCalls.map(tc => ({
+          tool_name: tc.toolName,
+          tool_call_id: tc.toolCallId,
+          args: sanitizeToolInput(tc.args),
+        })) : [],
+        // Capture tool results
+        tool_results: step.toolResults ? step.toolResults.map(tr => ({
+          tool_name: tr.toolName,
+          tool_call_id: tr.toolCallId,
+          result: sanitizeToolOutput(tr.result),
+        })) : [],
       },
       async (updateMetadata) => {
         // Update metadata with token usage

@@ -115,18 +115,34 @@ export async function traceToolCall<T>(
   try {
     return await logger.traced(
       async (span) => {
-        // Provide metadata updater that logs to the span as metadata
-        // Note: Braintrust's log() expects ExperimentLogPartialArgs, so we pass as metadata field
+        // Log initial input (tool parameters)
+        if (span) {
+          span.log({
+            input: meta,
+            metadata: meta,
+          } as any);
+        }
+
+        let toolResult: T;
+
+        // Provide metadata updater that logs output and updated metadata
         const updateMetadata = (updates: Partial<ToolSpanMetadata>) => {
           if (span) {
-            span.log({ metadata: updates } as any);
+            span.log({
+              output: {
+                ...updates,
+                result: toolResult,
+              },
+              metadata: { ...meta, ...updates },
+            } as any);
           }
         };
-        return await fn(updateMetadata);
+
+        toolResult = await fn(updateMetadata);
+        return toolResult;
       },
       {
         name: `tool:${name}`,
-        ...meta,
       }
     );
   } catch (err) {
@@ -168,18 +184,40 @@ export async function traceAICall<T>(
   try {
     return await logger.traced(
       async (span) => {
-        // Provide metadata updater that logs to the span as metadata
-        // Note: Braintrust's log() expects ExperimentLogPartialArgs, so we pass as metadata field
+        // Log initial input immediately (the agent's state going into this AI call)
+        if (span) {
+          span.log({
+            input: {
+              model: meta.model,
+              provider: meta.provider,
+              text_content: (meta as any).text_content,
+              tool_calls: (meta as any).tool_calls,
+            },
+            metadata: meta,
+          } as any);
+        }
+
+        // Provide metadata updater that logs updates and output
         const updateMetadata = (updates: Partial<AISpanMetadata>) => {
           if (span) {
-            span.log({ metadata: updates } as any);
+            // Log both output and updated metadata
+            span.log({
+              output: {
+                text_content: (updates as any).text_content || (meta as any).text_content,
+                tool_calls: (updates as any).tool_calls || (meta as any).tool_calls,
+                tool_results: (updates as any).tool_results || (meta as any).tool_results,
+                prompt_tokens: updates.prompt_tokens,
+                completion_tokens: updates.completion_tokens,
+                total_tokens: updates.total_tokens,
+              },
+              metadata: { ...meta, ...updates },
+            } as any);
           }
         };
         return await fn(updateMetadata);
       },
       {
         name: `ai:${name}`,
-        ...meta,
       }
     );
   } catch (err) {
