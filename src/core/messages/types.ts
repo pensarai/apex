@@ -133,3 +133,5 @@ export const ModelMessageObject = z.discriminatedUnion('role', [
   AssistantModelMessageObject,
   ToolMessageObject
 ]);
+
+export type ToolMessage = z.infer<typeof ToolMessageObject>;

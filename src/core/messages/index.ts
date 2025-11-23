@@ -2,8 +2,10 @@ import type { Session } from "../agent/sessions";
 import fs from "fs";
 import { z } from 'zod';
 import { ModelMessageObject } from "./types";
+import type { ToolMessage } from "./types";
 
-export type Message = z.infer<typeof ModelMessageObject>;
+type Message = z.infer<typeof ModelMessageObject>;
+
 
 export function getMessages(session: Session): Message[] {
   const messages = fs.readFileSync(session.rootPath + "/messages.json", "utf8");
@@ -42,3 +44,8 @@ export function saveSubagentMessages(
     JSON.stringify(messages, null, 2)
   );
 }
+
+export {
+  type Message,
+  type ToolMessage
+};
