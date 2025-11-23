@@ -358,5 +358,5 @@ function CommandOverlay({ children }: { children: React.ReactNode }) {
 }
 
 render(<App />, {
-  exitOnCtrlC: false, // We'll handle Ctrl+C manually
+  exitOnCtrlC: true, // We'll handle Ctrl+C manually
 });
