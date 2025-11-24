@@ -9,6 +9,7 @@ interface QuicktestOptions {
   model?: AIModel;
   headerMode?: 'none' | 'default' | 'custom';
   customHeaders?: Record<string, string>;
+  rps?: number;
 }
 
 async function runQuicktest(options: QuicktestOptions): Promise<void> {
@@ -17,7 +18,8 @@ async function runQuicktest(options: QuicktestOptions): Promise<void> {
     objective,
     model = "claude-sonnet-4-5" as AIModel,
     headerMode = 'default',
-    customHeaders
+    customHeaders,
+    rps
   } = options;
 
   console.log("=".repeat(80));
@@ -272,6 +274,7 @@ async function main() {
       ...(model && { model }),
       headerMode,
       ...(headerMode === 'custom' && { customHeaders }),
+      ...(rps && { rps }),
     });
   } catch (error: any) {
     console.error("Fatal error:", error.message);

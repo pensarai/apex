@@ -12,7 +12,7 @@ import {
 import { join } from "path";
 import type { Session } from "./sessions";
 import { getOffensiveHeaders } from "./sessions";
-import { RateLimiter } from '../services/rateLimiter';
+import { RateLimiter } from '../../services/rateLimiter';
 import { runAgent } from "./pentestAgent";
 import type { AIModel } from "../ai";
 import { generateObjectResponse } from "../ai";
@@ -2761,12 +2761,11 @@ export function createPentestTools(
   // Get offensive headers from session config
   const offensiveHeaders = getOffensiveHeaders(session);
 
-  // Initialize rate limiter as SINGLETON on the session object
-  // All agents sharing this session will share the same rate limiter instance
-  if (!session._rateLimiter && session.config?.rateLimiter) {
-    session._rateLimiter = new RateLimiter(session.config.rateLimiter);
-  }
+  // Get rate limiter from session (initialized eagerly in createSession)
   const rateLimiter = session._rateLimiter;
+  if (rateLimiter) {
+    console.log(`[RATE_LIMIT_TOOLS] Using rate limiter for session ${session.id}`);
+  }
 
   const executeCommand = tool({
     name: "execute_command",

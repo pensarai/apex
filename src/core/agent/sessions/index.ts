@@ -10,7 +10,7 @@ import {
 import { join } from "path";
 import { homedir } from "os";
 import { randomBytes } from "crypto";
-import { RateLimiter, type RateLimiterConfig } from '../services/rateLimiter';
+import { RateLimiter, type RateLimiterConfig } from '../../services/rateLimiter';
 
 /**
  * Configuration for offensive security testing headers
@@ -102,6 +102,13 @@ export function createSession(
     startTime: new Date().toISOString(),
     config,
   };
+
+  // Initialize rate limiter eagerly to prevent race conditions
+  // when multiple agents access the session simultaneously
+  if (config?.rateLimiter) {
+    console.log(`[RATE_LIMIT_INIT] Creating rate limiter for session ${sessionId} with RPS=${config.rateLimiter.requestsPerSecond}`);
+    session._rateLimiter = new RateLimiter(config.rateLimiter);
+  }
 
   // Write session metadata
   const metadataPath = join(rootPath, "session.json");
