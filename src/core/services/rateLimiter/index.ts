@@ -5,7 +5,10 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Token bucket rate limiter with optimal time/space efficiency
+ * Token bucket rate limiter with queue-based concurrency control
+ *
+ * Uses a promise queue to ensure requests are processed sequentially,
+ * preventing race conditions when multiple requests try to acquire tokens simultaneously.
  *
  * Optimizations:
  * - Uses performance.now() for monotonic clock
@@ -14,7 +17,7 @@ function sleep(ms: number): Promise<void> {
  * - Early returns when bucket is full
  * - Skips all logic in unlimited mode
  *
- * Complexity: O(1) time, O(1) space
+ * Complexity: O(1) time per request, O(n) space for queue (where n = concurrent requests)
  */
 export class RateLimiter {
   private tokens: number;
@@ -22,36 +25,58 @@ export class RateLimiter {
   private readonly rps: number | undefined;
   private readonly bucketSize: number;
   private readonly msPerToken: number | undefined;
+  private queue: Promise<void>;
 
   constructor(config?: RateLimiterConfig) {
     this.rps = config?.requestsPerSecond;
-    this.bucketSize = this.rps || 0;
+    // Bucket size = 1 for strict rate limiting (no bursts)
+    // Note: Setting bucketSize = this.rps would allow bursts (e.g., 5 immediate requests for RPS=5)
+    // which violates rate limiting in security testing contexts
+    this.bucketSize = this.rps ? 1 : 0;
     this.tokens = this.bucketSize;
     this.lastRefillTime = performance.now();
     // Precompute msPerToken once in constructor
     this.msPerToken = this.rps ? 1000 / this.rps : undefined;
+    // Initialize promise queue for sequential processing
+    this.queue = Promise.resolve();
   }
 
   /**
    * Acquire a slot for making a request
    * Blocks until a token is available
+   * Uses a queue to prevent race conditions from concurrent calls
    */
   async acquireSlot(): Promise<void> {
     // Early exit for unlimited mode - skip all token logic
     if (!this.rps || !this.msPerToken) return;
 
-    // Cache now for this call to avoid multiple time calls
-    const now = performance.now();
-    this.refill(now);
+    // Queue this request to ensure sequential processing
+    const previousPromise = this.queue;
+    let resolveCurrentRequest: () => void;
+    this.queue = new Promise<void>((resolve) => {
+      resolveCurrentRequest = resolve;
+    });
 
-    if (this.tokens < 1) {
-      const waitTime = (1 - this.tokens) * this.msPerToken;
-      await sleep(waitTime);
-      const nowAfterSleep = performance.now();
-      this.refill(nowAfterSleep);
+    // Wait for previous request to complete
+    await previousPromise;
+
+    try {
+      // Cache now for this call to avoid multiple time calls
+      const now = performance.now();
+      this.refill(now);
+
+      if (this.tokens < 1) {
+        const waitTime = (1 - this.tokens) * this.msPerToken;
+        await sleep(waitTime);
+        const nowAfterSleep = performance.now();
+        this.refill(nowAfterSleep);
+      }
+
+      this.tokens -= 1;
+    } finally {
+      // Signal next request can proceed
+      resolveCurrentRequest!();
     }
-
-    this.tokens -= 1;
   }
 
   private refill(now: number): void {
