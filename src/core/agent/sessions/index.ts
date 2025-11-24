@@ -106,7 +106,6 @@ export function createSession(
   // Initialize rate limiter eagerly to prevent race conditions
   // when multiple agents access the session simultaneously
   if (config?.rateLimiter) {
-    console.log(`[RATE_LIMIT_INIT] Creating rate limiter for session ${sessionId} with RPS=${config.rateLimiter.requestsPerSecond}`);
     session._rateLimiter = new RateLimiter(config.rateLimiter);
   }
 

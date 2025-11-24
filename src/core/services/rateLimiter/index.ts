@@ -50,9 +50,6 @@ export class RateLimiter {
     // Early exit for unlimited mode - skip all token logic
     if (!this.rps || !this.msPerToken) return;
 
-    const requestStartTime = performance.now();
-    console.log(`[RATE_LIMIT_ACQUIRE] Request queued at ${Date.now()} (perf: ${requestStartTime.toFixed(2)}ms)`);
-
     // Queue this request to ensure sequential processing
     const previousPromise = this.queue;
     let resolveCurrentRequest: () => void;
@@ -62,8 +59,6 @@ export class RateLimiter {
 
     // Wait for previous request to complete
     await previousPromise;
-    const queueWaitTime = performance.now() - requestStartTime;
-    console.log(`[RATE_LIMIT_ACQUIRE] Queue wait: ${queueWaitTime.toFixed(2)}ms`);
 
     try {
       // Cache now for this call to avoid multiple time calls
@@ -72,15 +67,12 @@ export class RateLimiter {
 
       if (this.tokens < 1) {
         const waitTime = (1 - this.tokens) * this.msPerToken;
-        console.log(`[RATE_LIMIT_ACQUIRE] Waiting ${waitTime.toFixed(2)}ms for token (tokens: ${this.tokens.toFixed(3)})`);
         await sleep(waitTime);
         const nowAfterSleep = performance.now();
         this.refill(nowAfterSleep);
       }
 
       this.tokens -= 1;
-      const totalWaitTime = performance.now() - requestStartTime;
-      console.log(`[RATE_LIMIT_RELEASE] Request approved at ${Date.now()} (total wait: ${totalWaitTime.toFixed(2)}ms, tokens remaining: ${this.tokens.toFixed(3)})`);
     } finally {
       // Signal next request can proceed
       resolveCurrentRequest!();

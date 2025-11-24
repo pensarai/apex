@@ -2763,9 +2763,6 @@ export function createPentestTools(
 
   // Get rate limiter from session (initialized eagerly in createSession)
   const rateLimiter = session._rateLimiter;
-  if (rateLimiter) {
-    console.log(`[RATE_LIMIT_TOOLS] Using rate limiter for session ${session.id}`);
-  }
 
   const executeCommand = tool({
     name: "execute_command",
