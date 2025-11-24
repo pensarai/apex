@@ -10,6 +10,7 @@ import {
 import { join } from "path";
 import { homedir } from "os";
 import { randomBytes } from "crypto";
+import { RateLimiter, type RateLimiterConfig } from '../services/rateLimiter';
 
 /**
  * Configuration for offensive security testing headers
@@ -24,6 +25,7 @@ export interface OffensiveHeadersConfig {
  */
 export interface SessionConfig {
   offensiveHeaders?: OffensiveHeadersConfig;
+  rateLimiter?: RateLimiterConfig;
 }
 
 /**
@@ -43,6 +45,7 @@ export interface Session {
   objective: string;
   startTime: string;
   config?: SessionConfig;
+  _rateLimiter?: RateLimiter;
 }
 
 /**
