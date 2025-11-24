@@ -159,7 +159,17 @@ export function getSession(sessionId: string): Session | null {
 }
 
 /**
- * List all sessions
+ * Extract timestamp from session ID for sorting
+ * Session IDs are in format: "timestamp" or "prefix-timestamp" (base36)
+ */
+function extractTimestamp(sessionId: string): number {
+  const parts = sessionId.split('-');
+  const timestampBase36 = parts[parts.length - 1];
+  return parseInt(timestampBase36 || '', 36);
+}
+
+/**
+ * List all sessions, sorted by creation time (newest first)
  */
 export function listSessions(): string[] {
   const executionsDir = getExecutionsDir();
@@ -170,10 +180,19 @@ export function listSessions(): string[] {
 
   const entries = readdirSync(executionsDir);
 
-  return entries.filter((entry: string) => {
+  const directories = entries.filter((entry: string) => {
     const fullPath = join(executionsDir, entry);
     return statSync(fullPath).isDirectory();
   });
+
+  // Sort by timestamp embedded in session ID (newest first)
+  // O(n log n) time, O(1) extra space, no file I/O
+  return directories.sort((a, b) => {
+    const timestampA = extractTimestamp(a);
+    const timestampB = extractTimestamp(b);
+    return timestampB - timestampA; // Descending order
+  });
+
 }
 
 /**
