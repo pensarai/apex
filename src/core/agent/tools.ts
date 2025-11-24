@@ -12,7 +12,7 @@ import {
 import { join } from "path";
 import type { Session } from "./sessions";
 import { getOffensiveHeaders } from "./sessions";
-import { RateLimiter } from '../../services/rateLimiter';
+import { RateLimiter } from '../services/rateLimiter';
 import { runAgent } from "./pentestAgent";
 import type { AIModel } from "../ai";
 import { generateObjectResponse } from "../ai";
