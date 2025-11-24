@@ -97,4 +97,4 @@ export class RateLimiter {
   }
 }
 
-export { RateLimiterConfig };
+export type { RateLimiterConfig };
