@@ -18,9 +18,10 @@ export type AIAuthConfig = {
   anthropicAPIKey?: string;
   openRouterAPIKey?: string;
   bedrock?: {
-    accessKeyId: string;
-    secretAccessKey: string;
-    region: string;
+    enabled?: boolean;
+    accessKeyId?: string;
+    secretAccessKey?: string;
+    region?: string;
   };
   local?: {
     baseURL: string;
@@ -42,8 +43,7 @@ export function getProviderModel(
     authConfig?.bedrock?.accessKeyId || process.env.AWS_ACCESS_KEY_ID;
   const bedrockSecretAccessKey =
     authConfig?.bedrock?.secretAccessKey || process.env.AWS_SECRET_ACCESS_KEY;
-  const bedrockRegion =
-    authConfig?.bedrock?.region || process.env.AWS_REGION || "us-east-1";
+  const bedrockRegion = authConfig?.bedrock?.region || process.env.AWS_REGION;
   const localBaseURL =
     authConfig?.local?.baseURL ||
     process.env.LOCAL_MODEL_URL ||

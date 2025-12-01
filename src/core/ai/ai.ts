@@ -18,7 +18,6 @@ import {
   type ToolSet,
 } from "ai";
 import { z } from "zod";
-import { getModelInfo } from "./models";
 import {
   checkIfContextLengthError,
   createSummarizationStream,
