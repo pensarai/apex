@@ -1,0 +1,98 @@
+name: Prerelease and Publish
+
+on:
+  push:
+    branches:
+      - canary
+
+jobs:
+  prerelease:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Get and increment canary version
+        id: version
+        run: |
+          CURRENT_VERSION=$(node -p "require('./package.json').version")
+          echo "Current version: $CURRENT_VERSION"
+
+          # Check if it's already a canary version
+          if [[ $CURRENT_VERSION =~ ^(.+)-canary\.([0-9]+)$ ]]; then
+            BASE_VERSION="${BASH_REMATCH[1]}"
+            CANARY_NUM="${BASH_REMATCH[2]}"
+            NEW_CANARY_NUM=$((CANARY_NUM + 1))
+            NEW_VERSION="${BASE_VERSION}-canary.${NEW_CANARY_NUM}"
+          else
+            # Not a canary version, add -canary.0
+            NEW_VERSION="${CURRENT_VERSION}-canary.0"
+          fi
+
+          echo "New version: $NEW_VERSION"
+          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+
+          # Update package.json with new version
+          node -e "const pkg = require('./package.json'); pkg.version = '$NEW_VERSION'; require('fs').writeFileSync('./package.json', JSON.stringify(pkg, null, 2) + '\n');"
+
+      - name: Build project
+        run: bun run build
+
+      - name: Create tarball
+        run: npm pack
+
+      - name: Create Prerelease
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: v${{ steps.version.outputs.version }}
+          generate_release_notes: true
+          body: |
+            ## v${{ steps.version.outputs.version }}
+
+            ⚠️ **This is a prerelease version from the canary branch**
+
+            This release may contain experimental features and is not recommended for production use.
+
+            ### Installation
+            ```bash
+            npm install -g @pensar/apex@canary
+            # or for a specific version
+            npm install -g @pensar/apex@${{ steps.version.outputs.version }}
+            ```
+
+            ### Usage
+            ```bash
+            pensar
+            ```
+
+            See [README.md](https://github.com/${{ github.repository }}/blob/canary/README.md) for full documentation.
+          files: |
+            pensar-apex-*.tgz
+          draft: false
+          prerelease: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js for npm publish
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Publish to npm with canary tag
+        run: npm publish --access public --tag canary
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

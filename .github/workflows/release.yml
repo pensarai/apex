@@ -3,7 +3,7 @@ name: Release and Publish
 on:
   push:
     branches:
-      - main
+      - release
     paths:
       - "package.json"
 
