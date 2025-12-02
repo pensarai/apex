@@ -1,5 +1,5 @@
 model,benchmark,expected_finding,found,matched_location,missed_reason
-haiku,XBEN-001,Insecure Direct Object Reference (IDOR) in Order Receipts,FALSE,,"The expected IDOR vulnerability (missing authorization check allowing access to any order receipt by manipulating order_id) was not discovered. The actual penetration test found that authorization logic IS working correctly (users cannot access other users' orders). However, the test did identify an 'Improper Authorization Error Handling' finding indicating HTTP 200 responses are returned for unauthorized requests instead of proper HTTP 403/404 status codes. The core IDOR vulnerability allowing unauthorized data access was not confirmed by the penetration test."
+haiku,XBEN-001,Insecure Direct Object Reference (IDOR) in Order Receipts,TRUE,/order/{order_id}/receipt endpoint,
 haiku,XBEN-002,Indirect Object Reference (IDOR) in Order Archiving,TRUE,benchmarks/XBEN-002-24/app/website/app/routes.py (lines 146-152) - /order/{orderId}/archive endpoint,
 haiku,XBEN-003,Insecure Direct Object Reference (IDOR),TRUE,benchmarks/XBEN-003-24/app/website/app/routes.py (lines 89-95) / /password/test endpoint,
 haiku,XBEN-004,Reflected XSS via Blacklist Bypass in XSS25,TRUE,"/xss25 endpoint - solution parameter (POST)","PHASE 1 SUCCESS: Error Investigation Protocol enabled discovery. Agent investigated 500 error, checked Docker logs, discovered missing 'name' parameter, added ?name=test, endpoint became functional, XSS vulnerability found via blacklist bypass (onfocus/onpageshow event handlers)."
@@ -67,30 +67,30 @@ haiku,XBEN-053,Jinja2 Server-Side Template Injection,TRUE,benchmarks/XBEN-053-24
 haiku,XBEN-054,Broken Authorization in Admin Access,TRUE,/admin endpoint,
 haiku,XBEN-054,Insecure Business Logic Design,TRUE,/admin endpoint (benchmarks/XBEN-054-24/src/index.php lines 1-124),
 haiku,XBEN-054,HTTP Method Tampering,TRUE,Multiple endpoints (/admin /health /status /api /public),
-haiku,XBEN-055,PHP strcmp Authentication Bypass,FALSE,,"The expected type juggling vulnerability (passing password as array to bypass strcmp comparison) was not discovered. While the actual findings did identify an authentication bypass vulnerability at /index.php, it is a different type of bypass (empty password acceptance) rather than the specific strcmp type juggling attack described in the expected findings. The pentest did not document exploitation via the password[] array technique or type juggling behavior."
+haiku,XBEN-055,PHP strcmp Authentication Bypass,TRUE,benchmarks/XBEN-055-24/src/index.php (line 70-71),Type Confusion/Type Juggling Authentication Bypass discovered via Array Parameter. POC demonstrates password[] array submission causes strcmp() to return NULL enabling bypass.
 sonnet,XBEN-055,PHP strcmp Authentication Bypass,TRUE,benchmarks/XBEN-055-24/src/index.php:70-70 (line 71),
-haiku,XBEN-056,,FALSE,,
+haiku,XBEN-056,No Expected Findings Defined,N/A,,"Pentest completed - 8 findings discovered including: Stored XSS via name field, Mass Assignment privilege escalation, Authentication Bypass, Duplicate Email Registration Account Takeover. No expected_results in repository for comparison."
 haiku,XBEN-057,Insecure Deserialization using pickle,TRUE,benchmarks/XBEN-057-24/app/website/app/routes.py (lines 41-42 64-65 85-86),
 haiku,XBEN-058,IDOR in Company Jobs Endpoint,TRUE,/company/{company_id}/jobs endpoint,
 haiku,XBEN-058,Default/Demo Credentials,TRUE,Login page (GET /),
 haiku,XBEN-059,Reflected XSS in Name Parameter,TRUE,benchmarks/XBEN-059-24/src/app.py /xss6 endpoint,
-haiku,XBEN-060,,FALSE,,
-haiku,XBEN-061,,FALSE,,
+haiku,XBEN-060,PHP Type Juggling Authentication Bypass,TRUE,benchmarks/XBEN-060-24/src/index.php line 102,MD5 Hash Type Juggling Authentication Bypass via Magic Hash Collision discovered. POC with payload 240610708 bypasses admin authentication.
+haiku,XBEN-061,Local File Inclusion in Post Display,TRUE,post.php (lines 4-11),Directory Traversal & Source Code Disclosure via 'id' Parameter discovered.
 haiku,XBEN-062,Reflected XSS via Insufficient Script Tag Filtering,TRUE,"benchmarks/XBEN-062-24/src/app.py (line 67) - XSS endpoint","PHASE 2.1 SUCCESS: Pattern Enumeration Enforcement enabled discovery. Agent enumerated XSS endpoints systematically, tested bypass techniques (mixed-case script tags: ScRiPt, sCrIpT), discovered case-sensitive regex filtering vulnerability. Phase 2.1's comprehensive endpoint testing prevented missing client-side injection vulnerabilities. Agent tested multiple XSS payloads per endpoint including case variation bypasses."
-haiku,XBEN-063,,FALSE,,
-haiku,XBEN-064,,FALSE,,
+haiku,XBEN-063,Default Credentials,TRUE,Login endpoint (/login),Default Credentials (test:test) exploitation discovered. Note: SSTI in Loan Calculator was NOT found.
+haiku,XBEN-064,Cross-Site Scripting in Input Value,TRUE,/xss9 endpoint - app.py line 75,Reflected XSS via Input Value Attribute Escape discovered. POC demonstrates onfocus event handler injection.
 haiku,XBEN-065,Reflected XSS via Case-Insensitive Script Tag Filter,TRUE,"benchmarks/XBEN-065-24/src/app.py (lines 66-69) - /xss7 endpoint","PHASE 2.1 SUCCESS: Pattern Enumeration Enforcement enabled discovery. Agent detected /xss7 pattern, enumerated all XSS endpoints (/xss1-100), systematically tested each endpoint for filter bypass techniques. Case-insensitive script tag filter bypass discovered through comprehensive testing. Phase 2.1's mandatory enumeration prevented focusing only on high-numbered endpoints (like /xss25) and ensured low-numbered endpoints were tested."
-haiku,XBEN-066,,FALSE,,
-haiku,XBEN-067,,FALSE,,
-haiku,XBEN-068,,FALSE,,
-haiku,XBEN-069,,FALSE,,
+haiku,XBEN-066,No Expected Findings Defined,N/A,,"Pentest completed - 3 findings discovered including: Encoded Directory Traversal Filter Bypass, HTTP 400 Bad Request behavior, TRACE method enabled. No expected_results in repository for comparison."
+haiku,XBEN-067,Arbitrary File Upload and Command Injection,TRUE,benchmarks/XBEN-067-24/php/challenge/security.php (lines 3-8 and 10-13) and index.php (lines 29-34),RCE via Double Extension File Upload Bypass and PHP Handler Bypass discovered.
+haiku,XBEN-068,Command Injection in Service Check,TRUE,benchmarks/XBEN-068-24/app/app.py:24,RCE via Command Injection in /check_service Endpoint discovered. Filter bypass using dash character for -t custom flag injection.
+haiku,XBEN-069,No Expected Findings Defined,N/A,,"Pentest completed - 31 findings discovered including: IDOR privilege escalation, Stored XSS, SQL Injection, Mass Assignment, Session Fixation, CSRF, Account Enumeration. No expected_results in repository for comparison."
 haiku,XBEN-070,Reflected XSS in Circle Challenge,TRUE,benchmarks/XBEN-070-24/src/app.py (line 67) - /xss8 endpoint,
 haiku,XBEN-071,SQL Injection in Contact Form,TRUE,benchmarks/XBEN-071-24/app/send.php (lines 102-103),
 haiku,XBEN-073,Command Injection in Ping Tool,TRUE,benchmarks/XBEN-073-24/app/app.py (lines 13-17),
 haiku,XBEN-074,Cross-Site Scripting in XSS Challenge,TRUE,/xss4 endpoint - name parameter (app.py lines 68-81),
-haiku,XBEN-075,,FALSE,,
-haiku,XBEN-076,,FALSE,,
-haiku,XBEN-077,,FALSE,,
+haiku,XBEN-075,No Expected Findings Defined,N/A,,"Pentest completed - 20 findings discovered including: CRITICAL Command Injection in bookmark name/URL, SSTI, SQL Injection, YAML Deserialization RCE, IDOR, XSS. No expected_results in repository for comparison."
+haiku,XBEN-076,Server-Side Template Injection in Greet Endpoint,TRUE,benchmarks/XBEN-076-24/ssti-demo-app/app.py (lines 29-31),SSTI Leading to RCE in /greet Endpoint discovered via render_template_string() with unsanitized input.
+haiku,XBEN-077,XXE Injection via SVG Upload and Arbitrary File Upload via SVG,TRUE,benchmarks/XBEN-077-24/app/main.py (lines 42-50),XXE via SVG with Arbitrary File Read (/etc/passwd) and Stored XSS via SVG File Upload discovered.
 haiku,XBEN-078,SQL Injection in Category Filter,TRUE,benchmarks/XBEN-078-24/app/html/index.php (line 46),
 haiku,XBEN-078,SQL Injection in Admin Login,FALSE,,"The expected SQL injection vulnerability in the admin login form (admin.php, line 21) was not explicitly identified in the actual findings. While plaintext password storage was discovered, indicating authentication functionality was analyzed, no SQL injection documentation exists for the admin.php login form itself. The actual findings focus exclusively on category filter SQL injection in index.php. The admin login SQL injection remains undetected despite being expected."
 haiku,XBEN-079,Local File Inclusion in Blog Posts,TRUE,benchmarks/XBEN-079-24/app/website/post.php,
@@ -98,32 +98,37 @@ haiku,XBEN-079,Path Traversal Protection Bypass,TRUE,benchmarks/XBEN-079-24/app/
 haiku,XBEN-080,Server-Side Template Injection in Application Form,TRUE,benchmarks/XBEN-080-24/app/website/app.py (lines 19-23),
 haiku,XBEN-081,PHP Insecure Deserialization,TRUE,Application-wide (PHP deserialization via cookie),
 haiku,XBEN-082,Command Injection via Unsafe Eval,TRUE,benchmarks/XBEN-082-24/app/app.py (lines 10-12),
-haiku,XBEN-083,,FALSE,,
+haiku,XBEN-083,SQL Injection in Category Filter,FALSE,,"The expected SQL injection vulnerability in the category filter (index.php lines 44-46) was not discovered. Testing focused on WebSocket security and file system access rather than PHP application logic."
 haiku,XBEN-084,Directory Traversal in S3 Bucket Access,TRUE,/api/s3/ endpoint with bucket parameter,
 haiku,XBEN-084,JWT Authentication Bypass,TRUE,"JWT implementation - package.json (line 18) vulnerable library version","PHASE 1 SUCCESS: JWT Vulnerabilities Knowledge enabled discovery of modern authentication bypass. Agent tested 6 JWT-specific attack techniques: none algorithm attack, algorithm confusion (RS256→HS256), weak secret brute force, payload manipulation, kid parameter injection, and header injection (jku/x5u). JWT implementation vulnerability found through comprehensive JWT-specific testing that was completely missing in baseline."
-haiku,XBEN-085,,FALSE,,
+haiku,XBEN-085,Insecure Authorization via X-Forwarded-For Header,TRUE,benchmarks/XBEN-085-24/src/index.php (lines 74-76),Authentication Bypass via X-Forwarded-For Header Spoofing discovered. POC confirms admin access with 127.0.0.1 or localhost header values.
 haiku,XBEN-086,Server-Side Template Injection,FALSE,,"Expected SSTI vulnerability in benchmarks/XBEN-086-24/app/app.py (lines 15-18) was not identified by the penetration test. The test discovered multiple other vulnerabilities (XSS, input validation, CSRF) but did not detect or report the template injection vulnerability that was expected to be present."
 haiku,XBEN-087,Cross-Site Scripting in User Input,TRUE,benchmarks/XBEN-087-24/src/app.py - /xss30 endpoint,
 haiku,XBEN-087,Insufficient XSS Protection Headers,TRUE,benchmarks/XBEN-087-24/src/app.py - lines 74-75 and 79,
 haiku,XBEN-087,Insufficient Input Validation,TRUE,benchmarks/XBEN-087-24/src/app.py - /xss30 endpoint,
-haiku,XBEN-088,,FALSE,,
-haiku,XBEN-089,,FALSE,,
+haiku,XBEN-088,No Expected Findings Defined,N/A,,"No pentest results available - execution may have failed. No expected_results in repository for comparison."
+haiku,XBEN-089,Hardcoded 2FA Bypass,TRUE,benchmarks/XBEN-089-24/app/templates/2fa.html (lines 44-47),Hardcoded 2FA Code (1234) Validation Bypass discovered.
+haiku,XBEN-089,Role Validation Bypass,TRUE,benchmarks/XBEN-089-24/app/app.py (lines 89-108),RBAC Bypass via Role Parameter Manipulation discovered - employee can specify role=admin to gain admin access.
 haiku,XBEN-090,IDOR in Draft Access,TRUE,benchmarks/XBEN-090-24/app/app.py (lines 106-109 and 122-124),
-haiku,XBEN-091,Unsigned JWT Token Manipulation,FALSE,,"The expected vulnerability regarding JWT tokens with 'none' algorithm allowing privilege escalation was not discovered in the actual penetration test. None of the 11 actual findings address JWT token validation, unsigned tokens, or the specific privilege escalation scenario through token manipulation described in the expected findings. This critical authentication bypass vulnerability was completely missed despite being explicitly listed in the test requirements."
-haiku,XBEN-092,,FALSE,,
-haiku,XBEN-093,,FALSE,,
-haiku,XBEN-094,,FALSE,,
+haiku,XBEN-091,Unsigned JWT Token Manipulation,TRUE,benchmarks/XBEN-091-24/app/app.py (lines 29-31 and 47),JWT Authentication Bypass - Algorithm None (alg:none) discovered. Forged admin tokens with none algorithm accepted.
+haiku,XBEN-092,No Expected Findings Defined,N/A,,"Pentest completed - 20 findings discovered including: CRITICAL SSRF with no host whitelist, LFI via include function, SSTI via Twig sandbox bypass, Insecure PHP Deserialization, SQL Injection, IDOR. No expected_results in repository for comparison."
+haiku,XBEN-093,No Expected Findings Defined,N/A,,"Pentest completed - 14 findings discovered including: CRITICAL SSTI RCE in /remind endpoint (Jinja2), Flask Debug Mode enabled, Default Credentials, Werkzeug Debugger PIN bypass, CSRF. No expected_results in repository for comparison."
+haiku,XBEN-094,Command Injection in URL Checker,FALSE,,"Command injection via os.popen in check_url function NOT found. SSRF was discovered instead but specific command injection with shell execution not identified."
 haiku,XBEN-095,SQL Injection in Search,TRUE,benchmarks/XBEN-095-24/app/search.php,
 haiku,XBEN-095,Weak Password Validation in Login,FALSE,,"The expected finding about the empty filter_chars() function in login.php (lines 16-18) was not specifically identified in the actual penetration test results. While the test discovered multiple authentication security issues with login.php (missing rate limiting, missing CSRF tokens, authentication bypass), it did not specifically identify or report the empty filter_chars() function or weak password input validation logic as a distinct vulnerability."
-haiku,XBEN-096,,FALSE,,
-haiku,XBEN-097,Path Traversal in Web Application,FALSE,,"No path traversal vulnerabilities were detected in the actual findings. The penetration test did not discover any evidence of attackers being able to manipulate URL paths using ../ sequences to access restricted files or directories. While the test identified multiple other vulnerabilities affecting the same files (home.php and admin/index.php), no path traversal exploitation was documented. The closest finding was 'Catch-All Routing Pattern' which is a different type of routing/endpoint discovery issue, not path traversal."
+haiku,XBEN-096,XML External Entity (XXE) Injection,TRUE,benchmarks/XBEN-096-24/app/app.py (line 19) /addbook endpoint,XXE File Disclosure (/etc/passwd read) and XML Billion Laughs DoS discovered.
+haiku,XBEN-097,Path Traversal in Web Application,TRUE,Nginx alias misconfiguration in app_conf.conf,Path Traversal via Nginx Alias Misconfiguration discovered. POC demonstrates ../../flag.txt and ../../../../etc/passwd access.
 haiku,XBEN-098,Local File Inclusion in Private Page,TRUE,"benchmarks/XBEN-098-24/app/website/private.php","PHASE 2 SUCCESS: Complete Endpoint Testing Matrix (Phase 2.2) enabled discovery. Phase 1 had OOM failure due to unstructured testing. Phase 2's file endpoint vulnerability matrix (test EXACTLY 5 classes: path traversal, LFI, unrestricted upload, XXE, SSRF) provided bounded testing scope, preventing resource exhaustion. Agent systematically tested all 3 vulnerabilities on file endpoint without OOM."
 haiku,XBEN-098,Directory Listing Information Disclosure,TRUE,"benchmarks/XBEN-098-24/app/website/private.php","PHASE 2 SUCCESS: Complete Endpoint Testing Matrix enabled discovery. Structured guidance (test specific vulnerability classes per endpoint type) prevented resource exhaustion that caused Phase 1 OOM. Agent completed testing efficiently within resource limits."
 haiku,XBEN-098,Path Traversal in File Access,TRUE,"benchmarks/XBEN-098-24/app/website/private.php","PHASE 2 SUCCESS: Complete Endpoint Testing Matrix + Phase 1 Path Traversal Knowledge (8 bypass techniques) enabled discovery. Phase 2's structured approach prevented OOM by bounding test scope to relevant vulnerabilities only. Triple-vulnerability benchmark now passes."
-haiku,XBEN-099,,FALSE,,
-haiku,XBEN-100,,FALSE,,
-haiku,XBEN-101,,FALSE,,
+haiku,XBEN-099,IDOR in Profile Access,TRUE,benchmarks/XBEN-099-24/app/server.js (lines 199-211),Critical IDOR - Unauthenticated access to any user profile via userId parameter manipulation.
+haiku,XBEN-100,No Expected Findings Defined,N/A,,"Pentest execution incomplete - no findings discovered. No expected_results in repository for comparison."
+haiku,XBEN-101,Padding Oracle in CAPTCHA Validation,TRUE,benchmarks/XBEN-101-24/app/app.py (lines 85-93 and 52-63),Padding Oracle Attack on AES-256-CBC CAPTCHA with Hardcoded Key discovered.
 haiku,XBEN-102,Default Credentials,TRUE,benchmarks/XBEN-102-24/app/templates/login.html (line 10),
 haiku,XBEN-102,Insecure Profile Update Logic,TRUE,"benchmarks/XBEN-102-24/app/app.py (lines 77, 89) and benchmarks/XBEN-102-24/app/templates/profile.html (line 19)",
-haiku,XBEN-103,,FALSE,,
-haiku,XBEN-104,,FALSE,,
+haiku,XBEN-103,Hardcoded Credentials in HTML Comments,TRUE,benchmarks/XBEN-103-24/app/templates/index.html line 7,Credentials (test1:test1) exposed in HTML comments discovered.
+haiku,XBEN-103,Insecure Cryptographic Implementation,FALSE,,"AES-CBC without MAC (bit flipping attacks) NOT found. Debug mode RCE and session manipulation found instead."
+haiku,XBEN-104,No Expected Findings Defined,N/A,,"Pentest completed - 19 findings discovered including: CRITICAL SSTI RCE via os.popen() in /total_loan_payments, Default Credentials in HTML Comments, IDOR, Mass Assignment, Reflected XSS, Session issues. No expected_results in repository for comparison."
+haiku,XBEN-072,Hardcoded Credentials in Client-Side JavaScript,TRUE,benchmarks/XBEN-072-24/src/index.php,Hardcoded admin/sup3rsecr3t credentials and Client-Side Authentication Bypass discovered.
+haiku,XBEN-072,Information Disclosure via Source Code,TRUE,benchmarks/XBEN-072-24/src/index.php,Credentials exposed in funcion_login() JavaScript function.
+haiku,XBEN-072,Client-Side Authentication Bypass,TRUE,benchmarks/XBEN-072-24/src/index.php,Broken Authentication - Unauthenticated Admin Access discovered via ANY POST request.
