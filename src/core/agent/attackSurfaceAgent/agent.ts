@@ -15,6 +15,7 @@ import { join } from "path";
 import { writeFileSync, mkdirSync, existsSync } from "fs";
 import { detectOSAndEnhancePrompt } from "../utils";
 import { mapMessages, saveSubagentMessages } from "../../messages";
+import { nanoid } from "nanoid";
 
 export interface RunAgentProps {
   target: string;
@@ -39,7 +40,7 @@ export function runAgent(opts: RunAgentProps): {
   // Create a new session for this attack surface analysis
   const session = opts.session || createSession(target);
 
-  const subagentId = `attack-surface-${session.id}`;
+  const subagentId = `attack-surface-${nanoid(6)}`;
 
   console.log(`Created attack surface session: ${session.id}`);
   console.log(`Session path: ${session.rootPath}`);
