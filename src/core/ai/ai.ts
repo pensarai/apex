@@ -10,6 +10,7 @@ import {
   type LanguageModel,
   type ModelMessage,
   type StopCondition,
+  type StreamTextOnFinishCallback,
   type StreamTextOnStepFinishCallback,
   type StreamTextResult,
   type TextStreamPart,
@@ -141,6 +142,7 @@ export interface StreamResponseOpts {
   activeTools?: string[];
   silent?: boolean;
   authConfig?: AIAuthConfig;
+  onFinish?: StreamTextOnFinishCallback<ToolSet>;
 }
 
 export function streamResponse(
@@ -159,6 +161,7 @@ export function streamResponse(
     activeTools,
     silent,
     authConfig,
+    onFinish,
   } = opts;
   // Use a container object so the reference stays stable but the value can be updated
   const messagesContainer = { current: messages || [] };
@@ -232,6 +235,7 @@ export function streamResponse(
           throw repairError;
         }
       },
+      onFinish,
     });
 
     // Wrap the stream to catch async errors during consumption
