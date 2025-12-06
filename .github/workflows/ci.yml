@@ -21,6 +21,9 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Generate ASCII art
+        run: bun run generate:ascii
+
       - name: Run type check
         run: bunx tsc --noEmit
 

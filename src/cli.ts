@@ -127,16 +127,16 @@ if (command === "version" || command === "--version" || command === "-v") {
   showHelp();
 } else if (command === "benchmark") {
   // Remove "benchmark" from args before importing (the script parses process.argv)
-  process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
+  process.argv = [process.argv[0]!, process.argv[1]!, ...args.slice(1)];
   await import("../scripts/benchmark.ts");
 } else if (command === "quicktest") {
-  process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
+  process.argv = [process.argv[0]!, process.argv[1]!, ...args.slice(1)];
   await import("../scripts/quicktest.ts");
 } else if (command === "pentest") {
-  process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
+  process.argv = [process.argv[0]!, process.argv[1]!, ...args.slice(1)];
   await import("../scripts/pentest.ts");
 } else if (command === "swarm") {
-  process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
+  process.argv = [process.argv[0]!, process.argv[1]!, ...args.slice(1)];
   await import("../scripts/swarm.ts");
 } else if (args.length === 0) {
   // No command specified, run the TUI
