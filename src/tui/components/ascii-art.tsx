@@ -68,7 +68,7 @@ export async function convertImageToAscii(
  * Converts an image to ASCII art with color
  * Scales the image by percentage first, then converts to ASCII
  *
- * @param path - Path to the image file
+ * @param input - Path to the image file or a Buffer containing image data
  * @param scale - Scale percentage (e.g., 0.5 = 50%, 1.0 = 100%, 2.0 = 200%)
  * @param maxWidth - Optional: maximum width in characters (if undefined, uses scaled size)
  * @param aspectRatio - Height adjustment factor (default: 0.5, since chars are ~2x taller than wide)
@@ -76,14 +76,14 @@ export async function convertImageToAscii(
  * @returns 2D array of ASCII characters with RGB color data
  */
 export async function convertImageToColoredAscii(
-  path: string,
+  input: string | Buffer,
   scale: number = 1.0,
   maxWidth?: number,
   aspectRatio: number = 0.5,
   invert: boolean = false
 ): Promise<{ char: string; r: number; g: number; b: number }[][]> {
   // First, get the original image dimensions
-  const metadata = await sharp(path, { density: 300 }).metadata();
+  const metadata = await sharp(input, { density: 300 }).metadata();
   const originalWidth = metadata.width ?? 100;
   const originalHeight = metadata.height ?? 100;
 
@@ -113,7 +113,7 @@ export async function convertImageToColoredAscii(
   };
 
   // Get color data with alpha channel
-  const colorBuffer = await sharp(path, { density: 300 })
+  const colorBuffer = await sharp(input, { density: 300 })
     .resize(resizeOptions)
     .ensureAlpha()
     .raw()

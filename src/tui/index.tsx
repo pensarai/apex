@@ -1,8 +1,5 @@
 import { render, useKeyboard } from "@opentui/react";
-import {
-  convertImageToColoredAscii,
-  ColoredAsciiArt,
-} from "./components/ascii-art";
+import { ColoredAsciiArt } from "./components/ascii-art-component";
 import { useState, useEffect } from "react";
 import Header from "./components/header";
 import Footer from "./components/footer";
@@ -18,55 +15,18 @@ import ModelsDisplay from "./components/commands/models-display";
 import type { Config } from "../core/config/config";
 import { config } from "../core/config";
 import AlertDialog from "./components/alert-dialog";
-import { fileURLToPath } from "url";
-import { dirname, join } from "path";
-import { existsSync } from "fs";
 
-// Get the directory of the current module
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+// Pre-generated ASCII art (generated at build time with scripts/generate-ascii-art.ts)
+// This avoids needing sharp at runtime, which doesn't work in compiled binaries
+import generatedAsciiArt from "./generated-ascii-art.json";
 
-// Find the image path - works both in dev (src/tui) and bundled (build)
-function findImagePath(): string {
-  // Try bundled path first (build/index.js -> ../pensar.svg)
-  const bundledPath = join(__dirname, "..", "pensar.svg");
-  if (existsSync(bundledPath)) {
-    return bundledPath;
-  }
-
-  // Try dev path (src/tui/index.tsx -> ../../pensar.svg)
-  const devPath = join(__dirname, "..", "..", "pensar.svg");
-  if (existsSync(devPath)) {
-    return devPath;
-  }
-
-  throw new Error("Could not find pensar.svg");
-}
-
-// Configuration
-const CONFIG = {
-  imagePath: findImagePath(),
-  scale: 1.0, // Scale the image (0.5 = 50%, 1.0 = 100%, 2.0 = 200%)
-  maxWidth: 50, // Optional: maximum width in characters (undefined = no limit)
-  aspectRatio: 0.5, // Height adjustment (0.5 = half height, good for most terminals)
-  invert: true, // Invert brightness (try true if image looks wrong)
-  title: "Pensar Logo", // Optional: title to display
-};
-
-// Scale the image with sharp first, then convert to ASCII
-const coloredAscii = await convertImageToColoredAscii(
-  CONFIG.imagePath,
-  CONFIG.scale,
-  CONFIG.maxWidth,
-  CONFIG.aspectRatio,
-  CONFIG.invert
-);
-
-console.log(
-  `Generated colored ASCII: ${coloredAscii.length} rows x ${
-    coloredAscii[0]?.length || 0
-  } columns (scale: ${CONFIG.scale * 100}%)`
-);
+// Use the pre-generated ASCII art
+const coloredAscii = generatedAsciiArt as {
+  char: string;
+  r: number;
+  g: number;
+  b: number;
+}[][];
 
 function App() {
   const [appConfig, setAppConfig] = useState<Config | null>(null);

@@ -20,6 +20,13 @@
   ],
   "scripts": {
     "build": "bun build src/tui/index.tsx --outdir build --target node --format esm --external sharp && bun build scripts/benchmark.ts --outdir build --target node --format esm --external sharp && bun build scripts/quicktest.ts --outdir build --target node --format esm --external sharp && bun build scripts/pentest.ts --outdir build --target node --format esm --external sharp && bun build scripts/swarm.ts --outdir build --target node --format esm --external sharp",
+    "generate:ascii": "bun run scripts/generate-ascii-art.ts",
+    "build:binary": "bun run generate:ascii && bun build src/cli.ts --compile --outfile pensar",
+    "build:binary:macos-arm64": "bun build src/cli.ts --compile --target=bun-darwin-arm64 --outfile dist/pensar-darwin-arm64",
+    "build:binary:macos-x64": "bun build src/cli.ts --compile --target=bun-darwin-x64 --outfile dist/pensar-darwin-x64",
+    "build:binary:linux-x64": "bun build src/cli.ts --compile --target=bun-linux-x64 --outfile dist/pensar-linux-x64",
+    "build:binary:linux-arm64": "bun build src/cli.ts --compile --target=bun-linux-arm64 --outfile dist/pensar-linux-arm64",
+    "build:binaries": "bun run generate:ascii && mkdir -p dist && bun run build:binary:macos-arm64 && bun run build:binary:macos-x64 && bun run build:binary:linux-x64 && bun run build:binary:linux-arm64",
     "dev": "bun run scripts/watch.ts",
     "dev:debug": "SHOW_CONSOLE=true bun run scripts/watch.ts",
     "start": "bun run src/tui/index.tsx",

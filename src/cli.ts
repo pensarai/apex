@@ -3,68 +3,18 @@
 /**
  * Pensar - AI-Powered Penetration Testing CLI
  *
- * This is the main entry point for the Pensar CLI tool.
- * It supports:
- * - Default (no args): Launches the OpenTUI-based terminal interface
- * - benchmark command: Runs the benchmark CLI
+ * Unified entry point for standalone binary compilation.
+ * All modules are statically imported so Bun can bundle them.
  */
 
-import { fileURLToPath } from "url";
-import { dirname, join } from "path";
-
-// Import package.json directly so Bun can embed it at compile time
 import packageJson from "../package.json";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-// Get command-line arguments (skip node/bun and script path)
+// Get command-line arguments
 const args = process.argv.slice(2);
 const command = args[0];
-
 const version = packageJson.version;
 
-// Handle different commands
-if (command === "benchmark") {
-  // Run benchmark CLI
-  const benchmarkPath = join(__dirname, "..", "build", "benchmark.js");
-
-  // Remove "benchmark" from args and pass the rest to benchmark script
-  process.argv = [process.argv[0], benchmarkPath, ...args.slice(1)];
-
-  // Import and run benchmark
-  await import(benchmarkPath);
-} else if (command === "swarm") {
-  const swarmPath = join(__dirname, "..", "build", "swarm.js");
-  process.argv = [process.argv[0], swarmPath, ...args.slice(1)];
-  await import(swarmPath);
-} else if (command === "quicktest") {
-  // Run quicktest CLI
-  const quicktestPath = join(__dirname, "..", "build", "quicktest.js");
-
-  // Remove "quicktest" from args and pass the rest to quicktest script
-  process.argv = [process.argv[0], quicktestPath, ...args.slice(1)];
-
-  // Import and run quicktest
-  await import(quicktestPath);
-} else if (command === "pentest") {
-  // Run pentest CLI
-  const pentestPath = join(__dirname, "..", "build", "pentest.js");
-
-  // Remove "pentest" from args and pass the rest to pentest script
-  process.argv = [process.argv[0], pentestPath, ...args.slice(1)];
-
-  // Import and run pentest
-  await import(pentestPath);
-} else if (
-  command === "version" ||
-  command === "--version" ||
-  command === "-v"
-) {
-  // Show version
-  console.log(`v${version}`);
-} else if (command === "help" || command === "--help" || command === "-h") {
-  // Show help
+function showHelp() {
   console.log("Pensar - AI-Powered Penetration Testing CLI");
   console.log();
   console.log("Usage:");
@@ -166,21 +116,32 @@ if (command === "benchmark") {
   console.log(
     "  pensar quicktest --target http://localhost:3000 --objective 'Find SQL injection'"
   );
-  console.log(
-    "  pensar quicktest --target api.example.com --objective 'API testing' --headers custom --header 'User-Agent: pensar_client123'"
-  );
   console.log("  pensar pentest --target example.com");
-  console.log(
-    "  pensar pentest --target example.com --headers custom --header 'User-Agent: pensar_client123'"
-  );
   console.log("  pensar swarm targets.json");
-  console.log("  pensar swarm targets.json --headers none");
+}
+
+// Route to the appropriate command
+if (command === "version" || command === "--version" || command === "-v") {
+  console.log(`v${version}`);
+} else if (command === "help" || command === "--help" || command === "-h") {
+  showHelp();
+} else if (command === "benchmark") {
+  // Remove "benchmark" from args before importing (the script parses process.argv)
+  process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
+  await import("../scripts/benchmark.ts");
+} else if (command === "quicktest") {
+  process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
+  await import("../scripts/quicktest.ts");
+} else if (command === "pentest") {
+  process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
+  await import("../scripts/pentest.ts");
+} else if (command === "swarm") {
+  process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
+  await import("../scripts/swarm.ts");
 } else if (args.length === 0) {
   // No command specified, run the TUI
-  const appPath = join(__dirname, "..", "build", "index.js");
-  await import(appPath);
+  await import("./tui/index.tsx");
 } else {
-  // Unknown command
   console.error(`Error: Unknown command '${command}'`);
   console.error();
   console.error("Run 'pensar --help' for usage information");
