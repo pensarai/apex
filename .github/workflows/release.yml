@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     branches:
-      - canary
+      - release
 
 permissions:
   contents: write
