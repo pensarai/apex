@@ -47,6 +47,9 @@ jobs:
           # Update package.json with new version
           node -e "const pkg = require('./package.json'); pkg.version = '$NEW_VERSION'; require('fs').writeFileSync('./package.json', JSON.stringify(pkg, null, 2) + '\n');"
 
+      - name: Generate ASCII art
+        run: bun run generate:ascii
+
       - name: Build project
         run: bun run build
 
