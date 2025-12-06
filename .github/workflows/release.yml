@@ -170,8 +170,8 @@ jobs:
           SHA_DARWIN_X64: ${{ steps.sha256.outputs.darwin_x64 }}
           SHA_LINUX_X64: ${{ steps.sha256.outputs.linux_x64 }}
         run: |
-          cat > homebrew-tap/Formula/pensar.rb << EOF
-          class Pensar < Formula
+          cat > homebrew-tap/Formula/apex.rb << EOF
+          class Apex < Formula
             desc "AI-powered penetration testing CLI tool with terminal UI"
             homepage "https://github.com/pensarai/apex"
             version "${VERSION}"
@@ -210,6 +210,8 @@ jobs:
           cd homebrew-tap
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
-          git add Formula/pensar.rb
-          git commit -m "pensar ${{ needs.version.outputs.version }}"
+          # Remove old formula if it exists
+          git rm -f Formula/pensar.rb 2>/dev/null || true
+          git add Formula/apex.rb
+          git commit -m "apex ${{ needs.version.outputs.version }}"
           git push

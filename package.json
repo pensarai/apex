@@ -1,6 +1,6 @@
 {
   "name": "@pensar/apex",
-  "version": "0.0.32",
+  "version": "0.0.33",
   "description": "AI-powered penetration testing CLI tool with terminal UI",
   "module": "src/tui/index.tsx",
   "main": "build/index.js",
