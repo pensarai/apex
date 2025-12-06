@@ -78,14 +78,14 @@ jobs:
       - name: Build binary (Unix)
         if: runner.os != 'Windows'
         run: |
-          bun build src/cli.ts --compile --target=${{ matrix.target }} --outfile ${{ matrix.name }}
-          tar -czvf ${{ matrix.name }}.tar.gz ${{ matrix.name }}
+          bun build src/cli.ts --compile --target=${{ matrix.target }} --outfile pensar
+          tar -czvf ${{ matrix.name }}.tar.gz pensar
 
       - name: Build binary (Windows)
         if: runner.os == 'Windows'
         run: |
-          bun build src/cli.ts --compile --target=${{ matrix.target }} --outfile ${{ matrix.name }}.exe
-          Compress-Archive -Path "${{ matrix.name }}.exe" -DestinationPath "${{ matrix.name }}.zip"
+          bun build src/cli.ts --compile --target=${{ matrix.target }} --outfile pensar.exe
+          Compress-Archive -Path "pensar.exe" -DestinationPath "${{ matrix.name }}.zip"
 
       - name: Upload artifact (Unix)
         if: runner.os != 'Windows'
