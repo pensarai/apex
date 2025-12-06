@@ -1,94 +1,215 @@
-name: Release and Publish
+name: Release
 
 on:
   push:
     branches:
-      - release
-    paths:
-      - "package.json"
+      - canary
+
+permissions:
+  contents: write
 
 jobs:
-  release:
+  version:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      id-token: write
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+      tag_exists: ${{ steps.check_tag.outputs.exists }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get version from package.json
+        id: get_version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Version: ${VERSION}"
+
+      - name: Check if tag already exists
+        id: check_tag
+        run: |
+          if git rev-parse "v${{ steps.get_version.outputs.version }}" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "Tag v${{ steps.get_version.outputs.version }} already exists, skipping release"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "Tag v${{ steps.get_version.outputs.version }} does not exist, proceeding with release"
+          fi
+
+  build:
+    needs: version
+    if: needs.version.outputs.tag_exists == 'false'
+    strategy:
+      matrix:
+        include:
+          - os: macos-14
+            target: bun-darwin-arm64
+            name: pensar-darwin-arm64
+            ext: ""
+          - os: macos-13
+            target: bun-darwin-x64
+            name: pensar-darwin-x64
+            ext: ""
+          - os: ubuntu-latest
+            target: bun-linux-x64
+            name: pensar-linux-x64
+            ext: ""
+          - os: windows-latest
+            target: bun-windows-x64
+            name: pensar-windows-x64
+            ext: ".exe"
+
+    runs-on: ${{ matrix.os }}
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
 
       - name: Install dependencies
         run: bun install
 
-      - name: Get version from package.json
-        id: package-version
+      - name: Generate ASCII art
+        run: bun run generate:ascii
+
+      - name: Build binary (Unix)
+        if: runner.os != 'Windows'
         run: |
-          VERSION=$(node -p "require('./package.json').version")
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Version: $VERSION"
+          bun build src/cli.ts --compile --target=${{ matrix.target }} --outfile ${{ matrix.name }}
+          tar -czvf ${{ matrix.name }}.tar.gz ${{ matrix.name }}
 
-      - name: Check if tag exists
-        id: check-tag
+      - name: Build binary (Windows)
+        if: runner.os == 'Windows'
         run: |
-          if git rev-parse "v${{ steps.package-version.outputs.version }}" >/dev/null 2>&1; then
-            echo "exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "exists=false" >> $GITHUB_OUTPUT
-          fi
+          bun build src/cli.ts --compile --target=${{ matrix.target }} --outfile ${{ matrix.name }}.exe
+          Compress-Archive -Path "${{ matrix.name }}.exe" -DestinationPath "${{ matrix.name }}.zip"
 
-      - name: Build project
-        if: steps.check-tag.outputs.exists == 'false'
-        run: bun run build
+      - name: Upload artifact (Unix)
+        if: runner.os != 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: ${{ matrix.name }}.tar.gz
 
-      - name: Create tarball
-        if: steps.check-tag.outputs.exists == 'false'
-        run: npm pack
+      - name: Upload artifact (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: ${{ matrix.name }}.zip
+
+  release:
+    needs: [version, build]
+    if: needs.version.outputs.tag_exists == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create tag
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git tag -a "v${{ needs.version.outputs.version }}" -m "Release v${{ needs.version.outputs.version }}"
+          git push origin "v${{ needs.version.outputs.version }}"
 
       - name: Create Release
-        if: steps.check-tag.outputs.exists == 'false'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.package-version.outputs.version }}
-          name: Release v${{ steps.package-version.outputs.version }}
-          generate_release_notes: true
-          body: |
-            ## Release v${{ steps.package-version.outputs.version }}
-
-            ### Installation
-            ```bash
-            npm install -g @pensar/apex
-            # or
-            bun install -g @pensar/apex
-            ```
-
-            ### Usage
-            ```bash
-            pensar
-            ```
-
-            See [README.md](https://github.com/${{ github.repository }}/blob/main/README.md) for full documentation.
+          tag_name: v${{ needs.version.outputs.version }}
+          name: v${{ needs.version.outputs.version }}
           files: |
-            pensar-apex-*.tgz
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            artifacts/pensar-darwin-arm64/pensar-darwin-arm64.tar.gz
+            artifacts/pensar-darwin-x64/pensar-darwin-x64.tar.gz
+            artifacts/pensar-linux-x64/pensar-linux-x64.tar.gz
+            artifacts/pensar-windows-x64/pensar-windows-x64.zip
+          generate_release_notes: true
 
-      - name: Setup Node.js for npm publish
-        if: steps.check-tag.outputs.exists == 'false'
-        uses: actions/setup-node@v4
+  homebrew:
+    needs: [version, release]
+    if: needs.version.outputs.tag_exists == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download release assets and calculate SHA256
+        id: sha256
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          BASE_URL="https://github.com/pensarai/apex/releases/download/v${VERSION}"
+
+          # Wait a moment for release assets to be available
+          sleep 10
+
+          # Download and calculate SHA256 for each platform
+          curl -sL "${BASE_URL}/pensar-darwin-arm64.tar.gz" -o darwin-arm64.tar.gz
+          curl -sL "${BASE_URL}/pensar-darwin-x64.tar.gz" -o darwin-x64.tar.gz
+          curl -sL "${BASE_URL}/pensar-linux-x64.tar.gz" -o linux-x64.tar.gz
+
+          echo "darwin_arm64=$(sha256sum darwin-arm64.tar.gz | cut -d ' ' -f1)" >> $GITHUB_OUTPUT
+          echo "darwin_x64=$(sha256sum darwin-x64.tar.gz | cut -d ' ' -f1)" >> $GITHUB_OUTPUT
+          echo "linux_x64=$(sha256sum linux-x64.tar.gz | cut -d ' ' -f1)" >> $GITHUB_OUTPUT
+
+      - name: Checkout Homebrew tap
+        uses: actions/checkout@v4
         with:
-          node-version: "20"
-          registry-url: "https://registry.npmjs.org"
+          repository: pensarai/homebrew-apex
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-tap
 
-      - name: Publish to npm
-        if: steps.check-tag.outputs.exists == 'false'
-        run: npm publish --access public
+      - name: Update formula
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          VERSION: ${{ needs.version.outputs.version }}
+          SHA_DARWIN_ARM64: ${{ steps.sha256.outputs.darwin_arm64 }}
+          SHA_DARWIN_X64: ${{ steps.sha256.outputs.darwin_x64 }}
+          SHA_LINUX_X64: ${{ steps.sha256.outputs.linux_x64 }}
+        run: |
+          cat > homebrew-tap/Formula/pensar.rb << EOF
+          class Pensar < Formula
+            desc "AI-powered penetration testing CLI tool with terminal UI"
+            homepage "https://github.com/pensarai/apex"
+            version "${VERSION}"
+            license "MIT"
+
+            on_macos do
+              on_arm do
+                url "https://github.com/pensarai/apex/releases/download/v${VERSION}/pensar-darwin-arm64.tar.gz"
+                sha256 "${SHA_DARWIN_ARM64}"
+              end
+              on_intel do
+                url "https://github.com/pensarai/apex/releases/download/v${VERSION}/pensar-darwin-x64.tar.gz"
+                sha256 "${SHA_DARWIN_X64}"
+              end
+            end
+
+            on_linux do
+              on_intel do
+                url "https://github.com/pensarai/apex/releases/download/v${VERSION}/pensar-linux-x64.tar.gz"
+                sha256 "${SHA_LINUX_X64}"
+              end
+            end
+
+            def install
+              bin.install "pensar"
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/pensar --version")
+            end
+          end
+          EOF
+
+      - name: Commit and push formula
+        run: |
+          cd homebrew-tap
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add Formula/pensar.rb
+          git commit -m "pensar ${{ needs.version.outputs.version }}"
+          git push

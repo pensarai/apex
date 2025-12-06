@@ -10,6 +10,12 @@ out
 dist
 *.tgz
 
+# compiled binary
+pensar
+
+# generated assets (created at build time)
+src/tui/generated-ascii-art.json
+
 # code coverage
 coverage
 *.lcov
