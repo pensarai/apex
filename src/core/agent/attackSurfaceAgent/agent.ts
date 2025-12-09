@@ -30,7 +30,7 @@ export interface RunAgentResult extends StreamTextResult<ToolSet, never> {
   session: Session;
 }
 
-export function runAgent(opts: RunAgentProps): {
+function runAgentImpl(opts: RunAgentProps): {
   streamResult: RunAgentResult;
   session: Session;
   subagentId: string;
@@ -273,4 +273,15 @@ You MUST provide the details final report using create_attack_surface_report too
   (streamResult as any).session = session;
 
   return { streamResult: streamResult as RunAgentResult, session, subagentId };
+}
+
+/**
+ * Executes the attack surface analysis agent.
+ */
+export function runAgent(opts: RunAgentProps): {
+  streamResult: RunAgentResult;
+  session: Session;
+  subagentId: string;
+} {
+  return runAgentImpl(opts);
 }

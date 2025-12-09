@@ -1,6 +1,6 @@
 import os from "os";
 import { useAgent } from "../agentProvider";
-import { ProgressBar, SpinnerDots } from "./sprites";
+import { SpinnerDots } from "./sprites";
 
 interface FooterProps {
   cwd?: string;
@@ -21,7 +21,7 @@ export default function Footer({
   showExitWarning = false,
 }: FooterProps) {
   cwd = "~" + cwd.split(os.homedir()).pop() || "";
-  const { model, tokenCount, thinking, isExecuting } = useAgent();
+  const { model, tokenCount, tokenUsage, hasExecuted, thinking, isExecuting } = useAgent();
 
   const hotkeys = isExecuting
     ? [{ key: "Ctrl+C", label: "Stop Execution" }]
@@ -40,10 +40,19 @@ export default function Footer({
       <box flexDirection="row" gap={1}>
         <text fg="gray">{cwd}</text>
         <box border={["right"]} borderColor="green" />
-        <text fg="gray">
-          <span fg="white">{model.name}</span>
-        </text>
-        <AgentStatus />
+        <text fg="white">{model.name}</text>
+        {hasExecuted && (
+          <>
+            <box border={["right"]} borderColor="green" />
+            <text fg="white">{`↓${formatTokenCount(tokenUsage.inputTokens)} ↑${formatTokenCount(tokenUsage.outputTokens)} Σ${formatTokenCount(tokenCount)}`}</text>
+          </>
+        )}
+        {thinking && (
+          <>
+            <box border={["right"]} borderColor="green" />
+            <SpinnerDots label="Thinking" fg="green" />
+          </>
+        )}
       </box>
       {showExitWarning ? (
         <box flexDirection="row" gap={1}>
@@ -63,35 +72,3 @@ export default function Footer({
   );
 }
 
-export function AgentStatus() {
-  const { tokenCount, thinking, isExecuting } = useAgent();
-
-  return (
-    <box flexDirection="row" gap={1}>
-      {tokenCount > 0 && (
-        <>
-          <box border={["right"]} borderColor="green" />
-          <text fg="gray">
-            ■ <span fg="white">{formatTokenCount(tokenCount)}</span>
-          </text>
-          <ContextProgress width={10} />
-        </>
-      )}
-      {thinking && (
-        <>
-          <box border={["right"]} borderColor="green" />
-          <SpinnerDots label="Thinking" fg="green" />
-        </>
-      )}
-    </box>
-  );
-}
-
-function ContextProgress({ width }: { width?: number }) {
-  const { model, tokenCount, thinking } = useAgent();
-  const contextProgress = Number(
-    ((tokenCount / (model.contextLength ?? 200000)) * 100).toFixed(2)
-  );
-  if (!thinking) return null;
-  return <ProgressBar value={contextProgress} width={width} />;
-}

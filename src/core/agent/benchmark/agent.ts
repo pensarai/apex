@@ -22,7 +22,7 @@ export interface RunAgentResult extends StreamTextResult<ToolSet, never> {
   session: Session;
 }
 
-export function runAgent(opts: RunAgentProps): {
+function runAgentImpl(opts: RunAgentProps): {
   streamResult: RunAgentResult;
   session: Session;
 } {
@@ -74,10 +74,21 @@ Begin by loading the expected results and starting the development environment.
     toolChoice: "auto",
     onStepFinish,
     abortSignal,
+    onFinish: () => {},
   });
 
   // Attach the session directly to the stream result object
   (streamResult as any).session = session;
 
   return { streamResult: streamResult as RunAgentResult, session };
+}
+
+/**
+ * Executes the benchmark orchestrator agent.
+ */
+export function runAgent(opts: RunAgentProps): {
+  streamResult: RunAgentResult;
+  session: Session;
+} {
+  return runAgentImpl(opts);
 }

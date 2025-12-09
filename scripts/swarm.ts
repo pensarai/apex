@@ -159,6 +159,12 @@ export async function swarm(
     console.log(`Failed: ${results.filter((r) => !r.success).length}`);
     console.log(`Session ID: ${session.id}`);
     console.log(`Session Path: ${session.rootPath}`);
+
+    // Report token usage if available
+    const tokenUsage = getSessionTokenUsage(session.id);
+    if (tokenUsage) {
+      console.log(`${formatTokenUsage(tokenUsage)}`);
+    }
     console.log();
 
     for (const result of results) {

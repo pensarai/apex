@@ -98,6 +98,12 @@ async function runBenchmark(options: BenchmarkOptions): Promise<void> {
       console.log(`✓ Benchmark completed successfully for branch: ${branch}`);
       console.log(`  Session ID: ${session.id}`);
       console.log(`  Results: ${session.rootPath}/benchmark_results.json`);
+
+      // Report token usage if available
+      const tokenUsage = getSessionTokenUsage(session.id);
+      if (tokenUsage) {
+        console.log(`  ${formatTokenUsage(tokenUsage)}`);
+      }
       console.log();
 
       results.push({

@@ -39,11 +39,11 @@ function App() {
   const navigableItems = ["command-input"]; // List of items that can be focused
 
   useEffect(() => {
-    async function getConfig() {
+    async function initializeApp() {
       const _config = await config.get();
       setAppConfig(_config);
     }
-    getConfig();
+    initializeApp();
   }, []);
 
   const handleAcceptPolicy = async () => {

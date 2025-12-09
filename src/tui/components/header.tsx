@@ -1,5 +1,4 @@
 import { useAgent } from "../agentProvider";
-import { AgentStatus } from "./footer";
 import { SpinnerDots } from "./sprites";
 
 export default function Header() {
@@ -17,7 +16,7 @@ export default function Header() {
       justifyContent="space-between"
     >
       <text fg="green">Pensar</text>
-      <AgentStatus />
+      <SpinnerDots label="Thinking" fg="green" />
     </box>
   );
 }

@@ -54,7 +54,7 @@ const FindingObject = z.object({
 
 export type Finding = z.infer<typeof FindingObject>;
 
-export async function documentFindingAgent(
+async function documentFindingAgentImpl(
   finding: Finding,
   model: AIModel,
   session: Session,
@@ -692,4 +692,27 @@ Begin your analysis now.
     findingPath: documentationResult.findingPath,
     success: documentationResult.action === 'documented',
   };
+}
+
+/**
+ * Sub-agent for documenting security findings with POC validation.
+ */
+export async function documentFindingAgent(
+  finding: Finding,
+  model: AIModel,
+  session: Session,
+  authConfig?: AIAuthConfig,
+  toolOverride?: {
+    create_poc?: (opts: CreatePocOpts) => Promise<CreatePocResult>;
+  },
+  onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>
+) {
+  return documentFindingAgentImpl(
+    finding,
+    model,
+    session,
+    authConfig,
+    toolOverride,
+    onStepFinish
+  );
 }
