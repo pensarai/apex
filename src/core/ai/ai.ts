@@ -1,9 +1,9 @@
-import { createAnthropic } from "@ai-sdk/anthropic";
-import type { AnthropicMessagesModelId } from "@ai-sdk/anthropic/internal";
-import { createOpenAI } from "@ai-sdk/openai";
-import type { OpenAIChatModelId } from "@ai-sdk/openai/internal";
-import { createOpenRouter } from "@openrouter/ai-sdk-provider";
-import { createAmazonBedrock } from "@ai-sdk/amazon-bedrock";
+import { createAnthropic } from '@ai-sdk/anthropic';
+import type { AnthropicMessagesModelId } from '@ai-sdk/anthropic/internal';
+import { createOpenAI } from '@ai-sdk/openai';
+import type { OpenAIChatModelId } from '@ai-sdk/openai/internal';
+import { createOpenRouter } from '@openrouter/ai-sdk-provider';
+import { createAmazonBedrock } from '@ai-sdk/amazon-bedrock';
 import {
   generateObject,
   streamText,
@@ -17,24 +17,24 @@ import {
   type ToolCallRepairFunction,
   type ToolChoice,
   type ToolSet,
-} from "ai";
-import { z } from "zod";
+} from 'ai';
+import { z } from 'zod';
 import {
   checkIfContextLengthError,
   createSummarizationStream,
   getProviderModel,
   summarizeConversation,
   type AIAuthConfig,
-} from "./utils";
+} from './utils';
 
 export type AIModel = AnthropicMessagesModelId | OpenAIChatModelId | string; // For OpenRouter and Bedrock models
 
 export type AIModelProvider =
-  | "anthropic"
-  | "openai"
-  | "openrouter"
-  | "bedrock"
-  | "local";
+  | 'anthropic'
+  | 'openai'
+  | 'openrouter'
+  | 'bedrock'
+  | 'local';
 
 // Helper function to wrap a stream with error handling for async errors
 function wrapStreamWithErrorHandler(
@@ -50,13 +50,13 @@ function wrapStreamWithErrorHandler(
   const handler = {
     get(target: any, prop: string) {
       // Intercept access to fullStream
-      if (prop === "fullStream") {
+      if (prop === 'fullStream') {
         if (!wrappedStream) {
           wrappedStream = (async function* () {
             try {
               for await (const chunk of originalStream.fullStream) {
                 // Check if this chunk contains an error
-                if (chunk.type === "error" || (chunk as any).error) {
+                if (chunk.type === 'error' || (chunk as any).error) {
                   const error = (chunk as any).error || chunk;
                   throw error;
                 }
@@ -98,7 +98,7 @@ function wrapStreamWithErrorHandler(
               } else {
                 if (!silent) {
                   console.error(
-                    "Non-context length error, re-throwing",
+                    'Non-context length error, re-throwing',
                     error.message
                   );
                 }
@@ -167,6 +167,7 @@ export function streamResponse(
   const messagesContainer = { current: messages || [] };
   const providerModel = getProviderModel(model, authConfig);
 
+  let rateLimitRetryCount = 0;
   try {
     // Create the appropriate provider instance
     const response = streamText({
@@ -182,6 +183,21 @@ export function streamResponse(
         messagesContainer.current = opts.messages;
         return undefined;
       },
+      onError: async ({ error }: { error: any }) => {
+        if (
+          error.message.toLowerCase().includes('too many tokens') ||
+          error.message.toLowerCase().includes('overloaded')
+        ) {
+          rateLimitRetryCount++;
+          await new Promise((resolve) =>
+            setTimeout(resolve, 1000 * rateLimitRetryCount)
+          );
+          if (rateLimitRetryCount < 20) {
+            return;
+          }
+        }
+        throw error;
+      },
       onStepFinish,
       abortSignal,
       activeTools,
@@ -194,9 +210,9 @@ export function streamResponse(
         try {
           if (!silent) {
             console.log(
-              "Repairing tool call:",
+              'Repairing tool call:',
               toolCall.toolName,
-              "Error:",
+              'Error:',
               error
             );
           }
@@ -222,8 +238,8 @@ export function streamResponse(
               `The tool accepts the following schema:`,
               JSON.stringify(jsonSchema),
               `Error encountered: ${error}`,
-              "Please fix the inputs to match the schema.",
-            ].join("\n"),
+              'Please fix the inputs to match the schema.',
+            ].join('\n'),
           });
 
           // Report tool repair token usage if onStepFinish callback is provided
@@ -259,7 +275,7 @@ export function streamResponse(
           return { ...toolCall, input: JSON.stringify(repairedArgs) };
         } catch (repairError: any) {
           if (!silent) {
-            console.error("Error repairing tool call:", repairError.message);
+            console.error('Error repairing tool call:', repairError.message);
           }
           throw repairError;
         }
@@ -294,7 +310,7 @@ export function streamResponse(
       );
     }
     if (!silent) {
-      console.error("Non-context length error, re-throwing", error.message);
+      console.error('Non-context length error, re-throwing', error.message);
     }
 
     // Re-throw if it's not a context length error
