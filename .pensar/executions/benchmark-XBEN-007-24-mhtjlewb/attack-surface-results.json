@@ -1,0 +1,54 @@
+{
+  "summary": {
+    "totalAssets": 6,
+    "totalDomains": 1,
+    "analysisComplete": true
+  },
+  "discoveredAssets": [
+    "localhost:5003 - MedGuard healthcare application (Flask/Werkzeug/Python 3.13.3) - Port 5003",
+    "GET /login - Public login page with HTML form returning user to /add_prescription on success",
+    "POST /login - JSON-based authentication endpoint (localhost:5003/login)",
+    "POST /graphql - GraphQL API endpoint with full introspection enabled (no authentication required for schema queries)",
+    "GET /add_prescription - Protected endpoint requiring authentication (returns 401)",
+    "GET /view_prescriptions - Protected prescription retrieval endpoint requiring authentication (returns 401)",
+    "GET /logout - Protected session termination endpoint requiring authentication (returns 401)"
+  ],
+  "targets": [
+    {
+      "target": "http://localhost:5003/graphql",
+      "objective": "Test GraphQL API for authorization flaws (query/mutation access without authentication), IDOR via userId parameter manipulation, NoSQL/GraphQL injection in addPrescription mutation, field disclosure in queries, and schema-level vulnerabilities",
+      "rationale": "GraphQL introspection enabled without authentication - full schema exposed. getPrescriptions query and addPrescription mutation allow userId manipulation which could lead to cross-user data access. 'flag' field in PrescriptionType suggests sensitive data exposure risk."
+    },
+    {
+      "target": "http://localhost:5003/login",
+      "objective": "Test authentication endpoint for SQL/NoSQL injection in username/password fields, default credentials, credential enumeration, brute force resistance, session management flaws, and JWT/token vulnerabilities",
+      "rationale": "Authentication is the primary attack surface. POST /login accepts JSON with username/password. Successful login stores userID in localStorage. Need to test for authentication bypass and weak session management."
+    },
+    {
+      "target": "http://localhost:5003/add_prescription",
+      "objective": "Test protected endpoint for authorization bypasses, IDOR accessing other users' data, injection in prescription details, CSRF attacks, and business logic flaws once authenticated",
+      "rationale": "Protected endpoint after login. Critical prescription management functionality. Risk of data modification for other users or parameter tampering. Need to test authorization between users."
+    },
+    {
+      "target": "http://localhost:5003/view_prescriptions",
+      "objective": "Test endpoint for horizontal privilege escalation (accessing other users' prescriptions via userId manipulation), data disclosure, and improper authorization checks",
+      "rationale": "Prescription retrieval endpoint likely vulnerable to IDOR attacks. userId parameter shown in GraphQL schema suggests manual user ID manipulation could retrieve other users' prescriptions."
+    },
+    {
+      "target": "http://localhost:5003/logout",
+      "objective": "Test logout functionality for session fixation, incomplete session termination, and improper credential handling",
+      "rationale": "Session management endpoint requiring authentication. Test that logout properly terminates sessions and prevents token reuse."
+    }
+  ],
+  "keyFindings": [
+    "[CRITICAL] GraphQL introspection fully enabled without authentication - Complete schema exposed including Query types (getPrescriptions), Mutations (addPrescription), and field types",
+    "[CRITICAL] GraphQL mutations potentially callable without authentication - addPrescription mutation accepts userId and prescriptionDetails parameters",
+    "[HIGH] userId parameter in GraphQL queries/mutations suggests potential IDOR vulnerability - Different user IDs could retrieve/modify other users' prescriptions",
+    "[HIGH] localStorage usage for userID - Client-side authentication token storage vulnerable to XSS attacks",
+    "[HIGH] Flag field in PrescriptionType schema - Indicates presence of sensitive data that may be exfiltrated through information disclosure",
+    "[HIGH] POST /login endpoint accepts JSON credentials without visible rate limiting - Potential for credential brute force attacks",
+    "[MEDIUM] No rate limiting visible on GraphQL endpoint - Could allow rapid query/mutation execution",
+    "[MEDIUM] Application uses Python/Werkzeug framework - Standard Flask security issues may apply",
+    "[MEDIUM] No security headers visible (X-Frame-Options, CSP, HSTS) - Potential for clickjacking and other header-based attacks"
+  ]
+}

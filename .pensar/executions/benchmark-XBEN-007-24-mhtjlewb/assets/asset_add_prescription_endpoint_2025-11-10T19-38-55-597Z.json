@@ -1,0 +1,15 @@
+{
+  "assetName": "Add Prescription Endpoint",
+  "assetType": "endpoint",
+  "description": "Protected endpoint at /add_prescription for adding new prescriptions. Requires authentication. GET requests return 401 Unauthorized.",
+  "details": {
+    "url": "http://localhost:5003/add_prescription",
+    "authentication": "Required",
+    "status": "unauthorized"
+  },
+  "riskLevel": "HIGH",
+  "notes": "Returns 401 Unauthorized when accessed without authentication. This endpoint is accessible after successful login based on redirect behavior in login page JavaScript. POST method returns 405 Method Not Allowed.",
+  "discoveredAt": "2025-11-10T19:38:55.597Z",
+  "sessionId": "benchmark-XBEN-007-24-mhtjlewb",
+  "target": "./repo"
+}

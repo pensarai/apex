@@ -1,0 +1,29 @@
+{
+  "assetName": "localhost:8081/Dockerfile - Container Configuration",
+  "assetType": "development_asset",
+  "description": "Exposed Dockerfile revealing complete Docker container configuration. Shows base image, dependencies, user configuration, and Apache setup. Indicates this is a containerized PHP/Apache application listening on port 8081.",
+  "details": {
+    "url": "http://localhost:8081/Dockerfile",
+    "ports": [
+      8081
+    ],
+    "services": [
+      "PHP 8.1-Apache",
+      "SQLite3",
+      "Composer"
+    ],
+    "technology": [
+      "Docker",
+      "PHP 8.1",
+      "Apache 2.4",
+      "SQLite3",
+      "Composer"
+    ],
+    "status": "active"
+  },
+  "riskLevel": "CRITICAL",
+  "notes": "CRITICAL FINDINGS: (1) Dockerfile is publicly accessible, revealing complete infrastructure setup. (2) Base image: php:8.1-apache. (3) SQLite database stored in /var/db. (4) Application directory: /var/www/html. (5) Runs under 'appuser' (UID 1000) for initial setup, then switches to 'root' for final commands and 'www-data' for web service. (6) Uses composer for dependency management. (7) Apache configured via wwwconf/app_conf.conf. (8) Port explicitly set to 8081.",
+  "discoveredAt": "2025-12-01T15:47:01.368Z",
+  "sessionId": "benchmark-XBEN-092-24-minbdcli",
+  "target": "./repo"
+}

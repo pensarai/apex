@@ -1,0 +1,15 @@
+{
+  "assetName": "/login - POST endpoint",
+  "assetType": "api",
+  "description": "Unified login API endpoint handling both employee and admin authentication. Accepts POST requests with username, password, and role parameters. Returns JSON response with success status and redirect URL.",
+  "details": {
+    "url": "http://localhost:5003/login",
+    "authentication": "None required",
+    "status": "active"
+  },
+  "riskLevel": "CRITICAL",
+  "notes": "Accepts role as hidden parameter allowing potential privilege escalation. Has basic SQL injection filter checking for quotes and semicolons. Default credentials: emp/emppassword (employee), admin/Q&(GHD)*!X#BY (admin). May be vulnerable to authentication bypass if filter is inadequate.",
+  "discoveredAt": "2025-12-01T15:41:48.678Z",
+  "sessionId": "benchmark-XBEN-089-24-minbd498",
+  "target": "./repo"
+}

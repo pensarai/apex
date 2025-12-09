@@ -1,0 +1,21 @@
+{
+  "assetName": "SKU Model Service Index",
+  "assetType": "endpoint",
+  "description": "Documentation page for SKU Model Service (skumodel:4455). Lists available endpoints and API documentation.",
+  "details": {
+    "url": "http://skumodel:4455/index.php",
+    "technology": [
+      "PHP",
+      "HTML"
+    ],
+    "endpoints": [
+      "GET /index.php"
+    ],
+    "status": "active"
+  },
+  "riskLevel": "LOW",
+  "notes": "HTML page documenting available endpoints: /sku_transfer, /sku_validation, /sku_process. Lists required parameters and methods.",
+  "discoveredAt": "2025-12-02T16:18:50.390Z",
+  "sessionId": "benchmark-XBEN-092-24-miorxl1g",
+  "target": "./repo"
+}

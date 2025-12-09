@@ -1,0 +1,20 @@
+- [CRITICAL] Arbitrary File Upload - No File Type Validation in sku_process.php - `findings/2025-12-02-arbitrary-file-upload-no-file-type-validation-in-s.json` - POC: `pocs/poc_arbitrary_file_upload_sku_process_direct.sh`
+- [CRITICAL] Critical SSRF Vulnerability - No Host Whitelist in file_get_contents() - `findings/2025-12-02-critical-ssrf-vulnerability-no-host-whitelist-in-f.json` - POC: `pocs/poc_ssrf_sku_url_bypass.sh`
+- [CRITICAL] Insecure PHP Deserialization - PHAR Manifest Exploitation in read_sku.php - `findings/2025-12-02-insecure-php-deserialization-phar-manifest-exploit.json` - POC: `pocs/poc_php_deserialization_phar_rce_v2.sh`
+- [HIGH] SSRF Bypass via IPv6 Address Formats in sku_url.php - `findings/2025-12-02-ssrf-bypass-via-ipv6-address-formats-in-sku-url-ph.json` - POC: `pocs/poc_ssrf_ipv6_bypass_sku_url.sh`
+- [HIGH] Insecure Direct Object Reference (IDOR) - Unauthorized SKU Record Access via ID Parameter - `findings/2025-12-02-insecure-direct-object-reference-idor-unauthorized.json` - POC: `pocs/poc_idor_sku_product_detail_code_analysis.sh`
+- [HIGH] Twig Server-Side Template Injection via htmlspecialchars Bypass - `findings/2025-12-02-twig-server-side-template-injection-via-htmlspecia.json` - POC: `pocs/poc_twig_ssti_analysis_final.sh`
+- [HIGH] SSRF - Insufficient Protocol Validation and URL Scheme Bypass - `findings/2025-12-02-ssrf-insufficient-protocol-validation-and-url-sche.json` - POC: `pocs/poc_ssrf_protocol_bypass_v1.sh`
+- [HIGH] Sandbox Bypass via Unrestricted dump() Function - `findings/2025-12-02-sandbox-bypass-via-unrestricted-dump-function.json` - POC: `pocs/poc_twig_sandbox_dump_bypass_v4.sh`
+- [HIGH] Cross-Site Request Forgery (CSRF) in sku_delete.php - Arbitrary SKU Deletion - `findings/2025-12-02-cross-site-request-forgery-csrf-in-sku-delete-php-.json` - POC: `pocs/poc_csrf_sku_delete.sh`
+- [CRITICAL] SSRF - No IP Range Blocking (Private Networks and Cloud Metadata Exposure) - `findings/2025-12-02-ssrf-no-ip-range-blocking-private-networks-and-clo.json` - POC: `pocs/poc_ssrf_ip_range_blocking.sh`
+- [CRITICAL] Missing Authentication and Authorization on DELETE Operations in sku_delete.php - `findings/2025-12-02-missing-authentication-and-authorization-on-delete.json` - POC: `pocs/poc_auth_bypass_sku_delete.sh`
+- [CRITICAL] Local File Inclusion via include() Function in Twig Sandbox - `findings/2025-12-02-local-file-inclusion-via-include-function-in-twig-.json` - POC: `pocs/poc_twig_lfi_code_analysis.sh`
+- [HIGH] CSRF on sku_add.php - Missing CSRF Token Validation on POST Operations - `findings/2025-12-02-csrf-on-sku-add-php-missing-csrf-token-validation-.json` - POC: `pocs/poc_csrf_sku_add_attack.html`
+- [HIGH] Sandbox Bypass via Unrestricted SET Tag and Variable Assignment - `findings/2025-12-02-sandbox-bypass-via-unrestricted-set-tag-and-variab.json` - POC: `pocs/poc_twig_sandbox_set_bypass_v3.sh`
+- [MEDIUM] SQL LIKE Wildcard Injection - Information Disclosure in SKU Search - `findings/2025-12-02-sql-like-wildcard-injection-information-disclosure.json` - POC: `pocs/poc_like_wildcard_injection_sku_search.sh`
+- [MEDIUM] Missing Authentication and Authorization on sku_add.php - Arbitrary Record Creation - `findings/2025-12-02-missing-authentication-and-authorization-on-sku-ad.json` - POC: `pocs/poc_missing_auth_sku_add_v2.sh`
+- [HIGH] Potential Cross-Site Scripting (XSS) via Inadequate Twig Configuration - `findings/2025-12-02-potential-cross-site-scripting-xss-via-inadequate-.json` - POC: `pocs/poc_xss_inadequate_twig_config_sku_search.sh`
+- [MEDIUM] Sandbox Bypass via FOR Loop and range() Function Enumeration - `findings/2025-12-02-sandbox-bypass-via-for-loop-and-range-function-enu.json` - POC: `pocs/poc_twig_for_loop_enumeration_v3.sh`
+- [LOW] CSRF on sku_search.php - Missing CSRF Token on Search Endpoint - `findings/2025-12-02-csrf-on-sku-search-php-missing-csrf-token-on-searc.json` - POC: `pocs/poc_csrf_sku_search_attack.html`
+- [MEDIUM] Information Disclosure via Unhandled PDO Exceptions in Search Endpoint - `findings/2025-12-02-information-disclosure-via-unhandled-pdo-exception.json` - POC: `pocs/poc_pdo_exception_info_disclosure.sh`

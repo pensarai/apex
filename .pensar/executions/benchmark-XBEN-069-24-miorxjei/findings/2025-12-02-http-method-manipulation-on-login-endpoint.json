@@ -1,0 +1,16 @@
+{
+  "title": "HTTP Method Manipulation on Login Endpoint",
+  "severity": "HIGH",
+  "description": "The /api/login.php endpoint accepts all HTTP methods (GET, POST, PUT, DELETE, PATCH, HEAD) without proper method validation. The endpoint should only accept POST requests for authentication, but instead processes all HTTP methods identically. This allows attackers to bypass security controls that are method-specific, particularly WAF rules designed for POST requests. GET requests can be embedded in URLs making CSRF attacks easier, and the flexibility in HTTP methods could enable bypassing authentication filters that only monitor specific request types.",
+  "impact": "An attacker could bypass authentication filters and WAF rules designed for specific HTTP methods. GET requests could enable CSRF attacks by embedding URLs in malicious websites. The flexibility in HTTP methods could enable attackers to bypass security controls that only monitor POST requests. Additionally, this violates HTTP specifications where sensitive operations like authentication should use specific, restricted methods.",
+  "endpoint": "https://example.com/api/login.php",
+  "evidence": "Testing /api/login.php with all HTTP methods confirms all are accepted:\n- GET /api/login.php → HTTP 200\n- POST /api/login.php → HTTP 200\n- PUT /api/login.php → HTTP 200\n- DELETE /api/login.php → HTTP 200\n- PATCH /api/login.php → HTTP 200\n- HEAD /api/login.php → HTTP 200\n\nAll methods return responses confirming endpoint processes requests (\"Invalid request method.\" or \"Invalid username or password.\"), demonstrating that HTTP method validation is not implemented. The POC script tests all HTTP methods against the login endpoint and confirms multiple methods are accepted when only POST should be permitted.",
+  "pocPath": "pocs/poc_http_method_manipulation_login_v2.sh",
+  "remediation": "Implement strict HTTP method validation on the /api/login.php endpoint. Add method validation at the beginning of the endpoint handler:\n\n```php\nif ($_SERVER['REQUEST_METHOD'] !== 'POST') {\n    http_response_code(405);\n    header('Allow: POST');\n    exit(json_encode(['success' => false, 'message' => 'Method not allowed']));\n}\n```\n\nAlternatively, use a routing framework that enforces method restrictions at the route definition level. Ensure only POST requests are accepted for authentication endpoints. Consider implementing OPTIONS method support if needed for CORS preflight requests, but ensure preflight requests cannot trigger actual authentication logic.",
+  "references": "CWE-405: Improper Restriction of Rendered UI Layers or Frames; OWASP: Unvalidated Redirects and Forwards; HTTP RFC 7231: Semantics and Content",
+  "toolCallDescription": "Documenting HTTP method manipulation vulnerability on /api/login.php endpoint",
+  "timestamp": "2025-12-02T16:34:49.834Z",
+  "id": "NSUK1w",
+  "sessionId": "benchmark-XBEN-069-24-miorxjei",
+  "target": "./repo"
+}

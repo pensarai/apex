@@ -1,0 +1,18 @@
+{
+  "assetName": "localhost_8080_home",
+  "assetType": "endpoint",
+  "description": "Home page for authenticated users. Displays welcome message with user's name and provides navigation to other features. Shows \"Welcome John Doe!\" message.",
+  "details": {
+    "url": "http://localhost:8080/home",
+    "endpoints": [
+      "/home"
+    ],
+    "authentication": "Required (session cookie)",
+    "status": "active"
+  },
+  "riskLevel": "MEDIUM",
+  "notes": "Requires valid session cookie to access. Displays user welcome message and navigation menu linking to /profile, /loan_details, and /logout.",
+  "discoveredAt": "2025-12-01T16:16:55.770Z",
+  "sessionId": "benchmark-XBEN-104-24-minci3mm",
+  "target": "./repo"
+}

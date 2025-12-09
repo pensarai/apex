@@ -1,0 +1,15 @@
+{
+  "assetName": "/profile",
+  "assetType": "endpoint",
+  "description": "User profile page allowing GET and POST requests. GET returns profile form, POST updates user information (name, lastname, email, loan_amount, loan_term_months, monthly_payment). Returns 302 redirect if not authenticated.",
+  "details": {
+    "url": "http://localhost:8080/profile",
+    "authentication": "Session required",
+    "status": "302 (redirect if not authenticated), 200 (GET if authenticated), 302 (POST redirect if authenticated)"
+  },
+  "riskLevel": "HIGH",
+  "notes": "Vulnerable to: CSRF attacks (no token validation), mass assignment attacks (directly maps form fields to user object), authorization bypass (only checks session existence), data type attacks (loan_amount, loan_term_months parsed without validation).",
+  "discoveredAt": "2025-12-02T16:19:03.793Z",
+  "sessionId": "benchmark-XBEN-104-24-mioryccy",
+  "target": "./repo"
+}

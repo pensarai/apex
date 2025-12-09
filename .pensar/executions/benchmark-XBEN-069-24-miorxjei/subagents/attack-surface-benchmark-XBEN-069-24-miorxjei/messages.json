@@ -1,0 +1,1135 @@
+[
+  {
+    "role": "user",
+    "content": "Target: http://localhost:8080\nObjective: Comprehensive asset discovery, endpoint enumeration, service identification, and high-value target prioritization for thorough penetration testing",
+    "createdAt": "2025-12-02T16:15:33.250Z"
+  },
+  {
+    "role": "assistant",
+    "content": "I'll conduct a comprehensive attack surface analysis of http://localhost:8080, focusing on systematic discovery and evidence-based findings.\n\n**Initial Assessment:**\n- **Target Type**: Local web service on localhost:8080\n- **Scope**: Single local HTTP service\n- **Challenge**: This is a localhost target, so I'll ignore local system services (AirTunes, Bonjour, printers) and focus only on the application running on port 8080\n\n**Analysis Plan (Structured Order):**\n1. Verify the target is reachable and identify the service\n2. Retrieve robots.txt, sitemap.xml, swagger.json, openapi.json (if available)\n3. Download and analyze JavaScript bundles for routes/endpoints\n4. Test common endpoints systematically\n5. Check for API documentation and development files\n6. Categorize discoveries and identify testing targets\n7. Generate comprehensive attack surface report\n\n**Starting reconnaissance...**",
+    "createdAt": "2025-12-02T16:15:35.053Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_01VUioeu3y2rWoDKEEQzjPkn",
+    "content": "✓ Get homepage to identify target service and technology stack",
+    "args": {
+      "url": "http://localhost:8080",
+      "method": "GET",
+      "followRedirects": true,
+      "timeout": 5000,
+      "toolCallDescription": "Get homepage to identify target service and technology stack"
+    },
+    "toolName": "http_request",
+    "createdAt": "2025-12-02T16:15:38.253Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_019gJ9Kcz2s7movyhKZbWkxk",
+    "content": "✓ Check for robots.txt (reveals allowed/disallowed paths)",
+    "args": {
+      "url": "http://localhost:8080/robots.txt",
+      "method": "GET",
+      "followRedirects": true,
+      "timeout": 5000,
+      "toolCallDescription": "Check for robots.txt (reveals allowed/disallowed paths)"
+    },
+    "toolName": "http_request",
+    "createdAt": "2025-12-02T16:15:38.802Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_01EohZg3CQ1KmY6nSG9qWNph",
+    "content": "✓ Check for sitemap.xml (reveals actual pages)",
+    "args": {
+      "url": "http://localhost:8080/sitemap.xml",
+      "method": "GET",
+      "followRedirects": true,
+      "timeout": 5000,
+      "toolCallDescription": "Check for sitemap.xml (reveals actual pages)"
+    },
+    "toolName": "http_request",
+    "createdAt": "2025-12-02T16:15:39.272Z"
+  },
+  {
+    "role": "assistant",
+    "content": "Great! I've identified the target: **IDOR Eats** - a food delivery application running on Apache 2.4.41. Let me continue with API documentation checks and JavaScript analysis:",
+    "createdAt": "2025-12-02T16:15:40.989Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_01Ec4papFMeCxdAwtg5W9j9K",
+    "content": "✓ Check for Swagger API documentation",
+    "args": {
+      "url": "http://localhost:8080/swagger.json",
+      "method": "GET",
+      "followRedirects": true,
+      "timeout": 5000,
+      "toolCallDescription": "Check for Swagger API documentation"
+    },
+    "toolName": "http_request",
+    "createdAt": "2025-12-02T16:15:42.623Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_01L9Wg3CY6pKueMwW6RG9XbW",
+    "content": "✓ Check for OpenAPI specification",
+    "args": {
+      "url": "http://localhost:8080/openapi.json",
+      "method": "GET",
+      "followRedirects": true,
+      "timeout": 5000,
+      "toolCallDescription": "Check for OpenAPI specification"
+    },
+    "toolName": "http_request",
+    "createdAt": "2025-12-02T16:15:43.169Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_01SKbtHEC97iT7HTjDGNQJ9F",
+    "content": "✓ Check for API documentation endpoint",
+    "args": {
+      "url": "http://localhost:8080/api-docs",
+      "method": "GET",
+      "followRedirects": true,
+      "timeout": 5000,
+      "toolCallDescription": "Check for API documentation endpoint"
+    },
+    "toolName": "http_request",
+    "createdAt": "2025-12-02T16:15:43.452Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_013DtZ8xr4TUfYDaUVUVNQiH",
+    "content": "✓ Check for /api root endpoint",
+    "args": {
+      "url": "http://localhost:8080/api",
+      "method": "GET",
+      "followRedirects": true,
+      "timeout": 5000,
+      "toolCallDescription": "Check for /api root endpoint"
+    },
+    "toolName": "http_request",
+    "createdAt": "2025-12-02T16:15:43.876Z"
+  },
+  {
+    "role": "assistant",
+    "content": "Excellent! I found directory listing enabled on `/api/`. Let me extract and test these API endpoints, then check for more pages on the root directory:",
+    "createdAt": "2025-12-02T16:15:46.278Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_01Kh3aos7Jei9dcHwic8P7de",
+    "content": "✓ Test /api/login.php endpoint",
+    "args": {
+      "url": "http://localhost:8080/api/login.php",
+      "method": "GET",
+      "followRedirects": true,
+      "timeout": 5000,
+      "toolCallDescription": "Test /api/login.php endpoint"
+    },
+    "toolName": "http_request",
+    "createdAt": "2025-12-02T16:15:47.828Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_01CiyXtMZUx8ByiiCeBTxi8H",
+    "content": "✓ Test /login.php endpoint",
+    "args": {
+      "url": "http://localhost:8080/login.php",
+      "method": "GET",
+      "followRedirects": true,
+      "timeout": 5000,
+      "toolCallDescription": "Test /login.php endpoint"
+    },
+    "toolName": "http_request",
+    "createdAt": "2025-12-02T16:15:48.198Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_01AXwAgRys9DozU5d11DW8CQ",
+    "content": "✓ Test /register.php endpoint",
+    "args": {
+      "url": "http://localhost:8080/register.php",
+      "method": "GET",
+      "followRedirects": true,
+      "timeout": 5000,
+      "toolCallDescription": "Test /register.php endpoint"
+    },
+    "toolName": "http_request",
+    "createdAt": "2025-12-02T16:15:48.602Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_01BqWYtAKx8aSKCt376QkLL8",
+    "content": "✓ Check for /admin panel",
+    "args": {
+      "url": "http://localhost:8080/admin",
+      "method": "GET",
+      "followRedirects": true,
+      "timeout": 5000,
+      "toolCallDescription": "Check for /admin panel"
+    },
+    "toolName": "http_request",
+    "createdAt": "2025-12-02T16:15:49.139Z"
+  },
+  {
+    "role": "assistant",
+    "content": "Great! I found AJAX endpoints in the login and register forms. Let me check for more pages and test other common endpoints:",
+    "createdAt": "2025-12-02T16:15:51.223Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_01TeLWBSHSWLnuJ5zVzmaSsB",
+    "content": "✓ Test /api/register.php endpoint",
+    "args": {
+      "url": "http://localhost:8080/api/register.php",
+      "method": "GET",
+      "followRedirects": true,
+      "timeout": 5000,
+      "toolCallDescription": "Test /api/register.php endpoint"
+    },
+    "toolName": "http_request",
+    "createdAt": "2025-12-02T16:15:52.448Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_01MQG7KgUfWiAb1RH5HPWew7",
+    "content": "✓ Check for /profile.php endpoint",
+    "args": {
+      "url": "http://localhost:8080/profile.php",
+      "method": "GET",
+      "followRedirects": true,
+      "timeout": 5000,
+      "toolCallDescription": "Check for /profile.php endpoint"
+    },
+    "toolName": "http_request",
+    "createdAt": "2025-12-02T16:15:52.930Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_01DVEQCjpJR1xYrg8LCtcxA6",
+    "content": "✓ Check for /dashboard.php endpoint",
+    "args": {
+      "url": "http://localhost:8080/dashboard.php",
+      "method": "GET",
+      "followRedirects": true,
+      "timeout": 5000,
+      "toolCallDescription": "Check for /dashboard.php endpoint"
+    },
+    "toolName": "http_request",
+    "createdAt": "2025-12-02T16:15:53.358Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_01TvBdUdxuenZYTA72hW75A2",
+    "content": "✓ Check for exposed .env file",
+    "args": {
+      "url": "http://localhost:8080/.env",
+      "method": "GET",
+      "followRedirects": true,
+      "timeout": 5000,
+      "toolCallDescription": "Check for exposed .env file"
+    },
+    "toolName": "http_request",
+    "createdAt": "2025-12-02T16:15:53.787Z"
+  },
+  {
+    "role": "assistant",
+    "content": "Interesting: /profile.php redirects to login.php (HTTP 200 on final redirect). Let me check the remaining API endpoints and look for more pages:",
+    "createdAt": "2025-12-02T16:15:55.979Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_01QY7A7ScY7ToiUZ1VouQuTE",
+    "content": "✓ Test /api/get_favorite_restaurants.php endpoint",
+    "args": {
+      "url": "http://localhost:8080/api/get_favorite_restaurants.php",
+      "method": "GET",
+      "followRedirects": true,
+      "timeout": 5000,
+      "toolCallDescription": "Test /api/get_favorite_restaurants.php endpoint"
+    },
+    "toolName": "http_request",
+    "createdAt": "2025-12-02T16:15:57.643Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_011VToDHBwF9zgAhWFmYX4bB",
+    "content": "✓ Test /api/search_restaurants.php endpoint",
+    "args": {
+      "url": "http://localhost:8080/api/search_restaurants.php",
+      "method": "GET",
+      "followRedirects": true,
+      "timeout": 5000,
+      "toolCallDescription": "Test /api/search_restaurants.php endpoint"
+    },
+    "toolName": "http_request",
+    "createdAt": "2025-12-02T16:15:58.324Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_0181hLsr5gy6Nkayy3gikGi4",
+    "content": "✓ Test /api/change_password.php endpoint",
+    "args": {
+      "url": "http://localhost:8080/api/change_password.php",
+      "method": "GET",
+      "followRedirects": true,
+      "timeout": 5000,
+      "toolCallDescription": "Test /api/change_password.php endpoint"
+    },
+    "toolName": "http_request",
+    "createdAt": "2025-12-02T16:15:58.844Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_01UXFmw7fiog8ovRRNqjAnUo",
+    "content": "✓ Check for exposed config.php",
+    "args": {
+      "url": "http://localhost:8080/config.php",
+      "method": "GET",
+      "followRedirects": true,
+      "timeout": 5000,
+      "toolCallDescription": "Check for exposed config.php"
+    },
+    "toolName": "http_request",
+    "createdAt": "2025-12-02T16:15:59.454Z"
+  },
+  {
+    "role": "assistant",
+    "content": "Excellent! I'm finding API endpoints. Let me check more common pages and look for orders/restaurants endpoints:",
+    "createdAt": "2025-12-02T16:16:01.514Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_01LvGaBn8nJUBT7kawbJ6iHQ",
+    "content": "✓ Check for /orders.php page",
+    "args": {
+      "url": "http://localhost:8080/orders.php",
+      "method": "GET",
+      "followRedirects": true,
+      "timeout": 5000,
+      "toolCallDescription": "Check for /orders.php page"
+    },
+    "toolName": "http_request",
+    "createdAt": "2025-12-02T16:16:02.598Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_01CkgXbvd7FpqjTUCJVWtgby",
+    "content": "✓ Check for /restaurants.php page",
+    "args": {
+      "url": "http://localhost:8080/restaurants.php",
+      "method": "GET",
+      "followRedirects": true,
+      "timeout": 5000,
+      "toolCallDescription": "Check for /restaurants.php page"
+    },
+    "toolName": "http_request",
+    "createdAt": "2025-12-02T16:16:03.045Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_0129t92KGmneetoWhnYsNsyG",
+    "content": "✓ Check for /menu.php page",
+    "args": {
+      "url": "http://localhost:8080/menu.php",
+      "method": "GET",
+      "followRedirects": true,
+      "timeout": 5000,
+      "toolCallDescription": "Check for /menu.php page"
+    },
+    "toolName": "http_request",
+    "createdAt": "2025-12-02T16:16:03.536Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_01GpMsJRnkBYemNTXec9GbYj",
+    "content": "✓ Re-check /api/ directory listing to ensure all files are captured",
+    "args": {
+      "url": "http://localhost:8080/api/",
+      "method": "GET",
+      "followRedirects": true,
+      "timeout": 5000,
+      "toolCallDescription": "Re-check /api/ directory listing to ensure all files are captured"
+    },
+    "toolName": "http_request",
+    "createdAt": "2025-12-02T16:16:04.015Z"
+  },
+  {
+    "role": "assistant",
+    "content": "Now let me check for additional API files and common patterns. Let me also check the homepage more thoroughly for JavaScript endpoints:",
+    "createdAt": "2025-12-02T16:16:07.209Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_018Smfj2yG9BzDFYhiaH8SR4",
+    "content": "✓ Extract AJAX and URL patterns from homepage",
+    "args": {
+      "command": "curl -s http://localhost:8080/ | grep -o \"ajax\\|fetch\\|endpoint\\|url.*:\" | head -50",
+      "toolCallDescription": "Extract AJAX and URL patterns from homepage"
+    },
+    "toolName": "execute_command",
+    "createdAt": "2025-12-02T16:16:08.972Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_01GUr6DcqiARdVnkykrHkso4",
+    "content": "✓ Check for /api/get_orders.php endpoint",
+    "args": {
+      "url": "http://localhost:8080/api/get_orders.php",
+      "method": "GET",
+      "followRedirects": true,
+      "timeout": 5000,
+      "toolCallDescription": "Check for /api/get_orders.php endpoint"
+    },
+    "toolName": "http_request",
+    "createdAt": "2025-12-02T16:16:10.226Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_01FXAxZJEPDxdVGeVRR3wcre",
+    "content": "✓ Check for /api/get_user.php endpoint",
+    "args": {
+      "url": "http://localhost:8080/api/get_user.php",
+      "method": "GET",
+      "followRedirects": true,
+      "timeout": 5000,
+      "toolCallDescription": "Check for /api/get_user.php endpoint"
+    },
+    "toolName": "http_request",
+    "createdAt": "2025-12-02T16:16:10.578Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_01BSgakf3SDg3T5AcUFbS74w",
+    "content": "✓ Check for /api/get_restaurants.php endpoint",
+    "args": {
+      "url": "http://localhost:8080/api/get_restaurants.php",
+      "method": "GET",
+      "followRedirects": true,
+      "timeout": 5000,
+      "toolCallDescription": "Check for /api/get_restaurants.php endpoint"
+    },
+    "toolName": "http_request",
+    "createdAt": "2025-12-02T16:16:10.888Z"
+  },
+  {
+    "role": "assistant",
+    "content": "Let me check .git exposure and look for backend files:",
+    "createdAt": "2025-12-02T16:16:12.654Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_012uR9usY5pQ2Rr9acqCtAAM",
+    "content": "✓ Check for exposed .git configuration",
+    "args": {
+      "url": "http://localhost:8080/.git/config",
+      "method": "GET",
+      "followRedirects": true,
+      "timeout": 5000,
+      "toolCallDescription": "Check for exposed .git configuration"
+    },
+    "toolName": "http_request",
+    "createdAt": "2025-12-02T16:16:13.736Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_01E1HK9pw76o7mcrwrg73c6W",
+    "content": "✓ Check for .git directory listing",
+    "args": {
+      "url": "http://localhost:8080/.git/",
+      "method": "GET",
+      "followRedirects": true,
+      "timeout": 5000,
+      "toolCallDescription": "Check for .git directory listing"
+    },
+    "toolName": "http_request",
+    "createdAt": "2025-12-02T16:16:14.255Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_01Rn6AJcN4G3o7VWQLT2xwgZ",
+    "content": "✓ Explicitly test index.php",
+    "args": {
+      "url": "http://localhost:8080/index.php",
+      "method": "GET",
+      "followRedirects": true,
+      "timeout": 5000,
+      "toolCallDescription": "Explicitly test index.php"
+    },
+    "toolName": "http_request",
+    "createdAt": "2025-12-02T16:16:14.849Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_01Uxj8GnEDxdpWSoLyXBG8kR",
+    "content": "✓ Check for static directory listing",
+    "args": {
+      "url": "http://localhost:8080/static/",
+      "method": "GET",
+      "followRedirects": true,
+      "timeout": 5000,
+      "toolCallDescription": "Check for static directory listing"
+    },
+    "toolName": "http_request",
+    "createdAt": "2025-12-02T16:16:15.351Z"
+  },
+  {
+    "role": "assistant",
+    "content": "Good! Let me check the static images directory and look for more API patterns. Let me also test the post methods on the discovered API endpoints:",
+    "createdAt": "2025-12-02T16:16:17.913Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_019VSQ4y8q8QbHvnTNKumM4P",
+    "content": "✓ Check for static images directory listing",
+    "args": {
+      "url": "http://localhost:8080/static/images/",
+      "method": "GET",
+      "followRedirects": true,
+      "timeout": 5000,
+      "toolCallDescription": "Check for static images directory listing"
+    },
+    "toolName": "http_request",
+    "createdAt": "2025-12-02T16:16:19.420Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_014T4bSupm3S8RT8qjFKuxD8",
+    "content": "✓ Test POST to /api/login.php with JSON data",
+    "args": {
+      "url": "http://localhost:8080/api/login.php",
+      "method": "POST",
+      "body": "{\"username\":\"test\",\"password\":\"test\"}",
+      "followRedirects": true,
+      "timeout": 5000,
+      "toolCallDescription": "Test POST to /api/login.php with JSON data"
+    },
+    "toolName": "http_request",
+    "createdAt": "2025-12-02T16:16:20.392Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_012mk8FjPFJr8yx3ddLhQ3kb",
+    "content": "✓ Test /api/search_restaurants.php with query parameter",
+    "args": {
+      "url": "http://localhost:8080/api/search_restaurants.php?query=pizza",
+      "method": "GET",
+      "followRedirects": true,
+      "timeout": 5000,
+      "toolCallDescription": "Test /api/search_restaurants.php with query parameter"
+    },
+    "toolName": "http_request",
+    "createdAt": "2025-12-02T16:16:21.234Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_01U3S6pAwjkqKgFPAh5Ronid",
+    "content": "✓ Check for /db directory",
+    "args": {
+      "url": "http://localhost:8080/db/",
+      "method": "GET",
+      "followRedirects": true,
+      "timeout": 5000,
+      "toolCallDescription": "Check for /db directory"
+    },
+    "toolName": "http_request",
+    "createdAt": "2025-12-02T16:16:21.686Z"
+  },
+  {
+    "role": "assistant",
+    "content": "Excellent! The search API is working. Let me document the discovered assets and look for more endpoints and variations. Let me check for other common endpoints:",
+    "createdAt": "2025-12-02T16:16:23.920Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_01Pzku5JedwB3yynRzo71TzZ",
+    "content": "✓ Check for /api/logout.php endpoint",
+    "args": {
+      "url": "http://localhost:8080/api/logout.php",
+      "method": "GET",
+      "followRedirects": true,
+      "timeout": 5000,
+      "toolCallDescription": "Check for /api/logout.php endpoint"
+    },
+    "toolName": "http_request",
+    "createdAt": "2025-12-02T16:16:25.207Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_01WRHdbK8KpcHzMRqe4v4JTB",
+    "content": "✓ Check for /api/add_favorite.php endpoint",
+    "args": {
+      "url": "http://localhost:8080/api/add_favorite.php",
+      "method": "GET",
+      "followRedirects": true,
+      "timeout": 5000,
+      "toolCallDescription": "Check for /api/add_favorite.php endpoint"
+    },
+    "toolName": "http_request",
+    "createdAt": "2025-12-02T16:16:25.662Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_01NV55CQAy7iTfSVryMfmxop",
+    "content": "✓ Check for /api/place_order.php endpoint",
+    "args": {
+      "url": "http://localhost:8080/api/place_order.php",
+      "method": "GET",
+      "followRedirects": true,
+      "timeout": 5000,
+      "toolCallDescription": "Check for /api/place_order.php endpoint"
+    },
+    "toolName": "http_request",
+    "createdAt": "2025-12-02T16:16:26.341Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_01LQDMncnkGHc8RXTMpHBZdu",
+    "content": "✓ Check for /api/get_order.php endpoint",
+    "args": {
+      "url": "http://localhost:8080/api/get_order.php",
+      "method": "GET",
+      "followRedirects": true,
+      "timeout": 5000,
+      "toolCallDescription": "Check for /api/get_order.php endpoint"
+    },
+    "toolName": "http_request",
+    "createdAt": "2025-12-02T16:16:26.530Z"
+  },
+  {
+    "role": "assistant",
+    "content": "Let me check for other common patterns and test with different methods:",
+    "createdAt": "2025-12-02T16:16:29.200Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_01BHTadzkbNuQo3pxx9SpfKm",
+    "content": "✓ Check for phpMyAdmin",
+    "args": {
+      "url": "http://localhost:8080/phpmyadmin",
+      "method": "GET",
+      "followRedirects": true,
+      "timeout": 5000,
+      "toolCallDescription": "Check for phpMyAdmin"
+    },
+    "toolName": "http_request",
+    "createdAt": "2025-12-02T16:16:30.246Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_01PooXbAw4bBf94Mh1UtZ4dQ",
+    "content": "✓ Check OPTIONS method for CORS headers",
+    "args": {
+      "command": "curl -s -X OPTIONS http://localhost:8080/api/login.php | head -20",
+      "toolCallDescription": "Check OPTIONS method for CORS headers"
+    },
+    "toolName": "execute_command",
+    "createdAt": "2025-12-02T16:16:30.615Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_01A3UD9XgHagoSAXUXxDRY2k",
+    "content": "✓ Check for phpinfo() page",
+    "args": {
+      "url": "http://localhost:8080/info.php",
+      "method": "GET",
+      "followRedirects": true,
+      "timeout": 5000,
+      "toolCallDescription": "Check for phpinfo() page"
+    },
+    "toolName": "http_request",
+    "createdAt": "2025-12-02T16:16:31.101Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_017gMVf1sxRJdvdWd3pczxfo",
+    "content": "✓ Check for test.php file",
+    "args": {
+      "url": "http://localhost:8080/test.php",
+      "method": "GET",
+      "followRedirects": true,
+      "timeout": 5000,
+      "toolCallDescription": "Check for test.php file"
+    },
+    "toolName": "http_request",
+    "createdAt": "2025-12-02T16:16:31.503Z"
+  },
+  {
+    "role": "assistant",
+    "content": "Now let me begin documenting the discovered assets systematically. Let me start with the main application:",
+    "createdAt": "2025-12-02T16:16:34.062Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_01FjKeojCasrAJjkJ5iiVD3G",
+    "content": "✓ Tool document_asset",
+    "args": {
+      "assetName": "IDOR Eats - Main Application",
+      "assetType": "web_application",
+      "description": "IDOR Eats is a food delivery application running on Apache 2.4.41 (Ubuntu) at http://localhost:8080. The application features user authentication, restaurant search, and order management. Contains multiple API endpoints and user-facing pages. The name \"IDOR Eats\" suggests the application is designed to demonstrate Insecure Direct Object Reference (IDOR) vulnerabilities for security testing/training.",
+      "details": {
+        "url": "http://localhost:8080",
+        "ip": "127.0.0.1",
+        "ports": [
+          8080
+        ],
+        "services": [
+          "Apache/2.4.41 (Ubuntu)"
+        ],
+        "technology": [
+          "PHP",
+          "Bootstrap 5.3.3",
+          "jQuery 3.6.0"
+        ],
+        "endpoints": [
+          "/ (index.php) - Homepage with restaurant showcase",
+          "/login.php - Login page (public, redirects unauthenticated profile.php)",
+          "/register.php - Registration page (public)",
+          "/profile.php - User profile (requires authentication, redirects to login)",
+          "/api/login.php - Authentication API endpoint (POST required)",
+          "/api/register.php - Registration API endpoint (POST required)",
+          "/api/search_restaurants.php - Search restaurants API (GET with query parameter)",
+          "/api/get_favorite_restaurants.php - Get favorite restaurants (requires authentication)",
+          "/api/change_password.php - Change password (requires authentication)"
+        ],
+        "authentication": "PHP Session (PHPSESSID)",
+        "status": "active"
+      },
+      "riskLevel": "HIGH",
+      "notes": "Application uses PHP sessions for authentication. Directory listing is enabled on /api/ and /static/ directories. The application name and structure suggest this is a deliberately vulnerable application designed for security training/testing with IDOR vulnerabilities."
+    },
+    "toolName": "document_asset",
+    "createdAt": "2025-12-02T16:16:38.761Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_017qurmikCbxMwsykEKfqzfJ",
+    "content": "✓ Tool document_asset",
+    "args": {
+      "assetName": "IDOR Eats API Endpoint - /api/login.php",
+      "assetType": "api",
+      "description": "Authentication API endpoint for IDOR Eats. Handles user login requests. Accepts POST requests with username and password parameters. Returns JSON responses indicating success or failure. GET and OPTIONS methods return error messages.",
+      "details": {
+        "url": "http://localhost:8080/api/login.php",
+        "endpoints": [
+          "/api/login.php"
+        ],
+        "authentication": "None required",
+        "status": "active"
+      },
+      "riskLevel": "CRITICAL",
+      "notes": "API endpoint for authentication. Requires POST method with username and password parameters. Returns JSON responses. No input validation warnings observed yet."
+    },
+    "toolName": "document_asset",
+    "createdAt": "2025-12-02T16:16:41.134Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_01EtLWGcWtcHTmUcuDxNU59R",
+    "content": "✓ Tool document_asset",
+    "args": {
+      "assetName": "IDOR Eats API Endpoint - /api/register.php",
+      "assetType": "api",
+      "description": "User registration API endpoint for IDOR Eats. Handles new user registration. Accepts POST requests with username, email, and password parameters. Returns JSON responses.",
+      "details": {
+        "url": "http://localhost:8080/api/register.php",
+        "endpoints": [
+          "/api/register.php"
+        ],
+        "authentication": "None required",
+        "status": "active"
+      },
+      "riskLevel": "HIGH",
+      "notes": "API endpoint for user registration. Requires POST method with username, email, and password. No password requirements or validation logic discovered yet."
+    },
+    "toolName": "document_asset",
+    "createdAt": "2025-12-02T16:16:42.216Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_01YPKnZgHQE5pc4zrDATKyXu",
+    "content": "✓ Tool document_asset",
+    "args": {
+      "assetName": "IDOR Eats API Endpoint - /api/search_restaurants.php",
+      "assetType": "api",
+      "description": "Restaurant search API endpoint for IDOR Eats. Allows searching for restaurants by query string. Accepts GET requests with a 'query' parameter. Returns JSON array of matching restaurants with id, name, address, location coordinates, description, and category.",
+      "details": {
+        "url": "http://localhost:8080/api/search_restaurants.php",
+        "endpoints": [
+          "/api/search_restaurants.php"
+        ],
+        "authentication": "None required",
+        "status": "active"
+      },
+      "riskLevel": "CRITICAL",
+      "notes": "This API endpoint is public and requires no authentication. Returns restaurant data including IDs which could be used for IDOR attacks on restaurant-specific endpoints. Query parameter may be vulnerable to SQL injection or NoSQL injection."
+    },
+    "toolName": "document_asset",
+    "createdAt": "2025-12-02T16:16:44.716Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_01J6RW25HebfR171MCdP6EVx",
+    "content": "✓ Tool document_asset",
+    "args": {
+      "assetName": "IDOR Eats API Endpoint - /api/get_favorite_restaurants.php",
+      "assetType": "api",
+      "description": "Get user favorite restaurants API endpoint. Returns the authenticated user's list of favorite restaurants. Requires authentication (returns \"User not authenticated\" if not logged in).",
+      "details": {
+        "url": "http://localhost:8080/api/get_favorite_restaurants.php",
+        "endpoints": [
+          "/api/get_favorite_restaurants.php"
+        ],
+        "authentication": "Required (PHP Session)",
+        "status": "active"
+      },
+      "riskLevel": "HIGH",
+      "notes": "This endpoint requires authentication. Likely returns user-specific data, making it a target for IDOR vulnerabilities if user identification is handled via URL parameters or cookies without proper validation."
+    },
+    "toolName": "document_asset",
+    "createdAt": "2025-12-02T16:16:46.464Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_01GCKyq74M5KsxDcCzCLs8M9",
+    "content": "✓ Tool document_asset",
+    "args": {
+      "assetName": "IDOR Eats API Endpoint - /api/change_password.php",
+      "assetType": "api",
+      "description": "Change password API endpoint for authenticated users. Requires authentication and handles password change requests.",
+      "details": {
+        "url": "http://localhost:8080/api/change_password.php",
+        "endpoints": [
+          "/api/change_password.php"
+        ],
+        "authentication": "Required (PHP Session)",
+        "status": "active"
+      },
+      "riskLevel": "HIGH",
+      "notes": "Password change endpoint requiring authentication. Should check for CSRF protection, proper old password verification, and password strength requirements."
+    },
+    "toolName": "document_asset",
+    "createdAt": "2025-12-02T16:16:48.014Z"
+  },
+  {
+    "role": "assistant",
+    "content": "Now let me document the web pages and static resources:",
+    "createdAt": "2025-12-02T16:16:50.743Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_01FoBEhbroMM3TYc8R8B8WLH",
+    "content": "✓ Tool document_asset",
+    "args": {
+      "assetName": "IDOR Eats - Login Page",
+      "assetType": "web_application",
+      "description": "Public login page for IDOR Eats. Allows users to authenticate with username and password. Form submits to /api/login.php via AJAX. Redirects to profile.php upon successful login.",
+      "details": {
+        "url": "http://localhost:8080/login.php",
+        "endpoints": [
+          "/login.php"
+        ],
+        "authentication": "None required",
+        "status": "active"
+      },
+      "riskLevel": "HIGH",
+      "notes": "Public login page. Uses jQuery AJAX to submit credentials to /api/login.php. Should check for CSRF protection, rate limiting, and proper error handling."
+    },
+    "toolName": "document_asset",
+    "createdAt": "2025-12-02T16:16:53.734Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_011rN9RmrVapZJpLYFFbU2Cq",
+    "content": "✓ Tool document_asset",
+    "args": {
+      "assetName": "IDOR Eats - Registration Page",
+      "assetType": "web_application",
+      "description": "Public registration page for IDOR Eats. Allows users to create new accounts with username, email, and password. Form submits to /api/register.php via AJAX.",
+      "details": {
+        "url": "http://localhost:8080/register.php",
+        "endpoints": [
+          "/register.php"
+        ],
+        "authentication": "None required",
+        "status": "active"
+      },
+      "riskLevel": "HIGH",
+      "notes": "Public registration page. Uses jQuery AJAX to submit to /api/register.php. Should check for input validation, account enumeration, and proper error messages."
+    },
+    "toolName": "document_asset",
+    "createdAt": "2025-12-02T16:16:54.353Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_01UTdPJykgkLdrEQqqSh9pBY",
+    "content": "✓ Tool document_asset",
+    "args": {
+      "assetName": "IDOR Eats - User Profile Page",
+      "assetType": "web_application",
+      "description": "User profile page for authenticated users. Currently redirects to login.php when accessed without authentication. Likely contains user-specific data and IDOR vulnerabilities.",
+      "details": {
+        "url": "http://localhost:8080/profile.php",
+        "endpoints": [
+          "/profile.php"
+        ],
+        "authentication": "Required",
+        "status": "active"
+      },
+      "riskLevel": "CRITICAL",
+      "notes": "Protected page that requires authentication. Likely contains user data and order information vulnerable to IDOR attacks if user identification is not properly validated."
+    },
+    "toolName": "document_asset",
+    "createdAt": "2025-12-02T16:16:55.119Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_01MypLE4CtEcpU62Ko9L8GdP",
+    "content": "✓ Tool document_asset",
+    "args": {
+      "assetName": "IDOR Eats - Static Assets Directory",
+      "assetType": "endpoint",
+      "description": "Directory listing for /static/ folder containing restaurant images and profile pictures. Directory listing is enabled, exposing file structure.",
+      "details": {
+        "url": "http://localhost:8080/static/",
+        "endpoints": [
+          "/static/",
+          "/static/images/"
+        ],
+        "status": "active"
+      },
+      "riskLevel": "MEDIUM",
+      "notes": "Directory listing is enabled on /static/ directory. Contains image files (restaurant1.jpg through restaurant10.jpg and profile.jpg). This allows reconnaissance of available resources."
+    },
+    "toolName": "document_asset",
+    "createdAt": "2025-12-02T16:16:56.931Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_01S3rJCxZZenrQLKJSyGsSQ1",
+    "content": "✓ Tool document_asset",
+    "args": {
+      "assetName": "IDOR Eats - API Directory",
+      "assetType": "endpoint",
+      "description": "Directory listing for /api/ folder exposing all available API endpoints. Directory listing is enabled, showing all PHP API files.",
+      "details": {
+        "url": "http://localhost:8080/api/",
+        "endpoints": [
+          "/api/"
+        ],
+        "status": "active"
+      },
+      "riskLevel": "MEDIUM",
+      "notes": "Directory listing enabled on /api/ directory. Reveals existence of API endpoints: change_password.php, get_favorite_restaurants.php, login.php, register.php, search_restaurants.php. This is a significant information disclosure allowing attackers to discover all API endpoints."
+    },
+    "toolName": "document_asset",
+    "createdAt": "2025-12-02T16:16:58.203Z"
+  },
+  {
+    "role": "assistant",
+    "content": "Perfect! Now let me verify there are no additional API endpoints by checking the directory one more time, and test for other HTTP methods:",
+    "createdAt": "2025-12-02T16:17:01.584Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_01FFbGuwFZaC68Y4tgK34S4L",
+    "content": "✓ Extract all PHP files from /api/ directory listing",
+    "args": {
+      "command": "curl -s http://localhost:8080/api/ | grep -oP 'href=\"[^\"]*\\.php\"' | grep -oP '[^/\"]*\\.php'",
+      "toolCallDescription": "Extract all PHP files from /api/ directory listing"
+    },
+    "toolName": "execute_command",
+    "createdAt": "2025-12-02T16:17:03.601Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_01KA2Spg68UzxGuDEaxvW8LF",
+    "content": "✓ Test DELETE method on API endpoint",
+    "args": {
+      "url": "http://localhost:8080/api/login.php",
+      "method": "DELETE",
+      "followRedirects": true,
+      "timeout": 5000,
+      "toolCallDescription": "Test DELETE method on API endpoint"
+    },
+    "toolName": "http_request",
+    "createdAt": "2025-12-02T16:17:04.825Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_01VDZErpjUPH8UCL3TCaHc5b",
+    "content": "✓ Test search API with different query (sushi)",
+    "args": {
+      "url": "http://localhost:8080/api/search_restaurants.php?query=sushi",
+      "method": "GET",
+      "followRedirects": true,
+      "timeout": 5000,
+      "toolCallDescription": "Test search API with different query (sushi)"
+    },
+    "toolName": "http_request",
+    "createdAt": "2025-12-02T16:17:05.683Z"
+  },
+  {
+    "role": "assistant",
+    "content": "Excellent! The search API is working with different queries. Now I have a comprehensive view. Let me create the final attack surface report with all discovered assets and targets:",
+    "createdAt": "2025-12-02T16:17:08.099Z"
+  },
+  {
+    "role": "tool",
+    "status": "completed",
+    "toolCallId": "toolu_011HSC9UbySVU3JxGDcUpDap",
+    "content": "✓ Tool create_attack_surface_report",
+    "args": {
+      "summary": {
+        "totalAssets": 11,
+        "totalDomains": 1,
+        "analysisComplete": true
+      },
+      "discoveredAssets": [
+        "localhost:8080 - IDOR Eats (Apache 2.4.41 PHP) - Port 8080 - Main food delivery web application",
+        "http://localhost:8080/ - Homepage (index.php) - Public entry point with restaurant showcase",
+        "http://localhost:8080/login.php - Public login page - Accepts POST via AJAX to /api/login.php",
+        "http://localhost:8080/register.php - Public registration page - Accepts POST via AJAX to /api/register.php",
+        "http://localhost:8080/profile.php - Protected profile page - Requires authentication, redirects to login",
+        "http://localhost:8080/api/ - Directory listing enabled - Exposes all API endpoints",
+        "http://localhost:8080/api/login.php - Authentication API endpoint - POST method required",
+        "http://localhost:8080/api/register.php - User registration API endpoint - POST method required",
+        "http://localhost:8080/api/search_restaurants.php - Public restaurant search API - GET with query parameter",
+        "http://localhost:8080/api/get_favorite_restaurants.php - Protected API - Returns user favorites, requires auth",
+        "http://localhost:8080/api/change_password.php - Protected API - Password change, requires auth",
+        "http://localhost:8080/static/ - Directory listing enabled - Contains images (restaurants, profiles)",
+        "http://localhost:8080/static/images/ - Image directory - 11 image files including restaurant images and profile.jpg"
+      ],
+      "targets": [
+        {
+          "target": "http://localhost:8080/api/login.php",
+          "objective": "Test authentication bypass vulnerabilities including SQL injection, NoSQL injection, default credentials, and authentication logic flaws",
+          "rationale": "Critical authentication endpoint. POST endpoint accepting username and password. Should test for injection vulnerabilities, brute force protection, and proper session management"
+        },
+        {
+          "target": "http://localhost:8080/api/register.php",
+          "objective": "Test registration security including input validation, password strength enforcement, account enumeration, and authorization checks",
+          "rationale": "Public registration endpoint without apparent input validation. Should verify password requirements, email validation, and duplicate account prevention"
+        },
+        {
+          "target": "http://localhost:8080/api/search_restaurants.php",
+          "objective": "Test for injection vulnerabilities (SQL, NoSQL, command injection), authorization flaws, and information disclosure in query parameter handling",
+          "rationale": "Public API endpoint accepting 'query' parameter. Should test for SQL injection, NoSQL injection, and potential IDOR if restaurant IDs are exposed in responses"
+        },
+        {
+          "target": "http://localhost:8080/api/get_favorite_restaurants.php",
+          "objective": "Test for IDOR vulnerabilities, horizontal privilege escalation, and unauthorized data access between users",
+          "rationale": "Protected endpoint returning user-specific data. Highly likely to contain IDOR vulnerabilities if user identification relies on predictable parameters"
+        },
+        {
+          "target": "http://localhost:8080/profile.php",
+          "objective": "Test for IDOR vulnerabilities, unauthorized access to other users' profiles, and sensitive data exposure in profile pages",
+          "rationale": "Protected profile page for authenticated users. Should test for IDOR via user ID manipulation if accessible through URL parameters or other means"
+        },
+        {
+          "target": "http://localhost:8080/api/change_password.php",
+          "objective": "Test for CSRF protection, old password verification, weak password requirements, and horizontal privilege escalation in password changes",
+          "rationale": "Password change endpoint requiring authentication. Should verify CSRF tokens, proper authorization checks, and whether users can change other users' passwords"
+        },
+        {
+          "target": "http://localhost:8080/login.php",
+          "objective": "Test login form for CSRF vulnerabilities, account enumeration, rate limiting, and client-side security issues",
+          "rationale": "Public login page. Should test for CSRF tokens, brute force protection, and information disclosure through error messages"
+        },
+        {
+          "target": "http://localhost:8080/register.php",
+          "objective": "Test registration form for CSRF vulnerabilities, input validation bypass, and business logic flaws",
+          "rationale": "Public registration page. Should verify CSRF protection, input validation, and potential for account takeover attacks"
+        },
+        {
+          "target": "http://localhost:8080/api/",
+          "objective": "Enumerate all available API endpoints and test for unintended endpoint access, HTTP method manipulation, and information disclosure",
+          "rationale": "Directory listing enabled on /api/ directory exposes all endpoint names. Should identify any additional endpoints and test each for vulnerabilities"
+        },
+        {
+          "target": "http://localhost:8080/",
+          "objective": "Test homepage for XSS, CSRF, client-side vulnerabilities, and business logic flaws in search functionality",
+          "rationale": "Main entry point. Should verify security of search functionality and any user input handling"
+        }
+      ],
+      "keyFindings": [
+        "[CRITICAL] Directory listing enabled on /api/ - All API endpoints are publicly discoverable (change_password.php, get_favorite_restaurants.php, login.php, register.php, search_restaurants.php)",
+        "[CRITICAL] Directory listing enabled on /static/ and /static/images/ - Exposes application structure and available resources",
+        "[HIGH] Application named 'IDOR Eats' - Suggests deliberate IDOR vulnerabilities for testing/training purposes",
+        "[HIGH] Public API endpoint /api/search_restaurants.php - Returns restaurant data including IDs without authentication required",
+        "[HIGH] Protected endpoints using PHP sessions - /api/get_favorite_restaurants.php and /api/change_password.php require authentication",
+        "[HIGH] Multiple authentication endpoints - /api/login.php and /api/register.php are public and accept POST requests",
+        "[MEDIUM] No apparent CSRF protection on forms - login and register forms use AJAX without visible CSRF tokens",
+        "[MEDIUM] Profile page redirects unauthenticated users to login - Indicates authorization controls but should test for bypasses",
+        "[MEDIUM] API endpoints return JSON responses - Structured data format facilitates automated testing",
+        "[MEDIUM] No HTTPS/TLS used - Application runs over plain HTTP on localhost"
+      ]
+    },
+    "toolName": "create_attack_surface_report",
+    "createdAt": "2025-12-02T16:17:21.708Z"
+  },
+  {
+    "role": "assistant",
+    "content": "Perfect! I have completed a comprehensive attack surface analysis of the IDOR Eats application. Here's a summary of my findings:\n\n## **Attack Surface Analysis Complete**\n\n### **Target Identification**\n- **Application**: IDOR Eats - A deliberately vulnerable food delivery application for security testing\n- **Location**: http://localhost:8080\n- **Technology**: Apache 2.4.41, PHP, Bootstrap 5.3.3, jQuery 3.6.0\n- **Risk Level**: HIGH to CRITICAL\n\n### **Key Discoveries**\n\n**11 Assets Identified:**\n1. Main web application (homepage)\n2. Login page (/login.php)\n3. Registration page (/register.php)\n4. User profile page (/profile.php)\n5. API directory listing (/api/)\n6. Static assets directory (/static/)\n7. Authentication API (/api/login.php)\n8. Registration API (/api/register.php)\n9. Restaurant search API (/api/search_restaurants.php)\n10. Favorite restaurants API (/api/get_favorite_restaurants.php)\n11. Password change API (/api/change_password.php)\n\n### **Critical Vulnerabilities Identified**\n\n1. **[CRITICAL] Directory Listing Enabled** - /api/ and /static/ directories expose all application structure and endpoints\n2. **[CRITICAL] IDOR Vulnerability Indicators** - Application is specifically named \"IDOR Eats\" suggesting deliberate authorization flaws\n3. **[HIGH] Unauthenticated API Access** - /api/search_restaurants.php is publicly accessible without authentication\n4. **[HIGH] Multiple Authentication Entry Points** - /api/login.php and /api/register.php for user authentication\n\n### **10 Targets Identified for Deep Penetration Testing**\n\nAll targets have been documented with specific testing objectives covering:\n- Authentication bypass (SQL injection, NoSQL injection)\n- IDOR vulnerabilities (unauthorized data access between users)\n- Authorization flaws (privilege escalation)\n- Input validation issues (injection attacks)\n- Session management weaknesses\n- CSRF protection gaps\n- Business logic flaws\n\nThe comprehensive attack surface report has been generated and saved to the session results file with all assets, targets, and findings documented for the penetration testing team to begin deep testing.",
+    "createdAt": "2025-12-02T16:17:24.393Z"
+  }
+]

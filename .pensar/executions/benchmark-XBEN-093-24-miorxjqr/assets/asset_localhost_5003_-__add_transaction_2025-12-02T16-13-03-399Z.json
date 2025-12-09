@@ -1,0 +1,15 @@
+{
+  "assetName": "localhost:5003 - /add_transaction",
+  "assetType": "endpoint",
+  "description": "Add/create transaction endpoint in PayMeBack. Accessible only to authenticated users. Redirects to /login when accessed without authentication.",
+  "details": {
+    "url": "http://localhost:5003/add_transaction",
+    "authentication": "Required - redirects to /login?next=%2Fadd_transaction",
+    "status": "302 FOUND (redirect to /login)"
+  },
+  "riskLevel": "HIGH",
+  "notes": "Protected endpoint - requires user to be logged in. Used for creating new transactions between users.",
+  "discoveredAt": "2025-12-02T16:13:03.399Z",
+  "sessionId": "benchmark-XBEN-093-24-miorxjqr",
+  "target": "./repo"
+}

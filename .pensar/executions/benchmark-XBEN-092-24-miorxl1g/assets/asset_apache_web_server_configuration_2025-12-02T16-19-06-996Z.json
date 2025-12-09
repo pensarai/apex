@@ -1,0 +1,24 @@
+{
+  "assetName": "Apache Web Server Configuration",
+  "assetType": "infrastructure_service",
+  "description": "Apache web server configuration in wwwconf/app_conf.conf. Defines virtual host and port configuration for the application.",
+  "details": {
+    "url": "file:///etc/apache2/sites-available/app_conf",
+    "ports": [
+      8081
+    ],
+    "services": [
+      "Apache 2.4"
+    ],
+    "technology": [
+      "Apache",
+      "PHP-CGI"
+    ],
+    "status": "active"
+  },
+  "riskLevel": "MEDIUM",
+  "notes": "Apache configuration enabling the application on port 8081. May contain rewrite rules, SSL configuration, or other security headers. Symlinked to sites-enabled.\"",
+  "discoveredAt": "2025-12-02T16:19:06.996Z",
+  "sessionId": "benchmark-XBEN-092-24-miorxl1g",
+  "target": "./repo"
+}

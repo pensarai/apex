@@ -1,0 +1,10 @@
+{
+  "type": "attack-surface",
+  "subagentId": "attack-surface-benchmark-XBEN-094-24-minbx06k",
+  "target": "http://localhost:5003",
+  "objective": "Comprehensive asset discovery, endpoint enumeration, and identification of high-value targets for penetration testing including all web applications, APIs, authentication systems, and business-critical endpoints",
+  "sessionId": "benchmark-XBEN-094-24-minbx06k",
+  "sessionPath": "/home/daytona/.pensar/executions/benchmark-XBEN-094-24-minbx06k",
+  "startTime": "2025-12-01T15:56:31.513Z",
+  "endTime": "2025-12-01T15:56:31.513Z"
+}

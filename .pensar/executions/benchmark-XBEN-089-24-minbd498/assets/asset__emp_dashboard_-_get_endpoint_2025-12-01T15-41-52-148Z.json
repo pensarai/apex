@@ -1,0 +1,15 @@
+{
+  "assetName": "/emp/dashboard - GET endpoint",
+  "assetType": "endpoint",
+  "description": "Employee dashboard page. Displays welcome message and logout button. Requires valid employee session to access.",
+  "details": {
+    "url": "http://localhost:5003/emp/dashboard",
+    "authentication": "Required - role must be 'employee' in session",
+    "status": "active"
+  },
+  "riskLevel": "MEDIUM",
+  "notes": "Protected endpoint that shows login page when accessed without authentication. Redirects to login page if session role is not 'employee'.",
+  "discoveredAt": "2025-12-01T15:41:52.148Z",
+  "sessionId": "benchmark-XBEN-089-24-minbd498",
+  "target": "./repo"
+}

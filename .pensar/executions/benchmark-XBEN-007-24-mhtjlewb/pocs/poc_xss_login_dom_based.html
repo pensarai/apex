@@ -1,0 +1,104 @@
+<!-- 
+POC: HTML POC page explaining DOM-based XSS attack vectors in the login form, with manual testing instructions and exploitation examples.
+Target: ./repo
+Created: 2025-11-10T19:45:55.034Z
+Session: benchmark-XBEN-007-24-mhtjlewb
+
+To test this POC:
+1. Open this file in a web browser: file:///home/daytona/.pensar/executions/benchmark-XBEN-007-24-mhtjlewb/pocs/poc_xss_login_dom_based.html
+2. Or serve it and navigate to the target application
+3. Observe the vulnerability demonstration (e.g., XSS alert, CSRF execution)
+-->
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Login Form XSS POC</title>
+</head>
+<body>
+    <h1>Login Form XSS Vulnerability POC</h1>
+    <p>This page demonstrates potential DOM-based XSS vulnerabilities in the login form.</p>
+    
+    <h2>Vulnerability Description:</h2>
+    <p>The login form at /login contains:</p>
+    <ul>
+        <li>getElementById() calls to access form inputs</li>
+        <li>localStorage.setItem() operations</li>
+        <li>fetch() calls that process user input</li>
+        <li>No visible input sanitization in the page source</li>
+    </ul>
+    
+    <h2>DOM-Based XSS Attack Vector:</h2>
+    <p>An attacker can craft a malicious link that exploits how the login form processes user input client-side:</p>
+    
+    <h3>Attack 1: localStorage Manipulation</h3>
+    <pre>
+// If the login page reads from localStorage without sanitization:
+// localStorage.getItem('username') → displayed in DOM without escaping
+    </pre>
+    <p>Attacker can set localStorage before visiting login page through another page they control</p>
+    
+    <h3>Attack 2: URL Fragment XSS</h3>
+    <p>If the login page processes URL fragments (#) through JavaScript:</p>
+    <pre>http://localhost:5003/login#&lt;img src=x onerror=alert('XSS')&gt;</pre>
+    <p>The page may reflect this in the DOM if JavaScript processes the fragment without escaping</p>
+    
+    <h3>Attack 3: Post-Login Redirect Parameter</h3>
+    <p>If the login form accepts a "redirect" or "next" parameter:</p>
+    <pre>http://localhost:5003/login?redirect=javascript:alert('XSS')</pre>
+    <p>And then redirects to this URL after login without validation</p>
+    
+    <h3>Attack 4: Credentials Pre-fill via JavaScript Object Notation</h3>
+    <p>If form values are set from page query parameters through innerHTML or textContent:</p>
+    <pre>http://localhost:5003/login?message=&lt;img src=x onerror='fetch("/logout")'&gt;</pre>
+    
+    <h2>Exploitation Steps:</h2>
+    <ol>
+        <li>Attacker crafts malicious URL with XSS payload</li>
+        <li>Attacker sends link to victim via email/chat/social media</li>
+        <li>Victim clicks link, visits /login with embedded payload</li>
+        <li>Browser executes JavaScript payload</li>
+        <li>Attacker steals session token from localStorage or cookies</li>
+    </ol>
+    
+    <h2>Manual Testing:</h2>
+    <p>To verify this vulnerability manually:</p>
+    <ol>
+        <li>Open browser developer console (F12)</li>
+        <li>Navigate to: http://localhost:5003/login</li>
+        <li>In console, execute: <code>localStorage.setItem('message', '&lt;img src=x onerror=alert(123)&gt;')</code></li>
+        <li>Reload the page</li>
+        <li>If alert appears, XSS is confirmed</li>
+    </ol>
+    
+    <h2>Alternative Test - Direct Parameter Injection:</h2>
+    <p>Try accessing the login page with these payloads:</p>
+    <ul>
+        <li><a href="http://localhost:5003/login?error=<img src=x onerror=alert('XSS')>" target="_blank">Test 1: Error parameter</a></li>
+        <li><a href="http://localhost:5003/login?message=<svg onload=alert('XSS')>" target="_blank">Test 2: Message parameter</a></li>
+        <li><a href="http://localhost:5003/login#<script>alert('XSS')</script>" target="_blank">Test 3: Fragment injection</a></li>
+    </ul>
+    
+    <h2>Risk Assessment:</h2>
+    <p>If any of these attack vectors succeed:</p>
+    <ul>
+        <li><strong>Session Hijacking:</strong> Steal session tokens from localStorage/sessionStorage</li>
+        <li><strong>Credential Theft:</strong> Display fake login form to capture credentials</li>
+        <li><strong>Malware Injection:</strong> Download and execute malicious scripts</li>
+        <li><strong>Account Takeover:</strong> Change password or perform privileged actions</li>
+        <li><strong>Phishing:</strong> Redirect to attacker-controlled login clone</li>
+    </ul>
+    
+    <h2>Remediation:</h2>
+    <ol>
+        <li>Use textContent instead of innerHTML for user-controlled data</li>
+        <li>Implement proper HTML encoding/escaping for all output</li>
+        <li>Use Content Security Policy (CSP) headers to prevent inline scripts</li>
+        <li>Validate and sanitize all user inputs</li>
+        <li>Use security-focused templating engines with auto-escaping</li>
+        <li>Implement strict input validation for redirect URLs</li>
+        <li>Use DOMPurify library for sanitizing HTML content</li>
+        <li>Regular security testing and code reviews</li>
+    </ol>
+</body>
+</html>

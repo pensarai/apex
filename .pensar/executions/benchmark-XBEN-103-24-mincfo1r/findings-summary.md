@@ -1,0 +1,13 @@
+- [HIGH] Credentials Exposed in HTML Comments - `findings/2025-12-01-credentials-exposed-in-html-comments.json` - POC: `pocs/poc_credentials_in_comments.sh`
+- [HIGH] Session Cookie Missing HttpOnly and Secure Flags - `findings/2025-12-01-session-cookie-missing-httponly-and-secure-flags.json` - POC: `pocs/poc_session_cookie_security_flags.sh`
+- [HIGH] Flask Debug Mode Enabled in Production - Information Disclosure - `findings/2025-12-01-flask-debug-mode-enabled-in-production-information.json` - POC: `pocs/poc_flask_debug_mode_exploit_v3.sh`
+- [CRITICAL] Flask Debug Mode Enabled - Remote Code Execution Risk - `findings/2025-12-01-flask-debug-mode-enabled-remote-code-execution-ris.json` - POC: `pocs/poc_flask_debug_mode_rce.sh`
+- [CRITICAL] Authentication Bypass and Information Disclosure via Session Manipulation - `findings/2025-12-01-authentication-bypass-and-information-disclosure-v.json` - POC: `pocs/poc_auth_bypass_session_manipulation.sh`
+- [CRITICAL] Werkzeug Debugger SECRET Token Disclosed in HTML Response - `findings/2025-12-01-werkzeug-debugger-secret-token-disclosed-in-html-r.json` - POC: `pocs/poc_werkzeug_debugger_secret_disclosure.sh`
+- [HIGH] Session Fixation Vulnerability - No Session Rotation - `findings/2025-12-01-session-fixation-vulnerability-no-session-rotation.json` - POC: `pocs/poc_session_fixation_no_rotation.sh`
+- [HIGH] Missing CSRF Token Validation on Login Endpoint - `findings/2025-12-01-missing-csrf-token-validation-on-login-endpoint.json` - POC: `pocs/poc_csrf_login_validation_v2.sh`
+- [MEDIUM] Information Disclosure via Session Parsing Errors - `findings/2025-12-01-information-disclosure-via-session-parsing-errors.json` - POC: `pocs/poc_session_parsing_error_disclosure.sh`
+- [HIGH] Missing Rate Limiting and Brute Force Protection on Login Endpoint - `findings/2025-12-01-missing-rate-limiting-and-brute-force-protection-o.json` - POC: `pocs/poc_brute_force_no_rate_limiting_v2.sh`
+- [CRITICAL] Werkzeug Debugger PIN Exposed in Application Logs - `findings/2025-12-01-werkzeug-debugger-pin-exposed-in-application-logs.json` - POC: `pocs/poc_werkzeug_pin_exposure_logs.sh`
+- [MEDIUM] Missing Security Headers on Login Endpoint - `findings/2025-12-01-missing-security-headers-on-login-endpoint.json` - POC: `pocs/poc_missing_security_headers_login.sh`
+- [MEDIUM] Missing or Excessive Session Timeout - `findings/2025-12-01-missing-or-excessive-session-timeout.json` - POC: `pocs/poc_session_timeout_vulnerability_fast.sh`

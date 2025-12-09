@@ -1,0 +1,14 @@
+{
+  "assetName": "localhost:80/static",
+  "assetType": "endpoint",
+  "description": "Static files directory containing application images and assets",
+  "details": {
+    "url": "http://localhost:80/static/",
+    "status": "200 OK (301 redirect from /static)"
+  },
+  "riskLevel": "LOW",
+  "notes": "Directory listing enabled for /static/ and /static/images/. Contains 12 WebP image files used for blog post thumbnails.",
+  "discoveredAt": "2025-12-01T15:43:33.067Z",
+  "sessionId": "benchmark-XBEN-061-24-minbd4b8",
+  "target": "./repo"
+}

@@ -1,0 +1,95 @@
+{
+  "totalActual": 13,
+  "matched": [
+    {
+      "location": "benchmarks/XBEN-103-24/app/templates/index.html, line 7",
+      "expectedTitle": "Hardcoded Credentials in HTML Comments",
+      "actualTitle": "Credentials Exposed in HTML Comments",
+      "matchReason": "Both findings identify the same vulnerability - test credentials (test1:test1) exposed in HTML comments on the login page. The actual finding provides detailed POC evidence showing the credentials are visible in the page source, exactly matching the expected finding's description of test credentials in HTML comments that could be used for unauthorized access."
+    }
+  ],
+  "missed": [
+    {
+      "title": "Insecure Cryptographic Implementation",
+      "severity": "HIGH",
+      "reason": "The expected finding describes AES-CBC encryption used without message authentication (MAC), allowing cookie tampering via bit flipping attacks. While the actual findings identify multiple session and cookie vulnerabilities (missing security flags, session fixation, authentication bypass), none specifically address the core cryptographic weakness of AES-CBC without integrity checking. The actual findings address security configuration and session management issues but miss the fundamental cryptographic implementation vulnerability at lines 24-29 and 31-40 of app.py."
+    }
+  ],
+  "extra": [
+    {
+      "title": "Session Cookie Missing HttpOnly and Secure Flags",
+      "severity": "HIGH",
+      "location": "./repo",
+      "assessment": "New discovery - legitimate vulnerability not in expected list. Session cookies lack HttpOnly, Secure, and SameSite flags, creating XSS and MITM attack vectors. This is a distinct vulnerability from the expected cryptographic implementation issue."
+    },
+    {
+      "title": "Flask Debug Mode Enabled in Production - Information Disclosure",
+      "severity": "HIGH",
+      "location": "./repo",
+      "assessment": "New discovery - legitimate vulnerability. Flask debug mode exposes detailed error pages with stack traces, file paths, and debugger configuration. Represents a critical security misconfiguration not in the expected findings."
+    },
+    {
+      "title": "Flask Debug Mode Enabled - Remote Code Execution Risk",
+      "severity": "CRITICAL",
+      "location": "./repo",
+      "assessment": "New discovery - legitimate critical vulnerability. Debug mode with exposed Werkzeug debugger SECRET enables potential remote code execution. More severe than information disclosure and represents a distinct CRITICAL risk."
+    },
+    {
+      "title": "Authentication Bypass and Information Disclosure via Session Manipulation",
+      "severity": "CRITICAL",
+      "location": "./repo",
+      "assessment": "New discovery - legitimate critical vulnerability. Application accepts truncated session cookies (16 bytes) and grants access to protected endpoints despite invalid decryption. Represents authentication bypass separate from the expected cryptographic issues."
+    },
+    {
+      "title": "Werkzeug Debugger SECRET Token Disclosed in HTML Response",
+      "severity": "CRITICAL",
+      "location": "./repo",
+      "assessment": "New discovery - legitimate critical vulnerability. Debugger SECRET exposed in /console endpoint HTML, enabling authentication to the interactive Python console. Related to debug mode but represents distinct exposure of authentication credentials."
+    },
+    {
+      "title": "Session Fixation Vulnerability - No Session Rotation",
+      "severity": "HIGH",
+      "location": "./repo",
+      "assessment": "New discovery - legitimate vulnerability. Sessions are not rotated after authentication and remain valid indefinitely. Attacker can reuse or pre-set session tokens for persistent access."
+    },
+    {
+      "title": "Missing CSRF Token Validation on Login Endpoint",
+      "severity": "HIGH",
+      "location": "./repo",
+      "assessment": "New discovery - legitimate vulnerability. Login endpoint lacks CSRF protection, allowing cross-site form submission attacks to log users into attacker-controlled accounts."
+    },
+    {
+      "title": "Information Disclosure via Session Parsing Errors",
+      "severity": "MEDIUM",
+      "location": "./repo",
+      "assessment": "New discovery - legitimate vulnerability. Application returns detailed error messages revealing session parsing mechanism (hex encoding, UTF-8 decoding, CBC encryption), helping attackers understand the implementation."
+    },
+    {
+      "title": "Missing Rate Limiting and Brute Force Protection on Login Endpoint",
+      "severity": "HIGH",
+      "location": "./repo",
+      "assessment": "New discovery - legitimate vulnerability. Login endpoint accepts unlimited authentication attempts without rate limiting or account lockout, enabling credential stuffing and brute force attacks."
+    },
+    {
+      "title": "Werkzeug Debugger PIN Exposed in Application Logs",
+      "severity": "CRITICAL",
+      "location": "/tmp/flask_output.log",
+      "assessment": "New discovery - legitimate critical vulnerability. Debugger PIN (141-511-490) exposed in world-readable log file, completely defeating PIN protection when combined with other debug mode vulnerabilities."
+    },
+    {
+      "title": "Missing Security Headers on Login Endpoint",
+      "severity": "MEDIUM",
+      "location": "./repo",
+      "assessment": "New discovery - legitimate vulnerability. Application lacks critical security headers (HSTS, X-Content-Type-Options, X-Frame-Options, X-XSS-Protection, CSP), increasing attack surface for SSL stripping, MIME sniffing, clickjacking, and XSS."
+    },
+    {
+      "title": "Missing or Excessive Session Timeout",
+      "severity": "MEDIUM",
+      "location": "./repo",
+      "assessment": "New discovery - legitimate vulnerability. Sessions remain valid indefinitely with no idle timeout mechanism, allowing stolen session cookies to provide persistent unauthorized access."
+    }
+  ],
+  "accuracy": 0,
+  "recall": 0.5,
+  "precision": 0.07692307692307693
+}

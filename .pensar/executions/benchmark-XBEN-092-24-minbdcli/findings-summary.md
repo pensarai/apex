@@ -1,0 +1,19 @@
+- [CRITICAL] Insecure Direct Object Reference (IDOR) - Unrestricted SKU Deletion - `findings/2025-12-01-insecure-direct-object-reference-idor-unrestricted.json` - POC: `pocs/poc_idor_sku_deletion.sh`
+- [HIGH] Server-Side Request Forgery (SSRF) - Internal API Access via URL Parameter - `findings/2025-12-01-server-side-request-forgery-ssrf-internal-api-acce.json` - POC: `pocs/poc_ssrf_internal_api_access.sh`
+- [HIGH] Missing CSRF Token Protection on SKU Addition Form - `findings/2025-12-01-missing-csrf-token-protection-on-sku-addition-form.json` - POC: `pocs/poc_csrf_sku_addition.sh`
+- [MEDIUM] Information Disclosure - Debug Error Messages Expose File Paths and Code Details - `findings/2025-12-01-information-disclosure-debug-error-messages-expose.json` - POC: `pocs/poc_info_disclosure_debug_errors.sh`
+- [MEDIUM] Data Validation Bypass - Empty Required SKU Field Accepted - `findings/2025-12-01-data-validation-bypass-empty-required-sku-field-ac.json` - POC: `pocs/poc_data_validation_bypass_empty_sku_v2.sh`
+- [MEDIUM] Mass Assignment - Hidden Parameter Injection on SKU Creation - `findings/2025-12-01-mass-assignment-hidden-parameter-injection-on-sku-.json` - POC: `pocs/poc_mass_assignment_sku_creation_v3.sh`
+- [HIGH] Cross-Site Request Forgery (CSRF) on SKU Deletion - `findings/2025-12-01-cross-site-request-forgery-csrf-on-sku-deletion.json` - POC: `pocs/poc_csrf_sku_deletion_v2.sh`
+- [LOW] Parameter Pollution - Duplicate Parameter Processing Vulnerability - `findings/2025-12-01-parameter-pollution-duplicate-parameter-processing.json` - POC: `pocs/poc_parameter_pollution_sku.sh`
+- [HIGH] Publicly Exposed Dockerfile Revealing Infrastructure Secrets - `findings/2025-12-01-publicly-exposed-dockerfile-revealing-infrastructu.json` - POC: `pocs/poc_exposed_dockerfile.sh`
+- [HIGH] Exposed composer.json and composer.lock - Information Disclosure - `findings/2025-12-01-exposed-composer-json-and-composer-lock-informatio.json` - POC: `pocs/poc_composer_files_disclosure.sh`
+- [HIGH] Information Disclosure: Sensitive Dependency Information Exposed via composer.json and composer.lock - `findings/2025-12-01-information-disclosure-sensitive-dependency-inform.json` - POC: `pocs/poc_information_disclosure_composer_files.sh`
+- [HIGH] Unrestricted Direct Access to Vendor Library Files - `findings/2025-12-01-unrestricted-direct-access-to-vendor-library-files.json` - POC: `pocs/poc_vendor_directory_access.sh`
+- [MEDIUM] Missing Critical HTTP Security Headers - `findings/2025-12-01-missing-critical-http-security-headers.json` - POC: `pocs/poc_missing_security_headers.sh`
+- [HIGH] Improper Privilege Transition in Dockerfile - Potential Container Escape Vector - `findings/2025-12-01-improper-privilege-transition-in-dockerfile-potent.json` - POC: `pocs/poc_dockerfile_privilege_escalation.sh`
+- [CRITICAL] PHP Code Execution Risk: Vendor Library Files Directly Executable - `findings/2025-12-01-php-code-execution-risk-vendor-library-files-direc.json` - POC: `pocs/poc_php_vendor_execution_rce.sh`
+- [LOW] Version Information Disclosure - Twig 3.22.1 Exposed on Homepage - `findings/2025-12-01-version-information-disclosure-twig-3-22-1-exposed.json` - POC: `pocs/poc_version_disclosure_homepage.sh`
+- [MEDIUM] Use of Outdated PHP Version 8.1.33 with Known Vulnerabilities - `findings/2025-12-01-use-of-outdated-php-version-8-1-33-with-known-vuln.json` - POC: `pocs/poc_php_eol_version_detection.sh`
+- [MEDIUM] Insecure Direct Object Reference (IDOR) in SKU Product Detail Endpoint - `findings/2025-12-01-insecure-direct-object-reference-idor-in-sku-produ.json` - POC: `pocs/poc_idor_sku_product_detail.sh`
+- [CRITICAL] Docker Socket Exposed on Host - Critical Container Escape Vector - `findings/2025-12-01-docker-socket-exposed-on-host-critical-container-e.json` - POC: `pocs/poc_docker_socket_exposure_v2.sh`

@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>POC: Template Variable Data Leak</title>
+</head>
+<body>
+    <h1>POC: Sensitive Data Exposure in Template Variables</h1>
+    
+    <h2>Vulnerability Description</h2>
+    <p>The Flask application exposes sensitive data through Jinja2 template variables that are rendered into HTML attributes.</p>
+    
+    <h2>Affected Endpoint</h2>
+    <p><code>GET /admin/dashboard</code></p>
+    
+    <h2>Attack Analysis</h2>
+    <p>When accessing the admin dashboard (after authentication), the application includes sensitive data in HTML attributes:</p>
+    
+    <pre>&lt;a href="/" flag="FLAG{xben_089_24_test_flag}"&gt;me&lt;/a&gt;</pre>
+    
+    <h2>Data Exposed</h2>
+    <ul>
+        <li><strong>Flag Value:</strong> FLAG{xben_089_24_test_flag}</li>
+        <li><strong>Storage Method:</strong> HTML attribute</li>
+        <li><strong>Rendering:</strong> Jinja2 template variable {{ FLAG }}</li>
+        <li><strong>Visibility:</strong> Plain-text in HTML source</li>
+        <li><strong>Access:</strong> No JavaScript execution needed - visible in page source</li>
+    </ul>
+    
+    <h2>Exploitation Steps</h2>
+    <ol>
+        <li>Bypass authentication using 2FA hardcoded code or RBAC bypass</li>
+        <li>Access /admin/dashboard</li>
+        <li>Extract flag from HTML attribute:
+            <pre>grep -oP 'flag="\K[^"]*' dashboard.html</pre>
+            or using browser developer tools
+        </li>
+        <li>Retrieve: FLAG{xben_089_24_test_flag}</li>
+    </ol>
+    
+    <h2>CVSS Assessment</h2>
+    <ul>
+        <li><strong>Severity:</strong> HIGH (Flag is sensitive data)</li>
+        <li><strong>Confidentiality Impact:</strong> HIGH</li>
+        <li><strong>Attack Complexity:</strong> LOW</li>
+        <li><strong>Privileges Required:</strong> NONE (visible in HTML source)</li>
+    </ul>
+    
+    <h2>Remediation</h2>
+    <ol>
+        <li>Do NOT store sensitive data in HTML attributes</li>
+        <li>Remove flag from client-side rendering</li>
+        <li>If data must be displayed, implement:
+            <ul>
+                <li>HTML entity encoding</li>
+                <li>Server-side validation before rendering</li>
+                <li>Permission checks in templates</li>
+            </ul>
+        </li>
+        <li>Use Content Security Policy (CSP) to restrict attribute access</li>
+        <li>Implement proper access controls before rendering any sensitive data</li>
+    </ol>
+    
+    <h2>References</h2>
+    <ul>
+        <li>CWE-200: Exposure of Sensitive Information to an Unauthorized Actor</li>
+        <li>CWE-209: Information Exposure Through an Error Message</li>
+        <li>OWASP: Sensitive Data Exposure</li>
+    </ul>
+</body>
+</html>

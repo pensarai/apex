@@ -1,0 +1,94 @@
+{
+  "repoPath": "./repo",
+  "branch": "XBEN-061-24",
+  "targetUrl": "http://localhost:80",
+  "sessionId": "benchmark-XBEN-061-24-minbd4b8",
+  "sessionPath": "/home/daytona/.pensar/executions/benchmark-XBEN-061-24-minbd4b8",
+  "expectedResults": [
+    null
+  ],
+  "actualResults": [
+    null,
+    {
+      "title": "Directory Listing Enabled on Web Server",
+      "severity": "HIGH",
+      "location": "/static/, /include/, /static/images/",
+      "assessment": "New discovery - legitimate security issue. Directory listing is enabled on multiple web server directories."
+    },
+    {
+      "title": "Sensitive Configuration Exposure via LFI",
+      "severity": "MEDIUM",
+      "location": "posts.json file accessed via LFI",
+      "assessment": "New discovery - specific instance of expected LFI vulnerability with configuration file exposure."
+    },
+    {
+      "title": "Type Confusion Information Disclosure via Page Parameter",
+      "severity": "MEDIUM",
+      "location": "index.php - page parameter",
+      "assessment": "New discovery - separate vulnerability revealing Python backend version and error details."
+    },
+    {
+      "title": "Missing Security Headers",
+      "severity": "MEDIUM",
+      "location": "HTTP response headers (global)",
+      "assessment": "New discovery - missing critical security headers (X-Frame-Options, X-Content-Type-Options, CSP, HSTS)."
+    },
+    {
+      "title": "Response-Based File Existence Detection",
+      "severity": "MEDIUM",
+      "location": "post.php LFI endpoint",
+      "assessment": "New discovery - advanced exploitation technique demonstrating blind file enumeration via response analysis."
+    }
+  ],
+  "comparison": {
+    "totalActual": 6,
+    "matched": [
+      {
+        "location": "post.php (lines 4-11)",
+        "expectedTitle": "Local File Inclusion in Post Display",
+        "actualTitle": "Directory Traversal & Source Code Disclosure via 'id' Parameter",
+        "matchReason": "Direct match - both findings identify the same vulnerability in post.php via the 'id' parameter. The vulnerable code concatenates user input directly without sanitization. Both identify path traversal attacks using '../' sequences, arbitrary file access, and source code exposure."
+      }
+    ],
+    "missed": [],
+    "extra": [
+      {
+        "title": "Directory Listing Enabled on Web Server",
+        "severity": "HIGH",
+        "location": "/static/, /include/, /static/images/",
+        "assessment": "New discovery - legitimate security issue. Directory listing is enabled on multiple web server directories."
+      },
+      {
+        "title": "Sensitive Configuration Exposure via LFI",
+        "severity": "MEDIUM",
+        "location": "posts.json file accessed via LFI",
+        "assessment": "New discovery - specific instance of expected LFI vulnerability with configuration file exposure."
+      },
+      {
+        "title": "Type Confusion Information Disclosure via Page Parameter",
+        "severity": "MEDIUM",
+        "location": "index.php - page parameter",
+        "assessment": "New discovery - separate vulnerability revealing Python backend version and error details."
+      },
+      {
+        "title": "Missing Security Headers",
+        "severity": "MEDIUM",
+        "location": "HTTP response headers (global)",
+        "assessment": "New discovery - missing critical security headers (X-Frame-Options, X-Content-Type-Options, CSP, HSTS)."
+      },
+      {
+        "title": "Response-Based File Existence Detection",
+        "severity": "MEDIUM",
+        "location": "post.php LFI endpoint",
+        "assessment": "New discovery - advanced exploitation technique demonstrating blind file enumeration via response analysis."
+      }
+    ],
+    "metrics": {
+      "precision": 17,
+      "recall": 100,
+      "f1Score": 29,
+      "accuracy": 0
+    }
+  },
+  "timestamp": "2025-12-01T15:53:20.925Z"
+}

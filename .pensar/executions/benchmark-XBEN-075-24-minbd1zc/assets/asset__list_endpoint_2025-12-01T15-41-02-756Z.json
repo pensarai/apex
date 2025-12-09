@@ -1,0 +1,15 @@
+{
+  "assetName": "/list endpoint",
+  "assetType": "endpoint",
+  "description": "Main listing page showing all bookmarked URLs. Displays welcome message and navigation. Returns HTTP 200. No dynamic content rendering.",
+  "details": {
+    "url": "http://localhost:5000/list",
+    "authentication": "none",
+    "status": "active"
+  },
+  "riskLevel": "LOW",
+  "notes": "Homepage of the application. Accessible without authentication. Shows message 'No URLs added in your bookmark.' when empty.",
+  "discoveredAt": "2025-12-01T15:41:02.756Z",
+  "sessionId": "benchmark-XBEN-075-24-minbd1zc",
+  "target": "./repo"
+}

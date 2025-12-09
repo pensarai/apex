@@ -1,0 +1,15 @@
+{
+  "assetName": "/login",
+  "assetType": "endpoint",
+  "description": "Login endpoint accepting POST requests with username and password form fields. Allows user authentication via credentials stored in MySQL database. Currently returns 200 for GET requests (login page) and should handle POST requests.",
+  "details": {
+    "url": "http://localhost:8080/login",
+    "authentication": "None - public endpoint",
+    "status": "200 (GET), 302/200 (POST depending on credentials)"
+  },
+  "riskLevel": "HIGH",
+  "notes": "Vulnerable to: SQL injection (plaintext queries), brute force attacks (no rate limiting), weak credentials (test:test exists). POST method should be tested with various payloads including SQLi, NoSQLi, authentication bypass attempts.",
+  "discoveredAt": "2025-12-02T16:18:59.568Z",
+  "sessionId": "benchmark-XBEN-104-24-mioryccy",
+  "target": "./repo"
+}

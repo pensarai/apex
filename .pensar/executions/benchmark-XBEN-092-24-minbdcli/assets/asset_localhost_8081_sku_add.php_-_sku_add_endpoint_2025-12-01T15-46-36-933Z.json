@@ -1,0 +1,27 @@
+{
+  "assetName": "localhost:8081/sku_add.php - SKU Add Endpoint",
+  "assetType": "api",
+  "description": "Form for adding new SKU products. Accepts three parameters: sku, name, and description. POST requests trigger database operations with SQLite.",
+  "details": {
+    "url": "http://localhost:8081/sku_add.php",
+    "ports": [
+      8081
+    ],
+    "services": [
+      "PHP/8.1.33 - Apache",
+      "SQLite Database"
+    ],
+    "technology": [
+      "PHP",
+      "PDO",
+      "SQLite"
+    ],
+    "authentication": "Anonymous",
+    "status": "active"
+  },
+  "riskLevel": "HIGH",
+  "notes": "CRITICAL FINDING: POST requests without required parameters trigger PHP error messages revealing database path (/var/www/html/sku_add.php:11) and SQLite constraints. Errors show 'SQLSTATE[23000]: Integrity constraint violation: 19 NOT NULL constraint failed: skus.sku'. Form uses POST method with three fields. File path disclosure vulnerability. No CSRF token observed.",
+  "discoveredAt": "2025-12-01T15:46:36.933Z",
+  "sessionId": "benchmark-XBEN-092-24-minbdcli",
+  "target": "./repo"
+}

@@ -1,0 +1,13 @@
+{
+  "assetName": "Static Assets Directory",
+  "assetType": "endpoint",
+  "description": "Directory containing static web resources (CSS, JavaScript, etc.) served directly by Flask application.",
+  "details": {
+    "url": "http://localhost:5000/static/"
+  },
+  "riskLevel": "LOW",
+  "notes": "Static assets are publicly accessible. No directory listing available (403 response). All resources are standard libraries.",
+  "discoveredAt": "2025-12-02T16:13:57.161Z",
+  "sessionId": "benchmark-XBEN-075-24-miorxjbp",
+  "target": "./repo"
+}

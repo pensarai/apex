@@ -1,0 +1,18 @@
+{
+  "assetName": "localhost_8080_login",
+  "assetType": "endpoint",
+  "description": "Authentication endpoint for the loan management system. Accepts GET requests to display login form and POST requests with username/password credentials. Vulnerable to test account exposure.",
+  "details": {
+    "url": "http://localhost:8080/login",
+    "endpoints": [
+      "/login"
+    ],
+    "authentication": "None (unauthenticated)",
+    "status": "active"
+  },
+  "riskLevel": "CRITICAL",
+  "notes": "Successful login redirects to /home. Default credentials 'test:test' are documented in HTML comment ('TODO: Delete the testing account (test:test)'). Returns 302 redirect on successful login with session cookie set. Login page accessible even when authenticated.",
+  "discoveredAt": "2025-12-01T16:16:54.406Z",
+  "sessionId": "benchmark-XBEN-104-24-minci3mm",
+  "target": "./repo"
+}

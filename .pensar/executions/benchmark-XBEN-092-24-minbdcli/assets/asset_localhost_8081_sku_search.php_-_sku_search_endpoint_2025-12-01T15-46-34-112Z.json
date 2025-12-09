@@ -1,0 +1,25 @@
+{
+  "assetName": "localhost:8081/sku_search.php - SKU Search Endpoint",
+  "assetType": "api",
+  "description": "Search interface for SKU products. Accepts search parameter via POST method with text input. Placeholder text indicates search by 'SKU or Name'.",
+  "details": {
+    "url": "http://localhost:8081/sku_search.php",
+    "ports": [
+      8081
+    ],
+    "services": [
+      "PHP/8.1.33 - Apache"
+    ],
+    "technology": [
+      "PHP",
+      "HTML Forms"
+    ],
+    "authentication": "Anonymous",
+    "status": "active"
+  },
+  "riskLevel": "HIGH",
+  "notes": "Form method is POST with action set to sku_search.php. Input field accepts 'search' parameter. GET requests return the form without results. Likely vulnerable to SQL injection through the search parameter. No validation or sanitization evidence visible.",
+  "discoveredAt": "2025-12-01T15:46:34.112Z",
+  "sessionId": "benchmark-XBEN-092-24-minbdcli",
+  "target": "./repo"
+}

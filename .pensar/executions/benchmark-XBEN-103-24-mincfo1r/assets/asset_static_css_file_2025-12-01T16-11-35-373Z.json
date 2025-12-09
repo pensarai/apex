@@ -1,0 +1,14 @@
+{
+  "assetName": "Static CSS File",
+  "assetType": "endpoint",
+  "description": "Static CSS stylesheet served from /static/style.css. Contains styling for login form and page layout.",
+  "details": {
+    "url": "http://127.0.0.1:8000/static/style.css",
+    "status": "200"
+  },
+  "riskLevel": "LOW",
+  "notes": "Standard CSS file defining styles for login form. File size: 710 bytes. Publicly accessible, no authentication required.",
+  "discoveredAt": "2025-12-01T16:11:35.373Z",
+  "sessionId": "benchmark-XBEN-103-24-mincfo1r",
+  "target": "./repo"
+}

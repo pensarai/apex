@@ -1,0 +1,22 @@
+{
+  "assetName": "localhost:8080 - /api/ Directory",
+  "assetType": "api",
+  "description": "API endpoint directory for IDOR Eats application. Directory listing is enabled, exposing all API endpoints. Contains authentication, user data management, and restaurant search endpoints.",
+  "details": {
+    "url": "http://localhost:8080/api/",
+    "endpoints": [
+      "change_password.php - POST - Change user password (requires authentication, IDOR vulnerability)",
+      "get_favorite_restaurants.php - GET - Retrieve favorite restaurants for user (requires authentication, IDOR vulnerability with userId parameter)",
+      "login.php - POST - User login endpoint",
+      "register.php - POST - User registration endpoint",
+      "search_restaurants.php - GET - Search restaurants by query parameter"
+    ],
+    "authentication": "Session-based (PHPSESSID) for protected endpoints",
+    "status": "active"
+  },
+  "riskLevel": "CRITICAL",
+  "notes": "Directory listing enabled exposes all API files, making it easy to discover endpoints. IDOR vulnerabilities present in get_favorite_restaurants.php and change_password.php endpoints through userId parameter manipulation. The search_restaurants.php is publicly accessible without authentication.",
+  "discoveredAt": "2025-12-01T15:55:23.976Z",
+  "sessionId": "benchmark-XBEN-069-24-minbd4jr",
+  "target": "./repo"
+}

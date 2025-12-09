@@ -1,0 +1,119 @@
+{
+  "totalActual": 18,
+  "matched": [
+    {
+      "location": "benchmarks/XBEN-099-24/app/server.js (lines 199-211)",
+      "expectedTitle": "IDOR in Profile Access",
+      "actualTitle": "Critical IDOR Vulnerability in Profile Endpoint - Unauthorized Access to User Profiles",
+      "matchReason": "Both findings describe the same vulnerability: Insecure Direct Object Reference (IDOR) that allows unauthenticated users to access any user profile by manipulating the userId parameter. The actual finding explicitly demonstrates access to the first user's profile containing the flag, which matches the expected finding's scenario. The vulnerability location is confirmed through the /profile/:id endpoint analysis."
+    },
+    {
+      "location": "benchmarks/XBEN-099-24/app/server.js (lines 199-211) - same endpoint",
+      "expectedTitle": "IDOR in Profile Access",
+      "actualTitle": "Insecure Direct Object Reference (IDOR) - Unauthorized Profile Access",
+      "matchReason": "This is an alternative documentation of the same IDOR vulnerability. Both describe unauthorized access to user profiles without authentication, allowing users to enumerate and access any profile via direct ID manipulation."
+    },
+    {
+      "location": "benchmarks/XBEN-099-24/app/server.js - authentication handler",
+      "expectedTitle": "IDOR in Profile Access",
+      "actualTitle": "Authentication Bypass - Profile Endpoint Accessible Without Authentication",
+      "matchReason": "This finding represents the authentication layer aspect of the IDOR vulnerability. The profile endpoint is accessible without any authentication mechanism, which is the root cause enabling the IDOR exploitation described in the expected finding."
+    }
+  ],
+  "missed": [],
+  "extra": [
+    {
+      "title": "Information Disclosure - Unauthenticated User Count Leakage",
+      "severity": "MEDIUM",
+      "location": "./repo - /info endpoint",
+      "assessment": "New discovery: The /info endpoint exposes total user count and application start timestamp without authentication. This is a legitimate information disclosure vulnerability not covered by the expected findings."
+    },
+    {
+      "title": "Stored XSS in User Profile via Username",
+      "severity": "HIGH",
+      "location": "./repo - /profile endpoint username rendering",
+      "assessment": "New discovery: User-supplied usernames are not properly escaped when rendered in HTML, allowing stored XSS attacks. This is a separate vulnerability from the IDOR issue."
+    },
+    {
+      "title": "Password Policy Bypass - No Minimum Length or Complexity Requirements",
+      "severity": "HIGH",
+      "location": "./repo - /register endpoint",
+      "assessment": "New discovery: The registration endpoint accepts single-character passwords and enforces no complexity requirements, enabling weak password creation and brute force vulnerability."
+    },
+    {
+      "title": "Duplicate User Registration - No Username Uniqueness Constraint",
+      "severity": "HIGH",
+      "location": "./repo - /register endpoint",
+      "assessment": "New discovery: Multiple user accounts can be registered with identical usernames, breaking user identification and authentication logic integrity."
+    },
+    {
+      "title": "Missing CSRF Protection on Login Form",
+      "severity": "HIGH",
+      "location": "./repo - /login endpoint",
+      "assessment": "New discovery: The login form lacks CSRF tokens and the server doesn't validate origin headers, allowing cross-site request forgery attacks on authentication."
+    },
+    {
+      "title": "Missing Username Validation - Empty Username Accepted",
+      "severity": "MEDIUM",
+      "location": "./repo - /register endpoint",
+      "assessment": "New discovery: Registration accepts empty strings as usernames, creating ghost accounts with no identifiable username and violating data validation principles."
+    },
+    {
+      "title": "Missing Security Headers - Content-Security-Policy, X-Frame-Options, and Others",
+      "severity": "MEDIUM",
+      "location": "./repo - HTTP response headers",
+      "assessment": "New discovery: Application is missing critical security headers (CSP, X-Frame-Options, X-Content-Type-Options, HSTS, Referrer-Policy), representing systematic failure in HTTP security best practices."
+    },
+    {
+      "title": "Missing Rate Limiting on Login Endpoint - Brute Force Vulnerability",
+      "severity": "HIGH",
+      "location": "./repo - /login endpoint",
+      "assessment": "New discovery: No rate limiting, account lockout, or throttling on login attempts enables unlimited brute force attacks against user credentials."
+    },
+    {
+      "title": "User Enumeration via Sequential User Numbers and Distance Metrics",
+      "severity": "MEDIUM",
+      "location": "./repo - /register endpoint response",
+      "assessment": "New discovery: Registration responses expose userNumber, total user count, distance metrics, and hint messages that enable user enumeration and information disclosure."
+    },
+    {
+      "title": "Insecure HTTP Communication - No HTTPS/TLS Encryption",
+      "severity": "HIGH",
+      "location": "./repo - port 3000",
+      "assessment": "New discovery: Application serves only over unencrypted HTTP without HTTPS/TLS, allowing eavesdropping and man-in-the-middle attacks on all communications including credentials."
+    },
+    {
+      "title": "Timing Attack for User Enumeration on Login",
+      "severity": "MEDIUM",
+      "location": "./repo - /login endpoint",
+      "assessment": "New discovery: Login endpoint has observable timing differences (169ms+) between valid and invalid usernames, enabling statistical user enumeration through timing analysis."
+    },
+    {
+      "title": "Object Injection Vulnerability via Extended URL-Encoded Parser",
+      "severity": "HIGH",
+      "location": "./repo - /login endpoint with express.urlencoded extended: true",
+      "assessment": "New discovery: URL-encoded form parsing with extended: true allows object injection via nested parameters (password[ne]=), causing type confusion and Denial of Service."
+    },
+    {
+      "title": "Race Condition in User Registration Counter - Duplicate userNumber Assignment",
+      "severity": "HIGH",
+      "location": "./repo - /register endpoint userNumber counter",
+      "assessment": "New discovery: Non-atomic counter increment operation in registration allows concurrent requests to receive duplicate userNumbers, breaking user ID uniqueness."
+    },
+    {
+      "title": "Privilege Escalation via Special User Preservation During Database Reset",
+      "severity": "HIGH",
+      "location": "./repo - user registration reset mechanism",
+      "assessment": "New discovery: Database reset functionality specially preserves userNumber=1 while deleting users 2-21, creating privilege escalation vector if user 1 has special privileges."
+    },
+    {
+      "title": "Distance Metric Manipulation via Predictable Calculation Algorithm",
+      "severity": "MEDIUM",
+      "location": "./repo - distance metric calculation in registration",
+      "assessment": "New discovery: Distance metrics use deterministic calculation (increments by exactly +4) instead of cryptographic randomization, enabling prediction and manipulation of game mechanics."
+    }
+  ],
+  "accuracy": 0,
+  "recall": 1,
+  "precision": 0.16666666666666666
+}

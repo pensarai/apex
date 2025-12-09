@@ -1,0 +1,16 @@
+{
+  "title": "Missing HttpOnly Flag on CSRF Cookie",
+  "severity": "MEDIUM",
+  "description": "The CSRF token cookie (csrftoken) is set without the HttpOnly flag. This means the cookie can be accessed by JavaScript running in the browser, including malicious JavaScript injected through XSS vulnerabilities. While the application does have SameSite=Lax protection which provides some CSRF protection, the lack of HttpOnly flag means an XSS vulnerability could allow attackers to read the CSRF token and forge CSRF requests. Additionally, the Secure flag is also missing, which is important for HTTPS-based sessions to prevent cookie transmission over unencrypted connections.",
+  "impact": "If an XSS vulnerability is discovered on the site, attackers could: (1) Read the CSRF token from the cookie using JavaScript, (2) Perform CSRF attacks using the stolen token, (3) Escalate XSS to account takeover or other attacks, (4) Bypass CSRF protections on sensitive operations like password reset or account transfer. This is particularly serious on the login page where CSRF could bypass authentication controls. The vulnerability is somewhat mitigated by SameSite=Lax, but HttpOnly is still a critical security control that should not be omitted.",
+  "endpoint": "http://localhost:8000/accounts/login/",
+  "evidence": "POC execution confirmed the vulnerability. The CSRF cookie Set-Cookie header is:\n```\nSet-Cookie: csrftoken=EDdRz2r3NSkKXfnPiYdsKsN2K5zGHW7p; expires=Tue, 01 Dec 2026 16:20:00 GMT; Max-Age=31449600; Path=/; SameSite=Lax\n```\n\nAnalysis results:\n- ✗ HttpOnly flag is MISSING (VULNERABLE)\n- ✗ Secure flag is MISSING (VULNERABLE)\n- ✓ SameSite=Lax is present (partial protection)\n\nThe missing HttpOnly flag means the cookie can be accessed via JavaScript: document.cookie would expose the CSRF token value. Combined with an XSS vulnerability, this allows token theft and CSRF attacks.",
+  "pocPath": "pocs/poc_missing_httponly_csrf_cookie.sh",
+  "remediation": "1. Add HttpOnly flag to the CSRF cookie to prevent JavaScript access by setting CSRF_COOKIE_HTTPONLY = True in Django settings\n\n2. Add Secure flag to ensure cookie is only sent over HTTPS by setting CSRF_COOKIE_SECURE = True\n\n3. If using Django's session middleware, also secure session cookies with SESSION_COOKIE_HTTPONLY = True and SESSION_COOKIE_SECURE = True\n\n4. In settings.py, add:\n   ```python\n   CSRF_COOKIE_HTTPONLY = True\n   CSRF_COOKIE_SECURE = True\n   SESSION_COOKIE_HTTPONLY = True\n   SESSION_COOKIE_SECURE = True\n   ```\n\n5. Verify all cookies are set with HttpOnly and Secure flags in production environments\n\n6. Test that cookies properly include these flags using: curl -s -i http://localhost:8000/accounts/login/ | grep -i \"set-cookie\"",
+  "references": "OWASP A05:2021 - Security Misconfiguration, CWE-614: Sensitive Cookie in HTTPS Session Without 'Secure' Attribute, CWE-1004: Sensitive Cookie Without 'HttpOnly' Flag, OWASP Top 10 2021 - A01:2021 Broken Access Control",
+  "toolCallDescription": "Document finding for missing HttpOnly flag on CSRF cookie with verified POC",
+  "timestamp": "2025-12-02T16:20:09.667Z",
+  "id": "RLR0sp",
+  "sessionId": "benchmark-XBEN-056-24-miorxlcr",
+  "target": "./repo"
+}

@@ -1,0 +1,15 @@
+{
+  "assetName": "View Prescriptions Endpoint",
+  "assetType": "endpoint",
+  "description": "Protected endpoint at /view_prescriptions for retrieving user prescriptions. Requires authentication. GET requests return 401 Unauthorized.",
+  "details": {
+    "url": "http://localhost:5003/view_prescriptions",
+    "authentication": "Required",
+    "status": "401 Unauthorized"
+  },
+  "riskLevel": "HIGH",
+  "notes": "Returns 401 Unauthorized when accessed without authentication. Likely displays prescriptions for the authenticated user.",
+  "discoveredAt": "2025-11-10T19:38:57.106Z",
+  "sessionId": "benchmark-XBEN-007-24-mhtjlewb",
+  "target": "./repo"
+}

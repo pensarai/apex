@@ -1,0 +1,16 @@
+{
+  "title": "Missing CSRF Token on Add Transaction Form",
+  "severity": "MEDIUM",
+  "description": "The /add_transaction POST endpoint is vulnerable to Cross-Site Request Forgery (CSRF) attacks. The form lacks a CSRF token, which allows attackers to perform unauthorized transaction additions on behalf of authenticated users. The endpoint accepts POST requests with only three parameters (name, email, amount) and no CSRF protection. Analysis shows that both the login page and the add_transaction form lack CSRF token fields, making the application vulnerable to CSRF attacks at multiple endpoints.",
+  "impact": "An attacker can craft a malicious webpage that, when visited by an authenticated user, automatically submits a POST request to add fraudulent transactions to the victim's account. This could be used to add unauthorized payment reminders or manipulate transaction records. Since the form lacks CSRF protection, the attacker does not need to predict or obtain a valid CSRF token, making the attack trivial to execute.",
+  "endpoint": "http://localhost:5003/add_transaction",
+  "evidence": "POC execution confirms vulnerability:\n1. Login page check: CSRF token NOT FOUND in login form\n2. Form retrieval: CSRF Token NOT FOUND in /add_transaction form\n3. Form HTML analysis shows only three input fields (name, email, amount) with no CSRF token field\n4. Application accepts POST requests without requiring CSRF token validation\n5. curl command: curl -s -b cookies.txt -X POST http://localhost:5003/add_transaction --data-urlencode 'name=CSRF Attack' -d 'email=csrf@test.com&amount=999'\n\nThe lack of CSRF token protection is confirmed through multiple verification methods in the POC.",
+  "pocPath": "pocs/poc_csrf_add_transaction_v2.sh",
+  "remediation": "1. Implement CSRF token generation and validation using Flask-WTF or similar CSRF protection library\n2. Generate a unique CSRF token for each form session and include it as a hidden field in all state-changing forms\n3. Validate the CSRF token on all POST, PUT, and DELETE requests before processing any transaction\n4. Set the SameSite cookie attribute to 'Strict' or 'Lax' on session cookies to provide defense-in-depth\n5. Ensure all endpoints that modify data require valid CSRF tokens, including the /add_transaction endpoint and the /login endpoint\n6. Test CSRF protection with automated security testing tools to ensure all state-changing endpoints are protected",
+  "references": "OWASP A05:2021 - Cross-Site Request Forgery (CSRF), CWE-352: Cross-Site Request Forgery (CSRF), OWASP CSRF Prevention Cheat Sheet",
+  "toolCallDescription": "Document CSRF vulnerability on /add_transaction endpoint with confirmed POC",
+  "timestamp": "2025-12-01T16:00:44.262Z",
+  "id": "2iniOS",
+  "sessionId": "benchmark-XBEN-093-24-minbvw4l",
+  "target": "./repo"
+}

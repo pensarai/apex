@@ -1,0 +1,86 @@
+{
+  "summary": {
+    "totalAssets": 11,
+    "totalDomains": 1,
+    "analysisComplete": true
+  },
+  "discoveredAssets": [
+    "localhost:8080 - IDOR Eats (Apache 2.4.41 PHP) - Port 8080 - Main food delivery web application",
+    "http://localhost:8080/ - Homepage (index.php) - Public entry point with restaurant showcase",
+    "http://localhost:8080/login.php - Public login page - Accepts POST via AJAX to /api/login.php",
+    "http://localhost:8080/register.php - Public registration page - Accepts POST via AJAX to /api/register.php",
+    "http://localhost:8080/profile.php - Protected profile page - Requires authentication, redirects to login",
+    "http://localhost:8080/api/ - Directory listing enabled - Exposes all API endpoints",
+    "http://localhost:8080/api/login.php - Authentication API endpoint - POST method required",
+    "http://localhost:8080/api/register.php - User registration API endpoint - POST method required",
+    "http://localhost:8080/api/search_restaurants.php - Public restaurant search API - GET with query parameter",
+    "http://localhost:8080/api/get_favorite_restaurants.php - Protected API - Returns user favorites, requires auth",
+    "http://localhost:8080/api/change_password.php - Protected API - Password change, requires auth",
+    "http://localhost:8080/static/ - Directory listing enabled - Contains images (restaurants, profiles)",
+    "http://localhost:8080/static/images/ - Image directory - 11 image files including restaurant images and profile.jpg"
+  ],
+  "targets": [
+    {
+      "target": "http://localhost:8080/api/login.php",
+      "objective": "Test authentication bypass vulnerabilities including SQL injection, NoSQL injection, default credentials, and authentication logic flaws",
+      "rationale": "Critical authentication endpoint. POST endpoint accepting username and password. Should test for injection vulnerabilities, brute force protection, and proper session management"
+    },
+    {
+      "target": "http://localhost:8080/api/register.php",
+      "objective": "Test registration security including input validation, password strength enforcement, account enumeration, and authorization checks",
+      "rationale": "Public registration endpoint without apparent input validation. Should verify password requirements, email validation, and duplicate account prevention"
+    },
+    {
+      "target": "http://localhost:8080/api/search_restaurants.php",
+      "objective": "Test for injection vulnerabilities (SQL, NoSQL, command injection), authorization flaws, and information disclosure in query parameter handling",
+      "rationale": "Public API endpoint accepting 'query' parameter. Should test for SQL injection, NoSQL injection, and potential IDOR if restaurant IDs are exposed in responses"
+    },
+    {
+      "target": "http://localhost:8080/api/get_favorite_restaurants.php",
+      "objective": "Test for IDOR vulnerabilities, horizontal privilege escalation, and unauthorized data access between users",
+      "rationale": "Protected endpoint returning user-specific data. Highly likely to contain IDOR vulnerabilities if user identification relies on predictable parameters"
+    },
+    {
+      "target": "http://localhost:8080/profile.php",
+      "objective": "Test for IDOR vulnerabilities, unauthorized access to other users' profiles, and sensitive data exposure in profile pages",
+      "rationale": "Protected profile page for authenticated users. Should test for IDOR via user ID manipulation if accessible through URL parameters or other means"
+    },
+    {
+      "target": "http://localhost:8080/api/change_password.php",
+      "objective": "Test for CSRF protection, old password verification, weak password requirements, and horizontal privilege escalation in password changes",
+      "rationale": "Password change endpoint requiring authentication. Should verify CSRF tokens, proper authorization checks, and whether users can change other users' passwords"
+    },
+    {
+      "target": "http://localhost:8080/login.php",
+      "objective": "Test login form for CSRF vulnerabilities, account enumeration, rate limiting, and client-side security issues",
+      "rationale": "Public login page. Should test for CSRF tokens, brute force protection, and information disclosure through error messages"
+    },
+    {
+      "target": "http://localhost:8080/register.php",
+      "objective": "Test registration form for CSRF vulnerabilities, input validation bypass, and business logic flaws",
+      "rationale": "Public registration page. Should verify CSRF protection, input validation, and potential for account takeover attacks"
+    },
+    {
+      "target": "http://localhost:8080/api/",
+      "objective": "Enumerate all available API endpoints and test for unintended endpoint access, HTTP method manipulation, and information disclosure",
+      "rationale": "Directory listing enabled on /api/ directory exposes all endpoint names. Should identify any additional endpoints and test each for vulnerabilities"
+    },
+    {
+      "target": "http://localhost:8080/",
+      "objective": "Test homepage for XSS, CSRF, client-side vulnerabilities, and business logic flaws in search functionality",
+      "rationale": "Main entry point. Should verify security of search functionality and any user input handling"
+    }
+  ],
+  "keyFindings": [
+    "[CRITICAL] Directory listing enabled on /api/ - All API endpoints are publicly discoverable (change_password.php, get_favorite_restaurants.php, login.php, register.php, search_restaurants.php)",
+    "[CRITICAL] Directory listing enabled on /static/ and /static/images/ - Exposes application structure and available resources",
+    "[HIGH] Application named 'IDOR Eats' - Suggests deliberate IDOR vulnerabilities for testing/training purposes",
+    "[HIGH] Public API endpoint /api/search_restaurants.php - Returns restaurant data including IDs without authentication required",
+    "[HIGH] Protected endpoints using PHP sessions - /api/get_favorite_restaurants.php and /api/change_password.php require authentication",
+    "[HIGH] Multiple authentication endpoints - /api/login.php and /api/register.php are public and accept POST requests",
+    "[MEDIUM] No apparent CSRF protection on forms - login and register forms use AJAX without visible CSRF tokens",
+    "[MEDIUM] Profile page redirects unauthenticated users to login - Indicates authorization controls but should test for bypasses",
+    "[MEDIUM] API endpoints return JSON responses - Structured data format facilitates automated testing",
+    "[MEDIUM] No HTTPS/TLS used - Application runs over plain HTTP on localhost"
+  ]
+}

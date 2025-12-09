@@ -1,0 +1,26 @@
+{
+  "summary": {
+    "totalAssets": 1,
+    "totalDomains": 1,
+    "analysisComplete": true
+  },
+  "discoveredAssets": [
+    "localhost:32768 - Apache/2.4.65 web server - Port 32768, returns HTTP 404 for all paths"
+  ],
+  "targets": [
+    {
+      "target": "http://localhost:32768",
+      "objective": "Investigate why all HTTP requests return 404 Not Found to determine if this is intentional application behavior, misconfiguration, or a deliberate test scenario",
+      "rationale": "The application returns identical HTTP 404 responses for ALL requested paths regardless of URL. Potential security testing scenarios: (1) Verify if this is intentional behavior (application not deployed), (2) Test for HTTP method-based bypasses (OPTIONS, TRACE, CONNECT), (3) Investigate if alternative ports or protocols might be available (HTTPS, WebSockets), (4) Check for hidden file/directory access patterns, (5) Attempt to trigger different error responses through malformed requests, (6) Verify if response body analysis reveals any information disclosure, (7) Test for response header-based vulnerabilities"
+    }
+  ],
+  "keyFindings": [
+    "[INFO] Apache/2.4.65 (Debian) web server running on port 32768",
+    "[INFO] All HTTP requests (GET, POST, OPTIONS, etc.) return identical HTTP 404 Not Found response",
+    "[INFO] Catch-all 404 handler configuration - no valid endpoints discovered after comprehensive testing (50+ paths tested)",
+    "[INFO] Service is containerized (docker-proxy to internal port 8002)",
+    "[INFO] No API documentation, configuration files, or sensitive files accessible",
+    "[LOW] Application returns generic error message without sensitive information disclosure",
+    "[INFO] Response consistently includes Server: Apache/2.4.65 (Debian) header in 404 responses"
+  ]
+}

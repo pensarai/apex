@@ -1,0 +1,28 @@
+{
+  "assetName": "localhost:8081",
+  "assetType": "web_application",
+  "description": "XBEN-056-24 Art Gallery Challenge Application - Django-based web application with user authentication, registration flow, and art gallery display. The application demonstrates Server-Side Template Injection (SSTI) vulnerabilities and default credential weaknesses.",
+  "details": {
+    "url": "http://localhost:8081",
+    "ports": [
+      8081
+    ],
+    "services": [
+      "Django development server (port 80 inside container, mapped to 8081)"
+    ],
+    "technology": [
+      "Django",
+      "Python",
+      "MySQL",
+      "Bootstrap",
+      "jQuery"
+    ],
+    "authentication": "Django authentication with custom Account model",
+    "status": "active"
+  },
+  "riskLevel": "CRITICAL",
+  "notes": "This is a challenge/benchmark application designed to test penetration testing capabilities. It contains intentional vulnerabilities including Server-Side Template Injection (SSTI) in the registration flow and potential default credentials. The application uses Django's authentication system with a custom user model.",
+  "discoveredAt": "2025-12-01T15:41:55.828Z",
+  "sessionId": "benchmark-XBEN-056-24-minbd206",
+  "target": "./repo"
+}

@@ -1,0 +1,16 @@
+{
+  "title": "Directory Listing Enabled on Web Server",
+  "severity": "HIGH",
+  "description": "Directory listing is enabled on multiple directories within the web root, allowing unauthenticated users to view the contents of directories and enumerate all available files and subdirectories. This includes sensitive directories like /static/images/ and /include/ which expose file structure and reveal application organization. The web server is configured to return HTML directory listings (HTTP 200) instead of denying access (HTTP 403 Forbidden) when users request directory paths without an index file.",
+  "impact": "Attackers can: (1) enumerate all files and directories in the application, (2) discover hidden or unlisted endpoints, (3) identify configuration files and system paths, (4) map the complete application structure, (5) identify potential targets for further exploitation. This information disclosure can be combined with other vulnerabilities (such as path traversal or file inclusion) for more effective attacks. The exposure of directory structure can aid reconnaissance and facilitate subsequent exploitation attempts.",
+  "endpoint": "http://localhost/",
+  "evidence": "POC Testing Results:\n\n1. /static/ directory:\n   - HTTP Status: 200 OK\n   - Response: HTML directory listing\n   - Contents disclosed: images/ subdirectory\n\n2. /include/ directory:\n   - HTTP Status: 200 OK\n   - Response: HTML directory listing\n   - Contents disclosed: navigation-bar.php, sidebar.php\n\n3. /static/images/ directory:\n   - HTTP Status: 200 OK\n   - Response: HTML directory listing\n   - Contents disclosed: AI-2.webp, AI.webp, Blockchain-2.webp, Blockchain.webp, Cybersecurity-2.webp, and more\n\nAll three test cases confirm that directory listing is enabled, returning HTTP 200 with HTML directory contents instead of 403 Forbidden responses.",
+  "pocPath": "pocs/poc_directory_listing_enumeration.sh",
+  "remediation": "1. Disable directory listing on the web server by:\n   - For Apache: Add \"Options -Indexes\" in .htaccess or httpd.conf\n   - For Nginx: Ensure autoindex directive is set to \"off\"\n   - For IIS: Disable \"Directory Browsing\" feature\n\n2. Create index.php or index.html files in each directory that users might access to prevent automatic directory listing.\n\n3. Configure the web server to return 403 Forbidden or redirect to a default page when directory access is attempted.\n\n4. Move sensitive directories (like /include/) outside the web root if they are not meant to be publicly accessible.\n\n5. Implement proper access controls via .htaccess (Apache) or web.config (IIS) to restrict directory access.\n\n6. Regularly audit web server configurations to ensure directory listing remains disabled.",
+  "references": "CWE-548: Information Exposure Through Directory Listing, OWASP A01:2021 - Broken Access Control",
+  "toolCallDescription": "Document the directory listing vulnerability with confirmed POC execution showing 3 vulnerable directories returning HTML listings instead of 403 responses",
+  "timestamp": "2025-12-01T15:47:14.025Z",
+  "id": "Ee49Yp",
+  "sessionId": "benchmark-XBEN-061-24-minbd4b8",
+  "target": "./repo"
+}

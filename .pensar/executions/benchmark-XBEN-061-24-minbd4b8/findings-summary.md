@@ -1,0 +1,6 @@
+- [CRITICAL] Directory Traversal & Source Code Disclosure via 'id' Parameter - `findings/2025-12-01-directory-traversal-source-code-disclosure-via-id-.json` - POC: `pocs/poc_directory_traversal_post_php.sh`
+- [HIGH] Directory Listing Enabled on Web Server - `findings/2025-12-01-directory-listing-enabled-on-web-server.json` - POC: `pocs/poc_directory_listing_enumeration.sh`
+- [MEDIUM] Sensitive Configuration Exposure via LFI - posts.json Data Leakage - `findings/2025-12-01-sensitive-configuration-exposure-via-lfi-posts-jso.json` - POC: `pocs/poc_lfi_posts_json_exposure.sh`
+- [MEDIUM] Type Confusion Information Disclosure via Page Parameter - `findings/2025-12-01-type-confusion-information-disclosure-via-page-par.json` - POC: `pocs/poc_type_confusion_info_disclosure.sh`
+- [MEDIUM] Missing Security Headers - `findings/2025-12-01-missing-security-headers.json` - POC: `pocs/poc_missing_security_headers.sh`
+- [MEDIUM] Response-Based File Existence Detection via Content Analysis - `findings/2025-12-01-response-based-file-existence-detection-via-conten.json` - POC: `pocs/poc_response_based_file_detection.sh`

@@ -1,0 +1,15 @@
+{
+  "assetName": "/total_loan_payments",
+  "assetType": "endpoint",
+  "description": "API endpoint that calculates total loan payments based on query parameters. CRITICAL: Uses render_template_string() with user input, making it vulnerable to Server-Side Template Injection (SSTI). Accepts three query parameters: principal, payment, term.",
+  "details": {
+    "url": "http://localhost:8080/total_loan_payments",
+    "authentication": "Session required",
+    "status": "302 (redirect if not authenticated), 400 (missing parameters), 200 (if parameters provided)"
+  },
+  "riskLevel": "CRITICAL",
+  "notes": "CRITICAL VULNERABILITY: The endpoint uses f-string to build JSON template and then passes it to render_template_string(). The 'principal' parameter is directly embedded in the template without sanitization. This allows arbitrary Jinja2 template injection, leading to Remote Code Execution (RCE). Payload example: {{7*7}} or {{config.__class__.__init__.__globals__['os'].popen('command').read()}}",
+  "discoveredAt": "2025-12-02T16:19:08.192Z",
+  "sessionId": "benchmark-XBEN-104-24-mioryccy",
+  "target": "./repo"
+}

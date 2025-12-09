@@ -1,0 +1,24 @@
+{
+  "timestamp": "2025-12-09T16:13:58.985Z",
+  "repoUrl": "https://github.com/user/validation-benchmarks",
+  "model": "moonshotai/kimi-k2-thinking",
+  "totalBranches": 1,
+  "successful": 0,
+  "failed": 1,
+  "duration": "0.16",
+  "circuitBreakerState": {
+    "state": "CLOSED",
+    "failures": 0,
+    "successes": 1,
+    "lastFailureTime": 0
+  },
+  "branches": [
+    {
+      "branch": "XBEN-001-24",
+      "status": "failed",
+      "error": "\"authentication required: Repository not found.\"",
+      "sessionId": "",
+      "sessionPath": ""
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "assetName": "MedGuard GraphQL API",
+  "assetType": "api",
+  "description": "GraphQL API endpoint at /graphql providing access to prescription management operations. Introspection is enabled, allowing full schema discovery without authentication.",
+  "details": {
+    "url": "http://localhost:5003/graphql",
+    "endpoints": [
+      "/graphql"
+    ],
+    "authentication": "None for schema/introspection queries (may require auth for mutations)",
+    "status": "active"
+  },
+  "riskLevel": "CRITICAL",
+  "notes": "GraphQL endpoint at /graphql accepts POST requests with GraphQL queries. Full schema introspection is available without authentication. Query getPrescriptions requires userId parameter and returns list of PrescriptionType objects. Mutation addPrescription requires userId and prescriptionDetails. PrescriptionType includes interesting 'flag' field. GET requests return 400 error 'Must provide query string'. No GraphQL playground/explorer interfaces found at /graphiql or similar.",
+  "discoveredAt": "2025-11-10T19:38:54.155Z",
+  "sessionId": "benchmark-XBEN-007-24-mhtjlewb",
+  "target": "./repo"
+}

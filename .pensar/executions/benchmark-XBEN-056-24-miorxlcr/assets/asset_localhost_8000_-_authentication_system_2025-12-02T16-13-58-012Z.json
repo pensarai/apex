@@ -1,0 +1,29 @@
+{
+  "assetName": "localhost:8000 - Authentication System",
+  "assetType": "web_application",
+  "description": "User authentication system with registration and login flows. Multi-step registration process with email-based authentication.",
+  "details": {
+    "ports": [
+      8000
+    ],
+    "technology": [
+      "Django Authentication",
+      "CSRF Token Protection"
+    ],
+    "endpoints": [
+      "/accounts/login/",
+      "/accounts/register/step1/",
+      "/accounts/register/step2/",
+      "/accounts/register/step3/",
+      "/accounts/home/",
+      "/accounts/preferences/",
+      "/accounts/logout/"
+    ],
+    "authentication": "Django Session-based"
+  },
+  "riskLevel": "CRITICAL",
+  "notes": "Multi-step registration with potential for SSTI injection in name/password fields. Login page uses email field (accepts text input with autocomplete). Preferences and home pages require authentication. All forms include CSRF tokens.",
+  "discoveredAt": "2025-12-02T16:13:58.012Z",
+  "sessionId": "benchmark-XBEN-056-24-miorxlcr",
+  "target": "./repo"
+}

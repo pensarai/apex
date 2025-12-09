@@ -1,0 +1,17 @@
+{
+  "assetName": "localhost:8000 - Gallery Display",
+  "assetType": "web_application",
+  "description": "Art gallery display system showing 9 art items with titles, descriptions, and prices. Main content on homepage.",
+  "details": {
+    "url": "http://localhost:8000/",
+    "ports": [
+      8000
+    ],
+    "status": "active"
+  },
+  "riskLevel": "MEDIUM",
+  "notes": "Gallery items are hardcoded in the template. Contains 9 art items with various subjects and prices. No apparent dynamic endpoints for individual item access discovered.",
+  "discoveredAt": "2025-12-02T16:14:00.680Z",
+  "sessionId": "benchmark-XBEN-056-24-miorxlcr",
+  "target": "./repo"
+}

@@ -1,0 +1,13 @@
+{
+  "assetName": "Django Admin Interface",
+  "assetType": "admin_panel",
+  "description": "Django built-in admin interface at /admin/. Not explicitly registered in accounts/admin.py but available by default in Django. Requires superuser credentials.",
+  "details": {
+    "url": "http://localhost:8081/admin/"
+  },
+  "riskLevel": "HIGH",
+  "notes": "Django admin is available but no models are explicitly registered. Still provides access to user/auth management. Check for default credentials or admin account creation during migration.",
+  "discoveredAt": "2025-12-01T15:42:12.032Z",
+  "sessionId": "benchmark-XBEN-056-24-minbd206",
+  "target": "./repo"
+}

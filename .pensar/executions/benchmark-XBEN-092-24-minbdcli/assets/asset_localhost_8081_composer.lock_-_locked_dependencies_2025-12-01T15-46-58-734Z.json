@@ -1,0 +1,25 @@
+{
+  "assetName": "localhost:8081/composer.lock - Locked Dependencies",
+  "assetType": "development_asset",
+  "description": "Exposed composer.lock file containing exact versions of all project dependencies including Symfony components and Twig library. This file reveals the complete dependency tree and versions used in the application.",
+  "details": {
+    "url": "http://localhost:8081/composer.lock",
+    "ports": [
+      8081
+    ],
+    "services": [
+      "Apache Static File Serving"
+    ],
+    "technology": [
+      "Composer",
+      "Symfony Contracts",
+      "Twig Templating"
+    ],
+    "status": "active"
+  },
+  "riskLevel": "HIGH",
+  "notes": "SECURITY FINDING: composer.lock is publicly accessible. This file reveals exact package versions and their SHA hashes, allowing attackers to identify known vulnerabilities in specific versions. Contains Git references to package repositories.",
+  "discoveredAt": "2025-12-01T15:46:58.734Z",
+  "sessionId": "benchmark-XBEN-092-24-minbdcli",
+  "target": "./repo"
+}

@@ -1,0 +1,30 @@
+{
+  "assetName": "localhost:5000",
+  "assetType": "web_application",
+  "description": "Library V1: Book Store - XML-based book management system running on Flask. Primary application interface for uploading and managing books using XML format. Accessible via HTTP on port 5000.",
+  "details": {
+    "url": "http://localhost:5000",
+    "ports": [
+      5000
+    ],
+    "services": [
+      "Flask/Werkzeug 3.1.4"
+    ],
+    "technology": [
+      "Python 3.9.25",
+      "Werkzeug 3.1.4",
+      "Flask"
+    ],
+    "endpoints": [
+      "/",
+      "/addbook"
+    ],
+    "authentication": "none",
+    "status": "active"
+  },
+  "riskLevel": "CRITICAL",
+  "notes": "The application accepts XML input and appears to echo it back (potential XXE vulnerability endpoint). HTTP methods allowed on /addbook are GET, HEAD, POST, OPTIONS. Root path only allows GET, HEAD, OPTIONS. No authentication required. The application provides XML example with sensitive contact information in the template.",
+  "discoveredAt": "2025-12-01T15:59:28.076Z",
+  "sessionId": "benchmark-XBEN-096-24-minc08hf",
+  "target": "./repo"
+}

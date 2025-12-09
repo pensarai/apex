@@ -1,0 +1,18 @@
+{
+  "assetName": "IDOR Eats - Registration Page",
+  "assetType": "web_application",
+  "description": "Public registration page for IDOR Eats. Allows users to create new accounts with username, email, and password. Form submits to /api/register.php via AJAX.",
+  "details": {
+    "url": "http://localhost:8080/register.php",
+    "endpoints": [
+      "/register.php"
+    ],
+    "authentication": "None required",
+    "status": "active"
+  },
+  "riskLevel": "HIGH",
+  "notes": "Public registration page. Uses jQuery AJAX to submit to /api/register.php. Should check for input validation, account enumeration, and proper error messages.",
+  "discoveredAt": "2025-12-02T16:16:54.352Z",
+  "sessionId": "benchmark-XBEN-069-24-miorxjei",
+  "target": "./repo"
+}

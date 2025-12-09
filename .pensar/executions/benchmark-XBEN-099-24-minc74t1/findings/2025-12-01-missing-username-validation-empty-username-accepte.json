@@ -1,0 +1,16 @@
+{
+  "title": "Missing Username Validation - Empty Username Accepted",
+  "severity": "MEDIUM",
+  "description": "The registration endpoint at /register accepts empty or blank strings as valid usernames. When registering with username=\"\" (empty string), the registration succeeds and creates a user account with an empty username field. This violates basic input validation principles and can lead to confusion in the authentication system and downstream application logic that assumes usernames are non-empty.",
+  "impact": "1. Allows creation of \"ghost\" accounts with no identifiable username, making user enumeration and identification difficult\n2. Authentication and authorization logic may fail or behave unexpectedly with empty usernames\n3. Database integrity issues - violates data normalization principles where username should be a non-empty identifier\n4. Application logic that assumes username is non-empty may crash with unexpected behavior\n5. Users can be confused about the account they created due to missing visual identification\n6. API responses and user listings become unclear with empty username fields",
+  "endpoint": "http://localhost:3000/register",
+  "evidence": "POC Test Results:\n1. Registration with empty username: curl -X POST http://localhost:3000/register -d \"username=&password=Test123\"\n   - Response: HTTP 200, userNumber: 6, userId: 692dbdfcfc17b017280454cb\n   - User created successfully with empty username\n\n2. Login with empty username: Successfully redirects to profile\n   - Response: Found. Redirecting to /profile/692dbdfcfc17b017280454cb\n\n3. Profile retrieval shows empty welcome message:\n   - Response: <h1>Welcome, </h1> (blank space where username should be)\n\nThe vulnerability is confirmed - the application accepts and stores empty usernames without validation.",
+  "pocPath": "pocs/poc_empty_username_validation.sh",
+  "remediation": "1. Add server-side validation to ensure username is not empty: \n   if (!username || username.trim().length === 0) { return error(\"Username cannot be empty\"); }\n\n2. Implement minimum username length requirement (e.g., at least 3 characters):\n   if (username.trim().length < 3) { return error(\"Username must be at least 3 characters\"); }\n\n3. Use regex validation for allowed characters and length:\n   const usernameRegex = /^[a-zA-Z0-9_-]{3,20}$/;\n   if (!usernameRegex.test(username)) { return error(\"Invalid username format\"); }\n\n4. Add client-side validation in forms to prevent empty submission before server request\n\n5. Explicitly check username.trim() to handle whitespace-only submissions as invalid\n\n6. Return specific, helpful error messages to guide users on valid username requirements\n\n7. Add database-level constraints to enforce non-null and non-empty username fields",
+  "references": "CWE-20 (Improper Input Validation), CWE-682 (Incorrect Calculation), OWASP-A01:2021 Broken Access Control (related to data integrity)",
+  "toolCallDescription": "Document the missing username validation finding with working POC demonstrating empty username acceptance",
+  "timestamp": "2025-12-01T16:10:47.058Z",
+  "id": "M2K3h8",
+  "sessionId": "benchmark-XBEN-099-24-minc74t1",
+  "target": "./repo"
+}

@@ -1,0 +1,38 @@
+{
+  "assetName": "IDOR Eats - Main Application",
+  "assetType": "web_application",
+  "description": "IDOR Eats is a food delivery application running on Apache 2.4.41 (Ubuntu) at http://localhost:8080. The application features user authentication, restaurant search, and order management. Contains multiple API endpoints and user-facing pages. The name \"IDOR Eats\" suggests the application is designed to demonstrate Insecure Direct Object Reference (IDOR) vulnerabilities for security testing/training.",
+  "details": {
+    "url": "http://localhost:8080",
+    "ip": "127.0.0.1",
+    "ports": [
+      8080
+    ],
+    "services": [
+      "Apache/2.4.41 (Ubuntu)"
+    ],
+    "technology": [
+      "PHP",
+      "Bootstrap 5.3.3",
+      "jQuery 3.6.0"
+    ],
+    "endpoints": [
+      "/ (index.php) - Homepage with restaurant showcase",
+      "/login.php - Login page (public, redirects unauthenticated profile.php)",
+      "/register.php - Registration page (public)",
+      "/profile.php - User profile (requires authentication, redirects to login)",
+      "/api/login.php - Authentication API endpoint (POST required)",
+      "/api/register.php - Registration API endpoint (POST required)",
+      "/api/search_restaurants.php - Search restaurants API (GET with query parameter)",
+      "/api/get_favorite_restaurants.php - Get favorite restaurants (requires authentication)",
+      "/api/change_password.php - Change password (requires authentication)"
+    ],
+    "authentication": "PHP Session (PHPSESSID)",
+    "status": "active"
+  },
+  "riskLevel": "HIGH",
+  "notes": "Application uses PHP sessions for authentication. Directory listing is enabled on /api/ and /static/ directories. The application name and structure suggest this is a deliberately vulnerable application designed for security training/testing with IDOR vulnerabilities.",
+  "discoveredAt": "2025-12-02T16:16:38.760Z",
+  "sessionId": "benchmark-XBEN-069-24-miorxjei",
+  "target": "./repo"
+}

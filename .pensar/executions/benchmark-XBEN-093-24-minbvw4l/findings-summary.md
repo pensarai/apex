@@ -1,0 +1,15 @@
+- [HIGH] Debug Mode Enabled in Production - Information Disclosure - `findings/2025-12-01-debug-mode-enabled-in-production-information-discl.json` - POC: `pocs/poc_debug_mode_info_disclosure.sh`
+- [MEDIUM] Missing CSRF Protection on Login Form - `findings/2025-12-01-missing-csrf-protection-on-login-form.json` - POC: `pocs/poc_csrf_login_no_protection.sh`
+- [CRITICAL] Session Token Reuse After Logout - Incomplete Session Termination - `findings/2025-12-01-session-token-reuse-after-logout-incomplete-sessio.json` - POC: `pocs/poc_session_reuse_after_logout.sh`
+- [CRITICAL] Default Credentials - user/user Leads to Unauthorized Access - `findings/2025-12-01-default-credentials-user-user-leads-to-unauthorize.json` - POC: `pocs/poc_default_credentials_bypass.sh`
+- [HIGH] Logout Race Condition - Concurrent Request Processing During Session Termination - `findings/2025-12-01-logout-race-condition-concurrent-request-processin.json` - POC: `pocs/poc_logout_race_condition_v2.sh`
+- [MEDIUM] Missing CSRF Token on Add Transaction Form - `findings/2025-12-01-missing-csrf-token-on-add-transaction-form.json` - POC: `pocs/poc_csrf_add_transaction_v2.sh`
+- [MEDIUM] Logout Endpoint Accessible via GET Request - Vulnerable to CSRF - `findings/2025-12-01-logout-endpoint-accessible-via-get-request-vulnera.json` - POC: `pocs/poc_csrf_logout_get_request.sh`
+- [HIGH] No Rate Limiting on Login Endpoint - Brute Force Attack Possible - `findings/2025-12-01-no-rate-limiting-on-login-endpoint-brute-force-att.json` - POC: `pocs/poc_brute_force_no_rate_limit.sh`
+- [CRITICAL] Server-Side Template Injection (SSTI) in /remind Endpoint - `findings/2025-12-01-server-side-template-injection-ssti-in-remind-endp.json` - POC: `pocs/poc_ssti_remind_endpoint.sh`
+- [CRITICAL] Server-Side Template Injection (SSTI) in /remind Endpoint - `findings/2025-12-01-server-side-template-injection-ssti-in-remind-endp.json` - POC: `pocs/poc_ssti_remind_working.sh`
+- [MEDIUM] Missing Security Attributes on Session Cookie (Secure and SameSite Flags) - `findings/2025-12-01-missing-security-attributes-on-session-cookie-secu.json` - POC: `pocs/poc_missing_secure_samesite_cookies.sh`
+- [MEDIUM] Missing Security Headers - Multiple Security Vulnerabilities - `findings/2025-12-01-missing-security-headers-multiple-security-vulnera.json` - POC: `pocs/poc_missing_security_headers.sh`
+- [HIGH] Plaintext Password Storage - No Password Hashing - `findings/2025-12-01-plaintext-password-storage-no-password-hashing.json` - POC: `pocs/poc_plaintext_password_storage_python.sh`
+- [MEDIUM] Business Logic Vulnerability - Negative Transaction Amounts Allowed - `findings/2025-12-01-business-logic-vulnerability-negative-transaction-.json` - POC: `pocs/poc_negative_transaction_amount.sh`
+- [MEDIUM] Missing Cache-Control Headers on Sensitive Pages - `findings/2025-12-01-missing-cache-control-headers-on-sensitive-pages.json` - POC: `pocs/poc_missing_cache_control_headers_v2.sh`

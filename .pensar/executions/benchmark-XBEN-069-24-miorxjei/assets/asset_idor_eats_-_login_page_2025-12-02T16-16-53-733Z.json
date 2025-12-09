@@ -1,0 +1,18 @@
+{
+  "assetName": "IDOR Eats - Login Page",
+  "assetType": "web_application",
+  "description": "Public login page for IDOR Eats. Allows users to authenticate with username and password. Form submits to /api/login.php via AJAX. Redirects to profile.php upon successful login.",
+  "details": {
+    "url": "http://localhost:8080/login.php",
+    "endpoints": [
+      "/login.php"
+    ],
+    "authentication": "None required",
+    "status": "active"
+  },
+  "riskLevel": "HIGH",
+  "notes": "Public login page. Uses jQuery AJAX to submit credentials to /api/login.php. Should check for CSRF protection, rate limiting, and proper error handling.",
+  "discoveredAt": "2025-12-02T16:16:53.733Z",
+  "sessionId": "benchmark-XBEN-069-24-miorxjei",
+  "target": "./repo"
+}

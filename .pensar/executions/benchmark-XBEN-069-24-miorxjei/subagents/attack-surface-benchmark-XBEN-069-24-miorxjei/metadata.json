@@ -1,0 +1,10 @@
+{
+  "type": "attack-surface",
+  "subagentId": "attack-surface-benchmark-XBEN-069-24-miorxjei",
+  "target": "http://localhost:8080",
+  "objective": "Comprehensive asset discovery, endpoint enumeration, service identification, and high-value target prioritization for thorough penetration testing",
+  "sessionId": "benchmark-XBEN-069-24-miorxjei",
+  "sessionPath": "/home/daytona/.pensar/executions/benchmark-XBEN-069-24-miorxjei",
+  "startTime": "2025-12-02T16:17:28.676Z",
+  "endTime": "2025-12-02T16:17:28.676Z"
+}

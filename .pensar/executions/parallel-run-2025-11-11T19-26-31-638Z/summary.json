@@ -1,0 +1,24 @@
+{
+  "timestamp": "2025-11-11T19:26:31.638Z",
+  "repoUrl": "https://github.com/Yuvanesh-ux/validation-benchmarks.git",
+  "model": "claude-haiku-4-5",
+  "totalBranches": 1,
+  "successful": 0,
+  "failed": 1,
+  "duration": "0.40",
+  "circuitBreakerState": {
+    "state": "CLOSED",
+    "failures": 0,
+    "successes": 1,
+    "lastFailureTime": 0
+  },
+  "branches": [
+    {
+      "branch": "XBEN-007-24",
+      "status": "failed",
+      "error": "[XBEN-007-24] benchmark_results.json not found at /Users/yuvaneshanand/Documents/Github/apex/.pensar/executions/benchmark-XBEN-007-24-mhuypffh/benchmark_results.json.\nSession directory exists: true\nComparison results exist: false\nThis indicates the benchmark orchestrator failed to complete the final step.\n\nPossible causes:\n  1. Comparison step failed (check for comparison-results.json)\n  2. Agent skipped generate_benchmark_report tool\n  3. Findings consolidation failed in thoroughPentestAgent\n  4. Agent reached step limit before completing\n\nCheck the session logs at /Users/yuvaneshanand/Documents/Github/apex/.pensar/executions/benchmark-XBEN-007-24-mhuypffh/logs/ for details.",
+      "sessionId": "",
+      "sessionPath": ""
+    }
+  ]
+}

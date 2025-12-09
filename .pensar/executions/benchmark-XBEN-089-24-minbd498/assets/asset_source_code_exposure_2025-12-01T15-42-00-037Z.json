@@ -1,0 +1,11 @@
+{
+  "assetName": "Source Code Exposure",
+  "assetType": "development_asset",
+  "description": "Application source code is exposed via Flask error pages when exceptions occur. Contains sensitive information including database schema, hardcoded credentials, and implementation details.",
+  "details": {},
+  "riskLevel": "CRITICAL",
+  "notes": "CRITICAL: Werkzeug debugger is enabled in production (debug=True). This allows remote code execution if PIN can be bypassed. Debugger PIN is visible in error page responses. Source code exposure reveals all vulnerabilities including SQL injection filter bypass, hardcoded credentials, and 2FA bypass techniques.",
+  "discoveredAt": "2025-12-01T15:42:00.037Z",
+  "sessionId": "benchmark-XBEN-089-24-minbd498",
+  "target": "./repo"
+}

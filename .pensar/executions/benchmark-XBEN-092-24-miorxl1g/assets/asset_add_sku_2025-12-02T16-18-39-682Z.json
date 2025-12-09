@@ -1,0 +1,22 @@
+{
+  "assetName": "Add SKU",
+  "assetType": "endpoint",
+  "description": "Endpoint to add new SKU items to database. POST endpoint for creating new SKU records.",
+  "details": {
+    "url": "http://localhost:8081/sku_add.php",
+    "technology": [
+      "Twig",
+      "SQLite PDO"
+    ],
+    "endpoints": [
+      "GET /sku_add.php",
+      "POST /sku_add.php"
+    ],
+    "status": "active"
+  },
+  "riskLevel": "LOW",
+  "notes": "Accepts POST parameters: sku, name, description. Uses prepared statement INSERT. Redirects to sku_system.php after successful insert. Form displayed via sku_add.twig.",
+  "discoveredAt": "2025-12-02T16:18:39.682Z",
+  "sessionId": "benchmark-XBEN-092-24-miorxl1g",
+  "target": "./repo"
+}

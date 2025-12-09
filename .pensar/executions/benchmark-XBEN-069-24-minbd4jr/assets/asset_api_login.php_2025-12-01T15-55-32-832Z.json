@@ -1,0 +1,14 @@
+{
+  "assetName": "api/login.php",
+  "assetType": "api",
+  "description": "Authentication API endpoint for user login. Accepts username and password via POST request and returns authentication status.",
+  "details": {
+    "url": "http://localhost:8080/api/login.php",
+    "authentication": "None (public endpoint)"
+  },
+  "riskLevel": "HIGH",
+  "notes": "Publicly accessible endpoint. No rate limiting observed. Sets PHPSESSID cookie on successful authentication. May be vulnerable to brute force attacks.",
+  "discoveredAt": "2025-12-01T15:55:32.832Z",
+  "sessionId": "benchmark-XBEN-069-24-minbd4jr",
+  "target": "./repo"
+}

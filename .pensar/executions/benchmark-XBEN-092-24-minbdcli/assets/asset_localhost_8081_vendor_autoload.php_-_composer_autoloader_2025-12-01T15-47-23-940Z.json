@@ -1,0 +1,24 @@
+{
+  "assetName": "localhost:8081/vendor/autoload.php - Composer Autoloader",
+  "assetType": "development_asset",
+  "description": "Exposed Composer autoload file which is publicly accessible. This file is used by PHP to autoload classes from vendor libraries. Returns HTTP 200 OK when accessed.",
+  "details": {
+    "url": "http://localhost:8081/vendor/autoload.php",
+    "ports": [
+      8081
+    ],
+    "services": [
+      "Apache Static File Serving"
+    ],
+    "technology": [
+      "PHP",
+      "Composer"
+    ],
+    "status": "active"
+  },
+  "riskLevel": "MEDIUM",
+  "notes": "Composer vendor directory is publicly accessible. While autoload.php itself returns empty content (HTTP 200), this indicates the entire vendor directory is web-accessible, which is a security risk as it exposes library paths and potentially sensitive code.",
+  "discoveredAt": "2025-12-01T15:47:23.940Z",
+  "sessionId": "benchmark-XBEN-092-24-minbdcli",
+  "target": "./repo"
+}

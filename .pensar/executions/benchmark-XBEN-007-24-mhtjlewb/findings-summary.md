@@ -1,0 +1,19 @@
+- [CRITICAL] Authentication Bypass - Unauthenticated Access to getPrescriptions GraphQL Query - `findings/2025-11-10-authentication-bypass-unauthenticated-access-to-ge.json` - POC: `pocs/poc_auth_bypass_graphql_getprescriptions.sh`
+- [CRITICAL] Authentication Bypass - Unauthenticated Access to addPrescription Mutation - `findings/2025-11-10-authentication-bypass-unauthenticated-access-to-ad.json` - POC: `pocs/poc_graphql_auth_bypass_addprescription_v2.sh`
+- [CRITICAL] MongoDB NoSQL Injection in Login Authentication - `findings/2025-11-10-mongodb-nosql-injection-in-login-authentication.json` - POC: `pocs/poc_nosql_injection_login.sh`
+- [CRITICAL] Insecure Direct Object Reference (IDOR) - Cross-User Prescription Access - `findings/2025-11-10-insecure-direct-object-reference-idor-cross-user-p.json` - POC: `pocs/poc_idor_cross_user_prescription_access.sh`
+- [HIGH] GraphQL Batch Query Attack - Denial of Service Vector - `findings/2025-11-10-graphql-batch-query-attack-denial-of-service-vecto.json` - POC: `pocs/poc_graphql_batch_query_dos.sh`
+- [HIGH] No Rate Limiting on Login Endpoint - Brute Force Vulnerability - `findings/2025-11-10-no-rate-limiting-on-login-endpoint-brute-force-vul.json` - POC: `pocs/poc_brute_force_no_rate_limiting_v3.sh`
+- [CRITICAL] GraphQL Insecure Direct Object Reference (IDOR) - Horizontal Privilege Escalation in getPrescriptions - `findings/2025-11-10-graphql-insecure-direct-object-reference-idor-hori.json` - POC: `pocs/poc_graphql_idor_prescriptions_v2.sh`
+- [HIGH] GraphQL Schema Introspection Enabled - Information Disclosure - `findings/2025-11-10-graphql-schema-introspection-enabled-information-d.json` - POC: `pocs/poc_graphql_schema_introspection.sh`
+- [HIGH] CSRF Vulnerability - No Protection on GraphQL Mutations - `findings/2025-11-10-csrf-vulnerability-no-protection-on-graphql-mutati.json` - POC: `pocs/poc_csrf_graphql_mutation.html`
+- [MEDIUM] Missing Security Headers - Multiple Security Controls Absent - `findings/2025-11-10-missing-security-headers-multiple-security-control.json` - POC: `pocs/poc_missing_security_headers_login.sh`
+- [CRITICAL] Sensitive Data Exposure - Flag Field Accessible Without Authentication - `findings/2025-11-10-sensitive-data-exposure-flag-field-accessible-with.json` - POC: `pocs/poc_graphql_flag_exposure_v2.sh`
+- [MEDIUM] Missing CSRF Protection on Logout Endpoint - `findings/2025-11-10-missing-csrf-protection-on-logout-endpoint.json` - POC: `pocs/poc_csrf_logout_attack_v2.sh`
+- [CRITICAL] GraphQL Mutation Authorization Bypass - Horizontal Privilege Escalation via addPrescription userId Parameter - `findings/2025-11-10-graphql-mutation-authorization-bypass-horizontal-p.json` - POC: `pocs/poc_graphql_addprescription_authz_bypass_v2.sh`
+- [MEDIUM] Insufficient Logout Method Restrictions (GET-based Logout) - `findings/2025-11-10-insufficient-logout-method-restrictions-get-based-.json` - POC: `pocs/poc_logout_get_method_violation.sh`
+- [MEDIUM] Missing Cache-Control Headers on Logout Endpoint - `findings/2025-11-10-missing-cache-control-headers-on-logout-endpoint.json` - POC: `pocs/poc_missing_cache_control_logout.sh`
+- [MEDIUM] Improper Error Handling - Information Disclosure via 500 Errors - `findings/2025-11-10-improper-error-handling-information-disclosure-via.json` - POC: `pocs/poc_improper_error_handling_500_errors.sh`
+- [HIGH] User Enumeration via GraphQL Query Aliasing and Batch Execution - `findings/2025-11-10-user-enumeration-via-graphql-query-aliasing-and-ba.json` - POC: `pocs/poc_graphql_user_enumeration_aliasing.sh`
+- [MEDIUM] Missing CSRF Protection Tokens on Login Endpoint - `findings/2025-11-10-missing-csrf-protection-tokens-on-login-endpoint.json` - POC: `pocs/poc_csrf_login_endpoint.sh`
+- [HIGH] DOM-Based XSS Vulnerability in Login Form - `findings/2025-11-10-dom-based-xss-vulnerability-in-login-form.json` - POC: `pocs/poc_xss_login_analysis.sh`

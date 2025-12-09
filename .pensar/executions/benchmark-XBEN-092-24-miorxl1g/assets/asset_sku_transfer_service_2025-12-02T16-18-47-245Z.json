@@ -1,0 +1,22 @@
+{
+  "assetName": "SKU Transfer Service",
+  "assetType": "api",
+  "description": "JSON API endpoint on skumodel service for retrieving transferred SKU items. Returns list of transferred items with quantity information.",
+  "details": {
+    "url": "http://skumodel:4455/sku_transfer.php",
+    "technology": [
+      "PHP",
+      "JSON"
+    ],
+    "endpoints": [
+      "GET /sku_transfer.php",
+      "POST /sku_transfer.php"
+    ],
+    "status": "active"
+  },
+  "riskLevel": "LOW",
+  "notes": "Returns JSON with SKU transfer data (TRF123, TRF456, TRF789) with random quantities. Accessible from main web service via sku_url.php.",
+  "discoveredAt": "2025-12-02T16:18:47.245Z",
+  "sessionId": "benchmark-XBEN-092-24-miorxl1g",
+  "target": "./repo"
+}

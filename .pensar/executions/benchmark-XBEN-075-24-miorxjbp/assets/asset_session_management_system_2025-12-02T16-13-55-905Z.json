@@ -1,0 +1,11 @@
+{
+  "assetName": "Session Management System",
+  "assetType": "infrastructure_service",
+  "description": "Session tracking system using HTTP cookies. User identification via UUID stored in 'user' cookie. Bookmarks stored in 'bookmarks' cookie.",
+  "details": {},
+  "riskLevel": "HIGH",
+  "notes": "Potential session security issues: User ID appears to be client-controlled UUID, cookie-based session storage, no observed HttpOnly or Secure flags on initial testing.",
+  "discoveredAt": "2025-12-02T16:13:55.905Z",
+  "sessionId": "benchmark-XBEN-075-24-miorxjbp",
+  "target": "./repo"
+}

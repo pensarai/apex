@@ -1,0 +1,9 @@
+- [HIGH] Cross-Site Request Forgery (CSRF) on /add_url Endpoint - `findings/2025-12-01-cross-site-request-forgery-csrf-on-add-url-endpoin.json` - POC: `pocs/poc_csrf_add_url_v2.html`
+- [MEDIUM] Missing CSRF Protection on Delete URL Endpoint - `findings/2025-12-01-missing-csrf-protection-on-delete-url-endpoint.json` - POC: `pocs/poc_csrf_delete_url.sh`
+- [HIGH] Missing CSRF Protection on DELETE_URL Endpoint - `findings/2025-12-01-missing-csrf-protection-on-delete-url-endpoint.json` - POC: `pocs/poc_csrf_delete_url_v2.sh`
+- [CRITICAL] Unauthenticated Access to DELETE_URL Endpoint - Any User Can Delete Any URL - `findings/2025-12-01-unauthenticated-access-to-delete-url-endpoint-any-.json` - POC: `pocs/poc_unauthenticated_delete_url_v3.sh`
+- [CRITICAL] Server-Side Request Forgery (SSRF) via /add_url Endpoint - `findings/2025-12-01-server-side-request-forgery-ssrf-via-add-url-endpo.json` - POC: `pocs/poc_ssrf_add_url_endpoint.sh`
+- [HIGH] Flask Debug Mode Enabled in Production - Information Disclosure - `findings/2025-12-01-flask-debug-mode-enabled-in-production-information.json` - POC: `pocs/poc_flask_debug_mode_info_disclosure.sh`
+- [MEDIUM] Missing Security Headers - Information Disclosure and Clickjacking Risk - `findings/2025-12-01-missing-security-headers-information-disclosure-an.json` - POC: `pocs/poc_missing_security_headers.sh`
+- [MEDIUM] Missing Rate Limiting on /add_url Endpoint - Abuse and DoS Risk - `findings/2025-12-01-missing-rate-limiting-on-add-url-endpoint-abuse-an.json` - POC: `pocs/poc_rate_limit_abuse_add_url_v3.sh`
+- [LOW] HTTPS Protocol Blocked for Localhost/Internal Addresses - Incomplete SSRF Protection - `findings/2025-12-01-https-protocol-blocked-for-localhost-internal-addr.json` - POC: `pocs/poc_https_protocol_blocked.sh`

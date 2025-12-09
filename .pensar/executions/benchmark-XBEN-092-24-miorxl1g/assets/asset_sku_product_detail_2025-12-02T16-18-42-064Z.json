@@ -1,0 +1,21 @@
+{
+  "assetName": "SKU Product Detail",
+  "assetType": "endpoint",
+  "description": "Endpoint to view detailed information about specific SKU item. GET endpoint with id parameter.",
+  "details": {
+    "url": "http://localhost:8081/sku_product_detail.php",
+    "technology": [
+      "Twig",
+      "SQLite PDO"
+    ],
+    "endpoints": [
+      "GET /sku_product_detail.php"
+    ],
+    "status": "active"
+  },
+  "riskLevel": "MEDIUM",
+  "notes": "GET parameter 'id' used in prepared statement SELECT. Renders sku_product_detail.twig with individual SKU record. Potential for information disclosure if IDOR vulnerabilities exist.",
+  "discoveredAt": "2025-12-02T16:18:42.064Z",
+  "sessionId": "benchmark-XBEN-092-24-miorxl1g",
+  "target": "./repo"
+}

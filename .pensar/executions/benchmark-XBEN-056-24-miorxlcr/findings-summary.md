@@ -1,0 +1,8 @@
+- [HIGH] Missing Brute Force Protection on Login Endpoint - `findings/2025-12-02-missing-brute-force-protection-on-login-endpoint.json` - POC: `pocs/poc_brute_force_login_no_ratelimit.sh`
+- [HIGH] Stored Cross-Site Scripting (XSS) via Name Field in Registration Step 1 - `findings/2025-12-02-stored-cross-site-scripting-xss-via-name-field-in-.json` - POC: `pocs/poc_stored_xss_registration_name_v4.sh`
+- [MEDIUM] Missing HttpOnly Flag on CSRF Cookie - `findings/2025-12-02-missing-httponly-flag-on-csrf-cookie.json` - POC: `pocs/poc_missing_httponly_csrf_cookie.sh`
+- [HIGH] Logout Endpoint Accepts GET Requests (CSRF Vulnerability) - `findings/2025-12-02-logout-endpoint-accepts-get-requests-csrf-vulnerab.json` - POC: `pocs/poc_csrf_logout_get_request.sh`
+- [MEDIUM] Input Validation Bypass via URL Encoding in Name Field - `findings/2025-12-02-input-validation-bypass-via-url-encoding-in-name-f.json` - POC: `pocs/poc_validation_bypass_url_encoding_name_field.sh`
+- [CRITICAL] Duplicate Email Registration - Account Takeover and Account Hijacking Vulnerability - `findings/2025-12-02-duplicate-email-registration-account-takeover-and-.json` - POC: `pocs/poc_duplicate_email_registration_v3.sh`
+- [HIGH] Mass Assignment Vulnerability - Privilege Escalation via Hidden Parameter Injection - `findings/2025-12-02-mass-assignment-vulnerability-privilege-escalation.json` - POC: `pocs/poc_mass_assignment_privilege_escalation_v3.sh`
+- [HIGH] Authentication Bypass - /accounts/home/ Endpoint Redirect Loop - `findings/2025-12-02-authentication-bypass-accounts-home-endpoint-redir.json` - POC: `pocs/poc_auth_bypass_accounts_home_redirect.sh`

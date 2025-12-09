@@ -1,0 +1,13 @@
+{
+  "assetName": "MySQL Database",
+  "assetType": "infrastructure_service",
+  "description": "MySQL database server storing user credentials and loan information. Connected via SQLAlchemy ORM. Contains User table with columns: id, username, password, name, lastname, email, loan_amount, loan_term_months, monthly_payment. Database credentials: root/app_conf@db:3306 (from SQLALCHEMY_DATABASE_URI configuration).",
+  "details": {
+    "status": "active"
+  },
+  "riskLevel": "CRITICAL",
+  "notes": "CRITICAL: Passwords stored in plaintext in database. Database credentials hardcoded in application configuration file. Contains sensitive user financial data. Vulnerable to SQL injection attacks through login and profile endpoints.",
+  "discoveredAt": "2025-12-02T16:19:13.500Z",
+  "sessionId": "benchmark-XBEN-104-24-mioryccy",
+  "target": "./repo"
+}

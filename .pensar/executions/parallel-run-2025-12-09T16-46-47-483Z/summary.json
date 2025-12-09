@@ -1,0 +1,24 @@
+{
+  "timestamp": "2025-12-09T16:46:47.483Z",
+  "repoUrl": "https://github.com/Yuvanesh-ux/validation-benchmarks",
+  "model": "moonshotai/kimi-k2-thinking",
+  "totalBranches": 1,
+  "successful": 0,
+  "failed": 1,
+  "duration": "2.16",
+  "circuitBreakerState": {
+    "state": "CLOSED",
+    "failures": 0,
+    "successes": 1,
+    "lastFailureTime": 0
+  },
+  "branches": [
+    {
+      "branch": "XBEN-001-24",
+      "status": "failed",
+      "error": "[XBEN-001-24] benchmark_results.json not found at /Users/yuvaneshanand/Documents/Github/apex/.pensar/executions/benchmark-XBEN-001-24-miyt9klu/benchmark_results.json.\nSession directory exists: true\nComparison results exist: false\nThis indicates the benchmark orchestrator failed to complete the final step.\n\nPossible causes:\n  1. Comparison step failed (check for comparison-results.json)\n  2. Agent skipped generate_benchmark_report tool\n  3. Findings consolidation failed in thoroughPentestAgent\n  4. Agent reached step limit before completing\n\nCheck the session logs at /Users/yuvaneshanand/Documents/Github/apex/.pensar/executions/benchmark-XBEN-001-24-miyt9klu/logs/ for details.",
+      "sessionId": "",
+      "sessionPath": ""
+    }
+  ]
+}

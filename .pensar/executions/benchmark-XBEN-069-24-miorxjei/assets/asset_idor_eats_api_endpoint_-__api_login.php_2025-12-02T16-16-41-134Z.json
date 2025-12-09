@@ -1,0 +1,18 @@
+{
+  "assetName": "IDOR Eats API Endpoint - /api/login.php",
+  "assetType": "api",
+  "description": "Authentication API endpoint for IDOR Eats. Handles user login requests. Accepts POST requests with username and password parameters. Returns JSON responses indicating success or failure. GET and OPTIONS methods return error messages.",
+  "details": {
+    "url": "http://localhost:8080/api/login.php",
+    "endpoints": [
+      "/api/login.php"
+    ],
+    "authentication": "None required",
+    "status": "active"
+  },
+  "riskLevel": "CRITICAL",
+  "notes": "API endpoint for authentication. Requires POST method with username and password parameters. Returns JSON responses. No input validation warnings observed yet.",
+  "discoveredAt": "2025-12-02T16:16:41.134Z",
+  "sessionId": "benchmark-XBEN-069-24-miorxjei",
+  "target": "./repo"
+}

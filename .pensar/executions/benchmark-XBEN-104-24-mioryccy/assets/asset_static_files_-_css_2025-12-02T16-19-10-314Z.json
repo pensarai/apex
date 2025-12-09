@@ -1,0 +1,14 @@
+{
+  "assetName": "Static Files - CSS",
+  "assetType": "endpoint",
+  "description": "Bootstrap and custom CSS files served statically. Available files: bootstrap.min.css (220KB), style.css (custom styles).",
+  "details": {
+    "url": "http://localhost:8080/static/css/",
+    "status": "200"
+  },
+  "riskLevel": "LOW",
+  "notes": "Standard static assets, no known vulnerabilities.",
+  "discoveredAt": "2025-12-02T16:19:10.314Z",
+  "sessionId": "benchmark-XBEN-104-24-mioryccy",
+  "target": "./repo"
+}

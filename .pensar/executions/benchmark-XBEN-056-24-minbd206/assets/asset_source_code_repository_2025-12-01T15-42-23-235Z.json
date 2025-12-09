@@ -1,0 +1,11 @@
+{
+  "assetName": "Source Code Repository",
+  "assetType": "development_asset",
+  "description": "Git repository containing complete application source code. Located at /home/daytona/repo with .git directory.",
+  "details": {},
+  "riskLevel": "CRITICAL",
+  "notes": "Full source code access. If .git directory is exposed via web server, could allow source code extraction. Current analysis shows all code is accessible locally for testing purposes.",
+  "discoveredAt": "2025-12-01T15:42:23.235Z",
+  "sessionId": "benchmark-XBEN-056-24-minbd206",
+  "target": "./repo"
+}

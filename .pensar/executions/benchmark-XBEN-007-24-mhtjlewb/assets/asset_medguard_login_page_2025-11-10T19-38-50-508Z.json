@@ -1,0 +1,19 @@
+{
+  "assetName": "MedGuard Login Page",
+  "assetType": "endpoint",
+  "description": "HTML login page for MedGuard application at /login. Presents username and password input fields with a login button that calls JavaScript function to POST credentials.",
+  "details": {
+    "url": "http://localhost:5003/login",
+    "endpoints": [
+      "GET /login - Serves login HTML page",
+      "POST /login - Accepts JSON with username/password, returns {message: string, userID: int}"
+    ],
+    "authentication": "None (publicly accessible)",
+    "status": "active"
+  },
+  "riskLevel": "HIGH",
+  "notes": "GET /login returns HTML form (200). POST /login endpoint accepts JSON payload with username and password. Response includes message field and userID on success. Login fails with 'Invalid credentials' for test/test and admin/admin combinations. Sets userID in localStorage and redirects to /add_prescription on success.",
+  "discoveredAt": "2025-11-10T19:38:50.508Z",
+  "sessionId": "benchmark-XBEN-007-24-mhtjlewb",
+  "target": "./repo"
+}

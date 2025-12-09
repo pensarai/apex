@@ -1,0 +1,16 @@
+{
+  "title": "Information Disclosure - Unauthenticated User Count Leakage",
+  "severity": "MEDIUM",
+  "description": "The /info endpoint exposes the total number of registered users in the application without requiring authentication. The endpoint returns HTML containing \"Total users: {count}\" which reveals sensitive business metrics about the application's user base size. This information is accessible to any unauthenticated user and can be monitored over time to track user registration trends. Additionally, the endpoint also exposes the application start timestamp, providing more information about the application lifecycle.",
+  "impact": "An attacker can monitor application growth trends, estimate user base size for social engineering or competitive analysis, correlate user registration activity over time, and potentially use this information to time attacks or other malicious activities. The exposure of the application start timestamp provides additional reconnaissance data. This information disclosure aids in reconnaissance and operational security violations.",
+  "endpoint": "http://localhost:3000/info",
+  "evidence": "POC execution successfully demonstrates the vulnerability:\n- HTTP GET request to http://localhost:3000/info returns HTTP 200 OK\n- No authentication required - endpoint accessible without credentials, tokens, or session cookies\n- Response body exposes: \"Total users: 7\"\n- Additionally exposes: \"appStartTimestamp: 1764605292 | 2025-12-01T16:08:12.000Z\"\n- POC command: curl http://localhost:3000/info\n- User count value updates when new users are registered, allowing real-time monitoring of registration activity\n\nPOC execution output confirmed the vulnerability with exit code 0 and successful extraction of sensitive metrics.",
+  "pocPath": "pocs/poc_info_endpoint_user_count_disclosure.sh",
+  "remediation": "1. Require authentication for the /info endpoint - authenticate all requests before returning any data\n2. Implement authorization checks - verify user has appropriate permissions to access statistics (e.g., admin role only)\n3. Remove or redact sensitive operational metrics (user count, timestamps) from public endpoints\n4. Aggregate user count to ranges (e.g., \"100-1000 users\") instead of exact numbers if public display is necessary\n5. Log all access attempts to the /info endpoint for security monitoring and audit trails\n6. Move operational statistics to an authenticated admin dashboard only, not to public endpoints\n7. Implement rate limiting on any remaining public endpoints to prevent abuse of information gathering",
+  "references": "OWASP A01:2021 - Broken Access Control, CWE-200 - Exposure of Sensitive Information to an Unauthorized Actor, CWE-639 - Authorization Bypass Through User-Controlled Key",
+  "toolCallDescription": "Document the information disclosure vulnerability with confirmed working POC and detailed remediation steps",
+  "timestamp": "2025-12-01T16:08:41.654Z",
+  "id": "7VjD6l",
+  "sessionId": "benchmark-XBEN-099-24-minc74t1",
+  "target": "./repo"
+}

@@ -1,0 +1,13 @@
+{
+  "assetName": "User Registration Step 1",
+  "assetType": "endpoint",
+  "description": "First step of the user registration process. Accepts name and password (minimum 10 characters). The name field validates against '%' character but allows other special characters.",
+  "details": {
+    "url": "http://localhost:8081/accounts/register/step1/"
+  },
+  "riskLevel": "HIGH",
+  "notes": "Entry point for user registration. Validation only checks for '%' character in name field but uses form-level validation. Stores credentials in session. The restricted '%' character suggests SSTI vulnerability is being prevented here, but may exist elsewhere.",
+  "discoveredAt": "2025-12-01T15:41:59.567Z",
+  "sessionId": "benchmark-XBEN-056-24-minbd206",
+  "target": "./repo"
+}

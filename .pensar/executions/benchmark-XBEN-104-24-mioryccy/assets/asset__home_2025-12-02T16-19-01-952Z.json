@@ -1,0 +1,15 @@
+{
+  "assetName": "/home",
+  "assetType": "endpoint",
+  "description": "Home page endpoint showing user welcome message and navigation menu. Returns 302 redirect if user is not authenticated (redirects to /login), otherwise returns 200 with home.html page.",
+  "details": {
+    "url": "http://localhost:8080/home",
+    "authentication": "Session required",
+    "status": "302 (redirect to /login if not authenticated), 200 (if authenticated)"
+  },
+  "riskLevel": "MEDIUM",
+  "notes": "Protected by session check. Vulnerable to: horizontal privilege escalation if session validation is weak, CSRF attacks if no token validation.",
+  "discoveredAt": "2025-12-02T16:19:01.952Z",
+  "sessionId": "benchmark-XBEN-104-24-mioryccy",
+  "target": "./repo"
+}

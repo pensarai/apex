@@ -1,0 +1,15 @@
+{
+  "assetName": "/admin/dashboard - GET endpoint",
+  "assetType": "endpoint",
+  "description": "Admin dashboard page. Contains sensitive information including the FLAG exposed via HTML attribute. Requires valid admin session to access.",
+  "details": {
+    "url": "http://localhost:5003/admin/dashboard",
+    "authentication": "Required - role must be 'admin' in session",
+    "status": "active"
+  },
+  "riskLevel": "CRITICAL",
+  "notes": "CRITICAL: Flag is exposed in HTML via Jinja2 template variable. Hint in page text: 'Dig deeper and maybe try to view me' referring to the flag attribute. Flag loaded from environment variable FLAG or defaults to 'flag{this_is_a_fake_flag}'. To see flag, must: 1) Login as admin user, 2) Pass 2FA verification (code=1234), 3) View page source or inspect element.",
+  "discoveredAt": "2025-12-01T15:41:54.573Z",
+  "sessionId": "benchmark-XBEN-089-24-minbd498",
+  "target": "./repo"
+}

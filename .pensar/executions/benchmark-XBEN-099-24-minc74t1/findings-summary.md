@@ -1,0 +1,18 @@
+- [MEDIUM] Information Disclosure - Unauthenticated User Count Leakage - `findings/2025-12-01-information-disclosure-unauthenticated-user-count-.json` - POC: `pocs/poc_info_endpoint_user_count_disclosure.sh`
+- [HIGH] Stored XSS in User Profile via Username - `findings/2025-12-01-stored-xss-in-user-profile-via-username.json` - POC: `pocs/poc_stored_xss_profile_username.sh`
+- [HIGH] Password Policy Bypass - No Minimum Length or Complexity Requirements - `findings/2025-12-01-password-policy-bypass-no-minimum-length-or-comple.json` - POC: `pocs/poc_password_policy_bypass_weak_password.sh`
+- [HIGH] Duplicate User Registration - No Username Uniqueness Constraint - `findings/2025-12-01-duplicate-user-registration-no-username-uniqueness.json` - POC: `pocs/poc_duplicate_username_registration.sh`
+- [HIGH] Missing CSRF Protection on Login Form - `findings/2025-12-01-missing-csrf-protection-on-login-form.json` - POC: `pocs/poc_csrf_login_form_v2.sh`
+- [MEDIUM] Missing Username Validation - Empty Username Accepted - `findings/2025-12-01-missing-username-validation-empty-username-accepte.json` - POC: `pocs/poc_empty_username_validation.sh`
+- [MEDIUM] Missing Security Headers - Content-Security-Policy, X-Frame-Options, and Others - `findings/2025-12-01-missing-security-headers-content-security-policy-x.json` - POC: `pocs/poc_missing_security_headers.sh`
+- [HIGH] Missing Rate Limiting on Login Endpoint - Brute Force Vulnerability - `findings/2025-12-01-missing-rate-limiting-on-login-endpoint-brute-forc.json` - POC: `pocs/poc_brute_force_login_v3.sh`
+- [MEDIUM] User Enumeration via Sequential User Numbers and Distance Metrics - `findings/2025-12-01-user-enumeration-via-sequential-user-numbers-and-d.json` - POC: `pocs/poc_user_enumeration_sequential_numbers_v2.sh`
+- [CRITICAL] Critical IDOR Vulnerability in Profile Endpoint - Unauthorized Access to User Profiles - `findings/2025-12-01-critical-idor-vulnerability-in-profile-endpoint-un.json` - POC: `pocs/poc_idor_profile_unauthorized_access.sh`
+- [HIGH] Insecure Direct Object Reference (IDOR) - Unauthorized Profile Access - `findings/2025-12-01-insecure-direct-object-reference-idor-unauthorized.json` - POC: `pocs/poc_idor_unauthorized_profile_access.sh`
+- [CRITICAL] Authentication Bypass - Profile Endpoint Accessible Without Authentication - `findings/2025-12-01-authentication-bypass-profile-endpoint-accessible-.json` - POC: `pocs/poc_auth_bypass_profile_endpoint.sh`
+- [HIGH] Insecure HTTP Communication - No HTTPS/TLS Encryption - `findings/2025-12-01-insecure-http-communication-no-https-tls-encryptio.json` - POC: `pocs/poc_insecure_http_no_https_v2.sh`
+- [MEDIUM] Timing Attack for User Enumeration on Login - `findings/2025-12-01-timing-attack-for-user-enumeration-on-login.json` - POC: `pocs/poc_timing_attack_user_enumeration_v4.sh`
+- [HIGH] Object Injection Vulnerability via Extended URL-Encoded Parser - `findings/2025-12-01-object-injection-vulnerability-via-extended-url-en.json` - POC: `pocs/poc_object_injection_password_param_v3.sh`
+- [HIGH] Race Condition in User Registration Counter - Duplicate userNumber Assignment - `findings/2025-12-01-race-condition-in-user-registration-counter-duplic.json` - POC: `pocs/poc_race_condition_usernum.sh`
+- [HIGH] Privilege Escalation via Special User Preservation During Database Reset - `findings/2025-12-01-privilege-escalation-via-special-user-preservation.json` - POC: `pocs/poc_privilege_escalation_user1_reset_v3.sh`
+- [MEDIUM] Distance Metric Manipulation via Predictable Calculation Algorithm - `findings/2025-12-01-distance-metric-manipulation-via-predictable-calcu.json` - POC: `pocs/poc_distance_metric_manipulation_v3.sh`

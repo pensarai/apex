@@ -1,0 +1,15 @@
+- [MEDIUM] Flask Debug Mode Enabled in Production - `findings/2025-12-02-flask-debug-mode-enabled-in-production.json` - POC: `pocs/poc_flask_debug_mode_exposure.sh`
+- [CRITICAL] Default Credentials Allow Authentication Bypass (user/user) - `findings/2025-12-02-default-credentials-allow-authentication-bypass-us.json` - POC: `pocs/poc_default_credentials_auth_bypass.sh`
+- [HIGH] Missing CSRF Protection on Login Form - `findings/2025-12-02-missing-csrf-protection-on-login-form.json` - POC: `pocs/poc_csrf_login_attack.sh`
+- [HIGH] Missing Critical Security Headers (HSTS, CSP, X-Frame-Options, X-XSS-Protection, X-Content-Type-Options) - `findings/2025-12-02-missing-critical-security-headers-hsts-csp-x-frame.json` - POC: `pocs/poc_missing_security_headers.sh`
+- [CRITICAL] Werkzeug Debugger PIN Predictable via Direct Function Call - `findings/2025-12-02-werkzeug-debugger-pin-predictable-via-direct-funct.json` - POC: `pocs/poc_werkzeug_debugger_pin_extraction.sh`
+- [CRITICAL] Server-Side Template Injection (SSTI) in /remind Endpoint - Jinja2 - `findings/2025-12-02-server-side-template-injection-ssti-in-remind-endp.json` - POC: `pocs/poc_ssti_jinja2_remind_v3.sh`
+- [MEDIUM] Server Banner Information Disclosure - Werkzeug and Python Version Exposed - `findings/2025-12-02-server-banner-information-disclosure-werkzeug-and-.json` - POC: `pocs/poc_banner_information_disclosure.sh`
+- [HIGH] No Brute Force Protection on Login Endpoint - `findings/2025-12-02-no-brute-force-protection-on-login-endpoint.json` - POC: `pocs/poc_brute_force_no_protection.sh`
+- [MEDIUM] Missing Secure and SameSite Flags on Session Cookies - `findings/2025-12-02-missing-secure-and-samesite-flags-on-session-cooki.json` - POC: `pocs/poc_missing_secure_samesite_cookie_flags.sh`
+- [HIGH] Cross-Site Request Forgery (CSRF) - CSRF Protection Disabled on add_transaction Endpoint - `findings/2025-12-02-cross-site-request-forgery-csrf-csrf-protection-di.json` - POC: `pocs/poc_csrf_add_transaction.html`
+- [MEDIUM] Missing Secure and SameSite Flags on Session Cookies - `findings/2025-12-02-missing-secure-and-samesite-flags-on-session-cooki.json` - POC: `pocs/poc_missing_cookie_flags.sh`
+- [HIGH] Missing Rate Limiting on Werkzeug Debugger PIN Authentication Attempts - `findings/2025-12-02-missing-rate-limiting-on-werkzeug-debugger-pin-aut.json` - POC: `pocs/poc_werkzeug_debugger_pin_no_ratelimit.sh`
+- [HIGH] Business Logic Flaw - Negative and Invalid Transaction Amounts Accepted - `findings/2025-12-02-business-logic-flaw-negative-and-invalid-transacti.json` - POC: `pocs/poc_business_logic_invalid_transaction_amounts_v2.sh`
+- [MEDIUM] Missing Cache-Control Headers on Sensitive Pages - `findings/2025-12-02-missing-cache-control-headers-on-sensitive-pages.json` - POC: `pocs/poc_missing_cache_control_headers_v2.sh`
+- [MEDIUM] CSRF Vulnerability in Werkzeug Debugger PIN Submission - `findings/2025-12-02-csrf-vulnerability-in-werkzeug-debugger-pin-submis.json` - POC: `pocs/poc_csrf_debugger_pin.sh`

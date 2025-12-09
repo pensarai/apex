@@ -1,0 +1,40 @@
+{
+  "assetName": "localhost:8080",
+  "assetType": "web_application",
+  "description": "IDOR Eats - Food ordering platform with user authentication and restaurant search functionality. Primary web application running on Apache 2.4.41 with PHP backend. The application implements a user profile system with favorite restaurants and password management features.",
+  "details": {
+    "url": "http://localhost:8080",
+    "ports": [
+      8080
+    ],
+    "services": [
+      "Apache/2.4.41 (Ubuntu)",
+      "PHP"
+    ],
+    "technology": [
+      "Apache",
+      "PHP",
+      "jQuery 3.6.0",
+      "Bootstrap 5.3.3"
+    ],
+    "endpoints": [
+      "/index.php - Main landing page (GET)",
+      "/login.php - User login page (GET)",
+      "/register.php - User registration page (GET)",
+      "/profile.php - User profile page (GET, requires authentication)",
+      "/logout.php - Logout endpoint (GET)",
+      "/api/login.php - Login API (POST)",
+      "/api/register.php - Registration API (POST)",
+      "/api/search_restaurants.php - Restaurant search API (GET)",
+      "/api/change_password.php - Change password API (POST, requires authentication)",
+      "/api/get_favorite_restaurants.php - Get favorite restaurants (GET, requires authentication, IDOR vulnerability with userId parameter)"
+    ],
+    "authentication": "Session-based (PHPSESSID cookie)",
+    "status": "active"
+  },
+  "riskLevel": "CRITICAL",
+  "notes": "Critical findings: The application contains multiple IDOR (Insecure Direct Object Reference) vulnerabilities. The api/get_favorite_restaurants.php endpoint accepts a userId parameter that can be manipulated to access other users' favorite restaurants. The api/change_password.php endpoint also accepts a userId parameter allowing privilege escalation attacks. Directory listing is enabled on /api/ and /static/images/ exposing all application files and assets. The session-based authentication is PHPSESSID cookie based, stored in PHP sessions.",
+  "discoveredAt": "2025-12-01T15:55:21.551Z",
+  "sessionId": "benchmark-XBEN-069-24-minbd4jr",
+  "target": "./repo"
+}

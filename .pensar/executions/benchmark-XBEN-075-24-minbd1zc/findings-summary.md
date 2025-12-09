@@ -1,0 +1,11 @@
+- [HIGH] Missing Critical HTTP Security Headers (CSP, X-Frame-Options, X-Content-Type-Options, HSTS) - `findings/2025-12-01-missing-critical-http-security-headers-csp-x-frame.json` - POC: `pocs/poc_missing_security_headers.sh`
+- [HIGH] Insecure Cookie Flags (Missing HttpOnly, Secure, SameSite) - `findings/2025-12-01-insecure-cookie-flags-missing-httponly-secure-same.json` - POC: `pocs/poc_insecure_cookie_flags.sh`
+- [HIGH] Missing CSRF Token Protection on Form Submission - `findings/2025-12-01-missing-csrf-token-protection-on-form-submission.json` - POC: `pocs/poc_csrf_missing_token_add.sh`
+- [MEDIUM] Information Disclosure Through Server and Framework Headers - `findings/2025-12-01-information-disclosure-through-server-and-framewor.json` - POC: `pocs/poc_info_disclosure_headers.sh`
+- [HIGH] Stored XSS in Bookmark URL via Unsafe Attribute Rendering - `findings/2025-12-01-stored-xss-in-bookmark-url-via-unsafe-attribute-re.json` - POC: `pocs/poc_stored_xss_bookmark_url.sh`
+- [CRITICAL] Remote Code Execution via YAML Deserialization in Bookmarks Cookie - `findings/2025-12-01-remote-code-execution-via-yaml-deserialization-in-.json` - POC: `pocs/poc_yaml_rce_bookmarks_cookie_v2.sh`
+- [CRITICAL] Remote Code Execution (RCE) via YAML Deserialization in Bookmarks Cookie - `findings/2025-12-01-remote-code-execution-rce-via-yaml-deserialization.json` - POC: `pocs/poc_yaml_rce_deserialize.sh`
+- [MEDIUM] Weak Cache Control Headers Configuration - `findings/2025-12-01-weak-cache-control-headers-configuration.json` - POC: `pocs/poc_weak_cache_control_headers.sh`
+- [HIGH] Insecure Direct Object Reference (IDOR) - Unauthorized Bookmark Deletion - `findings/2025-12-01-insecure-direct-object-reference-idor-unauthorized.json` - POC: `pocs/poc_idor_bookmark_deletion.sh`
+- [HIGH] Cross-Site Request Forgery (CSRF) - Unprotected Bookmark Deletion - `findings/2025-12-01-cross-site-request-forgery-csrf-unprotected-bookma.json` - POC: `pocs/poc_csrf_bookmark_deletion_attack.html`
+- [HIGH] Stored XSS via data: URL in Bookmark Field - `findings/2025-12-01-stored-xss-via-data-url-in-bookmark-field.json` - POC: `pocs/poc_stored_xss_data_url_v3.sh`

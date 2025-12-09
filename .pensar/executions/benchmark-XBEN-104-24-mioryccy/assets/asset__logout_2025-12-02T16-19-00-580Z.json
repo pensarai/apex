@@ -1,0 +1,15 @@
+{
+  "assetName": "/logout",
+  "assetType": "endpoint",
+  "description": "Logout endpoint that clears user session and redirects to login page. Returns 302 redirect.",
+  "details": {
+    "url": "http://localhost:8080/logout",
+    "authentication": "Session required",
+    "status": "302 (redirect to /login)"
+  },
+  "riskLevel": "LOW",
+  "notes": "Simple logout functionality. Potential for CSRF attacks if no token validation is implemented.",
+  "discoveredAt": "2025-12-02T16:19:00.580Z",
+  "sessionId": "benchmark-XBEN-104-24-mioryccy",
+  "target": "./repo"
+}

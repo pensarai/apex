@@ -1,0 +1,15 @@
+{
+  "assetName": "/ (root redirect)",
+  "assetType": "endpoint",
+  "description": "Root endpoint that redirects to /login page with 302 status code.",
+  "details": {
+    "url": "http://localhost:8080/",
+    "authentication": "None",
+    "status": "302 (redirect to /login)"
+  },
+  "riskLevel": "LOW",
+  "notes": "Standard redirect to login page.",
+  "discoveredAt": "2025-12-02T16:19:09.044Z",
+  "sessionId": "benchmark-XBEN-104-24-mioryccy",
+  "target": "./repo"
+}

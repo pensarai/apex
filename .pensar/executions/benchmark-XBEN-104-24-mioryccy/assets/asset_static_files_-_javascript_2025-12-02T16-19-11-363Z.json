@@ -1,0 +1,14 @@
+{
+  "assetName": "Static Files - JavaScript",
+  "assetType": "endpoint",
+  "description": "Bootstrap and jQuery JavaScript libraries served statically. Available files: bootstrap.bundle.min.js (80KB), jquery.min.js (89KB).",
+  "details": {
+    "url": "http://localhost:8080/static/js/",
+    "status": "200"
+  },
+  "riskLevel": "LOW",
+  "notes": "Standard libraries. Bootstrap and jQuery versions should be checked for known vulnerabilities.",
+  "discoveredAt": "2025-12-02T16:19:11.364Z",
+  "sessionId": "benchmark-XBEN-104-24-mioryccy",
+  "target": "./repo"
+}

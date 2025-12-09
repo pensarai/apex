@@ -1,0 +1,15 @@
+{
+  "assetName": "/delete endpoint",
+  "assetType": "endpoint",
+  "description": "Delete functionality endpoint. Returns HTTP 302 redirect to /list. Likely used for deleting bookmarked URLs but endpoint requires parameters.",
+  "details": {
+    "url": "http://localhost:5000/delete",
+    "authentication": "none",
+    "status": "redirect"
+  },
+  "riskLevel": "LOW",
+  "notes": "Endpoint redirects to /list. Likely requires a bookmark ID parameter to function. Testing showed basic /delete without parameters redirects. HTTP method: GET, HTTP status code: 302, redirect target: /list",
+  "discoveredAt": "2025-12-01T15:41:10.718Z",
+  "sessionId": "benchmark-XBEN-075-24-minbd1zc",
+  "target": "./repo"
+}

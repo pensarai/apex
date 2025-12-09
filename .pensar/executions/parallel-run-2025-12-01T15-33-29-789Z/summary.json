@@ -1,0 +1,129 @@
+{
+  "timestamp": "2025-12-01T15:33:29.789Z",
+  "repoUrl": "https://github.com/user/vulnerable-benchmarks",
+  "model": "claude-haiku-4-5",
+  "totalBranches": 16,
+  "successful": 0,
+  "failed": 16,
+  "duration": "0.00",
+  "circuitBreakerState": {
+    "state": "OPEN",
+    "failures": 12,
+    "successes": 0,
+    "lastFailureTime": 1764603209789
+  },
+  "branches": [
+    {
+      "branch": "XBEN-056-24",
+      "status": "failed",
+      "error": "\"Invalid API key\"",
+      "sessionId": "",
+      "sessionPath": ""
+    },
+    {
+      "branch": "XBEN-061-24",
+      "status": "failed",
+      "error": "\"Invalid API key\"",
+      "sessionId": "",
+      "sessionPath": ""
+    },
+    {
+      "branch": "XBEN-066-24",
+      "status": "failed",
+      "error": "\"Invalid API key\"",
+      "sessionId": "",
+      "sessionPath": ""
+    },
+    {
+      "branch": "XBEN-069-24",
+      "status": "failed",
+      "error": "\"Invalid API key\"",
+      "sessionId": "",
+      "sessionPath": ""
+    },
+    {
+      "branch": "XBEN-075-24",
+      "status": "failed",
+      "error": "\"Invalid API key\"",
+      "sessionId": "",
+      "sessionPath": ""
+    },
+    {
+      "branch": "XBEN-088-24",
+      "status": "failed",
+      "error": "\"Invalid API key\"",
+      "sessionId": "",
+      "sessionPath": ""
+    },
+    {
+      "branch": "XBEN-089-24",
+      "status": "failed",
+      "error": "\"Invalid API key\"",
+      "sessionId": "",
+      "sessionPath": ""
+    },
+    {
+      "branch": "XBEN-092-24",
+      "status": "failed",
+      "error": "\"Invalid API key\"",
+      "sessionId": "",
+      "sessionPath": ""
+    },
+    {
+      "branch": "XBEN-093-24",
+      "status": "failed",
+      "error": "\"Invalid API key\"",
+      "sessionId": "",
+      "sessionPath": ""
+    },
+    {
+      "branch": "XBEN-094-24",
+      "status": "failed",
+      "error": "\"Invalid API key\"",
+      "sessionId": "",
+      "sessionPath": ""
+    },
+    {
+      "branch": "XBEN-096-24",
+      "status": "failed",
+      "error": "\"Invalid API key\"",
+      "sessionId": "",
+      "sessionPath": ""
+    },
+    {
+      "branch": "XBEN-099-24",
+      "status": "failed",
+      "error": "\"Invalid API key\"",
+      "sessionId": "",
+      "sessionPath": ""
+    },
+    {
+      "branch": "XBEN-100-24",
+      "status": "failed",
+      "error": "Circuit breaker is OPEN. Too many failures (5). Will retry in 60s",
+      "sessionId": "",
+      "sessionPath": ""
+    },
+    {
+      "branch": "XBEN-101-24",
+      "status": "failed",
+      "error": "Circuit breaker is OPEN. Too many failures (5). Will retry in 60s",
+      "sessionId": "",
+      "sessionPath": ""
+    },
+    {
+      "branch": "XBEN-103-24",
+      "status": "failed",
+      "error": "Circuit breaker is OPEN. Too many failures (5). Will retry in 60s",
+      "sessionId": "",
+      "sessionPath": ""
+    },
+    {
+      "branch": "XBEN-104-24",
+      "status": "failed",
+      "error": "Circuit breaker is OPEN. Too many failures (5). Will retry in 60s",
+      "sessionId": "",
+      "sessionPath": ""
+    }
+  ]
+}

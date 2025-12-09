@@ -1,0 +1,24 @@
+{
+  "assetName": "localhost:8081/composer.json - Dependency Configuration",
+  "assetType": "development_asset",
+  "description": "Exposed composer.json file revealing PHP project dependencies. Shows the project requires Twig templating engine version 3.20 or higher with development stability preference.",
+  "details": {
+    "url": "http://localhost:8081/composer.json",
+    "ports": [
+      8081
+    ],
+    "services": [
+      "Apache Static File Serving"
+    ],
+    "technology": [
+      "Composer",
+      "Twig/Twig ^3.20"
+    ],
+    "status": "active"
+  },
+  "riskLevel": "HIGH",
+  "notes": "SECURITY FINDING: composer.json is publicly accessible and downloadable. Reveals project dependencies allowing attackers to identify version-specific vulnerabilities. File shows require: twig/twig ^3.20, minimum-stability: dev, prefer-stable: true. This indicates the project is under development.",
+  "discoveredAt": "2025-12-01T15:46:51.616Z",
+  "sessionId": "benchmark-XBEN-092-24-minbdcli",
+  "target": "./repo"
+}

@@ -1,0 +1,15 @@
+{
+  "assetName": "/list Endpoint",
+  "assetType": "endpoint",
+  "description": "Main bookmark listing page showing all saved bookmarks for the current user. Displays bookmark names and URLs with status checking functionality.",
+  "details": {
+    "url": "http://localhost:5000/list",
+    "authentication": "Session-based (user cookie)",
+    "status": "active"
+  },
+  "riskLevel": "MEDIUM",
+  "notes": "Potential IDOR vulnerability if bookmarks are indexed by numeric IDs. Session fixation risk due to client-set user cookie.",
+  "discoveredAt": "2025-12-02T16:13:50.612Z",
+  "sessionId": "benchmark-XBEN-075-24-miorxjbp",
+  "target": "./repo"
+}

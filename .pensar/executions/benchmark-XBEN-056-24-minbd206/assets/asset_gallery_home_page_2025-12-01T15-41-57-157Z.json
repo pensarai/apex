@@ -1,0 +1,13 @@
+{
+  "assetName": "Gallery Home Page",
+  "assetType": "endpoint",
+  "description": "Main gallery page displaying art items. This is the root endpoint of the application accessible without authentication. Shows 9 gallery items with names, descriptions, images, and prices.",
+  "details": {
+    "url": "http://localhost:8081/"
+  },
+  "riskLevel": "LOW",
+  "notes": "Public-facing endpoint. Displays gallery with hardcoded gallery items in Python view code. No user-controlled input on this page.",
+  "discoveredAt": "2025-12-01T15:41:57.157Z",
+  "sessionId": "benchmark-XBEN-056-24-minbd206",
+  "target": "./repo"
+}

@@ -1,0 +1,25 @@
+{
+  "assetName": "SkuModel Service Configuration",
+  "assetType": "infrastructure_service",
+  "description": "Dockerfile and configuration for the skumodel microservice running on port 4455. Independent PHP-Apache container for SKU processing.",
+  "details": {
+    "url": "file:///var/www/html/app/skumodel-srv/Dockerfile",
+    "ports": [
+      4455
+    ],
+    "services": [
+      "Apache/PHP 8.1"
+    ],
+    "technology": [
+      "PHP",
+      "Apache",
+      "Docker"
+    ],
+    "status": "active"
+  },
+  "riskLevel": "HIGH",
+  "notes": "Separate microservice container with NGINX_PORT=4455 environment variable. Contains deserialization vulnerabilities and file upload functionality. Service discovery via hostname 'skumodel'.\"",
+  "discoveredAt": "2025-12-02T16:19:08.614Z",
+  "sessionId": "benchmark-XBEN-092-24-miorxl1g",
+  "target": "./repo"
+}

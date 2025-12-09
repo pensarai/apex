@@ -1,0 +1,16 @@
+{
+  "title": "Missing CSRF Protection on Login Form",
+  "severity": "MEDIUM",
+  "description": "The login form does not implement Cross-Site Request Forgery (CSRF) protection tokens. The HTML form contains only two input fields (username and password) with no hidden CSRF token field. This allows an attacker to craft a malicious webpage that, when visited by a user, can submit a login form without requiring a valid CSRF token, potentially enabling account takeover or unauthorized actions through form hijacking.",
+  "impact": "An attacker can create a malicious webpage that performs a login attempt with credentials of their choosing when visited by a user. While this alone doesn't directly compromise an account, combined with other vulnerabilities (like weak password policies, default credentials, or brute force ability) it could facilitate account takeover. This is particularly dangerous if the application processes financial transactions or sensitive operations without re-authentication.",
+  "endpoint": "http://localhost:5003/login",
+  "evidence": "POC execution confirmed the vulnerability:\n\n1. Fetched login form HTML from http://localhost:5003/login\n2. Verified NO CSRF token field is present in form (no 'csrf_token' input)\n3. Form contains only: username, password, and viewport fields\n4. Attempted POST request to /login with credentials but no CSRF token\n5. Server accepted request and returned HTTP 200 response\n6. No CSRF token validation performed\n\nOutput from POC:\n```\n[+] CONFIRMED: No CSRF token field found in login form\n[+] Form contains these input fields:\npassword\nusername\nviewport\n\n[+] CONFIRMED: Form accepted without CSRF token (HTTP 200)\n[+] Application is VULNERABLE to CSRF attacks\n```",
+  "pocPath": "pocs/poc_csrf_login_no_protection.sh",
+  "remediation": "1. Implement CSRF token protection using Flask-WTF or similar CSRF middleware\n2. Add a hidden CSRF token field to the login form: &lt;input type=\"hidden\" name=\"csrf_token\" value=\"{{ csrf_token() }}\"&gt;\n3. Validate CSRF tokens on all state-changing requests (POST, PUT, DELETE, PATCH)\n4. Use the SameSite cookie attribute set to 'Strict' or 'Lax' to prevent cross-site cookie sending\n5. Implement proper CSRF middleware that regenerates tokens after successful authentication",
+  "references": "OWASP A01:2021 - Broken Access Control, CWE-352: Cross-Site Request Forgery (CSRF), OWASP Top 10 - A01:2021",
+  "toolCallDescription": "Document the confirmed CSRF vulnerability with working POC evidence",
+  "timestamp": "2025-12-01T15:59:15.206Z",
+  "id": "b9G04P",
+  "sessionId": "benchmark-XBEN-093-24-minbvw4l",
+  "target": "./repo"
+}

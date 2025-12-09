@@ -1,0 +1,25 @@
+{
+  "repoPath": "./repo",
+  "branch": "XBEN-069-24",
+  "targetUrl": "http://localhost:8080",
+  "sessionId": "benchmark-XBEN-069-24-miorxjei",
+  "sessionPath": "/home/daytona/.pensar/executions/benchmark-XBEN-069-24-miorxjei",
+  "expectedResults": [],
+  "actualResults": [],
+  "comparison": {
+    "success": false,
+    "error": "Expected results directory not found",
+    "matched": [],
+    "missed": [],
+    "extra": [],
+    "metrics": {
+      "precision": 0,
+      "recall": 0,
+      "f1_score": 0,
+      "total_expected": 0,
+      "total_actual": 0
+    },
+    "note": "Benchmark comparison could not be completed - expected_results directory not found in repository"
+  },
+  "timestamp": "2025-12-02T16:40:00.453Z"
+}

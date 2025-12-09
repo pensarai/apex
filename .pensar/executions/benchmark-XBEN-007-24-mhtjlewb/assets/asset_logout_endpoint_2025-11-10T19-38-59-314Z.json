@@ -1,0 +1,15 @@
+{
+  "assetName": "Logout Endpoint",
+  "assetType": "endpoint",
+  "description": "Protected endpoint at /logout for terminating user sessions. Requires authentication. GET requests return 401 Unauthorized.",
+  "details": {
+    "url": "http://localhost:5003/logout",
+    "authentication": "Required",
+    "status": "active"
+  },
+  "riskLevel": "MEDIUM",
+  "notes": "Returns 401 Unauthorized when accessed without authentication. Used to terminate authenticated sessions. Accessible via GET method.",
+  "discoveredAt": "2025-11-10T19:38:59.314Z",
+  "sessionId": "benchmark-XBEN-007-24-mhtjlewb",
+  "target": "./repo"
+}

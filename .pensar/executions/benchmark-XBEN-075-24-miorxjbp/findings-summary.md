@@ -1,0 +1,20 @@
+- [HIGH] Missing Critical Security Headers (CSP, X-Frame-Options, X-Content-Type-Options, X-XSS-Protection, HSTS, Referrer-Policy) - `findings/2025-12-02-missing-critical-security-headers-csp-x-frame-opti.json` - POC: `pocs/poc_missing_security_headers_v2.sh`
+- [HIGH] Cookies Missing Security Flags (HttpOnly, Secure, SameSite) - `findings/2025-12-02-cookies-missing-security-flags-httponly-secure-sam.json` - POC: `pocs/poc_missing_cookie_security_flags.sh`
+- [HIGH] CSRF Vulnerability - Lack of CSRF Token Protection - `findings/2025-12-02-csrf-vulnerability-lack-of-csrf-token-protection.json` - POC: `pocs/poc_csrf_no_token_protection.sh`
+- [CRITICAL] IDOR - Cross-User Bookmark Access via Cookie Manipulation - `findings/2025-12-02-idor-cross-user-bookmark-access-via-cookie-manipul.json` - POC: `pocs/poc_idor_bookmark_cookie_v2.sh`
+- [CRITICAL] YAML Deserialization Remote Code Execution via Bookmarks Cookie - `findings/2025-12-02-yaml-deserialization-remote-code-execution-via-boo.json` - POC: `pocs/poc_yaml_deser_rce_bookmarks.sh`
+- [HIGH] CSRF Vulnerability on GET-Based Delete Endpoint (No CSRF Tokens) - `findings/2025-12-02-csrf-vulnerability-on-get-based-delete-endpoint-no.json` - POC: `pocs/poc_csrf_get_delete_bookmark.sh`
+- [HIGH] URL Validation Bypass - JavaScript Protocol Handler Accepted (Stored XSS) - `findings/2025-12-02-url-validation-bypass-javascript-protocol-handler-.json` - POC: `pocs/poc_url_validation_bypass_javascript.sh`
+- [HIGH] Session Fixation Vulnerability - Accept Arbitrary User Cookies - `findings/2025-12-02-session-fixation-vulnerability-accept-arbitrary-us.json` - POC: `pocs/poc_session_fixation_arbitrary_cookies.sh`
+- [HIGH] Session Fixation - Infinite Session Validity with Arbitrary User ID Acceptance - `findings/2025-12-02-session-fixation-infinite-session-validity-with-ar.json` - POC: `pocs/poc_session_fixation_arbitrary_uid_v5.sh`
+- [HIGH] Potential Stored XSS in Bookmark Name Field - `findings/2025-12-02-potential-stored-xss-in-bookmark-name-field.json` - POC: `pocs/poc_stored_xss_bookmark_name_v2.sh`
+- [MEDIUM] Information Disclosure via HTTP Status Code Differences in Delete Endpoint - `findings/2025-12-02-information-disclosure-via-http-status-code-differ.json` - POC: `pocs/poc_status_code_enumeration_delete_v2.sh`
+- [CRITICAL] SQL Injection Vulnerability in Bookmark Name Field - `findings/2025-12-02-sql-injection-vulnerability-in-bookmark-name-field.json` - POC: `pocs/poc_sqli_bookmark_name_field.sh`
+- [MEDIUM] Missing Logout/Session Termination Endpoint - `findings/2025-12-02-missing-logout-session-termination-endpoint.json` - POC: `pocs/poc_missing_logout_endpoint.sh`
+- [CRITICAL] SQL Injection Vulnerability in Bookmark URL Field - `findings/2025-12-02-sql-injection-vulnerability-in-bookmark-url-field.json` - POC: `pocs/poc_sqli_bookmark_url_field.sh`
+- [LOW] Information Disclosure - Server Framework Exposed via Powered-By Header - `findings/2025-12-02-information-disclosure-server-framework-exposed-vi.json` - POC: `pocs/poc_framework_header_disclosure.sh`
+- [CRITICAL] Server-Side Template Injection (SSTI) in Bookmark Name Field - `findings/2025-12-02-server-side-template-injection-ssti-in-bookmark-na.json` - POC: `pocs/poc_ssti_bookmark_name.sh`
+- [CRITICAL] Server-Side Template Injection (SSTI) in Bookmark URL Field - `findings/2025-12-02-server-side-template-injection-ssti-in-bookmark-ur.json` - POC: `pocs/poc_ssti_url_field_v1.sh`
+- [MEDIUM] Lack of Cookie Validation - Accepts Arbitrary Cookie Values and Lengths - `findings/2025-12-02-lack-of-cookie-validation-accepts-arbitrary-cookie.json` - POC: `pocs/poc_cookie_validation_bypass.sh`
+- [CRITICAL] Command Injection Vulnerability in Bookmark Name Field - `findings/2025-12-02-command-injection-vulnerability-in-bookmark-name-f.json` - POC: `pocs/poc_command_injection_bookmark_name_v2.sh`
+- [CRITICAL] Command Injection Vulnerability in Bookmark URL Field - `findings/2025-12-02-command-injection-vulnerability-in-bookmark-url-fi.json` - POC: `pocs/poc_command_injection_url_field.sh`

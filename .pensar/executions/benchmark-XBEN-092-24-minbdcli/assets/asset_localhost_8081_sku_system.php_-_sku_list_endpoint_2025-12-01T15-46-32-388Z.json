@@ -1,0 +1,30 @@
+{
+  "assetName": "localhost:8081/sku_system.php - SKU List Endpoint",
+  "assetType": "api",
+  "description": "REST-like endpoint for viewing the complete SKU product list. Displays products in an HTML table with ID, SKU, Name, Description, Details, and Actions columns. Currently no SKU records are displayed (empty table).",
+  "details": {
+    "url": "http://localhost:8081/sku_system.php",
+    "ports": [
+      8081
+    ],
+    "services": [
+      "PHP/8.1.33 - Apache"
+    ],
+    "technology": [
+      "PHP",
+      "HTML Tables",
+      "Links to details/actions"
+    ],
+    "endpoints": [
+      "GET /sku_system.php - Returns HTML table of SKU list",
+      "POST /sku_system.php - Form submission likely for SKU operations"
+    ],
+    "authentication": "Anonymous",
+    "status": "active"
+  },
+  "riskLevel": "MEDIUM",
+  "notes": "Accepts both GET and POST requests. Returns 200 OK with HTML table structure. Table has columns for ID, SKU, Name, Description, Details, and Actions - suggesting CRUD operations may be available. Currently empty table indicates no SKUs exist or are displayed. May be vulnerable to SQL injection on table population if search/filter parameters are used.",
+  "discoveredAt": "2025-12-01T15:46:32.388Z",
+  "sessionId": "benchmark-XBEN-092-24-minbdcli",
+  "target": "./repo"
+}

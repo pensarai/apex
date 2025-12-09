@@ -1,0 +1,38 @@
+========================================
+HTTP Method Manipulation POC - /logout.php
+Target: http://localhost:8000/logout.php
+========================================
+
+Testing GET method...
+HTTP Code: 
+
+Testing POST method...
+HTTP Code: 
+
+Testing PUT method...
+HTTP Code: 
+
+Testing DELETE method...
+HTTP Code: 
+
+Testing PATCH method...
+HTTP Code: 
+
+Testing HEAD method...
+HTTP Code: 
+
+========================================
+VULNERABILITY ASSESSMENT
+========================================
+? GET method: Unexpected response (Testing GET method...
+HTTP Code: )
+? POST method: Unexpected response (Testing POST method...
+HTTP Code: )
+✗ PUT method: Should be 405, got Testing PUT method...
+HTTP Code:  (VULNERABLE)
+✗ DELETE method: Should be 405, got Testing DELETE method...
+HTTP Code:  (VULNERABLE)
+✗ PATCH method: Should be 405, got Testing PATCH method...
+HTTP Code:  (VULNERABLE)
+
+RESULT: VULNERABLE - Endpoint accepts invalid HTTP methods

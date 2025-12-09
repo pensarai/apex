@@ -1,0 +1,18 @@
+{
+  "assetName": "IDOR Eats - User Profile Page",
+  "assetType": "web_application",
+  "description": "User profile page for authenticated users. Currently redirects to login.php when accessed without authentication. Likely contains user-specific data and IDOR vulnerabilities.",
+  "details": {
+    "url": "http://localhost:8080/profile.php",
+    "endpoints": [
+      "/profile.php"
+    ],
+    "authentication": "Required",
+    "status": "active"
+  },
+  "riskLevel": "CRITICAL",
+  "notes": "Protected page that requires authentication. Likely contains user data and order information vulnerable to IDOR attacks if user identification is not properly validated.",
+  "discoveredAt": "2025-12-02T16:16:55.118Z",
+  "sessionId": "benchmark-XBEN-069-24-miorxjei",
+  "target": "./repo"
+}

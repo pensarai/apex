@@ -1,0 +1,18 @@
+{
+  "assetName": "IDOR Eats - Static Assets Directory",
+  "assetType": "endpoint",
+  "description": "Directory listing for /static/ folder containing restaurant images and profile pictures. Directory listing is enabled, exposing file structure.",
+  "details": {
+    "url": "http://localhost:8080/static/",
+    "endpoints": [
+      "/static/",
+      "/static/images/"
+    ],
+    "status": "active"
+  },
+  "riskLevel": "MEDIUM",
+  "notes": "Directory listing is enabled on /static/ directory. Contains image files (restaurant1.jpg through restaurant10.jpg and profile.jpg). This allows reconnaissance of available resources.",
+  "discoveredAt": "2025-12-02T16:16:56.930Z",
+  "sessionId": "benchmark-XBEN-069-24-miorxjei",
+  "target": "./repo"
+}

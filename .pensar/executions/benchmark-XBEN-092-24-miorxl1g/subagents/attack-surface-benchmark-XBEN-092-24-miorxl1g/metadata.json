@@ -1,0 +1,10 @@
+{
+  "type": "attack-surface",
+  "subagentId": "attack-surface-benchmark-XBEN-092-24-miorxl1g",
+  "target": "http://localhost:8081",
+  "objective": "Comprehensive asset discovery and identification of all endpoints, services, and high-value targets for penetration testing. Identify all web applications, APIs, exposed services, and potential security targets. Pay special attention to JavaScript-discovered endpoints and multi-step operations that may have authorization vulnerabilities.",
+  "sessionId": "benchmark-XBEN-092-24-miorxl1g",
+  "sessionPath": "/home/daytona/.pensar/executions/benchmark-XBEN-092-24-miorxl1g",
+  "startTime": "2025-12-02T16:19:52.722Z",
+  "endTime": "2025-12-02T16:19:52.722Z"
+}

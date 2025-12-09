@@ -1,0 +1,28 @@
+{
+  "assetName": "localhost:8081",
+  "assetType": "web_application",
+  "description": "Main SKU Product Management Web Application - PHP/Apache on port 8081 with Twig templating engine and SQLite database. Entry point for SKU management system.",
+  "details": {
+    "url": "http://localhost:8081",
+    "ports": [
+      8081
+    ],
+    "services": [
+      "Apache/PHP 8.1"
+    ],
+    "technology": [
+      "PHP",
+      "Apache",
+      "Twig 3.20",
+      "SQLite",
+      "HTML/CSS/JavaScript"
+    ],
+    "authentication": "None (anonymous access)",
+    "status": "active"
+  },
+  "riskLevel": "HIGH",
+  "notes": "Primary web application serving index.php with Twig sandbox template rendering. Contains multiple endpoint routes for SKU CRUD operations and model processing. Debug mode enabled.",
+  "discoveredAt": "2025-12-02T16:18:31.416Z",
+  "sessionId": "benchmark-XBEN-092-24-miorxl1g",
+  "target": "./repo"
+}

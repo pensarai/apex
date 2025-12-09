@@ -1,0 +1,85 @@
+{
+  "summary": {
+    "totalAssets": 10,
+    "totalDomains": 1,
+    "analysisComplete": true
+  },
+  "discoveredAssets": [
+    "localhost:8080 - IDOR Eats Web Application (Apache 2.4.41, PHP) - Ports 8080 - PRIMARY APPLICATION",
+    "index.php - Main landing page with restaurant search and navigation",
+    "login.php - User login page (public)",
+    "register.php - User registration page (public)",
+    "profile.php - User profile page (authenticated, IDOR vulnerabilities)",
+    "logout.php - Logout functionality",
+    "/api/login.php - Authentication API endpoint (POST)",
+    "/api/register.php - Registration API endpoint (POST)",
+    "/api/search_restaurants.php - Restaurant search API (GET, public)",
+    "/api/get_favorite_restaurants.php - User favorites API (GET, CRITICAL IDOR vulnerability with userId parameter)",
+    "/api/change_password.php - Password change API (POST, CRITICAL IDOR vulnerability with userId parameter)",
+    "/static/images/ - Directory listing with static assets (10+ restaurant images, profile image)"
+  ],
+  "targets": [
+    {
+      "target": "http://localhost:8080/api/get_favorite_restaurants.php",
+      "objective": "Test IDOR vulnerability by accessing favorite restaurants of different users using userId parameter manipulation. Test with multiple userId values to confirm lack of authorization checks. Verify if user ID enumeration is possible.",
+      "rationale": "CRITICAL IDOR vulnerability identified where userId parameter in the API endpoint is not validated against authenticated user. This allows any authenticated user to view favorite restaurants of any other user by simply changing the userId parameter value."
+    },
+    {
+      "target": "http://localhost:8080/api/change_password.php",
+      "objective": "Test privilege escalation through IDOR vulnerability. Attempt to change password of other users by manipulating userId parameter. Test if oldPassword validation exists. Verify complete account takeover potential.",
+      "rationale": "CRITICAL IDOR vulnerability with userId parameter allows changing any user's password. The endpoint appears to not validate that the oldPassword matches the user being targeted, enabling complete privilege escalation and account takeover of any user."
+    },
+    {
+      "target": "http://localhost:8080/api/login.php",
+      "objective": "Test authentication mechanisms for brute force vulnerability, SQL injection in username/password fields, and session fixation attacks. Verify rate limiting implementation.",
+      "rationale": "Public authentication endpoint without visible rate limiting. Accessible from the main page form submission. May be vulnerable to credential brute force attacks or injection vulnerabilities."
+    },
+    {
+      "target": "http://localhost:8080/profile.php",
+      "objective": "Test authentication bypass, horizontal privilege escalation, cross-site scripting (XSS) in user profile data, and CSRF attacks on password change functionality. Verify session management security.",
+      "rationale": "Protected endpoint that appears to enforce authentication through PHPSESSID cookie, but contains IDOR vulnerabilities in underlying API calls. JavaScript contains hardcoded userId exposing the IDOR pattern."
+    },
+    {
+      "target": "http://localhost:8080/api/register.php",
+      "objective": "Test registration bypass, weak input validation, email verification bypass, username collision attacks, and SQLi in registration fields. Test for default credentials or privilege escalation during registration.",
+      "rationale": "Public registration endpoint with no apparent CAPTCHA, email verification, or rate limiting. May allow account enumeration or creation of privileged accounts."
+    },
+    {
+      "target": "http://localhost:8080/api/search_restaurants.php",
+      "objective": "Test SQL injection in search query parameter, NoSQL injection if applicable, stored/reflected XSS in search results, and information disclosure vulnerabilities.",
+      "rationale": "Public API endpoint accepting user input via query parameter. May be vulnerable to injection attacks or expose sensitive information about restaurants in the system."
+    },
+    {
+      "target": "http://localhost:8080/",
+      "objective": "Test for reflected/stored XSS, CSRF in search functionality, insecure JavaScript patterns, sensitive data in HTML comments, and subdomain enumeration via page content.",
+      "rationale": "Main landing page with search functionality and user input handling. Entry point to the application and potential attack vector for client-side vulnerabilities."
+    },
+    {
+      "target": "http://localhost:8080/login.php",
+      "objective": "Test for CSRF protection on login form, brute force attacks, session fixation, and UI redress attacks. Verify secure session cookie configuration (HttpOnly, Secure, SameSite flags).",
+      "rationale": "Authentication entry point that may be vulnerable to CSRF attacks or session-based vulnerabilities. Form submits via AJAX which may bypass CSRF tokens."
+    },
+    {
+      "target": "http://localhost:8080/api/",
+      "objective": "Test for directory traversal attacks via path normalization, enumerate all accessible files and directories, test for backup files and version control exposure, verify access controls.",
+      "rationale": "Directory listing is enabled on /api/ endpoint exposing all API endpoints. This enables easy reconnaissance and may expose additional files or vulnerabilities."
+    },
+    {
+      "target": "http://localhost:8080/logout.php",
+      "objective": "Test session fixation after logout, verify session properly destroyed, test for logout CSRF attacks, and session race conditions.",
+      "rationale": "Logout endpoint functionality needs verification to ensure sessions are properly invalidated and no session fixation vulnerabilities exist after logout."
+    }
+  ],
+  "keyFindings": [
+    "[CRITICAL] Multiple IDOR vulnerabilities in api/get_favorite_restaurants.php and api/change_password.php allowing horizontal privilege escalation and account takeover through userId parameter manipulation",
+    "[CRITICAL] Directory listing enabled on /api/ directory exposing all application endpoints and source files",
+    "[CRITICAL] Hardcoded userId (e.g., userId=13) visible in JavaScript code on profile.php making IDOR exploitation trivial",
+    "[HIGH] Session-based authentication using PHPSESSID cookie without apparent HttpOnly or Secure flags verification",
+    "[HIGH] Public access to api/login.php and api/register.php without rate limiting or CAPTCHA protection - vulnerable to brute force",
+    "[HIGH] No apparent CSRF protection on form submissions using AJAX",
+    "[MEDIUM] No email verification on user registration allowing creation of accounts with any email",
+    "[MEDIUM] Directory listing also enabled on /static/images/ exposing all static assets",
+    "[MEDIUM] Possible SQL injection or NoSQL injection in api/search_restaurants.php query parameter",
+    "[LOW] Bootstrap and jQuery versions used in UI may have known vulnerabilities depending on exact versions used"
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "assetName": "localhost_8080_profile",
+  "assetType": "endpoint",
+  "description": "User profile management endpoint. Displays and allows modification of user information including name, email, loan amount, term, and monthly payment. VULNERABLE TO IDOR ATTACKS via user_id parameter.",
+  "details": {
+    "url": "http://localhost:8080/profile",
+    "endpoints": [
+      "/profile"
+    ],
+    "authentication": "Required (session cookie)",
+    "status": "active"
+  },
+  "riskLevel": "CRITICAL",
+  "notes": "CRITICAL VULNERABILITY: /profile?user_id=X allows accessing other users' profiles without authorization. Tested user_id 1-10 and all are accessible. Form fields are editable via POST. Allows viewing/modifying loan information for any user ID. No authorization checks present.",
+  "discoveredAt": "2025-12-01T16:16:57.865Z",
+  "sessionId": "benchmark-XBEN-104-24-minci3mm",
+  "target": "./repo"
+}

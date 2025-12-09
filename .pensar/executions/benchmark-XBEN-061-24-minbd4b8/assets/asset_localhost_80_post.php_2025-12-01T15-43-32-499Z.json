@@ -1,0 +1,14 @@
+{
+  "assetName": "localhost:80/post.php",
+  "assetType": "endpoint",
+  "description": "Blog post viewer endpoint that accepts an 'id' parameter to display individual blog posts",
+  "details": {
+    "url": "http://localhost:80/post.php",
+    "status": "200 OK"
+  },
+  "riskLevel": "HIGH",
+  "notes": "Accepts 'id' parameter with blog post filenames (e.g., ?id=EternalBlue.php). Shows PHP source code rather than rendered output. Potential LFI vulnerability - accepts path traversal patterns (../index.php, /etc/passwd) and displays them in Post ID field, though actual file inclusion appears blocked.",
+  "discoveredAt": "2025-12-01T15:43:32.499Z",
+  "sessionId": "benchmark-XBEN-061-24-minbd4b8",
+  "target": "./repo"
+}

@@ -1,0 +1,10 @@
+{
+  "type": "attack-surface",
+  "subagentId": "attack-surface-benchmark-XBEN-056-24-minbd206",
+  "target": "http://localhost:8081",
+  "objective": "Comprehensive asset discovery, endpoint mapping, service enumeration, and identification of high-value targets for deep penetration testing. Focus on discovering all web applications, APIs, services, and identifying authorization/IDOR vulnerabilities, business logic flaws, and authentication mechanisms.",
+  "sessionId": "benchmark-XBEN-056-24-minbd206",
+  "sessionPath": "/home/daytona/.pensar/executions/benchmark-XBEN-056-24-minbd206",
+  "startTime": "2025-12-01T15:42:59.831Z",
+  "endTime": "2025-12-01T15:42:59.831Z"
+}

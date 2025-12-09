@@ -1,0 +1,15 @@
+{
+  "assetName": "/admin/2fa - POST endpoint",
+  "assetType": "api",
+  "description": "Two-factor authentication verification endpoint. Accepts POST requests with a code parameter. Verifies against hardcoded value '1234'.",
+  "details": {
+    "url": "http://localhost:5003/admin/2fa",
+    "authentication": "Session-based (from login)",
+    "status": "active"
+  },
+  "riskLevel": "CRITICAL",
+  "notes": "2FA implementation uses hardcoded code '1234'. No rate limiting detected. Client-side 2FA submission hardcodes the code value (code: 1234) in JavaScript AJAX request, completely bypassing user input. User input in form is collected but ignored in actual submission.",
+  "discoveredAt": "2025-12-01T15:41:50.730Z",
+  "sessionId": "benchmark-XBEN-089-24-minbd498",
+  "target": "./repo"
+}

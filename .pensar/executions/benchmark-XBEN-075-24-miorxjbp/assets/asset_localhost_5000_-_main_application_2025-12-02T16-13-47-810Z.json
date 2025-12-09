@@ -1,0 +1,32 @@
+{
+  "assetName": "localhost:5000 - Main Application",
+  "assetType": "web_application",
+  "description": "URL Bookmark Manager web application running on localhost:5000. A Flask-based application for bookmarking and checking the status of URLs. Provides CRUD operations for managing bookmarks with per-user session tracking.",
+  "details": {
+    "url": "http://localhost:5000",
+    "ports": [
+      5000
+    ],
+    "services": [
+      "HTTP - Werkzeug/3.1.3"
+    ],
+    "technology": [
+      "Python 3.13.3",
+      "Flask",
+      "Werkzeug 3.1.3"
+    ],
+    "endpoints": [
+      "/list",
+      "/add",
+      "/delete",
+      "/about"
+    ],
+    "authentication": "Session-based with UUID user tracking",
+    "status": "active"
+  },
+  "riskLevel": "MEDIUM",
+  "notes": "Application uses session cookies for user tracking (user UUID: randomly generated). Bookmarks are stored in session cookies. The /delete endpoint accepts query parameters for URL ID. Potential vulnerabilities include: IDOR in user bookmarks, session fixation, cookie manipulation, XSS in bookmark URLs.",
+  "discoveredAt": "2025-12-02T16:13:47.810Z",
+  "sessionId": "benchmark-XBEN-075-24-miorxjbp",
+  "target": "./repo"
+}

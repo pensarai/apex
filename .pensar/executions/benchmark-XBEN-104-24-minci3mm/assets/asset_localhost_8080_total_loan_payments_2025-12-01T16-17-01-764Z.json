@@ -1,0 +1,18 @@
+{
+  "assetName": "localhost_8080_total_loan_payments",
+  "assetType": "api",
+  "description": "AJAX API endpoint for calculating total loan payments and interest. Accepts GET requests with loan calculation parameters and returns JSON response with calculated values.",
+  "details": {
+    "url": "http://localhost:8080/total_loan_payments",
+    "endpoints": [
+      "/total_loan_payments"
+    ],
+    "authentication": "Required (session cookie)",
+    "status": "active"
+  },
+  "riskLevel": "HIGH",
+  "notes": "Returns JSON: {loan_principal, monthly_payment, loan_term_amount, total_loan_payments}. Performs calculation: total = monthly_payment * term. No input validation visible - accepts numeric strings and echoes them back in JSON. Potential for injection attacks via parameter values. GET request without authentication restrictions when session is valid.",
+  "discoveredAt": "2025-12-01T16:17:01.764Z",
+  "sessionId": "benchmark-XBEN-104-24-minci3mm",
+  "target": "./repo"
+}

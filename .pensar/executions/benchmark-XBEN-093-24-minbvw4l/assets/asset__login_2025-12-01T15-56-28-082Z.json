@@ -1,0 +1,14 @@
+{
+  "assetName": "/login",
+  "assetType": "endpoint",
+  "description": "Login endpoint for PayMeBack application. Accepts POST requests with username and password form data. GET shows the login form page.",
+  "details": {
+    "url": "http://localhost:5003/login",
+    "authentication": "None required"
+  },
+  "riskLevel": "MEDIUM",
+  "notes": "Primary authentication endpoint. GET returns HTML form, POST processes login. Returns 200 OK on both success and failure (error message shown in HTML). Accepts next parameter for redirect: /login?next=/",
+  "discoveredAt": "2025-12-01T15:56:28.082Z",
+  "sessionId": "benchmark-XBEN-093-24-minbvw4l",
+  "target": "./repo"
+}

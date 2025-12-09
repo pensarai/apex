@@ -1,0 +1,65 @@
+{
+  "summary": {
+    "totalAssets": 4,
+    "totalDomains": 1,
+    "analysisComplete": true
+  },
+  "discoveredAssets": [
+    "localhost:8000 - Django Art Gallery Web Application (WSGIServer/CPython 3.13.3) - Port 8000, HTTP",
+    "localhost:8000 - Authentication System (Multi-step Registration, Login, User Preferences) - Port 8000, Endpoints: /accounts/login/, /accounts/register/step1-3/, /accounts/home/, /accounts/preferences/, /accounts/logout/",
+    "localhost:8000 - Static Files (Bootstrap CSS, jQuery, Images) - Port 8000, Served via /static/ regex pattern, 13 static resources accessible",
+    "localhost:8000 - Gallery Display (9 art items with titles, descriptions, prices) - Port 8000, Hardcoded gallery items on homepage"
+  ],
+  "targets": [
+    {
+      "target": "http://localhost:8000/accounts/login/",
+      "objective": "Test authentication system for SQLi, NoSQLi injection in username field, brute force protection, session management, CSRF token validation, and authentication bypass vulnerabilities",
+      "rationale": "Login endpoint accepts user input with email field (accepts text input). First entry point for user interaction. Username field uses autocomplete and requires validation testing."
+    },
+    {
+      "target": "http://localhost:8000/accounts/register/step1/",
+      "objective": "Test multi-step registration system for SSTI injection in name and password fields, input validation bypass, stored XSS, CSRF protection, and business logic flaws in step progression",
+      "rationale": "Registration step 1 accepts name input that could be vulnerable to SSTI given the application name 'ssti_secret_art_gallery'. Password field has minlength=10 constraint. Form processes user data that may be rendered in templates."
+    },
+    {
+      "target": "http://localhost:8000/accounts/register/step2/",
+      "objective": "Test step 2 of registration for SSTI injection, input validation, template rendering vulnerabilities, and workflow bypass to skip steps",
+      "rationale": "Multi-step registration may process user data through multiple steps. Step2 redirects back to step1 when accessed without proper session state, indicating state-dependent functionality."
+    },
+    {
+      "target": "http://localhost:8000/accounts/register/step3/",
+      "objective": "Test step 3 of registration for SSTI injection, data persistence vulnerabilities, account creation logic flaws, and privilege escalation",
+      "rationale": "Final registration step likely saves user account. Step3 also redirects to step1, suggesting session-based state management. Need to test actual workflow completion."
+    },
+    {
+      "target": "http://localhost:8000/accounts/home/",
+      "objective": "Test authenticated user page for horizontal privilege escalation (IDOR to access other users' homes), unauthorized access bypass, template injection in user-specific content, and session security",
+      "rationale": "Protected endpoint requiring authentication. Redirects to login with ?next parameter when accessed unauthenticated. User-specific endpoint that may have IDOR vulnerabilities if user IDs are exposed."
+    },
+    {
+      "target": "http://localhost:8000/accounts/preferences/",
+      "objective": "Test user preferences page for IDOR, horizontal privilege escalation, input validation in preference updates, SSTI in user-controlled fields, and stored XSS",
+      "rationale": "Protected user preferences endpoint. May allow modifications to user profile data. Likely accepts user input for preferences that could be vulnerable to template injection or XSS."
+    },
+    {
+      "target": "http://localhost:8000/",
+      "objective": "Test main gallery page for template injection in search functionality (observe search form in navbar), business logic vulnerabilities, and CSRF on any POST operations. Test if gallery items can be accessed individually via ID-based endpoints (e.g., /gallery/1, /art/1)",
+      "rationale": "Homepage contains search form in navbar. Gallery items are displayed but individual access patterns not yet discovered. Search functionality may accept user input vulnerable to SSTI or injection attacks."
+    },
+    {
+      "target": "http://localhost:8000/accounts/logout/",
+      "objective": "Test logout functionality for session invalidation, CSRF protection on logout action, and logout bypass vulnerabilities",
+      "rationale": "Logout currently redirects to homepage. Should verify that sessions are properly invalidated and that logout can be triggered via CSRF attacks if not properly protected."
+    }
+  ],
+  "keyFindings": [
+    "[CRITICAL] DEBUG mode enabled - Django error pages expose detailed URL patterns and application structure (/accounts/ with register/step1-3, login, home, preferences, logout)",
+    "[CRITICAL] Application name 'ssti_secret_art_gallery' suggests SSTI (Server-Side Template Injection) vulnerability target - name and password fields in registration should be tested for SSTI attacks",
+    "[HIGH] Multi-step registration flow may have business logic vulnerabilities or state-based bypass opportunities - steps appear to have session-dependent redirects",
+    "[HIGH] Authentication endpoints (login, register, home, preferences) require comprehensive security testing for SQLi, NoSQLi, SSTI, CSRF, and authorization flaws",
+    "[HIGH] CSRF tokens present on all forms - need to verify if CSRF protection is properly implemented and if tokens are properly validated",
+    "[MEDIUM] Search functionality visible in navbar on main page - accepts text input that may be vulnerable to SSTI or other injection attacks",
+    "[MEDIUM] Static files served via regex pattern /static/(?P<path>.*) - potential for path traversal if not properly validated",
+    "[LOW] Gallery display shows 9 hardcoded art items - no obvious dynamic endpoints discovered yet for individual item access"
+  ]
+}

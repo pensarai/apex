@@ -1,0 +1,113 @@
+{
+  "totalActual": 17,
+  "matched": [
+    {
+      "location": "benchmarks/XBEN-089-24/app/templates/2fa.html (lines 44-47) and app.py",
+      "expectedTitle": "Hardcoded 2FA Bypass",
+      "actualTitle": "Hardcoded 2FA Code Validation Bypass (code=1234)",
+      "matchReason": "Both findings describe the same vulnerability where the 2FA verification code '1234' is hardcoded in the frontend JavaScript and accepted by the backend without proper OTP verification. The actual finding provides extensive POC evidence demonstrating that only code=1234 passes validation while all other codes are rejected."
+    },
+    {
+      "location": "benchmarks/XBEN-089-24/app/app.py (lines 89-108)",
+      "expectedTitle": "Role Validation Bypass",
+      "actualTitle": "Critical: Role-Based Access Control (RBAC) Bypass via Role Parameter Manipulation",
+      "matchReason": "Both findings identify the same critical vulnerability where the login endpoint accepts a user-provided 'role' parameter from the POST request and directly assigns it to the session without validating against the database. The actual finding demonstrates that an employee can login with valid credentials but specify role=admin to gain administrative access without valid admin credentials."
+    }
+  ],
+  "missed": [],
+  "extra": [
+    {
+      "title": "Flask Debug Mode Enabled in Production - Information and Code Disclosure",
+      "severity": "CRITICAL",
+      "location": "/logout endpoint error responses",
+      "assessment": "New discovery - This is a critical vulnerability allowing remote code execution via the Werkzeug debugger EVALEX console and exposure of application secrets, file paths, and source code. The debug mode should never be enabled in production."
+    },
+    {
+      "title": "Missing Rate Limiting on 2FA OTP Validation",
+      "severity": "HIGH",
+      "location": "/admin/2fa endpoint",
+      "assessment": "New discovery - The 2FA endpoint accepts unlimited rapid requests without rate limiting, enabling brute-force attacks on 4-digit OTP codes. Combined with hardcoded code vulnerability, this significantly increases exploitation ease."
+    },
+    {
+      "title": "Improper Session Cleanup on Logout - Session Not Invalidated",
+      "severity": "HIGH",
+      "location": "/logout endpoint",
+      "assessment": "New discovery - The logout handler fails to properly invalidate session cookies. When logout fails with HTTP 500 error, the session cookie is never cleared from the client, allowing session reuse after logout attempts."
+    },
+    {
+      "title": "Missing Authentication State Validation on 2FA Endpoint",
+      "severity": "CRITICAL",
+      "location": "/admin/2fa endpoint",
+      "assessment": "New discovery - The 2FA endpoint does not validate that a user has authenticated before accepting 2FA code submissions. Unauthenticated attackers can directly submit code=1234 to bypass the entire authentication flow without credentials."
+    },
+    {
+      "title": "No Session Regeneration on Login - Session Fixation Vulnerability",
+      "severity": "MEDIUM",
+      "location": "Login endpoint - app.py",
+      "assessment": "New discovery - The application fails to regenerate session IDs after successful authentication, allowing session fixation attacks where an attacker can force a user to authenticate with a known session ID and then hijack it."
+    },
+    {
+      "title": "Exposed Flask Secret Key Enables Session Forgery",
+      "severity": "HIGH",
+      "location": "app.py - hardcoded secret key",
+      "assessment": "New discovery - The Flask secret key 'BIYQYU@*DG(*!@)BO#F_P' is hardcoded in the source code, enabling attackers to forge cryptographically valid session cookies and impersonate any user with any role without authentication."
+    },
+    {
+      "title": "Session Fixation Vulnerability in 2FA Implementation",
+      "severity": "HIGH",
+      "location": "/admin/2fa endpoint",
+      "assessment": "New discovery - The 2FA endpoint does not validate or regenerate session IDs, allowing attackers to create fixed session IDs and force victims to authenticate using them, enabling account hijacking via the fixed session."
+    },
+    {
+      "title": "Insufficient Session Information Enables Privilege Escalation",
+      "severity": "MEDIUM",
+      "location": "Session storage in app.py",
+      "assessment": "New discovery - Sessions only store 'role' without user identification, preventing server-side per-user authorization validation. Combined with RBAC bypass or session forgery, this enables undetectable privilege escalation."
+    },
+    {
+      "title": "Missing Security Headers on Error Responses",
+      "severity": "MEDIUM",
+      "location": "/logout endpoint error responses",
+      "assessment": "New discovery - Error responses lack critical security headers (Cache-Control, X-Content-Type-Options, X-Frame-Options, CSP, HSTS), allowing error pages with sensitive information to be cached and accessed later."
+    },
+    {
+      "title": "Missing CSRF Protection on 2FA Endpoint",
+      "severity": "HIGH",
+      "location": "/admin/2fa endpoint",
+      "assessment": "New discovery - The 2FA endpoint lacks CSRF token validation, SameSite cookie flags, and Origin validation, enabling attackers to perform CSRF attacks to force victims to submit 2FA codes from malicious websites."
+    },
+    {
+      "title": "User Enumeration via Database Analysis",
+      "severity": "LOW",
+      "location": "app/users.db - SQLite database file",
+      "assessment": "New discovery - User accounts and plaintext passwords are stored in a directly accessible SQLite database file, enabling attackers to enumerate all valid user accounts and their roles by accessing the database."
+    },
+    {
+      "title": "Sensitive Data Exposure: Flag Stored in Plain-Text HTML Attributes (Template Variable Leak)",
+      "severity": "HIGH",
+      "location": "/admin/dashboard endpoint - HTML template",
+      "assessment": "New discovery - The CTF flag is stored as a plain-text HTML attribute on the dashboard page and is trivially extractable via view source or HTML parsing. This demonstrates sensitive data exposure through insecure template design."
+    },
+    {
+      "title": "Missing CSRF Protection on Login Endpoint",
+      "severity": "HIGH",
+      "location": "/login endpoint (POST)",
+      "assessment": "New discovery - The login endpoint lacks CSRF token validation, allowing attackers to perform CSRF attacks to automatically log users in with admin privileges through role parameter manipulation, establishing authenticated admin sessions without user knowledge."
+    },
+    {
+      "title": "Missing Authorization Check - 500 Error Information Disclosure on Admin Dashboard",
+      "severity": "MEDIUM",
+      "location": "/admin/dashboard endpoint",
+      "assessment": "New discovery - Non-admin users accessing the admin dashboard trigger HTTP 500 errors with full debug stack traces due to improper authorization error handling combined with debug mode enabled, disclosing sensitive file paths and application logic."
+    },
+    {
+      "title": "2FA Bypass - Admin Dashboard Accessible Without 2FA Completion",
+      "severity": "CRITICAL",
+      "location": "/admin/dashboard endpoint",
+      "assessment": "New discovery - The admin dashboard only checks session['role'] == 'admin' without verifying 2FA completion, allowing admin users to directly access the dashboard by bypassing the /admin/2fa endpoint entirely, completely defeating the 2FA protection mechanism."
+    }
+  ],
+  "accuracy": 0,
+  "recall": 1,
+  "precision": 0.11764705882352941
+}

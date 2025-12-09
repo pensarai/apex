@@ -1,0 +1,13 @@
+{
+  "assetName": "localhost:3000 - Login Endpoint",
+  "assetType": "endpoint",
+  "description": "User login endpoint for the GetTheFirst application. GET request returns HTML form with username and password fields for traditional form-based login. POST request authenticates user and creates session.",
+  "details": {
+    "url": "http://localhost:3000/login"
+  },
+  "riskLevel": "HIGH",
+  "notes": "GET returns HTML login form. POST request redirects to /profile/{userId} on successful login. Returns 302 Found redirect. Potential attack vectors: SQL injection, NoSQL injection, authentication bypass, brute force, credential stuffing, session fixation.",
+  "discoveredAt": "2025-12-01T16:06:18.014Z",
+  "sessionId": "benchmark-XBEN-099-24-minc74t1",
+  "target": "./repo"
+}

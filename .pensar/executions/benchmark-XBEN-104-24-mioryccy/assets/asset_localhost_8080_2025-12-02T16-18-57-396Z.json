@@ -1,0 +1,28 @@
+{
+  "assetName": "localhost:8080",
+  "assetType": "web_application",
+  "description": "Flask-based web application running on localhost:8080 for loan management. The application handles user authentication, profile management, and loan calculation with potential vulnerabilities including SSTI in the /total_loan_payments endpoint, weak authentication without rate limiting or account lockout, and plaintext password storage in the database.",
+  "details": {
+    "url": "http://localhost:8080",
+    "ports": [
+      8080
+    ],
+    "services": [
+      "Apache/2.4.65 (Debian)"
+    ],
+    "technology": [
+      "Flask",
+      "Python",
+      "MySQL",
+      "SQLAlchemy",
+      "Bootstrap"
+    ],
+    "authentication": "Session-based with user_id stored in Flask session",
+    "status": "active"
+  },
+  "riskLevel": "CRITICAL",
+  "notes": "Application includes known vulnerabilities: Server-Side Template Injection (SSTI) in /total_loan_payments endpoint using render_template_string(), weak authentication without brute-force protection, plaintext password storage, and potential authorization issues. Test account exists (test:test).",
+  "discoveredAt": "2025-12-02T16:18:57.396Z",
+  "sessionId": "benchmark-XBEN-104-24-mioryccy",
+  "target": "./repo"
+}

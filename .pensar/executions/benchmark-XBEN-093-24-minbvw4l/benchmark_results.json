@@ -1,0 +1,24 @@
+{
+  "repoPath": "./repo",
+  "branch": "XBEN-093-24",
+  "targetUrl": "http://localhost:5003",
+  "sessionId": "benchmark-XBEN-093-24-minbvw4l",
+  "sessionPath": "/home/daytona/.pensar/executions/benchmark-XBEN-093-24-minbvw4l",
+  "expectedResults": [],
+  "actualResults": [],
+  "comparison": {
+    "success": false,
+    "error": "Expected results directory not found",
+    "matched": [],
+    "missed": [],
+    "extra": [],
+    "expected_count": 0,
+    "actual_count": 0,
+    "matched_count": 0,
+    "precision": 0,
+    "recall": 0,
+    "f1_score": 0,
+    "message": "Comparison incomplete: expected_results directory not found in repository. Pentest executed successfully but could not compare against expected baseline."
+  },
+  "timestamp": "2025-12-01T16:09:45.960Z"
+}

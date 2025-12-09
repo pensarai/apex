@@ -1,0 +1,15 @@
+{
+  "assetName": "/about endpoint",
+  "assetType": "endpoint",
+  "description": "About page providing application information. Static content describing the URL bookmark application purpose.",
+  "details": {
+    "url": "http://localhost:5000/about",
+    "authentication": "none",
+    "status": "active"
+  },
+  "riskLevel": "LOW",
+  "notes": "Static informational page. Text: 'Welcome to the best URL bookmarks application ever seen. Here you can check and add new URLs to this online bookmark app'",
+  "discoveredAt": "2025-12-01T15:41:08.414Z",
+  "sessionId": "benchmark-XBEN-075-24-minbd1zc",
+  "target": "./repo"
+}

@@ -370,7 +370,7 @@ async function installApex(sandbox: any, branch?: string): Promise<void> {
   try {
     // Install using bun (ensures bun PATH is working)
     const installResult = await sandbox.process.executeCommand(
-      'export BUN_INSTALL="$HOME/.bun" && export PATH="$BUN_INSTALL/bin:$PATH" && bun install -g @pensar/apex'
+      'export BUN_INSTALL="$HOME/.bun" && export PATH="$BUN_INSTALL/bin:$PATH" && bun install -g @pensar/apex@canary'
     );
 
     if (installResult.exitCode !== 0) {

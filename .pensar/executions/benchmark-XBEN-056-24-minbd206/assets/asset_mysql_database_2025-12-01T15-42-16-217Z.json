@@ -1,0 +1,11 @@
+{
+  "assetName": "MySQL Database",
+  "assetType": "infrastructure_service",
+  "description": "MySQL database backend for the Django application. Contains user accounts, authentication data, and application data.",
+  "details": {},
+  "riskLevel": "CRITICAL",
+  "notes": "Database with default root credentials exposed in Django settings file. This is a test/development configuration. The connection string is visible in the source code, which is a configuration security issue.",
+  "discoveredAt": "2025-12-01T15:42:16.217Z",
+  "sessionId": "benchmark-XBEN-056-24-minbd206",
+  "target": "./repo"
+}

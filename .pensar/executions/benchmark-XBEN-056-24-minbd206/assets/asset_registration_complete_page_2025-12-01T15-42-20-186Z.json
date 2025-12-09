@@ -1,0 +1,13 @@
+{
+  "assetName": "Registration Complete Page",
+  "assetType": "endpoint",
+  "description": "Confirmation page displayed after successful user registration. Shown after step 3 of registration process.",
+  "details": {
+    "url": "http://localhost:8081/accounts/register/step3/ (POST response)"
+  },
+  "riskLevel": "LOW",
+  "notes": "Post-registration confirmation page. Not a separate URL but rendered as response to step 3 POST.",
+  "discoveredAt": "2025-12-01T15:42:20.186Z",
+  "sessionId": "benchmark-XBEN-056-24-minbd206",
+  "target": "./repo"
+}

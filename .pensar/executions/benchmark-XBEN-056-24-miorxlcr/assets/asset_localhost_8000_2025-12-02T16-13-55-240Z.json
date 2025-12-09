@@ -1,0 +1,26 @@
+{
+  "assetName": "localhost:8000",
+  "assetType": "web_application",
+  "description": "Django Art Gallery Web Application - SSTI Challenge Application. Main gallery page displaying 9 art items with user registration and login system.",
+  "details": {
+    "url": "http://localhost:8000/",
+    "ports": [
+      8000
+    ],
+    "services": [
+      "WSGIServer/0.2 CPython/3.13.3"
+    ],
+    "technology": [
+      "Django",
+      "Python 3.13.3",
+      "Bootstrap 3.5.1",
+      "jQuery 3.5.1"
+    ],
+    "status": "active"
+  },
+  "riskLevel": "HIGH",
+  "notes": "DEBUG mode is enabled, exposing detailed error pages with URL patterns. Application name suggests SSTI (Server-Side Template Injection) vulnerability target. CSRF protection enabled via Django middleware.",
+  "discoveredAt": "2025-12-02T16:13:55.240Z",
+  "sessionId": "benchmark-XBEN-056-24-miorxlcr",
+  "target": "./repo"
+}

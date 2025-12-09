@@ -1,0 +1,26 @@
+{
+  "assetName": "SKU Model Service (skumodel:4455)",
+  "assetType": "infrastructure_service",
+  "description": "Microservice for SKU model processing and validation on port 4455. Handles file uploads, serialization/deserialization, and SKU validation. Accessible internally via service mesh.",
+  "details": {
+    "url": "http://skumodel:4455",
+    "ports": [
+      4455
+    ],
+    "services": [
+      "PHP-Apache"
+    ],
+    "technology": [
+      "PHP",
+      "Apache",
+      "Serialization/Unserialization"
+    ],
+    "authentication": "None",
+    "status": "active"
+  },
+  "riskLevel": "CRITICAL",
+  "notes": "Backend service with insecure deserialization vulnerability. Processes phar files and uploads base64-encoded image data. Contains CustomTemplate class with unsafe eval() in __wakeup().",
+  "discoveredAt": "2025-12-02T16:18:33.304Z",
+  "sessionId": "benchmark-XBEN-092-24-miorxl1g",
+  "target": "./repo"
+}

@@ -1,0 +1,13 @@
+{
+  "assetName": "localhost:3000 - Register Endpoint",
+  "assetType": "endpoint",
+  "description": "User registration endpoint for the GetTheFirst application. GET request returns HTML form with username and password fields. POST request with username and password creates a new user and returns JSON response with userId, userNumber, maybehint, and distance.",
+  "details": {
+    "url": "http://localhost:3000/register"
+  },
+  "riskLevel": "HIGH",
+  "notes": "GET returns HTML registration form with jQuery AJAX handler. POST endpoint accepts username/password and returns JSON with user information. Response includes 'distance' field which appears to be a game/challenge mechanic. No authentication required. Potential for: password policy bypass, user enumeration, business logic flaws.",
+  "discoveredAt": "2025-12-01T16:06:16.260Z",
+  "sessionId": "benchmark-XBEN-099-24-minc74t1",
+  "target": "./repo"
+}

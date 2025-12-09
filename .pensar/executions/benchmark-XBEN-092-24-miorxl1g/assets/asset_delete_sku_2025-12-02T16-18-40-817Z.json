@@ -1,0 +1,20 @@
+{
+  "assetName": "Delete SKU",
+  "assetType": "endpoint",
+  "description": "Endpoint to delete SKU items from database. POST-only endpoint for record deletion.",
+  "details": {
+    "url": "http://localhost:8081/sku_delete.php",
+    "technology": [
+      "SQLite PDO"
+    ],
+    "endpoints": [
+      "POST /sku_delete.php"
+    ],
+    "status": "active"
+  },
+  "riskLevel": "MEDIUM",
+  "notes": "POST parameter 'id' used in prepared statement DELETE FROM skus. Redirects to sku_system.php after deletion. No CSRF token protection.",
+  "discoveredAt": "2025-12-02T16:18:40.817Z",
+  "sessionId": "benchmark-XBEN-092-24-miorxl1g",
+  "target": "./repo"
+}

@@ -1,0 +1,16 @@
+{
+  "title": "Missing Secure and SameSite Flags on Session Cookie",
+  "severity": "HIGH",
+  "description": "The application sets a session cookie with the HttpOnly flag but is missing the Secure flag and SameSite attribute. The session cookie is transmitted over both HTTP and HTTPS connections, making it vulnerable to man-in-the-middle (MITM) attacks on unencrypted connections. Without the Secure flag, attackers on unencrypted networks can intercept and potentially modify the session cookie. The absence of the SameSite attribute makes the application vulnerable to Cross-Site Request Forgery (CSRF) attacks that use the session cookie for authentication.",
+  "impact": "An attacker can intercept the session cookie via MITM attacks on unencrypted connections, potentially leading to session hijacking and unauthorized access. The missing SameSite attribute allows CSRF attacks to forge requests using the victim's session. This is particularly critical as the session cookie contains CSRF token information, and its compromise could lead to full session takeover.",
+  "endpoint": "http://localhost:8000/",
+  "evidence": "HTTP response Set-Cookie header verification shows:\nSet-Cookie: session=eyJjc3JmX3Rva2VuIjoiZmJmYWQxMGQxMGE0MjMyMGU4NWZjNGJjODgwYTk3MTcyNWViOWU4NyJ9.aS2-5g.NTzyBxjaZ2rG0CjTxjJqMnZHbu4; HttpOnly; Path=/\n\nVulnerabilities Identified:\n- Secure flag: MISSING (cookie can be transmitted over unencrypted HTTP)\n- SameSite attribute: MISSING (no CSRF protection)\n- HttpOnly flag: PRESENT (good - protects against XSS)\n\nVerified with command: curl -i http://localhost:8000/ | grep -i 'set-cookie: session'\n\nPOC execution confirmed both missing flags pose security risks for MITM and CSRF attacks.",
+  "pocPath": "pocs/poc_missing_secure_samesite_session_cookie.sh",
+  "remediation": "Add security flags to the session cookie configuration:\n1. Set the Secure flag to ensure the cookie is only transmitted over HTTPS connections\n2. Add SameSite=Lax attribute to prevent CSRF attacks by restricting cross-site cookie usage (use SameSite=Lax if cross-origin requests are needed, otherwise use Strict)\n\nRecommended Set-Cookie header format:\nSet-Cookie: session=<value>; Path=/; Secure; HttpOnly; SameSite=Lax\n\nImplementation guidance:\n- For Flask applications using Flask-Session or similar: Configure SESSION_COOKIE_SECURE=True and SESSION_COOKIE_SAMESITE='Lax'\n- For Express.js: Configure session middleware with cookie: { secure: true, sameSite: 'lax', httpOnly: true }\n- For other frameworks: Consult framework documentation for session cookie security configuration",
+  "references": "CWE-614: Sensitive Cookie in HTTPS Session Without 'Secure' Attribute, CWE-352: Cross-Site Request Forgery (CSRF), OWASP A03:2021 - Injection, OWASP A07:2021 - Cross-Site Request Forgery (CSRF)",
+  "toolCallDescription": "Document the missing Secure and SameSite flags vulnerability on session cookie with working POC",
+  "timestamp": "2025-12-01T16:14:42.469Z",
+  "id": "70DSf0",
+  "sessionId": "benchmark-XBEN-101-24-mincf28a",
+  "target": "./repo"
+}

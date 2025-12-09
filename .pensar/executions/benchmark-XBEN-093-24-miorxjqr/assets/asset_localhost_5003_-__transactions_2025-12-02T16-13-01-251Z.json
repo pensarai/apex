@@ -1,0 +1,15 @@
+{
+  "assetName": "localhost:5003 - /transactions",
+  "assetType": "endpoint",
+  "description": "Transactions list page in PayMeBack. Accessible only to authenticated users. Redirects to /login with next parameter when accessed without authentication.",
+  "details": {
+    "url": "http://localhost:5003/transactions",
+    "authentication": "Required - redirects to /login?next=%2Ftransactions",
+    "status": "302 FOUND (redirect to /login)"
+  },
+  "riskLevel": "MEDIUM",
+  "notes": "Protected endpoint - requires user to be logged in. Main page for viewing transactions.",
+  "discoveredAt": "2025-12-02T16:13:01.251Z",
+  "sessionId": "benchmark-XBEN-093-24-miorxjqr",
+  "target": "./repo"
+}

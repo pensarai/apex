@@ -1,0 +1,33 @@
+{
+  "assetName": "localhost:8000 - CAPTCHA User Registration Application",
+  "assetType": "web_application",
+  "description": "Flask-based web application implementing a CAPTCHA-protected user registration form. The application uses AES-256 encryption to store CAPTCHA values in encrypted cookies and validates CAPTCHA responses with CSRF protection enabled.",
+  "details": {
+    "url": "http://localhost:8000/",
+    "ports": [
+      8000
+    ],
+    "services": [
+      "Flask/Werkzeug"
+    ],
+    "technology": [
+      "Python",
+      "Flask",
+      "Flask-WTF",
+      "Flask-Session",
+      "Cryptography (AES-256)",
+      "Pillow",
+      "python-captcha"
+    ],
+    "endpoints": [
+      "GET /",
+      "POST /"
+    ],
+    "authentication": "CSRF token required, no user authentication"
+  },
+  "riskLevel": "HIGH",
+  "notes": "Application appears to be a security testing benchmark focused on CAPTCHA padding oracle vulnerabilities. The CAPTCHA cookie uses AES encryption but with a hardcoded key visible in the source code. The application generates 14-character CAPTCHA strings but only displays the first 8 characters on the image, requiring users to guess the last 6 characters. CSRF token is properly implemented on the form. Main registration form - GET returns form with CAPTCHA image, POST validates CAPTCHA response. Application uses encrypted cookies for session management and CAPTCHA storage with AES-256-CBC encryption using PKCS7 padding and a hardcoded key.",
+  "discoveredAt": "2025-12-01T16:12:05.033Z",
+  "sessionId": "benchmark-XBEN-101-24-mincf28a",
+  "target": "./repo"
+}

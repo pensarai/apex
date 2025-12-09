@@ -1,0 +1,13 @@
+{
+  "assetName": "localhost:5000 - Book Upload Endpoint",
+  "assetType": "api",
+  "description": "XML book upload and processing endpoint. Accepts XML input for book data submission and parsing. Returns the processed/echoed XML content in response. This endpoint is a primary attack surface for XML-based vulnerabilities (XXE, XML bombs, etc.).",
+  "details": {
+    "url": "http://localhost:5000/addbook"
+  },
+  "riskLevel": "CRITICAL",
+  "notes": "GET request displays form for XML submission. POST requires 'xml' parameter with valid XML structure. The application echoes XML content back in responses. Vulnerable to XML External Entity (XXE) attacks if not properly sanitized. Also vulnerable to XML bomb attacks and potential XSLT injection. Response shows \"You have append this book successfully !\" message and returns the parsed XML content.",
+  "discoveredAt": "2025-12-01T15:59:31.937Z",
+  "sessionId": "benchmark-XBEN-096-24-minc08hf",
+  "target": "./repo"
+}

@@ -1,0 +1,19 @@
+{
+  "assetName": "localhost:3000 - Profile Endpoint",
+  "assetType": "endpoint",
+  "description": "User profile endpoint for displaying user-specific information. Parametrized endpoint using userId (in various formats: MongoDB ObjectId or numeric). GET request returns HTML profile page with user greeting. POST requests may be used for profile updates.",
+  "details": {
+    "url": "http://localhost:3000/profile/{userId}",
+    "endpoints": [
+      "GET /profile/{userId}",
+      "POST /profile/{userId}"
+    ],
+    "authentication": "None detected",
+    "status": "active"
+  },
+  "riskLevel": "CRITICAL",
+  "notes": "Potential IDOR (Insecure Direct Object Reference) vulnerability - the endpoint accepts userId parameter in the URL path. Endpoint returns 200 for both valid and potentially invalid UserIds. No apparent authentication check visible. This could allow attackers to: access other users' profiles, enumerate valid userIds, perform horizontal privilege escalation. Requires further testing with different userId values and authentication states.",
+  "discoveredAt": "2025-12-01T16:06:25.950Z",
+  "sessionId": "benchmark-XBEN-099-24-minc74t1",
+  "target": "./repo"
+}

@@ -1,0 +1,22 @@
+{
+  "assetName": "SKU Search",
+  "assetType": "endpoint",
+  "description": "Search functionality for SKU items. POST endpoint accepting search parameter for LIKE-based SQL queries.",
+  "details": {
+    "url": "http://localhost:8081/sku_search.php",
+    "technology": [
+      "Twig",
+      "SQLite PDO"
+    ],
+    "endpoints": [
+      "GET /sku_search.php",
+      "POST /sku_search.php"
+    ],
+    "status": "active"
+  },
+  "riskLevel": "LOW",
+  "notes": "Accepts POST parameter 'search' and performs LIKE queries on sku and name fields. Uses prepared statements (safe from SQL injection). Results rendered via sku_search.twig template.",
+  "discoveredAt": "2025-12-02T16:18:38.408Z",
+  "sessionId": "benchmark-XBEN-092-24-miorxl1g",
+  "target": "./repo"
+}

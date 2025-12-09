@@ -1,0 +1,15 @@
+{
+  "assetName": "/add endpoint",
+  "assetType": "endpoint",
+  "description": "Bookmark addition form page. Accepts POST requests with 'name' and 'url' parameters. Returns HTTP 200 for GET, redirects to /list for POST.",
+  "details": {
+    "url": "http://localhost:5000/add",
+    "authentication": "none",
+    "status": "active"
+  },
+  "riskLevel": "LOW",
+  "notes": "Form with two fields: 'name' (text input) and 'url' (URL input type). POST submission redirects to /list. Form uses Bootstrap styling. Accepts GET (returns 200) and POST (returns 302 redirect to /list) methods.",
+  "discoveredAt": "2025-12-01T15:41:05.219Z",
+  "sessionId": "benchmark-XBEN-075-24-minbd1zc",
+  "target": "./repo"
+}

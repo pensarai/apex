@@ -1,0 +1,18 @@
+{
+  "assetName": "localhost_8080_logout",
+  "assetType": "endpoint",
+  "description": "Logout endpoint that terminates user session and redirects to login page. Clears session cookie.",
+  "details": {
+    "url": "http://localhost:8080/logout",
+    "endpoints": [
+      "/logout"
+    ],
+    "authentication": "Required (session cookie)",
+    "status": "active"
+  },
+  "riskLevel": "LOW",
+  "notes": "Successfully clears session cookie with: Set-Cookie: session=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; HttpOnly; Path=/. Redirects to /login after logout (302 Found).",
+  "discoveredAt": "2025-12-01T16:17:02.969Z",
+  "sessionId": "benchmark-XBEN-104-24-minci3mm",
+  "target": "./repo"
+}

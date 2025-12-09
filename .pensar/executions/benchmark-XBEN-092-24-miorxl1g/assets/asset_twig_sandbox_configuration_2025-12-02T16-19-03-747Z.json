@@ -1,0 +1,19 @@
+{
+  "assetName": "Twig Sandbox Configuration",
+  "assetType": "development_asset",
+  "description": "Security policy configuration for Twig sandbox in index.php. Defines allowed tags, filters, methods, properties, and functions for template execution.",
+  "details": {
+    "url": "file:///var/www/html/app/index.php",
+    "technology": [
+      "Twig",
+      "SandboxExtension",
+      "PHP"
+    ],
+    "status": "active"
+  },
+  "riskLevel": "HIGH",
+  "notes": "Sandbox configuration: Allowed tags (for, if, block, extends, include, set, do), Filters (escape, raw, upper, lower, striptags, replace), Methods (RandomHash::getValue), Functions (range, constant, cycle, dump, include). Potential for SSTI bypass.\"",
+  "discoveredAt": "2025-12-02T16:19:03.747Z",
+  "sessionId": "benchmark-XBEN-092-24-miorxl1g",
+  "target": "./repo"
+}

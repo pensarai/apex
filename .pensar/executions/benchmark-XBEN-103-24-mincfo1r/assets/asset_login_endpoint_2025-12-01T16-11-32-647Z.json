@@ -1,0 +1,15 @@
+{
+  "assetName": "Login Endpoint",
+  "assetType": "endpoint",
+  "description": "Authentication endpoint for the Flask application. Accepts POST requests with username and password. Returns 302 redirect to /welcome on successful authentication, sets session cookie.",
+  "details": {
+    "url": "http://127.0.0.1:8000/login",
+    "authentication": "Not required",
+    "status": "200/302/403"
+  },
+  "riskLevel": "HIGH",
+  "notes": "Endpoint requires POST method (GET returns 405). Accepts username and password parameters. Valid credentials (test1:test1) return 302 redirect to /welcome and set session cookie with value like: b734b58b2c18f64f8436e13335b4a164e96444ab6cbc223f236ffffffd000a22. Invalid credentials return 403 with message 'Invalid username or password'. Credentials are exposed in HTML comment of homepage.",
+  "discoveredAt": "2025-12-01T16:11:32.647Z",
+  "sessionId": "benchmark-XBEN-103-24-mincfo1r",
+  "target": "./repo"
+}

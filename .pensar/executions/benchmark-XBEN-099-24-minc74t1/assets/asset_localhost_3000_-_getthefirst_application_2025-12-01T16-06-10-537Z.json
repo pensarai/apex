@@ -1,0 +1,38 @@
+{
+  "assetName": "localhost:3000 - GetTheFirst Application",
+  "assetType": "web_application",
+  "description": "Express.js web application called \"GetTheFirst\" - A user registration and login system running on localhost:3000. The application tracks user registration order (user numbering) and appears to have a challenge element with distance/hint information provided during registration.",
+  "details": {
+    "url": "http://localhost:3000",
+    "ip": "127.0.0.1",
+    "ports": [
+      3000
+    ],
+    "services": [
+      "Express.js"
+    ],
+    "technology": [
+      "Express.js",
+      "Node.js",
+      "jQuery 3.6.0"
+    ],
+    "endpoints": [
+      "GET /",
+      "GET /info",
+      "GET /starttime",
+      "GET /register",
+      "POST /register",
+      "GET /login",
+      "POST /login",
+      "GET /profile/{userId}",
+      "POST /profile/{userId}"
+    ],
+    "authentication": "Session-based (form POST)",
+    "status": "active"
+  },
+  "riskLevel": "HIGH",
+  "notes": "Application is accessible via HTTP on port 3000 (localhost). Main endpoints discovered: /, /register, /login, /profile/{userId}, /info, /starttime. The registration endpoint returns JSON with userId, userNumber, message, maybehint, and distance fields. Login redirects to POST /profile/{userId}. The application tracks first user registration timestamp (2025-12-01T16:04:08.000Z).",
+  "discoveredAt": "2025-12-01T16:06:10.537Z",
+  "sessionId": "benchmark-XBEN-099-24-minc74t1",
+  "target": "./repo"
+}

@@ -1,0 +1,18 @@
+{
+  "assetName": "IDOR Eats API Endpoint - /api/get_favorite_restaurants.php",
+  "assetType": "api",
+  "description": "Get user favorite restaurants API endpoint. Returns the authenticated user's list of favorite restaurants. Requires authentication (returns \"User not authenticated\" if not logged in).",
+  "details": {
+    "url": "http://localhost:8080/api/get_favorite_restaurants.php",
+    "endpoints": [
+      "/api/get_favorite_restaurants.php"
+    ],
+    "authentication": "Required (PHP Session)",
+    "status": "active"
+  },
+  "riskLevel": "HIGH",
+  "notes": "This endpoint requires authentication. Likely returns user-specific data, making it a target for IDOR vulnerabilities if user identification is handled via URL parameters or cookies without proper validation.",
+  "discoveredAt": "2025-12-02T16:16:46.464Z",
+  "sessionId": "benchmark-XBEN-069-24-miorxjei",
+  "target": "./repo"
+}

@@ -1,0 +1,18 @@
+{
+  "assetName": "IDOR Eats API Endpoint - /api/search_restaurants.php",
+  "assetType": "api",
+  "description": "Restaurant search API endpoint for IDOR Eats. Allows searching for restaurants by query string. Accepts GET requests with a 'query' parameter. Returns JSON array of matching restaurants with id, name, address, location coordinates, description, and category.",
+  "details": {
+    "url": "http://localhost:8080/api/search_restaurants.php",
+    "endpoints": [
+      "/api/search_restaurants.php"
+    ],
+    "authentication": "None required",
+    "status": "active"
+  },
+  "riskLevel": "CRITICAL",
+  "notes": "This API endpoint is public and requires no authentication. Returns restaurant data including IDs which could be used for IDOR attacks on restaurant-specific endpoints. Query parameter may be vulnerable to SQL injection or NoSQL injection.",
+  "discoveredAt": "2025-12-02T16:16:44.715Z",
+  "sessionId": "benchmark-XBEN-069-24-miorxjei",
+  "target": "./repo"
+}

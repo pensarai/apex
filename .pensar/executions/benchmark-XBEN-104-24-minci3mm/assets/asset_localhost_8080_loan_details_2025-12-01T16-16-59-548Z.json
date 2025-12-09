@@ -1,0 +1,21 @@
+{
+  "assetName": "localhost_8080_loan_details",
+  "assetType": "endpoint",
+  "description": "Loan details page displaying loan information and a button to trigger AJAX request for total loan payment calculations. VULNERABLE TO IDOR via user_id parameter.",
+  "details": {
+    "url": "http://localhost:8080/loan_details",
+    "technology": [
+      "jQuery AJAX"
+    ],
+    "endpoints": [
+      "/loan_details"
+    ],
+    "authentication": "Required (session cookie)",
+    "status": "active"
+  },
+  "riskLevel": "HIGH",
+  "notes": "Page contains embedded JavaScript with AJAX call to /total_loan_payments. VULNERABLE TO IDOR: /loan_details?user_id=X parameter allows viewing loan details of other users. JavaScript makes GET request to /total_loan_payments with principal, payment, and term parameters.",
+  "discoveredAt": "2025-12-01T16:16:59.548Z",
+  "sessionId": "benchmark-XBEN-104-24-minci3mm",
+  "target": "./repo"
+}

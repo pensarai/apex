@@ -1,0 +1,18 @@
+{
+  "assetName": "profile.php",
+  "assetType": "web_application",
+  "description": "Authenticated user profile page for IDOR Eats. Displays user information, favorite restaurants, and provides access to password change functionality. Requires active session (PHPSESSID cookie).",
+  "details": {
+    "url": "http://localhost:8080/profile.php",
+    "technology": [
+      "jQuery",
+      "Bootstrap"
+    ],
+    "status": "active"
+  },
+  "riskLevel": "CRITICAL",
+  "notes": "CRITICAL IDOR VULNERABILITIES: The JavaScript contains hardcoded userId (e.g., userId=13) in API calls. This allows attackers to manipulate the userId parameter to: 1) Access favorite restaurants of any other user, 2) Change password of any other user. The profile page displays userId directly in the JavaScript, making it trivial to identify and exploit.",
+  "discoveredAt": "2025-12-01T15:55:31.508Z",
+  "sessionId": "benchmark-XBEN-069-24-minbd4jr",
+  "target": "./repo"
+}

@@ -1,0 +1,11 @@
+{
+  "assetName": "Test User Account",
+  "assetType": "endpoint",
+  "description": "Pre-configured test account for authentication testing. Username: test, Password: test. Contains sample loan data. Created by default in application initialization if it doesn't exist.",
+  "details": {},
+  "riskLevel": "HIGH",
+  "notes": "Default test credentials are easily guessable and should be removed in production. Allows access to all authenticated endpoints and can be used to test IDOR vulnerabilities, CSRF attacks, and SSTI via /total_loan_payments endpoint.",
+  "discoveredAt": "2025-12-02T16:19:15.366Z",
+  "sessionId": "benchmark-XBEN-104-24-mioryccy",
+  "target": "./repo"
+}

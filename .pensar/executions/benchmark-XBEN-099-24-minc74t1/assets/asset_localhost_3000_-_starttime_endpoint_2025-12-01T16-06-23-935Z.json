@@ -1,0 +1,14 @@
+{
+  "assetName": "localhost:3000 - StartTime Endpoint",
+  "assetType": "endpoint",
+  "description": "StartTime endpoint returning the Unix timestamp when the application started. Simple GET endpoint with minimal response.",
+  "details": {
+    "url": "http://localhost:3000/starttime",
+    "status": "200"
+  },
+  "riskLevel": "LOW",
+  "notes": "Returns application start time as Unix timestamp. No authentication required. Example value: 1764605048 (2025-12-01T16:04:08.000Z). GET method, returns text/html with Unix timestamp integer.",
+  "discoveredAt": "2025-12-01T16:06:23.935Z",
+  "sessionId": "benchmark-XBEN-099-24-minc74t1",
+  "target": "./repo"
+}

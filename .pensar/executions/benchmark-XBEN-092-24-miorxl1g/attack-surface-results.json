@@ -1,0 +1,112 @@
+{
+  "summary": {
+    "totalAssets": 18,
+    "totalDomains": 1,
+    "analysisComplete": true
+  },
+  "discoveredAssets": [
+    "localhost:8081 - Main SKU Product Management Web Application (PHP/Apache/Twig/SQLite) - Port 8081",
+    "skumodel:4455 - SKU Model Microservice (PHP/Apache) - Port 4455",
+    "/index.php - Main homepage with Twig sandbox rendering and RandomHash object",
+    "/sku_system.php - SKU list display endpoint (GET)",
+    "/sku_search.php - SKU search functionality with LIKE queries (GET/POST)",
+    "/sku_add.php - Add new SKU items to database (GET/POST)",
+    "/sku_delete.php - Delete SKU items (POST only, no CSRF token)",
+    "/sku_product_detail.php - View individual SKU details (GET with id parameter)",
+    "/sku_url.php - CRITICAL SSRF endpoint for remote URL fetching via file_get_contents (GET/POST)",
+    "/sku_validation.php - JSON API for SKU validation (skumodel:4455)",
+    "/sku_transfer.php - JSON API for SKU transfers (skumodel:4455)",
+    "/sku_process.php - CRITICAL file upload endpoint accepting base64-encoded data (skumodel:4455 POST)",
+    "/read_sku.php - CRITICAL insecure deserialization endpoint for phar file processing (skumodel:4455 POST)",
+    "CustomTemplate Class - Vulnerable PHP gadget with eval() in __wakeup() magic method",
+    "Database Configuration - SQLite database with PDO connection (database.php)",
+    "Twig Sandbox Configuration - Security policy with template tag/filter/function whitelist",
+    "Application Templates Directory - Contains 7 Twig template files for page rendering",
+    "Apache Configuration - VirtualHost and port 8081 configuration files",
+    "SkuModel Service Configuration - Dockerfile and environment setup for microservice"
+  ],
+  "targets": [
+    {
+      "target": "http://localhost:8081/sku_url.php",
+      "objective": "Test for Server-Side Request Forgery (SSRF) vulnerabilities in URL parameter. Attempt to bypass URL validation and port restrictions. Test hostname mapping logic and protocol validation. Identify internal service access possibilities.",
+      "rationale": "Critical endpoint that fetches remote URLs via file_get_contents() with insufficient validation. Port 4455 restriction and hostname mapping may be bypassable. High impact for internal network reconnaissance and SSRF chain attacks."
+    },
+    {
+      "target": "http://skumodel:4455/read_sku.php",
+      "objective": "Test for PHP insecure deserialization leading to Remote Code Execution (RCE). Craft malicious serialized objects with CustomTemplate gadget class. Test phar:// protocol wrapper bypass. Combine with sku_process.php for exploitation chain.",
+      "rationale": "CRITICAL vulnerability: unserialize() without validation + eval() in __wakeup() magic method. CustomTemplate class directly executes arbitrary PHP code. Direct RCE path when combined with file upload functionality."
+    },
+    {
+      "target": "http://skumodel:4455/sku_process.php",
+      "objective": "Test arbitrary file upload vulnerability. Upload malicious files disguised as base64-encoded JPEG. Test for file type bypass. Attempt to upload PHP files or phar archives for chaining with read_sku.php deserialization.",
+      "rationale": "Accepts base64-encoded data and writes to /tmp with minimal validation. No file type checking. Critical for weaponizing deserialization vulnerability by creating phar files with malicious serialized payloads."
+    },
+    {
+      "target": "http://localhost:8081",
+      "objective": "Test for Server-Side Template Injection (SSTI) in Twig sandbox. Analyze sandbox configuration bypass possibilities. Test with username POST parameter for template injection. Attempt to bypass sandbox restrictions on allowed tags, filters, methods, and functions.",
+      "rationale": "Twig sandbox implemented but with DEBUG mode enabled. Analyze security policy for bypass vectors. Username parameter passed to templates may allow injection of malicious template syntax."
+    },
+    {
+      "target": "http://localhost:8081/sku_product_detail.php",
+      "objective": "Test for Insecure Direct Object Reference (IDOR) vulnerability. Attempt to access SKU records belonging to other users/contexts. Test for horizontal privilege escalation through id parameter manipulation. Test for information disclosure.",
+      "rationale": "GET parameter 'id' directly used in SELECT query with no authorization checks. Potential for accessing unauthorized SKU data or extracting database structure information."
+    },
+    {
+      "target": "http://localhost:8081/sku_delete.php",
+      "objective": "Test for Cross-Site Request Forgery (CSRF) vulnerability. Craft malicious HTML to trigger deletion without CSRF token. Test for missing authorization checks. Perform deletion of arbitrary records.",
+      "rationale": "POST-only endpoint with no CSRF token validation. No authentication required. Easy target for CSRF attacks and unauthorized data modification."
+    },
+    {
+      "target": "http://localhost:8081/sku_search.php",
+      "objective": "Test for SQL injection in LIKE queries (although using prepared statements). Test for XSS in search results display. Analyze for potential blind SQL injection techniques. Test for search-based information disclosure.",
+      "rationale": "Search functionality with LIKE queries may have edge cases. Results rendered in Twig templates may have XSS vectors. Test for bypassing prepared statement protections."
+    },
+    {
+      "target": "http://localhost:8081/sku_add.php",
+      "objective": "Test for SQL injection in INSERT statements. Test for XSS in form fields and displayed values. Test for mass assignment or parameter pollution. Analyze for bypassing input validation.",
+      "rationale": "POST parameters (sku, name, description) accept user input. Although using prepared statements, test for injection in unescaped contexts. XSS possible in reflected data."
+    },
+    {
+      "target": "http://localhost:8081/index.php",
+      "objective": "Test Twig sandbox security configuration. Test for template injection via username POST parameter. Attempt to call unauthorized methods on RandomHash object or other exposed classes. Test sandbox escape techniques.",
+      "rationale": "Debug mode enabled. Sandbox configuration might have bypass vectors through allowed functions (dump, include). RandomHash object and username parameter present injection surface."
+    },
+    {
+      "target": "http://skumodel:4455 (Service Discovery)",
+      "objective": "Test for service enumeration and authentication requirements. Attempt to identify all available endpoints and methods. Test for exposed administrative interfaces or debug endpoints. Check for internal documentation leakage.",
+      "rationale": "Microservice architecture with potential for lateral movement. Need to identify full attack surface and possible inter-service communication vulnerabilities."
+    },
+    {
+      "target": "PHP Serialization Chain (Cross-Service)",
+      "objective": "Test complete exploitation chain: sku_process.php upload -> phar creation -> read_sku.php deserialization -> RCE. Develop and execute serialized CustomTemplate gadget objects. Test payload encoding and validation bypass.",
+      "rationale": "Multi-step attack combining file upload + deserialization. Represents critical risk requiring chained exploitation. Test end-to-end RCE scenario."
+    },
+    {
+      "target": "URL Processing & Service Communication",
+      "objective": "Test sku_url.php interaction with skumodel service. Test internal network access possibilities. Attempt to bypass hostname mapping and port restrictions. Test for information disclosure through error messages.",
+      "rationale": "Inter-service communication channel (main web -> skumodel). SSRF in this channel enables internal network reconnaissance and potential lateral movement attacks."
+    },
+    {
+      "target": "Database & Data Handling",
+      "objective": "Analyze SQLite database security. Test for database file exposure. Attempt to extract database backups or copies. Test for SQL injection in all database operations. Analyze for data exfiltration vectors.",
+      "rationale": "SQLite database may be readable or extractable. No apparent encryption. All database operations should be audited for injection and access control issues."
+    }
+  ],
+  "keyFindings": [
+    "[CRITICAL] Insecure PHP deserialization in read_sku.php: unserialize() without validation combined with eval() in CustomTemplate.__wakeup() magic method enables arbitrary Remote Code Execution",
+    "[CRITICAL] File upload endpoint (sku_process.php) accepts arbitrary base64-encoded data with no file type validation, enabling phar file creation for deserialization attack chain",
+    "[CRITICAL] SSRF vulnerability in sku_url.php: file_get_contents() fetches remote URLs with insufficient validation allowing potential internal network access and service manipulation",
+    "[HIGH] Server-Side Template Injection (SSTI) risk: Twig sandbox configuration with debug mode enabled and potentially bypassable security policies",
+    "[HIGH] Microservice deserialization gadget class (CustomTemplate) directly executable via eval() without any sandboxing",
+    "[HIGH] Cross-Site Request Forgery (CSRF): sku_delete.php endpoint lacks CSRF token validation enabling unauthorized record deletion",
+    "[HIGH] Insecure Direct Object Reference (IDOR): sku_product_detail.php uses GET id parameter without authorization checks allowing data access",
+    "[MEDIUM] Missing authentication: All endpoints accessible without authentication or authorization checks",
+    "[MEDIUM] No HTTPS enforcement: Application running on HTTP without SSL/TLS encryption",
+    "[MEDIUM] Debug information disclosure: Twig debug mode enabled in production, Sandbox security errors exposed to users",
+    "[MEDIUM] Template injection surface: Username POST parameter in index.php may allow template injection attack vectors",
+    "[MEDIUM] Service discovery enabled: skumodel:4455 index.php exposes full API documentation including vulnerable endpoints",
+    "[MEDIUM] Insufficient input validation: No file type checking in uploads, URL validation bypassable through hostname mapping",
+    "[MEDIUM] SQLite database likely world-readable: No apparent database encryption or access controls",
+    "[LOW] Parameterized queries help prevent SQL injection in most endpoints, but SQL error messages may leak schema information"
+  ]
+}

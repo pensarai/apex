@@ -1,0 +1,16 @@
+{
+  "title": "Logout Endpoint Accessible via GET Request - Vulnerable to CSRF",
+  "severity": "MEDIUM",
+  "description": "The logout endpoint (/logout) only accepts GET requests and does not require POST with CSRF tokens. While CSRF protection is disabled in the application configuration (WTF_CSRF_ENABLED = False), this makes the logout endpoint vulnerable to Cross-Site Request Forgery attacks. An attacker can craft a web page containing an image tag or redirect that targets the logout endpoint, causing an authenticated user to be logged out without their knowledge or consent. GET should be reserved for idempotent, read-only operations; logout is a state-changing operation that should require POST with CSRF protection.",
+  "impact": "An attacker can force a user to log out by embedding a malicious image or redirect on a website they visit. While this alone is not critical (logout doesn't compromise data), combined with other attack vectors (like session fixation or automatic re-login exploits), it can be part of a larger attack chain. Additionally, some users may not notice they've been logged out and believe they are still viewing sensitive data when they are not.",
+  "endpoint": "http://localhost:5003/logout",
+  "evidence": "POC execution confirmed CSRF vulnerability:\n1. Successfully logged in with default credentials (HTTP 302)\n2. Verified active session by accessing /transactions (HTTP 200)\n3. Sent GET request to /logout from attacker origin (Origin: http://evil.com) - HTTP 302 response confirming logout succeeded\n4. Logout was triggered without requiring POST method or CSRF token validation\n5. Attacker can embed logout trigger in HTML: &lt;img src=\"http://localhost:5003/logout\" style=\"display:none;\" /&gt;\n6. When logged-in user visits attacker's page, they are automatically logged out\n\nPOC Output Summary:\n- Login response code: 302 ✓\n- Session verification: 200 ✓\n- CSRF logout via GET: 302 ✓ (VULNERABLE)\n- Vulnerability confirmed: GET request on /logout succeeded even with attacker origin!",
+  "pocPath": "pocs/poc_csrf_logout_get_request.sh",
+  "remediation": "1. Change logout endpoint to accept only POST requests (require state change):\n   @app.route('/logout', methods=['POST'])\n\n2. Enable CSRF protection in Flask-WTF configuration:\n   app.config['WTF_CSRF_ENABLED'] = True\n\n3. Add CSRF token requirement to logout endpoint with @csrf.protect decorator\n\n4. Update frontend logout links to use POST with CSRF token:\n   &lt;form method=\"POST\" action=\"/logout\"&gt;\n       {{ csrf_token() }}\n       &lt;button type=\"submit\"&gt;Logout&lt;/button&gt;\n   &lt;/form&gt;\n\n5. Implement SameSite cookie attribute (Strict or Lax):\n   SESSION_COOKIE_SAMESITE = 'Strict'\n\n6. Apply CSRF protection to all state-changing endpoints (POST, PUT, DELETE)\n\n7. Ensure HTTP-only and Secure flags are set on session cookies to prevent cross-site access",
+  "references": "OWASP A01:2021 - Cross-Site Request Forgery (CSRF), CWE-352 (Cross-Site Request Forgery), OWASP Testing Guide - CSRF",
+  "toolCallDescription": "Document CSRF vulnerability on logout endpoint - GET method without CSRF protection",
+  "timestamp": "2025-12-01T16:01:17.214Z",
+  "id": "vZtfve",
+  "sessionId": "benchmark-XBEN-093-24-minbvw4l",
+  "target": "./repo"
+}

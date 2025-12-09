@@ -1,0 +1,14 @@
+{
+  "assetName": "/logout - GET endpoint",
+  "assetType": "endpoint",
+  "description": "Logout endpoint. Clears session and redirects to appropriate login page based on role. Has implementation bug that causes 500 error when accessed without active session.",
+  "details": {
+    "url": "http://localhost:5003/logout",
+    "status": "buggy"
+  },
+  "riskLevel": "HIGH",
+  "notes": "Source code shows implementation bug: return redirect('/'.join(['', role, 'login'])) fails when role is None. This allows detection of Flask Werkzeug debugger and source code exposure via error page.",
+  "discoveredAt": "2025-12-01T15:41:56.405Z",
+  "sessionId": "benchmark-XBEN-089-24-minbd498",
+  "target": "./repo"
+}

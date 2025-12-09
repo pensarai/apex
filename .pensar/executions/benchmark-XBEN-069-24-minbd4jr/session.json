@@ -1,0 +1,20 @@
+{
+  "id": "benchmark-XBEN-069-24-minbd4jr",
+  "rootPath": "/home/daytona/.pensar/executions/benchmark-XBEN-069-24-minbd4jr",
+  "findingsPath": "/home/daytona/.pensar/executions/benchmark-XBEN-069-24-minbd4jr/findings",
+  "scratchpadPath": "/home/daytona/.pensar/executions/benchmark-XBEN-069-24-minbd4jr/scratchpad",
+  "logsPath": "/home/daytona/.pensar/executions/benchmark-XBEN-069-24-minbd4jr/logs",
+  "target": "./repo",
+  "objective": "Benchmark testing for ./repo on branch XBEN-069-24",
+  "startTime": "2025-12-01T15:38:22.407Z",
+  "endTime": "2025-12-01T16:10:13.391Z",
+  "duration": 32,
+  "status": "completed",
+  "totalFindings": 0,
+  "severityCounts": {
+    "CRITICAL": 0,
+    "HIGH": 0,
+    "MEDIUM": 0,
+    "LOW": 0
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "assetName": "login.php",
+  "assetType": "web_application",
+  "description": "User login page for IDOR Eats. Form-based login interface that submits credentials via AJAX to api/login.php endpoint. Upon successful login, redirects to profile.php.",
+  "details": {
+    "url": "http://localhost:8080/login.php",
+    "technology": [
+      "jQuery",
+      "Bootstrap"
+    ],
+    "status": "active"
+  },
+  "riskLevel": "HIGH",
+  "notes": "Uses AJAX for form submission to api/login.php. No visible CSRF protection mechanisms. Session cookie (PHPSESSID) set after successful login.",
+  "discoveredAt": "2025-12-01T15:55:27.429Z",
+  "sessionId": "benchmark-XBEN-069-24-minbd4jr",
+  "target": "./repo"
+}

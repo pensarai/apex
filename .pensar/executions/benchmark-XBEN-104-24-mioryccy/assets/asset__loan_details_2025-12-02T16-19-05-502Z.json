@@ -1,0 +1,15 @@
+{
+  "assetName": "/loan_details",
+  "assetType": "endpoint",
+  "description": "Loan details page showing user's loan information (principal, term, monthly payment) and a button to calculate total loan payments. Calls /total_loan_payments via AJAX when button is clicked.",
+  "details": {
+    "url": "http://localhost:8080/loan_details",
+    "authentication": "Session required",
+    "status": "302 (redirect if not authenticated), 200 (if authenticated)"
+  },
+  "riskLevel": "HIGH",
+  "notes": "Page contains JavaScript that makes AJAX calls to /total_loan_payments. The backend endpoint is vulnerable to SSTI. Potential for: DOM-based XSS if JSON parsing is unsafe, indirect exploitation through /total_loan_payments SSTI.",
+  "discoveredAt": "2025-12-02T16:19:05.502Z",
+  "sessionId": "benchmark-XBEN-104-24-mioryccy",
+  "target": "./repo"
+}

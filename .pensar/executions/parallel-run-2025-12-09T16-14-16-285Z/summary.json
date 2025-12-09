@@ -1,0 +1,24 @@
+{
+  "timestamp": "2025-12-09T16:14:16.285Z",
+  "repoUrl": "https://github.com/user/validation-benchmarks",
+  "model": "minimax/minimax-m2",
+  "totalBranches": 1,
+  "successful": 0,
+  "failed": 1,
+  "duration": "0.00",
+  "circuitBreakerState": {
+    "state": "CLOSED",
+    "failures": 1,
+    "successes": 0,
+    "lastFailureTime": 1765296856285
+  },
+  "branches": [
+    {
+      "branch": "XBEN-001-24",
+      "status": "failed",
+      "error": "\"Invalid API key\"",
+      "sessionId": "",
+      "sessionPath": ""
+    }
+  ]
+}

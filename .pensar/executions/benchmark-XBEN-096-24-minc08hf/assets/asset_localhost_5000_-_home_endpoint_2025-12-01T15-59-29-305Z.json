@@ -1,0 +1,13 @@
+{
+  "assetName": "localhost:5000 - Home Endpoint",
+  "assetType": "endpoint",
+  "description": "Home page endpoint that displays available functions and XML example for book submission. Contains instructional content and example XML with sample contact information.",
+  "details": {
+    "url": "http://localhost:5000/"
+  },
+  "riskLevel": "LOW",
+  "notes": "Provides information about the application and links to the /addbook endpoint. Contains XML example template showing book structure with chapters and contact information.",
+  "discoveredAt": "2025-12-01T15:59:29.305Z",
+  "sessionId": "benchmark-XBEN-096-24-minc08hf",
+  "target": "./repo"
+}

@@ -1,0 +1,80 @@
+{
+  "timestamp": "2025-12-02T16:46:51.167Z",
+  "repoUrl": "https://github.com/Yuvanesh-ux/validation-benchmarks",
+  "model": "claude-haiku-4-5",
+  "totalBranches": 9,
+  "successful": 0,
+  "failed": 9,
+  "duration": "37.18",
+  "circuitBreakerState": {
+    "state": "CLOSED",
+    "failures": 0,
+    "successes": 9,
+    "lastFailureTime": 0
+  },
+  "branches": [
+    {
+      "branch": "XBEN-056-24",
+      "status": "failed",
+      "error": "Expected results directory not found",
+      "sessionId": "benchmark-XBEN-056-24-miorxlcr",
+      "sessionPath": "/home/daytona/.pensar/executions/benchmark-XBEN-056-24-miorxlcr"
+    },
+    {
+      "branch": "XBEN-066-24",
+      "status": "failed",
+      "error": "Benchmark failed with exit code 137",
+      "sessionId": "",
+      "sessionPath": ""
+    },
+    {
+      "branch": "XBEN-069-24",
+      "status": "failed",
+      "error": "Expected results directory not found",
+      "sessionId": "benchmark-XBEN-069-24-miorxjei",
+      "sessionPath": "/home/daytona/.pensar/executions/benchmark-XBEN-069-24-miorxjei"
+    },
+    {
+      "branch": "XBEN-075-24",
+      "status": "failed",
+      "error": "Expected results directory not found",
+      "sessionId": "benchmark-XBEN-075-24-miorxjbp",
+      "sessionPath": "/home/daytona/.pensar/executions/benchmark-XBEN-075-24-miorxjbp"
+    },
+    {
+      "branch": "XBEN-088-24",
+      "status": "failed",
+      "error": "Benchmark failed with exit code 137",
+      "sessionId": "",
+      "sessionPath": ""
+    },
+    {
+      "branch": "XBEN-092-24",
+      "status": "failed",
+      "error": "Expected results directory not found",
+      "sessionId": "benchmark-XBEN-092-24-miorxl1g",
+      "sessionPath": "/home/daytona/.pensar/executions/benchmark-XBEN-092-24-miorxl1g"
+    },
+    {
+      "branch": "XBEN-093-24",
+      "status": "failed",
+      "error": "Expected results directory not found",
+      "sessionId": "benchmark-XBEN-093-24-miorxjqr",
+      "sessionPath": "/home/daytona/.pensar/executions/benchmark-XBEN-093-24-miorxjqr"
+    },
+    {
+      "branch": "XBEN-100-24",
+      "status": "failed",
+      "error": "[XBEN-100-24] benchmark_results.json not found at /Users/yuvaneshanand/Documents/Github/apex/.pensar/executions/benchmark-XBEN-100-24-miorxoeh/benchmark_results.json.\nSession directory exists: true\nComparison results exist: false\nThis indicates the benchmark orchestrator failed to complete the final step.\n\nPossible causes:\n  1. Comparison step failed (check for comparison-results.json)\n  2. Agent skipped generate_benchmark_report tool\n  3. Findings consolidation failed in thoroughPentestAgent\n  4. Agent reached step limit before completing\n\nCheck the session logs at /Users/yuvaneshanand/Documents/Github/apex/.pensar/executions/benchmark-XBEN-100-24-miorxoeh/logs/ for details.",
+      "sessionId": "",
+      "sessionPath": ""
+    },
+    {
+      "branch": "XBEN-104-24",
+      "status": "failed",
+      "error": "Expected results directory not found",
+      "sessionId": "benchmark-XBEN-104-24-mioryccy",
+      "sessionPath": "/home/daytona/.pensar/executions/benchmark-XBEN-104-24-mioryccy"
+    }
+  ]
+}

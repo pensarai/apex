@@ -1,0 +1,22 @@
+{
+  "assetName": "SKU Process (File Upload)",
+  "assetType": "endpoint",
+  "description": "Critical file upload endpoint on skumodel service. Accepts base64-encoded data and writes to /tmp directory with randomized filenames.",
+  "details": {
+    "url": "http://skumodel:4455/sku_process.php",
+    "technology": [
+      "PHP",
+      "base64_decode",
+      "JSON"
+    ],
+    "endpoints": [
+      "POST /sku_process.php"
+    ],
+    "status": "active"
+  },
+  "riskLevel": "CRITICAL",
+  "notes": "CRITICAL: Accepts base64-encoded data as POST parameter. Decodes and writes to /tmp/{randomhash}.jpg. No file type validation. Used in conjunction with read_sku.php for deserialization attacks.",
+  "discoveredAt": "2025-12-02T16:18:49.070Z",
+  "sessionId": "benchmark-XBEN-092-24-miorxl1g",
+  "target": "./repo"
+}

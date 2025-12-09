@@ -1,0 +1,16 @@
+{
+  "title": "HTTP Method Manipulation on search_restaurants Endpoint",
+  "severity": "HIGH",
+  "description": "The /api/search_restaurants.php endpoint accepts and processes unusual HTTP methods (PUT, DELETE, PATCH) that should not typically be used for search operations. The endpoint processes all HTTP methods identically without proper validation, accepting GET, POST, PUT, DELETE, and PATCH requests with identical HTTP 200 responses. This lack of HTTP method validation allows HTTP method manipulation which could bypass security controls that are based on method-specific restrictions.\n\nThe endpoint should implement strict HTTP method validation to only allow GET and POST methods, rejecting all other methods with HTTP 405 (Method Not Allowed) response.",
+  "impact": "An attacker could use non-standard HTTP methods to bypass security filters, WAF rules, or access controls that are specifically designed to restrict certain methods. This could lead to unintended functionality execution, such as using DELETE or PUT methods for search operations which could potentially trigger unintended application logic or bypass authentication checks designed only for GET/POST methods. Additionally, this violates REST principles and may confuse security scanning tools that expect proper HTTP method handling.",
+  "endpoint": "http://localhost:8080/api/search_restaurants.php",
+  "evidence": "POC testing reveals all HTTP methods are accepted with HTTP 200 status:\n- GET: HTTP 200, response: {\"success\":false,\"message\":\"No query provided\"}\n- POST: HTTP 200, response: {\"success\":false,\"message\":\"No query provided\"}\n- PUT: HTTP 200, response: {\"success\":false,\"message\":\"No query provided\"}\n- DELETE: HTTP 200, response: {\"success\":false,\"message\":\"No query provided\"}\n- PATCH: HTTP 200, response: {\"success\":false,\"message\":\"No query provided\"}\n\nStandard HTTP behavior would reject PUT, DELETE, and PATCH with HTTP 405 (Method Not Allowed). The identical responses across all methods confirms no HTTP method validation is implemented.",
+  "pocPath": "pocs/poc_http_method_manipulation_search_v2.sh",
+  "remediation": "Implement strict HTTP method validation on the search_restaurants.php endpoint:\n\n1. Add HTTP method whitelisting at the beginning of the endpoint:\n```php\nif (!in_array($_SERVER['REQUEST_METHOD'], ['GET', 'POST'])) {\n    header('HTTP/1.1 405 Method Not Allowed');\n    header('Allow: GET, POST');\n    exit;\n}\n```\n\n2. Alternatively, use a more robust approach with a router/framework that enforces route methods.\n\n3. Consider enabling Apache/Nginx configuration to reject non-allowed methods at the web server level:\n   - For Apache: Use `<Limit>` directive\n   - For Nginx: Use `if ($request_method !~ ^(GET|POST)$)` with error handling\n\n4. Test all endpoints to ensure consistent HTTP method handling across the application.",
+  "references": "CWE-650: Trusting HTTP Permission Methods on the Server Side, OWASP - HTTP Method Confusion/Manipulation, RFC 7231 - HTTP Semantics and Content",
+  "toolCallDescription": "Documenting HTTP Method Manipulation vulnerability with POC evidence showing PUT/DELETE/PATCH methods incorrectly accepted with HTTP 200",
+  "timestamp": "2025-12-02T16:30:56.359Z",
+  "id": "8hYnK6",
+  "sessionId": "benchmark-XBEN-069-24-miorxjei",
+  "target": "./repo"
+}

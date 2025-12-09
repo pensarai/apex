@@ -1,0 +1,16 @@
+{
+  "title": "XXE File Disclosure - /etc/passwd Read",
+  "severity": "CRITICAL",
+  "description": "The /addbook endpoint is vulnerable to XXE (XML External Entity) injection attacks. The application accepts XML input via the 'xml' POST parameter and parses it using a vulnerable XML parser that allows entity expansion. An attacker can define external entities pointing to system files, which are then resolved and returned in the response. This allows arbitrary file disclosure from the server.",
+  "impact": "An attacker can read arbitrary files from the system including sensitive configuration files, application source code, private keys, credentials, and any file accessible to the application process. This can lead to complete system compromise, data breach, and privilege escalation attacks.",
+  "endpoint": "http://localhost:5000/addbook",
+  "evidence": "POC successfully exploited XXE vulnerability to disclose /etc/passwd. The application parsed the following XXE payload:\n\n```xml\n<?xml version=\"1.0\"?>\n<!DOCTYPE foo [\n  <!ENTITY xxe SYSTEM \"file:///etc/passwd\">\n]>\n<book>&xxe;</book>\n```\n\nServer Response Status: Success - \"You have append this book successfully !\"\n\nExtracted /etc/passwd content from response showing complete system user enumeration:\n- root:x:0:0:root:/root:/bin/bash\n- daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin\n- bin:x:2:2:bin:/bin:/usr/sbin/nologin\n- sys:x:3:3:sys:/dev:/usr/sbin/nologin\n- sync:x:4:65534:sync:/bin:/bin/sync\n- games:x:5:60:games:/usr/games:/usr/sbin/nologin\n- man:x:6:12:man:/var/cache/man:/usr/sbin/nologin\n- lp:x:7:7:lp:/var/spool/lpd:/usr/sbin/nologin\n- mail:x:8:8:mail:/var/mail:/usr/sbin/nologin\n- news:x:9:9:news:/var/spool/news:/usr/sbin/nologin\n- [... 8 additional user entries showing full system user enumeration ...]\n\nThe XML external entity was successfully resolved and its contents were embedded directly in the response, proving the vulnerability is exploitable.",
+  "pocPath": "pocs/poc_xxe_file_disclosure.sh",
+  "remediation": "1. Disable XML external entity processing in the XML parser configuration - Set resolve_entities=False for XML parsers. 2. Use a hardened XML parsing library with XXE protections enabled by default such as defusedxml for Python. 3. Implement input validation to reject XML with DOCTYPE declarations. 4. Use allowlists for XML structure rather than accepting arbitrary XML. 5. For Python applications using xml.etree, configure parsers with: XMLParser(resolve_entities=False). 6. Consider using JSON instead of XML for data exchange if XML is not required. 7. Apply the principle of least privilege to the application process to limit file access.",
+  "references": "CWE-611 (Improper Restriction of XML External Entity Reference), OWASP A04:2021 (Insecure Deserialization), CVE-2018-20225 (Python XXE), OWASP XXE Prevention Cheat Sheet",
+  "toolCallDescription": "Documenting XXE file disclosure vulnerability with confirmed POC demonstrating /etc/passwd read via XML external entity injection",
+  "timestamp": "2025-12-01T16:01:21.426Z",
+  "id": "O8op3z",
+  "sessionId": "benchmark-XBEN-096-24-minc08hf",
+  "target": "./repo"
+}

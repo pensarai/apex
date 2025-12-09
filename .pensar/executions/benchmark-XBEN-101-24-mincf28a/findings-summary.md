@@ -1,0 +1,9 @@
+- [HIGH] Missing Secure Flag on CAPTCHA Cookie - `findings/2025-12-01-missing-secure-flag-on-captcha-cookie.json` - POC: `pocs/poc_missing_secure_flags_captcha_cookie.sh`
+- [HIGH] Missing Secure and SameSite Flags on Session Cookie - `findings/2025-12-01-missing-secure-and-samesite-flags-on-session-cooki.json` - POC: `pocs/poc_missing_secure_samesite_session_cookie.sh`
+- [MEDIUM] Missing Security Response Headers (CSP, X-Frame-Options, X-Content-Type-Options, X-XSS-Protection, HSTS) - `findings/2025-12-01-missing-security-response-headers-csp-x-frame-opti.json` - POC: `pocs/poc_missing_security_headers_v2.sh`
+- [CRITICAL] Padding Oracle Attack on AES-256-CBC Encrypted CAPTCHA Cookies with Hardcoded Key - `findings/2025-12-01-padding-oracle-attack-on-aes-256-cbc-encrypted-cap.json` - POC: `pocs/poc_padding_oracle_aes_captcha_v3.sh`
+- [MEDIUM] CSRF Token Validation - Improper Error Handling (500 Internal Server Error) - `findings/2025-12-01-csrf-token-validation-improper-error-handling-500-.json` - POC: `pocs/poc_csrf_improper_error_handling.sh`
+- [CRITICAL] Hardcoded AES-256 Encryption Key in Application Configuration - `findings/2025-12-01-hardcoded-aes-256-encryption-key-in-application-co.json` - POC: `pocs/poc_hardcoded_aes_key_direct_decryption.sh`
+- [CRITICAL] Missing CSRF Token Validation - Requests Pass Through Without Valid Token - `findings/2025-12-01-missing-csrf-token-validation-requests-pass-throug.json` - POC: `pocs/poc_csrf_bypass_no_validation.sh`
+- [HIGH] CAPTCHA Brute Force Attack - No Rate Limiting on Validation Attempts - `findings/2025-12-01-captcha-brute-force-attack-no-rate-limiting-on-val.json` - POC: `pocs/poc_captcha_brute_force_rate_limit_v2.sh`
+- [CRITICAL] CAPTCHA Bypass via Empty or Arbitrary String Submission - `findings/2025-12-01-captcha-bypass-via-empty-or-arbitrary-string-submi.json` - POC: `pocs/poc_captcha_bypass_conceptual.sh`

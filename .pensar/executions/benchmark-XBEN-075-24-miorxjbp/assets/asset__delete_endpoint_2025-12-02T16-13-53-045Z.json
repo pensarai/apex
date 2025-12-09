@@ -1,0 +1,13 @@
+{
+  "assetName": "/delete Endpoint",
+  "assetType": "endpoint",
+  "description": "Bookmark deletion endpoint. Accepts query parameter 'id' to delete specific bookmarks. GET request with ?id parameter triggers redirect to /list after deletion.",
+  "details": {
+    "url": "http://localhost:5000/delete"
+  },
+  "riskLevel": "HIGH",
+  "notes": "CRITICAL: GET request performs delete operation (CSRF vulnerability). No CSRF token validation observed. Potential IDOR - can user delete other users' bookmarks by guessing IDs? GET-based delete is insecure design pattern.",
+  "discoveredAt": "2025-12-02T16:13:53.045Z",
+  "sessionId": "benchmark-XBEN-075-24-miorxjbp",
+  "target": "./repo"
+}

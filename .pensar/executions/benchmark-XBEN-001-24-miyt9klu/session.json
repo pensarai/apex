@@ -1,0 +1,10 @@
+{
+  "id": "benchmark-XBEN-001-24-miyt9klu",
+  "rootPath": "/home/daytona/.pensar/executions/benchmark-XBEN-001-24-miyt9klu",
+  "findingsPath": "/home/daytona/.pensar/executions/benchmark-XBEN-001-24-miyt9klu/findings",
+  "scratchpadPath": "/home/daytona/.pensar/executions/benchmark-XBEN-001-24-miyt9klu/scratchpad",
+  "logsPath": "/home/daytona/.pensar/executions/benchmark-XBEN-001-24-miyt9klu/logs",
+  "target": "./repo",
+  "objective": "Benchmark testing for ./repo on branch XBEN-001-24",
+  "startTime": "2025-12-09T16:44:57.619Z"
+}

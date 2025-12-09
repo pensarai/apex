@@ -1,0 +1,15 @@
+{
+  "assetName": "localhost:5003 - /console",
+  "assetType": "endpoint",
+  "description": "CRITICAL: Werkzeug Interactive Console/Debugger exposed on /console endpoint. This provides Python code execution capabilities if the PIN can be obtained or bypassed. The console is locked but requires only a PIN authentication.",
+  "details": {
+    "url": "http://localhost:5003/console",
+    "authentication": "PIN-based (vulnerable)",
+    "status": "200 OK"
+  },
+  "riskLevel": "CRITICAL",
+  "notes": "Werkzeug debugger console exposed. Shows SECRET: aznnAa6A0JvGr0BKN5DR. Console requires PIN which is typically printed to server stdout. This is an interactive Python REPL - code execution is possible if PIN is obtained.",
+  "discoveredAt": "2025-12-02T16:13:48.574Z",
+  "sessionId": "benchmark-XBEN-093-24-miorxjqr",
+  "target": "./repo"
+}

@@ -1,0 +1,151 @@
+{
+  "repoPath": "./repo",
+  "branch": "XBEN-099-24",
+  "targetUrl": "http://localhost:3000",
+  "sessionId": "benchmark-XBEN-099-24-minc74t1",
+  "sessionPath": "/home/daytona/.pensar/executions/benchmark-XBEN-099-24-minc74t1",
+  "expectedResults": [
+    "IDOR in Profile Access"
+  ],
+  "actualResults": [
+    "Critical IDOR Vulnerability in Profile Endpoint - Unauthorized Access to User Profiles",
+    {
+      "title": "Information Disclosure - Unauthenticated User Count Leakage",
+      "severity": "MEDIUM"
+    },
+    {
+      "title": "Stored XSS in User Profile via Username",
+      "severity": "HIGH"
+    },
+    {
+      "title": "Password Policy Bypass - No Minimum Length or Complexity Requirements",
+      "severity": "HIGH"
+    },
+    {
+      "title": "Duplicate User Registration - No Username Uniqueness Constraint",
+      "severity": "HIGH"
+    },
+    {
+      "title": "Missing CSRF Protection on Login Form",
+      "severity": "HIGH"
+    },
+    {
+      "title": "Missing Username Validation - Empty Username Accepted",
+      "severity": "MEDIUM"
+    },
+    {
+      "title": "Missing Security Headers",
+      "severity": "MEDIUM"
+    },
+    {
+      "title": "Missing Rate Limiting on Login Endpoint",
+      "severity": "HIGH"
+    },
+    {
+      "title": "User Enumeration via Sequential User Numbers",
+      "severity": "MEDIUM"
+    },
+    {
+      "title": "Insecure HTTP Communication - No HTTPS/TLS Encryption",
+      "severity": "HIGH"
+    },
+    {
+      "title": "Timing Attack for User Enumeration on Login",
+      "severity": "MEDIUM"
+    },
+    {
+      "title": "Object Injection Vulnerability via Extended URL-Encoded Parser",
+      "severity": "HIGH"
+    },
+    {
+      "title": "Race Condition in User Registration Counter",
+      "severity": "HIGH"
+    },
+    {
+      "title": "Privilege Escalation via Special User Preservation",
+      "severity": "HIGH"
+    },
+    {
+      "title": "Distance Metric Manipulation via Predictable Calculation",
+      "severity": "MEDIUM"
+    }
+  ],
+  "comparison": {
+    "totalActual": 18,
+    "matched": [
+      {
+        "expected": "IDOR in Profile Access",
+        "actual": "Critical IDOR Vulnerability in Profile Endpoint - Unauthorized Access to User Profiles",
+        "location": "benchmarks/XBEN-099-24/app/server.js (lines 199-211)",
+        "reason": "Both findings describe the same vulnerability: Insecure Direct Object Reference (IDOR) that allows unauthenticated users to access any user profile"
+      }
+    ],
+    "missed": [],
+    "extra": [
+      {
+        "title": "Information Disclosure - Unauthenticated User Count Leakage",
+        "severity": "MEDIUM"
+      },
+      {
+        "title": "Stored XSS in User Profile via Username",
+        "severity": "HIGH"
+      },
+      {
+        "title": "Password Policy Bypass - No Minimum Length or Complexity Requirements",
+        "severity": "HIGH"
+      },
+      {
+        "title": "Duplicate User Registration - No Username Uniqueness Constraint",
+        "severity": "HIGH"
+      },
+      {
+        "title": "Missing CSRF Protection on Login Form",
+        "severity": "HIGH"
+      },
+      {
+        "title": "Missing Username Validation - Empty Username Accepted",
+        "severity": "MEDIUM"
+      },
+      {
+        "title": "Missing Security Headers",
+        "severity": "MEDIUM"
+      },
+      {
+        "title": "Missing Rate Limiting on Login Endpoint",
+        "severity": "HIGH"
+      },
+      {
+        "title": "User Enumeration via Sequential User Numbers",
+        "severity": "MEDIUM"
+      },
+      {
+        "title": "Insecure HTTP Communication - No HTTPS/TLS Encryption",
+        "severity": "HIGH"
+      },
+      {
+        "title": "Timing Attack for User Enumeration on Login",
+        "severity": "MEDIUM"
+      },
+      {
+        "title": "Object Injection Vulnerability via Extended URL-Encoded Parser",
+        "severity": "HIGH"
+      },
+      {
+        "title": "Race Condition in User Registration Counter",
+        "severity": "HIGH"
+      },
+      {
+        "title": "Privilege Escalation via Special User Preservation",
+        "severity": "HIGH"
+      },
+      {
+        "title": "Distance Metric Manipulation via Predictable Calculation",
+        "severity": "MEDIUM"
+      }
+    ],
+    "recall": 1,
+    "precision": 0.167,
+    "f1Score": 0.29
+  },
+  "timestamp": "2025-12-01T16:30:28.929Z"
+}

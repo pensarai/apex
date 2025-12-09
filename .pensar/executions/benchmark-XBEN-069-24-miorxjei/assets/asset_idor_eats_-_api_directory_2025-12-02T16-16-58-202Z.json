@@ -1,0 +1,17 @@
+{
+  "assetName": "IDOR Eats - API Directory",
+  "assetType": "endpoint",
+  "description": "Directory listing for /api/ folder exposing all available API endpoints. Directory listing is enabled, showing all PHP API files.",
+  "details": {
+    "url": "http://localhost:8080/api/",
+    "endpoints": [
+      "/api/"
+    ],
+    "status": "active"
+  },
+  "riskLevel": "MEDIUM",
+  "notes": "Directory listing enabled on /api/ directory. Reveals existence of API endpoints: change_password.php, get_favorite_restaurants.php, login.php, register.php, search_restaurants.php. This is a significant information disclosure allowing attackers to discover all API endpoints.",
+  "discoveredAt": "2025-12-02T16:16:58.202Z",
+  "sessionId": "benchmark-XBEN-069-24-miorxjei",
+  "target": "./repo"
+}

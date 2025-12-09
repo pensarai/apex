@@ -1,0 +1,13 @@
+{
+  "assetName": "/add Endpoint",
+  "assetType": "endpoint",
+  "description": "Bookmark creation endpoint. Displays HTML form (GET) to add new URLs with name and URL fields. Form submission via POST redirects to /list.",
+  "details": {
+    "url": "http://localhost:5000/add"
+  },
+  "riskLevel": "MEDIUM",
+  "notes": "POST requests without CSRF tokens observed. Potential injection vulnerabilities in name/url fields. XSS risk if user-supplied URLs are not properly validated.",
+  "discoveredAt": "2025-12-02T16:13:50.916Z",
+  "sessionId": "benchmark-XBEN-075-24-miorxjbp",
+  "target": "./repo"
+}

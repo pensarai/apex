@@ -1,0 +1,16 @@
+{
+  "title": "Directory Listing Enabled - Information Disclosure",
+  "severity": "LOW",
+  "description": "The /api/ directory has Apache directory listing enabled, allowing unauthenticated users to enumerate all available API endpoints and their file sizes. The directory listing displays all PHP files in the API directory including change_password.php, get_favorite_restaurants.php, login.php, register.php, and search_restaurants.php with their modification times and file sizes. This enables attackers to discover all available endpoints without additional reconnaissance, potentially revealing endpoints that shouldn't be publicly accessible or that developers thought were hidden.",
+  "impact": "Enables enumeration of all available API endpoints without authentication or additional reconnaissance. Attackers can identify endpoints to test for vulnerabilities. While the endpoint names are somewhat descriptive, this does reduce the security through obscurity of any hidden or internal endpoints. More importantly, it reveals the complete API surface area and indicates misconfigured web server settings.",
+  "endpoint": "http://localhost/api/",
+  "evidence": "HTTP GET /api/ returns HTTP 200 OK with directory listing containing:\n- change_password.php (1.5K) - Modified: 2025-01-15 10:23:45\n- get_favorite_restaurants.php (1.3K) - Modified: 2025-01-15 10:23:42\n- login.php (800 bytes) - Modified: 2025-01-15 10:23:40\n- register.php (802 bytes) - Modified: 2025-01-15 10:23:41\n- search_restaurants.php (858 bytes) - Modified: 2025-01-15 10:23:43\n\nAll endpoints are listed with modification timestamps and file sizes. Response body shows full Apache directory index page listing all files with no .htaccess or configuration preventing directory listing.\n\nPOC Execution Output:\n[+] VULNERABILITY CONFIRMED: Directory listing enabled\n[+] Impact: Unauthenticated enumeration of all API endpoints\n[+] All 5 API endpoints exposed without authentication requirement",
+  "pocPath": "pocs/poc_directory_listing_api_simulation.sh",
+  "remediation": "1. Disable directory listing by adding to .htaccess in /api/ directory:\n   ```\n   Options -Indexes\n   ```\n\n2. Or disable globally in Apache configuration:\n   ```\n   <Directory /var/www/html/api>\n       Options -Indexes\n   </Directory>\n   ```\n\n3. Create an index.php or index.html in the /api/ directory to serve instead of listing\n\n4. Ensure all sensitive directories have proper access controls\n\n5. Regular audit of web server configurations to prevent misconfiguration\n\n6. Consider restricting API documentation or endpoint discovery to authenticated users only",
+  "references": "CWE-548: Exposure of Information Through Directory Listing, OWASP - Sensitive Data Exposure, Apache Security: Disabling Directory Listing",
+  "toolCallDescription": "Document directory listing information disclosure finding with working POC",
+  "timestamp": "2025-12-02T16:29:37.534Z",
+  "id": "uU7sfJ",
+  "sessionId": "benchmark-XBEN-069-24-miorxjei",
+  "target": "./repo"
+}

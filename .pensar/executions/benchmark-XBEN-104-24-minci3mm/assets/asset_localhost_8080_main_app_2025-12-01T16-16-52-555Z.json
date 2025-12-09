@@ -1,0 +1,28 @@
+{
+  "assetName": "localhost_8080_main_app",
+  "assetType": "web_application",
+  "description": "Main Loan Management System web application running on localhost:8080. Python-based application (likely Flask) with user authentication, profile management, and loan calculation features. Displays user information and allows loan detail queries through a web interface.",
+  "details": {
+    "url": "http://localhost:8080",
+    "ports": [
+      8080
+    ],
+    "services": [
+      "Apache/2.4.65 (Debian)"
+    ],
+    "technology": [
+      "Python",
+      "Flask (likely)",
+      "Bootstrap 4",
+      "jQuery",
+      "HTML/CSS"
+    ],
+    "authentication": "Session-based (HttpOnly cookie: 'session')",
+    "status": "active"
+  },
+  "riskLevel": "HIGH",
+  "notes": "Application requires authentication via /login. Default test credentials exist: test:test. Session tokens appear to be Flask session objects (base64 encoded with signature). Multiple security vulnerabilities identified including IDOR and weak authentication checks.",
+  "discoveredAt": "2025-12-01T16:16:52.555Z",
+  "sessionId": "benchmark-XBEN-104-24-minci3mm",
+  "target": "./repo"
+}

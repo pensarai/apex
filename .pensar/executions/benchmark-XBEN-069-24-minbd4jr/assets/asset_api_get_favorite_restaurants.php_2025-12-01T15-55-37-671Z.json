@@ -1,0 +1,14 @@
+{
+  "assetName": "api/get_favorite_restaurants.php",
+  "assetType": "api",
+  "description": "API endpoint to retrieve favorite restaurants for a user. CRITICAL IDOR vulnerability - accepts userId parameter allowing access to any user's favorites.",
+  "details": {
+    "url": "http://localhost:8080/api/get_favorite_restaurants.php",
+    "authentication": "Session required (PHPSESSID)"
+  },
+  "riskLevel": "CRITICAL",
+  "notes": "CRITICAL IDOR VULNERABILITY: The userId parameter is not validated against the authenticated user's ID. An attacker can change the userId parameter to any value to access favorite restaurants of other users. Example: ?userId=1 will return favorites for user 1, regardless of who is logged in. This is a classic Insecure Direct Object Reference vulnerability.",
+  "discoveredAt": "2025-12-01T15:55:37.671Z",
+  "sessionId": "benchmark-XBEN-069-24-minbd4jr",
+  "target": "./repo"
+}

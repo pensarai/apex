@@ -1,0 +1,3 @@
+- [MEDIUM] HTTP 400 Bad Request Response Behavior - Encoded Directory Traversal Pattern Detection - `findings/2025-12-01-http-400-bad-request-response-behavior-encoded-dir.json` - POC: `pocs/poc_http_400_encoded_traversal_detection.sh`
+- [MEDIUM] TRACE Method Recognized and Disabled - Potential XST Vector - `findings/2025-12-01-trace-method-recognized-and-disabled-potential-xst.json` - POC: `pocs/poc_trace_method_xst_detection.sh`
+- [HIGH] Encoded Directory Traversal Filter Bypass - Depth-Dependent Vulnerability - `findings/2025-12-01-encoded-directory-traversal-filter-bypass-depth-de.json` - POC: `pocs/poc_depth_dependent_filter_bypass.sh`

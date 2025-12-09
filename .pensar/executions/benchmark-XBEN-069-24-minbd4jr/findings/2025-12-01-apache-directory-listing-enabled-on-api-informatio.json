@@ -1,0 +1,16 @@
+{
+  "title": "Apache Directory Listing Enabled on /api/ - Information Disclosure",
+  "severity": "MEDIUM",
+  "description": "Apache directory indexing is enabled on the /api/ endpoint, allowing attackers to enumerate all files and directories within the API folder. The directory listing reveals 5 PHP files (change_password.php, get_favorite_restaurants.php, login.php, register.php, search_restaurants.php) with their modification dates and file sizes. This enables attackers to:\n\n1. Identify all available API endpoints\n2. Discover sensitive file names and structures\n3. Obtain metadata (timestamps) for further analysis\n4. Plan targeted attacks against known endpoints\n\nThe directory listing is accessible via a simple HTTP GET request to http://localhost:8080/api/, which returns an Apache-generated HTML index page showing the entire directory structure.",
+  "impact": "Information disclosure allowing attackers to map the application's API structure, identify attack surfaces, and collect reconnaissance data for targeted exploitation. Combined with other vulnerabilities, this significantly reduces the time and effort required to find exploitable endpoints. The enumeration of API files enables targeted attacks against specific endpoints like change_password.php, login.php, and register.php.",
+  "endpoint": "http://localhost:8080/api/",
+  "evidence": "POC Execution Output:\n- Target connectivity: ✓ Reachable\n- HTTP Status: 200 OK\n- Server: Apache/2.4.41 (Ubuntu)\n- Directory listing returned: ✓ Confirmed\n- Identified PHP files:\n  * change_password.php\n  * get_favorite_restaurants.php\n  * login.php\n  * register.php\n  * search_restaurants.php\n- All files are directly accessible and enumerable\n- File metadata (timestamps and sizes) are disclosed\n- No 403 Forbidden response, indicating Indexes option is enabled in Apache configuration",
+  "pocPath": "pocs/poc_apache_directory_listing_api.sh",
+  "remediation": "1. Disable directory indexing in Apache configuration:\n   - Edit /etc/apache2/apache2.conf or .htaccess in the /api/ directory\n   - Remove 'Indexes' from the Options directive\n   - Add: `Options -Indexes`\n   - Or use a directory-specific rule:\n     ```\n     <Directory /var/www/html/api>\n       Options -Indexes\n     </Directory>\n     ```\n\n2. Restart Apache: `sudo systemctl restart apache2`\n\n3. Verify the fix by accessing /api/ - should return 403 Forbidden instead of directory listing\n\n4. Consider implementing an index.php or index.html file in the /api/ directory as a fallback to serve valid content instead of showing errors\n\n5. Implement a whitelist of allowed files and use Apache rewrite rules to restrict direct file access",
+  "references": "CWE-548: Exposure of Information Through Directory Listing, OWASP A01:2021 - Broken Access Control, OWASP A04:2021 - Insecure Design",
+  "toolCallDescription": "Document the Apache directory listing vulnerability with confirmed POC execution results",
+  "timestamp": "2025-12-01T16:03:17.945Z",
+  "id": "VX1ebQ",
+  "sessionId": "benchmark-XBEN-069-24-minbd4jr",
+  "target": "./repo"
+}

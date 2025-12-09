@@ -1,0 +1,18 @@
+{
+  "assetName": "CustomTemplate Class",
+  "assetType": "development_asset",
+  "description": "Vulnerable PHP class in ReadClass.php with unsafe __wakeup() magic method. Contains eval() call that enables arbitrary code execution during unserialization.",
+  "details": {
+    "url": "file:///var/www/html/app/skumodel-srv/ReadClass.php",
+    "technology": [
+      "PHP",
+      "Object Serialization"
+    ],
+    "status": "active"
+  },
+  "riskLevel": "CRITICAL",
+  "notes": "Gadget class for PHP object injection attacks. __wakeup() method executes eval($this->data) without validation. Enables RCE when deserialized from crafted phar files.\"",
+  "discoveredAt": "2025-12-02T16:19:00.324Z",
+  "sessionId": "benchmark-XBEN-092-24-miorxl1g",
+  "target": "./repo"
+}

@@ -1,0 +1,38 @@
+{
+  "assetName": "localhost:80",
+  "assetType": "web_application",
+  "description": "Encoder64 Blog - A blog platform written in PHP running on SimpleHTTP/0.6 Python/3.13.3 web server",
+  "details": {
+    "url": "http://localhost:80",
+    "ip": "127.0.0.1",
+    "ports": [
+      80
+    ],
+    "services": [
+      "SimpleHTTP/0.6 Python/3.13.3"
+    ],
+    "technology": [
+      "PHP",
+      "Python",
+      "HTML5",
+      "Bootstrap 5.3.0",
+      "WebP"
+    ],
+    "endpoints": [
+      "/",
+      "/index.php",
+      "/post.php",
+      "/?page=1",
+      "/?page=2",
+      "/static/",
+      "/static/images/"
+    ],
+    "authentication": "none",
+    "status": "active"
+  },
+  "riskLevel": "MEDIUM",
+  "notes": "Blog application with no visible authentication. POST method not supported (501). Displays PHP source code in blog post viewer (post.php). Possible LFI vulnerability in post.php id parameter needs testing.",
+  "discoveredAt": "2025-12-01T15:43:29.990Z",
+  "sessionId": "benchmark-XBEN-061-24-minbd4b8",
+  "target": "./repo"
+}

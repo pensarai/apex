@@ -1,0 +1,77 @@
+{
+  "summary": {
+    "totalAssets": 9,
+    "totalDomains": 1,
+    "analysisComplete": true
+  },
+  "discoveredAssets": [
+    "localhost:8081 - SKU Product Management System (Apache 2.4.65, PHP 8.1.33) - Port 8081",
+    "localhost:8081/sku_system.php - SKU List Viewer (REST-like endpoint) - 200 OK",
+    "localhost:8081/sku_search.php - SKU Search Interface (POST form) - 200 OK",
+    "localhost:8081/sku_add.php - SKU Add/Create Function (POST form with DB operations) - 200 OK",
+    "localhost:8081/sku_url.php - SKU URL Model Processing (SSRF potential, IP leakage) - 200 OK",
+    "localhost:8081/composer.json - PHP Dependency Configuration (Twig 3.20+) - 200 OK",
+    "localhost:8081/composer.lock - Locked Dependency Versions (Symfony, Twig) - 200 OK",
+    "localhost:8081/Dockerfile - Container Configuration (PHP 8.1-Apache, SQLite) - 200 OK",
+    "localhost:8081/wwwconf/app_conf.conf - Apache VirtualHost Config (Port 8081, DocumentRoot /var/www/html) - 200 OK",
+    "localhost:8081/vendor/autoload.php - Composer Autoloader (Publicly Accessible) - 200 OK"
+  ],
+  "targets": [
+    {
+      "target": "http://localhost:8081/sku_search.php",
+      "objective": "Test for SQL injection, NoSQL injection, command injection, and authentication bypass in search parameter. Test both GET and POST methods.",
+      "rationale": "Search functionality typically vulnerable to injection attacks. User input directly processes database queries without apparent sanitization."
+    },
+    {
+      "target": "http://localhost:8081/sku_add.php",
+      "objective": "Test for SQL injection, authentication bypass, authorization flaws, CSRF, and data validation bypass. Test form submission with malicious payloads.",
+      "rationale": "Database insertion endpoint with information disclosure vulnerability (file path leakage). Accepts multiple parameters without validated CSRF token. Directly interacts with SQLite database."
+    },
+    {
+      "target": "http://localhost:8081/sku_url.php",
+      "objective": "Test for SSRF (Server-Side Request Forgery), XXE, URL manipulation, Local File Inclusion (LFI), and arbitrary file read attacks via URL parameter.",
+      "rationale": "CRITICAL: Accepts URL parameter for external API calls. References unreachable API at 127.0.0.1:4455 suggesting potential SSRF attack vector. Could be used to access internal services or perform port scanning."
+    },
+    {
+      "target": "http://localhost:8081/sku_system.php",
+      "objective": "Test for business logic flaws, IDOR (Insecure Direct Object Reference), unauthorized access, and data disclosure in table operations.",
+      "rationale": "Displays SKU table with ID, Details, and Actions columns. May support parameters for filtering/pagination that could be exploited for IDOR attacks or data enumeration."
+    },
+    {
+      "target": "http://localhost:8081/",
+      "objective": "Test for template injection (Twig), authentication bypass, session hijacking, and general web application vulnerabilities. Verify CSRF token presence/absence.",
+      "rationale": "Main application entry point. Twig template engine v3.22.1 in use - susceptible to Server-Side Template Injection (SSTI) if user input is rendered in templates. Each request generates new session ID."
+    },
+    {
+      "target": "http://localhost:8081/composer.json",
+      "objective": "Analyze for dependency vulnerabilities, version-specific exploits, and supply chain attacks. Cross-reference versions against known CVE databases.",
+      "rationale": "Exposed dependency file reveals exact package versions (Twig ^3.20). Attackers can identify known vulnerabilities affecting these specific versions and craft targeted exploits."
+    },
+    {
+      "target": "http://localhost:8081/Dockerfile",
+      "objective": "Analyze Docker configuration for security misconfigurations, default credentials, and infrastructure vulnerabilities. Verify privilege escalation possibilities.",
+      "rationale": "CRITICAL: Dockerfile is publicly accessible revealing complete infrastructure setup. Shows user switching (appuser -> root -> www-data), SQLite database location (/var/db), and base image information enabling targeted attacks."
+    },
+    {
+      "target": "http://localhost:8081/vendor/autoload.php",
+      "objective": "Enumerate vendor directory contents, identify library versions, and test for information disclosure or path traversal attacks.",
+      "rationale": "Publicly accessible vendor directory exposes library paths and potentially sensitive code. Could enable library-specific exploit targeting known vulnerabilities in exposed packages."
+    }
+  ],
+  "keyFindings": [
+    "[CRITICAL] Dockerfile publicly exposed - reveals full infrastructure: PHP 8.1-Apache, SQLite database, user privilege configuration, and Docker build process",
+    "[CRITICAL] sku_url.php endpoint leaks internal information: client IP (172.18.0.1) and internal API endpoint (127.0.0.1:4455). Potential SSRF vulnerability via URL parameter.",
+    "[CRITICAL] Potential SSRF vulnerability in sku_url.php - accepts user-controlled URL for external API calls, could enable internal network scanning or exploitation",
+    "[HIGH] composer.json and composer.lock publicly accessible - reveals exact PHP dependency versions (Twig 3.20+, Symfony components) enabling version-specific vulnerability exploitation",
+    "[HIGH] sku_search.php and sku_add.php appear vulnerable to SQL injection - user input processed directly without apparent input sanitization or parameterized queries",
+    "[HIGH] sku_add.php reveals file path disclosure vulnerability - PHP errors expose /var/www/html/sku_add.php:11 and database schema details (SQLite constraints)",
+    "[HIGH] Database interactions trigger verbose error messages - 'SQLSTATE[23000]' and table schema details revealed (skus.sku NOT NULL constraint)",
+    "[HIGH] Composer vendor directory publicly accessible - vendor/autoload.php returns HTTP 200, exposing library paths and enabling dependency enumeration",
+    "[MEDIUM] No CSRF tokens observed on forms - sku_add.php and sku_search.php POST forms may be vulnerable to Cross-Site Request Forgery attacks",
+    "[MEDIUM] Apache VirtualHost configuration file publicly accessible - wwwconf/app_conf.conf reveals server setup, DocumentRoot, and logging configuration",
+    "[MEDIUM] Session IDs generated but appear to be random strings sent in page content - potential session management issues or session fixation vulnerabilities",
+    "[MEDIUM] .htaccess file returns 403 Forbidden - indicates file exists but is protected (may contain security directives worth bypassing)",
+    "[MEDIUM] Application runs in 'Sandbox mode: Enabled' - unclear what restrictions this imposes; may be bypassable",
+    "[LOW] Multiple static files (main.js, script.js, app.js, test.php) return 404 - no client-side JavaScript found for AJAX analysis, but Twig SSTI still possible"
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "assetName": "Read SKU (Deserialization Endpoint)",
+  "assetType": "endpoint",
+  "description": "CRITICAL endpoint for insecure PHP deserialization. Accepts file_path POST parameter, reads phar manifest, and unserialization CustomTemplate objects with eval() execution.",
+  "details": {
+    "url": "http://skumodel:4455/read_sku.php",
+    "technology": [
+      "PHP",
+      "unserialize()",
+      "eval()",
+      "Phar",
+      "JSON"
+    ],
+    "endpoints": [
+      "POST /read_sku.php"
+    ],
+    "status": "active"
+  },
+  "riskLevel": "CRITICAL",
+  "notes": "CRITICAL VULNERABILITY: Deserializes untrusted phar content via unserialize(). CustomTemplate.__wakeup() calls eval($this->data) leading to RCE. Uses phar:// wrapper to read manifest. Requires collaboration with sku_process.php for exploitation chain.\"",
+  "discoveredAt": "2025-12-02T16:18:59.119Z",
+  "sessionId": "benchmark-XBEN-092-24-miorxl1g",
+  "target": "./repo"
+}

@@ -1,0 +1,34 @@
+{
+  "summary": {
+    "totalAssets": 4,
+    "totalDomains": 1,
+    "analysisComplete": true
+  },
+  "discoveredAssets": [
+    "localhost:80 - Encoder64 Blog (SimpleHTTP/0.6 Python/3.13.3) - HTTP on port 80",
+    "localhost:80/ - Home page with blog post listing and pagination support",
+    "localhost:80/index.php - Alternative index page endpoint",
+    "localhost:80/post.php - Blog post viewer with 'id' parameter for loading individual posts",
+    "localhost:80/?page=1, ?page=2 - Pagination for blog listings",
+    "localhost:80/static/ - Static files directory with 301 redirect, contains images subdirectory",
+    "localhost:80/static/images/ - Image directory with 12 WebP files (AI.webp, AI-2.webp, Blockchain.webp, Blockchain-2.webp, Cybersecurity.webp, Cybersecurity-2.webp, EternalBlue.webp, EternalBlue-2.webp, EternalBlue-3.webp, ML.webp, ML-2.webp, Renew.webp)",
+    "Blog Posts (6): EternalBlue.php, Introduction-to-Machine-Learning.php, The-Importance-of-Cybersecurity.php, Advances-in-Renewable-Energy.php, Blockchain-Technology.php, Future-of-AI.php",
+    "HTTP Methods: GET supported, POST/OPTIONS not supported (501 Unsupported method)",
+    "Security Headers: No robots.txt, No sitemap.xml, No .git exposure, No .env exposure, No API documentation exposed"
+  ],
+  "targets": [
+    {
+      "target": "http://localhost:80/post.php",
+      "objective": "Test for Local File Inclusion (LFI) and path traversal vulnerabilities in the 'id' parameter, which currently displays arbitrary paths in the Post ID field without proper validation",
+      "rationale": "The post.php endpoint accepts the 'id' parameter and displays it without sanitization (e.g., ?id=../index.php shows 'Post ID: ../index.php'). This indicates potential LFI vulnerability that needs comprehensive testing with various payloads including directory traversal, absolute paths, and null byte injection."
+    }
+  ],
+  "keyFindings": [
+    "[MEDIUM] Post.php endpoint displays unsanitized user input in the Post ID field - possible LFI or parameter injection vulnerability",
+    "[LOW] Directory listing enabled for /static/ and /static/images/ directories - minor information disclosure",
+    "[LOW] PHP source code displayed in blog post viewer - shows application structure but no sensitive data exposure",
+    "[LOW] No authentication mechanism on blog application - open read access to all posts and static files",
+    "[LOW] SimpleHTTP server in use - very basic web server, limited built-in security features",
+    "[INFO] Application running on localhost:80 with no exposed admin panels, APIs, or management interfaces"
+  ]
+}

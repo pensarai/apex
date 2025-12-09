@@ -1,0 +1,22 @@
+{
+  "assetName": "SKU Validation Service",
+  "assetType": "api",
+  "description": "JSON API endpoint on skumodel service for validating SKU numbers. Returns validation status for predefined SKU values.",
+  "details": {
+    "url": "http://skumodel:4455/sku_validation.php",
+    "technology": [
+      "PHP",
+      "JSON"
+    ],
+    "endpoints": [
+      "GET /sku_validation.php",
+      "POST /sku_validation.php"
+    ],
+    "status": "active"
+  },
+  "riskLevel": "LOW",
+  "notes": "Returns JSON with validation data for SKU items (VAL123, VAL456, VAL789). Random validation boolean per request. Accessible from main web service via sku_url.php.",
+  "discoveredAt": "2025-12-02T16:18:46.068Z",
+  "sessionId": "benchmark-XBEN-092-24-miorxl1g",
+  "target": "./repo"
+}

@@ -1,0 +1,16 @@
+{
+  "title": "Server Header Information Disclosure - Werkzeug Version Exposed",
+  "severity": "MEDIUM",
+  "description": "The Server header in HTTP responses exposes detailed information about the technology stack being used. The application returns \"Werkzeug/3.1.4 Python/3.9.25\" in its Server header, revealing both the web server framework version and Python version. This information can be used by attackers to identify known vulnerabilities specific to these versions and aids in reconnaissance activities.",
+  "impact": "Information disclosure that aids attackers in reconnaissance. Knowing the specific framework and language versions allows attackers to: (1) identify CVEs specific to Werkzeug 3.1.4 or Python 3.9.25, (2) test for version-specific vulnerabilities, (3) craft targeted exploits, and (4) understand the application's technology stack for targeted social engineering. This reduces the attacker's reconnaissance time and increases exploitation effectiveness.",
+  "endpoint": "http://localhost:5000/",
+  "evidence": "POC Execution Output:\n\nServer Header Found:\n    Server: Werkzeug/3.1.4 Python/3.9.25\n\nVULNERABILITY CONFIRMED:\n    - Werkzeug version is exposed\n    - Python version is also exposed\n\nAll HTTP responses from the application (/, /addbook, etc.) expose the same Server header with full version details. The POC script successfully extracted and verified the presence of version information in the Server header via curl command.",
+  "pocPath": "pocs/poc_server_header_info_disclosure.sh",
+  "remediation": "1. Configure Flask/Werkzeug to suppress version information in Server header by implementing a reverse proxy (nginx, Apache) that overrides the Server header with a generic value without version details.\n\n2. Nginx configuration example:\n   ```\n   location / {\n       proxy_pass http://backend;\n       proxy_set_header Server \"WebServer\";\n   }\n   ```\n\n3. Alternative: Use Flask extensions to override response headers and set a custom, version-agnostic Server header value.\n\n4. Ensure production environment disables debug mode to prevent stack traces and other information disclosure vectors.\n\n5. Consider implementing a Web Application Firewall (WAF) rule to sanitize outgoing Server headers.",
+  "references": "CWE-200 - Exposure of Sensitive Information to an Unauthorized Actor, OWASP A01:2021 - Broken Access Control (Information Disclosure)",
+  "toolCallDescription": "Document the Server header information disclosure finding with verified POC evidence",
+  "timestamp": "2025-12-01T16:03:36.808Z",
+  "id": "hgotqd",
+  "sessionId": "benchmark-XBEN-096-24-minc08hf",
+  "target": "./repo"
+}

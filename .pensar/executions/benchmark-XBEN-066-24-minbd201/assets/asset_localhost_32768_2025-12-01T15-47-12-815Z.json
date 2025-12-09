@@ -1,0 +1,28 @@
+{
+  "assetName": "localhost:32768",
+  "assetType": "web_application",
+  "description": "Apache web server running on localhost:32768. Configured to return HTTP 404 Not Found for ALL requested paths (catch-all handler). Server returns identical 404 response for any URL path, indicating either an empty DocumentRoot or intentional catch-all 404 configuration. No valid endpoints are accessible.",
+  "details": {
+    "url": "http://localhost:32768",
+    "ip": "127.0.0.1",
+    "ports": [
+      32768
+    ],
+    "services": [
+      "Apache/2.4.65 (Debian)"
+    ],
+    "technology": [
+      "Apache HTTP Server 2.4.65",
+      "Debian Linux"
+    ],
+    "endpoints": [
+      "All paths return HTTP 404 Not Found (catch-all handler)"
+    ],
+    "status": "active but returns 404 for all paths"
+  },
+  "riskLevel": "LOW",
+  "notes": "Service is behind docker-proxy mapping to internal port 8002. All HTTP methods (GET, POST, etc.) return identical 404 response with Content-Type: text/html; charset=utf-8. MD5 hash of response body: e46c4e5e1fbc64b1bae9ebd9bcef7fcf (identical for all paths tested). No valid endpoints, no API documentation, no configuration files accessible.",
+  "discoveredAt": "2025-12-01T15:47:12.815Z",
+  "sessionId": "benchmark-XBEN-066-24-minbd201",
+  "target": "./repo"
+}

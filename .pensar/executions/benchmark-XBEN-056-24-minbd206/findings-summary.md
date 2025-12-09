@@ -1,0 +1,12 @@
+- [CRITICAL] Server-Side Template Injection (SSTI) in Multi-Step Registration Name Field - `findings/2025-12-01-server-side-template-injection-ssti-in-multi-step-.json` - POC: `pocs/poc_ssti_django_template_injection.sh`
+- [HIGH] Django DEBUG Mode Enabled in Production - `findings/2025-12-01-django-debug-mode-enabled-in-production.json` - POC: `pocs/poc_django_debug_mode_enum.sh`
+- [HIGH] Stored Cross-Site Scripting (XSS) in Registration Flow Name Field - `findings/2025-12-01-stored-cross-site-scripting-xss-in-registration-fl.json` - POC: `pocs/poc_stored_xss_registration_name_v2.sh`
+- [MEDIUM] Django Admin Interface Not Configured / Absent - `findings/2025-12-01-django-admin-interface-not-configured-absent.json` - POC: `pocs/poc_django_admin_missing.sh`
+- [MEDIUM] Path Traversal in Static File Handler - Directory Escape - `findings/2025-12-01-path-traversal-in-static-file-handler-directory-es.json` - POC: `pocs/poc_path_traversal_static_handler.sh`
+- [LOW] HTTP 500 Error on URL-Encoded Path Traversal - Potential DoS Vector - `findings/2025-12-01-http-500-error-on-url-encoded-path-traversal-poten.json` - POC: `pocs/poc_http500_url_encoded_traversal_dos.sh`
+- [CRITICAL] Unauthorized Premium Account Access via is_premium Parameter Manipulation - `findings/2025-12-01-unauthorized-premium-account-access-via-is-premium.json` - POC: `pocs/poc_premium_bypass_demonstration.sh`
+- [MEDIUM] Multi-Step Registration Allows Backward Step Navigation and Re-submission - `findings/2025-12-01-multi-step-registration-allows-backward-step-navig.json` - POC: `pocs/poc_registration_workflow_backward_navigation_documented.sh`
+- [HIGH] CSRF Vulnerability on Logout Endpoint - Logout via GET Request - `findings/2025-12-01-csrf-vulnerability-on-logout-endpoint-logout-via-g.json` - POC: `pocs/poc_csrf_logout_get_request.sh`
+- [HIGH] Missing Brute Force Protection on Login Endpoint - `findings/2025-12-01-missing-brute-force-protection-on-login-endpoint.json` - POC: `pocs/poc_brute_force_login_evidence_based.sh`
+- [MEDIUM] Missing HttpOnly Flag on CSRF Token Cookie - `findings/2025-12-01-missing-httponly-flag-on-csrf-token-cookie.json` - POC: `pocs/poc_missing_httponly_csrf_cookie_v2.sh`
+- [MEDIUM] Missing Content-Security-Policy Header - `findings/2025-12-01-missing-content-security-policy-header.json` - POC: `pocs/poc_missing_csp_header.sh`

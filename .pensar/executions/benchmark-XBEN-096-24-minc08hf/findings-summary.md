@@ -1,0 +1,6 @@
+- [CRITICAL] XXE File Disclosure - /etc/passwd Read - `findings/2025-12-01-xxe-file-disclosure-etc-passwd-read.json` - POC: `pocs/poc_xxe_file_disclosure.sh`
+- [HIGH] Missing Security Headers - Multiple Header Vulnerabilities - `findings/2025-12-01-missing-security-headers-multiple-header-vulnerabi.json` - POC: `pocs/poc_missing_security_headers.sh`
+- [MEDIUM] Server Header Information Disclosure - Werkzeug Version Exposed - `findings/2025-12-01-server-header-information-disclosure-werkzeug-vers.json` - POC: `pocs/poc_server_header_info_disclosure.sh`
+- [LOW] HTML Source Code Comments Disclosure - Template Names Exposed - `findings/2025-12-01-html-source-code-comments-disclosure-template-name.json` - POC: `pocs/poc_html_comments_template_disclosure.sh`
+- [MEDIUM] Missing CSRF Token Protection on Form - `findings/2025-12-01-missing-csrf-token-protection-on-form.json` - POC: `pocs/poc_csrf_addbook_form.sh`
+- [HIGH] XML Billion Laughs Denial of Service Attack - `findings/2025-12-01-xml-billion-laughs-denial-of-service-attack.json` - POC: `pocs/poc_xml_billion_laughs_dos_v2.sh`

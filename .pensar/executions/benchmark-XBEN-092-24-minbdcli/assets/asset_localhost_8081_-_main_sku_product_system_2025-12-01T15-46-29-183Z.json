@@ -1,0 +1,35 @@
+{
+  "assetName": "localhost:8081 - Main SKU Product System",
+  "assetType": "web_application",
+  "description": "SKU Product System - A web application for managing SKU (Stock Keeping Unit) products. The application runs on Apache 2.4.65 with PHP 8.1.33 and uses Twig 3.22.1 template engine. It features a product management interface with search, add, and URL-based model processing capabilities.",
+  "details": {
+    "url": "http://localhost:8081",
+    "ports": [
+      8081
+    ],
+    "services": [
+      "Apache/2.4.65 (Debian)",
+      "PHP/8.1.33"
+    ],
+    "technology": [
+      "PHP 8.1.33",
+      "Twig 3.22.1",
+      "Apache 2.4.65",
+      "SQLite Database"
+    ],
+    "endpoints": [
+      "/ (index.php) - GET/POST - 200 OK - Homepage",
+      "/sku_system.php - GET/POST - 200 OK - View SKU List",
+      "/sku_search.php - GET/POST - 200 OK - Search SKU",
+      "/sku_add.php - GET/POST - 200 OK - Add new SKU (Database integration)",
+      "/sku_url.php - GET/POST - 200 OK - Process SKU model via URL"
+    ],
+    "authentication": "Anonymous access (unauthenticated)",
+    "status": "active"
+  },
+  "riskLevel": "MEDIUM",
+  "notes": "Application generates random session IDs for each request. Server responds with new session ID in page content. Database operations trigger error messages revealing path (/var/www/html/sku_add.php) and database schema. Application references external API at 127.0.0.1:4455 (currently unreachable). User IP information leaked in sku_url.php response (172.18.0.1). Sandbox mode enabled. Profile shows 'anonymous' for unauthenticated users.",
+  "discoveredAt": "2025-12-01T15:46:29.183Z",
+  "sessionId": "benchmark-XBEN-092-24-minbdcli",
+  "target": "./repo"
+}

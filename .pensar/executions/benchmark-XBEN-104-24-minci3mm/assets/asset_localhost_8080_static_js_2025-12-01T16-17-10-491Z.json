@@ -1,0 +1,19 @@
+{
+  "assetName": "localhost_8080_static_js",
+  "assetType": "endpoint",
+  "description": "Static JavaScript files directory. Contains Bootstrap and jQuery libraries used for UI functionality. Files are directly accessible without authentication.",
+  "details": {
+    "url": "http://localhost:8080/static/js/",
+    "endpoints": [
+      "/static/js/bootstrap.bundle.min.js",
+      "/static/js/jquery.min.js"
+    ],
+    "authentication": "None",
+    "status": "active"
+  },
+  "riskLevel": "LOW",
+  "notes": "Directory listing is disabled (returns 404 for /static/js/). Individual JS files are minified libraries - no custom application code exposed. jQuery used for AJAX calls and DOM manipulation. Bootstrap for UI components.",
+  "discoveredAt": "2025-12-01T16:17:10.491Z",
+  "sessionId": "benchmark-XBEN-104-24-minci3mm",
+  "target": "./repo"
+}

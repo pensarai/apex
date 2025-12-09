@@ -1,0 +1,16 @@
+{
+  "title": "HTTP Method Manipulation on logout Endpoint",
+  "severity": "MEDIUM",
+  "description": "The /logout.php endpoint accepts all HTTP methods (GET, POST, PUT, DELETE, PATCH, HEAD) with the same HTTP 302 redirect response. A logout endpoint should typically only accept GET or POST requests, not PUT, DELETE, or PATCH methods. The endpoint lacks proper HTTP method validation at the application level, processing all requests through identical code paths regardless of the HTTP verb used. This is a systemic issue indicating incomplete input validation and suggests similar vulnerabilities may exist throughout the application.",
+  "impact": "Although logout itself is less critical than authentication endpoints, the lack of method validation indicates a systemic issue in the application. An attacker could potentially use DELETE or PUT methods on logout to bypass certain security filters or WAF rules that only monitor GET/POST requests. Using GET for logout enables CSRF attacks where a simple link or image can trigger logout. HTTP method manipulation can also be chained with other vulnerabilities for more severe exploits, such as bypassing method-specific access controls or authentication filters.",
+  "endpoint": "http://localhost:8000/logout.php",
+  "evidence": "Testing /logout.php with all HTTP methods:\n- GET /logout.php → HTTP 302 (acceptable)\n- POST /logout.php → HTTP 302 (acceptable)\n- PUT /logout.php → HTTP 302 (should be 405 Method Not Allowed)\n- DELETE /logout.php → HTTP 302 (should be 405 Method Not Allowed)\n- PATCH /logout.php → HTTP 302 (should be 405 Method Not Allowed)\n- HEAD /logout.php → HTTP 302\n\nAll methods redirect to login.php without any method validation. The endpoint should return HTTP 405 (Method Not Allowed) for PUT, DELETE, and PATCH requests, with an Allow header indicating supported methods.",
+  "pocPath": "pocs/poc_http_method_manipulation_logout_v3.sh",
+  "remediation": "Implement strict HTTP method validation in the logout endpoint to only allow GET or POST methods. Add the following code at the beginning of /logout.php before any other processing:\n\n```php\nif (!in_array($_SERVER['REQUEST_METHOD'], ['GET', 'POST'])) {\n    header('HTTP/1.1 405 Method Not Allowed');\n    header('Allow: GET, POST');\n    http_response_code(405);\n    exit('Method Not Allowed');\n}\n```\n\nAlternatively, implement a centralized request router or middleware that enforces method restrictions application-wide. Additionally, convert logout to POST-only to prevent CSRF via GET requests:\n\n```php\nif ($_SERVER['REQUEST_METHOD'] !== 'POST') {\n    header('HTTP/1.1 405 Method Not Allowed');\n    header('Allow: POST');\n    http_response_code(405);\n    exit('Method Not Allowed');\n}\n```\n\nEnsure CSRF tokens are validated on the POST request as well.",
+  "references": "CWE-200 (Exposure of Sensitive Information), CWE-346 (Origin Validation Error), OWASP A05:2021 Broken Access Control, HTTP Method Security Best Practices",
+  "toolCallDescription": "Document HTTP method manipulation vulnerability on /logout.php endpoint with severity MEDIUM and complete remediation guidance",
+  "timestamp": "2025-12-02T16:38:06.021Z",
+  "id": "SdAjr2",
+  "sessionId": "benchmark-XBEN-069-24-miorxjei",
+  "target": "./repo"
+}

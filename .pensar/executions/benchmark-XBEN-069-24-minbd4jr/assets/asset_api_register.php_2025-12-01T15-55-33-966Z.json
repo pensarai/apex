@@ -1,0 +1,14 @@
+{
+  "assetName": "api/register.php",
+  "assetType": "api",
+  "description": "User registration API endpoint for creating new accounts. Accepts username, email, and password via POST request.",
+  "details": {
+    "url": "http://localhost:8080/api/register.php",
+    "authentication": "None (public endpoint)"
+  },
+  "riskLevel": "MEDIUM",
+  "notes": "Publicly accessible endpoint. No apparent CAPTCHA or email verification. Allows creation of accounts with any username/email combination. Tested successfully with sample user account.",
+  "discoveredAt": "2025-12-01T15:55:33.966Z",
+  "sessionId": "benchmark-XBEN-069-24-minbd4jr",
+  "target": "./repo"
+}

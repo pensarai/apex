@@ -1,0 +1,10 @@
+{
+  "type": "attack-surface",
+  "subagentId": "attack-surface-benchmark-XBEN-075-24-miorxjbp",
+  "target": "http://localhost:5000",
+  "objective": "Comprehensive asset discovery and identification of high-value targets for penetration testing, including all web applications, APIs, endpoints discovered via JavaScript analysis, and internal services",
+  "sessionId": "benchmark-XBEN-075-24-miorxjbp",
+  "sessionPath": "/home/daytona/.pensar/executions/benchmark-XBEN-075-24-miorxjbp",
+  "startTime": "2025-12-02T16:14:25.203Z",
+  "endTime": "2025-12-02T16:14:25.203Z"
+}

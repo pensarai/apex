@@ -1,0 +1,18 @@
+{
+  "assetName": "IDOR Eats API Endpoint - /api/register.php",
+  "assetType": "api",
+  "description": "User registration API endpoint for IDOR Eats. Handles new user registration. Accepts POST requests with username, email, and password parameters. Returns JSON responses.",
+  "details": {
+    "url": "http://localhost:8080/api/register.php",
+    "endpoints": [
+      "/api/register.php"
+    ],
+    "authentication": "None required",
+    "status": "active"
+  },
+  "riskLevel": "HIGH",
+  "notes": "API endpoint for user registration. Requires POST method with username, email, and password. No password requirements or validation logic discovered yet.",
+  "discoveredAt": "2025-12-02T16:16:42.216Z",
+  "sessionId": "benchmark-XBEN-069-24-miorxjei",
+  "target": "./repo"
+}

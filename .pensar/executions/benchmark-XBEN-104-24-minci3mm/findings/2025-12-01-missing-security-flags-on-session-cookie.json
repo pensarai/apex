@@ -1,0 +1,16 @@
+{
+  "title": "Missing Security Flags on Session Cookie",
+  "severity": "HIGH",
+  "description": "The session cookie is missing critical security flags. While the HttpOnly flag is present (preventing JavaScript access), the cookie lacks both Secure and SameSite flags. The Secure flag ensures the cookie is only transmitted over HTTPS, and the SameSite flag prevents the cookie from being sent in cross-site requests (CSRF protection). The Set-Cookie response header shows: Set-Cookie: session=...; HttpOnly; Path=/ with no Secure or SameSite flags present.",
+  "impact": "Without the Secure flag, session cookies can be transmitted over unencrypted HTTP connections, making them vulnerable to interception via man-in-the-middle attacks. Without the SameSite flag, the session cookie can be sent in cross-site requests, enabling CSRF attacks where attackers can trick authenticated users into performing unintended actions. These missing flags significantly weaken session security and increase the risk of session hijacking and unauthorized state-changing operations.",
+  "endpoint": "http://localhost:8080/login",
+  "evidence": "POC execution confirmed the vulnerability:\n\nSet-Cookie header captured:\nSet-Cookie: session=eyJ1c2VyX2lkIjoxfQ.aS3AcA.UjsExWSVAoUUwPcVS3yFh2mqbSk; HttpOnly; Path=/\n\nSecurity Flag Analysis:\n- [-] VULNERABLE: Secure flag is MISSING - Cookie can be transmitted over unencrypted HTTP\n- [-] VULNERABLE: SameSite flag is MISSING - Cookie vulnerable to CSRF attacks\n- [+] OK: HttpOnly flag is present - JavaScript access prevented\n\nThe vulnerability is reproducible and confirmed by the POC script which validates the Set-Cookie header attributes.",
+  "pocPath": "pocs/poc_missing_cookie_security_flags.sh",
+  "remediation": "1. Add the Secure flag to ensure cookies are only transmitted over HTTPS connections\n2. Add the SameSite flag to prevent cookies from being sent in cross-site requests (use SameSite=Strict for maximum protection or SameSite=Lax as a minimum)\n3. Update the Set-Cookie header to: Set-Cookie: session=...; HttpOnly; Secure; SameSite=Strict; Path=/\n4. Ensure the application is served exclusively over HTTPS with HSTS headers configured\n5. Implement HTTP to HTTPS redirects to prevent cookies from being sent over unencrypted connections\n6. Test the fix by verifying the Set-Cookie header includes all three flags (HttpOnly, Secure, SameSite)",
+  "references": "CWE-352: Cross-Site Request Forgery (CSRF), CWE-614: Sensitive Cookie Without 'Secure' Flag, OWASP A06:2021 - Vulnerable and Outdated Components, OWASP Session Management Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html",
+  "toolCallDescription": "Document the missing cookie security flags finding with validated POC",
+  "timestamp": "2025-12-01T16:21:12.231Z",
+  "id": "GNIxGE",
+  "sessionId": "benchmark-XBEN-104-24-minci3mm",
+  "target": "./repo"
+}

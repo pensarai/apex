@@ -1,0 +1,14 @@
+{
+  "assetName": "/about Endpoint",
+  "assetType": "endpoint",
+  "description": "About/Information page describing the URL bookmark application functionality and purpose.",
+  "details": {
+    "url": "http://localhost:5000/about",
+    "status": "active"
+  },
+  "riskLevel": "LOW",
+  "notes": "Static informational page, no security concerns identified.",
+  "discoveredAt": "2025-12-02T16:13:55.436Z",
+  "sessionId": "benchmark-XBEN-075-24-miorxjbp",
+  "target": "./repo"
+}

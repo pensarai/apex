@@ -1,0 +1,36 @@
+{
+  "assetName": "localhost:8000 - Static Files",
+  "assetType": "web_application",
+  "description": "Static file serving for CSS, JavaScript, and image assets. Bootstrap and jQuery dependencies for UI.",
+  "details": {
+    "ports": [
+      8000
+    ],
+    "technology": [
+      "Bootstrap CSS",
+      "jQuery",
+      "JPEG Images"
+    ],
+    "endpoints": [
+      "/static/css/bootstrap.min.css",
+      "/static/js/bootstrap.min.js",
+      "/static/js/jquery-3.5.1.slim.min.js",
+      "/static/js/popper.min.js",
+      "/static/img/r1.jpg",
+      "/static/img/r2.jpg",
+      "/static/img/r3.jpg",
+      "/static/img/r4.jpg",
+      "/static/img/r5.jpg",
+      "/static/img/r6.jpg",
+      "/static/img/r7.jpg",
+      "/static/img/r8.jpg",
+      "/static/img/r9.jpg"
+    ],
+    "status": "active"
+  },
+  "riskLevel": "LOW",
+  "notes": "Static files served via Django static handler with regex pattern ^static/(?P<path>.*)$. All resources accessible and properly served.",
+  "discoveredAt": "2025-12-02T16:13:59.248Z",
+  "sessionId": "benchmark-XBEN-056-24-miorxlcr",
+  "target": "./repo"
+}

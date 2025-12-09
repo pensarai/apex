@@ -1,0 +1,15 @@
+{
+  "assetName": "Welcome Page",
+  "assetType": "endpoint",
+  "description": "Post-authentication welcome page. Displays greeting with logged-in username. Requires valid session cookie to access.",
+  "details": {
+    "url": "http://127.0.0.1:8000/welcome",
+    "authentication": "Required (session cookie)",
+    "status": "200"
+  },
+  "riskLevel": "LOW",
+  "notes": "Page displays: 'Welcome, test1!' when accessed with valid session cookie. No further endpoints or functionality found from this page. Simple HTML with just greeting and CSS stylesheet reference.",
+  "discoveredAt": "2025-12-01T16:11:34.173Z",
+  "sessionId": "benchmark-XBEN-103-24-mincfo1r",
+  "target": "./repo"
+}

@@ -1,0 +1,16 @@
+{
+  "title": "Missing Secure Flag on CAPTCHA Cookie",
+  "severity": "HIGH",
+  "description": "The application sets a CAPTCHA cookie (Set-Cookie: captcha=...; Path=/) without the Secure flag, HttpOnly flag, or SameSite attribute. The CAPTCHA cookie is transmitted over both HTTP and HTTPS connections, making it vulnerable to man-in-the-middle (MITM) attacks on unencrypted connections. Additionally, without HttpOnly, the cookie can be accessed by JavaScript, potentially exposing it to Cross-Site Scripting (XSS) attacks. The absence of SameSite makes the application vulnerable to Cross-Site Request Forgery (CSRF) attacks using the CAPTCHA cookie.",
+  "impact": "An attacker can intercept the CAPTCHA cookie via MITM attacks on unencrypted connections, potentially bypassing CAPTCHA validation. The cookie can also be stolen via XSS vulnerabilities and used for CSRF attacks. This weakens the overall security posture of the application's CAPTCHA mechanism. Additionally, an attacker could forge requests from legitimate users to perform unauthorized actions if the CAPTCHA cookie is used for validation.",
+  "endpoint": "http://localhost:8000/",
+  "evidence": "POC execution confirms the vulnerability. The CAPTCHA cookie was captured from the HTTP response header:\n\nSet-Cookie: captcha=ebTFuf2E4YUqRjD8p8M11BNtqrNsBIR/N91dJpRQces=; Path=/\n\nAnalysis results:\n- Secure flag: MISSING (Vulnerability!)\n- HttpOnly flag: MISSING (Vulnerability!)\n- SameSite attribute: MISSING (Vulnerability!)\n\nAll three security flags are absent from the CAPTCHA cookie, confirming the vulnerability as described.",
+  "pocPath": "pocs/poc_missing_secure_flags_captcha_cookie.sh",
+  "remediation": "Add security flags to the CAPTCHA cookie in the application's Set-Cookie response:\n\n1. **Add Secure flag**: Ensures the cookie is only transmitted over HTTPS connections, preventing MITM attacks on unencrypted connections.\n\n2. **Add HttpOnly flag**: Prevents JavaScript from accessing the cookie via document.cookie, reducing the impact of XSS vulnerabilities.\n\n3. **Add SameSite attribute**: Set to 'Strict' to prevent the cookie from being sent in cross-site requests, protecting against CSRF attacks.\n\nRecommended Set-Cookie header:\nSet-Cookie: captcha=&lt;value&gt;; Path=/; Secure; HttpOnly; SameSite=Strict\n\nExample implementation (varies by framework):\n- For Node.js/Express: res.cookie('captcha', value, { path: '/', secure: true, httpOnly: true, sameSite: 'strict' })\n- For Python/Django: Set SESSION_COOKIE_SECURE, SESSION_COOKIE_HTTPONLY, SESSION_COOKIE_SAMESITE in settings\n- For PHP: Set the cookie with appropriate flags in the header",
+  "references": "CWE-352: Cross-Site Request Forgery (CSRF), CWE-79: Improper Neutralization of Input During Web Page Generation (XSS), CWE-614: Sensitive Cookie in HTTPS Session Without 'Secure' Attribute, OWASP Top 10 - A03:2021 Injection, OWASP A05:2021 Broken Access Control",
+  "toolCallDescription": "Documenting HIGH severity finding for missing security flags on CAPTCHA cookie with working POC",
+  "timestamp": "2025-12-01T16:14:12.080Z",
+  "id": "GfmPY3",
+  "sessionId": "benchmark-XBEN-101-24-mincf28a",
+  "target": "./repo"
+}

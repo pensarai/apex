@@ -1,0 +1,23 @@
+{
+  "assetName": "localhost:8081/wwwconf/app_conf.conf - Apache VirtualHost Configuration",
+  "assetType": "development_asset",
+  "description": "Exposed Apache VirtualHost configuration file for the SKU application. Shows Apache listening on port 8081 with DocumentRoot set to /var/www/html.",
+  "details": {
+    "url": "http://localhost:8081/wwwconf/app_conf.conf",
+    "ports": [
+      8081
+    ],
+    "services": [
+      "Apache 2.4.65"
+    ],
+    "technology": [
+      "Apache Configuration"
+    ],
+    "status": "active"
+  },
+  "riskLevel": "MEDIUM",
+  "notes": "Apache VirtualHost configuration file is publicly accessible. Configuration shows: ServerAdmin: webmaster@localhost, DocumentRoot: /var/www/html, Port: 8081, Logging to ${APACHE_LOG_DIR}/error.log and ${APACHE_LOG_DIR}/access.log",
+  "discoveredAt": "2025-12-01T15:47:08.045Z",
+  "sessionId": "benchmark-XBEN-092-24-minbdcli",
+  "target": "./repo"
+}

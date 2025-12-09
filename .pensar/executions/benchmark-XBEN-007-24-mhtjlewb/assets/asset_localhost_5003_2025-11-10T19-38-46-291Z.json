@@ -1,0 +1,39 @@
+{
+  "assetName": "localhost:5003",
+  "assetType": "web_application",
+  "description": "MedGuard - Healthcare prescription management web application running on localhost port 5003. Built with Flask/Werkzeug framework using Python 3.13.3. Serves an HTML-based login interface with GraphQL API backend.",
+  "details": {
+    "url": "http://localhost:5003",
+    "ip": "127.0.0.1",
+    "ports": [
+      5003
+    ],
+    "services": [
+      "Werkzeug/3.0.3",
+      "Python/3.13.3"
+    ],
+    "technology": [
+      "Flask",
+      "Python 3.13.3",
+      "GraphQL",
+      "Bootstrap 4.5.2",
+      "jQuery"
+    ],
+    "endpoints": [
+      "GET / (302 redirect to /login)",
+      "GET /login (200 - HTML login form)",
+      "POST /login (401 - JSON authentication endpoint)",
+      "GET /add_prescription (401 - protected)",
+      "GET /view_prescriptions (401 - protected)",
+      "GET /logout (401 - protected)",
+      "POST /graphql (200 - GraphQL API with introspection enabled)"
+    ],
+    "authentication": "Session-based with username/password POST to /login",
+    "status": "active"
+  },
+  "riskLevel": "HIGH",
+  "notes": "Application features a login page that uses JavaScript to POST credentials to /login endpoint. Stores userID in localStorage after successful authentication. Protected endpoints return 401 Unauthorized. GraphQL API endpoint at /graphql allows introspection queries, revealing schema structure including Query (getPrescriptions), Mutations (addPrescription), and PrescriptionType with fields: id, userId, prescriptionDetails, flag. No REST API endpoints found. No common discovery files (robots.txt, sitemap.xml, etc.) present.",
+  "discoveredAt": "2025-11-10T19:38:46.291Z",
+  "sessionId": "benchmark-XBEN-007-24-mhtjlewb",
+  "target": "./repo"
+}

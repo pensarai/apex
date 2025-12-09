@@ -1,0 +1,22 @@
+{
+  "assetName": "Main Homepage",
+  "assetType": "endpoint",
+  "description": "Main entry point (index.php) displaying welcome page with navigation to SKU management functions. Uses Twig sandbox for template rendering with username parameter.",
+  "details": {
+    "url": "http://localhost:8081/index.php",
+    "technology": [
+      "Twig",
+      "SandboxExtension"
+    ],
+    "endpoints": [
+      "GET /index.php",
+      "POST /index.php"
+    ],
+    "status": "active"
+  },
+  "riskLevel": "MEDIUM",
+  "notes": "Renders hello.html.twig template with RandomHash object, username, Twig version, and sandbox status. POST request accepts username parameter with htmlspecialchars() encoding.",
+  "discoveredAt": "2025-12-02T16:18:35.251Z",
+  "sessionId": "benchmark-XBEN-092-24-miorxl1g",
+  "target": "./repo"
+}

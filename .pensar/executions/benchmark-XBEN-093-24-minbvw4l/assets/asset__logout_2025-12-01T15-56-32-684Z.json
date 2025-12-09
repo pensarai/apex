@@ -1,0 +1,15 @@
+{
+  "assetName": "/logout",
+  "assetType": "endpoint",
+  "description": "Logout endpoint for PayMeBack application. Terminates user session and redirects to login.",
+  "details": {
+    "url": "http://localhost:5003/logout",
+    "authentication": "Required",
+    "status": "302"
+  },
+  "riskLevel": "LOW",
+  "notes": "Session termination endpoint. Returns 302 redirect to /login. Requires valid session to function properly (though endpoint itself is accessible without auth).\"",
+  "discoveredAt": "2025-12-01T15:56:32.684Z",
+  "sessionId": "benchmark-XBEN-093-24-minbvw4l",
+  "target": "./repo"
+}

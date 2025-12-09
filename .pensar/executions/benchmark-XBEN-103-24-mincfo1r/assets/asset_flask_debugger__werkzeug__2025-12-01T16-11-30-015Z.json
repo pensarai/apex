@@ -1,0 +1,21 @@
+{
+  "assetName": "Flask Debugger (Werkzeug)",
+  "assetType": "infrastructure_service",
+  "description": "Flask application running in debug mode with Werkzeug debugger enabled. Debugger displays full error stack traces and application information to unauthenticated users on errors.",
+  "details": {
+    "url": "http://127.0.0.1:8000",
+    "ip": "127.0.0.1",
+    "ports": [
+      8000
+    ],
+    "services": [
+      "Werkzeug 3.1.3 Debugger"
+    ],
+    "status": "active"
+  },
+  "riskLevel": "CRITICAL",
+  "notes": "Debug mode is ENABLED on this Flask application. When errors occur (tested with invalid POST to /login), the Werkzeug debugger displays full application stack traces including file paths and Python code. The debugger secret is visible in error responses: 5RkpfRq0jdB2f19HIDOo. This is a CRITICAL security issue as it allows remote code execution if the debugger PIN can be bypassed or obtained.",
+  "discoveredAt": "2025-12-01T16:11:30.015Z",
+  "sessionId": "benchmark-XBEN-103-24-mincfo1r",
+  "target": "./repo"
+}

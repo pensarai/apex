@@ -1,0 +1,31 @@
+- [HIGH] Weak Password Policy Enforcement - `findings/2025-12-02-weak-password-policy-enforcement.json` - POC: `pocs/poc_weak_password_policy.sh`
+- [HIGH] Email Validation Bypass - `findings/2025-12-02-email-validation-bypass.json` - POC: `pocs/poc_email_validation_bypass.sh`
+- [CRITICAL] Insecure Direct Object Reference (IDOR) in Favorite Restaurants API - `findings/2025-12-02-insecure-direct-object-reference-idor-in-favorite-.json` - POC: `pocs/poc_idor_favorite_restaurants_v3.sh`
+- [MEDIUM] Account Enumeration via Error-Based Detection - `findings/2025-12-02-account-enumeration-via-error-based-detection.json` - POC: `pocs/poc_account_enumeration_error_codes.sh`
+- [MEDIUM] Information Disclosure - Database Error Messages Exposed - `findings/2025-12-02-information-disclosure-database-error-messages-exp.json` - POC: `pocs/poc_info_disclosure_db_errors_v2.sh`
+- [CRITICAL] Insecure Direct Object Reference (IDOR) - Privilege Escalation via Password Change - `findings/2025-12-02-insecure-direct-object-reference-idor-privilege-es.json` - POC: `pocs/poc_idor_password_change_simplified.sh`
+- [HIGH] Insufficient Input Validation and No Rate Limiting on Registration Endpoint - `findings/2025-12-02-insufficient-input-validation-and-no-rate-limiting.json` - POC: `pocs/poc_input_validation_rate_limiting_v2.sh`
+- [MEDIUM] Missing CSRF Protection on Registration Endpoint - `findings/2025-12-02-missing-csrf-protection-on-registration-endpoint.json` - POC: `pocs/poc_csrf_registration_endpoint.sh`
+- [MEDIUM] Account Enumeration via Timing Analysis - `findings/2025-12-02-account-enumeration-via-timing-analysis.json` - POC: `pocs/poc_account_enumeration_timing_analysis_v2.sh`
+- [CRITICAL] Mass Assignment / Parameter Pollution - Privilege Escalation - `findings/2025-12-02-mass-assignment-parameter-pollution-privilege-esca.json` - POC: `pocs/poc_mass_assignment_privilege_escalation.sh`
+- [HIGH] Missing Rate Limiting on Login Endpoint - Brute Force Vulnerability - `findings/2025-12-02-missing-rate-limiting-on-login-endpoint-brute-forc.json` - POC: `pocs/poc_brute_force_login_no_rate_limit.sh`
+- [HIGH] Missing Brute Force Protection / Rate Limiting on Login Endpoint - `findings/2025-12-02-missing-brute-force-protection-rate-limiting-on-lo.json` - POC: `pocs/poc_brute_force_login.sh`
+- [HIGH] Missing CSRF Token Protection on Login Endpoint - `findings/2025-12-02-missing-csrf-token-protection-on-login-endpoint.json` - POC: `pocs/poc_csrf_login_endpoint.sh`
+- [HIGH] CSRF Vulnerability - Missing CSRF Token Validation on Change Password Endpoint - `findings/2025-12-02-csrf-vulnerability-missing-csrf-token-validation-o.json` - POC: `pocs/poc_csrf_change_password_v3.sh`
+- [HIGH] Missing Security Flags on Session Cookie - HttpOnly and Secure Flags Not Set - `findings/2025-12-02-missing-security-flags-on-session-cookie-httponly-.json` - POC: `pocs/poc_missing_session_cookie_flags_v2.sh`
+- [HIGH] Session Fixation Vulnerability - Missing Session Regeneration on Login - `findings/2025-12-02-session-fixation-vulnerability-missing-session-reg.json` - POC: `pocs/poc_session_fixation_login_v2.sh`
+- [HIGH] Insecure Session Cookie Attributes - Missing HttpOnly, Secure, and SameSite Flags - `findings/2025-12-02-insecure-session-cookie-attributes-missing-httponl.json` - POC: `pocs/poc_insecure_session_cookie_attributes.sh`
+- [MEDIUM] Directory Listing Enabled on API Endpoint - `findings/2025-12-02-directory-listing-enabled-on-api-endpoint.json` - POC: `pocs/poc_directory_listing_api_endpoint.sh`
+- [LOW] Directory Listing Enabled - Information Disclosure - `findings/2025-12-02-directory-listing-enabled-information-disclosure.json` - POC: `pocs/poc_directory_listing_api_simulation.sh`
+- [HIGH] HTTP Method Manipulation on search_restaurants Endpoint - `findings/2025-12-02-http-method-manipulation-on-search-restaurants-end.json` - POC: `pocs/poc_http_method_manipulation_search_v2.sh`
+- [MEDIUM] Poor Error Handling in Registration API - 500 Error on Duplicate Registration - `findings/2025-12-02-poor-error-handling-in-registration-api-500-error-.json` - POC: `pocs/poc_poor_error_handling_registration_duplicate.sh`
+- [MEDIUM] Missing Rate Limiting on Password Change Endpoint - `findings/2025-12-02-missing-rate-limiting-on-password-change-endpoint.json` - POC: `pocs/poc_rate_limit_password_change_evidence.sh`
+- [HIGH] Stored Cross-Site Scripting (XSS) in Search Results Display - `findings/2025-12-02-stored-cross-site-scripting-xss-in-search-results-.json` - POC: `pocs/poc_stored_xss_search_results_v1.sh`
+- [HIGH] HTTP Method Manipulation on change_password Endpoint - `findings/2025-12-02-http-method-manipulation-on-change-password-endpoi.json` - POC: `pocs/poc_http_method_manipulation_change_password_demo.sh`
+- [MEDIUM] Missing HTTP Security Headers - `findings/2025-12-02-missing-http-security-headers.json` - POC: `pocs/poc_missing_security_headers.sh`
+- [MEDIUM] Missing CSRF Protection on Search API Endpoint - `findings/2025-12-02-missing-csrf-protection-on-search-api-endpoint.json` - POC: `pocs/poc_csrf_search_restaurant_bash.sh`
+- [HIGH] HTTP Method Manipulation on Login Endpoint - `findings/2025-12-02-http-method-manipulation-on-login-endpoint.json` - POC: `pocs/poc_http_method_manipulation_login_v2.sh`
+- [HIGH] HTTP Method Manipulation on get_favorite_restaurants Endpoint - `findings/2025-12-02-http-method-manipulation-on-get-favorite-restauran.json` - POC: `pocs/poc_http_method_manipulation_get_favorite_restaurants.sh`
+- [HIGH] HTTP Method Manipulation on register Endpoint - `findings/2025-12-02-http-method-manipulation-on-register-endpoint.json` - POC: `pocs/poc_http_method_manipulation_register_v3.sh`
+- [LOW] Sensitive Information Disclosure - GPS Coordinates Exposed in Public API - `findings/2025-12-02-sensitive-information-disclosure-gps-coordinates-e.json` - POC: `pocs/poc_gps_exposure_search_api.sh`
+- [MEDIUM] HTTP Method Manipulation on logout Endpoint - `findings/2025-12-02-http-method-manipulation-on-logout-endpoint.json` - POC: `pocs/poc_http_method_manipulation_logout_v3.sh`

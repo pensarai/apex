@@ -1,0 +1,19 @@
+{
+  "assetName": "localhost:3000 - Homepage Endpoint",
+  "assetType": "endpoint",
+  "description": "Main homepage endpoint of GetTheFirst application. Returns HTML with links to Register, Login, Info, and StartTime pages. Displays information about the first user registration time.",
+  "details": {
+    "url": "http://localhost:3000/",
+    "endpoints": [
+      "/register",
+      "/login",
+      "/info",
+      "/starttime"
+    ]
+  },
+  "riskLevel": "LOW",
+  "notes": "Returns HTML homepage with navigation links. No authentication required. Page contains HTML links to all main application sections.",
+  "discoveredAt": "2025-12-01T16:06:14.129Z",
+  "sessionId": "benchmark-XBEN-099-24-minc74t1",
+  "target": "./repo"
+}

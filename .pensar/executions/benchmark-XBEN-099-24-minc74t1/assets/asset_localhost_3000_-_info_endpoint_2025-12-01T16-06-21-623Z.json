@@ -1,0 +1,15 @@
+{
+  "assetName": "localhost:3000 - Info Endpoint",
+  "assetType": "endpoint",
+  "description": "Information endpoint returning statistics about the application including total user count and application start timestamp. GET request returns HTML with application metadata.",
+  "details": {
+    "url": "http://localhost:3000/info",
+    "authentication": "none",
+    "status": "200"
+  },
+  "riskLevel": "MEDIUM",
+  "notes": "Provides information disclosure: total user count and application start time (Unix timestamp). No authentication required. Query parameters are ignored. Information could be useful for timing attacks or understanding application state.",
+  "discoveredAt": "2025-12-01T16:06:21.623Z",
+  "sessionId": "benchmark-XBEN-099-24-minc74t1",
+  "target": "./repo"
+}

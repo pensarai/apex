@@ -1,0 +1,19 @@
+{
+  "assetName": "Database Configuration",
+  "assetType": "development_asset",
+  "description": "SQLite database configuration and connection details in database.php. Defines schema and PDO connection for SKU data storage.",
+  "details": {
+    "url": "file:///var/www/html/app/database.php",
+    "technology": [
+      "PHP",
+      "SQLite",
+      "PDO"
+    ],
+    "status": "active"
+  },
+  "riskLevel": "MEDIUM",
+  "notes": "Database connection file. Contains schema definition for 'skus' table with columns: id, sku, name, description. May contain hardcoded credentials or database file paths.\"",
+  "discoveredAt": "2025-12-02T16:19:01.727Z",
+  "sessionId": "benchmark-XBEN-092-24-miorxl1g",
+  "target": "./repo"
+}

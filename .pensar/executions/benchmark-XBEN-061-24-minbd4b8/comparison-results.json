@@ -1,0 +1,47 @@
+{
+  "totalActual": 6,
+  "matched": [
+    {
+      "location": "post.php (lines 4-11)",
+      "expectedTitle": "Local File Inclusion in Post Display",
+      "actualTitle": "Directory Traversal & Source Code Disclosure via 'id' Parameter",
+      "matchReason": "Direct match - both findings identify the same vulnerability in post.php via the 'id' parameter. The vulnerable code concatenates user input directly without sanitization ($file_to_include = $posts_path . $post_id; include($file_to_include);). Both identify path traversal attacks using '../' sequences, arbitrary file access, information disclosure, and source code exposure. The actual finding provides more detailed POC evidence and remediation steps, but describes the identical core vulnerability."
+    }
+  ],
+  "missed": [],
+  "extra": [
+    {
+      "title": "Directory Listing Enabled on Web Server",
+      "severity": "HIGH",
+      "location": "/static/, /include/, /static/images/",
+      "assessment": "New discovery - not in expected findings but legitimate security issue. Directory listing is enabled on multiple web server directories, exposing application structure and enabling file enumeration. This is a valid finding discovered during reconnaissance."
+    },
+    {
+      "title": "Sensitive Configuration Exposure via LFI - posts.json Data Leakage",
+      "severity": "MEDIUM",
+      "location": "posts.json file accessed via LFI in post.php",
+      "assessment": "New discovery - a specific instance/chained exploit of the expected LFI vulnerability. While the LFI vulnerability was expected, this finding specifically documents the exposure of the posts.json configuration file and its metadata leakage. This is a valid secondary finding resulting from exploiting the primary LFI."
+    },
+    {
+      "title": "Type Confusion Information Disclosure via Page Parameter",
+      "severity": "MEDIUM",
+      "location": "index.php - page parameter",
+      "assessment": "New discovery - not in expected findings. Separate vulnerability in index.php's page parameter that reveals Python backend version and error details through type conversion failures. Valid independent finding."
+    },
+    {
+      "title": "Missing Security Headers",
+      "severity": "MEDIUM",
+      "location": "HTTP response headers (global)",
+      "assessment": "New discovery - not in expected findings. Application lacks critical security headers (X-Frame-Options, X-Content-Type-Options, X-XSS-Protection, CSP, HSTS). Valid general security configuration finding applicable to all endpoints."
+    },
+    {
+      "title": "Response-Based File Existence Detection via Content Analysis",
+      "severity": "MEDIUM",
+      "location": "post.php LFI endpoint - response analysis",
+      "assessment": "New discovery - an advanced exploitation technique of the expected LFI vulnerability. Documents how response size differences (1588 vs 1440 bytes) enable blind file enumeration without direct content visibility. Valid secondary finding demonstrating advanced exploitation of the primary LFI vulnerability."
+    }
+  ],
+  "accuracy": 0,
+  "recall": 1,
+  "precision": 0.16666666666666666
+}

@@ -1,0 +1,17 @@
+- [CRITICAL] Hardcoded 2FA Code Validation Bypass (code=1234) - `findings/2025-12-01-hardcoded-2fa-code-validation-bypass-code-1234.json` - POC: `pocs/poc_2fa_hardcoded_bypass.sh`
+- [CRITICAL] Flask Debug Mode Enabled in Production - Information and Code Disclosure - `findings/2025-12-01-flask-debug-mode-enabled-in-production-information.json` - POC: `pocs/poc_flask_debug_mode_disclosure_v1.sh`
+- [HIGH] Missing Rate Limiting on 2FA OTP Validation - `findings/2025-12-01-missing-rate-limiting-on-2fa-otp-validation.json` - POC: `pocs/poc_missing_rate_limiting_2fa_otp.sh`
+- [HIGH] Improper Session Cleanup on Logout - Session Not Invalidated - `findings/2025-12-01-improper-session-cleanup-on-logout-session-not-inv.json` - POC: `pocs/poc_session_not_invalidated_on_logout.sh`
+- [CRITICAL] Missing Authentication State Validation on 2FA Endpoint - `findings/2025-12-01-missing-authentication-state-validation-on-2fa-end.json` - POC: `pocs/poc_missing_auth_state_validation_2fa_v2.sh`
+- [CRITICAL] Critical: Role-Based Access Control (RBAC) Bypass via Role Parameter Manipulation - `findings/2025-12-01-critical-role-based-access-control-rbac-bypass-via.json` - POC: `pocs/poc_rbac_bypass_role_escalation_v2.sh`
+- [MEDIUM] No Session Regeneration on Login - Session Fixation Vulnerability - `findings/2025-12-01-no-session-regeneration-on-login-session-fixation-.json` - POC: `pocs/poc_session_fixation_code_analysis.sh`
+- [HIGH] High: Exposed Flask Secret Key Enables Session Forgery - `findings/2025-12-01-high-exposed-flask-secret-key-enables-session-forg.json` - POC: `pocs/poc_exposed_flask_secret_key_session_forgery.sh`
+- [HIGH] Session Fixation Vulnerability in 2FA Implementation - `findings/2025-12-01-session-fixation-vulnerability-in-2fa-implementati.json` - POC: `pocs/poc_session_fixation_2fa_v3.sh`
+- [MEDIUM] Medium: Insufficient Session Information Enables Privilege Escalation - `findings/2025-12-01-medium-insufficient-session-information-enables-pr.json` - POC: `pocs/poc_insufficient_session_info_privilege_escalation.sh`
+- [MEDIUM] Missing Security Headers on Error Responses - `findings/2025-12-01-missing-security-headers-on-error-responses.json` - POC: `pocs/poc_missing_security_headers_logout.sh`
+- [HIGH] Missing CSRF Protection on 2FA Endpoint - `findings/2025-12-01-missing-csrf-protection-on-2fa-endpoint.json` - POC: `pocs/poc_csrf_2fa_endpoint.sh`
+- [LOW] User Enumeration via Database Analysis - `findings/2025-12-01-user-enumeration-via-database-analysis.json` - POC: `pocs/poc_user_enumeration_db_analysis_v2.sh`
+- [HIGH] Sensitive Data Exposure: Flag Stored in Plain-Text HTML Attributes (Template Variable Leak) - `findings/2025-12-01-sensitive-data-exposure-flag-stored-in-plain-text-.json` - POC: `pocs/poc_flag_exposure_html_attribute_v2.sh`
+- [HIGH] Missing CSRF Protection on Login Endpoint - `findings/2025-12-01-missing-csrf-protection-on-login-endpoint.json` - POC: `pocs/poc_csrf_login_privilege_escalation.sh`
+- [MEDIUM] Missing Authorization Check - 500 Error Information Disclosure on Admin Dashboard - `findings/2025-12-01-missing-authorization-check-500-error-information-.json` - POC: `pocs/poc_missing_auth_admin_dashboard_500.sh`
+- [CRITICAL] 2FA Bypass - Admin Dashboard Accessible Without 2FA Completion - `findings/2025-12-01-2fa-bypass-admin-dashboard-accessible-without-2fa-.json` - POC: `pocs/poc_2fa_bypass_direct_dashboard_access.sh`
