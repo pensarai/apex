@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useContext, useState, useMemo, useCallback, type ReactNode } from "react";
 import { type ModelInfo } from "../core/ai";
 import { AVAILABLE_MODELS } from "../core/ai/models";
 
@@ -50,45 +50,47 @@ export function AgentProvider({ children }: AgentProviderProps) {
   const [thinking, setThinking] = useState<boolean>(false);
   const [isExecuting, setIsExecuting] = useState<boolean>(false);
 
-  const addTokens = (tokens: number) => {
+  const addTokens = useCallback((tokens: number) => {
     setTokenCount((prev) => prev + tokens);
-  };
+  }, []);
 
-  const addTokenUsage = (input: number, output: number) => {
+  const addTokenUsage = useCallback((input: number, output: number) => {
     setHasExecuted(true);
     setTokenUsage((prev) => ({
       inputTokens: prev.inputTokens + input,
       outputTokens: prev.outputTokens + output,
       totalTokens: prev.totalTokens + input + output,
     }));
-    // Also update the legacy tokenCount for backwards compatibility
     setTokenCount((prev) => prev + input + output);
-  };
+  }, []);
 
-  const resetTokenUsage = () => {
+  const resetTokenUsage = useCallback(() => {
     setHasExecuted(false);
     setTokenUsage({ inputTokens: 0, outputTokens: 0, totalTokens: 0 });
     setTokenCount(0);
-  };
+  }, []);
+
+  const contextValue = useMemo(
+    () => ({
+      model,
+      setModel,
+      tokenCount,
+      setTokenCount,
+      addTokens,
+      tokenUsage,
+      addTokenUsage,
+      resetTokenUsage,
+      hasExecuted,
+      thinking,
+      setThinking,
+      isExecuting,
+      setIsExecuting,
+    }),
+    [model, tokenCount, tokenUsage, hasExecuted, thinking, isExecuting, addTokens, addTokenUsage, resetTokenUsage]
+  );
 
   return (
-    <AgentContext.Provider
-      value={{
-        model,
-        setModel,
-        tokenCount,
-        setTokenCount,
-        addTokens,
-        tokenUsage,
-        addTokenUsage,
-        resetTokenUsage,
-        hasExecuted,
-        thinking,
-        setThinking,
-        isExecuting,
-        setIsExecuting,
-      }}
-    >
+    <AgentContext.Provider value={contextValue}>
       {children}
     </AgentContext.Provider>
   );
