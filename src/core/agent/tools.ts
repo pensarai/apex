@@ -1880,6 +1880,9 @@ Example workflow:
  * AI Helper Functions for Smart Testing
  */
 
+// Token usage callback type
+type OnTokenUsage = (inputTokens: number, outputTokens: number) => void;
+
 // Generate AI-powered test strategy
 async function generateTestStrategy(params: {
   attackType: string;
@@ -1887,7 +1890,7 @@ async function generateTestStrategy(params: {
   parameter: string;
   endpoint: string;
   context?: any;
-}, model: AIModel) {
+}, model: AIModel, onTokenUsage?: OnTokenUsage) {
   const prompt = `You are a penetration testing expert. Generate a concise testing strategy:
 
 Attack Type: ${params.knowledge.name}
@@ -1915,6 +1918,11 @@ Be tactical and specific.`;
       prompt,
     });
 
+    // Report token usage if callback provided
+    if (onTokenUsage && result.usage) {
+      onTokenUsage(result.usage.inputTokens ?? 0, result.usage.outputTokens ?? 0);
+    }
+
     return result.text;
   } catch (error) {
     // Fallback to knowledge base strategy
@@ -1929,7 +1937,7 @@ async function generatePayload(params: {
   context: any;
   previousResults: any[];
   round: number;
-}, model: AIModel) {
+}, model: AIModel, onTokenUsage?: OnTokenUsage) {
   const prompt = `Generate ONE ${params.knowledge.name} payload for testing.
 
 Techniques:
@@ -1953,6 +1961,7 @@ Generate ONE specific payload. Return ONLY JSON:
       model,
       schema: PayloadSchema,
       prompt,
+      onTokenUsage,
     });
 
     return result;
@@ -1976,7 +1985,7 @@ async function analyzeResponse(params: {
   attackType: string;
   knowledge: any;
   previousResults: any[];
-}, model: AIModel) {
+}, model: AIModel, onTokenUsage?: OnTokenUsage) {
   const prompt = `Analyze this security test response:
 
 Attack: ${params.knowledge.name}
@@ -2004,6 +2013,7 @@ Analyze: Is this vulnerable? Return ONLY JSON:
       model,
       schema: AnalysisSchema,
       prompt,
+      onTokenUsage,
     });
 
     return result;
@@ -2040,7 +2050,7 @@ Analyze: Is this vulnerable? Return ONLY JSON:
 /**
  * Smart Test Parameter Tool
  */
-function createSmartTestTool(session: Session, model: AIModel) {
+function createSmartTestTool(session: Session, model: AIModel, onTokenUsage?: OnTokenUsage) {
   return tool({
     name: "test_parameter",
     description: `Intelligently test a parameter for a vulnerability using AI-powered adaptive testing.
@@ -2111,7 +2121,7 @@ test_parameter({
           parameter,
           endpoint,
           context
-        }, model);
+        }, model, onTokenUsage);
 
         console.log(`Strategy: ${strategy}`);
 
@@ -2130,7 +2140,7 @@ test_parameter({
             context: {...context, parameter, endpoint},
             previousResults: results,
             round
-          }, model);
+          }, model, onTokenUsage);
 
           console.log(`  Payload: ${payloadData.payload}`);
           console.log(`  Reasoning: ${payloadData.reasoning}`);
@@ -2165,7 +2175,7 @@ test_parameter({
             attackType,
             knowledge,
             previousResults: results
-          }, model);
+          }, model, onTokenUsage);
 
           console.log(`  Analysis: ${analysis.reasoning}`);
           console.log(`  Vulnerable: ${analysis.vulnerable} (confidence: ${analysis.confidence})`);
@@ -2756,7 +2766,8 @@ export function createPentestTools(
       opts: ExecuteCommandOpts
     ) => Promise<ExecuteCommandResult>;
     http_request?: (opts: HttpRequestOpts) => Promise<HttpRequestResult>;
-  }
+  },
+  onTokenUsage?: (inputTokens: number, outputTokens: number) => void
 ) {
   // Get offensive headers from session config
   const offensiveHeaders = getOffensiveHeaders(session);
@@ -2957,7 +2968,7 @@ COMMON TESTING PATTERNS:
     http_request: httpRequest,
     document_finding: createDocumentFindingTool(session),
     record_test_result: createRecordTestResultTool(session),
-    test_parameter: createSmartTestTool(session, model || 'claude-sonnet-4-20250514'),
+    test_parameter: createSmartTestTool(session, model || 'claude-sonnet-4-20250514', onTokenUsage),
     check_testing_coverage: createCheckTestingCoverageTool(session),
     validate_completeness: createValidateCompletenessTool(session),
     enumerate_endpoints: createEnumerateEndpointsTool(session),

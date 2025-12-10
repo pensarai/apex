@@ -22,6 +22,7 @@ export interface RunAgentProps {
   objective: string;
   model: AIModel;
   onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
+  onToolTokenUsage?: (inputTokens: number, outputTokens: number) => void;
   abortSignal?: AbortSignal;
   session?: Session;
 }
@@ -35,7 +36,7 @@ export function runAgent(opts: RunAgentProps): {
   session: Session;
   subagentId: string;
 } {
-  const { target, model, onStepFinish, abortSignal } = opts;
+  const { target, model, onStepFinish, onToolTokenUsage, abortSignal } = opts;
 
   // Create a new session for this attack surface analysis
   const session = opts.session || createSession(target);
@@ -54,7 +55,9 @@ export function runAgent(opts: RunAgentProps): {
   // Create tools with session context
   const { analyze_scan, execute_command, http_request } = createPentestTools(
     session,
-    model
+    model,
+    undefined,
+    onToolTokenUsage
   );
 
   // Attack Surface specific tool: document_asset

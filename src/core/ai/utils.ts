@@ -159,11 +159,42 @@ export async function summarizeConversation(
     },
   ];
 
-  const { text: summary } = await generateText({
+  const { text: summary, usage: summaryUsage } = await generateText({
     model,
     system: `You are a helpful assistant that summarizes conversations to pass to another agent. Review the conversation and system prompt at the end provided by the user.`,
     messages: summarizedMessages,
   });
+
+  // Report summarization token usage if onStepFinish callback is provided
+  // This ensures summarization tokens are tracked even though it's not a "step"
+  if (opts.onStepFinish && summaryUsage) {
+    // Create a minimal step finish event for the summarization
+    opts.onStepFinish({
+      text: '',
+      reasoning: undefined,
+      reasoningDetails: [],
+      files: [],
+      sources: [],
+      toolCalls: [],
+      toolResults: [],
+      finishReason: 'stop',
+      usage: {
+        inputTokens: summaryUsage.inputTokens ?? 0,
+        outputTokens: summaryUsage.outputTokens ?? 0,
+        totalTokens: summaryUsage.totalTokens ?? 0,
+      },
+      warnings: [],
+      request: {},
+      response: {
+        id: 'summarization',
+        timestamp: new Date(),
+        modelId: '',
+      },
+      providerMetadata: undefined,
+      stepType: 'initial',
+      isContinued: false,
+    } as any);
+  }
 
   // For very long prompts, replace with just the summary instead of appending
   const originalLength =

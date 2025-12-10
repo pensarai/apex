@@ -21,7 +21,7 @@ export default function Footer({
   showExitWarning = false,
 }: FooterProps) {
   cwd = "~" + cwd.split(os.homedir()).pop() || "";
-  const { model, tokenCount, thinking, isExecuting } = useAgent();
+  const { model, tokenUsage, hasExecuted, thinking, isExecuting } = useAgent();
 
   const hotkeys = isExecuting
     ? [{ key: "Ctrl+C", label: "Stop Execution" }]
@@ -64,16 +64,14 @@ export default function Footer({
 }
 
 export function AgentStatus() {
-  const { tokenCount, thinking, isExecuting } = useAgent();
+  const { tokenUsage, hasExecuted, thinking, isExecuting } = useAgent();
 
   return (
     <box flexDirection="row" gap={1}>
-      {tokenCount > 0 && (
+      {hasExecuted && (
         <>
           <box border={["right"]} borderColor="green" />
-          <text fg="gray">
-            ■ <span fg="white">{formatTokenCount(tokenCount)}</span>
-          </text>
+          <text fg="white">{`↓${formatTokenCount(tokenUsage.inputTokens)} ↑${formatTokenCount(tokenUsage.outputTokens)} Σ${formatTokenCount(tokenUsage.totalTokens)}`}</text>
           <ContextProgress width={10} />
         </>
       )}
@@ -88,10 +86,11 @@ export function AgentStatus() {
 }
 
 function ContextProgress({ width }: { width?: number }) {
-  const { model, tokenCount, thinking } = useAgent();
-  const contextProgress = Number(
-    ((tokenCount / (model.contextLength ?? 200000)) * 100).toFixed(2)
-  );
-  if (!thinking) return null;
+  const { model, tokenUsage, thinking } = useAgent();
+  if (!thinking || tokenUsage.totalTokens === 0) return null;
+  const contextLength = model.contextLength ?? 200000;
+  const contextProgress = Math.max(0, Math.min(100, Number(
+    ((tokenUsage.totalTokens / contextLength) * 100).toFixed(2)
+  )));
   return <ProgressBar value={contextProgress} width={width} />;
 }

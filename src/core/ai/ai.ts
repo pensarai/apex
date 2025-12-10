@@ -212,7 +212,7 @@ export function streamResponse(
           // Get JSONSchema7 for display purposes
           const jsonSchema = inputSchema({ toolName: toolCall.toolName });
 
-          const { object: repairedArgs } = await generateObject({
+          const { object: repairedArgs, usage: repairUsage } = await generateObject({
             model: providerModel,
             schema: tool.inputSchema, // Use the actual Zod schema from the tool
             prompt: [
@@ -225,6 +225,35 @@ export function streamResponse(
               "Please fix the inputs to match the schema.",
             ].join("\n"),
           });
+
+          // Report tool repair token usage if onStepFinish callback is provided
+          if (onStepFinish && repairUsage) {
+            onStepFinish({
+              text: '',
+              reasoning: undefined,
+              reasoningDetails: [],
+              files: [],
+              sources: [],
+              toolCalls: [],
+              toolResults: [],
+              finishReason: 'stop',
+              usage: {
+                inputTokens: repairUsage.inputTokens ?? 0,
+                outputTokens: repairUsage.outputTokens ?? 0,
+                totalTokens: repairUsage.totalTokens ?? 0,
+              },
+              warnings: [],
+              request: {},
+              response: {
+                id: 'tool-repair',
+                timestamp: new Date(),
+                modelId: '',
+              },
+              providerMetadata: undefined,
+              stepType: 'initial',
+              isContinued: false,
+            } as any);
+          }
 
           // Return the tool call with stringified repaired arguments
           return { ...toolCall, input: JSON.stringify(repairedArgs) };
@@ -281,17 +310,18 @@ export interface GenerateObjectOpts<T extends z.ZodType> {
   maxTokens?: number;
   temperature?: number;
   authConfig?: AIAuthConfig;
+  onTokenUsage?: (inputTokens: number, outputTokens: number) => void;
 }
 
 export async function generateObjectResponse<T extends z.ZodType>(
   opts: GenerateObjectOpts<T>
 ) {
-  const { model, schema, prompt, system, maxTokens, temperature, authConfig } =
+  const { model, schema, prompt, system, maxTokens, temperature, authConfig, onTokenUsage } =
     opts;
 
   const providerModel = getProviderModel(model, authConfig);
 
-  const { object } = await generateObject({
+  const { object, usage } = await generateObject({
     model: providerModel,
     schema,
     prompt,
@@ -299,6 +329,11 @@ export async function generateObjectResponse<T extends z.ZodType>(
     maxTokens,
     temperature,
   });
+
+  // Report token usage if callback provided
+  if (onTokenUsage && usage) {
+    onTokenUsage(usage.inputTokens ?? 0, usage.outputTokens ?? 0);
+  }
 
   return object;
 }
