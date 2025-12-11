@@ -8,6 +8,10 @@
  */
 
 import packageJson from "../package.json";
+import { initWeave } from "./core/tracing";
+
+// Initialize Weave tracing if WANDB_API_KEY is set
+await initWeave();
 
 // Get command-line arguments
 const args = process.argv.slice(2);

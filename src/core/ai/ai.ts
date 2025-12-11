@@ -26,6 +26,7 @@ import {
   summarizeConversation,
   type AIAuthConfig,
 } from "./utils";
+import { maybeLogLLMCall } from "../tracing/llm-logger";
 
 export type AIModel = AnthropicMessagesModelId | OpenAIChatModelId | string; // For OpenRouter and Bedrock models
 
@@ -167,6 +168,24 @@ export function streamResponse(
   const messagesContainer = { current: messages || [] };
   const providerModel = getProviderModel(model, authConfig);
 
+  // Wrap onStepFinish to also log LLM calls to Weave
+  const wrappedOnStepFinish: typeof onStepFinish = onStepFinish
+    ? async (step) => {
+        // Call the original callback
+        onStepFinish(step);
+
+        // Log to Weave (no-op if Weave is disabled)
+        await maybeLogLLMCall({
+          model,
+          inputTokens: step.usage.inputTokens ?? 0,
+          outputTokens: step.usage.outputTokens ?? 0,
+          totalTokens: (step.usage.inputTokens ?? 0) + (step.usage.outputTokens ?? 0),
+          finishReason: step.finishReason,
+          toolCallCount: step.toolCalls?.length || 0,
+        });
+      }
+    : undefined;
+
   try {
     // Create the appropriate provider instance
     const response = streamText({
@@ -182,7 +201,7 @@ export function streamResponse(
         messagesContainer.current = opts.messages;
         return undefined;
       },
-      onStepFinish,
+      onStepFinish: wrappedOnStepFinish,
       abortSignal,
       activeTools,
       experimental_repairToolCall: async ({

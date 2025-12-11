@@ -15,6 +15,10 @@ import ModelsDisplay from "./components/commands/models-display";
 import type { Config } from "../core/config/config";
 import { config } from "../core/config";
 import AlertDialog from "./components/alert-dialog";
+import { initWeave } from "../core/tracing";
+
+// Initialize Weave tracing if WANDB_API_KEY is set
+await initWeave();
 
 // Pre-generated ASCII art (generated at build time with scripts/generate-ascii-art.ts)
 // This avoids needing sharp at runtime, which doesn't work in compiled binaries
