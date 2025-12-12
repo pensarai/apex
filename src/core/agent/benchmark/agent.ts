@@ -74,6 +74,9 @@ Begin by loading the expected results and starting the development environment.
     toolChoice: "auto",
     onStepFinish,
     abortSignal,
+    // Training data context for Weave
+    sessionId: session.id,
+    target: repoPath,
   });
 
   // Attach the session directly to the stream result object

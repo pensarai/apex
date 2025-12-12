@@ -675,6 +675,9 @@ Begin your analysis now.
     authConfig,
     onStepFinish,
     stopWhen: hasToolCall('finalize_documentation') || stepCountIs(1000),
+    // Training data context for Weave
+    sessionId: session.id,
+    target: session.target,
   });
 
   for await (const delta of streamResult.fullStream) {

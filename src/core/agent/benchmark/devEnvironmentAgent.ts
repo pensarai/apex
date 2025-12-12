@@ -380,6 +380,9 @@ Ensure the repo is on the correct branch: ${branch}. Use execute_command to chec
     stopWhen: stepCountIs(10000),
     toolChoice: "auto",
     abortSignal,
+    // Training data context for Weave
+    sessionId: `dev-env-${Date.now()}`,
+    target: workingDir,
   });
 
   // Consume the stream and log progress

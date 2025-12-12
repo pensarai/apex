@@ -1,3 +1,86 @@
+/**
+ * Weave Tracing for Tool Usage Training Data
+ *
+ * This module logs tool calls with full context to W&B Weave for human curation.
+ * The traces can be reviewed in the Weave app and curated into datasets for
+ * TRL/RL fine-tuning with tools like Tinker.
+ *
+ * Each trace captures:
+ * - System prompt
+ * - Conversation context (messages leading to the tool call)
+ * - Model reasoning (if available, e.g., from thinking models)
+ * - Tool call (name + arguments)
+ * - Tool result (output + success/error status)
+ * - Metadata (model, session, target)
+ */
+
+import type { ModelMessage } from 'ai';
+import type { AIModel } from '../ai';
+
+// ============================================================================
+// Types
+// ============================================================================
+
+/**
+ * Simplified message format for training context.
+ * Stored as part of each tool usage trace.
+ */
+export interface TrainingMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content: string;
+  /** For assistant messages that include tool calls */
+  toolCall?: {
+    name: string;
+    arguments: Record<string, unknown>;
+  };
+}
+
+/**
+ * Complete context for a tool usage training example.
+ * This is what gets logged to Weave for human curation.
+ */
+export interface ToolUsageTrace {
+  /** System prompt that was active */
+  systemPrompt: string;
+
+  /** Conversation history leading to this tool call */
+  conversationContext: TrainingMessage[];
+
+  /** Model's reasoning/thinking before the tool call (if available) */
+  reasoning?: string;
+
+  /** The tool that was called */
+  toolName: string;
+
+  /** Arguments passed to the tool */
+  toolArguments: Record<string, unknown>;
+
+  /** Whether the tool execution succeeded */
+  toolSuccess: boolean;
+
+  /** Tool output (result or error) */
+  toolOutput: unknown;
+
+  /** Error message if tool failed */
+  toolError?: string;
+
+  /** Model used for this call */
+  model: string;
+
+  /** Session identifier for grouping related traces */
+  sessionId: string;
+
+  /** Target being tested (for pentest context) */
+  target?: string;
+
+  /** Timestamp of the tool call */
+  timestamp: string;
+}
+
+// ============================================================================
+// Weave Module State
+// ============================================================================
+
 let weaveModule: typeof import('weave') | null = null;
 let initialized = false;
 let initializationFailed = false;
@@ -20,11 +103,10 @@ export async function initWeave(): Promise<boolean> {
   }
 
   try {
-    // Dynamically import weave only when needed
     weaveModule = await import('weave');
-    await weaveModule.init(process.env.WANDB_PROJECT || 'apex-pentest-traces');
+    await weaveModule.init(process.env.WANDB_PROJECT || 'apex-tool-training-data');
     initialized = true;
-    console.log('[Weave] Tracing initialized');
+    console.log('[Weave] Training data collection initialized');
     return true;
   } catch (error: any) {
     initializationFailed = true;
@@ -48,143 +130,222 @@ export function getWeave(): typeof import('weave') | null {
   return weaveModule;
 }
 
-/**
- * Create a traced operation wrapper. Returns a no-op if Weave is not initialized.
- * This should be called at runtime, not at module load time.
- */
-export function createTracedOp<T extends (...args: any[]) => any>(
-  name: string,
-  fn: T
-): T {
-  if (!initialized || !weaveModule) {
-    return fn;
-  }
-  return weaveModule.op(fn, { name }) as T;
-}
+// ============================================================================
+// Tool Usage Trace Logging
+// ============================================================================
 
-// Cached traced wrappers for specific operations
-let _tracedOrchestratorExecution: any = null;
-let _tracedToolExecution: any = null;
+// Cached traced function for tool usage examples
+let tracedToolUsage: ((trace: ToolUsageTrace) => Promise<ToolUsageTrace>) | null = null;
 
-/**
- * Get or create a traced wrapper for the orchestrator execution.
- * This wraps the entire pentest flow so all child operations nest under it.
- */
-export function getTracedOrchestratorExecution() {
-  if (_tracedOrchestratorExecution) return _tracedOrchestratorExecution;
+function getTracedToolUsage() {
+  if (tracedToolUsage) return tracedToolUsage;
   if (!weaveModule) return null;
 
-  _tracedOrchestratorExecution = weaveModule.op(
-    async function thoroughPentestOrchestrator<T>(
-      params: { target: string; sessionId: string; model: string },
-      executeFn: () => Promise<T>
-    ): Promise<T> {
-      return executeFn();
-    }
+  // This creates a Weave op that logs the full tool usage context
+  // Each call appears as a trace in the Weave UI for human curation
+  tracedToolUsage = weaveModule.op(
+    async function toolUsageExample(trace: ToolUsageTrace): Promise<ToolUsageTrace> {
+      // The function returns the trace - Weave captures input/output automatically
+      return trace;
+    },
+    { name: 'tool_usage_example' }
   );
-  return _tracedOrchestratorExecution;
+
+  return tracedToolUsage;
 }
 
 /**
- * Get or create a traced wrapper for tool executions within the orchestrator.
- * When called within a traced orchestrator context, these will be children.
+ * Log a tool usage example to Weave for training data curation.
+ *
+ * Call this after each tool execution to capture the full context
+ * needed for TRL/RL fine-tuning.
+ *
+ * @param params - All context needed for the training example
  */
-export function getTracedToolExecution() {
-  if (_tracedToolExecution) return _tracedToolExecution;
-  if (!weaveModule) return null;
+export async function logToolUsage(params: {
+  systemPrompt: string;
+  messages: ModelMessage[];
+  toolName: string;
+  toolArguments: Record<string, unknown>;
+  toolOutput: unknown;
+  toolSuccess: boolean;
+  toolError?: string;
+  model: AIModel;
+  sessionId: string;
+  target?: string;
+}): Promise<void> {
+  if (!isWeaveEnabled()) {
+    return;
+  }
 
-  _tracedToolExecution = weaveModule.op(
-    async function toolExecution<T>(
-      params: { toolName: string; input: any },
-      executeFn: () => Promise<T>
-    ): Promise<T> {
-      return executeFn();
-    }
-  );
-  return _tracedToolExecution;
+  const tracedFn = getTracedToolUsage();
+  if (!tracedFn) return;
+
+  try {
+    // Extract reasoning from the last assistant message if present
+    const reasoning = extractReasoning(params.messages);
+
+    // Convert messages to simplified training format
+    const conversationContext = convertToTrainingMessages(params.messages);
+
+    const trace: ToolUsageTrace = {
+      systemPrompt: params.systemPrompt,
+      conversationContext,
+      reasoning,
+      toolName: params.toolName,
+      toolArguments: params.toolArguments,
+      toolSuccess: params.toolSuccess,
+      toolOutput: params.toolOutput,
+      toolError: params.toolError,
+      model: params.model,
+      sessionId: params.sessionId,
+      target: params.target,
+      timestamp: new Date().toISOString(),
+    };
+
+    await tracedFn(trace);
+  } catch (error) {
+    // Silently fail - don't crash the app if logging fails
+    console.warn('[Weave] Failed to log tool usage:', error);
+  }
 }
 
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
 /**
- * Execute a function within a traced orchestrator context.
- * All operations awaited within executeFn will be children of this trace.
+ * Extract reasoning/thinking from the most recent assistant message.
+ * This captures chain-of-thought from thinking models.
  */
-export async function withTracedOrchestrator<T>(
-  params: { target: string; sessionId: string; model: string },
-  executeFn: () => Promise<T>
-): Promise<T> {
-  const tracedFn = getTracedOrchestratorExecution();
-  if (tracedFn) {
-    try {
-      return await tracedFn(params, executeFn);
-    } catch (error) {
-      // Silently fall back to untraced execution if Weave fails
-      return executeFn();
+function extractReasoning(messages: ModelMessage[]): string | undefined {
+  // Look backwards for the most recent assistant message with reasoning
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (!msg) continue;
+    if (msg.role === 'assistant' && typeof msg.content !== 'string') {
+      for (const part of msg.content) {
+        if (part.type === 'reasoning') {
+          return part.text;
+        }
+      }
     }
   }
-  return executeFn();
+  return undefined;
 }
 
 /**
- * Execute a tool within a traced context.
- * When called within withTracedOrchestrator, this will be a child trace.
+ * Convert AI SDK ModelMessage[] to simplified TrainingMessage[] format.
+ * This creates a clean representation for training data.
+ */
+function convertToTrainingMessages(messages: ModelMessage[]): TrainingMessage[] {
+  const result: TrainingMessage[] = [];
+
+  for (const msg of messages) {
+    switch (msg.role) {
+      case 'system':
+        result.push({
+          role: 'system',
+          content: typeof msg.content === 'string' ? msg.content : '',
+        });
+        break;
+
+      case 'user':
+        const userContent = typeof msg.content === 'string'
+          ? msg.content
+          : msg.content
+              .filter(part => part.type === 'text')
+              .map(part => (part as { type: 'text'; text: string }).text)
+              .join('\n');
+        result.push({ role: 'user', content: userContent });
+        break;
+
+      case 'assistant':
+        if (typeof msg.content === 'string') {
+          result.push({ role: 'assistant', content: msg.content });
+        } else {
+          // Extract text content and tool calls
+          let textContent = '';
+          let toolCall: TrainingMessage['toolCall'] = undefined;
+
+          for (const part of msg.content) {
+            if (part.type === 'text') {
+              textContent += part.text;
+            } else if (part.type === 'reasoning') {
+              // Include reasoning in a marked format
+              textContent += `<reasoning>${part.text}</reasoning>`;
+            } else if (part.type === 'tool-call') {
+              // Capture the last tool call (there's usually just one per message)
+              toolCall = {
+                name: part.toolName,
+                arguments: part.input as Record<string, unknown>,
+              };
+            }
+          }
+
+          result.push({
+            role: 'assistant',
+            content: textContent,
+            toolCall,
+          });
+        }
+        break;
+
+      case 'tool':
+        // Tool results
+        if (Array.isArray(msg.content)) {
+          for (const part of msg.content) {
+            if (part.type === 'tool-result') {
+              result.push({
+                role: 'tool',
+                content: typeof part.output === 'string'
+                  ? part.output
+                  : JSON.stringify(part.output),
+              });
+            }
+          }
+        }
+        break;
+    }
+  }
+
+  return result;
+}
+
+// ============================================================================
+// Legacy Exports (for backwards compatibility during migration)
+// ============================================================================
+
+/**
+ * @deprecated Use logToolUsage instead. This is a no-op wrapper for migration.
  */
 export async function withTracedTool<T>(
-  toolName: string,
-  input: any,
+  _toolName: string,
+  _input: any,
   executeFn: () => Promise<T>
 ): Promise<T> {
-  const tracedFn = getTracedToolExecution();
-  if (tracedFn) {
-    try {
-      return await tracedFn({ toolName, input }, executeFn);
-    } catch (error) {
-      // Silently fall back to untraced execution if Weave fails
-      return executeFn();
-    }
-  }
+  // Just execute the function - actual logging happens via logToolUsage
   return executeFn();
 }
 
-// Cached traced wrapper for subagents
-let _tracedSubagentExecution: any = null;
-
 /**
- * Get or create a traced wrapper for subagent execution.
+ * @deprecated Use logToolUsage instead. This is a no-op wrapper for migration.
  */
-function getTracedSubagentExecution() {
-  if (_tracedSubagentExecution) return _tracedSubagentExecution;
-  if (!weaveModule) return null;
-
-  _tracedSubagentExecution = weaveModule.op(
-    async function subagentExecution<T>(
-      params: { agentType: string; target: string; subagentId: string },
-      executeFn: () => Promise<T>
-    ): Promise<T> {
-      return executeFn();
-    }
-  );
-  return _tracedSubagentExecution;
+export async function withTracedOrchestrator<T>(
+  _params: { target: string; sessionId: string; model: string },
+  executeFn: () => Promise<T>
+): Promise<T> {
+  return executeFn();
 }
 
 /**
- * Execute a subagent within a traced context.
- * When called within withTracedTool (which is within withTracedOrchestrator),
- * this will be a grandchild trace.
+ * @deprecated Use logToolUsage instead. This is a no-op wrapper for migration.
  */
 export async function withTracedSubagent<T>(
-  agentType: string,
-  target: string,
-  subagentId: string,
+  _agentType: string,
+  _target: string,
+  _subagentId: string,
   executeFn: () => Promise<T>
 ): Promise<T> {
-  const tracedFn = getTracedSubagentExecution();
-  if (tracedFn) {
-    try {
-      return await tracedFn({ agentType, target, subagentId }, executeFn);
-    } catch (error) {
-      // Silently fall back to untraced execution if Weave fails
-      return executeFn();
-    }
-  }
   return executeFn();
 }

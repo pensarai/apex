@@ -26,7 +26,7 @@ import {
   summarizeConversation,
   type AIAuthConfig,
 } from "./utils";
-import { maybeLogLLMCall } from "../tracing/llm-logger";
+import { logToolUsage } from "../tracing";
 
 export type AIModel = AnthropicMessagesModelId | OpenAIChatModelId | string; // For OpenRouter and Bedrock models
 
@@ -144,6 +144,10 @@ export interface StreamResponseOpts {
   silent?: boolean;
   authConfig?: AIAuthConfig;
   onFinish?: StreamTextOnFinishCallback<ToolSet>;
+  /** Training data context - sessionId for grouping traces */
+  sessionId?: string;
+  /** Training data context - target being tested */
+  target?: string;
 }
 
 export function streamResponse(
@@ -163,28 +167,58 @@ export function streamResponse(
     silent,
     authConfig,
     onFinish,
+    sessionId,
+    target,
   } = opts;
   // Use a container object so the reference stays stable but the value can be updated
   const messagesContainer = { current: messages || [] };
   const providerModel = getProviderModel(model, authConfig);
 
-  // Wrap onStepFinish to also log LLM calls to Weave
-  const wrappedOnStepFinish: typeof onStepFinish = onStepFinish
-    ? async (step) => {
-        // Call the original callback
-        onStepFinish(step);
+  // Wrap onStepFinish to log tool usage to Weave for training data
+  const wrappedOnStepFinish: typeof onStepFinish = async (step) => {
+    // Call the original callback if provided
+    if (onStepFinish) {
+      onStepFinish(step);
+    }
 
-        // Log to Weave (no-op if Weave is disabled)
-        await maybeLogLLMCall({
-          model,
-          inputTokens: step.usage.inputTokens ?? 0,
-          outputTokens: step.usage.outputTokens ?? 0,
-          totalTokens: (step.usage.inputTokens ?? 0) + (step.usage.outputTokens ?? 0),
-          finishReason: step.finishReason,
-          toolCallCount: step.toolCalls?.length || 0,
-        });
+    // Log tool calls to Weave for training data collection
+    // Each tool call in this step gets logged with full context
+    if (step.toolCalls && step.toolCalls.length > 0 && step.toolResults) {
+      for (const toolCall of step.toolCalls) {
+        // Cast to access properties - AI SDK types are complex
+        const tc = toolCall as { toolCallId: string; toolName: string; args?: unknown };
+
+        // Find the matching result for this tool call
+        const toolResult = step.toolResults.find(
+          (r) => (r as { toolCallId: string }).toolCallId === tc.toolCallId
+        );
+
+        if (toolResult) {
+          // Cast to access result property
+          const tr = toolResult as { result?: unknown };
+          const result = tr.result;
+
+          // Determine success based on result type
+          const isError = result &&
+            typeof result === 'object' &&
+            (result as { success?: boolean }).success === false;
+
+          await logToolUsage({
+            systemPrompt: system || '',
+            messages: messagesContainer.current,
+            toolName: tc.toolName,
+            toolArguments: (tc.args ?? {}) as Record<string, unknown>,
+            toolOutput: result,
+            toolSuccess: !isError,
+            toolError: isError ? (result as { error?: string }).error : undefined,
+            model,
+            sessionId: sessionId || 'unknown',
+            target,
+          });
+        }
       }
-    : undefined;
+    }
+  };
 
   try {
     // Create the appropriate provider instance

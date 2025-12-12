@@ -266,6 +266,8 @@ Be thorough in your analysis and provide clear explanations for your matches. St
     tools: { provide_comparison_results },
     toolChoice: "auto",
     stopWhen: stepCountIs(10000),
+    // Training data context for Weave
+    sessionId: `comparison-${Date.now()}`,
   });
 
   // Consume the stream and log progress

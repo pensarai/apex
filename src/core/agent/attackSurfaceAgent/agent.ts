@@ -267,6 +267,9 @@ You MUST provide the details final report using create_attack_surface_report too
     onFinish: ({ response }) => {
       saveSubagentMessages(session, subagentId, mapMessages(response.messages));
     },
+    // Training data context for Weave
+    sessionId: session.id,
+    target,
   });
 
   // Attach the session directly to the stream result object
