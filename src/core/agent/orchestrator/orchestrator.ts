@@ -325,6 +325,18 @@ export async function runPentestOrchestrator(
           remoteSandboxUrl: sessionConfig?.remoteSandboxUrl,
           toolOverride,
           abortSignal,
+          onStream: (chunk) => {
+            // Forward text-delta chunks for real-time streaming
+            if (chunk.type === 'text-delta') {
+              onAgentStream?.({
+                type: 'text-delta',
+                agentId,
+                data: {
+                  textDelta: chunk.textDelta,
+                },
+              });
+            }
+          },
           onStepFinish: (step) => {
             // Forward step events to caller
             onAgentStream?.({

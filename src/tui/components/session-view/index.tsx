@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useKeyboard } from "@opentui/react";
 import { RGBA } from "@opentui/core";
 import { useRoute } from "../../context/route";
@@ -29,6 +29,9 @@ import { SpinnerDots } from "../sprites";
 const greenBullet = RGBA.fromInts(76, 175, 80, 255);
 const creamText = RGBA.fromInts(255, 248, 220, 255);
 const dimText = RGBA.fromInts(120, 120, 120, 255);
+
+// Streaming update interval (ms) - throttle UI updates to prevent flashing
+const STREAM_UPDATE_INTERVAL = 80;
 
 // UIMessage helper for tool messages
 type ToolUIMessage = UIMessage & {
@@ -129,7 +132,168 @@ export default function SessionView({
       const controller = new AbortController();
       setAbortController(controller);
 
-      let currentDiscoveryText = "";
+      // Throttled streaming state for all agents (discovery + pentest)
+      const pendingTextByAgent: Map<string, string> = new Map();
+      let flushTimer: ReturnType<typeof setTimeout> | null = null;
+
+      const flushPendingText = () => {
+        if (pendingTextByAgent.size === 0) return;
+
+        setSubagents((prev) => {
+          let updated = [...prev];
+          for (const [agentId, text] of pendingTextByAgent) {
+            const idx = updated.findIndex((s) => s.id === agentId);
+            if (idx === -1) continue;
+
+            const subagent = updated[idx]!;
+            const newMessages = [...subagent.messages];
+            const lastMsg = newMessages[newMessages.length - 1];
+
+            if (lastMsg && lastMsg.role === "assistant") {
+              newMessages[newMessages.length - 1] = {
+                ...lastMsg,
+                content: (lastMsg.content || "") + text,
+              };
+            } else {
+              newMessages.push({
+                role: "assistant",
+                content: text,
+                createdAt: new Date(),
+              });
+            }
+
+            updated[idx] = { ...subagent, messages: newMessages };
+          }
+          return updated;
+        });
+
+        pendingTextByAgent.clear();
+      };
+
+      const scheduleFlush = () => {
+        if (flushTimer) return; // Already scheduled
+        flushTimer = setTimeout(() => {
+          flushTimer = null;
+          flushPendingText();
+        }, STREAM_UPDATE_INTERVAL);
+      };
+
+      // Helper to simulate streaming for text that arrives all at once
+      const streamTextToAgent = (agentId: string, text: string, onComplete?: () => void) => {
+        let charIndex = 0;
+        const streamInterval = setInterval(() => {
+          const chunkSize = 3 + Math.floor(Math.random() * 3);
+          const chunk = text.slice(charIndex, charIndex + chunkSize);
+          charIndex += chunkSize;
+
+          if (chunk) {
+            pendingTextByAgent.set(
+              agentId,
+              (pendingTextByAgent.get(agentId) || "") + chunk
+            );
+            scheduleFlush();
+          }
+
+          if (charIndex >= text.length) {
+            clearInterval(streamInterval);
+            if (flushTimer) {
+              clearTimeout(flushTimer);
+              flushTimer = null;
+            }
+            flushPendingText();
+            onComplete?.();
+          }
+        }, 15);
+      };
+
+      // Helper to stream tool description text
+      const streamToolDescription = (agentId: string, toolCallId: string, text: string) => {
+        let charIndex = 0;
+        const streamInterval = setInterval(() => {
+          const chunkSize = 2 + Math.floor(Math.random() * 3);
+          const chunk = text.slice(charIndex, charIndex + chunkSize);
+          charIndex += chunkSize;
+
+          if (chunk) {
+            setSubagents((prev) => {
+              const idx = prev.findIndex((s) => s.id === agentId);
+              if (idx === -1) return prev;
+
+              const updated = [...prev];
+              const subagent = updated[idx]!;
+              const newMessages = [...subagent.messages];
+
+              const msgIdx = newMessages.findIndex(
+                (m) => m.role === "tool" && m.toolCallId === toolCallId
+              );
+              if (msgIdx !== -1) {
+                const existingMsg = newMessages[msgIdx] as ToolUIMessage;
+                newMessages[msgIdx] = {
+                  ...existingMsg,
+                  content: (existingMsg.content || "") + chunk,
+                };
+              }
+
+              updated[idx] = { ...subagent, messages: newMessages };
+              return updated;
+            });
+          }
+
+          if (charIndex >= text.length) {
+            clearInterval(streamInterval);
+          }
+        }, 20);
+      };
+
+      // Helper to stream tool completion (prepend checkmark)
+      const streamToolCompletion = (agentId: string, toolCallId: string) => {
+        const checkmark = "✓ ";
+        let charIndex = 0;
+        const streamInterval = setInterval(() => {
+          const chunk = checkmark.slice(charIndex, charIndex + 1);
+          charIndex += 1;
+
+          if (chunk) {
+            setSubagents((prev) => {
+              const idx = prev.findIndex((s) => s.id === agentId);
+              if (idx === -1) return prev;
+
+              const updated = [...prev];
+              const subagent = updated[idx]!;
+              const newMessages = [...subagent.messages];
+
+              const msgIdx = newMessages.findIndex(
+                (m) => m.role === "tool" && m.toolCallId === toolCallId
+              );
+              if (msgIdx !== -1) {
+                const existingMsg = newMessages[msgIdx] as ToolUIMessage;
+                // Prepend to existing content
+                if (charIndex === 1) {
+                  // First char - start prepending
+                  newMessages[msgIdx] = {
+                    ...existingMsg,
+                    content: chunk + existingMsg.content,
+                  };
+                } else {
+                  // Continue prepending (insert after previous prepended chars)
+                  const content = existingMsg.content || "";
+                  newMessages[msgIdx] = {
+                    ...existingMsg,
+                    content: content.slice(0, charIndex - 1) + chunk + content.slice(charIndex - 1),
+                  };
+                }
+              }
+
+              updated[idx] = { ...subagent, messages: newMessages };
+              return updated;
+            });
+          }
+
+          if (charIndex >= checkmark.length) {
+            clearInterval(streamInterval);
+          }
+        }, 30);
+      };
 
       try {
         // Add discovery subagent
@@ -153,8 +317,8 @@ export default function SessionView({
           sessionConfig: execSession.config,
           abortSignal: controller.signal,
 
-          // Use onStepFinish for UI updates (like metavuln agent does)
-          // This is more reliable than raw stream chunks which can be interrupted
+          // Handle step-finish for token usage and tool calls/results
+          // Text content comes via onDiscoveryStream for real-time streaming
           onDiscoveryStepFinish: (step) => {
             const stepTokens =
               (step.usage?.inputTokens ?? 0) + (step.usage?.outputTokens ?? 0);
@@ -164,137 +328,102 @@ export default function SessionView({
                 step.usage.outputTokens ?? 0
               );
 
-            // Update messages from step data (same pattern as onPentestAgentStream)
-            const { text, toolCalls, toolResults } = step;
+            const { toolCalls, toolResults } = step;
+            const agentId = "attack-surface-discovery";
 
-            setSubagents((prev) => {
-              const idx = prev.findIndex(
-                (s) => s.id === "attack-surface-discovery"
-              );
-              if (idx === -1) return prev;
+            // Handle tool calls - add them immediately, then stream the description
+            if (toolCalls && toolCalls.length > 0) {
+              setThinking(false);
+              for (const tc of toolCalls) {
+                const args = (tc as any).input as
+                  | Record<string, unknown>
+                  | undefined;
+                const toolDescription =
+                  typeof args?.toolCallDescription === "string"
+                    ? args.toolCallDescription
+                    : tc.toolName;
 
-              const updated = [...prev];
-              const subagent = updated[idx]!;
-              const newMessages = [...subagent.messages];
+                // Add tool message with empty content, then stream the description
+                setSubagents((prev) => {
+                  const idx = prev.findIndex((s) => s.id === agentId);
+                  if (idx === -1) return prev;
 
-              // Add text content
-              if (text && text.trim()) {
-                setThinking(false);
-                const lastMsg = newMessages[newMessages.length - 1];
-                if (lastMsg && lastMsg.role === "assistant") {
-                  newMessages[newMessages.length - 1] = {
-                    ...lastMsg,
-                    content: (lastMsg.content || "") + text,
+                  const updated = [...prev];
+                  const subagent = updated[idx]!;
+                  updated[idx] = {
+                    ...subagent,
+                    messages: [
+                      ...subagent.messages,
+                      {
+                        role: "tool",
+                        status: "pending",
+                        toolCallId: tc.toolCallId,
+                        toolName: tc.toolName,
+                        content: "",
+                        args: args,
+                        createdAt: new Date(),
+                      },
+                    ],
                   };
-                } else {
-                  newMessages.push({
-                    role: "assistant",
-                    content: text,
-                    createdAt: new Date(),
-                  });
-                }
-              }
+                  return updated;
+                });
 
-              // Add tool calls
-              if (toolCalls && toolCalls.length > 0) {
-                setThinking(false);
-                for (const tc of toolCalls) {
-                  // AI SDK v5.x uses 'input' instead of 'args'
-                  const args = (tc as any).input as
-                    | Record<string, unknown>
-                    | undefined;
-                  const toolDescription =
-                    typeof args?.toolCallDescription === "string"
-                      ? args.toolCallDescription
-                      : tc.toolName;
-                  newMessages.push({
-                    role: "tool",
-                    status: "pending",
-                    toolCallId: tc.toolCallId,
-                    toolName: tc.toolName,
-                    content: toolDescription,
-                    args: args,
-                    createdAt: new Date(),
-                  });
-                }
+                // Stream the tool description
+                streamToolDescription(agentId, tc.toolCallId, toolDescription);
               }
+            }
 
-              // Update tool results
-              if (toolResults && toolResults.length > 0) {
-                setThinking(true);
-                for (const tr of toolResults) {
+            // Handle tool results - update status and stream completion message
+            if (toolResults && toolResults.length > 0) {
+              setThinking(true);
+              for (const tr of toolResults) {
+                setSubagents((prev) => {
+                  const idx = prev.findIndex((s) => s.id === agentId);
+                  if (idx === -1) return prev;
+
+                  const updated = [...prev];
+                  const subagent = updated[idx]!;
+                  const newMessages = [...subagent.messages];
+
                   const msgIdx = newMessages.findIndex(
                     (m) => m.role === "tool" && m.toolCallId === tr.toolCallId
                   );
                   if (msgIdx !== -1) {
                     const existingMsg = newMessages[msgIdx] as ToolUIMessage;
-                    // Use the stored toolCallDescription (in content) if available, fallback to toolName
-                    const description =
-                      typeof existingMsg.content === "string" &&
-                      existingMsg.content !== existingMsg.toolName
-                        ? existingMsg.content
-                        : existingMsg.toolName || "tool";
                     newMessages[msgIdx] = {
                       ...existingMsg,
                       status: "completed",
-                      content: `✓ ${description}`,
-                      result: (tr as any).output, // Store the tool output
+                      content: existingMsg.content, // Keep current content, will stream checkmark
+                      result: (tr as any).output,
                     };
                   }
-                }
-              }
 
-              updated[idx] = { ...subagent, messages: newMessages };
-              return updated;
-            });
-          },
-
-          // Keep onDiscoveryStream as backup for real-time text streaming
-          onDiscoveryStream: (chunk) => {
-            // Only handle text-delta for real-time streaming effect
-            // Other chunk types are handled by onStepFinish for reliability
-            if (chunk.type === "text-delta" && chunk.textDelta) {
-              currentDiscoveryText += chunk.textDelta;
-
-              // Debounce updates - only update every 100ms worth of text
-              if (currentDiscoveryText.trim()) {
-                setSubagents((prev) => {
-                  const idx = prev.findIndex(
-                    (s) => s.id === "attack-surface-discovery"
-                  );
-                  if (idx === -1) return prev;
-
-                  const updated = [...prev];
-                  const subagent = updated[idx]!;
-                  const lastMsg =
-                    subagent.messages[subagent.messages.length - 1];
-
-                  if (lastMsg && lastMsg.role === "assistant") {
-                    const newMessages = [...subagent.messages];
-                    newMessages[newMessages.length - 1] = {
-                      ...lastMsg,
-                      content: currentDiscoveryText,
-                    };
-                    updated[idx] = { ...subagent, messages: newMessages };
-                  } else {
-                    updated[idx] = {
-                      ...subagent,
-                      messages: [
-                        ...subagent.messages,
-                        {
-                          role: "assistant",
-                          content: currentDiscoveryText,
-                          createdAt: new Date(),
-                        },
-                      ],
-                    };
-                  }
+                  updated[idx] = { ...subagent, messages: newMessages };
                   return updated;
                 });
+
+                // Stream the checkmark prefix to the tool
+                streamToolCompletion(agentId, tr.toolCallId);
               }
+            }
+          },
+
+          // Real-time text streaming for discovery agent with throttling
+          onDiscoveryStream: (chunk) => {
+            if (chunk.type === "text-delta" && chunk.textDelta) {
+              setThinking(false);
+              // Buffer the text and schedule a throttled flush
+              const agentId = "attack-surface-discovery";
+              const existing = pendingTextByAgent.get(agentId) || "";
+              pendingTextByAgent.set(agentId, existing + chunk.textDelta);
+              scheduleFlush();
             } else if (chunk.type === "step-finish") {
-              // Reset accumulated text at step boundaries
-              currentDiscoveryText = "";
+              // Flush any pending text immediately at step boundaries
+              if (flushTimer) {
+                clearTimeout(flushTimer);
+                flushTimer = null;
+              }
+              flushPendingText();
             }
           },
 
@@ -321,8 +450,25 @@ export default function SessionView({
           },
 
           onPentestAgentStream: (event: SubAgentStreamEvent) => {
+            // Handle real-time text streaming with throttling
+            if (event.type === "text-delta" && event.data?.textDelta) {
+              setThinking(false);
+              // Buffer the text and schedule a throttled flush
+              const existing = pendingTextByAgent.get(event.agentId) || "";
+              pendingTextByAgent.set(event.agentId, existing + event.data.textDelta);
+              scheduleFlush();
+            }
+
+            // Handle step-finish for tool calls and token usage
             if (event.type === "step-finish" && event.data) {
-              const { text, toolCalls, toolResults, usage } = event.data;
+              // Flush any pending text immediately before processing step-finish
+              if (flushTimer) {
+                clearTimeout(flushTimer);
+                flushTimer = null;
+              }
+              flushPendingText();
+              const { toolCalls, toolResults, usage } = event.data;
+              const agentId = event.agentId;
 
               if (usage) {
                 const stepTokens =
@@ -334,78 +480,79 @@ export default function SessionView({
                   );
               }
 
-              setSubagents((prev) => {
-                const idx = prev.findIndex((s) => s.id === event.agentId);
-                if (idx === -1) return prev;
+              // Handle tool calls - add with empty content, then stream description
+              if (toolCalls && toolCalls.length > 0) {
+                for (const tc of toolCalls) {
+                  const args = (tc as any).input as
+                    | Record<string, unknown>
+                    | undefined;
+                  const toolDescription =
+                    typeof args?.toolCallDescription === "string"
+                      ? args.toolCallDescription
+                      : tc.toolName;
 
-                const updated = [...prev];
-                const subagent = updated[idx]!;
-                const newMessages = [...subagent.messages];
+                  // Add tool message with empty content
+                  setSubagents((prev) => {
+                    const idx = prev.findIndex((s) => s.id === agentId);
+                    if (idx === -1) return prev;
 
-                if (text && text.trim()) {
-                  const lastMsg = newMessages[newMessages.length - 1];
-                  if (lastMsg && lastMsg.role === "assistant") {
-                    newMessages[newMessages.length - 1] = {
-                      ...lastMsg,
-                      content: (lastMsg.content || "") + text,
+                    const updated = [...prev];
+                    const subagent = updated[idx]!;
+                    updated[idx] = {
+                      ...subagent,
+                      messages: [
+                        ...subagent.messages,
+                        {
+                          role: "tool",
+                          status: "pending",
+                          toolCallId: tc.toolCallId,
+                          toolName: tc.toolName,
+                          content: "",
+                          args: args,
+                          createdAt: new Date(),
+                        },
+                      ],
                     };
-                  } else {
-                    newMessages.push({
-                      role: "assistant",
-                      content: text,
-                      createdAt: new Date(),
-                    });
-                  }
-                }
+                    return updated;
+                  });
 
-                if (toolCalls && toolCalls.length > 0) {
-                  for (const tc of toolCalls) {
-                    // AI SDK v5.x uses 'input' instead of 'args'
-                    const args = (tc as any).input as
-                      | Record<string, unknown>
-                      | undefined;
-                    const toolDescription =
-                      typeof args?.toolCallDescription === "string"
-                        ? args.toolCallDescription
-                        : tc.toolName;
-                    newMessages.push({
-                      role: "tool",
-                      status: "pending",
-                      toolCallId: tc.toolCallId,
-                      toolName: tc.toolName,
-                      content: toolDescription,
-                      args: args,
-                      createdAt: new Date(),
-                    });
-                  }
+                  // Stream the tool description
+                  streamToolDescription(agentId, tc.toolCallId, toolDescription);
                 }
+              }
 
-                if (toolResults && toolResults.length > 0) {
-                  for (const tr of toolResults) {
+              // Handle tool results - update status and stream checkmark
+              if (toolResults && toolResults.length > 0) {
+                for (const tr of toolResults) {
+                  setSubagents((prev) => {
+                    const idx = prev.findIndex((s) => s.id === agentId);
+                    if (idx === -1) return prev;
+
+                    const updated = [...prev];
+                    const subagent = updated[idx]!;
+                    const newMessages = [...subagent.messages];
+
                     const msgIdx = newMessages.findIndex(
                       (m) => m.role === "tool" && m.toolCallId === tr.toolCallId
                     );
                     if (msgIdx !== -1) {
                       const existingMsg = newMessages[msgIdx] as ToolUIMessage;
-                      // Use the stored toolCallDescription (in content) if available, fallback to toolName
-                      const description =
-                        typeof existingMsg.content === "string" &&
-                        existingMsg.content !== existingMsg.toolName
-                          ? existingMsg.content
-                          : existingMsg.toolName || "tool";
                       newMessages[msgIdx] = {
                         ...existingMsg,
                         status: "completed",
-                        content: `✓ ${description}`,
-                        result: (tr as any).output, // Store the tool output
+                        content: existingMsg.content,
+                        result: (tr as any).output,
                       };
                     }
-                  }
-                }
 
-                updated[idx] = { ...subagent, messages: newMessages };
-                return updated;
-              });
+                    updated[idx] = { ...subagent, messages: newMessages };
+                    return updated;
+                  });
+
+                  // Stream the checkmark
+                  streamToolCompletion(agentId, tr.toolCallId);
+                }
+              }
             }
           },
 
@@ -413,6 +560,11 @@ export default function SessionView({
             agentId: string,
             agentResult: MetaVulnerabilityTestResult
           ) => {
+            // Stream out the completion summary using the same throttled mechanism
+            const prefix = agentResult.findingsCount > 0 ? "✅ " : "⚪ ";
+            const fullText = prefix + agentResult.summary;
+
+            // Add empty assistant message first, then stream into it
             setSubagents((prev) =>
               prev.map((sub) =>
                 sub.id === agentId
@@ -423,9 +575,7 @@ export default function SessionView({
                         ...sub.messages,
                         {
                           role: "assistant",
-                          content: `${
-                            agentResult.findingsCount > 0 ? "✅" : "⚪"
-                          } ${agentResult.summary}`,
+                          content: "",
                           createdAt: new Date(),
                         },
                       ],
@@ -433,6 +583,33 @@ export default function SessionView({
                   : sub
               )
             );
+
+            // Stream the text character by character with small delays
+            let charIndex = 0;
+            const streamInterval = setInterval(() => {
+              // Stream ~3-5 characters at a time for smooth effect
+              const chunkSize = 3 + Math.floor(Math.random() * 3);
+              const chunk = fullText.slice(charIndex, charIndex + chunkSize);
+              charIndex += chunkSize;
+
+              if (chunk) {
+                pendingTextByAgent.set(
+                  agentId,
+                  (pendingTextByAgent.get(agentId) || "") + chunk
+                );
+                scheduleFlush();
+              }
+
+              if (charIndex >= fullText.length) {
+                clearInterval(streamInterval);
+                // Final flush
+                if (flushTimer) {
+                  clearTimeout(flushTimer);
+                  flushTimer = null;
+                }
+                flushPendingText();
+              }
+            }, 20); // 20ms between chunks for smooth streaming
           },
 
           onProgress: (status: StreamlinedPentestProgress) => {
