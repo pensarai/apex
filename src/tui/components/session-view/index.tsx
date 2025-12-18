@@ -328,8 +328,42 @@ export default function SessionView({
                 step.usage.outputTokens ?? 0
               );
 
-            const { toolCalls, toolResults } = step;
+            const { text, toolCalls, toolResults } = step;
             const agentId = "attack-surface-discovery";
+
+            // Handle text from this step - add as assistant message if present
+            if (text) {
+              setSubagents((prev) => {
+                const idx = prev.findIndex((s) => s.id === agentId);
+                if (idx === -1) return prev;
+
+                const updated = [...prev];
+                const subagent = updated[idx]!;
+                const newMessages = [...subagent.messages];
+                const lastMsg = newMessages[newMessages.length - 1];
+
+                if (lastMsg && lastMsg.role === "assistant") {
+                  // Append to existing assistant message
+                  newMessages[newMessages.length - 1] = {
+                    ...lastMsg,
+                    content: (lastMsg.content || "") + text,
+                  };
+                } else {
+                  // Create new assistant message
+                  newMessages.push({
+                    role: "assistant",
+                    content: text,
+                    createdAt: new Date(),
+                  });
+                }
+
+                updated[idx] = { ...subagent, messages: newMessages };
+                return updated;
+              });
+
+              // Clear pending text to avoid duplication
+              pendingTextByAgent.delete(agentId);
+            }
 
             // Handle tool calls - add them immediately, then stream the description
             if (toolCalls && toolCalls.length > 0) {
@@ -419,6 +453,7 @@ export default function SessionView({
               scheduleFlush();
             } else if (chunk.type === "step-finish") {
               // Flush any pending text immediately at step boundaries
+              // Text content is handled in onDiscoveryStepFinish
               if (flushTimer) {
                 clearTimeout(flushTimer);
                 flushTimer = null;
