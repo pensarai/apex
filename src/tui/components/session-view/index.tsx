@@ -467,8 +467,42 @@ export default function SessionView({
                 flushTimer = null;
               }
               flushPendingText();
-              const { toolCalls, toolResults, usage } = event.data;
+              const { text, toolCalls, toolResults, usage } = event.data;
               const agentId = event.agentId;
+
+              // Handle text from this step - add as assistant message if present
+              if (text) {
+                setSubagents((prev) => {
+                  const idx = prev.findIndex((s) => s.id === agentId);
+                  if (idx === -1) return prev;
+
+                  const updated = [...prev];
+                  const subagent = updated[idx]!;
+                  const newMessages = [...subagent.messages];
+                  const lastMsg = newMessages[newMessages.length - 1];
+
+                  if (lastMsg && lastMsg.role === "assistant") {
+                    // Append to existing assistant message
+                    newMessages[newMessages.length - 1] = {
+                      ...lastMsg,
+                      content: (lastMsg.content || "") + text,
+                    };
+                  } else {
+                    // Create new assistant message
+                    newMessages.push({
+                      role: "assistant",
+                      content: text,
+                      createdAt: new Date(),
+                    });
+                  }
+
+                  updated[idx] = { ...subagent, messages: newMessages };
+                  return updated;
+                });
+
+                // Clear pending text to avoid duplication
+                pendingTextByAgent.delete(agentId);
+              }
 
               if (usage) {
                 const stepTokens =
