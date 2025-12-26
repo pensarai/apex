@@ -7,6 +7,7 @@ export type RoutePath =
     | "pentest"
     | "thorough"
     | "web"
+    | "static"
     | "dns"
     | "config"
     | "models"
@@ -18,17 +19,29 @@ export interface WebCommandOptions {
     target?: string;
 }
 
+export interface StaticCommandOptions {
+    repo?: string;
+    ref?: string;
+    fast?: boolean;
+}
+
 export type Route =
     {
         type: "base",
         path: RoutePath,
-        options?: WebCommandOptions
+        options?: WebCommandOptions | StaticCommandOptions
     }
   | {
         type: "session",
         sessionId: string,
         /** If true, load existing session state without starting a new pentest */
         isResume?: boolean
+    }
+  | {
+        type: "static-session",
+        runId: string,
+        /** Session info for static analysis */
+        sessionId?: string
     };
 
 

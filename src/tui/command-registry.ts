@@ -99,6 +99,29 @@ export const commands: CommandConfig[] = [
     },
   },
   {
+    name: "static",
+    aliases: ["s", "sast"],
+    description: "Run LLM-augmented static analysis on a git repository",
+    category: "Analysis",
+    options: [
+      { name: "--repo", description: "Repository URL or local path", valueHint: "<repo>" },
+      { name: "--ref", description: "Git ref (branch/tag/commit)", valueHint: "<ref>" },
+      { name: "--fast", description: "Skip heavy analysis (CodeQL, Joern)" },
+    ],
+    handler: async (args, ctx) => {
+      const hasFast = args.includes('--fast');
+      const repoIdx = args.indexOf('--repo');
+      const repo = repoIdx !== -1 ? args[repoIdx + 1] : undefined;
+      const refIdx = args.indexOf('--ref');
+      const ref = refIdx !== -1 ? args[refIdx + 1] : undefined;
+      ctx.navigate({
+        type: "base",
+        path: "static",
+        options: { repo, ref, fast: hasFast }
+      });
+    },
+  },
+  {
     name: "models",
     description: "Show available AI models",
     category: "General",

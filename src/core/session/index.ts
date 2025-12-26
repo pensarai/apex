@@ -56,15 +56,34 @@ export namespace Session {
 
     export type OffensiveHeadersConfig = z.infer<typeof OffensiveHeadersConfigObject>;
 
+    const StaticConfigObject = z.object({
+        /** Repository URL (if remote) */
+        repoUrl: z.string().optional(),
+        /** Local repository path */
+        repoPath: z.string().optional(),
+        /** Git ref to analyze */
+        ref: z.string().optional(),
+        /** Languages to focus on */
+        languages: z.array(z.string()).optional(),
+        /** Tools to skip */
+        skipTools: z.array(z.string()).optional(),
+        /** Enable fast mode (skip heavy tools) */
+        fastMode: z.boolean().optional(),
+    });
+
+    export type StaticConfig = z.infer<typeof StaticConfigObject>;
+
     const SessionConfigObject = z.object({
         offensiveHeaders: OffensiveHeadersConfigObject.optional(),
-        sessionType: z.enum(['web-app']).optional(),
+        sessionType: z.enum(['web-app', 'static']).optional(),
         mode: z.enum(['auto', 'driver']).optional(),
         outcomeGuidance: z.string().optional(),
         scopeConstraints: ScopeConstraintsObject.optional(),
         authCredentials: AuthCredentialsObject.optional(),
         authenticationInstructions: z.string().optional(),
-        requestsPerSecond: z.number().optional()
+        requestsPerSecond: z.number().optional(),
+        /** Static analysis configuration (when sessionType is 'static') */
+        staticConfig: StaticConfigObject.optional(),
     });
 
     export type SessionConfig = z.infer<typeof SessionConfigObject>;

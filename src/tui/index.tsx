@@ -10,11 +10,14 @@ import { CommandProvider } from "./command-provider";
 import { AgentProvider } from "./agentProvider";
 import HelpDialog from "./components/commands/help-dialog";
 import WebWizard from "./components/commands/web-wizard";
+import StaticWizard from "./components/commands/static-wizard";
 import SessionView from "./components/session-view";
+import StaticSessionView from "./components/static-session-view";
 import SessionsDisplay from "./components/commands/sessions-display";
 import ConfigDialog from "./components/commands/config-dialog";
 import ModelsDisplay from "./components/commands/models-display";
 import ProviderManager from "./components/commands/provider-manager";
+import type { StaticCommandOptions, WebCommandOptions } from "./context/route";
 // import CreateSessionDialog from "./components/commands/create-session-dialog";
 import type { Config } from "../core/config/config";
 import { config } from "../core/config";
@@ -182,12 +185,14 @@ function AppContent({
     }
 
     // Escape - Return to home from any non-home route
-    // Exclude "web" and "session" routes - they handle their own ESC behavior
+    // Exclude "web", "static", "session", and "static-session" routes - they handle their own ESC behavior
     if (key.name === "escape") {
       const isHome = route.data.type === "base" && route.data.path === "home";
       const isWeb = route.data.type === "base" && route.data.path === "web";
+      const isStatic = route.data.type === "base" && route.data.path === "static";
       const isSession = route.data.type === "session";
-      if (!isHome && !isWeb && !isSession) {
+      const isStaticSession = route.data.type === "static-session";
+      if (!isHome && !isWeb && !isStatic && !isSession && !isStaticSession) {
         route.navigate({
           type: "base",
           path: "home"
@@ -354,8 +359,15 @@ function CommandDisplay({
           </RouteSwitch.Case>
           <RouteSwitch.Case when="web">
             <WebWizard
-              initialTarget={route.data.options?.target}
-              autoMode={route.data.options?.auto}
+              initialTarget={(route.data.options as WebCommandOptions)?.target}
+              autoMode={(route.data.options as WebCommandOptions)?.auto}
+            />
+          </RouteSwitch.Case>
+          <RouteSwitch.Case when="static">
+            <StaticWizard
+              initialRepo={(route.data.options as StaticCommandOptions)?.repo}
+              initialRef={(route.data.options as StaticCommandOptions)?.ref}
+              fastMode={(route.data.options as StaticCommandOptions)?.fast}
             />
           </RouteSwitch.Case>
           <RouteSwitch.Case when="config">
@@ -378,6 +390,11 @@ function CommandDisplay({
   // Session route - render SessionView which handles pentest execution
   if(route.data.type === "session") {
     return <SessionView sessionId={route.data.sessionId} isResume={route.data.isResume} />;
+  }
+
+  // Static session route - render StaticSessionView which handles static analysis
+  if(route.data.type === "static-session") {
+    return <StaticSessionView runId={route.data.runId} sessionId={route.data.sessionId} />;
   }
 
   return null;
@@ -437,8 +454,13 @@ function Home () {
         </text>
         <text>
           <span fg={greenBullet}>█ </span>
-          <span fg={dimText}>Quick start: </span>
+          <span fg={dimText}>Web pentest: </span>
           <span fg={creamText}>/web</span>
+        </text>
+        <text>
+          <span fg={greenBullet}>█ </span>
+          <span fg={dimText}>Static analysis: </span>
+          <span fg={creamText}>/static</span>
         </text>
         <text>
           <span fg={greenBullet}>█ </span>
