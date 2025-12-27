@@ -14,6 +14,15 @@ import path from 'path';
 import { existsSync } from 'fs';
 import type { WorkspacePaths } from '../workspace';
 import type { LanguageInfo, SecurityHotspot } from '../types';
+import {
+  EXCLUDE_DIRS,
+  LANGUAGE_EXTENSIONS,
+  SECURITY_PATTERNS,
+  BUILD_SYSTEM_INDICATORS,
+  LIMITS,
+  getLanguageFromExtension,
+} from '../constants';
+import { walkDirectory, searchFiles, countFilesByLanguage } from '../utils/file-walker';
 
 const execAsync = promisify(exec);
 
@@ -43,75 +52,6 @@ const SearchCodeSchema = z.object({
 });
 
 /**
- * Language detection based on file extensions
- */
-const LANGUAGE_EXTENSIONS: Record<string, string[]> = {
-  python: ['.py', '.pyw', '.pyi'],
-  javascript: ['.js', '.mjs', '.cjs'],
-  typescript: ['.ts', '.tsx', '.mts', '.cts'],
-  java: ['.java'],
-  kotlin: ['.kt', '.kts'],
-  go: ['.go'],
-  rust: ['.rs'],
-  ruby: ['.rb', '.rake', '.gemspec'],
-  php: ['.php', '.phtml'],
-  csharp: ['.cs'],
-  cpp: ['.cpp', '.cc', '.cxx', '.hpp', '.h', '.hxx'],
-  c: ['.c'],
-  swift: ['.swift'],
-  scala: ['.scala', '.sc'],
-  shell: ['.sh', '.bash', '.zsh'],
-  sql: ['.sql'],
-  html: ['.html', '.htm'],
-  css: ['.css', '.scss', '.sass', '.less'],
-  yaml: ['.yaml', '.yml'],
-  json: ['.json'],
-  xml: ['.xml'],
-  markdown: ['.md', '.markdown'],
-};
-
-/**
- * Security-sensitive patterns to look for
- */
-const SECURITY_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
-  { pattern: /auth|login|session|jwt|token|cookie/i, reason: 'authentication/session handling' },
-  { pattern: /password|credential|secret|key/i, reason: 'credential handling' },
-  { pattern: /pickle|marshal|yaml\.load|deserialize|unserialize/i, reason: 'deserialization' },
-  { pattern: /exec|eval|system|popen|spawn|shell/i, reason: 'command execution' },
-  { pattern: /sql|query|execute|cursor/i, reason: 'database operations' },
-  { pattern: /upload|file|path|directory/i, reason: 'file operations' },
-  { pattern: /http|request|fetch|curl|axios/i, reason: 'HTTP requests' },
-  { pattern: /crypto|encrypt|decrypt|hash|aes|rsa/i, reason: 'cryptography' },
-  { pattern: /render|template|jinja|mustache/i, reason: 'templating' },
-  { pattern: /xml|parse|dom|sax/i, reason: 'XML parsing' },
-];
-
-/**
- * Directories to exclude from scanning
- */
-const EXCLUDE_DIRS = new Set([
-  'node_modules',
-  'vendor',
-  'venv',
-  '.venv',
-  '__pycache__',
-  '.git',
-  '.svn',
-  '.hg',
-  'dist',
-  'build',
-  'target',
-  'out',
-  '.idea',
-  '.vscode',
-  'coverage',
-  '.nyc_output',
-  'tmp',
-  'temp',
-  'logs',
-]);
-
-/**
  * Create repository tools for an agent
  */
 export function createRepoTools(paths: WorkspacePaths) {
@@ -125,42 +65,17 @@ export function createRepoTools(paths: WorkspacePaths) {
     inputSchema: ListFilesSchema,
     execute: async ({ directory, extensions, maxFiles }: z.infer<typeof ListFilesSchema>) => {
       const targetDir = directory ? path.join(repoPath, directory) : repoPath;
-      const files: string[] = [];
 
-      async function walkDir(dir: string, depth: number = 0): Promise<void> {
-        if (files.length >= maxFiles || depth > 20) return;
-
-        try {
-          const entries = await fs.readdir(dir, { withFileTypes: true });
-
-          for (const entry of entries) {
-            if (files.length >= maxFiles) break;
-
-            const fullPath = path.join(dir, entry.name);
-            const relativePath = path.relative(repoPath, fullPath);
-
-            if (entry.isDirectory()) {
-              if (!EXCLUDE_DIRS.has(entry.name) && !entry.name.startsWith('.')) {
-                await walkDir(fullPath, depth + 1);
-              }
-            } else if (entry.isFile()) {
-              if (!extensions || extensions.some(ext => entry.name.endsWith(ext))) {
-                files.push(relativePath);
-              }
-            }
-          }
-        } catch {
-          // Ignore permission errors
-        }
-      }
-
-      await walkDir(targetDir);
+      const { files, truncated } = await walkDirectory(targetDir, {
+        extensions,
+        maxFiles,
+      });
 
       return {
         success: true,
-        files,
+        files: files.map(f => path.relative(repoPath, f.fullPath)),
         count: files.length,
-        truncated: files.length >= maxFiles,
+        truncated,
       };
     },
   });
@@ -207,40 +122,9 @@ export function createRepoTools(paths: WorkspacePaths) {
     description: 'Detect programming languages used in the repository based on file extensions',
     inputSchema: EmptyRepoSchema,
     execute: async () => {
-      const languageCounts: Record<string, number> = {};
-      let totalFiles = 0;
+      const languageCounts = await countFilesByLanguage(repoPath);
 
-      async function countFiles(dir: string, depth: number = 0): Promise<void> {
-        if (depth > 20) return;
-
-        try {
-          const entries = await fs.readdir(dir, { withFileTypes: true });
-
-          for (const entry of entries) {
-            const fullPath = path.join(dir, entry.name);
-
-            if (entry.isDirectory()) {
-              if (!EXCLUDE_DIRS.has(entry.name) && !entry.name.startsWith('.')) {
-                await countFiles(fullPath, depth + 1);
-              }
-            } else if (entry.isFile()) {
-              const ext = path.extname(entry.name).toLowerCase();
-
-              for (const [lang, exts] of Object.entries(LANGUAGE_EXTENSIONS)) {
-                if (exts.includes(ext)) {
-                  languageCounts[lang] = (languageCounts[lang] || 0) + 1;
-                  totalFiles++;
-                  break;
-                }
-              }
-            }
-          }
-        } catch {
-          // Ignore errors
-        }
-      }
-
-      await countFiles(repoPath);
+      const totalFiles = Object.values(languageCounts).reduce((sum, count) => sum + count, 0);
 
       const languages: LanguageInfo[] = Object.entries(languageCounts)
         .map(([name, files]) => ({
@@ -268,38 +152,16 @@ export function createRepoTools(paths: WorkspacePaths) {
       const buildSystems: string[] = [];
       const dependencyFiles: string[] = [];
 
-      const indicators: Record<string, { buildSystem: string; isDependency: boolean }> = {
-        'package.json': { buildSystem: 'npm/yarn', isDependency: true },
-        'package-lock.json': { buildSystem: 'npm', isDependency: false },
-        'yarn.lock': { buildSystem: 'yarn', isDependency: false },
-        'pnpm-lock.yaml': { buildSystem: 'pnpm', isDependency: false },
-        'requirements.txt': { buildSystem: 'pip', isDependency: true },
-        'setup.py': { buildSystem: 'setuptools', isDependency: true },
-        'pyproject.toml': { buildSystem: 'poetry/pip', isDependency: true },
-        'Pipfile': { buildSystem: 'pipenv', isDependency: true },
-        'go.mod': { buildSystem: 'go modules', isDependency: true },
-        'Cargo.toml': { buildSystem: 'cargo', isDependency: true },
-        'pom.xml': { buildSystem: 'maven', isDependency: true },
-        'build.gradle': { buildSystem: 'gradle', isDependency: true },
-        'build.gradle.kts': { buildSystem: 'gradle', isDependency: true },
-        'Gemfile': { buildSystem: 'bundler', isDependency: true },
-        'composer.json': { buildSystem: 'composer', isDependency: true },
-        'CMakeLists.txt': { buildSystem: 'cmake', isDependency: false },
-        'Makefile': { buildSystem: 'make', isDependency: false },
-        'Dockerfile': { buildSystem: 'docker', isDependency: false },
-        'docker-compose.yml': { buildSystem: 'docker-compose', isDependency: false },
-      };
-
       try {
         const entries = await fs.readdir(repoPath);
 
         for (const entry of entries) {
-          const indicator = indicators[entry];
+          const indicator = BUILD_SYSTEM_INDICATORS[entry];
           if (indicator) {
             if (!buildSystems.includes(indicator.buildSystem)) {
               buildSystems.push(indicator.buildSystem);
             }
-            if (indicator.isDependency) {
+            if (indicator.isDependencyFile) {
               dependencyFiles.push(entry);
             }
           }
@@ -422,56 +284,12 @@ export function createRepoTools(paths: WorkspacePaths) {
     description: 'Search for a pattern in code files using grep-like functionality',
     inputSchema: SearchCodeSchema,
     execute: async ({ pattern, fileExtensions, maxResults }: z.infer<typeof SearchCodeSchema>) => {
-      const results: Array<{ file: string; line: number; content: string }> = [];
       const regex = new RegExp(pattern, 'gi');
 
-      async function searchDir(dir: string, depth: number = 0): Promise<void> {
-        if (results.length >= maxResults || depth > 15) return;
-
-        try {
-          const entries = await fs.readdir(dir, { withFileTypes: true });
-
-          for (const entry of entries) {
-            if (results.length >= maxResults) break;
-
-            const fullPath = path.join(dir, entry.name);
-            const relativePath = path.relative(repoPath, fullPath);
-
-            if (entry.isDirectory()) {
-              if (!EXCLUDE_DIRS.has(entry.name) && !entry.name.startsWith('.')) {
-                await searchDir(fullPath, depth + 1);
-              }
-            } else if (entry.isFile()) {
-              const ext = path.extname(entry.name).toLowerCase();
-              if (fileExtensions && !fileExtensions.includes(ext)) continue;
-
-              try {
-                const stat = await fs.stat(fullPath);
-                if (stat.size > 1000000) continue; // Skip files > 1MB
-
-                const content = await fs.readFile(fullPath, 'utf-8');
-                const lines = content.split('\n');
-
-                for (let i = 0; i < lines.length && results.length < maxResults; i++) {
-                  if (regex.test(lines[i]!)) {
-                    results.push({
-                      file: relativePath,
-                      line: i + 1,
-                      content: lines[i]!.trim().substring(0, 200),
-                    });
-                  }
-                }
-              } catch {
-                // Ignore read errors
-              }
-            }
-          }
-        } catch {
-          // Ignore errors
-        }
-      }
-
-      await searchDir(repoPath);
+      const results = await searchFiles(repoPath, regex, {
+        extensions: fileExtensions,
+        maxResults,
+      });
 
       return {
         success: true,

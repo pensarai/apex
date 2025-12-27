@@ -1,21 +1,22 @@
 /**
- * Stub Agents
+ * Agent Implementations
  *
- * Minimal implementations for agents that can be enhanced later:
- * - IndexGraphAgent: Currently a passthrough (index building is implicit in other tools)
- * - SpecSynthAgent: Reserved for custom query generation (future)
- * - VulRAGAgent: Reserved for vulnerability knowledge enrichment (needs DB)
- * - LocalizeAndProveAgent: Basic localization without complex trace reconstruction
+ * Real implementations for the static analysis agents.
+ * VulRAGAgent remains a stub pending vulnerability knowledge base integration.
  */
 
 import { streamResponse, type AIModel } from '../../ai';
 import type { WorkspacePaths } from '../workspace';
 import type { StaticAnalysisState, StaticAgentResult } from '../types';
-import { createFindingTools, listFindingsDirect } from '../tools/finding-tools';
+import { createFindingTools, listFindingsDirect, getFindingDirect } from '../tools/finding-tools';
 import { createRepoTools } from '../tools/repo-tools';
 import { saveState, appendToResultsJsonl, saveSubagentMessages } from '../workspace';
 import fs from 'fs/promises';
 import path from 'path';
+
+// Re-export real implementations
+export { runIndexGraphAgent } from './index-graph';
+export { runSpecSynthAgent } from './spec-synth';
 
 export interface StubAgentInput {
   paths: WorkspacePaths;
@@ -23,126 +24,6 @@ export interface StubAgentInput {
   model: AIModel;
   abortSignal?: AbortSignal;
   onStepFinish?: (step: any) => void;
-}
-
-/**
- * IndexGraphAgent - Currently a passthrough
- *
- * Future: Build symbol index, call graph, import graph for navigation.
- * For now, we rely on the repo tools' search_code for navigation.
- */
-export async function runIndexGraphAgent(input: StubAgentInput): Promise<StaticAgentResult> {
-  const { paths, state } = input;
-  const startTime = Date.now();
-
-  try {
-    // Create placeholder index files
-    const indexDir = paths.artifacts.index;
-
-    const placeholderIndex = {
-      status: 'stub',
-      note: 'Full index building not yet implemented. Using grep-based search.',
-      timestamp: new Date().toISOString(),
-    };
-
-    await fs.writeFile(
-      path.join(indexDir, 'symbols.json'),
-      JSON.stringify(placeholderIndex, null, 2)
-    );
-
-    state.index = {
-      symbol_index: path.join(indexDir, 'symbols.json'),
-      call_graph: path.join(indexDir, 'call_graph.json'),
-      import_graph: path.join(indexDir, 'import_graph.json'),
-      dep_graph: path.join(indexDir, 'deps.json'),
-      hotspot_ranking: state.inventory?.security_hotspots.map(h => h.path) || [],
-    };
-
-    await saveState(paths, state);
-
-    await appendToResultsJsonl(paths, {
-      type: 'agent_complete',
-      agent: 'index-graph',
-      success: true,
-      duration_ms: Date.now() - startTime,
-      note: 'stub implementation',
-    });
-
-    return {
-      stage: 'index-graph',
-      success: true,
-      artifacts: [path.join(indexDir, 'symbols.json')],
-      summary: 'Index stage complete (using search-based navigation)',
-      duration_ms: Date.now() - startTime,
-    };
-  } catch (error: any) {
-    return {
-      stage: 'index-graph',
-      success: false,
-      artifacts: [],
-      summary: `Index stage failed: ${error.message}`,
-      error: error.message,
-      duration_ms: Date.now() - startTime,
-    };
-  }
-}
-
-/**
- * SpecSynthAgent - Currently a passthrough
- *
- * Future: Generate custom Semgrep rules, CodeQL queries, and taint specs
- * based on the codebase patterns.
- */
-export async function runSpecSynthAgent(input: StubAgentInput): Promise<StaticAgentResult> {
-  const { paths, state } = input;
-  const startTime = Date.now();
-
-  try {
-    const specsDir = paths.artifacts.specs;
-
-    const placeholderSpecs = {
-      status: 'stub',
-      note: 'Custom spec synthesis not yet implemented. Using default tool rules.',
-      timestamp: new Date().toISOString(),
-      planned_features: [
-        'Custom taint source/sink detection',
-        'Repo-specific Semgrep rules',
-        'CodeQL query generation',
-      ],
-    };
-
-    await fs.writeFile(
-      path.join(specsDir, 'custom_specs.json'),
-      JSON.stringify(placeholderSpecs, null, 2)
-    );
-
-    await saveState(paths, state);
-
-    await appendToResultsJsonl(paths, {
-      type: 'agent_complete',
-      agent: 'spec-synth',
-      success: true,
-      duration_ms: Date.now() - startTime,
-      note: 'stub implementation',
-    });
-
-    return {
-      stage: 'spec-synth',
-      success: true,
-      artifacts: [path.join(specsDir, 'custom_specs.json')],
-      summary: 'Spec synthesis stage complete (using default rules)',
-      duration_ms: Date.now() - startTime,
-    };
-  } catch (error: any) {
-    return {
-      stage: 'spec-synth',
-      success: false,
-      artifacts: [],
-      summary: `Spec synthesis failed: ${error.message}`,
-      error: error.message,
-      duration_ms: Date.now() - startTime,
-    };
-  }
 }
 
 /**
@@ -156,7 +37,7 @@ export async function runSpecSynthAgent(input: StubAgentInput): Promise<StaticAg
  * Requires: Vulnerability knowledge base (user to provide)
  */
 export async function runVulRAGAgent(input: StubAgentInput): Promise<StaticAgentResult> {
-  const { paths, state } = input;
+  const { paths } = input;
   const startTime = Date.now();
 
   try {
@@ -188,10 +69,48 @@ export async function runVulRAGAgent(input: StubAgentInput): Promise<StaticAgent
   }
 }
 
+const LOCALIZE_SYSTEM_PROMPT = `You are an expert security analyst performing precise vulnerability localization and dataflow analysis. Your job is to examine security findings from static analysis tools and enhance them with detailed trace information.
+
+For each finding you analyze:
+
+## 1. Code Examination
+- Read the vulnerable code at the reported location
+- Understand the context: what function is this in? What does it do?
+- Identify the actual security issue vs false positives
+
+## 2. Dataflow Tracing
+- **Source**: Where does the untrusted data originate? (user input, file read, network request, etc.)
+- **Propagation**: How does the data flow through the code? Follow variable assignments, function calls, returns
+- **Sink**: Where does the dangerous operation occur? (SQL query, command execution, file write, etc.)
+- **Sanitization**: Are there any sanitization/validation steps? Are they sufficient?
+
+## 3. Exploitability Assessment
+Consider:
+- Can an attacker control the source data?
+- Is the dataflow actually reachable in practice?
+- Are there runtime protections (WAF, sandboxing) that might mitigate?
+- What's the actual impact if exploited?
+
+## 4. Confidence Calibration
+Adjust confidence based on your analysis:
+- **Increase** if: clear dataflow, no sanitization, easily exploitable
+- **Decrease** if: sanitization present, complex conditions needed, limited impact
+- **Reject** if: false positive (data is never user-controlled, proper sanitization exists)
+
+When updating findings, provide:
+- Clear path_summary describing source → sink flow in plain English
+- Specific code references for source and sink locations
+- Confidence adjustment with reasoning
+- Relevant tags (e.g., "user-controlled", "authenticated-only", "internal-api")`;
+
 /**
  * LocalizeAndProveAgent
  *
- * Uses LLM to examine findings and add precise localization with code context.
+ * Examines findings from static analysis tools and enhances them with:
+ * - Precise source/sink localization
+ * - Dataflow trace narratives
+ * - Confidence calibration based on code review
+ * - Exploitability assessment
  */
 export async function runLocalizeAgent(input: StubAgentInput): Promise<StaticAgentResult> {
   const { paths, state, model, abortSignal, onStepFinish } = input;
@@ -215,6 +134,47 @@ export async function runLocalizeAgent(input: StubAgentInput): Promise<StaticAge
       };
     }
 
+    // Get high-priority findings for detailed analysis
+    const highPriorityFindings = listResult.findings
+      ?.filter(f => f.severity === 'critical' || f.severity === 'high')
+      .slice(0, 10) || [];
+
+    const mediumFindings = listResult.findings
+      ?.filter(f => f.severity === 'medium')
+      .slice(0, 5) || [];
+
+    const findingsToAnalyze = [...highPriorityFindings, ...mediumFindings];
+
+    // Build finding summaries for the prompt
+    const findingSummaries = await Promise.all(
+      findingsToAnalyze.map(async f => {
+        const detail = await getFindingDirect(paths, f.id);
+        if (!detail.success || !detail.finding) return null;
+        return {
+          id: f.id,
+          title: f.title,
+          severity: f.severity,
+          file: f.file,
+          line: f.line,
+          cwe: f.cwe,
+          description: detail.finding.description,
+          toolEvidence: detail.finding.evidence?.[0]?.tool,
+        };
+      })
+    );
+
+    const validFindings = findingSummaries.filter(f => f !== null);
+
+    if (validFindings.length === 0) {
+      return {
+        stage: 'localize',
+        success: true,
+        artifacts,
+        summary: 'No findings available for detailed analysis',
+        duration_ms: Date.now() - startTime,
+      };
+    }
+
     const tools = {
       list_findings: findingTools.list_findings,
       get_finding: findingTools.get_finding,
@@ -223,29 +183,46 @@ export async function runLocalizeAgent(input: StubAgentInput): Promise<StaticAge
       search_code: repoTools.search_code,
     };
 
-    const systemPrompt = `You are a security analyst. Your job is to examine security findings and:
-1. Read the code at the reported location
-2. Trace the data flow if applicable
-3. Add precise location details
-4. Update the finding with a clear trace summary
+    const findingsList = validFindings.map(f =>
+      `- [${f!.severity.toUpperCase()}] ${f!.id}: ${f!.title}\n  File: ${f!.file}:${f!.line}\n  CWE: ${f!.cwe.join(', ')}`
+    ).join('\n');
 
-For each finding, update it with:
-- A clear path_summary describing the vulnerability
-- Confidence adjustment based on code review
-- Additional tags if relevant`;
+    const userPrompt = `Analyze and localize the following ${validFindings.length} security findings.
 
-    const userPrompt = `Review ${listResult.count} findings and localize them.
+## Findings to Analyze
+${findingsList}
 
-For each finding:
-1. Use get_finding to see details
-2. Use read_file to examine the code
-3. Use update_finding to add trace information
+## Your Tasks
 
-Process high-severity findings first.`;
+For each finding (prioritize critical/high severity):
+
+1. **Use get_finding** to see full details including tool evidence
+
+2. **Use read_file** to examine:
+   - The vulnerable code location (±20 lines for context)
+   - Related files if the dataflow spans multiple files
+   - Any security utilities or validators referenced
+
+3. **Use search_code** to:
+   - Find the source of user input (search for request parameters, form data, etc.)
+   - Locate sanitization functions that might be applied
+   - Find similar patterns elsewhere in the codebase
+
+4. **Use update_finding** to enhance each finding with:
+   - \`pathSummary\`: Clear description of the dataflow (e.g., "User input from request.GET['id'] flows to cursor.execute() without sanitization")
+   - \`confidence\`: Adjusted score (0.0-1.0) based on your analysis
+   - \`tags\`: Add relevant tags like "user-controlled", "requires-auth", "internal-only"
+   - \`additionalEvidence\`: Key code snippets showing the vulnerability
+
+5. If a finding is a **false positive**, use update_finding with:
+   - \`status\`: "rejected"
+   - \`rejectionReason\`: Clear explanation why it's not exploitable
+
+Be thorough but efficient. Focus on findings that are likely real vulnerabilities.`;
 
     const result = streamResponse({
       model,
-      system: systemPrompt,
+      system: LOCALIZE_SYSTEM_PROMPT,
       prompt: userPrompt,
       tools,
       abortSignal,
@@ -260,7 +237,8 @@ Process high-severity findings first.`;
     }
 
     const savedMsgPath = await saveSubagentMessages(paths, 'localize', messages, {
-      findings_processed: listResult.count,
+      findings_analyzed: validFindings.length,
+      total_candidates: listResult.count,
     });
     artifacts.push(savedMsgPath);
 
@@ -269,14 +247,14 @@ Process high-severity findings first.`;
       agent: 'localize',
       success: true,
       duration_ms: Date.now() - startTime,
-      findings_processed: listResult.count,
+      findings_analyzed: validFindings.length,
     });
 
     return {
       stage: 'localize',
       success: true,
       artifacts,
-      summary: `Localization complete: ${listResult.count} findings processed`,
+      summary: `Localization complete: ${validFindings.length} findings analyzed in detail`,
       duration_ms: Date.now() - startTime,
     };
   } catch (error: any) {

@@ -1,7 +1,7 @@
 /**
  * Static Analysis Orchestrator
  *
- * Sequences the 8-agent pipeline for LLM-augmented SAST:
+ * Sequences the 9-agent pipeline for LLM-augmented SAST:
  * 1. RepoIntake - Analyze repository structure
  * 2. IndexGraph - Build code navigation index
  * 3. Analyzer - Run static analysis tools (parallel internally)
@@ -9,7 +9,8 @@
  * 5. VulRAG - Enrich with vulnerability knowledge
  * 6. Localize - Precise localization with traces
  * 7. Triage - Deduplicate and rank findings
- * 8. Report - Generate final reports
+ * 8. ExploitSynth - Generate POC exploits to prove vulnerabilities
+ * 9. Report - Generate final reports
  *
  * Follows the same pattern as runPentestOrchestrator():
  * - pLimit for concurrency control
@@ -27,6 +28,7 @@ import { generateRandomName } from '../../util/name';
 import { detectAvailableTools, hasMinimumTools, getInstallInstructions } from './external/detector';
 import {
   createWorkspace,
+  setupRepository,
   saveState,
   loadState,
   appendToResultsJsonl,
@@ -43,6 +45,7 @@ import type {
   StaticFinding,
   StaticAnalysisStage,
   ToolAvailability,
+  TokenUsage,
 } from './types';
 import { STAGE_ORDER, STAGE_NAMES, AGENT_TIMEOUTS } from './types';
 
@@ -55,6 +58,7 @@ import {
   runVulRAGAgent,
   runLocalizeAgent,
   runTriageAgent,
+  runExploitSynthAgent,
   runReportAgent,
 } from './agents';
 
@@ -94,7 +98,7 @@ export async function runStaticOrchestrator(
     onProgress?.({
       phase,
       message,
-      totalStages: 8,
+      totalStages: 9,
       ...extras,
     });
   };
@@ -115,19 +119,9 @@ export async function runStaticOrchestrator(
   }
 
   // =========================================================================
-  // Step 2: Resolve git info and create workspace
+  // Step 2: Create session and workspace
   // =========================================================================
   reportProgress('starting', 'Setting up workspace...');
-
-  // Resolve commit SHA
-  let commitSha: string;
-  try {
-    commitSha = execSync(`git -C "${repoPath}" rev-parse HEAD`, {
-      encoding: 'utf-8',
-    }).trim();
-  } catch {
-    commitSha = 'unknown';
-  }
 
   // Create or use session
   const session =
@@ -155,15 +149,26 @@ export async function runStaticOrchestrator(
     await appendToResultsJsonl(paths, { type, ...data });
   }
 
-  // Initialize state
+  // =========================================================================
+  // Step 3: Set up repository (clone remote or symlink local)
+  // =========================================================================
+  reportProgress('starting', repoUrl ? 'Cloning repository...' : 'Linking repository...');
+
+  let repoInfo;
+  try {
+    repoInfo = await setupRepository(paths, {
+      url: repoUrl,
+      localPath: repoPath,
+      ref,
+    });
+  } catch (error: any) {
+    throw new Error(`Failed to set up repository: ${error.message}`);
+  }
+
+  // Initialize state with repo info from setupRepository
   const state: StaticAnalysisState = {
     run_id: runId,
-    repo: {
-      root: repoPath,
-      url: repoUrl,
-      ref,
-      commit: commitSha,
-    },
+    repo: repoInfo,
     analysis_runs: [],
     candidates: [],
     findings: [],
@@ -175,10 +180,10 @@ export async function runStaticOrchestrator(
   await saveState(paths, state);
   await appendResultLog('run_started', {
     runId,
-    repoPath,
-    repoUrl,
-    ref,
-    commit: commitSha,
+    repoPath: repoInfo.root,
+    repoUrl: repoInfo.url,
+    ref: repoInfo.ref,
+    commit: repoInfo.commit,
     tools: toolAvailability,
   });
 
@@ -186,6 +191,10 @@ export async function runStaticOrchestrator(
   const agentResults = new Map<StaticAnalysisStage, StaticAgentResult>();
   let currentStageIndex = 0;
   let activeAgents = 0;
+
+  // Track token usage per agent
+  const tokenUsageByAgent = new Map<StaticAnalysisStage, TokenUsage>();
+  const initTokenUsage = (): TokenUsage => ({ inputTokens: 0, outputTokens: 0, totalTokens: 0 });
 
   // =========================================================================
   // Agent execution helper
@@ -287,9 +296,21 @@ export async function runStaticOrchestrator(
   // Step 3: Run pipeline stages
   // =========================================================================
 
-  // Create step finish handler for agents that support it
+  // Create step finish handler for agents that support it (with token tracking)
   const createStepHandler = (stage: StaticAnalysisStage) => (step: any) => {
     const agentId = `${stage}-${runId}`;
+
+    // Track token usage
+    if (step.usage) {
+      const current = tokenUsageByAgent.get(stage) || initTokenUsage();
+      current.inputTokens += step.usage.inputTokens || step.usage.promptTokens || 0;
+      current.outputTokens += step.usage.outputTokens || step.usage.completionTokens || 0;
+      current.totalTokens += step.usage.totalTokens ||
+        ((step.usage.inputTokens || step.usage.promptTokens || 0) +
+         (step.usage.outputTokens || step.usage.completionTokens || 0));
+      tokenUsageByAgent.set(stage, current);
+    }
+
     onAgentStream?.({
       type: 'step-finish',
       agentId,
@@ -324,14 +345,12 @@ export async function runStaticOrchestrator(
     const stateAfterIntake = await loadState(paths);
     Object.assign(state, stateAfterIntake);
 
-    // Stage 2: IndexGraph (stub - fast)
+    // Stage 2: IndexGraph (builds symbol index, import graph, security function registry)
     const indexResult = await runAgent('index-graph', () =>
       runIndexGraphAgent({
         paths,
         state,
-        model,
         abortSignal,
-        onStepFinish: createStepHandler('index-graph'),
       })
     );
     agentResults.set('index-graph', indexResult);
@@ -410,7 +429,21 @@ export async function runStaticOrchestrator(
     const stateAfterTriage = await loadState(paths);
     Object.assign(state, stateAfterTriage);
 
-    // Stage 8: Report
+    // Stage 8: ExploitSynth (generate POCs to prove exploitability)
+    const exploitResult = await runAgent('exploit-synth', () =>
+      runExploitSynthAgent({
+        paths,
+        state,
+        model,
+        abortSignal,
+        onStepFinish: createStepHandler('exploit-synth'),
+        enableExecution: false, // Disable sandbox execution by default for safety
+        maxPOCs: 10,
+      })
+    );
+    agentResults.set('exploit-synth', exploitResult);
+
+    // Stage 9: Report
     const reportResult = await runAgent('report', () =>
       runReportAgent({
         paths,
@@ -478,9 +511,27 @@ export async function runStaticOrchestrator(
   });
 
   reportProgress('complete', summary, {
-    stagesCompleted: 8,
+    stagesCompleted: 9,
     findingsCount: confirmedFindings.length,
     activeAgents: 0,
+  });
+
+  // Aggregate token usage
+  const totalTokenUsage: TokenUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
+  const tokenUsageByAgentRecord: Record<StaticAnalysisStage, TokenUsage> = {} as Record<StaticAnalysisStage, TokenUsage>;
+
+  for (const stage of STAGE_ORDER) {
+    const usage = tokenUsageByAgent.get(stage) || initTokenUsage();
+    tokenUsageByAgentRecord[stage] = usage;
+    totalTokenUsage.inputTokens += usage.inputTokens;
+    totalTokenUsage.outputTokens += usage.outputTokens;
+    totalTokenUsage.totalTokens += usage.totalTokens;
+  }
+
+  // Log token usage
+  await appendResultLog('token_usage', {
+    total: totalTokenUsage,
+    byAgent: tokenUsageByAgentRecord,
   });
 
   return {
@@ -491,6 +542,8 @@ export async function runStaticOrchestrator(
     reportPaths: state.report || { sarif: '', md: '', json: '' },
     summary,
     duration_ms: totalDuration,
+    tokenUsage: totalTokenUsage,
+    tokenUsageByAgent: tokenUsageByAgentRecord,
   };
 }
 

@@ -356,6 +356,63 @@ export async function getFindingStatsDirect(
 }
 
 /**
+ * Update a finding directly
+ */
+export async function updateFindingDirect(
+  paths: WorkspacePaths,
+  findingId: string,
+  updates: {
+    status?: FindingStatus;
+    confidence?: number;
+    tags?: string[];
+    additionalEvidence?: string;
+    pathSummary?: string;
+    rejectionReason?: string;
+  }
+): Promise<{ success: boolean; finding?: StaticFinding; error?: string }> {
+  const findingPath = path.join(paths.artifacts.findings, `${findingId}.json`);
+
+  try {
+    const content = await fs.readFile(findingPath, 'utf-8');
+    const finding: StaticFinding = JSON.parse(content);
+
+    // Apply updates
+    if (updates.status) finding.status = updates.status;
+    if (updates.confidence !== undefined) finding.confidence = updates.confidence;
+    if (updates.rejectionReason) finding.rejection_reason = updates.rejectionReason;
+    if (updates.pathSummary) finding.trace.path_summary = updates.pathSummary;
+
+    // Append tags
+    if (updates.tags && updates.tags.length > 0) {
+      const existingTags = new Set(finding.metadata.tags);
+      for (const tag of updates.tags) {
+        existingTags.add(tag);
+      }
+      finding.metadata.tags = Array.from(existingTags);
+    }
+
+    // Add additional evidence
+    if (updates.additionalEvidence) {
+      finding.evidence.push({
+        type: 'code_excerpt',
+        ref: 'inline',
+        content: updates.additionalEvidence,
+      });
+    }
+
+    // Update timestamp
+    finding.metadata.updated_at = new Date().toISOString();
+
+    // Save updated finding
+    await fs.writeFile(findingPath, JSON.stringify(finding, null, 2));
+
+    return { success: true, finding };
+  } catch (error: any) {
+    return { success: false, error: `Failed to update finding: ${error.message}` };
+  }
+}
+
+/**
  * Create finding tools for an agent
  */
 export function createFindingTools(

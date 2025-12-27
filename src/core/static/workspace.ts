@@ -31,6 +31,7 @@ export interface WorkspacePaths {
     analysis: string;
     specs: string;
     findings: string;
+    exploits: string;
     reports: string;
   };
   /** Cache directory (CodeQL DB, Joern CPG) */
@@ -75,6 +76,7 @@ export function getWorkspacePaths(runId: string): WorkspacePaths {
       analysis: path.join(artifactsRoot, 'analysis'),
       specs: path.join(artifactsRoot, 'specs'),
       findings: path.join(artifactsRoot, 'findings'),
+      exploits: path.join(artifactsRoot, 'exploits'),
       reports: path.join(artifactsRoot, 'reports'),
     },
     cache: path.join(root, 'cache'),
@@ -103,6 +105,7 @@ export async function createWorkspace(runId?: string): Promise<{
     paths.artifacts.analysis,
     paths.artifacts.specs,
     paths.artifacts.findings,
+    paths.artifacts.exploits,
     paths.artifacts.reports,
     paths.cache,
     paths.logs,
@@ -278,6 +281,9 @@ export async function readResultsJsonl<T>(paths: WorkspacePaths): Promise<T[]> {
 
 /**
  * Clone or link a repository to the workspace
+ *
+ * If URL is provided, clones the repository (URL takes precedence).
+ * Otherwise, symlinks to the local path.
  */
 export async function setupRepository(
   paths: WorkspacePaths,
@@ -288,29 +294,44 @@ export async function setupRepository(
   }
 ): Promise<RepoInfo> {
   const { url, localPath, ref = 'HEAD' } = options;
+  const { execSync } = await import('child_process');
 
-  if (localPath) {
-    // Create symlink to local repo
-    await fs.symlink(localPath, paths.repo, 'dir').catch(async () => {
-      // If symlink fails, copy instead (Windows compatibility)
-      await fs.cp(localPath, paths.repo, { recursive: true });
-    });
-  } else if (url) {
-    // Clone from URL
-    const { execSync } = await import('child_process');
+  // Remove existing repo directory if it exists (from workspace creation)
+  try {
+    await fs.rm(paths.repo, { recursive: true, force: true });
+  } catch {
+    // Ignore if doesn't exist
+  }
+
+  if (url) {
+    // Clone from URL (takes precedence if both URL and localPath provided)
     const cloneCmd = ref && ref !== 'HEAD'
-      ? `git clone --branch ${ref} --depth 1 ${url} ${paths.repo}`
-      : `git clone --depth 1 ${url} ${paths.repo}`;
-    execSync(cloneCmd, { stdio: 'pipe' });
+      ? `git clone --branch ${ref} --depth 1 "${url}" "${paths.repo}"`
+      : `git clone --depth 1 "${url}" "${paths.repo}"`;
+    try {
+      execSync(cloneCmd, { stdio: 'pipe' });
+    } catch (error: any) {
+      throw new Error(`Failed to clone repository: ${error.message}`);
+    }
+  } else if (localPath) {
+    // Create symlink to local repo
+    try {
+      await fs.symlink(localPath, paths.repo, 'dir');
+    } catch {
+      // If symlink fails (Windows or same-device issue), copy instead
+      await fs.cp(localPath, paths.repo, { recursive: true });
+    }
   } else {
     throw new Error('Either url or localPath must be provided');
   }
 
   // Get commit SHA
-  const { execSync } = await import('child_process');
-  const commit = execSync('git rev-parse HEAD', { cwd: paths.repo })
-    .toString()
-    .trim();
+  let commit: string;
+  try {
+    commit = execSync('git rev-parse HEAD', { cwd: paths.repo, encoding: 'utf-8' }).trim();
+  } catch {
+    commit = 'unknown';
+  }
 
   return {
     root: paths.repo,

@@ -20,6 +20,7 @@ export type StaticAnalysisStage =
   | 'vul-rag'
   | 'localize'
   | 'triage'
+  | 'exploit-synth'
   | 'report';
 
 export const STAGE_ORDER: StaticAnalysisStage[] = [
@@ -30,6 +31,7 @@ export const STAGE_ORDER: StaticAnalysisStage[] = [
   'vul-rag',
   'localize',
   'triage',
+  'exploit-synth',
   'report',
 ];
 
@@ -41,6 +43,7 @@ export const STAGE_NAMES: Record<StaticAnalysisStage, string> = {
   'vul-rag': 'Knowledge Enrichment',
   'localize': 'Localization',
   'triage': 'Triage & Dedup',
+  'exploit-synth': 'Exploit Synthesis',
   'report': 'Report Generation',
 };
 
@@ -296,6 +299,15 @@ export interface StaticSubagentStreamEvent {
   };
 }
 
+export interface TokenUsage {
+  /** Input/prompt tokens */
+  inputTokens: number;
+  /** Output/completion tokens */
+  outputTokens: number;
+  /** Total tokens (input + output) */
+  totalTokens: number;
+}
+
 export interface StaticAgentResult {
   stage: StaticAnalysisStage;
   success: boolean;
@@ -307,6 +319,8 @@ export interface StaticAgentResult {
   error?: string;
   /** Duration in milliseconds */
   duration_ms: number;
+  /** Token usage for this agent */
+  tokenUsage?: TokenUsage;
 }
 
 // ============================================================================
@@ -370,6 +384,10 @@ export interface StaticOrchestratorResult {
   summary: string;
   /** Total duration in milliseconds */
   duration_ms: number;
+  /** Total token usage across all agents */
+  tokenUsage: TokenUsage;
+  /** Token usage broken down by agent */
+  tokenUsageByAgent: Record<StaticAnalysisStage, TokenUsage>;
 }
 
 // ============================================================================
@@ -396,6 +414,7 @@ export const AGENT_TIMEOUTS: Record<StaticAnalysisStage, number> = {
   'vul-rag': 5 * 60 * 1000,          // 5 min
   'localize': 15 * 60 * 1000,        // 15 min
   'triage': 5 * 60 * 1000,           // 5 min
+  'exploit-synth': 20 * 60 * 1000,   // 20 min (POC gen + validation)
   'report': 5 * 60 * 1000,           // 5 min
 };
 
@@ -451,4 +470,100 @@ export interface VulnerabilityPattern {
   code_pattern: string;
   /** Semgrep rule if available */
   semgrep_rule?: string;
+}
+
+// ============================================================================
+// POC/Exploit Types (ExploitSynthAgent)
+// ============================================================================
+
+export type ExploitationPrimitive =
+  | 'rce'              // Remote Code Execution
+  | 'lfi'              // Local File Inclusion
+  | 'rfi'              // Remote File Inclusion
+  | 'sqli'             // SQL Injection
+  | 'xss'              // Cross-Site Scripting
+  | 'ssrf'             // Server-Side Request Forgery
+  | 'xxe'              // XML External Entity
+  | 'deserialize'      // Insecure Deserialization
+  | 'path-traversal'   // Path Traversal
+  | 'cmd-injection'    // OS Command Injection
+  | 'info-disclosure'  // Information Disclosure
+  | 'auth-bypass'      // Authentication Bypass
+  | 'dos'              // Denial of Service
+  | 'memory-corruption' // Memory Safety Issues
+  | 'other';
+
+export type POCValidationStatus =
+  | 'not_attempted'    // POC not generated
+  | 'generated'        // POC generated but not validated
+  | 'validated'        // POC executed and confirmed vulnerability
+  | 'failed'           // POC execution failed or did not trigger vuln
+  | 'inconclusive';    // Could not determine if vuln was triggered
+
+export interface POCFile {
+  /** Filename (e.g., poc_sqli_001.py) */
+  filename: string;
+  /** Path to POC file in workspace */
+  path: string;
+  /** Language of the POC */
+  language: string;
+  /** POC source code */
+  content: string;
+  /** Setup instructions (dependencies, environment) */
+  setup_instructions?: string;
+  /** How to run the POC */
+  execution_command: string;
+  /** Expected output/behavior if vulnerability triggers */
+  expected_result: string;
+}
+
+export interface POCExecutionResult {
+  /** Whether the POC was executed */
+  executed: boolean;
+  /** Exit code if executed */
+  exit_code?: number;
+  /** stdout from execution */
+  stdout?: string;
+  /** stderr from execution */
+  stderr?: string;
+  /** Duration in milliseconds */
+  duration_ms?: number;
+  /** Whether the expected behavior was observed */
+  vulnerability_triggered: boolean;
+  /** Explanation of result */
+  analysis: string;
+}
+
+export interface POCResult {
+  /** Associated finding ID */
+  finding_id: string;
+  /** Exploitation primitive demonstrated */
+  primitive: ExploitationPrimitive;
+  /** Validation status */
+  status: POCValidationStatus;
+  /** Generated POC files */
+  poc_files: POCFile[];
+  /** Execution results if validated */
+  execution_result?: POCExecutionResult;
+  /** Why POC couldn't be generated (if applicable) */
+  generation_failure_reason?: string;
+  /** Risk assessment based on POC */
+  risk_assessment: {
+    /** Is this trivially exploitable? */
+    trivially_exploitable: boolean;
+    /** Does it require authentication? */
+    requires_authentication: boolean;
+    /** Does it require special conditions? */
+    special_conditions?: string[];
+    /** Real-world impact */
+    impact_summary: string;
+  };
+  /** ISO timestamp */
+  created_at: string;
+}
+
+/** Extended finding with POC information */
+export interface ExploitableFinding extends StaticFinding {
+  /** POC result if exploit synthesis was attempted */
+  poc?: POCResult;
 }

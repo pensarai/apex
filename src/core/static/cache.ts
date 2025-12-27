@@ -10,6 +10,7 @@ import path from 'path';
 import fs from 'fs/promises';
 import { existsSync } from 'fs';
 import type { AnalysisTool } from './types';
+import { getDirectorySize as getDirectorySizeUtil } from './utils/file-walker';
 
 /**
  * Global cache directory for static analysis artifacts
@@ -294,29 +295,7 @@ export async function clearCache(): Promise<void> {
 /**
  * Get directory size recursively
  */
-export async function getDirectorySize(dirPath: string): Promise<number> {
-  let totalSize = 0;
-
-  async function walkDir(dir: string): Promise<void> {
-    try {
-      const entries = await fs.readdir(dir, { withFileTypes: true });
-      for (const entry of entries) {
-        const fullPath = path.join(dir, entry.name);
-        if (entry.isDirectory()) {
-          await walkDir(fullPath);
-        } else {
-          const stat = await fs.stat(fullPath);
-          totalSize += stat.size;
-        }
-      }
-    } catch {
-      // Ignore errors (permission denied, etc.)
-    }
-  }
-
-  await walkDir(dirPath);
-  return totalSize;
-}
+export const getDirectorySize = getDirectorySizeUtil;
 
 /**
  * Copy cached artifact to workspace
