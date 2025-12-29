@@ -1,19 +1,19 @@
 import { EventEmitter } from "events";
 import type {
-  HITLStage,
+  OperatorStage,
   StageProgress,
-  HITLEvent,
+  OperatorEvent,
 } from "./types";
-import { HITL_STAGES, getStagesInOrder, getNextStage } from "./types";
+import { OPERATOR_STAGES, getStagesInOrder, getNextStage } from "./types";
 
 /**
- * StageManager tracks progress through the HITL workflow stages
+ * StageManager tracks progress through the Operator workflow stages
  */
 export class StageManager extends EventEmitter {
-  private currentStage: HITLStage;
-  private stageProgress: Record<HITLStage, StageProgress>;
+  private currentStage: OperatorStage;
+  private stageProgress: Record<OperatorStage, StageProgress>;
 
-  constructor(initialStage: HITLStage = "setup") {
+  constructor(initialStage: OperatorStage = "setup") {
     super();
     this.currentStage = initialStage;
     this.stageProgress = this.createInitialProgress();
@@ -26,9 +26,9 @@ export class StageManager extends EventEmitter {
   /**
    * Create initial progress tracking for all stages
    */
-  private createInitialProgress(): Record<HITLStage, StageProgress> {
-    const progress = {} as Record<HITLStage, StageProgress>;
-    for (const stage of Object.keys(HITL_STAGES) as HITLStage[]) {
+  private createInitialProgress(): Record<OperatorStage, StageProgress> {
+    const progress = {} as Record<OperatorStage, StageProgress>;
+    for (const stage of Object.keys(OPERATOR_STAGES) as OperatorStage[]) {
       progress[stage] = {
         started: false,
         completed: false,
@@ -40,7 +40,7 @@ export class StageManager extends EventEmitter {
   /**
    * Get current stage
    */
-  getCurrentStage(): HITLStage {
+  getCurrentStage(): OperatorStage {
     return this.currentStage;
   }
 
@@ -48,13 +48,13 @@ export class StageManager extends EventEmitter {
    * Get current stage definition
    */
   getCurrentStageDefinition() {
-    return HITL_STAGES[this.currentStage];
+    return OPERATOR_STAGES[this.currentStage];
   }
 
   /**
    * Get progress for all stages
    */
-  getProgress(): Record<HITLStage, StageProgress> {
+  getProgress(): Record<OperatorStage, StageProgress> {
     return { ...this.stageProgress };
   }
 
@@ -70,7 +70,7 @@ export class StageManager extends EventEmitter {
   /**
    * Transition to a new stage
    */
-  transitionTo(stage: HITLStage): void {
+  transitionTo(stage: OperatorStage): void {
     if (stage === this.currentStage) {
       return;
     }
@@ -96,7 +96,7 @@ export class StageManager extends EventEmitter {
   /**
    * Advance to the next stage
    */
-  advanceToNextStage(): HITLStage | null {
+  advanceToNextStage(): OperatorStage | null {
     const nextStage = getNextStage(this.currentStage);
     if (nextStage) {
       this.transitionTo(nextStage);
@@ -114,14 +114,14 @@ export class StageManager extends EventEmitter {
   /**
    * Check if a stage has been started
    */
-  isStageStarted(stage: HITLStage): boolean {
+  isStageStarted(stage: OperatorStage): boolean {
     return this.stageProgress[stage].started;
   }
 
   /**
    * Check if a stage is completed
    */
-  isStageCompleted(stage: HITLStage): boolean {
+  isStageCompleted(stage: OperatorStage): boolean {
     return this.stageProgress[stage].completed;
   }
 
@@ -129,14 +129,14 @@ export class StageManager extends EventEmitter {
    * Get suggested actions for current stage
    */
   getSuggestedActions(): string[] {
-    return HITL_STAGES[this.currentStage].suggestedActions;
+    return OPERATOR_STAGES[this.currentStage].suggestedActions;
   }
 
   /**
    * Get stages summary for display
    */
   getStagesSummary(): Array<{
-    stage: HITLStage;
+    stage: OperatorStage;
     name: string;
     status: "pending" | "current" | "completed";
     order: number;
@@ -155,17 +155,17 @@ export class StageManager extends EventEmitter {
   }
 
   /**
-   * Emit a typed HITL event
+   * Emit a typed Operator event
    */
-  private emitEvent(event: HITLEvent): void {
+  private emitEvent(event: OperatorEvent): void {
     this.emit(event.type, event);
-    this.emit("hitl-event", event);
+    this.emit("operator-event", event);
   }
 
   /**
    * Serialize state for persistence
    */
-  toJSON(): { currentStage: HITLStage; stageProgress: Record<HITLStage, StageProgress> } {
+  toJSON(): { currentStage: OperatorStage; stageProgress: Record<OperatorStage, StageProgress> } {
     return {
       currentStage: this.currentStage,
       stageProgress: this.stageProgress,
@@ -176,8 +176,8 @@ export class StageManager extends EventEmitter {
    * Restore state from serialized data
    */
   static fromJSON(data: {
-    currentStage: HITLStage;
-    stageProgress: Record<HITLStage, StageProgress>;
+    currentStage: OperatorStage;
+    stageProgress: Record<OperatorStage, StageProgress>;
   }): StageManager {
     const manager = new StageManager(data.currentStage);
     manager.stageProgress = data.stageProgress;

@@ -1,7 +1,7 @@
 /**
  * Chat Message Component
  *
- * Claude Code-like message display for HITL mode.
+ * Claude Code-like message display for Operator mode.
  * Minimal chrome, streaming text, terminal-style.
  */
 

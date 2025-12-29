@@ -1,7 +1,7 @@
 /**
- * HITL Dashboard
+ * Operator Dashboard
  *
- * Claude Code-like terminal chat experience for Human-in-the-Loop pentesting.
+ * Claude Code-like terminal chat experience for Operator pentesting.
  * Features streaming text, inline approval prompts, and a clean terminal feel.
  */
 
@@ -9,9 +9,9 @@ import { useState, useEffect, useCallback } from "react";
 import { useKeyboard } from "@opentui/react";
 import { RGBA } from "@opentui/core";
 import { Session } from "../../../core/session";
-import { createHITLAgent, type HITLAgent } from "../../../core/agent/hitlAgent";
-import type { HITLMode, HITLStage, PermissionTier, PendingApproval, ActionHistoryEntry } from "../../../core/hitl";
-import { HITL_STAGES, getStagesInOrder, PERMISSION_TIERS } from "../../../core/hitl";
+import { createOperatorAgent, type OperatorAgent } from "../../../core/agent/operatorAgent";
+import type { OperatorMode, OperatorStage, PermissionTier, PendingApproval, ActionHistoryEntry } from "../../../core/operator";
+import { OPERATOR_STAGES, getStagesInOrder, PERMISSION_TIERS } from "../../../core/operator";
 import { useRoute } from "../../context/route";
 import { useAgent } from "../../agentProvider";
 import type { DisplayMessage } from "../agent-display";
@@ -33,36 +33,36 @@ function getTierColor(tier: PermissionTier) {
   return redText;
 }
 
-function getModeColor(mode: HITLMode) {
+function getModeColor(mode: OperatorMode) {
   if (mode === "plan") return yellowText;
   if (mode === "auto") return greenAccent;
   return blueText;
 }
 
-interface HITLDashboardProps {
+interface OperatorDashboardProps {
   session: Session.SessionInfo;
 }
 
-export default function HITLDashboard({ session }: HITLDashboardProps) {
+export default function OperatorDashboard({ session }: OperatorDashboardProps) {
   const route = useRoute();
   const { model } = useAgent();
 
-  // Get HITL settings from session config
-  const hitlSettings = session.config?.hitlSettings || {
-    initialMode: "manual" as HITLMode,
+  // Get Operator settings from session config
+  const operatorSettings = session.config?.operatorSettings || {
+    initialMode: "manual" as OperatorMode,
     autoApproveTier: 2 as PermissionTier,
   };
 
   // Agent state
-  const [agent, setAgent] = useState<HITLAgent | null>(null);
+  const [agent, setAgent] = useState<OperatorAgent | null>(null);
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [status, setStatus] = useState<string>("idle");
   const [streamingMessageIndex, setStreamingMessageIndex] = useState<number>(-1);
 
-  // HITL state
-  const [mode, setMode] = useState<HITLMode>(hitlSettings.initialMode);
-  const [autoApproveTier, setAutoApproveTier] = useState<PermissionTier>(hitlSettings.autoApproveTier as PermissionTier);
-  const [currentStage, setCurrentStage] = useState<HITLStage>("setup");
+  // Operator state
+  const [mode, setMode] = useState<OperatorMode>(operatorSettings.initialMode);
+  const [autoApproveTier, setAutoApproveTier] = useState<PermissionTier>(operatorSettings.autoApproveTier as PermissionTier);
+  const [currentStage, setCurrentStage] = useState<OperatorStage>("setup");
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
   const [actionHistory, setActionHistory] = useState<ActionHistoryEntry[]>([]);
 
@@ -74,7 +74,7 @@ export default function HITLDashboard({ session }: HITLDashboardProps) {
 
   // Initialize agent
   useEffect(() => {
-    const hitlAgent = createHITLAgent({
+    const operatorAgent = createOperatorAgent({
       session,
       model: model.id,
       initialMode: mode,
@@ -83,11 +83,11 @@ export default function HITLDashboard({ session }: HITLDashboardProps) {
     });
 
     // Set up event listeners
-    hitlAgent.on("status-change", (newStatus: string) => {
+    operatorAgent.on("status-change", (newStatus: string) => {
       setStatus(newStatus);
     });
 
-    hitlAgent.on("message", (message: DisplayMessage) => {
+    operatorAgent.on("message", (message: DisplayMessage) => {
       setMessages((prev) => {
         const newMessages = [...prev, message];
         // Track streaming assistant message
@@ -98,7 +98,7 @@ export default function HITLDashboard({ session }: HITLDashboardProps) {
       });
     });
 
-    hitlAgent.on("message-updated", ({ index, message }: { index: number; message: DisplayMessage }) => {
+    operatorAgent.on("message-updated", ({ index, message }: { index: number; message: DisplayMessage }) => {
       setMessages((prev) => {
         const newMessages = [...prev];
         newMessages[index] = message;
@@ -106,7 +106,7 @@ export default function HITLDashboard({ session }: HITLDashboardProps) {
       });
     });
 
-    hitlAgent.on("hitl-event", (event: any) => {
+    operatorAgent.on("operator-event", (event: any) => {
       switch (event.type) {
         case "mode-changed":
           setMode(event.mode);
@@ -126,15 +126,15 @@ export default function HITLDashboard({ session }: HITLDashboardProps) {
       }
     });
 
-    setAgent(hitlAgent);
+    setAgent(operatorAgent);
 
     return () => {
-      hitlAgent.stop();
+      operatorAgent.stop();
     };
   }, [session, model.id]);
 
   // Handle mode change
-  const handleModeChange = useCallback((newMode: HITLMode) => {
+  const handleModeChange = useCallback((newMode: OperatorMode) => {
     if (agent) {
       agent.setMode(newMode);
     }
@@ -143,7 +143,7 @@ export default function HITLDashboard({ session }: HITLDashboardProps) {
   }, [agent]);
 
   // Handle stage change
-  const handleStageChange = useCallback((newStage: HITLStage) => {
+  const handleStageChange = useCallback((newStage: OperatorStage) => {
     if (agent) {
       agent.setStage(newStage);
     }
@@ -316,7 +316,7 @@ export default function HITLDashboard({ session }: HITLDashboardProps) {
       >
         <box flexDirection="row" gap={2}>
           <text fg={getModeColor(mode)}>[{mode.toUpperCase()}]</text>
-          <text fg={dimText}>Stage: {HITL_STAGES[currentStage].name}</text>
+          <text fg={dimText}>Stage: {OPERATOR_STAGES[currentStage].name}</text>
           <text fg={dimText}>|</text>
           <text fg={dimText}>{session.targets[0]}</text>
         </box>
@@ -342,7 +342,7 @@ export default function HITLDashboard({ session }: HITLDashboardProps) {
             {/* Welcome message if empty */}
             {messages.length === 0 && status === "idle" && (
               <box flexDirection="column" gap={1} marginTop={2}>
-                <text fg={greenAccent}>HITL Mode Active</text>
+                <text fg={greenAccent}>Operator Mode Active</text>
                 <text fg={dimText}>Type a directive to begin (e.g., "Explore the attack surface").</text>
                 <text fg={dimText}>The agent will think out loud and suggest next steps inline.</text>
               </box>

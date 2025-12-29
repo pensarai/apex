@@ -52,27 +52,27 @@ export const PERMISSION_TIERS: Record<PermissionTier, TierDefinition> = {
   },
 };
 
-/** HITL operating modes */
-export type HITLMode = "plan" | "manual" | "auto";
+/** Operator operating modes */
+export type OperatorMode = "plan" | "manual" | "auto";
 
-export const HITL_MODES: Record<HITLMode, { name: string; description: string; color: string }> = {
+export const OPERATOR_MODES: Record<OperatorMode, { name: string; description: string; color: string }> = {
   plan: { name: "Plan", description: "Read-only - agent proposes but cannot execute", color: "yellow" },
   manual: { name: "Manual", description: "Approve each action", color: "blue" },
   auto: { name: "Auto", description: "Auto-approve within tier", color: "green" },
 };
 
-/** HITL workflow stages */
-export type HITLStage = "setup" | "recon" | "enumerate" | "test" | "validate" | "report";
+/** Operator workflow stages */
+export type OperatorStage = "setup" | "recon" | "enumerate" | "test" | "validate" | "report";
 
 export interface StageDefinition {
-  stage: HITLStage;
+  stage: OperatorStage;
   name: string;
   description: string;
   order: number;
   suggestedActions: string[];
 }
 
-export const HITL_STAGES: Record<HITLStage, StageDefinition> = {
+export const OPERATOR_STAGES: Record<OperatorStage, StageDefinition> = {
   setup: { stage: "setup", name: "Setup", description: "Configure target and testing parameters", order: 1, suggestedActions: ["Verify target is accessible", "Check scope constraints"] },
   recon: { stage: "recon", name: "Recon", description: "Discover attack surface", order: 2, suggestedActions: ["Crawl application", "Enumerate endpoints", "Identify technologies"] },
   enumerate: { stage: "enumerate", name: "Enumerate", description: "Identify targets and parameters", order: 3, suggestedActions: ["Map parameters", "Catalog API endpoints", "Find hidden params"] },
@@ -82,10 +82,10 @@ export const HITL_STAGES: Record<HITLStage, StageDefinition> = {
 };
 
 export function getStagesInOrder(): StageDefinition[] {
-  return Object.values(HITL_STAGES).sort((a, b) => a.order - b.order);
+  return Object.values(OPERATOR_STAGES).sort((a, b) => a.order - b.order);
 }
 
-export function getNextStage(current: HITLStage): HITLStage | null {
+export function getNextStage(current: OperatorStage): OperatorStage | null {
   const stages = getStagesInOrder();
   const idx = stages.findIndex((s) => s.stage === current);
   return idx === -1 || idx === stages.length - 1 ? null : stages[idx + 1].stage;
@@ -124,37 +124,36 @@ export interface StageProgress {
   completedAt?: number;
 }
 
-/** HITL session state */
-export interface HITLSessionState {
-  mode: HITLMode;
-  currentStage: HITLStage;
+/** Operator session state */
+export interface OperatorSessionState {
+  mode: OperatorMode;
+  currentStage: OperatorStage;
   autoApproveTier: PermissionTier;
   pendingApprovals: PendingApproval[];
   actionHistory: ActionHistoryEntry[];
-  stageProgress: Record<HITLStage, StageProgress>;
+  stageProgress: Record<OperatorStage, StageProgress>;
 }
 
-export function createInitialHITLState(initialMode: HITLMode = "manual", autoApproveTier: PermissionTier = 2): HITLSessionState {
-  const stageProgress = {} as Record<HITLStage, StageProgress>;
-  for (const stage of Object.keys(HITL_STAGES) as HITLStage[]) {
+export function createInitialOperatorState(initialMode: OperatorMode = "manual", autoApproveTier: PermissionTier = 2): OperatorSessionState {
+  const stageProgress = {} as Record<OperatorStage, StageProgress>;
+  for (const stage of Object.keys(OPERATOR_STAGES) as OperatorStage[]) {
     stageProgress[stage] = { started: false, completed: false };
   }
   return { mode: initialMode, currentStage: "setup", autoApproveTier, pendingApprovals: [], actionHistory: [], stageProgress };
 }
 
-/** HITL settings for session config */
-export const HITLSettingsObject = z.object({
+/** Operator settings for session config */
+export const OperatorSettingsObject = z.object({
   initialMode: z.enum(["plan", "manual", "auto"]).default("manual"),
   autoApproveTier: z.number().min(1).max(5).default(2),
-  enableSuggestions: z.boolean().default(true),
 });
 
-export type HITLSettings = z.infer<typeof HITLSettingsObject>;
+export type OperatorSettings = z.infer<typeof OperatorSettingsObject>;
 
-/** Events emitted by HITL system */
-export type HITLEvent =
-  | { type: "mode-changed"; mode: HITLMode }
-  | { type: "stage-changed"; stage: HITLStage }
+/** Events emitted by Operator system */
+export type OperatorEvent =
+  | { type: "mode-changed"; mode: OperatorMode }
+  | { type: "stage-changed"; stage: OperatorStage }
   | { type: "approval-needed"; approval: PendingApproval }
   | { type: "approval-resolved"; id: string; decision: ApprovalDecision }
   | { type: "action-completed"; entry: ActionHistoryEntry };

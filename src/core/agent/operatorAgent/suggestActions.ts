@@ -1,18 +1,18 @@
 /**
- * Action Suggestions for HITL Mode
+ * Action Suggestions for Operator Mode
  *
  * Provides contextual suggestions based on current stage and findings.
  */
 
-import type { HITLStage, ActionHistoryEntry } from "../../hitl";
-import { HITL_STAGES } from "../../hitl";
+import type { OperatorStage, ActionHistoryEntry } from "../../operator";
+import { OPERATOR_STAGES } from "../../operator";
 
 export interface ActionSuggestion {
   id: string;
   label: string;
   description: string;
   directive: string;
-  stage: HITLStage;
+  stage: OperatorStage;
   priority: "high" | "medium" | "low";
 }
 
@@ -20,7 +20,7 @@ export interface ActionSuggestion {
  * Get suggested actions for the current stage
  */
 export function getSuggestedActions(
-  currentStage: HITLStage,
+  currentStage: OperatorStage,
   actionHistory: ActionHistoryEntry[],
   context?: {
     target?: string;
@@ -28,7 +28,7 @@ export function getSuggestedActions(
     endpointsFound?: number;
   }
 ): ActionSuggestion[] {
-  const stageDef = HITL_STAGES[currentStage];
+  const stageDef = OPERATOR_STAGES[currentStage];
   const suggestions: ActionSuggestion[] = [];
 
   // Add stage-specific suggestions
@@ -61,7 +61,7 @@ export function getSuggestedActions(
  * Get stage-specific suggestions
  */
 function getStageSpecificSuggestions(
-  stage: HITLStage,
+  stage: OperatorStage,
   context?: { target?: string; findingsCount?: number; endpointsFound?: number }
 ): ActionSuggestion[] {
   const target = context?.target || "the target";
@@ -251,7 +251,7 @@ function getStageSpecificSuggestions(
 /**
  * Get quick action suggestions (for toolbar/shortcuts)
  */
-export function getQuickActions(stage: HITLStage): Array<{ key: string; label: string; directive: string }> {
+export function getQuickActions(stage: OperatorStage): Array<{ key: string; label: string; directive: string }> {
   switch (stage) {
     case "recon":
       return [

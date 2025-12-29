@@ -1,10 +1,10 @@
-import type { HITLMode, PermissionTier } from "./types";
+import type { OperatorMode, PermissionTier } from "./types";
 
 /**
  * Permission policy configuration
  */
 export interface PermissionPolicyConfig {
-  mode: HITLMode;
+  mode: OperatorMode;
   autoApproveTier: PermissionTier;
 }
 
@@ -87,7 +87,7 @@ export function checkPermission(
  */
 export function shouldBlockAction(
   tier: PermissionTier,
-  mode: HITLMode
+  mode: OperatorMode
 ): boolean {
   // Only plan mode blocks actions (tier > 1)
   return mode === "plan" && tier > 1;
@@ -98,7 +98,7 @@ export function shouldBlockAction(
  */
 export function shouldAutoApprove(
   tier: PermissionTier,
-  mode: HITLMode,
+  mode: OperatorMode,
   autoApproveTier: PermissionTier
 ): boolean {
   const result = checkPermission(tier, { mode, autoApproveTier });

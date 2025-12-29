@@ -99,7 +99,7 @@ export const commands: CommandConfig[] = [
     },
   },
   {
-    name: "hitl",
+    name: "operator",
     aliases: ["h"],
     description: "Start interactive pentesting session (Human-in-the-Loop)",
     category: "Pentesting",
@@ -114,7 +114,7 @@ export const commands: CommandConfig[] = [
       const mode = modeIdx !== -1 ? args[modeIdx + 1] : undefined;
       ctx.navigate({
         type: "base",
-        path: "hitl",
+        path: "operator",
         options: { target, mode } as any
       });
     },

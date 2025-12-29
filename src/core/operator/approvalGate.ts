@@ -1,12 +1,12 @@
 import { EventEmitter } from "events";
 import { randomBytes } from "crypto";
 import type {
-  HITLMode,
+  OperatorMode,
   PermissionTier,
   PendingApproval,
   ApprovalDecision,
   ActionHistoryEntry,
-  HITLEvent,
+  OperatorEvent,
 } from "./types";
 import { classifyToolCall } from "./toolClassifier";
 import { checkPermission, shouldBlockAction } from "./permissionPolicy";
@@ -15,7 +15,7 @@ import { checkPermission, shouldBlockAction } from "./permissionPolicy";
  * Approval gate configuration
  */
 export interface ApprovalGateConfig {
-  mode: HITLMode;
+  mode: OperatorMode;
   autoApproveTier: PermissionTier;
 }
 
@@ -237,11 +237,11 @@ export class ApprovalGate extends EventEmitter {
   }
 
   /**
-   * Emit a typed HITL event
+   * Emit a typed Operator event
    */
-  private emitEvent(event: HITLEvent): void {
+  private emitEvent(event: OperatorEvent): void {
     this.emit(event.type, event);
-    this.emit("hitl-event", event);
+    this.emit("operator-event", event);
   }
 }
 

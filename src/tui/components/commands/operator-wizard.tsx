@@ -6,15 +6,15 @@ import { useRoute } from "../../context/route";
 import { Session } from "../../../core/session";
 import { SpinnerDots } from "../sprites";
 import { generateRandomName } from "../../../util/name";
-import type { HITLMode, PermissionTier } from "../../../core/hitl";
-import { HITL_MODES, PERMISSION_TIERS } from "../../../core/hitl";
+import type { OperatorMode, PermissionTier } from "../../../core/operator";
+import { OPERATOR_MODES, PERMISSION_TIERS } from "../../../core/operator";
 
 type WizardStep = "target" | "mode" | "creating";
 
 interface WizardState {
   name: string;
   target: string;
-  mode: HITLMode;
+  mode: OperatorMode;
   autoApproveTier: PermissionTier;
   scope: {
     allowedHosts: string[];
@@ -42,7 +42,7 @@ export default function HITLWizard({ initialTarget, initialMode }: HITLWizardPro
   const [state, setState] = useState<WizardState>(() => ({
     name: generateRandomName(),
     target: initialTarget || "",
-    mode: (initialMode as HITLMode) || "manual",
+    mode: (initialMode as OperatorMode) || "manual",
     autoApproveTier: 2,
     scope: {
       allowedHosts: [],
@@ -64,8 +64,8 @@ export default function HITLWizard({ initialTarget, initialMode }: HITLWizardPro
     try {
       const sessionConfig: Session.SessionConfig = {
         sessionType: "web-app",
-        mode: "hitl",
-        hitlSettings: {
+        mode: "operator",
+        operatorSettings: {
           initialMode: state.mode,
           autoApproveTier: state.autoApproveTier,
           enableSuggestions: true,
@@ -158,7 +158,7 @@ export default function HITLWizard({ initialTarget, initialMode }: HITLWizardPro
 
       if (key.name === "up" || key.name === "down") {
         if (modeFocusedField === 0) {
-          const modes: HITLMode[] = ["plan", "manual", "auto"];
+          const modes: OperatorMode[] = ["plan", "manual", "auto"];
           const idx = modes.indexOf(state.mode);
           const newIdx = key.name === "up" ? (idx - 1 + modes.length) % modes.length : (idx + 1) % modes.length;
           setState((prev) => ({ ...prev, mode: modes[newIdx] }));
@@ -189,7 +189,7 @@ export default function HITLWizard({ initialTarget, initialMode }: HITLWizardPro
       <box flexDirection="column" width="100%" height="100%" alignItems="center" justifyContent="center" flexGrow={1} gap={2}>
         <SpinnerDots label="Creating HITL session..." fg="green" />
         <text fg={dimText}>Target: {state.target}</text>
-        <text fg={modeColor}>Mode: {HITL_MODES[state.mode].name}</text>
+        <text fg={modeColor}>Mode: {OPERATOR_MODES[state.mode].name}</text>
       </box>
     );
   }
@@ -197,7 +197,7 @@ export default function HITLWizard({ initialTarget, initialMode }: HITLWizardPro
   if (currentStep === "target") {
     return (
       <box width="100%" flexDirection="column" gap={2} paddingLeft={4}>
-        <text fg={creamText}>Interactive Pentesting (HITL Mode)</text>
+        <text fg={creamText}>Interactive Pentesting (Operator Mode)</text>
         <text fg={dimText}>Human-in-the-Loop - Approval gates for risky actions</text>
 
         {error && <text fg="red">Error: {error}</text>}
@@ -244,7 +244,7 @@ export default function HITLWizard({ initialTarget, initialMode }: HITLWizardPro
   return (
     <box width="100%" flexDirection="column" gap={2} paddingLeft={4}>
       <box flexDirection="column">
-        <text fg={creamText}>Configure HITL Mode</text>
+        <text fg={creamText}>Configure Operator Mode</text>
         <text fg={dimText}>Target: {state.target}</text>
       </box>
 
@@ -252,8 +252,8 @@ export default function HITLWizard({ initialTarget, initialMode }: HITLWizardPro
       <box flexDirection="column" gap={1}>
         <text fg={modeFocusedField === 0 ? creamText : dimText}>Approval Mode</text>
         <box flexDirection="column" paddingLeft={2}>
-          {(["plan", "manual", "auto"] as HITLMode[]).map((m) => {
-            const def = HITL_MODES[m];
+          {(["plan", "manual", "auto"] as OperatorMode[]).map((m) => {
+            const def = OPERATOR_MODES[m];
             const isSelected = state.mode === m;
             const mColor = m === "plan" ? yellowText : m === "auto" ? greenBullet : blueText;
             return (
@@ -327,7 +327,7 @@ export default function HITLWizard({ initialTarget, initialMode }: HITLWizardPro
           <span fg={dimText}>Press </span>
           <span fg={creamText}>[Enter]</span>
           <span fg={dimText}> to start (</span>
-          <span fg={modeColor}>{HITL_MODES[state.mode].name}</span>
+          <span fg={modeColor}>{OPERATOR_MODES[state.mode].name}</span>
           <span fg={dimText}> mode)</span>
         </text>
         <text>

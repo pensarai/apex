@@ -1,5 +1,5 @@
 /**
- * HITLAgent - Human-in-the-Loop Agent
+ * OperatorAgent - Operator Mode Agent
  *
  * A single agent that collaborates with the pentester through approval gates.
  * Unlike SwarmMode, this runs one agent that waits for approval on risky actions.
@@ -14,28 +14,28 @@ import {
   ApprovalBlockedError,
   ApprovalDeniedError,
   StageManager,
-  type HITLMode,
-  type HITLStage,
+  type OperatorMode,
+  type OperatorStage,
   type PermissionTier,
   type PendingApproval,
   type ActionHistoryEntry,
-  type HITLEvent,
-  HITL_STAGES,
-} from "../../hitl";
+  type OperatorEvent,
+  OPERATOR_STAGES,
+} from "../../operator";
 import { createPentestTools } from "../tools";
 import type { DisplayMessage } from "../../../tui/components/agent-display";
 
-export type HITLAgentStatus = "idle" | "running" | "waiting" | "paused" | "completed" | "failed";
+export type OperatorAgentStatus = "idle" | "running" | "waiting" | "paused" | "completed" | "failed";
 
-export interface HITLAgentConfig {
+export interface OperatorAgentConfig {
   session: Session.SessionInfo;
   model: AIModel;
-  initialMode?: HITLMode;
+  initialMode?: OperatorMode;
   autoApproveTier?: PermissionTier;
-  initialStage?: HITLStage;
+  initialStage?: OperatorStage;
 }
 
-export interface HITLAgentResult {
+export interface OperatorAgentResult {
   findingsCount: number;
   pocPaths: string[];
   summary: string;
@@ -43,21 +43,21 @@ export interface HITLAgentResult {
 }
 
 /**
- * HITLAgent class - single agent with approval gates
+ * OperatorAgent class - single agent with approval gates
  */
-export class HITLAgent extends EventEmitter {
-  private _status: HITLAgentStatus = "idle";
-  private config: HITLAgentConfig;
+export class OperatorAgent extends EventEmitter {
+  private _status: OperatorAgentStatus = "idle";
+  private config: OperatorAgentConfig;
   private abortController: AbortController | null = null;
   private messages: DisplayMessage[] = [];
   private userDirectives: string[] = [];
   private findingsSummary: string = "";
 
-  // HITL components
+  // Operator components
   readonly approvalGate: ApprovalGate;
   readonly stageManager: StageManager;
 
-  constructor(config: HITLAgentConfig) {
+  constructor(config: OperatorAgentConfig) {
     super();
     this.config = config;
 
@@ -71,8 +71,8 @@ export class HITLAgent extends EventEmitter {
     this.stageManager = new StageManager(config.initialStage || "setup");
 
     // Forward approval gate events
-    this.approvalGate.on("hitl-event", (event: HITLEvent) => {
-      this.emit("hitl-event", event);
+    this.approvalGate.on("operator-event", (event: OperatorEvent) => {
+      this.emit("operator-event", event);
       if (event.type === "approval-needed") {
         this.setStatus("waiting");
       }
@@ -84,20 +84,20 @@ export class HITLAgent extends EventEmitter {
     });
 
     // Forward stage manager events
-    this.stageManager.on("hitl-event", (event: HITLEvent) => {
-      this.emit("hitl-event", event);
+    this.stageManager.on("operator-event", (event: OperatorEvent) => {
+      this.emit("operator-event", event);
     });
   }
 
-  get status(): HITLAgentStatus {
+  get status(): OperatorAgentStatus {
     return this._status;
   }
 
-  get mode(): HITLMode {
+  get mode(): OperatorMode {
     return this.approvalGate.getConfig().mode;
   }
 
-  get currentStage(): HITLStage {
+  get currentStage(): OperatorStage {
     return this.stageManager.getCurrentStage();
   }
 
@@ -105,7 +105,7 @@ export class HITLAgent extends EventEmitter {
     return [...this.messages];
   }
 
-  private setStatus(status: HITLAgentStatus): void {
+  private setStatus(status: OperatorAgentStatus): void {
     this._status = status;
     this.emit("status-change", status);
   }
@@ -123,9 +123,9 @@ export class HITLAgent extends EventEmitter {
   /**
    * Change the operating mode
    */
-  setMode(mode: HITLMode): void {
+  setMode(mode: OperatorMode): void {
     this.approvalGate.updateConfig({ mode });
-    this.emit("hitl-event", { type: "mode-changed", mode });
+    this.emit("operator-event", { type: "mode-changed", mode });
   }
 
   /**
@@ -138,7 +138,7 @@ export class HITLAgent extends EventEmitter {
   /**
    * Transition to a new stage
    */
-  setStage(stage: HITLStage): void {
+  setStage(stage: OperatorStage): void {
     this.stageManager.transitionTo(stage);
   }
 
@@ -180,7 +180,7 @@ export class HITLAgent extends EventEmitter {
   /**
    * Start the agent with an initial directive
    */
-  async start(directive?: string): Promise<HITLAgentResult> {
+  async start(directive?: string): Promise<OperatorAgentResult> {
     if (this._status === "running" || this._status === "waiting") {
       throw new Error("Agent is already running");
     }
@@ -195,7 +195,7 @@ export class HITLAgent extends EventEmitter {
 
     const session = this.config.session;
     const target = session.targets[0] || "";
-    const stageDef = HITL_STAGES[this.currentStage];
+    const stageDef = OPERATOR_STAGES[this.currentStage];
 
     // Build initial system message
     const systemMessage = this.buildSystemPrompt(target, stageDef);
@@ -256,7 +256,7 @@ export class HITLAgent extends EventEmitter {
   /**
    * Build system prompt for current stage
    */
-  private buildSystemPrompt(target: string, stageDef: typeof HITL_STAGES[HITLStage]): string {
+  private buildSystemPrompt(target: string, stageDef: typeof OPERATOR_STAGES[OperatorStage]): string {
     const session = this.config.session;
 
     return `You are an expert penetration tester working alongside a human colleague.
@@ -295,7 +295,7 @@ Document significant findings using the document_finding tool.`;
   /**
    * Run the main agent loop
    */
-  private async runAgentLoop(systemMessage: string, initialUserMessage: string): Promise<HITLAgentResult> {
+  private async runAgentLoop(systemMessage: string, initialUserMessage: string): Promise<OperatorAgentResult> {
     const session = this.config.session;
     const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
       { role: "system", content: systemMessage },
@@ -556,10 +556,10 @@ Document significant findings using the document_finding tool.`;
 }
 
 /**
- * Create a new HITL agent
+ * Create a new Operator agent
  */
-export function createHITLAgent(config: HITLAgentConfig): HITLAgent {
-  return new HITLAgent(config);
+export function createOperatorAgent(config: OperatorAgentConfig): OperatorAgent {
+  return new OperatorAgent(config);
 }
 
-export type { HITLMode, HITLStage, PermissionTier, PendingApproval, ActionHistoryEntry };
+export type { OperatorMode, OperatorStage, PermissionTier, PendingApproval, ActionHistoryEntry };

@@ -1,5 +1,5 @@
 /**
- * HITL (Human-in-the-Loop) Module
+ * Operator Module
  *
  * Provides approval gates, permission tiers, and stage management
  * for interactive pentesting sessions.
@@ -9,26 +9,26 @@
 export type {
   PermissionTier,
   TierDefinition,
-  HITLMode,
-  HITLStage,
+  OperatorMode,
+  OperatorStage,
   StageDefinition,
   PendingApproval,
   ApprovalDecision,
   ActionHistoryEntry,
   StageProgress,
-  HITLSessionState,
-  HITLSettings,
-  HITLEvent,
+  OperatorSessionState,
+  OperatorSettings,
+  OperatorEvent,
 } from "./types";
 
 export {
   PERMISSION_TIERS,
-  HITL_MODES,
-  HITL_STAGES,
+  OPERATOR_MODES,
+  OPERATOR_STAGES,
   getStagesInOrder,
   getNextStage,
-  createInitialHITLState,
-  HITLSettingsObject,
+  createInitialOperatorState,
+  OperatorSettingsObject,
 } from "./types";
 
 // Tool Classifier
