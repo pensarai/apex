@@ -7,6 +7,7 @@ export type RoutePath =
     | "pentest"
     | "thorough"
     | "web"
+    | "hitl"
     | "dns"
     | "config"
     | "models"

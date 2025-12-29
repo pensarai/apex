@@ -56,15 +56,24 @@ export namespace Session {
 
     export type OffensiveHeadersConfig = z.infer<typeof OffensiveHeadersConfigObject>;
 
+    const HITLSettingsObject = z.object({
+        initialMode: z.enum(["plan", "manual", "auto"]).default("manual"),
+        autoApproveTier: z.number().min(1).max(5).default(2),
+        enableSuggestions: z.boolean().default(true),
+    });
+
+    export type HITLSettings = z.infer<typeof HITLSettingsObject>;
+
     const SessionConfigObject = z.object({
         offensiveHeaders: OffensiveHeadersConfigObject.optional(),
         sessionType: z.enum(['web-app']).optional(),
-        mode: z.enum(['auto', 'driver']).optional(),
+        mode: z.enum(['auto', 'driver', 'hitl']).optional(),
         outcomeGuidance: z.string().optional(),
         scopeConstraints: ScopeConstraintsObject.optional(),
         authCredentials: AuthCredentialsObject.optional(),
         authenticationInstructions: z.string().optional(),
-        requestsPerSecond: z.number().optional()
+        requestsPerSecond: z.number().optional(),
+        hitlSettings: HITLSettingsObject.optional(),
     });
 
     export type SessionConfig = z.infer<typeof SessionConfigObject>;

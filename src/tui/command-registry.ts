@@ -99,6 +99,27 @@ export const commands: CommandConfig[] = [
     },
   },
   {
+    name: "hitl",
+    aliases: ["h"],
+    description: "Start interactive pentesting session (Human-in-the-Loop)",
+    category: "Pentesting",
+    options: [
+      { name: "--target", description: "Target URL to test", valueHint: "<url>" },
+      { name: "--mode", description: "Approval mode: plan, manual, or auto", valueHint: "<mode>" },
+    ],
+    handler: async (args, ctx) => {
+      const targetIdx = args.indexOf('--target');
+      const target = targetIdx !== -1 ? args[targetIdx + 1] : undefined;
+      const modeIdx = args.indexOf('--mode');
+      const mode = modeIdx !== -1 ? args[modeIdx + 1] : undefined;
+      ctx.navigate({
+        type: "base",
+        path: "hitl",
+        options: { target, mode } as any
+      });
+    },
+  },
+  {
     name: "models",
     description: "Show available AI models",
     category: "General",

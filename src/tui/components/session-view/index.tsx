@@ -8,6 +8,7 @@ import SwarmDashboard, {
   type Subagent,
 } from "../swarm-dashboard";
 import DriverDashboard from "../driver-dashboard";
+import HITLDashboard from "../hitl-dashboard";
 import { Session } from "../../../core/session";
 import {
   loadSessionState,
@@ -531,6 +532,11 @@ export default function SessionView({
   // Driver mode - render DriverDashboard for manual agent orchestration
   if (session.config?.mode === 'driver') {
     return <DriverDashboard session={session} />;
+  }
+
+  // HITL mode - render HITLDashboard for human-in-the-loop pentesting
+  if (session.config?.mode === 'hitl') {
+    return <HITLDashboard session={session} />;
   }
 
   // Auto mode - Render SwarmDashboard with streamlined pentest

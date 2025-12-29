@@ -10,6 +10,7 @@ import { CommandProvider } from "./command-provider";
 import { AgentProvider } from "./agentProvider";
 import HelpDialog from "./components/commands/help-dialog";
 import WebWizard from "./components/commands/web-wizard";
+import HITLWizard from "./components/commands/hitl-wizard";
 import SessionView from "./components/session-view";
 import SessionsDisplay from "./components/commands/sessions-display";
 import ConfigDialog from "./components/commands/config-dialog";
@@ -182,12 +183,13 @@ function AppContent({
     }
 
     // Escape - Return to home from any non-home route
-    // Exclude "web" and "session" routes - they handle their own ESC behavior
+    // Exclude "web", "hitl" and "session" routes - they handle their own ESC behavior
     if (key.name === "escape") {
       const isHome = route.data.type === "base" && route.data.path === "home";
       const isWeb = route.data.type === "base" && route.data.path === "web";
+      const isHitl = route.data.type === "base" && route.data.path === "hitl";
       const isSession = route.data.type === "session";
-      if (!isHome && !isWeb && !isSession) {
+      if (!isHome && !isWeb && !isHitl && !isSession) {
         route.navigate({
           type: "base",
           path: "home"
@@ -356,6 +358,12 @@ function CommandDisplay({
             <WebWizard
               initialTarget={route.data.options?.target}
               autoMode={route.data.options?.auto}
+            />
+          </RouteSwitch.Case>
+          <RouteSwitch.Case when="hitl">
+            <HITLWizard
+              initialTarget={(route.data.options as any)?.target}
+              initialMode={(route.data.options as any)?.mode}
             />
           </RouteSwitch.Case>
           <RouteSwitch.Case when="config">
