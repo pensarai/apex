@@ -5,14 +5,13 @@
  * Features streaming text, inline approval prompts, and a clean terminal feel.
  */
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useKeyboard } from "@opentui/react";
 import { RGBA } from "@opentui/core";
 import { Session } from "../../../core/session";
 import { createHITLAgent, type HITLAgent } from "../../../core/agent/hitlAgent";
 import type { HITLMode, HITLStage, PermissionTier, PendingApproval, ActionHistoryEntry } from "../../../core/hitl";
-import { HITL_MODES, HITL_STAGES, getStagesInOrder, PERMISSION_TIERS } from "../../../core/hitl";
-import { getSuggestedActions } from "../../../core/agent/hitlAgent/suggestActions";
+import { HITL_STAGES, getStagesInOrder, PERMISSION_TIERS } from "../../../core/hitl";
 import { useRoute } from "../../context/route";
 import { useAgent } from "../../agentProvider";
 import type { DisplayMessage } from "../agent-display";
@@ -52,7 +51,6 @@ export default function HITLDashboard({ session }: HITLDashboardProps) {
   const hitlSettings = session.config?.hitlSettings || {
     initialMode: "manual" as HITLMode,
     autoApproveTier: 2 as PermissionTier,
-    enableSuggestions: true,
   };
 
   // Agent state
@@ -72,6 +70,7 @@ export default function HITLDashboard({ session }: HITLDashboardProps) {
   const [directiveInput, setDirectiveInput] = useState("");
   const [showModeMenu, setShowModeMenu] = useState(false);
   const [showStageMenu, setShowStageMenu] = useState(false);
+  const [verboseMode, setVerboseMode] = useState(false);
 
   // Initialize agent
   useEffect(() => {
@@ -162,11 +161,23 @@ export default function HITLDashboard({ session }: HITLDashboardProps) {
     agent?.deny(approvalId);
   }, [agent]);
 
-  // Handle auto-approve tier upgrade
+  // Handle auto-approve tier upgrade - switches to auto mode and sets tier
   const handleAutoApproveTier = useCallback((tier: PermissionTier) => {
+    // Switch to auto mode so the tier setting actually takes effect
+    setMode("auto");
+    agent?.setMode("auto");
+
+    // Set the auto-approve tier
     setAutoApproveTier(tier);
     agent?.setAutoApproveTier(tier);
-  }, [agent]);
+
+    // Auto-approve any pending approvals that are now within the tier
+    pendingApprovals.forEach((approval) => {
+      if (approval.tier <= tier) {
+        agent?.approve(approval.id);
+      }
+    });
+  }, [agent, pendingApprovals]);
 
   // Handle sending directive
   const handleSendDirective = useCallback(async (directive: string) => {
@@ -174,11 +185,6 @@ export default function HITLDashboard({ session }: HITLDashboardProps) {
     setDirectiveInput("");
     await agent.sendDirective(directive);
   }, [agent]);
-
-  // Get suggestions
-  const suggestions = useMemo(() => {
-    return getSuggestedActions(currentStage, actionHistory, { target: session.targets[0] });
-  }, [currentStage, actionHistory, session.targets]);
 
   // Keyboard handling
   useKeyboard((key) => {
@@ -215,14 +221,21 @@ export default function HITLDashboard({ session }: HITLDashboardProps) {
         return;
       }
       if (key.name === "a" || key.name === "A") {
+        // This switches to auto mode and approves all pending within tier
         handleAutoApproveTier(approval.tier);
-        handleApprove(approval.id);
         return;
       }
     }
 
-    // ESC - Exit to home
+    // Ctrl+C - Stop agent immediately
+    if (key.ctrl && key.name === "c") {
+      agent?.stop();
+      return;
+    }
+
+    // ESC - Stop agent and exit to home
     if (key.name === "escape") {
+      agent?.stop();
       route.navigate({ type: "base", path: "home" });
       return;
     }
@@ -239,13 +252,10 @@ export default function HITLDashboard({ session }: HITLDashboardProps) {
       return;
     }
 
-    // Number keys for suggestions (only when not typing)
-    if (!directiveInput) {
-      const num = parseInt(key.name || "", 10);
-      if (num >= 1 && num <= 5 && suggestions[num - 1]) {
-        handleSendDirective(suggestions[num - 1].directive);
-        return;
-      }
+    // Option+T (meta+t) - Toggle verbose mode
+    if (key.meta && key.name === "t") {
+      setVerboseMode((v) => !v);
+      return;
     }
 
     // Enter to send directive
@@ -333,8 +343,8 @@ export default function HITLDashboard({ session }: HITLDashboardProps) {
             {messages.length === 0 && status === "idle" && (
               <box flexDirection="column" gap={1} marginTop={2}>
                 <text fg={greenAccent}>HITL Mode Active</text>
-                <text fg={dimText}>Type a directive or select a suggestion to begin.</text>
-                <text fg={dimText}>The agent will request approval for risky actions.</text>
+                <text fg={dimText}>Type a directive to begin (e.g., "Explore the attack surface").</text>
+                <text fg={dimText}>The agent will think out loud and suggest next steps inline.</text>
               </box>
             )}
 
@@ -344,6 +354,7 @@ export default function HITLDashboard({ session }: HITLDashboardProps) {
                 key={`msg-${idx}-${msg.createdAt.getTime()}`}
                 message={msg}
                 isStreaming={status === "running" && idx === streamingMessageIndex}
+                verbose={verboseMode}
               />
             ))}
 
@@ -360,10 +371,7 @@ export default function HITLDashboard({ session }: HITLDashboardProps) {
                 approval={pendingApprovals[0]}
                 onApprove={() => handleApprove(pendingApprovals[0].id)}
                 onDeny={() => handleDeny(pendingApprovals[0].id)}
-                onAutoApprove={() => {
-                  handleAutoApproveTier(pendingApprovals[0].tier);
-                  handleApprove(pendingApprovals[0].id);
-                }}
+                onAutoApprove={() => handleAutoApproveTier(pendingApprovals[0].tier)}
               />
             )}
           </scrollbox>
@@ -378,7 +386,7 @@ export default function HITLDashboard({ session }: HITLDashboardProps) {
             backgroundColor="transparent"
           >
             <box flexDirection="row" gap={1} backgroundColor="transparent">
-              <text fg={pendingApprovals.length > 0 ? dimText : greenAccent}>❯</text>
+              <text fg={pendingApprovals.length > 0 ? dimText : greenAccent}>{">"}</text>
               <input
                 width="100%"
                 value={directiveInput}
@@ -390,9 +398,10 @@ export default function HITLDashboard({ session }: HITLDashboardProps) {
               />
             </box>
             <box flexDirection="row" gap={2} marginTop={1} backgroundColor="transparent">
+              {status === "running" && <text fg={redText}>^C Stop</text>}
               <text fg={dimText}>^M Mode</text>
               <text fg={dimText}>^S Stage</text>
-              <text fg={dimText}>[1-5] Suggestions</text>
+              <text fg={verboseMode ? greenAccent : dimText}>⌥T Verbose{verboseMode ? " [ON]" : ""}</text>
               <text fg={dimText}>[ESC] Exit</text>
             </box>
           </box>
@@ -408,24 +417,21 @@ export default function HITLDashboard({ session }: HITLDashboardProps) {
           border={["left"]}
           borderColor={dimText}
         >
-          {/* Suggestions */}
+          {/* Stage indicator */}
           <box flexDirection="column" gap={1}>
-            <text fg={creamText}>Suggestions</text>
-            {suggestions.slice(0, 5).map((s, idx) => (
-              <text key={s.id} fg={dimText}>
-                <span fg={greenAccent}>[{idx + 1}]</span> {s.label}
+            <text fg={creamText}>Stage</text>
+            {getStagesInOrder().map((s) => (
+              <text key={s.stage} fg={currentStage === s.stage ? greenAccent : dimText}>
+                {currentStage === s.stage ? ">" : " "} {s.name}
               </text>
             ))}
-            {suggestions.length === 0 && (
-              <text fg={dimText}>No suggestions available</text>
-            )}
           </box>
 
           {/* Audit log */}
           <box flexDirection="column" gap={1} flexGrow={1}>
             <text fg={creamText}>Recent Actions</text>
-            {actionHistory.slice(-8).reverse().map((entry) => {
-              const icon = entry.decision === "approved" ? "✓" : entry.decision === "auto-approved" ? "⚡" : "✗";
+            {actionHistory.slice(-10).reverse().map((entry) => {
+              const icon = entry.decision === "approved" ? "+" : entry.decision === "auto-approved" ? "*" : "x";
               const color = entry.decision === "denied" ? redText : entry.decision === "auto-approved" ? yellowText : greenAccent;
               return (
                 <text key={entry.id} fg={dimText}>
@@ -490,7 +496,7 @@ function InlineApprovalPrompt({
         </text>
         <text>
           <span fg={yellowText}>[A]</span>
-          <span fg={dimText}> Always T{approval.tier}</span>
+          <span fg={dimText}> Auto T1-T{approval.tier}</span>
         </text>
       </box>
     </box>

@@ -65,7 +65,7 @@ function markdownToStyledText(content: string): StyledText {
         chunks.push({ __isChunk: true, text: "\n", attributes: 0 });
       } else if (token.type === "list") {
         for (const item of token.items) {
-          chunks.push({ __isChunk: true, text: "  • ", attributes: 0 });
+          chunks.push({ __isChunk: true, text: "  - ", attributes: 0 });
           processInlineTokens(item.tokens[0]?.tokens || []);
           chunks.push({ __isChunk: true, text: "\n", attributes: 0 });
         }
@@ -102,9 +102,10 @@ function markdownToStyledText(content: string): StyledText {
 interface ChatMessageProps {
   message: DisplayMessage;
   isStreaming?: boolean;
+  verbose?: boolean;
 }
 
-export const ChatMessage = memo(function ChatMessage({ message, isStreaming = false }: ChatMessageProps) {
+export const ChatMessage = memo(function ChatMessage({ message, isStreaming = false, verbose = false }: ChatMessageProps) {
   const content = typeof message.content === "string"
     ? message.content
     : JSON.stringify(message.content);
@@ -113,7 +114,7 @@ export const ChatMessage = memo(function ChatMessage({ message, isStreaming = fa
   if (message.role === "user") {
     return (
       <box flexDirection="row" gap={1} marginTop={1}>
-        <text fg={greenAccent}>❯</text>
+        <text fg={greenAccent}>{">"}</text>
         <text fg={creamText}>{content}</text>
       </box>
     );
@@ -131,13 +132,94 @@ export const ChatMessage = memo(function ChatMessage({ message, isStreaming = fa
   // Tool messages - inline with status
   if (message.role === "tool") {
     const isPending = message.status === "pending";
+    const toolName = (message as any).toolName || "";
+    const args = (message as any).args || {};
+    const result = (message as any).result;
+
+    // Get the key info to display based on tool type
+    const getToolSummary = (): string => {
+      switch (toolName) {
+        case "http_request": {
+          const method = (args.method || "GET").toUpperCase();
+          const url = args.url || "";
+          return `${method} ${url}`;
+        }
+        case "crawl":
+          return `crawl ${args.url || args.target || ""}`;
+        case "execute_command":
+          return `$ ${args.command || ""}`;
+        case "nuclei_scan":
+          return `nuclei ${args.templates || "all"} -> ${args.target || ""}`;
+        case "document_finding":
+          return `finding: ${args.title || args.name || ""}`;
+        case "read_file":
+          return `read ${args.path || ""}`;
+        case "write_file":
+          return `write ${args.path || ""}`;
+        case "scratchpad":
+          return `note: ${(args.content || "").slice(0, 40)}...`;
+        default: {
+          // For unknown tools, show first meaningful arg
+          const firstArg = Object.entries(args)
+            .filter(([k]) => k !== "toolCallDescription")
+            .map(([_, v]) => typeof v === "string" ? v : JSON.stringify(v))
+            .find(v => v.length > 0);
+          return `${toolName}${firstArg ? ` ${firstArg.slice(0, 50)}` : ""}`;
+        }
+      }
+    };
+
+    const summary = getToolSummary();
+
+    // Compact view (default) - shows actual command
+    if (!verbose) {
+      return (
+        <box flexDirection="row" gap={1} marginLeft={2}>
+          {isPending ? (
+            <SpinnerDots label={summary} fg="green" />
+          ) : (
+            <text fg={toolColor}>+ {summary}</text>
+          )}
+        </box>
+      );
+    }
+
+    // Verbose view - show tool name, args, and result
+    const formatArgs = (obj: Record<string, unknown>): string => {
+      const entries = Object.entries(obj)
+        .filter(([k]) => k !== "toolCallDescription")
+        .slice(0, 5);
+      return entries.map(([k, v]) => {
+        const val = typeof v === "string" ? v : JSON.stringify(v);
+        const truncated = val.length > 60 ? val.slice(0, 57) + "..." : val;
+        return `  ${k}: ${truncated}`;
+      }).join("\n");
+    };
+
+    const formatResult = (res: unknown): string => {
+      if (!res) return "";
+      const str = typeof res === "string" ? res : JSON.stringify(res, null, 2);
+      const lines = str.split("\n").slice(0, 8);
+      if (str.split("\n").length > 8) lines.push("  ...");
+      return lines.map(l => `  ${l.slice(0, 80)}`).join("\n");
+    };
 
     return (
-      <box flexDirection="row" gap={1} marginLeft={2}>
-        {isPending ? (
-          <SpinnerDots label={content} fg="green" />
-        ) : (
-          <text fg={toolColor}>{content}</text>
+      <box flexDirection="column" marginLeft={2} marginTop={1}>
+        <box flexDirection="row" gap={1}>
+          {isPending ? (
+            <SpinnerDots label={`${toolName}`} fg="green" />
+          ) : (
+            <text fg={toolColor}>+ {toolName}</text>
+          )}
+        </box>
+        {Object.keys(args).length > 0 && (
+          <text fg={dimText}>{formatArgs(args)}</text>
+        )}
+        {result && !isPending && (
+          <box marginTop={1}>
+            <text fg={RGBA.fromInts(80, 80, 80, 255)}>{formatResult(result)}</text>
+          </box>
         )}
       </box>
     );

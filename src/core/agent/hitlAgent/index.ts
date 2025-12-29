@@ -51,6 +51,7 @@ export class HITLAgent extends EventEmitter {
   private abortController: AbortController | null = null;
   private messages: DisplayMessage[] = [];
   private userDirectives: string[] = [];
+  private findingsSummary: string = "";
 
   // HITL components
   readonly approvalGate: ApprovalGate;
@@ -258,30 +259,37 @@ export class HITLAgent extends EventEmitter {
   private buildSystemPrompt(target: string, stageDef: typeof HITL_STAGES[HITLStage]): string {
     const session = this.config.session;
 
-    return `You are an AI security researcher conducting a penetration test.
+    return `You are an expert penetration tester working alongside a human colleague.
 
-## Target
-${target}
+## How to Communicate
+- Think out loud as you work. Share your reasoning naturally.
+- When you find something interesting, explain why it caught your attention.
+- After discoveries, suggest 2-3 concrete next steps with brief explanations.
+- If your colleague doesn't respond, proceed with the most promising approach.
+- Periodically synthesize: "Here's what we've learned so far..."
 
-## Current Stage: ${stageDef.name}
-${stageDef.description}
+## Current Assessment
+Target: ${target}
+Stage: ${stageDef.name} - ${stageDef.description}
+${session.config?.authenticationInstructions ? `\nSession context: ${session.config.authenticationInstructions}` : ""}
 
-## Suggested Actions for This Stage
-${stageDef.suggestedActions.map((a) => `- ${a}`).join("\n")}
-
-## Guidelines
-- Work methodically through the current stage
-- Explain your reasoning before taking actions
-- When you find something interesting, investigate it thoroughly
-- Document any findings using the document_finding tool
-- Move to the next stage when current objectives are met
+## What We Know So Far
+${this.findingsSummary || "Just starting - no findings yet."}
 
 ## Testing Guidance
 ${session.config?.outcomeGuidance || Session.DEFAULT_OUTCOME_GUIDANCE}
 
-${session.config?.authenticationInstructions ? `## Authentication Instructions\n${session.config.authenticationInstructions}` : ""}
+## Your Approach
+Be methodical but follow interesting leads. Quality over quantity.
+A good pentest isn't about running every tool - it's about understanding
+the application and finding the paths an attacker would actually exploit.
 
-Be thorough but efficient. Focus on high-value targets first.`;
+When you discover something notable:
+1. Explain what you found and why it matters
+2. Offer 2-3 directions we could explore next
+3. If I don't respond, pick the most promising path and continue
+
+Document significant findings using the document_finding tool.`;
   }
 
   /**
@@ -473,10 +481,75 @@ Be thorough but efficient. Focus on high-value targets first.`;
           this.updateMessage(msgIdx, {
             ...existingMsg,
             status: "completed",
-            content: `✓ ${existingMsg.content}`,
+            content: `+ ${existingMsg.content}`,
             result: (tr as any).output,
           });
+
+          // Extract findings from significant tool results
+          this.extractFindings(existingMsg.toolName || "", (tr as any).output);
         }
+      }
+    }
+  }
+
+  /**
+   * Extract key findings from tool results and update the summary
+   */
+  private extractFindings(toolName: string, result: any): void {
+    if (!result) return;
+
+    const resultStr = typeof result === "string" ? result : JSON.stringify(result);
+    const findings: string[] = [];
+
+    // HTTP response analysis
+    if (toolName === "http_request") {
+      const status = result?.status || result?.statusCode;
+      const url = result?.url || "";
+
+      // Interesting status codes
+      if (status === 403) {
+        findings.push(`- 403 Forbidden at ${url} (potential access control to bypass)`);
+      } else if (status === 401) {
+        findings.push(`- 401 Unauthorized at ${url} (auth required)`);
+      } else if (status === 500) {
+        findings.push(`- 500 Error at ${url} (potential for error-based info leak)`);
+      }
+
+      // Check for sensitive data patterns in response
+      if (resultStr.includes("password") || resultStr.includes("token") || resultStr.includes("api_key")) {
+        findings.push(`- Sensitive keywords found in response from ${url}`);
+      }
+    }
+
+    // Crawl results
+    if (toolName === "crawl" && result?.urls) {
+      const urlCount = Array.isArray(result.urls) ? result.urls.length : 0;
+      if (urlCount > 0) {
+        findings.push(`- Discovered ${urlCount} URLs from crawling`);
+      }
+    }
+
+    // Document finding tool (explicit finding)
+    if (toolName === "document_finding") {
+      const title = result?.title || result?.name || "Finding";
+      findings.push(`- FINDING: ${title}`);
+    }
+
+    // Update summary if we found something notable
+    if (findings.length > 0) {
+      const timestamp = new Date().toLocaleTimeString();
+      const newFindings = findings.map((f) => `[${timestamp}] ${f}`).join("\n");
+
+      if (this.findingsSummary) {
+        this.findingsSummary += "\n" + newFindings;
+      } else {
+        this.findingsSummary = newFindings;
+      }
+
+      // Keep summary bounded (last ~20 findings)
+      const lines = this.findingsSummary.split("\n");
+      if (lines.length > 20) {
+        this.findingsSummary = lines.slice(-20).join("\n");
       }
     }
   }
