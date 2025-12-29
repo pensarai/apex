@@ -375,8 +375,9 @@ export default function HITLDashboard({ session }: HITLDashboardProps) {
             paddingRight={2}
             paddingTop={1}
             paddingBottom={1}
+            backgroundColor="transparent"
           >
-            <box flexDirection="row" gap={1}>
+            <box flexDirection="row" gap={1} backgroundColor="transparent">
               <text fg={pendingApprovals.length > 0 ? dimText : greenAccent}>❯</text>
               <input
                 width="100%"
@@ -385,9 +386,10 @@ export default function HITLDashboard({ session }: HITLDashboardProps) {
                 focused={pendingApprovals.length === 0}
                 placeholder={pendingApprovals.length > 0 ? "Respond to approval first..." : "Enter directive..."}
                 textColor={pendingApprovals.length > 0 ? "gray" : "white"}
+                backgroundColor="transparent"
               />
             </box>
-            <box flexDirection="row" gap={2} marginTop={1}>
+            <box flexDirection="row" gap={2} marginTop={1} backgroundColor="transparent">
               <text fg={dimText}>^M Mode</text>
               <text fg={dimText}>^S Stage</text>
               <text fg={dimText}>[1-5] Suggestions</text>
