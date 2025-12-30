@@ -179,11 +179,27 @@ export default function OperatorDashboard({ session }: OperatorDashboardProps) {
     });
   }, [agent, pendingApprovals]);
 
-  // Handle sending directive
+  // Handle sending directive (can be used to redirect during approval)
   const handleSendDirective = useCallback(async (directive: string) => {
     if (!agent || !directive.trim()) return;
     setDirectiveInput("");
+
+    // If there's a pending approval, deny it and send the directive as a redirect
+    if (pendingApprovals.length > 0) {
+      const approval = pendingApprovals[0];
+      agent.deny(approval.id);
+      // The directive will be sent after denial, acting as a redirect
+    }
+
     await agent.sendDirective(directive);
+  }, [agent, pendingApprovals]);
+
+  // Handle denial with request for alternatives
+  const handleDenyWithAlternatives = useCallback((approvalId: string) => {
+    if (!agent) return;
+    agent.deny(approvalId);
+    // Send a message asking the agent to suggest alternatives
+    agent.sendDirective("That action was denied. Please suggest 2-3 alternative approaches we could take instead, or ask me what I'd prefer to do.");
   }, [agent]);
 
   // Keyboard handling
@@ -209,15 +225,16 @@ export default function OperatorDashboard({ session }: OperatorDashboardProps) {
       return;
     }
 
-    // Handle pending approval
-    if (pendingApprovals.length > 0) {
+    // Handle pending approval (only intercept Y/N/A if input is empty)
+    // This allows user to type a redirect message instead
+    if (pendingApprovals.length > 0 && !directiveInput.trim()) {
       const approval = pendingApprovals[0];
       if (key.name === "y" || key.name === "Y") {
         handleApprove(approval.id);
         return;
       }
       if (key.name === "n" || key.name === "N") {
-        handleDeny(approval.id);
+        handleDenyWithAlternatives(approval.id);
         return;
       }
       if (key.name === "a" || key.name === "A") {
@@ -258,7 +275,7 @@ export default function OperatorDashboard({ session }: OperatorDashboardProps) {
       return;
     }
 
-    // Enter to send directive
+    // Enter to send directive (works during approval or while agent is running)
     if (key.name === "return" && directiveInput.trim()) {
       handleSendDirective(directiveInput);
       return;
@@ -391,9 +408,9 @@ export default function OperatorDashboard({ session }: OperatorDashboardProps) {
                 width="100%"
                 value={directiveInput}
                 onInput={setDirectiveInput}
-                focused={pendingApprovals.length === 0}
-                placeholder={pendingApprovals.length > 0 ? "Respond to approval first..." : "Enter directive..."}
-                textColor={pendingApprovals.length > 0 ? "gray" : "white"}
+                focused={true}
+                placeholder={pendingApprovals.length > 0 ? "Type to redirect, or Y/N/A..." : "Enter directive..."}
+                textColor="white"
                 backgroundColor="transparent"
               />
             </box>
@@ -492,12 +509,15 @@ function InlineApprovalPrompt({
         </text>
         <text>
           <span fg={redText}>[N]</span>
-          <span fg={dimText}> No</span>
+          <span fg={dimText}> No + suggest alt</span>
         </text>
         <text>
           <span fg={yellowText}>[A]</span>
           <span fg={dimText}> Auto T1-T{approval.tier}</span>
         </text>
+      </box>
+      <box marginLeft={3} marginTop={1}>
+        <text fg={dimText}>Or type a message to redirect the agent...</text>
       </box>
     </box>
   );

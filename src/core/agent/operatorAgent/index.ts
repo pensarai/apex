@@ -6,6 +6,7 @@
  */
 
 import { EventEmitter } from "events";
+import { stepCountIs } from "ai";
 import type { AIModel } from "../../ai";
 import { streamResponse } from "../../ai/ai";
 import { Session } from "../../session";
@@ -330,6 +331,7 @@ Document significant findings using the document_finding tool.`;
           system: systemMessage,
           messages: messages.slice(1) as any, // exclude system message (passed separately)
           tools: wrappedTools,
+          stopWhen: stepCountIs(100), // Allow multi-step tool execution within each iteration
           abortSignal: this.abortController?.signal,
           onStepFinish: (step) => this.handleStepFinish(step),
         });

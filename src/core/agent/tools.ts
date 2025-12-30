@@ -3255,7 +3255,12 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
           ? wrapCommandWithHeaders(command, offensiveHeaders)
           : command;
 
-        const { stdout, stderr } = await execAsync(finalCommand, {
+        // Use login shell to ensure user's PATH is available (e.g., ~/go/bin for katana)
+        const shellCommand = process.platform === 'win32'
+          ? finalCommand
+          : `bash -lc ${JSON.stringify(finalCommand)}`;
+
+        const { stdout, stderr } = await execAsync(shellCommand, {
           timeout,
           maxBuffer: 10 * 1024 * 1024, // 10MB buffer
         });
