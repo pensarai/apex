@@ -7,6 +7,8 @@
 
 import { EventEmitter } from "events";
 import { stepCountIs } from "ai";
+import { appendFileSync, existsSync, mkdirSync } from "fs";
+import { join } from "path";
 import type { AIModel } from "../../ai";
 import { streamResponse } from "../../ai/ai";
 import { Session } from "../../session";
@@ -53,6 +55,8 @@ export class OperatorAgent extends EventEmitter {
   private messages: DisplayMessage[] = [];
   private userDirectives: string[] = [];
   private findingsSummary: string = "";
+  private logPath: string;
+  private runId: string;
 
   // Operator components
   readonly approvalGate: ApprovalGate;
@@ -61,6 +65,21 @@ export class OperatorAgent extends EventEmitter {
   constructor(config: OperatorAgentConfig) {
     super();
     this.config = config;
+
+    // Initialize logging
+    this.runId = `run_${Date.now()}`;
+    const logsDir = join(config.session.rootPath, "logs");
+    if (!existsSync(logsDir)) {
+      mkdirSync(logsDir, { recursive: true });
+    }
+    this.logPath = join(logsDir, `operator_${this.runId}.jsonl`);
+    this.log("session_start", {
+      sessionId: config.session.id,
+      target: config.session.targets[0],
+      mode: config.initialMode || "manual",
+      autoApproveTier: config.autoApproveTier || 2,
+      model: config.model,
+    });
 
     // Initialize approval gate
     this.approvalGate = new ApprovalGate({
@@ -74,6 +93,7 @@ export class OperatorAgent extends EventEmitter {
     // Forward approval gate events
     this.approvalGate.on("operator-event", (event: OperatorEvent) => {
       this.emit("operator-event", event);
+      this.log("operator_event", event);
       if (event.type === "approval-needed") {
         this.setStatus("waiting");
       }
@@ -87,7 +107,25 @@ export class OperatorAgent extends EventEmitter {
     // Forward stage manager events
     this.stageManager.on("operator-event", (event: OperatorEvent) => {
       this.emit("operator-event", event);
+      this.log("operator_event", event);
     });
+  }
+
+  /**
+   * Log an event to the JSONL file
+   */
+  private log(type: string, data: any): void {
+    const entry = {
+      timestamp: new Date().toISOString(),
+      runId: this.runId,
+      type,
+      ...data,
+    };
+    try {
+      appendFileSync(this.logPath, JSON.stringify(entry) + "\n");
+    } catch (e) {
+      // Silently fail if logging fails
+    }
   }
 
   get status(): OperatorAgentStatus {
@@ -107,17 +145,33 @@ export class OperatorAgent extends EventEmitter {
   }
 
   private setStatus(status: OperatorAgentStatus): void {
+    const prevStatus = this._status;
     this._status = status;
+    this.log("status_change", { from: prevStatus, to: status });
     this.emit("status-change", status);
   }
 
   private addMessage(message: DisplayMessage): void {
     this.messages.push(message);
+    this.log("message", {
+      role: message.role,
+      content: message.content,
+      toolName: (message as any).toolName,
+      toolCallId: (message as any).toolCallId,
+      args: (message as any).args,
+    });
     this.emit("message", message);
   }
 
   private updateMessage(index: number, message: DisplayMessage): void {
     this.messages[index] = message;
+    this.log("message_updated", {
+      index,
+      role: message.role,
+      content: message.content,
+      status: (message as any).status,
+      result: (message as any).result,
+    });
     this.emit("message-updated", { index, message });
   }
 
@@ -125,6 +179,7 @@ export class OperatorAgent extends EventEmitter {
    * Change the operating mode
    */
   setMode(mode: OperatorMode): void {
+    this.log("mode_change", { mode });
     this.approvalGate.updateConfig({ mode });
     this.emit("operator-event", { type: "mode-changed", mode });
   }
@@ -133,6 +188,7 @@ export class OperatorAgent extends EventEmitter {
    * Change the auto-approve tier
    */
   setAutoApproveTier(tier: PermissionTier): void {
+    this.log("tier_change", { tier });
     this.approvalGate.updateConfig({ autoApproveTier: tier });
   }
 
@@ -161,6 +217,8 @@ export class OperatorAgent extends EventEmitter {
    * Approve a pending action
    */
   approve(approvalId: string): void {
+    const pending = this.approvalGate.getPendingApprovals().find(p => p.id === approvalId);
+    this.log("action_approved", { approvalId, toolName: pending?.toolName, args: pending?.args });
     this.approvalGate.approve(approvalId);
   }
 
@@ -168,6 +226,8 @@ export class OperatorAgent extends EventEmitter {
    * Deny a pending action
    */
   deny(approvalId: string): void {
+    const pending = this.approvalGate.getPendingApprovals().find(p => p.id === approvalId);
+    this.log("action_denied", { approvalId, toolName: pending?.toolName, args: pending?.args });
     this.approvalGate.deny(approvalId);
   }
 
@@ -175,6 +235,7 @@ export class OperatorAgent extends EventEmitter {
    * Batch approve multiple actions
    */
   batchApprove(approvalIds: string[]): void {
+    this.log("batch_approved", { approvalIds, count: approvalIds.length });
     this.approvalGate.batchApprove(approvalIds);
   }
 
@@ -186,6 +247,7 @@ export class OperatorAgent extends EventEmitter {
       throw new Error("Agent is already running");
     }
 
+    this.log("agent_start", { directive, stage: this.currentStage });
     this.setStatus("running");
     this.abortController = new AbortController();
 
@@ -212,13 +274,16 @@ export class OperatorAgent extends EventEmitter {
 
     try {
       const result = await this.runAgentLoop(systemMessage, userMessage);
+      this.log("agent_completed", { result });
       this.setStatus("idle"); // Back to idle, ready for new input
       return result;
-    } catch (error) {
+    } catch (error: any) {
       if (this.abortController?.signal.aborted) {
+        this.log("agent_stopped", { reason: "user_abort" });
         this.setStatus("idle"); // Back to idle after stop
         return { findingsCount: 0, pocPaths: [], summary: "Agent stopped by user" };
       }
+      this.log("agent_error", { error: error?.message || String(error) });
       this.setStatus("failed");
       throw error;
     }
@@ -228,6 +293,8 @@ export class OperatorAgent extends EventEmitter {
    * Send a directive to the agent
    */
   async sendDirective(directive: string): Promise<void> {
+    this.log("user_directive", { directive, currentStatus: this._status });
+
     if (this._status !== "running" && this._status !== "waiting") {
       // If idle or completed, start a new loop with this directive
       await this.start(directive);
@@ -246,6 +313,7 @@ export class OperatorAgent extends EventEmitter {
    * Stop the agent
    */
   stop(): void {
+    this.log("agent_stop", { reason: "user_initiated" });
     if (this.abortController) {
       this.abortController.abort();
     }
@@ -331,6 +399,14 @@ Document significant findings using the document_finding tool.`;
       }
 
       try {
+        // Log the full model input for trajectory collection
+        this.log("model_turn_start", {
+          iteration: iterations,
+          system: systemMessage,
+          messages: messages.slice(1), // Full conversation context
+          model: this.config.model,
+        });
+
         const streamResult = streamResponse({
           prompt: initialUserMessage,
           model: this.config.model,
@@ -353,6 +429,19 @@ Document significant findings using the document_finding tool.`;
         // Get final result
         const finalResult = await streamResult;
         const toolCalls = await finalResult.toolCalls;
+        const usage = await finalResult.usage;
+
+        // Log complete model output for trajectory collection
+        this.log("model_turn_end", {
+          iteration: iterations,
+          assistantContent,
+          toolCalls: toolCalls?.map((tc: any) => ({
+            toolName: tc.toolName,
+            toolCallId: tc.toolCallId,
+            args: tc.input || tc.args,
+          })),
+          usage, // token counts
+        });
 
         // Add assistant message to history
         if (assistantContent) {
@@ -376,6 +465,7 @@ Document significant findings using the document_finding tool.`;
       } catch (error: any) {
         if (error instanceof ApprovalBlockedError) {
           // Action was blocked in plan mode - add message and continue
+          this.log("action_blocked", { error: error.message });
           this.addMessage({
             role: "system",
             content: `Action blocked: ${error.message}`,
@@ -385,6 +475,7 @@ Document significant findings using the document_finding tool.`;
         }
         if (error instanceof ApprovalDeniedError) {
           // User denied action - add message and continue
+          this.log("action_denied_error", { error: error.message });
           this.addMessage({
             role: "system",
             content: `Action denied by user`,
@@ -406,11 +497,13 @@ Document significant findings using the document_finding tool.`;
       }
     }
 
-    return {
+    const result = {
       findingsCount,
       pocPaths,
       summary: `Completed ${iterations} iterations in ${this.currentStage} stage`,
     };
+    this.log("agent_loop_completed", { iterations, stage: this.currentStage, result });
+    return result;
   }
 
   /**
@@ -464,6 +557,7 @@ Document significant findings using the document_finding tool.`;
 
     // Handle text content
     if (text && text.trim()) {
+      this.log("assistant_text", { text: text.slice(0, 500) }); // Truncate to avoid huge logs
       const lastMsg = this.messages[this.messages.length - 1];
       if (lastMsg && lastMsg.role === "assistant") {
         this.updateMessage(this.messages.length - 1, {
@@ -485,6 +579,12 @@ Document significant findings using the document_finding tool.`;
         const args = (tc as any).input || {};
         const description = args.toolCallDescription || tc.toolName;
 
+        this.log("tool_call", {
+          toolCallId: tc.toolCallId,
+          toolName: tc.toolName,
+          args,
+        });
+
         this.addMessage({
           role: "tool",
           status: "pending",
@@ -505,6 +605,13 @@ Document significant findings using the document_finding tool.`;
         );
         if (msgIdx !== -1) {
           const existingMsg = this.messages[msgIdx];
+
+          this.log("tool_result", {
+            toolCallId: tr.toolCallId,
+            toolName: existingMsg.toolName,
+            result: (tr as any).output,
+          });
+
           this.updateMessage(msgIdx, {
             ...existingMsg,
             status: "completed",
@@ -566,6 +673,8 @@ Document significant findings using the document_finding tool.`;
     if (findings.length > 0) {
       const timestamp = new Date().toLocaleTimeString();
       const newFindings = findings.map((f) => `[${timestamp}] ${f}`).join("\n");
+
+      this.log("findings_extracted", { toolName, findings });
 
       if (this.findingsSummary) {
         this.findingsSummary += "\n" + newFindings;
