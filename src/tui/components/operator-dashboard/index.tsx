@@ -225,22 +225,29 @@ export default function OperatorDashboard({ session }: OperatorDashboardProps) {
       return;
     }
 
-    // Handle pending approval (only intercept Y/N/A if input is empty)
-    // This allows user to type a redirect message instead
-    if (pendingApprovals.length > 0 && !directiveInput.trim()) {
+    // Handle pending approval - intercept Y/N/A keys
+    // Check if input is empty OR just became a single Y/N/A character (key just typed)
+    if (pendingApprovals.length > 0) {
       const approval = pendingApprovals[0];
-      if (key.name === "y" || key.name === "Y") {
-        handleApprove(approval.id);
-        return;
-      }
-      if (key.name === "n" || key.name === "N") {
-        handleDenyWithAlternatives(approval.id);
-        return;
-      }
-      if (key.name === "a" || key.name === "A") {
-        // This switches to auto mode and approves all pending within tier
-        handleAutoApproveTier(approval.tier);
-        return;
+      const inputIsEffectivelyEmpty = !directiveInput.trim() ||
+        directiveInput.trim().toLowerCase() === key.name?.toLowerCase();
+
+      if (inputIsEffectivelyEmpty) {
+        if (key.name === "y" || key.name === "Y") {
+          setDirectiveInput(""); // Clear any typed 'y'
+          handleApprove(approval.id);
+          return;
+        }
+        if (key.name === "n" || key.name === "N") {
+          setDirectiveInput(""); // Clear any typed 'n'
+          handleDenyWithAlternatives(approval.id);
+          return;
+        }
+        if (key.name === "a" || key.name === "A") {
+          setDirectiveInput(""); // Clear any typed 'a'
+          handleAutoApproveTier(approval.tier);
+          return;
+        }
       }
     }
 
