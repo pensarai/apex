@@ -8,7 +8,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useKeyboard } from "@opentui/react";
 import { RGBA } from "@opentui/core";
-import { execSync } from "child_process";
 import { Session } from "../../../core/session";
 import { createOperatorAgent, type OperatorAgent } from "../../../core/agent/operatorAgent";
 import type { OperatorMode, OperatorStage, PermissionTier, PendingApproval, ActionHistoryEntry } from "../../../core/operator";
@@ -71,34 +70,6 @@ export default function OperatorDashboard({ session }: OperatorDashboardProps) {
   const [directiveInput, setDirectiveInput] = useState("");
   const [showStageMenu, setShowStageMenu] = useState(false);
   const [verboseMode, setVerboseMode] = useState(false);
-  const [copiedFeedback, setCopiedFeedback] = useState(false);
-
-  // Copy to clipboard (works on macOS)
-  const copyToClipboard = useCallback((text: string) => {
-    try {
-      execSync("pbcopy", { input: text });
-      setCopiedFeedback(true);
-      setTimeout(() => setCopiedFeedback(false), 1500);
-      return true;
-    } catch {
-      return false;
-    }
-  }, []);
-
-  // Get last copyable content (assistant message or tool result)
-  const getLastCopyableContent = useCallback((): string | null => {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const msg = messages[i];
-      if (msg.role === "assistant" && msg.content) {
-        return typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content);
-      }
-      if (msg.role === "tool" && (msg as any).result) {
-        const result = (msg as any).result;
-        return typeof result === "string" ? result : JSON.stringify(result, null, 2);
-      }
-    }
-    return null;
-  }, [messages]);
 
   // Initialize agent
   useEffect(() => {
@@ -285,15 +256,6 @@ export default function OperatorDashboard({ session }: OperatorDashboardProps) {
       return;
     }
 
-    // Cmd+C (macOS) - Copy last output to clipboard
-    if (key.meta && key.name === "c") {
-      const content = getLastCopyableContent();
-      if (content) {
-        copyToClipboard(content);
-      }
-      return;
-    }
-
     // Ctrl+C - Clear input first, then stop agent if input is empty
     if (key.ctrl && key.name === "c") {
       if (directiveInput.trim()) {
@@ -451,13 +413,9 @@ export default function OperatorDashboard({ session }: OperatorDashboardProps) {
             <box flexDirection="row" gap={2} marginTop={1} backgroundColor="transparent">
               {mode === "plan" && <text fg={yellowText}>{"⏸  PLAN"}</text>}
               {mode === "auto" && <text fg={greenAccent}>{"▶▶ AUTO"}</text>}
-              {copiedFeedback && <text fg={greenAccent}>Copied!</text>}
-              <text fg={dimText}>Cmd+C Copy</text>
-              <text fg={dimText}>Shift+Tab: mode</text>
-              <text fg={dimText}>^C {directiveInput.trim() ? "Clear" : "Stop"}</text>
-              <text fg={dimText}>^S Stage</text>
-              <text fg={verboseMode ? greenAccent : dimText}>^T Verbose{verboseMode ? " ON" : ""}</text>
-              <text fg={dimText}>ESC</text>
+              <text fg={dimText}>⇧Tab mode</text>
+              <text fg={dimText}>^C {directiveInput.trim() ? "clear" : "stop"}</text>
+              <text fg={dimText}>ESC quit</text>
             </box>
           </box>
         </box>
