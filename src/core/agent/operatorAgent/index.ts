@@ -212,11 +212,11 @@ export class OperatorAgent extends EventEmitter {
 
     try {
       const result = await this.runAgentLoop(systemMessage, userMessage);
-      this.setStatus("completed");
+      this.setStatus("idle"); // Back to idle, ready for new input
       return result;
     } catch (error) {
       if (this.abortController?.signal.aborted) {
-        this.setStatus("completed");
+        this.setStatus("idle"); // Back to idle after stop
         return { findingsCount: 0, pocPaths: [], summary: "Agent stopped by user" };
       }
       this.setStatus("failed");
@@ -251,7 +251,7 @@ export class OperatorAgent extends EventEmitter {
     }
     // Deny all pending approvals
     this.approvalGate.denyAll();
-    this.setStatus("completed");
+    this.setStatus("idle"); // Ready for new input
   }
 
   /**
@@ -354,18 +354,20 @@ Document significant findings using the document_finding tool.`;
         }
 
         // Check if we should continue
-        // Stop if: no tool calls made, or agent indicates completion
+        // Stop if: no tool calls AND no pending user directives
         const hasToolCalls = toolCalls && toolCalls.length > 0;
-        if (!hasToolCalls) {
+        const hasPendingDirectives = this.userDirectives.length > 0;
+
+        if (!hasToolCalls && !hasPendingDirectives) {
           continueLoop = false;
         }
 
-        // Check for complete_testing tool call
-        if (toolCalls?.some((tc: any) => tc.toolName === "complete_testing")) {
+        // Check for complete_testing tool call (but still process pending directives)
+        if (toolCalls?.some((tc: any) => tc.toolName === "complete_testing") && !hasPendingDirectives) {
           continueLoop = false;
         }
 
-      } catch (error) {
+      } catch (error: any) {
         if (error instanceof ApprovalBlockedError) {
           // Action was blocked in plan mode - add message and continue
           this.addMessage({
@@ -383,6 +385,16 @@ Document significant findings using the document_finding tool.`;
             createdAt: new Date(),
           });
           continue;
+        }
+        // Check if aborted due to user directive - continue to process it
+        if (this.abortController?.signal.aborted && this.userDirectives.length > 0) {
+          // Reset abort controller for next iteration
+          this.abortController = new AbortController();
+          continue;
+        }
+        // Check if just a user-initiated stop (no pending directives)
+        if (this.abortController?.signal.aborted) {
+          break; // Exit loop cleanly
         }
         throw error;
       }
@@ -436,6 +448,13 @@ Document significant findings using the document_finding tool.`;
    */
   private handleStepFinish(step: any): void {
     const { text, toolCalls, toolResults } = step;
+
+    // Check for user directives - if user typed something, interrupt to process it sooner
+    if (this.userDirectives.length > 0 && this.abortController && !this.abortController.signal.aborted) {
+      // Abort current stream to pick up user input on next iteration
+      this.abortController.abort();
+      // Note: The abort will be caught in runAgentLoop, which will continue and pick up the directive
+    }
 
     // Handle text content
     if (text && text.trim()) {
