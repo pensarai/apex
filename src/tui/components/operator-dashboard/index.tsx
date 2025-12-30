@@ -404,6 +404,10 @@ export default function OperatorDashboard({ session }: OperatorDashboardProps) {
                 width="100%"
                 value={directiveInput}
                 onInput={setDirectiveInput}
+                onPaste={(event) => {
+                  const cleaned = String(event.text).replace(/\r?\n/g, " ");
+                  setDirectiveInput((prev) => prev + cleaned);
+                }}
                 focused={true}
                 placeholder={pendingApprovals.length > 0 ? "Type to redirect, or Y/N/A..." : "Enter directive..."}
                 textColor="white"
@@ -413,7 +417,6 @@ export default function OperatorDashboard({ session }: OperatorDashboardProps) {
             <box flexDirection="row" gap={2} marginTop={1} backgroundColor="transparent">
               {mode === "plan" && <text fg={yellowText}>{"⏸  PLAN"}</text>}
               {mode === "auto" && <text fg={greenAccent}>{"▶▶ AUTO"}</text>}
-              <text fg={dimText}>⇧Tab mode</text>
               <text fg={dimText}>^C {directiveInput.trim() ? "clear" : "stop"}</text>
               <text fg={dimText}>ESC quit</text>
             </box>
