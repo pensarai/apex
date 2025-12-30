@@ -114,8 +114,13 @@ export default function SessionView({
   }, [sessionId, isResume]);
 
   // Start pentest once session is loaded (only if not resuming)
+  // Skip auto-start for operator/driver modes - they have their own start logic
   useEffect(() => {
     if (session && !hasStarted && !loading && !isResume) {
+      const mode = session.config?.mode;
+      if (mode === 'operator' || mode === 'driver') {
+        return; // These modes wait for user to initiate
+      }
       setHasStarted(true);
       startPentest(session);
     }
