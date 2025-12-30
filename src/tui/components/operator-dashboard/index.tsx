@@ -68,7 +68,6 @@ export default function OperatorDashboard({ session }: OperatorDashboardProps) {
 
   // UI state
   const [directiveInput, setDirectiveInput] = useState("");
-  const [showModeMenu, setShowModeMenu] = useState(false);
   const [showStageMenu, setShowStageMenu] = useState(false);
   const [verboseMode, setVerboseMode] = useState(false);
 
@@ -139,8 +138,17 @@ export default function OperatorDashboard({ session }: OperatorDashboardProps) {
       agent.setMode(newMode);
     }
     setMode(newMode);
-    setShowModeMenu(false);
   }, [agent]);
+
+  // Cycle through modes with Tab/Shift+Tab
+  const cycleMode = useCallback((reverse: boolean = false) => {
+    const modes: OperatorMode[] = ["plan", "manual", "auto"];
+    const currentIdx = modes.indexOf(mode);
+    const nextIdx = reverse
+      ? (currentIdx - 1 + modes.length) % modes.length
+      : (currentIdx + 1) % modes.length;
+    handleModeChange(modes[nextIdx]);
+  }, [mode, handleModeChange]);
 
   // Handle stage change
   const handleStageChange = useCallback((newStage: OperatorStage) => {
@@ -204,15 +212,6 @@ export default function OperatorDashboard({ session }: OperatorDashboardProps) {
 
   // Keyboard handling
   useKeyboard((key) => {
-    // Handle mode menu
-    if (showModeMenu) {
-      if (key.name === "escape") { setShowModeMenu(false); return; }
-      if (key.name === "p") { handleModeChange("plan"); return; }
-      if (key.name === "m") { handleModeChange("manual"); return; }
-      if (key.name === "a") { handleModeChange("auto"); return; }
-      return;
-    }
-
     // Handle stage menu
     if (showStageMenu) {
       if (key.name === "escape") { setShowStageMenu(false); return; }
@@ -251,8 +250,18 @@ export default function OperatorDashboard({ session }: OperatorDashboardProps) {
       }
     }
 
-    // Ctrl+C - Stop agent immediately
+    // Shift+Tab - Cycle modes (plan → manual → auto)
+    if (key.name === "tab" && key.shift) {
+      cycleMode(false);
+      return;
+    }
+
+    // Ctrl+C - Clear input first, then stop agent if input is empty
     if (key.ctrl && key.name === "c") {
+      if (directiveInput.trim()) {
+        setDirectiveInput("");
+        return;
+      }
       agent?.stop();
       return;
     }
@@ -261,12 +270,6 @@ export default function OperatorDashboard({ session }: OperatorDashboardProps) {
     if (key.name === "escape") {
       agent?.stop();
       route.navigate({ type: "base", path: "home" });
-      return;
-    }
-
-    // Ctrl+M - Mode menu
-    if (key.ctrl && key.name === "m") {
-      setShowModeMenu(true);
       return;
     }
 
@@ -288,21 +291,6 @@ export default function OperatorDashboard({ session }: OperatorDashboardProps) {
       return;
     }
   });
-
-  // Render mode menu overlay
-  if (showModeMenu) {
-    return (
-      <box flexDirection="column" width="100%" height="100%" padding={2}>
-        <text fg={creamText}>Select Mode:</text>
-        <text fg={dimText}> </text>
-        <text fg={mode === "plan" ? yellowText : dimText}>  [P] Plan - Read-only, propose actions</text>
-        <text fg={mode === "manual" ? blueText : dimText}>  [M] Manual - Approve each action</text>
-        <text fg={mode === "auto" ? greenAccent : dimText}>  [A] Auto - Auto-approve T1-T{autoApproveTier}</text>
-        <text fg={dimText}> </text>
-        <text fg={dimText}>  [ESC] Cancel</text>
-      </box>
-    );
-  }
 
   // Render stage menu overlay
   if (showStageMenu) {
@@ -339,8 +327,9 @@ export default function OperatorDashboard({ session }: OperatorDashboardProps) {
         paddingTop={1}
       >
         <box flexDirection="row" gap={2}>
-          <text fg={getModeColor(mode)}>[{mode.toUpperCase()}]</text>
-          <text fg={dimText}>Stage: {OPERATOR_STAGES[currentStage].name}</text>
+          {mode === "plan" && <text fg={yellowText}>{"⏸ "}</text>}
+          {mode === "auto" && <text fg={greenAccent}>{"▶▶"}</text>}
+          <text fg={dimText}>{OPERATOR_STAGES[currentStage].name}</text>
           <text fg={dimText}>|</text>
           <text fg={dimText}>{session.targets[0]}</text>
         </box>
@@ -361,7 +350,7 @@ export default function OperatorDashboard({ session }: OperatorDashboardProps) {
             }}
             stickyScroll={true}
             stickyStart="bottom"
-            focused={pendingApprovals.length === 0}
+            focused={false}
           >
             {/* Welcome message if empty */}
             {messages.length === 0 && status === "idle" && (
@@ -422,11 +411,13 @@ export default function OperatorDashboard({ session }: OperatorDashboardProps) {
               />
             </box>
             <box flexDirection="row" gap={2} marginTop={1} backgroundColor="transparent">
-              {status === "running" && <text fg={redText}>^C Stop</text>}
-              <text fg={dimText}>^M Mode</text>
+              {mode === "plan" && <text fg={yellowText}>{"⏸  PLAN"}</text>}
+              {mode === "auto" && <text fg={greenAccent}>{"▶▶ AUTO"}</text>}
+              <text fg={dimText}>Shift+Tab: mode</text>
+              <text fg={dimText}>^C {directiveInput.trim() ? "Clear" : "Stop"}</text>
               <text fg={dimText}>^S Stage</text>
-              <text fg={verboseMode ? greenAccent : dimText}>⌥T Verbose{verboseMode ? " [ON]" : ""}</text>
-              <text fg={dimText}>[ESC] Exit</text>
+              <text fg={verboseMode ? greenAccent : dimText}>^T Verbose{verboseMode ? " ON" : ""}</text>
+              <text fg={dimText}>ESC</text>
             </box>
           </box>
         </box>
