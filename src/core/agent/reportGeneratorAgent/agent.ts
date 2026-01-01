@@ -89,16 +89,35 @@ function loadFindings(findingsPath: string): Finding[] {
 }
 
 /**
- * Count findings by severity
+ * Count findings by severity (including CVSS statistics if available)
  */
 function countBySeverity(findings: Finding[]): FindingsCount {
-  return {
+  const baseCounts: FindingsCount = {
     critical: findings.filter((f) => f.severity === 'CRITICAL').length,
     high: findings.filter((f) => f.severity === 'HIGH').length,
     medium: findings.filter((f) => f.severity === 'MEDIUM').length,
     low: findings.filter((f) => f.severity === 'LOW').length,
     total: findings.length,
   };
+
+  // Calculate CVSS stats if any findings have CVSS scores
+  const cvssFindings = findings.filter((f) => f.cvss?.score !== undefined);
+  if (cvssFindings.length > 0) {
+    const scores = cvssFindings.map((f) => f.cvss!.score);
+    baseCounts.cvss = {
+      averageScore: Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10,
+      maxScore: Math.max(...scores),
+      byRange: {
+        critical: cvssFindings.filter((f) => f.cvss!.score >= 9.0).length,
+        high: cvssFindings.filter((f) => f.cvss!.score >= 7.0 && f.cvss!.score < 9.0).length,
+        medium: cvssFindings.filter((f) => f.cvss!.score >= 4.0 && f.cvss!.score < 7.0).length,
+        low: cvssFindings.filter((f) => f.cvss!.score >= 0.1 && f.cvss!.score < 4.0).length,
+        none: cvssFindings.filter((f) => f.cvss!.score === 0).length,
+      },
+    };
+  }
+
+  return baseCounts;
 }
 
 /**
@@ -223,7 +242,7 @@ function getRiskLevel(findingsCount: FindingsCount): string {
  * Build findings summary table
  */
 function buildFindingsSummaryTable(findingsCount: FindingsCount): string {
-  return `## Findings Summary
+  let content = `## Findings Summary
 
 | Metric | Value |
 |--------|-------|
@@ -233,6 +252,24 @@ function buildFindingsSummaryTable(findingsCount: FindingsCount): string {
 | Low Findings | ${findingsCount.low} |
 | **Total** | **${findingsCount.total}** |
 `;
+
+  // Add CVSS statistics if available
+  if (findingsCount.cvss) {
+    content += `
+### CVSS 4.0 Metrics
+
+| Metric | Value |
+|--------|-------|
+| Average Score | **${findingsCount.cvss.averageScore}** |
+| Highest Score | **${findingsCount.cvss.maxScore}** |
+| Critical (9.0-10.0) | ${findingsCount.cvss.byRange.critical} |
+| High (7.0-8.9) | ${findingsCount.cvss.byRange.high} |
+| Medium (4.0-6.9) | ${findingsCount.cvss.byRange.medium} |
+| Low (0.1-3.9) | ${findingsCount.cvss.byRange.low} |
+`;
+  }
+
+  return content;
 }
 
 /**
@@ -288,11 +325,19 @@ No vulnerabilities were identified during this assessment.
 `;
   }
 
-  // Sort by severity
+  // Sort by CVSS score (if available) or severity
   const severityOrder = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
-  const sortedFindings = [...findings].sort(
-    (a, b) => severityOrder[a.severity] - severityOrder[b.severity]
-  );
+  const sortedFindings = [...findings].sort((a, b) => {
+    // If both have CVSS scores, sort by score (descending)
+    if (a.cvss?.score !== undefined && b.cvss?.score !== undefined) {
+      return b.cvss.score - a.cvss.score;
+    }
+    // If only one has CVSS, prioritize the one with CVSS
+    if (a.cvss?.score !== undefined) return -1;
+    if (b.cvss?.score !== undefined) return 1;
+    // Fall back to severity order
+    return severityOrder[a.severity] - severityOrder[b.severity];
+  });
 
   let content = `## Detailed Findings\n\n`;
 
@@ -303,7 +348,17 @@ No vulnerabilities were identified during this assessment.
     content += `### ${i + 1}. ${finding.title}
 
 **Severity:** ${severityBadge} ${finding.severity}
-**Endpoint:** \`${finding.endpoint}\`
+`;
+
+    // Add CVSS information if available
+    if (finding.cvss) {
+      const cvssBadge = getCVSSBadge(finding.cvss.score);
+      content += `**CVSS 4.0 Score:** ${cvssBadge} **${finding.cvss.score}** (${finding.cvss.severity})
+**Vector:** \`${finding.cvss.vectorString}\`
+`;
+    }
+
+    content += `**Endpoint:** \`${finding.endpoint}\`
 **Vulnerability Class:** ${finding.vulnerabilityClass || 'N/A'}
 
 #### Description
@@ -328,12 +383,38 @@ POC Script: \`${finding.pocPath}\`
 
 ${finding.remediation}
 
-${finding.references ? `#### References\n\n${finding.references}\n` : ''}
+`;
+
+    // Add CVSS reasoning if available
+    if (finding.cvss?.reasoning) {
+      content += `#### CVSS Assessment Reasoning
+
+${finding.cvss.reasoning}
 
 `;
+    }
+
+    if (finding.references) {
+      content += `#### References
+
+${finding.references}
+
+`;
+    }
   }
 
   return content;
+}
+
+/**
+ * Get CVSS score badge emoji
+ */
+function getCVSSBadge(score: number): string {
+  if (score >= 9.0) return '🔴';
+  if (score >= 7.0) return '🟠';
+  if (score >= 4.0) return '🟡';
+  if (score > 0) return '🟢';
+  return '⚪';
 }
 
 /**
