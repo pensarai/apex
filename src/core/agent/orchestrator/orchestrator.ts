@@ -338,6 +338,10 @@ export async function runPentestOrchestrator(
               logsPath: session.logsPath,
               pocsPath,
             },
+            sessionConfig: {
+              enableCvssScoring: session.config?.enableCvssScoring,
+              cvssModel: session.config?.cvssModel,
+            },
           },
           model,
           remoteSandboxUrl: sessionConfig?.remoteSandboxUrl,

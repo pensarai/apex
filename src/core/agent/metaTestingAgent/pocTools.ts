@@ -446,7 +446,12 @@ Continue testing for OTHER vulnerabilities at different endpoints.`,
           timestamp,
           sessionId: session.id,
           target,
-          ...(cvssData && { cvss: cvssData }),
+          ...(cvssData && { cvss: {
+            score: cvssData.score,
+            severity: cvssData.severity,
+            vectorString: cvssData.vectorString,
+            reasoning: cvssData.reasoning
+          } }),
         };
 
         const safeTitle = sanitizeFilename(finding.title);

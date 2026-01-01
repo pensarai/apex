@@ -674,6 +674,7 @@ export async function runBenchmarkWithDaytona(
           allowedPorts: [actualHostPort],
           strictScope: true,
         },
+        enableCvssScoring: true
       },
     });
 
