@@ -5,7 +5,8 @@ import type { OpenAIChatModelId } from '@ai-sdk/openai/internal';
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 import { createAmazonBedrock } from '@ai-sdk/amazon-bedrock';
 import {
-  generateObject,
+  generateText,
+  Output,
   streamText,
   type LanguageModel,
   type ModelMessage,
@@ -18,7 +19,7 @@ import {
   type ToolChoice,
   type ToolSet,
 } from 'ai';
-import { z } from 'zod';
+import { z } from 'zod/v3';
 import {
   checkIfContextLengthError,
   createSummarizationStream,
@@ -122,7 +123,7 @@ function wrapStreamWithErrorHandler(
 // Available models with names
 export interface ModelInfo {
   id: AIModel;
-  name: string;
+  name?: string;
   provider: AIModelProvider;
   contextLength?: number;
 }
@@ -228,19 +229,26 @@ export function streamResponse(
           // Get JSONSchema7 for display purposes
           const jsonSchema = inputSchema({ toolName: toolCall.toolName });
 
-          const { object: repairedArgs, usage: repairUsage } = await generateObject({
-            model: providerModel,
-            schema: tool.inputSchema, // Use the actual Zod schema from the tool
-            prompt: [
-              `The model tried to call the tool "${toolCall.toolName}"` +
-                ` with the following inputs:`,
-              toolCall.input,
-              `The tool accepts the following schema:`,
-              JSON.stringify(jsonSchema),
-              `Error encountered: ${error}`,
-              'Please fix the inputs to match the schema.',
-            ].join('\n'),
-          });
+          const { output: repairedArgs, usage: repairUsage } =
+            await generateText({
+              model: providerModel,
+              output: Output.object({
+                schema: tool.inputSchema, // Use the actual Zod schema from the tool
+              }),
+              prompt: [
+                `The model tried to call the tool "${toolCall.toolName}"` +
+                  ` with the following inputs:`,
+                toolCall.input,
+                `The tool accepts the following schema:`,
+                JSON.stringify(jsonSchema),
+                `Error encountered: ${error}`,
+                'Please fix the inputs to match the schema.',
+              ].join('\n'),
+            });
+
+          if (!repairedArgs) {
+            throw new Error('Failed to repair tool call arguments');
+          }
 
           // Report tool repair token usage if onStepFinish callback is provided
           if (onStepFinish && repairUsage) {
@@ -331,18 +339,28 @@ export interface GenerateObjectOpts<T extends z.ZodType> {
 
 export async function generateObjectResponse<T extends z.ZodType>(
   opts: GenerateObjectOpts<T>
-) {
-  const { model, schema, prompt, system, maxTokens, temperature, authConfig, onTokenUsage } =
-    opts;
-
-  const providerModel = getProviderModel(model, authConfig);
-
-  const { object, usage } = await generateObject({
-    model: providerModel,
+): Promise<z.infer<T>> {
+  const {
+    model,
     schema,
     prompt,
     system,
     maxTokens,
+    temperature,
+    authConfig,
+    onTokenUsage,
+  } = opts;
+
+  const providerModel = getProviderModel(model, authConfig);
+
+  const { output, usage } = await generateText({
+    model: providerModel,
+    output: Output.object({
+      schema,
+    }),
+    prompt,
+    system,
+    maxOutputTokens: maxTokens,
     temperature,
   });
 
@@ -351,5 +369,9 @@ export async function generateObjectResponse<T extends z.ZodType>(
     onTokenUsage(usage.inputTokens ?? 0, usage.outputTokens ?? 0);
   }
 
-  return object;
+  if (!output) {
+    throw new Error('Failed to generate structured output');
+  }
+
+  return output;
 }

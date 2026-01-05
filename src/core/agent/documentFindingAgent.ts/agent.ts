@@ -7,7 +7,7 @@ import {
 } from 'ai';
 import { streamResponse, type AIModel } from '../../ai';
 import type { Session } from '../sessions';
-import z from 'zod';
+import z from 'zod/v3';
 import { join } from 'path';
 import {
   existsSync,
@@ -72,7 +72,6 @@ export async function documentFindingAgent(
   }
   // Pentest-specific tool: create_poc
   const create_poc = tool({
-    name: 'create_poc',
     description: `Create a Proof-of-Concept (POC) file to demonstrate a vulnerability.
 
 **PRIMARY TYPE: bash scripts** - Most POCs should be executable bash scripts
@@ -365,7 +364,6 @@ ${executionResult.instructions}
 
   // Pentest-specific tool: document_finding with POC validation
   const document_finding = tool({
-    name: 'document_finding',
     description: `Document a security finding with severity, impact, and remediation guidance.
 
 **CRITICAL REQUIREMENT:** You MUST provide a valid POC path. The POC script must exist before documenting.
@@ -519,7 +517,6 @@ Create this POC, test it, then retry document_finding.`,
   let documentationResult: any = null;
 
   const finalize_documentation = tool({
-    name: 'finalize_documentation',
     description: `Finalize the finding documentation after POC verification.
     
 Call this tool to indicate the finding has been successfully documented or should be discarded.`,

@@ -1,6 +1,6 @@
 import type { Session } from "../agent/sessions";
 import fs from "fs";
-import { z } from "zod";
+import { z } from "zod/v3";
 import { ModelMessageObject } from "./types";
 import type { ToolMessage } from "./types";
 import type { ModelMessage } from "ai";

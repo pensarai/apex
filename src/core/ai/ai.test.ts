@@ -3,7 +3,7 @@ import { streamResponse } from "./ai";
 import { consumeStream } from "./utils";
 import { readFileSync } from "fs";
 import { join } from "path";
-import { z } from "zod";
+import { z } from "zod/v3";
 
 // Skip tests if API keys are not available (e.g., in CI)
 const hasApiKeys = process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY;

@@ -10,7 +10,7 @@ import { streamResponse, type AIModel } from "../../ai";
 import { SYSTEM } from "./prompts";
 import { createPentestTools } from "../tools";
 import { createSession, type Session } from "../sessions";
-import { z } from "zod";
+import { z } from "zod/v3";
 import { join } from "path";
 import { writeFileSync, mkdirSync, existsSync } from "fs";
 import { detectOSAndEnhancePrompt } from "../utils";

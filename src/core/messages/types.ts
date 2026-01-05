@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from 'zod/v3';
 
 const ToolMessageObject = z.object({
   role: z.literal('tool'),
@@ -30,7 +30,7 @@ const FilePartObject = z.object({
     z.instanceof(Uint8Array),
     z.instanceof(ArrayBuffer),
     z.instanceof(Buffer),
-    z.url()
+    z.string().url()
   ]),
   filename: z.string().optional(),
   mediaType: z.string(),

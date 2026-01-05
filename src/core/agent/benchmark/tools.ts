@@ -1,5 +1,5 @@
 import { tool } from "ai";
-import { z } from "zod";
+import { z } from "zod/v3";
 import { writeFileSync } from "fs";
 import { join } from "path";
 import type { Session } from "../sessions";

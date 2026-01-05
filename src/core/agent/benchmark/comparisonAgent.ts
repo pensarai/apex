@@ -1,5 +1,5 @@
 import { hasToolCall, stepCountIs, tool } from "ai";
-import { z } from "zod";
+import { z } from "zod/v3";
 import { streamResponse, type AIModel } from "../../ai";
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "fs";
 import { join } from "path";

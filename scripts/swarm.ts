@@ -3,7 +3,7 @@
 import { runAgent } from "../src/core/agent/pentestAgent";
 import { createSession, type Session } from "../src/core/agent/sessions";
 import type { AIModel } from "../src/core/ai";
-import { z } from "zod";
+import { z } from "zod/v3";
 import { readFileSync } from "fs";
 import pLimit from "p-limit";
 

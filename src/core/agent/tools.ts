@@ -1,5 +1,5 @@
 import { tool } from "ai";
-import { z } from "zod";
+import { z } from "zod/v3";
 import { exec } from "child_process";
 import { promisify } from "util";
 import {
@@ -44,30 +44,25 @@ const AnalysisSchema = z.object({
  */
 const ATTACK_KNOWLEDGE = {
   graphql_injection: {
-    name: "GraphQL Injection",
     description: "Exploits insufficient input validation in GraphQL queries to inject malicious queries/mutations",
     objective: "Access unauthorized data, expose API structure, or execute unintended operations",
     techniques: [
       {
-        name: "Schema Introspection Injection",
         how: "Inject __schema queries to expose complete API structure",
         context: "When GraphQL introspection is enabled and input isn't properly validated",
         example: "Inject '} { __schema { types { name } } }' to break out and query schema"
       },
       {
-        name: "Query Injection",
         how: "Break out of parameter context to inject unauthorized queries",
         context: "When user input is embedded in queries without proper parameterization",
         example: "Use '} { users { password email } }' to inject data-accessing queries"
       },
       {
-        name: "Mutation Injection",
         how: "Inject mutations to modify or delete data",
         context: "When mutations are accessible without authorization checks",
         example: "Inject 'mutation { deleteUser(id: 1) }' or similar data-modifying operations"
       },
       {
-        name: "Newline-based Injection",
         how: "Use newline characters to bypass basic input validation",
         context: "When basic string matching is used for filtering",
         example: "Use '\n__schema' or '\n' + 'query' to bypass simple filters"
@@ -93,30 +88,25 @@ const ATTACK_KNOWLEDGE = {
   },
 
   sql_injection: {
-    name: "SQL Injection",
     description: "Exploits insufficient input sanitization in SQL queries",
     objective: "Bypass authentication, access/modify data, or execute commands",
     techniques: [
       {
-        name: "Boolean-based Blind",
         how: "Use boolean conditions to infer data through application behavior",
         context: "When direct output isn't visible but application behavior changes",
         example: "' OR '1'='1 makes condition always true, ' OR '1'='2 makes it false"
       },
       {
-        name: "Union-based",
         how: "Use UNION to combine results from multiple queries",
         context: "When query results are displayed in the application",
         example: "' UNION SELECT username,password FROM users-- to extract data"
       },
       {
-        name: "Time-based Blind",
         how: "Use database sleep functions to infer conditions",
         context: "When no visible output changes occur",
         example: "' AND SLEEP(5)-- causes 5 second delay if vulnerable"
       },
       {
-        name: "Error-based",
         how: "Trigger SQL errors to extract information",
         context: "When database errors are displayed",
         example: "' to cause syntax error revealing database structure"
@@ -142,24 +132,20 @@ const ATTACK_KNOWLEDGE = {
   },
 
   nosql_injection: {
-    name: "NoSQL Injection",
     description: "Exploits insufficient input validation in NoSQL database queries (MongoDB, CouchDB, etc.)",
     objective: "Bypass authentication, access unauthorized data, or modify database queries",
     techniques: [
       {
-        name: "Operator Injection",
         how: "Inject NoSQL operators like $ne, $gt, $regex to manipulate queries",
         context: "When user input is directly used in NoSQL query objects",
         example: '{"username": "admin", "password": {"$ne": ""}} bypasses authentication'
       },
       {
-        name: "JavaScript Injection",
         how: "Inject JavaScript code in $where clauses",
         context: "When $where operator is used with user input",
         example: '{"$where": "this.username == \'admin\' || 1==1"} to bypass logic'
       },
       {
-        name: "Array Injection",
         how: "Send arrays instead of strings to manipulate query logic",
         context: "When query parsers accept arrays as operator syntax",
         example: "username=admin&password[$ne]=wrong as query parameters"
@@ -184,24 +170,20 @@ const ATTACK_KNOWLEDGE = {
   },
 
   xss_reflected: {
-    name: "Reflected Cross-Site Scripting (XSS)",
     description: "Injecting malicious scripts that execute in victim's browser",
     objective: "Execute JavaScript in victim's browser context",
     techniques: [
       {
-        name: "Basic Script Injection",
         how: "Inject <script> tags directly",
         context: "When output isn't HTML-escaped",
         example: "<script>alert(1)</script>"
       },
       {
-        name: "Event Handler Injection",
         how: "Use HTML event handlers like onerror, onload",
         context: "When <script> is filtered but other tags aren't",
         example: "<img src=x onerror=alert(1)>"
       },
       {
-        name: "Attribute Breakout",
         how: "Break out of HTML attributes to inject tags",
         context: "When input is reflected inside HTML attributes",
         example: '"><script>alert(1)</script>'
@@ -225,24 +207,20 @@ const ATTACK_KNOWLEDGE = {
   },
 
   command_injection: {
-    name: "Command Injection",
     description: "Executing arbitrary system commands through vulnerable application",
     objective: "Execute system commands on the server",
     techniques: [
       {
-        name: "Command Chaining",
         how: "Use semicolon to chain commands",
         context: "When input is passed to system shell",
         example: "; whoami or ; cat /etc/passwd"
       },
       {
-        name: "Pipe Injection",
         how: "Use pipe operator to redirect output",
         context: "When command output is processed",
         example: "| whoami"
       },
       {
-        name: "Subshell Injection",
         how: "Use backticks or $() for command substitution",
         context: "When shell interprets special characters",
         example: "`whoami` or $(cat /etc/passwd)"
@@ -266,18 +244,15 @@ const ATTACK_KNOWLEDGE = {
   },
 
   idor: {
-    name: "Insecure Direct Object Reference (IDOR)",
     description: "Accessing unauthorized objects by manipulating references",
     objective: "Access other users' data or unauthorized resources",
     techniques: [
       {
-        name: "Sequential ID Manipulation",
         how: "Change numeric IDs to access other resources",
         context: "When authorization isn't checked on ID-based endpoints",
         example: "Change /user/123 to /user/124 to access other user's data"
       },
       {
-        name: "UUID Enumeration",
         how: "Try predictable or enumerable UUIDs",
         context: "When UUIDs are sequential or guessable",
         example: "Test sequential UUIDs or common patterns"
@@ -299,24 +274,20 @@ const ATTACK_KNOWLEDGE = {
   },
 
   business_logic: {
-    name: "Business Logic Vulnerabilities",
     description: "Exploiting flaws in application's business logic",
     objective: "Manipulate prices, quantities, workflows, or bypass business rules",
     techniques: [
       {
-        name: "Price Manipulation",
         how: "Modify price parameters to negative or zero",
         context: "When client-side price values are trusted",
         example: "Set price=-100 or price=0.01"
       },
       {
-        name: "Quantity Manipulation",
         how: "Use negative quantities or overflow values",
         context: "When quantity validation is insufficient",
         example: "quantity=-1 or quantity=999999999"
       },
       {
-        name: "Workflow Bypass",
         how: "Skip required steps in multi-step processes",
         context: "When step validation isn't enforced",
         example: "Go directly to /checkout without /payment"
@@ -340,7 +311,6 @@ const ATTACK_KNOWLEDGE = {
 
   methodology: {
     systematic_discovery: {
-      name: "Systematic Attack Surface Discovery",
       description: "Complete attack surface mapping before vulnerability testing - professional pentesting methodology",
       objective: "Discover ALL endpoints, parameters, forms, APIs before testing any vulnerabilities",
 
@@ -459,7 +429,6 @@ const ATTACK_KNOWLEDGE = {
   },
 
   ssti: {
-    name: "Server-Side Template Injection (SSTI)",
     description: "Exploits unsafe template rendering where user input is embedded in templates without sanitization",
     objective: "Execute arbitrary code on server, access sensitive configuration, achieve RCE",
 
@@ -510,7 +479,6 @@ const ATTACK_KNOWLEDGE = {
 
     techniques: [
       {
-        name: "Math Expression Detection",
         how: "Inject template math expressions to test if evaluation occurs",
         context: "First step - determines if template injection is possible",
         payloads: ["{{7*7}}", "${7*7}", "{7*7}", "<%= 7*7 %>"],
@@ -518,7 +486,6 @@ const ATTACK_KNOWLEDGE = {
         example: "Test {{7*7}} in name parameter - if response shows '49', SSTI confirmed"
       },
       {
-        name: "Config/Environment Access",
         how: "Access template engine's config or environment objects",
         context: "After confirming evaluation, escalate to data access",
         payloads: {
@@ -529,7 +496,6 @@ const ATTACK_KNOWLEDGE = {
         example: "{{config}} in Jinja2 exposes Flask application configuration"
       },
       {
-        name: "RCE via Template Functions",
         how: "Use template built-in functions to execute system commands",
         context: "Final escalation to remote code execution",
         payloads: {
@@ -542,7 +508,6 @@ const ATTACK_KNOWLEDGE = {
         example: "Jinja2 RCE through config object and os module access"
       },
       {
-        name: "Blind SSTI - Time-Based",
         how: "Use sleep/delay functions when no visible output",
         context: "When template output isn't directly visible",
         payloads: {
@@ -553,7 +518,6 @@ const ATTACK_KNOWLEDGE = {
         example: "Inject sleep command and measure response time"
       },
       {
-        name: "Blind SSTI - Error-Based",
         how: "Trigger template errors to confirm injection",
         context: "When no output reflection but errors visible",
         payloads: ["{{invalid_syntax}}", "${undefined_var}", "{malformed"],
@@ -561,7 +525,6 @@ const ATTACK_KNOWLEDGE = {
         example: "{{invalid}} triggers 'TemplateSyntaxError' revealing Jinja2"
       },
       {
-        name: "Multi-Step Form SSTI",
         how: "Inject payload in step 1, check if executed in step 3",
         context: "Registration forms where name is rendered later",
         workflow: [
@@ -670,7 +633,6 @@ Don't just test obvious fields - templates can be anywhere user input is rendere
   },
 
   path_traversal: {
-    name: "Path Traversal / Local File Inclusion (LFI)",
     description: "Exploits insufficient input validation in file path operations to read arbitrary files",
     objective: "Read sensitive files (/etc/passwd, config files, source code, credentials)",
 
@@ -683,7 +645,6 @@ Don't just test obvious fields - templates can be anywhere user input is rendere
 
     techniques: [
       {
-        name: "Basic Traversal",
         how: "Use ../ sequences to navigate up directories",
         context: "First test - works if no validation",
         payloads: [
@@ -695,7 +656,6 @@ Don't just test obvious fields - templates can be anywhere user input is rendere
         example: "../../../etc/passwd accesses /etc/passwd from 3 levels deep"
       },
       {
-        name: "URL Encoding Bypass",
         how: "Encode ../ as %2e%2e%2f to bypass filters",
         context: "When basic traversal blocked by string matching",
         payloads: [
@@ -705,7 +665,6 @@ Don't just test obvious fields - templates can be anywhere user input is rendere
         example: "%2e%2e%2f bypasses filters that only check for literal '../'"
       },
       {
-        name: "Double Encoding Bypass",
         how: "Double-encode to bypass decoding filters",
         context: "When single encoding blocked",
         payloads: [
@@ -715,7 +674,6 @@ Don't just test obvious fields - templates can be anywhere user input is rendere
         example: "%252e = encoded '%2e' which decodes to '.'"
       },
       {
-        name: "Null Byte Injection",
         how: "Use %00 to truncate expected file extensions",
         context: "When application appends .pdf, .txt, .html",
         payloads: [
@@ -726,7 +684,6 @@ Don't just test obvious fields - templates can be anywhere user input is rendere
         example: "../../../etc/passwd%00.pdf - null byte truncates .pdf"
       },
       {
-        name: "Absolute Path Access",
         how: "Use absolute paths instead of relative",
         context: "When traversal sequences filtered",
         payloads: [
@@ -738,7 +695,6 @@ Don't just test obvious fields - templates can be anywhere user input is rendere
         example: "/etc/passwd directly accesses absolute path"
       },
       {
-        name: "Windows Path Separators",
         how: "Use backslashes for Windows systems",
         context: "When / is filtered but \\\\ isn't",
         payloads: [
@@ -749,7 +705,6 @@ Don't just test obvious fields - templates can be anywhere user input is rendere
         example: "..\\\\..\\\\ uses Windows path separators"
       },
       {
-        name: "Protocol Wrappers (PHP)",
         how: "Use PHP wrappers to access files",
         context: "PHP applications with wrapper support",
         payloads: [
@@ -762,7 +717,6 @@ Don't just test obvious fields - templates can be anywhere user input is rendere
         example: "php://filter/convert.base64-encode reveals source code"
       },
       {
-        name: "Mixed Encoding",
         how: "Mix different encodings to confuse filters",
         context: "Advanced bypass when multiple filters exist",
         payloads: [
@@ -877,7 +831,6 @@ CRITICAL: Test ALL parameters that might handle files:
   },
 
   jwt_vulnerabilities: {
-    name: "JWT (JSON Web Token) Vulnerabilities",
     description: "Exploits weak JWT implementations allowing token forgery, signature bypass, or algorithm confusion",
     objective: "Forge tokens, bypass authentication, escalate privileges, manipulate user identity",
 
@@ -894,7 +847,6 @@ CRITICAL: Test ALL parameters that might handle files:
 
     techniques: [
       {
-        name: "None Algorithm Attack",
         how: "Change alg header to 'none', remove signature",
         context: "Some implementations accept unsigned tokens",
         steps: [
@@ -907,7 +859,6 @@ CRITICAL: Test ALL parameters that might handle files:
         example: "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJ1c2VyX2lkIjoxLCJyb2xlIjoiYWRtaW4ifQ."
       },
       {
-        name: "Algorithm Confusion (RS256→HS256)",
         how: "Change algorithm from RS256 to HS256",
         context: "Server may verify HS256 with public key as secret",
         steps: [
@@ -919,7 +870,6 @@ CRITICAL: Test ALL parameters that might handle files:
         example: "Public key used as HMAC secret instead of RSA verification"
       },
       {
-        name: "Weak Secret Brute Force",
         how: "Crack JWT secret using dictionary attack",
         context: "When HS256/HS512 uses weak secret",
         tools: [
@@ -934,7 +884,6 @@ CRITICAL: Test ALL parameters that might handle files:
         example: "If secret is 'secret', token can be forged"
       },
       {
-        name: "Payload Manipulation Without Re-signing",
         how: "Modify payload without changing signature",
         context: "When signature not verified",
         steps: [
@@ -948,7 +897,6 @@ CRITICAL: Test ALL parameters that might handle files:
         example: "Change user_id without re-signing to access other user's data"
       },
       {
-        name: "JWT Injection in Kid Parameter",
         how: "Inject malicious values in 'kid' (key ID) header",
         context: "When kid used to fetch signing key from filesystem or URL",
         payloads: [
@@ -960,7 +908,6 @@ CRITICAL: Test ALL parameters that might handle files:
         example: "kid: /dev/null causes verification with empty key"
       },
       {
-        name: "JWT Header Injection",
         how: "Add malicious parameters to JWT header",
         context: "When application processes custom header parameters",
         payloads: [
@@ -1113,8 +1060,7 @@ export type HttpRequestResult = {
  * This function is created with a session context to save findings to disk
  */
 function createDocumentFindingTool(session: Session) {
-  return tool({
-    name: "document_finding",
+  return tool<any, any>({
     description: `Document a security finding with severity, impact, and remediation guidance.
 
 SEVERITY LEVELS:
@@ -1235,8 +1181,7 @@ ${finding.references ? `## References\n\n${finding.references}` : ""}
  * Scratchpad tool - Take notes during testing
  */
 function createScratchpadTool(session: Session) {
-  return tool({
-    name: "scratchpad",
+  return tool<any, any>({
     description: `Write notes, observations, or temporary data to the scratchpad during testing.
 
 Use this to:
@@ -1289,8 +1234,7 @@ The scratchpad is session-specific and helps maintain context during long assess
 /**
  * Port scan analyzer - Interpret nmap results
  */
-export const analyzeScan = tool({
-  name: "analyze_scan",
+export const analyzeScan = tool<any, any>({
   description: `Analyze scan results and suggest next steps for penetration testing.
 
 This tool helps interpret findings from:
@@ -1335,8 +1279,8 @@ Provides guidance on:
       const portMatches = results.match(/(\d+)\/tcp\s+open/g);
       if (portMatches) {
         analysis.openPorts = portMatches
-          .map((m) => m.split("/")[0])
-          .filter((p): p is string => p !== undefined);
+          .map((m: string) => m.split("/")[0])
+          .filter((p: string | undefined): p is string => p !== undefined);
         analysis.summary = `Found ${analysis.openPorts.length} open TCP ports`;
 
         // Add recommendations based on common ports
@@ -1376,8 +1320,7 @@ Provides guidance on:
  * Generate comprehensive report - Create final pentest report
  */
 function createGenerateReportTool(session: Session) {
-  return tool({
-    name: "generate_report",
+  return tool<any, any>({
     description: `Generate a comprehensive penetration testing report for the session.
 
 This tool creates a detailed report including:
@@ -1595,7 +1538,7 @@ ${testResultsSummary ? `\n### Test Coverage\n\n${testResultsSummary}\n` : ""}
 
 ## Key Findings
 
-${keyFindings.map((finding, idx) => `${idx + 1}. ${finding}`).join("\n")}
+${keyFindings.map((finding: string, idx: number) => `${idx + 1}. ${finding}`).join("\n")}
 
 ---
 
@@ -1813,8 +1756,7 @@ async function recordTestResultCore(session: Session, params: {
  * Record test result - Track all security tests including negative results
  */
 function createRecordTestResultTool(session: Session) {
-  return tool({
-    name: "record_test_result",
+  return tool<any, any>({
     description: `Record the result of a security test, including tests that did NOT find vulnerabilities.
 
 This tool is critical for:
@@ -1893,7 +1835,7 @@ async function generateTestStrategy(params: {
 }, model: AIModel, onTokenUsage?: OnTokenUsage) {
   const prompt = `You are a penetration testing expert. Generate a concise testing strategy:
 
-Attack Type: ${params.knowledge.name}
+Attack Type: ${params.attackType}
 Description: ${params.knowledge.description}
 Objective: ${params.knowledge.objective}
 
@@ -1938,7 +1880,7 @@ async function generatePayload(params: {
   previousResults: any[];
   round: number;
 }, model: AIModel, onTokenUsage?: OnTokenUsage) {
-  const prompt = `Generate ONE ${params.knowledge.name} payload for testing.
+  const prompt = `Generate ONE ${params.attackType} payload for testing.
 
 Techniques:
 ${params.knowledge.techniques.map((t: any) => `- ${t.name}: ${t.example}`).join('\n')}
@@ -1988,7 +1930,7 @@ async function analyzeResponse(params: {
 }, model: AIModel, onTokenUsage?: OnTokenUsage) {
   const prompt = `Analyze this security test response:
 
-Attack: ${params.knowledge.name}
+Attack: ${params.attackType}
 Payload: ${params.payload.payload}
 HTTP Status: ${params.response.status}
 Response Body: ${params.response.body?.substring(0, 500) || 'N/A'}
@@ -2051,8 +1993,7 @@ Analyze: Is this vulnerable? Return ONLY JSON:
  * Smart Test Parameter Tool
  */
 function createSmartTestTool(session: Session, model: AIModel, onTokenUsage?: OnTokenUsage) {
-  return tool({
-    name: "test_parameter",
+  return tool<any, any>({
     description: `Intelligently test a parameter for a vulnerability using AI-powered adaptive testing.
 
 This tool uses AI to:
@@ -2112,7 +2053,7 @@ test_parameter({
           };
         }
 
-        console.log(`\n[*] Testing ${parameter} for ${knowledge.name}...`);
+        console.log(`\n[*] Testing ${parameter} for ${attackType}...`);
 
         // Generate strategy (optional, for logging)
         const strategy = await generateTestStrategy({
@@ -2207,8 +2148,8 @@ test_parameter({
           vulnerable,
           payloadsTested: results,
           conclusion: vulnerable
-            ? `VULNERABLE to ${knowledge.name} with ${finalConfidence} confidence`
-            : `NOT VULNERABLE to ${knowledge.name} after ${results.length} tests`,
+            ? `VULNERABLE to ${attackType} with ${finalConfidence} confidence`
+            : `NOT VULNERABLE to ${attackType} after ${results.length} tests`,
           evidence: vulnerable ? JSON.stringify(results.filter(r => r.vulnerable)) : undefined,
           confidence: finalConfidence as any,
           toolCallDescription: 'Recording test result'
@@ -2221,8 +2162,8 @@ test_parameter({
           testsPerformed: results.length,
           results,
           recommendation: vulnerable
-            ? `✓ VULNERABILITY FOUND! Use document_finding to formally document this ${knowledge.name} vulnerability.`
-            : `✓ Parameter appears secure against ${knowledge.name}. Continue testing other attack types or parameters.`,
+            ? `✓ VULNERABILITY FOUND! Use document_finding to formally document this ${attackType} vulnerability.`
+            : `✓ Parameter appears secure against ${attackType}. Continue testing other attack types or parameters.`,
           nextAction: vulnerable ? 'document_finding' : 'continue_testing'
         };
 
@@ -2238,8 +2179,7 @@ test_parameter({
 }
 
 function getAttackSurfaceAgent() {
-  return tool({
-    name: "get_attack_surface",
+  return tool<any, any>({
     description:
       "Get the attack surface of a target using the attack surface agent",
     inputSchema: z.object({
@@ -2250,8 +2190,7 @@ function getAttackSurfaceAgent() {
 }
 
 function runPentestAgents(model: AIModel = "claude-4-sonnet-20240229") {
-  return tool({
-    name: "pentest_agents",
+  return tool<any, any>({
     description: "Perform a pentest on a target using the pentest agent",
     inputSchema: z.object({
       targets: z
@@ -2264,7 +2203,7 @@ function runPentestAgents(model: AIModel = "claude-4-sonnet-20240229") {
         .describe("The targets to perform a pentest on"),
     }),
     execute: async ({ targets }) => {
-      const promises = targets.map((target) => {
+      const promises = targets.map((target: { target: string; objective: string }) => {
         return runAgent({
           target: target.target,
           objective: target.objective,
@@ -2278,8 +2217,7 @@ function runPentestAgents(model: AIModel = "claude-4-sonnet-20240229") {
 }
 
 function createCheckTestingCoverageTool(session: Session) {
-  return tool({
-    name: "check_testing_coverage",
+  return tool<any, any>({
     description: `Analyze testing coverage to understand what has been tested and identify gaps.
 
 This tool reads all recorded test results and provides:
@@ -2389,9 +2327,8 @@ Use this when:
             // Skip methodology - it's not a testable attack type
             if ('systematic_discovery' in knowledge) continue;
 
-            if (objectiveLower.includes(attackType.replace('_', ' ')) ||
-                objectiveLower.includes(knowledge.name.toLowerCase())) {
-              suggestions.push(`⚠️ Objective mentions "${knowledge.name}" but no tests performed yet`);
+            if (objectiveLower.includes(attackType.replace('_', ' '))) {
+              suggestions.push(`⚠️ Objective mentions "${attackType}" but no tests performed yet`);
             }
           }
         }
@@ -2449,8 +2386,7 @@ Use this when:
  * Ensures agent tested everything systematically
  */
 function createValidateCompletenessTool(session: Session) {
-  return tool({
-    name: "validate_completeness",
+  return tool<any, any>({
     description: `Validate that you've completed a thorough, professional assessment before generating final report.
 
 This tool checks:
@@ -2592,8 +2528,7 @@ This is the difference between amateur and professional pentesting.`,
  * Wraps execute_command for common enumeration patterns
  */
 function createEnumerateEndpointsTool(session: Session) {
-  return tool({
-    name: "enumerate_endpoints",
+  return tool<any, any>({
     description: `Quickly enumerate endpoints using pattern-based discovery.
 
 Use this when:
@@ -2775,8 +2710,7 @@ export function createPentestTools(
   // Get rate limiter from session (initialized eagerly in createSession)
   const rateLimiter = session._rateLimiter;
 
-  const executeCommand = tool({
-    name: "execute_command",
+  const executeCommand = tool<any, any>({
     description: `Execute a shell command for penetration testing activities.
 
 COMMON COMMANDS FOR BLACK BOX TESTING:
@@ -2866,8 +2800,7 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
   });
 
   // Define httpRequest tool with override support
-  const httpRequest = tool({
-    name: "http_request",
+  const httpRequest = tool<any, any>({
     description: `Make HTTP requests with detailed response analysis for web application testing.
 
 USAGE GUIDANCE:

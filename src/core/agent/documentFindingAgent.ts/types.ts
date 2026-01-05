@@ -1,4 +1,4 @@
-import z from 'zod';
+import z from 'zod/v3';
 
 export const ApexFindingObject = z.object({
   title: z.string().describe('Finding title'),
