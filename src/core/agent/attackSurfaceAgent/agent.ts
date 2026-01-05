@@ -91,11 +91,12 @@ export async function runAgent(opts: RunAgentProps): Promise<{
   }
 
   // Create tools with session context
-  const { analyze_scan, execute_command, http_request } = createPentestTools(
+  const { analyze_scan, execute_command, http_request, cve_lookup, smart_enumerate } = createPentestTools(
     session,
     model,
     toolOverride,
-    onToolTokenUsage
+    onToolTokenUsage,
+    abortSignal
   );
 
   // Attack Surface specific tool: document_asset
@@ -795,9 +796,11 @@ Begin your attack surface analysis by:
 1. Understanding the target scope (is it a domain, IP, URL, network range, or organization?)
 2. Performing comprehensive reconnaissance to map the attack surface WITHIN SCOPE
 3. Identifying assets, services, endpoints, and potential entry points
-4. Categorizing discovered targets by type and risk level
-5. Document each significant asset using the document_asset tool
-6. When complete, call the create_attack_surface_report tool
+4. Call the smart_enumerate tool to aid in your discovery to find hidden routes and other resources
+5. Categorizing discovered targets by type and risk level
+6. Identify any core technologies being used, their versions, and calling the cve_lookup tool to see if there are any existing vulnerabilities in that version of the identified software
+7. Document each significant asset using the document_asset tool
+8. When complete, call the create_attack_surface_report tool
 
 IMPORTANT SCOPING RULES:
 ${
@@ -843,6 +846,8 @@ You MUST provide the final report using create_attack_surface_report tool.
       test_endpoint_variations,
       validate_discovery_completeness,
       create_attack_surface_report,
+      cve_lookup,
+      smart_enumerate
     },
     stopWhen: stepCountIs(10000),
     toolChoice: "auto", // Let the model decide when to use tools vs respond

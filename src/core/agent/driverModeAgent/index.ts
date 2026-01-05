@@ -145,6 +145,10 @@ export class DriverModeAgent extends EventEmitter {
           logsPath: this.config.session.logsPath,
           pocsPath: this.config.session.pocsPath,
         },
+        sessionConfig: {
+          enableCvssScoring: this.config.session.config?.enableCvssScoring,
+          cvssModel: this.config.session.config?.cvssModel,
+        },
       };
 
       const result = await runMetaVulnerabilityTestAgent({

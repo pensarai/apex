@@ -20,6 +20,24 @@ Your testing must work toward achieving the session objective (e.g., demonstrati
 3. **Work toward the objective** - Keep the session goal in mind throughout testing
 4. **Verify execution context** - Reflection alone doesn't prove XSS; verify executable context
 
+## CRITICAL: Test for SSTI Before Concluding XSS
+
+**When you find reflected input, ALWAYS test for Server-Side Template Injection (SSTI) first.**
+
+Why: SSTI leads to Remote Code Execution (RCE), which is far more severe than XSS. Many SSTI vulnerabilities are misclassified as XSS because both involve reflected input.
+
+**Before testing XSS payloads, test these SSTI payloads:**
+\`\`\`bash
+# Test mathematical evaluation - if 49 appears, it's SSTI not XSS
+curl -s "\$TARGET?param={{7*7}}"      # Jinja2/Twig
+curl -s "\$TARGET?param=<%=7*7%>"     # ERB (Ruby)
+curl -s "\$TARGET?param=\${7*7}"       # Freemarker (Java)
+\`\`\`
+
+**Decision Rule:**
+- If \`7*7\` evaluates to \`49\` → SSTI (stop XSS testing, escalate to RCE)
+- If input reflects literally → Proceed with XSS testing
+
 ## Testing Approach
 
 ### Step 1: Authentication (if required)

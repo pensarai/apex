@@ -33,17 +33,24 @@ import type {
 } from "./types";
 import { CreatePocSchema, DocumentFindingSchema } from "./types";
 import type { ExecuteCommandOpts, ExecuteCommandResult } from "../tools";
+import { scoreFindingWithCVSS, DEFAULT_CVSS_MODEL } from "../cvssScorer";
+import type { AIModel } from "../../ai";
+import type { CVSS4Metrics } from "../../../lib/cvss";
+
+/** Options for CVSS scoring in document_finding tool */
+export interface DocumentFindingCVSSOptions {
+  /** Enable CVSS scoring (from session config) */
+  enableCvssScoring?: boolean;
+  /** Model to use for CVSS scoring (default: claude-4-5-haiku) */
+  cvssModel?: AIModel;
+  /** Callback to get current agent messages for context */
+  getMessages?: () => any[];
+}
 
 const execAsync = promisify(exec);
 
-/**
- * Maximum POC attempts before giving up on an approach
- */
 const MAX_POC_ATTEMPTS = 3;
 
-/**
- * Sanitize a string for use in filenames
- */
 function sanitizeFilename(str: string): string {
   return str
     .toLowerCase()
@@ -53,9 +60,6 @@ function sanitizeFilename(str: string): string {
     .substring(0, 50);
 }
 
-/**
- * Create the create_poc tool for generating and testing POC scripts
- */
 export function createPocTool(
   session: MetaTestingSessionInfo,
   logger: Logger,
@@ -92,7 +96,6 @@ POC requirements:
 Max ${MAX_POC_ATTEMPTS} attempts per approach before pivoting.`,
     inputSchema: CreatePocSchema,
     execute: async (poc: CreatePocInput): Promise<CreatePocResult> => {
-      // Track attempts for this approach
       const approachKey = `${poc.pocName}_${poc.description.substring(0, 30)}`;
       const currentAttempts = (pocAttempts.get(approachKey) || 0) + 1;
       pocAttempts.set(approachKey, currentAttempts);
@@ -102,7 +105,6 @@ Max ${MAX_POC_ATTEMPTS} attempts per approach before pivoting.`,
       );
 
       try {
-        // Ensure pocs directory exists
         const pocsPath = session.pocsPath;
         if (!existsSync(pocsPath)) {
           mkdirSync(pocsPath, { recursive: true });
@@ -150,11 +152,9 @@ set -e  # Exit on error
           }
         }
 
-        // Write POC file
         writeFileSync(pocPath, pocContent);
         logger.info(`POC written to: ${relativePocPath}`);
 
-        // Execute the POC
         let stdout = "";
         let stderr = "";
         let exitCode = 0;
@@ -205,7 +205,6 @@ set -e  # Exit on error
             stderr = result.stderr;
           }
 
-          // Success - POC executed without error
           logger.info(`POC executed successfully: ${filename}`);
           pocPaths.push(relativePocPath);
 
@@ -309,13 +308,11 @@ This is a system error, not an exploitation failure. Check:
   return { create_poc, pocPaths };
 }
 
-/**
- * Create the document_finding tool for recording confirmed vulnerabilities
- */
 export function createDocumentFindingTool(
   session: MetaTestingSessionInfo,
   logger: Logger,
-  target: string
+  target: string,
+  cvssOptions?: DocumentFindingCVSSOptions
 ) {
   const findingPaths: string[] = [];
 
@@ -330,8 +327,9 @@ export function createDocumentFindingTool(
 This tool:
 1. Validates POC exists
 2. Checks for duplicate findings
-3. Saves finding JSON to session
-4. Updates findings summary
+3. Calculates CVSS 4.0 score (if enabled)
+4. Saves finding JSON to session
+5. Updates findings summary
 
 **Call this when:**
 - POC executed successfully AND
@@ -346,12 +344,10 @@ This tool:
       );
 
       try {
-        // Ensure findings directory exists
         if (!existsSync(session.findingsPath)) {
           mkdirSync(session.findingsPath, { recursive: true });
         }
 
-        // Validate POC exists
         const fullPocPath = join(session.rootPath, finding.pocPath);
         if (!existsSync(fullPocPath)) {
           return {
@@ -385,9 +381,64 @@ Continue testing for OTHER vulnerabilities at different endpoints.`,
           };
         }
 
-        // Create finding with metadata
         const timestamp = new Date().toISOString();
         const id = nanoid(8);
+
+        // Calculate CVSS 4.0 score if enabled
+        let cvssData:
+          | {
+              score: number;
+              severity: string;
+              vectorString: string;
+              metrics: CVSS4Metrics;
+              scoreType: string;
+              reasoning: string;
+            }
+          | undefined;
+
+        // Default to true if not specified (per plan)
+        const shouldScoreCVSS = cvssOptions?.enableCvssScoring !== false;
+
+        if (shouldScoreCVSS) {
+          try {
+            const cvssModel = cvssOptions?.cvssModel || DEFAULT_CVSS_MODEL;
+            const messages = cvssOptions?.getMessages?.() || [];
+
+            logger.info(`Calculating CVSS 4.0 score for: ${finding.title}`);
+
+            const cvssResult = await scoreFindingWithCVSS(
+              {
+                finding: {
+                  title: finding.title,
+                  description: finding.description,
+                  impact: finding.impact,
+                  evidence: finding.evidence,
+                  endpoint: finding.endpoint,
+                  vulnerabilityClass: (finding as any).vulnerabilityClass,
+                  remediation: finding.remediation,
+                },
+                agentMessages: messages,
+              },
+              cvssModel
+            );
+
+            cvssData = {
+              score: cvssResult.score,
+              severity: cvssResult.severity,
+              vectorString: cvssResult.vectorString,
+              metrics: cvssResult.metrics,
+              scoreType: cvssResult.scoreType,
+              reasoning: cvssResult.reasoning,
+            };
+
+            logger.info(
+              `CVSS 4.0 Score: ${cvssResult.score} (${cvssResult.severity}) - ${cvssResult.vectorString}`
+            );
+          } catch (cvssError: any) {
+            // Non-blocking: log error and continue without CVSS
+            logger.error(`CVSS scoring failed: ${cvssError.message}`);
+          }
+        }
 
         const findingWithMeta = {
           ...finding,
@@ -395,9 +446,14 @@ Continue testing for OTHER vulnerabilities at different endpoints.`,
           timestamp,
           sessionId: session.id,
           target,
+          ...(cvssData && { cvss: {
+            score: cvssData.score,
+            severity: cvssData.severity,
+            vectorString: cvssData.vectorString,
+            reasoning: cvssData.reasoning
+          } }),
         };
 
-        // Save finding JSON
         const safeTitle = sanitizeFilename(finding.title);
         const filename = `${timestamp.split("T")[0]}-${safeTitle}.json`;
         const filepath = join(session.findingsPath, filename);
@@ -405,9 +461,11 @@ Continue testing for OTHER vulnerabilities at different endpoints.`,
         writeFileSync(filepath, JSON.stringify(findingWithMeta, null, 2));
         findingPaths.push(filepath);
 
-        // Update findings summary
         const summaryPath = join(session.rootPath, "findings-summary.md");
-        const summaryEntry = `\n- **[${finding.severity}]** ${finding.title}\n  - Endpoint: \`${finding.endpoint}\`\n  - POC: \`${finding.pocPath}\`\n  - Finding: \`findings/${filename}\`\n`;
+        const cvssInfo = cvssData
+          ? `\n  - CVSS 4.0: **${cvssData.score}** (${cvssData.severity})`
+          : "";
+        const summaryEntry = `\n- **[${finding.severity}]** ${finding.title}${cvssInfo}\n  - Endpoint: \`${finding.endpoint}\`\n  - POC: \`${finding.pocPath}\`\n  - Finding: \`findings/${filename}\`\n`;
 
         try {
           if (existsSync(summaryPath)) {
@@ -429,12 +487,16 @@ ${summaryEntry}`;
 
         logger.info(`Finding documented: ${filename}`);
 
+        const cvssMessage = cvssData
+          ? `\n- CVSS 4.0: **${cvssData.score}** (${cvssData.severity})\n- Vector: \`${cvssData.vectorString}\``
+          : "";
+
         return {
           success: true,
           findingPath: filepath,
           message: `Finding documented successfully!
 
-**[${finding.severity}]** ${finding.title}
+**[${finding.severity}]** ${finding.title}${cvssMessage}
 - Saved to: findings/${filename}
 - POC: ${finding.pocPath}
 
@@ -457,9 +519,6 @@ ${summaryEntry}`;
   return { document_finding, findingPaths };
 }
 
-/**
- * Load existing findings from the findings directory
- */
 function loadExistingFindings(findingsPath: string): any[] {
   if (!existsSync(findingsPath)) {
     return [];

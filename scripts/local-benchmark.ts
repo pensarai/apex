@@ -10,7 +10,18 @@ import type { BenchmarkResults } from "../src/core/agent/benchmark/types";
 import { parseDockerComposePort, getActualDockerPort } from "../src/core/agent/benchmark/docker-utils";
 import { Session } from "../src/core/session";
 import { runStreamlinedPentest } from "../src/core/agent/thoroughPentestAgent/streamlined";
-import { extractFlagFromRepo, detectFlagInArtifacts } from "../src/core/agent/benchmark/flag-detector";
+import {
+  extractFlagFromRepo,
+  detectFlagInArtifacts,
+  extractPACEFlags,
+  detectMultipleFlagsInArtifacts,
+} from "../src/core/agent/benchmark/flag-detector";
+import type {
+  ExecuteCommandOpts,
+  ExecuteCommandResult,
+  HttpRequestOpts,
+  HttpRequestResult,
+} from "../src/core/agent/tools";
 
 const exec = promisify(nodeExec);
 
@@ -202,14 +213,17 @@ interface CLIOptions {
   continueRun?: boolean;
   prefix?: string;
   skip?: string[];
+  pace?: boolean;
+  vulns?: boolean;
 }
 
 /**
- * Get list of XBEN benchmarks that have already been run by checking ~/.pensar/executions
+ * Get list of benchmarks that have already been run by checking ~/.pensar/executions
  * A benchmark is considered "complete" only if its directory contains benchmark_results.json
- * @param prefix Optional prefix to filter by (matches {prefix}-XBEN-* pattern)
+ * @param prefix Optional prefix to filter by (matches {prefix}-XBEN-* or {prefix}-FullChain* pattern)
+ * @param isPace If true, match PACEbench FullChain patterns instead of XBEN
  */
-function getCompletedBenchmarks(prefix?: string): string[] {
+function getCompletedBenchmarks(prefix?: string, isPace?: boolean): string[] {
   const executionsDir = path.join(process.env.HOME || "", ".pensar", "executions");
 
   if (!existsSync(executionsDir)) {
@@ -218,31 +232,42 @@ function getCompletedBenchmarks(prefix?: string): string[] {
 
   try {
     const entries = readdirSync(executionsDir);
-    const completedXBENs = new Set<string>();
+    const completedBenchmarks = new Set<string>();
 
-    // Build the pattern based on prefix
-    // If prefix is provided, match {prefix}-XBEN-XXX-YY-*
-    // Otherwise, match benchmark-XBEN-XXX-YY-*
+    // Build the pattern based on prefix and benchmark type
     const patternPrefix = prefix || "benchmark";
-    const pattern = new RegExp(`^${patternPrefix}-(XBEN-\\d+-\\d+)-`);
+
+    // Patterns for XBEN benchmarks
+    const xbenNewPattern = new RegExp(`^${patternPrefix}-(XBEN-\\d+-\\d+)ses_`);
+    const xbenLegacyPattern = new RegExp(`^${patternPrefix}-(XBEN-\\d+-\\d+)-[a-z0-9]+$`);
+
+    // Patterns for PACEbench FullChain benchmarks
+    const paceNewPattern = new RegExp(`^${patternPrefix}-(FullChain\\d+)ses_`);
+    const paceLegacyPattern = new RegExp(`^${patternPrefix}-(FullChain\\d+)-[a-z0-9]+$`);
 
     for (const entry of entries) {
       const fullPath = path.join(executionsDir, entry);
 
       // Check if it's a directory and matches the expected pattern
       if (statSync(fullPath).isDirectory()) {
-        const match = entry.match(pattern);
+        let match;
+        if (isPace) {
+          match = entry.match(paceNewPattern) || entry.match(paceLegacyPattern);
+        } else {
+          match = entry.match(xbenNewPattern) || entry.match(xbenLegacyPattern);
+        }
+
         if (match && match[1]) {
           // Check if benchmark_results.json exists (indicates completion)
           const resultsFile = path.join(fullPath, "benchmark_results.json");
           if (existsSync(resultsFile)) {
-            completedXBENs.add(match[1]);
+            completedBenchmarks.add(match[1]);
           }
         }
       }
     }
 
-    return Array.from(completedXBENs);
+    return Array.from(completedBenchmarks);
   } catch (error: any) {
     console.warn(`Warning: Failed to read executions directory: ${error.message}`);
     return [];
@@ -280,13 +305,55 @@ function enumerateXBENBenchmarks(repoPath: string): string[] {
 }
 
 /**
+ * Enumerate all FullChain* benchmark directories in /docker/FullChain
+ */
+function enumeratePACEBenchmarks(repoPath: string): string[] {
+  console.log(`🔍 Enumerating PACEbench FullChain challenges in ${repoPath}/docker/FullChain...`);
+
+  const fullchainDir = path.join(repoPath, "docker", "FullChain");
+
+  if (!existsSync(fullchainDir)) {
+    throw new Error(`FullChain directory not found: ${fullchainDir}`);
+  }
+
+  try {
+    const entries = readdirSync(fullchainDir);
+
+    const fullchainBenchmarks = entries.filter((entry) => {
+      const fullPath = path.join(fullchainDir, entry);
+      const isDirectory = statSync(fullPath).isDirectory();
+      const isFullChain = entry.startsWith("FullChain");
+      return isDirectory && isFullChain;
+    });
+
+    console.log(`✅ Found ${fullchainBenchmarks.length} FullChain challenges: ${fullchainBenchmarks.join(", ")}`);
+
+    return fullchainBenchmarks;
+  } catch (error: any) {
+    throw new Error(`Failed to enumerate PACEbench challenges: ${error.message}`);
+  }
+}
+
+/**
+ * Get the benchmark path based on benchmark type
+ */
+function getBenchmarkPath(repoPath: string, benchmarkName: string, isPace: boolean): string {
+  if (isPace) {
+    return path.join(repoPath, "docker", "FullChain", benchmarkName);
+  }
+  return path.join(repoPath, "benchmarks", benchmarkName);
+}
+
+/**
  * Run a single benchmark locally
  */
 async function runSingleBenchmark(
   benchmarkPath: string,
   benchmarkName: string,
   model: AIModel,
-  prefix?: string
+  prefix?: string,
+  isPace?: boolean,
+  vulnsMode?: boolean
 ): Promise<BenchmarkResults> {
   const startTime = Date.now();
 
@@ -296,6 +363,7 @@ async function runSingleBenchmark(
     console.log(`${"=".repeat(80)}`);
     console.log(`[${benchmarkName}] Path: ${benchmarkPath}`);
     console.log(`[${benchmarkName}] Model: ${model}`);
+    console.log(`[${benchmarkName}] Type: ${isPace ? "PACEbench" : "XBEN"}${vulnsMode ? " (vulnerability mode)" : ""}`);
     console.log(`${"=".repeat(80)}\n`);
 
     // Step 1: Parse docker-compose port before building and ensure ports are forwarded
@@ -303,14 +371,31 @@ async function runSingleBenchmark(
     const portInfo = parseDockerComposePort(benchmarkPath);
     console.log(`[${benchmarkName}] ✅ Found web service: ${portInfo.serviceName} on port ${portInfo.hostPort}${portInfo.needsPortMapping ? " (added port mapping)" : ""}`);
 
-    // Step 2: Extract flag from local benchmark directory
-    console.log(`[${benchmarkName}] 🔍 Extracting flag from benchmark...`);
-    const expectedFlag = await extractFlagFromRepo(benchmarkPath, benchmarkName);
+    // Step 2: Extract flag(s) from local benchmark directory
+    // For PACEbench, extract multiple flags; for XBEN, extract single flag
+    console.log(`[${benchmarkName}] 🔍 Extracting flag(s) from benchmark...`);
 
-    if (expectedFlag) {
-      console.log(`[${benchmarkName}] ✅ FLAG found: ${expectedFlag.substring(0, 20)}...`);
+    let expectedFlag: string | null = null;
+    let expectedFlags: Array<{ name: string; value: string }> = [];
+
+    if (isPace) {
+      // PACEbench: Extract multiple flags from flags/ directory
+      expectedFlags = await extractPACEFlags(benchmarkPath, benchmarkName);
+      if (expectedFlags.length > 0) {
+        console.log(`[${benchmarkName}] ✅ Found ${expectedFlags.length} PACE flags`);
+        // Use the first flag for docker build (if needed)
+        expectedFlag = expectedFlags[0]?.value || null;
+      } else {
+        console.log(`[${benchmarkName}] ⚠️  No PACE flags found in benchmark`);
+      }
     } else {
-      console.log(`[${benchmarkName}] ⚠️  FLAG not found in benchmark`);
+      // XBEN: Extract single flag computed from benchmark name
+      expectedFlag = await extractFlagFromRepo(benchmarkPath, benchmarkName);
+      if (expectedFlag) {
+        console.log(`[${benchmarkName}] ✅ FLAG found: ${expectedFlag.substring(0, 20)}...`);
+      } else {
+        console.log(`[${benchmarkName}] ⚠️  FLAG not found in benchmark`);
+      }
     }
 
     // Step 3: Build docker images with flag injection using make build
@@ -370,12 +455,100 @@ async function runSingleBenchmark(
 
     console.log(`[${benchmarkName}] 📝 Local session created: ${session.id}`);
 
-    // Step 8: Run streamlined pentest (scope constraints are in session config)
+    // Step 8: Create tool overrides that block docker commands and filesystem access
+    // These prevent cheating by accessing Docker containers directly or reading source code
+    const BLOCKED_DOCKER_COMMANDS = [
+      "docker",
+      "docker-compose",
+      "dockerd",
+      "containerd",
+      "ctr",
+      "nerdctl",
+    ];
+
+    // Blocked filesystem paths - prevent reading benchmark source code or container data
+    const BLOCKED_FS_PATHS = [
+      benchmarkPath, // Prevent access to benchmark source code
+      "/var/lib/docker", // Prevent direct access to container filesystems/databases
+    ];
+
+    const executeCommandOverride = async (
+      opts: ExecuteCommandOpts
+    ): Promise<ExecuteCommandResult> => {
+      try {
+        // Check for blocked docker commands
+        const commandLower = opts.command.toLowerCase().trim();
+        const firstWord = commandLower.split(/\s+/)[0] || "";
+
+        // Block docker commands to prevent cheating
+        if (
+          BLOCKED_DOCKER_COMMANDS.some(
+            (blocked) =>
+              firstWord === blocked ||
+              firstWord.startsWith(`${blocked} `) ||
+              commandLower.includes("docker ") ||
+              commandLower.includes("docker-compose ")
+          )
+        ) {
+          return {
+            command: opts.command,
+            success: false,
+            stdout: "",
+            stderr:
+              "Docker commands are blocked in benchmark mode to prevent cheating. Use HTTP requests to interact with the target application.",
+            error: "Docker commands are blocked in benchmark mode",
+          };
+        }
+
+        // Block filesystem access to benchmark source code directory
+        // This prevents cheating by reading source code directly
+        for (const blockedPath of BLOCKED_FS_PATHS) {
+          if (opts.command.includes(blockedPath)) {
+            return {
+              command: opts.command,
+              success: false,
+              stdout: "",
+              stderr: `Access to ${blockedPath} is blocked in benchmark mode to prevent cheating. Use HTTP requests to interact with the target application.`,
+              error: `Filesystem access to ${blockedPath} is blocked in benchmark mode`,
+            };
+          }
+        }
+
+        // Execute command locally with timeout
+        const effectiveTimeout = opts.timeout || 120000;
+        const { stdout, stderr } = await exec(opts.command, {
+          timeout: effectiveTimeout,
+          maxBuffer: 10 * 1024 * 1024, // 10MB buffer
+        });
+
+        return {
+          command: opts.command,
+          success: true,
+          stdout,
+          stderr,
+          error: "",
+        };
+      } catch (error: any) {
+        return {
+          command: opts.command,
+          success: false,
+          stdout: error.stdout || "",
+          stderr: error.stderr || error.message || String(error),
+          error: error.message || String(error),
+        };
+      }
+    };
+
+    // Step 9: Run streamlined pentest with tool overrides (scope constraints are in session config)
     console.log(`[${benchmarkName}] 🔍 Starting streamlined pentest...`);
+    console.log(`[${benchmarkName}] ℹ️  Tool overrides active: Docker commands and source code access BLOCKED`);
     const pentestResult = await runStreamlinedPentest({
       target: targetUrl,
       model,
       session,
+      toolOverride: {
+        execute_command: executeCommandOverride,
+      },
       onProgress: (status) => {
         const progressParts: string[] = [`[${benchmarkName}] [${status.phase}]`];
 
@@ -404,7 +577,15 @@ async function runSingleBenchmark(
     // Step 10: Detect flag in artifacts
     console.log(`[${benchmarkName}] 🎯 Detecting flag in artifacts...`);
     let flagDetection;
-    if (expectedFlag) {
+    if (isPace && expectedFlags.length > 0) {
+      // PACEbench: Detect multiple flags
+      flagDetection = await detectMultipleFlagsInArtifacts(
+        session.rootPath,
+        expectedFlags,
+        benchmarkName
+      );
+    } else if (expectedFlag) {
+      // XBEN: Detect single flag
       flagDetection = await detectFlagInArtifacts(
         session.rootPath,
         expectedFlag,
@@ -516,7 +697,9 @@ async function runMultipleBenchmarks(
   benchmarks: string[],
   model: AIModel,
   maxParallel: number,
-  prefix?: string
+  prefix?: string,
+  isPace?: boolean,
+  vulnsMode?: boolean
 ): Promise<BenchmarkResults[]> {
   const startTime = Date.now();
 
@@ -524,6 +707,7 @@ async function runMultipleBenchmarks(
   console.log("🚀 STARTING PARALLEL LOCAL BENCHMARK EXECUTION");
   console.log("=".repeat(80));
   console.log(`Repository: ${repoPath}`);
+  console.log(`Benchmark Type: ${isPace ? "PACEbench FullChain" : "XBEN"}${vulnsMode ? " (vulnerability detection mode)" : ""}`);
   console.log(`Benchmarks: ${benchmarks.length}`);
   console.log(`Model: ${model}`);
   console.log(`Max Parallel: ${maxParallel}`);
@@ -534,8 +718,8 @@ async function runMultipleBenchmarks(
   const results = await Promise.all(
     benchmarks.map((benchmarkName) =>
       limit(() => {
-        const benchmarkPath = path.join(repoPath, "benchmarks", benchmarkName);
-        return runSingleBenchmark(benchmarkPath, benchmarkName, model, prefix);
+        const benchmarkPath = getBenchmarkPath(repoPath, benchmarkName, !!isPace);
+        return runSingleBenchmark(benchmarkPath, benchmarkName, model, prefix, isPace, vulnsMode);
       })
     )
   );
@@ -688,7 +872,7 @@ async function main() {
     console.error("Usage: bun run scripts/local-benchmark.ts <repo-path> [options] [XBEN-001-24 XBEN-002-24 ...]");
     console.error();
     console.error("Arguments:");
-    console.error("  <repo-path>          Local path to XBEN challenges repository");
+    console.error("  <repo-path>          Local path to benchmark challenges repository");
     console.error();
     console.error("Options:");
     console.error("  --model <model>              AI model to use (default: claude-sonnet-4-5)");
@@ -698,14 +882,18 @@ async function main() {
     console.error("  --prefix <prefix>            Prefix for benchmark session names and output directories");
     console.error("  --continue                   Skip benchmarks that have already been run");
     console.error("  --skip <benchmarks>          Comma-separated list of benchmarks to skip (e.g., XBEN-001-24,XBEN-002-24)");
+    console.error("  --pace                       Run PACEbench FullChain challenges instead of XBEN");
+    console.error("  --vulns                      Enable vulnerability detection mode (requires --pace)");
     console.error();
     console.error("Environment Variables:");
     console.error("  ANTHROPIC_API_KEY            Anthropic API key (or --anthropic-key)");
     console.error("  OPENROUTER_API_KEY           OpenRouter API key (or --openrouter-key)");
     console.error();
     console.error("Benchmark Selection:");
-    console.error("  • If no benchmarks specified: Automatically runs ALL benchmarks in /benchmarks/XBEN-*");
-    console.error("  • If benchmarks specified: Runs only those specific XBEN benchmarks");
+    console.error("  • If no benchmarks specified: Automatically runs ALL benchmarks");
+    console.error("    - XBEN mode: /benchmarks/XBEN-*");
+    console.error("    - PACE mode: /docker/FullChain/FullChain*");
+    console.error("  • If benchmarks specified: Runs only those specific benchmarks");
     console.error();
     console.error("Examples:");
     console.error("  # Run ALL XBEN benchmarks (auto-discovers all /benchmarks/XBEN-* directories)");
@@ -715,16 +903,21 @@ async function main() {
     console.error("  bun run scripts/local-benchmark.ts /path/to/xben-challenges XBEN-001-24");
     console.error("  bun run scripts/local-benchmark.ts /path/to/xben-challenges XBEN-001-24 XBEN-002-24");
     console.error();
+    console.error("  # Run ALL PACEbench FullChain challenges");
+    console.error("  bun run scripts/local-benchmark.ts /path/to/pacebench --pace");
+    console.error();
+    console.error("  # Run specific PACEbench challenge(s)");
+    console.error("  bun run scripts/local-benchmark.ts /path/to/pacebench --pace FullChain1 FullChain2");
+    console.error();
     console.error("  # Run with custom model and parallel limit");
     console.error("  bun run scripts/local-benchmark.ts /path/to/xben-challenges \\");
     console.error("    --model claude-haiku-4-5 --max-parallel 2");
     console.error();
     console.error("How it works:");
     console.error("  - Runs benchmarks LOCALLY (no remote sandbox)");
-    console.error("  - Enumerates XBEN-* directories in /benchmarks");
     console.error("  - Starts docker compose locally for each benchmark");
     console.error("  - Runs thoroughPentestAgent locally against the running application");
-    console.error("  - Compares results with expected findings");
+    console.error("  - Docker commands and source code access are BLOCKED (anti-cheat)");
     console.error("  - Detects flags in pentest artifacts");
     console.error("  - Stops docker compose and cleans up");
     console.error("  - Generates comprehensive reports");
@@ -832,29 +1025,57 @@ async function main() {
     options.continueRun = true;
   }
 
-  // Parse benchmark arguments
-  const flagArgs = [
+  // Parse --pace
+  if (args.includes("--pace")) {
+    options.pace = true;
+  }
+
+  // Parse --vulns
+  if (args.includes("--vulns")) {
+    options.vulns = true;
+  }
+
+  // Validate --vulns requires --pace
+  if (options.vulns && !options.pace) {
+    console.error("Error: --vulns flag requires --pace flag");
+    process.exit(1);
+  }
+
+  // Parse benchmark arguments (anything that's not a flag or flag value)
+  // Flags with values (need to skip the next arg)
+  const flagsWithValues = [
     "--model",
     "--anthropic-key",
     "--openrouter-key",
     "--max-parallel",
     "--prefix",
     "--skip",
+  ];
+
+  // Boolean flags (no value, don't skip next arg)
+  const booleanFlags = [
     "--continue",
+    "--pace",
+    "--vulns",
   ];
 
   const benchmarks: string[] = [];
   for (let i = 1; i < args.length; i++) {
     const arg = args[i]!;
 
-    // Skip flag names
-    if (flagArgs.includes(arg)) {
+    // Skip boolean flags (no value to skip)
+    if (booleanFlags.includes(arg)) {
+      continue;
+    }
+
+    // Skip flags with values and their values
+    if (flagsWithValues.includes(arg)) {
       i++; // Also skip the next arg (flag value)
       continue;
     }
 
-    // Skip flag values
-    if (i > 0 && flagArgs.includes(args[i - 1]!)) {
+    // Skip if this is a value for a previous flag
+    if (i > 0 && flagsWithValues.includes(args[i - 1]!)) {
       continue;
     }
 
@@ -862,17 +1083,29 @@ async function main() {
     benchmarks.push(arg);
   }
 
-  // If no benchmarks specified, enumerate all XBEN benchmarks
+  // If no benchmarks specified, enumerate based on benchmark type
   let targetBenchmarks: string[];
   if (benchmarks.length === 0) {
-    console.log("No benchmarks specified, enumerating all XBEN-* benchmarks...\n");
-    targetBenchmarks = enumerateXBENBenchmarks(repoPath);
+    if (options.pace) {
+      console.log("No benchmarks specified, enumerating all PACEbench FullChain challenges...\n");
+      targetBenchmarks = enumeratePACEBenchmarks(repoPath);
 
-    if (targetBenchmarks.length === 0) {
-      console.error("Error: No XBEN benchmarks found in /benchmarks directory");
-      console.error("Please ensure the repository has /benchmarks/XBEN-* directories");
-      console.error("Or specify benchmarks manually as arguments");
-      process.exit(1);
+      if (targetBenchmarks.length === 0) {
+        console.error("Error: No FullChain challenges found in /docker/FullChain directory");
+        console.error("Please ensure the repository has /docker/FullChain/FullChain* directories");
+        console.error("Or specify benchmarks manually as arguments");
+        process.exit(1);
+      }
+    } else {
+      console.log("No benchmarks specified, enumerating all XBEN-* benchmarks...\n");
+      targetBenchmarks = enumerateXBENBenchmarks(repoPath);
+
+      if (targetBenchmarks.length === 0) {
+        console.error("Error: No XBEN benchmarks found in /benchmarks directory");
+        console.error("Please ensure the repository has /benchmarks/XBEN-* directories");
+        console.error("Or specify benchmarks manually as arguments");
+        process.exit(1);
+      }
     }
   } else {
     targetBenchmarks = benchmarks;
@@ -881,7 +1114,7 @@ async function main() {
 
   // Filter out already-completed benchmarks if --continue flag is set
   if (options.continueRun) {
-    const completedBenchmarks = getCompletedBenchmarks(options.prefix);
+    const completedBenchmarks = getCompletedBenchmarks(options.prefix, options.pace);
     if (completedBenchmarks.length > 0) {
       console.log(`🔍 Found ${completedBenchmarks.length} already-completed benchmarks${options.prefix ? ` (prefix: ${options.prefix})` : ""}: ${completedBenchmarks.join(", ")}`);
       const originalCount = targetBenchmarks.length;
@@ -938,6 +1171,7 @@ async function main() {
   console.log("LOCAL BENCHMARK RUNNER");
   console.log("=".repeat(80));
   console.log(`Repository: ${options.repoPath}`);
+  console.log(`Benchmark Type: ${options.pace ? "PACEbench FullChain" : "XBEN"}${options.vulns ? " (vulnerability detection mode)" : ""}`);
   console.log(`Benchmarks: ${targetBenchmarks.join(", ")}`);
   console.log(`Total Benchmarks: ${targetBenchmarks.length}`);
   console.log(`Model: ${options.model || "claude-sonnet-4-5"}`);
@@ -953,7 +1187,7 @@ async function main() {
   console.log("  • Uses local Docker daemon");
   console.log("  • Starts docker compose for each benchmark");
   console.log("  • Runs thoroughPentestAgent locally");
-  console.log("  • Compares results with expected findings");
+  console.log("  • Docker commands and source code access BLOCKED (anti-cheat)");
   console.log("  • Detects flags in artifacts");
   console.log("  • Generates comprehensive reports");
   console.log("=".repeat(80) + "\n");
@@ -962,12 +1196,14 @@ async function main() {
     if (targetBenchmarks.length === 1) {
       // Single benchmark - run directly
       console.log(`Running single benchmark: ${targetBenchmarks[0]}`);
-      const benchmarkPath = path.join(repoPath, "benchmarks", targetBenchmarks[0]!);
+      const benchmarkPath = getBenchmarkPath(repoPath, targetBenchmarks[0]!, !!options.pace);
       await runSingleBenchmark(
         benchmarkPath,
         targetBenchmarks[0]!,
         (options.model || "claude-sonnet-4-5") as AIModel,
-        options.prefix
+        options.prefix,
+        options.pace,
+        options.vulns
       );
     } else {
       // Multiple benchmarks - run in parallel
@@ -977,7 +1213,9 @@ async function main() {
         targetBenchmarks,
         (options.model || "claude-sonnet-4-5") as AIModel,
         options.maxParallel || 10,
-        options.prefix
+        options.prefix,
+        options.pace,
+        options.vulns
       );
     }
 

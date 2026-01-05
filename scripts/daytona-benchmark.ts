@@ -8,6 +8,21 @@ import {
 } from "../src/core/agent/benchmark/remote/daytona-benchmark";
 import type { AIModel } from "../src/core/ai";
 
+// Global error handlers to catch silent crashes
+process.on("uncaughtException", (error) => {
+  console.error("\n❌ UNCAUGHT EXCEPTION:");
+  console.error("   Error:", error.message);
+  console.error("   Stack:", error.stack);
+  process.exit(1);
+});
+
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("\n❌ UNHANDLED PROMISE REJECTION:");
+  console.error("   Reason:", reason);
+  console.error("   Promise:", promise);
+  // Don't exit immediately - let the error propagate
+});
+
 interface CLIOptions {
   repoPath: string;
   benchmarks?: string[];
@@ -22,14 +37,17 @@ interface CLIOptions {
   skip?: string[];
   dockerUsername?: string;
   dockerPassword?: string;
+  pace?: boolean;
+  vulns?: boolean;
 }
 
 /**
- * Get list of XBEN benchmarks that have already been run by checking ~/.pensar/executions
+ * Get list of benchmarks that have already been run by checking ~/.pensar/executions
  * A benchmark is considered "complete" only if its directory contains benchmark_results.json
- * @param prefix Optional prefix to filter by (matches {prefix}-XBEN-* pattern)
+ * @param prefix Optional prefix to filter by (matches {prefix}-XBEN-* or {prefix}-FullChain* pattern)
+ * @param isPace If true, match PACEbench FullChain patterns instead of XBEN
  */
-function getCompletedBenchmarks(prefix?: string): string[] {
+function getCompletedBenchmarks(prefix?: string, isPace?: boolean): string[] {
   const executionsDir = path.join(process.env.HOME || "", ".pensar", "executions");
 
   if (!existsSync(executionsDir)) {
@@ -38,34 +56,42 @@ function getCompletedBenchmarks(prefix?: string): string[] {
 
   try {
     const entries = readdirSync(executionsDir);
-    const completedXBENs = new Set<string>();
+    const completedBenchmarks = new Set<string>();
 
-    // Build the pattern based on prefix
-    // If prefix is provided, match {prefix}-XBEN-XXX-YY-ses_*
-    // Otherwise, match benchmark-XBEN-XXX-YY-ses_*
-    // Also support legacy format without ses_ for backward compatibility
+    // Build the pattern based on prefix and benchmark type
     const patternPrefix = prefix || "benchmark";
-    const newPattern = new RegExp(`^${patternPrefix}-(XBEN-\\d+-\\d+)-ses_`);
-    const legacyPattern = new RegExp(`^${patternPrefix}-(XBEN-\\d+-\\d+)-[a-z0-9]+$`);
+
+    // Patterns for XBEN benchmarks
+    const xbenNewPattern = new RegExp(`^${patternPrefix}-(XBEN-\\d+-\\d+)ses_`);
+    const xbenLegacyPattern = new RegExp(`^${patternPrefix}-(XBEN-\\d+-\\d+)-[a-z0-9]+$`);
+
+    // Patterns for PACEbench FullChain benchmarks
+    const paceNewPattern = new RegExp(`^${patternPrefix}-(FullChain\\d+)ses_`);
+    const paceLegacyPattern = new RegExp(`^${patternPrefix}-(FullChain\\d+)-[a-z0-9]+$`);
 
     for (const entry of entries) {
       const fullPath = path.join(executionsDir, entry);
 
       // Check if it's a directory and matches the expected pattern
       if (statSync(fullPath).isDirectory()) {
-        // Try new pattern first, then legacy pattern for backward compatibility
-        const match = entry.match(newPattern) || entry.match(legacyPattern);
+        let match;
+        if (isPace) {
+          match = entry.match(paceNewPattern) || entry.match(paceLegacyPattern);
+        } else {
+          match = entry.match(xbenNewPattern) || entry.match(xbenLegacyPattern);
+        }
+
         if (match && match[1]) {
           // Check if benchmark_results.json exists (indicates completion)
           const resultsFile = path.join(fullPath, "benchmark_results.json");
           if (existsSync(resultsFile)) {
-            completedXBENs.add(match[1]);
+            completedBenchmarks.add(match[1]);
           }
         }
       }
     }
 
-    return Array.from(completedXBENs);
+    return Array.from(completedBenchmarks);
   } catch (error: any) {
     console.warn(`Warning: Failed to read executions directory: ${error.message}`);
     return [];
@@ -102,6 +128,46 @@ function enumerateXBENBenchmarks(repoPath: string): string[] {
   }
 }
 
+/**
+ * Enumerate all FullChain* benchmark directories in /docker/FullChain
+ */
+function enumeratePACEBenchmarks(repoPath: string): string[] {
+  console.log(`🔍 Enumerating PACEbench FullChain challenges in ${repoPath}/docker/FullChain...`);
+
+  const fullchainDir = path.join(repoPath, "docker", "FullChain");
+
+  if (!existsSync(fullchainDir)) {
+    throw new Error(`FullChain directory not found: ${fullchainDir}`);
+  }
+
+  try {
+    const entries = readdirSync(fullchainDir);
+
+    const fullchainBenchmarks = entries.filter((entry) => {
+      const fullPath = path.join(fullchainDir, entry);
+      const isDirectory = statSync(fullPath).isDirectory();
+      const isFullChain = entry.startsWith("FullChain");
+      return isDirectory && isFullChain;
+    });
+
+    console.log(`✅ Found ${fullchainBenchmarks.length} FullChain challenges: ${fullchainBenchmarks.join(", ")}`);
+
+    return fullchainBenchmarks;
+  } catch (error: any) {
+    throw new Error(`Failed to enumerate PACEbench challenges: ${error.message}`);
+  }
+}
+
+/**
+ * Get the benchmark path based on benchmark type
+ */
+function getBenchmarkPath(repoPath: string, benchmarkName: string, isPace: boolean): string {
+  if (isPace) {
+    return path.join(repoPath, "docker", "FullChain", benchmarkName);
+  }
+  return path.join(repoPath, "benchmarks", benchmarkName);
+}
+
 async function main() {
   const args = process.argv.slice(2);
 
@@ -123,6 +189,8 @@ async function main() {
     console.error("  --skip <benchmarks>          Comma-separated list of benchmarks to skip (e.g., XBEN-001-24,XBEN-002-24)");
     console.error("  --docker-username <user>     Docker Hub username for authenticated pulls (default: DOCKER_USERNAME env)");
     console.error("  --docker-password <pass>     Docker Hub password/token for authenticated pulls (default: DOCKER_PASSWORD env)");
+    console.error("  --pace                       Run PACEbench FullChain challenges instead of XBEN");
+    console.error("  --vulns                      Enable vulnerability detection mode (requires --pace)");
     console.error();
     console.error("Environment Variables Required:");
     console.error("  DAYTONA_API_KEY              Daytona API key (required)");
@@ -308,8 +376,19 @@ async function main() {
     options.continueRun = true;
   }
 
+  // Parse --pace
+  if (args.includes("--pace")) {
+    options.pace = true;
+  }
+
+  // Parse --vulns
+  if (args.includes("--vulns")) {
+    options.vulns = true;
+  }
+
   // Parse benchmark arguments (anything that's not a flag or flag value)
-  const flagArgs = [
+  // Flags with values (need to skip the next arg)
+  const flagsWithValues = [
     "--model",
     "--daytona-api-key",
     "--daytona-org-id",
@@ -320,21 +399,32 @@ async function main() {
     "--skip",
     "--docker-username",
     "--docker-password",
+  ];
+
+  // Boolean flags (no value, don't skip next arg)
+  const booleanFlags = [
     "--continue",
+    "--pace",
+    "--vulns",
   ];
 
   const benchmarks: string[] = [];
   for (let i = 1; i < args.length; i++) {
     const arg = args[i]!;
 
-    // Skip flag names
-    if (flagArgs.includes(arg)) {
+    // Skip boolean flags (no value to skip)
+    if (booleanFlags.includes(arg)) {
+      continue;
+    }
+
+    // Skip flags with values and their values
+    if (flagsWithValues.includes(arg)) {
       i++; // Also skip the next arg (flag value)
       continue;
     }
 
-    // Skip flag values
-    if (i > 0 && flagArgs.includes(args[i - 1]!)) {
+    // Skip if this is a value for a previous flag
+    if (i > 0 && flagsWithValues.includes(args[i - 1]!)) {
       continue;
     }
 
@@ -342,17 +432,35 @@ async function main() {
     benchmarks.push(arg);
   }
 
-  // If no benchmarks specified, enumerate all XBEN benchmarks
+  // Validate --vulns requires --pace
+  if (options.vulns && !options.pace) {
+    console.error("Error: --vulns flag requires --pace flag");
+    process.exit(1);
+  }
+
+  // If no benchmarks specified, enumerate based on benchmark type
   let targetBenchmarks: string[];
   if (benchmarks.length === 0) {
-    console.log("No benchmarks specified, enumerating all XBEN-* benchmarks...\n");
-    targetBenchmarks = enumerateXBENBenchmarks(repoPath);
+    if (options.pace) {
+      console.log("No benchmarks specified, enumerating all PACEbench FullChain challenges...\n");
+      targetBenchmarks = enumeratePACEBenchmarks(repoPath);
 
-    if (targetBenchmarks.length === 0) {
-      console.error("Error: No XBEN benchmarks found in /benchmarks directory");
-      console.error("Please ensure the repository has /benchmarks/XBEN-* directories");
-      console.error("Or specify benchmarks manually as arguments");
-      process.exit(1);
+      if (targetBenchmarks.length === 0) {
+        console.error("Error: No FullChain challenges found in /docker/FullChain directory");
+        console.error("Please ensure the repository has /docker/FullChain/FullChain* directories");
+        console.error("Or specify benchmarks manually as arguments");
+        process.exit(1);
+      }
+    } else {
+      console.log("No benchmarks specified, enumerating all XBEN-* benchmarks...\n");
+      targetBenchmarks = enumerateXBENBenchmarks(repoPath);
+
+      if (targetBenchmarks.length === 0) {
+        console.error("Error: No XBEN benchmarks found in /benchmarks directory");
+        console.error("Please ensure the repository has /benchmarks/XBEN-* directories");
+        console.error("Or specify benchmarks manually as arguments");
+        process.exit(1);
+      }
     }
   } else {
     targetBenchmarks = benchmarks;
@@ -361,7 +469,7 @@ async function main() {
 
   // Filter out already-completed benchmarks if --continue flag is set
   if (options.continueRun) {
-    const completedBenchmarks = getCompletedBenchmarks(options.prefix);
+    const completedBenchmarks = getCompletedBenchmarks(options.prefix, options.pace);
     if (completedBenchmarks.length > 0) {
       console.log(`🔍 Found ${completedBenchmarks.length} already-completed benchmarks${options.prefix ? ` (prefix: ${options.prefix})` : ""}: ${completedBenchmarks.join(", ")}`);
       const originalCount = targetBenchmarks.length;
@@ -420,6 +528,7 @@ async function main() {
   console.log("DAYTONA DOCKER-IN-DOCKER BENCHMARK RUNNER");
   console.log("=".repeat(80));
   console.log(`Repository: ${options.repoPath}`);
+  console.log(`Benchmark Type: ${options.pace ? "PACEbench FullChain" : "XBEN"}${options.vulns ? " (vulnerability detection mode)" : ""}`);
   console.log(`Benchmarks: ${targetBenchmarks.join(", ")}`);
   console.log(`Total Benchmarks: ${targetBenchmarks.length}`);
   console.log(`Model: ${options.model || "claude-sonnet-4-5"}`);
@@ -451,7 +560,7 @@ async function main() {
     if (targetBenchmarks.length === 1) {
       // Single benchmark - run directly
       console.log(`Running single benchmark: ${targetBenchmarks[0]}`);
-      const benchmarkPath = path.join(repoPath, "benchmarks", targetBenchmarks[0]!);
+      const benchmarkPath = getBenchmarkPath(repoPath, targetBenchmarks[0]!, !!options.pace);
       await runBenchmarkWithDaytona({
         benchmarkPath,
         benchmarkName: targetBenchmarks[0]!,
@@ -463,6 +572,8 @@ async function main() {
         prefix: options.prefix,
         dockerUsername,
         dockerPassword,
+        benchmarkType: options.pace ? "pace" : "xben",
+        vulnsMode: options.vulns,
       });
     } else {
       // Multiple benchmarks - run in parallel
@@ -479,6 +590,8 @@ async function main() {
         prefix: options.prefix,
         dockerUsername,
         dockerPassword,
+        benchmarkType: options.pace ? "pace" : "xben",
+        vulnsMode: options.vulns,
       });
     }
 

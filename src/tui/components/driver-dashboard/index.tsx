@@ -23,6 +23,7 @@ import AgentDisplay from "../agent-display";
 import { SpinnerDots } from "../sprites";
 import { useRoute } from "../../context/route";
 import { useAgent } from "../../agentProvider";
+import { useDialog } from "../dialog";
 import EndpointSidebar from "./endpoint-sidebar";
 import AgentChatView from "./agent-chat-view";
 import MentionAutocomplete from "./mention-autocomplete";
@@ -53,6 +54,7 @@ interface DriverDashboardProps {
 export default function DriverDashboard({ session }: DriverDashboardProps) {
   const route = useRoute();
   const { model } = useAgent();
+  const { stack, externalDialogOpen } = useDialog();
 
   // State
   const [currentView, setCurrentView] = useState<'overview' | 'agent-chat' | 'recon-view'>('overview');
@@ -345,6 +347,9 @@ export default function DriverDashboard({ session }: DriverDashboardProps) {
 
   // Keyboard navigation
   useKeyboard((key) => {
+    // Skip all keyboard handling when any dialog is open
+    if (stack.length > 0 || externalDialogOpen) return;
+
     // Handle agent chat view separately
     if (currentView === 'agent-chat') {
       // Shift+/ to return to dashboard

@@ -54,6 +54,8 @@ interface DialogContextValue {
   stack: DialogStackItem[];
   size: "medium" | "large";
   setSize: (size: "medium" | "large") => void;
+  externalDialogOpen: boolean;
+  setExternalDialogOpen: (open: boolean) => void;
 }
 
 const DialogContext = createContext<DialogContextValue | null>(null);
@@ -61,6 +63,7 @@ const DialogContext = createContext<DialogContextValue | null>(null);
 export function DialogProvider({ children }: { children: ReactNode }) {
   const [stack, setStack] = useState<DialogStackItem[]>([]);
   const [size, setSize] = useState<"medium" | "large">("medium");
+  const [externalDialogOpen, setExternalDialogOpen] = useState(false);
   const renderer = useRenderer();
   const focusRef = useRef<Renderable | null>(null);
 
@@ -120,6 +123,8 @@ export function DialogProvider({ children }: { children: ReactNode }) {
     stack,
     size,
     setSize,
+    externalDialogOpen,
+    setExternalDialogOpen,
   };
 
   return (

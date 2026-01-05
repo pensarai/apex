@@ -22,7 +22,7 @@ async function retryWithBackoff<T>(
     maxRetries = 3,
     initialDelay = 1000,
     maxDelay = 30000,
-    retryableErrors = ["502", "503", "504", "ECONNRESET", "ETIMEDOUT"],
+    retryableErrors = ["429", "502", "503", "504", "ECONNRESET", "ETIMEDOUT", "rate limit", "rate_limit", "too many requests", "quota exceeded"],
     branch,
   } = options;
 

@@ -3,6 +3,7 @@ import { useKeyboard } from "@opentui/react";
 import { RGBA } from "@opentui/core";
 import AgentDisplay, { type DisplayMessage } from "../agent-display";
 import { SpinnerDots } from "../sprites";
+import { useDialog } from "../dialog";
 
 // Color palette (matching home view)
 export const greenBullet = RGBA.fromInts(76, 175, 80, 255);
@@ -50,6 +51,7 @@ export default function SwarmDashboard({
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [focusedIndex, setFocusedIndex] = useState(0);
   const [showDiscoveryLogs, setShowDiscoveryLogs] = useState(false);
+  const { stack, externalDialogOpen } = useDialog();
 
   // Separate discovery and pentest agents
   const discoveryAgent = useMemo(
@@ -96,6 +98,9 @@ export default function SwarmDashboard({
 
   // Keyboard navigation
   useKeyboard((key) => {
+    // Skip all keyboard handling when any dialog is open
+    if (stack.length > 0 || externalDialogOpen) return;
+
     if (currentView === "overview") {
       // D to toggle discovery logs
       if (key.name === "d" || key.name === "D") {

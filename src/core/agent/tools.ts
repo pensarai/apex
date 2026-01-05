@@ -1152,6 +1152,134 @@ CRITICAL: JWT tokens often in:
 Check ALL locations where tokens might be stored/transmitted!
     `,
   },
+
+  crypto_attacks: {
+    name: "Cryptographic Vulnerabilities",
+    description:
+      "Exploits weaknesses in cryptographic implementations including unauthenticated encryption, weak algorithms, and cipher mode vulnerabilities",
+    objective:
+      "Forge tokens, bypass authentication, decrypt data, or escalate privileges through cryptographic manipulation",
+
+    vulnerabilityTypes: {
+      unauthenticated_encryption: {
+        name: "Unauthenticated Encryption",
+        description: "Encryption without MAC/HMAC allows ciphertext modification",
+        impact: "Attacker can modify encrypted data without detection",
+        detection: "Modify ciphertext bytes, observe if server processes modified data",
+        exploitation: "Calculate XOR differences to flip specific plaintext bytes",
+      },
+      cbc_bit_flipping: {
+        name: "CBC Bit-Flipping Attack",
+        description: "Modifying ciphertext block N changes decrypted plaintext of block N+1",
+        impact: "Forge session tokens, modify encrypted parameters",
+        prerequisite: "Know or guess part of the plaintext, tolerate block corruption",
+        formula: "new_IV[i] = old_IV[i] XOR known_plaintext[i] XOR desired_plaintext[i]",
+      },
+      ecb_mode: {
+        name: "ECB Mode Vulnerabilities",
+        description: "Same plaintext block always produces same ciphertext block",
+        impact: "Pattern detection, block reordering, cut-and-paste attacks",
+        detection: "Look for repeating 16-byte patterns in ciphertext",
+      },
+      padding_oracle: {
+        name: "Padding Oracle Attack",
+        description: "Application leaks whether PKCS#7 padding is valid",
+        impact: "Decrypt entire ciphertext byte-by-byte",
+        detection: "Different error responses for invalid padding vs invalid data",
+      },
+      weak_algorithms: {
+        name: "Weak Cryptographic Algorithms",
+        description: "Use of DES, RC4, MD5 for passwords, SHA1 for signatures",
+        impact: "Brute force, collision attacks, rainbow tables",
+        detection: "Check SSL/TLS config, analyze hash lengths and formats",
+      },
+    },
+
+    techniques: [
+      {
+        name: "Token Structure Analysis",
+        how: "Determine if token is encrypted vs encoded, identify block boundaries",
+        steps: [
+          "1. Check encoding (hex: even length, 0-9a-f; base64: alphanumeric+/=)",
+          "2. Decode and check entropy (high = encrypted, readable = encoded)",
+          "3. Check length alignment (multiple of 16 = likely AES)",
+          "4. Compare multiple tokens for patterns (ECB) or randomness (CBC with IV)",
+        ],
+        example: "32 hex chars = 16 bytes = 1 AES block, likely IV",
+      },
+      {
+        name: "CBC Malleability Exploitation",
+        how: "Modify IV or ciphertext blocks to change decrypted plaintext",
+        steps: [
+          "1. Identify which block contains target plaintext",
+          "2. For block 0: modify IV bytes; for block N: modify block N-1",
+          "3. Calculate XOR: old_byte XOR new_byte",
+          "4. Apply XOR to corresponding position in previous block/IV",
+          "5. Note: modified block becomes corrupted, next block changes",
+        ],
+        example: "Change 'user' to 'root' by XORing IV with ('u'^'r', 's'^'o', 'e'^'o', 'r'^'t')",
+      },
+      {
+        name: "Padding Oracle Detection",
+        how: "Test for different error responses based on padding validity",
+        steps: [
+          "1. Capture valid encrypted token",
+          "2. Modify last byte of last block (affects padding)",
+          "3. Send modified token, observe error response",
+          "4. Compare with other modifications (different errors = oracle exists)",
+        ],
+        example: "Byte 0xFF gives 'padding error', 0xFE gives 'invalid data'",
+      },
+    ],
+
+    indicators: {
+      vulnerable: [
+        "Modified ciphertext accepted by server (no MAC verification)",
+        "Different error messages for padding vs data errors",
+        "Repeating patterns in encrypted tokens (ECB mode)",
+        "Session tokens change predictably with input changes",
+        "Weak cipher suites in SSL/TLS (DES, RC4, export ciphers)",
+        "Short hashes (32 hex = MD5, 40 hex = SHA1)",
+        "Token forgery successful after byte manipulation",
+      ],
+      notVulnerable: [
+        "HMAC/MAC verification on all encrypted data",
+        "AEAD modes (GCM, CCM, ChaCha20-Poly1305)",
+        "Constant-time comparison for MACs",
+        "Generic 'invalid token' error for all failures",
+        "Strong cipher suites only (AES-GCM, ChaCha20)",
+      ],
+    },
+
+    adaptiveStrategy: `
+Round 1: Token Analysis
+- Capture session tokens/cookies after authentication
+- Determine encoding (hex, base64, URL-encoded)
+- Calculate byte length, check for block alignment (16, 32, 48 bytes)
+- Compare multiple tokens to identify IV position and patterns
+
+Round 2: Test for Unauthenticated Encryption
+- Modify random byte in middle of token
+- If server processes (even with app error): no authentication
+- If 'invalid token' immediately: likely authenticated
+
+Round 3: Cipher Mode Identification
+- Check for repeating 16-byte patterns (ECB)
+- Check if first 16 bytes differ per token (random IV = CBC)
+- Create similar plaintexts, compare ciphertext patterns
+
+Round 4: Exploitation
+- For CBC without auth: Attempt bit-flipping attack
+- For padding oracle: Use padbuster or custom script
+- For ECB: Try block reordering attacks
+
+Round 5: Targeted Forgery
+- Identify what plaintext changes achieve objective (e.g., username→admin)
+- Calculate required XOR modifications
+- Write Python script for byte-level manipulation
+- Test forged token for privilege escalation
+    `,
+  },
 } as const;
 
 // Exported type definitions for tool overrides
@@ -1215,6 +1343,736 @@ export type HttpRequestResult = {
   url: string;
   redirected: boolean;
 };
+
+// Payload Mutation Tool - for filter bypass testing
+export const MutatePayloadInput = z.object({
+  payload: z.string().describe("The base payload to mutate/encode"),
+  mutationTypes: z
+    .array(
+      z.enum([
+        "url_encode",
+        "double_url_encode",
+        "triple_url_encode",
+        "unicode_dotdot",
+        "overlong_utf8",
+        "html_entity",
+        "html_entity_hex",
+        "mixed_case",
+        "null_byte",
+        "path_normalization",
+        "backslash",
+        "double_slash",
+      ])
+    )
+    .optional()
+    .describe(
+      "Specific mutation types to apply. If not provided, all mutations will be generated."
+    ),
+  context: z
+    .enum(["lfi", "xss", "sqli", "command_injection", "ssti", "general"])
+    .optional()
+    .describe(
+      "The vulnerability context to optimize mutations for. Helps prioritize which mutations are most relevant."
+    ),
+  toolCallDescription: z
+    .string()
+    .describe(
+      "A concise, human-readable description of what this tool call is doing (e.g., 'Generating URL-encoded variants of LFI payload')"
+    ),
+});
+
+export type MutatePayloadOpts = z.infer<typeof MutatePayloadInput>;
+
+export type MutatePayloadResult = {
+  success: boolean;
+  original: string;
+  mutations: {
+    type: string;
+    payload: string;
+    description: string;
+  }[];
+  recommendedOrder: string[];
+};
+
+/**
+ * Payload Mutation Functions
+ *
+ * These functions generate encoded/obfuscated variants of payloads
+ * to bypass common security filters.
+ */
+const payloadMutations = {
+  // URL encoding: ../ -> %2e%2e%2f
+  url_encode: (payload: string): string => {
+    return payload
+      .split("")
+      .map((c) => {
+        if (/[a-zA-Z0-9]/.test(c)) return c;
+        return "%" + c.charCodeAt(0).toString(16).padStart(2, "0");
+      })
+      .join("");
+  },
+
+  // Double URL encoding: ../ -> %252e%252e%252f
+  double_url_encode: (payload: string): string => {
+    const single = payloadMutations.url_encode(payload);
+    return single.replace(/%/g, "%25");
+  },
+
+  // Triple URL encoding for deep filter bypasses
+  triple_url_encode: (payload: string): string => {
+    const double = payloadMutations.double_url_encode(payload);
+    return double.replace(/%/g, "%25");
+  },
+
+  // Unicode encoding for ../ using overlong sequences
+  unicode_dotdot: (payload: string): string => {
+    // Replace ../ with unicode variants
+    return payload
+      .replace(/\.\.\//g, "..%c0%af")
+      .replace(/\.\.\\/g, "..%c1%9c");
+  },
+
+  // Overlong UTF-8 encoding (for older systems)
+  overlong_utf8: (payload: string): string => {
+    // Common overlong encodings for path traversal
+    return payload
+      .replace(/\.\./g, "%c0%ae%c0%ae")
+      .replace(/\//g, "%c0%af")
+      .replace(/\\/g, "%c1%9c");
+  },
+
+  // HTML entity encoding (decimal)
+  html_entity: (payload: string): string => {
+    return payload
+      .split("")
+      .map((c) => `&#${c.charCodeAt(0)};`)
+      .join("");
+  },
+
+  // HTML entity encoding (hex)
+  html_entity_hex: (payload: string): string => {
+    return payload
+      .split("")
+      .map((c) => `&#x${c.charCodeAt(0).toString(16)};`)
+      .join("");
+  },
+
+  // Mixed case (for case-insensitive filters)
+  mixed_case: (payload: string): string => {
+    return payload
+      .split("")
+      .map((c, i) => (i % 2 === 0 ? c.toUpperCase() : c.toLowerCase()))
+      .join("");
+  },
+
+  // Null byte injection
+  null_byte: (payload: string): string => {
+    return payload + "%00";
+  },
+
+  // Path normalization tricks
+  path_normalization: (payload: string): string => {
+    // Double dots with extra components that normalize away
+    return payload
+      .replace(/\.\.\//g, "....//")
+      .replace(/\.\.\\/g, "....\\\\");
+  },
+
+  // Backslash variants (Windows paths)
+  backslash: (payload: string): string => {
+    return payload.replace(/\//g, "\\");
+  },
+
+  // Double slash injection
+  double_slash: (payload: string): string => {
+    return payload.replace(/\//g, "//");
+  },
+};
+
+// Context-specific mutation priorities
+const contextPriorities: Record<string, string[]> = {
+  lfi: [
+    "url_encode",
+    "double_url_encode",
+    "unicode_dotdot",
+    "path_normalization",
+    "null_byte",
+    "backslash",
+    "overlong_utf8",
+    "triple_url_encode",
+  ],
+  xss: [
+    "html_entity",
+    "html_entity_hex",
+    "url_encode",
+    "double_url_encode",
+    "mixed_case",
+  ],
+  sqli: ["url_encode", "double_url_encode", "html_entity", "mixed_case"],
+  command_injection: [
+    "url_encode",
+    "double_url_encode",
+    "null_byte",
+    "mixed_case",
+  ],
+  ssti: ["url_encode", "double_url_encode", "html_entity", "html_entity_hex"],
+  general: [
+    "url_encode",
+    "double_url_encode",
+    "null_byte",
+    "path_normalization",
+    "mixed_case",
+  ],
+};
+
+const mutationDescriptions: Record<string, string> = {
+  url_encode: "Single URL encoding - bypasses filters checking raw input",
+  double_url_encode:
+    "Double URL encoding - bypasses filters that decode once before checking",
+  triple_url_encode:
+    "Triple URL encoding - for deeply nested decoding scenarios",
+  unicode_dotdot:
+    "Unicode overlong encoding for ../ - bypasses ASCII-based path filters",
+  overlong_utf8:
+    "Overlong UTF-8 sequences - exploits legacy UTF-8 parsing vulnerabilities",
+  html_entity:
+    "HTML entity encoding (decimal) - bypasses keyword filters in HTML context",
+  html_entity_hex:
+    "HTML entity encoding (hex) - alternative HTML encoding format",
+  mixed_case: "Mixed case alternation - bypasses case-sensitive filters",
+  null_byte:
+    "Null byte suffix - truncates strings in C-based functions (legacy)",
+  path_normalization:
+    "Path normalization tricks (..../) - bypasses simple ../ removal",
+  backslash:
+    "Backslash path separators - for Windows or mixed-OS environments",
+  double_slash: "Double slash injection - may bypass path canonicalization",
+};
+
+function createMutatePayloadTool() {
+  return tool({
+    name: "mutate_payload",
+    description: `Generate encoded/obfuscated variants of a payload to bypass security filters.
+
+USE THIS TOOL WHEN:
+- A payload is being blocked by a filter (403, "invalid input", WAF block)
+- You need to test if encoding bypasses input validation
+- Testing for filter weaknesses before giving up on an attack vector
+
+MUTATION TYPES:
+- url_encode: %2e%2e%2f (single encoding)
+- double_url_encode: %252e%252e%252f (double encoding - most common bypass)
+- triple_url_encode: For deeply nested decoding
+- unicode_dotdot: ..%c0%af (Unicode path traversal)
+- overlong_utf8: %c0%ae%c0%ae (legacy UTF-8 bypass)
+- html_entity: &#46;&#46;&#47; (HTML decimal)
+- html_entity_hex: &#x2e;&#x2e;&#x2f; (HTML hex)
+- null_byte: payload%00 (C-string termination)
+- path_normalization: ....// (normalization tricks)
+- backslash: ..\\ (Windows paths)
+
+WORKFLOW:
+1. Try standard payload
+2. If blocked, call mutate_payload with the payload
+3. Test each mutation variant
+4. Compare responses to find which encoding bypasses the filter
+
+EXAMPLE:
+  Original: "../../../etc/passwd"
+  Blocked: "Invalid path detected"
+
+  Call: mutate_payload(payload="../../../etc/passwd", context="lfi")
+  Returns: URL-encoded, double-encoded, unicode variants
+
+  Test each until one succeeds (200 OK with file contents)`,
+    inputSchema: MutatePayloadInput,
+    execute: async ({
+      payload,
+      mutationTypes,
+      context = "general",
+    }): Promise<MutatePayloadResult> => {
+      const typesToApply =
+        mutationTypes || (Object.keys(payloadMutations) as Array<keyof typeof payloadMutations>);
+
+      const mutations = typesToApply.map((type) => {
+        const mutationFn = payloadMutations[type as keyof typeof payloadMutations];
+        if (!mutationFn) {
+          return {
+            type,
+            payload: payload,
+            description: `Unknown mutation type: ${type}`,
+          };
+        }
+        return {
+          type,
+          payload: mutationFn(payload),
+          description: mutationDescriptions[type] || type,
+        };
+      });
+
+      const recommendedOrder = contextPriorities[context] || contextPriorities.general;
+
+      return {
+        success: true,
+        original: payload,
+        mutations,
+        recommendedOrder: recommendedOrder.filter((t) =>
+          typesToApply.includes(t as any)
+        ),
+      };
+    },
+  });
+}
+
+// Smart Enumerate Tool - AI-powered endpoint enumeration using feroxagent
+export const SmartEnumerateInput = z.object({
+  url: z.string().describe("The target URL to enumerate (e.g., http://localhost:80)"),
+  depth: z
+    .number()
+    .optional()
+    .describe("Maximum recursion depth for directory enumeration (default: 2)"),
+  extensions: z
+    .array(z.string())
+    .optional()
+    .describe("File extensions to test (e.g., ['php', 'cgi', 'sh', 'pl'])"),
+  timeout: z
+    .number()
+    .optional()
+    .describe("Timeout in seconds for the entire scan (default: 120)"),
+  threads: z
+    .number()
+    .optional()
+    .describe("Number of concurrent threads (default: 20)"),
+  toolCallDescription: z
+    .string()
+    .describe(
+      "A concise, human-readable description of what this tool call is doing"
+    ),
+});
+
+export type SmartEnumerateOpts = z.infer<typeof SmartEnumerateInput>;
+
+export interface FeroxEndpoint {
+  url: string;
+  method: string;
+  status: number;
+  contentLength: number;
+  contentType?: string;
+  redirectLocation?: string;
+}
+
+export interface SmartEnumerateResult {
+  success: boolean;
+  targetUrl: string;
+  endpoints: FeroxEndpoint[];
+  technologies: string[];
+  recommendations: string[];
+  totalDiscovered: number;
+  scanDuration: number;
+  error?: string;
+}
+
+/**
+ * Smart Enumerate Tool - Uses feroxagent for AI-powered endpoint enumeration
+ *
+ * This tool wraps feroxagent which uses Claude to generate context-aware wordlists
+ * based on detected technology stacks. It's particularly useful for:
+ * - Discovering files when a directory returns 403 (listing disabled)
+ * - Finding hidden endpoints based on framework detection
+ * - Smart directory enumeration with AI-generated wordlists
+ */
+function createSmartEnumerateTool(
+  executeCommand?: (opts: ExecuteCommandOpts) => Promise<ExecuteCommandResult>
+) {
+  return tool({
+    name: "smart_enumerate",
+    description: `AI-powered endpoint enumeration using feroxagent.
+
+USE THIS TOOL WHEN:
+- A directory returns 403 (listing disabled) but may contain accessible files
+- You need to discover endpoints specific to a detected technology stack
+- Standard enumeration hasn't found expected endpoints
+- You want intelligent, tech-stack-aware discovery instead of generic wordlists
+
+CAPABILITIES:
+- Detects technology stack from headers and responses
+- Generates AI-powered wordlists tailored to the detected stack
+- Recursive directory enumeration
+- Handles 403 directories intelligently (enumerates files inside them)
+
+OUTPUT:
+Returns discovered endpoints with status codes, content types, and AI-generated
+recommendations for further testing based on the technology stack.`,
+    inputSchema: SmartEnumerateInput,
+    execute: async ({
+      url,
+      depth = 2,
+      extensions,
+      timeout = 120,
+      threads = 20,
+    }): Promise<SmartEnumerateResult> => {
+      const startTime = Date.now();
+
+      // Build feroxagent command
+      let cmd = `feroxagent -u "${url}" --json -d ${depth} -t ${threads} --timeout ${timeout}`;
+
+      // Add extensions if specified
+      if (extensions && extensions.length > 0) {
+        cmd += ` -x ${extensions.join(",")}`;
+      }
+
+      // Add silent mode to reduce noise
+      cmd += " --silent";
+
+      try {
+        let result: ExecuteCommandResult;
+
+        if (executeCommand) {
+          // Use provided execute function (for sandbox execution)
+          result = await executeCommand({
+            command: cmd,
+            timeout: (timeout + 30) * 1000, // Add buffer to timeout
+            toolCallDescription: `Running feroxagent on ${url}`,
+          });
+        } else {
+          // Direct execution (local mode)
+          const { execSync } = await import("child_process");
+          try {
+            const output = execSync(cmd, {
+              timeout: (timeout + 30) * 1000,
+              encoding: "utf-8",
+              maxBuffer: 10 * 1024 * 1024, // 10MB buffer
+            });
+            result = {
+              success: true,
+              stdout: output,
+              stderr: "",
+              command: cmd,
+              error: "",
+            };
+          } catch (execError: any) {
+            result = {
+              success: false,
+              stdout: execError.stdout || "",
+              stderr: execError.stderr || execError.message,
+              command: cmd,
+              error: execError.message,
+            };
+          }
+        }
+
+        const scanDuration = (Date.now() - startTime) / 1000;
+
+        if (!result.success && !result.stdout) {
+          return {
+            success: false,
+            targetUrl: url,
+            endpoints: [],
+            technologies: [],
+            recommendations: [],
+            totalDiscovered: 0,
+            scanDuration,
+            error: result.error || result.stderr || "feroxagent execution failed",
+          };
+        }
+
+        // Parse JSON output from feroxagent
+        const output = result.stdout || "";
+        const endpoints: FeroxEndpoint[] = [];
+        const technologies: string[] = [];
+        const recommendations: string[] = [];
+
+        try {
+          // feroxagent outputs JSON lines or a JSON object
+          // Try to parse as JSON first
+          const lines = output.trim().split("\n").filter(Boolean);
+
+          for (const line of lines) {
+            try {
+              const parsed = JSON.parse(line);
+
+              // Handle different JSON output formats from feroxagent
+              if (parsed.url && parsed.status) {
+                // Individual endpoint result
+                endpoints.push({
+                  url: parsed.url,
+                  method: parsed.method || "GET",
+                  status: parsed.status,
+                  contentLength: parsed.content_length || parsed.contentLength || 0,
+                  contentType: parsed.content_type || parsed.contentType,
+                  redirectLocation: parsed.redirect_location || parsed.location,
+                });
+              } else if (parsed.canonical_endpoints) {
+                // Full report format
+                for (const ep of parsed.canonical_endpoints || []) {
+                  endpoints.push({
+                    url: ep.url,
+                    method: ep.method || "GET",
+                    status: ep.status || 200,
+                    contentLength: ep.content_length || 0,
+                    contentType: ep.content_type,
+                    redirectLocation: ep.redirect_location,
+                  });
+                }
+                // Extract technologies if present
+                if (parsed.technologies) {
+                  technologies.push(...parsed.technologies);
+                }
+                // Extract recommendations if present
+                if (parsed.recommendations) {
+                  recommendations.push(...parsed.recommendations);
+                }
+              } else if (parsed.type === "response") {
+                // Streaming response format
+                endpoints.push({
+                  url: parsed.url,
+                  method: "GET",
+                  status: parsed.status,
+                  contentLength: parsed.content_length || 0,
+                  contentType: parsed.content_type,
+                  redirectLocation: parsed.redirect_location,
+                });
+              }
+            } catch {
+              // Skip non-JSON lines (progress output, etc.)
+            }
+          }
+        } catch (parseError) {
+          // If JSON parsing fails entirely, try to extract URLs from plain text
+          const urlMatches = output.match(/https?:\/\/[^\s]+/g) || [];
+          for (const foundUrl of urlMatches) {
+            endpoints.push({
+              url: foundUrl,
+              method: "GET",
+              status: 200,
+              contentLength: 0,
+            });
+          }
+        }
+
+        // Deduplicate endpoints by URL
+        const uniqueEndpoints = endpoints.filter(
+          (ep, index, self) => self.findIndex((e) => e.url === ep.url) === index
+        );
+
+        return {
+          success: true,
+          targetUrl: url,
+          endpoints: uniqueEndpoints,
+          technologies: [...new Set(technologies)],
+          recommendations: [...new Set(recommendations)],
+          totalDiscovered: uniqueEndpoints.length,
+          scanDuration,
+        };
+      } catch (error: any) {
+        return {
+          success: false,
+          targetUrl: url,
+          endpoints: [],
+          technologies: [],
+          recommendations: [],
+          totalDiscovered: 0,
+          scanDuration: (Date.now() - startTime) / 1000,
+          error: error.message,
+        };
+      }
+    },
+  });
+}
+
+// CVE Lookup Tool - Schema definitions
+const CVELookupInput = z.object({
+  query: z
+    .string()
+    .describe(
+      "Search query - can be a CVE ID (e.g., 'CVE-2023-1234'), software name (e.g., 'nginx'), software with version (e.g., 'openssh 8.0'), or vulnerability type (e.g., 'rce wordpress')"
+    ),
+  limit: z
+    .number()
+    .optional()
+    .default(5)
+    .describe("Maximum number of results to return (default: 5)"),
+  toolCallDescription: z
+    .string()
+    .describe(
+      "A concise, human-readable description of what this tool call is doing"
+    ).optional(),
+});
+
+export interface CVETemplate {
+  id: string;
+  name: string;
+  severity: string;
+  description?: string;
+  tags?: string[];
+  template_content?: string; // Raw YAML template with exploit patterns
+}
+
+export interface CVELookupResult {
+  success: boolean;
+  query: string;
+  total_found: number;
+  templates: CVETemplate[];
+  error?: string;
+}
+
+/**
+ * CVE Lookup Tool - Search for known CVEs and get exploit templates
+ *
+ * Uses the ProjectDiscovery API to search Nuclei templates for known CVEs.
+ * Returns raw templates with exploit patterns that can be used to test vulnerabilities.
+ *
+ * Requires DISCOVERY_API_KEY environment variable to be set.
+ */
+export function createCVELookupTool() {
+  return tool({
+    name: "cve_lookup",
+    description: `Search for known CVEs and get exploit templates from the Nuclei template database.
+
+USE THIS TOOL WHEN:
+- You identify a software version in headers, responses, or fingerprints
+- You want to check if detected software has known vulnerabilities
+- You need ready-to-use exploit patterns for a specific CVE
+- You're testing a target and want to check for CVEs affecting its tech stack
+
+SEARCH EXAMPLES:
+- CVE ID: "CVE-2023-22515" or "CVE-2022-1388"
+- Software name: "gitlab", "jenkins", "tomcat"
+- Software + version: "nginx 1.18", "php 7.4"
+- Vulnerability type + software: "rce confluence", "ssrf spring"
+- CWE: "CWE-89" (SQL injection)
+
+OUTPUT:
+Returns Nuclei templates containing:
+- CVE/CWE identifiers and severity ratings
+- Raw YAML template with full exploit pattern
+- HTTP request details (method, path, headers, body)
+- Matchers to validate successful exploitation
+
+Parse the template_content field to extract actionable exploit payloads.`,
+    inputSchema: CVELookupInput,
+    execute: async ({
+      query,
+      limit = 5,
+    }): Promise<CVELookupResult> => {
+      const apiKey = process.env.DISCOVERY_API_KEY;
+
+      if (!apiKey) {
+        return {
+          success: false,
+          query,
+          total_found: 0,
+          templates: [],
+          error:
+            "DISCOVERY_API_KEY environment variable not set. Get an API key from https://cloud.projectdiscovery.io/",
+        };
+      }
+
+      try {
+        // Step 1: Search for templates matching the query
+        // Smart query construction based on input pattern
+        let searchQuery = query.trim();
+
+        // Exact CVE ID match (e.g., "CVE-2021-41773") - use id: prefix for exact lookup
+        if (/^CVE-\d{4}-\d+$/i.test(searchQuery)) {
+          searchQuery = `id:${searchQuery.toUpperCase()}`;
+        }
+        // CWE pattern (e.g., "CWE-89") - search by tag
+        else if (/^CWE-\d+$/i.test(searchQuery)) {
+          searchQuery = `tags:${searchQuery.toLowerCase()}`;
+        }
+        // General search (software names, versions, vulnerability types) - use as-is
+
+        const searchUrl = new URL(
+          "https://api.projectdiscovery.io/v2/template/search"
+        );
+        searchUrl.searchParams.set("q", searchQuery);
+        searchUrl.searchParams.set("limit", String(limit));
+        searchUrl.searchParams.set("scope", "public");
+
+        const searchResponse = await fetch(searchUrl.toString(), {
+          method: "GET",
+          headers: {
+            "X-API-Key": apiKey,
+            "Content-Type": "application/json",
+          },
+        });
+
+        if (!searchResponse.ok) {
+          const errorText = await searchResponse.text();
+          return {
+            success: false,
+            query,
+            total_found: 0,
+            templates: [],
+            error: `Search API error (${searchResponse.status}): ${errorText}`,
+          };
+        }
+
+        const searchData = (await searchResponse.json()) as Record<string, any>;
+        const searchResults = (searchData.results || searchData.data || searchData.templates || []) as any[];
+
+        if (searchResults.length === 0) {
+          return {
+            success: true,
+            query,
+            total_found: 0,
+            templates: [],
+          };
+        }
+
+        // Build template objects from search results
+        const templates: CVETemplate[] = [];
+        const GITHUB_RAW_BASE = "https://raw.githubusercontent.com/projectdiscovery/nuclei-templates/main";
+
+        for (const result of searchResults.slice(0, limit)) {
+          const templateObj: CVETemplate = {
+            id: result.id || result.template_id || "unknown",
+            name: result.name || "Unknown",
+            severity: result.severity || "unknown",
+            description: result.description,
+            tags: result.tags,
+          };
+
+          // Use raw content if available, otherwise fetch from GitHub
+          if (result.raw) {
+            templateObj.template_content = result.raw;
+          } else {
+            const templatePath = result.uri || (result.dir && result.filename ? `${result.dir}/${result.filename}` : null);
+            if (templatePath) {
+              try {
+                const githubUrl = `${GITHUB_RAW_BASE}/${templatePath}`;
+                const templateResponse = await fetch(githubUrl);
+                if (templateResponse.ok) {
+                  templateObj.template_content = await templateResponse.text();
+                }
+              } catch {
+                // Silently fail - template_content will be undefined
+              }
+            }
+          }
+
+          templates.push(templateObj);
+        }
+
+        return {
+          success: true,
+          query,
+          total_found: searchData.total || templates.length,
+          templates,
+        };
+      } catch (error: any) {
+        return {
+          success: false,
+          query,
+          total_found: 0,
+          templates: [],
+          error: `CVE lookup failed: ${error.message}`,
+        };
+      }
+    },
+  });
+}
 
 /**
  * Analysis tool - Document findings and maintain testing state
@@ -3120,7 +3978,8 @@ export function createPentestTools(
     ) => Promise<ExecuteCommandResult>;
     http_request?: (opts: HttpRequestOpts) => Promise<HttpRequestResult>;
   },
-  onTokenUsage?: (inputTokens: number, outputTokens: number) => void
+  onTokenUsage?: (inputTokens: number, outputTokens: number) => void,
+  abortSignal?: AbortSignal
 ) {
   // Get offensive headers from session config
   const offensiveHeaders = Session.getOffensiveHeaders(session);
@@ -3161,15 +4020,25 @@ export function createPentestTools(
       method,
       headers,
     }) => {
+      // Check if already aborted before starting
+      if (abortSignal?.aborted) {
+        return { error: "Fuzzing aborted by user", results: [] };
+      }
+
       const length = Math.floor(endNumber - startNumber) + 1;
       const ids = Array.from({ length }, (_, i) => startNumber + i);
 
       const fuzz = async (value: number) => {
+        // Check abort before each request
+        if (abortSignal?.aborted) {
+          throw new Error("Aborted");
+        }
         const result = await fetch(
           url.replace(`{${parameter}}`, value.toLocaleString()),
           {
             method: method,
             headers: { ...offensiveHeaders, ...headers },
+            signal: abortSignal,
           }
         );
         const body = await result.text();
@@ -3181,6 +4050,11 @@ export function createPentestTools(
       const input = ids.map((id) => limit(() => fuzz(id)));
 
       const results = await Promise.allSettled(input);
+
+      // Check if aborted after all requests
+      if (abortSignal?.aborted) {
+        return { error: "Fuzzing aborted by user", results: [] };
+      }
 
       // TODO: probably a better way to do this
       return results
@@ -3237,9 +4111,31 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
     inputSchema: ExecuteCommandInput,
     execute: async ({ command, timeout = 30000, toolCallDescription }) => {
       try {
+        // Check if already aborted before starting
+        if (abortSignal?.aborted) {
+          return {
+            success: false,
+            error: "Command aborted by user",
+            stdout: "",
+            stderr: "",
+            command,
+          };
+        }
+
         // Apply rate limiting before command execution
         if (rateLimiter) {
           await rateLimiter.acquireSlot();
+        }
+
+        // Check again after rate limiting wait
+        if (abortSignal?.aborted) {
+          return {
+            success: false,
+            error: "Command aborted by user",
+            stdout: "",
+            stderr: "",
+            command,
+          };
         }
 
         if (toolOverride?.execute_command) {
@@ -3264,6 +4160,18 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
           timeout,
           maxBuffer: 10 * 1024 * 1024, // 10MB buffer
         });
+
+        // Check if aborted while command was running
+        if (abortSignal?.aborted) {
+          return {
+            success: false,
+            error: "Command completed but session was aborted",
+            stdout: stdout || "",
+            stderr: stderr || "",
+            command: finalCommand,
+          };
+        }
+
         return {
           success: true,
           stdout:
@@ -3320,6 +4228,7 @@ COMMON TESTING PATTERNS:
       timeout,
       toolCallDescription,
     }) => {
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
       try {
         // Apply rate limiting before HTTP request
         if (rateLimiter) {
@@ -3338,8 +4247,28 @@ COMMON TESTING PATTERNS:
           });
         }
 
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), timeout);
+        // Check if already aborted before starting
+        if (abortSignal?.aborted) {
+          return {
+            success: false,
+            error: "Request aborted by user",
+            url,
+            method,
+            status: 0,
+            statusText: "",
+            headers: {},
+            body: "",
+            redirected: false,
+          };
+        }
+
+        const timeoutController = new AbortController();
+        timeoutId = setTimeout(() => timeoutController.abort(), timeout);
+
+        // Combine parent abort signal with timeout - either can cancel
+        const combinedSignal = abortSignal
+          ? AbortSignal.any([abortSignal, timeoutController.signal])
+          : timeoutController.signal;
 
         const response = await fetch(url, {
           method,
@@ -3349,7 +4278,7 @@ COMMON TESTING PATTERNS:
           },
           body: body || undefined,
           redirect: followRedirects ? "follow" : "manual",
-          signal: controller.signal,
+          signal: combinedSignal,
         });
 
         clearTimeout(timeoutId);
@@ -3379,6 +4308,26 @@ COMMON TESTING PATTERNS:
           redirected: response.redirected,
         };
       } catch (error: any) {
+        if (timeoutId) clearTimeout(timeoutId);
+
+        // Distinguish between user abort and timeout
+        if (error.name === 'AbortError') {
+          const errorMsg = abortSignal?.aborted
+            ? "Request aborted by user"
+            : `Request timeout after ${timeout}ms`;
+          return {
+            success: false,
+            error: errorMsg,
+            url,
+            method,
+            status: 0,
+            statusText: "",
+            headers: {},
+            body: "",
+            redirected: false,
+          };
+        }
+
         return {
           success: false,
           error: error.message,
@@ -3398,6 +4347,9 @@ COMMON TESTING PATTERNS:
     fuzz_endpoint: fuzzEndpoint,
     execute_command: executeCommand,
     http_request: httpRequest,
+    mutate_payload: createMutatePayloadTool(),
+    smart_enumerate: createSmartEnumerateTool(toolOverride?.execute_command),
+    cve_lookup: createCVELookupTool(),
     document_finding: createDocumentFindingTool(session),
     record_test_result: createRecordTestResultTool(session),
     test_parameter: createSmartTestTool(

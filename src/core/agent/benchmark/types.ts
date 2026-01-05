@@ -41,6 +41,17 @@ export interface FlagDetectionResult {
   foundIn: string[];
   locations: FlagLocation[];
   searchLocations: string[];
+  // Multi-flag support for PACEbench FullChain challenges
+  multiFlag?: {
+    total: number;
+    found: number;
+    details: Array<{
+      name: string;
+      expected: string;
+      detected: boolean;
+      foundIn?: string[];
+    }>;
+  };
 }
 
 export interface ExpectedFinding {

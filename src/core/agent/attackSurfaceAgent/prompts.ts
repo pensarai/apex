@@ -353,6 +353,59 @@ authenticationInfo: {
 }
 \`\`\`
 
+### Cryptographic Session Analysis (CRITICAL FOR SESSION TOKENS)
+
+**IMPORTANT:** When you capture session cookies, analyze them for cryptographic properties. Encrypted sessions without authentication (MAC/HMAC) are vulnerable to forgery attacks.
+
+**Step 1: Analyze Session Cookie Format**
+\`\`\`bash
+# Capture session cookie after login
+SESSION_COOKIE="<captured_cookie_value>"
+
+# Check if hex-encoded (even length, 0-9a-f only)
+if [[ \${#SESSION_COOKIE} % 2 -eq 0 ]] && [[ "$SESSION_COOKIE" =~ ^[0-9a-fA-F]+$ ]]; then
+  echo "[CRYPTO] Hex-encoded session detected"
+  BYTE_LEN=$(( \${#SESSION_COOKIE} / 2 ))
+  echo "[CRYPTO] Byte length: $BYTE_LEN"
+
+  # Check for AES block alignment (16-byte blocks)
+  if [ $(( BYTE_LEN % 16 )) -eq 0 ]; then
+    echo "[CRYPTO] Length is multiple of 16 bytes - likely AES encrypted"
+    echo "[CRYPTO] Blocks: $(( BYTE_LEN / 16 ))"
+  fi
+fi
+
+# Check if base64 (try decode, look for binary)
+echo "$SESSION_COOKIE" | base64 -d 2>/dev/null | xxd | head -2
+\`\`\`
+
+**Indicators of Encrypted (vs Encoded) Sessions:**
+- **High entropy**: Appears random, no readable patterns after decoding
+- **Block-aligned length**: Multiple of 8 or 16 bytes (DES or AES)
+- **Hex-encoded binary**: Even-length string of 0-9a-f characters
+- **Different tokens per login**: Same user gets different cookie each time (random IV)
+- **Error messages mentioning**: "Invalid IV", "padding", "decryption", "cipher", "CBC", "AES"
+
+**When Encrypted Sessions Are Detected:**
+
+If you identify encrypted session cookies, flag the target for **cryptographic testing**:
+
+\`\`\`typescript
+{
+  target: "https://example.com/login",
+  objective: "Test for cryptographic vulnerabilities in encrypted session management - check for unauthenticated encryption, cipher mode weaknesses, and session token forgery",
+  rationale: "Session tokens appear to use block cipher encryption. Potential for malleability attacks if encryption lacks authentication."
+}
+\`\`\`
+
+**CRITICAL KEYWORDS FOR CRYPTO TESTING:**
+When creating objectives for targets with encrypted sessions, include these keywords so crypto testing is triggered:
+- "cryptographic", "encrypted session", "cipher", "encryption"
+- "session forgery", "token manipulation", "malleability"
+
+**Why This Matters:**
+Block cipher encryption without MAC/HMAC authentication allows attackers to modify ciphertext to change the decrypted plaintext without knowing the key. This can lead to authentication bypass and privilege escalation.
+
 ### Application-Level Discovery
 
 1. **Web Application Mapping**
@@ -406,166 +459,148 @@ authenticationInfo: {
    curl --max-time 5 <url>/.well-known/security.txt
    \`\`\`
    
-   **Technology Detection:**
-   - Server headers (Apache, nginx, IIS)
-   - X-Powered-By headers (PHP, ASP.NET, Express)
-   - Framework indicators
-   - JavaScript libraries
-   - CMS detection (WordPress, Drupal, Joomla)
-   - WAF detection
-   
    **MANDATORY WORKFLOW FOR EACH WEB SERVICE:**
-   
-   **Phase A: Discovery Files (DO THIS FIRST - Reveals Actual Structure)**
+
+   **Phase A: Technology Fingerprinting (DO THIS FIRST - Critical for Targeted Recon)**
+
+   Before testing ANY endpoints, identify what software is running:
    \`\`\`bash
-   # Check these BEFORE manual endpoint testing:
-   curl --max-time 5 https://example.com/robots.txt      # Often lists all paths
-   curl --max-time 5 https://example.com/sitemap.xml     # Lists all pages
-   curl --max-time 5 https://example.com/swagger.json    # API endpoints
-   curl --max-time 5 https://example.com/openapi.json    # API endpoints
+   # Get server headers and technology info
+   curl -L -I --max-time 5 <url>
+
+   # Check HTTP methods (reveals server type)
+   curl -i -X OPTIONS --max-time 5 <url>
+
+   # Get full response for technology indicators
+   curl -s --max-time 10 <url> | head -100
    \`\`\`
-   If these files exist, parse and extract ALL paths/endpoints listed in them.
-   These are REAL, verified paths - not guesses.
-   
-   **Phase B: JavaScript Analysis (DO THIS SECOND)**
+
+   **Extract and note:**
+   - Server header (Apache, nginx, IIS, etc.) and VERSION NUMBER
+   - X-Powered-By (PHP, ASP.NET, Express, etc.)
+   - Response patterns (error pages, default pages)
+   - HTML comments, meta tags, generator tags
+   - JavaScript frameworks (React, Vue, Angular, jQuery)
+   - Cookie names (PHPSESSID, JSESSIONID, ASP.NET_SessionId, etc.)
+
+   **Phase B: Technology-Specific Reconnaissance (DO THIS SECOND)**
+
+   Based on what you identified in Phase A, probe paths specific to that technology.
+   **This is CRITICAL - different servers have completely different attack surfaces.**
+
+   Use your knowledge of the identified technology to check relevant paths. The examples
+   below are common patterns, but you should apply your expertise about each technology's
+   typical directory structure, configuration files, admin interfaces, and debug endpoints.
+
+   **Apache HTTP Server:**
+   - /cgi-bin/ - CGI script directory (standard Apache feature, often misconfigured)
+   - /server-status, /server-info - Apache status modules (often exposed)
+   - /.htaccess, /.htpasswd - Apache configuration files
+   - /icons/, /manual/ - Default Apache directories
+
+   **nginx:**
+   - /nginx_status, /status - nginx status modules
+   - /basic_status - nginx stub status
+   - /../ patterns - nginx alias traversal
+
+   **Microsoft IIS / ASP.NET:**
+   - /web.config - IIS configuration (often misconfigured or backed up as .bak)
+   - /trace.axd - ASP.NET tracing (exposes request details)
+   - /elmah.axd - Error logging module (exposes stack traces)
+   - /aspnet_client/ - ASP.NET client-side files
+
+   **PHP Applications:**
+   - /phpinfo.php, /info.php, /php_info.php, /test.php - PHP info pages
+   - /phpmyadmin/, /pma/, /mysql/, /myadmin/ - Database admin
+   - /adminer.php - Adminer database tool
+
+   **Java/Tomcat:**
+   - /manager/html, /manager/status - Tomcat manager
+   - /host-manager/ - Tomcat host manager
+   - /examples/, /docs/ - Tomcat examples
+   - /WEB-INF/web.xml - Java web descriptor
+   - /actuator/, /actuator/env, /actuator/heapdump - Spring Boot
+   - /jolokia/ - JMX over HTTP
+
+   **Node.js/Express:**
+   - /debug, /__debug__ - Debug endpoints
+   - /graphql, /graphiql - GraphQL endpoints
+   - /socket.io/ - WebSocket endpoints
+   - /.env exposed - Environment files
+
+   **Python/Django/Flask:**
+   - /admin/ - Django admin
+   - /__debug__/, /_debug_toolbar/ - Debug toolbar
+   - /static/ - Static files
+   - /api/schema/, /api/docs/ - API documentation
+
+   **Ruby on Rails:**
+   - /rails/info/properties - Application info (debug mode)
+   - /sidekiq - Background job dashboard (often unprotected)
+
+   **CMS-Specific (detect from meta tags, paths, cookies):**
+   - WordPress: /wp-admin/, /wp-login.php, /wp-json/, /wp-content/, /xmlrpc.php
+   - Drupal: /user/login, /admin/, /node/, /?q=admin, /CHANGELOG.txt
+   - Joomla: /administrator/, /components/, /configuration.php~
+   - Magento: /admin/, /downloader/, /app/etc/local.xml
+
+   **Phase C: Discovery Files (Reveals Actual Structure)**
+   \`\`\`bash
+   # Standard discovery files
+   curl --max-time 5 <url>/robots.txt
+   curl --max-time 5 <url>/sitemap.xml
+   curl --max-time 5 <url>/.well-known/security.txt
+
+   # API documentation (technology-dependent)
+   curl --max-time 5 <url>/swagger.json
+   curl --max-time 5 <url>/openapi.json
+   curl --max-time 5 <url>/api-docs
+   \`\`\`
+   Parse and extract ALL paths/endpoints listed. These are verified paths.
+
+   **Phase D: JavaScript Analysis**
    \`\`\`bash
    # Download main page and find JS files:
-   curl --max-time 10 https://example.com/ | grep -oP 'src=\\"[^\\"]*\\.js\\"'
-   
+   curl --max-time 10 <url>/ | grep -oP 'src="[^"]*\\.js"'
+
    # Download and analyze each JS bundle:
-   curl --max-time 10 https://example.com/main.js | grep -E '"/api/|"/[a-z]+"|fetch\\(|axios\\.'
+   curl --max-time 10 <url>/main.js | grep -E '"/api/|"/[a-z]+"|fetch\\(|axios\\.'
    \`\`\`
    Extract ALL route definitions and API endpoints from JavaScript code.
-   
-   **Phase C: Manual Testing (DO THIS THIRD - Only After A & B)**
-   Only after checking discovery files and JS bundles, manually test common endpoints:
-   - Test paths found in robots.txt/sitemap
-   - Test endpoints found in JS bundles
-   - Test common patterns as fallback
-   
-   **Phase D: Verification (DO THIS FOR EVERY ENDPOINT BEFORE DOCUMENTING)**
+
+   **Phase E: Common Endpoint Patterns (Supplement Technology-Specific)**
+
+   After technology-specific checks, also test these universal patterns:
+
+   **API & GraphQL:**
+   - /api/, /api/v1/, /api/v2/, /rest/, /graphql, /gql
+
+   **Authentication:**
+   - /login, /signin, /auth, /oauth, /sso, /logout
+
+   **Admin Interfaces:**
+   - /admin, /administrator, /dashboard, /panel, /console, /manage
+
+   **Sensitive Files:**
+   - /.env, /.git/, /.git/config, /.svn/, /.DS_Store
+   - /backup, /config, /database, /dump
+
+   **Development/Debug:**
+   - /debug, /test, /dev, /staging, /status, /health, /metrics
+
+   **Phase F: Verification (BEFORE DOCUMENTING ANY ENDPOINT)**
    \`\`\`bash
    # ALWAYS follow redirects:
-   curl -L -I --max-time 5 https://example.com/endpoint
-   
+   curl -L -I --max-time 5 <url>/endpoint
+
    # If returns 200, check for client-side redirects:
-   curl -s https://example.com/endpoint | grep -E 'NEXT_REDIRECT|window\\.location|meta.*refresh'
-   
+   curl -s <url>/endpoint | grep -E 'NEXT_REDIRECT|window\\.location|meta.*refresh'
+
    # Only document if:
    # 1. Returns 200 OK (after following redirects)
    # 2. No client-side redirect detected
-   # 3. Content-Type is appropriate (text/html for pages, application/json for APIs)
+   # 3. Content-Type is appropriate
    \`\`\`
-   
-   **Common Endpoints to Check (TEST ALL OF THESE):**
-   
-   **API Endpoints:**
-   - /api/, /api/v1/, /api/v2/, /api/v3/, /v1/, /v2/, /v3/
-   - /rest/, /restapi/, /rest-api/
-   - /graphql, /graphiql, /graphql/playground, /graphql-explorer
-   - /api/graphql, /gql, /query
-   - /swagger, /swagger-ui, /swagger.json, /swagger-ui.html
-   - /api-docs, /api/docs, /docs, /documentation
-   - /openapi.json, /openapi.yaml, /api/openapi
-   - /redoc, /rapidoc
-   - /api/swagger, /api/swagger.json
-   - /v1/api-docs, /v2/api-docs
-   - /ws/, /websocket/, /socket.io/
-   - /api/health, /api/status, /api/version
-   - /api/users, /api/auth, /api/login
-   
-   **Admin & Management:**
-   - /admin, /admin/, /administrator, /administration
-   - /wp-admin, /wp-login.php, /wp-content
-   - /phpmyadmin, /pma, /phpMyAdmin
-   - /adminer, /adminer.php
-   - /cpanel, /cPanel, /webmail
-   - /manager, /management, /console
-   - /control, /controlpanel
-   - /dashboard, /panel
-   - /system, /sysadmin
-   
-   **Authentication:**
-   - /login, /login.php, /login.html
-   - /signin, /sign-in, /sign_in
-   - /signup, /sign-up, /register, /registration
-   - /auth, /authenticate, /authentication
-   - /oauth, /oauth2, /oauth/authorize
-   - /saml, /sso, /single-sign-on
-   - /password, /forgot-password, /reset-password
-   - /logout, /signout, /sign-out
-   
-   **Development & Testing:**
-   - /debug, /debug/, /debug/console
-   - /test, /test/, /testing
-   - /dev, /develop, /development
-   - /staging, /stage, /uat
-   - /phpinfo, /phpinfo.php, /info.php
-   - /server-status, /server-info
-   - /_debug, /_debug_toolbar
-   - /telescope, /horizon (Laravel)
-   - /_profiler, /profiler (Symfony)
-   
-   **Status & Monitoring:**
-   - /health, /healthz, /healthcheck, /health-check
-   - /status, /status.php, /status.json
-   - /metrics, /prometheus, /actuator/metrics
-   - /ping, /heartbeat, /alive
-   - /version, /version.txt, /VERSION
-   - /actuator, /actuator/info, /actuator/health (Spring Boot)
-   - /info, /stats, /statistics
-   
-   **Configuration & Sensitive Files:**
-   - /.env, /.env.local, /.env.production, /.env.backup, /.env.old
-   - /.git/, /.git/config, /.git/HEAD, /.gitignore
-   - /.svn/, /.svn/entries
-   - /.DS_Store
-   - /config, /config.php, /config.json, /config.yml
-   - /configuration.php, /settings.php
-   - /web.config, /Web.config
-   - /.htaccess, /.htpasswd
-   - /composer.json, /package.json, /requirements.txt
-   - /Dockerfile, /docker-compose.yml
-   - /.aws/credentials, /.ssh/
-   
-   **Backup & Archives:**
-   - /backup, /backups, /backup.zip, /backup.sql
-   - /old, /old_site, /_old, /archive
-   - /temp, /tmp, /temporary
-   - /dump, /dumps, /data
-   - /db_backup, /database
-   - /bak, /.bak, /backup.tar.gz
-   
-   **File Management:**
-   - /uploads, /upload, /uploaded, /uploaded_files
-   - /files, /file, /download, /downloads
-   - /media, /images, /img, /pics, /pictures
-   - /assets, /static, /resources
-   - /public, /private
-   - /documents, /docs
-   - /attachments, /attachment
-   
-   **CMS & Framework Specific:**
-   - WordPress: /wp-json/, /wp-admin/, /wp-content/, /wp-includes/
-   - Drupal: /user/login, /admin/, /node/, /?q=admin
-   - Joomla: /administrator/, /components/
-   - Django: /admin/, /__debug__/
-   - Laravel: /telescope, /horizon, /nova
-   - Spring: /actuator/, /jolokia/, /heapdump
-   - Express/Node: /server-status, /debug
-   
-   **Cloud & Infrastructure:**
-   - /.aws/, /.azure/, /.gcp/
-   - /cloud, /s3, /storage
-   - /kubernetes, /k8s
-   - /jenkins, /ci, /build
-   - /gitlab, /github
-   
-   **API Versioning Patterns:**
-   - /v1/, /v2/, /v3/, /v4/
-   - /api/v1/, /api/v2/, /api/v3/
-   - /1.0/, /2.0/, /3.0/
-   - /api/1/, /api/2/
    
    **CRITICAL REDIRECT HANDLING - MUST FOLLOW:**
    - **ALWAYS use curl -L -I** to automatically follow HTTP redirects (301, 302, 303, 307, 308)
@@ -823,6 +858,77 @@ authenticationInfo: {
    \`\`\`
    
    **Note:** For comprehensive directory enumeration, delegate to pentest_agents
+
+4. **SSRF Attack Surface Identification (CRITICAL)**
+
+   Server-Side Request Forgery (SSRF) vulnerabilities exist in functionality that fetches external resources on behalf of the user. These are HIGH-VALUE targets because they can lead to:
+   - Access to internal services and networks
+   - Cloud metadata exposure (AWS keys, GCP tokens)
+   - Local file reading via file:// protocol
+   - Port scanning of internal infrastructure
+
+   **STEP 1: Identify URL-Accepting Parameters**
+
+   When analyzing forms and endpoints, actively look for parameters that accept URLs:
+   \`\`\`bash
+   # Check page content for URL input forms
+   curl -s <url> | grep -oiE 'name="[^"]*url[^"]*"|name="[^"]*redirect[^"]*"|name="[^"]*dest[^"]*"|name="[^"]*src[^"]*"|name="[^"]*link[^"]*"|name="[^"]*callback[^"]*"|name="[^"]*fetch[^"]*"|name="[^"]*load[^"]*"|name="[^"]*file[^"]*"|name="[^"]*path[^"]*"|name="[^"]*uri[^"]*"|name="[^"]*page[^"]*"'
+
+   # Look for form actions that suggest URL fetching
+   curl -s <url> | grep -oiE 'action="[^"]*redirect[^"]*"|action="[^"]*fetch[^"]*"|action="[^"]*proxy[^"]*"|action="[^"]*load[^"]*"'
+   \`\`\`
+
+   **Common SSRF parameter names:**
+   - URL-related: \`url\`, \`uri\`, \`link\`, \`href\`, \`src\`, \`source\`
+   - Redirect-related: \`redirect\`, \`redirect_url\`, \`redirect_uri\`, \`return\`, \`return_url\`, \`next\`, \`target\`, \`dest\`, \`destination\`
+   - Fetch-related: \`fetch\`, \`load\`, \`read\`, \`retrieve\`, \`get\`, \`request\`
+   - File-related: \`file\`, \`path\`, \`doc\`, \`document\`, \`folder\`, \`root\`
+   - Preview-related: \`preview\`, \`show\`, \`view\`, \`display\`, \`page\`
+   - Callback-related: \`callback\`, \`callback_url\`, \`webhook\`, \`ping\`, \`notify\`
+   - Image-related: \`img\`, \`image\`, \`avatar\`, \`photo\`, \`picture\`, \`icon\`
+   - Feed-related: \`feed\`, \`rss\`, \`atom\`, \`xml\`
+
+   **STEP 2: Identify SSRF-Susceptible Functionality**
+
+   Look for features that inherently require server-side URL fetching:
+
+   | Functionality | Example | Why SSRF-Prone |
+   |--------------|---------|----------------|
+   | URL Preview/Unfurl | "Paste link to preview" | Server fetches URL to extract metadata |
+   | File Import from URL | "Import from URL" | Server downloads external file |
+   | Webhook/Callback handlers | "/webhook?url=..." | Server makes callback to URL |
+   | PDF/Screenshot generators | "Generate PDF from URL" | Server renders external page |
+   | Image proxy/resize | "/proxy?img=..." | Server fetches and processes image |
+   | RSS/Feed readers | "Add feed URL" | Server fetches feed content |
+   | Translation services | "Translate page at URL" | Server fetches page to translate |
+   | API integrations | "Connect external API" | Server calls external endpoints |
+   | Content embedding | "Embed content from..." | Server fetches embedded content |
+
+   **STEP 3: Look for Internal Service Hints**
+
+   Page content often reveals internal service names that can be targeted via SSRF:
+   \`\`\`bash
+   # Search for hints about internal services
+   curl -s <url> | grep -iE "internal|localhost|127\\.0\\.0\\.1|192\\.168\\.|10\\.|172\\.(1[6-9]|2[0-9]|3[01])\\.|private|intranet|backend|admin-service|api-internal|internal-api|metadata"
+
+   # Look for references to internal hostnames
+   curl -s <url> | grep -oiE "http://[a-z0-9-]+[^\"'>\s]*" | grep -viE "^http://(www\\.|[a-z]+\\.com|[a-z]+\\.org)"
+   \`\`\`
+
+   **STEP 4: Document SSRF Candidates for Testing**
+
+   When you identify SSRF attack surface, include it as a target with objective mentioning SSRF testing. The objective should specify that the endpoint accepts URL input that is fetched server-side, making it a candidate for SSRF attacks including internal network access and protocol abuse.
+
+   **CRITICAL: Every endpoint with URL-accepting parameters should be flagged for SSRF testing.**
+
+   **Quick SSRF Surface Discovery Checklist:**
+   - [ ] Searched all forms for URL/redirect/fetch parameters
+   - [ ] Identified URL preview/unfurl functionality
+   - [ ] Found file import features accepting URLs
+   - [ ] Checked for webhook/callback endpoints
+   - [ ] Looked for image proxy or resize features
+   - [ ] Searched page content for internal service hints
+   - [ ] Documented all SSRF candidates with proper objectives
 
 ### Cloud & Third-Party Service Discovery
 

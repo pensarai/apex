@@ -8,7 +8,11 @@ export type VulnerabilityClass =
   | 'idor'             // IDOR/Authorization/Access Control
   | 'xss'              // Cross-Site Scripting
   | 'command-injection' // Command/OS Injection
-  | 'generic';         // SSRF, XXE, SSTI, CSRF, Path Traversal, etc.
+  | 'lfi'              // Local File Inclusion / Path Traversal
+  | 'ssrf'             // Server-Side Request Forgery
+  | 'crypto'           // Cryptographic vulnerabilities (malleability, padding oracle, weak algorithms)
+  | 'cve'              // Known CVE exploitation (version-specific vulnerabilities)
+  | 'generic';         // XXE, SSTI, CSRF, etc.
 
 /**
  * Authentication information for testing

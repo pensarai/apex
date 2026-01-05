@@ -74,6 +74,10 @@ export namespace Session {
         authenticationInstructions: z.string().optional(),
         requestsPerSecond: z.number().optional(),
         operatorSettings: OperatorSettingsObject.optional(),
+        /** Enable CVSS 4.0 scoring for findings (defaults to true if not specified) */
+        enableCvssScoring: z.boolean().optional(),
+        /** Model to use for CVSS scorer subagent (default: claude-4-5-haiku) */
+        cvssModel: z.string().optional()
     });
 
     export type SessionConfig = z.infer<typeof SessionConfigObject>;
@@ -313,7 +317,9 @@ Testing in progress...
                     }
                 },
                 outcomeGuidance: input.config?.outcomeGuidance || DEFAULT_OUTCOME_GUIDANCE,
-                scopeConstraints: input.config?.scopeConstraints
+                scopeConstraints: input.config?.scopeConstraints,
+                enableCvssScoring: input.config?.enableCvssScoring,
+                cvssModel: input.config?.cvssModel
             },
             _rateLimiter: rateLimiter,
             rootPath,

@@ -209,7 +209,7 @@ run_group() {
         # Check how many are actually remaining
         local remaining=0
         for b in "${benchmarks[@]}"; do
-            if ! ls ~/.pensar/executions/${group_prefix}-${b}-*/benchmark_results.json 2>/dev/null | head -1 | grep -q .; then
+            if ! ls ~/.pensar/executions/${group_prefix}-${b}*/benchmark_results.json 2>/dev/null | head -1 | grep -q .; then
                 ((remaining++)) || true
             fi
         done

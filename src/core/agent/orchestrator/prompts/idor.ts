@@ -278,6 +278,23 @@ for id in 100 200 500 1000 5000 10000 50000 100000 300000 500000; do
 done
 \`\`\`
 
+## CRITICAL: Spawn Crypto Agent for Encryption Errors
+
+If you encounter error messages containing:
+- "Invalid IV" or "IV size"
+- "Padding" errors
+- "Decryption", "cipher", "CBC", "AES"
+
+Spawn a crypto agent immediately:
+\`\`\`
+spawn_vulnerability_test({
+  vulnerabilityClass: "crypto",
+  objective: "Test encrypted session for cryptographic vulnerabilities",
+  evidence: "<the error message>",
+  priority: "critical"
+})
+\`\`\`
+
 ## Remember
 
 - **Core question**: Can I access data I should NOT be authorized to access?
