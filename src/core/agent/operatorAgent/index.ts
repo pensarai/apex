@@ -26,6 +26,7 @@ import {
   OPERATOR_STAGES,
 } from "../../operator";
 import { createPentestTools } from "../tools";
+import { createBrowserTools, disconnectMcpClient } from "../browserTools";
 import type { DisplayMessage } from "../../../tui/components/agent-display";
 
 export type OperatorAgentStatus = "idle" | "running" | "waiting" | "paused" | "completed" | "failed";
@@ -317,6 +318,8 @@ export class OperatorAgent extends EventEmitter {
     if (this.abortController) {
       this.abortController.abort();
     }
+    // Cleanup browser MCP client
+    disconnectMcpClient().catch(() => {});
     // Deny all pending approvals
     this.approvalGate.denyAll();
     this.setStatus("idle"); // Ready for new input
@@ -374,6 +377,24 @@ ${this.findingsSummary || "Just starting - no findings yet."}
 ## Testing Guidance
 ${session.config?.outcomeGuidance || Session.DEFAULT_OUTCOME_GUIDANCE}
 
+## Browser Tools (Validation & Evidence)
+You have browser automation for when you need real browser execution:
+
+**Tools:** browser_navigate, browser_fill, browser_click, browser_evaluate, browser_console, browser_screenshot
+
+**When to use browsers (vs http_request):**
+- VALIDATING XSS: After http_request shows unencoded reflection, use browser to prove JS executes
+- DOM-based XSS: These ONLY work in browsers (client-side JS vulnerabilities)
+- Evidence capture: Screenshots for POC documentation
+- Complex interactions: Multi-step flows requiring JS rendering
+
+**Optimal XSS testing flow:**
+1. http_request with payloads - look for unencoded reflection in response
+2. If reflection found → browser_navigate + browser_console to confirm execution
+3. browser_screenshot for evidence → document_finding
+
+Use http_request for speed/discovery. Use browser to PROVE vulnerabilities work.
+
 ## Your Approach
 Be methodical but follow interesting leads. Quality over quantity.
 A good pentest isn't about running every tool - it's about understanding
@@ -405,8 +426,18 @@ Document significant findings using the document_finding tool.`;
     // Create tools with approval gate wrapper
     const baseTools = createPentestTools(session, this.config.model);
 
-    // Wrap tools with approval checking
-    const wrappedTools = this.wrapToolsWithApproval(baseTools);
+    // Add browser tools for operator mode (HITL) only
+    const evidenceDir = join(session.rootPath, "evidence");
+    const browserTools = createBrowserTools(
+      session.targets[0] || "",
+      evidenceDir,
+      undefined, // logger - could be passed in future
+      this.abortController?.signal
+    );
+
+    // Merge all tools and wrap with approval checking
+    const allTools = { ...baseTools, ...browserTools };
+    const wrappedTools = this.wrapToolsWithApproval(allTools);
 
     let findingsCount = 0;
     let pocPaths: string[] = [];

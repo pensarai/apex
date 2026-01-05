@@ -29,6 +29,14 @@ const TOOL_BASE_TIERS: Record<string, PermissionTier> = {
 
   // Tier 5 - Exploit (handled dynamically)
   create_poc: 4, // POC creation is tier 4, execution could be 5
+
+  // Browser tools (Playwright MCP) - Operator mode only
+  browser_navigate: 2, // T2 - Low-risk Active (navigation only)
+  browser_screenshot: 2, // T2 - Low-risk Active (evidence capture)
+  browser_console: 2, // T2 - Low-risk Active (reading console logs)
+  browser_click: 3, // T3 - Probing (user interaction simulation)
+  browser_fill: 3, // T3 - Probing (form filling with payloads)
+  browser_evaluate: 4, // T4 - Intrusive (JavaScript execution)
 };
 
 /**
