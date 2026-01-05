@@ -499,6 +499,14 @@ Document significant findings using the document_finding tool.`;
           usage, // token counts
         });
 
+        // Emit token usage for UI tracking
+        if (usage) {
+          this.emit("token-usage", {
+            inputTokens: usage.inputTokens ?? 0,
+            outputTokens: usage.outputTokens ?? 0,
+          });
+        }
+
         // Add assistant message to history
         if (assistantContent) {
           messages.push({ role: "assistant", content: assistantContent });

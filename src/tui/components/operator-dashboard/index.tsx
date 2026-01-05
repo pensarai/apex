@@ -43,13 +43,19 @@ function getModeColor(mode: OperatorMode) {
   return blueText;
 }
 
+function formatTokenCount(count: number): string {
+  if (count >= 1000000) return `${(count / 1000000).toFixed(1)}M`;
+  if (count >= 1000) return `${(count / 1000).toFixed(1)}K`;
+  return count.toString();
+}
+
 interface OperatorDashboardProps {
   session: Session.SessionInfo;
 }
 
 export default function OperatorDashboard({ session }: OperatorDashboardProps) {
   const route = useRoute();
-  const { model } = useAgent();
+  const { model, tokenUsage, hasExecuted, addTokenUsage } = useAgent();
   const { setInputValue } = useInput();
 
   // Get Operator settings from session config
@@ -227,6 +233,10 @@ export default function OperatorDashboard({ session }: OperatorDashboardProps) {
           setEvidence((prev) => [...prev, event.evidence]);
           break;
       }
+    });
+
+    operatorAgent.on("token-usage", ({ inputTokens, outputTokens }: { inputTokens: number; outputTokens: number }) => {
+      addTokenUsage(inputTokens, outputTokens);
     });
 
     setAgent(operatorAgent);
@@ -569,6 +579,14 @@ export default function OperatorDashboard({ session }: OperatorDashboardProps) {
             <box flexDirection="row" gap={2} marginTop={1} backgroundColor="transparent">
               {mode === "plan" && <text fg={yellowText}>{"⏸  PLAN"}</text>}
               {mode === "auto" && <text fg={greenAccent}>{"▶▶ AUTO"}</text>}
+              {hasExecuted && (
+                <text fg={creamText}>
+                  {`↓${formatTokenCount(tokenUsage.inputTokens)} ↑${formatTokenCount(tokenUsage.outputTokens)} Σ${formatTokenCount(tokenUsage.totalTokens)}`}
+                </text>
+              )}
+              <text fg={verboseMode ? greenAccent : dimText}>
+                {verboseMode ? "⌥T verbose:on" : "⌥T verbose"}
+              </text>
               <text fg={dimText}>^C {directiveInput.trim() ? "clear" : "stop"}</text>
               <text fg={dimText}>ESC quit</text>
             </box>
