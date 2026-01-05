@@ -13,6 +13,7 @@ import { createOperatorAgent, type OperatorAgent } from "../../../core/agent/ope
 import type { OperatorMode, OperatorStage, PermissionTier, PendingApproval, ActionHistoryEntry } from "../../../core/operator";
 import { OPERATOR_STAGES, getStagesInOrder, PERMISSION_TIERS } from "../../../core/operator";
 import { useRoute } from "../../context/route";
+import { useInput } from "../../context/input";
 import { useAgent } from "../../agentProvider";
 import type { DisplayMessage } from "../agent-display";
 import { ChatMessage } from "./chat-message";
@@ -49,6 +50,7 @@ interface OperatorDashboardProps {
 export default function OperatorDashboard({ session }: OperatorDashboardProps) {
   const route = useRoute();
   const { model } = useAgent();
+  const { setInputValue } = useInput();
 
   // Get Operator settings from session config
   const operatorSettings = session.config?.operatorSettings || {
@@ -73,6 +75,11 @@ export default function OperatorDashboard({ session }: OperatorDashboardProps) {
   const [directiveInput, setDirectiveInput] = useState("");
   const [showStageMenu, setShowStageMenu] = useState(false);
   const [verboseMode, setVerboseMode] = useState(false);
+
+  // Sync directive input with global input context (prevents global shortcuts like ? while typing)
+  useEffect(() => {
+    setInputValue(directiveInput);
+  }, [directiveInput, setInputValue]);
 
   // Enhanced sidebar state
   const [attackSurface, setAttackSurface] = useState<Endpoint[]>([]);
@@ -353,22 +360,24 @@ export default function OperatorDashboard({ session }: OperatorDashboardProps) {
       return;
     }
 
+    // IMPORTANT: Only intercept shortcuts when input is COMPLETELY empty
+    // This prevents shortcuts from triggering while user is typing
+    const inputIsEmpty = directiveInput === "";
+
     // Handle phase transition confirmation (Y/N when pendingPhase is set)
-    if (targetState?.pendingPhase && !directiveInput.trim() && pendingApprovals.length === 0) {
+    if (inputIsEmpty && targetState?.pendingPhase && pendingApprovals.length === 0) {
       if (key.name === "y" || key.name === "Y") {
-        setDirectiveInput("");
         handlePhaseConfirm(true);
         return;
       }
       if (key.name === "n" || key.name === "N") {
-        setDirectiveInput("");
         handlePhaseConfirm(false);
         return;
       }
     }
 
     // Handle suggestion selection (1/2/3 keys) when input is empty and suggestions exist
-    if (suggestions.length > 0 && !directiveInput.trim()) {
+    if (inputIsEmpty && suggestions.length > 0) {
       const num = parseInt(key.name || "", 10);
       if (num >= 1 && num <= suggestions.length) {
         handleSuggestionSelect(num);
@@ -376,29 +385,20 @@ export default function OperatorDashboard({ session }: OperatorDashboardProps) {
       }
     }
 
-    // Handle pending approval - intercept Y/N/A keys
-    // Check if input is empty OR just became a single Y/N/A character (key just typed)
-    if (pendingApprovals.length > 0) {
+    // Handle pending approval - intercept Y/N/A keys ONLY when input is empty
+    if (inputIsEmpty && pendingApprovals.length > 0) {
       const approval = pendingApprovals[0];
-      const inputIsEffectivelyEmpty = !directiveInput.trim() ||
-        directiveInput.trim().toLowerCase() === key.name?.toLowerCase();
-
-      if (inputIsEffectivelyEmpty) {
-        if (key.name === "y" || key.name === "Y") {
-          setDirectiveInput(""); // Clear any typed 'y'
-          handleApprove(approval.id);
-          return;
-        }
-        if (key.name === "n" || key.name === "N") {
-          setDirectiveInput(""); // Clear any typed 'n'
-          handleDenyWithAlternatives(approval.id);
-          return;
-        }
-        if (key.name === "a" || key.name === "A") {
-          setDirectiveInput(""); // Clear any typed 'a'
-          handleAutoApproveTier(approval.tier);
-          return;
-        }
+      if (key.name === "y" || key.name === "Y") {
+        handleApprove(approval.id);
+        return;
+      }
+      if (key.name === "n" || key.name === "N") {
+        handleDenyWithAlternatives(approval.id);
+        return;
+      }
+      if (key.name === "a" || key.name === "A") {
+        handleAutoApproveTier(approval.tier);
+        return;
       }
     }
 
