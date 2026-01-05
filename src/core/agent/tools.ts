@@ -17,6 +17,25 @@ import { getProviderModel } from "../ai/utils";
 import { generateText } from "ai";
 import pLimit from "p-limit";
 
+// Knowledge system imports
+import {
+  getTechKnowledge,
+  getVulnKnowledge,
+  getTechniques,
+  getPayloads,
+  getWordlist,
+  getCommonEndpoints,
+  fingerprintResponse,
+  listTechnologies,
+  getUnifiedTechKnowledge,
+  listAvailableTechnologies,
+  listVulnClasses,
+  type TechLookupResult,
+  type WordlistLookupResult,
+  type UnifiedTechKnowledge,
+} from "../knowledge";
+import { getKnowledgeCache, CacheKeys } from "../knowledge/cache";
+
 const execAsync = promisify(exec);
 
 // Schemas for AI-generated structured outputs
@@ -1887,11 +1906,29 @@ const CVELookupInput = z.object({
     .describe(
       "Search query - can be a CVE ID (e.g., 'CVE-2023-1234'), software name (e.g., 'nginx'), software with version (e.g., 'openssh 8.0'), or vulnerability type (e.g., 'rce wordpress')"
     ),
+  techFilter: z
+    .string()
+    .optional()
+    .describe(
+      "Filter results by technology tag (e.g., 'wordpress', 'express', 'graphql', 'django'). Adds 'tags:{tech}' to query."
+    ),
+  templateType: z
+    .enum(["cve", "technique", "all"])
+    .optional()
+    .default("all")
+    .describe(
+      "Type of templates to return: 'cve' for CVE-specific, 'technique' for attack techniques, 'all' for both"
+    ),
   limit: z
     .number()
     .optional()
     .default(5)
     .describe("Maximum number of results to return (default: 5)"),
+  useCache: z
+    .boolean()
+    .optional()
+    .default(true)
+    .describe("Whether to use cached results if available (default: true)"),
   toolCallDescription: z
     .string()
     .describe(
@@ -1906,13 +1943,25 @@ export interface CVETemplate {
   description?: string;
   tags?: string[];
   template_content?: string; // Raw YAML template with exploit patterns
+  /** Extracted techniques from template (for tech_lookup) */
+  techniques?: Array<{
+    name: string;
+    description: string;
+    payloads?: string[];
+  }>;
 }
 
 export interface CVELookupResult {
   success: boolean;
   query: string;
+  techFilter?: string;
+  templateType?: string;
   total_found: number;
   templates: CVETemplate[];
+  /** Technologies detected in results (from tags) */
+  detectedTechs?: string[];
+  /** Whether result was from cache */
+  fromCache?: boolean;
   error?: string;
 }
 
@@ -1921,19 +1970,22 @@ export interface CVELookupResult {
  *
  * Uses the ProjectDiscovery API to search Nuclei templates for known CVEs.
  * Returns raw templates with exploit patterns that can be used to test vulnerabilities.
+ * Supports technology filtering and disk caching (24h TTL).
  *
  * Requires DISCOVERY_API_KEY environment variable to be set.
  */
 export function createCVELookupTool() {
+  const cache = getKnowledgeCache();
+
   return tool({
     name: "cve_lookup",
-    description: `Search for known CVEs and get exploit templates from the Nuclei template database.
+    description: `Search for known CVEs and exploit templates from the Nuclei template database.
 
 USE THIS TOOL WHEN:
 - You identify a software version in headers, responses, or fingerprints
 - You want to check if detected software has known vulnerabilities
 - You need ready-to-use exploit patterns for a specific CVE
-- You're testing a target and want to check for CVEs affecting its tech stack
+- You want technology-specific attack techniques (use techFilter)
 
 SEARCH EXAMPLES:
 - CVE ID: "CVE-2023-22515" or "CVE-2022-1388"
@@ -1941,6 +1993,14 @@ SEARCH EXAMPLES:
 - Software + version: "nginx 1.18", "php 7.4"
 - Vulnerability type + software: "rce confluence", "ssrf spring"
 - CWE: "CWE-89" (SQL injection)
+- Technology-specific: query="injection" techFilter="wordpress"
+
+TECH FILTER:
+Add techFilter to get technology-specific templates:
+- techFilter="wordpress" → WordPress-specific vulnerabilities
+- techFilter="express" → Express.js vulnerabilities
+- techFilter="graphql" → GraphQL-specific attacks
+- techFilter="django" → Django vulnerabilities
 
 OUTPUT:
 Returns Nuclei templates containing:
@@ -1948,19 +2008,36 @@ Returns Nuclei templates containing:
 - Raw YAML template with full exploit pattern
 - HTTP request details (method, path, headers, body)
 - Matchers to validate successful exploitation
+- detectedTechs: technologies found in result tags
 
-Parse the template_content field to extract actionable exploit payloads.`,
+Results are cached to disk (24h TTL) for faster subsequent lookups.`,
     inputSchema: CVELookupInput,
     execute: async ({
       query,
+      techFilter,
+      templateType = "all",
       limit = 5,
+      useCache = true,
     }): Promise<CVELookupResult> => {
+      // Generate cache key
+      const cacheKey = CacheKeys.cveTemplates(`${query}_${techFilter || ''}_${templateType}`);
+
+      // Check cache first
+      if (useCache) {
+        const cached = cache.get<CVELookupResult>(cacheKey);
+        if (cached) {
+          return { ...cached, fromCache: true };
+        }
+      }
+
       const apiKey = process.env.DISCOVERY_API_KEY;
 
       if (!apiKey) {
         return {
           success: false,
           query,
+          techFilter,
+          templateType,
           total_found: 0,
           templates: [],
           error:
@@ -1969,7 +2046,6 @@ Parse the template_content field to extract actionable exploit payloads.`,
       }
 
       try {
-        // Step 1: Search for templates matching the query
         // Smart query construction based on input pattern
         let searchQuery = query.trim();
 
@@ -1981,7 +2057,19 @@ Parse the template_content field to extract actionable exploit payloads.`,
         else if (/^CWE-\d+$/i.test(searchQuery)) {
           searchQuery = `tags:${searchQuery.toLowerCase()}`;
         }
-        // General search (software names, versions, vulnerability types) - use as-is
+
+        // Add technology filter if specified
+        if (techFilter) {
+          searchQuery = `${searchQuery} tags:${techFilter.toLowerCase()}`;
+        }
+
+        // Add template type filter
+        if (templateType === "cve") {
+          searchQuery = `${searchQuery} tags:cve`;
+        } else if (templateType === "technique") {
+          // Exclude CVE-specific templates, focus on general techniques
+          searchQuery = `${searchQuery} -tags:cve`;
+        }
 
         const searchUrl = new URL(
           "https://api.projectdiscovery.io/v2/template/search"
@@ -2003,6 +2091,8 @@ Parse the template_content field to extract actionable exploit payloads.`,
           return {
             success: false,
             query,
+            techFilter,
+            templateType,
             total_found: 0,
             templates: [],
             error: `Search API error (${searchResponse.status}): ${errorText}`,
@@ -2013,16 +2103,25 @@ Parse the template_content field to extract actionable exploit payloads.`,
         const searchResults = (searchData.results || searchData.data || searchData.templates || []) as any[];
 
         if (searchResults.length === 0) {
-          return {
+          const result: CVELookupResult = {
             success: true,
             query,
+            techFilter,
+            templateType,
             total_found: 0,
             templates: [],
+            fromCache: false,
           };
+          // Cache empty results too (to avoid repeated API calls)
+          if (useCache) {
+            cache.set(cacheKey, result, { source: 'nuclei-api' });
+          }
+          return result;
         }
 
         // Build template objects from search results
         const templates: CVETemplate[] = [];
+        const detectedTechsSet = new Set<string>();
         const GITHUB_RAW_BASE = "https://raw.githubusercontent.com/projectdiscovery/nuclei-templates/main";
 
         for (const result of searchResults.slice(0, limit)) {
@@ -2033,6 +2132,17 @@ Parse the template_content field to extract actionable exploit payloads.`,
             description: result.description,
             tags: result.tags,
           };
+
+          // Extract technology tags
+          if (result.tags && Array.isArray(result.tags)) {
+            const techTags = ['wordpress', 'express', 'django', 'graphql', 'jwt', 'nginx', 'apache',
+              'tomcat', 'spring', 'laravel', 'rails', 'flask', 'nodejs', 'php', 'java', 'python'];
+            for (const tag of result.tags) {
+              if (techTags.includes(tag.toLowerCase())) {
+                detectedTechsSet.add(tag.toLowerCase());
+              }
+            }
+          }
 
           // Use raw content if available, otherwise fetch from GitHub
           if (result.raw) {
@@ -2055,19 +2165,322 @@ Parse the template_content field to extract actionable exploit payloads.`,
           templates.push(templateObj);
         }
 
-        return {
+        const result: CVELookupResult = {
           success: true,
           query,
+          techFilter,
+          templateType,
           total_found: searchData.total || templates.length,
           templates,
+          detectedTechs: Array.from(detectedTechsSet),
+          fromCache: false,
         };
+
+        // Cache the result
+        if (useCache) {
+          cache.set(cacheKey, result, { source: 'nuclei-api' });
+        }
+
+        return result;
       } catch (error: any) {
         return {
           success: false,
           query,
+          techFilter,
+          templateType,
           total_found: 0,
           templates: [],
           error: `CVE lookup failed: ${error.message}`,
+        };
+      }
+    },
+  });
+}
+
+// Tech Lookup Tool - Schema definitions
+const TechLookupInput = z.object({
+  tech: z
+    .string()
+    .describe(
+      "Technology name to look up (e.g., 'express', 'django', 'graphql', 'jwt', 'wordpress')"
+    ),
+  vulnClass: z
+    .string()
+    .optional()
+    .describe(
+      "Specific vulnerability class to focus on (e.g., 'sqli', 'xss', 'auth_bypass', 'idor'). If omitted, returns all techniques."
+    ),
+  toolCallDescription: z
+    .string()
+    .describe(
+      "A concise, human-readable description of what this tool call is doing"
+    ).optional(),
+});
+
+/**
+ * Tech Lookup Tool - Get technology-specific testing techniques
+ *
+ * Returns testing knowledge based on detected technologies, including:
+ * - Specific attack techniques for the technology
+ * - Payloads known to work
+ * - Indicators of vulnerability
+ * - Common endpoints and patterns
+ */
+export function createTechLookupTool() {
+  return tool({
+    name: "tech_lookup",
+    description: `Get technology-specific testing techniques, payloads, and patterns.
+
+UNIFIED KNOWLEDGE SOURCE:
+This tool fetches from multiple sources with automatic fallback:
+1. Disk cache (24h TTL) - fastest, minimizes API calls during engagements
+2. Nuclei templates API - community-maintained, auto-discovers new technologies
+3. Local knowledge base - fingerprints, auth patterns, common endpoints
+
+USE THIS TOOL WHEN:
+- You identify a framework (Express, Django, Spring, Laravel)
+- You identify an API type (GraphQL, REST, gRPC)
+- You identify an auth mechanism (JWT, OAuth, session-based)
+- You identify a CMS (WordPress, Drupal, Joomla)
+- You need targeted payloads for a vulnerability class on a specific tech
+
+AVAILABLE TECHNOLOGIES (auto-discovered from Nuclei + local):
+- express/nodejs: Express.js framework
+- django/python: Django framework
+- graphql: GraphQL APIs
+- jwt: JSON Web Tokens
+- wordpress/wp: WordPress CMS
+- laravel/spring/rails/nginx/apache/tomcat: And many more via Nuclei
+
+VULNERABILITY CLASSES (optional):
+- sqli: SQL injection techniques
+- nosqli: NoSQL injection (MongoDB operators)
+- xss: Cross-site scripting
+- ssti: Server-side template injection
+- idor: Insecure direct object references
+- auth_bypass: Authentication/authorization bypass
+- rce: Remote code execution
+- lfi: Local file inclusion
+- ssrf: Server-side request forgery
+- xxe: XML external entity
+
+EXAMPLE USAGE:
+- tech_lookup tech="express" → All Express testing techniques
+- tech_lookup tech="graphql" vulnClass="injection" → GraphQL injection techniques
+- tech_lookup tech="jwt" vulnClass="auth_bypass" → JWT auth bypass techniques
+- tech_lookup tech="wordpress" → WordPress testing techniques (plugins, XML-RPC, etc.)
+
+OUTPUT:
+Returns unified knowledge including:
+- Techniques from Nuclei templates + local knowledge
+- Payloads known to work for this tech
+- Indicators of vulnerability vs non-vulnerability
+- Fingerprints for detection (headers, cookies, body patterns)
+- Auth patterns and misconfigurations
+- Common endpoints to check
+- Source indicator (cache/nuclei/local/merged)
+- Number of Nuclei templates found`,
+    inputSchema: TechLookupInput,
+    execute: async ({ tech, vulnClass }): Promise<TechLookupResult> => {
+      try {
+        // Use unified lookup with fallback chain
+        const result = await getUnifiedTechKnowledge(tech, vulnClass);
+
+        if (!result.success || !result.knowledge) {
+          const available = listAvailableTechnologies();
+          const vulnClasses = listVulnClasses();
+          return {
+            success: false,
+            tech,
+            error: result.error || `Technology '${tech}' not found. Available: ${available.join(", ")}. ` +
+                   `Vuln classes: ${vulnClasses.join(", ")}`,
+          };
+        }
+
+        const knowledge = result.knowledge;
+
+        return {
+          success: true,
+          tech,
+          vulnClass,
+          knowledge: {
+            name: knowledge.name,
+            category: knowledge.category,
+            techniques: knowledge.techniques,
+            payloads: knowledge.payloads,
+            commonEndpoints: knowledge.commonEndpoints,
+            auth: knowledge.auth,
+            indicators: knowledge.indicators,
+            adaptiveStrategy: knowledge.adaptiveStrategy,
+            notes: knowledge.notes,
+            // New unified fields
+            fingerprints: knowledge.fingerprints,
+            source: knowledge.source,
+            nucleiTemplateCount: knowledge.nucleiTemplateCount,
+            vulnClasses: knowledge.vulnClasses,
+          },
+          fromCache: result.fromCache,
+        };
+      } catch (error: any) {
+        return {
+          success: false,
+          tech,
+          error: `Tech lookup failed: ${error.message}`,
+        };
+      }
+    },
+  });
+}
+
+// Wordlist Lookup Tool - Schema definitions
+const WordlistLookupInput = z.object({
+  tech: z
+    .string()
+    .describe(
+      "Technology name for context-aware wordlist (e.g., 'express', 'django', 'wordpress', 'graphql', 'generic')"
+    ),
+  type: z
+    .enum(["endpoints", "params", "files"])
+    .describe(
+      "Type of wordlist: 'endpoints' for URL paths, 'params' for parameter names, 'files' for sensitive files"
+    ),
+  toolCallDescription: z
+    .string()
+    .describe(
+      "A concise, human-readable description of what this tool call is doing"
+    ).optional(),
+});
+
+/**
+ * Wordlist Lookup Tool - Get context-aware wordlists for fuzzing
+ *
+ * Returns technology-specific wordlists for endpoint discovery,
+ * parameter fuzzing, and sensitive file enumeration.
+ */
+export function createWordlistLookupTool() {
+  return tool({
+    name: "wordlist_lookup",
+    description: `Get technology-specific wordlists for fuzzing and enumeration.
+
+USE THIS TOOL WHEN:
+- You need endpoints to enumerate for a specific framework
+- You need common parameter names for a technology
+- You need sensitive files to check for a platform
+- You want targeted fuzzing rather than generic wordlists
+
+WORDLIST TYPES:
+- endpoints: URL paths common to the technology (e.g., /api, /graphql, /admin)
+- params: Parameter names commonly used (e.g., id, user_id, token, query)
+- files: Sensitive files to check (e.g., .env, config.json, wp-config.php)
+
+EXAMPLE USAGE:
+- wordlist_lookup tech="express" type="endpoints" → Express API endpoints
+- wordlist_lookup tech="wordpress" type="files" → WordPress sensitive files
+- wordlist_lookup tech="django" type="params" → Django parameter names
+- wordlist_lookup tech="generic" type="endpoints" → Generic endpoints
+
+OUTPUT:
+Returns array of entries for the specified type, tailored to the technology.
+Use with smart_enumerate or fuzz_endpoint for targeted discovery.`,
+    inputSchema: WordlistLookupInput,
+    execute: async ({ tech, type }): Promise<WordlistLookupResult> => {
+      try {
+        const entries = getWordlist(tech, type);
+
+        if (entries.length === 0) {
+          // Fall back to generic if tech-specific not found
+          const genericEntries = getWordlist("generic", type);
+          if (genericEntries.length > 0) {
+            return {
+              success: true,
+              tech,
+              type,
+              entries: genericEntries,
+              source: "generic (fallback)",
+            };
+          }
+
+          return {
+            success: false,
+            tech,
+            type,
+            entries: [],
+            error: `No wordlist found for tech='${tech}' type='${type}'`,
+          };
+        }
+
+        return {
+          success: true,
+          tech,
+          type,
+          entries,
+          source: tech,
+        };
+      } catch (error: any) {
+        return {
+          success: false,
+          tech,
+          type,
+          entries: [],
+          error: `Wordlist lookup failed: ${error.message}`,
+        };
+      }
+    },
+  });
+}
+
+/**
+ * Fingerprint Tool - Detect technologies from HTTP response
+ *
+ * Analyzes response headers, cookies, and body to identify technologies.
+ */
+export function createFingerprintTool() {
+  return tool({
+    name: "fingerprint_tech",
+    description: `Analyze an HTTP response to detect technologies in use.
+
+USE THIS TOOL WHEN:
+- You've received an HTTP response and want to identify the tech stack
+- You want to know what technologies to look up for targeted testing
+- You're starting reconnaissance and need to understand the target
+
+INPUT:
+- headers: Response headers as key-value object
+- cookies: Array of cookie names found
+- body: Response body (can be truncated)
+- url: The URL that was requested
+
+OUTPUT:
+Returns detected technologies with confidence scores and the signals that matched.
+Use the detected technologies with tech_lookup for targeted testing techniques.`,
+    inputSchema: z.object({
+      headers: z.record(z.string(), z.string()).describe("HTTP response headers"),
+      cookies: z.array(z.string()).describe("Cookie names from the response"),
+      body: z.string().describe("Response body (can be partial)"),
+      url: z.string().describe("The URL that was requested"),
+      toolCallDescription: z
+        .string()
+        .describe("A concise description of what this tool call is doing")
+        .optional(),
+    }),
+    execute: async ({ headers, cookies, body, url }) => {
+      try {
+        const headersRecord: Record<string, string> = headers as Record<string, string>;
+        const result = fingerprintResponse(headersRecord, cookies, body, url);
+
+        return {
+          success: true,
+          technologies: result.technologies,
+          confidence: result.confidence,
+          signals: result.rawSignals,
+          recommendation: result.technologies.length > 0
+            ? `Detected technologies: ${result.technologies.join(", ")}. Use tech_lookup for each to get targeted testing techniques.`
+            : "No specific technologies detected. Use generic testing approach.",
+        };
+      } catch (error: any) {
+        return {
+          success: false,
+          error: `Fingerprinting failed: ${error.message}`,
         };
       }
     },
@@ -4350,6 +4763,9 @@ COMMON TESTING PATTERNS:
     mutate_payload: createMutatePayloadTool(),
     smart_enumerate: createSmartEnumerateTool(toolOverride?.execute_command),
     cve_lookup: createCVELookupTool(),
+    tech_lookup: createTechLookupTool(),
+    wordlist_lookup: createWordlistLookupTool(),
+    fingerprint_tech: createFingerprintTool(),
     document_finding: createDocumentFindingTool(session),
     record_test_result: createRecordTestResultTool(session),
     test_parameter: createSmartTestTool(

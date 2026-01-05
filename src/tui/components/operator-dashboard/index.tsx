@@ -17,9 +17,9 @@ import { useAgent } from "../../agentProvider";
 import type { DisplayMessage } from "../agent-display";
 import { ChatMessage } from "./chat-message";
 import { SpinnerDots } from "../sprites";
-import { AttackSurfacePanel, SuggestionsPanel, VerifiedVulnsPanel } from "./sidebar";
-import type { Endpoint, Suggestion, VerifiedVuln } from "./types";
-import { parseSuggestionsFromText } from "./types";
+import { AttackSurfacePanel, CredentialsPanel, SuggestionsPanel, TargetStatePanel, VerifiedVulnsPanel } from "./sidebar";
+import type { Endpoint, Suggestion, VerifiedVuln, TargetState, Credential, Hypothesis, Evidence } from "./types";
+import { parseSuggestionsFromText, createInitialTargetState } from "./types";
 
 const greenAccent = RGBA.fromInts(76, 175, 80, 255);
 const creamText = RGBA.fromInts(255, 248, 220, 255);
@@ -78,6 +78,14 @@ export default function OperatorDashboard({ session }: OperatorDashboardProps) {
   const [attackSurface, setAttackSurface] = useState<Endpoint[]>([]);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [verifiedVulns, setVerifiedVulns] = useState<VerifiedVuln[]>([]);
+
+  // Tier 1 panel state
+  const [targetState, setTargetState] = useState<TargetState | null>(
+    session.targets[0] ? createInitialTargetState(session.targets[0]) : null
+  );
+  const [credentials, setCredentials] = useState<Credential[]>([]);
+  const [hypotheses, setHypotheses] = useState<Hypothesis[]>([]);
+  const [evidence, setEvidence] = useState<Evidence[]>([]);
 
   // Parse suggestions from latest assistant message
   useEffect(() => {
@@ -166,6 +174,50 @@ export default function OperatorDashboard({ session }: OperatorDashboardProps) {
         case "finding-verified":
           // Add new verified vulnerability
           setVerifiedVulns((prev) => [...prev, event.finding]);
+          break;
+
+        // Tier 1 events
+        case "target-state-updated":
+          // Update target state (host, ports, auth, focus)
+          setTargetState((prev) => prev ? { ...prev, ...event.state } : event.state);
+          break;
+        case "phase-transition-suggested":
+          // Set pending phase for Y/N confirmation
+          setTargetState((prev) => prev ? { ...prev, pendingPhase: event.phase } : null);
+          break;
+        case "objective-proposed":
+          // Update objective (unless user override exists)
+          setTargetState((prev) => {
+            if (!prev) return null;
+            if (prev.objectiveOverride) return prev; // User override takes precedence
+            return { ...prev, objective: event.objective };
+          });
+          break;
+        case "credential-found":
+          // Append new credential
+          setCredentials((prev) => {
+            // Avoid duplicates by checking id
+            if (prev.some((c) => c.id === event.credential.id)) return prev;
+            return [...prev, event.credential];
+          });
+          break;
+        case "endpoint-status-changed":
+          // Update endpoint status marker
+          setAttackSurface((prev) =>
+            prev.map((ep) =>
+              ep.id === event.endpointId
+                ? { ...ep, status: event.status, vulnType: event.vulnType }
+                : ep
+            )
+          );
+          break;
+        case "hypothesis-recorded":
+          // Append hypothesis for stuck detection
+          setHypotheses((prev) => [...prev, event.hypothesis]);
+          break;
+        case "evidence-captured":
+          // Append evidence with stable ID
+          setEvidence((prev) => [...prev, event.evidence]);
           break;
       }
     });
@@ -267,6 +319,26 @@ export default function OperatorDashboard({ session }: OperatorDashboardProps) {
     agent.sendDirective(suggestion.label);
   }, [agent, suggestions]);
 
+  // Handle phase transition confirmation (Y/N)
+  const handlePhaseConfirm = useCallback((confirmed: boolean) => {
+    if (!targetState?.pendingPhase) return;
+
+    if (confirmed) {
+      // Accept the phase transition
+      setTargetState((prev) => prev ? {
+        ...prev,
+        phase: prev.pendingPhase!,
+        pendingPhase: undefined,
+      } : null);
+    } else {
+      // Reject the phase transition
+      setTargetState((prev) => prev ? {
+        ...prev,
+        pendingPhase: undefined,
+      } : null);
+    }
+  }, [targetState]);
+
   // Keyboard handling
   useKeyboard((key) => {
     // Handle stage menu
@@ -279,6 +351,20 @@ export default function OperatorDashboard({ session }: OperatorDashboardProps) {
         return;
       }
       return;
+    }
+
+    // Handle phase transition confirmation (Y/N when pendingPhase is set)
+    if (targetState?.pendingPhase && !directiveInput.trim() && pendingApprovals.length === 0) {
+      if (key.name === "y" || key.name === "Y") {
+        setDirectiveInput("");
+        handlePhaseConfirm(true);
+        return;
+      }
+      if (key.name === "n" || key.name === "N") {
+        setDirectiveInput("");
+        handlePhaseConfirm(false);
+        return;
+      }
     }
 
     // Handle suggestion selection (1/2/3 keys) when input is empty and suggestions exist
@@ -499,14 +585,20 @@ export default function OperatorDashboard({ session }: OperatorDashboardProps) {
           border={["left"]}
           borderColor={dimText}
         >
-          {/* Attack Surface */}
-          <AttackSurfacePanel endpoints={attackSurface} maxVisible={5} />
+          {/* Target State - externalizes agent's mental model */}
+          <TargetStatePanel target={targetState} onPhaseConfirm={handlePhaseConfirm} />
+
+          {/* Attack Surface with status markers */}
+          <AttackSurfacePanel endpoints={attackSurface} maxVisible={4} />
+
+          {/* Credentials - discovered creds with source/scope */}
+          <CredentialsPanel credentials={credentials} maxVisible={3} />
 
           {/* Suggestions */}
           <SuggestionsPanel suggestions={suggestions} />
 
           {/* Verified Vulnerabilities */}
-          <VerifiedVulnsPanel vulns={verifiedVulns} maxVisible={4} />
+          <VerifiedVulnsPanel vulns={verifiedVulns} maxVisible={3} />
 
           {/* Stage indicator - compact */}
           <box flexDirection="column" gap={1}>
