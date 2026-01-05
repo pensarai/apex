@@ -17,6 +17,9 @@ import { useAgent } from "../../agentProvider";
 import type { DisplayMessage } from "../agent-display";
 import { ChatMessage } from "./chat-message";
 import { SpinnerDots } from "../sprites";
+import { AttackSurfacePanel, SuggestionsPanel, VerifiedVulnsPanel } from "./sidebar";
+import type { Endpoint, Suggestion, VerifiedVuln } from "./types";
+import { parseSuggestionsFromText } from "./types";
 
 const greenAccent = RGBA.fromInts(76, 175, 80, 255);
 const creamText = RGBA.fromInts(255, 248, 220, 255);
@@ -71,6 +74,34 @@ export default function OperatorDashboard({ session }: OperatorDashboardProps) {
   const [showStageMenu, setShowStageMenu] = useState(false);
   const [verboseMode, setVerboseMode] = useState(false);
 
+  // Enhanced sidebar state
+  const [attackSurface, setAttackSurface] = useState<Endpoint[]>([]);
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [verifiedVulns, setVerifiedVulns] = useState<VerifiedVuln[]>([]);
+
+  // Parse suggestions from latest assistant message
+  useEffect(() => {
+    if (messages.length === 0) return;
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage.role !== "assistant") return;
+
+    // Get text content from message (content can be string or array)
+    let textContent = "";
+    if (typeof lastMessage.content === "string") {
+      textContent = lastMessage.content;
+    } else if (Array.isArray(lastMessage.content)) {
+      textContent = lastMessage.content
+        .filter((c: any) => c?.type === "text" && typeof c?.text === "string")
+        .map((c: any) => c.text)
+        .join("\n");
+    }
+
+    const parsed = parseSuggestionsFromText(textContent);
+    if (parsed.length > 0) {
+      setSuggestions(parsed);
+    }
+  }, [messages]);
+
   // Initialize agent
   useEffect(() => {
     const operatorAgent = createOperatorAgent({
@@ -121,6 +152,20 @@ export default function OperatorDashboard({ session }: OperatorDashboardProps) {
           break;
         case "action-completed":
           setActionHistory((prev) => [...prev, event.entry]);
+          break;
+        case "attack-surface-updated":
+          // Merge new endpoints with existing, avoiding duplicates
+          setAttackSurface((prev) => {
+            const existing = new Set(prev.map(e => `${e.method}:${e.path}`));
+            const newEndpoints = (event.endpoints || []).filter(
+              (e: Endpoint) => !existing.has(`${e.method}:${e.path}`)
+            );
+            return [...prev, ...newEndpoints];
+          });
+          break;
+        case "finding-verified":
+          // Add new verified vulnerability
+          setVerifiedVulns((prev) => [...prev, event.finding]);
           break;
       }
     });
@@ -210,6 +255,18 @@ export default function OperatorDashboard({ session }: OperatorDashboardProps) {
     agent.sendDirective("That action was denied. Please suggest 2-3 alternative approaches we could take instead, or ask me what I'd prefer to do.");
   }, [agent]);
 
+  // Handle suggestion selection (1/2/3 keys)
+  const handleSuggestionSelect = useCallback((num: number) => {
+    const suggestion = suggestions.find((s) => s.number === num);
+    if (!suggestion || !agent) return;
+
+    // Clear suggestions after selection
+    setSuggestions([]);
+
+    // Send the suggestion label as a directive
+    agent.sendDirective(suggestion.label);
+  }, [agent, suggestions]);
+
   // Keyboard handling
   useKeyboard((key) => {
     // Handle stage menu
@@ -222,6 +279,15 @@ export default function OperatorDashboard({ session }: OperatorDashboardProps) {
         return;
       }
       return;
+    }
+
+    // Handle suggestion selection (1/2/3 keys) when input is empty and suggestions exist
+    if (suggestions.length > 0 && !directiveInput.trim()) {
+      const num = parseInt(key.name || "", 10);
+      if (num >= 1 && num <= suggestions.length) {
+        handleSuggestionSelect(num);
+        return;
+      }
     }
 
     // Handle pending approval - intercept Y/N/A keys
@@ -433,31 +499,20 @@ export default function OperatorDashboard({ session }: OperatorDashboardProps) {
           border={["left"]}
           borderColor={dimText}
         >
-          {/* Stage indicator */}
-          <box flexDirection="column" gap={1}>
-            <text fg={creamText}>Stage</text>
-            {getStagesInOrder().map((s) => (
-              <text key={s.stage} fg={currentStage === s.stage ? greenAccent : dimText}>
-                {currentStage === s.stage ? ">" : " "} {s.name}
-              </text>
-            ))}
-          </box>
+          {/* Attack Surface */}
+          <AttackSurfacePanel endpoints={attackSurface} maxVisible={5} />
 
-          {/* Audit log */}
-          <box flexDirection="column" gap={1} flexGrow={1}>
-            <text fg={creamText}>Recent Actions</text>
-            {actionHistory.slice(-10).reverse().map((entry) => {
-              const icon = entry.decision === "approved" ? "+" : entry.decision === "auto-approved" ? "*" : "x";
-              const color = entry.decision === "denied" ? redText : entry.decision === "auto-approved" ? yellowText : greenAccent;
-              return (
-                <text key={entry.id} fg={dimText}>
-                  <span fg={color}>{icon}</span> T{entry.tier} {entry.toolName}
-                </text>
-              );
-            })}
-            {actionHistory.length === 0 && (
-              <text fg={dimText}>No actions yet</text>
-            )}
+          {/* Suggestions */}
+          <SuggestionsPanel suggestions={suggestions} />
+
+          {/* Verified Vulnerabilities */}
+          <VerifiedVulnsPanel vulns={verifiedVulns} maxVisible={4} />
+
+          {/* Stage indicator - compact */}
+          <box flexDirection="column" gap={1}>
+            <text fg={dimText}>
+              Stage: <span fg={greenAccent}>{OPERATOR_STAGES[currentStage].name}</span>
+            </text>
           </box>
         </box>
       </box>

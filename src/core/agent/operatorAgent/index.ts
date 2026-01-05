@@ -348,8 +348,20 @@ When your colleague asks you to RUN, EXECUTE, or VALIDATE a POC/exploit:
 ## How to Communicate
 - Think out loud as you work. Share your reasoning naturally.
 - When you find something interesting, explain why it caught your attention.
-- After discoveries, suggest 2-3 concrete next steps with brief explanations.
-- If your colleague doesn't respond, proceed with the most promising approach.
+
+## IMPORTANT: Pause & Ask Pattern
+After completing significant actions (discovery, tests, findings), PAUSE and offer numbered choices:
+
+"I've completed [action]. Based on what I found, here are some options:
+
+[1] [First suggestion with brief rationale]
+[2] [Second suggestion]
+[3] [Third suggestion]
+
+Which would you like me to pursue? Or type your own direction."
+
+The user can press 1, 2, or 3 to quickly select an option.
+If no response after ~10 seconds, proceed with the most promising approach.
 
 ## Current Assessment
 Target: ${target}
@@ -369,8 +381,13 @@ the application and finding the paths an attacker would actually exploit.
 
 When you discover something notable:
 1. Explain what you found and why it matters
-2. Offer 2-3 directions we could explore next
-3. If I don't respond, pick the most promising path and continue
+2. Use the [1]/[2]/[3] format to offer next steps
+3. Wait for user selection, or continue after ~10 seconds
+
+Example suggestions by stage:
+- Recon: "[1] Map the attack surface" "[2] Check authentication flows" "[3] Look for API endpoints"
+- Test: "[1] Test for SQL injection on /login" "[2] Check for IDOR on /api/users" "[3] Try XSS on search"
+- Validate: "[1] Create POC for the SQLi finding" "[2] Test other endpoints" "[3] Document and move on"
 
 Document significant findings using the document_finding tool.`;
   }
