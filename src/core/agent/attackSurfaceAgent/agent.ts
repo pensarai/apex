@@ -19,6 +19,10 @@ import { getScopeDescription } from "../scope";
 import { extractJavascriptEndpoints } from "./jsExtraction";
 import { generateRandomName } from "../../../util/name";
 import { nanoid } from "nanoid";
+import {
+  createBrowserTools,
+  disconnectMcpClient,
+} from "../browserTools/playwrightMcp";
 
 export interface RunAgentProps {
   target: string;
@@ -96,6 +100,15 @@ export async function runAgent(opts: RunAgentProps): Promise<{
     model,
     toolOverride,
     onToolTokenUsage,
+    abortSignal
+  );
+
+  // Create browser tools for JavaScript-heavy page analysis
+  const evidenceDir = join(session.rootPath, "evidence");
+  const browserTools = createBrowserTools(
+    target,
+    evidenceDir,
+    undefined, // No logger needed for attack surface
     abortSignal
   );
 
@@ -847,7 +860,9 @@ You MUST provide the final report using create_attack_surface_report tool.
       validate_discovery_completeness,
       create_attack_surface_report,
       cve_lookup,
-      smart_enumerate
+      smart_enumerate,
+      // Browser automation tools for JavaScript-heavy apps and SPAs
+      ...browserTools,
     },
     stopWhen: stepCountIs(10000),
     toolChoice: "auto", // Let the model decide when to use tools vs respond

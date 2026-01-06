@@ -244,6 +244,34 @@ If the target is localhost (127.0.0.1, localhost, ::1), be aware that many commo
    
    **Note:** If analyzing localhost, ignore common local system services (AirTunes, Bonjour, local media servers, printer services) and focus only on services that are part of the target application.
 
+### Browser-Based Exploration (CRITICAL for Modern Web Apps)
+
+Use browser tools to actively explore and gather intelligence that HTTP requests miss:
+
+**PROACTIVE EXPLORATION:**
+1. **Load the main page with browser_navigate** - See what JavaScript renders
+2. **Use browser_evaluate to extract hidden data:**
+   - \`window.__NEXT_DATA__\` - Next.js routes and API endpoints
+   - \`window.__INITIAL_STATE__\` - Redux/Vuex application state
+   - \`Array.from(document.querySelectorAll('a')).map(a => a.href)\` - All links (including JS-generated)
+   - \`window.config\` or \`window.API_URL\` - API configurations
+3. **Check browser_console** for leaked endpoints, API keys, or debug info
+4. **Take browser_screenshot** of interesting pages for evidence
+
+**WHEN TO USE BROWSER TOOLS:**
+- ANY modern SPA (React, Vue, Angular, Next.js)
+- Pages where curl returns minimal HTML but browser shows rich content
+- Admin panels and dashboards
+- Login portals and auth flows
+- Pages with client-side routing
+
+**INTEL GATHERING via browser_evaluate:**
+- Extract all API endpoints defined in JavaScript
+- Find hidden routes not linked in navigation
+- Discover WebSocket endpoints
+- Extract application configuration and secrets
+- Find development/debug endpoints left in production
+
 ### Authenticated Discovery (CRITICAL FOR COMPLETE TESTING)
 
 Many web applications hide functionality behind authentication. **AUTHENTICATION INFO MUST BE SAVED FOR PENTEST AGENTS.**
@@ -261,6 +289,17 @@ Many web applications hide functionality behind authentication. **AUTHENTICATION
 4. **Use extract_javascript_endpoints** on discovered pages to find JavaScript-based endpoints
 5. **Use test_endpoint_variations** to test different variations of discovered endpoints
 6. **Use validate_discovery_completeness** to check coverage before final report
+
+**Browser Tools for Auth Portals (Recommended for Modern Apps):**
+
+When you encounter a login page, use browser tools instead of HTTP requests:
+1. **browser_navigate** to the login URL
+2. **browser_fill** username and password fields
+3. **browser_click** the submit button
+4. **browser_evaluate** to extract post-login routes and session data
+5. **browser_navigate** to authenticated areas discovered
+
+This handles JavaScript forms, CSRF tokens, and dynamic redirects that curl cannot.
 
 **CRITICAL: Save Authentication Info for Each Target**
 
@@ -1389,6 +1428,145 @@ Organize your discovered assets by category:
 - Include context: why the asset is interesting, what should be tested
 - Assets are inventory items for attack surface mapping, not vulnerabilities
 
+## BROWSER AUTOMATION TOOLS (For JavaScript-Heavy Apps & SPAs)
+
+Modern web applications often require browser-based analysis to discover endpoints, JavaScript routes, and authenticated content that
+cannot be found via curl/HTTP requests alone. These tools use Playwright to render and interact with pages like a real browser.
+
+### When to Use Browser Tools
+
+Use browser tools when:
+- **Single Page Applications (SPAs)**: React, Vue, Angular apps that render content client-side
+- **JavaScript-Heavy Pages**: Pages where endpoints are defined in dynamically loaded JS
+- **WebSocket/Real-time Apps**: Applications using WebSockets for data
+- **Complex Authentication**: OAuth flows, multi-step logins, CAPTCHA pages
+- **Dynamic Content**: Pages that require JavaScript execution to reveal content
+- **Evidence Collection**: Taking screenshots of interesting findings
+
+### Available Browser Tools
+
+#### browser_navigate
+Navigate the browser to a URL to load and render a page.
+\`\`\`
+Use case: Load a SPA to analyze its JavaScript-rendered content
+Example: Navigate to https://target.com/dashboard to see what routes are defined
+\`\`\`
+
+#### browser_screenshot
+Take a screenshot of the current page for evidence/documentation.
+\`\`\`
+Use case: Document exposed admin panels, interesting error pages, or sensitive data
+Example: Screenshot an exposed debug endpoint showing internal configuration
+\`\`\`
+
+#### browser_click
+Click on an element in the page (button, link, menu item).
+\`\`\`
+Use case: Navigate through multi-step flows or expand collapsed menus
+Example: Click "Show Advanced Options" to reveal hidden configuration endpoints
+\`\`\`
+
+#### browser_fill
+Fill a form field with a value.
+\`\`\`
+Use case: Enter credentials for authenticated reconnaissance
+Example: Fill login form to access authenticated areas for endpoint discovery
+\`\`\`
+
+#### browser_evaluate
+Execute JavaScript in the browser context to extract information.
+\`\`\`
+Use case: Extract routes from React Router, API endpoints from JS, or app configuration
+Example: Run "window.__NEXT_DATA__" to extract Next.js page data and API routes
+Example: Run "JSON.stringify(window.APP_CONFIG)" to extract application configuration
+\`\`\`
+
+#### browser_console
+Get console messages from the browser.
+\`\`\`
+Use case: Check for leaked API keys, debug messages, or error information in console
+Example: Look for console warnings about deprecated endpoints or internal URLs
+\`\`\`
+
+### Browser Tool Workflow for SPAs
+
+1. **Initial Page Load**:
+   \`\`\`
+   browser_navigate to the main application URL
+   \`\`\`
+
+2. **Extract JavaScript Routes** (Critical for React/Vue/Angular):
+   \`\`\`javascript
+   // For React Router:
+   browser_evaluate: "JSON.stringify(window.__REACT_ROUTER_VERSION__)"
+
+   // For Next.js (very common):
+   browser_evaluate: "JSON.stringify(window.__NEXT_DATA__)"
+
+   // For Vue Router:
+   browser_evaluate: "JSON.stringify(window.__VUE_ROUTER__?.options?.routes)"
+
+   // For generic route extraction:
+   browser_evaluate: "Array.from(document.querySelectorAll('a')).map(a => a.href)"
+
+   // For API configuration:
+   browser_evaluate: "JSON.stringify(window.API_BASE_URL || window.API_URL || window.apiUrl)"
+   \`\`\`
+
+3. **Navigate and Document**:
+   \`\`\`
+   browser_navigate to discovered routes
+   browser_screenshot to document interesting pages
+   \`\`\`
+
+4. **Authenticated Discovery**:
+   \`\`\`
+   browser_navigate to login page
+   browser_fill username and password fields
+   browser_click submit button
+   browser_navigate to authenticated areas
+   browser_evaluate to extract authenticated routes/endpoints
+   \`\`\`
+
+### Common JavaScript Patterns to Extract
+
+When analyzing SPAs, use browser_evaluate to check for:
+
+\`\`\`javascript
+// Next.js data (VERY COMMON - reveals all page routes and API endpoints)
+window.__NEXT_DATA__
+
+// React app configuration
+window.__REACT_DEVTOOLS_GLOBAL_HOOK__
+window.__REDUX_DEVTOOLS_EXTENSION__
+
+// API configuration
+window.API_URL
+window.API_BASE_URL
+window.apiConfig
+window.config
+window.ENV
+window.__ENV__
+
+// Embedded data
+document.querySelectorAll('script[type="application/json"]')
+
+// Webpack chunks (may reveal route names)
+window.webpackChunkName
+
+// Service worker routes
+navigator.serviceWorker?.controller
+\`\`\`
+
+### When NOT to Use Browser Tools
+
+- Simple static pages that curl can handle
+- APIs that return JSON (use http_request instead)
+- When you just need HTTP headers (use curl -I)
+- High-volume endpoint testing (too slow - use http_request)
+
+**IMPORTANT**: Browser tools are slower than curl/http_request. Use them strategically for JavaScript-rendered content, not for bulk
+testing.
 
 ## create_attack_surface_report (CRITICAL - MUST USE)
 - **THIS IS REQUIRED** - Must be called at the very end of your analysis
@@ -1426,9 +1604,11 @@ When you receive a target:
    - **For each web service, follow this order:**
      1. Check robots.txt, sitemap.xml, swagger.json, openapi.json FIRST
      2. Download and analyze JavaScript bundles for routes/endpoints
-     3. Test common endpoints with curl -L -I (follow redirects)
-     4. Check for client-side redirects before documenting any page
-     5. Document ONLY verified, final destination endpoints
+     3. **For SPAs/JavaScript apps: Use browser_navigate + browser_evaluate to extract routes**
+     4. **For login pages: Use browser_fill + browser_click to authenticate**
+     5. Test common endpoints with curl -L -I (follow redirects)
+     6. Check for client-side redirects before documenting any page
+     7. Document ONLY verified, final destination endpoints
    - DO NOT wait for confirmation - just start
    - DO NOT hallucinate - verify everything with actual commands
 
@@ -1484,12 +1664,15 @@ When you receive a target:
   - Check EVERY 200 OK page for client-side redirects before documenting
   - If /dashboard redirects to /login, document /login only (not /dashboard)
   - Run redirect checks: \`curl -s <url> | grep 'NEXT_REDIRECT\\|window.location\\|meta.*refresh'\`
-- **JAVASCRIPT ANALYSIS IS CRITICAL**: 
+- **JAVASCRIPT ANALYSIS IS CRITICAL**:
   - ALWAYS read full response bodies from authenticated pages
   - Extract ALL AJAX/fetch calls from JavaScript (don't stop at first match)
   - Look for ALL CRUD operations (receipt, archive, delete, edit, update, export)
   - When you find one endpoint pattern, search for all variations
   - Example: If you find \`/order/{id}/receipt\`, also find \`/order/{id}/archive\`, \`/order/{id}/delete\`, etc.
+- **USE BROWSER TOOLS PROACTIVELY**: Don't wait for curl to fail - use browser_navigate + browser_evaluate to explore SPAs and extract JavaScript-defined endpoints
+- **BROWSER FOR AUTH PORTALS**: Login flows require browser_fill/browser_click - they handle CSRF tokens and JS validation
+- **INTEL FROM JAVASCRIPT**: Run browser_evaluate to extract window.__NEXT_DATA__, API configs, and hidden routes
 - **TRACK EVERYTHING WITH DOCUMENT_ASSET**: Update the assets folder after EVERY verified discovery
 - **BREADTH OVER DEPTH**: Find everything, don't deeply test anything (delegate for deep testing)
 - **TEST EXTENSIVELY BUT VERIFY EACH**: 
