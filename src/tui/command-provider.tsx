@@ -79,23 +79,12 @@ export function CommandProvider({ children }: CommandProviderProps) {
         description += ` [${optionsList}]`;
       }
 
-      // Add main command
+      // Add main command (aliases hidden but still work via router)
       options.push({
         value: `/${cmd.name}`,
         label: `/${cmd.name}`,
         description,
       });
-
-      // Add aliases
-      if (cmd.aliases) {
-        for (const alias of cmd.aliases) {
-          options.push({
-            value: `/${alias}`,
-            label: `/${alias}`,
-            description: `Alias for /${cmd.name}`,
-          });
-        }
-      }
     }
 
     return options;

@@ -64,6 +64,8 @@ export default function OperatorDashboard({ session }: OperatorDashboardProps) {
     autoApproveTier: 2 as PermissionTier,
   };
 
+  // Dashboard starts directly in running mode (config is done in wizard)
+
   // Agent state
   const [agent, setAgent] = useState<OperatorAgent | null>(null);
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
@@ -125,6 +127,8 @@ export default function OperatorDashboard({ session }: OperatorDashboardProps) {
 
   // Initialize agent
   useEffect(() => {
+    if (agent) return; // Already initialized
+
     const operatorAgent = createOperatorAgent({
       session,
       model: model.id,

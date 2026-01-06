@@ -150,10 +150,78 @@ export const OperatorSettingsObject = z.object({
 
 export type OperatorSettings = z.infer<typeof OperatorSettingsObject>;
 
+/** Endpoint discovered during attack surface mapping */
+export interface DiscoveredEndpoint {
+  id: string;
+  path: string;
+  method: string;
+  category?: string;
+  params?: string[];
+  status?: "untested" | "suspicious" | "confirmed" | "clean" | "blocked";
+  vulnType?: string;
+}
+
+/** Credential discovered during testing */
+export interface DiscoveredCredential {
+  id: string;
+  username: string;
+  secret: string;
+  type: "password" | "cookie" | "jwt" | "ssh_key" | "api_key";
+  source: string;
+  scope: string;
+  isActive?: boolean;
+}
+
+/** Verified vulnerability finding */
+export interface VerifiedFinding {
+  id: string;
+  type: string;
+  endpoint: string;
+  severity: "critical" | "high" | "medium" | "low" | "info";
+  summary: string;
+  pocPath?: string;
+}
+
+/** Target state for sidebar panel */
+export interface SidebarTargetState {
+  host?: string;
+  ports?: number[];
+  authState?: string;
+  phase?: string;
+  objective?: string;
+}
+
+/** Hypothesis for stuck detection */
+export interface SidebarHypothesis {
+  id: string;
+  description: string;
+  confidence: number;
+  timestamp: number;
+}
+
+/** Evidence captured during testing */
+export interface SidebarEvidence {
+  id: string;
+  type: string;
+  path: string;
+  description: string;
+  timestamp: number;
+}
+
 /** Events emitted by Operator system */
 export type OperatorEvent =
   | { type: "mode-changed"; mode: OperatorMode }
   | { type: "stage-changed"; stage: OperatorStage }
   | { type: "approval-needed"; approval: PendingApproval }
   | { type: "approval-resolved"; id: string; decision: ApprovalDecision }
-  | { type: "action-completed"; entry: ActionHistoryEntry };
+  | { type: "action-completed"; entry: ActionHistoryEntry }
+  // Sidebar population events
+  | { type: "attack-surface-updated"; endpoints: DiscoveredEndpoint[] }
+  | { type: "endpoint-status-changed"; endpointId: string; status: string; vulnType?: string }
+  | { type: "finding-verified"; finding: VerifiedFinding }
+  | { type: "credential-found"; credential: DiscoveredCredential }
+  | { type: "target-state-updated"; state: Partial<SidebarTargetState> }
+  | { type: "hypothesis-recorded"; hypothesis: SidebarHypothesis }
+  | { type: "evidence-captured"; evidence: SidebarEvidence }
+  | { type: "phase-transition-suggested"; phase: string }
+  | { type: "objective-proposed"; objective: string };

@@ -26,14 +26,10 @@ export default function HelpDialog() {
   }
 
   const message = useMemo(() => {
-    // Generate commands list with options
+    // Generate commands list with options (aliases hidden but still work)
     const commandsList = commands
       .map((cmd) => {
-        const aliases = cmd.aliases?.length
-          ? ` (${cmd.aliases.map((a) => `/${a}`).join(", ")})`
-          : "";
-
-        let line = ` /${cmd.name}${aliases}: ${cmd.description || "No description"}`;
+        let line = ` /${cmd.name}: ${cmd.description || "No description"}`;
 
         // Add options if present
         if (cmd.options?.length) {

@@ -1,13 +1,17 @@
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useKeyboard } from "@opentui/react";
 import { RGBA } from "@opentui/core";
 import Input from "../input";
 import { useRoute } from "../../context/route";
+import { useConfig } from "../../context/config";
+import { useAgent } from "../../agentProvider";
 import { Session } from "../../../core/session";
 import { SpinnerDots } from "../sprites";
 import { generateRandomName } from "../../../util/name";
 import type { OperatorMode, PermissionTier } from "../../../core/operator";
 import { OPERATOR_MODES, PERMISSION_TIERS } from "../../../core/operator";
+import type { ModelInfo } from "../../../core/ai";
+import { getAvailableModels } from "../../../core/providers/utils";
 
 type WizardStep = "target" | "mode" | "creating";
 
@@ -33,8 +37,18 @@ const dimText = RGBA.fromInts(120, 120, 120, 255);
 const yellowText = RGBA.fromInts(255, 235, 59, 255);
 const blueText = RGBA.fromInts(100, 181, 246, 255);
 
+const providerNames: Record<string, string> = {
+  anthropic: "Claude",
+  openai: "OpenAI",
+  openrouter: "OpenRouter",
+  bedrock: "Bedrock",
+};
+const providerOrder = ["anthropic", "openai", "openrouter", "bedrock"];
+
 export default function HITLWizard({ initialTarget, initialMode }: HITLWizardProps) {
   const route = useRoute();
+  const config = useConfig();
+  const { model, setModel, isModelUserSelected } = useAgent();
 
   const initialStep: WizardStep = initialTarget ? "mode" : "target";
 
@@ -54,6 +68,52 @@ export default function HITLWizard({ initialTarget, initialMode }: HITLWizardPro
   const [modeFocusedField, setModeFocusedField] = useState(0);
   const [hostInput, setHostInput] = useState("");
   const [error, setError] = useState<string | null>(null);
+
+  // Model picker state
+  const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
+  const [modelSearchQuery, setModelSearchQuery] = useState("");
+  const [expandedProviders, setExpandedProviders] = useState<Set<string>>(new Set(["anthropic"]));
+
+  // Load available models
+  useEffect(() => {
+    if (config.data) {
+      const models = getAvailableModels(config.data);
+      setAvailableModels(models);
+      if (models.length > 0) {
+        const currentModel = models.find(m => m.id === model.id) || models[0];
+        if (currentModel) {
+          setExpandedProviders(new Set([currentModel.provider]));
+        }
+      }
+    }
+  }, [config.data, model.id]);
+
+  // Group and filter models
+  const groupedModels = useMemo(() => {
+    const groups: Record<string, ModelInfo[]> = {};
+    const query = modelSearchQuery.toLowerCase().trim();
+    for (const m of availableModels) {
+      if (query && !m.name.toLowerCase().includes(query) && !m.id.toLowerCase().includes(query)) {
+        continue;
+      }
+      if (!groups[m.provider]) groups[m.provider] = [];
+      groups[m.provider].push(m);
+    }
+    return groups;
+  }, [availableModels, modelSearchQuery]);
+
+  // Visible models for navigation
+  const visibleModels = useMemo(() => {
+    const result: ModelInfo[] = [];
+    for (const provider of providerOrder) {
+      const models = groupedModels[provider];
+      if (!models || models.length === 0) continue;
+      if (expandedProviders.has(provider)) {
+        result.push(...models);
+      }
+    }
+    return result;
+  }, [groupedModels, expandedProviders]);
 
   async function createSessionAndNavigate() {
     if (!state.target.trim()) return;
@@ -151,7 +211,7 @@ export default function HITLWizard({ initialTarget, initialMode }: HITLWizardPro
         if (key.shift) {
           setModeFocusedField((prev) => Math.max(0, prev - 1));
         } else {
-          setModeFocusedField((prev) => Math.min(3, prev + 1));
+          setModeFocusedField((prev) => Math.min(4, prev + 1));
         }
         return;
       }
@@ -176,6 +236,48 @@ export default function HITLWizard({ initialTarget, initialMode }: HITLWizardPro
             ...prev,
             scope: { ...prev.scope, strictScope: !prev.scope.strictScope },
           }));
+          return;
+        }
+        // Model selection
+        if (modeFocusedField === 4 && visibleModels.length > 0) {
+          const currentIdx = visibleModels.findIndex(m => m.id === model.id);
+          const newIdx = key.name === "up"
+            ? Math.max(0, currentIdx - 1)
+            : Math.min(visibleModels.length - 1, currentIdx + 1);
+          const newModel = visibleModels[newIdx];
+          if (newModel) setModel(newModel);
+          return;
+        }
+      }
+
+      // Model section: handle search, left/right for collapse/expand
+      if (modeFocusedField === 4) {
+        if (key.name === "backspace") {
+          setModelSearchQuery(prev => prev.slice(0, -1));
+          return;
+        }
+        if (key.name === "escape" && modelSearchQuery) {
+          setModelSearchQuery("");
+          return;
+        }
+        if (key.name === "left" || key.name === "right") {
+          const currentProvider = model.provider;
+          if (key.name === "left") {
+            setExpandedProviders(prev => {
+              const next = new Set(prev);
+              next.delete(currentProvider);
+              return next;
+            });
+          } else {
+            setExpandedProviders(prev => new Set([...prev, currentProvider]));
+          }
+          return;
+        }
+        if (key.sequence && key.sequence.length === 1 && /[a-zA-Z0-9\-_.]/.test(key.sequence)) {
+          setModelSearchQuery(prev => prev + key.sequence);
+          if (!modelSearchQuery) {
+            setExpandedProviders(new Set(providerOrder));
+          }
           return;
         }
       }
@@ -319,6 +421,58 @@ export default function HITLWizard({ initialTarget, initialMode }: HITLWizardPro
             {modeFocusedField === 3 && <text fg={dimText}>(↑/↓ to toggle)</text>}
           </box>
         </box>
+      </box>
+
+      {/* Model Section */}
+      <box flexDirection="column" gap={1}>
+        <text>
+          <span fg={greenBullet}>█ </span>
+          <span fg={modeFocusedField === 4 ? creamText : dimText}>AI Model</span>
+          <span fg={dimText}> ({model.name})</span>
+          <span fg={dimText}> [{isModelUserSelected ? "user" : "default"}]</span>
+        </text>
+        {modeFocusedField === 4 && (
+          <box flexDirection="column" gap={0} paddingLeft={2}>
+            {/* Search input */}
+            {modelSearchQuery ? (
+              <text fg={creamText}>Search: {modelSearchQuery}_</text>
+            ) : (
+              <text fg={dimText}>Type to search models...</text>
+            )}
+
+            {/* Provider groups */}
+            {providerOrder.map(provider => {
+              const models = groupedModels[provider];
+              if (!models || models.length === 0) return null;
+
+              const isExpanded = expandedProviders.has(provider);
+              const providerName = providerNames[provider] || provider;
+
+              return (
+                <box key={provider} flexDirection="column" gap={0}>
+                  <text fg={isExpanded ? creamText : dimText}>
+                    {isExpanded ? "▾" : "▸"} {providerName} ({models.length})
+                  </text>
+                  {isExpanded && (
+                    <box flexDirection="column" gap={0} paddingLeft={2}>
+                      {models.map((m) => {
+                        const isSelected = m.id === model.id;
+                        const isDefault = m.id === "claude-haiku-4-5" || m.id === "gpt-4o-mini";
+                        return (
+                          <text key={m.id} fg={isSelected ? greenBullet : dimText}>
+                            {isSelected ? "●" : "○"} {m.name}
+                            {isDefault && !isModelUserSelected && isSelected ? " [default]" : ""}
+                          </text>
+                        );
+                      })}
+                    </box>
+                  )}
+                </box>
+              );
+            })}
+            <text fg={dimText}>↑/↓ select | Type to search | ←/→ collapse/expand</text>
+          </box>
+        )}
       </box>
 
       <box flexDirection="column" gap={0} marginTop={1}>

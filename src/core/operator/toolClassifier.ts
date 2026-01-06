@@ -14,6 +14,11 @@ const TOOL_BASE_TIERS: Record<string, PermissionTier> = {
   check_testing_coverage: 1,
   validate_completeness: 1,
   record_test_result: 1,
+  // Sidebar-updating tools (UI state only, no network)
+  update_attack_surface: 1,
+  record_credential: 1,
+  update_endpoint_status: 1,
+  record_verified_finding: 1,
 
   // Tier 2 - Low-risk Active (light network interaction)
   http_request: 2, // Escalates based on method

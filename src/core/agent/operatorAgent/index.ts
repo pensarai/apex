@@ -685,6 +685,41 @@ Document significant findings using the document_finding tool.`;
 
           // Extract findings from significant tool results
           this.extractFindings(existingMsg.toolName || "", (tr as any).output);
+
+          // Emit sidebar events for sidebar-updating tools
+          const output = (tr as any).output;
+          if (output && typeof output === "object") {
+            // Attack surface updates
+            if (output.endpoints && Array.isArray(output.endpoints)) {
+              this.emit("operator-event", {
+                type: "attack-surface-updated",
+                endpoints: output.endpoints,
+              });
+            }
+            // Credential discoveries
+            if (output.credential) {
+              this.emit("operator-event", {
+                type: "credential-found",
+                credential: output.credential,
+              });
+            }
+            // Verified findings
+            if (output.finding) {
+              this.emit("operator-event", {
+                type: "finding-verified",
+                finding: output.finding,
+              });
+            }
+            // Endpoint status changes
+            if (output.endpointId && output.status) {
+              this.emit("operator-event", {
+                type: "endpoint-status-changed",
+                endpointId: output.endpointId,
+                status: output.status,
+                vulnType: output.vulnType,
+              });
+            }
+          }
         }
       }
     }

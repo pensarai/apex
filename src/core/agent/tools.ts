@@ -4450,6 +4450,141 @@ COMMON TESTING PATTERNS:
     },
   });
 
+  // Sidebar-updating tools for operator mode
+  const updateAttackSurface = tool({
+    name: "update_attack_surface",
+    description: `Record discovered endpoints to the attack surface panel in the operator sidebar.
+
+Call this when you discover new endpoints through:
+- Crawling the application
+- API enumeration
+- Manual inspection
+- Directory brute-forcing
+
+This helps the operator visualize the attack surface as testing progresses.`,
+    inputSchema: z.object({
+      endpoints: z.array(z.object({
+        path: z.string().describe("The endpoint path (e.g., /api/users)"),
+        method: z.string().describe("HTTP method (GET, POST, PUT, DELETE, etc.)"),
+        category: z.string().optional().describe("Category: auth, api, admin, static, etc."),
+        params: z.array(z.string()).optional().describe("Parameter names found at this endpoint"),
+      })).describe("Array of discovered endpoints"),
+      toolCallDescription: z.string().optional(),
+    }),
+    execute: async ({ endpoints }) => {
+      const discoveredEndpoints = endpoints.map((ep, idx) => ({
+        id: `ep_${Date.now()}_${idx}`,
+        path: ep.path,
+        method: ep.method,
+        category: ep.category,
+        params: ep.params,
+        status: "untested" as const,
+      }));
+      return {
+        success: true,
+        endpoints: discoveredEndpoints,
+        message: `Added ${discoveredEndpoints.length} endpoints to attack surface`,
+      };
+    },
+  });
+
+  const recordCredential = tool({
+    name: "record_credential",
+    description: `Record a discovered credential to the credentials panel in the operator sidebar.
+
+Call this when you find:
+- Hardcoded credentials in source/config files
+- Credentials in form responses
+- JWT tokens or API keys
+- Session cookies worth tracking`,
+    inputSchema: z.object({
+      username: z.string().describe("Username or identifier"),
+      secret: z.string().describe("The credential value (will be partially redacted in display)"),
+      type: z.enum(["password", "cookie", "jwt", "ssh_key", "api_key"]).describe("Type of credential"),
+      source: z.string().describe("Where this was found (e.g., 'wp-config.php', 'login response')"),
+      scope: z.string().describe("Where this credential works (e.g., 'HTTP basic auth', 'MySQL', 'SSH')"),
+      toolCallDescription: z.string().optional(),
+    }),
+    execute: async ({ username, secret, type, source, scope }) => {
+      const credential = {
+        id: `cred_${Date.now()}`,
+        username,
+        secret,
+        type,
+        source,
+        scope,
+        isActive: false,
+      };
+      return {
+        success: true,
+        credential,
+        message: `Recorded ${type} credential for ${username}`,
+      };
+    },
+  });
+
+  const updateEndpointStatus = tool({
+    name: "update_endpoint_status",
+    description: `Update the status of a previously discovered endpoint after testing.
+
+Status markers:
+- untested: Not yet tested (default)
+- suspicious: Shows anomalous behavior, needs more investigation
+- confirmed: Confirmed vulnerable
+- clean: Tested and appears secure
+- blocked: Testing blocked by WAF/protection`,
+    inputSchema: z.object({
+      endpointId: z.string().describe("The endpoint ID to update"),
+      status: z.enum(["untested", "suspicious", "confirmed", "clean", "blocked"]),
+      vulnType: z.string().optional().describe("If confirmed, the vulnerability type (e.g., SQLi, XSS, IDOR)"),
+      toolCallDescription: z.string().optional(),
+    }),
+    execute: async ({ endpointId, status, vulnType }) => {
+      return {
+        success: true,
+        endpointId,
+        status,
+        vulnType,
+        message: `Updated endpoint ${endpointId} status to ${status}${vulnType ? ` (${vulnType})` : ''}`,
+      };
+    },
+  });
+
+  const recordVerifiedFinding = tool({
+    name: "record_verified_finding",
+    description: `Record a verified vulnerability finding to the sidebar panel.
+
+Use this after you have:
+1. Confirmed the vulnerability exists
+2. Created a proof of concept
+3. Determined severity
+
+This is separate from document_finding - this updates the live sidebar display.`,
+    inputSchema: z.object({
+      type: z.string().describe("Vulnerability type (e.g., sqli, idor, xss, rce, auth_bypass)"),
+      endpoint: z.string().describe("Affected endpoint"),
+      severity: z.enum(["critical", "high", "medium", "low", "info"]),
+      summary: z.string().describe("Brief description of the finding"),
+      pocPath: z.string().optional().describe("Path to POC file if created"),
+      toolCallDescription: z.string().optional(),
+    }),
+    execute: async ({ type, endpoint, severity, summary, pocPath }) => {
+      const finding = {
+        id: `vuln_${Date.now()}`,
+        type,
+        endpoint,
+        severity,
+        summary,
+        pocPath,
+      };
+      return {
+        success: true,
+        finding,
+        message: `Recorded ${severity} ${type} vulnerability at ${endpoint}`,
+      };
+    },
+  });
+
   return {
     fuzz_endpoint: fuzzEndpoint,
     execute_command: executeCommand,
@@ -4471,5 +4606,10 @@ COMMON TESTING PATTERNS:
     scratchpad: createScratchpadTool(session),
     generate_report: createGenerateReportTool(session),
     get_attack_surface: getAttackSurfaceAgent(),
+    // Sidebar-updating tools for operator mode
+    update_attack_surface: updateAttackSurface,
+    record_credential: recordCredential,
+    update_endpoint_status: updateEndpointStatus,
+    record_verified_finding: recordVerifiedFinding,
   };
 }
