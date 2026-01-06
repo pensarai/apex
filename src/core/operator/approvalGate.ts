@@ -2,6 +2,7 @@ import { EventEmitter } from "events";
 import { randomBytes } from "crypto";
 import type {
   OperatorMode,
+  OperatorStage,
   PermissionTier,
   PendingApproval,
   ApprovalDecision,
@@ -17,6 +18,10 @@ import { checkPermission, shouldBlockAction } from "./permissionPolicy";
 export interface ApprovalGateConfig {
   mode: OperatorMode;
   autoApproveTier: PermissionTier;
+  /** Current operator stage - used for stage-aware auto-approval */
+  currentStage?: OperatorStage;
+  /** Tools to auto-approve in test/validate stages (offensive mode) */
+  offensiveStageTools?: string[];
 }
 
 /**
@@ -89,6 +94,15 @@ export class ApprovalGate extends EventEmitter {
         `Action blocked in plan mode (tier ${tier})`,
         tier
       );
+    }
+
+    // Stage-aware auto-approval: Auto-approve offensive tools in test/validate stages
+    const isOffensiveStage = ["test", "validate"].includes(this.config.currentStage || "");
+    const isOffensiveTool = this.config.offensiveStageTools?.includes(toolName);
+    if (isOffensiveStage && isOffensiveTool && tier <= 3) {
+      const entry = this.recordAction(toolName, toolCallId, tier, "auto-approved");
+      this.emitEvent({ type: "action-completed", entry });
+      return "auto-approved";
     }
 
     // Check permission policy

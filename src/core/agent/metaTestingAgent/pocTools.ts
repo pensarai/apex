@@ -76,22 +76,21 @@ export function createPocTool(
   const create_poc = tool({
     description: `Create and test a Proof-of-Concept script.
 
-**Primarily use bash scripts** - they are automatically executed and tested.
-Python scripts are also supported for complex scenarios requiring libraries.
+Supported languages:
+- **Bash** (.sh) - Preferred for simple HTTP/curl-based POCs
+- **Python** (.py) - For complex scenarios with requests library
+- **JavaScript** (.js) - For Node.js-based exploitation
 
 This tool:
 1. Creates the POC file in the pocs/ directory
-2. For bash: Makes executable (chmod +x) and runs it
-3. For python: Runs with python3
-4. Returns execution output for analysis
-5. **Deletes the file if execution fails**
+2. Makes executable and runs it (bash via sh, python via python3, js via node)
+3. Returns execution output for analysis
+4. **Deletes the file if execution fails**
 
 POC requirements:
-- Bash: Start with #!/bin/bash, exit 0 on success (vuln confirmed), 1 on failure
-- Python: Use requests library, print clear success/failure indicators, sys.exit(0/1)
-- Include rate limiting (sleep between requests)
-- Include authentication if required
+- Exit 0 on success (vuln confirmed), 1 on failure
 - Print clear evidence of exploitation
+- Include rate limiting (sleep between requests)
 
 Max ${MAX_POC_ATTEMPTS} attempts per approach before pivoting.`,
     inputSchema: CreatePocSchema,
@@ -110,7 +109,9 @@ Max ${MAX_POC_ATTEMPTS} attempts per approach before pivoting.`,
           mkdirSync(pocsPath, { recursive: true });
         }
 
-        const extension = poc.pocType === "bash" ? ".sh" : ".py";
+        const extension = poc.pocType === "bash" ? ".sh"
+          : poc.pocType === "python" ? ".py"
+          : ".js";
         const sanitizedName = sanitizeFilename(poc.pocName);
         const filename = `poc_${sanitizedName}${extension}`;
         const pocPath = join(pocsPath, filename);
@@ -135,7 +136,7 @@ set -e  # Exit on error
 `;
             pocContent = header + pocContent.replace(/^#!\/bin\/bash\s*\n/, "");
           }
-        } else {
+        } else if (poc.pocType === "python") {
           // Python
           if (!pocContent.startsWith("#!") && !pocContent.startsWith("#!/")) {
             pocContent = "#!/usr/bin/env python3\n" + pocContent;
@@ -150,6 +151,21 @@ set -e  # Exit on error
 `;
             pocContent = header + pocContent.replace(/^#!.*\n/, "");
           }
+        } else {
+          // JavaScript (Node.js)
+          if (!pocContent.startsWith("#!/")) {
+            pocContent = "#!/usr/bin/env node\n" + pocContent;
+          }
+          // Add header comment if not present
+          if (!pocContent.includes("// POC:")) {
+            const header = `#!/usr/bin/env node
+// POC: ${poc.description}
+// Created: ${new Date().toISOString()}
+// Attempt: ${currentAttempts}/${MAX_POC_ATTEMPTS}
+
+`;
+            pocContent = header + pocContent.replace(/^#!.*\n/, "");
+          }
         }
 
         writeFileSync(pocPath, pocContent);
@@ -160,7 +176,7 @@ set -e  # Exit on error
         let exitCode = 0;
 
         try {
-          if (poc.pocType === "bash") {
+          if (poc.pocType === "bash" || poc.pocType === "javascript") {
             chmodSync(pocPath, 0o755);
           }
 
@@ -171,7 +187,9 @@ set -e  # Exit on error
             const execCommand =
               poc.pocType === "bash"
                 ? `echo '${pocBase64}' | base64 -d | bash`
-                : `echo '${pocBase64}' | base64 -d | python3`;
+                : poc.pocType === "python"
+                ? `echo '${pocBase64}' | base64 -d | python3`
+                : `echo '${pocBase64}' | base64 -d | node`;
 
             const execResult = await toolOverride.execute_command({
               command: execCommand,
@@ -193,7 +211,9 @@ set -e  # Exit on error
           } else {
             // Local execution
             const execCommand =
-              poc.pocType === "bash" ? pocPath : `python3 ${pocPath}`;
+              poc.pocType === "bash" ? pocPath
+                : poc.pocType === "python" ? `python3 ${pocPath}`
+                : `node ${pocPath}`;
 
             const result = await execAsync(execCommand, {
               timeout: 60000,

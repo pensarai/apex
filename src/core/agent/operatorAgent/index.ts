@@ -25,9 +25,40 @@ import {
   type OperatorEvent,
   OPERATOR_STAGES,
 } from "../../operator";
-import { createPentestTools } from "../tools";
+import { createPentestTools, ATTACK_KNOWLEDGE } from "../tools";
 import { createBrowserTools, disconnectMcpClient } from "../browserTools";
+import { createPocTool } from "../metaTestingAgent/pocTools";
+import { Logger } from "../logger";
+import { inferVulnerabilityClasses } from "../orchestrator/prompts";
 import type { DisplayMessage } from "../../../tui/components/agent-display";
+
+/**
+ * Cognitive testing loop for offensive stages (test/validate)
+ * Borrowed from pentestagent's META_TESTING methodology
+ */
+const OFFENSIVE_COGNITIVE_LOOP = `
+## Cognitive Testing Loop (Test/Validate Stages)
+
+Every test action MUST follow this cycle:
+
+### HYPOTHESIS (Before EVERY tool call)
+HYPOTHESIS:
+- Technique: [what I'm testing] (attempt N)
+- Confidence: [0-100%] because [reasoning]
+- Expected: if TRUE -> [outcome] | if FALSE -> [pivot plan]
+
+### VALIDATION (After EVERY result)
+VALIDATION:
+- Outcome: [YES/NO + evidence]
+- Constraint learned: [specific insight]
+- Confidence: BEFORE [X%] -> AFTER [Y%]
+- Decision: pivot (<50%) | iterate (50-80%) | exploit (>80%)
+
+**Rules:**
+- Pivot at <50% confidence - don't waste budget on dead ends
+- Direct-first: What's the MINIMUM steps to demonstrate this vulnerability?
+- Create POCs with create_poc to prove findings (supports bash, python, javascript)
+`;
 
 export type OperatorAgentStatus = "idle" | "running" | "waiting" | "paused" | "completed" | "failed";
 
@@ -82,10 +113,12 @@ export class OperatorAgent extends EventEmitter {
       model: config.model,
     });
 
-    // Initialize approval gate
+    // Initialize approval gate with offensive stage tools for auto-approval in test/validate
     this.approvalGate = new ApprovalGate({
       mode: config.initialMode || "manual",
       autoApproveTier: config.autoApproveTier || 2,
+      currentStage: config.initialStage || "setup",
+      offensiveStageTools: ["test_parameter", "fuzz_endpoint", "create_poc"],
     });
 
     // Initialize stage manager
@@ -198,6 +231,8 @@ export class OperatorAgent extends EventEmitter {
    */
   setStage(stage: OperatorStage): void {
     this.stageManager.transitionTo(stage);
+    // Sync stage with approval gate for stage-aware auto-approval
+    this.approvalGate.updateConfig({ currentStage: stage });
   }
 
   /**
@@ -261,11 +296,11 @@ export class OperatorAgent extends EventEmitter {
     const target = session.targets[0] || "";
     const stageDef = OPERATOR_STAGES[this.currentStage];
 
-    // Build initial system message
-    const systemMessage = this.buildSystemPrompt(target, stageDef);
-
     // Initial user message
     const userMessage = directive || `Begin ${stageDef.name.toLowerCase()} phase for target: ${target}`;
+
+    // Build initial system message (with attack knowledge based on directive)
+    const systemMessage = this.buildSystemPrompt(target, stageDef, directive);
 
     this.addMessage({
       role: "user",
@@ -326,12 +361,51 @@ export class OperatorAgent extends EventEmitter {
   }
 
   /**
+   * Get attack knowledge based on user directive
+   */
+  private getAttackKnowledge(directive?: string): string {
+    if (!["test", "validate"].includes(this.currentStage)) return "";
+
+    // Use existing inferVulnerabilityClasses to detect vuln types
+    const vulnClasses = inferVulnerabilityClasses(directive || "");
+    if (vulnClasses.length === 0) return "";
+
+    // Map vuln classes to ATTACK_KNOWLEDGE keys
+    const keyMap: Record<string, keyof typeof ATTACK_KNOWLEDGE> = {
+      sqli: "sql_injection",
+      xss: "xss_reflected",
+      idor: "idor",
+      command_injection: "command_injection",
+      lfi: "path_traversal",
+      ssti: "ssti",
+      // Note: ssrf, crypto, jwt don't have direct matches - skip them
+    };
+
+    // Get attack knowledge for top 2 detected classes
+    const sections = vulnClasses.slice(0, 2)
+      .map(vc => {
+        const key = keyMap[vc];
+        if (!key || !ATTACK_KNOWLEDGE[key]) return null;
+        const knowledge = ATTACK_KNOWLEDGE[key] as any;
+        if (!knowledge.techniques || !knowledge.indicators) return null;
+        return `### ${String(key).toUpperCase()}\n**Techniques:**\n${
+          knowledge.techniques.map((t: any) => `- ${t.name}: ${t.how}`).join("\n")
+        }\n**Vulnerable indicators:** ${knowledge.indicators.vulnerable.join(", ")}\n**Not vulnerable:** ${knowledge.indicators.notVulnerable.join(", ")}`;
+      })
+      .filter(Boolean);
+
+    return sections.length > 0 ? `\n## Attack Knowledge\n${sections.join("\n\n")}` : "";
+  }
+
+  /**
    * Build system prompt for current stage
    */
-  private buildSystemPrompt(target: string, stageDef: typeof OPERATOR_STAGES[OperatorStage]): string {
+  private buildSystemPrompt(target: string, stageDef: typeof OPERATOR_STAGES[OperatorStage], directive?: string): string {
     const session = this.config.session;
+    const isOffensiveStage = ["test", "validate"].includes(this.currentStage);
 
-    return `You are an expert penetration tester working alongside a human colleague.
+    // Build base prompt
+    let prompt = `You are an expert penetration tester working alongside a human colleague.
 
 ## CRITICAL: Follow User Instructions
 When your colleague gives you a specific instruction, STOP what you're doing and follow it immediately.
@@ -411,6 +485,19 @@ Example suggestions by stage:
 - Validate: "[1] Create POC for the SQLi finding" "[2] Test other endpoints" "[3] Document and move on"
 
 Document significant findings using the document_finding tool.`;
+
+    // Inject cognitive loop for offensive stages (test/validate)
+    if (isOffensiveStage) {
+      prompt += OFFENSIVE_COGNITIVE_LOOP;
+    }
+
+    // Inject attack knowledge based on directive
+    const attackKnowledge = this.getAttackKnowledge(directive);
+    if (attackKnowledge) {
+      prompt += attackKnowledge;
+    }
+
+    return prompt;
   }
 
   /**
@@ -435,8 +522,25 @@ Document significant findings using the document_finding tool.`;
       this.abortController?.signal
     );
 
+    // Add POC tools for offensive stages (test/validate)
+    let pocTools: Record<string, any> = {};
+    if (["test", "validate"].includes(this.currentStage)) {
+      const logger = new Logger(session, 'operator-agent.log');
+      const { create_poc } = createPocTool(
+        {
+          id: session.id,
+          rootPath: session.rootPath,
+          pocsPath: join(session.rootPath, "pocs"),
+          findingsPath: join(session.rootPath, "findings"),
+          logsPath: join(session.rootPath, "logs"),
+        },
+        logger
+      );
+      pocTools = { create_poc };
+    }
+
     // Merge all tools and wrap with approval checking
-    const allTools = { ...baseTools, ...browserTools };
+    const allTools = { ...baseTools, ...browserTools, ...pocTools };
     const wrappedTools = this.wrapToolsWithApproval(allTools);
 
     let findingsCount = 0;

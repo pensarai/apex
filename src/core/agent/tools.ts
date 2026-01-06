@@ -43,7 +43,7 @@ const AnalysisSchema = z.object({
  * Contains expert knowledge about attack types, techniques, and detection
  * indicators to guide AI in generating contextual tests.
  */
-const ATTACK_KNOWLEDGE = {
+export const ATTACK_KNOWLEDGE = {
   graphql_injection: {
     name: "GraphQL Injection",
     description:
@@ -2182,6 +2182,22 @@ Results are cached to disk (24h TTL) for faster subsequent lookups.`,
 }
 
 /**
+ * Derive vulnerability type from finding title
+ */
+function deriveVulnTypeFromTitle(title: string): string {
+  const lower = title.toLowerCase();
+  if (lower.includes('sql') || lower.includes('injection')) return 'sqli';
+  if (lower.includes('xss') || lower.includes('cross-site scripting')) return 'xss';
+  if (lower.includes('idor') || lower.includes('insecure direct')) return 'idor';
+  if (lower.includes('command') || lower.includes('rce')) return 'rce';
+  if (lower.includes('ssrf')) return 'ssrf';
+  if (lower.includes('lfi') || lower.includes('path traversal') || lower.includes('local file')) return 'lfi';
+  if (lower.includes('auth') || lower.includes('bypass')) return 'auth_bypass';
+  if (lower.includes('ssti') || lower.includes('template')) return 'ssti';
+  return 'vuln';
+}
+
+/**
  * Analysis tool - Document findings and maintain testing state
  *
  * This function is created with a session context to save findings to disk
@@ -2292,7 +2308,11 @@ ${finding.references ? `## References\n\n${finding.references}` : ""}
 
         return {
           success: true,
-          finding: findingWithMeta,
+          finding: {
+            ...findingWithMeta,
+            type: deriveVulnTypeFromTitle(finding.title), // Derive type for sidebar display
+            endpoint: findingWithMeta.target || '', // Ensure endpoint exists for sidebar
+          },
           filepath,
           message: `Finding documented: [${finding.severity}] ${finding.title}`,
         };

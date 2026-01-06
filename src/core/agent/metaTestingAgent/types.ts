@@ -117,7 +117,7 @@ export interface PromptOptimization {
 /**
  * POC types supported
  */
-export type PocType = "bash" | "python";
+export type PocType = "bash" | "python" | "javascript";
 
 /**
  * Zod schema for create_poc tool input
@@ -127,8 +127,8 @@ export const CreatePocSchema = z.object({
     .string()
     .describe("Descriptive name for the POC (e.g., sqli_union_extract)"),
   pocType: z
-    .enum(["bash", "python"])
-    .describe("Script type - bash preferred, python for complex scenarios"),
+    .enum(["bash", "python", "javascript"])
+    .describe("Script type - bash/python/javascript (node)"),
   pocContent: z.string().describe("Complete script content"),
   description: z.string().describe("What vulnerability this POC demonstrates"),
   toolCallDescription: z
