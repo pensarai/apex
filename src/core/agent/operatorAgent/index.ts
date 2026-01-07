@@ -62,6 +62,14 @@ VALIDATION:
 
 export type OperatorAgentStatus = "idle" | "running" | "waiting" | "paused" | "completed" | "failed";
 
+/** Attack surface endpoint for resume context */
+export interface AttackSurfaceEndpoint {
+  method: string;
+  path: string;
+  status?: string;
+  category?: string;
+}
+
 export interface OperatorAgentConfig {
   session: Session.SessionInfo;
   model: AIModel;
@@ -70,6 +78,8 @@ export interface OperatorAgentConfig {
   initialStage?: OperatorStage;
   /** Previous messages to restore on resume (for session continuity) */
   previousMessages?: DisplayMessage[];
+  /** Attack surface endpoints discovered in previous session (for resume context) */
+  previousAttackSurface?: AttackSurfaceEndpoint[];
 }
 
 export interface OperatorAgentResult {
@@ -92,6 +102,7 @@ export class OperatorAgent extends EventEmitter {
   private logPath: string;
   private runId: string;
   private isResume: boolean = false;
+  private attackSurface: AttackSurfaceEndpoint[] = [];
 
   // Operator components
   readonly approvalGate: ApprovalGate;
@@ -106,6 +117,9 @@ export class OperatorAgent extends EventEmitter {
 
     // Track if this is a resume (has previous messages loaded)
     this.isResume = !!(config.previousMessages && config.previousMessages.length > 0);
+
+    // Store attack surface from previous session (for resume context)
+    this.attackSurface = config.previousAttackSurface ?? [];
 
     // Initialize logging
     this.runId = `run_${Date.now()}`;
@@ -412,6 +426,72 @@ export class OperatorAgent extends EventEmitter {
   }
 
   /**
+   * Build resume context from attack surface and message history
+   * Provides the agent with a summary of prior discoveries when resuming
+   */
+  private buildResumeContext(): string {
+    if (!this.isResume) return "";
+
+    const sections: string[] = [];
+
+    // Attack surface summary - list known endpoints
+    if (this.attackSurface && this.attackSurface.length > 0) {
+      const endpoints = this.attackSurface.map(e => {
+        const status = e.status && e.status !== "untested" ? ` [${e.status}]` : "";
+        return `  - ${e.method} ${e.path}${status}`;
+      }).join('\n');
+      sections.push(`**Known Attack Surface (${this.attackSurface.length} endpoints):**\n${endpoints}`);
+    }
+
+    // Extract key findings from message history
+    const findings: string[] = [];
+    for (const msg of this.messages) {
+      if (msg.role === "assistant" && typeof msg.content === "string") {
+        const content = msg.content;
+        // Look for structured findings patterns
+        if (content.includes("Summary") || content.includes("discovered") ||
+            content.includes("Endpoint") || content.includes("vulnerability") ||
+            content.includes("Status") || content.includes("found")) {
+          const lines = content.split('\n').filter(l => {
+            const trimmed = l.trim();
+            return (
+              trimmed.startsWith('-') ||
+              trimmed.startsWith('•') ||
+              trimmed.includes('GET ') ||
+              trimmed.includes('POST ') ||
+              trimmed.includes('/api/') ||
+              trimmed.includes('Status') ||
+              trimmed.includes('401') ||
+              trimmed.includes('200') ||
+              trimmed.includes('404')
+            );
+          }).slice(0, 15);
+          findings.push(...lines);
+        }
+      }
+    }
+
+    // Deduplicate findings
+    const uniqueFindings = [...new Set(findings)].slice(0, 20);
+    if (uniqueFindings.length > 0) {
+      sections.push(`**Previous Discoveries:**\n${uniqueFindings.join('\n')}`);
+    }
+
+    if (sections.length === 0) {
+      return "Session resumed - continuing from previous context.";
+    }
+
+    return `---
+## SESSION RESUMED
+This session has prior context. You have already performed reconnaissance.
+Do NOT restart reconnaissance or call get_attack_surface/smart_enumerate again.
+Proceed directly with the user's current request using the information below.
+
+${sections.join('\n\n')}
+---`;
+  }
+
+  /**
    * Build system prompt for current stage
    */
   private buildSystemPrompt(target: string, stageDef: typeof OPERATOR_STAGES[OperatorStage], directive?: string): string {
@@ -460,7 +540,7 @@ Stage: ${stageDef.name} - ${stageDef.description}
 ${session.config?.authenticationInstructions ? `\nSession context: ${session.config.authenticationInstructions}` : ""}
 
 ## What We Know So Far
-${this.findingsSummary || "Just starting - no findings yet."}
+${this.isResume ? this.buildResumeContext() : (this.findingsSummary || "Just starting - no findings yet.")}
 
 ## Testing Guidance
 ${session.config?.outcomeGuidance || Session.DEFAULT_OUTCOME_GUIDANCE}
@@ -500,9 +580,10 @@ Example suggestions by stage:
 
 Document significant findings using the document_finding tool.`;
 
-    // Note: On resume, the conversation history is already passed to the model
-    // via previousMessages, so no special prompting is needed - the agent
-    // naturally has context from the previous session
+    // On resume, context is provided in two ways:
+    // 1. buildResumeContext() adds attack surface and findings to the system prompt
+    // 2. runAgentLoop() includes recent messages in the conversation history
+    // This ensures the agent knows about prior discoveries and won't restart recon
 
     // Inject cognitive loop for offensive stages (test/validate)
     if (isOffensiveStage) {
@@ -525,8 +606,21 @@ Document significant findings using the document_finding tool.`;
     const session = this.config.session;
     const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
       { role: "system", content: systemMessage },
-      { role: "user", content: initialUserMessage },
     ];
+
+    // On resume, include recent conversation history for context
+    // This gives the AI model awareness of previous interactions
+    if (this.isResume && this.messages.length > 0) {
+      const recentMessages = this.messages.slice(-20); // Last 20 messages for context
+      for (const msg of recentMessages) {
+        if (msg.role === "user" || msg.role === "assistant") {
+          messages.push({ role: msg.role, content: String(msg.content) });
+        }
+      }
+    }
+
+    // Add current user directive
+    messages.push({ role: "user", content: initialUserMessage });
 
     // Create tools with approval gate wrapper
     const baseTools = createPentestTools(session, this.config.model);

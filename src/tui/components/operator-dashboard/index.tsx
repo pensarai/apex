@@ -190,6 +190,13 @@ export default function OperatorDashboard({ session, isResume = false }: Operato
       // DEEP COPY messages on resume to prevent shared reference mutation
       // Without this, agent.addMessage() mutates dashboard state directly
       previousMessages: isResume ? messages.map(m => ({ ...m })) : undefined,
+      // Pass attack surface for resume context - agent needs to know discovered endpoints
+      previousAttackSurface: isResume ? attackSurface.map(e => ({
+        method: e.method,
+        path: e.path,
+        status: e.status,
+        category: e.category,
+      })) : undefined,
     });
 
     // Set up event listeners
