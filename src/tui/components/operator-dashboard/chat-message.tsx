@@ -5,7 +5,7 @@
  * Minimal chrome, streaming text, terminal-style.
  */
 
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import { RGBA, StyledText, TextAttributes, type TextChunk } from "@opentui/core";
 import { marked } from "marked";
 import { SpinnerDots } from "../sprites";
@@ -227,8 +227,8 @@ export const ChatMessage = memo(function ChatMessage({ message, isStreaming = fa
     );
   }
 
-  // Assistant messages - streaming markdown
-  const displayContent = markdownToStyledText(content);
+  // Assistant messages - streaming markdown (memoized to avoid re-parsing on every render)
+  const displayContent = useMemo(() => markdownToStyledText(content), [content]);
 
   return (
     <box flexDirection="column" marginTop={1}>

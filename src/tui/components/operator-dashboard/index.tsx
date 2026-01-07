@@ -5,7 +5,7 @@
  * Features streaming text, inline approval prompts, and a clean terminal feel.
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useKeyboard } from "@opentui/react";
 import { RGBA } from "@opentui/core";
 import { Session } from "../../../core/session";
@@ -76,6 +76,9 @@ export default function OperatorDashboard({ session, isResume = false }: Operato
   const [currentStage, setCurrentStage] = useState<OperatorStage>("setup");
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
   const [actionHistory, setActionHistory] = useState<ActionHistoryEntry[]>([]);
+  // Pre-computed stats counters (avoids O(n) filter on every render)
+  const [approvedCount, setApprovedCount] = useState(0);
+  const [deniedCount, setDeniedCount] = useState(0);
 
   // UI state
   const [directiveInput, setDirectiveInput] = useState("");
@@ -101,6 +104,14 @@ export default function OperatorDashboard({ session, isResume = false }: Operato
   const [hypotheses, setHypotheses] = useState<Hypothesis[]>([]);
   const [evidence, setEvidence] = useState<Evidence[]>([]);
   const [resumeLoaded, setResumeLoaded] = useState(false);
+
+  // Memoize pending tool check to avoid duplicate slice operations in render
+  const hasPendingTool = useMemo(() => {
+    const recentMessages = messages.slice(-5);
+    return recentMessages.some(
+      m => m.role === "tool" && (m as any).status === "pending"
+    );
+  }, [messages]);
 
   // Function to gather current state for saving
   const gatherOperatorState = useCallback((): Session.OperatorSessionState => ({
@@ -147,6 +158,10 @@ export default function OperatorDashboard({ session, isResume = false }: Operato
         setHypotheses(savedState.hypotheses || []);
         setEvidence(savedState.evidence || []);
         setActionHistory(savedState.actionHistory || []);
+        // Initialize counters from restored action history
+        const history = savedState.actionHistory || [];
+        setApprovedCount(history.filter((a: any) => a.decision === "approved" || a.decision === "auto-approved").length);
+        setDeniedCount(history.filter((a: any) => a.decision === "denied").length);
       }
       setResumeLoaded(true);
     });
@@ -241,6 +256,12 @@ export default function OperatorDashboard({ session, isResume = false }: Operato
           break;
         case "action-completed":
           setActionHistory((prev) => [...prev, event.entry]);
+          // Increment pre-computed counters (avoids O(n) filter on every render)
+          if (event.entry.decision === "approved" || event.entry.decision === "auto-approved") {
+            setApprovedCount((c) => c + 1);
+          } else if (event.entry.decision === "denied") {
+            setDeniedCount((c) => c + 1);
+          }
           break;
         case "attack-surface-updated":
           // Merge new endpoints with existing, avoiding duplicates
@@ -557,10 +578,10 @@ export default function OperatorDashboard({ session, isResume = false }: Operato
     );
   }
 
-  // Compact stats
+  // Use pre-computed counters (O(1) instead of O(n) filter on every render)
   const stats = {
-    approved: actionHistory.filter((a) => a.decision === "approved" || a.decision === "auto-approved").length,
-    denied: actionHistory.filter((a) => a.decision === "denied").length,
+    approved: approvedCount,
+    denied: deniedCount,
   };
 
   return (
@@ -624,42 +645,17 @@ export default function OperatorDashboard({ session, isResume = false }: Operato
             ))}
 
             {/* Streaming indicator - show when agent is processing (thinking or executing) */}
-            {status === "running" && messages.length > 0 && pendingApprovals.length === 0 && (() => {
-              const lastMsg = messages[messages.length - 1];
-
-              // Don't show if last message is assistant (already streaming response)
-              if (lastMsg?.role === "assistant") return false;
-
-              // Check if ANY recent message is a pending tool (tool is executing)
-              const recentMessages = messages.slice(-5);
-              const hasPendingTool = recentMessages.some(
-                m => m.role === "tool" && (m as any).status === "pending"
-              );
-
-              // If pending tool exists, show "Executing..." label instead of "Thinking..."
-              // (the tool spinner shows the command, but this provides additional context)
-              if (hasPendingTool) return "executing";
-
-              // Show "Thinking..." for all other running states:
-              // - After user message (waiting for initial response)
-              // - After completed tool (agent deciding what to do next)
-              return "thinking";
-            })() && (
+            {status === "running" &&
+              messages.length > 0 &&
+              pendingApprovals.length === 0 &&
+              messages[messages.length - 1]?.role !== "assistant" && (
               <box marginTop={1} marginLeft={2}>
                 <SpinnerDots
-                  label={(() => {
-                    const recentMessages = messages.slice(-5);
-                    const hasPendingTool = recentMessages.some(
-                      m => m.role === "tool" && (m as any).status === "pending"
-                    );
-                    if (hasPendingTool) {
-                      // Show what action is executing if we know it
-                      return lastApprovedAction
-                        ? `Executing: ${lastApprovedAction}`
-                        : "Executing...";
-                    }
-                    return "Thinking...";
-                  })()}
+                  label={
+                    hasPendingTool
+                      ? (lastApprovedAction ? `Executing: ${lastApprovedAction}` : "Executing...")
+                      : "Thinking..."
+                  }
                   fg="green"
                 />
               </box>

@@ -103,6 +103,8 @@ export class OperatorAgent extends EventEmitter {
   private runId: string;
   private isResume: boolean = false;
   private attackSurface: AttackSurfaceEndpoint[] = [];
+  // O(1) lookup for tool message indices by toolCallId (prevents O(n²) searches)
+  private toolCallIdToIndex: Map<string, number> = new Map();
 
   // Operator components
   readonly approvalGate: ApprovalGate;
@@ -213,12 +215,20 @@ export class OperatorAgent extends EventEmitter {
   }
 
   private addMessage(message: DisplayMessage): void {
+    const index = this.messages.length;
     this.messages.push(message);
+
+    // Index tool messages by toolCallId for O(1) lookup
+    const toolCallId = (message as any).toolCallId;
+    if (message.role === "tool" && toolCallId) {
+      this.toolCallIdToIndex.set(toolCallId, index);
+    }
+
     this.log("message", {
       role: message.role,
       content: message.content,
       toolName: (message as any).toolName,
-      toolCallId: (message as any).toolCallId,
+      toolCallId,
       args: (message as any).args,
     });
     this.emit("message", message);
@@ -880,9 +890,8 @@ Document significant findings using the document_finding tool.`;
     // Handle tool results
     if (toolResults && toolResults.length > 0) {
       for (const tr of toolResults) {
-        const msgIdx = this.messages.findIndex(
-          (m) => m.role === "tool" && (m as any).toolCallId === tr.toolCallId
-        );
+        // O(1) lookup using pre-built index map (was O(n) findIndex)
+        const msgIdx = this.toolCallIdToIndex.get(tr.toolCallId) ?? -1;
         if (msgIdx !== -1) {
           const existingMsg = this.messages[msgIdx];
 
