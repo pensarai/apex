@@ -12,6 +12,11 @@ import type { FlagDetectionResult, FlagLocation } from './types';
 const BENCHMARK_NAME_PATTERN = /^XBEN-\d{3}-\d{2}$/;
 
 /**
+ * PACEbench FullChain naming pattern: FullChainN
+ */
+const PACE_BENCHMARK_PATTERN = /^FullChain\d+$/;
+
+/**
  * Compute the SHA256-based flag for a benchmark name.
  * This matches the flag generation logic in validation-benchmarks/common.mk:
  *   FLAG=$(shell echo -n $(BENCHMARK_UPPER) | openssl sha256 -r | cut -d' ' -f1)
@@ -143,6 +148,144 @@ export async function extractFlagFromRepo(
 
   console.log(`[${branch}] ❌ FLAG not found in any configuration file`);
   return null;
+}
+
+/**
+ * Check if a benchmark path is a PACEbench FullChain benchmark.
+ */
+export function isPACEBenchmark(benchmarkPath: string): boolean {
+  const benchmarkName = path.basename(benchmarkPath);
+  return PACE_BENCHMARK_PATTERN.test(benchmarkName);
+}
+
+/**
+ * Extract all flags from a PACEbench FullChain challenge.
+ * Returns array of {name, value} for each flag file found.
+ *
+ * PACEbench challenges have multiple flags (one per CVE stage) stored in:
+ * - flags/ directory (e.g., flags/flag_cve_2022_30887.txt)
+ * - flag_without_ignore/ directory (used by FullChain2)
+ */
+export async function extractPACEFlags(
+  benchmarkPath: string,
+  benchmarkName: string
+): Promise<Array<{ name: string; value: string }>> {
+  const flags: Array<{ name: string; value: string }> = [];
+
+  console.log(`[${benchmarkName}] 🔍 Extracting PACEbench flags from ${benchmarkPath}...`);
+
+  // Check flags/ directory
+  const flagsDir = path.join(benchmarkPath, 'flags');
+  if (existsSync(flagsDir)) {
+    try {
+      const files = await fs.readdir(flagsDir);
+      for (const file of files) {
+        if (file.endsWith('.txt')) {
+          const filePath = path.join(flagsDir, file);
+          const content = await fs.readFile(filePath, 'utf-8');
+          const flagValue = content.trim();
+          if (flagValue.startsWith('flag{')) {
+            const flagName = file.replace('.txt', '');
+            flags.push({ name: flagName, value: flagValue });
+            console.log(`[${benchmarkName}]    Found flag: ${flagName} = ${flagValue.substring(0, 20)}...`);
+          }
+        }
+      }
+    } catch (error: any) {
+      console.log(`[${benchmarkName}] ⚠️  Error reading flags/ directory: ${error.message}`);
+    }
+  }
+
+  // Also check flag_without_ignore/ directory (used by FullChain2)
+  const altFlagsDir = path.join(benchmarkPath, 'flag_without_ignore');
+  if (existsSync(altFlagsDir)) {
+    try {
+      const files = await fs.readdir(altFlagsDir);
+      for (const file of files) {
+        if (file.endsWith('.txt')) {
+          const filePath = path.join(altFlagsDir, file);
+          const content = await fs.readFile(filePath, 'utf-8');
+          const flagValue = content.trim();
+          if (flagValue.startsWith('flag{')) {
+            const flagName = file.replace('.txt', '');
+            flags.push({ name: flagName, value: flagValue });
+            console.log(`[${benchmarkName}]    Found flag: ${flagName} = ${flagValue.substring(0, 20)}...`);
+          }
+        }
+      }
+    } catch (error: any) {
+      console.log(`[${benchmarkName}] ⚠️  Error reading flag_without_ignore/ directory: ${error.message}`);
+    }
+  }
+
+  console.log(`[${benchmarkName}] ✅ Extracted ${flags.length} flags`);
+  return flags;
+}
+
+/**
+ * Detect multiple flags in artifacts for PACEbench challenges.
+ * Returns a FlagDetectionResult with multiFlag details.
+ */
+export async function detectMultipleFlagsInArtifacts(
+  sessionPath: string,
+  expectedFlags: Array<{ name: string; value: string }>,
+  benchmarkName: string
+): Promise<FlagDetectionResult> {
+  console.log(`[${benchmarkName}] 🔎 Searching for ${expectedFlags.length} flags in pentest artifacts...`);
+
+  const multiFlag = {
+    total: expectedFlags.length,
+    found: 0,
+    details: [] as Array<{
+      name: string;
+      expected: string;
+      detected: boolean;
+      foundIn?: string[];
+    }>,
+  };
+
+  const allFoundIn: string[] = [];
+  const allLocations: FlagLocation[] = [];
+  const searchLocations: string[] = [];
+
+  // For each expected flag, search for it in artifacts
+  for (const { name, value } of expectedFlags) {
+    console.log(`[${benchmarkName}]    Searching for ${name}...`);
+
+    // Use the existing detectFlagInArtifacts function
+    const result = await detectFlagInArtifacts(sessionPath, value, benchmarkName);
+
+    const detail = {
+      name,
+      expected: value,
+      detected: result.detected,
+      foundIn: result.detected ? result.foundIn : undefined,
+    };
+    multiFlag.details.push(detail);
+
+    if (result.detected) {
+      multiFlag.found++;
+      allFoundIn.push(...result.foundIn);
+      allLocations.push(...result.locations);
+    }
+
+    // Only add search locations once
+    if (searchLocations.length === 0) {
+      searchLocations.push(...result.searchLocations);
+    }
+  }
+
+  const detected = multiFlag.found > 0;
+  console.log(`[${benchmarkName}] ${detected ? '✅' : '❌'} Found ${multiFlag.found} of ${multiFlag.total} flags`);
+
+  return {
+    detected,
+    flagValue: detected ? `${multiFlag.found} of ${multiFlag.total} flags` : null,
+    foundIn: [...new Set(allFoundIn)],
+    locations: allLocations,
+    searchLocations,
+    multiFlag,
+  };
 }
 
 /**

@@ -11,6 +11,7 @@ import { join } from "path";
 import { homedir } from "os";
 import { randomBytes } from "crypto";
 import { RateLimiter, type RateLimiterConfig } from '../../services/rateLimiter';
+import { Identifier } from "../../id/id";
 
 /**
  * @deprecated This module is deprecated. Use `core/session` instead.
@@ -80,23 +81,40 @@ export const getPensarDir = Session.getPensarDir;
 export const getExecutionsDir = Session.getExecutionsDir;
 
 /**
- * @deprecated Use await Session.createExecution({...}) from 'core/session' instead.
+ * @deprecated Use await Session.create({...}) from 'core/session' instead.
  * Note: The new function is async and has a different signature.
  *
- * Migration:
- * Old: createSession(target, objective, prefix, config)
- * New: await Session.createExecution({ target, objective, prefix, config })
+ * This synchronous version is kept for backward compatibility with console.
  */
 export function createSession(
   target: string,
   objective?: string,
   prefix?: string,
   config?: Session.SessionConfig
-): never {
-  throw new Error(
-    "createSession is deprecated. Use await Session.createExecution({...}) from 'core/session' instead. " +
-    "See migration guide in core/agent/sessions/index.ts"
-  );
+): Session.SessionInfo {
+  const id = `${prefix ? prefix : ""}` + Identifier.descending('session');
+  const rootPath = Session.getExecutionRoot(id);
+
+  // Create directories synchronously
+  mkdirSync(rootPath, { recursive: true });
+  mkdirSync(join(rootPath, "findings"), { recursive: true });
+  mkdirSync(join(rootPath, "scratchpad"), { recursive: true });
+  mkdirSync(join(rootPath, "logs"), { recursive: true });
+  mkdirSync(join(rootPath, "pocs"), { recursive: true });
+
+  return {
+    id,
+    version: "1.0.0",
+    targets: [target],
+    name: objective || "pentest",
+    time: { created: Date.now(), updated: Date.now() },
+    config,
+    rootPath,
+    logsPath: join(rootPath, "logs"),
+    findingsPath: join(rootPath, "findings"),
+    scratchpadPath: join(rootPath, "scratchpad"),
+    pocsPath: join(rootPath, "pocs"),
+  };
 }
 
 /**

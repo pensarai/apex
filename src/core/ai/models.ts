@@ -95,20 +95,14 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
 
   // OpenAI Models
   {
-    id: "gpt-4.5-turbo",
-    name: "GPT-4.5 Turbo",
+    id: "gpt-4o-mini",
+    name: "GPT-4o Mini",
     provider: "openai",
     contextLength: 128000,
   },
   {
     id: "gpt-4o",
     name: "GPT-4o",
-    provider: "openai",
-    contextLength: 128000,
-  },
-  {
-    id: "gpt-4o-mini",
-    name: "GPT-4o Mini",
     provider: "openai",
     contextLength: 128000,
   },

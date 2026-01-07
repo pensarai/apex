@@ -1,7 +1,7 @@
 /**
  * Prompt Optimizer (Meta-Prompting)
  *
- * This module implements the meta-prompting capability from CyberAutoAgent:
+ * Metaprompting
  * - Analyzes what approaches worked vs failed
  * - Generates an optimized execution prompt
  * - Removes dead-end tactics
@@ -23,9 +23,6 @@ import type {
 } from "./types";
 import { loadAdaptations } from "./planMemory";
 
-/**
- * Base execution prompt that will be optimized
- */
 const BASE_OPTIMIZATION_PROMPT = `
 ## Runtime Learned Patterns
 
@@ -33,9 +30,6 @@ This section contains patterns learned during this testing session.
 Use this information to guide your approach selection.
 `;
 
-/**
- * Create the optimize_prompt tool
- */
 export function createPromptOptimizerTool(
   session: MetaTestingSessionInfo,
   logger: Logger
@@ -76,7 +70,6 @@ This is meta-prompting: the agent optimizing its own guidance based on experienc
     }),
     execute: async () => {
       try {
-        // Load all adaptations
         const adaptations = loadAdaptations(session.rootPath);
 
         if (adaptations.length === 0) {
@@ -110,16 +103,13 @@ Then call optimize_prompt to generate optimized guidance.`,
           timestamp: new Date().toISOString(),
         };
 
-        // Generate optimized prompt
         const optimizedPrompt = generateOptimizedPrompt(optimization);
 
-        // Write to session
         writeFileSync(optimizedPromptPath, optimizedPrompt);
         logger.info(
           `Optimized prompt generated: ${worked.length} working, ${failed.length} failed, ${constraints.length} constraints`
         );
 
-        // Also write optimization metadata
         const optimizationPath = join(
           session.rootPath,
           "prompt_optimization.json"
@@ -186,9 +176,7 @@ ${failed
   return { optimize_prompt };
 }
 
-/**
- * Generate the optimized execution prompt
- */
+
 function generateOptimizedPrompt(opt: PromptOptimization): string {
   let prompt = `# Optimized Execution Guidance
 
@@ -283,9 +271,6 @@ Remember: Direct-first economics - always prefer the shortest path to your objec
   return prompt;
 }
 
-/**
- * Load the optimized prompt if it exists
- */
 export function loadOptimizedPrompt(sessionRootPath: string): string | null {
   const optimizedPromptPath = join(
     sessionRootPath,
@@ -303,9 +288,6 @@ export function loadOptimizedPrompt(sessionRootPath: string): string | null {
   }
 }
 
-/**
- * Load the optimization metadata if it exists
- */
 export function loadOptimization(
   sessionRootPath: string
 ): PromptOptimization | null {

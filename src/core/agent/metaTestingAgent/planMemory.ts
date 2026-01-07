@@ -4,8 +4,7 @@
  * Tools for storing and retrieving strategic plans and adaptations.
  * Plans are stored as JSON files in the session directory.
  *
- * Key concepts from CyberAutoAgent:
- * - Plans as external working memory (not in context window)
+ * - Plans as external working memory
  * - Checkpoint protocol at 20%/40%/60%/80% budget
  * - Adaptations track what worked/failed for meta-prompting
  */
@@ -18,14 +17,8 @@ import { Logger } from "../logger";
 import type { PentestPlan, Adaptation, MetaTestingSessionInfo } from "./types";
 import { StorePlanSchema, StoreAdaptationSchema } from "./types";
 
-/**
- * Budget checkpoints for plan review
- */
 export const BUDGET_CHECKPOINTS = [20, 40, 60, 80];
 
-/**
- * Create plan memory tools for the MetaTestingAgent
- */
 export function createPlanMemoryTools(
   session: MetaTestingSessionInfo,
   logger: Logger
@@ -33,9 +26,6 @@ export function createPlanMemoryTools(
   const planPath = join(session.rootPath, "plan.json");
   const adaptationsPath = join(session.rootPath, "adaptations.json");
 
-  /**
-   * Store or update the strategic plan
-   */
   const store_plan = tool({
     description: `Store or update the strategic pentest plan.
 
@@ -82,7 +72,6 @@ Phase statuses:
           `Plan stored: Phase ${plan.current_phase}/${plan.total_phases}, Budget: ${plan.budget_used}%`
         );
 
-        // Check if at a checkpoint
         const checkpoint = BUDGET_CHECKPOINTS.find(
           (cp) => plan.budget_used >= cp && plan.budget_used < cp + 20
         );
@@ -119,9 +108,6 @@ Phase statuses:
     },
   });
 
-  /**
-   * Retrieve the current plan
-   */
   const get_plan = tool({
     description: `Retrieve the current strategic plan.
 
@@ -176,7 +162,6 @@ This helps maintain strategic coherence across long operations.`,
           })
           .join("\n");
 
-        // Calculate checkpoint status
         const nextCheckpoint = BUDGET_CHECKPOINTS.find(
           (cp) => plan.budget_used < cp
         );
@@ -217,9 +202,6 @@ Update plan with store_plan after evaluation.`,
     },
   });
 
-  /**
-   * Store an adaptation (what worked/failed)
-   */
   const store_adaptation = tool({
     description: `Record an approach outcome for meta-prompting.
 
@@ -239,7 +221,6 @@ This data is used by optimize_prompt to:
     inputSchema: StoreAdaptationSchema,
     execute: async (adaptation) => {
       try {
-        // Load existing adaptations
         let adaptations: Adaptation[] = [];
         if (existsSync(adaptationsPath)) {
           try {
@@ -249,7 +230,6 @@ This data is used by optimize_prompt to:
           }
         }
 
-        // Add new adaptation
         const newAdaptation: Adaptation = {
           ...adaptation,
           timestamp: Date.now(),
@@ -312,9 +292,6 @@ ${
   };
 }
 
-/**
- * Load adaptations from session
- */
 export function loadAdaptations(sessionRootPath: string): Adaptation[] {
   const adaptationsPath = join(sessionRootPath, "adaptations.json");
 
@@ -329,9 +306,6 @@ export function loadAdaptations(sessionRootPath: string): Adaptation[] {
   }
 }
 
-/**
- * Load plan from session
- */
 export function loadPlan(sessionRootPath: string): PentestPlan | null {
   const planPath = join(sessionRootPath, "plan.json");
 

@@ -14,7 +14,7 @@ export interface DockerComposePortInfo {
   serviceName: string;
 }
 
-// Infrastructure service patterns to skip (database, cache, message queue, etc.)
+// Infrastructure service patterns to skip (database, cache, message queue, internal services, etc.)
 const INFRASTRUCTURE_PATTERNS = [
   'postgres', 'postgresql', 'pg', 'db', 'database',
   'mysql', 'mariadb',
@@ -23,6 +23,9 @@ const INFRASTRUCTURE_PATTERNS = [
   'rabbitmq', 'kafka',
   'elasticsearch', 'elastic',
   'minio', 'storage',
+  'internal',  // Skip internal services (they should only be accessible via SSRF, not directly)
+  'backend',   // Skip backend services
+  'worker',    // Skip worker services
 ];
 
 /**

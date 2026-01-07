@@ -120,6 +120,15 @@ export default function SessionView({
     }
   }, [session, hasStarted, loading, isResume]);
 
+  // Cleanup: abort on unmount (safety net)
+  useEffect(() => {
+    return () => {
+      if (abortController) {
+        abortController.abort();
+      }
+    };
+  }, [abortController]);
+
   // Start the pentest
   const startPentest = useCallback(
     async (execSession: Session.SessionInfo) => {
@@ -485,13 +494,11 @@ export default function SessionView({
 
   // Handle back navigation
   const handleBack = useCallback(() => {
+    if (abortController) {
+      abortController.abort();
+    }
     route.navigate({ type: "base", path: "home" });
-    // if (isExecuting && abortController) {
-    //   abortController.abort();
-    // } else {
-    //   route.navigate({ type: "base", path: "home" });
-    // }
-  }, [isExecuting, abortController, route]);
+  }, [abortController, route]);
 
   // Loading state
   if (loading) {

@@ -12,11 +12,11 @@
  */
 
 // Main agents
-export { runMetaTestingAgent } from './agent';
 export {
   runMetaVulnerabilityTestAgent,
   type MetaVulnerabilityTestInput,
   type MetaVulnerabilityTestResult,
+  type SpawnVulnerabilityTestRequest,
 } from './metaVulnerabilityTestAgent';
 
 // Types
