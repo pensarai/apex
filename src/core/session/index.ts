@@ -320,6 +320,8 @@ Testing in progress...
             },
             config: {
                 mode: input.config?.mode || "auto",
+                sessionType: input.config?.sessionType,
+                staticConfig: input.config?.staticConfig,
                 offensiveHeaders: input.config?.offensiveHeaders || {
                     mode: "default",
                     headers: {

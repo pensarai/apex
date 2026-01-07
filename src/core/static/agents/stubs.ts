@@ -2,7 +2,7 @@
  * Agent Implementations
  *
  * Real implementations for the static analysis agents.
- * VulRAGAgent remains a stub pending vulnerability knowledge base integration.
+ * LocalizeAgent performs dataflow analysis to enhance findings.
  */
 
 import { streamResponse, type AIModel } from '../../ai';
@@ -24,49 +24,6 @@ export interface StubAgentInput {
   model: AIModel;
   abortSignal?: AbortSignal;
   onStepFinish?: (step: any) => void;
-}
-
-/**
- * VulRAGAgent - Passthrough stub
- *
- * Future: Enrich findings with:
- * - Similar vulnerabilities from CWE database
- * - Historical fix patterns
- * - Remediation recommendations
- *
- * Requires: Vulnerability knowledge base (user to provide)
- */
-export async function runVulRAGAgent(input: StubAgentInput): Promise<StaticAgentResult> {
-  const { paths } = input;
-  const startTime = Date.now();
-
-  try {
-    // For now, just pass through without enrichment
-    await appendToResultsJsonl(paths, {
-      type: 'agent_complete',
-      agent: 'vul-rag',
-      success: true,
-      duration_ms: Date.now() - startTime,
-      note: 'stub implementation - waiting for vulnerability knowledge base',
-    });
-
-    return {
-      stage: 'vul-rag',
-      success: true,
-      artifacts: [],
-      summary: 'VulRAG stage skipped (knowledge base not configured)',
-      duration_ms: Date.now() - startTime,
-    };
-  } catch (error: any) {
-    return {
-      stage: 'vul-rag',
-      success: false,
-      artifacts: [],
-      summary: `VulRAG failed: ${error.message}`,
-      error: error.message,
-      duration_ms: Date.now() - startTime,
-    };
-  }
 }
 
 const LOCALIZE_SYSTEM_PROMPT = `You are an expert security analyst performing precise vulnerability localization and dataflow analysis. Your job is to examine security findings from static analysis tools and enhance them with detailed trace information.

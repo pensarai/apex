@@ -6,7 +6,7 @@
  * 2. IndexGraph - Build code navigation index (symbol/import graph, security function registry)
  * 3. Analyzer - Run static analysis tools
  * 4. SpecSynth - LLM synthesizes custom Semgrep rules and Joern taint queries
- * 5. VulRAG - Enrich with vulnerability knowledge (stub - pending knowledge base)
+ * 5. VulRAG - Enrich findings with Nuclei template vulnerability data
  * 6. Localize - Precise dataflow localization with trace narratives
  * 7. Triage - Deduplicate and rank findings
  * 8. ExploitSynth - Generate POC exploits to prove vulnerabilities
@@ -34,10 +34,10 @@ export type { ExploitSynthInput } from './exploit-synth';
 export { runReportAgent } from './report';
 export type { ReportInput } from './report';
 
-// VulRAG stub (waiting for vulnerability knowledge base integration)
-// Localize agent with real prompts for dataflow analysis
-export {
-  runVulRAGAgent,
-  runLocalizeAgent,
-} from './stubs';
+// VulRAG agent - enriches findings with Nuclei template data
+export { runVulRAGAgent, enrichFindingDirect } from './vul-rag';
+export type { VulRAGInput } from './vul-rag';
+
+// Localize agent - dataflow analysis
+export { runLocalizeAgent } from './stubs';
 export type { StubAgentInput } from './stubs';

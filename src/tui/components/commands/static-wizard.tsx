@@ -11,6 +11,20 @@ import type { ToolAvailability } from "../../../core/static/types";
 import { existsSync } from "fs";
 import { execSync } from "child_process";
 import path from "path";
+import os from "os";
+
+/**
+ * Expand tilde (~) to home directory in paths
+ */
+function expandTilde(filePath: string): string {
+  if (filePath.startsWith('~/')) {
+    return path.join(os.homedir(), filePath.slice(2));
+  }
+  if (filePath === '~') {
+    return os.homedir();
+  }
+  return filePath;
+}
 
 // Wizard step types
 type WizardStep = "repo" | "configure" | "checking" | "creating";
@@ -48,11 +62,14 @@ export default function StaticWizard({ initialRepo, initialRef, fastMode = false
   const isUrl = initialRepo?.startsWith("http") || initialRepo?.startsWith("git@");
   const initialStep: WizardStep = initialRepo ? "checking" : "repo";
 
+  // Expand tilde in initial repo if it's a local path
+  const expandedInitialRepo = initialRepo && !isUrl ? expandTilde(initialRepo) : initialRepo;
+
   // Wizard state
   const [currentStep, setCurrentStep] = useState<WizardStep>(initialStep);
   const [state, setState] = useState<WizardState>(() => ({
     name: generateRandomName(),
-    repoPath: isUrl ? "" : (initialRepo || ""),
+    repoPath: isUrl ? "" : (expandedInitialRepo || ""),
     repoUrl: isUrl ? (initialRepo || "") : "",
     ref: initialRef || "HEAD",
     fastMode: fastMode,
@@ -90,7 +107,7 @@ export default function StaticWizard({ initialRepo, initialRef, fastMode = false
 
       // Validate repo path if local
       if (state.repoPath) {
-        const resolvedPath = path.resolve(state.repoPath);
+        const resolvedPath = path.resolve(expandTilde(state.repoPath));
         if (!existsSync(resolvedPath)) {
           setError(`Repository path does not exist: ${resolvedPath}`);
           setCurrentStep("repo");
@@ -130,12 +147,30 @@ export default function StaticWizard({ initialRepo, initialRef, fastMode = false
 
     try {
       // Clone if URL provided
-      let repoPath = state.repoPath;
+      let repoPath = state.repoPath ? path.resolve(expandTilde(state.repoPath)) : "";
       if (state.repoUrl && !state.repoPath) {
         // TODO: Clone to temp directory
         setError("Remote repository cloning not yet implemented. Please provide a local path.");
         setCurrentStep("configure");
         return;
+      }
+
+      // Validate path exists
+      if (repoPath && !existsSync(repoPath)) {
+        setError(`Repository path does not exist: ${repoPath}`);
+        setCurrentStep("repo");
+        return;
+      }
+
+      // Validate it's a git repo
+      if (repoPath) {
+        try {
+          execSync(`git -C "${repoPath}" rev-parse --git-dir`, { encoding: 'utf-8', stdio: 'pipe' });
+        } catch {
+          setError(`Not a git repository: ${repoPath}`);
+          setCurrentStep("repo");
+          return;
+        }
       }
 
       // Build session config

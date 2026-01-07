@@ -389,7 +389,7 @@ export async function runStaticOrchestrator(
     );
     agentResults.set('spec-synth', specResult);
 
-    // Stage 5: VulRAG (stub - waiting for knowledge base)
+    // Stage 5: VulRAG - Enrich findings with Nuclei template data
     const ragResult = await runAgent('vul-rag', () =>
       runVulRAGAgent({
         paths,

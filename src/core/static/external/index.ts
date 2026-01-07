@@ -19,6 +19,9 @@ export * from './joern';
 // TruffleHog secrets scanning
 export * from './trufflehog';
 
+// Nuclei template integration
+export * from './nuclei';
+
 // Re-export commonly used functions
 export {
   detectAvailableTools,
@@ -53,3 +56,18 @@ export {
   getSecretCWE,
   getSecretLocation,
 } from './trufflehog';
+
+export {
+  initializeNucleiTemplates,
+  ensureTemplatesCloned,
+  updateTemplates,
+  indexTemplates,
+  searchTemplates,
+  getTemplate,
+  getTemplateContent,
+  getIndexStats,
+  type NucleiTemplate,
+  type NucleiIndex,
+  type NucleiSearchQuery,
+  type NucleiSearchResult,
+} from './nuclei';
