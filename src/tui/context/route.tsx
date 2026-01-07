@@ -12,7 +12,8 @@ export type RoutePath =
     | "config"
     | "models"
     | "providers"
-    | "disclosure";
+    | "disclosure"
+    | "resume";
 
 export interface WebCommandOptions {
     auto?: boolean;

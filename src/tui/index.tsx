@@ -16,6 +16,7 @@ import SessionsDisplay from "./components/commands/sessions-display";
 import ConfigDialog from "./components/commands/config-dialog";
 import ModelsDisplay from "./components/commands/models-display";
 import ProviderManager from "./components/commands/provider-manager";
+import ResumeWizard from "./components/commands/resume-wizard";
 // import CreateSessionDialog from "./components/commands/create-session-dialog";
 import type { Config } from "../core/config/config";
 import { config } from "../core/config";
@@ -377,6 +378,9 @@ function CommandDisplay({
           </RouteSwitch.Case>
           <RouteSwitch.Case when="providers">
             <ProviderManager />
+          </RouteSwitch.Case>
+          <RouteSwitch.Case when="resume">
+            <ResumeWizard />
           </RouteSwitch.Case>
           <RouteSwitch.Default>
             <CommandInput focused={focusIndex === 0} inputKey={inputKey}/>

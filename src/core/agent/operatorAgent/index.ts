@@ -68,6 +68,8 @@ export interface OperatorAgentConfig {
   initialMode?: OperatorMode;
   autoApproveTier?: PermissionTier;
   initialStage?: OperatorStage;
+  /** Previous messages to restore on resume (for session continuity) */
+  previousMessages?: DisplayMessage[];
 }
 
 export interface OperatorAgentResult {
@@ -84,11 +86,12 @@ export class OperatorAgent extends EventEmitter {
   private _status: OperatorAgentStatus = "idle";
   private config: OperatorAgentConfig;
   private abortController: AbortController | null = null;
-  private messages: DisplayMessage[] = [];
+  private messages: DisplayMessage[];
   private userDirectives: string[] = [];
   private findingsSummary: string = "";
   private logPath: string;
   private runId: string;
+  private isResume: boolean = false;
 
   // Operator components
   readonly approvalGate: ApprovalGate;
@@ -97,6 +100,12 @@ export class OperatorAgent extends EventEmitter {
   constructor(config: OperatorAgentConfig) {
     super();
     this.config = config;
+
+    // Initialize messages (restore from previous session if resuming)
+    this.messages = config.previousMessages ?? [];
+
+    // Track if this is a resume (has previous messages loaded)
+    this.isResume = !!(config.previousMessages && config.previousMessages.length > 0);
 
     // Initialize logging
     this.runId = `run_${Date.now()}`;
@@ -176,6 +185,10 @@ export class OperatorAgent extends EventEmitter {
 
   get allMessages(): DisplayMessage[] {
     return [...this.messages];
+  }
+
+  get currentRunId(): string {
+    return this.runId;
   }
 
   private setStatus(status: OperatorAgentStatus): void {
@@ -302,6 +315,7 @@ export class OperatorAgent extends EventEmitter {
     // Build initial system message (with attack knowledge based on directive)
     const systemMessage = this.buildSystemPrompt(target, stageDef, directive);
 
+    // Always add the user's message so it appears in chat
     this.addMessage({
       role: "user",
       content: userMessage,
@@ -485,6 +499,10 @@ Example suggestions by stage:
 - Validate: "[1] Create POC for the SQLi finding" "[2] Test other endpoints" "[3] Document and move on"
 
 Document significant findings using the document_finding tool.`;
+
+    // Note: On resume, the conversation history is already passed to the model
+    // via previousMessages, so no special prompting is needed - the agent
+    // naturally has context from the previous session
 
     // Inject cognitive loop for offensive stages (test/validate)
     if (isOffensiveStage) {

@@ -1738,18 +1738,16 @@ recommendations for further testing based on the technology stack.`,
             toolCallDescription: `Running feroxagent on ${url}`,
           });
         } else {
-          // Direct execution (local mode)
-          const { execSync } = await import("child_process");
+          // Direct execution (local mode) - use async to avoid blocking event loop
           try {
-            const output = execSync(cmd, {
+            const { stdout, stderr } = await execAsync(cmd, {
               timeout: (timeout + 30) * 1000,
-              encoding: "utf-8",
               maxBuffer: 10 * 1024 * 1024, // 10MB buffer
             });
             result = {
               success: true,
-              stdout: output,
-              stderr: "",
+              stdout,
+              stderr,
               command: cmd,
               error: "",
             };

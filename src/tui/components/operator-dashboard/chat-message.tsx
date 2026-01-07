@@ -15,6 +15,8 @@ const greenAccent = RGBA.fromInts(76, 175, 80, 255);
 const creamText = RGBA.fromInts(255, 248, 220, 255);
 const dimText = RGBA.fromInts(120, 120, 120, 255);
 const toolColor = RGBA.fromInts(100, 180, 255, 255);
+// Use consistent RGBA for spinners to avoid color mismatches
+const blueSpinner = toolColor;  // Same blue for tool spinners
 
 // Simplified markdown to styled text
 function markdownToStyledText(content: string): StyledText {
@@ -176,7 +178,7 @@ export const ChatMessage = memo(function ChatMessage({ message, isStreaming = fa
       return (
         <box flexDirection="row" gap={1} marginLeft={2}>
           {isPending ? (
-            <SpinnerDots label={summary} fg="green" />
+            <SpinnerDots label={summary} fg={blueSpinner} />
           ) : (
             <text fg={toolColor}>+ {summary}</text>
           )}
@@ -208,7 +210,7 @@ export const ChatMessage = memo(function ChatMessage({ message, isStreaming = fa
       <box flexDirection="column" marginLeft={2} marginTop={1}>
         <box flexDirection="row" gap={1}>
           {isPending ? (
-            <SpinnerDots label={`${toolName}`} fg="green" />
+            <SpinnerDots label={`${toolName}`} fg={blueSpinner} />
           ) : (
             <text fg={toolColor}>+ {toolName}</text>
           )}

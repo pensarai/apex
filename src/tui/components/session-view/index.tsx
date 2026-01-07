@@ -548,7 +548,7 @@ export default function SessionView({
 
   // Operator mode - render OperatorDashboard for interactive pentesting
   if (session.config?.mode === 'operator') {
-    return <OperatorDashboard session={session} />;
+    return <OperatorDashboard session={session} isResume={isResume} />;
   }
 
   // Auto mode - Render SwarmDashboard with streamlined pentest

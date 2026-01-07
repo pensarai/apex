@@ -28,7 +28,15 @@ const dimText = RGBA.fromInts(120, 120, 120, 255);
 const yellowText = RGBA.fromInts(255, 235, 59, 255);
 const redText = RGBA.fromInts(244, 67, 54, 255);
 const orangeText = RGBA.fromInts(255, 152, 0, 255);
-const blueText = RGBA.fromInts(100, 181, 246, 255);
+
+function formatTokenCount(count: number): string {
+  if (count >= 1000000) {
+    return `${(count / 1000000).toFixed(1)}M`;
+  } else if (count >= 1000) {
+    return `${(count / 1000).toFixed(1)}K`;
+  }
+  return count.toString();
+}
 
 function getTierColor(tier: PermissionTier) {
   if (tier <= 2) return greenAccent;
@@ -37,25 +45,15 @@ function getTierColor(tier: PermissionTier) {
   return redText;
 }
 
-function getModeColor(mode: OperatorMode) {
-  if (mode === "plan") return yellowText;
-  if (mode === "auto") return greenAccent;
-  return blueText;
-}
-
-function formatTokenCount(count: number): string {
-  if (count >= 1000000) return `${(count / 1000000).toFixed(1)}M`;
-  if (count >= 1000) return `${(count / 1000).toFixed(1)}K`;
-  return count.toString();
-}
-
 interface OperatorDashboardProps {
   session: Session.SessionInfo;
+  /** If true, restore saved state from disk instead of starting fresh */
+  isResume?: boolean;
 }
 
-export default function OperatorDashboard({ session }: OperatorDashboardProps) {
+export default function OperatorDashboard({ session, isResume = false }: OperatorDashboardProps) {
   const route = useRoute();
-  const { model, tokenUsage, hasExecuted, addTokenUsage } = useAgent();
+  const { model, addTokenUsage, tokenUsage, hasExecuted } = useAgent();
   const { setInputValue } = useInput();
 
   // Get Operator settings from session config
@@ -83,6 +81,7 @@ export default function OperatorDashboard({ session }: OperatorDashboardProps) {
   const [directiveInput, setDirectiveInput] = useState("");
   const [showStageMenu, setShowStageMenu] = useState(false);
   const [verboseMode, setVerboseMode] = useState(false);
+  const [lastApprovedAction, setLastApprovedAction] = useState<string | null>(null);
 
   // Sync directive input with global input context (prevents global shortcuts like ? while typing)
   useEffect(() => {
@@ -101,6 +100,57 @@ export default function OperatorDashboard({ session }: OperatorDashboardProps) {
   const [credentials, setCredentials] = useState<Credential[]>([]);
   const [hypotheses, setHypotheses] = useState<Hypothesis[]>([]);
   const [evidence, setEvidence] = useState<Evidence[]>([]);
+  const [resumeLoaded, setResumeLoaded] = useState(false);
+
+  // Function to gather current state for saving
+  const gatherOperatorState = useCallback((): Session.OperatorSessionState => ({
+    mode,
+    autoApproveTier,
+    currentStage,
+    messages,
+    attackSurface,
+    credentials,
+    verifiedVulns,
+    targetState,
+    hypotheses,
+    evidence,
+    actionHistory,
+    pausedAt: new Date().toISOString(),
+    lastRunId: agent?.currentRunId || '',
+  }), [
+    mode, autoApproveTier, currentStage, messages, attackSurface,
+    credentials, verifiedVulns, targetState, hypotheses, evidence,
+    actionHistory, agent
+  ]);
+
+  // Load state on resume
+  useEffect(() => {
+    if (!isResume || resumeLoaded) return;
+
+    Session.loadOperatorState(session.id).then((savedState) => {
+      if (savedState) {
+        setMode(savedState.mode as OperatorMode);
+        setAutoApproveTier(savedState.autoApproveTier as PermissionTier);
+        setCurrentStage(savedState.currentStage as OperatorStage);
+        // Deserialize messages with proper date conversion and status reconciliation
+        const restoredMessages = (savedState.messages || []).map((msg: any) => ({
+          ...msg,
+          createdAt: msg.createdAt ? new Date(msg.createdAt) : new Date(),
+          // Force pending tools to completed - they won't re-run on resume
+          status: msg.role === "tool" && msg.status === "pending" ? "completed" : msg.status,
+        }));
+        setMessages(restoredMessages);
+        setAttackSurface(savedState.attackSurface || []);
+        setCredentials(savedState.credentials || []);
+        setVerifiedVulns(savedState.verifiedVulns || []);
+        setTargetState(savedState.targetState || null);
+        setHypotheses(savedState.hypotheses || []);
+        setEvidence(savedState.evidence || []);
+        setActionHistory(savedState.actionHistory || []);
+      }
+      setResumeLoaded(true);
+    });
+  }, [isResume, session.id, resumeLoaded]);
 
   // Parse suggestions from latest assistant message
   useEffect(() => {
@@ -128,13 +178,18 @@ export default function OperatorDashboard({ session }: OperatorDashboardProps) {
   // Initialize agent
   useEffect(() => {
     if (agent) return; // Already initialized
+    // Wait for resume state to load before creating agent
+    if (isResume && !resumeLoaded) return;
 
     const operatorAgent = createOperatorAgent({
       session,
       model: model.id,
       initialMode: mode,
       autoApproveTier,
-      initialStage: "setup",
+      initialStage: currentStage,
+      // DEEP COPY messages on resume to prevent shared reference mutation
+      // Without this, agent.addMessage() mutates dashboard state directly
+      previousMessages: isResume ? messages.map(m => ({ ...m })) : undefined,
     });
 
     // Set up event listeners
@@ -148,6 +203,8 @@ export default function OperatorDashboard({ session }: OperatorDashboardProps) {
         // Track streaming assistant message
         if (message.role === "assistant") {
           setStreamingMessageIndex(newMessages.length - 1);
+          // Clear lastApprovedAction when agent starts responding
+          setLastApprovedAction(null);
         }
         return newMessages;
       });
@@ -248,7 +305,7 @@ export default function OperatorDashboard({ session }: OperatorDashboardProps) {
     return () => {
       operatorAgent.stop();
     };
-  }, [session, model.id]);
+  }, [session, model.id, isResume, resumeLoaded]);
 
   // Handle mode change
   const handleModeChange = useCallback((newMode: OperatorMode) => {
@@ -279,8 +336,21 @@ export default function OperatorDashboard({ session }: OperatorDashboardProps) {
 
   // Handle approval
   const handleApprove = useCallback((approvalId: string) => {
+    // Find the approval to get action details for display
+    const approval = pendingApprovals.find(a => a.id === approvalId);
+    if (approval) {
+      // Format the action for display (e.g., "smart_enumerate", "http_request GET /api")
+      const args = approval.args || {};
+      let actionDesc = approval.toolName;
+      if (approval.toolName === "http_request" && args.method && args.url) {
+        actionDesc = `${args.method} ${args.url}`;
+      } else if (approval.toolName === "execute_command" && args.command) {
+        actionDesc = `$ ${String(args.command).slice(0, 50)}`;
+      }
+      setLastApprovedAction(actionDesc);
+    }
     agent?.approve(approvalId);
-  }, [agent]);
+  }, [agent, pendingApprovals]);
 
   // Handle deny
   const handleDeny = useCallback((approvalId: string) => {
@@ -422,18 +492,22 @@ export default function OperatorDashboard({ session }: OperatorDashboardProps) {
       return;
     }
 
-    // Ctrl+C - Clear input first, then stop agent if input is empty
+    // Ctrl+C - Clear input first, then save state and stop agent if input is empty
     if (key.ctrl && key.name === "c") {
       if (directiveInput.trim()) {
         setDirectiveInput("");
         return;
       }
+      // Save state before stopping
+      Session.saveOperatorState(session.id, gatherOperatorState()).catch(() => {});
       agent?.stop();
       return;
     }
 
-    // ESC - Stop agent and exit to home
+    // ESC - Save state, stop agent and exit to home
     if (key.name === "escape") {
+      // Save state before exiting
+      Session.saveOperatorState(session.id, gatherOperatorState()).catch(() => {});
       agent?.stop();
       route.navigate({ type: "base", path: "home" });
       return;
@@ -500,6 +574,11 @@ export default function OperatorDashboard({ session }: OperatorDashboardProps) {
           <text fg={dimText}>{session.targets[0]}</text>
         </box>
         <box flexDirection="row" gap={2}>
+          {hasExecuted && (
+            <text fg={creamText}>
+              {`${formatTokenCount(tokenUsage.inputTokens)}/${formatTokenCount(tokenUsage.outputTokens)}`}
+            </text>
+          )}
           <text fg={greenAccent}>{stats.approved} approved</text>
           {stats.denied > 0 && <text fg={redText}>{stats.denied} denied</text>}
         </box>
@@ -537,10 +616,45 @@ export default function OperatorDashboard({ session }: OperatorDashboardProps) {
               />
             ))}
 
-            {/* Streaming indicator */}
-            {status === "running" && messages.length > 0 && messages[messages.length - 1]?.role !== "assistant" && (
+            {/* Streaming indicator - show when agent is processing (thinking or executing) */}
+            {status === "running" && messages.length > 0 && pendingApprovals.length === 0 && (() => {
+              const lastMsg = messages[messages.length - 1];
+
+              // Don't show if last message is assistant (already streaming response)
+              if (lastMsg?.role === "assistant") return false;
+
+              // Check if ANY recent message is a pending tool (tool is executing)
+              const recentMessages = messages.slice(-5);
+              const hasPendingTool = recentMessages.some(
+                m => m.role === "tool" && (m as any).status === "pending"
+              );
+
+              // If pending tool exists, show "Executing..." label instead of "Thinking..."
+              // (the tool spinner shows the command, but this provides additional context)
+              if (hasPendingTool) return "executing";
+
+              // Show "Thinking..." for all other running states:
+              // - After user message (waiting for initial response)
+              // - After completed tool (agent deciding what to do next)
+              return "thinking";
+            })() && (
               <box marginTop={1} marginLeft={2}>
-                <SpinnerDots label="Thinking..." fg="green" />
+                <SpinnerDots
+                  label={(() => {
+                    const recentMessages = messages.slice(-5);
+                    const hasPendingTool = recentMessages.some(
+                      m => m.role === "tool" && (m as any).status === "pending"
+                    );
+                    if (hasPendingTool) {
+                      // Show what action is executing if we know it
+                      return lastApprovedAction
+                        ? `Executing: ${lastApprovedAction}`
+                        : "Executing...";
+                    }
+                    return "Thinking...";
+                  })()}
+                  fg="green"
+                />
               </box>
             )}
 
@@ -580,14 +694,10 @@ export default function OperatorDashboard({ session }: OperatorDashboardProps) {
                 backgroundColor="transparent"
               />
             </box>
+            {/* Shortcuts row */}
             <box flexDirection="row" gap={2} marginTop={1} backgroundColor="transparent">
               {mode === "plan" && <text fg={yellowText}>{"⏸  PLAN"}</text>}
               {mode === "auto" && <text fg={greenAccent}>{"▶▶ AUTO"}</text>}
-              {hasExecuted && (
-                <text fg={creamText}>
-                  {`↓${formatTokenCount(tokenUsage.inputTokens)} ↑${formatTokenCount(tokenUsage.outputTokens)} Σ${formatTokenCount(tokenUsage.totalTokens)}`}
-                </text>
-              )}
               <text fg={verboseMode ? greenAccent : dimText}>
                 {verboseMode ? "⌥T verbose:on" : "⌥T verbose"}
               </text>
