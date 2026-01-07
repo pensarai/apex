@@ -17,6 +17,7 @@ import {
   ApprovalBlockedError,
   ApprovalDeniedError,
   StageManager,
+  inferStageFromDirective,
   type OperatorMode,
   type OperatorStage,
   type PermissionTier,
@@ -368,6 +369,18 @@ export class OperatorAgent extends EventEmitter {
    */
   async sendDirective(directive: string): Promise<void> {
     this.log("user_directive", { directive, currentStatus: this._status });
+
+    // Auto-infer stage from directive intent
+    const inference = inferStageFromDirective(directive);
+    if (inference && inference.stage !== this.currentStage) {
+      this.log("stage_inferred", {
+        from: this.currentStage,
+        to: inference.stage,
+        confidence: inference.confidence,
+        reason: inference.reason,
+      });
+      this.setStage(inference.stage);
+    }
 
     if (this._status !== "running" && this._status !== "waiting") {
       // If idle or completed, start a new loop with this directive

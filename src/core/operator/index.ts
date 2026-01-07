@@ -60,3 +60,9 @@ export {
 
 // Stage Manager
 export { StageManager } from "./stageManager";
+
+// Stage Inference
+export {
+  inferStageFromDirective,
+  type StageInferenceResult,
+} from "./stageInference";

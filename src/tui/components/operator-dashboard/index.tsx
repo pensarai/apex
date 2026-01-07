@@ -18,9 +18,38 @@ import { useAgent } from "../../agentProvider";
 import type { DisplayMessage } from "../agent-display";
 import { ChatMessage } from "./chat-message";
 import { SpinnerDots } from "../sprites";
-import { AttackSurfacePanel, CredentialsPanel, SuggestionsPanel, TargetStatePanel, VerifiedVulnsPanel } from "./sidebar";
-import type { Endpoint, Suggestion, VerifiedVuln, TargetState, Credential, Hypothesis, Evidence } from "./types";
-import { parseSuggestionsFromText, createInitialTargetState } from "./types";
+import { AttackSurfacePanel, CredentialsPanel, TargetStatePanel, VerifiedVulnsPanel } from "./sidebar";
+import type { Endpoint, VerifiedVuln, Credential, Hypothesis, Evidence } from "./types";
+
+/**
+ * Parse port from target URL or IP:port string
+ */
+function parsePortFromTarget(target: string): number | null {
+  try {
+    const url = new URL(target);
+    if (url.port) return parseInt(url.port, 10);
+    if (url.protocol === "https:") return 443;
+    if (url.protocol === "http:") return 80;
+  } catch {
+    // Not a URL, might be IP:port format
+    const match = target.match(/:(\d+)$/);
+    if (match) return parseInt(match[1], 10);
+  }
+  return null;
+}
+
+/**
+ * Extract hostname from target URL
+ */
+function parseHostFromTarget(target: string): string {
+  try {
+    const url = new URL(target);
+    return url.hostname;
+  } catch {
+    // Not a URL, return as-is (might be IP or hostname)
+    return target.replace(/:(\d+)$/, "");
+  }
+}
 
 const greenAccent = RGBA.fromInts(76, 175, 80, 255);
 const creamText = RGBA.fromInts(255, 248, 220, 255);
@@ -93,12 +122,13 @@ export default function OperatorDashboard({ session, isResume = false }: Operato
 
   // Enhanced sidebar state
   const [attackSurface, setAttackSurface] = useState<Endpoint[]>([]);
-  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [verifiedVulns, setVerifiedVulns] = useState<VerifiedVuln[]>([]);
 
-  // Tier 1 panel state
-  const [targetState, setTargetState] = useState<TargetState | null>(
-    session.targets[0] ? createInitialTargetState(session.targets[0]) : null
+  // Parse host and port from target URL
+  const targetHost = parseHostFromTarget(session.targets[0] || "");
+  const initialPort = parsePortFromTarget(session.targets[0] || "");
+  const [discoveredPorts, setDiscoveredPorts] = useState<{ port: number; service?: string }[]>(
+    initialPort ? [{ port: initialPort, service: "http" }] : []
   );
   const [credentials, setCredentials] = useState<Credential[]>([]);
   const [hypotheses, setHypotheses] = useState<Hypothesis[]>([]);
@@ -122,7 +152,7 @@ export default function OperatorDashboard({ session, isResume = false }: Operato
     attackSurface,
     credentials,
     verifiedVulns,
-    targetState,
+    targetState: { host: targetHost, ports: discoveredPorts }, // Simplified target state
     hypotheses,
     evidence,
     actionHistory,
@@ -130,7 +160,7 @@ export default function OperatorDashboard({ session, isResume = false }: Operato
     lastRunId: agent?.currentRunId || '',
   }), [
     mode, autoApproveTier, currentStage, messages, attackSurface,
-    credentials, verifiedVulns, targetState, hypotheses, evidence,
+    credentials, verifiedVulns, targetHost, discoveredPorts, hypotheses, evidence,
     actionHistory, agent
   ]);
 
@@ -154,7 +184,10 @@ export default function OperatorDashboard({ session, isResume = false }: Operato
         setAttackSurface(savedState.attackSurface || []);
         setCredentials(savedState.credentials || []);
         setVerifiedVulns(savedState.verifiedVulns || []);
-        setTargetState(savedState.targetState || null);
+        // Restore discovered ports from saved state
+        if (savedState.targetState?.ports) {
+          setDiscoveredPorts(savedState.targetState.ports);
+        }
         setHypotheses(savedState.hypotheses || []);
         setEvidence(savedState.evidence || []);
         setActionHistory(savedState.actionHistory || []);
@@ -166,29 +199,6 @@ export default function OperatorDashboard({ session, isResume = false }: Operato
       setResumeLoaded(true);
     });
   }, [isResume, session.id, resumeLoaded]);
-
-  // Parse suggestions from latest assistant message
-  useEffect(() => {
-    if (messages.length === 0) return;
-    const lastMessage = messages[messages.length - 1];
-    if (lastMessage.role !== "assistant") return;
-
-    // Get text content from message (content can be string or array)
-    let textContent = "";
-    if (typeof lastMessage.content === "string") {
-      textContent = lastMessage.content;
-    } else if (Array.isArray(lastMessage.content)) {
-      textContent = lastMessage.content
-        .filter((c: any) => c?.type === "text" && typeof c?.text === "string")
-        .map((c: any) => c.text)
-        .join("\n");
-    }
-
-    const parsed = parseSuggestionsFromText(textContent);
-    if (parsed.length > 0) {
-      setSuggestions(parsed);
-    }
-  }, [messages]);
 
   // Initialize agent
   useEffect(() => {
@@ -278,22 +288,15 @@ export default function OperatorDashboard({ session, isResume = false }: Operato
           setVerifiedVulns((prev) => [...prev, event.finding]);
           break;
 
-        // Tier 1 events
+        // Port discovery - add newly discovered ports
         case "target-state-updated":
-          // Update target state (host, ports, auth, focus)
-          setTargetState((prev) => prev ? { ...prev, ...event.state } : event.state);
-          break;
-        case "phase-transition-suggested":
-          // Set pending phase for Y/N confirmation
-          setTargetState((prev) => prev ? { ...prev, pendingPhase: event.phase } : null);
-          break;
-        case "objective-proposed":
-          // Update objective (unless user override exists)
-          setTargetState((prev) => {
-            if (!prev) return null;
-            if (prev.objectiveOverride) return prev; // User override takes precedence
-            return { ...prev, objective: event.objective };
-          });
+          if (event.state?.ports) {
+            setDiscoveredPorts((prev) => {
+              const existingPorts = new Set(prev.map(p => p.port));
+              const newPorts = event.state.ports.filter((p: any) => !existingPorts.has(p.port));
+              return newPorts.length > 0 ? [...prev, ...newPorts] : prev;
+            });
+          }
           break;
         case "credential-found":
           // Append new credential
@@ -426,38 +429,6 @@ export default function OperatorDashboard({ session, isResume = false }: Operato
     agent.sendDirective("That action was denied. Please suggest 2-3 alternative approaches we could take instead, or ask me what I'd prefer to do.");
   }, [agent]);
 
-  // Handle suggestion selection (1/2/3 keys)
-  const handleSuggestionSelect = useCallback((num: number) => {
-    const suggestion = suggestions.find((s) => s.number === num);
-    if (!suggestion || !agent) return;
-
-    // Clear suggestions after selection
-    setSuggestions([]);
-
-    // Send the suggestion label as a directive
-    agent.sendDirective(suggestion.label);
-  }, [agent, suggestions]);
-
-  // Handle phase transition confirmation (Y/N)
-  const handlePhaseConfirm = useCallback((confirmed: boolean) => {
-    if (!targetState?.pendingPhase) return;
-
-    if (confirmed) {
-      // Accept the phase transition
-      setTargetState((prev) => prev ? {
-        ...prev,
-        phase: prev.pendingPhase!,
-        pendingPhase: undefined,
-      } : null);
-    } else {
-      // Reject the phase transition
-      setTargetState((prev) => prev ? {
-        ...prev,
-        pendingPhase: undefined,
-      } : null);
-    }
-  }, [targetState]);
-
   // Keyboard handling
   useKeyboard((key) => {
     // Handle stage menu
@@ -475,27 +446,6 @@ export default function OperatorDashboard({ session, isResume = false }: Operato
     // IMPORTANT: Only intercept shortcuts when input is COMPLETELY empty
     // This prevents shortcuts from triggering while user is typing
     const inputIsEmpty = directiveInput === "";
-
-    // Handle phase transition confirmation (Y/N when pendingPhase is set)
-    if (inputIsEmpty && targetState?.pendingPhase && pendingApprovals.length === 0) {
-      if (key.name === "y" || key.name === "Y") {
-        handlePhaseConfirm(true);
-        return;
-      }
-      if (key.name === "n" || key.name === "N") {
-        handlePhaseConfirm(false);
-        return;
-      }
-    }
-
-    // Handle suggestion selection (1/2/3 keys) when input is empty and suggestions exist
-    if (inputIsEmpty && suggestions.length > 0) {
-      const num = parseInt(key.name || "", 10);
-      if (num >= 1 && num <= suggestions.length) {
-        handleSuggestionSelect(num);
-        return;
-      }
-    }
 
     // Handle pending approval - intercept Y/N/A keys ONLY when input is empty
     if (inputIsEmpty && pendingApprovals.length > 0) {
@@ -720,8 +670,8 @@ export default function OperatorDashboard({ session, isResume = false }: Operato
           border={["left"]}
           borderColor={dimText}
         >
-          {/* Target State - externalizes agent's mental model */}
-          <TargetStatePanel target={targetState} onPhaseConfirm={handlePhaseConfirm} />
+          {/* Target - host and discovered ports */}
+          <TargetStatePanel host={targetHost} ports={discoveredPorts} />
 
           {/* Attack Surface with status markers */}
           <AttackSurfacePanel endpoints={attackSurface} maxVisible={4} />
@@ -729,18 +679,8 @@ export default function OperatorDashboard({ session, isResume = false }: Operato
           {/* Credentials - discovered creds with source/scope */}
           <CredentialsPanel credentials={credentials} maxVisible={3} />
 
-          {/* Suggestions */}
-          <SuggestionsPanel suggestions={suggestions} />
-
           {/* Verified Vulnerabilities */}
           <VerifiedVulnsPanel vulns={verifiedVulns} maxVisible={3} />
-
-          {/* Stage indicator - compact */}
-          <box flexDirection="column" gap={1}>
-            <text fg={dimText}>
-              Stage: <span fg={greenAccent}>{OPERATOR_STAGES[currentStage].name}</span>
-            </text>
-          </box>
         </box>
       </box>
     </box>
