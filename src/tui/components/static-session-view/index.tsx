@@ -24,6 +24,8 @@ import { SpinnerDots } from "../sprites";
 const greenBullet = RGBA.fromInts(76, 175, 80, 255);
 const creamText = RGBA.fromInts(255, 248, 220, 255);
 const dimText = RGBA.fromInts(120, 120, 120, 255);
+const yellowText = RGBA.fromInts(255, 193, 7, 255);
+const redText = RGBA.fromInts(244, 67, 54, 255);
 
 // UIMessage helper for tool messages
 type ToolUIMessage = UIMessage & {
@@ -63,19 +65,81 @@ export default function StaticSessionView({
   const [findings, setFindings] = useState<StaticFinding[]>([]);
   const [reportPaths, setReportPaths] = useState<{ sarif?: string; md?: string; json?: string }>({});
 
-  // Load session on mount
+  // Initialization progress tracking
+  type InitStatus = 'pending' | 'in_progress' | 'done' | 'error';
+  const [initProgress, setInitProgress] = useState<{
+    loadingSession: InitStatus;
+    initializingWorkspace: InitStatus;
+    startingPipeline: InitStatus;
+  }>({
+    loadingSession: 'in_progress',
+    initializingWorkspace: 'pending',
+    startingPipeline: 'pending',
+  });
+
+  // Activity log for streaming telemetry
+  interface ActivityEntry {
+    id: string;
+    timestamp: Date;
+    type: 'tool_start' | 'tool_complete' | 'finding' | 'stage_transition' | 'message';
+    icon: string;
+    color: typeof greenBullet;
+    title: string;
+    detail?: string;
+    agentId?: string;
+    stage?: StaticAnalysisStage;
+  }
+  const [activityLog, setActivityLog] = useState<ActivityEntry[]>([]);
+  const [showActivityStream, setShowActivityStream] = useState(true);
+  const [currentTool, setCurrentTool] = useState<string | undefined>();
+
+  // Activity buckets for sparkline visualization (last 30 seconds, 1-second buckets)
+  const [activityBuckets, setActivityBuckets] = useState<number[]>(new Array(30).fill(0));
+
+  // Shift activity buckets every second
+  useEffect(() => {
+    if (!isExecuting) return;
+
+    const interval = setInterval(() => {
+      setActivityBuckets(prev => [...prev.slice(1), 0]);
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [isExecuting]);
+
+  // Load session on mount with progress tracking
   useEffect(() => {
     async function loadSession() {
       try {
+        setInitProgress(prev => ({ ...prev, loadingSession: 'in_progress' }));
+
         const loadedSession = await Session.get(sessionId || runId);
         if (!loadedSession) {
+          setInitProgress(prev => ({ ...prev, loadingSession: 'error' }));
           setError(`Session not found: ${sessionId || runId}`);
           setLoading(false);
           return;
         }
+
+        setInitProgress(prev => ({
+          ...prev,
+          loadingSession: 'done',
+          initializingWorkspace: 'in_progress'
+        }));
+
+        // Brief delay to show workspace initialization
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        setInitProgress(prev => ({
+          ...prev,
+          initializingWorkspace: 'done',
+          startingPipeline: 'in_progress'
+        }));
+
         setSession(loadedSession);
         setLoading(false);
       } catch (e) {
+        setInitProgress(prev => ({ ...prev, loadingSession: 'error' }));
         setError(e instanceof Error ? e.message : "Failed to load session");
         setLoading(false);
       }
@@ -198,6 +262,25 @@ export default function StaticSessionView({
                       args: args,
                       createdAt: new Date(),
                     });
+
+                    // Add to activity log and increment activity bucket for sparkline
+                    const friendlyToolName = tc.toolName.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1').trim();
+                    setCurrentTool(friendlyToolName);
+                    setActivityBuckets(prev => {
+                      const next = [...prev];
+                      next[next.length - 1]++;
+                      return next;
+                    });
+                    setActivityLog(prev => [...prev.slice(-50), {
+                      id: tc.toolCallId,
+                      timestamp: new Date(),
+                      type: 'tool_start' as const,
+                      icon: '◐',
+                      color: yellowText,
+                      title: `Running ${friendlyToolName}`,
+                      detail: toolDescription,
+                      agentId: event.agentId,
+                    }]);
                   }
                 }
 
@@ -220,6 +303,20 @@ export default function StaticSessionView({
                         content: `✓ ${description}`,
                         result: (tr as any).output,
                       };
+
+                      // Update activity log - mark tool complete
+                      setCurrentTool(undefined);
+                      setActivityLog(prev => prev.map(entry =>
+                        entry.id === tr.toolCallId
+                          ? {
+                              ...entry,
+                              type: 'tool_complete' as const,
+                              icon: '✓',
+                              color: greenBullet,
+                              title: entry.title.replace('Running ', ''),
+                            }
+                          : entry
+                      ));
                     }
                   }
                 }
@@ -259,6 +356,18 @@ export default function StaticSessionView({
                 return [...prev, agentResult.stage];
               });
             }
+
+            // Add stage transition to activity log
+            setActivityLog(prev => [...prev.slice(-50), {
+              id: `stage-${agentResult.stage}-${Date.now()}`,
+              timestamp: new Date(),
+              type: 'stage_transition' as const,
+              icon: agentResult.success ? '✓' : '✗',
+              color: agentResult.success ? greenBullet : redText,
+              title: `Stage ${agentResult.stage} ${agentResult.success ? 'completed' : 'failed'}`,
+              detail: agentResult.summary,
+              stage: agentResult.stage,
+            }]);
           },
         });
 
@@ -298,7 +407,28 @@ export default function StaticSessionView({
     route.navigate({ type: "base", path: "home" });
   }, [route]);
 
-  // Loading state
+  // Helper to get status icon and color
+  const getInitIcon = (status: InitStatus) => {
+    switch (status) {
+      case 'pending': return '○';
+      case 'in_progress': return '◐';
+      case 'done': return '✓';
+      case 'error': return '✗';
+      default: return '○';
+    }
+  };
+
+  const getInitColor = (status: InitStatus) => {
+    switch (status) {
+      case 'pending': return dimText;
+      case 'in_progress': return yellowText;
+      case 'done': return greenBullet;
+      case 'error': return redText;
+      default: return dimText;
+    }
+  };
+
+  // Loading state with step-by-step progress
   if (loading) {
     return (
       <box
@@ -308,9 +438,38 @@ export default function StaticSessionView({
         alignItems="center"
         justifyContent="center"
         flexGrow={1}
-        gap={2}
+        gap={1}
       >
-        <SpinnerDots label="Loading session..." fg="green" />
+        <SpinnerDots label="Initializing analysis..." fg="green" />
+
+        <box flexDirection="column" gap={0} marginTop={1}>
+          <box flexDirection="row" gap={1}>
+            <text fg={getInitColor(initProgress.loadingSession)}>
+              {getInitIcon(initProgress.loadingSession)}
+            </text>
+            <text fg={initProgress.loadingSession === 'in_progress' ? creamText : dimText}>
+              Loading session...
+            </text>
+          </box>
+
+          <box flexDirection="row" gap={1}>
+            <text fg={getInitColor(initProgress.initializingWorkspace)}>
+              {getInitIcon(initProgress.initializingWorkspace)}
+            </text>
+            <text fg={initProgress.initializingWorkspace === 'in_progress' ? creamText : dimText}>
+              Initializing workspace...
+            </text>
+          </box>
+
+          <box flexDirection="row" gap={1}>
+            <text fg={getInitColor(initProgress.startingPipeline)}>
+              {getInitIcon(initProgress.startingPipeline)}
+            </text>
+            <text fg={initProgress.startingPipeline === 'in_progress' ? creamText : dimText}>
+              Starting pipeline...
+            </text>
+          </box>
+        </box>
       </box>
     );
   }
@@ -346,6 +505,11 @@ export default function StaticSessionView({
       completedStages={completedStages}
       repoPath={session.config?.staticConfig?.repoPath}
       reportPaths={reportPaths}
+      currentTool={currentTool}
+      activityLog={activityLog}
+      activityBuckets={activityBuckets}
+      showActivityStream={showActivityStream}
+      onToggleActivityStream={() => setShowActivityStream(prev => !prev)}
       onBack={handleBack}
       onViewReport={openReport}
     />

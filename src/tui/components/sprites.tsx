@@ -240,3 +240,122 @@ export function StatusPulse({
 
   return <text fg={config.color} content={`${displayIcon} ${config.label}`} />;
 }
+
+// ============================================================================
+// Data Visualization Components
+// ============================================================================
+
+const SPARK_CHARS = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+
+/** Sparkline - mini line chart using Unicode block characters */
+export function Sparkline({
+  data,
+  width = 20,
+  fg = "green",
+  label,
+}: {
+  data: number[];
+  width?: number;
+  fg?: string;
+  label?: string;
+}) {
+  const sparkline = useMemo(() => {
+    if (data.length === 0) return SPARK_CHARS[0].repeat(width);
+
+    const max = Math.max(...data, 1);
+    const min = Math.min(...data, 0);
+    const range = max - min || 1;
+
+    // Resample to fit width
+    const resampled: number[] = [];
+    for (let i = 0; i < width; i++) {
+      const idx = Math.floor((i / width) * data.length);
+      resampled.push(data[idx] ?? 0);
+    }
+
+    return resampled.map(v => {
+      const normalized = (v - min) / range;
+      const charIdx = Math.floor(normalized * (SPARK_CHARS.length - 1));
+      return SPARK_CHARS[Math.min(charIdx, SPARK_CHARS.length - 1)];
+    }).join('');
+  }, [data, width]);
+
+  return (
+    <box flexDirection="row" gap={1}>
+      {label && <text fg="gray">{label}</text>}
+      <text fg={fg}>{sparkline}</text>
+    </box>
+  );
+}
+
+/** Timeline/Gantt - shows horizontal bars for time-based entries */
+export function Timeline({
+  entries,
+  totalMs,
+  width = 24,
+  labelWidth = 12,
+}: {
+  entries: { label: string; startMs: number; endMs?: number; color?: RGBA }[];
+  totalMs: number;
+  width?: number;
+  labelWidth?: number;
+}) {
+  const safeTotalMs = Math.max(totalMs, 1);
+
+  return (
+    <box flexDirection="column" gap={0}>
+      {entries.map((entry, i) => {
+        const startPct = Math.max(0, entry.startMs) / safeTotalMs;
+        const endPct = Math.min(1, (entry.endMs ?? safeTotalMs) / safeTotalMs);
+        const barStart = Math.floor(startPct * width);
+        const barLen = Math.max(1, Math.floor((endPct - startPct) * width));
+
+        const bar = ' '.repeat(barStart) + '█'.repeat(barLen);
+        const displayBar = bar.slice(0, width).padEnd(width, ' ');
+
+        return (
+          <box key={i} flexDirection="row" gap={1}>
+            <text fg="gray" width={labelWidth}>
+              {entry.label.slice(0, labelWidth - 1)}
+            </text>
+            <text fg={entry.color || "green"}>
+              {displayBar}
+            </text>
+          </box>
+        );
+      })}
+    </box>
+  );
+}
+
+/** Histogram - bar chart for categorical data */
+export function Histogram({
+  data,
+  maxBarWidth = 16,
+  labelWidth = 8,
+}: {
+  data: { label: string; value: number; color?: RGBA }[];
+  maxBarWidth?: number;
+  labelWidth?: number;
+}) {
+  const maxVal = Math.max(...data.map(d => d.value), 1);
+
+  return (
+    <box flexDirection="column" gap={0}>
+      {data.map((item, i) => {
+        const barLen = Math.round((item.value / maxVal) * maxBarWidth);
+        return (
+          <box key={i} flexDirection="row" gap={1}>
+            <text fg="gray" width={labelWidth}>
+              {item.label.slice(0, labelWidth - 1)}
+            </text>
+            <text fg={item.color || "green"}>
+              {'█'.repeat(barLen)}
+            </text>
+            <text fg="gray">{item.value}</text>
+          </box>
+        );
+      })}
+    </box>
+  );
+}

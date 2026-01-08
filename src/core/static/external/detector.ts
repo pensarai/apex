@@ -45,7 +45,7 @@ async function getToolVersion(
 /**
  * Detect Semgrep availability
  */
-async function detectSemgrep(): Promise<{ available: boolean; version?: string }> {
+export async function detectSemgrep(): Promise<{ available: boolean; version?: string }> {
   const exists = await commandExists('semgrep');
   if (!exists) {
     return { available: false };
@@ -57,7 +57,7 @@ async function detectSemgrep(): Promise<{ available: boolean; version?: string }
 /**
  * Detect CodeQL availability
  */
-async function detectCodeQL(): Promise<{ available: boolean; version?: string }> {
+export async function detectCodeQL(): Promise<{ available: boolean; version?: string }> {
   const exists = await commandExists('codeql');
   if (!exists) {
     return { available: false };
@@ -69,7 +69,7 @@ async function detectCodeQL(): Promise<{ available: boolean; version?: string }>
 /**
  * Detect Joern availability
  */
-async function detectJoern(): Promise<{ available: boolean; version?: string }> {
+export async function detectJoern(): Promise<{ available: boolean; version?: string }> {
   // Joern can be installed as 'joern' or 'joern-parse'
   const joernExists = await commandExists('joern');
   const joernParseExists = await commandExists('joern-parse');
@@ -88,7 +88,7 @@ async function detectJoern(): Promise<{ available: boolean; version?: string }> 
 /**
  * Detect TruffleHog availability
  */
-async function detectTrufflehog(): Promise<{ available: boolean; version?: string }> {
+export async function detectTrufflehog(): Promise<{ available: boolean; version?: string }> {
   const exists = await commandExists('trufflehog');
   if (!exists) {
     return { available: false };
@@ -100,7 +100,7 @@ async function detectTrufflehog(): Promise<{ available: boolean; version?: strin
 /**
  * Detect Grype (vulnerability scanner) availability
  */
-async function detectGrype(): Promise<{ available: boolean; version?: string }> {
+export async function detectGrype(): Promise<{ available: boolean; version?: string }> {
   const exists = await commandExists('grype');
   if (!exists) {
     return { available: false };

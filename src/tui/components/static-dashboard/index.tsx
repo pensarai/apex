@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { useKeyboard } from "@opentui/react";
 import { RGBA } from "@opentui/core";
 import AgentDisplay, { type DisplayMessage } from "../agent-display";
-import { SpinnerDots } from "../sprites";
+import { SpinnerDots, Sparkline, Histogram } from "../sprites";
 import type { StaticAnalysisStage, StaticFinding } from "../../../core/static/types";
 import { STAGE_ORDER, STAGE_NAMES } from "../../../core/static/types";
 
@@ -31,6 +31,19 @@ export interface StaticSubagent {
   duration_ms?: number;
 }
 
+// Activity entry type for streaming telemetry
+export interface ActivityEntry {
+  id: string;
+  timestamp: Date;
+  type: 'tool_start' | 'tool_complete' | 'finding' | 'stage_transition' | 'message';
+  icon: string;
+  color: typeof greenBullet;
+  title: string;
+  detail?: string;
+  agentId?: string;
+  stage?: StaticAnalysisStage;
+}
+
 interface StaticDashboardProps {
   subagents: StaticSubagent[];
   isExecuting: boolean;
@@ -46,6 +59,11 @@ interface StaticDashboardProps {
     md?: string;
     json?: string;
   };
+  currentTool?: string;
+  activityLog?: ActivityEntry[];
+  activityBuckets?: number[];
+  showActivityStream?: boolean;
+  onToggleActivityStream?: () => void;
   onBack?: () => void;
   onViewReport?: () => void;
 }
@@ -61,12 +79,18 @@ export default function StaticDashboard({
   completedStages = [],
   repoPath,
   reportPaths,
+  currentTool,
+  activityLog = [],
+  activityBuckets = [],
+  showActivityStream = true,
+  onToggleActivityStream,
   onBack,
   onViewReport,
 }: StaticDashboardProps) {
   const [currentView, setCurrentView] = useState<"overview" | "detail" | "findings">("overview");
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [focusedIndex, setFocusedIndex] = useState(0);
+  const [rightPanelMode, setRightPanelMode] = useState<"pipeline" | "activity">("pipeline");
 
   // Computed metrics
   const metrics = useMemo(() => {
@@ -96,6 +120,18 @@ export default function StaticDashboard({
   // Keyboard navigation
   useKeyboard((key) => {
     if (currentView === "overview") {
+      // P for pipeline panel
+      if (key.name === "p" || key.name === "P") {
+        setRightPanelMode("pipeline");
+        return;
+      }
+
+      // A for activity panel
+      if (key.name === "a" || key.name === "A") {
+        setRightPanelMode("activity");
+        return;
+      }
+
       // F to toggle findings view
       if (key.name === "f" || key.name === "F") {
         if (findings.length > 0) {
@@ -183,15 +219,7 @@ export default function StaticDashboard({
 
       {/* Main content area */}
       <box flexDirection="row" flexGrow={1} gap={2} padding={1}>
-        {/* Left: Pipeline stages */}
-        <PipelineView
-          stages={STAGE_ORDER}
-          currentStage={currentStage}
-          completedStages={completedStages}
-          subagents={subagents}
-        />
-
-        {/* Right: Stage cards or placeholder */}
+        {/* Left: Stage cards or placeholder */}
         <box flexDirection="column" flexGrow={1} gap={1}>
           {subagents.length === 0 ? (
             <box
@@ -200,7 +228,6 @@ export default function StaticDashboard({
               justifyContent="center"
               border
               borderColor={dimText}
-              backgroundColor={darkBg}
               padding={2}
             >
               <box flexDirection="column" alignItems="center" gap={1}>
@@ -219,6 +246,19 @@ export default function StaticDashboard({
             />
           )}
         </box>
+
+        {/* Right: Cycling panel (Pipeline or Activity) */}
+        <RightPanel
+          mode={rightPanelMode}
+          stages={STAGE_ORDER}
+          currentStage={currentStage}
+          completedStages={completedStages}
+          subagents={subagents}
+          currentTool={currentTool}
+          activityLog={activityLog}
+          activityBuckets={activityBuckets}
+          startTime={startTime}
+        />
       </box>
 
       {/* Completion banner */}
@@ -226,29 +266,48 @@ export default function StaticDashboard({
         <box
           width="100%"
           padding={1}
-          backgroundColor={darkBg}
           border
           borderColor={greenBullet}
-          flexDirection="column"
-          alignItems="center"
-          gap={1}
+          flexDirection="row"
+          justifyContent="space-between"
+          gap={2}
         >
-          <text fg={greenBullet}>Static Analysis Completed</text>
-          <text fg={dimText}>{reportPaths.md}</text>
-          <box flexDirection="row" gap={2}>
-            <text>
-              <span fg={greenBullet}>[Enter]</span>
-              <span fg={dimText}> View Report</span>
-            </text>
-            <text>
-              <span fg={greenBullet}>[F]</span>
-              <span fg={dimText}> View Findings ({findings.length})</span>
-            </text>
-            <text>
-              <span fg={greenBullet}>[ESC]</span>
-              <span fg={dimText}> Close</span>
-            </text>
+          {/* Left: Status and actions */}
+          <box flexDirection="column" gap={1}>
+            <text fg={greenBullet}>Static Analysis Completed</text>
+            <text fg={dimText}>{reportPaths.md}</text>
+            <box flexDirection="row" gap={2}>
+              <text>
+                <span fg={greenBullet}>[Enter]</span>
+                <span fg={dimText}> Report</span>
+              </text>
+              <text>
+                <span fg={greenBullet}>[F]</span>
+                <span fg={dimText}> Findings ({findings.length})</span>
+              </text>
+              <text>
+                <span fg={greenBullet}>[ESC]</span>
+                <span fg={dimText}> Close</span>
+              </text>
+            </box>
           </box>
+
+          {/* Right: Findings histogram */}
+          {findings.length > 0 && (
+            <box flexDirection="column" gap={0}>
+              <text fg={creamText}>Findings</text>
+              <Histogram
+                data={[
+                  { label: 'Crit', value: metrics.bySeverity.critical, color: redText },
+                  { label: 'High', value: metrics.bySeverity.high, color: orangeText },
+                  { label: 'Med', value: metrics.bySeverity.medium, color: yellowText },
+                  { label: 'Low', value: metrics.bySeverity.low, color: dimText },
+                ]}
+                maxBarWidth={12}
+                labelWidth={5}
+              />
+            </box>
+          )}
         </box>
       )}
 
@@ -260,6 +319,7 @@ export default function StaticDashboard({
         totalStages={metrics.totalStages}
         duration={metrics.duration}
         isExecuting={isExecuting}
+        rightPanelMode={rightPanelMode}
       />
     </box>
   );
@@ -269,23 +329,37 @@ export default function StaticDashboard({
 // Sub-components
 // ============================================================================
 
-interface PipelineViewProps {
+interface RightPanelProps {
+  mode: "pipeline" | "activity";
   stages: StaticAnalysisStage[];
   currentStage?: StaticAnalysisStage;
   completedStages: StaticAnalysisStage[];
   subagents: StaticSubagent[];
+  currentTool?: string;
+  activityLog: ActivityEntry[];
+  activityBuckets: number[];
+  startTime?: Date;
 }
 
-function PipelineView({ stages, currentStage, completedStages, subagents }: PipelineViewProps) {
+function RightPanel({
+  mode,
+  stages,
+  currentStage,
+  completedStages,
+  subagents,
+  currentTool,
+  activityLog,
+  activityBuckets,
+  startTime,
+}: RightPanelProps) {
   return (
     <box
-      width={28}
+      width={34}
       border
       borderColor={greenBullet}
-      backgroundColor={darkBg}
       flexDirection="column"
     >
-      {/* Header */}
+      {/* Header with mode indicator */}
       <box
         flexDirection="row"
         alignItems="center"
@@ -294,43 +368,128 @@ function PipelineView({ stages, currentStage, completedStages, subagents }: Pipe
         borderColor={dimText}
         border={["bottom"]}
       >
-        <text fg={creamText}>Pipeline</text>
-        <text fg={dimText}>{completedStages.length}/8</text>
+        <text fg={creamText}>
+          {mode === 'pipeline' ? 'Pipeline' : 'Activity'}
+        </text>
+        <text fg={dimText}>
+          {mode === 'pipeline' ? `${completedStages.length}/8` : `${activityLog.length}`}
+        </text>
       </box>
 
-      {/* Stage list */}
-      <box flexDirection="column" padding={1} gap={0}>
-        {stages.map((stage, i) => {
-          const isComplete = completedStages.includes(stage);
-          const isCurrent = stage === currentStage;
-          const agent = subagents.find(s => s.type === stage);
-          const hasFailed = agent?.status === 'failed';
+      {/* Content based on mode */}
+      {mode === 'pipeline' ? (
+        <PipelineContent
+          stages={stages}
+          currentStage={currentStage}
+          completedStages={completedStages}
+          subagents={subagents}
+          currentTool={currentTool}
+        />
+      ) : (
+        <ActivityContent
+          entries={activityLog}
+          currentTool={currentTool}
+        />
+      )}
 
-          let icon = "○";
-          let color = dimText;
-
-          if (isComplete) {
-            icon = "✓";
-            color = greenBullet;
-          } else if (hasFailed) {
-            icon = "✗";
-            color = redText;
-          } else if (isCurrent) {
-            icon = "◐";
-            color = yellowText;
-          }
-
-          return (
-            <box key={stage} flexDirection="row" gap={1}>
-              <text fg={color}>{icon}</text>
-              <text fg={isCurrent ? creamText : dimText}>
-                {i + 1}. {STAGE_NAMES[stage].substring(0, 18)}
-              </text>
-            </box>
-          );
-        })}
+      {/* Sparkline visualization at bottom */}
+      <box padding={1} border={["top"]} borderColor={dimText} flexDirection="column" gap={0}>
+        <Sparkline data={activityBuckets} width={28} fg="green" />
+        {currentTool ? (
+          <SpinnerDots label={currentTool.substring(0, 26)} fg="green" />
+        ) : (
+          <text fg={dimText}>activity (30s)</text>
+        )}
       </box>
     </box>
+  );
+}
+
+interface PipelineContentProps {
+  stages: StaticAnalysisStage[];
+  currentStage?: StaticAnalysisStage;
+  completedStages: StaticAnalysisStage[];
+  subagents: StaticSubagent[];
+  currentTool?: string;
+}
+
+function PipelineContent({ stages, currentStage, completedStages, subagents, currentTool }: PipelineContentProps) {
+  return (
+    <box flexDirection="column" padding={1} gap={0} flexGrow={1}>
+      {stages.map((stage, i) => {
+        const isComplete = completedStages.includes(stage);
+        const isCurrent = stage === currentStage;
+        const agent = subagents.find(s => s.type === stage);
+        const hasFailed = agent?.status === 'failed';
+
+        let icon = "○";
+        let color = dimText;
+
+        if (isComplete) {
+          icon = "✓";
+          color = greenBullet;
+        } else if (hasFailed) {
+          icon = "✗";
+          color = redText;
+        } else if (isCurrent) {
+          icon = "◐";
+          color = yellowText;
+        }
+
+        return (
+          <box key={stage} flexDirection="column" gap={0}>
+            <box flexDirection="row" gap={1}>
+              <text fg={color}>{icon}</text>
+              <text fg={isCurrent ? creamText : dimText}>
+                {i + 1}. {STAGE_NAMES[stage].substring(0, 20)}
+              </text>
+            </box>
+            {/* Show current tool under active stage */}
+            {isCurrent && currentTool && (
+              <text fg={dimText} paddingLeft={3}>
+                └ {currentTool.substring(0, 20)}
+              </text>
+            )}
+          </box>
+        );
+      })}
+    </box>
+  );
+}
+
+interface ActivityContentProps {
+  entries: ActivityEntry[];
+  currentTool?: string;
+}
+
+function ActivityContent({ entries }: ActivityContentProps) {
+  // Show last 15 entries
+  const recentEntries = entries.slice(-15);
+
+  return (
+    <scrollbox
+      style={{
+        rootOptions: { flexGrow: 1 },
+        contentOptions: { flexDirection: "column", gap: 0, padding: 1 },
+      }}
+      stickyScroll={true}
+      focused={false}
+    >
+      {recentEntries.length === 0 ? (
+        <box padding={1}>
+          <text fg={dimText}>Waiting for activity...</text>
+        </box>
+      ) : (
+        recentEntries.map((entry) => (
+          <box key={entry.id} flexDirection="row" gap={1}>
+            <text fg={entry.color}>{entry.icon}</text>
+            <text fg={entry.type === 'tool_start' ? creamText : dimText}>
+              {entry.title.substring(0, 26)}
+            </text>
+          </box>
+        ))
+      )}
+    </scrollbox>
   );
 }
 
@@ -381,8 +540,7 @@ function StageCard({ agent, focused, onSelect }: StageCardProps) {
       minWidth={36}
       border
       borderColor={focused ? greenBullet : dimText}
-      backgroundColor={darkBg}
-      flexDirection="column"
+            flexDirection="column"
       padding={1}
       rowGap={1}
       onMouseDown={onSelect}
@@ -467,6 +625,7 @@ interface MetricsBarProps {
   totalStages: number;
   duration: number;
   isExecuting: boolean;
+  rightPanelMode: "pipeline" | "activity";
 }
 
 function MetricsBar({
@@ -476,6 +635,7 @@ function MetricsBar({
   totalStages,
   duration,
   isExecuting,
+  rightPanelMode,
 }: MetricsBarProps) {
   const formattedDuration = useMemo(() => {
     const mins = Math.floor(duration / 60);
@@ -521,6 +681,14 @@ function MetricsBar({
 
       {/* Right: Keyboard hints */}
       <box flexDirection="row" gap={2}>
+        <text>
+          <span fg={rightPanelMode === 'pipeline' ? greenBullet : dimText}>[P]</span>
+          <span fg={dimText}> Pipeline</span>
+        </text>
+        <text>
+          <span fg={rightPanelMode === 'activity' ? greenBullet : dimText}>[A]</span>
+          <span fg={dimText}> Activity</span>
+        </text>
         <text>
           <span fg={greenBullet}>[F]</span>
           <span fg={dimText}> Findings</span>
