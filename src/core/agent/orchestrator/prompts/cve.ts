@@ -304,6 +304,20 @@ else
 fi
 \`\`\`
 
+## Evidence Validation Checkpoint
+
+**BEFORE documenting findings, verify you have AT LEAST ONE of:**
+- Specific CVE exploit executed successfully (file read, RCE, or other expected impact)
+- Version-specific behavior confirmed matching CVE description
+- Exploit output matches CVE expected impact (e.g., file content, command output)
+- Version fingerprint matches vulnerable version EXACTLY
+
+**NOT EVIDENCE (do not report these alone):**
+- Version might be vulnerable (unconfirmed exploitation)
+- CVE exists for software but not confirmed exploitable
+- Similar behavior without version confirmation
+- HTTP 200 status without expected CVE impact
+
 ## Validation Criteria
 
 A valid CVE exploitation must demonstrate:

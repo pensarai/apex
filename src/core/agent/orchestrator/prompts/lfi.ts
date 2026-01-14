@@ -262,6 +262,23 @@ curl -s "\$TARGET?file=../valid_file" # If blocked, filter exists
 
 **CRITICAL**: Do NOT conclude "not vulnerable" until you've tested at least 3-4 bypass categories. Filters are common but often bypassable.
 
+## Evidence Validation Checkpoint
+
+**BEFORE documenting findings, verify you have AT LEAST ONE of:**
+- Actual file content retrieved (e.g., root:x:0:0 for /etc/passwd)
+- PHP source code via php://filter wrapper (base64 decoded)
+- Sensitive config file contents (database credentials, API keys)
+- Content validation against known file format
+- Filter bypass technique exploited (encoding, nested sequences, null byte)
+- PHP wrapper exploitation confirmed (php://filter, php://input, data://)
+
+**NOT EVIDENCE (do not report these alone):**
+- HTTP 200 without file content
+- Error message mentioning file path
+- Redirect or empty response
+- File not found error (might just be wrong path)
+- Path traversal sequence in error message without actual file content
+
 ## Success Criteria
 
 A valid LFI finding must demonstrate:
@@ -273,6 +290,9 @@ A valid LFI finding must demonstrate:
 
 ## Remember
 
+- **Nested sequences survive single-pass filters** - \`....//\` becomes \`../\` after filter
+- **Try multiple encoding levels** - URL, double URL, UTF-8
+- **PHP wrappers are powerful** - php://filter can read ANY PHP file as base64
 - **POC = codification of your exploit** - document what you actually did
 - **Authenticate first** when testing authenticated endpoints
 - **Validate file contents** - HTTP 200 with an error page is NOT successful exploitation

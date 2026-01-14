@@ -7,7 +7,9 @@
  * - Single agent with meta capabilities (vs multi-agent pipeline)
  * - Confidence-driven reasoning (KNOW → THINK → TEST → VALIDATE)
  * - Plans as external working memory with checkpoint protocol
- * - Meta-prompting for runtime optimization
+ * - Shared memory for cross-agent learning
+ * - Objective guard for focus enforcement
+ * - Per-vuln-type evidence criteria
  * - POC-driven vulnerability validation (bash/python)
  */
 
@@ -58,7 +60,8 @@ export {
 // Tools (for custom agent construction)
 export { createPocTool, createDocumentFindingTool } from './pocTools';
 export { createPlanMemoryTools, loadAdaptations, loadPlan, BUDGET_CHECKPOINTS } from './planMemory';
-export { createPromptOptimizerTool, loadOptimizedPrompt, loadOptimization } from './promptOptimizer';
+export { createObjectiveGuard, getObjectiveFocusPrompt } from './objectiveGuard';
+export { createValidateEvidenceTool, getEvidenceCriteriaPrompt, EVIDENCE_CRITERIA } from './evidenceCriteria';
 
 // Prompts
 export { buildMetaTestingPrompt, buildUserPrompt, META_TESTING_SYSTEM_PROMPT } from './prompts/execution';

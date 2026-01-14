@@ -720,6 +720,102 @@ Returns a confidence score and identifies potential gaps based on:
     },
   });
 
+  // Tool to document how authentication was discovered
+  const document_auth_discovery = tool({
+    name: "document_auth_discovery",
+    description: `Document how you discovered authentication requirements for a target.
+
+**REQUIRED** when you identify authentication for a target. Must explain:
+- HOW you determined auth is needed (response codes, redirects, content)
+- WHAT type of auth (session cookie, bearer token, basic auth)
+- WHERE credentials/tokens come from
+- WHY you're confident in this assessment
+
+This documentation is passed to testing agents so they can replicate your auth process.`,
+    inputSchema: z.object({
+      target: z.string().describe("Target URL/endpoint requiring auth"),
+      discoveryMethod: z
+        .enum([
+          "response_analysis", // Analyzed HTTP responses
+          "form_inspection", // Found login form
+          "header_analysis", // Auth headers in requests/responses
+          "js_extraction", // Found in JavaScript code
+          "documentation", // Found in API docs or comments
+          "error_message", // Error revealed auth requirement
+          "redirect_behavior", // 302 redirect to login
+        ])
+        .describe("How you discovered the auth requirement"),
+      discoveryExplanation: z
+        .string()
+        .describe("Detailed explanation of how you discovered this"),
+      analyzedEndpoints: z
+        .array(z.string())
+        .describe("URLs/endpoints you analyzed"),
+      responseSnippets: z
+        .array(z.string())
+        .optional()
+        .describe("Relevant response snippets"),
+      relevantHeaders: z
+        .array(z.string())
+        .optional()
+        .describe("Headers that indicated auth type"),
+      formFields: z
+        .array(z.string())
+        .optional()
+        .describe("Form fields discovered"),
+      authMethod: z.string().describe("The auth method (e.g., session cookie, JWT)"),
+      authDetails: z.string().describe("How to authenticate"),
+      credentials: z.string().optional().describe("Credentials if available"),
+      confidence: z.number().min(0).max(100).describe("Confidence in discovery"),
+      toolCallDescription: z
+        .string()
+        .describe(
+          "A concise, human-readable description of what this tool call is doing"
+        ),
+    }),
+    execute: async (params) => {
+      const authDiscovery = {
+        discoveryMethod: params.discoveryMethod,
+        discoveryExplanation: params.discoveryExplanation,
+        evidence: {
+          analyzedEndpoints: params.analyzedEndpoints,
+          responseSnippets: params.responseSnippets,
+          relevantHeaders: params.relevantHeaders,
+          formFields: params.formFields,
+        },
+        confidence: params.confidence,
+      };
+
+      // Save auth discovery to session for later use
+      const discoveryPath = join(session.rootPath, "auth-discoveries.json");
+      let discoveries: Record<string, any> = {};
+      if (existsSync(discoveryPath)) {
+        try {
+          const existing = await Bun.file(discoveryPath).text();
+          discoveries = JSON.parse(existing);
+        } catch {
+          // Start fresh if parse fails
+        }
+      }
+      discoveries[params.target] = {
+        ...authDiscovery,
+        authMethod: params.authMethod,
+        authDetails: params.authDetails,
+        credentials: params.credentials,
+        timestamp: new Date().toISOString(),
+      };
+      writeFileSync(discoveryPath, JSON.stringify(discoveries, null, 2));
+
+      return {
+        success: true,
+        target: params.target,
+        authMethod: params.authMethod,
+        confidence: params.confidence,
+        message: `Auth discovery documented for ${params.target}. Method: ${params.authMethod}. Confidence: ${params.confidence}%`,
+      };
+    },
+  });
+
   // Simplified answer schema for orchestrator agent
   const create_attack_surface_report = tool({
     name: "create_attack_surface_report",
@@ -810,11 +906,12 @@ Begin your attack surface analysis by:
 1. Understanding the target scope (is it a domain, IP, URL, network range, or organization?)
 2. Performing comprehensive reconnaissance to map the attack surface WITHIN SCOPE
 3. Identifying assets, services, endpoints, and potential entry points
-4. Call the smart_enumerate tool to aid in your discovery to find hidden routes and other resources
-5. Categorizing discovered targets by type and risk level
-6. Identify any core technologies being used, their versions, and calling the cve_lookup tool to see if there are any existing vulnerabilities in that version of the identified software
-7. Document each significant asset using the document_asset tool
-8. When complete, call the create_attack_surface_report tool
+4. ALWAYS Call the smart_enumerate tool to aid in your discovery to find hidden routes and other resources
+5. Call the document_auth_discovery tool to document how to authenticate to the target application
+6. Categorizing discovered targets by type and risk level
+7. Identify any core technologies being used, their versions, and calling the cve_lookup tool to see if there are any existing vulnerabilities in that version of the identified software
+8. Document each significant asset using the document_asset tool
+9. When complete, call the create_attack_surface_report tool
 
 IMPORTANT SCOPING RULES:
 ${
@@ -859,6 +956,7 @@ You MUST provide the final report using create_attack_surface_report tool.
       crawl_authenticated_area,
       test_endpoint_variations,
       validate_discovery_completeness,
+      document_auth_discovery,
       create_attack_surface_report,
       cve_lookup,
       smart_enumerate,

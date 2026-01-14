@@ -267,6 +267,21 @@ echo "[*] Verifying access..."
 
 ---
 
+## Evidence Validation Checkpoint
+
+**BEFORE documenting findings, verify you have AT LEAST ONE of:**
+- Decryption of ciphertext without key
+- Forged signature/token accepted by application (authenticated as different user)
+- Padding oracle timing difference demonstrated (statistical significance)
+- Ciphertext manipulation producing valid, altered output (bit-flipping success)
+- Session forgery via CBC malleability (changed user ID, role, or privilege)
+
+**NOT EVIDENCE (do not report these alone):**
+- Weak algorithm identified but not exploited (theoretical attack)
+- Error message about crypto (without exploitation)
+- Different ciphertext lengths (observation without exploit)
+- Block alignment identified (structure without attack)
+
 ## Success Criteria
 
 A valid cryptographic vulnerability finding must demonstrate:
@@ -282,5 +297,6 @@ A valid cryptographic vulnerability finding must demonstrate:
 - **Encryption ≠ Authentication** - Most crypto vulns stem from unauthenticated encryption
 - **Block structure matters** - Understanding block boundaries is essential for exploitation
 - **Python for byte ops** - Write scripts for reliable byte-level manipulation
+- **XOR is your friend** - CBC bit-flipping: new_byte = old_ciphertext_byte XOR old_plaintext XOR new_plaintext
 - **Document the WHY** - The vulnerability is the design flaw, not just the attack
 `;

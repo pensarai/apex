@@ -116,12 +116,72 @@ interface ComparisonResult {
   };
 }
 
+type BenchmarkMode = "xben" | "pace" | "custom";
+
 /**
- * Extract benchmark ID (e.g., XBEN-001-24 or FullChain1) from execution directory name
+ * Escape special regex characters in a string
  */
-function extractBenchmarkId(dirName: string, isPace?: boolean): string | null {
-  if (isPace) {
-    // PACEbench FullChain patterns
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Extract benchmark ID from execution directory name based on the benchmark mode.
+ *
+ * @param dirName - The directory name to extract from
+ * @param mode - The benchmark mode: "xben", "pace", or "custom"
+ * @param customIds - For "custom" mode, the list of benchmark IDs to search for
+ * @returns The extracted benchmark ID or null if not found
+ */
+function extractBenchmarkId(
+  dirName: string,
+  mode: BenchmarkMode,
+  customIds?: string[]
+): string | null {
+  if (mode === "custom") {
+    // Custom mode: look for specific benchmark IDs provided by the user
+    if (!customIds || customIds.length === 0) {
+      return null;
+    }
+
+    for (const id of customIds) {
+      const escapedId = escapeRegex(id);
+      // Match common directory patterns: benchmark-{id}-, benchmark-{id}ses_, etc.
+      const patterns = [
+        new RegExp(`benchmark-${escapedId}(?:-|ses_|$)`),
+        new RegExp(`test-migration-${escapedId}(?:-|ses_|$)`),
+        new RegExp(`pace-${escapedId}(?:-|ses_|$)`),
+        new RegExp(`^${escapedId}(?:-|ses_|$)`),
+      ];
+
+      for (const pattern of patterns) {
+        if (pattern.test(dirName)) {
+          return id;
+        }
+      }
+    }
+    return null;
+  }
+
+  if (mode === "xben") {
+    // XBEN mode: look for XBEN-###-## pattern
+    const xbenPatterns = [
+      /benchmark-(XBEN-\d{3}-\d{2})-/,
+      /test-migration-(XBEN-\d{3}-\d{2})-/,
+      /(XBEN-\d{3}-\d{2})/,
+    ];
+
+    for (const pattern of xbenPatterns) {
+      const match = dirName.match(pattern);
+      if (match) {
+        return match[1]!;
+      }
+    }
+    return null;
+  }
+
+  if (mode === "pace") {
+    // PACEbench mode: look for FullChain# pattern
     const pacePatterns = [
       /benchmark-(FullChain\d+)-/,
       /pace-(FullChain\d+)-/,
@@ -135,43 +195,44 @@ function extractBenchmarkId(dirName: string, isPace?: boolean): string | null {
         return match[1]!;
       }
     }
-  } else {
-    // XBEN patterns
-    const xbenPatterns = [
-      /benchmark-(XBEN-\d{3}-\d{2})-/,
-      /test-migration-(XBEN-\d{3}-\d{2})-/,
-      /(XBEN-\d{3}-\d{2})/,
-    ];
-
-    for (const pattern of xbenPatterns) {
-      const match = dirName.match(pattern);
-      if (match) {
-        return match[1]!;
-      }
-    }
+    return null;
   }
+
   return null;
 }
 
 /**
  * Load expected_results.json for a given benchmark
  */
-function loadExpectedResults(benchmarksDir: string, benchmarkId: string, isPace?: boolean): ExpectedResult[] | null {
-  // For PACEbench: {benchmarksDir}/docker/FullChain/{benchmarkId}/expected_results.json
-  // For XBEN: {benchmarksDir}/benchmarks/{benchmarkId}/expected_results.json or {benchmarksDir}/{benchmarkId}/expected_results.json
-  let expectedPath: string;
+function loadExpectedResults(benchmarksDir: string, benchmarkId: string, mode: BenchmarkMode): ExpectedResult[] | null {
+  // Try multiple paths based on mode:
+  // - PACEbench: {benchmarksDir}/docker/FullChain/{benchmarkId}/expected_results.json
+  // - XBEN: {benchmarksDir}/{benchmarkId}/expected_results.json or {benchmarksDir}/benchmarks/{benchmarkId}/expected_results.json
+  // - Custom: {benchmarksDir}/expected_results.json (direct) or {benchmarksDir}/{benchmarkId}/expected_results.json
+  const pathsToTry: string[] = [];
 
-  if (isPace) {
-    expectedPath = path.join(benchmarksDir, "docker", "FullChain", benchmarkId, "expected_results.json");
+  if (mode === "pace") {
+    pathsToTry.push(path.join(benchmarksDir, "docker", "FullChain", benchmarkId, "expected_results.json"));
+  } else if (mode === "custom") {
+    // For custom, try direct path first (benchmarksDir is the benchmark folder itself)
+    pathsToTry.push(path.join(benchmarksDir, "expected_results.json"));
+    // Then try with benchmark ID subdirectory
+    pathsToTry.push(path.join(benchmarksDir, benchmarkId, "expected_results.json"));
   } else {
-    // Try both paths for XBEN (with and without 'benchmarks' subdirectory)
-    expectedPath = path.join(benchmarksDir, benchmarkId, "expected_results.json");
-    if (!existsSync(expectedPath)) {
-      expectedPath = path.join(benchmarksDir, "benchmarks", benchmarkId, "expected_results.json");
+    // XBEN mode
+    pathsToTry.push(path.join(benchmarksDir, benchmarkId, "expected_results.json"));
+    pathsToTry.push(path.join(benchmarksDir, "benchmarks", benchmarkId, "expected_results.json"));
+  }
+
+  let expectedPath: string | null = null;
+  for (const p of pathsToTry) {
+    if (existsSync(p)) {
+      expectedPath = p;
+      break;
     }
   }
 
-  if (!existsSync(expectedPath)) {
+  if (!expectedPath) {
     return null;
   }
 
@@ -303,7 +364,7 @@ Analyze strictly whether the agent found THE SPECIFIC vulnerability described, n
 
   try {
     const { object } = await generateObject({
-      model: anthropic("claude-sonnet-4-20250514"),
+      model: anthropic("claude-sonnet-4-5-20250929"),
       schema: ComparisonResponseSchema,
       prompt,
       temperature: 0,
@@ -329,9 +390,9 @@ Analyze strictly whether the agent found THE SPECIFIC vulnerability described, n
  */
 function findExecutions(
   executionsDir: string,
+  mode: BenchmarkMode,
   benchmarkIds?: string[],
-  prefix?: string,
-  isPace?: boolean
+  prefix?: string
 ): Array<{ benchmarkId: string; path: string }> {
   const executions: Array<{ benchmarkId: string; path: string; mtime: number }> = [];
 
@@ -349,12 +410,18 @@ function findExecutions(
       continue;
     }
 
-    const benchmarkId = extractBenchmarkId(entry, isPace);
+    // For custom mode, pass the benchmark IDs as custom patterns
+    const benchmarkId = extractBenchmarkId(
+      entry,
+      mode,
+      mode === "custom" ? benchmarkIds : undefined
+    );
     if (!benchmarkId) {
       continue;
     }
 
-    if (benchmarkIds && !benchmarkIds.includes(benchmarkId)) {
+    // For xben/pace modes, filter by benchmark IDs if specified
+    if (mode !== "custom" && benchmarkIds && !benchmarkIds.includes(benchmarkId)) {
       continue;
     }
 
@@ -372,10 +439,10 @@ async function compareBenchmark(
   benchmarkId: string,
   executionPath: string,
   benchmarksDir: string,
-  isPace?: boolean
+  mode: BenchmarkMode
 ): Promise<ComparisonResult | null> {
   // Load expected results (now returns array)
-  const expectedResults = loadExpectedResults(benchmarksDir, benchmarkId, isPace);
+  const expectedResults = loadExpectedResults(benchmarksDir, benchmarkId, mode);
   if (!expectedResults || expectedResults.length === 0) {
     console.error(`Warning: No expected_results.json found for ${benchmarkId}`);
     return null;
@@ -637,51 +704,58 @@ Compares AI-generated security findings against expected_results.json for each b
 Uses Claude API to perform intelligent semantic comparison of vulnerability findings.
 
 Usage:
-  bun run scripts/compare-results.ts [options]
+  bun run scripts/compare-results.ts <mode> [options]
+
+Modes (one required):
+  --xben                      Compare XBEN benchmark executions (XBEN-###-## pattern)
+  --pace                      Compare PACEbench FullChain executions (FullChain# pattern)
+  --custom <ids...>           Compare custom benchmark executions by ID
+                              (e.g., --custom coffee-shop my-benchmark)
 
 Options:
   --executions-dir <path>     Directory containing execution results
                               (default: ~/.pensar/executions)
   --benchmarks-dir <path>     Directory containing benchmark definitions
-                              (default: ~/validation-benchmarks/benchmarks for XBEN,
-                               ~/PACEbench for --pace)
+                              (required for --custom, defaults for --xben/--pace)
   --execution-path <path>     Path to a specific execution directory
-  --benchmark-ids <ids...>    Specific benchmark IDs to compare
+  --benchmark-ids <ids...>    Filter to specific benchmark IDs (for --xben/--pace modes)
                               (e.g., XBEN-001-24 XBEN-002-24 or FullChain1 FullChain2)
-  --prefix <prefix>           Filter executions by prefix
+  --prefix <prefix>           Filter executions by directory name prefix
                               (e.g., run-20251217-1317)
-  --pace                      Compare PACEbench FullChain results instead of XBEN
   --latest-only               Only compare the latest execution per benchmark
   --format <text|json>        Output format (default: text)
   --output <path>             Write output to file instead of stdout
   --show-missed               Print missed benchmark ids
-  --dry                       Print the paths of the execution logs to run comparison against
+  --dry                       Print execution paths without running comparison
   --help, -h                  Show this help message
 
 Examples:
-  # Compare all XBEN executions in the default directory
-  bun run scripts/compare-results.ts
+  # Compare all XBEN executions
+  bun run scripts/compare-results.ts --xben
 
   # Compare specific XBEN benchmarks
-  bun run scripts/compare-results.ts --benchmark-ids XBEN-001-24 XBEN-002-24
+  bun run scripts/compare-results.ts --xben --benchmark-ids XBEN-001-24 XBEN-002-24
 
-  # Compare PACEbench FullChain results
+  # Compare all PACEbench FullChain executions
   bun run scripts/compare-results.ts --pace --benchmarks-dir ~/PACEbench
 
   # Compare specific PACEbench benchmarks
   bun run scripts/compare-results.ts --pace --benchmark-ids FullChain1 FullChain2
 
-  # Compare a single execution
-  bun run scripts/compare-results.ts --execution-path ~/.pensar/executions/test-migration-XBEN-001-24-xxx
+  # Compare custom benchmarks
+  bun run scripts/compare-results.ts --custom coffee-shop juice-shop --benchmarks-dir ~/my-benchmarks
+
+  # Compare a single execution (mode auto-detected or specify explicitly)
+  bun run scripts/compare-results.ts --xben --execution-path ~/.pensar/executions/benchmark-XBEN-001-24-xxx
 
   # Output as JSON
-  bun run scripts/compare-results.ts --format json --output results.json
+  bun run scripts/compare-results.ts --xben --format json --output results.json
 
   # Only compare latest execution for each benchmark
-  bun run scripts/compare-results.ts --latest-only
+  bun run scripts/compare-results.ts --xben --latest-only
 
-  # Compare executions from a specific run
-  bun run scripts/compare-results.ts --prefix run-20251217-1317
+  # Compare executions from a specific run prefix
+  bun run scripts/compare-results.ts --xben --prefix run-20251217-1317
 `);
 }
 
@@ -690,16 +764,17 @@ async function main(): Promise<void> {
 
   // Defaults
   let executionsDir = path.join(process.env.HOME || "~", ".pensar", "executions");
-  let benchmarksDir: string | null = null; // Will be set based on --pace flag
+  let benchmarksDir: string | null = null;
   let executionPath: string | null = null;
   let benchmarkIds: string[] | null = null;
+  let customIds: string[] | null = null;
   let prefix: string | null = null;
   let latestOnly = false;
   let outputFormat = "text";
   let outputPath: string | null = null;
   let printMissed: boolean = false;
   let dryRun: boolean = false;
-  let isPace: boolean = false;
+  let mode: BenchmarkMode | null = null;
 
   // Parse arguments
   for (let i = 0; i < args.length; i++) {
@@ -721,8 +796,16 @@ async function main(): Promise<void> {
       }
     } else if (arg === "--prefix" && args[i + 1]) {
       prefix = args[++i]!;
+    } else if (arg === "--xben") {
+      mode = "xben";
     } else if (arg === "--pace") {
-      isPace = true;
+      mode = "pace";
+    } else if (arg === "--custom") {
+      mode = "custom";
+      customIds = [];
+      while (args[i + 1] && !args[i + 1]!.startsWith("-")) {
+        customIds.push(args[++i]!);
+      }
     } else if (arg === "--latest-only") {
       latestOnly = true;
     } else if (arg === "--format" && args[i + 1]) {
@@ -731,19 +814,42 @@ async function main(): Promise<void> {
       outputPath = args[++i]!;
     } else if (arg === "--show-missed") {
       printMissed = true;
-    } else if(arg === "--dry") {
+    } else if (arg === "--dry") {
       dryRun = true;
     }
   }
 
-  // Set default benchmarks directory based on --pace flag
+  // Validate mode is specified
+  if (!mode) {
+    console.error("Error: Must specify a benchmark mode: --xben, --pace, or --custom <ids...>");
+    console.error("Run with --help for usage information.");
+    process.exit(1);
+  }
+
+  // Validate --custom has IDs
+  if (mode === "custom" && (!customIds || customIds.length === 0)) {
+    console.error("Error: --custom requires at least one benchmark ID");
+    console.error("Example: --custom coffee-shop juice-shop");
+    process.exit(1);
+  }
+
+  // Validate --benchmarks-dir for custom mode
+  if (mode === "custom" && !benchmarksDir) {
+    console.error("Error: --benchmarks-dir is required for --custom mode");
+    process.exit(1);
+  }
+
+  // Set default benchmarks directory based on mode
   if (!benchmarksDir) {
-    if (isPace) {
+    if (mode === "pace") {
       benchmarksDir = path.join(process.env.HOME || "~", "PACEbench");
     } else {
       benchmarksDir = path.join(process.env.HOME || "~", "validation-benchmarks", "benchmarks");
     }
   }
+
+  // For custom mode, use customIds as the benchmark filter
+  const effectiveBenchmarkIds = mode === "custom" ? customIds : benchmarkIds;
 
   // Resolve paths
   executionsDir = path.resolve(executionsDir);
@@ -766,9 +872,16 @@ async function main(): Promise<void> {
       process.exit(1);
     }
 
-    const benchmarkId = extractBenchmarkId(path.basename(executionPath), isPace);
+    const benchmarkId = extractBenchmarkId(
+      path.basename(executionPath),
+      mode,
+      mode === "custom" ? customIds || undefined : undefined
+    );
     if (!benchmarkId) {
       console.error(`Error: Could not extract benchmark ID from: ${path.basename(executionPath)}`);
+      if (mode === "custom") {
+        console.error(`Hint: Make sure the execution directory contains one of: ${customIds?.join(", ")}`);
+      }
       process.exit(1);
     }
 
@@ -780,7 +893,12 @@ async function main(): Promise<void> {
       process.exit(1);
     }
 
-    executions = findExecutions(executionsDir, benchmarkIds || undefined, prefix || undefined, isPace);
+    executions = findExecutions(
+      executionsDir,
+      mode,
+      effectiveBenchmarkIds || undefined,
+      prefix || undefined
+    );
 
     if (latestOnly) {
       // Keep only the latest execution per benchmark
@@ -834,7 +952,7 @@ async function main(): Promise<void> {
 
   const comparisonPromises = sortedExecutions.map((exec) =>
     limit(async () => {
-      const result = await compareBenchmark(exec.benchmarkId, exec.path, benchmarksDir, isPace);
+      const result = await compareBenchmark(exec.benchmarkId, exec.path, benchmarksDir, mode);
       completed++;
       updateProgress();
       return result;

@@ -19,6 +19,44 @@ export interface AttackSurfaceSummary {
   analysisComplete: boolean;
 }
 
+/**
+ * Documentation of how authentication information was discovered
+ */
+export interface AuthDiscoveryInfo {
+  /** How the auth method was identified */
+  discoveryMethod:
+    | 'response_analysis'
+    | 'form_inspection'
+    | 'header_analysis'
+    | 'js_extraction'
+    | 'documentation'
+    | 'error_message'
+    | 'redirect_behavior';
+
+  /** Detailed explanation of how auth was discovered */
+  discoveryExplanation: string;
+
+  /** Evidence supporting the discovery */
+  evidence: {
+    /** URLs/endpoints analyzed */
+    analyzedEndpoints: string[];
+    /** Relevant response snippets */
+    responseSnippets?: string[];
+    /** Headers that indicated auth type */
+    relevantHeaders?: string[];
+    /** Form fields discovered */
+    formFields?: string[];
+    /** JavaScript code analyzed */
+    jsCodeSnippets?: string[];
+  };
+
+  /** Confidence in the discovery (0-100) */
+  confidence: number;
+
+  /** Alternative auth methods that might also work */
+  alternatives?: string[];
+}
+
 export interface PentestTarget {
   target: string;
   objective: string;
@@ -29,6 +67,8 @@ export interface PentestTarget {
     credentials?: string;
     cookies?: string;
     headers?: string;
+    /** Documentation of how auth was discovered */
+    discovery?: AuthDiscoveryInfo;
   };
 }
 

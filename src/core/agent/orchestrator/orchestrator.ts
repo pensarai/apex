@@ -9,11 +9,9 @@
  */
 
 import type { AIModel } from '../../ai';
-import type { PentestTarget } from '../attackSurfaceAgent/types';
-import {
-  inferVulnerabilityClasses,
-  getVulnerabilityClassName,
-} from './prompts';
+import type { PentestTarget, AttackSurfaceAnalysisResults } from '../attackSurfaceAgent/types';
+import { getVulnerabilityClassName } from './prompts';
+import { runOrchestratorAgent, type TestPlan } from '../orchestratorAgent';
 import {
   runMetaVulnerabilityTestAgent,
   type MetaVulnerabilityTestResult,
@@ -94,6 +92,9 @@ export interface PentestOrchestratorInput {
   /** Targets from AttackSurfaceAgent */
   targets: PentestTarget[];
 
+  /** Full attack surface results (for intelligent planning) */
+  attackSurfaceResults?: AttackSurfaceAnalysisResults;
+
   /** AI model to use */
   model: AIModel;
 
@@ -107,6 +108,9 @@ export interface PentestOrchestratorInput {
     authenticationInstructions?: string;
     remoteSandboxUrl?: string;
   };
+
+  /** Whether to use the LLM orchestrator agent for planning (default: true) */
+  useOrchestratorAgent?: boolean;
 
   /** Progress callback */
   onProgress?: (status: PentestProgressStatus) => void;
@@ -181,7 +185,13 @@ interface TestTask {
   target: string;
   objective: string;
   authenticationInfo?: any;
+  /** Whether authentication is required (from orchestrator agent) */
+  authNeeded?: boolean;
   vulnClass: VulnerabilityClass;
+  /** Priority from orchestrator agent */
+  priority?: 'critical' | 'high' | 'medium' | 'low';
+  /** Rationale from orchestrator agent */
+  rationale?: string;
   /** Whether this task was dynamically spawned by another agent */
   isSpawned?: boolean;
   /** Evidence that led to spawning this task (for spawned tasks) */
@@ -228,21 +238,92 @@ export async function runPentestOrchestrator(
     mkdirSync(pocsPath, { recursive: true });
   }
 
-  // Build all test tasks: flatten (target, vulnClass) pairs
+  // Build all test tasks using orchestrator agent or fallback to heuristics
   const testTasks: TestTask[] = [];
-  for (let i = 0; i < targets.length; i++) {
-    const pentestTarget = targets[i];
-    const vulnClasses = inferVulnerabilityClasses(pentestTarget.objective);
+  const useOrchestratorAgentPlanning = input.useOrchestratorAgent !== false;
 
-    for (const vulnClass of vulnClasses) {
-      testTasks.push({
-        targetIndex: i,
-        target: pentestTarget.target,
-        objective: pentestTarget.objective,
-        authenticationInfo: pentestTarget.authenticationInfo,
-        vulnClass,
+  if (useOrchestratorAgentPlanning && input.attackSurfaceResults) {
+    // Use LLM orchestrator agent for intelligent planning
+    logger.info('Using orchestrator agent for test planning...');
+    onProgress?.({
+      phase: 'starting',
+      targetsCompleted: 0,
+      totalTargets: targets.length,
+      tasksCompleted: 0,
+      totalTasks: 0,
+      activeAgents: 0,
+      findingsCount: 0,
+      message: 'Creating test plan with orchestrator agent...',
+    });
+
+    try {
+      const orchestratorResult = await runOrchestratorAgent({
+        attackSurfaceResults: input.attackSurfaceResults,
+        session,
+        model,
+        onProgress: (msg) => {
+          onProgress?.({
+            phase: 'starting',
+            targetsCompleted: 0,
+            totalTargets: targets.length,
+            tasksCompleted: 0,
+            totalTasks: 0,
+            activeAgents: 0,
+            findingsCount: 0,
+            message: msg,
+          });
+        },
+        abortSignal,
       });
+
+      if (orchestratorResult.success && orchestratorResult.testPlan.tests.length > 0) {
+        // Build tasks from orchestrator agent's plan
+        for (let i = 0; i < orchestratorResult.testPlan.tests.length; i++) {
+          const test = orchestratorResult.testPlan.tests[i];
+          testTasks.push({
+            targetIndex: i,
+            target: test.target,
+            objective: test.objective,
+            vulnClass: test.vulnClass,
+            authNeeded: test.authNeeded,
+            authenticationInfo: test.authInfo,
+            priority: test.priority,
+            rationale: test.rationale,
+          });
+        }
+        logger.info(`Orchestrator agent created test plan with ${testTasks.length} tests`);
+      } else {
+        // Fallback to legacy heuristics if orchestrator fails
+        logger.warn('Orchestrator agent failed, falling back to heuristics');
+        buildTasksWithHeuristics();
+      }
+    } catch (error: any) {
+      logger.error(`Orchestrator agent error: ${error.message}, falling back to heuristics`);
+      buildTasksWithHeuristics();
     }
+  } else {
+    // Use legacy heuristics (keyword-based) if no attack surface results or disabled
+    buildTasksWithHeuristics();
+  }
+
+  // Legacy heuristics fallback (kept for backwards compatibility)
+  function buildTasksWithHeuristics() {
+    const { inferVulnerabilityClasses } = require('./prompts');
+    for (let i = 0; i < targets.length; i++) {
+      const pentestTarget = targets[i];
+      const vulnClasses = inferVulnerabilityClasses(pentestTarget.objective);
+
+      for (const vulnClass of vulnClasses) {
+        testTasks.push({
+          targetIndex: i,
+          target: pentestTarget.target,
+          objective: pentestTarget.objective,
+          authenticationInfo: pentestTarget.authenticationInfo,
+          vulnClass,
+        });
+      }
+    }
+    logger.info(`Built ${testTasks.length} tasks using heuristics`);
   }
 
   logger.info(`Starting pentest orchestrator: ${targets.length} targets, ${testTasks.length} tasks, concurrency limit ${concurrencyLimit}`);
@@ -328,6 +409,7 @@ export async function runPentestOrchestrator(
             target: task.target,
             objective: task.objective,
             vulnerabilityClass: task.vulnClass,
+            authNeeded: task.authNeeded,
             authenticationInfo: task.authenticationInfo,
             authenticationInstructions: session.config?.authenticationInstructions,
             outcomeGuidance,

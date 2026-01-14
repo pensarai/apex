@@ -1,12 +1,14 @@
 /**
  * Plan Memory Tools
  *
- * Tools for storing and retrieving strategic plans and adaptations.
+ * Tools for storing and retrieving strategic plans.
  * Plans are stored as JSON files in the session directory.
  *
  * - Plans as external working memory
  * - Checkpoint protocol at 20%/40%/60%/80% budget
- * - Adaptations track what worked/failed for meta-prompting
+ *
+ * Note: Adaptations tracking has been moved to shared memory system.
+ * See ../sharedMemory for approach recording and querying.
  */
 
 import { tool } from "ai";
@@ -15,7 +17,7 @@ import { join } from "path";
 import { existsSync, writeFileSync, readFileSync } from "fs";
 import { Logger } from "../logger";
 import type { PentestPlan, Adaptation, MetaTestingSessionInfo } from "./types";
-import { StorePlanSchema, StoreAdaptationSchema } from "./types";
+import { StorePlanSchema } from "./types";
 
 export const BUDGET_CHECKPOINTS = [20, 40, 60, 80];
 
@@ -24,7 +26,6 @@ export function createPlanMemoryTools(
   logger: Logger
 ) {
   const planPath = join(session.rootPath, "plan.json");
-  const adaptationsPath = join(session.rootPath, "adaptations.json");
 
   const store_plan = tool({
     description: `Store or update the strategic pentest plan.
@@ -116,7 +117,7 @@ Phase statuses:
 After retrieving:
 1. Evaluate: Are current phase criteria met?
 2. If YES: Update phase status to 'done', advance current_phase
-3. If NO but stuck: Consider calling optimize_prompt, then pivot
+3. If NO but stuck: Query shared memory with get_relevant_approaches, then pivot
 4. Call store_plan with updated status
 
 This helps maintain strategic coherence across long operations.`,
@@ -187,7 +188,7 @@ ${phasesDisplay}
 **VALIDATION REQUIRED:**
 1. Are current phase criteria met?
 2. Should you advance to next phase?
-3. Need to pivot or call optimize_prompt?
+3. Need to pivot? Query shared memory with get_relevant_approaches.
 
 Update plan with store_plan after evaluation.`,
         };
@@ -202,93 +203,13 @@ Update plan with store_plan after evaluation.`,
     },
   });
 
-  const store_adaptation = tool({
-    description: `Record an approach outcome for meta-prompting.
-
-**Call after each significant attempt:**
-- worked=true: Approach succeeded, will be emphasized
-- worked=false: Approach failed, will be de-prioritized
-- constraint_learned: Specific blocker discovered (e.g., "WAF blocks <script>")
-
-This data is used by optimize_prompt to:
-- Remove exhausted tactics from guidance
-- Emphasize working approaches
-- Track learned constraints
-
-**Examples:**
-- worked=true, approach="UNION-based SQLi on /api/users"
-- worked=false, approach="XSS via img onerror", constraint_learned="CSP blocks inline event handlers"`,
-    inputSchema: StoreAdaptationSchema,
-    execute: async (adaptation) => {
-      try {
-        let adaptations: Adaptation[] = [];
-        if (existsSync(adaptationsPath)) {
-          try {
-            adaptations = JSON.parse(readFileSync(adaptationsPath, "utf-8"));
-          } catch {
-            adaptations = [];
-          }
-        }
-
-        const newAdaptation: Adaptation = {
-          ...adaptation,
-          timestamp: Date.now(),
-        };
-        adaptations.push(newAdaptation);
-
-        writeFileSync(adaptationsPath, JSON.stringify(adaptations, null, 2));
-
-        const workedCount = adaptations.filter((a) => a.worked).length;
-        const failedCount = adaptations.filter((a) => !a.worked).length;
-        const constraintsCount = adaptations.filter(
-          (a) => a.constraint_learned
-        ).length;
-
-        logger.info(
-          `Adaptation stored: ${adaptation.approach} (${
-            adaptation.worked ? "SUCCESS" : "FAILED"
-          })`
-        );
-
-        return {
-          success: true,
-          message: `Adaptation recorded: ${
-            adaptation.worked ? "✅ SUCCESS" : "❌ FAILED"
-          }
-
-Approach: "${adaptation.approach}"
-${
-  adaptation.constraint_learned
-    ? `Constraint learned: "${adaptation.constraint_learned}"`
-    : ""
-}
-
-**Running totals:**
-- Successful approaches: ${workedCount}
-- Failed approaches: ${failedCount}
-- Constraints discovered: ${constraintsCount}
-
-${
-  failedCount >= 3 && !adaptation.worked
-    ? "\n**Consider calling optimize_prompt** to update execution guidance with learned patterns."
-    : ""
-}`,
-        };
-      } catch (error: any) {
-        logger.error(`Failed to store adaptation: ${error.message}`);
-        return {
-          success: false,
-          error: error.message,
-          message: `Failed to store adaptation: ${error.message}`,
-        };
-      }
-    },
-  });
+  // DEPRECATED: store_adaptation has been replaced by shared memory system
+  // Use record_approach tool from sharedMemory instead
+  // Keeping this for backwards compatibility but it's no longer used
 
   return {
     store_plan,
     get_plan,
-    store_adaptation,
   };
 }
 
