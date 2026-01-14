@@ -653,7 +653,8 @@ Document significant findings using the document_finding tool.`;
     const browserTools = createBrowserTools(
       session.targets[0] || "",
       evidenceDir,
-      undefined, // logger - could be passed in future
+      "operator", // Operator mode for user-driven reconnaissance
+      undefined,  // logger - could be passed in future
       this.abortController?.signal
     );
 

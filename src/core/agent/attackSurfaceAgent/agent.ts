@@ -108,7 +108,8 @@ export async function runAgent(opts: RunAgentProps): Promise<{
   const browserTools = createBrowserTools(
     target,
     evidenceDir,
-    undefined, // No logger needed for attack surface
+    "operator", // Attack surface uses operator mode (reconnaissance-focused)
+    undefined,  // No logger needed for attack surface
     abortSignal
   );
 
