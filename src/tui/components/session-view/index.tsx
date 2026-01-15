@@ -184,18 +184,21 @@ export default function SessionView({
               );
           },
 
-          // Real-time streaming - following v0.0.39 pattern exactly
-          // Mutate local arrays directly, then create new references for React
+          // Real-time streaming - create new objects for every update
+          // This ensures React detects changes even with memo()
           onDiscoveryStream: (chunk) => {
             if (chunk.type === "text-delta" && (chunk as any).text) {
               currentDiscoveryText += (chunk as any).text;
               setThinking(false);
 
-              // Update or create assistant message (mutate in place like v0.0.39)
+              // Update or create assistant message - always create new objects
               const lastMsg = discoveryMessages[discoveryMessages.length - 1];
               if (lastMsg && lastMsg.role === "assistant") {
-                // Mutate directly
-                lastMsg.content = currentDiscoveryText;
+                // Create new message object (not mutation!)
+                discoveryMessages[discoveryMessages.length - 1] = {
+                  ...lastMsg,
+                  content: currentDiscoveryText,
+                };
               } else {
                 // Add new message
                 discoveryMessages.push({
@@ -205,12 +208,16 @@ export default function SessionView({
                 });
               }
 
-              // Create new references for React (critical for re-render)
-              allSubagents[0] = {
+              // Create completely new array and object references for React
+              const newMessages = discoveryMessages.map(m => ({ ...m }));
+              const newSubagent = {
                 ...allSubagents[0]!,
-                messages: [...discoveryMessages],
+                messages: newMessages,
               };
-              setSubagents([...allSubagents]);
+              setSubagents([newSubagent, ...allSubagents.slice(1)]);
+              
+              // Keep reference in sync
+              allSubagents[0] = newSubagent;
             } else if (chunk.type === "tool-call") {
               const tc = chunk as any;
               let args: Record<string, unknown> = {};
@@ -243,12 +250,14 @@ export default function SessionView({
               // Reset text for next segment
               currentDiscoveryText = "";
 
-              // Create new references for React
-              allSubagents[0] = {
+              // Create completely new array and object references
+              const newMessages = discoveryMessages.map(m => ({ ...m }));
+              const newSubagent = {
                 ...allSubagents[0]!,
-                messages: [...discoveryMessages],
+                messages: newMessages,
               };
-              setSubagents([...allSubagents]);
+              setSubagents([newSubagent, ...allSubagents.slice(1)]);
+              allSubagents[0] = newSubagent;
             } else if (chunk.type === "tool-result") {
               const tr = chunk as any;
               setThinking(true);
@@ -265,7 +274,7 @@ export default function SessionView({
                     ? existingMsg.content
                     : existingMsg.toolName || "tool";
                 
-                // Mutate directly
+                // Create new message object
                 discoveryMessages[msgIdx] = {
                   ...existingMsg,
                   status: "completed",
@@ -273,12 +282,14 @@ export default function SessionView({
                   result: tr.result || (tr as any).output,
                 };
 
-                // Create new references for React
-                allSubagents[0] = {
+                // Create completely new array and object references
+                const newMessages = discoveryMessages.map(m => ({ ...m }));
+                const newSubagent = {
                   ...allSubagents[0]!,
-                  messages: [...discoveryMessages],
+                  messages: newMessages,
                 };
-                setSubagents([...allSubagents]);
+                setSubagents([newSubagent, ...allSubagents.slice(1)]);
+                allSubagents[0] = newSubagent;
               }
             } else if (chunk.type === "step-finish") {
               // Reset accumulated text at step boundaries
