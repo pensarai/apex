@@ -380,6 +380,14 @@ export async function runPentestOrchestrator(
               },
             });
           },
+          onStream: (chunk) => {
+            // Forward real-time stream chunks
+            onAgentStream?.({
+              type: chunk.type,
+              agentId,
+              data: chunk,
+            });
+          },
         });
 
         // Notify completion

@@ -148,6 +148,10 @@ export default function SessionView({
       // Mutable state for streaming text accumulation
       let currentDiscoveryText = "";
       const discoveryMessages: UIMessage[] = [];
+      
+      // Mutable state for pentest agent streaming (multiple agents run in parallel)
+      const pentestAgentText: Map<string, string> = new Map();
+      const pentestAgentMessages: Map<string, UIMessage[]> = new Map();
 
       // Initial render - add discovery subagent
       setSubagents([
@@ -325,9 +329,18 @@ export default function SessionView({
           },
 
           onPentestAgentStream: (event: SubAgentStreamEvent) => {
+            const agentId = event.agentId;
+            
+            // Initialize message arrays if needed
+            if (!pentestAgentMessages.has(agentId)) {
+              pentestAgentMessages.set(agentId, []);
+              pentestAgentText.set(agentId, "");
+            }
+            const agentMessages = pentestAgentMessages.get(agentId)!;
+            
+            // Handle step-finish for token tracking only
             if (event.type === "step-finish" && event.data) {
-              const { text, toolCalls, toolResults, usage } = event.data;
-
+              const { usage } = event.data;
               if (usage) {
                 const stepTokens =
                   (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0);
@@ -337,79 +350,123 @@ export default function SessionView({
                     usage.outputTokens ?? 0
                   );
               }
-
-              setSubagents((prev) => {
-                const idx = prev.findIndex((s) => s.id === event.agentId);
-                if (idx === -1) return prev;
-
-                const updated = [...prev];
-                const subagent = updated[idx]!;
-                const newMessages = [...subagent.messages];
-
-                if (text && text.trim()) {
-                  const lastMsg = newMessages[newMessages.length - 1];
-                  if (lastMsg && lastMsg.role === "assistant") {
-                    newMessages[newMessages.length - 1] = {
-                      ...lastMsg,
-                      content: (lastMsg.content || "") + text,
-                    };
-                  } else {
-                    newMessages.push({
-                      role: "assistant",
-                      content: text,
-                      createdAt: new Date(),
-                    });
-                  }
+              // Reset accumulated text at step boundary
+              pentestAgentText.set(agentId, "");
+              return;
+            }
+            
+            // Handle real-time text-delta
+            if (event.type === "text-delta") {
+              const text = (event.data as any)?.text || (event.data as any)?.textDelta || "";
+              if (text) {
+                const currentText = (pentestAgentText.get(agentId) || "") + text;
+                pentestAgentText.set(agentId, currentText);
+                
+                // Update or create assistant message
+                const lastMsg = agentMessages[agentMessages.length - 1];
+                if (lastMsg && lastMsg.role === "assistant") {
+                  agentMessages[agentMessages.length - 1] = {
+                    ...lastMsg,
+                    content: currentText,
+                  };
+                } else {
+                  agentMessages.push({
+                    role: "assistant",
+                    content: currentText,
+                    createdAt: new Date(),
+                  });
                 }
-
-                if (toolCalls && toolCalls.length > 0) {
-                  for (const tc of toolCalls) {
-                    // AI SDK v5.x uses 'input' instead of 'args'
-                    const args = (tc as any).input as
-                      | Record<string, unknown>
-                      | undefined;
-                    const toolDescription =
-                      typeof args?.toolCallDescription === "string"
-                        ? args.toolCallDescription
-                        : tc.toolName;
-                    newMessages.push({
-                      role: "tool",
-                      status: "pending",
-                      toolCallId: tc.toolCallId,
-                      toolName: tc.toolName,
-                      content: toolDescription,
-                      args: args,
-                      createdAt: new Date(),
-                    });
-                  }
+                
+                // Create new array with new object references for React re-render
+                const newMessages = agentMessages.map(m => ({ ...m }));
+                
+                setSubagents((prev) => {
+                  return prev.map((s) => 
+                    s.id === agentId
+                      ? { ...s, messages: newMessages }
+                      : s
+                  );
+                });
+              }
+            }
+            
+            // Handle tool-call
+            else if (event.type === "tool-call") {
+              const tc = event.data as any;
+              let args: Record<string, unknown> = {};
+              try {
+                if (typeof tc.input === "string") {
+                  args = JSON.parse(tc.input);
+                } else if (tc.input && typeof tc.input === "object") {
+                  args = tc.input;
+                } else if (tc.args && typeof tc.args === "object") {
+                  args = tc.args;
                 }
-
-                if (toolResults && toolResults.length > 0) {
-                  for (const tr of toolResults) {
-                    const msgIdx = newMessages.findIndex(
-                      (m) => m.role === "tool" && m.toolCallId === tr.toolCallId
-                    );
-                    if (msgIdx !== -1) {
-                      const existingMsg = newMessages[msgIdx] as ToolUIMessage;
-                      // Use the stored toolCallDescription (in content) if available, fallback to toolName
-                      const description =
-                        typeof existingMsg.content === "string" &&
-                        existingMsg.content !== existingMsg.toolName
-                          ? existingMsg.content
-                          : existingMsg.toolName || "tool";
-                      newMessages[msgIdx] = {
-                        ...existingMsg,
-                        status: "completed",
-                        content: `✓ ${description}`,
-                        result: (tr as any).output, // Store the tool output
-                      };
-                    }
-                  }
-                }
-
-                updated[idx] = { ...subagent, messages: newMessages };
-                return updated;
+              } catch {
+                // ignore parse errors
+              }
+              
+              const toolDescription =
+                typeof args?.toolCallDescription === "string"
+                  ? args.toolCallDescription
+                  : tc.toolName;
+                  
+              agentMessages.push({
+                role: "tool",
+                status: "pending",
+                toolCallId: tc.toolCallId,
+                toolName: tc.toolName,
+                content: toolDescription,
+                args: args,
+                createdAt: new Date(),
               });
+              
+              // Reset accumulated text after tool call
+              pentestAgentText.set(agentId, "");
+              
+              // Create new array with new object references
+              const newMessages = agentMessages.map(m => ({ ...m }));
+              
+              setSubagents((prev) => {
+                return prev.map((s) => 
+                  s.id === agentId
+                    ? { ...s, messages: newMessages }
+                    : s
+                );
+              });
+            }
+            
+            // Handle tool-result
+            else if (event.type === "tool-result") {
+              const tr = event.data as any;
+              const msgIdx = agentMessages.findIndex(
+                (m) => m.role === "tool" && m.toolCallId === tr.toolCallId
+              );
+              if (msgIdx !== -1) {
+                const existingMsg = agentMessages[msgIdx] as ToolUIMessage;
+                const description =
+                  typeof existingMsg.content === "string" &&
+                  existingMsg.content !== existingMsg.toolName
+                    ? existingMsg.content
+                    : existingMsg.toolName || "tool";
+                agentMessages[msgIdx] = {
+                  ...existingMsg,
+                  status: "completed",
+                  content: `✓ ${description}`,
+                  result: (tr as any).result || (tr as any).output,
+                };
+                
+                // Create new array with new object references
+                const newMessages = agentMessages.map(m => ({ ...m }));
+                
+                setSubagents((prev) => {
+                  return prev.map((s) => 
+                    s.id === agentId
+                      ? { ...s, messages: newMessages }
+                      : s
+                  );
+                });
+              }
             }
           },
 
