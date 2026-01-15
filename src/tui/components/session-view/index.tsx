@@ -145,24 +145,22 @@ export default function SessionView({
       const controller = new AbortController();
       setAbortController(controller);
 
-      // Mutable state for streaming - following v0.0.39 pattern
-      // These are mutated directly and then new array references are created for React
+      // Mutable state for streaming text accumulation
       let currentDiscoveryText = "";
       const discoveryMessages: UIMessage[] = [];
-      const allSubagents: Subagent[] = [
+
+      // Initial render - add discovery subagent
+      setSubagents([
         {
           id: "attack-surface-discovery",
           name: "Attack Surface Discovery",
           type: "attack-surface",
           target: execSession.targets[0],
-          messages: discoveryMessages,
+          messages: [],
           status: "pending",
           createdAt: new Date(),
         },
-      ];
-
-      // Initial render
-      setSubagents([...allSubagents]);
+      ]);
 
       try {
         // Run streamlined pentest
@@ -185,7 +183,7 @@ export default function SessionView({
           },
 
           // Real-time streaming - create new objects for every update
-          // This ensures React detects changes even with memo()
+          // Use functional setState to preserve other subagents (pentest agents)
           onDiscoveryStream: (chunk) => {
             if (chunk.type === "text-delta" && (chunk as any).text) {
               currentDiscoveryText += (chunk as any).text;
@@ -208,16 +206,17 @@ export default function SessionView({
                 });
               }
 
-              // Create completely new array and object references for React
+              // Create new message array with new object references
               const newMessages = discoveryMessages.map(m => ({ ...m }));
-              const newSubagent = {
-                ...allSubagents[0]!,
-                messages: newMessages,
-              };
-              setSubagents([newSubagent, ...allSubagents.slice(1)]);
               
-              // Keep reference in sync
-              allSubagents[0] = newSubagent;
+              // Use functional setState to preserve pentest agents
+              setSubagents((prev) => {
+                return prev.map((s) => 
+                  s.id === "attack-surface-discovery"
+                    ? { ...s, messages: newMessages }
+                    : s
+                );
+              });
             } else if (chunk.type === "tool-call") {
               const tc = chunk as any;
               let args: Record<string, unknown> = {};
@@ -250,14 +249,17 @@ export default function SessionView({
               // Reset text for next segment
               currentDiscoveryText = "";
 
-              // Create completely new array and object references
+              // Create new message array with new object references
               const newMessages = discoveryMessages.map(m => ({ ...m }));
-              const newSubagent = {
-                ...allSubagents[0]!,
-                messages: newMessages,
-              };
-              setSubagents([newSubagent, ...allSubagents.slice(1)]);
-              allSubagents[0] = newSubagent;
+              
+              // Use functional setState to preserve pentest agents
+              setSubagents((prev) => {
+                return prev.map((s) => 
+                  s.id === "attack-surface-discovery"
+                    ? { ...s, messages: newMessages }
+                    : s
+                );
+              });
             } else if (chunk.type === "tool-result") {
               const tr = chunk as any;
               setThinking(true);
@@ -282,14 +284,17 @@ export default function SessionView({
                   result: tr.result || (tr as any).output,
                 };
 
-                // Create completely new array and object references
+                // Create new message array with new object references
                 const newMessages = discoveryMessages.map(m => ({ ...m }));
-                const newSubagent = {
-                  ...allSubagents[0]!,
-                  messages: newMessages,
-                };
-                setSubagents([newSubagent, ...allSubagents.slice(1)]);
-                allSubagents[0] = newSubagent;
+                
+                // Use functional setState to preserve pentest agents
+                setSubagents((prev) => {
+                  return prev.map((s) => 
+                    s.id === "attack-surface-discovery"
+                      ? { ...s, messages: newMessages }
+                      : s
+                  );
+                });
               }
             } else if (chunk.type === "step-finish") {
               // Reset accumulated text at step boundaries
