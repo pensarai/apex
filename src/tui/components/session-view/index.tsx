@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useKeyboard } from "@opentui/react";
 import { RGBA } from "@opentui/core";
 import { useRoute } from "../../context/route";
@@ -145,22 +145,26 @@ export default function SessionView({
       const controller = new AbortController();
       setAbortController(controller);
 
+      // Mutable state for streaming - following v0.0.39 pattern
+      // These are mutated directly and then new array references are created for React
       let currentDiscoveryText = "";
+      const discoveryMessages: UIMessage[] = [];
+      const allSubagents: Subagent[] = [
+        {
+          id: "attack-surface-discovery",
+          name: "Attack Surface Discovery",
+          type: "attack-surface",
+          target: execSession.targets[0],
+          messages: discoveryMessages,
+          status: "pending",
+          createdAt: new Date(),
+        },
+      ];
+
+      // Initial render
+      setSubagents([...allSubagents]);
 
       try {
-        // Add discovery subagent
-        setSubagents([
-          {
-            id: "attack-surface-discovery",
-            name: "Attack Surface Discovery",
-            type: "attack-surface",
-            target: execSession.targets[0],
-            messages: [],
-            status: "pending",
-            createdAt: new Date(),
-          },
-        ]);
-
         // Run streamlined pentest
         const result = await runStreamlinedPentest({
           target: execSession.targets[0],
@@ -169,7 +173,7 @@ export default function SessionView({
           sessionConfig: execSession.config,
           abortSignal: controller.signal,
 
-          // Token tracking only - message updates are handled by onDiscoveryStream
+          // Token tracking only
           onDiscoveryStepFinish: (step) => {
             const stepTokens =
               (step.usage?.inputTokens ?? 0) + (step.usage?.outputTokens ?? 0);
@@ -180,50 +184,34 @@ export default function SessionView({
               );
           },
 
-          // Real-time streaming for discovery agent - handles all chunk types
+          // Real-time streaming - following v0.0.39 pattern exactly
+          // Mutate local arrays directly, then create new references for React
           onDiscoveryStream: (chunk) => {
             if (chunk.type === "text-delta" && (chunk as any).text) {
               currentDiscoveryText += (chunk as any).text;
               setThinking(false);
 
-              // Update subagent messages with streaming text
-              if (currentDiscoveryText.trim()) {
-                setSubagents((prev) => {
-                  const idx = prev.findIndex(
-                    (s) => s.id === "attack-surface-discovery"
-                  );
-                  if (idx === -1) return prev;
-
-                  const updated = [...prev];
-                  const subagent = updated[idx]!;
-                  const lastMsg =
-                    subagent.messages[subagent.messages.length - 1];
-
-                  if (lastMsg && lastMsg.role === "assistant") {
-                    const newMessages = [...subagent.messages];
-                    newMessages[newMessages.length - 1] = {
-                      ...lastMsg,
-                      content: currentDiscoveryText,
-                    };
-                    updated[idx] = { ...subagent, messages: newMessages };
-                  } else {
-                    updated[idx] = {
-                      ...subagent,
-                      messages: [
-                        ...subagent.messages,
-                        {
-                          role: "assistant",
-                          content: currentDiscoveryText,
-                          createdAt: new Date(),
-                        },
-                      ],
-                    };
-                  }
-                  return updated;
+              // Update or create assistant message (mutate in place like v0.0.39)
+              const lastMsg = discoveryMessages[discoveryMessages.length - 1];
+              if (lastMsg && lastMsg.role === "assistant") {
+                // Mutate directly
+                lastMsg.content = currentDiscoveryText;
+              } else {
+                // Add new message
+                discoveryMessages.push({
+                  role: "assistant",
+                  content: currentDiscoveryText,
+                  createdAt: new Date(),
                 });
               }
+
+              // Create new references for React (critical for re-render)
+              allSubagents[0] = {
+                ...allSubagents[0]!,
+                messages: [...discoveryMessages],
+              };
+              setSubagents([...allSubagents]);
             } else if (chunk.type === "tool-call") {
-              // Handle tool calls in real-time
               const tc = chunk as any;
               let args: Record<string, unknown> = {};
               try {
@@ -241,70 +229,57 @@ export default function SessionView({
                   ? args.toolCallDescription
                   : tc.toolName;
 
-              setSubagents((prev) => {
-                const idx = prev.findIndex(
-                  (s) => s.id === "attack-surface-discovery"
-                );
-                if (idx === -1) return prev;
-
-                const updated = [...prev];
-                const subagent = updated[idx]!;
-                updated[idx] = {
-                  ...subagent,
-                  messages: [
-                    ...subagent.messages,
-                    {
-                      role: "tool",
-                      status: "pending",
-                      toolCallId: tc.toolCallId,
-                      toolName: tc.toolName,
-                      content: toolDescription,
-                      args: args,
-                      createdAt: new Date(),
-                    },
-                  ],
-                };
-                return updated;
+              // Add tool message
+              discoveryMessages.push({
+                role: "tool",
+                status: "pending",
+                toolCallId: tc.toolCallId,
+                toolName: tc.toolName,
+                content: toolDescription,
+                args: args,
+                createdAt: new Date(),
               });
 
-              // Reset text accumulator for next segment
+              // Reset text for next segment
               currentDiscoveryText = "";
+
+              // Create new references for React
+              allSubagents[0] = {
+                ...allSubagents[0]!,
+                messages: [...discoveryMessages],
+              };
+              setSubagents([...allSubagents]);
             } else if (chunk.type === "tool-result") {
-              // Handle tool results in real-time
               const tr = chunk as any;
               setThinking(true);
 
-              setSubagents((prev) => {
-                const idx = prev.findIndex(
-                  (s) => s.id === "attack-surface-discovery"
-                );
-                if (idx === -1) return prev;
+              // Find and update tool message
+              const msgIdx = discoveryMessages.findIndex(
+                (m) => m.role === "tool" && m.toolCallId === tr.toolCallId
+              );
+              if (msgIdx !== -1) {
+                const existingMsg = discoveryMessages[msgIdx] as ToolUIMessage;
+                const description =
+                  typeof existingMsg.content === "string" &&
+                  existingMsg.content !== existingMsg.toolName
+                    ? existingMsg.content
+                    : existingMsg.toolName || "tool";
+                
+                // Mutate directly
+                discoveryMessages[msgIdx] = {
+                  ...existingMsg,
+                  status: "completed",
+                  content: `✓ ${description}`,
+                  result: tr.result || (tr as any).output,
+                };
 
-                const updated = [...prev];
-                const subagent = updated[idx]!;
-                const newMessages = [...subagent.messages];
-
-                const msgIdx = newMessages.findIndex(
-                  (m) => m.role === "tool" && m.toolCallId === tr.toolCallId
-                );
-                if (msgIdx !== -1) {
-                  const existingMsg = newMessages[msgIdx] as ToolUIMessage;
-                  const description =
-                    typeof existingMsg.content === "string" &&
-                    existingMsg.content !== existingMsg.toolName
-                      ? existingMsg.content
-                      : existingMsg.toolName || "tool";
-                  newMessages[msgIdx] = {
-                    ...existingMsg,
-                    status: "completed",
-                    content: `✓ ${description}`,
-                    result: tr.result || (tr as any).output,
-                  };
-                }
-
-                updated[idx] = { ...subagent, messages: newMessages };
-                return updated;
-              });
+                // Create new references for React
+                allSubagents[0] = {
+                  ...allSubagents[0]!,
+                  messages: [...discoveryMessages],
+                };
+                setSubagents([...allSubagents]);
+              }
             } else if (chunk.type === "step-finish") {
               // Reset accumulated text at step boundaries
               currentDiscoveryText = "";
