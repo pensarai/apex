@@ -125,11 +125,16 @@ export default function DriverDashboard({ session }: DriverDashboardProps) {
   // Start recon agent
   const startRecon = useCallback(async () => {
     setReconStatus('running');
-    setReconMessages([{
+    
+    // Mutable state for streaming - similar to v0.0.39 pattern
+    let currentReconText = "";
+    const reconMsgs: DisplayMessage[] = [{
       role: 'user',
       content: `Starting attack surface discovery for: ${session.targets[0]}`,
       createdAt: new Date(),
-    }]);
+    }];
+    
+    setReconMessages([...reconMsgs]);
 
     try {
       const { streamResult } = await runAttackSurfaceAgent({
@@ -138,79 +143,91 @@ export default function DriverDashboard({ session }: DriverDashboardProps) {
         model: model.id,
         session,
         onStepFinish: async (step) => {
-          const { text, toolCalls, toolResults } = step;
-
-          setReconMessages(prev => {
-            const newMessages = [...prev];
-
-            // Add text content
-            if (text && text.trim()) {
-              const lastMsg = newMessages[newMessages.length - 1];
-              if (lastMsg && lastMsg.role === 'assistant') {
-                newMessages[newMessages.length - 1] = {
-                  ...lastMsg,
-                  content: (lastMsg.content || '') + text,
-                };
-              } else {
-                newMessages.push({
-                  role: 'assistant',
-                  content: text,
-                  createdAt: new Date(),
-                });
-              }
-            }
-
-            // Add tool calls
-            if (toolCalls && toolCalls.length > 0) {
-              for (const tc of toolCalls) {
-                const args = (tc as any).input as Record<string, unknown> | undefined;
-                const toolDescription =
-                  typeof args?.toolCallDescription === 'string'
-                    ? args.toolCallDescription
-                    : tc.toolName;
-                newMessages.push({
-                  role: 'tool',
-                  status: 'pending',
-                  toolCallId: tc.toolCallId,
-                  toolName: tc.toolName,
-                  content: toolDescription,
-                  args: args,
-                  createdAt: new Date(),
-                });
-              }
-            }
-
-            // Update tool results
-            if (toolResults && toolResults.length > 0) {
-              for (const tr of toolResults) {
-                const msgIdx = newMessages.findIndex(
-                  (m) => m.role === 'tool' && (m as any).toolCallId === tr.toolCallId
-                );
-                if (msgIdx !== -1) {
-                  const existingMsg = newMessages[msgIdx] as DisplayMessage & { toolName?: string; toolCallId?: string };
-                  const description =
-                    typeof existingMsg.content === 'string' &&
-                    existingMsg.content !== existingMsg.toolName
-                      ? existingMsg.content
-                      : existingMsg.toolName || 'tool';
-                  newMessages[msgIdx] = {
-                    ...existingMsg,
-                    status: 'completed',
-                    content: `✓ ${description}`,
-                    result: (tr as any).output,
-                  };
-                }
-              }
-            }
-
-            return newMessages;
-          });
+          // Token tracking only - real-time updates handled in stream consumption
         },
       });
 
-      // Consume the stream to let the agent complete
-      for await (const _chunk of streamResult.fullStream) {
-        // Just consume - messages are captured via onStepFinish
+      // Consume the stream with real-time UI updates
+      for await (const chunk of streamResult.fullStream) {
+        if (chunk.type === 'text-delta' && (chunk as any).text) {
+          currentReconText += (chunk as any).text;
+          
+          // Update or create assistant message
+          const lastMsg = reconMsgs[reconMsgs.length - 1];
+          if (lastMsg && lastMsg.role === 'assistant') {
+            // Create new message object (not mutation)
+            reconMsgs[reconMsgs.length - 1] = {
+              ...lastMsg,
+              content: currentReconText,
+            };
+          } else {
+            reconMsgs.push({
+              role: 'assistant',
+              content: currentReconText,
+              createdAt: new Date(),
+            });
+          }
+          
+          // Create new array with new object references for React
+          setReconMessages(reconMsgs.map(m => ({ ...m })));
+        } else if (chunk.type === 'tool-call') {
+          const tc = chunk as any;
+          let args: Record<string, unknown> = {};
+          try {
+            if (typeof tc.input === 'string') {
+              args = JSON.parse(tc.input);
+            } else if (tc.input && typeof tc.input === 'object') {
+              args = tc.input;
+            }
+          } catch {
+            args = {};
+          }
+          
+          const toolDescription =
+            typeof args?.toolCallDescription === 'string'
+              ? args.toolCallDescription
+              : tc.toolName;
+          
+          reconMsgs.push({
+            role: 'tool',
+            status: 'pending',
+            toolCallId: tc.toolCallId,
+            toolName: tc.toolName,
+            content: toolDescription,
+            args: args,
+            createdAt: new Date(),
+          });
+          
+          // Reset text for next segment
+          currentReconText = "";
+          
+          // Create new array with new object references
+          setReconMessages(reconMsgs.map(m => ({ ...m })));
+        } else if (chunk.type === 'tool-result') {
+          const tr = chunk as any;
+          
+          const msgIdx = reconMsgs.findIndex(
+            (m) => m.role === 'tool' && (m as any).toolCallId === tr.toolCallId
+          );
+          if (msgIdx !== -1) {
+            const existingMsg = reconMsgs[msgIdx] as DisplayMessage & { toolName?: string; toolCallId?: string };
+            const description =
+              typeof existingMsg.content === 'string' &&
+              existingMsg.content !== existingMsg.toolName
+                ? existingMsg.content
+                : existingMsg.toolName || 'tool';
+            
+            reconMsgs[msgIdx] = {
+              ...existingMsg,
+              status: 'completed',
+              content: `✓ ${description}`,
+              result: tr.result || (tr as any).output,
+            };
+            
+            // Create new array with new object references
+            setReconMessages(reconMsgs.map(m => ({ ...m })));
+          }
+        }
       }
 
       // Read results from the JSON file created by the agent
