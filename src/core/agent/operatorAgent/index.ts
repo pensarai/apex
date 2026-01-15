@@ -714,11 +714,116 @@ Document significant findings using the document_finding tool.`;
           onStepFinish: (step) => this.handleStepFinish(step),
         });
 
-        // Consume stream
+        // Consume stream with real-time UI updates
         let assistantContent = "";
+        let currentAssistantMessageIndex = -1;
+
         for await (const chunk of streamResult.fullStream) {
           if (chunk.type === "text-delta") {
             assistantContent += chunk.text;
+
+            // Emit real-time updates for streaming text
+            if (currentAssistantMessageIndex === -1) {
+              // Create new assistant message
+              const newMessage: DisplayMessage = {
+                role: "assistant",
+                content: assistantContent,
+                createdAt: new Date(),
+              };
+              currentAssistantMessageIndex = this.messages.length;
+              this.addMessage(newMessage);
+            } else {
+              // Update existing assistant message with accumulated text
+              const existingMsg = this.messages[currentAssistantMessageIndex];
+              if (existingMsg) {
+                this.updateMessage(currentAssistantMessageIndex, {
+                  ...existingMsg,
+                  content: assistantContent,
+                });
+              }
+            }
+          } else if (chunk.type === "tool-call") {
+            // Handle tool calls during streaming
+            const tc = chunk as any;
+            const args = tc.input ? (typeof tc.input === 'string' ? JSON.parse(tc.input) : tc.input) : {};
+            const description = args.toolCallDescription || tc.toolName;
+
+            this.log("tool_call_stream", {
+              toolCallId: tc.toolCallId,
+              toolName: tc.toolName,
+              args,
+            });
+
+            this.addMessage({
+              role: "tool",
+              status: "pending",
+              toolCallId: tc.toolCallId,
+              toolName: tc.toolName,
+              content: description,
+              args,
+              createdAt: new Date(),
+            });
+
+            // Reset assistant message index for next text segment
+            currentAssistantMessageIndex = -1;
+            assistantContent = "";
+          } else if (chunk.type === "tool-result") {
+            // Handle tool results during streaming
+            const tr = chunk as any;
+            const msgIdx = this.toolCallIdToIndex.get(tr.toolCallId) ?? -1;
+
+            if (msgIdx !== -1) {
+              const existingMsg = this.messages[msgIdx];
+
+              this.log("tool_result_stream", {
+                toolCallId: tr.toolCallId,
+                toolName: existingMsg?.toolName,
+                result: tr.result,
+              });
+
+              if (existingMsg) {
+                this.updateMessage(msgIdx, {
+                  ...existingMsg,
+                  status: "completed",
+                  content: `+ ${existingMsg.content}`,
+                  result: tr.result,
+                });
+
+                // Extract findings from tool results
+                this.extractFindings(existingMsg.toolName || "", tr.result);
+
+                // Emit sidebar events for sidebar-updating tools
+                const output = tr.result;
+                if (output && typeof output === "object") {
+                  if (output.endpoints && Array.isArray(output.endpoints)) {
+                    this.emit("operator-event", {
+                      type: "attack-surface-updated",
+                      endpoints: output.endpoints,
+                    });
+                  }
+                  if (output.credential) {
+                    this.emit("operator-event", {
+                      type: "credential-found",
+                      credential: output.credential,
+                    });
+                  }
+                  if (output.finding) {
+                    this.emit("operator-event", {
+                      type: "finding-verified",
+                      finding: output.finding,
+                    });
+                  }
+                  if (output.endpointId && output.status) {
+                    this.emit("operator-event", {
+                      type: "endpoint-status-changed",
+                      endpointId: output.endpointId,
+                      status: output.status,
+                      vulnType: output.vulnType,
+                    });
+                  }
+                }
+              }
+            }
           }
         }
 
@@ -848,10 +953,11 @@ Document significant findings using the document_finding tool.`;
 
   /**
    * Handle step finish callback from AI streaming
+   * Note: Text, tool calls, and tool results are now handled in real-time during
+   * the streaming loop for better UI responsiveness. This callback only handles
+   * user directive interrupts now.
    */
   private handleStepFinish(step: any): void {
-    const { text, toolCalls, toolResults } = step;
-
     // Check for user directives - if user typed something, interrupt to process it sooner
     if (this.userDirectives.length > 0 && this.abortController && !this.abortController.signal.aborted) {
       // Abort current stream to pick up user input on next iteration
@@ -859,109 +965,9 @@ Document significant findings using the document_finding tool.`;
       // Note: The abort will be caught in runAgentLoop, which will continue and pick up the directive
     }
 
-    // Handle text content
-    if (text && text.trim()) {
-      this.log("assistant_text", { text: text.slice(0, 500) }); // Truncate to avoid huge logs
-      const lastMsg = this.messages[this.messages.length - 1];
-      if (lastMsg && lastMsg.role === "assistant") {
-        this.updateMessage(this.messages.length - 1, {
-          ...lastMsg,
-          content: (lastMsg.content || "") + text,
-        });
-      } else {
-        this.addMessage({
-          role: "assistant",
-          content: text,
-          createdAt: new Date(),
-        });
-      }
-    }
-
-    // Handle tool calls
-    if (toolCalls && toolCalls.length > 0) {
-      for (const tc of toolCalls) {
-        const args = (tc as any).input || {};
-        const description = args.toolCallDescription || tc.toolName;
-
-        this.log("tool_call", {
-          toolCallId: tc.toolCallId,
-          toolName: tc.toolName,
-          args,
-        });
-
-        this.addMessage({
-          role: "tool",
-          status: "pending",
-          toolCallId: tc.toolCallId,
-          toolName: tc.toolName,
-          content: description,
-          args,
-          createdAt: new Date(),
-        });
-      }
-    }
-
-    // Handle tool results
-    if (toolResults && toolResults.length > 0) {
-      for (const tr of toolResults) {
-        // O(1) lookup using pre-built index map (was O(n) findIndex)
-        const msgIdx = this.toolCallIdToIndex.get(tr.toolCallId) ?? -1;
-        if (msgIdx !== -1) {
-          const existingMsg = this.messages[msgIdx];
-
-          this.log("tool_result", {
-            toolCallId: tr.toolCallId,
-            toolName: existingMsg.toolName,
-            result: (tr as any).output,
-          });
-
-          this.updateMessage(msgIdx, {
-            ...existingMsg,
-            status: "completed",
-            content: `+ ${existingMsg.content}`,
-            result: (tr as any).output,
-          });
-
-          // Extract findings from significant tool results
-          this.extractFindings(existingMsg.toolName || "", (tr as any).output);
-
-          // Emit sidebar events for sidebar-updating tools
-          const output = (tr as any).output;
-          if (output && typeof output === "object") {
-            // Attack surface updates
-            if (output.endpoints && Array.isArray(output.endpoints)) {
-              this.emit("operator-event", {
-                type: "attack-surface-updated",
-                endpoints: output.endpoints,
-              });
-            }
-            // Credential discoveries
-            if (output.credential) {
-              this.emit("operator-event", {
-                type: "credential-found",
-                credential: output.credential,
-              });
-            }
-            // Verified findings
-            if (output.finding) {
-              this.emit("operator-event", {
-                type: "finding-verified",
-                finding: output.finding,
-              });
-            }
-            // Endpoint status changes
-            if (output.endpointId && output.status) {
-              this.emit("operator-event", {
-                type: "endpoint-status-changed",
-                endpointId: output.endpointId,
-                status: output.status,
-                vulnType: output.vulnType,
-              });
-            }
-          }
-        }
-      }
-    }
+    // Note: Text, toolCalls, and toolResults are now processed in real-time
+    // during the streaming loop (for await...of streamResult.fullStream) to
+    // enable proper token-by-token streaming in the TUI.
   }
 
   /**

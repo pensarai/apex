@@ -269,8 +269,8 @@ export default function SessionView({
           onDiscoveryStream: (chunk) => {
             // Only handle text-delta for real-time streaming effect
             // Other chunk types are handled by onStepFinish for reliability
-            if (chunk.type === "text-delta" && chunk.textDelta) {
-              currentDiscoveryText += chunk.textDelta;
+            if (chunk.type === "text-delta" && (chunk as any).text) {
+              currentDiscoveryText += (chunk as any).text;
 
               // Debounce updates - only update every 100ms worth of text
               if (currentDiscoveryText.trim()) {
