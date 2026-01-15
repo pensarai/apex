@@ -169,8 +169,7 @@ export default function SessionView({
           sessionConfig: execSession.config,
           abortSignal: controller.signal,
 
-          // Use onStepFinish for UI updates (like metavuln agent does)
-          // This is more reliable than raw stream chunks which can be interrupted
+          // Token tracking only - message updates are handled by onDiscoveryStream
           onDiscoveryStepFinish: (step) => {
             const stepTokens =
               (step.usage?.inputTokens ?? 0) + (step.usage?.outputTokens ?? 0);
@@ -179,100 +178,15 @@ export default function SessionView({
                 step.usage.inputTokens ?? 0,
                 step.usage.outputTokens ?? 0
               );
-
-            // Update messages from step data (same pattern as onPentestAgentStream)
-            const { text, toolCalls, toolResults } = step;
-
-            setSubagents((prev) => {
-              const idx = prev.findIndex(
-                (s) => s.id === "attack-surface-discovery"
-              );
-              if (idx === -1) return prev;
-
-              const updated = [...prev];
-              const subagent = updated[idx]!;
-              const newMessages = [...subagent.messages];
-
-              // Add text content
-              if (text && text.trim()) {
-                setThinking(false);
-                const lastMsg = newMessages[newMessages.length - 1];
-                if (lastMsg && lastMsg.role === "assistant") {
-                  newMessages[newMessages.length - 1] = {
-                    ...lastMsg,
-                    content: (lastMsg.content || "") + text,
-                  };
-                } else {
-                  newMessages.push({
-                    role: "assistant",
-                    content: text,
-                    createdAt: new Date(),
-                  });
-                }
-              }
-
-              // Add tool calls
-              if (toolCalls && toolCalls.length > 0) {
-                setThinking(false);
-                for (const tc of toolCalls) {
-                  // AI SDK v5.x uses 'input' instead of 'args'
-                  const args = (tc as any).input as
-                    | Record<string, unknown>
-                    | undefined;
-                  const toolDescription =
-                    typeof args?.toolCallDescription === "string"
-                      ? args.toolCallDescription
-                      : tc.toolName;
-                  newMessages.push({
-                    role: "tool",
-                    status: "pending",
-                    toolCallId: tc.toolCallId,
-                    toolName: tc.toolName,
-                    content: toolDescription,
-                    args: args,
-                    createdAt: new Date(),
-                  });
-                }
-              }
-
-              // Update tool results
-              if (toolResults && toolResults.length > 0) {
-                setThinking(true);
-                for (const tr of toolResults) {
-                  const msgIdx = newMessages.findIndex(
-                    (m) => m.role === "tool" && m.toolCallId === tr.toolCallId
-                  );
-                  if (msgIdx !== -1) {
-                    const existingMsg = newMessages[msgIdx] as ToolUIMessage;
-                    // Use the stored toolCallDescription (in content) if available, fallback to toolName
-                    const description =
-                      typeof existingMsg.content === "string" &&
-                      existingMsg.content !== existingMsg.toolName
-                        ? existingMsg.content
-                        : existingMsg.toolName || "tool";
-                    newMessages[msgIdx] = {
-                      ...existingMsg,
-                      status: "completed",
-                      content: `✓ ${description}`,
-                      result: (tr as any).output, // Store the tool output
-                    };
-                  }
-                }
-              }
-
-              updated[idx] = { ...subagent, messages: newMessages };
-              return updated;
-            });
           },
 
-          // Keep onDiscoveryStream as backup for real-time text streaming
+          // Real-time streaming for discovery agent - handles all chunk types
           onDiscoveryStream: (chunk) => {
-            // Only handle text-delta for real-time streaming effect
-            // Other chunk types are handled by onStepFinish for reliability
             if (chunk.type === "text-delta" && (chunk as any).text) {
               currentDiscoveryText += (chunk as any).text;
+              setThinking(false);
 
-              // Debounce updates - only update every 100ms worth of text
+              // Update subagent messages with streaming text
               if (currentDiscoveryText.trim()) {
                 setSubagents((prev) => {
                   const idx = prev.findIndex(
@@ -308,6 +222,89 @@ export default function SessionView({
                   return updated;
                 });
               }
+            } else if (chunk.type === "tool-call") {
+              // Handle tool calls in real-time
+              const tc = chunk as any;
+              let args: Record<string, unknown> = {};
+              try {
+                if (typeof tc.input === "string") {
+                  args = JSON.parse(tc.input);
+                } else if (tc.input && typeof tc.input === "object") {
+                  args = tc.input;
+                }
+              } catch {
+                args = {};
+              }
+
+              const toolDescription =
+                typeof args?.toolCallDescription === "string"
+                  ? args.toolCallDescription
+                  : tc.toolName;
+
+              setSubagents((prev) => {
+                const idx = prev.findIndex(
+                  (s) => s.id === "attack-surface-discovery"
+                );
+                if (idx === -1) return prev;
+
+                const updated = [...prev];
+                const subagent = updated[idx]!;
+                updated[idx] = {
+                  ...subagent,
+                  messages: [
+                    ...subagent.messages,
+                    {
+                      role: "tool",
+                      status: "pending",
+                      toolCallId: tc.toolCallId,
+                      toolName: tc.toolName,
+                      content: toolDescription,
+                      args: args,
+                      createdAt: new Date(),
+                    },
+                  ],
+                };
+                return updated;
+              });
+
+              // Reset text accumulator for next segment
+              currentDiscoveryText = "";
+            } else if (chunk.type === "tool-result") {
+              // Handle tool results in real-time
+              const tr = chunk as any;
+              setThinking(true);
+
+              setSubagents((prev) => {
+                const idx = prev.findIndex(
+                  (s) => s.id === "attack-surface-discovery"
+                );
+                if (idx === -1) return prev;
+
+                const updated = [...prev];
+                const subagent = updated[idx]!;
+                const newMessages = [...subagent.messages];
+
+                const msgIdx = newMessages.findIndex(
+                  (m) => m.role === "tool" && m.toolCallId === tr.toolCallId
+                );
+                if (msgIdx !== -1) {
+                  const existingMsg = newMessages[msgIdx] as ToolUIMessage;
+                  const description =
+                    typeof existingMsg.content === "string" &&
+                    existingMsg.content !== existingMsg.toolName
+                      ? existingMsg.content
+                      : existingMsg.toolName || "tool";
+                  newMessages[msgIdx] = {
+                    ...existingMsg,
+                    status: "completed",
+                    content: `✓ ${description}`,
+                    result: tr.result || (tr as any).output,
+                  };
+                }
+
+                updated[idx] = { ...subagent, messages: newMessages };
+                return updated;
+              });
             } else if (chunk.type === "step-finish") {
               // Reset accumulated text at step boundaries
               currentDiscoveryText = "";
