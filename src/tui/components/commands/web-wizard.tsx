@@ -41,6 +41,28 @@ interface WebWizardProps {
   initialTarget?: string;
   /** Enable auto mode from --auto flag */
   autoMode?: boolean;
+  /** Pre-filled session name */
+  initialName?: string;
+  /** Pre-filled auth URL */
+  initialAuthUrl?: string;
+  /** Pre-filled auth username */
+  initialAuthUser?: string;
+  /** Pre-filled auth password */
+  initialAuthPass?: string;
+  /** Pre-filled auth instructions */
+  initialAuthInstructions?: string;
+  /** Pre-filled allowed hosts */
+  initialHosts?: string[];
+  /** Pre-filled allowed ports */
+  initialPorts?: number[];
+  /** Enable strict scope */
+  initialStrict?: boolean;
+  /** Pre-filled headers mode */
+  initialHeadersMode?: 'none' | 'default' | 'custom';
+  /** Pre-filled custom headers */
+  initialCustomHeaders?: Record<string, string>;
+  /** Pre-filled model ID */
+  initialModel?: string;
 }
 
 // Color palette
@@ -48,7 +70,21 @@ const greenBullet = RGBA.fromInts(76, 175, 80, 255);
 const creamText = RGBA.fromInts(255, 248, 220, 255);
 const dimText = RGBA.fromInts(120, 120, 120, 255);
 
-export default function WebWizard({ initialTarget, autoMode = false }: WebWizardProps) {
+export default function WebWizard({
+  initialTarget,
+  autoMode = false,
+  initialName,
+  initialAuthUrl,
+  initialAuthUser,
+  initialAuthPass,
+  initialAuthInstructions,
+  initialHosts,
+  initialPorts,
+  initialStrict,
+  initialHeadersMode,
+  initialCustomHeaders,
+  initialModel,
+}: WebWizardProps) {
   const route = useRoute();
   const config = useConfig();
   const { model, setModel, isModelUserSelected } = useAgent();
@@ -108,6 +144,21 @@ export default function WebWizard({ initialTarget, autoMode = false }: WebWizard
     if (config.data) {
       const models = getAvailableModels(config.data);
       setAvailableModels(models);
+
+      // If initialModel was provided, try to set it
+      if (initialModel) {
+        const targetModel = models.find(m => m.id === initialModel);
+        if (targetModel) {
+          setModel(targetModel);
+          const newIndex = models.findIndex(m => m.id === targetModel.id);
+          if (newIndex >= 0) {
+            setSelectedModelIndex(newIndex);
+          }
+          setExpandedProviders(new Set([targetModel.provider]));
+          return;
+        }
+      }
+
       // Find current model in the list
       const currentIndex = models.findIndex(m => m.id === model.id);
       if (currentIndex >= 0) {
@@ -121,7 +172,7 @@ export default function WebWizard({ initialTarget, autoMode = false }: WebWizard
         }
       }
     }
-  }, [config.data, model.id]);
+  }, [config.data, model.id, initialModel]);
 
   // Determine initial step based on whether target was provided
   const initialStep: WizardStep = initialTarget ? "configure" : "target";
@@ -129,22 +180,22 @@ export default function WebWizard({ initialTarget, autoMode = false }: WebWizard
   // Wizard state
   const [currentStep, setCurrentStep] = useState<WizardStep>(initialStep);
   const [state, setState] = useState<WizardState>(() => ({
-    name: generateRandomName(),
+    name: initialName || generateRandomName(),
     target: initialTarget || "",
     auth: {
-      loginUrl: "",
-      username: "",
-      password: "",
-      instructions: "",
+      loginUrl: initialAuthUrl || "",
+      username: initialAuthUser || "",
+      password: initialAuthPass || "",
+      instructions: initialAuthInstructions || "",
     },
     scope: {
-      allowedHosts: [],
-      allowedPorts: [],
-      strictScope: false,
+      allowedHosts: initialHosts || [],
+      allowedPorts: initialPorts?.map(String) || [],
+      strictScope: initialStrict || false,
     },
     headers: {
-      mode: "default",
-      customHeaders: {},
+      mode: initialHeadersMode || "default",
+      customHeaders: initialCustomHeaders || {},
     },
   }));
 

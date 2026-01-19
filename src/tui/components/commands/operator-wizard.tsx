@@ -29,6 +29,17 @@ interface WizardState {
 interface HITLWizardProps {
   initialTarget?: string;
   initialMode?: string;
+  initialName?: string;
+  initialTier?: number;
+  initialAuthUrl?: string;
+  initialAuthUser?: string;
+  initialAuthPass?: string;
+  initialAuthInstructions?: string;
+  initialHosts?: string[];
+  initialStrict?: boolean;
+  initialHeadersMode?: 'none' | 'default' | 'custom';
+  initialCustomHeaders?: Record<string, string>;
+  initialModel?: string;
 }
 
 const greenBullet = RGBA.fromInts(76, 175, 80, 255);
@@ -45,7 +56,21 @@ const providerNames: Record<string, string> = {
 };
 const providerOrder = ["anthropic", "openai", "openrouter", "bedrock"];
 
-export default function HITLWizard({ initialTarget, initialMode }: HITLWizardProps) {
+export default function HITLWizard({
+  initialTarget,
+  initialMode,
+  initialName,
+  initialTier,
+  initialAuthUrl,
+  initialAuthUser,
+  initialAuthPass,
+  initialAuthInstructions,
+  initialHosts,
+  initialStrict,
+  initialHeadersMode,
+  initialCustomHeaders,
+  initialModel,
+}: HITLWizardProps) {
   const route = useRoute();
   const config = useConfig();
   const { model, setModel, isModelUserSelected } = useAgent();
@@ -54,13 +79,13 @@ export default function HITLWizard({ initialTarget, initialMode }: HITLWizardPro
 
   const [currentStep, setCurrentStep] = useState<WizardStep>(initialStep);
   const [state, setState] = useState<WizardState>(() => ({
-    name: generateRandomName(),
+    name: initialName || generateRandomName(),
     target: initialTarget || "",
     mode: (initialMode as OperatorMode) || "manual",
-    autoApproveTier: 2,
+    autoApproveTier: (initialTier || 2) as PermissionTier,
     scope: {
-      allowedHosts: [],
-      strictScope: false,
+      allowedHosts: initialHosts || [],
+      strictScope: initialStrict || false,
     },
   }));
 
@@ -80,13 +105,22 @@ export default function HITLWizard({ initialTarget, initialMode }: HITLWizardPro
       const models = getAvailableModels(config.data);
       setAvailableModels(models);
       if (models.length > 0) {
+        // If initialModel was provided, try to set it
+        if (initialModel) {
+          const targetModel = models.find(m => m.id === initialModel);
+          if (targetModel) {
+            setModel(targetModel);
+            setExpandedProviders(new Set([targetModel.provider]));
+            return;
+          }
+        }
         const currentModel = models.find(m => m.id === model.id) || models[0];
         if (currentModel) {
           setExpandedProviders(new Set([currentModel.provider]));
         }
       }
     }
-  }, [config.data, model.id]);
+  }, [config.data, model.id, initialModel]);
 
   // Group and filter models
   const groupedModels = useMemo(() => {
@@ -155,6 +189,17 @@ export default function HITLWizard({ initialTarget, initialMode }: HITLWizardPro
     }
   }
 
+  // Calculate max field index (5 normally, 4 if plan mode hides tier selector)
+  const maxField = state.mode === "plan" ? 4 : 5;
+
+  // Adjust field index mapping when in plan mode (skip tier field)
+  const getActualField = (field: number): number => {
+    if (state.mode === "plan" && field >= 1) {
+      return field + 1; // Skip tier field (1) in plan mode
+    }
+    return field;
+  };
+
   useKeyboard((key) => {
     if (key.name === "escape") {
       if (currentStep === "creating") return;
@@ -173,7 +218,7 @@ export default function HITLWizard({ initialTarget, initialMode }: HITLWizardPro
     if (currentStep === "creating") return;
 
     if (currentStep === "target") {
-      if (key.name === "tab") {
+      if (key.name === "tab" || key.name === "down") {
         if (key.shift) {
           setTargetFocusedField((prev) => Math.max(0, prev - 1));
         } else {
@@ -185,6 +230,10 @@ export default function HITLWizard({ initialTarget, initialMode }: HITLWizardPro
         }
         return;
       }
+      if (key.name === "up") {
+        setTargetFocusedField((prev) => Math.max(0, prev - 1));
+        return;
+      }
       if (key.name === "return" && state.target.trim()) {
         setCurrentStep("mode");
         return;
@@ -193,9 +242,71 @@ export default function HITLWizard({ initialTarget, initialMode }: HITLWizardPro
     }
 
     if (currentStep === "mode") {
+      const actualField = getActualField(modeFocusedField);
+
+      // Up/down navigation between fields
+      if (key.name === "up") {
+        setModeFocusedField((prev) => Math.max(0, prev - 1));
+        return;
+      }
+      if (key.name === "down") {
+        setModeFocusedField((prev) => Math.min(maxField, prev + 1));
+        return;
+      }
+      if (key.name === "tab") {
+        if (key.shift) {
+          setModeFocusedField((prev) => Math.max(0, prev - 1));
+        } else {
+          setModeFocusedField((prev) => Math.min(maxField, prev + 1));
+        }
+        return;
+      }
+
+      // Left/right to change values within a field
+      if (key.name === "left" || key.name === "right") {
+        const delta = key.name === "left" ? -1 : 1;
+
+        // Mode selection (field 0)
+        if (actualField === 0) {
+          const modes: OperatorMode[] = ["plan", "manual", "auto"];
+          const idx = modes.indexOf(state.mode);
+          const newIdx = (idx + delta + modes.length) % modes.length;
+          setState((prev) => ({ ...prev, mode: modes[newIdx] }));
+          return;
+        }
+
+        // Tier selection (field 1, only in non-plan mode)
+        if (actualField === 1) {
+          const tiers: PermissionTier[] = [1, 2, 3, 4, 5];
+          const idx = tiers.indexOf(state.autoApproveTier);
+          const newIdx = Math.max(0, Math.min(4, idx + delta));
+          setState((prev) => ({ ...prev, autoApproveTier: tiers[newIdx] }));
+          return;
+        }
+
+        // Strict scope toggle (field 3)
+        if (actualField === 3) {
+          setState((prev) => ({
+            ...prev,
+            scope: { ...prev.scope, strictScope: !prev.scope.strictScope },
+          }));
+          return;
+        }
+
+        // Model selection (field 4)
+        if (actualField === 4 && visibleModels.length > 0) {
+          const currentIdx = visibleModels.findIndex(m => m.id === model.id);
+          const newIdx = Math.max(0, Math.min(visibleModels.length - 1, currentIdx + delta));
+          const newModel = visibleModels[newIdx];
+          if (newModel) setModel(newModel);
+          return;
+        }
+      }
+
+      // Enter to activate/submit
       if (key.name === "return") {
-        // Add host if typing
-        if (modeFocusedField === 2 && hostInput.trim()) {
+        // Add host if typing (field 2)
+        if (actualField === 2 && hostInput.trim()) {
           setState((prev) => ({
             ...prev,
             scope: { ...prev.scope, allowedHosts: [...prev.scope.allowedHosts, hostInput.trim()] },
@@ -203,83 +314,21 @@ export default function HITLWizard({ initialTarget, initialMode }: HITLWizardPro
           setHostInput("");
           return;
         }
-        createSessionAndNavigate();
-        return;
-      }
 
-      if (key.name === "tab") {
-        if (key.shift) {
-          setModeFocusedField((prev) => Math.max(0, prev - 1));
-        } else {
-          setModeFocusedField((prev) => Math.min(4, prev + 1));
-        }
-        return;
-      }
-
-      if (key.name === "up" || key.name === "down") {
-        if (modeFocusedField === 0) {
-          const modes: OperatorMode[] = ["plan", "manual", "auto"];
-          const idx = modes.indexOf(state.mode);
-          const newIdx = key.name === "up" ? (idx - 1 + modes.length) % modes.length : (idx + 1) % modes.length;
-          setState((prev) => ({ ...prev, mode: modes[newIdx] }));
-          return;
-        }
-        if (modeFocusedField === 1) {
-          const tiers: PermissionTier[] = [1, 2, 3, 4, 5];
-          const idx = tiers.indexOf(state.autoApproveTier);
-          const newIdx = key.name === "up" ? Math.max(0, idx - 1) : Math.min(4, idx + 1);
-          setState((prev) => ({ ...prev, autoApproveTier: tiers[newIdx] }));
-          return;
-        }
-        if (modeFocusedField === 3) {
+        // Toggle strict scope (field 3)
+        if (actualField === 3) {
           setState((prev) => ({
             ...prev,
             scope: { ...prev.scope, strictScope: !prev.scope.strictScope },
           }));
           return;
         }
-        // Model selection
-        if (modeFocusedField === 4 && visibleModels.length > 0) {
-          const currentIdx = visibleModels.findIndex(m => m.id === model.id);
-          const newIdx = key.name === "up"
-            ? Math.max(0, currentIdx - 1)
-            : Math.min(visibleModels.length - 1, currentIdx + 1);
-          const newModel = visibleModels[newIdx];
-          if (newModel) setModel(newModel);
-          return;
-        }
-      }
 
-      // Model section: handle search, left/right for collapse/expand
-      if (modeFocusedField === 4) {
-        if (key.name === "backspace") {
-          setModelSearchQuery(prev => prev.slice(0, -1));
-          return;
+        // Submit button (field 5)
+        if (actualField === 5) {
+          createSessionAndNavigate();
         }
-        if (key.name === "escape" && modelSearchQuery) {
-          setModelSearchQuery("");
-          return;
-        }
-        if (key.name === "left" || key.name === "right") {
-          const currentProvider = model.provider;
-          if (key.name === "left") {
-            setExpandedProviders(prev => {
-              const next = new Set(prev);
-              next.delete(currentProvider);
-              return next;
-            });
-          } else {
-            setExpandedProviders(prev => new Set([...prev, currentProvider]));
-          }
-          return;
-        }
-        if (key.sequence && key.sequence.length === 1 && /[a-zA-Z0-9\-_.]/.test(key.sequence)) {
-          setModelSearchQuery(prev => prev + key.sequence);
-          if (!modelSearchQuery) {
-            setExpandedProviders(new Set(providerOrder));
-          }
-          return;
-        }
+        return;
       }
     }
   });
@@ -342,160 +391,110 @@ export default function HITLWizard({ initialTarget, initialMode }: HITLWizardPro
     );
   }
 
-  // Mode step
+  // Mode step - field indices:
+  // 0: Mode selection
+  // 1: Auto-approve tier (hidden in plan mode)
+  // 2: Add allowed host input
+  // 3: Strict scope toggle
+  // 4: Model selection
+  // 5: Submit button
+  // In plan mode, fields shift: 0, 2, 3, 4, 5 become indices 0, 1, 2, 3, 4
+
+  const actualField = getActualField(modeFocusedField);
+  const modeDef = OPERATOR_MODES[state.mode];
+  const tierDef = PERMISSION_TIERS[state.autoApproveTier];
+
   return (
-    <box width="100%" flexDirection="column" gap={2} paddingLeft={4}>
-      <box flexDirection="column">
+    <box width="100%" flexDirection="column" gap={1} paddingLeft={4}>
+      <box flexDirection="column" marginBottom={1}>
         <text fg={creamText}>Configure Operator Mode</text>
         <text fg={dimText}>Target: {state.target}</text>
       </box>
 
-      {/* Mode Selection */}
-      <box flexDirection="column" gap={1}>
-        <text fg={modeFocusedField === 0 ? creamText : dimText}>Approval Mode</text>
-        <box flexDirection="column" paddingLeft={2}>
-          {(["plan", "manual", "auto"] as OperatorMode[]).map((m) => {
-            const def = OPERATOR_MODES[m];
-            const isSelected = state.mode === m;
-            const mColor = m === "plan" ? yellowText : m === "auto" ? greenBullet : blueText;
-            return (
-              <text key={m} fg={isSelected ? mColor : dimText}>
-                {isSelected ? "● " : "○ "}
-                <span fg={isSelected ? creamText : dimText}>{def.name}</span>
-                <span fg={dimText}> - {def.description}</span>
-              </text>
-            );
-          })}
-        </box>
-        {modeFocusedField === 0 && <text fg={dimText} paddingLeft={2}>Use ↑/↓ to select</text>}
+      {/* Mode Selection - Field 0 */}
+      <box flexDirection="row" gap={1}>
+        <text fg={actualField === 0 ? greenBullet : dimText}>{actualField === 0 ? "▸" : " "}</text>
+        <text fg={actualField === 0 ? creamText : dimText}>Mode:</text>
+        <text fg={modeColor}>{modeDef.name}</text>
+        <text fg={dimText}>- {modeDef.description}</text>
+        {actualField === 0 && <text fg={dimText}>(←/→)</text>}
       </box>
 
-      {/* Auto-approve Tier (only relevant for auto/manual mode) */}
+      {/* Auto-approve Tier - Field 1 (hidden in plan mode) */}
       {state.mode !== "plan" && (
-        <box flexDirection="column" gap={1}>
-          <text fg={modeFocusedField === 1 ? creamText : dimText}>
-            Auto-approve Tier {state.mode === "auto" ? "(actions up to this tier auto-approve)" : "(tier 1 always auto-approves)"}
-          </text>
-          <box flexDirection="column" paddingLeft={2}>
-            {([1, 2, 3, 4, 5] as PermissionTier[]).map((t) => {
-              const def = PERMISSION_TIERS[t];
-              const isSelected = state.autoApproveTier === t;
-              const isEffective = state.mode === "auto" ? t <= state.autoApproveTier : t === 1;
-              return (
-                <text key={t} fg={isSelected ? greenBullet : isEffective ? creamText : dimText}>
-                  {isSelected ? "● " : "○ "}
-                  T{t} - {def.name}
-                  <span fg={dimText}> ({def.examples.slice(0, 2).join(", ")})</span>
-                </text>
-              );
-            })}
-          </box>
-          {modeFocusedField === 1 && <text fg={dimText} paddingLeft={2}>Use ↑/↓ to adjust</text>}
+        <box flexDirection="row" gap={1}>
+          <text fg={actualField === 1 ? greenBullet : dimText}>{actualField === 1 ? "▸" : " "}</text>
+          <text fg={actualField === 1 ? creamText : dimText}>Auto-approve:</text>
+          <text fg={greenBullet}>T{state.autoApproveTier} - {tierDef.name}</text>
+          <text fg={dimText}>({tierDef.examples.slice(0, 2).join(", ")})</text>
+          {actualField === 1 && <text fg={dimText}>(←/→)</text>}
         </box>
       )}
 
-      {/* Scope Constraints */}
-      <box flexDirection="column" gap={1}>
-        <text fg={modeFocusedField === 2 || modeFocusedField === 3 ? creamText : dimText}>Scope Constraints (optional)</text>
-        <box flexDirection="column" paddingLeft={2} gap={1}>
-          <Input
-            label="Add Allowed Host"
-            description="Press Enter to add"
-            placeholder="example.com"
+      {/* Add Allowed Host - Field 2 */}
+      <box flexDirection="row" gap={1}>
+        <text fg={actualField === 2 ? greenBullet : dimText}>{actualField === 2 ? "▸" : " "}</text>
+        <text fg={actualField === 2 ? creamText : dimText}>Add host:</text>
+        {actualField === 2 ? (
+          <input
+            width={30}
             value={hostInput}
             onInput={setHostInput}
-            focused={modeFocusedField === 2}
+            focused={true}
+            placeholder="example.com"
+            textColor="white"
+            backgroundColor="transparent"
           />
-          {state.scope.allowedHosts.length > 0 && (
-            <box flexDirection="column">
-              {state.scope.allowedHosts.map((h, i) => (
-                <text key={i} fg={dimText}>• {h}</text>
-              ))}
-            </box>
-          )}
-          <box flexDirection="row" gap={1}>
-            <text fg={modeFocusedField === 3 ? creamText : dimText}>Strict Scope:</text>
-            <text fg={state.scope.strictScope ? greenBullet : dimText}>
-              {state.scope.strictScope ? "● Enabled" : "○ Disabled"}
-            </text>
-            {modeFocusedField === 3 && <text fg={dimText}>(↑/↓ to toggle)</text>}
-          </box>
-        </box>
-      </box>
-
-      {/* Model Section */}
-      <box flexDirection="column" gap={1}>
-        <text>
-          <span fg={greenBullet}>█ </span>
-          <span fg={modeFocusedField === 4 ? creamText : dimText}>AI Model</span>
-          <span fg={dimText}> ({model.name})</span>
-          <span fg={dimText}> [{isModelUserSelected ? "user" : "default"}]</span>
-        </text>
-        {modeFocusedField === 4 && (
-          <box flexDirection="column" gap={0} paddingLeft={2}>
-            {/* Search input */}
-            {modelSearchQuery ? (
-              <text fg={creamText}>Search: {modelSearchQuery}_</text>
-            ) : (
-              <text fg={dimText}>Type to search models...</text>
-            )}
-
-            {/* Provider groups */}
-            {providerOrder.map(provider => {
-              const models = groupedModels[provider];
-              if (!models || models.length === 0) return null;
-
-              const isExpanded = expandedProviders.has(provider);
-              const providerName = providerNames[provider] || provider;
-
-              return (
-                <box key={provider} flexDirection="column" gap={0}>
-                  <text fg={isExpanded ? creamText : dimText}>
-                    {isExpanded ? "▾" : "▸"} {providerName} ({models.length})
-                  </text>
-                  {isExpanded && (
-                    <box flexDirection="column" gap={0} paddingLeft={2}>
-                      {models.map((m) => {
-                        const isSelected = m.id === model.id;
-                        const isDefault = m.id === "claude-haiku-4-5" || m.id === "gpt-4o-mini";
-                        return (
-                          <text key={m.id} fg={isSelected ? greenBullet : dimText}>
-                            {isSelected ? "●" : "○"} {m.name}
-                            {isDefault && !isModelUserSelected && isSelected ? " [default]" : ""}
-                          </text>
-                        );
-                      })}
-                    </box>
-                  )}
-                </box>
-              );
-            })}
-            <text fg={dimText}>↑/↓ select | Type to search | ←/→ collapse/expand</text>
-          </box>
+        ) : (
+          <text fg={dimText}>{hostInput || "example.com"}</text>
         )}
+        {actualField === 2 && <text fg={dimText}>(Enter to add)</text>}
       </box>
 
-      <box flexDirection="column" gap={0} marginTop={1}>
-        <text>
-          <span fg={greenBullet}>█ </span>
-          <span fg={dimText}>Press </span>
-          <span fg={creamText}>[Enter]</span>
-          <span fg={dimText}> to start (</span>
-          <span fg={modeColor}>{OPERATOR_MODES[state.mode].name}</span>
-          <span fg={dimText}> mode)</span>
+      {/* Show added hosts */}
+      {state.scope.allowedHosts.length > 0 && (
+        <box flexDirection="column" paddingLeft={3}>
+          {state.scope.allowedHosts.map((h, i) => (
+            <text key={i} fg={dimText}>  • {h}</text>
+          ))}
+        </box>
+      )}
+
+      {/* Strict Scope - Field 3 */}
+      <box flexDirection="row" gap={1}>
+        <text fg={actualField === 3 ? greenBullet : dimText}>{actualField === 3 ? "▸" : " "}</text>
+        <text fg={actualField === 3 ? creamText : dimText}>Strict scope:</text>
+        <text fg={state.scope.strictScope ? greenBullet : dimText}>
+          {state.scope.strictScope ? "Enabled" : "Disabled"}
         </text>
-        <text>
-          <span fg={greenBullet}>█ </span>
-          <span fg={dimText}>Press </span>
-          <span fg={creamText}>[Tab]</span>
-          <span fg={dimText}> to navigate fields</span>
+        {actualField === 3 && <text fg={dimText}>(Enter/←/→)</text>}
+      </box>
+
+      {/* Model Selection - Field 4 */}
+      <box flexDirection="row" gap={1}>
+        <text fg={actualField === 4 ? greenBullet : dimText}>{actualField === 4 ? "▸" : " "}</text>
+        <text fg={actualField === 4 ? creamText : dimText}>Model:</text>
+        <text fg={greenBullet}>{model.name}</text>
+        {actualField === 4 && <text fg={dimText}>(←/→)</text>}
+      </box>
+
+      {/* Submit Button - Field 5 */}
+      <box flexDirection="row" gap={1} marginTop={1}>
+        <text fg={actualField === 5 ? greenBullet : dimText}>{actualField === 5 ? "▸" : " "}</text>
+        <text fg={actualField === 5 ? greenBullet : dimText}>
+          {actualField === 5 ? "[" : " "}
         </text>
-        <text>
-          <span fg={greenBullet}>█ </span>
-          <span fg={dimText}>Press </span>
-          <span fg={creamText}>[ESC]</span>
-          <span fg={dimText}> to go back</span>
+        <text fg={actualField === 5 ? creamText : dimText}>
+          Start Session
         </text>
+        <text fg={actualField === 5 ? greenBullet : dimText}>
+          {actualField === 5 ? "]" : " "}
+        </text>
+      </box>
+
+      {/* Help text */}
+      <box flexDirection="column" gap={0} marginTop={2}>
+        <text fg={dimText}>↑/↓ navigate | ←/→ change value | Enter select | ESC back</text>
       </box>
     </box>
   );

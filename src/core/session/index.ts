@@ -509,4 +509,41 @@ Testing in progress...
         return existsSync(statePath);
     }
 
+    // ============================================================================
+    // Runtime Operator Settings Update
+    // ============================================================================
+
+    /**
+     * Update operator settings for a running session
+     * This persists the changes to the session config
+     */
+    export async function updateOperatorSettings(
+        sessionId: string,
+        settings: Partial<OperatorSettings>
+    ): Promise<SessionInfo> {
+        return await update(sessionId, (session) => {
+            if (!session.config) {
+                session.config = {};
+            }
+            if (!session.config.operatorSettings) {
+                session.config.operatorSettings = {
+                    initialMode: "manual",
+                    autoApproveTier: 2,
+                    enableSuggestions: true,
+                };
+            }
+
+            // Update only the provided settings
+            if (settings.initialMode !== undefined) {
+                session.config.operatorSettings.initialMode = settings.initialMode;
+            }
+            if (settings.autoApproveTier !== undefined) {
+                session.config.operatorSettings.autoApproveTier = settings.autoApproveTier;
+            }
+            if (settings.enableSuggestions !== undefined) {
+                session.config.operatorSettings.enableSuggestions = settings.enableSuggestions;
+            }
+        });
+    }
+
 }

@@ -1,5 +1,11 @@
 import type { CommandDefinition } from "./command-router";
 import type { Route } from "./context/route";
+import {
+  parseWebFlags,
+  hasEnoughFlagsToSkipWizard,
+  createOperatorSessionFromFlags,
+  createSwarmSessionFromFlags,
+} from "./utils/command-flags";
 
 /**
  * Define your application's CommandContext type with specific methods
@@ -81,41 +87,75 @@ export const commands: CommandConfig[] = [
   {
     name: "web",
     aliases: ["w"],
-    description: "Start a web app pentest session",
+    description: "Start web pentest (use /help for flags)",
     category: "Pentesting",
-    options: [
-      { name: "--target", description: "Target URL to test", valueHint: "<url>" },
-      { name: "--auto", description: "Enable auto swarm mode" },
-    ],
     handler: async (args, ctx) => {
-      const hasAuto = args.includes('--auto');
-      const targetIdx = args.indexOf('--target');
-      const target = targetIdx !== -1 ? args[targetIdx + 1] : undefined;
+      const flags = parseWebFlags(args);
+
+      if (flags.swarm) {
+        // Swarm mode path
+        if (flags.target && hasEnoughFlagsToSkipWizard(flags)) {
+          try {
+            const session = await createSwarmSessionFromFlags(flags);
+            ctx.navigate({ type: "session", sessionId: session.id });
+            return;
+          } catch (e) {
+            // Fall through to wizard on error
+            console.error("Failed to create session:", e);
+          }
+        }
+        // Navigate to WebWizard (swarm wizard)
+        ctx.navigate({
+          type: "base",
+          path: "web",
+          options: { auto: true, ...flags }
+        });
+        return;
+      }
+
+      // Operator mode path (default)
+      if (flags.target && hasEnoughFlagsToSkipWizard(flags)) {
+        try {
+          const session = await createOperatorSessionFromFlags(flags);
+          ctx.navigate({ type: "session", sessionId: session.id });
+          return;
+        } catch (e) {
+          // Fall through to wizard on error
+          console.error("Failed to create session:", e);
+        }
+      }
+      // Navigate to operator wizard with pre-filled values
       ctx.navigate({
         type: "base",
-        path: "web",
-        options: { auto: hasAuto, target }
+        path: "operator",
+        options: flags as any
       });
     },
   },
   {
     name: "operator",
     aliases: ["h"],
-    description: "Start interactive pentesting session (Human-in-the-Loop)",
+    description: "Start HITL pentest session",
     category: "Pentesting",
-    options: [
-      { name: "--target", description: "Target URL to test", valueHint: "<url>" },
-      { name: "--mode", description: "Approval mode: plan, manual, or auto", valueHint: "<mode>" },
-    ],
     handler: async (args, ctx) => {
-      const targetIdx = args.indexOf('--target');
-      const target = targetIdx !== -1 ? args[targetIdx + 1] : undefined;
-      const modeIdx = args.indexOf('--mode');
-      const mode = modeIdx !== -1 ? args[modeIdx + 1] : undefined;
+      const flags = parseWebFlags(args);
+
+      // Operator mode - skip wizard if enough flags provided
+      if (flags.target && hasEnoughFlagsToSkipWizard(flags)) {
+        try {
+          const session = await createOperatorSessionFromFlags(flags);
+          ctx.navigate({ type: "session", sessionId: session.id });
+          return;
+        } catch (e) {
+          // Fall through to wizard on error
+          console.error("Failed to create session:", e);
+        }
+      }
+      // Navigate to operator wizard with pre-filled values
       ctx.navigate({
         type: "base",
         path: "operator",
-        options: { target, mode } as any
+        options: flags as any
       });
     },
   },
@@ -150,6 +190,18 @@ export const commands: CommandConfig[] = [
       ctx.navigate({
         type: "base",
         path: "resume"
+      });
+    },
+  },
+  {
+    name: "chat",
+    aliases: ["c"],
+    description: "Open the Chat TUI interface",
+    category: "General",
+    handler: async (args, ctx) => {
+      ctx.navigate({
+        type: "base",
+        path: "chat"
       });
     },
   },

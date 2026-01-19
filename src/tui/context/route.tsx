@@ -8,6 +8,7 @@ export type RoutePath =
     | "thorough"
     | "web"
     | "operator"
+    | "chat"
     | "dns"
     | "config"
     | "models"
@@ -18,6 +19,20 @@ export type RoutePath =
 export interface WebCommandOptions {
     auto?: boolean;
     target?: string;
+    name?: string;
+    swarm?: boolean;
+    mode?: 'plan' | 'manual' | 'auto';
+    tier?: number;
+    authUrl?: string;
+    authUser?: string;
+    authPass?: string;
+    authInstructions?: string;
+    hosts?: string[];
+    ports?: number[];
+    strict?: boolean;
+    headersMode?: 'none' | 'default' | 'custom';
+    customHeaders?: Record<string, string>;
+    model?: string;
 }
 
 export type Route =

@@ -1,8 +1,4 @@
 import { createRoot, useKeyboard, useRenderer } from "@opentui/react";
-import {
-  convertImageToColoredAscii,
-  ColoredAsciiArt,
-} from "./components/ascii-art";
 import { useState, useEffect } from "react";
 import Footer from "./components/footer";
 import CommandInput from "./command-input";
@@ -17,38 +13,20 @@ import ConfigDialog from "./components/commands/config-dialog";
 import ModelsDisplay from "./components/commands/models-display";
 import ProviderManager from "./components/commands/provider-manager";
 import ResumeWizard from "./components/commands/resume-wizard";
-// import CreateSessionDialog from "./components/commands/create-session-dialog";
+import ChatApp from "./components/chat";
 import type { Config } from "../core/config/config";
 import { config } from "../core/config";
-import { fileURLToPath } from "url";
-import { dirname, join } from "path";
-import { existsSync } from "fs";
-import { createCliRenderer, RGBA } from "@opentui/core";
+import { createCliRenderer } from "@opentui/core";
 import { ConfigProvider, useConfig } from "./context/config";
 import { createSwitch } from "./components/switch";
 import { type RoutePath, RouteProvider, useRoute } from "./context/route";
 import { ResponsibleUseDisclosure } from "./components/responsible-use-disclosure";
 import { hasAnyProviderConfigured } from "../core/providers";
-import { BoxLogo } from "./components/box-logo";
-import { AsciiTitle } from "./components/ascii-title";
 import { SessionProvider } from "./context/session";
 import { InputProvider, useInput } from "./context/input";
 import { FocusProvider, useFocus } from "./context/focus";
 import { DialogProvider, useDialog } from "./components/dialog";
-import { Session } from "../core/session";
 import ShortcutsDialog from "./components/commands/shortcuts-dialog";
-
-// Pre-generated ASCII art (generated at build time with scripts/generate-ascii-art.ts)
-// This avoids needing sharp at runtime, which doesn't work in compiled binaries
-import generatedAsciiArt from "./generated-ascii-art.json";
-
-// Use the pre-generated ASCII art
-const coloredAscii = generatedAsciiArt as {
-  char: string;
-  r: number;
-  g: number;
-  b: number;
-}[][];
 
 interface AppProps {
   appConfig: Config;
@@ -171,6 +149,8 @@ function AppContent({
       const lastPress = ctrlCPressTime;
 
       if (lastPress && now - lastPress < 1000) {
+        // Gracefully cleanup renderer before exit
+        renderer.destroy();
         process.exit(0);
       } else {
         setInputKey((prev) => prev + 1);
@@ -350,10 +330,7 @@ function CommandDisplay({
             <ResponsibleUseDisclosure onAccept={handleAcceptPolicy}/>
           </RouteSwitch.Case>
           <RouteSwitch.Case when="home">
-            <box width={"100%"} flexDirection="column" gap={1} paddingLeft={4}>
-              <Home/>
-              <CommandInput focused={focusIndex === 0} inputKey={inputKey}/>
-            </box>
+            <ChatApp />
           </RouteSwitch.Case>
           <RouteSwitch.Case when="help">
             <HelpDialog/>
@@ -362,12 +339,34 @@ function CommandDisplay({
             <WebWizard
               initialTarget={route.data.options?.target}
               autoMode={route.data.options?.auto}
+              initialName={route.data.options?.name}
+              initialAuthUrl={route.data.options?.authUrl}
+              initialAuthUser={route.data.options?.authUser}
+              initialAuthPass={route.data.options?.authPass}
+              initialAuthInstructions={route.data.options?.authInstructions}
+              initialHosts={route.data.options?.hosts}
+              initialPorts={route.data.options?.ports}
+              initialStrict={route.data.options?.strict}
+              initialHeadersMode={route.data.options?.headersMode}
+              initialCustomHeaders={route.data.options?.customHeaders}
+              initialModel={route.data.options?.model}
             />
           </RouteSwitch.Case>
           <RouteSwitch.Case when="operator">
             <OperatorWizard
               initialTarget={(route.data.options as any)?.target}
               initialMode={(route.data.options as any)?.mode}
+              initialName={(route.data.options as any)?.name}
+              initialTier={(route.data.options as any)?.tier}
+              initialAuthUrl={(route.data.options as any)?.authUrl}
+              initialAuthUser={(route.data.options as any)?.authUser}
+              initialAuthPass={(route.data.options as any)?.authPass}
+              initialAuthInstructions={(route.data.options as any)?.authInstructions}
+              initialHosts={(route.data.options as any)?.hosts}
+              initialStrict={(route.data.options as any)?.strict}
+              initialHeadersMode={(route.data.options as any)?.headersMode}
+              initialCustomHeaders={(route.data.options as any)?.customHeaders}
+              initialModel={(route.data.options as any)?.model}
             />
           </RouteSwitch.Case>
           <RouteSwitch.Case when="config">
@@ -398,91 +397,33 @@ function CommandDisplay({
   return null;
 }
 
-
-function Home () {
-  const config = useConfig();
-  const [recentSessions, setRecentSessions] = useState<Session.SessionInfo[]>([]);
-
-  useEffect(() => {
-    const loadRecentSessions = async () => {
-      const sessions: Session.SessionInfo[] = [];
-      for await(const session of Session.list()) {
-        sessions.push(session);
-      }
-      sessions.sort((a, b) => b.time.updated - a.time.updated);
-      setRecentSessions(sessions.slice(0, 4));
-    }
-    loadRecentSessions();
-  }, []);
-
-  const greenBullet = RGBA.fromInts(76, 175, 80, 255);
-  const creamText = RGBA.fromInts(255, 248, 220, 255);
-  const dimText = RGBA.fromInts(120, 120, 120, 255);
-
-  return (
-    <box width={"100%"} flexDirection="column" gap={1}>
-        <ColoredAsciiArt ascii={coloredAscii}/>
-      {/* Logo */}
-      <BoxLogo />
-
-      {/* Large Title */}
-      <box marginTop={1}>
-        <AsciiTitle />
-      </box>
-
-      {/* Subtitle */}
-      <text fg={creamText}>
-        <span>Apex CLI</span>
-        <span fg={dimText}>{" (by Pensar)"}</span>
-      </text>
-
-      {/* Tagline */}
-      <box marginTop={1}>
-        <text fg={dimText}>
-          Agentic security testing framework for modern applications.
-        </text>
-      </box>
-
-      {/* Metadata section */}
-      <box flexDirection="column" marginTop={1} gap={0}>
-        <text>
-          <span fg={greenBullet}>█ </span>
-          <span fg={dimText}>Version: </span>
-          <span fg={creamText}>{config.data.version}</span>
-        </text>
-        <text>
-          <span fg={greenBullet}>█ </span>
-          <span fg={dimText}>Quick start: </span>
-          <span fg={creamText}>/web</span>
-        </text>
-        <text>
-          <span fg={greenBullet}>█ </span>
-          <span fg={dimText}>Configure: </span>
-          <span fg={creamText}>/providers</span>
-        </text>
-      </box>
-
-      {/* Recent Sessions */}
-      <box flexDirection="column" marginTop={1}>
-        <text fg={dimText}>Recent sessions</text>
-        {recentSessions.length > 0 ? (
-          recentSessions.map((s, idx) => (
-            <text key={idx}>
-              <span fg={greenBullet}>█ </span>
-              <span fg={creamText}>{s.name}</span>
-            </text>
-          ))
-        ) : (
-          <text fg={dimText}>  No recent activity</text>
-        )}
-      </box>
-    </box>
-  )
-}
-
 async function main() {
   const appConfig = await config.get();
   const renderer = await createCliRenderer({ exitOnCtrlC: false });
+
+  // Graceful shutdown handler
+  const cleanup = () => {
+    renderer.destroy();
+    process.exit(0);
+  };
+
+  // Handle process signals for graceful shutdown
+  process.on("SIGINT", cleanup);
+  process.on("SIGTERM", cleanup);
+
+  // Handle uncaught errors - cleanup terminal before crash
+  process.on("uncaughtException", (err) => {
+    renderer.destroy();
+    console.error("Uncaught exception:", err);
+    process.exit(1);
+  });
+
+  process.on("unhandledRejection", (reason) => {
+    renderer.destroy();
+    console.error("Unhandled rejection:", reason);
+    process.exit(1);
+  });
+
   createRoot(renderer)
     .render(<App appConfig={appConfig} />);
 }

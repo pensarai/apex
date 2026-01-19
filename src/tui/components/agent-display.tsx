@@ -1,14 +1,12 @@
 import {
   RGBA,
-  TextAttributes,
   StyledText,
-  type TextChunk,
 } from "@opentui/core";
 import { SpinnerDots } from "./sprites";
 import { useState, memo } from "react";
-import { marked } from "marked";
 import type { Message } from "../../core/messages/types";
 import { useTerminalDimensions } from "@opentui/react";
+import { markdownToStyledText, getStableMessageKey } from "./shared";
 
 export type Subagent = {
   id: string;
@@ -20,44 +18,42 @@ export type Subagent = {
   status: "pending" | "completed" | "failed";
 };
 
-// Flexible display message type (doesn't require storage fields)
+/**
+ * Tool execution status.
+ */
+export type ToolStatus = "pending" | "completed" | "error";
+
+/**
+ * Display message type - flexible type for UI display.
+ *
+ * For tool messages: toolCallId, toolName, args, and status are required.
+ * For text messages: only role, content, and createdAt are required.
+ *
+ * Use isToolMessage() type guard for safe narrowing to tool messages.
+ */
 export type DisplayMessage = {
   role: "user" | "assistant" | "system" | "tool";
   content: string | unknown[];
   createdAt: Date;
-  // Optional tool fields
+  // Tool-specific fields (present when role === "tool")
   toolCallId?: string;
   toolName?: string;
   args?: Record<string, unknown>;
-  result?: unknown; // Tool output/result
-  status?: "pending" | "completed";
-};
-
-// Type guard for tool messages
-type ToolDisplayMessage = DisplayMessage & {
-  role: "tool";
-  toolCallId: string;
-  toolName: string;
+  result?: unknown;
+  status?: ToolStatus;
+  logs?: string[];
 };
 
 function getStableKey(
   item: DisplayMessage | Subagent,
   contextId: string = "root"
 ): string {
+  // Subagents have their own unique ID
   if ("messages" in item) {
     return `subagent-${item.id}`;
-  } else if (item.role === "tool" && "toolCallId" in item) {
-    return `${contextId}-tool-${(item as ToolDisplayMessage).toolCallId}`;
-  } else {
-    const content =
-      typeof item.content === "string"
-        ? item.content
-        : JSON.stringify(item.content);
-    const contentHash = content.length;
-    return `${contextId}-${
-      item.role
-    }-${item.createdAt.getTime()}-${contentHash}`;
   }
+  // Use shared utility for display messages
+  return getStableMessageKey(item, contextId);
 }
 
 interface AgentDisplayProps {
@@ -71,121 +67,6 @@ interface AgentDisplayProps {
   focused?: boolean; // Controls whether this scrollbox responds to scroll events
 }
 
-// Utility function to convert markdown to StyledText
-function markdownToStyledText(content: string): StyledText {
-  // Handle empty or whitespace-only content
-  if (!content || !content.trim()) {
-    return new StyledText([
-      { __isChunk: true, text: content || "", attributes: 0 },
-    ]);
-  }
-
-  try {
-    const tokens = marked.lexer(content);
-    const chunks: TextChunk[] = [];
-
-    function processInlineTokens(
-      inlineTokens: any[],
-      defaultAttrs: number = 0
-    ): void {
-      for (const token of inlineTokens) {
-        if (token.type === "text") {
-          chunks.push({
-            __isChunk: true,
-            text: token.text,
-            attributes: defaultAttrs,
-          });
-        } else if (token.type === "strong") {
-          processInlineTokens(token.tokens, defaultAttrs | TextAttributes.BOLD);
-        } else if (token.type === "em") {
-          processInlineTokens(
-            token.tokens,
-            defaultAttrs | TextAttributes.ITALIC
-          );
-        } else if (token.type === "codespan") {
-          chunks.push({
-            __isChunk: true,
-            text: token.text,
-            fg: RGBA.fromInts(100, 255, 100, 255), // green for code
-            attributes: defaultAttrs,
-          });
-        } else if (token.type === "link") {
-          chunks.push({
-            __isChunk: true,
-            text: token.text,
-            fg: RGBA.fromInts(100, 200, 255, 255), // cyan for links
-            attributes: defaultAttrs | TextAttributes.UNDERLINE,
-          });
-        } else if (token.type === "br") {
-          chunks.push({
-            __isChunk: true,
-            text: "\n",
-            attributes: defaultAttrs,
-          });
-        } else if (token.tokens) {
-          processInlineTokens(token.tokens, defaultAttrs);
-        }
-      }
-    }
-
-    for (const token of tokens) {
-      if (token.type === "paragraph") {
-        if (token.tokens) processInlineTokens(token.tokens);
-        chunks.push({ __isChunk: true, text: "\n\n", attributes: 0 });
-      } else if (token.type === "heading") {
-        if (token.tokens)
-          processInlineTokens(token.tokens, TextAttributes.BOLD);
-        chunks.push({ __isChunk: true, text: "\n\n", attributes: 0 });
-      } else if (token.type === "list") {
-        for (const item of token.items) {
-          chunks.push({
-            __isChunk: true,
-            text: token.ordered ? `${item.task ? "☐ " : "• "}` : "• ",
-            attributes: 0,
-          });
-          processInlineTokens(item.tokens[0]?.tokens || []);
-          chunks.push({ __isChunk: true, text: "\n", attributes: 0 });
-        }
-        chunks.push({ __isChunk: true, text: "\n", attributes: 0 });
-      } else if (token.type === "code") {
-        chunks.push({
-          __isChunk: true,
-          text: token.text + "\n\n",
-          fg: RGBA.fromInts(100, 255, 100, 255), // green for code blocks
-          attributes: 0,
-        });
-      } else if (token.type === "blockquote") {
-        if (token.tokens) processInlineTokens(token.tokens);
-        chunks.push({ __isChunk: true, text: "\n\n", attributes: 0 });
-      } else if (token.type === "space") {
-        chunks.push({ __isChunk: true, text: "\n", attributes: 0 });
-      }
-    }
-
-    // Remove trailing newlines from the last chunk
-    if (chunks.length > 0) {
-      const lastChunk = chunks[chunks.length - 1];
-      if (lastChunk && lastChunk.text) {
-        lastChunk.text = lastChunk.text.trimEnd();
-        // Remove the chunk entirely if it's now empty
-        if (lastChunk.text === "") {
-          chunks.pop();
-        }
-      }
-    }
-
-    return new StyledText(chunks);
-  } catch (error) {
-    // Fallback to plain text if parsing fails
-    return new StyledText([
-      {
-        __isChunk: true,
-        text: content,
-        attributes: 0,
-      },
-    ]);
-  }
-}
 
 export default function AgentDisplay({
   messages,
@@ -337,8 +218,7 @@ const AgentMessage = memo(function AgentMessage({
 
   // Check if this is a pending tool message
   const isPendingTool =
-    message.role === "tool" &&
-    (message as ToolDisplayMessage).status === "pending";
+    message.role === "tool" && message.status === "pending";
 
   return (
     <box
