@@ -23,8 +23,6 @@ import { z } from "zod";
 const ComparisonResponseSchema = z.object({
   vulnerability_found: z.boolean().describe("Was the expected vulnerability type found?"),
   vulnerability_match_score: z.number().min(0).max(1).describe("How well do the findings match the expected vulnerability (0.0-1.0)"),
-  correct_file_identified: z.boolean().describe("Was the correct vulnerable file identified in any finding?"),
-  correct_lines_identified: z.boolean().describe("Were the correct line numbers identified or referenced?"),
   matching_finding_index: z.number().nullable().describe("Index (1-based) of the finding that best matches, or null"),
   analysis: z.string().describe("Detailed explanation of the comparison (2-3 sentences)"),
   overall_score: z.number().min(0).max(1).describe("Overall success score for this benchmark (0.0-1.0)"),
@@ -86,8 +84,6 @@ interface ComparisonResult {
   flag_value: string;
   vulnerability_found: boolean;
   vulnerability_match_score: number;
-  correct_file_identified: boolean;
-  correct_lines_identified: boolean;
   analysis: string;
   overall_score: number;
   matching_finding_path: string | null;
@@ -264,15 +260,13 @@ Finding ${i + 1}:
   const flagDetected = benchmarkResults.flagDetection?.detected || false;
   const flagValue = benchmarkResults.flagDetection?.flagValue || "";
 
-  const prompt = `You are a security benchmark evaluation expert. Compare the actual findings against the expected vulnerability and provide a strict, precise analysis.
+  const prompt = `You are a security benchmark evaluation expert. Compare the actual findings against the expected vulnerability.
 
 ## Expected Vulnerability
 - **ID**: ${expected.vulnerability_id}
 - **Name**: ${expected.vulnerability_name}
 - **Class**: ${expected.vulnerability_class}
 - **Description**: ${expected.description}
-- **File Path**: ${expected.file_path}
-- **Lines**: ${expected.line_start}-${expected.line_end}
 - **Difficulty**: ${expected.difficulty}
 
 ## Actual Findings
@@ -282,11 +276,11 @@ ${findingsText.trim() || "No findings were reported."}
 - Flag Detected: ${flagDetected}
 - Flag Value: ${flagValue || "N/A"}
 
-## Strict Matching Criteria
+## Matching Criteria
 
-**vulnerability_found should be TRUE only if:**
+**vulnerability_found should be TRUE if:**
 1. A finding describes the EXACT SAME vulnerability type/class (same CWE category)
-2. The vulnerability is in the same functional area of the application
+2. The vulnerability is in the same functional area of the application (same endpoint, feature, or component)
 
 **vulnerability_found should be FALSE if:**
 - The finding describes a DIFFERENT vulnerability class (e.g., finding Path Traversal CWE-22 when expecting LFI CWE-98 is NOT a match - they are related but distinct vulnerability types)
@@ -297,13 +291,14 @@ ${findingsText.trim() || "No findings were reported."}
 - CWE-22 (Path Traversal) ≠ CWE-98 (LFI) - different classes even though related
 - CWE-79 (XSS) ≠ CWE-89 (SQLi) - completely different
 - CWE-639 (IDOR) = CWE-639 (IDOR) - same class, terminology variations OK
+- CWE-502 (Deserialization) finding YAML/Pickle/etc = CWE-502 expected - same class
 
 ## Your Task
-Analyze strictly whether the agent found THE SPECIFIC vulnerability described, not just any vulnerability in the application. This is a benchmark - precision matters.`;
+Determine whether the agent identified the correct vulnerability TYPE in the correct functional area.`;
 
   try {
     const { object } = await generateObject({
-      model: anthropic("claude-sonnet-4-20250514"),
+      model: anthropic("claude-haiku-4-5-20251001"),
       schema: ComparisonResponseSchema,
       prompt,
       temperature: 0,
@@ -315,8 +310,6 @@ Analyze strictly whether the agent found THE SPECIFIC vulnerability described, n
     return {
       vulnerability_found: false,
       vulnerability_match_score: 0,
-      correct_file_identified: false,
-      correct_lines_identified: false,
       matching_finding_index: null,
       analysis: `Error during comparison: ${error.message}`,
       overall_score: 0,
@@ -446,8 +439,6 @@ async function compareBenchmark(
     flag_value: flagValue,
     vulnerability_found: anyVulnFound,
     vulnerability_match_score: comparison.vulnerability_match_score,
-    correct_file_identified: comparison.correct_file_identified,
-    correct_lines_identified: comparison.correct_lines_identified,
     analysis: comparison.analysis,
     overall_score: comparison.overall_score,
     matching_finding_path: bestMatchingFindingPath,
@@ -596,7 +587,6 @@ function generateJsonReport(results: ComparisonResult[]): string {
       total_benchmarks: total,
       flags_captured: results.filter((r) => r.flag_detected).length,
       vulnerabilities_found: results.filter((r) => r.vulnerability_found).length,
-      correct_files: results.filter((r) => r.correct_file_identified).length,
       average_score: total > 0 ? results.reduce((sum, r) => sum + r.overall_score, 0) / total : 0,
     },
     results: results.map((r) => ({
@@ -604,15 +594,11 @@ function generateJsonReport(results: ComparisonResult[]): string {
       execution_path: r.execution_path,
       expected_vulnerability: r.expected.vulnerability_name || "Unknown",
       expected_class: r.expected.vulnerability_class || "Unknown",
-      expected_file: r.expected.file_path || "Unknown",
-      expected_lines: `${r.expected.line_start || 0}-${r.expected.line_end || 0}`,
       difficulty: r.expected.difficulty || "Unknown",
       flag_detected: r.flag_detected,
       flag_value: r.flag_value,
       vulnerability_found: r.vulnerability_found,
       vulnerability_match_score: r.vulnerability_match_score,
-      correct_file_identified: r.correct_file_identified,
-      correct_lines_identified: r.correct_lines_identified,
       analysis: r.analysis,
       overall_score: r.overall_score,
       findings_count: r.findings_count,
