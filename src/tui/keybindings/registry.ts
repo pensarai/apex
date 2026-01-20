@@ -21,6 +21,8 @@ export interface KeybindingDependencies {
     setExternalDialogOpen: (open: boolean) => void;
     setFocusIndex: (fn: (prev: number) => number) => void;
     navigableItems: string[];
+    /** Optional: Toggle tools panel visibility (session context only) */
+    setShowToolsPanel?: (show: boolean) => void;
 }
 
 export function createKeybindings(deps: KeybindingDependencies): KeybindingEntry[] {
@@ -35,6 +37,7 @@ export function createKeybindings(deps: KeybindingDependencies): KeybindingEntry
         setExternalDialogOpen,
         setFocusIndex,
         navigableItems,
+        setShowToolsPanel,
     } = deps;
 
     const route = useRoute();
@@ -116,6 +119,16 @@ export function createKeybindings(deps: KeybindingDependencies): KeybindingEntry
             description: "Previous focusable item",
             fn: async () => {
                 setFocusIndex((prev) => (prev - 1 + navigableItems.length) % navigableItems.length);
+            },
+        },
+        {
+            combo: "ctrl+t",
+            description: "Toggle tools panel",
+            fn: async () => {
+                // Only works in session context
+                if (route.data.type === "session" && setShowToolsPanel) {
+                    setShowToolsPanel(true);
+                }
             },
         },
     ];

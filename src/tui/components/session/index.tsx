@@ -30,12 +30,15 @@ import type {
 import { OPERATOR_STAGES, OPERATOR_MODES, PERMISSION_TIERS, getStagesInOrder } from "../../../core/operator";
 import { useRoute } from "../../context/route";
 import { useInput } from "../../context/input";
+import { useFocus } from "../../context/focus";
 import { useAgent } from "../../agentProvider";
 import { colors } from "../../theme";
 import type { DisplayMessage } from "../agent-display";
 import { isToolMessage, useMessageState } from "../shared";
 import type { ModelInfo } from "../../../core/ai";
 import type { Endpoint, VerifiedVuln, Credential, Hypothesis, Evidence } from "../operator-dashboard/types";
+import ToolsPanel from "../tools-panel";
+import type { ToolsetState } from "../../../core/toolset";
 
 // Session sub-components
 import { Header } from "./header";
@@ -159,8 +162,10 @@ export function SessionComponent({
 
   const [directiveInput, setDirectiveInput] = useState("");
   const [showStageMenu, setShowStageMenu] = useState(false);
+  const [showToolsPanel, setShowToolsPanel] = useState(false);
   const [verboseMode, setVerboseMode] = useState(false);
   const [expandedLogs, setExpandedLogs] = useState(false);
+  const { refocusPrompt } = useFocus();
   const [lastApprovedAction, setLastApprovedAction] = useState<string | null>(null);
   const [lastDeclineNote, setLastDeclineNote] = useState<string | null>(null);
   const [resumeLoaded, setResumeLoaded] = useState(false);
@@ -528,13 +533,19 @@ export function SessionComponent({
           `Stage: ${OPERATOR_STAGES[currentStage].name}`,
           `Verbose: ${verboseMode ? "on" : "off"}`,
           "",
-          `Commands: /mode <plan|manual|auto>, /tier <1-5>, /config`,
+          `Commands: /mode <plan|manual|auto>, /tier <1-5>, /config, /tools`,
         ].join("\n");
         addMessage({
           role: "system",
           content: config,
           createdAt: new Date(),
         });
+        return;
+      }
+
+      // /tools - Open tools panel
+      if (cmd === "tools" || cmd === "t") {
+        setShowToolsPanel(true);
         return;
       }
     }
@@ -573,6 +584,12 @@ export function SessionComponent({
   // ============================================
 
   useKeyboard((key) => {
+    // Handle tools panel - let it handle its own keyboard events
+    if (showToolsPanel) {
+      // ESC is handled by the panel itself
+      return;
+    }
+
     // Handle stage menu
     if (showStageMenu) {
       if (key.name === "escape") {
@@ -585,6 +602,12 @@ export function SessionComponent({
         handleStageChange(stages[num - 1].stage);
         return;
       }
+      return;
+    }
+
+    // Ctrl+T - Open tools panel
+    if (key.ctrl && key.name === "t") {
+      setShowToolsPanel(true);
       return;
     }
 
@@ -740,7 +763,7 @@ export function SessionComponent({
             onChange={setDirectiveInput}
             onSubmit={handleSendDirective}
             placeholder="Enter directive..."
-            focused={true}
+            focused={!showToolsPanel}
             status={chatStatus}
             mode={mode}
             operatorMode={operatorMode}
@@ -761,6 +784,26 @@ export function SessionComponent({
           />
         )}
       </box>
+
+      {/* Tools Panel Overlay */}
+      <ToolsPanel
+        open={showToolsPanel}
+        onClose={() => {
+          setShowToolsPanel(false);
+          // Refocus the input after closing
+          refocusPrompt();
+        }}
+        session={session}
+        onToolsetChange={(newState: ToolsetState) => {
+          // Toolset state is persisted by the panel itself
+          // Agent will pick up the new state on next tool call
+          addMessage({
+            role: "system",
+            content: "Toolset updated. Changes will apply to future agent actions.",
+            createdAt: new Date(),
+          });
+        }}
+      />
     </box>
   );
 }

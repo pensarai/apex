@@ -205,6 +205,21 @@ export const commands: CommandConfig[] = [
       });
     },
   },
+  {
+    name: "tools",
+    aliases: ["t"],
+    description: "View and manage active tools (session only)",
+    category: "Session",
+    handler: async (args, ctx) => {
+      // This command is handled by the session view when in a session
+      // From home, it does nothing - tools panel only works in session context
+      if (ctx.route.type !== "session") {
+        // Not in a session - command is a no-op
+        return;
+      }
+      // The session view will detect this command via route options
+    },
+  },
 
   // Add more commands here...
   // Example:

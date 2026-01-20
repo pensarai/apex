@@ -2,15 +2,17 @@
  * Session Input Area Component
  *
  * Unified input component that handles:
- * - Normal directive input
+ * - Normal directive input using shared PromptInput
  * - Approval mode input (redirect)
  * - Mode and status awareness
  */
 
-import { useState, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useKeyboard } from "@opentui/react";
 import { colors, getTierColor } from "../../theme";
-import type { PendingApproval, PermissionTier, OperatorMode } from "../../../core/operator";
+import { PromptInput, type PromptInputRef } from "../shared/prompt-input";
+import { InputProvider, useInput } from "../../context/input";
+import type { PendingApproval, OperatorMode } from "../../../core/operator";
 
 export interface InputAreaProps {
   /** Current input value */
@@ -44,9 +46,10 @@ export interface InputAreaProps {
 }
 
 /**
- * Session input area - adapts based on mode and approval state
+ * Inner component that syncs external value/onChange with InputContext
+ * Only used for normal (non-approval) input mode
  */
-export function InputArea({
+function NormalInputAreaInner({
   value,
   onChange,
   onSubmit,
@@ -57,30 +60,39 @@ export function InputArea({
   operatorMode,
   verboseMode = false,
   expandedLogs = false,
-  pendingApproval,
-  onApprove,
-  onAutoApprove,
-  lastDeclineNote,
-}: InputAreaProps) {
-  const isDisabled = status === "running" && !pendingApproval;
-  const hasPendingApproval = !!pendingApproval;
+}: Omit<InputAreaProps, 'pendingApproval' | 'onApprove' | 'onAutoApprove' | 'lastDeclineNote'>) {
+  const { inputValue, setInputValue } = useInput();
+  const promptRef = useRef<PromptInputRef>(null);
+  const isExternalUpdate = useRef(false);
 
-  // Approval mode input - shows options and allows redirect
-  if (hasPendingApproval) {
-    return (
-      <ApprovalInputArea
-        approval={pendingApproval}
-        onApprove={onApprove || (() => {})}
-        onAutoApprove={onAutoApprove || (() => {})}
-        onRedirect={onSubmit}
-        redirectInput={value}
-        setRedirectInput={onChange}
-        lastDeclineNote={lastDeclineNote}
-      />
-    );
-  }
+  const isDisabled = status === "running";
 
-  // Normal input mode
+  // Sync external value prop to context when it changes
+  useEffect(() => {
+    if (value !== inputValue) {
+      isExternalUpdate.current = true;
+      setInputValue(value);
+      promptRef.current?.setValue(value);
+    }
+  }, [value]);
+
+  // Sync context changes back to parent via onChange
+  useEffect(() => {
+    if (isExternalUpdate.current) {
+      isExternalUpdate.current = false;
+      return;
+    }
+    if (inputValue !== value) {
+      onChange(inputValue);
+    }
+  }, [inputValue]);
+
+  const handleSubmit = (val: string) => {
+    if (val.trim()) {
+      onSubmit(val.trim());
+    }
+  };
+
   return (
     <box
       flexDirection="column"
@@ -92,18 +104,14 @@ export function InputArea({
     >
       <box flexDirection="row" gap={1} backgroundColor="transparent">
         <text fg={isDisabled ? colors.dimText : colors.greenAccent}>{">"}</text>
-        <input
+        <PromptInput
+          ref={promptRef}
           width="100%"
-          value={value}
-          onInput={onChange}
-          onPaste={(event) => {
-            const cleaned = String(event.text).replace(/\r?\n/g, " ");
-            onChange(cleaned);
-          }}
+          minHeight={1}
+          maxHeight={3}
           focused={focused && !isDisabled}
           placeholder={isDisabled ? "Processing..." : placeholder}
-          textColor="white"
-          backgroundColor="transparent"
+          onSubmit={handleSubmit}
         />
       </box>
 
@@ -133,6 +141,50 @@ export function InputArea({
         </box>
       )}
     </box>
+  );
+}
+
+/**
+ * Session input area - handles both normal and approval modes
+ * Approval mode bypasses InputProvider since it has its own focus management
+ */
+export function InputArea(props: InputAreaProps) {
+  const {
+    pendingApproval,
+    onApprove,
+    onAutoApprove,
+    lastDeclineNote,
+    value,
+    onChange,
+    onSubmit,
+    ...normalProps
+  } = props;
+
+  // Approval mode - render without InputProvider
+  if (pendingApproval) {
+    return (
+      <ApprovalInputArea
+        approval={pendingApproval}
+        onApprove={onApprove || (() => {})}
+        onAutoApprove={onAutoApprove || (() => {})}
+        onRedirect={onSubmit}
+        redirectInput={value}
+        setRedirectInput={onChange}
+        lastDeclineNote={lastDeclineNote}
+      />
+    );
+  }
+
+  // Normal mode - wrap with InputProvider
+  return (
+    <InputProvider>
+      <NormalInputAreaInner
+        value={value}
+        onChange={onChange}
+        onSubmit={onSubmit}
+        {...normalProps}
+      />
+    </InputProvider>
   );
 }
 

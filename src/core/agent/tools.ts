@@ -3468,7 +3468,7 @@ function getAttackSurfaceAgent() {
   return tool({
     name: "get_attack_surface",
     description:
-      "Get the attack surface of a target using the attack surface agent",
+      "Get the attack surface of a target. Returns guidance on how to proceed with attack surface discovery.",
     inputSchema: z.object({
       target: z.string().describe("The target to get the attack surface of"),
       toolCallDescription: z
@@ -3477,7 +3477,24 @@ function getAttackSurfaceAgent() {
           "A concise, human-readable description of what this tool call is doing (e.g., 'Discovering attack surface')"
         ),
     }),
-    execute: async ({ target }) => {},
+    execute: async ({ target }) => {
+      // Return guidance on how to discover attack surface
+      return {
+        success: true,
+        target,
+        message: "To discover the attack surface, use the following tools:",
+        recommendations: [
+          "Use smart_enumerate to discover endpoints",
+          "Use http_request to probe specific paths",
+          "Use browser_navigate to interact with the application",
+        ],
+        nextSteps: [
+          "1. Start with smart_enumerate on the target URL",
+          "2. Explore interesting endpoints found",
+          "3. Look for API documentation or swagger endpoints",
+        ],
+      };
+    },
   });
 }
 

@@ -35,6 +35,7 @@ import type { DisplayMessage } from "../../../tui/components/agent-display";
 import { runAuthenticationSubagent } from "../authenticationSubagent";
 import { tool } from "ai";
 import { z } from "zod";
+import { getActiveToolNames } from "../../toolset";
 
 /**
  * Cognitive testing loop for offensive stages (test/validate)
@@ -225,7 +226,6 @@ export class OperatorAgent extends EventEmitter {
     // Index tool messages by toolCallId for O(1) lookup
     const toolCallId = (message as any).toolCallId;
     if (message.role === "tool" && toolCallId) {
-      console.log("[DEBUG] Indexing tool message:", toolCallId, "at index:", index);
       this.toolCallIdToIndex.set(toolCallId, index);
     }
 
@@ -240,7 +240,6 @@ export class OperatorAgent extends EventEmitter {
   }
 
   private updateMessage(index: number, message: DisplayMessage): void {
-    console.log("[DEBUG] updateMessage called - index:", index, "status:", (message as any).status);
     this.messages[index] = message;
     this.log("message_updated", {
       index,
@@ -249,7 +248,6 @@ export class OperatorAgent extends EventEmitter {
       status: (message as any).status,
       result: (message as any).result,
     });
-    console.log("[DEBUG] Emitting message-updated event");
     this.emit("message-updated", { index, message });
   }
 
@@ -765,7 +763,18 @@ This tool requires user approval (T3 tier - Probing).`,
 
     // Merge all tools and wrap with approval checking
     const allTools = { ...baseTools, ...browserTools, ...pocTools, ...authTools };
-    const wrappedTools = this.wrapToolsWithApproval(allTools);
+
+    // Filter tools based on toolset state
+    const activeToolNames = getActiveToolNames(session.config?.toolsetState);
+    const filteredTools: Record<string, any> = {};
+    for (const [toolName, tool] of Object.entries(allTools)) {
+      if (activeToolNames.includes(toolName)) {
+        filteredTools[toolName] = tool;
+      }
+    }
+
+    // Wrap filtered tools with approval checking
+    const wrappedTools = this.wrapToolsWithApproval(filteredTools);
 
     let findingsCount = 0;
     let pocPaths: string[] = [];
@@ -860,26 +869,28 @@ This tool requires user approval (T3 tier - Probing).`,
 
             case "tool-result":
               // Update tool message to completed
+              // Note: AI SDK uses 'output' not 'result' for tool-result chunks
               const msgIdx = this.toolCallIdToIndex.get(chunk.toolCallId) ?? -1;
               if (msgIdx !== -1) {
                 const existingMsg = this.messages[msgIdx];
+                const toolOutput = (chunk as any).output;
 
                 this.log("tool_result", {
                   toolCallId: chunk.toolCallId,
                   toolName: existingMsg.toolName,
-                  result: (chunk as any).result,
+                  result: toolOutput,
                 });
 
                 this.updateMessage(msgIdx, {
                   ...existingMsg,
                   status: "completed",
                   content: `+ ${existingMsg.content}`,
-                  result: (chunk as any).result,
+                  result: toolOutput,
                 });
 
                 // Extract findings and emit sidebar events
-                this.extractFindings(existingMsg.toolName || "", (chunk as any).result);
-                this.emitSidebarEvents((chunk as any).result);
+                this.extractFindings(existingMsg.toolName || "", toolOutput);
+                this.emitSidebarEvents(toolOutput);
               }
               break;
           }

@@ -8,6 +8,7 @@
 import { Session } from "../../core/session";
 import { generateRandomName } from "../../util/name";
 import type { OperatorMode, PermissionTier } from "../../core/operator";
+import { createToolsetState } from "../../core/toolset";
 
 // ============================================================================
 // General Flag Parsing
@@ -276,6 +277,8 @@ export async function createOperatorSessionFromFlags(
       autoApproveTier: (flags.tier || 2) as PermissionTier,
       enableSuggestions: true,
     },
+    // Initialize toolset with full web-pentest tools
+    toolsetState: createToolsetState("web-pentest"),
   };
 
   // Auth config
@@ -325,6 +328,8 @@ export async function createSwarmSessionFromFlags(
   const sessionConfig: Session.SessionConfig = {
     sessionType: "web-app",
     mode: "auto",
+    // Initialize toolset with full web-pentest tools
+    toolsetState: createToolsetState("web-pentest"),
   };
 
   // Auth config
