@@ -9,11 +9,11 @@ interface ShortcutsDialogProps {
 }
 
 export default function ShortcutsDialog({ open, onClose }: ShortcutsDialogProps) {
-  const { refocusCommandInput } = useFocus();
+  const { refocusPrompt } = useFocus();
 
   useKeyboard((key) => {
     if (key.name === "escape") {
-      refocusCommandInput();
+      refocusPrompt();
       onClose();
       return;
     }
@@ -22,7 +22,7 @@ export default function ShortcutsDialog({ open, onClose }: ShortcutsDialogProps)
   if (!open) return null;
 
   const handleClose = () => {
-    refocusCommandInput();
+    refocusPrompt();
     onClose();
   };
 

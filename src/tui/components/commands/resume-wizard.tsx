@@ -54,7 +54,7 @@ export default function ResumeWizard() {
 
   const route = useRoute();
   const { load: loadSession } = useSession();
-  const { refocusCommandInput } = useFocus();
+  const { refocusPrompt } = useFocus();
 
   // Load sessions with operator state on mount
   useEffect(() => {
@@ -113,7 +113,7 @@ export default function ResumeWizard() {
 
   useKeyboard((key) => {
     if (key.name === "escape") {
-      refocusCommandInput();
+      refocusPrompt();
       route.navigate({ type: "base", path: "home" });
       return;
     }

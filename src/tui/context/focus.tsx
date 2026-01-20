@@ -1,27 +1,52 @@
 import { createContext, useContext, useRef, useCallback, type ReactNode } from "react";
-import type { InputRenderable } from "@opentui/core";
+import type { PromptInputRef } from "../components/shared/prompt-input";
 
 interface FocusContextType {
-  commandInputRef: React.MutableRefObject<InputRenderable | null>;
-  refocusCommandInput: () => void;
+  promptRef: React.MutableRefObject<PromptInputRef | null>;
+  // Existing
+  refocusPrompt: () => void;
+  // Ref control methods
+  focusPrompt: () => void;
+  blurPrompt: () => void;
+  resetPrompt: () => void;
+  setPromptValue: (value: string) => void;
+  getPromptValue: () => string;
+  registerPromptRef: (ref: PromptInputRef | null) => void;
 }
 
 const FocusContext = createContext<FocusContextType | undefined>(undefined);
 
 export function FocusProvider({ children }: { children: ReactNode }) {
-  const commandInputRef = useRef<InputRenderable | null>(null);
+  const promptRef = useRef<PromptInputRef | null>(null);
 
-  const refocusCommandInput = useCallback(() => {
+  const refocusPrompt = useCallback(() => {
     setTimeout(() => {
-      const input = commandInputRef.current;
-      if (!input) return;
-      if (input.isDestroyed) return;
-      input.focus();
+      promptRef.current?.focus();
     }, 1);
   }, []);
 
+  const focusPrompt = useCallback(() => promptRef.current?.focus(), []);
+  const blurPrompt = useCallback(() => promptRef.current?.blur(), []);
+  const resetPrompt = useCallback(() => promptRef.current?.reset(), []);
+  const setPromptValue = useCallback((value: string) => promptRef.current?.setValue(value), []);
+  const getPromptValue = useCallback(() => promptRef.current?.getValue() ?? "", []);
+  const registerPromptRef = useCallback((ref: PromptInputRef | null) => {
+    promptRef.current = ref;
+  }, []);
+
   return (
-    <FocusContext.Provider value={{ commandInputRef, refocusCommandInput }}>
+    <FocusContext.Provider
+      value={{
+        promptRef,
+        refocusPrompt,
+        focusPrompt,
+        blurPrompt,
+        resetPrompt,
+        setPromptValue,
+        getPromptValue,
+        registerPromptRef,
+      }}
+    >
       {children}
     </FocusContext.Provider>
   );

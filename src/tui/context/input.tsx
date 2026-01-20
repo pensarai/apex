@@ -1,9 +1,10 @@
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useContext, useState, useCallback, type ReactNode } from "react";
 
 interface InputContextType {
   inputValue: string;
   setInputValue: (value: string) => void;
   isInputEmpty: boolean;
+  clearInput: () => void;
 }
 
 const InputContext = createContext<InputContextType | undefined>(undefined);
@@ -11,12 +12,17 @@ const InputContext = createContext<InputContextType | undefined>(undefined);
 export function InputProvider({ children }: { children: ReactNode }) {
   const [inputValue, setInputValue] = useState("");
 
+  const clearInput = useCallback(() => {
+    setInputValue("");
+  }, []);
+
   return (
     <InputContext.Provider
       value={{
         inputValue,
         setInputValue,
-        isInputEmpty: inputValue.trim().length === 0
+        clearInput,
+        isInputEmpty: inputValue.trim().length === 0,
       }}
     >
       {children}

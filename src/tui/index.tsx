@@ -1,18 +1,11 @@
-import { createRoot, useKeyboard, useRenderer } from "@opentui/react";
+import { createRoot } from "@opentui/react";
 import { useState, useEffect } from "react";
 import Footer from "./components/footer";
-import CommandInput from "./command-input";
 import { CommandProvider } from "./command-provider";
 import { AgentProvider } from "./agentProvider";
-import HelpDialog from "./components/commands/help-dialog";
-import WebWizard from "./components/commands/web-wizard";
-import OperatorWizard from "./components/commands/operator-wizard";
 import SessionView from "./components/session-view";
 import SessionsDisplay from "./components/commands/sessions-display";
 import ConfigDialog from "./components/commands/config-dialog";
-import ModelsDisplay from "./components/commands/models-display";
-import ProviderManager from "./components/commands/provider-manager";
-import ResumeWizard from "./components/commands/resume-wizard";
 import ChatApp from "./components/chat";
 import type { Config } from "../core/config/config";
 import { config } from "../core/config";
@@ -27,6 +20,7 @@ import { InputProvider, useInput } from "./context/input";
 import { FocusProvider, useFocus } from "./context/focus";
 import { DialogProvider, useDialog } from "./components/dialog";
 import ShortcutsDialog from "./components/commands/shortcuts-dialog";
+import { KeybindingProvider } from "./context/keybinding";
 
 interface AppProps {
   appConfig: Config;
@@ -39,6 +33,8 @@ function App(props: AppProps) {
   const [ctrlCPressTime, setCtrlCPressTime] = useState<number | null>(null);
   const [showExitWarning, setShowExitWarning] = useState(false);
   const [inputKey, setInputKey] = useState(0); // Force input remount on clear
+  const [showSessionsDialog, setShowSessionsDialog] = useState(false);
+  const [showShortcutsDialog, setShowShortcutsDialog] = useState(false);
 
   const navigableItems = ["command-input"]; // List of items that can be focused
 
@@ -51,18 +47,34 @@ function App(props: AppProps) {
               <DialogProvider>
                 <AgentProvider>
                   <CommandProvider>
-                    <AppContent
-                      focusIndex={focusIndex}
-                      setFocusIndex={setFocusIndex}
-                      cwd={cwd}
-                      ctrlCPressTime={ctrlCPressTime}
-                      setCtrlCPressTime={setCtrlCPressTime}
-                      showExitWarning={showExitWarning}
-                      setShowExitWarning={setShowExitWarning}
-                      inputKey={inputKey}
-                      setInputKey={setInputKey}
-                      navigableItems={navigableItems}
-                    />
+                    <KeybindingProvider
+                     deps={
+                      {
+                        ctrlCPressTime,
+                        setCtrlCPressTime,
+                        setShowExitWarning,
+                        setInputKey,
+                        setShowSessionsDialog,
+                        setShowShortcutsDialog,
+                        setFocusIndex,
+                        navigableItems,                        
+                      }
+                     }
+                    >
+                      <AppContent
+                        focusIndex={focusIndex}
+                        showSessionsDialog={showSessionsDialog}
+                        setShowSessionsDialog={setShowSessionsDialog}
+                        showShortcutsDialog={showShortcutsDialog}
+                        setShowShortcutsDialog={setShowShortcutsDialog}
+                        cwd={cwd}
+                        setCtrlCPressTime={setCtrlCPressTime}
+                        showExitWarning={showExitWarning}
+                        setShowExitWarning={setShowExitWarning}
+                        inputKey={inputKey}
+                        setInputKey={setInputKey}
+                      />
+                    </KeybindingProvider>
                   </CommandProvider>
                 </AgentProvider>
               </DialogProvider>
@@ -76,37 +88,36 @@ function App(props: AppProps) {
 
 function AppContent({
   focusIndex,
-  setFocusIndex,
+  showSessionsDialog,
+  setShowSessionsDialog,
+  showShortcutsDialog,
+  setShowShortcutsDialog,
   cwd,
-  ctrlCPressTime,
   setCtrlCPressTime,
   showExitWarning,
   setShowExitWarning,
   inputKey,
   setInputKey,
-  navigableItems,
 }: {
   focusIndex: number;
-  setFocusIndex: (fn: (prev: number) => number) => void;
+  showSessionsDialog: boolean;
+  setShowSessionsDialog: (show: boolean) => void;
+  showShortcutsDialog: boolean;
+  setShowShortcutsDialog: (show: boolean) => void;
   cwd: string;
-  ctrlCPressTime: number | null;
   setCtrlCPressTime: (time: number | null) => void;
   showExitWarning: boolean;
   setShowExitWarning: (show: boolean) => void;
   inputKey: number;
   setInputKey: (fn: (prev: number) => number) => void;
-  navigableItems: string[];
 }) {
 
   const route = useRoute();
   const config = useConfig();
-  const renderer = useRenderer();
-  const { isInputEmpty } = useInput();
-  const { refocusCommandInput } = useFocus();
+
+  const { refocusPrompt } = useFocus();
   const { setExternalDialogOpen } = useDialog();
-  const [showCreateSessionDialog, setShowCreateSessionDialog] = useState(false);
-  const [showSessionsDialog, setShowSessionsDialog] = useState(false);
-  const [showShortcutsDialog, setShowShortcutsDialog] = useState(false);
+  
 
   // First check: responsible use disclosure
   if (!config.data.responsibleUseAccepted && route.data.type === "base" && route.data.path !== "disclosure") {
@@ -141,112 +152,17 @@ function AppContent({
     }
   }, [showExitWarning]);
 
-  // Navigation and command hotkey handlers
-  useKeyboard((key) => {
-    // Ctrl+C should always work, even when dialogs are open
-    if (key.ctrl && (key.name === "c" || key.sequence === "\x03")) {
-      const now = Date.now();
-      const lastPress = ctrlCPressTime;
-
-      if (lastPress && now - lastPress < 1000) {
-        // Gracefully cleanup renderer before exit
-        renderer.destroy();
-        process.exit(0);
-      } else {
-        setInputKey((prev) => prev + 1);
-        setCtrlCPressTime(now);
-        setShowExitWarning(true);
-      }
-      return;
-    }
-
-    if(key.ctrl && key.name === "k") {
-      renderer.console.toggle();
-    }
-
-    // Escape - Return to home from any non-home route
-    // Exclude "web", "operator" and "session" routes - they handle their own ESC behavior
-    if (key.name === "escape") {
-      const isHome = route.data.type === "base" && route.data.path === "home";
-      const isWeb = route.data.type === "base" && route.data.path === "web";
-      const isOperator = route.data.type === "base" && route.data.path === "operator";
-      const isSession = route.data.type === "session";
-      if (!isHome && !isWeb && !isOperator && !isSession) {
-        route.navigate({
-          type: "base",
-          path: "home"
-        });
-        refocusCommandInput();
-        return;
-      }
-    }
-
-    // // Ctrl+N - Create new session (only on home view)
-    // if (key.ctrl && key.name === "n" && route.data.type === "base" && route.data.path === "home") {
-    //   setShowCreateSessionDialog(true);
-    //   return;
-    // }
-
-    // // Ctrl+S - Show sessions (only on home view)
-    if (key.ctrl && key.name === "s" && route.data.type === "base" && route.data.path === "home") {
-      setShowSessionsDialog(true);
-      return;
-    }
-
-    // ? - Show keyboard shortcuts (when input is empty)
-    if (key.sequence === "?" && isInputEmpty) {
-      setExternalDialogOpen(true);
-      setShowShortcutsDialog(true);
-      return;
-    }
-
-    // Tab - Next item
-    if (key.name === "tab" && !key.shift) {
-      setFocusIndex((prev) => (prev + 1) % navigableItems.length);
-      return;
-    }
-
-    // Shift+Tab - Previous item
-    if (key.name === "tab" && key.shift) {
-      setFocusIndex(
-        (prev) => (prev - 1 + navigableItems.length) % navigableItems.length
-      );
-      return;
-    }
-
-    // Reset ctrl+c timer on any other key
-    if (ctrlCPressTime) {
-      setCtrlCPressTime(null);
-      setShowExitWarning(false);
-    }
-  });
-
-  const handleCreateSessionSuccess = (sessionId: string) => {
-    setShowCreateSessionDialog(false);
-    setInputKey((prev) => prev + 1);
-    route.navigate({
-      type: "session",
-      sessionId: sessionId
-    });
-  };
-
-  const handleCloseCreateDialog = () => {
-    setShowCreateSessionDialog(false);
-    setInputKey((prev) => prev + 1);
-    refocusCommandInput();
-  };
-
   const handleCloseSessionsDialog = () => {
     setShowSessionsDialog(false);
     setInputKey((prev) => prev + 1);
-    refocusCommandInput();
+    refocusPrompt();
   };
 
   const handleCloseShortcutsDialog = () => {
     setShowShortcutsDialog(false);
     setExternalDialogOpen(false);
     setInputKey((prev) => prev + 1);
-    refocusCommandInput();
+    refocusPrompt();
   };
 
   // Check if we're on the home route
@@ -262,20 +178,10 @@ function AppContent({
       overflow="hidden"
       backgroundColor={'transparent'}
     >
-      {/* Only show large logo on non-home routes */}
-      {/* {!isHomeRoute && <ColoredAsciiArt ascii={coloredAscii} />} */}
-
       <CommandDisplay focusIndex={focusIndex} inputKey={inputKey} />
 
       {/* Only show footer on non-home routes */}
       <Footer cwd={cwd} showExitWarning={showExitWarning} />
-
-      {/* {showCreateSessionDialog && (
-        <CreateSessionDialog
-          onClose={handleCloseCreateDialog}
-          onSuccess={handleCreateSessionSuccess}
-        />
-      )} */}
 
       {showSessionsDialog && (
         <SessionsDisplay onClose={handleCloseSessionsDialog} />
@@ -325,6 +231,11 @@ function CommandDisplay({
         gap={2}
         backgroundColor={"transparent"}
       >
+
+      {/* routes to have: home (chat), responsible use, session, global config route */}
+      {/* when user either runs command or simply enters message: extract args etc, create session with related config, route to session */}
+      {/* on startup, check if responsible use has been agreed, if not route to resp use route */}
+
         <RouteSwitch condition={routePath}>
           <RouteSwitch.Case when="disclosure">
             <ResponsibleUseDisclosure onAccept={handleAcceptPolicy}/>
@@ -332,58 +243,9 @@ function CommandDisplay({
           <RouteSwitch.Case when="home">
             <ChatApp />
           </RouteSwitch.Case>
-          <RouteSwitch.Case when="help">
-            <HelpDialog/>
-          </RouteSwitch.Case>
-          <RouteSwitch.Case when="web">
-            <WebWizard
-              initialTarget={route.data.options?.target}
-              autoMode={route.data.options?.auto}
-              initialName={route.data.options?.name}
-              initialAuthUrl={route.data.options?.authUrl}
-              initialAuthUser={route.data.options?.authUser}
-              initialAuthPass={route.data.options?.authPass}
-              initialAuthInstructions={route.data.options?.authInstructions}
-              initialHosts={route.data.options?.hosts}
-              initialPorts={route.data.options?.ports}
-              initialStrict={route.data.options?.strict}
-              initialHeadersMode={route.data.options?.headersMode}
-              initialCustomHeaders={route.data.options?.customHeaders}
-              initialModel={route.data.options?.model}
-            />
-          </RouteSwitch.Case>
-          <RouteSwitch.Case when="operator">
-            <OperatorWizard
-              initialTarget={(route.data.options as any)?.target}
-              initialMode={(route.data.options as any)?.mode}
-              initialName={(route.data.options as any)?.name}
-              initialTier={(route.data.options as any)?.tier}
-              initialAuthUrl={(route.data.options as any)?.authUrl}
-              initialAuthUser={(route.data.options as any)?.authUser}
-              initialAuthPass={(route.data.options as any)?.authPass}
-              initialAuthInstructions={(route.data.options as any)?.authInstructions}
-              initialHosts={(route.data.options as any)?.hosts}
-              initialStrict={(route.data.options as any)?.strict}
-              initialHeadersMode={(route.data.options as any)?.headersMode}
-              initialCustomHeaders={(route.data.options as any)?.customHeaders}
-              initialModel={(route.data.options as any)?.model}
-            />
-          </RouteSwitch.Case>
           <RouteSwitch.Case when="config">
             <ConfigDialog />
           </RouteSwitch.Case>
-          <RouteSwitch.Case when="models">
-            <ModelsDisplay />
-          </RouteSwitch.Case>
-          <RouteSwitch.Case when="providers">
-            <ProviderManager />
-          </RouteSwitch.Case>
-          <RouteSwitch.Case when="resume">
-            <ResumeWizard />
-          </RouteSwitch.Case>
-          <RouteSwitch.Default>
-            <CommandInput focused={focusIndex === 0} inputKey={inputKey}/>
-          </RouteSwitch.Default>
         </RouteSwitch>
       </box>
     );

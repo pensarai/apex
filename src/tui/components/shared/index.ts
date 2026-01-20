@@ -35,3 +35,7 @@ export { InlineApprovalPrompt, ApprovalInputArea } from "./approval-prompt";
 
 // State management
 export { useMessageState } from "./message-reducer";
+
+// Input components
+export { PromptInput, type PromptInputRef } from "./prompt-input";
+export { type AutocompleteOption } from "../autocomplete";

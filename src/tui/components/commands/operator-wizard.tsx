@@ -56,21 +56,8 @@ const providerNames: Record<string, string> = {
 };
 const providerOrder = ["anthropic", "openai", "openrouter", "bedrock"];
 
-export default function HITLWizard({
-  initialTarget,
-  initialMode,
-  initialName,
-  initialTier,
-  initialAuthUrl,
-  initialAuthUser,
-  initialAuthPass,
-  initialAuthInstructions,
-  initialHosts,
-  initialStrict,
-  initialHeadersMode,
-  initialCustomHeaders,
-  initialModel,
-}: HITLWizardProps) {
+export default function HITLWizard(props: HITLWizardProps) {
+  
   const route = useRoute();
   const config = useConfig();
   const { model, setModel, isModelUserSelected } = useAgent();

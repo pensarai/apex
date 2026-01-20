@@ -7,14 +7,15 @@
  * - Centered command input with inline autocomplete
  */
 
-import { useState, useCallback, useEffect, useMemo } from "react";
-import { RGBA, type InputRenderable } from "@opentui/core";
-import { useKeyboard, useTerminalDimensions } from "@opentui/react";
+import { useCallback } from "react";
+import { RGBA } from "@opentui/core";
+import { useTerminalDimensions } from "@opentui/react";
 import { PetriAnimation } from "./components/petri-animation";
 import { useCommand } from "../../command-provider";
 import { useInput } from "../../context/input";
 import { useFocus } from "../../context/focus";
 import { useConfig } from "../../context/config";
+import { PromptInput } from "../shared/prompt-input";
 
 // Colors
 const greenAccent = RGBA.fromInts(76, 175, 80, 255);
@@ -31,92 +32,25 @@ interface HomeViewProps {
 export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
   const dimensions = useTerminalDimensions();
   const config = useConfig();
-  const [inputValue, setInputValue] = useState("");
-  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(-1);
 
   // Get autocomplete options and input sync from contexts
   const { executeCommand, autocompleteOptions } = useCommand();
-  const { setInputValue: syncInputValue } = useInput();
-  const { commandInputRef } = useFocus();
+  const { setInputValue } = useInput();
+  const { promptRef } = useFocus();
 
-  // Callback ref to register input with focus context
-  const inputRefCallback = (node: InputRenderable | null) => {
-    if (node) {
-      commandInputRef.current = node;
-    }
-  };
-
-  // Filter suggestions based on input
-  const suggestions = useMemo(() => {
-    if (!inputValue || inputValue.length === 0) return [];
-    const input = inputValue.toLowerCase().trim();
-    return autocompleteOptions
-      .filter((opt) => {
-        const optValue = opt.value.toLowerCase();
-        const optLabel = opt.label.toLowerCase();
-        return optValue.includes(input) || optLabel.includes(input);
-      })
-      .slice(0, 6);
-  }, [inputValue, autocompleteOptions]);
-
-  // Reset selection when suggestions change
-  useEffect(() => {
-    setSelectedSuggestionIndex(suggestions.length > 0 ? 0 : -1);
-  }, [suggestions.length]);
-
-  // Sync input state with context
-  useEffect(() => {
-    syncInputValue(inputValue);
-  }, [inputValue, syncInputValue]);
-
-  // Handle keyboard for suggestion navigation
-  useKeyboard((key) => {
-    if (suggestions.length === 0) return;
-
-    if (key.name === "up") {
-      setSelectedSuggestionIndex((prev) =>
-        prev <= 0 ? suggestions.length - 1 : prev - 1
-      );
-      return;
-    }
-    if (key.name === "down") {
-      setSelectedSuggestionIndex((prev) =>
-        prev >= suggestions.length - 1 ? 0 : prev + 1
-      );
-      return;
-    }
-  });
-
-  const handleSubmit = useCallback(async () => {
-    // If a suggestion is selected, use it
-    let valueToSubmit = inputValue.trim();
-    if (selectedSuggestionIndex >= 0 && selectedSuggestionIndex < suggestions.length) {
-      valueToSubmit = suggestions[selectedSuggestionIndex].value;
-    }
-
-    if (!valueToSubmit) return;
-
-    // If it starts with /, treat as a command and use executeCommand
-    if (valueToSubmit.startsWith("/")) {
-      await executeCommand(valueToSubmit);
-      setInputValue("");
-      syncInputValue("");
-      setSelectedSuggestionIndex(-1);
-      return;
-    }
-
-    // Otherwise, start a session with this directive
-    onStartSession(valueToSubmit);
+  const handleSubmit = useCallback((value: string) => {
+    // Commands are handled by PromptInput, this only gets non-command text
+    onStartSession(value);
     setInputValue("");
-    syncInputValue("");
-    setSelectedSuggestionIndex(-1);
-  }, [inputValue, selectedSuggestionIndex, suggestions, executeCommand, onStartSession, syncInputValue]);
+  }, [onStartSession, setInputValue]);
+
+  const handleCommandExecute = useCallback(async (command: string) => {
+    await executeCommand(command);
+  }, [executeCommand]);
 
   // Calculate layout dimensions
   const animationHeight = Math.max(6, Math.floor(dimensions.height * 0.2));
   const inputWidth = Math.min(80, dimensions.width - 10);
-  const centerLeft = Math.floor((dimensions.width - inputWidth) / 2);
-  const inputTop = animationHeight + 8; // Below animation and title
 
   return (
     <box
@@ -147,46 +81,28 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
         border={['left', 'right']}
         borderColor={greenAccent}
       >
-        {/* Input */}
-        <box flexDirection="row">
-          <text marginRight={2} fg={greenAccent}>{"❯ "}</text>
-          <input
-            ref={inputRefCallback}
-            width={inputWidth - 4}
-            value={inputValue}
-            onInput={setInputValue}
-            onSubmit={handleSubmit}
-            focused={true}
-            placeholder="Type a command or message..."
-            textColor="white"
-            backgroundColor="transparent"
-          />
-        </box>
-
-        {/* Autocomplete suggestions - inline below input */}
-        {suggestions.length > 0 && (
-          <box flexDirection="column" marginTop={1}>
-            {suggestions.map((suggestion, index) => {
-              const isSelected = index === selectedSuggestionIndex;
-              return (
-                <box key={suggestion.value} flexDirection="row" gap={1}>
-                  <text fg={isSelected ? greenAccent : dimText}>
-                    {isSelected ? " ▸" : "  "}
-                  </text>
-                  <text fg={isSelected ? creamText : dimText}>
-                    {suggestion.label}
-                  </text>
-                  {suggestion.description && (
-                    <text fg={dimText}> {suggestion.description}</text>
-                  )}
-                </box>
-              );
-            })}
-          </box>
-        )}
+        {/* Input with built-in autocomplete */}
+        <PromptInput
+          ref={promptRef}
+          focused
+          width={inputWidth - 4}
+          minHeight={1}
+          maxHeight={4}
+          onSubmit={handleSubmit}
+          placeholder="Type a command or message..."
+          textColor="white"
+          focusedTextColor="white"
+          backgroundColor="transparent"
+          focusedBackgroundColor="transparent"
+          enableAutocomplete={true}
+          autocompleteOptions={autocompleteOptions}
+          enableCommands={true}
+          onCommandExecute={handleCommandExecute}
+          showPromptIndicator={true}
+        />
 
         {/* Help text */}
-        <box marginTop={suggestions.length > 0 ? 1 : 0}>
+        <box marginTop={1}>
           <text fg={dimText}>
             <span>Type </span>
             <span fg={creamText}>/</span>
