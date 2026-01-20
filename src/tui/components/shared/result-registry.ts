@@ -16,11 +16,210 @@ export interface ResultSummary {
  * Get a human-readable summary for a tool result.
  *
  * @param result - The raw tool result
+ * @param toolName - Optional tool name for tool-specific summaries
  * @returns Summary object with text and error flag, or null if no summary available
  */
-export function getResultSummary(result: unknown): ResultSummary | null {
+export function getResultSummary(
+  result: unknown,
+  toolName?: string
+): ResultSummary | null {
   if (result === null || result === undefined) {
     return null;
+  }
+
+  // Tool-specific handlers
+  if (toolName) {
+    switch (toolName) {
+      // File system tools
+      case "Read":
+      case "read_file": {
+        if (typeof result === "string") {
+          const lines = result.split("\n").length;
+          return { text: `Read ${lines} lines`, isError: false };
+        }
+        break;
+      }
+      case "Grep": {
+        if (typeof result === "string") {
+          const lines = result.trim() ? result.split("\n").length : 0;
+          return {
+            text: lines > 0 ? `Found ${lines} lines` : "No matches",
+            isError: false,
+          };
+        }
+        break;
+      }
+      case "Glob": {
+        if (Array.isArray(result)) {
+          return { text: `Found ${result.length} files`, isError: false };
+        }
+        if (typeof result === "string") {
+          const files = result.trim() ? result.split("\n").length : 0;
+          return {
+            text: files > 0 ? `Found ${files} files` : "No files found",
+            isError: false,
+          };
+        }
+        break;
+      }
+      case "Edit": {
+        return { text: "Edited file", isError: false };
+      }
+      case "Write":
+      case "write_file": {
+        if (typeof result === "string") {
+          const lines = result.split("\n").length;
+          return { text: `Wrote ${lines} lines`, isError: false };
+        }
+        return { text: "File written", isError: false };
+      }
+
+      // Command execution
+      case "execute_command": {
+        if (typeof result === "object" && result !== null) {
+          const obj = result as Record<string, unknown>;
+          if ("exitCode" in obj || "code" in obj) {
+            const code = Number(obj.exitCode ?? obj.code ?? 0);
+            return { text: `Exit ${code}`, isError: code !== 0 };
+          }
+        }
+        break;
+      }
+
+      // Task/Agent tools
+      case "Task":
+      case "task": {
+        if (typeof result === "string") {
+          return { text: result.slice(0, 60), isError: false };
+        }
+        return { text: "Task completed", isError: false };
+      }
+
+      // HTTP/Network tools
+      case "crawl": {
+        if (typeof result === "object" && result !== null) {
+          const obj = result as Record<string, unknown>;
+          if (obj.urls && Array.isArray(obj.urls)) {
+            return { text: `Found ${obj.urls.length} URLs`, isError: false };
+          }
+        }
+        break;
+      }
+
+      // Security/Analysis tools
+      case "smart_enumerate": {
+        if (typeof result === "object" && result !== null) {
+          const obj = result as Record<string, unknown>;
+          if (obj.endpoints && Array.isArray(obj.endpoints)) {
+            return { text: `Found ${obj.endpoints.length} endpoints`, isError: false };
+          }
+        }
+        return { text: "Enumeration complete", isError: false };
+      }
+      case "get_attack_surface": {
+        return { text: "Attack surface retrieved", isError: false };
+      }
+      case "nuclei_scan": {
+        if (typeof result === "object" && result !== null) {
+          const obj = result as Record<string, unknown>;
+          if (obj.findings && Array.isArray(obj.findings)) {
+            return { text: `Found ${obj.findings.length} vulnerabilities`, isError: false };
+          }
+        }
+        return { text: "Scan complete", isError: false };
+      }
+      case "document_finding": {
+        return { text: "Finding documented", isError: false };
+      }
+      case "analyze_scan": {
+        return { text: "Analysis complete", isError: false };
+      }
+      case "fuzz_endpoint": {
+        return { text: "Fuzzing complete", isError: false };
+      }
+      case "test_parameter": {
+        if (typeof result === "object" && result !== null) {
+          const obj = result as Record<string, unknown>;
+          if (typeof obj.vulnerable === "boolean") {
+            return {
+              text: obj.vulnerable ? "Vulnerable" : "Not vulnerable",
+              isError: false,
+            };
+          }
+        }
+        return { text: "Test complete", isError: false };
+      }
+      case "cve_lookup": {
+        if (typeof result === "object" && result !== null) {
+          const obj = result as Record<string, unknown>;
+          if (obj.cves && Array.isArray(obj.cves)) {
+            return { text: `Found ${obj.cves.length} CVEs`, isError: false };
+          }
+        }
+        return { text: "Lookup complete", isError: false };
+      }
+      case "enumerate_endpoints": {
+        if (typeof result === "object" && result !== null) {
+          const obj = result as Record<string, unknown>;
+          if (obj.endpoints && Array.isArray(obj.endpoints)) {
+            return { text: `Found ${obj.endpoints.length} endpoints`, isError: false };
+          }
+        }
+        return { text: "Enumeration complete", isError: false };
+      }
+      case "generate_report": {
+        return { text: "Report generated", isError: false };
+      }
+      case "check_testing_coverage": {
+        return { text: "Coverage checked", isError: false };
+      }
+      case "validate_completeness": {
+        return { text: "Validation complete", isError: false };
+      }
+      case "mutate_payload": {
+        return { text: "Payload generated", isError: false };
+      }
+      case "record_test_result": {
+        return { text: "Result recorded", isError: false };
+      }
+      case "update_attack_surface": {
+        return { text: "Attack surface updated", isError: false };
+      }
+      case "record_credential": {
+        return { text: "Credential recorded", isError: false };
+      }
+      case "update_endpoint_status": {
+        return { text: "Status updated", isError: false };
+      }
+      case "record_verified_finding": {
+        return { text: "Finding verified", isError: false };
+      }
+
+      // Browser tools
+      case "browser_navigate": {
+        return { text: "Page loaded", isError: false };
+      }
+      case "browser_screenshot": {
+        return { text: "Screenshot taken", isError: false };
+      }
+      case "browser_evaluate": {
+        return { text: "Evaluated", isError: false };
+      }
+      case "browser_console": {
+        if (typeof result === "object" && result !== null) {
+          const obj = result as Record<string, unknown>;
+          if (obj.console && Array.isArray(obj.console)) {
+            return { text: `${obj.console.length} console messages`, isError: false };
+          }
+        }
+        return { text: "Console retrieved", isError: false };
+      }
+
+      // Utility tools
+      case "scratchpad": {
+        return { text: "Note saved", isError: false };
+      }
+    }
   }
 
   if (typeof result === "object" && result !== null) {

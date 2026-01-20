@@ -44,7 +44,7 @@ export const ToolRenderer = memo(function ToolRenderer({
 
   // Get result summary for completed tools
   const resultDisplay: ResultSummary | null =
-    isCompleted || isError ? getResultSummary(result) : null;
+    isCompleted || isError ? getResultSummary(result, toolName) : null;
 
   // Determine border color based on status
   const borderColor = isError

@@ -7,6 +7,8 @@ import SessionView from "./components/session-view";
 import SessionsDisplay from "./components/commands/sessions-display";
 import ConfigDialog from "./components/commands/config-dialog";
 import ChatApp from "./components/chat";
+import HITLWizard from "./components/commands/operator-wizard";
+import ProviderManager from "./components/commands/provider-manager";
 import type { Config } from "../core/config/config";
 import { config } from "../core/config";
 import { createCliRenderer } from "@opentui/core";
@@ -245,6 +247,20 @@ function CommandDisplay({
           </RouteSwitch.Case>
           <RouteSwitch.Case when="config">
             <ConfigDialog />
+          </RouteSwitch.Case>
+          <RouteSwitch.Case when="operator">
+            <HITLWizard
+              initialTarget={route.data.options?.target}
+              initialMode={route.data.options?.mode}
+              initialName={route.data.options?.name}
+              initialTier={route.data.options?.tier}
+              initialHosts={route.data.options?.hosts}
+              initialStrict={route.data.options?.strict}
+              initialModel={route.data.options?.model}
+            />
+          </RouteSwitch.Case>
+          <RouteSwitch.Case when="providers">
+            <ProviderManager />
           </RouteSwitch.Case>
         </RouteSwitch>
       </box>

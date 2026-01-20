@@ -56,8 +56,36 @@ const providerNames: Record<string, string> = {
 };
 const providerOrder = ["anthropic", "openai", "openrouter", "bedrock"];
 
+/**
+ * Parse host from a URL string (includes port if present)
+ * e.g., http://localhost:3001 -> localhost:3001
+ */
+function parseHostFromUrl(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    return parsed.host; // host includes port, hostname does not
+  } catch {
+    // Try adding protocol if missing
+    try {
+      const parsed = new URL(`https://${url}`);
+      return parsed.host;
+    } catch {
+      return null;
+    }
+  }
+}
+
 export default function HITLWizard(props: HITLWizardProps) {
-  
+  const {
+    initialTarget,
+    initialMode,
+    initialName,
+    initialTier,
+    initialHosts,
+    initialStrict,
+    initialModel,
+  } = props;
+
   const route = useRoute();
   const config = useConfig();
   const { model, setModel, isModelUserSelected } = useAgent();
@@ -65,16 +93,29 @@ export default function HITLWizard(props: HITLWizardProps) {
   const initialStep: WizardStep = initialTarget ? "mode" : "target";
 
   const [currentStep, setCurrentStep] = useState<WizardStep>(initialStep);
-  const [state, setState] = useState<WizardState>(() => ({
-    name: initialName || generateRandomName(),
-    target: initialTarget || "",
-    mode: (initialMode as OperatorMode) || "manual",
-    autoApproveTier: (initialTier || 2) as PermissionTier,
-    scope: {
-      allowedHosts: initialHosts || [],
-      strictScope: initialStrict || false,
-    },
-  }));
+  const [state, setState] = useState<WizardState>(() => {
+    // Auto-parse host from target URL if provided
+    const hostsFromTarget: string[] = [];
+    if (initialTarget) {
+      const parsedHost = parseHostFromUrl(initialTarget);
+      if (parsedHost) {
+        hostsFromTarget.push(parsedHost);
+      }
+    }
+    // Combine with any explicitly provided hosts (avoiding duplicates)
+    const combinedHosts = [...new Set([...hostsFromTarget, ...(initialHosts || [])])];
+
+    return {
+      name: initialName || generateRandomName(),
+      target: initialTarget || "",
+      mode: (initialMode as OperatorMode) || "manual",
+      autoApproveTier: (initialTier || 2) as PermissionTier,
+      scope: {
+        allowedHosts: combinedHosts,
+        strictScope: initialStrict || false,
+      },
+    };
+  });
 
   const [targetFocusedField, setTargetFocusedField] = useState(0);
   const [modeFocusedField, setModeFocusedField] = useState(0);
@@ -176,6 +217,22 @@ export default function HITLWizard(props: HITLWizardProps) {
     }
   }
 
+  // Helper to transition to mode step and auto-parse host from target
+  const goToModeStep = () => {
+    // Auto-parse host from target URL if not already in scope
+    const targetHost = parseHostFromUrl(state.target);
+    if (targetHost && !state.scope.allowedHosts.includes(targetHost)) {
+      setState((prev) => ({
+        ...prev,
+        scope: {
+          ...prev.scope,
+          allowedHosts: [targetHost, ...prev.scope.allowedHosts],
+        },
+      }));
+    }
+    setCurrentStep("mode");
+  };
+
   // Calculate max field index (5 normally, 4 if plan mode hides tier selector)
   const maxField = state.mode === "plan" ? 4 : 5;
 
@@ -210,7 +267,7 @@ export default function HITLWizard(props: HITLWizardProps) {
           setTargetFocusedField((prev) => Math.max(0, prev - 1));
         } else {
           if (targetFocusedField === 1 && state.target.trim()) {
-            setCurrentStep("mode");
+            goToModeStep();
           } else {
             setTargetFocusedField((prev) => Math.min(1, prev + 1));
           }
@@ -222,7 +279,7 @@ export default function HITLWizard(props: HITLWizardProps) {
         return;
       }
       if (key.name === "return" && state.target.trim()) {
-        setCurrentStep("mode");
+        goToModeStep();
         return;
       }
       return;
