@@ -4,7 +4,7 @@ import { RGBA } from "@opentui/core";
 import Input from "../input";
 import { useRoute } from "../../context/route";
 import { useConfig } from "../../context/config";
-import { useAgent } from "../../agentProvider";
+import { useAgent } from "../../context/agent";
 import { Session } from "../../../core/session";
 import { SpinnerDots } from "../sprites";
 import { generateRandomName } from "../../../util/name";

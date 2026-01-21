@@ -1,6 +1,6 @@
 import { useKeyboard } from "@opentui/react";
 import { RGBA } from "@opentui/core";
-import { useAgent } from "../../agentProvider";
+import { useAgent } from "../../context/agent";
 import { useRoute } from "../../context/route";
 import { useConfig } from "../../context/config";
 import { ModelPicker } from "../model-picker";

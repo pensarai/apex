@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import AlertDialog from "../alert-dialog";
-import { useCommand } from "../../command-provider";
+import { useCommand } from "../../context/command";
 import { useRoute } from "../../context/route";
 
 export default function HelpDialog() {

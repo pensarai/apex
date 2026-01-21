@@ -5,7 +5,7 @@
  * Provides operator-specific configuration and routing.
  */
 
-import { Session as SessionComponent } from "../session";
+import { Session as SessionComponent } from "../../session";
 import type { Session } from "../../../core/session";
 
 interface OperatorDashboardProps {

@@ -18,33 +18,33 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useKeyboard } from "@opentui/react";
-import { Session } from "../../../core/session";
-import { createOperatorAgent, type OperatorAgent } from "../../../core/agent/operatorAgent";
+import { Session } from "../../core/session";
+import { createOperatorAgent, type OperatorAgent } from "../../core/agent/operatorAgent";
 import type {
   OperatorMode,
   OperatorStage,
   PermissionTier,
   PendingApproval,
   ActionHistoryEntry,
-} from "../../../core/operator";
-import { OPERATOR_STAGES, OPERATOR_MODES, PERMISSION_TIERS, getStagesInOrder } from "../../../core/operator";
-import { useRoute } from "../../context/route";
-import { useInput } from "../../context/input";
-import { useFocus } from "../../context/focus";
-import { useAgent } from "../../agentProvider";
-import { colors } from "../../theme";
-import type { DisplayMessage } from "../agent-display";
-import { isToolMessage, useMessageState } from "../shared";
-import type { ModelInfo } from "../../../core/ai";
-import type { Endpoint, VerifiedVuln, Credential, Hypothesis, Evidence } from "../operator-dashboard/types";
-import ToolsPanel from "../tools-panel";
-import type { ToolsetState } from "../../../core/toolset";
+} from "../../core/operator";
+import { OPERATOR_STAGES, OPERATOR_MODES, PERMISSION_TIERS, getStagesInOrder } from "../../core/operator";
+import { useRoute } from "../context/route";
+import { useInput } from "../context/input";
+import { useFocus } from "../context/focus";
+import { useAgent } from "../context/agent";
+import { colors } from "../theme";
+import type { DisplayMessage } from "../components/agent-display";
+import { isToolMessage, useMessageState } from "../components/shared";
+import type { ModelInfo } from "../../core/ai";
+import type { Endpoint, VerifiedVuln, Credential, Hypothesis, Evidence } from "../components/operator-dashboard/types";
+import ToolsPanel from "../components/tools-panel";
+import type { ToolsetState } from "../../core/toolset";
 
 // Session sub-components
-import { Header } from "./header";
-import { MessageList } from "./message-list";
-import { InputArea } from "./input-area";
-import { Sidebar, useSidebarState, type SidebarState } from "./sidebar";
+import { Header } from "../components/chat/header";
+import { MessageList } from "../components/chat/message-list";
+import { InputArea } from "../components/chat/input-area";
+import { Sidebar, useSidebarState, type SidebarState } from "../components/chat/sidebar";
 
 // ============================================
 // Types
@@ -817,10 +817,10 @@ export { SessionComponent as Session };
 export default SessionComponent;
 
 // Re-export sub-components for external use
-export { Header } from "./header";
-export { MessageList } from "./message-list";
-export { InputArea } from "./input-area";
-export { Sidebar, useSidebarState, type SidebarState } from "./sidebar";
-export { InlineApprovalPrompt } from "./approval-inline";
-export { ToolMessage } from "./tool-message";
-export { LoadingIndicator, type LoadingState } from "./loading-indicator";
+export { Header } from "../components/chat/header";
+export { MessageList } from "../components/chat/message-list";
+export { InputArea } from "../components/chat/input-area";
+export { Sidebar, useSidebarState, type SidebarState } from "../components/chat/sidebar";
+export { InlineApprovalPrompt } from "../components/chat/approval-inline";
+export { ToolMessage } from "../components/chat/tool-message";
+export { LoadingIndicator, type LoadingState } from "../components/chat/loading-indicator";

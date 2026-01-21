@@ -1,8 +1,8 @@
 import { createContext, useContext, useState, useMemo, useCallback, useEffect, type ReactNode } from "react";
-import { type ModelInfo } from "../core/ai";
-import { AVAILABLE_MODELS } from "../core/ai/models";
-import { get as getConfig } from "../core/config/config";
-import { getAvailableModels } from "../core/providers/utils";
+import { type ModelInfo } from "../../core/ai";
+import { AVAILABLE_MODELS } from "../../core/ai/models";
+import { get as getConfig } from "../../core/config/config";
+import { getAvailableModels } from "../../core/providers/utils";
 
 // Preferred defaults by provider (fast + cheap models)
 const PREFERRED_DEFAULTS: Record<string, string> = {

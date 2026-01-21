@@ -1,4 +1,4 @@
-import { useAgent } from "../agentProvider";
+import { useAgent } from "../context/agent";
 import { AgentStatus } from "./footer";
 import { SpinnerDots } from "./sprites";
 

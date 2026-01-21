@@ -10,8 +10,8 @@
 import { useCallback } from "react";
 import { RGBA } from "@opentui/core";
 import { useTerminalDimensions } from "@opentui/react";
-import { PetriAnimation } from "./components/petri-animation";
-import { useCommand } from "../../command-provider";
+import { PetriAnimation } from "./petri-animation";
+import { useCommand } from "../../context/command";
 import { useInput } from "../../context/input";
 import { useFocus } from "../../context/focus";
 import { useConfig } from "../../context/config";

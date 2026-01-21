@@ -1,5 +1,5 @@
 import os from "os";
-import { useAgent } from "../agentProvider";
+import { useAgent } from "../context/agent";
 import { ProgressBar, SpinnerDots } from "./sprites";
 import { useSession } from "../context/session";
 import { useRoute } from "../context/route";

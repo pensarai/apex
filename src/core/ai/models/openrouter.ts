@@ -74,6 +74,12 @@ export const OPENROUTER_MODELS: ModelInfo[] = [
     contextLength: 2000000,
   },
   {
+    id: "google/gemini-3-pro-preview",
+    name: "Gemini 3 Pro Preview",
+    provider: "openrouter",
+    contextLength: 1000000,
+  },
+  {
     id: "meta-llama/llama-3.3-70b-instruct",
     name: "Llama 3.3 70B Instruct",
     provider: "openrouter",
@@ -156,5 +162,29 @@ export const OPENROUTER_MODELS: ModelInfo[] = [
     name: "Nemotron 3 Nano 30B A3B (Free)",
     provider: "openrouter",
     contextLength: 256000,
+  },
+  {
+    id: "arcee-ai/trinity-mini:free",
+    name: "Arcee Trinity Mini (Free)",
+    provider: "openrouter",
+    contextLength: 131072,
+  },
+  {
+    id: "arcee-ai/trinity-mini",
+    name: "Arcee Trinity Mini",
+    provider: "openrouter",
+    contextLength: 131072,
+  },
+  {
+    id: "x-ai/grok-4.1-fast:free",
+    name: "Grok 4.1 Fast (Free)",
+    provider: "openrouter",
+    contextLength: 2000000,
+  },
+  {
+    id: "z-ai/glm-4.7-flash",
+    name: "GLM 4.7 Flash",
+    provider: "openrouter",
+    contextLength: 200000,
   },
 ];

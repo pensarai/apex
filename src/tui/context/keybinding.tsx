@@ -4,7 +4,7 @@ import { createContext, useContext, useState, type ReactNode } from "react";
 import { createKeybindings, Keybind, type KeybindingDependencies, type KeybindingEntry } from "../keybindings";
 import { useInput } from "./input";
 import { useFocus } from "./focus";
-import { useDialog } from "../components/dialog";
+import { useDialog } from "./dialog";
 
 export type { KeybindingEntry };
 

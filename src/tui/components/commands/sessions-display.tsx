@@ -7,7 +7,7 @@ import { useSession } from "../../context/session";
 import { useFocus } from "../../context/focus";
 import { Session } from "../../../core/session";
 import { Storage } from "../../../core/storage";
-import { Dialog } from "../dialog";
+import { Dialog } from "../../context/dialog";
 import { Renderable, ScrollBoxRenderable } from "@opentui/core";
 
 interface SessionsDisplayProps {

@@ -8,7 +8,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { RGBA } from "@opentui/core";
 import { useTerminalDimensions } from "@opentui/react";
-import { WaveSimulation } from "../lib/wave-simulation";
+import { WaveSimulation } from "./lib/wave-simulation";
 
 // Global tick system for animations (shared across components)
 let globalTick = 0;

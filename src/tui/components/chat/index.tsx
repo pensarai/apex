@@ -11,10 +11,10 @@
 import { useState, useCallback, useEffect } from "react";
 import { Session } from "../../../core/session";
 import { useConfig } from "../../context/config";
-import { useAgent } from "../../agentProvider";
+import { useAgent } from "../../context/agent";
 import { HomeView } from "./home-view";
 import { ConfigView, type SessionConfig } from "./config-view";
-import { Session as SessionComponent } from "../session";
+import { Session as SessionComponent } from "../../session";
 import type { ModelInfo } from "../../../core/ai";
 
 type ChatAppView = "home" | "config" | "chat";

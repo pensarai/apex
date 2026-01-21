@@ -1,8 +1,8 @@
 import { createRoot } from "@opentui/react";
 import { useState, useEffect } from "react";
 import Footer from "./components/footer";
-import { CommandProvider } from "./command-provider";
-import { AgentProvider } from "./agentProvider";
+import { CommandProvider } from "./context/command";
+import { AgentProvider } from "./context/agent";
 import SessionView from "./components/session-view";
 import SessionsDisplay from "./components/commands/sessions-display";
 import ConfigDialog from "./components/commands/config-dialog";
@@ -20,7 +20,7 @@ import { hasAnyProviderConfigured } from "../core/providers";
 import { SessionProvider } from "./context/session";
 import { InputProvider, useInput } from "./context/input";
 import { FocusProvider, useFocus } from "./context/focus";
-import { DialogProvider, useDialog } from "./components/dialog";
+import { DialogProvider, useDialog } from "./context/dialog";
 import ShortcutsDialog from "./components/commands/shortcuts-dialog";
 import { KeybindingProvider } from "./context/keybinding";
 

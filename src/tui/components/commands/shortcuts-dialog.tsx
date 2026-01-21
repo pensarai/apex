@@ -1,6 +1,6 @@
 import { useKeyboard } from "@opentui/react";
 import { useFocus } from "../../context/focus";
-import { Dialog } from "../dialog";
+import { Dialog } from "../../context/dialog";
 import { keybindings } from "../../keybindings-registry";
 
 interface ShortcutsDialogProps {

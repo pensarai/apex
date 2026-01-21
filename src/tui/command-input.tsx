@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useCommand } from "./command-provider";
+import { useCommand } from "./context/command";
 import { useConfig } from "./context/config";
 import { useInput } from "./context/input";
 import { Session } from "../core/session";

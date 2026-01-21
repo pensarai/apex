@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useKeyboard } from "@opentui/react";
 import { RGBA } from "@opentui/core";
 import { useRoute } from "../../context/route";
-import { useAgent } from "../../agentProvider";
+import { useAgent } from "../../context/agent";
 import SwarmDashboard, {
   type UIMessage,
   type Subagent,

@@ -3,7 +3,7 @@ import { useKeyboard } from "@opentui/react";
 import { RGBA } from "@opentui/core";
 import AgentDisplay, { type DisplayMessage } from "../agent-display";
 import { SpinnerDots } from "../sprites";
-import { useDialog } from "../dialog";
+import { useDialog } from "../../context/dialog";
 
 // Color palette (matching home view)
 export const greenBullet = RGBA.fromInts(76, 175, 80, 255);

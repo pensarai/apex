@@ -7,14 +7,14 @@ import {
   useEffect,
 } from "react";
 import type { ReactNode } from "react";
-import { CommandRouter } from "./command-router";
+import { CommandRouter } from "../command-router";
 import {
   commandRegistry,
   commands,
   type AppCommandContext,
-} from "./command-registry";
-import type { AutocompleteOption } from "./components/autocomplete";
-import { useRoute } from "./context/route";
+} from "../command-registry";
+import type { AutocompleteOption } from "../components/autocomplete";
+import { useRoute } from "./route";
 
 interface CommandContextValue {
   router: CommandRouter<AppCommandContext>;
@@ -47,7 +47,7 @@ export function CommandProvider({ children }: CommandProviderProps) {
     }
     return ctx
   }, [route]);
-  
+
   // Create router with context - initialized once
   const router = useMemo(() => {
     const router = new CommandRouter<AppCommandContext>();
