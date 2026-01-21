@@ -16,7 +16,7 @@
  * - State persistence for resume
  */
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useKeyboard } from "@opentui/react";
 import { Session } from "../../../core/session";
 import { createOperatorAgent, type OperatorAgent } from "../../../core/agent/operatorAgent";
@@ -112,6 +112,10 @@ export function SessionComponent({
   const route = useRoute();
   const { model: agentModel, addTokenUsage, tokenUsage } = useAgent();
   const { setInputValue } = useInput();
+
+  // Use ref to ensure agent always has access to latest callback
+  const addTokenUsageRef = useRef(addTokenUsage);
+  addTokenUsageRef.current = addTokenUsage;
 
   // Use provided model or fall back to agent context
   const model = propModel || agentModel;
@@ -281,6 +285,7 @@ export function SessionComponent({
             category: e.category,
           }))
         : undefined,
+      onTokenUsage: (input, output) => addTokenUsageRef.current(input, output),
     });
 
     // Status change

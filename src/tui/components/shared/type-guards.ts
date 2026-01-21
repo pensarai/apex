@@ -2,7 +2,7 @@
  * Type Guards for Display Messages
  *
  * TypeScript helpers for safely narrowing DisplayMessage types.
- * Eliminates `(m as any).status` casts throughout the codebase.
+ * Eliminates `(m as any).status` casts throughout the codebase which agents love to use.
  */
 
 import type { DisplayMessage, ToolStatus } from "../agent-display";

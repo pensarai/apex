@@ -16,20 +16,6 @@ export type ChatStatus = "idle" | "running" | "waiting" | "done";
 
 interface StatusBarProps {
   status: ChatStatus;
-  modelName?: string;
-  tokenCount?: { input: number; output: number };
-}
-
-/**
- * Format token count for display (e.g., "1.5K")
- */
-function formatTokenCount(count: number): string {
-  if (count >= 1000000) {
-    return `${(count / 1000000).toFixed(1)}M`;
-  } else if (count >= 1000) {
-    return `${(count / 1000).toFixed(1)}K`;
-  }
-  return count.toString();
 }
 
 /**
@@ -66,7 +52,7 @@ function getStatusLabel(status: ChatStatus): string {
   }
 }
 
-export function StatusBar({ status, modelName, tokenCount }: StatusBarProps) {
+export function StatusBar({ status }: StatusBarProps) {
   const indicator = getStatusIndicator(status);
   const label = getStatusLabel(status);
 
@@ -84,18 +70,6 @@ export function StatusBar({ status, modelName, tokenCount }: StatusBarProps) {
       <box flexDirection="row" gap={1}>
         <text fg={indicator.color}>{indicator.char}</text>
         <text fg={creamText}>{label}</text>
-      </box>
-
-      {/* Right: Model and tokens */}
-      <box flexDirection="row" gap={2}>
-        {tokenCount && (tokenCount.input > 0 || tokenCount.output > 0) && (
-          <text fg={dimText}>
-            {formatTokenCount(tokenCount.input)}/{formatTokenCount(tokenCount.output)}
-          </text>
-        )}
-        {modelName && (
-          <text fg={dimText}>{modelName}</text>
-        )}
       </box>
     </box>
   );

@@ -126,32 +126,12 @@ export function Header({
 
       {/* Right side: model | tokens | tool calls */}
       <box flexDirection="row" gap={1}>
-        {/* Model name */}
-        {modelName && (
-          <>
-            <text fg={colors.dimText}>{modelName}</text>
-            <text fg={colors.dimText}>│</text>
-          </>
-        )}
-
-        {/* Token usage - show if any tokens used */}
-        {tokenUsage && (tokenUsage.inputTokens > 0 || tokenUsage.outputTokens > 0) && (
-          <>
-            <text fg={colors.dimText}>
-              {formatTokenCount(tokenUsage.inputTokens)}↓
-            </text>
-            <text fg={colors.dimText}>
-              {formatTokenCount(tokenUsage.outputTokens)}↑
-            </text>
-          </>
-        )}
-
         {/* Tool calls count */}
         {toolCallsCount > 0 && (
           <>
             <text fg={colors.dimText}>│</text>
             <text fg={colors.toolColor}>{toolCallsCount}</text>
-            <text fg={colors.dimText}>calls</text>
+            <text fg={colors.dimText}>tool calls</text>
           </>
         )}
       </box>

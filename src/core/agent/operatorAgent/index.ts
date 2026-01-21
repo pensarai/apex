@@ -85,6 +85,8 @@ export interface OperatorAgentConfig {
   previousMessages?: DisplayMessage[];
   /** Attack surface endpoints discovered in previous session (for resume context) */
   previousAttackSurface?: AttackSurfaceEndpoint[];
+  /** Callback for token usage updates (called after each step) */
+  onTokenUsage?: (inputTokens: number, outputTokens: number) => void;
 }
 
 export interface OperatorAgentResult {
@@ -630,6 +632,7 @@ Document significant findings using the document_finding tool.`;
    * Run the main agent loop
    */
   private async runAgentLoop(systemMessage: string, initialUserMessage: string): Promise<OperatorAgentResult> {
+
     const session = this.config.session;
     const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
       { role: "system", content: systemMessage },
@@ -808,10 +811,21 @@ This tool requires user approval (T3 tier - Probing).`,
           tools: wrappedTools,
           stopWhen: stepCountIs(100), // Allow multi-step tool execution within each iteration
           abortSignal: this.abortController?.signal,
+          onStepFinish: (step) => {
+            console.log(step.usage)
+            console.log(this.config.onTokenUsage)
+            if (step.usage && this.config.onTokenUsage) {
+              console.log(step.usage)
+              this.config.onTokenUsage(
+                step.usage.inputTokens ?? 0,
+                step.usage.outputTokens ?? 0
+              );
+            }
+          }
         });
 
-        // Process stream events in order (like OpenCode's processor.ts pattern)
-        // This ensures text appears before tool calls in the UI
+        // Process stream events in order
+        // ensures text appears before tool calls in the UI
         let assistantContent = "";
         let currentAssistantMsgIndex = -1;
 
@@ -912,14 +926,6 @@ This tool requires user approval (T3 tier - Probing).`,
           })),
           usage, // token counts
         });
-
-        // Emit token usage for UI tracking
-        if (usage) {
-          this.emit("token-usage", {
-            inputTokens: usage.inputTokens ?? 0,
-            outputTokens: usage.outputTokens ?? 0,
-          });
-        }
 
         // Add assistant message to history
         if (assistantContent) {

@@ -5,7 +5,7 @@
  * approval prompts, and status bar.
  */
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useKeyboard } from "@opentui/react";
 import { Session } from "../../../core/session";
 import { createOperatorAgent, type OperatorAgent } from "../../../core/agent/operatorAgent";
@@ -18,6 +18,7 @@ import { MessageList } from "./components/message-list";
 import { StatusBar, type ChatStatus } from "./components/status-bar";
 import { ChatInputArea } from "./components/chat-input-area";
 import type { Endpoint, VerifiedVuln, Credential } from "../operator-dashboard/types";
+import { useAgent } from "../../agentProvider";
 
 interface SidebarStateType {
   attackSurface: Endpoint[];
@@ -45,6 +46,13 @@ export function ChatView({
   sidebarState,
   onSidebarUpdate,
 }: ChatViewProps) {
+  // Get token usage callback from context
+  const { addTokenUsage } = useAgent();
+
+  // Use ref to ensure agent always has access to latest callback
+  const addTokenUsageRef = useRef(addTokenUsage);
+  addTokenUsageRef.current = addTokenUsage;
+
   // Agent state
   const [agent, setAgent] = useState<OperatorAgent | null>(null);
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
@@ -56,9 +64,6 @@ export function ChatView({
   const [autoApproveTier, setAutoApproveTier] = useState<PermissionTier>(2);
   const [currentStage, setCurrentStage] = useState<OperatorStage>("setup");
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
-
-  // Token tracking
-  const [tokenUsage, setTokenUsage] = useState({ input: 0, output: 0 });
 
   // UI state
   const [directiveInput, setDirectiveInput] = useState("");
@@ -134,6 +139,7 @@ export function ChatView({
             category: e.category,
           }))
         : undefined,
+      onTokenUsage: (input, output) => addTokenUsageRef.current(input, output),
     });
 
     // Set up event listeners
@@ -206,13 +212,6 @@ export function ChatView({
           }
           break;
       }
-    });
-
-    operatorAgent.on("token-usage", ({ inputTokens, outputTokens }: { inputTokens: number; outputTokens: number }) => {
-      setTokenUsage((prev) => ({
-        input: prev.input + inputTokens,
-        output: prev.output + outputTokens,
-      }));
     });
 
     setAgent(operatorAgent);
@@ -406,8 +405,6 @@ export function ChatView({
       {/* Status bar */}
       <StatusBar
         status={chatStatus}
-        modelName={model.name}
-        tokenCount={tokenUsage}
       />
     </box>
   );
