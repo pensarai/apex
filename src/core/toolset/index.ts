@@ -249,6 +249,14 @@ export const ALL_TOOLS: ToolDefinition[] = [
 
   // Utility tools
   {
+    id: "run_auth_subagent",
+    name: "Auth Subagent",
+    description: "Run authentication",
+    detail: "Run the authentication subagent to obtain an authenticated session. Handles complex auth flows including OAuth, SAML, CSRF tokens, and SPA logins. Call when you need to access authenticated endpoints or the current session is expired.",
+    category: "utility",
+    defaultEnabled: true,
+  },
+  {
     id: "scratchpad",
     name: "Scratchpad",
     description: "Store temp notes",
