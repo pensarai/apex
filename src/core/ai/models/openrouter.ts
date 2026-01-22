@@ -164,6 +164,12 @@ export const OPENROUTER_MODELS: ModelInfo[] = [
     contextLength: 256000,
   },
   {
+    id: "nvidia/nemotron-3-nano-30b-a3b",
+    name: "Nemotron 3 Nano 30B A3B",
+    provider: "openrouter",
+    contextLength: 262144
+  },
+  {
     id: "arcee-ai/trinity-mini:free",
     name: "Arcee Trinity Mini (Free)",
     provider: "openrouter",
@@ -180,6 +186,12 @@ export const OPENROUTER_MODELS: ModelInfo[] = [
     name: "Grok 4.1 Fast (Free)",
     provider: "openrouter",
     contextLength: 2000000,
+  },
+  {
+    id: "x-ai/grok-code-fast-1",
+    name: "Grok Code Fast 1",
+    provider: "openrouter",
+    contextLength: 256000
   },
   {
     id: "z-ai/glm-4.7-flash",

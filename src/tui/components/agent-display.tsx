@@ -6,7 +6,7 @@ import { SpinnerDots } from "./sprites";
 import { useState, memo } from "react";
 import type { Message } from "../../core/messages/types";
 import { useTerminalDimensions } from "@opentui/react";
-import { markdownToStyledText, getStableMessageKey } from "./shared";
+import { markdownToStyledText, getStableMessageKey, getArgsPreview } from "./shared";
 
 export type Subagent = {
   id: string;
@@ -219,6 +219,19 @@ const AgentMessage = memo(function AgentMessage({
   // Check if this is a pending tool message
   const isPendingTool =
     message.role === "tool" && message.status === "pending";
+  const isCompletedTool =
+    message.role === "tool" && message.status === "completed";
+  const isErrorTool =
+    message.role === "tool" && message.status === "error";
+
+  // Get args preview for tool messages
+  const argsPreview =
+    message.role === "tool" && message.args
+      ? getArgsPreview(message.toolName || "", message.args, 80)
+      : "";
+
+  // Get streaming logs for pending tools
+  const streamingLogs = message.logs || [];
 
   return (
     <box
@@ -248,16 +261,52 @@ const AgentMessage = memo(function AgentMessage({
           backgroundColor={
             message.role !== "tool" ? RGBA.fromInts(40, 40, 40, 255) : undefined
           }
+          flexDirection="column"
         >
           {isPendingTool ? (
-            <SpinnerDots
-              label={
-                typeof displayContent === "string" ? displayContent : content
-              }
-              fg="green"
-            />
+            <>
+              <SpinnerDots
+                label={
+                  typeof displayContent === "string" ? displayContent : content
+                }
+                fg="green"
+              />
+              {/* Args preview for pending tools */}
+              {argsPreview && (
+                <text fg={RGBA.fromInts(120, 120, 120, 255)} content={`  ${argsPreview}`} />
+              )}
+              {/* Streaming logs for pending tools */}
+              {streamingLogs.length > 0 && (
+                <box flexDirection="column" marginTop={0} paddingLeft={2}>
+                  {streamingLogs.slice(-3).map((log, idx) => (
+                    <text
+                      key={idx}
+                      fg={RGBA.fromInts(100, 100, 100, 255)}
+                      content={log.length > 100 ? log.slice(0, 100) + "…" : log}
+                    />
+                  ))}
+                </box>
+              )}
+            </>
           ) : (
-            <text fg="white" content={displayContent} />
+            <>
+              {/* Completed/error tool indicator */}
+              {message.role === "tool" && (
+                <box flexDirection="row" gap={1}>
+                  <text fg={isErrorTool ? "red" : "green"}>
+                    {isErrorTool ? "✗" : "✓"}
+                  </text>
+                  <text fg="white" content={displayContent} />
+                </box>
+              )}
+              {message.role !== "tool" && (
+                <text fg="white" content={displayContent} />
+              )}
+              {/* Args preview for completed tools */}
+              {message.role === "tool" && argsPreview && (
+                <text fg={RGBA.fromInts(120, 120, 120, 255)} content={`  ${argsPreview}`} />
+              )}
+            </>
           )}
         </box>
         {message.role === "user" && (

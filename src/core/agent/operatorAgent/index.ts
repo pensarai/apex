@@ -254,6 +254,24 @@ export class OperatorAgent extends EventEmitter {
   }
 
   /**
+   * Add a streaming log to a tool message
+   */
+  private addToolLog(toolCallId: string, log: string): void {
+    const msgIdx = this.toolCallIdToIndex.get(toolCallId);
+    if (msgIdx === undefined) return;
+
+    const existingMsg = this.messages[msgIdx];
+    if (!existingMsg || existingMsg.role !== "tool") return;
+
+    const currentLogs = existingMsg.logs || [];
+    const updatedMsg = {
+      ...existingMsg,
+      logs: [...currentLogs, log],
+    };
+    this.updateMessage(msgIdx, updatedMsg);
+  }
+
+  /**
    * Change the operating mode
    */
   setMode(mode: OperatorMode): void {
@@ -991,7 +1009,7 @@ This tool requires user approval (T3 tier - Probing).`,
   }
 
   /**
-   * Wrap all tools with approval gate checking
+   * Wrap all tools with approval gate checking and progress logging
    */
   private wrapToolsWithApproval(tools: Record<string, any>): Record<string, any> {
     const wrapped: Record<string, any> = {};
@@ -1006,8 +1024,34 @@ This tool requires user approval (T3 tier - Probing).`,
             // Check approval
             await this.approvalGate.check(name, toolCallId, args);
 
-            // Execute original tool
-            return await tool.execute(args, context);
+            // Emit starting log
+            this.addToolLog(toolCallId, this.getToolStartLog(name, args));
+
+            // Set up progress interval for long-running tools
+            let progressCount = 0;
+            const progressInterval = setInterval(() => {
+              progressCount++;
+              const dots = ".".repeat((progressCount % 3) + 1);
+              this.addToolLog(toolCallId, `running${dots}`);
+            }, 2000);
+
+            try {
+              // Execute original tool
+              const result = await tool.execute(args, context);
+
+              // Clear progress interval
+              clearInterval(progressInterval);
+
+              // Emit result summary log
+              const resultLog = this.getToolResultLog(name, result);
+              if (resultLog) {
+                this.addToolLog(toolCallId, resultLog);
+              }
+
+              return result;
+            } finally {
+              clearInterval(progressInterval);
+            }
           } catch (error) {
             if (error instanceof ApprovalBlockedError || error instanceof ApprovalDeniedError) {
               // Return a message indicating the action was blocked/denied
@@ -1024,6 +1068,66 @@ This tool requires user approval (T3 tier - Probing).`,
     }
 
     return wrapped;
+  }
+
+  /**
+   * Get a starting log message for a tool
+   */
+  private getToolStartLog(toolName: string, args: any): string {
+    switch (toolName) {
+      case "execute_command":
+        const cmd = String(args.command || "").slice(0, 50);
+        return `$ ${cmd}${args.command?.length > 50 ? "..." : ""}`;
+      case "http_request":
+        const method = (args.method || "GET").toUpperCase();
+        const url = String(args.url || "").slice(0, 40);
+        return `${method} ${url}${args.url?.length > 40 ? "..." : ""}`;
+      case "browser_navigate":
+        return `navigating to ${String(args.url || "").slice(0, 40)}`;
+      case "Grep":
+      case "grep":
+        return `searching for "${String(args.pattern || "").slice(0, 30)}"`;
+      case "Read":
+      case "read_file":
+        return `reading ${String(args.file_path || args.path || "").slice(0, 40)}`;
+      default:
+        return `executing ${toolName}`;
+    }
+  }
+
+  /**
+   * Get a result summary log for a tool
+   */
+  private getToolResultLog(toolName: string, result: any): string | null {
+    if (!result) return null;
+
+    // HTTP request results
+    if (result.status !== undefined) {
+      return `→ status: ${result.status}`;
+    }
+
+    // Command results
+    if (result.stdout !== undefined) {
+      const lines = String(result.stdout).split("\n").filter(Boolean);
+      if (lines.length > 0) {
+        const firstLine = lines[0].slice(0, 60);
+        return lines.length > 1
+          ? `→ ${firstLine}... (${lines.length} lines)`
+          : `→ ${firstLine}`;
+      }
+    }
+
+    // Array results (endpoints, etc)
+    if (Array.isArray(result)) {
+      return `→ found ${result.length} items`;
+    }
+
+    // Object with count/length
+    if (result.endpoints?.length !== undefined) {
+      return `→ found ${result.endpoints.length} endpoints`;
+    }
+
+    return null;
   }
 
   /**

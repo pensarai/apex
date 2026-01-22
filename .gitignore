@@ -53,3 +53,5 @@ build
 .pensar
 
 .benchmark-logs
+
+.apex-cache

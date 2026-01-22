@@ -99,3 +99,53 @@ export function registerToolSummary(name: string, fn: ToolSummaryFn): void {
 export function hasToolSummary(name: string): boolean {
   return name in TOOL_SUMMARY_MAP;
 }
+
+/**
+ * Get a compact args preview for display alongside tool calls.
+ * Shows key parameter values in a truncated format.
+ *
+ * @param toolName - Name of the tool
+ * @param args - Tool arguments
+ * @param maxLength - Maximum length of preview (default 60)
+ * @returns Compact args preview string
+ */
+export function getArgsPreview(
+  toolName: string,
+  args: Record<string, unknown>,
+  maxLength: number = 60
+): string {
+  // Filter out description fields
+  const filteredArgs = Object.entries(args).filter(
+    ([k]) => !k.toLowerCase().includes("description")
+  );
+
+  if (filteredArgs.length === 0) return "";
+
+  // For single-arg tools, just show the value
+  if (filteredArgs.length === 1) {
+    const [, value] = filteredArgs[0];
+    const str = typeof value === "string" ? value : JSON.stringify(value);
+    return str.length > maxLength ? str.slice(0, maxLength) + "…" : str;
+  }
+
+  // For multi-arg tools, show key:value pairs
+  const parts = filteredArgs.map(([key, value]) => {
+    const shortKey = key.replace(/([A-Z])/g, "_$1").toLowerCase().replace(/^_/, "");
+    let shortValue: string;
+    if (typeof value === "string") {
+      shortValue = value.length > 20 ? value.slice(0, 20) + "…" : value;
+    } else if (typeof value === "boolean") {
+      shortValue = value ? "✓" : "✗";
+    } else if (typeof value === "number") {
+      shortValue = String(value);
+    } else if (Array.isArray(value)) {
+      shortValue = `[${value.length}]`;
+    } else {
+      shortValue = "{…}";
+    }
+    return `${shortKey}:${shortValue}`;
+  });
+
+  const preview = parts.join(" ");
+  return preview.length > maxLength ? preview.slice(0, maxLength) + "…" : preview;
+}

@@ -24,7 +24,7 @@ export {
 } from "./type-guards";
 
 // Registries
-export { getToolSummary, registerToolSummary, hasToolSummary } from "./tool-registry";
+export { getToolSummary, registerToolSummary, hasToolSummary, getArgsPreview } from "./tool-registry";
 export { getResultSummary, formatResultDetail, type ResultSummary } from "./result-registry";
 
 // Components

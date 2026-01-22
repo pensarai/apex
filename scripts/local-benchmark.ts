@@ -215,6 +215,7 @@ interface CLIOptions {
   skip?: string[];
   pace?: boolean;
   vulns?: boolean;
+  custom?: string; // Custom benchmark name - uses repoPath as target directory directly
 }
 
 /**
@@ -398,11 +399,9 @@ async function runSingleBenchmark(
       }
     }
 
-    // Step 3: Build docker images with flag injection using make build
-    console.log(`[${benchmarkName}] 🔨 Building docker images with make build...`);
-
-    // Change to benchmark directory and run make build
-    const buildResult = await exec("make build", {
+    // Step 3: Build and start docker compose
+    console.log(`[${benchmarkName}] 🐳 Building and starting docker compose...`);
+    await exec("docker compose up -d --build --wait", {
       cwd: benchmarkPath,
       env: {
         ...process.env,
@@ -410,22 +409,13 @@ async function runSingleBenchmark(
         FLAG: expectedFlag || "",
       },
     });
-
-    console.log(`[${benchmarkName}] ✅ Docker images built`);
-    if (buildResult.stdout) {
-      console.log(`[${benchmarkName}] Build output: ${buildResult.stdout.substring(0, 200)}...`);
-    }
-
-    // Step 4: Start docker compose
-    console.log(`[${benchmarkName}] 🐳 Starting docker compose...`);
-    await exec("docker compose up -d --wait", { cwd: benchmarkPath });
     console.log(`[${benchmarkName}] ✅ Docker compose started`);
 
     // Wait a bit for services to be ready
     console.log(`[${benchmarkName}] ⏳ Waiting for services to be ready...`);
     await new Promise((resolve) => setTimeout(resolve, 10000));
 
-    // Step 5: Query Docker to get the actual mapped host port
+    // Step 4: Query Docker to get the actual mapped host port
     console.log(`[${benchmarkName}] 🔍 Querying Docker for actual port mapping...`);
     const actualHostPort = await getActualDockerPort(
       benchmarkPath,
@@ -433,11 +423,11 @@ async function runSingleBenchmark(
       portInfo.containerPort
     );
 
-    // Step 6: Build target URL from actual mapped port
+    // Step 5: Build target URL from actual mapped port
     const targetUrl = `http://localhost:${actualHostPort}`;
     console.log(`[${benchmarkName}] 🎯 Target URL: ${targetUrl}`);
 
-    // Step 7: Create local session with benchmark guidance and scope constraints
+    // Step 6: Create local session with benchmark guidance and scope constraints
     const sessionPrefix = prefix ? `${prefix}-${benchmarkName}` : `benchmark-${benchmarkName}`;
     const session = await Session.create({
       targets: [targetUrl],
@@ -455,7 +445,7 @@ async function runSingleBenchmark(
 
     console.log(`[${benchmarkName}] 📝 Local session created: ${session.id}`);
 
-    // Step 8: Create tool overrides that block docker commands and filesystem access
+    // Step 7: Create tool overrides that block docker commands and filesystem access
     // These prevent cheating by accessing Docker containers directly or reading source code
     const BLOCKED_DOCKER_COMMANDS = [
       "docker",
@@ -539,7 +529,7 @@ async function runSingleBenchmark(
       }
     };
 
-    // Step 9: Run streamlined pentest with tool overrides (scope constraints are in session config)
+    // Step 8: Run streamlined pentest with tool overrides (scope constraints are in session config)
     console.log(`[${benchmarkName}] 🔍 Starting streamlined pentest...`);
     console.log(`[${benchmarkName}] ℹ️  Tool overrides active: Docker commands and source code access BLOCKED`);
     const pentestResult = await runStreamlinedPentest({
@@ -574,7 +564,7 @@ async function runSingleBenchmark(
 
     console.log(`[${benchmarkName}] ✅ Pentest completed. Total findings: ${pentestResult.totalFindings}`);
 
-    // Step 10: Detect flag in artifacts
+    // Step 9: Detect flag in artifacts
     console.log(`[${benchmarkName}] 🎯 Detecting flag in artifacts...`);
     let flagDetection;
     if (isPace && expectedFlags.length > 0) {
@@ -601,11 +591,11 @@ async function runSingleBenchmark(
       };
     }
 
-    // Step 11: Re-run all POCs and save their outputs
+    // Step 10: Re-run all POCs and save their outputs
     console.log(`[${benchmarkName}] 🔄 Re-running POCs...`);
     const pocRunResults = await rerunAllPocs(session.rootPath, benchmarkName, targetUrl);
 
-    // Step 12: Generate benchmark results
+    // Step 11: Generate benchmark results
     const results: BenchmarkResults = {
       repoPath: benchmarkPath,
       branch: benchmarkName,
@@ -678,7 +668,7 @@ async function runSingleBenchmark(
       timestamp: new Date().toISOString(),
     };
   } finally {
-    // Step 13: Cleanup - Stop docker compose
+    // Step 12: Cleanup - Stop docker compose
     try {
       console.log(`[${benchmarkName}] 🧹 Stopping docker compose...`);
       await exec("docker compose down", { cwd: benchmarkPath });
@@ -884,6 +874,7 @@ async function main() {
     console.error("  --skip <benchmarks>          Comma-separated list of benchmarks to skip (e.g., XBEN-001-24,XBEN-002-24)");
     console.error("  --pace                       Run PACEbench FullChain challenges instead of XBEN");
     console.error("  --vulns                      Enable vulnerability detection mode (requires --pace)");
+    console.error("  --custom <name>              Run against a custom target (first arg is target directory)");
     console.error();
     console.error("Environment Variables:");
     console.error("  ANTHROPIC_API_KEY            Anthropic API key (or --anthropic-key)");
@@ -908,6 +899,9 @@ async function main() {
     console.error();
     console.error("  # Run specific PACEbench challenge(s)");
     console.error("  bun run scripts/local-benchmark.ts /path/to/pacebench --pace FullChain1 FullChain2");
+    console.error();
+    console.error("  # Run against a custom target directory (e.g., ~/coffee-shop)");
+    console.error("  bun run scripts/local-benchmark.ts ~/coffee-shop --custom coffee-shop");
     console.error();
     console.error("  # Run with custom model and parallel limit");
     console.error("  bun run scripts/local-benchmark.ts /path/to/xben-challenges \\");
@@ -1035,6 +1029,17 @@ async function main() {
     options.vulns = true;
   }
 
+  // Parse --custom
+  const customIndex = args.indexOf("--custom");
+  if (customIndex !== -1) {
+    const customValue = args[customIndex + 1];
+    if (!customValue) {
+      console.error("Error: --custom must be followed by a benchmark name");
+      process.exit(1);
+    }
+    options.custom = customValue;
+  }
+
   // Validate --vulns requires --pace
   if (options.vulns && !options.pace) {
     console.error("Error: --vulns flag requires --pace flag");
@@ -1050,6 +1055,7 @@ async function main() {
     "--max-parallel",
     "--prefix",
     "--skip",
+    "--custom",
   ];
 
   // Boolean flags (no value, don't skip next arg)
@@ -1081,6 +1087,75 @@ async function main() {
 
     // This is a benchmark name
     benchmarks.push(arg);
+  }
+
+  // If --custom is specified, use repoPath as the target directory directly
+  // and skip benchmark enumeration
+  if (options.custom) {
+    // Validate environment variables
+    const anthropicKey = options.anthropicKey || process.env.ANTHROPIC_API_KEY;
+    const openrouterKey = options.openrouterKey || process.env.OPENROUTER_API_KEY;
+
+    if (!anthropicKey && !openrouterKey) {
+      console.error("Error: At least one AI API key is required");
+      console.error("Set ANTHROPIC_API_KEY or OPENROUTER_API_KEY environment variable");
+      console.error("Or use --anthropic-key or --openrouter-key flag");
+      process.exit(1);
+    }
+
+    // Set environment variables for the agents to use
+    if (anthropicKey) {
+      process.env.ANTHROPIC_API_KEY = anthropicKey;
+    }
+    if (openrouterKey) {
+      process.env.OPENROUTER_API_KEY = openrouterKey;
+    }
+
+    // Display configuration for custom mode
+    console.log("\n" + "=".repeat(80));
+    console.log("LOCAL BENCHMARK RUNNER");
+    console.log("=".repeat(80));
+    console.log(`Target Directory: ${repoPath}`);
+    console.log(`Benchmark Name: ${options.custom}`);
+    console.log(`Mode: Custom Target`);
+    console.log(`Model: ${options.model || "claude-sonnet-4-5"}`);
+    if (options.prefix) {
+      console.log(`Prefix: ${options.prefix}`);
+    }
+    console.log(`AI Keys: ${anthropicKey ? "Anthropic ✓" : ""} ${openrouterKey ? "OpenRouter ✓" : ""}`);
+    console.log("=".repeat(80));
+    console.log();
+    console.log("Architecture:");
+    console.log("  • Runs entirely locally (no remote sandbox)");
+    console.log("  • Uses local Docker daemon");
+    console.log("  • Starts docker compose for target");
+    console.log("  • Runs thoroughPentestAgent locally");
+    console.log("  • Docker commands and source code access BLOCKED (anti-cheat)");
+    console.log("  • Detects flags in artifacts");
+    console.log("  • Generates comprehensive reports");
+    console.log("=".repeat(80) + "\n");
+
+    try {
+      console.log(`Running against custom target: ${options.custom} (${repoPath})`);
+      await runSingleBenchmark(
+        repoPath,
+        options.custom,
+        (options.model || "claude-sonnet-4-5") as AIModel,
+        options.prefix,
+        false, // isPace
+        options.vulns
+      );
+      console.log("\n✅ Benchmark execution completed successfully!");
+    } catch (error: any) {
+      console.error("\n❌ Benchmark execution failed:");
+      console.error(error.message);
+      if (error.stack) {
+        console.error("\nStack trace:");
+        console.error(error.stack);
+      }
+      process.exit(1);
+    }
+    return;
   }
 
   // If no benchmarks specified, enumerate based on benchmark type
