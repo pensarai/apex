@@ -289,7 +289,9 @@ Testing in progress...
     });
 
     export type SessionInfo = z.output<typeof SessionInfoObject> & {
-        _rateLimiter?: RateLimiter
+        _rateLimiter?: RateLimiter;
+        tokensIn?: number;
+        tokensOut?: number;
     };
 
     interface CreateInputProps {

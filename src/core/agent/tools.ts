@@ -1,7 +1,8 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { exec } from "child_process";
+import { exec, spawn } from "child_process";
 import { promisify } from "util";
+import { taskManager } from "./taskManager";
 import {
   writeFileSync,
   appendFileSync,
@@ -21,6 +22,24 @@ import pLimit from "p-limit";
 import { getKnowledgeCache, CacheKeys } from "../knowledge/cache";
 
 const execAsync = promisify(exec);
+
+/**
+ * Tools that run in background by default
+ *
+ * These tools return immediately with a task ID while execution
+ * continues asynchronously. Use check_task_status to poll for results.
+ */
+export const BACKGROUND_TOOLS = new Set<string>([
+  // Long-running reconnaissance tools
+  "smart_enumerate",
+]);
+
+/**
+ * Check if a tool should run in background by default
+ */
+export function isBackgroundTool(toolName: string): boolean {
+  return BACKGROUND_TOOLS.has(toolName);
+}
 
 // Schemas for AI-generated structured outputs
 const PayloadSchema = z.object({
@@ -1292,6 +1311,12 @@ export const ExecuteCommandInput = z.object({
     .number()
     .optional()
     .describe("Timeout in milliseconds (default: 30000)"),
+  background: z
+    .boolean()
+    .optional()
+    .describe(
+      "Run command in background. Returns immediately with a task ID. Use check_task_status to poll for results. Good for long-running commands like full port scans."
+    ),
   toolCallDescription: z
     .string()
     .describe(
@@ -4121,7 +4146,9 @@ export function createPentestTools(
     http_request?: (opts: HttpRequestOpts) => Promise<HttpRequestResult>;
   },
   onTokenUsage?: (inputTokens: number, outputTokens: number) => void,
-  abortSignal?: AbortSignal
+  abortSignal?: AbortSignal,
+  /** Enable streaming stdout logs for operator mode (human-in-the-loop) */
+  operatorMode?: boolean
 ) {
   // Get offensive headers from session config
   const offensiveHeaders = Session.getOffensiveHeaders(session);
@@ -4251,7 +4278,120 @@ OUTPUT HANDLING:
 
 IMPORTANT: Always analyze results and adjust your approach based on findings.`,
     inputSchema: ExecuteCommandInput,
-    execute: async ({ command, timeout = 30000, toolCallDescription }) => {
+    execute: async (
+      { command, timeout = 30000, background = false, toolCallDescription },
+      context?: any
+    ) => {
+      // Extract emitLog callback from context (injected by operatorAgent wrapper)
+      // Only stream logs in operator mode (human-in-the-loop)
+      const emitLog: ((line: string) => void) | undefined =
+        operatorMode ? context?.emitLog : undefined;
+
+      // Wrap command with User-Agent headers if offensive headers are configured
+      const finalCommand = offensiveHeaders
+        ? wrapCommandWithHeaders(command, offensiveHeaders)
+        : command;
+
+      /**
+       * Execute command with spawn for real-time stdout streaming
+       */
+      const executeWithSpawn = (
+        logFn?: (line: string) => void
+      ): Promise<ExecuteCommandResult> => {
+        return new Promise((resolve) => {
+          const shellCmd = process.platform === "win32" ? "cmd" : "bash";
+          const shellArgs =
+            process.platform === "win32"
+              ? ["/c", finalCommand]
+              : ["-lc", finalCommand];
+
+          const child = spawn(shellCmd, shellArgs, {
+            stdio: ["ignore", "pipe", "pipe"],
+          });
+
+          let stdout = "";
+          let stderr = "";
+          let killed = false;
+
+          // Timeout handling
+          const timeoutTimer = setTimeout(() => {
+            killed = true;
+            child.kill("SIGTERM");
+          }, timeout);
+
+          // Stream stdout lines in real-time
+          child.stdout.on("data", (data) => {
+            const chunk = data.toString();
+            stdout += chunk;
+
+            // Emit each line for streaming display
+            if (logFn) {
+              chunk
+                .split("\n")
+                .filter(Boolean)
+                .forEach((line: string) => {
+                  logFn(line.slice(0, 200)); // Truncate long lines
+                });
+            }
+          });
+
+          // Stream stderr
+          child.stderr.on("data", (data) => {
+            const chunk = data.toString();
+            stderr += chunk;
+            if (logFn) {
+              chunk
+                .split("\n")
+                .filter(Boolean)
+                .forEach((line: string) => {
+                  logFn(`[stderr] ${line.slice(0, 150)}`);
+                });
+            }
+          });
+
+          child.on("close", (code) => {
+            clearTimeout(timeoutTimer);
+            resolve({
+              success: code === 0 && !killed,
+              stdout:
+                stdout.length > 50000
+                  ? `${stdout.substring(0, 50000)}...\n\n(truncated) call the command again with grep / tail to paginate`
+                  : stdout || "(no output)",
+              stderr: stderr || "",
+              command: finalCommand,
+              error: killed
+                ? "Command timed out"
+                : code !== 0
+                  ? `Exit code: ${code}`
+                  : "",
+            });
+          });
+
+          child.on("error", (err) => {
+            clearTimeout(timeoutTimer);
+            resolve({
+              success: false,
+              error: err.message,
+              stdout,
+              stderr,
+              command: finalCommand,
+            });
+          });
+
+          // Handle abort signal
+          if (abortSignal) {
+            const abortHandler = () => {
+              killed = true;
+              child.kill("SIGTERM");
+            };
+            abortSignal.addEventListener("abort", abortHandler, { once: true });
+            child.on("close", () => {
+              abortSignal.removeEventListener("abort", abortHandler);
+            });
+          }
+        });
+      };
+
       try {
         // Check if already aborted before starting
         if (abortSignal?.aborted) {
@@ -4280,58 +4420,53 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
           };
         }
 
+        // Tool override (for testing/sandboxing)
         if (toolOverride?.execute_command) {
           return toolOverride.execute_command({
             command,
             timeout,
+            background,
             toolCallDescription,
           });
         }
 
-        // Wrap command with User-Agent headers if offensive headers are configured
-        const finalCommand = offensiveHeaders
-          ? wrapCommandWithHeaders(command, offensiveHeaders)
-          : command;
+        // BACKGROUND MODE: Return immediately with task ID
+        if (background) {
+          const task = taskManager.createTask("execute_command");
 
-        // Use login shell to ensure user's PATH is available (e.g., ~/go/bin for katana)
-        const shellCommand = process.platform === 'win32'
-          ? finalCommand
-          : `bash -lc ${JSON.stringify(finalCommand)}`;
+          // Fire and forget - do NOT await
+          (async () => {
+            taskManager.updateStatus(task.id, "running");
+            try {
+              const result = await executeWithSpawn((line) =>
+                taskManager.addLog(task.id, line)
+              );
+              taskManager.setResult(task.id, result);
+            } catch (err: any) {
+              taskManager.setError(task.id, err.message);
+            }
+          })();
 
-        const { stdout, stderr } = await execAsync(shellCommand, {
-          timeout,
-          maxBuffer: 10 * 1024 * 1024, // 10MB buffer
-        });
-
-        // Check if aborted while command was running
-        if (abortSignal?.aborted) {
           return {
-            success: false,
-            error: "Command completed but session was aborted",
-            stdout: stdout || "",
-            stderr: stderr || "",
+            success: true,
+            background: true,
+            taskId: task.id,
+            stdout: "",
+            stderr: "",
             command: finalCommand,
+            error: "",
+            message: `Command started in background. Use check_task_status("${task.id}") to get results.`,
           };
         }
 
-        return {
-          success: true,
-          stdout:
-            `${stdout.substring(
-              0,
-              50000
-            )}... \n\n (truncated) call the command again with grep / tail to paginate the response` ||
-            "(no output)",
-          stderr: stderr || "",
-          command: finalCommand,
-          error: "",
-        };
+        // FOREGROUND MODE: Execute with streaming stdout
+        return await executeWithSpawn(emitLog);
       } catch (error: any) {
         return {
           success: false,
           error: error.message,
-          stdout: error.stdout || "",
-          stderr: error.stderr || "",
+          stdout: "",
+          stderr: "",
           command,
         };
       }
@@ -4620,6 +4755,80 @@ This is separate from document_finding - this updates the live sidebar display.`
     },
   });
 
+  // Tool to check background task status
+  const checkTaskStatus = tool({
+    name: "check_task_status",
+    description: `Check the status of a background task.
+
+Returns the current status, logs, and result (if completed) of a command started with background: true.
+
+Status values:
+- pending: Task created but not started
+- running: Task is executing
+- completed: Task finished successfully (result available)
+- failed: Task encountered an error (error message available)
+
+Example flow:
+1. execute_command({ command: "nmap -p- target.com", background: true })
+   -> Returns { taskId: "task_123..." }
+2. check_task_status({ taskId: "task_123..." })
+   -> Returns { status: "running", logs: [...] }
+3. Later: check_task_status({ taskId: "task_123..." })
+   -> Returns { status: "completed", result: { stdout: "..." } }`,
+    inputSchema: z.object({
+      taskId: z.string().describe("The task ID returned when starting a background command"),
+      toolCallDescription: z.string().optional(),
+    }),
+    execute: async ({ taskId }) => {
+      const task = taskManager.getTask(taskId);
+
+      if (!task) {
+        return {
+          success: false,
+          error: `Task not found: ${taskId}`,
+          taskId,
+        };
+      }
+
+      return {
+        success: true,
+        taskId: task.id,
+        toolName: task.toolName,
+        status: task.status,
+        logs: task.logs.slice(-30), // Last 30 logs
+        result: task.result,
+        error: task.error,
+        startedAt: task.startedAt.toISOString(),
+        completedAt: task.completedAt?.toISOString(),
+        isComplete: task.status === "completed" || task.status === "failed",
+      };
+    },
+  });
+
+  // Tool to list all running background tasks
+  const listRunningTasks = tool({
+    name: "list_running_tasks",
+    description: "List all currently running or pending background tasks.",
+    inputSchema: z.object({
+      toolCallDescription: z.string().optional(),
+    }),
+    execute: async () => {
+      const tasks = taskManager.getRunningTasks();
+      return {
+        success: true,
+        count: tasks.length,
+        tasks: tasks.map((t) => ({
+          taskId: t.id,
+          toolName: t.toolName,
+          status: t.status,
+          startedAt: t.startedAt.toISOString(),
+          logsCount: t.logs.length,
+          lastLog: t.logs.length > 0 ? t.logs[t.logs.length - 1] : null,
+        })),
+      };
+    },
+  });
+
   return {
     fuzz_endpoint: fuzzEndpoint,
     execute_command: executeCommand,
@@ -4641,6 +4850,9 @@ This is separate from document_finding - this updates the live sidebar display.`
     scratchpad: createScratchpadTool(session),
     generate_report: createGenerateReportTool(session),
     get_attack_surface: getAttackSurfaceAgent(),
+    // Background task tools
+    check_task_status: checkTaskStatus,
+    list_running_tasks: listRunningTasks,
     // Sidebar-updating tools for operator mode
     update_attack_surface: updateAttackSurface,
     record_credential: recordCredential,

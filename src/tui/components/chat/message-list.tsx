@@ -94,7 +94,7 @@ export function MessageList({
   return (
     <scrollbox
       style={{
-        rootOptions: { flexGrow: 1, width: "100%" },
+        rootOptions: { flexGrow: 1, flexShrink: 1, width: "100%", overflow: "hidden" },
         contentOptions: {
           paddingLeft: 2,
           paddingRight: 2,

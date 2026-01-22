@@ -26,7 +26,8 @@ import {
   type OperatorEvent,
   OPERATOR_STAGES,
 } from "../../operator";
-import { createPentestTools, ATTACK_KNOWLEDGE } from "../tools";
+import { createPentestTools, ATTACK_KNOWLEDGE, isBackgroundTool } from "../tools";
+import { taskManager } from "../taskManager";
 import { createBrowserTools, disconnectMcpClient } from "../browserTools";
 import { createPocTool } from "../metaTestingAgent/pocTools";
 import { Logger } from "../logger";
@@ -671,7 +672,15 @@ Document significant findings using the document_finding tool.`;
     messages.push({ role: "user", content: initialUserMessage });
 
     // Create tools with approval gate wrapper
-    const baseTools = createPentestTools(session, this.config.model);
+    // Pass operatorMode: true to enable streaming stdout logs
+    const baseTools = createPentestTools(
+      session,
+      this.config.model,
+      undefined, // toolOverride
+      undefined, // onTokenUsage
+      this.abortController?.signal,
+      true // operatorMode - enables streaming stdout
+    );
 
     // Add browser tools for operator mode (HITL) only
     const evidenceDir = join(session.rootPath, "evidence");
@@ -1011,6 +1020,26 @@ This tool requires user approval (T3 tier - Probing).`,
   /**
    * Wrap all tools with approval gate checking and progress logging
    */
+  /**
+   * Tools that support streaming stdout (don't show progress animation)
+   */
+  private static STREAMING_TOOLS = new Set(["execute_command"]);
+
+  /**
+   * Cute ASCII animation frames for non-streaming tools
+   * Bouncing dot in a track
+   */
+  private static PROGRESS_FRAMES = [
+    "∙ ● ∙ ∙ ∙",
+    "∙ ∙ ● ∙ ∙",
+    "∙ ∙ ∙ ● ∙",
+    "∙ ∙ ∙ ∙ ●",
+    "∙ ∙ ∙ ● ∙",
+    "∙ ∙ ● ∙ ∙",
+    "∙ ● ∙ ∙ ∙",
+    "● ∙ ∙ ∙ ∙",
+  ];
+
   private wrapToolsWithApproval(tools: Record<string, any>): Record<string, any> {
     const wrapped: Record<string, any> = {};
 
@@ -1027,30 +1056,73 @@ This tool requires user approval (T3 tier - Probing).`,
             // Emit starting log
             this.addToolLog(toolCallId, this.getToolStartLog(name, args));
 
-            // Set up progress interval for long-running tools
-            let progressCount = 0;
-            const progressInterval = setInterval(() => {
-              progressCount++;
-              const dots = ".".repeat((progressCount % 3) + 1);
-              this.addToolLog(toolCallId, `running${dots}`);
-            }, 2000);
+            // Inject emitLog callback into extended context for streaming tools
+            const extendedContext = {
+              ...context,
+              toolCallId,
+              emitLog: (line: string) => this.addToolLog(toolCallId, line),
+            };
+
+            // Check if this tool should run in background by default
+            if (isBackgroundTool(name)) {
+              const task = taskManager.createTask(name);
+              this.addToolLog(toolCallId, `→ running in background (task: ${task.id})`);
+
+              // Fire and forget - do NOT await
+              (async () => {
+                taskManager.updateStatus(task.id, "running");
+                try {
+                  const result = await tool.execute(args, extendedContext);
+                  taskManager.setResult(task.id, result);
+                } catch (err: any) {
+                  taskManager.setError(task.id, err.message);
+                }
+              })();
+
+              // Return immediately with task ID
+              return {
+                success: true,
+                background: true,
+                taskId: task.id,
+                message: `${name} started in background. Use check_task_status("${task.id}") to get results.`,
+              };
+            }
+
+            // Only show progress animation for tools that don't support streaming
+            const supportsStreaming = OperatorAgent.STREAMING_TOOLS.has(name);
+            let progressInterval: NodeJS.Timeout | null = null;
+
+            if (!supportsStreaming) {
+              let frameIndex = 0;
+              progressInterval = setInterval(() => {
+                const frame = OperatorAgent.PROGRESS_FRAMES[frameIndex];
+                this.addToolLog(toolCallId, frame);
+                frameIndex = (frameIndex + 1) % OperatorAgent.PROGRESS_FRAMES.length;
+              }, 200);
+            }
 
             try {
-              // Execute original tool
-              const result = await tool.execute(args, context);
+              // Execute original tool with extended context
+              const result = await tool.execute(args, extendedContext);
 
-              // Clear progress interval
-              clearInterval(progressInterval);
+              // Clear progress interval if set
+              if (progressInterval) {
+                clearInterval(progressInterval);
+              }
 
-              // Emit result summary log
-              const resultLog = this.getToolResultLog(name, result);
-              if (resultLog) {
-                this.addToolLog(toolCallId, resultLog);
+              // Emit result summary log (skip for streaming tools - they log their own output)
+              if (!supportsStreaming) {
+                const resultLog = this.getToolResultLog(name, result);
+                if (resultLog) {
+                  this.addToolLog(toolCallId, resultLog);
+                }
               }
 
               return result;
             } finally {
-              clearInterval(progressInterval);
+              if (progressInterval) {
+                clearInterval(progressInterval);
+              }
             }
           } catch (error) {
             if (error instanceof ApprovalBlockedError || error instanceof ApprovalDeniedError) {
@@ -1101,30 +1173,95 @@ This tool requires user approval (T3 tier - Probing).`,
   private getToolResultLog(toolName: string, result: any): string | null {
     if (!result) return null;
 
-    // HTTP request results
-    if (result.status !== undefined) {
-      return `→ status: ${result.status}`;
+    // Error results
+    if (result.success === false && result.error) {
+      return `✗ ${String(result.error).slice(0, 80)}`;
     }
 
-    // Command results
+    // HTTP request results
+    if (result.status !== undefined && result.statusText !== undefined) {
+      const bodyPreview = result.body
+        ? ` - ${String(result.body).slice(0, 50)}${result.body.length > 50 ? "..." : ""}`
+        : "";
+      return `→ ${result.status} ${result.statusText}${bodyPreview}`;
+    }
+
+    // Command results with stdout
     if (result.stdout !== undefined) {
-      const lines = String(result.stdout).split("\n").filter(Boolean);
-      if (lines.length > 0) {
-        const firstLine = lines[0].slice(0, 60);
-        return lines.length > 1
-          ? `→ ${firstLine}... (${lines.length} lines)`
-          : `→ ${firstLine}`;
+      const stdout = String(result.stdout).trim();
+      if (stdout && stdout !== "(no output)") {
+        const lines = stdout.split("\n").filter(Boolean);
+        if (lines.length > 0) {
+          const firstLine = lines[0].slice(0, 70);
+          if (lines.length > 1) {
+            return `→ ${firstLine}${firstLine.length < lines[0].length ? "..." : ""} (+${lines.length - 1} more lines)`;
+          }
+          return `→ ${firstLine}`;
+        }
+      }
+      // Command succeeded but no meaningful output
+      if (result.success) {
+        return "→ done (no output)";
       }
     }
 
-    // Array results (endpoints, etc)
-    if (Array.isArray(result)) {
-      return `→ found ${result.length} items`;
+    // Background task started
+    if (result.background && result.taskId) {
+      return `→ background task: ${result.taskId}`;
     }
 
-    // Object with count/length
+    // Array results (endpoints, urls, etc)
+    if (Array.isArray(result)) {
+      if (result.length === 0) return "→ found 0 items";
+      const preview = typeof result[0] === "string"
+        ? result[0].slice(0, 40)
+        : JSON.stringify(result[0]).slice(0, 40);
+      return `→ found ${result.length} items (${preview}${result.length > 1 ? ", ..." : ""})`;
+    }
+
+    // Object with endpoints array
     if (result.endpoints?.length !== undefined) {
       return `→ found ${result.endpoints.length} endpoints`;
+    }
+
+    // Object with urls array
+    if (result.urls?.length !== undefined) {
+      return `→ found ${result.urls.length} URLs`;
+    }
+
+    // Object with findings
+    if (result.findings?.length !== undefined) {
+      return `→ found ${result.findings.length} findings`;
+    }
+
+    // Generic success with message
+    if (result.success && result.message) {
+      return `→ ${String(result.message).slice(0, 80)}`;
+    }
+
+    // Generic success
+    if (result.success === true) {
+      return "→ done";
+    }
+
+    // Fallback: try to summarize the object
+    if (typeof result === "object") {
+      const keys = Object.keys(result);
+      const importantKeys = keys.filter(k =>
+        !["success", "error", "command", "toolCallDescription"].includes(k)
+      );
+      if (importantKeys.length > 0) {
+        const previews = importantKeys.slice(0, 2).map(k => {
+          const val = result[k];
+          if (Array.isArray(val)) return `${k}: ${val.length} items`;
+          if (typeof val === "string") return `${k}: ${val.slice(0, 20)}${val.length > 20 ? "..." : ""}`;
+          if (typeof val === "number") return `${k}: ${val}`;
+          return null;
+        }).filter(Boolean);
+        if (previews.length > 0) {
+          return `→ ${previews.join(", ")}`;
+        }
+      }
     }
 
     return null;

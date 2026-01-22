@@ -96,6 +96,7 @@ function NormalInputAreaInner({
   return (
     <box
       flexDirection="column"
+      flexShrink={0}
       paddingLeft={2}
       paddingRight={2}
       paddingTop={1}
@@ -244,6 +245,7 @@ function ApprovalInputArea({
   return (
     <box
       flexDirection="column"
+      flexShrink={0}
       paddingLeft={2}
       paddingRight={2}
       paddingTop={1}

@@ -561,7 +561,11 @@ export function SessionComponent({
     // If there's a pending approval, deny it and send as redirect
     if (pendingApprovals.length > 0) {
       const approval = pendingApprovals[0];
-      agent.deny(approval.id);
+      try {
+        agent.deny(approval.id);
+      } catch {
+        // Approval may have already been resolved - ignore
+      }
       setLastDeclineNote(trimmed);
     } else {
       setLastDeclineNote(null);
@@ -747,6 +751,7 @@ export function SessionComponent({
         <box
           flexDirection="column"
           flexGrow={1}
+          overflow="hidden"
           width={mode === "operator" && !sidebar.collapsed ? "70%" : "100%"}
         >
           <MessageList

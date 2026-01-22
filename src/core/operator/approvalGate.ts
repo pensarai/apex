@@ -174,7 +174,7 @@ export class ApprovalGate extends EventEmitter {
   deny(approvalId: string): void {
     const deferred = this.pendingApprovals.get(approvalId);
     if (!deferred) {
-      throw new Error(`No pending approval with id: ${approvalId}`);
+      return; // Already resolved or doesn't exist - no-op
     }
 
     this.pendingApprovals.delete(approvalId);
