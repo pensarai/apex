@@ -51,17 +51,17 @@ export const commands: CommandConfig[] = [
       });
     },
   },
-  // {
-  //   name: "config",
-  //   description: "Show config dialog",
-  //   category: "General",
-  //   handler: async (args, ctx) => {
-  //     ctx.navigate({
-  //       type: "base",
-  //       path: "config"
-  //     });
-  //   },
-  // },
+  {
+    name: "config",
+    description: "Show config dialog",
+    category: "General",
+    handler: async (args, ctx) => {
+      ctx.navigate({
+        type: "base",
+        path: "config"
+      });
+    },
+  },
   // {
   //   name: "quicktest",
   //   description: "Show quick pentest agent",
@@ -87,8 +87,25 @@ export const commands: CommandConfig[] = [
   {
     name: "web",
     aliases: ["w"],
-    description: "Start web pentest (use /help for flags)",
+    description: "Start web pentest session",
     category: "Pentesting",
+    options: [
+      { name: "--target", valueHint: "<url>", description: "Target URL to test" },
+      { name: "--name", valueHint: "<name>", description: "Session name" },
+      { name: "--swarm", description: "Use autonomous swarm mode" },
+      { name: "--mode", valueHint: "<plan|manual|auto>", description: "Operator mode" },
+      { name: "--tier", valueHint: "<1-5>", description: "Auto-approve permission tier" },
+      { name: "--auth-url", valueHint: "<url>", description: "Login page URL" },
+      { name: "--auth-user", valueHint: "<user>", description: "Auth username" },
+      { name: "--auth-pass", valueHint: "<pass>", description: "Auth password" },
+      { name: "--auth-instructions", valueHint: "<text>", description: "Auth instructions" },
+      { name: "--hosts", valueHint: "<h1,h2,...>", description: "Allowed hosts" },
+      { name: "--ports", valueHint: "<p1,p2,...>", description: "Allowed ports" },
+      { name: "--strict", description: "Enable strict scope mode" },
+      { name: "--headers", valueHint: "<none|default|custom>", description: "Headers mode" },
+      { name: "--header", valueHint: "<Name:Value>", description: "Custom header (repeatable)" },
+      { name: "--model", valueHint: "<model>", description: "AI model to use" },
+    ],
     handler: async (args, ctx) => {
       const flags = parseWebFlags(args);
 
@@ -114,33 +131,6 @@ export const commands: CommandConfig[] = [
       }
 
       // Operator mode path (default)
-      if (flags.target && hasEnoughFlagsToSkipWizard(flags)) {
-        try {
-          const session = await createOperatorSessionFromFlags(flags);
-          ctx.navigate({ type: "session", sessionId: session.id });
-          return;
-        } catch (e) {
-          // Fall through to wizard on error
-          console.error("Failed to create session:", e);
-        }
-      }
-      // Navigate to operator wizard with pre-filled values
-      ctx.navigate({
-        type: "base",
-        path: "operator",
-        options: flags as any
-      });
-    },
-  },
-  {
-    name: "operator",
-    aliases: ["h"],
-    description: "Start HITL pentest session",
-    category: "Pentesting",
-    handler: async (args, ctx) => {
-      const flags = parseWebFlags(args);
-
-      // Operator mode - skip wizard if enough flags provided
       if (flags.target && hasEnoughFlagsToSkipWizard(flags)) {
         try {
           const session = await createOperatorSessionFromFlags(flags);

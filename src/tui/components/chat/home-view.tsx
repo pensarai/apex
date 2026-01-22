@@ -108,8 +108,14 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
             <span fg={creamText}>/</span>
             <span> for commands</span>
             <span>  •  </span>
-            <span fg={creamText}>Ctrl+S</span>
-            <span> sessions</span>
+            <span fg={creamText}>[↓][↑]</span>
+            <span> navigate</span>
+            <span>  •  </span>
+            <span fg={creamText}>[tab]</span>
+            <span> complete</span>
+            <span>  •  </span>
+            <span fg={creamText}>[enter]</span>
+            <span> run</span>
           </text>
         </box>
       </box>

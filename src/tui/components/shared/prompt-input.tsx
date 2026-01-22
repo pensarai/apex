@@ -153,7 +153,7 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
       return () => registerPromptRef(null);
     }, [registerPromptRef]);
 
-    // Handle keyboard navigation for suggestions (up/down only)
+    // Handle keyboard navigation for suggestions (up/down/tab)
     useKeyboard((key) => {
       if (!focused || suggestions.length === 0) return;
 
@@ -169,6 +169,21 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
         );
         return;
       }
+      // Tab to fill suggestion without running command
+      if (key.name === "tab") {
+        key.preventDefault?.();
+        const currentSelectedIndex = selectedIndexRef.current;
+        if (currentSelectedIndex >= 0 && currentSelectedIndex < suggestions.length) {
+          const selected = suggestions[currentSelectedIndex];
+          if (selected) {
+            textareaRef.current?.setText(selected.value);
+            setInputValue(selected.value);
+            setSelectedSuggestionIndex(-1);
+            textareaRef.current?.gotoLineEnd();
+          }
+        }
+        return;
+      }
     });
 
     // Submit handler called by textarea's onSubmit
@@ -177,20 +192,19 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
       const currentSuggestions = suggestionsRef.current;
       const currentSelectedIndex = selectedIndexRef.current;
 
-      // If a suggestion is selected, fill it in instead of submitting
+      // If a suggestion is selected, use it as the value to submit
+      let valueToSubmit: string;
       if (currentSuggestions.length > 0 && currentSelectedIndex >= 0) {
         const selected = currentSuggestions[currentSelectedIndex];
         if (selected) {
-          textareaRef.current?.setText(selected.value);
-          setInputValue(selected.value);
+          valueToSubmit = selected.value;
           setSelectedSuggestionIndex(-1);
-          textareaRef.current?.gotoLineEnd();
-          return; // Don't submit, just fill in the suggestion
+        } else {
+          valueToSubmit = (textareaRef.current?.plainText ?? "").trim();
         }
+      } else {
+        valueToSubmit = (textareaRef.current?.plainText ?? "").trim();
       }
-
-      const currentText = textareaRef.current?.plainText ?? "";
-      let valueToSubmit = currentText.trim();
 
       if (!valueToSubmit) return;
 

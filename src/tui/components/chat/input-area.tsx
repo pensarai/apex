@@ -110,6 +110,7 @@ function NormalInputAreaInner({
           width="100%"
           minHeight={1}
           maxHeight={3}
+          textColor="white"
           focused={focused && !isDisabled}
           placeholder={isDisabled ? "Processing..." : placeholder}
           onSubmit={handleSubmit}

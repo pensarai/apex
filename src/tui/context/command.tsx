@@ -72,12 +72,6 @@ export function CommandProvider({ children }: CommandProviderProps) {
 
       // Build description with options hint
       let description = cmd.description || "";
-      if (cmdConfig?.options?.length) {
-        const optionsList = cmdConfig.options
-          .map((opt) => opt.name)
-          .join(" ");
-        description += ` [${optionsList}]`;
-      }
 
       // Add main command (aliases hidden but still work via router)
       options.push({

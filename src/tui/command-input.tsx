@@ -112,7 +112,13 @@ export default function CommandInput({
           <span> for commands</span>
           <span>  •  </span>
           <span fg={creamText}>{`[↓][↑]`}</span>
-          <span> to select command</span>
+          <span> navigate</span>
+          <span>  •  </span>
+          <span fg={creamText}>[tab]</span>
+          <span> complete</span>
+          <span>  •  </span>
+          <span fg={creamText}>[enter]</span>
+          <span> run</span>
         </text>
       </box>
     </box>

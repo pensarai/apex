@@ -82,6 +82,19 @@ const Autocomplete = forwardRef<InputRenderable, AutocompleteProps>(function Aut
       });
       return;
     }
+
+    // Tab to fill suggestion without running command
+    if (key.name === "tab") {
+      key.preventDefault?.();
+      if (selectedIndex >= 0 && selectedIndex < suggestions.length) {
+        const selected = suggestions[selectedIndex];
+        if (selected && onInput) {
+          onInput(selected.value);
+        }
+        setSelectedIndex(-1);
+      }
+      return;
+    }
   });
 
   const handleSubmit = (val: string) => {
