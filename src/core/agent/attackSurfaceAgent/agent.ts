@@ -24,6 +24,16 @@ import {
   disconnectMcpClient,
 } from "../browserTools/playwrightMcp";
 import { runAuthenticationSubagent, type AuthCredentials } from "../authenticationSubagent";
+import {
+  DocumentAssetSchema,
+  AttackSurfaceReportSchema,
+  AssetDetailsSchema,
+  AssetTypeEnum,
+  RiskLevelEnum,
+  type DocumentAssetInput,
+  type DocumentedAssetRecord,
+  type AttackSurfaceReport,
+} from "./schemas";
 
 /**
  * Merge session-level credentials with explicitly passed credentials.
@@ -81,6 +91,51 @@ function mergeAuthCredentials(
   };
 }
 
+/**
+ * Callbacks for persisting agent discoveries to external storage (e.g., database).
+ * These are optional - if not provided, assets are only written to the local filesystem.
+ */
+export interface PersistenceCallbacks {
+  /**
+   * Called when an asset is documented via the document_asset tool.
+   * Use this to persist assets to a database for real-time tracking.
+   */
+  onAssetDocumented?: (asset: DocumentedAssetRecord) => Promise<void>;
+
+  /**
+   * Called when the final attack surface report is created.
+   * Use this to persist the complete report and update job status.
+   */
+  onReportCreated?: (report: AttackSurfaceReport) => Promise<void>;
+
+  /**
+   * Called for generic progress updates during analysis.
+   * Use this to emit real-time status updates to clients.
+   */
+  onProgressUpdate?: (update: { type: string; data: unknown }) => Promise<void>;
+}
+
+/**
+ * Existing state from database for idempotency.
+ * When provided, the agent can avoid re-documenting known assets.
+ */
+export interface ExistingState {
+  /** Previously discovered applications */
+  applications?: Array<{
+    id: string;
+    name: string;
+    type?: string;
+    description?: string;
+  }>;
+  /** Previously discovered endpoints */
+  endpoints?: Array<{
+    id: string;
+    endpoint: string;
+    applicationId: string;
+    name?: string;
+  }>;
+}
+
 export interface RunAgentProps {
   target: string;
   objective: string;
@@ -93,6 +148,10 @@ export interface RunAgentProps {
     execute_command?: (opts: any) => Promise<any>;
     http_request?: (opts: any) => Promise<any>;
   };
+  /** Optional persistence callbacks for external storage integration */
+  persistence?: PersistenceCallbacks;
+  /** Optional existing state for idempotency - avoids re-documenting known assets */
+  existingState?: ExistingState;
 }
 
 export interface RunAgentResult extends StreamTextResult<ToolSet, never> {
@@ -110,6 +169,8 @@ export async function runAgent(opts: RunAgentProps): Promise<{
     abortSignal,
     onToolTokenUsage,
     toolOverride,
+    persistence,
+    existingState,
   } = opts;
 
   // Create a new session for this attack surface analysis
@@ -288,7 +349,7 @@ Each asset creates a JSON file in the assets directory for tracking and analysis
       const filepath = join(assetsPath, filename);
 
       // Create asset record with metadata
-      const assetRecord = {
+      const assetRecord: DocumentedAssetRecord = {
         ...asset,
         discoveredAt: new Date().toISOString(),
         sessionId: session.id,
@@ -297,6 +358,32 @@ Each asset creates a JSON file in the assets directory for tracking and analysis
 
       // Write asset to file
       writeFileSync(filepath, JSON.stringify(assetRecord, null, 2));
+
+      // Call persistence callback if provided (for external DB storage)
+      if (persistence?.onAssetDocumented) {
+        try {
+          await persistence.onAssetDocumented(assetRecord);
+        } catch (err) {
+          console.error("Persistence callback error (onAssetDocumented):", err);
+          // Don't fail the tool call - file was written successfully
+        }
+      }
+
+      // Emit progress update if callback provided
+      if (persistence?.onProgressUpdate) {
+        try {
+          await persistence.onProgressUpdate({
+            type: "asset_discovered",
+            data: {
+              name: asset.assetName,
+              assetType: asset.assetType,
+              riskLevel: asset.riskLevel,
+            },
+          });
+        } catch (err) {
+          console.error("Progress update callback error:", err);
+        }
+      }
 
       return {
         success: true,
@@ -999,6 +1086,33 @@ Call this at the END of your analysis with:
       // Save the results to the session for the orchestrator to access
       const resultsPath = join(session.rootPath, "attack-surface-results.json");
       writeFileSync(resultsPath, JSON.stringify(results, null, 2));
+
+      // Call persistence callback if provided (for external DB storage)
+      if (persistence?.onReportCreated) {
+        try {
+          await persistence.onReportCreated(results as AttackSurfaceReport);
+        } catch (err) {
+          console.error("Persistence callback error (onReportCreated):", err);
+          // Don't fail the tool call - file was written successfully
+        }
+      }
+
+      // Emit progress update for completion
+      if (persistence?.onProgressUpdate) {
+        try {
+          await persistence.onProgressUpdate({
+            type: "report_created",
+            data: {
+              totalAssets: results.summary.totalAssets,
+              totalDomains: results.summary.totalDomains,
+              targetsCount: results.targets.length,
+              analysisComplete: results.summary.analysisComplete,
+            },
+          });
+        } catch (err) {
+          console.error("Progress update callback error:", err);
+        }
+      }
 
       return {
         success: true,
