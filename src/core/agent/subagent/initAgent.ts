@@ -7,6 +7,7 @@ import { join } from "path";
 import { Messages } from "../../messages";
 import { buildVerificationPrompt } from "./verificationGuidance";
 import { listGuidanceFiles } from "./guidance";
+import type { Session } from "../../session";
 
 const INIT_SYSTEM_PROMPT = `You are a security testing initialization agent. Your job is to:
 
@@ -67,6 +68,16 @@ When calling write_verification_criteria, specify the tier for each success indi
 - tier: "medium" - Strong evidence of vulnerability
 - tier: "low" - Detection only, use sparingly
 
+## Authentication
+
+If the target requires authentication:
+1. Check if session-info.json exists (use get_auth_session tool)
+2. If not authenticated, use delegate_to_auth_subagent to authenticate
+3. Use returned sessionCookie/headers in http_request calls
+
+Session credentials may be pre-configured. Call delegate_to_auth_subagent
+without explicit credentials to use session defaults.
+
 Call complete_init when you have created both the plan and verification criteria.`;
 
 function logToFile(logsPath: string, message: string): void {
@@ -79,6 +90,7 @@ function logToFile(logsPath: string, message: string): void {
 
 export async function runInitAgent(
   subagentSession: SubAgentSession,
+  session: Session.SessionInfo,
   model: AIModel,
   abortSignal?: AbortSignal,
   fileAccessConfig?: FileAccessConfig
@@ -89,7 +101,7 @@ export async function runInitAgent(
   logToFile(logsPath, `[INFO] Vulnerability class: ${config.vulnerabilityClass}`);
   logToFile(logsPath, `[INFO] Whitebox mode: ${config.whiteboxMode}`);
 
-  const tools = createInitAgentTools(subagentSession, fileAccessConfig);
+  const tools = createInitAgentTools(subagentSession, session, model, abortSignal, fileAccessConfig);
 
   const guidanceFileList = listGuidanceFiles(subagentSession.guidancePath);
   const guidanceFilesStr = guidanceFileList.length > 0

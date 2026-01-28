@@ -5,6 +5,17 @@
   "module": "src/tui/index.tsx",
   "main": "build/index.js",
   "type": "module",
+  "exports": {
+    ".": {
+      "import": "./build/index.js",
+      "default": "./build/index.js"
+    },
+    "./api": {
+      "import": "./src/api/index.ts",
+      "types": "./src/api/index.ts",
+      "default": "./src/api/index.ts"
+    }
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/pensarai/apex.git"
@@ -15,6 +26,7 @@
   "files": [
     "build",
     "bin",
+    "src",
     "pensar.svg",
     "LICENSE"
   ],

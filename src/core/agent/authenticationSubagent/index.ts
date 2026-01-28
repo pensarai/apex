@@ -132,3 +132,12 @@ export {
   type EnsureAuthenticatedOptions,
   type EnsureAuthenticatedResult,
 } from "./integration";
+
+// Delegate tool factory (for subagents)
+export {
+  createDelegateToAuthSubagentTool,
+  createGetAuthSessionTool,
+  mergeAuthCredentials,
+  type CreateDelegateAuthToolOpts,
+  type SessionAuthInfo,
+} from "./delegateTool";

@@ -26,6 +26,7 @@ import {
 } from '../browserTools/playwrightMcp';
 import {
   runAuthenticationSubagent,
+  mergeAuthCredentials,
   type AuthCredentials,
 } from '../authenticationSubagent';
 import {
@@ -51,71 +52,6 @@ function tool<T extends z.ZodType, R>(config: {
   execute: (input: z.infer<T>) => Promise<R>;
 }): Tool<z.infer<T>, R> {
   return aiTool(config as any) as Tool<z.infer<T>, R>;
-}
-
-/**
- * Merge session-level credentials with explicitly passed credentials.
- * Explicit values take precedence over session defaults.
- */
-function mergeAuthCredentials(
-  sessionCreds: Session.AuthCredentials | undefined,
-  explicit: {
-    username?: string;
-    password?: string;
-    apiKey?: string;
-    loginUrl?: string;
-    tokens?: {
-      bearerToken?: string;
-      cookies?: string;
-      sessionToken?: string;
-      customHeaders?: Record<string, string>;
-    };
-  }
-): AuthCredentials | undefined {
-  const hasExplicit =
-    explicit.username ||
-    explicit.password ||
-    explicit.apiKey ||
-    explicit.tokens;
-  const hasSession =
-    sessionCreds &&
-    (sessionCreds.username ||
-      sessionCreds.password ||
-      sessionCreds.apiKey ||
-      sessionCreds.tokens);
-
-  if (!hasExplicit && !hasSession) {
-    return undefined;
-  }
-
-  return {
-    // Session-level defaults
-    username: sessionCreds?.username,
-    password: sessionCreds?.password,
-    apiKey: sessionCreds?.apiKey,
-    loginUrl: sessionCreds?.loginUrl,
-    tokens: sessionCreds?.tokens
-      ? {
-          bearerToken: sessionCreds.tokens.bearerToken,
-          cookies: sessionCreds.tokens.cookies,
-          sessionToken: sessionCreds.tokens.sessionToken,
-          customHeaders: sessionCreds.tokens.customHeaders,
-        }
-      : undefined,
-    // Explicit overrides (take precedence)
-    ...(explicit.username && { username: explicit.username }),
-    ...(explicit.password && { password: explicit.password }),
-    ...(explicit.apiKey && { apiKey: explicit.apiKey }),
-    ...(explicit.loginUrl && { loginUrl: explicit.loginUrl }),
-    ...(explicit.tokens && {
-      tokens: {
-        bearerToken: explicit.tokens.bearerToken,
-        cookies: explicit.tokens.cookies,
-        sessionToken: explicit.tokens.sessionToken,
-        customHeaders: explicit.tokens.customHeaders,
-      },
-    }),
-  };
 }
 
 /**
