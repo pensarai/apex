@@ -46,6 +46,38 @@ export interface PentestCallbacks {
 }
 
 /**
+ * Tool override functions for sandboxed execution
+ */
+export interface ToolOverride {
+  execute_command?: (opts: {
+    command: string;
+    timeout?: number;
+    background?: boolean;
+    toolCallDescription?: string;
+  }) => Promise<{
+    success: boolean;
+    stdout: string;
+    stderr: string;
+    error?: string;
+    command?: string;
+  }>;
+  http_request?: (opts: {
+    url: string;
+    method?: string;
+    headers?: Record<string, string>;
+    body?: string;
+    timeout?: number;
+  }) => Promise<{
+    success: boolean;
+    status: number;
+    statusText: string;
+    headers: Record<string, string>;
+    body: string;
+    error?: string;
+  }>;
+}
+
+/**
  * Input for whitebox pentest (single endpoint with source code access)
  */
 export interface WhiteboxPentestInput {
@@ -67,6 +99,8 @@ export interface WhiteboxPentestInput {
   concurrency?: number;
   /** Custom session name */
   sessionName?: string;
+  /** Optional tool override for sandboxed execution */
+  toolOverride?: ToolOverride;
 }
 
 /**

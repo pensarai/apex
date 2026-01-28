@@ -49,6 +49,7 @@ export type {
   BlackboxPentestInput,
   ResumePentestInput,
   PentestCallbacks,
+  ToolOverride,
   // Output types
   PentestResult,
   PentestStats,
