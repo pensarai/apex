@@ -136,6 +136,35 @@ Why: SSTI leads to Remote Code Execution (RCE), XSS does not. SSTI is far more s
 3. **Observe response patterns**: Content changes based on file-like values → LFI
 4. **For reflected input**: Test SSTI payloads first, then XSS if SSTI fails
 
+### CRITICAL: SQL Injection Pattern Detection
+
+**Don't dismiss errors as "broken functionality" - errors often indicate SQL injection.**
+
+**Raw WHERE Clause Injection Pattern:**
+\`\`\`
+Observation: Endpoint works WITHOUT parameter, fails WITH ANY value
+Example:
+  - GET /api/products → 200 OK, returns data
+  - GET /api/products?search=Espresso → 500 "Failed to fetch products"
+  - GET /api/products?search=test → 500 "Failed to fetch products"
+
+WRONG conclusion: "Search parameter is broken/unimplemented"
+CORRECT conclusion: Raw WHERE clause injection - input is being directly interpolated as SQL
+\`\`\`
+
+**Why this happens:**
+- Code like \`WHERE \${param}\` concatenates user input directly as the WHERE clause
+- Sending \`Espresso\` produces \`WHERE Espresso\` which is invalid SQL (not a boolean)
+- The SQL interpreter tries to execute it, fails, and returns a generic error
+
+**Correct payloads for raw WHERE clause injection:**
+- \`1=1\` → \`WHERE 1=1\` (valid boolean, returns all rows)
+- \`true\` → \`WHERE true\` (PostgreSQL)
+- \`name LIKE '%test%'\` → valid filter condition
+- NOT \`' OR '1'='1\` (assumes string context that doesn't exist)
+
+**Key heuristic:** When ALL inputs cause errors but NO input succeeds, you're not in a string context - try raw SQL expressions like \`1=1\`.
+
 ---
 
 ## Goal Focus & Anti-Distraction Protocol
@@ -328,14 +357,21 @@ Begin testing now. Remember: HYPOTHESIS → ACTION → VALIDATION for every step
  * Build the complete system prompt with outcome guidance
  */
 export function buildMetaTestingPrompt(outcomeGuidance: string): string {
-  return META_TESTING_SYSTEM_PROMPT.replace(OUTCOME_GUIDANCE_TEMPLATE, outcomeGuidance);
+  return META_TESTING_SYSTEM_PROMPT.replace(
+    OUTCOME_GUIDANCE_TEMPLATE,
+    outcomeGuidance
+  );
 }
 
 /**
  * Build user prompt with target context
  */
 export function buildUserPrompt(params: {
-  targets: Array<{ target: string; objective: string; authenticationInfo?: any }>;
+  targets: Array<{
+    target: string;
+    objective: string;
+    authenticationInfo?: any;
+  }>;
   authenticationInstructions?: string;
 }): string {
   const { targets, authenticationInstructions } = params;
