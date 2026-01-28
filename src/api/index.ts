@@ -35,12 +35,6 @@
 // Main API functions
 export { runWhiteboxPentest, runBlackboxPentest, resumePentest } from "./pentest";
 
-// Vulnerability detection utilities
-export {
-  detectVulnerabilityClasses,
-  formatDetectionSummary,
-  type DetectedVulnerabilities,
-} from "./vulnDetector";
 
 // Type exports
 export type {
