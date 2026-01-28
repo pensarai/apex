@@ -684,12 +684,15 @@ Document significant findings using the document_finding tool.`;
 
     // Add browser tools for operator mode (HITL) only
     const evidenceDir = join(session.rootPath, "evidence");
+    // Get custom headers from session config to pass to browser
+    const customHeaders = Session.getOffensiveHeaders(session);
     const browserTools = createBrowserTools(
       session.targets[0] || "",
       evidenceDir,
       "operator", // Operator mode for user-driven reconnaissance
       undefined,  // logger - could be passed in future
-      this.abortController?.signal
+      this.abortController?.signal,
+      customHeaders // Pass custom headers to browser
     );
 
     // Add POC tools for offensive stages (test/validate)

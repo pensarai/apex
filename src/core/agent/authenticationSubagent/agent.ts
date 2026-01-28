@@ -201,8 +201,13 @@ export async function runAuthenticationSubagent(
   let browserTools: BrowserTools | undefined;
   if (enableBrowserTools) {
     try {
-      browserTools = createBrowserTools(target, evidenceDir, "auth", logger, abortSignal);
+      // Get custom headers from session config to pass to browser
+      const customHeaders = Session.getOffensiveHeaders(session);
+      browserTools = createBrowserTools(target, evidenceDir, "auth", logger, abortSignal, customHeaders);
       logger.info("Browser tools enabled for auth subagent");
+      if (customHeaders && Object.keys(customHeaders).length > 0) {
+        logger.info(`Custom HTTP headers configured for browser: ${Object.keys(customHeaders).join(", ")}`);
+      }
     } catch (error) {
       logger.error(`Failed to create browser tools: ${error}`);
       // Continue without browser tools
@@ -508,8 +513,13 @@ export async function discoverAuthentication(
   let browserTools: BrowserTools | undefined;
   if (enableBrowserTools) {
     try {
-      browserTools = createBrowserTools(target, evidenceDir, "auth", logger, abortSignal);
+      // Get custom headers from session config to pass to browser
+      const customHeaders = Session.getOffensiveHeaders(session);
+      browserTools = createBrowserTools(target, evidenceDir, "auth", logger, abortSignal, customHeaders);
       logger.info("Browser tools enabled for auth discovery");
+      if (customHeaders && Object.keys(customHeaders).length > 0) {
+        logger.info(`Custom HTTP headers configured for browser: ${Object.keys(customHeaders).join(", ")}`);
+      }
     } catch (error) {
       logger.error(`Failed to create browser tools: ${error}`);
     }
