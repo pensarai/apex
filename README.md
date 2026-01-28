@@ -50,7 +50,7 @@ Download installer from `https://nmap.org/download.html` and ensure `nmap` is on
 #### macOS / Linux (Quick Install)
 
 ```bash
-curl -fsSL https://pensarai.com/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/pensarai/apex/main/scripts/install.sh | bash
 ```
 
 #### Homebrew
