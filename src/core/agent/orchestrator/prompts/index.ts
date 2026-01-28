@@ -12,7 +12,18 @@ import { SSRF_TESTING_PROMPT } from './ssrf';
 import { CRYPTO_TESTING_PROMPT } from './crypto';
 import { CVE_TESTING_PROMPT } from './cve';
 import { GENERIC_TESTING_PROMPT } from './generic';
-import type { VulnerabilityClass } from '../types';
+// The old VulnerabilityClass type from orchestrator/types.ts was different from subagent/types.ts
+// Define a local type that matches the prompts usage
+type VulnerabilityClass =
+  | 'sqli'
+  | 'idor'
+  | 'xss'
+  | 'command-injection'
+  | 'lfi'
+  | 'ssrf'
+  | 'crypto'
+  | 'cve'
+  | 'generic';
 
 // Re-export individual prompts
 export { BASE_TESTING_PROMPT, OUTCOME_GUIDANCE_TEMPLATE } from './base';

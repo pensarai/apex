@@ -25,5 +25,5 @@ export const ApexFindingObject = z.object({
 
 export type Finding = z.infer<typeof ApexFindingObject>;
 
-// Re-export CreatePoc types
-export type { CreatePocInput as CreatePocOpts, CreatePocResult } from './metaTestingAgent/types';
+// Re-export CreatePoc types from the relocated pocTools
+export type { CreatePocInput as CreatePocOpts, CreatePocResult } from './pocTools';

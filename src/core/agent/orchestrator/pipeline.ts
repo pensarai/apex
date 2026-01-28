@@ -2,7 +2,7 @@ import { join } from "path";
 import { existsSync, writeFileSync, readFileSync } from "fs";
 import type { AIModel } from "../../ai";
 import type { Session } from "../../session";
-import { runOrchestrator } from "./newOrchestrator";
+import { runOrchestrator } from "./orchestrator";
 import { runSubAgent, runSubAgentsParallel, runSubAgentsParallelWithCallbacks, type RunSubAgentResult } from "../subagent";
 import type { SubAgentManifest, Finding, FileAccessConfig } from "../subagent/types";
 
@@ -16,6 +16,8 @@ export interface PipelineInput {
   focusEndpoint?: string;
   concurrencyLimit?: number;
   abortSignal?: AbortSignal;
+  /** Timeout in ms for each subagent (default: 20 minutes) */
+  subagentTimeout?: number;
   /** Tool override for sandboxing execute_command */
   toolOverride?: {
     execute_command?: (opts: any) => Promise<any>;
@@ -47,6 +49,7 @@ export async function runPentestPipeline(input: PipelineInput): Promise<Pipeline
     focusEndpoint,
     concurrencyLimit = 10,
     abortSignal,
+    subagentTimeout,
     toolOverride,
     blockedPaths,
     onOrchestratorComplete,
@@ -110,6 +113,7 @@ export async function runPentestPipeline(input: PipelineInput): Promise<Pipeline
     workspace,
     model,
     abortSignal,
+    timeout: subagentTimeout,
     toolOverride,
     fileAccessConfig,
     onInitComplete: () => {

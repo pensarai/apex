@@ -105,7 +105,7 @@ export const FindingSchema = z.object({
   description: z.string(),
   impact: z.string(),
   evidence: z.string(),
-  pocPath: z.string().optional(),
+  pocPath: z.string(),
   remediation: z.string(),
   verificationPassed: z.boolean(),
   createdAt: z.string(),

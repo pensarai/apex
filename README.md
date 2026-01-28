@@ -19,31 +19,34 @@
 
 ### Prerequisites
 
-- **nmap** (required for network scanning)
 - **API Key** for your chosen AI provider
 
-#### Install nmap
+#### Optional: Install nmap (recommended)
 
-macOS:
+The AI agent uses nmap for network reconnaissance. Install it for full scanning capabilities:
 
+<details>
+<summary>Installation instructions</summary>
+
+**macOS:**
 ```bash
 brew install nmap
 ```
 
-Debian/Ubuntu:
-
+**Debian/Ubuntu:**
 ```bash
 sudo apt-get update && sudo apt-get install -y nmap
 ```
 
-Fedora/RHEL:
-
+**Fedora/RHEL:**
 ```bash
 sudo dnf install -y nmap
 ```
 
-Windows:
-Download installer from `https://nmap.org/download.html` and ensure `nmap` is on your PATH.
+**Windows:**
+Download installer from https://nmap.org/download.html and ensure `nmap` is on your PATH.
+
+</details>
 
 ### Install Apex
 

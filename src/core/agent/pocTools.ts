@@ -1,9 +1,11 @@
 /**
  * POC Generation and Finding Documentation Tools
  *
- * These tools enable the MetaTestingAgent to:
+ * These tools enable agents to:
  * 1. Create and execute POC scripts (bash preferred, python supported)
  * 2. Document confirmed vulnerabilities with evidence
+ *
+ * Relocated from metaTestingAgent/pocTools.ts for broader use.
  */
 
 import { tool } from 'ai';
@@ -20,22 +22,114 @@ import {
   readdirSync,
   readFileSync,
   appendFileSync,
-} from 'fs';
-import { nanoid } from 'nanoid';
-import { Logger } from '../logger';
-import type { Session } from '../../session';
-import type {
-  CreatePocInput,
-  CreatePocResult,
-  DocumentFindingInput,
-  DocumentFindingResult,
-  MetaTestingSessionInfo,
-} from './types';
-import { CreatePocSchema, DocumentFindingSchema } from './types';
-import type { ExecuteCommandOpts, ExecuteCommandResult } from '../tools';
-import { scoreFindingWithCVSS, DEFAULT_CVSS_MODEL } from '../cvssScorer';
-import type { AIModel } from '../../ai';
-import type { CVSS4Metrics } from '../../../lib/cvss';
+} from "fs";
+import { nanoid } from "nanoid";
+import { Logger } from "./logger";
+import type { Session } from "../session";
+import type { ExecuteCommandOpts, ExecuteCommandResult } from "./tools";
+import { scoreFindingWithCVSS, DEFAULT_CVSS_MODEL } from "./cvssScorer";
+import type { AIModel } from "../ai";
+import type { CVSS4Metrics } from "../../lib/cvss";
+
+/**
+ * POC types supported
+ */
+export type PocType = "bash" | "python" | "javascript";
+
+/**
+ * Zod schema for create_poc tool input
+ */
+export const CreatePocSchema = z.object({
+  pocName: z
+    .string()
+    .describe("Descriptive name for the POC (e.g., sqli_union_extract)"),
+  pocType: z
+    .enum(["bash", "python", "javascript"])
+    .describe("Script type - bash/python/javascript (node)"),
+  pocContent: z.string().describe("Complete script content"),
+  description: z.string().describe("What vulnerability this POC demonstrates"),
+  toolCallDescription: z
+    .string()
+    .describe(
+      "A concise, human-readable description of what this tool call is doing (e.g., 'Creating SQL injection POC script')"
+    ),
+});
+
+export type CreatePocInput = z.infer<typeof CreatePocSchema>;
+
+/**
+ * Result from create_poc tool
+ */
+export interface CreatePocResult {
+  success: boolean;
+  pocPath?: string;
+  execution?: {
+    success: boolean;
+    exitCode?: number;
+    stdout?: string;
+    stderr?: string;
+  };
+  error?: string;
+  message: string;
+}
+
+/**
+ * Zod schema for document_finding tool input
+ */
+export const DocumentFindingSchema = z.object({
+  title: z.string().describe("Clear, concise finding title"),
+  severity: z.preprocess((val) => {
+    if (typeof val === "string") {
+      const upper = val.toUpperCase();
+      if (upper.includes("CRITICAL")) return "CRITICAL";
+      if (upper.includes("HIGH")) return "HIGH";
+      if (upper.includes("MEDIUM")) return "MEDIUM";
+      if (upper.includes("LOW")) return "LOW";
+    }
+    return val;
+  }, z.enum(["CRITICAL", "HIGH", "MEDIUM", "LOW"])),
+  description: z.string().describe("Detailed technical description"),
+  impact: z.string().describe("Potential impact if exploited"),
+  evidence: z
+    .string()
+    .describe("Evidence/proof of vulnerability including POC output"),
+  endpoint: z
+    .string()
+    .describe("Full URL endpoint (e.g., https://example.com/api/endpoint)"),
+  pocPath: z
+    .string()
+    .describe("Relative path to POC script (e.g., pocs/poc_sqli_login.sh)"),
+  remediation: z.string().describe("Steps to fix the vulnerability"),
+  references: z.string().optional().describe("CVE, CWE, or related references"),
+  toolCallDescription: z
+    .string()
+    .describe(
+      "A concise, human-readable description of what this tool call is doing (e.g., 'Documenting SQL injection vulnerability')"
+    ),
+});
+
+export type DocumentFindingInput = z.infer<typeof DocumentFindingSchema>;
+
+/**
+ * Result from document_finding tool
+ */
+export interface DocumentFindingResult {
+  success: boolean;
+  findingPath?: string;
+  error?: string;
+  message: string;
+}
+
+/**
+ * Session info passed to POC tools
+ */
+export interface PocSessionInfo {
+  id: string;
+  rootPath: string;
+  findingsPath: string;
+  logsPath: string;
+  pocsPath: string;
+}
 
 /** Options for CVSS scoring in document_finding tool */
 export interface DocumentFindingCVSSOptions {
@@ -61,7 +155,7 @@ function sanitizeFilename(str: string): string {
 }
 
 export function createPocTool(
-  session: MetaTestingSessionInfo,
+  session: PocSessionInfo,
   logger: Logger,
   toolOverride?: {
     execute_command?: (
@@ -359,7 +453,7 @@ This is a system error, not an exploitation failure. Check:
 }
 
 export function createDocumentFindingTool(
-  session: MetaTestingSessionInfo,
+  session: PocSessionInfo,
   logger: Logger,
   target: string,
   cvssOptions?: DocumentFindingCVSSOptions

@@ -22,7 +22,7 @@ export type Subagent = {
   target: string;
   messages: DisplayMessage[];
   createdAt: Date;
-  status: "pending" | "completed" | "failed";
+  status: "pending" | "running" | "completed" | "failed";
 };
 
 interface SwarmDashboardProps {
@@ -448,12 +448,14 @@ interface AgentCardProps {
 function AgentCard({ agent, focused, onSelect }: AgentCardProps) {
   const statusIcon = {
     pending: "◐",
+    running: "◐",
     completed: "✓",
     failed: "✗",
   }[agent.status];
 
   const statusColor = {
     pending: greenBullet,
+    running: greenBullet,
     completed: greenBullet,
     failed: RGBA.fromInts(244, 67, 54, 255),
   }[agent.status];
@@ -656,6 +658,7 @@ interface AgentDetailViewProps {
 function AgentDetailView({ agent, onBack }: AgentDetailViewProps) {
   const statusColor = {
     pending: greenBullet,
+    running: greenBullet,
     completed: greenBullet,
     failed: RGBA.fromInts(244, 67, 54, 255),
   }[agent.status];
