@@ -29,7 +29,7 @@ import {
 import { createPentestTools, ATTACK_KNOWLEDGE, isBackgroundTool } from "../tools";
 import { taskManager } from "../taskManager";
 import { createBrowserTools, disconnectMcpClient } from "../browserTools";
-import { createPocTool } from "../metaTestingAgent/pocTools";
+import { createPocTool } from "../pocTools";
 import { Logger } from "../logger";
 import { inferVulnerabilityClasses } from "../orchestrator/prompts";
 import type { DisplayMessage } from "../../../tui/components/agent-display";

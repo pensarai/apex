@@ -13,6 +13,10 @@ import { Memory } from "../../memory";
 import { nanoid } from "nanoid";
 import { runVerificationAgent } from "./verificationAgent";
 import type { AIModel } from "../../ai";
+import {
+  createDelegateToAuthSubagentTool,
+  createGetAuthSessionTool,
+} from "../authenticationSubagent";
 
 function toKebabCase(str: string): string {
   return str
@@ -61,6 +65,9 @@ function isPathAllowed(
 
 export function createInitAgentTools(
   subagentSession: SubAgentSession,
+  session: Session.SessionInfo,
+  model: AIModel,
+  abortSignal?: AbortSignal,
   fileAccessConfig?: FileAccessConfig
 ) {
   const { id, config, rootPath, planPath, verificationPath } = subagentSession;
@@ -237,6 +244,14 @@ You can provide indicators as strings (defaults to medium tier) or as objects wi
     },
   });
 
+  // Create auth tools
+  const delegate_to_auth_subagent = createDelegateToAuthSubagentTool({
+    session,
+    model,
+    abortSignal,
+  });
+  const get_auth_session = createGetAuthSessionTool(session);
+
   return {
     read_file,
     search_code,
@@ -244,6 +259,8 @@ You can provide indicators as strings (defaults to medium tier) or as objects wi
     write_plan,
     write_verification_criteria,
     complete_init,
+    delegate_to_auth_subagent,
+    get_auth_session,
   };
 }
 
@@ -593,14 +610,18 @@ IMPORTANT: If verification fails, use the feedback to adjust your approach and r
   });
 
   const document_finding = tool({
-    description: "Document a verified vulnerability finding with POC",
+    description: `Document a verified vulnerability finding. Requires a POC script.
+
+IMPORTANT: You must create a POC script using execute_script BEFORE calling this tool.
+The pocPath should be the relative path to the script (e.g., "scripts/sqli_exploit.ts").
+Every finding must have a reproducible POC.`,
     inputSchema: z.object({
       title: z.string(),
       severity: z.enum(["critical", "high", "medium", "low", "info"]),
       description: z.string(),
       impact: z.string(),
       evidence: z.string(),
-      pocPath: z.string().optional(),
+      pocPath: z.string().describe("Relative path to POC script (e.g., scripts/sqli_exploit.ts). Required."),
       remediation: z.string(),
     }),
     execute: async ({ title, severity, description, impact, evidence, pocPath, remediation }) => {
@@ -660,6 +681,14 @@ IMPORTANT: If verification fails, use the feedback to adjust your approach and r
     },
   });
 
+  // Create auth tools
+  const delegate_to_auth_subagent = createDelegateToAuthSubagentTool({
+    session,
+    model,
+    abortSignal,
+  });
+  const get_auth_session = createGetAuthSessionTool(session);
+
   return {
     execute_command,
     http_request: pentest_http_request,
@@ -680,5 +709,7 @@ IMPORTANT: If verification fails, use the feedback to adjust your approach and r
     verify_finding,
     document_finding,
     complete_attack,
+    delegate_to_auth_subagent,
+    get_auth_session,
   };
 }

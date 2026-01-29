@@ -1,5 +1,4 @@
 export * from "./orchestrator";
-export * from "./newOrchestrator";
-export * from "./newTypes";
+export * from "./types";
 export * from "./pipeline";
 export * from "../tools";

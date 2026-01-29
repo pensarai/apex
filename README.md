@@ -19,31 +19,34 @@
 
 ### Prerequisites
 
-- **nmap** (required for network scanning)
 - **API Key** for your chosen AI provider
 
-#### Install nmap
+#### Optional: Install nmap (recommended)
 
-macOS:
+The AI agent uses nmap for network reconnaissance. Install it for full scanning capabilities:
 
+<details>
+<summary>Installation instructions</summary>
+
+**macOS:**
 ```bash
 brew install nmap
 ```
 
-Debian/Ubuntu:
-
+**Debian/Ubuntu:**
 ```bash
 sudo apt-get update && sudo apt-get install -y nmap
 ```
 
-Fedora/RHEL:
-
+**Fedora/RHEL:**
 ```bash
 sudo dnf install -y nmap
 ```
 
-Windows:
-Download installer from `https://nmap.org/download.html` and ensure `nmap` is on your PATH.
+**Windows:**
+Download installer from https://nmap.org/download.html and ensure `nmap` is on your PATH.
+
+</details>
 
 ### Install Apex
 
@@ -85,11 +88,154 @@ export ANTHROPIC_API_KEY="your-api-key-here"
 
 ## Usage
 
-Run Apex:
+### Interactive Mode
+
+Run Apex interactively:
 
 ```bash
 pensar
 ```
+
+### Programmatic API
+
+Apex provides a programmatic API for integration into your security testing workflows.
+
+#### Blackbox Pentest
+
+Test a target without source code access. The AI performs full attack surface mapping, endpoint enumeration, and vulnerability testing:
+
+```typescript
+import { runBlackboxPentest } from '@pensar/apex/api';
+
+const result = await runBlackboxPentest({
+  target: 'https://example.com',
+  model: 'claude-sonnet-4-5',
+  concurrency: 10,
+  callbacks: {
+    onPhaseChange: (phase) => console.log('Phase:', phase),
+    onSubagentStart: (id, endpoint, vulnClass) =>
+      console.log(`Testing ${vulnClass} on ${endpoint}`),
+    onFindingDiscovered: (finding) =>
+      console.log(`Found: [${finding.severity}] ${finding.title}`),
+  },
+});
+
+console.log(`Findings: ${result.findings.length}`);
+```
+
+**How Blackbox Mode Works:**
+
+1. **Enumeration Phase** (optional): Runs katana + feroxagent to discover endpoints
+2. **Attack Surface Mapping**: AI agent explores the target, documents endpoints, parameters, and authentication
+3. **Orchestrator Phase**: Analyzes attack surface and spawns targeted sub-agents
+4. **Testing Phase**: Sub-agents test for vulnerabilities across all discovered endpoints
+
+**Input Options:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `target` | `string` | Target URL or domain |
+| `model` | `AIModel` | AI model (default: `claude-sonnet-4-5`) |
+| `concurrency` | `number` | Max parallel sub-agents (default: 10) |
+| `skipEnumeration` | `boolean` | Skip katana+feroxagent enumeration |
+| `callbacks` | `PentestCallbacks` | Event callbacks |
+| `authCredentials` | `AuthCredentials?` | Authentication credentials |
+| `scopeConstraints` | `ScopeConstraints?` | Limit testing scope |
+| `blockedPaths` | `string[]?` | Paths to block from agent access |
+| `blockDocker` | `boolean?` | Block Docker commands |
+| `sessionId` | `string?` | Resume existing session |
+| `sessionName` | `string?` | Custom session name |
+| `timeout` | `number?` | Sub-agent timeout in ms (default: 20 min) |
+
+**Phases:**
+
+| Phase | Description |
+|-------|-------------|
+| `enumeration` | Running katana + feroxagent endpoint discovery |
+| `attack-surface` | AI mapping endpoints, parameters, auth flows |
+| `orchestrator` | Analyzing attack surface, planning sub-agents |
+| `testing` | Sub-agents actively testing for vulnerabilities |
+
+**Resume a Session:**
+
+```typescript
+import { resumePentest } from '@pensar/apex/api';
+
+const result = await resumePentest({
+  sessionId: 'pentest-abc123',
+  model: 'claude-sonnet-4-5',
+  callbacks: { /* ... */ },
+});
+```
+
+#### Whitebox Pentest
+
+Test a specific endpoint with source code access. The AI orchestrator analyzes your source code to intelligently determine which vulnerability classes to test:
+
+```typescript
+import { runWhiteboxPentest } from '@pensar/apex/api';
+
+const result = await runWhiteboxPentest({
+  endpoint: 'http://localhost:3000/api/users/:id',
+  sourceCodePath: '/path/to/your/source',
+  model: 'claude-sonnet-4-5',
+  callbacks: {
+    onPhaseChange: (phase) => console.log('Phase:', phase),
+    onSubagentStart: (id, endpoint, vulnClass) =>
+      console.log(`Testing ${vulnClass} on ${endpoint}`),
+    onFindingDiscovered: (finding) =>
+      console.log(`Found: [${finding.severity}] ${finding.title}`),
+  },
+});
+
+console.log(`Findings: ${result.findings.length}`);
+```
+
+**How Whitebox Mode Works:**
+
+1. The AI orchestrator analyzes your source code using pattern matching and code search
+2. It locates route handlers, controllers, and related files for your target endpoint
+3. It identifies vulnerability patterns in the code (SQL queries, exec calls, file operations, etc.)
+4. It spawns targeted sub-agents only for vulnerabilities with evidence in the code
+5. Each sub-agent tests for its assigned vulnerability class with full source code context
+
+### CLI Script
+
+For direct command-line usage:
+
+```bash
+# Blackbox pentest
+bun run scripts/pentest.ts https://example.com
+
+# Whitebox pentest (single endpoint with source code)
+bun run scripts/pentest.ts http://localhost:3000/api/users \
+  --whitebox \
+  --source-path /path/to/source \
+  --focus /api/users/:id
+
+# With options
+bun run scripts/pentest.ts https://example.com \
+  --model claude-sonnet-4-5 \
+  --concurrency 10 \
+  --verbose
+```
+
+**CLI Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--model <model>` | AI model to use (default: claude-sonnet-4-5) |
+| `--whitebox` | Enable whitebox mode with source code access |
+| `--source-path <path>` | Path to source code (required with --whitebox) |
+| `--workspace <name>` | Workspace name for memory |
+| `--focus <endpoint>` | Focus testing on a specific endpoint |
+| `--concurrency <n>` | Max parallel sub-agents (default: 10) |
+| `--skip-attack-surface` | Skip attack surface mapping phase |
+| `--skip-enum` | Skip katana+feroxagent enumeration |
+| `--verbose` | Show detailed output |
+| `--quiet` | Minimal output |
+| `--block-source <path>` | Block access to path (for sandboxing) |
+| `--block-docker` | Block Docker commands |
 
 ## AI Provider Support
 

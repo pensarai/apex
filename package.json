@@ -5,6 +5,17 @@
   "module": "src/tui/index.tsx",
   "main": "build/index.js",
   "type": "module",
+  "exports": {
+    ".": {
+      "import": "./build/index.js",
+      "default": "./build/index.js"
+    },
+    "./api": {
+      "import": "./src/api/index.ts",
+      "types": "./src/api/index.ts",
+      "default": "./src/api/index.ts"
+    }
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/pensarai/apex.git"
@@ -15,6 +26,7 @@
   "files": [
     "build",
     "bin",
+    "src",
     "pensar.svg",
     "LICENSE"
   ],
@@ -31,8 +43,6 @@
     "dev:debug": "SHOW_CONSOLE=true bun run scripts/watch.ts",
     "start": "bun run src/tui/index.tsx",
     "pensar": "node bin/pensar.js",
-    "daytona-benchmark": "bun run scripts/daytona-benchmark.ts",
-    "local-benchmark": "bun run scripts/local-benchmark.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "prepublishOnly": "npm run build"
@@ -47,7 +57,7 @@
     "tui"
   ],
   "author": "Pensar",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "engines": {
     "node": ">=18.0.0",
     "bun": ">=1.0.0"

@@ -94,7 +94,7 @@ export async function runSubAgent(input: RunSubAgentInput): Promise<RunSubAgentR
     // Run init phase with error handling
     let initResult: InitAgentResult;
     try {
-      initResult = await runInitAgent(subagentSession, model, combinedSignal, fileAccessConfig);
+      initResult = await runInitAgent(subagentSession, session, model, combinedSignal, fileAccessConfig);
       onInitComplete?.(initResult);
     } catch (initError: any) {
       clearTimeout(timeoutId);

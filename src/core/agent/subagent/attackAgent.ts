@@ -55,6 +55,8 @@ You have access to:
 - **search_memory/get_memory_tool**: Access workspace memory for reusable tools
 - **verify_finding**: Validate findings against criteria
 - **document_finding**: Record confirmed vulnerabilities
+- **delegate_to_auth_subagent**: Authenticate with target (complex auth flows)
+- **get_auth_session**: Load existing authenticated session
 
 ## Attack Approach
 
@@ -129,6 +131,16 @@ After 3 attempts, if you have detection-level evidence (errors, timing anomalies
 - Lower severity (info/low)
 - Clear notes that full exploitation was not achieved
 - The detection evidence you collected
+
+## Authentication
+
+If the target requires authentication:
+1. Check if session-info.json exists (use get_auth_session tool)
+2. If not authenticated, use delegate_to_auth_subagent to authenticate
+3. Use returned sessionCookie/headers in http_request calls
+
+Session credentials may be pre-configured. Call delegate_to_auth_subagent
+without explicit credentials to use session defaults.
 
 ## IMPORTANT: Document Findings Incrementally
 

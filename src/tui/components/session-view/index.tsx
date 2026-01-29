@@ -7,23 +7,20 @@ import SwarmDashboard, {
   type UIMessage,
   type Subagent,
 } from "../swarm-dashboard";
-import DriverDashboard from "../driver-dashboard";
 import OperatorDashboard from "../operator-dashboard";
 import { Session } from "../../../core/session";
 import {
   loadSessionState,
   type UISubagent,
 } from "../../../core/session/loader";
-import {
-  runStreamlinedPentest,
-  type StreamlinedPentestProgress,
-} from "../../../core/agent/thoroughPentestAgent/streamlined";
-import type {
-  SubAgentSpawnInfo,
-  SubAgentStreamEvent,
-} from "../../../core/agent/orchestrator/orchestrator";
-import type { MetaVulnerabilityTestResult } from "../../../core/agent/metaTestingAgent";
-import { existsSync } from "fs";
+import { runAgent as runAttackSurfaceAgent } from "../../../core/agent/attackSurfaceAgent/agent";
+import { runPentestPipeline, type PipelineResult, type PipelineInput } from "../../../core/agent/orchestrator/pipeline";
+import { generatePentestReport } from "../../../core/agent/reportGeneratorAgent";
+import type { AttackSurfaceAnalysisResults, PentestTarget } from "../../../core/agent/attackSurfaceAgent/types";
+import type { SubAgentManifest, Finding } from "../../../core/agent/subagent/types";
+import type { RunSubAgentResult } from "../../../core/agent/subagent";
+import { existsSync, readFileSync } from "fs";
+import { join } from "path";
 import { exec } from "child_process";
 import { SpinnerDots } from "../sprites";
 
@@ -135,7 +132,7 @@ export default function SessionView({
     };
   }, [abortController]);
 
-  // Start the pentest
+  // Start the pentest using the new pipeline
   const startPentest = useCallback(
     async (execSession: Session.SessionInfo) => {
       setIsExecuting(true);
@@ -161,17 +158,14 @@ export default function SessionView({
           },
         ]);
 
-        // Run streamlined pentest
-        const result = await runStreamlinedPentest({
-          target: execSession.targets[0],
+        // Phase 1: Run Attack Surface Discovery
+        const { streamResult } = await runAttackSurfaceAgent({
+          target: execSession.targets[0] || "",
+          objective: "Comprehensive attack surface discovery and target identification",
           model: model.id,
           session: execSession,
-          sessionConfig: execSession.config,
           abortSignal: controller.signal,
-
-          // Use onStepFinish for UI updates (like metavuln agent does)
-          // This is more reliable than raw stream chunks which can be interrupted
-          onDiscoveryStepFinish: (step) => {
+          onStepFinish: (step) => {
             const stepTokens =
               (step.usage?.inputTokens ?? 0) + (step.usage?.outputTokens ?? 0);
             if (stepTokens > 0)
@@ -180,7 +174,6 @@ export default function SessionView({
                 step.usage.outputTokens ?? 0
               );
 
-            // Update messages from step data (same pattern as onPentestAgentStream)
             const { text, toolCalls, toolResults } = step;
 
             setSubagents((prev) => {
@@ -215,7 +208,6 @@ export default function SessionView({
               if (toolCalls && toolCalls.length > 0) {
                 setThinking(false);
                 for (const tc of toolCalls) {
-                  // AI SDK v5.x uses 'input' instead of 'args'
                   const args = (tc as any).input as
                     | Record<string, unknown>
                     | undefined;
@@ -244,7 +236,6 @@ export default function SessionView({
                   );
                   if (msgIdx !== -1) {
                     const existingMsg = newMessages[msgIdx] as ToolUIMessage;
-                    // Use the stored toolCallDescription (in content) if available, fallback to toolName
                     const description =
                       typeof existingMsg.content === "string" &&
                       existingMsg.content !== existingMsg.toolName
@@ -253,8 +244,8 @@ export default function SessionView({
                     newMessages[msgIdx] = {
                       ...existingMsg,
                       status: "completed",
-                      content: `✓ ${description}`,
-                      result: (tr as any).output, // Store the tool output
+                      content: `+ ${description}`,
+                      result: (tr as any).output,
                     };
                   }
                 }
@@ -264,184 +255,93 @@ export default function SessionView({
               return updated;
             });
           },
+        });
 
-          // Keep onDiscoveryStream as backup for real-time text streaming
-          onDiscoveryStream: (chunk) => {
-            // Only handle text-delta for real-time streaming effect
-            // Other chunk types are handled by onStepFinish for reliability
-            if (chunk.type === "text-delta" && chunk.textDelta) {
-              currentDiscoveryText += chunk.textDelta;
+        // Consume the stream
+        for await (const chunk of streamResult.fullStream) {
+          // Handle text-delta for real-time streaming
+          if (chunk.type === "text-delta" && "text" in chunk) {
+            currentDiscoveryText += chunk.text;
+          }
+        }
 
-              // Debounce updates - only update every 100ms worth of text
-              if (currentDiscoveryText.trim()) {
-                setSubagents((prev) => {
-                  const idx = prev.findIndex(
-                    (s) => s.id === "attack-surface-discovery"
-                  );
-                  if (idx === -1) return prev;
+        // Mark discovery as complete
+        setSubagents((prev) =>
+          prev.map((s) =>
+            s.id === "attack-surface-discovery"
+              ? { ...s, status: "completed" as const }
+              : s
+          )
+        );
 
-                  const updated = [...prev];
-                  const subagent = updated[idx]!;
-                  const lastMsg =
-                    subagent.messages[subagent.messages.length - 1];
+        // Read attack surface results
+        const resultsPath = join(execSession.rootPath, "attack-surface-results.json");
+        if (!existsSync(resultsPath)) {
+          setThinking(false);
+          setIsExecuting(false);
+          return;
+        }
 
-                  if (lastMsg && lastMsg.role === "assistant") {
-                    const newMessages = [...subagent.messages];
-                    newMessages[newMessages.length - 1] = {
-                      ...lastMsg,
-                      content: currentDiscoveryText,
-                    };
-                    updated[idx] = { ...subagent, messages: newMessages };
-                  } else {
-                    updated[idx] = {
-                      ...subagent,
-                      messages: [
-                        ...subagent.messages,
-                        {
-                          role: "assistant",
-                          content: currentDiscoveryText,
-                          createdAt: new Date(),
-                        },
-                      ],
-                    };
-                  }
-                  return updated;
-                });
-              }
-            } else if (chunk.type === "step-finish") {
-              // Reset accumulated text at step boundaries
-              currentDiscoveryText = "";
-            }
-          },
+        const resultsData = readFileSync(resultsPath, "utf-8");
+        const results: AttackSurfaceAnalysisResults = JSON.parse(resultsData);
+        const targets = results.targets || [];
 
-          onPentestAgentSpawn: (info: SubAgentSpawnInfo) => {
-            setSubagents((prev) => {
-              const updated = prev.map((s) =>
-                s.id === "attack-surface-discovery" && s.status === "pending"
-                  ? { ...s, status: "completed" as const }
-                  : s
-              );
-              return [
-                ...updated,
+        if (targets.length === 0) {
+          setThinking(false);
+          setIsExecuting(false);
+          return;
+        }
+
+        // Phase 2: Run the new pentest pipeline
+        const pipelineResult = await runPentestPipeline({
+          attackSurfacePath: resultsPath,
+          session: execSession,
+          model: model.id,
+          workspace: execSession.rootPath,
+          whiteboxMode: false,
+          concurrencyLimit: 10,
+          abortSignal: controller.signal,
+          onOrchestratorComplete: (manifest: SubAgentManifest) => {
+            // Add subagents for each spawned agent in the manifest
+            for (const config of manifest.subagents) {
+              setSubagents((prev) => [
+                ...prev,
                 {
-                  id: info.id,
-                  name: info.name,
+                  id: config.id,
+                  name: `${config.vulnerabilityClass} on ${config.endpoint}`,
                   type: "pentest" as const,
-                  target: info.target,
+                  target: config.endpoint,
                   messages: [],
                   status: "pending" as const,
                   createdAt: new Date(),
                 },
-              ];
-            });
-          },
-
-          onPentestAgentStream: (event: SubAgentStreamEvent) => {
-            if (event.type === "step-finish" && event.data) {
-              const { text, toolCalls, toolResults, usage } = event.data;
-
-              if (usage) {
-                const stepTokens =
-                  (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0);
-                if (stepTokens > 0)
-                  addTokenUsage(
-                    usage.inputTokens ?? 0,
-                    usage.outputTokens ?? 0
-                  );
-              }
-
-              setSubagents((prev) => {
-                const idx = prev.findIndex((s) => s.id === event.agentId);
-                if (idx === -1) return prev;
-
-                const updated = [...prev];
-                const subagent = updated[idx]!;
-                const newMessages = [...subagent.messages];
-
-                if (text && text.trim()) {
-                  const lastMsg = newMessages[newMessages.length - 1];
-                  if (lastMsg && lastMsg.role === "assistant") {
-                    newMessages[newMessages.length - 1] = {
-                      ...lastMsg,
-                      content: (lastMsg.content || "") + text,
-                    };
-                  } else {
-                    newMessages.push({
-                      role: "assistant",
-                      content: text,
-                      createdAt: new Date(),
-                    });
-                  }
-                }
-
-                if (toolCalls && toolCalls.length > 0) {
-                  for (const tc of toolCalls) {
-                    // AI SDK v5.x uses 'input' instead of 'args'
-                    const args = (tc as any).input as
-                      | Record<string, unknown>
-                      | undefined;
-                    const toolDescription =
-                      typeof args?.toolCallDescription === "string"
-                        ? args.toolCallDescription
-                        : tc.toolName;
-                    newMessages.push({
-                      role: "tool",
-                      status: "pending",
-                      toolCallId: tc.toolCallId,
-                      toolName: tc.toolName,
-                      content: toolDescription,
-                      args: args,
-                      createdAt: new Date(),
-                    });
-                  }
-                }
-
-                if (toolResults && toolResults.length > 0) {
-                  for (const tr of toolResults) {
-                    const msgIdx = newMessages.findIndex(
-                      (m) => m.role === "tool" && m.toolCallId === tr.toolCallId
-                    );
-                    if (msgIdx !== -1) {
-                      const existingMsg = newMessages[msgIdx] as ToolUIMessage;
-                      // Use the stored toolCallDescription (in content) if available, fallback to toolName
-                      const description =
-                        typeof existingMsg.content === "string" &&
-                        existingMsg.content !== existingMsg.toolName
-                          ? existingMsg.content
-                          : existingMsg.toolName || "tool";
-                      newMessages[msgIdx] = {
-                        ...existingMsg,
-                        status: "completed",
-                        content: `✓ ${description}`,
-                        result: (tr as any).output, // Store the tool output
-                      };
-                    }
-                  }
-                }
-
-                updated[idx] = { ...subagent, messages: newMessages };
-                return updated;
-              });
+              ]);
             }
           },
-
-          onPentestAgentComplete: (
-            agentId: string,
-            agentResult: MetaVulnerabilityTestResult
-          ) => {
+          onSubAgentStart: (subagentId: string, endpoint: string, vulnClass: string) => {
             setSubagents((prev) =>
               prev.map((sub) =>
-                sub.id === agentId
+                sub.id === subagentId
+                  ? { ...sub, status: "running" as const }
+                  : sub
+              )
+            );
+          },
+          onSubAgentComplete: (result: RunSubAgentResult) => {
+            const findingsCount = result.findings?.length || 0;
+            const hasError = !!result.error;
+
+            setSubagents((prev) =>
+              prev.map((sub) =>
+                sub.id === result.subagentId
                   ? {
                       ...sub,
-                      status: agentResult.error ? "failed" : "completed",
+                      status: hasError ? "failed" : "completed",
                       messages: [
                         ...sub.messages,
                         {
                           role: "assistant",
-                          content: `${
-                            agentResult.findingsCount > 0 ? "✅" : "⚪"
-                          } ${agentResult.summary}`,
+                          content: `${findingsCount > 0 ? "+" : "-"} ${result.attackResult?.summary || "Complete"}`,
                           createdAt: new Date(),
                         },
                       ],
@@ -450,22 +350,24 @@ export default function SessionView({
               )
             );
           },
-
-          onProgress: (status: StreamlinedPentestProgress) => {
-            // Progress updates can be shown in UI if needed
-          },
         });
 
-        // Handle completion
-        if (result.success) {
-          if (
-            (result.reportPath && existsSync(result.reportPath)) ||
-            existsSync(
-              result.session.rootPath + "/comprehensive-pentest-report.md"
-            )
-          ) {
-            setIsCompleted(true);
-          }
+        // Phase 3: Generate report
+        if (pipelineResult.success && pipelineResult.allFindings.length > 0) {
+          await generatePentestReport({
+            sessionRootPath: execSession.rootPath,
+            sessionId: execSession.id,
+            target: execSession.targets[0] || "",
+            startTime: execSession.time.created.toString(),
+            reportTitle: `Penetration Test Report - ${execSession.targets[0]}`,
+            includeMethodology: true,
+          });
+        }
+
+        // Check if report was generated
+        const reportPath = join(execSession.rootPath, "comprehensive-pentest-report.md");
+        if (existsSync(reportPath)) {
+          setIsCompleted(true);
         }
 
         setThinking(false);
@@ -541,17 +443,15 @@ export default function SessionView({
     );
   }
 
-  // Driver mode - render DriverDashboard for manual agent orchestration
-  if (session.config?.mode === 'driver') {
-    return <DriverDashboard session={session} />;
-  }
+  // Driver mode - deprecated, fall through to auto mode
+  // Note: driver mode was removed as part of codebase cleanup
 
   // Operator mode - render OperatorDashboard for interactive pentesting
   if (session.config?.mode === 'operator') {
     return <OperatorDashboard session={session} isResume={isResume} />;
   }
 
-  // Auto mode - Render SwarmDashboard with streamlined pentest
+  // Auto mode - Render SwarmDashboard with pipeline pentest
   return (
     <SwarmDashboard
       subagents={subagents}

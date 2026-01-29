@@ -8,7 +8,10 @@ import {
   detectMultipleFlagsInArtifacts,
 } from "../flag-detector";
 import { runComparisonAgent } from "../comparisonAgent";
-import { runStreamlinedPentest } from "../../thoroughPentestAgent/streamlined";
+import { runAgent as runAttackSurfaceAgent } from "../../attackSurfaceAgent/agent";
+import { runPentestPipeline } from "../../orchestrator/pipeline";
+import { generatePentestReport } from "../../reportGeneratorAgent";
+import type { AttackSurfaceAnalysisResults } from "../../attackSurfaceAgent/types";
 import type { BenchmarkResults } from "../types";
 import type {
   ExecuteCommandOpts,
@@ -1089,41 +1092,88 @@ export async function runBenchmarkWithDaytona(
       }
     };
 
-    // Step 10: Run streamlined pentest with tool overrides (scope constraints are in session config)
-    console.log(`[${benchmarkName}] 🔍 Starting streamlined pentest...`);
+    // Step 10: Run attack surface discovery + pentest pipeline
+    console.log(`[${benchmarkName}] 🔍 Starting attack surface discovery...`);
     console.log(`[${benchmarkName}] ℹ️  Agent running locally with tool overrides (commands/HTTP proxied to sandbox, docker commands BLOCKED)`);
 
-    let pentestResult;
+    let pentestResult: { success: boolean; totalFindings: number; error?: string } = {
+      success: false,
+      totalFindings: 0,
+    };
+
     try {
-      pentestResult = await runStreamlinedPentest({
+      // Phase 1: Run attack surface discovery
+      console.log(`[${benchmarkName}] [discovery] Starting attack surface analysis...`);
+      const { streamResult } = await runAttackSurfaceAgent({
         target: targetUrl,
+        objective: "Comprehensive attack surface discovery and target identification",
         model,
         session,
         toolOverride: {
           execute_command: executeCommandOverride,
           http_request: httpRequestOverride,
         },
-        onProgress: (status) => {
-          const progressParts: string[] = [`[${benchmarkName}] [${status.phase}]`];
-
-          if (
-            status.tasksCompleted !== undefined &&
-            status.totalTasks !== undefined
-          ) {
-            progressParts.push(`[${status.tasksCompleted}/${status.totalTasks} tasks]`);
-          }
-          if (status.activeAgents !== undefined && status.activeAgents > 0) {
-            progressParts.push(`[${status.activeAgents} active]`);
-          }
-          progressParts.push(status.message);
-
-          console.log(progressParts.join(" "));
-
-          if (status.findingsCount !== undefined && status.findingsCount > 0) {
-            console.log(`[${benchmarkName}]   Findings so far: ${status.findingsCount}`);
-          }
-        },
       });
+
+      // Consume the stream
+      for await (const _chunk of streamResult.fullStream) {
+        // Just consume
+      }
+
+      // Read attack surface results
+      const resultsPath = path.join(session.rootPath, "attack-surface-results.json");
+      if (!existsSync(resultsPath)) {
+        console.log(`[${benchmarkName}] ⚠️  No attack surface results found`);
+        pentestResult = { success: true, totalFindings: 0 };
+      } else {
+        const resultsData = readFileSync(resultsPath, "utf-8");
+        const attackSurface: AttackSurfaceAnalysisResults = JSON.parse(resultsData);
+        console.log(`[${benchmarkName}] [discovery] Found ${attackSurface.targets?.length || 0} targets`);
+
+        if (!attackSurface.targets || attackSurface.targets.length === 0) {
+          pentestResult = { success: true, totalFindings: 0 };
+        } else {
+          // Phase 2: Run pentest pipeline
+          console.log(`[${benchmarkName}] [testing] Starting pentest pipeline...`);
+          const pipelineResult = await runPentestPipeline({
+            attackSurfacePath: resultsPath,
+            session,
+            model,
+            workspace: session.rootPath,
+            whiteboxMode: false,
+            concurrencyLimit: 10,
+            toolOverride: {
+              execute_command: executeCommandOverride,
+            },
+            onSubAgentStart: (subagentId, endpoint, vulnClass) => {
+              console.log(`[${benchmarkName}] [testing] Starting ${vulnClass} on ${endpoint}`);
+            },
+            onSubAgentComplete: (result) => {
+              const findings = result.findings?.length || 0;
+              console.log(`[${benchmarkName}] [testing] Completed ${result.subagentId}: ${findings} findings`);
+            },
+          });
+
+          // Phase 3: Generate report
+          if (pipelineResult.success && pipelineResult.allFindings.length > 0) {
+            console.log(`[${benchmarkName}] [reporting] Generating report...`);
+            await generatePentestReport({
+              sessionRootPath: session.rootPath,
+              sessionId: session.id,
+              target: targetUrl,
+              startTime: session.time.created.toString(),
+              reportTitle: `Penetration Test Report - ${benchmarkName}`,
+              includeMethodology: true,
+            });
+          }
+
+          pentestResult = {
+            success: pipelineResult.success,
+            totalFindings: pipelineResult.allFindings.length,
+            error: pipelineResult.error,
+          };
+        }
+      }
     } catch (pentestError: any) {
       console.error(`[${benchmarkName}] ❌ Pentest threw an exception: ${pentestError.message}`);
       logError("pentest_execution", {
