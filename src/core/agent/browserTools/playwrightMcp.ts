@@ -8,13 +8,15 @@
  * - "operator": User-driven operator mode - SPA reconnaissance, authenticated flows, attack surface mapping
  */
 
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { tool } from "ai";
-import { z } from "zod";
-import { writeFileSync, mkdirSync, existsSync } from "fs";
-import { join, dirname } from "path";
-import type { Logger } from "../logger";
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { tool } from 'ai';
+import { z } from 'zod';
+import { writeFileSync, mkdirSync, existsSync, unlinkSync } from 'fs';
+import { join, dirname } from 'path';
+import { tmpdir } from 'os';
+import { randomBytes } from 'crypto';
+import type { Logger } from '../logger';
 
 // Types for tool results
 export interface BrowserNavigateResult {
@@ -62,44 +64,83 @@ export interface BrowserConsoleResult {
 
 // Input schemas for browser tools
 const BrowserNavigateInput = z.object({
-  url: z.string().describe("Full URL to navigate to"),
-  toolCallDescription: z.string().describe("Why you are navigating to this URL"),
+  url: z.string().describe('Full URL to navigate to'),
+  toolCallDescription: z
+    .string()
+    .describe('Why you are navigating to this URL'),
 });
 
 const BrowserScreenshotInput = z.object({
-  filename: z.string().describe("Descriptive filename for screenshot (without extension)"),
-  toolCallDescription: z.string().describe("What evidence this screenshot captures"),
+  filename: z
+    .string()
+    .describe('Descriptive filename for screenshot (without extension)'),
+  toolCallDescription: z
+    .string()
+    .describe('What evidence this screenshot captures'),
 });
 
 const BrowserClickInput = z.object({
-  element: z.string().describe("Description of element to click, e.g., 'Submit button' or 'Login link'"),
-  ref: z.string().optional().describe("Element reference from browser_snapshot (e.g., 'e5'). If provided, uses exact element reference for precise clicking."),
-  toolCallDescription: z.string().describe("Why you are clicking this element"),
+  element: z
+    .string()
+    .describe(
+      "Description of element to click, e.g., 'Submit button' or 'Login link'"
+    ),
+  ref: z
+    .string()
+    .optional()
+    .describe(
+      "Element reference from browser_snapshot (e.g., 'e5'). If provided, uses exact element reference for precise clicking."
+    ),
+  toolCallDescription: z.string().describe('Why you are clicking this element'),
 });
 
 const BrowserFillInput = z.object({
-  element: z.string().describe("Description of form field, e.g., 'Username field' or 'Search input'"),
-  ref: z.string().optional().describe("Element reference from browser_snapshot (e.g., 'e3'). If provided, uses exact element reference for precise filling."),
-  value: z.string().describe("Value to fill into the field"),
-  toolCallDescription: z.string().describe("Why you are filling this field with this value"),
+  element: z
+    .string()
+    .describe(
+      "Description of form field, e.g., 'Username field' or 'Search input'"
+    ),
+  ref: z
+    .string()
+    .optional()
+    .describe(
+      "Element reference from browser_snapshot (e.g., 'e3'). If provided, uses exact element reference for precise filling."
+    ),
+  value: z.string().describe('Value to fill into the field'),
+  toolCallDescription: z
+    .string()
+    .describe('Why you are filling this field with this value'),
 });
 
 const BrowserSnapshotInput = z.object({
-  toolCallDescription: z.string().describe("Why you need to get the page snapshot"),
+  toolCallDescription: z
+    .string()
+    .describe('Why you need to get the page snapshot'),
 });
 
 const BrowserEvaluateInput = z.object({
-  script: z.string().describe("JavaScript code to execute in browser"),
-  toolCallDescription: z.string().describe("What you are testing with this script"),
+  script: z.string().describe('JavaScript code to execute in browser'),
+  toolCallDescription: z
+    .string()
+    .describe('What you are testing with this script'),
 });
 
 const BrowserConsoleInput = z.object({
-  toolCallDescription: z.string().describe("Why you need to check console messages"),
+  toolCallDescription: z
+    .string()
+    .describe('Why you need to check console messages'),
 });
 
 const BrowserGetCookiesInput = z.object({
-  urls: z.array(z.string()).optional().describe("Optional list of URLs to get cookies for. If not provided, gets all cookies."),
-  toolCallDescription: z.string().describe("Why you need to extract cookies from the browser"),
+  urls: z
+    .array(z.string())
+    .optional()
+    .describe(
+      'Optional list of URLs to get cookies for. If not provided, gets all cookies.'
+    ),
+  toolCallDescription: z
+    .string()
+    .describe('Why you need to extract cookies from the browser'),
 });
 
 // MCP Client singleton management
@@ -108,6 +149,8 @@ let mcpTransport: StdioClientTransport | null = null;
 let isConnecting = false;
 let connectionPromise: Promise<Client> | null = null;
 let configuredHeadless = true;
+let configuredExtraHeaders: Record<string, string> | undefined = undefined;
+let tempConfigPath: string | null = null;
 
 /**
  * Configure headless mode for the next browser session.
@@ -116,6 +159,53 @@ let configuredHeadless = true;
  */
 export function setHeadlessMode(headless: boolean): void {
   configuredHeadless = headless;
+}
+
+/**
+ * Configure extra HTTP headers for the browser session.
+ * These headers will be sent with every request made by the browser.
+ * Call this BEFORE any browser tools are used.
+ */
+export function setExtraHttpHeaders(
+  headers: Record<string, string> | undefined
+): void {
+  configuredExtraHeaders = headers;
+}
+
+/**
+ * Create a temporary config file for Playwright MCP with extra HTTP headers
+ */
+function createTempConfigFile(headers: Record<string, string>): string {
+  const tempDir = tmpdir();
+  const configId = randomBytes(8).toString('hex');
+  const configPath = join(tempDir, `playwright-mcp-config-${configId}.json`);
+
+  const config = {
+    browser: {
+      contextOptions: {
+        extraHTTPHeaders: headers,
+      },
+    },
+  };
+
+  writeFileSync(configPath, JSON.stringify(config, null, 2));
+  return configPath;
+}
+
+/**
+ * Clean up temporary config file
+ */
+function cleanupTempConfigFile(): void {
+  if (tempConfigPath) {
+    try {
+      if (existsSync(tempConfigPath)) {
+        unlinkSync(tempConfigPath);
+      }
+    } catch {
+      // Ignore cleanup errors
+    }
+    tempConfigPath = null;
+  }
 }
 
 /**
@@ -137,20 +227,29 @@ export async function initializeMcpClient(): Promise<Client> {
   isConnecting = true;
   connectionPromise = (async () => {
     try {
-      const args = ["@playwright/mcp@latest"];
+      const args = ['@playwright/mcp@latest'];
       if (configuredHeadless) {
-        args.push("--headless");
+        args.push('--headless');
+      }
+
+      // Create temp config file with extra HTTP headers if configured
+      if (
+        configuredExtraHeaders &&
+        Object.keys(configuredExtraHeaders).length > 0
+      ) {
+        tempConfigPath = createTempConfigFile(configuredExtraHeaders);
+        args.push('--config', tempConfigPath);
       }
 
       const transport = new StdioClientTransport({
-        command: "npx",
+        command: 'npx',
         args,
-        stderr: "pipe",
+        stderr: 'pipe',
       });
 
       const client = new Client({
-        name: "apex-browser-agent",
-        version: "1.0.0",
+        name: 'apex-browser-agent',
+        version: '1.0.0',
       });
 
       await client.connect(transport);
@@ -162,6 +261,7 @@ export async function initializeMcpClient(): Promise<Client> {
     } catch (error) {
       isConnecting = false;
       connectionPromise = null;
+      cleanupTempConfigFile();
       throw error;
     }
   })();
@@ -175,7 +275,7 @@ export async function initializeMcpClient(): Promise<Client> {
 export async function disconnectMcpClient(): Promise<void> {
   if (mcpClient) {
     try {
-      await mcpClient.callTool({ name: "browser_close", arguments: {} });
+      await mcpClient.callTool({ name: 'browser_close', arguments: {} });
     } catch {
       // Ignore cleanup errors
     }
@@ -191,6 +291,12 @@ export async function disconnectMcpClient(): Promise<void> {
   mcpTransport = null;
   isConnecting = false;
   connectionPromise = null;
+
+  // Clean up temp config file
+  cleanupTempConfigFile();
+
+  // Reset configured headers for next session
+  configuredExtraHeaders = undefined;
 }
 
 /**
@@ -214,20 +320,20 @@ async function callMcpTool(
   });
 
   // Extract content from the result
-  if (result && "content" in result && Array.isArray(result.content)) {
+  if (result && 'content' in result && Array.isArray(result.content)) {
     // Check for image content first (screenshots)
     const imageContent = result.content.find(
-      (c: { type: string }) => c.type === "image"
+      (c: { type: string }) => c.type === 'image'
     );
-    if (imageContent && "data" in imageContent) {
-      return { type: "image", data: imageContent.data };
+    if (imageContent && 'data' in imageContent) {
+      return { type: 'image', data: imageContent.data };
     }
 
     // Then check for text content
     const textContent = result.content.find(
-      (c: { type: string }) => c.type === "text"
+      (c: { type: string }) => c.type === 'text'
     );
-    if (textContent && "text" in textContent) {
+    if (textContent && 'text' in textContent) {
       try {
         return JSON.parse(textContent.text as string);
       } catch {
@@ -368,7 +474,7 @@ Use this to check for:
 - Network request failures revealing API patterns`,
 };
 
-export type BrowserToolMode = "pentest" | "operator" | "auth";
+export type BrowserToolMode = 'pentest' | 'operator' | 'auth';
 
 // Auth mode descriptions - focused on authentication flows
 const AUTH_DESCRIPTIONS = {
@@ -417,6 +523,21 @@ Use this to check for:
 - API response logging`,
 };
 
+export interface CreateBrowserToolsOptions {
+  /** Base target URL for context in descriptions */
+  targetUrl: string;
+  /** Directory to save screenshots */
+  evidenceDir: string;
+  /** Tool mode: "pentest" for automated pentesting, "operator" for user-driven reconnaissance, "auth" for authentication flows */
+  mode?: BrowserToolMode;
+  /** Optional logger for error reporting */
+  logger?: Logger;
+  /** Optional abort signal for cleanup */
+  abortSignal?: AbortSignal;
+  /** Optional custom HTTP headers to send with all browser requests */
+  customHeaders?: Record<string, string>;
+}
+
 /**
  * Create browser automation tools
  *
@@ -425,16 +546,18 @@ Use this to check for:
  * @param mode - "pentest" for automated pentesting, "operator" for user-driven reconnaissance, "auth" for authentication flows
  * @param logger - Optional logger for error reporting
  * @param abortSignal - Optional abort signal for cleanup
+ * @param customHeaders - Optional custom HTTP headers to send with all browser requests
  */
 export function createBrowserTools(
   targetUrl: string,
   evidenceDir: string,
-  mode: BrowserToolMode = "pentest",
+  mode: BrowserToolMode = 'pentest',
   logger?: Logger,
-  abortSignal?: AbortSignal
+  abortSignal?: AbortSignal,
+  customHeaders?: Record<string, string>
 ) {
   // Setup abort handler for cleanup
-  abortSignal?.addEventListener("abort", () => {
+  abortSignal?.addEventListener('abort', () => {
     disconnectMcpClient().catch(() => {});
   });
 
@@ -443,18 +566,30 @@ export function createBrowserTools(
     mkdirSync(evidenceDir, { recursive: true });
   }
 
-  const descriptions = mode === "pentest"
-    ? PENTEST_DESCRIPTIONS
-    : mode === "auth"
-    ? AUTH_DESCRIPTIONS
-    : OPERATOR_DESCRIPTIONS;
+  // Configure custom headers for the browser session
+  if (customHeaders && Object.keys(customHeaders).length > 0) {
+    setExtraHttpHeaders(customHeaders);
+    logger?.info(
+      `Configured ${Object.keys(customHeaders).length} custom HTTP headers for browser`
+    );
+  }
+
+  const descriptions =
+    mode === 'pentest'
+      ? PENTEST_DESCRIPTIONS
+      : mode === 'auth'
+        ? AUTH_DESCRIPTIONS
+        : OPERATOR_DESCRIPTIONS;
 
   const browser_navigate = tool({
     description: `${descriptions.navigate}\n\nTarget base URL: ${targetUrl}`,
     inputSchema: BrowserNavigateInput,
-    execute: async ({ url, toolCallDescription }): Promise<BrowserNavigateResult> => {
+    execute: async ({
+      url,
+      toolCallDescription,
+    }): Promise<BrowserNavigateResult> => {
       try {
-        const result = await callMcpTool("browser_navigate", { url });
+        const result = await callMcpTool('browser_navigate', { url });
         return {
           success: true,
           url,
@@ -471,24 +606,34 @@ export function createBrowserTools(
   const browser_screenshot = tool({
     description: descriptions.screenshot,
     inputSchema: BrowserScreenshotInput,
-    execute: async ({ filename, toolCallDescription }): Promise<BrowserScreenshotResult> => {
+    execute: async ({
+      filename,
+      toolCallDescription,
+    }): Promise<BrowserScreenshotResult> => {
       try {
-        const result = await callMcpTool("browser_screenshot", {});
+        const result = await callMcpTool('browser_screenshot', {});
 
         // Handle image data from MCP response
-        if (result && typeof result === "object" && "data" in result) {
-          const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+        if (result && typeof result === 'object' && 'data' in result) {
+          const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
           const screenshotFilename = `${filename}_${timestamp}.png`;
           const screenshotPath = join(evidenceDir, screenshotFilename);
           const dir = dirname(screenshotPath);
           if (!existsSync(dir)) {
             mkdirSync(dir, { recursive: true });
           }
-          writeFileSync(screenshotPath, Buffer.from((result as { data: string }).data, "base64"));
-          return { success: true, path: screenshotPath, message: `Screenshot saved to ${screenshotPath}` };
+          writeFileSync(
+            screenshotPath,
+            Buffer.from((result as { data: string }).data, 'base64')
+          );
+          return {
+            success: true,
+            path: screenshotPath,
+            message: `Screenshot saved to ${screenshotPath}`,
+          };
         }
 
-        return { success: false, error: "No screenshot data returned" };
+        return { success: false, error: 'No screenshot data returned' };
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         logger?.error(`browser_screenshot failed: ${message}`);
@@ -509,10 +654,18 @@ Example workflow:
 2. Find the element you need (e.g., "textbox 'Email'" with [ref=e3])
 3. Call browser_fill with ref="e3" to fill that specific element`,
     inputSchema: BrowserSnapshotInput,
-    execute: async ({ toolCallDescription }): Promise<{ success: boolean; snapshot?: string; error?: string }> => {
+    execute: async ({
+      toolCallDescription,
+    }): Promise<{ success: boolean; snapshot?: string; error?: string }> => {
       try {
-        const result = await callMcpTool("browser_snapshot", {});
-        return { success: true, snapshot: typeof result === 'string' ? result : JSON.stringify(result, null, 2) };
+        const result = await callMcpTool('browser_snapshot', {});
+        return {
+          success: true,
+          snapshot:
+            typeof result === 'string'
+              ? result
+              : JSON.stringify(result, null, 2),
+        };
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         logger?.error(`browser_snapshot failed: ${message}`);
@@ -522,15 +675,21 @@ Example workflow:
   });
 
   const browser_click = tool({
-    description: descriptions.click + `\n\nIMPORTANT: For reliable clicking, first call browser_snapshot to get element refs, then pass the ref parameter.`,
+    description:
+      descriptions.click +
+      `\n\nIMPORTANT: For reliable clicking, first call browser_snapshot to get element refs, then pass the ref parameter.`,
     inputSchema: BrowserClickInput,
-    execute: async ({ element, ref, toolCallDescription }): Promise<BrowserClickResult> => {
+    execute: async ({
+      element,
+      ref,
+      toolCallDescription,
+    }): Promise<BrowserClickResult> => {
       try {
         const args: Record<string, unknown> = { element };
         if (ref) {
           args.ref = ref;
         }
-        const result = await callMcpTool("browser_click", args);
+        const result = await callMcpTool('browser_click', args);
         return { success: true, element, result };
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
@@ -541,16 +700,23 @@ Example workflow:
   });
 
   const browser_fill = tool({
-    description: descriptions.fill + `\n\nIMPORTANT: For reliable form filling, first call browser_snapshot to get element refs, then pass the ref parameter.`,
+    description:
+      descriptions.fill +
+      `\n\nIMPORTANT: For reliable form filling, first call browser_snapshot to get element refs, then pass the ref parameter.`,
     inputSchema: BrowserFillInput,
-    execute: async ({ element, ref, value, toolCallDescription }): Promise<BrowserFillResult> => {
+    execute: async ({
+      element,
+      ref,
+      value,
+      toolCallDescription,
+    }): Promise<BrowserFillResult> => {
       try {
         // Note: Playwright MCP uses "browser_type" for filling fields
         const args: Record<string, unknown> = { element, text: value };
         if (ref) {
           args.ref = ref;
         }
-        const result = await callMcpTool("browser_type", args);
+        const result = await callMcpTool('browser_type', args);
         return { success: true, element, result };
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
@@ -563,9 +729,14 @@ Example workflow:
   const browser_evaluate = tool({
     description: descriptions.evaluate,
     inputSchema: BrowserEvaluateInput,
-    execute: async ({ script, toolCallDescription }): Promise<BrowserEvaluateResult> => {
+    execute: async ({
+      script,
+      toolCallDescription,
+    }): Promise<BrowserEvaluateResult> => {
       try {
-        const result = await callMcpTool("browser_evaluate", { expression: script });
+        const result = await callMcpTool('browser_evaluate', {
+          expression: script,
+        });
         return { success: true, script, result };
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
@@ -580,15 +751,15 @@ Example workflow:
     inputSchema: BrowserConsoleInput,
     execute: async ({ toolCallDescription }): Promise<BrowserConsoleResult> => {
       try {
-        const result = await callMcpTool("browser_console_messages", {});
+        const result = await callMcpTool('browser_console_messages', {});
 
         // Parse console messages if they're in JSON format
         let messages: Array<{ type: string; text: string }> | undefined;
-        if (typeof result === "string") {
+        if (typeof result === 'string') {
           try {
             messages = JSON.parse(result);
           } catch {
-            messages = [{ type: "log", text: result }];
+            messages = [{ type: 'log', text: result }];
           }
         } else if (Array.isArray(result)) {
           messages = result as Array<{ type: string; text: string }>;
@@ -615,30 +786,58 @@ Returns all cookies including:
 
 The returned cookies can be formatted as a Cookie header for use with http_request tool.`,
     inputSchema: BrowserGetCookiesInput,
-    execute: async ({ urls, toolCallDescription }): Promise<{ success: boolean; cookies?: Array<{ name: string; value: string; domain: string; path: string; httpOnly: boolean; secure: boolean }>; cookieHeader?: string; error?: string }> => {
+    execute: async ({
+      urls,
+      toolCallDescription,
+    }): Promise<{
+      success: boolean;
+      cookies?: Array<{
+        name: string;
+        value: string;
+        domain: string;
+        path: string;
+        httpOnly: boolean;
+        secure: boolean;
+      }>;
+      cookieHeader?: string;
+      error?: string;
+    }> => {
       try {
         const args: Record<string, unknown> = {};
         if (urls && urls.length > 0) {
           args.urls = urls;
         }
-        const result = await callMcpTool("browser_get_cookies", args);
+        const result = await callMcpTool('browser_get_cookies', args);
 
         // Parse cookies from result
-        let cookies: Array<{ name: string; value: string; domain: string; path: string; httpOnly: boolean; secure: boolean }> = [];
+        let cookies: Array<{
+          name: string;
+          value: string;
+          domain: string;
+          path: string;
+          httpOnly: boolean;
+          secure: boolean;
+        }> = [];
         if (Array.isArray(result)) {
           cookies = result as typeof cookies;
-        } else if (typeof result === "string") {
+        } else if (typeof result === 'string') {
           try {
             cookies = JSON.parse(result);
           } catch {
             // Result might be in a different format
           }
-        } else if (result && typeof result === "object" && "cookies" in result) {
+        } else if (
+          result &&
+          typeof result === 'object' &&
+          'cookies' in result
+        ) {
           cookies = (result as { cookies: typeof cookies }).cookies;
         }
 
         // Build Cookie header string
-        const cookieHeader = cookies.map(c => `${c.name}=${c.value}`).join("; ");
+        const cookieHeader = cookies
+          .map((c) => `${c.name}=${c.value}`)
+          .join('; ');
 
         return {
           success: true,

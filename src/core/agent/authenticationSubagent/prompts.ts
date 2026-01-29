@@ -82,13 +82,20 @@ Your approach depends entirely on your classified TASK_INTENT:
 
 ## AUTHENTICATE Mode (credentials provided)
 1. Call \`load_auth_flow\` for any cached flow info
-2. Call \`authenticate\` with provided credentials
+2. **IMPORTANT: If using browser and already logged in:**
+   - If you navigate to the target and find you're already authenticated (e.g., redirected to dashboard/workspace)
+   - You MUST log out first, then log back in with the provided credentials
+   - This ensures the provided credentials are actually valid
+   - Look for logout buttons/links: "Sign out", "Logout", "Log out", user menu → logout
+   - After logout, proceed with normal authentication flow
+3. Call \`authenticate\` with provided credentials
    - Use loginUrl hint if provided
    - Otherwise try common endpoints (/api/login, /login)
-3. Call \`validate_session\` to confirm success
-4. Call \`document_auth_flow\` to cache for future
-5. Call \`export_auth_for_agent\` to share auth state
+4. Call \`validate_session\` to confirm success
+5. Call \`document_auth_flow\` to cache for future
+6. Call \`export_auth_for_agent\` to share auth state
 **DO NOT** run detect_auth_scheme or probe_auth_endpoints when you have credentials.
+**DO NOT** assume an existing session validates the provided credentials - always re-authenticate.
 
 ## REGISTER Mode (no credentials provided)
 1. Call \`load_auth_flow\` for any cached registration info
@@ -240,12 +247,13 @@ export function buildAuthUserPrompt(input: {
     captchaDetected?: boolean;
   };
 }): string {
-  const hasTokens = input.credentials?.tokens && (
-    input.credentials.tokens.bearerToken ||
-    input.credentials.tokens.cookies ||
-    input.credentials.tokens.sessionToken ||
-    (input.credentials.tokens.customHeaders && Object.keys(input.credentials.tokens.customHeaders).length > 0)
-  );
+  const hasTokens =
+    input.credentials?.tokens &&
+    (input.credentials.tokens.bearerToken ||
+      input.credentials.tokens.cookies ||
+      input.credentials.tokens.sessionToken ||
+      (input.credentials.tokens.customHeaders &&
+        Object.keys(input.credentials.tokens.customHeaders).length > 0));
 
   let prompt = `# Authentication Task
 
@@ -339,7 +347,7 @@ You have working credentials. Your task is to USE THEM to authenticate.
 `;
     }
     if (input.authFlowHints.loginEndpoints?.length) {
-      prompt += `- Login Endpoints: ${input.authFlowHints.loginEndpoints.join(", ")}
+      prompt += `- Login Endpoints: ${input.authFlowHints.loginEndpoints.join(', ')}
 `;
     }
     if (input.authFlowHints.authScheme) {
@@ -359,21 +367,22 @@ You have working credentials. Your task is to USE THEM to authenticate.
   }
 
   // Check if we have any credentials at all
-  const hasCredentials = input.credentials && (
-    input.credentials.username ||
-    input.credentials.password ||
-    input.credentials.apiKey
-  );
+  const hasCredentials =
+    input.credentials &&
+    (input.credentials.username ||
+      input.credentials.password ||
+      input.credentials.apiKey);
 
   // Different instructions based on what is provided
   if (hasTokens) {
-    const hasProtectedEndpoints = input.authFlowHints?.protectedEndpoints?.length;
+    const hasProtectedEndpoints =
+      input.authFlowHints?.protectedEndpoints?.length;
     prompt += `## Instructions (Token Verification Mode)
 
 1. Use \`validate_session\` to test if the provided tokens grant authenticated access
 `;
     if (hasProtectedEndpoints) {
-      prompt += `   - Test against the protected endpoints provided above: ${input.authFlowHints!.protectedEndpoints!.join(", ")}
+      prompt += `   - Test against the protected endpoints provided above: ${input.authFlowHints!.protectedEndpoints!.join(', ')}
    - These are KNOWN to require auth - use them directly, don't guess endpoints
 `;
     } else {
@@ -401,7 +410,14 @@ Your TASK_INTENT is AUTHENTICATE. You have credentials - use them.
 5. Call \`document_auth_flow\` to save for future runs
 6. Call \`export_auth_for_agent\` to prepare auth for other agents
 
-IMPORTANT: Your goal is a SUCCESSFUL LOGIN, not a discovery report.
+**CRITICAL: Handle Pre-existing Browser Sessions**
+If using browser tools and you find the page is ALREADY logged in (shows dashboard/workspace instead of login):
+- DO NOT assume this validates your credentials - it's a stale session
+- You MUST log out first (find and click logout button)
+- THEN authenticate with the provided credentials
+- This ensures the credentials you were given actually work
+
+IMPORTANT: Your goal is a SUCCESSFUL LOGIN with the PROVIDED CREDENTIALS, not just having a session.
 If authentication fails, report the failure - do not fall back to discovery mode.
 
 Begin authentication NOW.
@@ -576,7 +592,7 @@ ${input.target}
 
   if (input.additionalEndpoints?.length) {
     prompt += `## Additional Endpoints to Check
-${input.additionalEndpoints.map(e => `- ${e}`).join('\n')}
+${input.additionalEndpoints.map((e) => `- ${e}`).join('\n')}
 
 `;
   }
@@ -607,6 +623,17 @@ export const BROWSER_FLOW_GUIDANCE = `
 When browser authentication is required (SPA, OAuth, JS-rendered forms):
 
 CRITICAL: Always call browser_snapshot BEFORE browser_fill or browser_click to get element refs!
+
+### IMPORTANT: Handle Pre-existing Sessions
+If you navigate to the target and discover you're ALREADY logged in (e.g., page shows dashboard, workspace, or user content instead of login form):
+1. **DO NOT** assume the existing session validates your provided credentials
+2. **MUST** log out first to clear the existing session:
+   - Take a browser_snapshot to find logout elements
+   - Look for: "Sign out", "Logout", "Log out", user avatar/menu with logout option
+   - Click the logout button/link
+   - Wait for redirect to login page
+3. **THEN** proceed with normal authentication using the provided credentials
+4. This ensures we're actually testing that the provided credentials work
 
 ### Step-by-step workflow:
 

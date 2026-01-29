@@ -193,12 +193,15 @@ export async function runAgent(opts: RunAgentProps): Promise<{
 
   // Create browser tools for JavaScript-heavy page analysis
   const evidenceDir = join(session.rootPath, 'evidence');
+  // Get custom headers from session config to pass to browser
+  const customHeaders = Session.getOffensiveHeaders(session);
   const browserTools = createBrowserTools(
     target,
     evidenceDir,
     'operator', // Attack surface uses operator mode (reconnaissance-focused)
     undefined, // No logger needed for attack surface
-    abortSignal
+    abortSignal,
+    customHeaders // Pass custom headers to browser
   );
 
   // Attack Surface specific tool: document_asset
