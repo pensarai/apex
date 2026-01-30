@@ -8,6 +8,7 @@ import SessionsDisplay from "./components/commands/sessions-display";
 import ConfigDialog from "./components/commands/config-dialog";
 import ChatApp from "./components/chat";
 import HITLWizard from "./components/commands/operator-wizard";
+import WebWizard from "./components/commands/web-wizard";
 import ProviderManager from "./components/commands/provider-manager";
 import type { Config } from "../core/config/config";
 import { config } from "../core/config";
@@ -51,8 +52,7 @@ function App(props: AppProps) {
                 <AgentProvider>
                   <CommandProvider>
                     <KeybindingProvider
-                     deps={
-                      {
+                      deps={{
                         ctrlCPressTime,
                         setCtrlCPressTime,
                         setShowExitWarning,
@@ -60,9 +60,8 @@ function App(props: AppProps) {
                         setShowSessionsDialog,
                         setShowShortcutsDialog,
                         setFocusIndex,
-                        navigableItems,                        
-                      }
-                     }
+                        navigableItems,
+                      }}
                     >
                       <AppContent
                         focusIndex={focusIndex}
@@ -114,19 +113,21 @@ function AppContent({
   inputKey: number;
   setInputKey: (fn: (prev: number) => number) => void;
 }) {
-
   const route = useRoute();
   const config = useConfig();
 
   const { refocusPrompt } = useFocus();
   const { setExternalDialogOpen } = useDialog();
-  
 
   // First check: responsible use disclosure
-  if (!config.data.responsibleUseAccepted && route.data.type === "base" && route.data.path !== "disclosure") {
+  if (
+    !config.data.responsibleUseAccepted &&
+    route.data.type === "base" &&
+    route.data.path !== "disclosure"
+  ) {
     route.navigate({
       type: "base",
-      path: "disclosure"
+      path: "disclosure",
     });
   }
 
@@ -140,7 +141,7 @@ function AppContent({
   ) {
     route.navigate({
       type: "base",
-      path: "providers"
+      path: "providers",
     });
   }
 
@@ -179,7 +180,7 @@ function AppContent({
       width="100%"
       maxHeight="100%"
       overflow="hidden"
-      backgroundColor={'transparent'}
+      backgroundColor={"transparent"}
     >
       <CommandDisplay focusIndex={focusIndex} inputKey={inputKey} />
 
@@ -191,7 +192,10 @@ function AppContent({
       )}
 
       {showShortcutsDialog && (
-        <ShortcutsDialog open={showShortcutsDialog} onClose={handleCloseShortcutsDialog} />
+        <ShortcutsDialog
+          open={showShortcutsDialog}
+          onClose={handleCloseShortcutsDialog}
+        />
       )}
     </box>
   );
@@ -206,7 +210,6 @@ function CommandDisplay({
   focusIndex: number;
   inputKey: number;
 }) {
-
   const route = useRoute();
   const _config = useConfig();
 
@@ -214,12 +217,11 @@ function CommandDisplay({
     await config.update({ responsibleUseAccepted: true });
     route.navigate({
       type: "base",
-      path: "home"
+      path: "home",
     });
   };
 
-
-  if(route.data.type === "base") {
+  if (route.data.type === "base") {
     const routePath = route.data.path;
     return (
       <box
@@ -234,14 +236,13 @@ function CommandDisplay({
         gap={2}
         backgroundColor={"transparent"}
       >
-
-      {/* routes to have: home (chat), responsible use, session, global config route */}
-      {/* when user either runs command or simply enters message: extract args etc, create session with related config, route to session */}
-      {/* on startup, check if responsible use has been agreed, if not route to resp use route */}
+        {/* routes to have: home (chat), responsible use, session, global config route */}
+        {/* when user either runs command or simply enters message: extract args etc, create session with related config, route to session */}
+        {/* on startup, check if responsible use has been agreed, if not route to resp use route */}
 
         <RouteSwitch condition={routePath}>
           <RouteSwitch.Case when="disclosure">
-            <ResponsibleUseDisclosure onAccept={handleAcceptPolicy}/>
+            <ResponsibleUseDisclosure onAccept={handleAcceptPolicy} />
           </RouteSwitch.Case>
           <RouteSwitch.Case when="home">
             <ChatApp />
@@ -260,6 +261,23 @@ function CommandDisplay({
               initialModel={route.data.options?.model}
             />
           </RouteSwitch.Case>
+          <RouteSwitch.Case when="web">
+            <WebWizard
+              initialTarget={route.data.options?.target}
+              autoMode={route.data.options?.auto}
+              initialName={route.data.options?.name}
+              initialAuthUrl={route.data.options?.authUrl}
+              initialAuthUser={route.data.options?.authUser}
+              initialAuthPass={route.data.options?.authPass}
+              initialAuthInstructions={route.data.options?.authInstructions}
+              initialHosts={route.data.options?.hosts}
+              initialPorts={route.data.options?.ports}
+              initialStrict={route.data.options?.strict}
+              initialHeadersMode={route.data.options?.headersMode}
+              initialCustomHeaders={route.data.options?.customHeaders}
+              initialModel={route.data.options?.model}
+            />
+          </RouteSwitch.Case>
           <RouteSwitch.Case when="providers">
             <ProviderManager />
           </RouteSwitch.Case>
@@ -272,8 +290,13 @@ function CommandDisplay({
   }
 
   // Session route - render SessionView which handles pentest execution
-  if(route.data.type === "session") {
-    return <SessionView sessionId={route.data.sessionId} isResume={route.data.isResume} />;
+  if (route.data.type === "session") {
+    return (
+      <SessionView
+        sessionId={route.data.sessionId}
+        isResume={route.data.isResume}
+      />
+    );
   }
 
   return null;
@@ -306,8 +329,7 @@ async function main() {
     process.exit(1);
   });
 
-  createRoot(renderer)
-    .render(<App appConfig={appConfig} />);
+  createRoot(renderer).render(<App appConfig={appConfig} />);
 }
 
 main();
