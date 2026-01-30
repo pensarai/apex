@@ -3,8 +3,17 @@ import { existsSync, writeFileSync, readFileSync } from "fs";
 import type { AIModel } from "../../ai";
 import type { Session } from "../../session";
 import { runOrchestrator } from "./orchestrator";
-import { runSubAgent, runSubAgentsParallel, runSubAgentsParallelWithCallbacks, type RunSubAgentResult } from "../subagent";
-import type { SubAgentManifest, Finding, FileAccessConfig } from "../subagent/types";
+import {
+  runSubAgent,
+  runSubAgentsParallel,
+  runSubAgentsParallelWithCallbacks,
+  type RunSubAgentResult,
+} from "../subagent";
+import type {
+  SubAgentManifest,
+  Finding,
+  FileAccessConfig,
+} from "../subagent/types";
 
 export interface PipelineInput {
   attackSurfacePath: string;
@@ -25,8 +34,41 @@ export interface PipelineInput {
   /** Paths to block from file access (for blackbox sandbox) */
   blockedPaths?: string[];
   onOrchestratorComplete?: (manifest: SubAgentManifest) => void;
-  onSubAgentStart?: (subagentId: string, endpoint: string, vulnClass: string) => void;
+  onSubAgentStart?: (
+    subagentId: string,
+    endpoint: string,
+    vulnClass: string,
+  ) => void;
   onSubAgentComplete?: (result: RunSubAgentResult) => void;
+  /** Callback for streaming step updates from subagents */
+  onSubAgentStep?: (
+    subagentId: string,
+    step: {
+      text?: string;
+      toolCalls?: Array<{
+        toolCallId: string;
+        toolName: string;
+        args: unknown;
+      }>;
+      toolResults?: Array<{
+        toolCallId: string;
+        toolName: string;
+        result: unknown;
+      }>;
+    },
+  ) => void;
+  /** Callback for real-time streaming chunks from subagents */
+  onSubAgentChunk?: (
+    subagentId: string,
+    chunk: {
+      type: "text-delta" | "tool-call" | "tool-result";
+      text?: string;
+      toolCallId?: string;
+      toolName?: string;
+      args?: unknown;
+      result?: unknown;
+    },
+  ) => void;
 }
 
 export interface PipelineResult {
@@ -38,7 +80,9 @@ export interface PipelineResult {
   error?: string;
 }
 
-export async function runPentestPipeline(input: PipelineInput): Promise<PipelineResult> {
+export async function runPentestPipeline(
+  input: PipelineInput,
+): Promise<PipelineResult> {
   const {
     attackSurfacePath,
     session,
@@ -55,17 +99,21 @@ export async function runPentestPipeline(input: PipelineInput): Promise<Pipeline
     onOrchestratorComplete,
     onSubAgentStart,
     onSubAgentComplete,
+    onSubAgentStep,
+    onSubAgentChunk,
   } = input;
 
   // Build file access config for sandboxing read_file/write_file/append_file
   const fileAccessConfig: FileAccessConfig | undefined =
-    (blockedPaths?.length || whiteboxMode) ? {
-      allowedPaths: [
-        session.rootPath,
-        ...(whiteboxMode && sourceCodePath ? [sourceCodePath] : []),
-      ],
-      blockedPaths: blockedPaths || [],
-    } : undefined;
+    blockedPaths?.length || whiteboxMode
+      ? {
+          allowedPaths: [
+            session.rootPath,
+            ...(whiteboxMode && sourceCodePath ? [sourceCodePath] : []),
+          ],
+          blockedPaths: blockedPaths || [],
+        }
+      : undefined;
 
   const orchestratorResult = await runOrchestrator(
     {
@@ -76,7 +124,7 @@ export async function runPentestPipeline(input: PipelineInput): Promise<Pipeline
       focusEndpoint,
       abortSignal,
     },
-    model
+    model,
   );
 
   if (!orchestratorResult.success) {
@@ -100,7 +148,8 @@ export async function runPentestPipeline(input: PipelineInput): Promise<Pipeline
       manifest,
       subAgentResults: [],
       allFindings: [],
-      summary: "No sub-agents to spawn - attack surface may be empty or no testable endpoints found",
+      summary:
+        "No sub-agents to spawn - attack surface may be empty or no testable endpoints found",
     };
   }
 
@@ -120,6 +169,12 @@ export async function runPentestPipeline(input: PipelineInput): Promise<Pipeline
       onSubAgentStart?.(config.id, config.endpoint, config.vulnerabilityClass);
     },
     onAttackComplete: (result: any) => {},
+    onStepFinish: onSubAgentStep
+      ? (step: any) => onSubAgentStep(config.id, step)
+      : undefined,
+    onChunk: onSubAgentChunk
+      ? (chunk: any) => onSubAgentChunk(config.id, chunk)
+      : undefined,
   }));
 
   // Wrap runSubAgentsParallel to get real-time completion callbacks
@@ -129,7 +184,7 @@ export async function runPentestPipeline(input: PipelineInput): Promise<Pipeline
     (result) => {
       completedResults.push(result);
       onSubAgentComplete?.(result);
-    }
+    },
   );
 
   const allFindings: Finding[] = [];
@@ -151,10 +206,13 @@ export async function runPentestPipeline(input: PipelineInput): Promise<Pipeline
       low: allFindings.filter((f) => f.severity === "low").length,
       info: allFindings.filter((f) => f.severity === "info").length,
     },
-    findingsByClass: allFindings.reduce((acc, f) => {
-      acc[f.vulnerabilityClass] = (acc[f.vulnerabilityClass] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>),
+    findingsByClass: allFindings.reduce(
+      (acc, f) => {
+        acc[f.vulnerabilityClass] = (acc[f.vulnerabilityClass] || 0) + 1;
+        return acc;
+      },
+      {} as Record<string, number>,
+    ),
   };
   writeFileSync(summaryPath, JSON.stringify(summaryData, null, 2));
 
@@ -176,9 +234,11 @@ export async function runPipelineFromManifest(
   model: AIModel,
   workspace: string,
   concurrencyLimit: number = 10,
-  abortSignal?: AbortSignal
+  abortSignal?: AbortSignal,
 ): Promise<PipelineResult> {
-  const manifest = JSON.parse(readFileSync(manifestPath, "utf-8")) as SubAgentManifest;
+  const manifest = JSON.parse(
+    readFileSync(manifestPath, "utf-8"),
+  ) as SubAgentManifest;
 
   const subagentInputs = manifest.subagents.map((config) => ({
     config,
@@ -188,7 +248,10 @@ export async function runPipelineFromManifest(
     abortSignal,
   }));
 
-  const subAgentResults = await runSubAgentsParallel(subagentInputs, concurrencyLimit);
+  const subAgentResults = await runSubAgentsParallel(
+    subagentInputs,
+    concurrencyLimit,
+  );
 
   const allFindings: Finding[] = [];
   for (const result of subAgentResults) {
