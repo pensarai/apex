@@ -1,6 +1,13 @@
 import { streamResponse, type AIModel } from "../../ai";
 import { hasToolCall } from "ai";
-import type { SubAgentSession, AttackAgentResult, Finding, AttackPlan, VerificationCriteria, FileAccessConfig } from "./types";
+import type {
+  SubAgentSession,
+  AttackAgentResult,
+  Finding,
+  AttackPlan,
+  VerificationCriteria,
+  FileAccessConfig,
+} from "./types";
 import { createAttackAgentTools } from "./tools";
 import type { Session } from "../../session";
 import { existsSync, readFileSync, readdirSync, appendFileSync } from "fs";
@@ -175,22 +182,63 @@ export async function runAttackAgent(
   toolOverride?: {
     execute_command?: (opts: any) => Promise<any>;
   },
-  fileAccessConfig?: FileAccessConfig
+  fileAccessConfig?: FileAccessConfig,
+  onStepFinish?: (step: {
+    text?: string;
+    toolCalls?: Array<{ toolCallId: string; toolName: string; args: unknown }>;
+    toolResults?: Array<{
+      toolCallId: string;
+      toolName: string;
+      result: unknown;
+    }>;
+  }) => void,
+  onChunk?: (chunk: {
+    type: "text-delta" | "tool-call" | "tool-result";
+    text?: string;
+    toolCallId?: string;
+    toolName?: string;
+    args?: unknown;
+    result?: unknown;
+  }) => void,
 ): Promise<AttackAgentResult> {
-  const { config, planPath, verificationPath, findingsPath, logsPath, rootPath } = subagentSession;
+  const {
+    config,
+    planPath,
+    verificationPath,
+    findingsPath,
+    logsPath,
+    rootPath,
+  } = subagentSession;
 
-  logToFile(logsPath, `[INFO] Starting attack phase for endpoint: ${config.endpoint}`);
-  logToFile(logsPath, `[INFO] Vulnerability class: ${config.vulnerabilityClass}`);
+  logToFile(
+    logsPath,
+    `[INFO] Starting attack phase for endpoint: ${config.endpoint}`,
+  );
+  logToFile(
+    logsPath,
+    `[INFO] Vulnerability class: ${config.vulnerabilityClass}`,
+  );
 
-  const tools = createAttackAgentTools(subagentSession, session, workspace, model, abortSignal, toolOverride, fileAccessConfig);
+  const tools = createAttackAgentTools(
+    subagentSession,
+    session,
+    workspace,
+    model,
+    abortSignal,
+    toolOverride,
+    fileAccessConfig,
+  );
 
   const guidanceFileList = listGuidanceFiles(subagentSession.guidancePath);
-  const guidanceFilesStr = guidanceFileList.length > 0
-    ? guidanceFileList.join("\n")
-    : "No guidance files available";
+  const guidanceFilesStr =
+    guidanceFileList.length > 0
+      ? guidanceFileList.join("\n")
+      : "No guidance files available";
 
-  const systemPrompt = ATTACK_SYSTEM_PROMPT
-    .replace("{endpoint}", config.endpoint)
+  const systemPrompt = ATTACK_SYSTEM_PROMPT.replace(
+    "{endpoint}",
+    config.endpoint,
+  )
     .replace("{vulnerabilityClass}", config.vulnerabilityClass)
     .replace("{guidanceFiles}", guidanceFilesStr);
 
@@ -199,7 +247,10 @@ export async function runAttackAgent(
 
   if (existsSync(planPath)) {
     plan = JSON.parse(readFileSync(planPath, "utf-8"));
-    logToFile(logsPath, `[INFO] Loaded attack plan with ${plan?.phases?.length || 0} phases`);
+    logToFile(
+      logsPath,
+      `[INFO] Loaded attack plan with ${plan?.phases?.length || 0} phases`,
+    );
   }
   if (existsSync(verificationPath)) {
     verificationCriteria = JSON.parse(readFileSync(verificationPath, "utf-8"));
@@ -237,8 +288,25 @@ Call complete_attack when done.`;
           logToFile(logsPath, `[INFO] Tool call: ${toolCall.toolName}`);
         }
         for (const toolResult of step.toolResults) {
-          logToFile(logsPath, `[INFO] Tool result: ${toolResult.toolName} - completed`);
+          logToFile(
+            logsPath,
+            `[INFO] Tool result: ${toolResult.toolName} - completed`,
+          );
         }
+        // Forward step to UI callback for real-time streaming
+        onStepFinish?.({
+          text: step.text,
+          toolCalls: step.toolCalls.map((tc) => ({
+            toolCallId: tc.toolCallId,
+            toolName: tc.toolName,
+            args: (tc as any).input || (tc as any).args,
+          })),
+          toolResults: step.toolResults.map((tr) => ({
+            toolCallId: tr.toolCallId,
+            toolName: tr.toolName,
+            result: (tr as any).output || (tr as any).result,
+          })),
+        });
       },
     });
 
@@ -251,6 +319,30 @@ Call complete_attack when done.`;
       if (chunk.type === "tool-call" && chunk.toolName === "complete_attack") {
         calledCompleteAttack = true;
       }
+      // Forward chunk for real-time UI streaming
+      if (onChunk) {
+        if (chunk.type === "text-delta") {
+          onChunk({ type: "text-delta", text: (chunk as any).text });
+        } else if (chunk.type === "tool-call") {
+          const tc = chunk as any;
+          onChunk({
+            type: "tool-call",
+            toolCallId: tc.toolCallId,
+            toolName: tc.toolName,
+            // AI SDK uses 'input' not 'args' for tool-call chunks
+            args: tc.input ?? tc.args,
+          });
+        } else if (chunk.type === "tool-result") {
+          const tr = chunk as any;
+          onChunk({
+            type: "tool-result",
+            toolCallId: tr.toolCallId,
+            toolName: tr.toolName,
+            // AI SDK uses 'output' not 'result' for tool-result chunks
+            result: tr.output ?? tr.result,
+          });
+        }
+      }
     }
 
     // Capture and save messages
@@ -258,17 +350,27 @@ Call complete_attack when done.`;
       const response = await streamResult.response;
       const messages = response.messages;
       Messages.saveSubagentPhaseMessages(rootPath, "attack", messages);
-      logToFile(logsPath, `[INFO] Saved ${messages.length} messages to attack-messages.json`);
+      logToFile(
+        logsPath,
+        `[INFO] Saved ${messages.length} messages to attack-messages.json`,
+      );
     } catch (msgError: any) {
-      logToFile(logsPath, `[WARN] Failed to save messages: ${msgError.message}`);
+      logToFile(
+        logsPath,
+        `[WARN] Failed to save messages: ${msgError.message}`,
+      );
     }
 
     const findings: Finding[] = [];
     if (existsSync(findingsPath)) {
-      const files = readdirSync(findingsPath).filter((f) => f.endsWith(".json"));
+      const files = readdirSync(findingsPath).filter((f) =>
+        f.endsWith(".json"),
+      );
       for (const file of files) {
         try {
-          const finding = JSON.parse(readFileSync(join(findingsPath, file), "utf-8"));
+          const finding = JSON.parse(
+            readFileSync(join(findingsPath, file), "utf-8"),
+          );
           findings.push(finding);
         } catch {}
       }
@@ -277,8 +379,14 @@ Call complete_attack when done.`;
     // Check if stream ended due to abort signal (timeout) vs complete_attack
     const wasAborted = abortSignal?.aborted && !calledCompleteAttack;
     if (wasAborted) {
-      logToFile(logsPath, `[WARN] Attack phase interrupted by abort signal (likely timeout)`);
-      logToFile(logsPath, `[INFO] Findings count before interruption: ${findings.length}`);
+      logToFile(
+        logsPath,
+        `[WARN] Attack phase interrupted by abort signal (likely timeout)`,
+      );
+      logToFile(
+        logsPath,
+        `[INFO] Findings count before interruption: ${findings.length}`,
+      );
       return {
         success: false,
         findings,
@@ -300,16 +408,23 @@ Call complete_attack when done.`;
 
     const findings: Finding[] = [];
     if (existsSync(findingsPath)) {
-      const files = readdirSync(findingsPath).filter((f) => f.endsWith(".json"));
+      const files = readdirSync(findingsPath).filter((f) =>
+        f.endsWith(".json"),
+      );
       for (const file of files) {
         try {
-          const finding = JSON.parse(readFileSync(join(findingsPath, file), "utf-8"));
+          const finding = JSON.parse(
+            readFileSync(join(findingsPath, file), "utf-8"),
+          );
           findings.push(finding);
         } catch {}
       }
     }
 
-    logToFile(logsPath, `[INFO] Findings count before error: ${findings.length}`);
+    logToFile(
+      logsPath,
+      `[INFO] Findings count before error: ${findings.length}`,
+    );
 
     return {
       success: false,

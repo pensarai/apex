@@ -2,7 +2,16 @@ import { join } from "path";
 import { existsSync, mkdirSync, readdirSync, readFileSync } from "fs";
 import type { AIModel } from "../../ai";
 import type { Session } from "../../session";
-import type { SubAgentConfig, SubAgentSession, InitAgentResult, AttackAgentResult, Finding, AttackPlan, VerificationCriteria, FileAccessConfig } from "./types";
+import type {
+  SubAgentConfig,
+  SubAgentSession,
+  InitAgentResult,
+  AttackAgentResult,
+  Finding,
+  AttackPlan,
+  VerificationCriteria,
+  FileAccessConfig,
+} from "./types";
 import { runInitAgent } from "./initAgent";
 import { runAttackAgent } from "./attackAgent";
 import { nanoid } from "nanoid";
@@ -24,6 +33,25 @@ export interface RunSubAgentInput {
   fileAccessConfig?: FileAccessConfig;
   onInitComplete?: (result: InitAgentResult) => void;
   onAttackComplete?: (result: AttackAgentResult) => void;
+  /** Callback for each step completion during agent execution (for streaming UI updates) */
+  onStepFinish?: (step: {
+    text?: string;
+    toolCalls?: Array<{ toolCallId: string; toolName: string; args: unknown }>;
+    toolResults?: Array<{
+      toolCallId: string;
+      toolName: string;
+      result: unknown;
+    }>;
+  }) => void;
+  /** Callback for each stream chunk (for real-time tool call display) */
+  onChunk?: (chunk: {
+    type: "text-delta" | "tool-call" | "tool-result";
+    text?: string;
+    toolCallId?: string;
+    toolName?: string;
+    args?: unknown;
+    result?: unknown;
+  }) => void;
   /** Timeout in ms for entire subagent execution (default: 10 minutes) */
   timeout?: number;
 }
@@ -36,7 +64,7 @@ export interface RunSubAgentResult {
   success: boolean;
   /** Error details if the subagent failed */
   error?: {
-    phase: 'init' | 'attack' | 'timeout' | 'unknown';
+    phase: "init" | "attack" | "timeout" | "unknown";
     message: string;
     timedOut?: boolean;
   };
@@ -44,7 +72,7 @@ export interface RunSubAgentResult {
 
 function createSubAgentSession(
   config: SubAgentConfig,
-  session: Session.SessionInfo
+  session: Session.SessionInfo,
 ): SubAgentSession {
   const subagentId = config.id || `subagent-${nanoid(6)}`;
   const rootPath = join(session.rootPath, "subagents", subagentId);
@@ -72,11 +100,22 @@ function createSubAgentSession(
   };
 }
 
-export async function runSubAgent(input: RunSubAgentInput): Promise<RunSubAgentResult> {
+export async function runSubAgent(
+  input: RunSubAgentInput,
+): Promise<RunSubAgentResult> {
   const {
-    config, session, workspace, model, abortSignal,
-    toolOverride, fileAccessConfig, onInitComplete, onAttackComplete,
-    timeout = DEFAULT_SUBAGENT_TIMEOUT
+    config,
+    session,
+    workspace,
+    model,
+    abortSignal,
+    toolOverride,
+    fileAccessConfig,
+    onInitComplete,
+    onAttackComplete,
+    onStepFinish,
+    onChunk,
+    timeout = DEFAULT_SUBAGENT_TIMEOUT,
   } = input;
 
   const subagentSession = createSubAgentSession(config, session);
@@ -94,27 +133,39 @@ export async function runSubAgent(input: RunSubAgentInput): Promise<RunSubAgentR
     // Run init phase with error handling
     let initResult: InitAgentResult;
     try {
-      initResult = await runInitAgent(subagentSession, session, model, combinedSignal, fileAccessConfig);
+      initResult = await runInitAgent(
+        subagentSession,
+        session,
+        model,
+        combinedSignal,
+        fileAccessConfig,
+        onStepFinish,
+        onChunk,
+      );
       onInitComplete?.(initResult);
     } catch (initError: any) {
       clearTimeout(timeoutId);
-      const timedOut = timeoutController.signal.aborted && !abortSignal?.aborted;
+      const timedOut =
+        timeoutController.signal.aborted && !abortSignal?.aborted;
       return {
         subagentId: subagentSession.id,
         initResult: {
           success: false,
           plan: {} as AttackPlan,
           verificationCriteria: {} as VerificationCriteria,
-          error: timedOut ? `Init timed out after ${timeout}ms` : initError.message,
+          error: timedOut
+            ? `Init timed out after ${timeout}ms`
+            : initError.message,
         },
         attackResult: {
-          success: false, findings: [],
+          success: false,
+          findings: [],
           summary: "Init phase failed with exception",
           error: initError.message,
         },
         findings: [],
         success: false,
-        error: { phase: 'init', message: initError.message, timedOut },
+        error: { phase: "init", message: initError.message, timedOut },
       };
     }
 
@@ -124,13 +175,17 @@ export async function runSubAgent(input: RunSubAgentInput): Promise<RunSubAgentR
         subagentId: subagentSession.id,
         initResult,
         attackResult: {
-          success: false, findings: [],
+          success: false,
+          findings: [],
           summary: "Init phase failed, attack not started",
           error: initResult.error,
         },
         findings: [],
         success: false,
-        error: { phase: 'init', message: initResult.error || 'Unknown init error' },
+        error: {
+          phase: "init",
+          message: initResult.error || "Unknown init error",
+        },
       };
     }
 
@@ -138,13 +193,24 @@ export async function runSubAgent(input: RunSubAgentInput): Promise<RunSubAgentR
     let attackResult: AttackAgentResult;
     try {
       attackResult = await runAttackAgent(
-        subagentSession, session, workspace, model, combinedSignal, toolOverride, fileAccessConfig
+        subagentSession,
+        session,
+        workspace,
+        model,
+        combinedSignal,
+        toolOverride,
+        fileAccessConfig,
+        onStepFinish,
+        onChunk,
       );
       onAttackComplete?.(attackResult);
     } catch (attackError: any) {
       clearTimeout(timeoutId);
-      const timedOut = timeoutController.signal.aborted && !abortSignal?.aborted;
-      const partialFindings = collectPartialFindings(subagentSession.findingsPath);
+      const timedOut =
+        timeoutController.signal.aborted && !abortSignal?.aborted;
+      const partialFindings = collectPartialFindings(
+        subagentSession.findingsPath,
+      );
       return {
         subagentId: subagentSession.id,
         initResult,
@@ -158,7 +224,7 @@ export async function runSubAgent(input: RunSubAgentInput): Promise<RunSubAgentR
         },
         findings: partialFindings,
         success: false,
-        error: { phase: 'attack', message: attackError.message, timedOut },
+        error: { phase: "attack", message: attackError.message, timedOut },
       };
     }
 
@@ -181,13 +247,14 @@ export async function runSubAgent(input: RunSubAgentInput): Promise<RunSubAgentR
         error: unexpectedError.message,
       },
       attackResult: {
-        success: false, findings: [],
+        success: false,
+        findings: [],
         summary: `Unexpected error: ${unexpectedError.message}`,
         error: unexpectedError.message,
       },
       findings: [],
       success: false,
-      error: { phase: 'unknown', message: unexpectedError.message },
+      error: { phase: "unknown", message: unexpectedError.message },
     };
   } finally {
     // Clean up guidance files after testing completes
@@ -200,10 +267,14 @@ function collectPartialFindings(findingsPath: string): Finding[] {
   const findings: Finding[] = [];
   try {
     if (existsSync(findingsPath)) {
-      const files = readdirSync(findingsPath).filter((f) => f.endsWith(".json"));
+      const files = readdirSync(findingsPath).filter((f) =>
+        f.endsWith(".json"),
+      );
       for (const file of files) {
         try {
-          const finding = JSON.parse(readFileSync(join(findingsPath, file), "utf-8"));
+          const finding = JSON.parse(
+            readFileSync(join(findingsPath, file), "utf-8"),
+          );
           findings.push(finding);
         } catch {}
       }
@@ -214,7 +285,7 @@ function collectPartialFindings(findingsPath: string): Finding[] {
 
 export async function runSubAgentsParallel(
   inputs: RunSubAgentInput[],
-  concurrencyLimit: number = 10
+  concurrencyLimit: number = 10,
 ): Promise<RunSubAgentResult[]> {
   const { default: pLimit } = await import("p-limit");
   const limit = pLimit(concurrencyLimit);
@@ -237,13 +308,17 @@ export async function runSubAgentsParallel(
         error: result.reason?.message || "Unknown error",
       },
       attackResult: {
-        success: false, findings: [],
+        success: false,
+        findings: [],
         summary: `Subagent failed: ${result.reason?.message || "Unknown error"}`,
         error: result.reason?.message || "Unknown error",
       },
       findings: [],
       success: false,
-      error: { phase: 'unknown' as const, message: result.reason?.message || "Unknown error" },
+      error: {
+        phase: "unknown" as const,
+        message: result.reason?.message || "Unknown error",
+      },
     };
   });
 }
@@ -254,7 +329,7 @@ export async function runSubAgentsParallel(
 export async function runSubAgentsParallelWithCallbacks(
   inputs: RunSubAgentInput[],
   concurrencyLimit: number = 10,
-  onComplete?: (result: RunSubAgentResult) => void
+  onComplete?: (result: RunSubAgentResult) => void,
 ): Promise<RunSubAgentResult[]> {
   const { default: pLimit } = await import("p-limit");
   const limit = pLimit(concurrencyLimit);
@@ -264,7 +339,7 @@ export async function runSubAgentsParallelWithCallbacks(
       const result = await runSubAgent(input);
       onComplete?.(result);
       return { result, index };
-    })
+    }),
   );
 
   const settledResults = await Promise.allSettled(promises);
@@ -284,13 +359,17 @@ export async function runSubAgentsParallelWithCallbacks(
           error: settled.reason?.message || "Unknown error",
         },
         attackResult: {
-          success: false, findings: [],
+          success: false,
+          findings: [],
           summary: `Subagent failed: ${settled.reason?.message}`,
           error: settled.reason?.message || "Unknown error",
         },
         findings: [],
         success: false,
-        error: { phase: 'unknown', message: settled.reason?.message || "Unknown error" },
+        error: {
+          phase: "unknown",
+          message: settled.reason?.message || "Unknown error",
+        },
       };
       onComplete?.(errorResult);
       const emptyIndex = results.findIndex((r) => r === undefined);
@@ -305,5 +384,8 @@ export * from "./types";
 export * from "./repl";
 export { runInitAgent } from "./initAgent";
 export { runAttackAgent } from "./attackAgent";
-export { buildVerificationPrompt, VERIFICATION_GUIDANCE } from "./verificationGuidance";
+export {
+  buildVerificationPrompt,
+  VERIFICATION_GUIDANCE,
+} from "./verificationGuidance";
 export type { VerificationGuidance } from "./verificationGuidance";
