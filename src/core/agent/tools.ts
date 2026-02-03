@@ -126,10 +126,18 @@ export const ATTACK_KNOWLEDGE = {
     objective: "Bypass authentication, access/modify data, or execute commands",
     techniques: [
       {
+        name: "Raw WHERE Clause Injection",
+        how: "When the entire WHERE clause or expression is user-controlled, inject complete boolean expressions",
+        context:
+          "When parameter is directly concatenated as WHERE clause (e.g., WHERE ${param}). CRITICAL: If adding ANY value to the parameter causes errors but omitting it succeeds, this pattern is likely.",
+        example:
+          "1=1 returns all rows, name LIKE '%test%' filters, 1=1 OR 1=1-- bypasses filters. For PostgreSQL use 1=1 or true (not just 1 which is not boolean).",
+      },
+      {
         name: "Boolean-based Blind",
         how: "Use boolean conditions to infer data through application behavior",
         context:
-          "When direct output isn't visible but application behavior changes",
+          "When direct output isn't visible but application behavior changes. Assumes breaking out of a string context.",
         example:
           "' OR '1'='1 makes condition always true, ' OR '1'='2 makes it false",
       },
@@ -1185,21 +1193,28 @@ Check ALL locations where tokens might be stored/transmitted!
     vulnerabilityTypes: {
       unauthenticated_encryption: {
         name: "Unauthenticated Encryption",
-        description: "Encryption without MAC/HMAC allows ciphertext modification",
+        description:
+          "Encryption without MAC/HMAC allows ciphertext modification",
         impact: "Attacker can modify encrypted data without detection",
-        detection: "Modify ciphertext bytes, observe if server processes modified data",
-        exploitation: "Calculate XOR differences to flip specific plaintext bytes",
+        detection:
+          "Modify ciphertext bytes, observe if server processes modified data",
+        exploitation:
+          "Calculate XOR differences to flip specific plaintext bytes",
       },
       cbc_bit_flipping: {
         name: "CBC Bit-Flipping Attack",
-        description: "Modifying ciphertext block N changes decrypted plaintext of block N+1",
+        description:
+          "Modifying ciphertext block N changes decrypted plaintext of block N+1",
         impact: "Forge session tokens, modify encrypted parameters",
-        prerequisite: "Know or guess part of the plaintext, tolerate block corruption",
-        formula: "new_IV[i] = old_IV[i] XOR known_plaintext[i] XOR desired_plaintext[i]",
+        prerequisite:
+          "Know or guess part of the plaintext, tolerate block corruption",
+        formula:
+          "new_IV[i] = old_IV[i] XOR known_plaintext[i] XOR desired_plaintext[i]",
       },
       ecb_mode: {
         name: "ECB Mode Vulnerabilities",
-        description: "Same plaintext block always produces same ciphertext block",
+        description:
+          "Same plaintext block always produces same ciphertext block",
         impact: "Pattern detection, block reordering, cut-and-paste attacks",
         detection: "Look for repeating 16-byte patterns in ciphertext",
       },
@@ -1207,7 +1222,8 @@ Check ALL locations where tokens might be stored/transmitted!
         name: "Padding Oracle Attack",
         description: "Application leaks whether PKCS#7 padding is valid",
         impact: "Decrypt entire ciphertext byte-by-byte",
-        detection: "Different error responses for invalid padding vs invalid data",
+        detection:
+          "Different error responses for invalid padding vs invalid data",
       },
       weak_algorithms: {
         name: "Weak Cryptographic Algorithms",
@@ -1239,7 +1255,8 @@ Check ALL locations where tokens might be stored/transmitted!
           "4. Apply XOR to corresponding position in previous block/IV",
           "5. Note: modified block becomes corrupted, next block changes",
         ],
-        example: "Change 'user' to 'root' by XORing IV with ('u'^'r', 's'^'o', 'e'^'o', 'r'^'t')",
+        example:
+          "Change 'user' to 'root' by XORing IV with ('u'^'r', 's'^'o', 'e'^'o', 'r'^'t')",
       },
       {
         name: "Padding Oracle Detection",
@@ -1351,7 +1368,12 @@ export const HttpRequestInput = z.object({
     }, z.record(z.string(), z.string()).optional())
     .describe("HTTP headers as key-value pairs (object or JSON string)"),
   body: z.string().optional().describe("Request body (for POST, PUT, PATCH)"),
-  followRedirects: z.boolean().default(false).describe("Whether to follow HTTP redirects (3xx). Defaults to false so you can see redirect responses with Location and Set-Cookie headers. Set to true to automatically follow redirects."),
+  followRedirects: z
+    .boolean()
+    .default(false)
+    .describe(
+      "Whether to follow HTTP redirects (3xx). Defaults to false so you can see redirect responses with Location and Set-Cookie headers. Set to true to automatically follow redirects."
+    ),
   timeout: z.number().default(10000),
   toolCallDescription: z
     .string()
@@ -1501,9 +1523,7 @@ const payloadMutations = {
   // Path normalization tricks
   path_normalization: (payload: string): string => {
     // Double dots with extra components that normalize away
-    return payload
-      .replace(/\.\.\//g, "....//")
-      .replace(/\.\.\\/g, "....\\\\");
+    return payload.replace(/\.\.\//g, "....//").replace(/\.\.\\/g, "....\\\\");
   },
 
   // Backslash variants (Windows paths)
@@ -1572,14 +1592,12 @@ const mutationDescriptions: Record<string, string> = {
     "Null byte suffix - truncates strings in C-based functions (legacy)",
   path_normalization:
     "Path normalization tricks (..../) - bypasses simple ../ removal",
-  backslash:
-    "Backslash path separators - for Windows or mixed-OS environments",
+  backslash: "Backslash path separators - for Windows or mixed-OS environments",
   double_slash: "Double slash injection - may bypass path canonicalization",
 };
 
 function createMutatePayloadTool() {
   return tool({
-    name: "mutate_payload",
     description: `Generate encoded/obfuscated variants of a payload to bypass security filters.
 
 USE THIS TOOL WHEN:
@@ -1620,10 +1638,12 @@ EXAMPLE:
       context = "general",
     }): Promise<MutatePayloadResult> => {
       const typesToApply =
-        mutationTypes || (Object.keys(payloadMutations) as Array<keyof typeof payloadMutations>);
+        mutationTypes ||
+        (Object.keys(payloadMutations) as Array<keyof typeof payloadMutations>);
 
       const mutations = typesToApply.map((type) => {
-        const mutationFn = payloadMutations[type as keyof typeof payloadMutations];
+        const mutationFn =
+          payloadMutations[type as keyof typeof payloadMutations];
         if (!mutationFn) {
           return {
             type,
@@ -1638,7 +1658,8 @@ EXAMPLE:
         };
       });
 
-      const recommendedOrder = contextPriorities[context] || contextPriorities.general;
+      const recommendedOrder =
+        contextPriorities[context] || contextPriorities.general;
 
       return {
         success: true,
@@ -1654,7 +1675,9 @@ EXAMPLE:
 
 // Smart Enumerate Tool - AI-powered endpoint enumeration using feroxagent
 export const SmartEnumerateInput = z.object({
-  url: z.string().describe("The target URL to enumerate (e.g., http://localhost:80)"),
+  url: z
+    .string()
+    .describe("The target URL to enumerate (e.g., http://localhost:80)"),
   depth: z
     .number()
     .optional()
@@ -1713,7 +1736,6 @@ function createSmartEnumerateTool(
   executeCommand?: (opts: ExecuteCommandOpts) => Promise<ExecuteCommandResult>
 ) {
   return tool({
-    name: "smart_enumerate",
     description: `AI-powered endpoint enumeration using feroxagent.
 
 USE THIS TOOL WHEN:
@@ -1798,7 +1820,8 @@ recommendations for further testing based on the technology stack.`,
             recommendations: [],
             totalDiscovered: 0,
             scanDuration,
-            error: result.error || result.stderr || "feroxagent execution failed",
+            error:
+              result.error || result.stderr || "feroxagent execution failed",
           };
         }
 
@@ -1824,7 +1847,8 @@ recommendations for further testing based on the technology stack.`,
                   url: parsed.url,
                   method: parsed.method || "GET",
                   status: parsed.status,
-                  contentLength: parsed.content_length || parsed.contentLength || 0,
+                  contentLength:
+                    parsed.content_length || parsed.contentLength || 0,
                   contentType: parsed.content_type || parsed.contentType,
                   redirectLocation: parsed.redirect_location || parsed.location,
                 });
@@ -1940,7 +1964,8 @@ const CVELookupInput = z.object({
     .string()
     .describe(
       "A concise, human-readable description of what this tool call is doing"
-    ).optional(),
+    )
+    .optional(),
 });
 
 export interface CVETemplate {
@@ -1985,7 +2010,6 @@ export function createCVELookupTool() {
   const cache = getKnowledgeCache();
 
   return tool({
-    name: "cve_lookup",
     description: `Search for known CVEs and exploit templates from the Nuclei template database.
 
 USE THIS TOOL WHEN:
@@ -2027,7 +2051,9 @@ Results are cached to disk (24h TTL) for faster subsequent lookups.`,
       useCache = true,
     }): Promise<CVELookupResult> => {
       // Generate cache key
-      const cacheKey = CacheKeys.cveTemplates(`${query}_${techFilter || ''}_${templateType}`);
+      const cacheKey = CacheKeys.cveTemplates(
+        `${query}_${techFilter || ""}_${templateType}`
+      );
 
       // Check cache first
       if (useCache) {
@@ -2107,7 +2133,10 @@ Results are cached to disk (24h TTL) for faster subsequent lookups.`,
         }
 
         const searchData = (await searchResponse.json()) as Record<string, any>;
-        const searchResults = (searchData.results || searchData.data || searchData.templates || []) as any[];
+        const searchResults = (searchData.results ||
+          searchData.data ||
+          searchData.templates ||
+          []) as any[];
 
         if (searchResults.length === 0) {
           const result: CVELookupResult = {
@@ -2121,7 +2150,7 @@ Results are cached to disk (24h TTL) for faster subsequent lookups.`,
           };
           // Cache empty results too (to avoid repeated API calls)
           if (useCache) {
-            cache.set(cacheKey, result, { source: 'nuclei-api' });
+            cache.set(cacheKey, result, { source: "nuclei-api" });
           }
           return result;
         }
@@ -2129,7 +2158,8 @@ Results are cached to disk (24h TTL) for faster subsequent lookups.`,
         // Build template objects from search results
         const templates: CVETemplate[] = [];
         const detectedTechsSet = new Set<string>();
-        const GITHUB_RAW_BASE = "https://raw.githubusercontent.com/projectdiscovery/nuclei-templates/main";
+        const GITHUB_RAW_BASE =
+          "https://raw.githubusercontent.com/projectdiscovery/nuclei-templates/main";
 
         for (const result of searchResults.slice(0, limit)) {
           const templateObj: CVETemplate = {
@@ -2142,8 +2172,24 @@ Results are cached to disk (24h TTL) for faster subsequent lookups.`,
 
           // Extract technology tags
           if (result.tags && Array.isArray(result.tags)) {
-            const techTags = ['wordpress', 'express', 'django', 'graphql', 'jwt', 'nginx', 'apache',
-              'tomcat', 'spring', 'laravel', 'rails', 'flask', 'nodejs', 'php', 'java', 'python'];
+            const techTags = [
+              "wordpress",
+              "express",
+              "django",
+              "graphql",
+              "jwt",
+              "nginx",
+              "apache",
+              "tomcat",
+              "spring",
+              "laravel",
+              "rails",
+              "flask",
+              "nodejs",
+              "php",
+              "java",
+              "python",
+            ];
             for (const tag of result.tags) {
               if (techTags.includes(tag.toLowerCase())) {
                 detectedTechsSet.add(tag.toLowerCase());
@@ -2155,7 +2201,11 @@ Results are cached to disk (24h TTL) for faster subsequent lookups.`,
           if (result.raw) {
             templateObj.template_content = result.raw;
           } else {
-            const templatePath = result.uri || (result.dir && result.filename ? `${result.dir}/${result.filename}` : null);
+            const templatePath =
+              result.uri ||
+              (result.dir && result.filename
+                ? `${result.dir}/${result.filename}`
+                : null);
             if (templatePath) {
               try {
                 const githubUrl = `${GITHUB_RAW_BASE}/${templatePath}`;
@@ -2185,7 +2235,7 @@ Results are cached to disk (24h TTL) for faster subsequent lookups.`,
 
         // Cache the result
         if (useCache) {
-          cache.set(cacheKey, result, { source: 'nuclei-api' });
+          cache.set(cacheKey, result, { source: "nuclei-api" });
         }
 
         return result;
@@ -2209,15 +2259,22 @@ Results are cached to disk (24h TTL) for faster subsequent lookups.`,
  */
 function deriveVulnTypeFromTitle(title: string): string {
   const lower = title.toLowerCase();
-  if (lower.includes('sql') || lower.includes('injection')) return 'sqli';
-  if (lower.includes('xss') || lower.includes('cross-site scripting')) return 'xss';
-  if (lower.includes('idor') || lower.includes('insecure direct')) return 'idor';
-  if (lower.includes('command') || lower.includes('rce')) return 'rce';
-  if (lower.includes('ssrf')) return 'ssrf';
-  if (lower.includes('lfi') || lower.includes('path traversal') || lower.includes('local file')) return 'lfi';
-  if (lower.includes('auth') || lower.includes('bypass')) return 'auth_bypass';
-  if (lower.includes('ssti') || lower.includes('template')) return 'ssti';
-  return 'vuln';
+  if (lower.includes("sql") || lower.includes("injection")) return "sqli";
+  if (lower.includes("xss") || lower.includes("cross-site scripting"))
+    return "xss";
+  if (lower.includes("idor") || lower.includes("insecure direct"))
+    return "idor";
+  if (lower.includes("command") || lower.includes("rce")) return "rce";
+  if (lower.includes("ssrf")) return "ssrf";
+  if (
+    lower.includes("lfi") ||
+    lower.includes("path traversal") ||
+    lower.includes("local file")
+  )
+    return "lfi";
+  if (lower.includes("auth") || lower.includes("bypass")) return "auth_bypass";
+  if (lower.includes("ssti") || lower.includes("template")) return "ssti";
+  return "vuln";
 }
 
 /**
@@ -2227,7 +2284,6 @@ function deriveVulnTypeFromTitle(title: string): string {
  */
 function createDocumentFindingTool(session: Session.SessionInfo) {
   return tool({
-    name: "document_finding",
     description: `Document a security finding with severity, impact, and remediation guidance.
 
 SEVERITY LEVELS:
@@ -2334,7 +2390,7 @@ ${finding.references ? `## References\n\n${finding.references}` : ""}
           finding: {
             ...findingWithMeta,
             type: deriveVulnTypeFromTitle(finding.title), // Derive type for sidebar display
-            endpoint: findingWithMeta.target || '', // Ensure endpoint exists for sidebar
+            endpoint: findingWithMeta.target || "", // Ensure endpoint exists for sidebar
           },
           filepath,
           message: `Finding documented: [${finding.severity}] ${finding.title}`,
@@ -2355,7 +2411,6 @@ ${finding.references ? `## References\n\n${finding.references}` : ""}
  */
 function createScratchpadTool(session: Session.SessionInfo) {
   return tool({
-    name: "scratchpad",
     description: `Write notes, observations, or temporary data to the scratchpad during testing.
 
 Use this to:
@@ -2411,7 +2466,6 @@ The scratchpad is session-specific and helps maintain context during long assess
  * Port scan analyzer - Interpret nmap results
  */
 export const analyzeScan = tool({
-  name: "analyze_scan",
   description: `Analyze scan results and suggest next steps for penetration testing.
 
 This tool helps interpret findings from:
@@ -2503,7 +2557,6 @@ Provides guidance on:
  */
 function createGenerateReportTool(session: Session.SessionInfo) {
   return tool({
-    name: "generate_report",
     description: `Generate a comprehensive penetration testing report for the session.
 
 This tool creates a detailed report including:
@@ -2969,7 +3022,6 @@ async function recordTestResultCore(
  */
 function createRecordTestResultTool(session: Session.SessionInfo) {
   return tool({
-    name: "record_test_result",
     description: `Record the result of a security test, including tests that did NOT find vulnerabilities.
 
 This tool is critical for:
@@ -3262,7 +3314,6 @@ function createSmartTestTool(
   onTokenUsage?: OnTokenUsage
 ) {
   return tool({
-    name: "test_parameter",
     description: `Intelligently test a parameter for a vulnerability using AI-powered adaptive testing.
 
 This tool uses AI to:
@@ -3491,7 +3542,6 @@ test_parameter({
 
 function getAttackSurfaceAgent() {
   return tool({
-    name: "get_attack_surface",
     description:
       "Get the attack surface of a target. Returns guidance on how to proceed with attack surface discovery.",
     inputSchema: z.object({
@@ -3525,7 +3575,6 @@ function getAttackSurfaceAgent() {
 
 function createCheckTestingCoverageTool(session: Session.SessionInfo) {
   return tool({
-    name: "check_testing_coverage",
     description: `Analyze testing coverage to understand what has been tested and identify gaps.
 
 This tool reads all recorded test results and provides:
@@ -3732,7 +3781,6 @@ Use this when:
  */
 function createValidateCompletenessTool(session: Session.SessionInfo) {
   return tool({
-    name: "validate_completeness",
     description: `Validate that you've completed a thorough, professional assessment before generating final report.
 
 This tool checks:
@@ -3909,7 +3957,6 @@ This is the difference between amateur and professional pentesting.`,
  */
 function createEnumerateEndpointsTool(session: Session.SessionInfo) {
   return tool({
-    name: "enumerate_endpoints",
     description: `Quickly enumerate endpoints using pattern-based discovery.
 
 Use this when:
@@ -4154,7 +4201,6 @@ export function createPentestTools(
   const offensiveHeaders = Session.getOffensiveHeaders(session);
 
   const fuzzEndpoint = tool({
-    name: "fuzz_endpoint",
     description:
       "Fuzz an endpoint with values between a given range to test for IDOR vulnerabilities. Only try to fuzz at most 50 values with each call of this tool.",
     inputSchema: z.object({
@@ -4237,7 +4283,6 @@ export function createPentestTools(
   const rateLimiter = session._rateLimiter;
 
   const executeCommand = tool({
-    name: "execute_command",
     description: `Execute a shell command for penetration testing activities.
 
 COMMON COMMANDS FOR BLACK BOX TESTING:
@@ -4284,8 +4329,9 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
     ) => {
       // Extract emitLog callback from context (injected by operatorAgent wrapper)
       // Only stream logs in operator mode (human-in-the-loop)
-      const emitLog: ((line: string) => void) | undefined =
-        operatorMode ? context?.emitLog : undefined;
+      const emitLog: ((line: string) => void) | undefined = operatorMode
+        ? context?.emitLog
+        : undefined;
 
       // Wrap command with User-Agent headers if offensive headers are configured
       const finalCommand = offensiveHeaders
@@ -4355,15 +4401,18 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
               success: code === 0 && !killed,
               stdout:
                 stdout.length > 50000
-                  ? `${stdout.substring(0, 50000)}...\n\n(truncated) call the command again with grep / tail to paginate`
+                  ? `${stdout.substring(
+                      0,
+                      50000
+                    )}...\n\n(truncated) call the command again with grep / tail to paginate`
                   : stdout || "(no output)",
               stderr: stderr || "",
               command: finalCommand,
               error: killed
                 ? "Command timed out"
                 : code !== 0
-                  ? `Exit code: ${code}`
-                  : "",
+                ? `Exit code: ${code}`
+                : "",
             });
           });
 
@@ -4475,7 +4524,6 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
 
   // Define httpRequest tool with override support
   const httpRequest = tool({
-    name: "http_request",
     description: `Make HTTP requests with detailed response analysis for web application testing.
 
 USAGE GUIDANCE:
@@ -4588,7 +4636,7 @@ COMMON TESTING PATTERNS:
         if (timeoutId) clearTimeout(timeoutId);
 
         // Distinguish between user abort and timeout
-        if (error.name === 'AbortError') {
+        if (error.name === "AbortError") {
           const errorMsg = abortSignal?.aborted
             ? "Request aborted by user"
             : `Request timeout after ${timeout}ms`;
@@ -4622,7 +4670,6 @@ COMMON TESTING PATTERNS:
 
   // Sidebar-updating tools for operator mode
   const updateAttackSurface = tool({
-    name: "update_attack_surface",
     description: `Record discovered endpoints to the attack surface panel in the operator sidebar.
 
 Call this when you discover new endpoints through:
@@ -4633,12 +4680,24 @@ Call this when you discover new endpoints through:
 
 This helps the operator visualize the attack surface as testing progresses.`,
     inputSchema: z.object({
-      endpoints: z.array(z.object({
-        path: z.string().describe("The endpoint path (e.g., /api/users)"),
-        method: z.string().describe("HTTP method (GET, POST, PUT, DELETE, etc.)"),
-        category: z.string().optional().describe("Category: auth, api, admin, static, etc."),
-        params: z.array(z.string()).optional().describe("Parameter names found at this endpoint"),
-      })).describe("Array of discovered endpoints"),
+      endpoints: z
+        .array(
+          z.object({
+            path: z.string().describe("The endpoint path (e.g., /api/users)"),
+            method: z
+              .string()
+              .describe("HTTP method (GET, POST, PUT, DELETE, etc.)"),
+            category: z
+              .string()
+              .optional()
+              .describe("Category: auth, api, admin, static, etc."),
+            params: z
+              .array(z.string())
+              .optional()
+              .describe("Parameter names found at this endpoint"),
+          })
+        )
+        .describe("Array of discovered endpoints"),
       toolCallDescription: z.string().optional(),
     }),
     execute: async ({ endpoints }) => {
@@ -4659,7 +4718,6 @@ This helps the operator visualize the attack surface as testing progresses.`,
   });
 
   const recordCredential = tool({
-    name: "record_credential",
     description: `Record a discovered credential to the credentials panel in the operator sidebar.
 
 Call this when you find:
@@ -4669,10 +4727,24 @@ Call this when you find:
 - Session cookies worth tracking`,
     inputSchema: z.object({
       username: z.string().describe("Username or identifier"),
-      secret: z.string().describe("The credential value (will be partially redacted in display)"),
-      type: z.enum(["password", "cookie", "jwt", "ssh_key", "api_key"]).describe("Type of credential"),
-      source: z.string().describe("Where this was found (e.g., 'wp-config.php', 'login response')"),
-      scope: z.string().describe("Where this credential works (e.g., 'HTTP basic auth', 'MySQL', 'SSH')"),
+      secret: z
+        .string()
+        .describe(
+          "The credential value (will be partially redacted in display)"
+        ),
+      type: z
+        .enum(["password", "cookie", "jwt", "ssh_key", "api_key"])
+        .describe("Type of credential"),
+      source: z
+        .string()
+        .describe(
+          "Where this was found (e.g., 'wp-config.php', 'login response')"
+        ),
+      scope: z
+        .string()
+        .describe(
+          "Where this credential works (e.g., 'HTTP basic auth', 'MySQL', 'SSH')"
+        ),
       toolCallDescription: z.string().optional(),
     }),
     execute: async ({ username, secret, type, source, scope }) => {
@@ -4694,7 +4766,6 @@ Call this when you find:
   });
 
   const updateEndpointStatus = tool({
-    name: "update_endpoint_status",
     description: `Update the status of a previously discovered endpoint after testing.
 
 Status markers:
@@ -4705,8 +4776,19 @@ Status markers:
 - blocked: Testing blocked by WAF/protection`,
     inputSchema: z.object({
       endpointId: z.string().describe("The endpoint ID to update"),
-      status: z.enum(["untested", "suspicious", "confirmed", "clean", "blocked"]),
-      vulnType: z.string().optional().describe("If confirmed, the vulnerability type (e.g., SQLi, XSS, IDOR)"),
+      status: z.enum([
+        "untested",
+        "suspicious",
+        "confirmed",
+        "clean",
+        "blocked",
+      ]),
+      vulnType: z
+        .string()
+        .optional()
+        .describe(
+          "If confirmed, the vulnerability type (e.g., SQLi, XSS, IDOR)"
+        ),
       toolCallDescription: z.string().optional(),
     }),
     execute: async ({ endpointId, status, vulnType }) => {
@@ -4715,13 +4797,14 @@ Status markers:
         endpointId,
         status,
         vulnType,
-        message: `Updated endpoint ${endpointId} status to ${status}${vulnType ? ` (${vulnType})` : ''}`,
+        message: `Updated endpoint ${endpointId} status to ${status}${
+          vulnType ? ` (${vulnType})` : ""
+        }`,
       };
     },
   });
 
   const recordVerifiedFinding = tool({
-    name: "record_verified_finding",
     description: `Record a verified vulnerability finding to the sidebar panel.
 
 Use this after you have:
@@ -4731,7 +4814,11 @@ Use this after you have:
 
 This is separate from document_finding - this updates the live sidebar display.`,
     inputSchema: z.object({
-      type: z.string().describe("Vulnerability type (e.g., sqli, idor, xss, rce, auth_bypass)"),
+      type: z
+        .string()
+        .describe(
+          "Vulnerability type (e.g., sqli, idor, xss, rce, auth_bypass)"
+        ),
       endpoint: z.string().describe("Affected endpoint"),
       severity: z.enum(["critical", "high", "medium", "low", "info"]),
       summary: z.string().describe("Brief description of the finding"),
@@ -4757,7 +4844,6 @@ This is separate from document_finding - this updates the live sidebar display.`
 
   // Tool to check background task status
   const checkTaskStatus = tool({
-    name: "check_task_status",
     description: `Check the status of a background task.
 
 Returns the current status, logs, and result (if completed) of a command started with background: true.
@@ -4776,7 +4862,9 @@ Example flow:
 3. Later: check_task_status({ taskId: "task_123..." })
    -> Returns { status: "completed", result: { stdout: "..." } }`,
     inputSchema: z.object({
-      taskId: z.string().describe("The task ID returned when starting a background command"),
+      taskId: z
+        .string()
+        .describe("The task ID returned when starting a background command"),
       toolCallDescription: z.string().optional(),
     }),
     execute: async ({ taskId }) => {
@@ -4807,7 +4895,6 @@ Example flow:
 
   // Tool to list all running background tasks
   const listRunningTasks = tool({
-    name: "list_running_tasks",
     description: "List all currently running or pending background tasks.",
     inputSchema: z.object({
       toolCallDescription: z.string().optional(),

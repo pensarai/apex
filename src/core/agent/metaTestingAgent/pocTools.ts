@@ -109,9 +109,12 @@ Max ${MAX_POC_ATTEMPTS} attempts per approach before pivoting.`,
           mkdirSync(pocsPath, { recursive: true });
         }
 
-        const extension = poc.pocType === "bash" ? ".sh"
-          : poc.pocType === "python" ? ".py"
-          : ".js";
+        const extension =
+          poc.pocType === "bash"
+            ? ".sh"
+            : poc.pocType === "python"
+            ? ".py"
+            : ".js";
         const sanitizedName = sanitizeFilename(poc.pocName);
         const filename = `poc_${sanitizedName}${extension}`;
         const pocPath = join(pocsPath, filename);
@@ -211,8 +214,10 @@ set -e  # Exit on error
           } else {
             // Local execution
             const execCommand =
-              poc.pocType === "bash" ? pocPath
-                : poc.pocType === "python" ? `python3 ${pocPath}`
+              poc.pocType === "bash"
+                ? pocPath
+                : poc.pocType === "python"
+                ? `python3 ${pocPath}`
                 : `node ${pocPath}`;
 
             const result = await execAsync(execCommand, {
@@ -258,13 +263,12 @@ Remember to update your confidence based on this result:
 VALIDATION: Outcome: [yes/no + evidence] | Confidence: BEFORE [X%] → AFTER [Y%]`,
           };
         } catch (execError: any) {
-          // Execution failed - delete the POC file
-          logger.info(`POC execution failed, deleting: ${filename}`);
-          try {
-            unlinkSync(pocPath);
-          } catch (e) {
-            // Ignore deletion errors
-          }
+          // Execution failed - but KEEP the POC file for:
+          // 1. Manual execution/verification later
+          // 2. Documentation purposes (the POC content is valid, target may just be down)
+          // 3. Reference in document_finding if evidence was gathered earlier
+          logger.info(`POC execution failed but keeping file: ${filename}`);
+          pocPaths.push(relativePocPath);
 
           exitCode = execError.code || 1;
           stdout = execError.stdout || "";
@@ -272,8 +276,27 @@ VALIDATION: Outcome: [yes/no + evidence] | Confidence: BEFORE [X%] → AFTER [Y%
 
           const attemptsRemaining = MAX_POC_ATTEMPTS - currentAttempts;
 
+          // Check if this looks like a service unavailability issue
+          const outputLower = (stdout + stderr).toLowerCase();
+          const isServiceDown =
+            stdout.includes("Service unavailable") ||
+            stdout.includes("Connection refused") ||
+            stderr.includes("ECONNREFUSED") ||
+            stderr.includes("service unavailable") ||
+            outputLower.includes("connection refused") ||
+            outputLower.includes("econnrefused") ||
+            outputLower.includes("service unavailable") ||
+            outputLower.includes("connect etimedout") ||
+            outputLower.includes("socket hang up") ||
+            outputLower.includes("ehostunreach") ||
+            outputLower.includes("network is unreachable") ||
+            outputLower.includes("no route to host") ||
+            outputLower.includes("connection reset") ||
+            outputLower.includes("econnreset");
+
           return {
             success: false,
+            pocPath: relativePocPath, // Include path even on failure - file still exists
             error: execError.message,
             execution: {
               success: false,
@@ -285,6 +308,12 @@ VALIDATION: Outcome: [yes/no + evidence] | Confidence: BEFORE [X%] → AFTER [Y%
 
 **Error:** ${execError.message}
 
+**POC file saved at:** ${relativePocPath}
+${
+  isServiceDown
+    ? "\n**NOTE:** Target service appears to be down/unavailable. POC may be valid but cannot be verified right now.\n"
+    : ""
+}
 STDOUT:
 \`\`\`
 ${stdout || "(none)"}
@@ -296,7 +325,12 @@ ${stderr}
 \`\`\`
 
 ${
-  attemptsRemaining > 0
+  isServiceDown
+    ? `**Service Unavailable - Options:**
+- If you have strong evidence from EARLIER testing that confirms the vulnerability, you CAN call document_finding with pocPath: "${relativePocPath}"
+- Otherwise, wait for service recovery or move to next target
+- The POC file has been saved and can be manually verified later`
+    : attemptsRemaining > 0
     ? `**Next Steps:**
 - Analyze the error and create an improved POC
 - Consider: syntax errors, missing dependencies, wrong assumptions
@@ -466,12 +500,14 @@ Continue testing for OTHER vulnerabilities at different endpoints.`,
           timestamp,
           sessionId: session.id,
           target,
-          ...(cvssData && { cvss: {
-            score: cvssData.score,
-            severity: cvssData.severity,
-            vectorString: cvssData.vectorString,
-            reasoning: cvssData.reasoning
-          } }),
+          ...(cvssData && {
+            cvss: {
+              score: cvssData.score,
+              severity: cvssData.severity,
+              vectorString: cvssData.vectorString,
+              reasoning: cvssData.reasoning,
+            },
+          }),
         };
 
         const safeTitle = sanitizeFilename(finding.title);

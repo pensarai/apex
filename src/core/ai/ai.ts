@@ -1,11 +1,12 @@
-import { createAnthropic } from '@ai-sdk/anthropic';
-import type { AnthropicMessagesModelId } from '@ai-sdk/anthropic/internal';
-import { createOpenAI } from '@ai-sdk/openai';
-import type { OpenAIChatModelId } from '@ai-sdk/openai/internal';
-import { createOpenRouter } from '@openrouter/ai-sdk-provider';
-import { createAmazonBedrock } from '@ai-sdk/amazon-bedrock';
+import { createAnthropic } from "@ai-sdk/anthropic";
+import type { AnthropicMessagesModelId } from "@ai-sdk/anthropic/internal";
+import { createOpenAI } from "@ai-sdk/openai";
+import type { OpenAIChatModelId } from "@ai-sdk/openai/internal";
+import { createOpenRouter } from "@openrouter/ai-sdk-provider";
+import { createAmazonBedrock } from "@ai-sdk/amazon-bedrock";
 import {
-  generateObject,
+  generateText,
+  Output,
   streamText,
   type LanguageModel,
   type ModelMessage,
@@ -17,24 +18,24 @@ import {
   type ToolCallRepairFunction,
   type ToolChoice,
   type ToolSet,
-} from 'ai';
-import { z } from 'zod';
+} from "ai";
+import { z } from "zod";
 import {
   checkIfContextLengthError,
   createSummarizationStream,
   getProviderModel,
   summarizeConversation,
   type AIAuthConfig,
-} from './utils';
+} from "./utils";
 
 export type AIModel = AnthropicMessagesModelId | OpenAIChatModelId | string; // For OpenRouter and Bedrock models
 
 export type AIModelProvider =
-  | 'anthropic'
-  | 'openai'
-  | 'openrouter'
-  | 'bedrock'
-  | 'local';
+  | "anthropic"
+  | "openai"
+  | "openrouter"
+  | "bedrock"
+  | "local";
 
 // Helper function to wrap a stream with error handling for async errors
 function wrapStreamWithErrorHandler(
@@ -50,13 +51,13 @@ function wrapStreamWithErrorHandler(
   const handler = {
     get(target: any, prop: string) {
       // Intercept access to fullStream
-      if (prop === 'fullStream') {
+      if (prop === "fullStream") {
         if (!wrappedStream) {
           wrappedStream = (async function* () {
             try {
               for await (const chunk of originalStream.fullStream) {
                 // Check if this chunk contains an error
-                if (chunk.type === 'error' || (chunk as any).error) {
+                if (chunk.type === "error" || (chunk as any).error) {
                   const error = (chunk as any).error || chunk;
                   throw error;
                 }
@@ -98,7 +99,7 @@ function wrapStreamWithErrorHandler(
               } else {
                 if (!silent) {
                   console.error(
-                    'Non-context length error, re-throwing',
+                    "Non-context length error, re-throwing",
                     error.message
                   );
                 }
@@ -185,8 +186,8 @@ export function streamResponse(
       },
       onError: async ({ error }: { error: any }) => {
         if (
-          error.message.toLowerCase().includes('too many tokens') ||
-          error.message.toLowerCase().includes('overloaded')
+          error.message.toLowerCase().includes("too many tokens") ||
+          error.message.toLowerCase().includes("overloaded")
         ) {
           rateLimitRetryCount++;
           await new Promise((resolve) =>
@@ -209,14 +210,18 @@ export function streamResponse(
       }) => {
         try {
           if (!silent) {
-            console.log(
-              `🔧 Repairing tool call: ${toolCall.toolName}`
-            );
+            console.log(`🔧 Repairing tool call: ${toolCall.toolName}`);
             console.log(`   Error: ${error.message || error}`);
 
             // Log specific details for common enum errors
-            if (error.message && (error.message.includes('severity') || error.message.includes('riskLevel'))) {
-              console.log(`   Note: This appears to be an enum validation error. Tool call repair will normalize the value.`);
+            if (
+              error.message &&
+              (error.message.includes("severity") ||
+                error.message.includes("riskLevel"))
+            ) {
+              console.log(
+                `   Note: This appears to be an enum validation error. Tool call repair will normalize the value.`
+              );
             }
           }
 
@@ -231,34 +236,37 @@ export function streamResponse(
           // Get JSONSchema7 for display purposes
           const jsonSchema = inputSchema({ toolName: toolCall.toolName });
 
-          const { object: repairedArgs, usage: repairUsage } = await generateObject({
-            model: providerModel,
-            schema: tool.inputSchema, // Use the actual Zod schema from the tool
-            prompt: [
-              `The model tried to call the tool "${toolCall.toolName}"` +
-                ` with the following inputs:`,
-              toolCall.input,
-              `The tool accepts the following schema:`,
-              JSON.stringify(jsonSchema),
-              `Error encountered: ${error}`,
-              'Please fix the inputs to match the schema.',
-               "",
-              "IMPORTANT: For enum fields like 'severity' or 'riskLevel', use ONLY the exact values from the enum (e.g., 'HIGH', 'CRITICAL', 'MEDIUM', 'LOW').",
-              "Do not add prefixes, suffixes, or formatting characters like '>', '-', '!', etc.",
-            ].join('\n'),
-          });
+          const { output: repairedArgs, usage: repairUsage } =
+            await generateText({
+              model: providerModel,
+              output: Output.object({
+                schema: tool.inputSchema, // Use the actual Zod schema from the tool
+              }),
+              prompt: [
+                `The model tried to call the tool "${toolCall.toolName}"` +
+                  ` with the following inputs:`,
+                toolCall.input,
+                `The tool accepts the following schema:`,
+                JSON.stringify(jsonSchema),
+                `Error encountered: ${error}`,
+                "Please fix the inputs to match the schema.",
+                "",
+                "IMPORTANT: For enum fields like 'severity' or 'riskLevel', use ONLY the exact values from the enum (e.g., 'HIGH', 'CRITICAL', 'MEDIUM', 'LOW').",
+                "Do not add prefixes, suffixes, or formatting characters like '>', '-', '!', etc.",
+              ].join("\n"),
+            });
 
           // Report tool repair token usage if onStepFinish callback is provided
           if (onStepFinish && repairUsage) {
             onStepFinish({
-              text: '',
+              text: "",
               reasoning: undefined,
               reasoningDetails: [],
               files: [],
               sources: [],
               toolCalls: [],
               toolResults: [],
-              finishReason: 'stop',
+              finishReason: "stop",
               usage: {
                 inputTokens: repairUsage.inputTokens ?? 0,
                 outputTokens: repairUsage.outputTokens ?? 0,
@@ -267,12 +275,12 @@ export function streamResponse(
               warnings: [],
               request: {},
               response: {
-                id: 'tool-repair',
+                id: "tool-repair",
                 timestamp: new Date(),
-                modelId: '',
+                modelId: "",
               },
               providerMetadata: undefined,
-              stepType: 'initial',
+              stepType: "initial",
               isContinued: false,
             } as any);
           }
@@ -281,7 +289,7 @@ export function streamResponse(
           return { ...toolCall, input: JSON.stringify(repairedArgs) };
         } catch (repairError: any) {
           if (!silent) {
-            console.error('Error repairing tool call:', repairError.message);
+            console.error("Error repairing tool call:", repairError.message);
           }
           throw repairError;
         }
@@ -316,7 +324,7 @@ export function streamResponse(
       );
     }
     if (!silent) {
-      console.error('Non-context length error, re-throwing', error.message);
+      console.error("Non-context length error, re-throwing", error.message);
     }
 
     // Re-throw if it's not a context length error
@@ -338,17 +346,27 @@ export interface GenerateObjectOpts<T extends z.ZodType> {
 export async function generateObjectResponse<T extends z.ZodType>(
   opts: GenerateObjectOpts<T>
 ) {
-  const { model, schema, prompt, system, maxTokens, temperature, authConfig, onTokenUsage } =
-    opts;
-
-  const providerModel = getProviderModel(model, authConfig);
-
-  const { object, usage } = await generateObject({
-    model: providerModel,
+  const {
+    model,
     schema,
     prompt,
     system,
     maxTokens,
+    temperature,
+    authConfig,
+    onTokenUsage,
+  } = opts;
+
+  const providerModel = getProviderModel(model, authConfig);
+
+  const { output, usage } = await generateText({
+    model: providerModel,
+    output: Output.object({
+      schema,
+    }),
+    prompt,
+    system,
+    maxOutputTokens: maxTokens,
     temperature,
   });
 
@@ -357,5 +375,5 @@ export async function generateObjectResponse<T extends z.ZodType>(
     onTokenUsage(usage.inputTokens ?? 0, usage.outputTokens ?? 0);
   }
 
-  return object;
+  return output;
 }
