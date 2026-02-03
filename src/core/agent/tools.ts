@@ -126,10 +126,18 @@ export const ATTACK_KNOWLEDGE = {
     objective: "Bypass authentication, access/modify data, or execute commands",
     techniques: [
       {
+        name: "Raw WHERE Clause Injection",
+        how: "When the entire WHERE clause or expression is user-controlled, inject complete boolean expressions",
+        context:
+          "When parameter is directly concatenated as WHERE clause (e.g., WHERE ${param}). CRITICAL: If adding ANY value to the parameter causes errors but omitting it succeeds, this pattern is likely.",
+        example:
+          "1=1 returns all rows, name LIKE '%test%' filters, 1=1 OR 1=1-- bypasses filters. For PostgreSQL use 1=1 or true (not just 1 which is not boolean).",
+      },
+      {
         name: "Boolean-based Blind",
         how: "Use boolean conditions to infer data through application behavior",
         context:
-          "When direct output isn't visible but application behavior changes",
+          "When direct output isn't visible but application behavior changes. Assumes breaking out of a string context.",
         example:
           "' OR '1'='1 makes condition always true, ' OR '1'='2 makes it false",
       },
