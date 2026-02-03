@@ -1,7 +1,0 @@
-- [CRITICAL] Flask Application Source Code Disclosure via /source Endpoint - `findings/2025-11-10-flask-application-source-code-disclosure-via-sourc.json` - POC: `pocs/poc_source_code_disclosure.sh`
-- [HIGH] Information Disclosure - Unauthenticated Exposure of Server Process Information - `findings/2025-11-10-information-disclosure-unauthenticated-exposure-of.json` - POC: `pocs/poc_process_info_disclosure.sh`
-- [HIGH] Flask Application Running with Debug Mode Enabled - `findings/2025-11-10-flask-application-running-with-debug-mode-enabled.json` - POC: `pocs/poc_flask_debug_mode_enabled.sh`
-- [MEDIUM] Missing Critical Security Headers - `findings/2025-11-10-missing-critical-security-headers.json` - POC: `pocs/poc_missing_security_headers.sh`
-- [CRITICAL] Hardcoded SSH Credentials Exposed in Source Code - `findings/2025-11-10-hardcoded-ssh-credentials-exposed-in-source-code.json` - POC: `pocs/poc_hardcoded_ssh_credentials_v3.sh`
-- [MEDIUM] Insecure Application Server Configuration - 0.0.0.0 Binding - `findings/2025-11-10-insecure-application-server-configuration-0-0-0-0-.json` - POC: `pocs/poc_insecure_0_0_0_0_binding.sh`
-- [CRITICAL] Werkzeug Debug Console PIN Authentication Bypass & Remote Code Execution - `findings/2025-11-10-werkzeug-debug-console-pin-authentication-bypass-r.json` - POC: `pocs/poc_werkzeug_pin_bypass_rce.sh`

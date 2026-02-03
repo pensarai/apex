@@ -1,9 +1,0 @@
-- [MEDIUM] Inconsistent HTTP Method Response Codes Enable Endpoint Enumeration - `findings/2025-10-31-inconsistent-http-method-response-codes-enable-end.json` - POC: `pocs/poc_endpoint_enumeration_method_response.sh`
-- [MEDIUM] Path Traversal in Static File Route - `findings/2025-10-31-path-traversal-in-static-file-route.json` - POC: `pocs/poc_path_traversal_static.sh`
-- [MEDIUM] Business Logic Flaw - Inaccessible XSS25 Challenge Endpoint - `findings/2025-10-31-business-logic-flaw-inaccessible-xss25-challenge-e.json` - POC: `pocs/poc_business_logic_xss25_broken_link.sh`
-- [MEDIUM] Broken Challenge Link - xss25 Endpoint Returns 404 - `findings/2025-10-31-broken-challenge-link-xss25-endpoint-returns-404.json` - POC: `pocs/poc_broken_xss25_link.sh`
-- [LOW] Information Disclosure Through Server Headers - `findings/2025-10-31-information-disclosure-through-server-headers.json` - POC: `pocs/poc_server_header_disclosure.sh`
-- [MEDIUM] Missing Security Headers Allow Multiple Client-Side Attacks - `findings/2025-10-31-missing-security-headers-allow-multiple-client-sid.json` - POC: `pocs/poc_missing_security_headers.sh`
-- [LOW] Missing Security Headers - `findings/2025-10-31-missing-security-headers.json` - POC: `pocs/poc_missing_security_headers_v2.sh`
-- [HIGH] Use of End-of-Life Python 2.7.18 - `findings/2025-10-31-use-of-end-of-life-python-2-7-18.json` - POC: `pocs/poc_python27_eol_detection.sh`
-- [MEDIUM] Use of Werkzeug Development Server (Not Production-Ready) - `findings/2025-10-31-use-of-werkzeug-development-server-not-production-.json` - POC: `pocs/poc_werkzeug_dev_server_detection.sh`

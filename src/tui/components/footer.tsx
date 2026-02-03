@@ -1,6 +1,10 @@
 import os from "os";
-import { useAgent } from "../agentProvider";
+import { useAgent } from "../context/agent";
 import { ProgressBar, SpinnerDots } from "./sprites";
+import { useSession } from "../context/session";
+import { useRoute } from "../context/route";
+import { useInput } from "../context/input";
+import { useEffect } from "react";
 
 interface FooterProps {
   cwd?: string;
@@ -22,10 +26,16 @@ export default function Footer({
 }: FooterProps) {
   cwd = "~" + cwd.split(os.homedir()).pop() || "";
   const { model, tokenUsage, hasExecuted, thinking, isExecuting } = useAgent();
+  const session = useSession();
+  const route = useRoute();
+  const { isInputEmpty } = useInput();
 
   const hotkeys = isExecuting
     ? [{ key: "Ctrl+C", label: "Stop Execution" }]
-    : [{ key: "Ctrl+C", label: "Clear/Exit" }];
+    : [
+        { key: "Ctrl+C", label: "Clear/Exit" },
+        ...(isInputEmpty ? [{ key: "?", label: "Shortcuts" }] : [])
+      ];
 
   return (
     <box
@@ -34,8 +44,6 @@ export default function Footer({
       width="100%"
       maxWidth="100%"
       flexShrink={0}
-      border={true}
-      borderColor="green"
     >
       <box flexDirection="row" gap={1}>
         <text fg="gray">{cwd}</text>
@@ -44,6 +52,15 @@ export default function Footer({
           <span fg="white">{model.name}</span>
         </text>
         <AgentStatus />
+        {
+          route.data.type === "session" && session.active &&
+          <text fg="white">
+            Session:{' '}
+            <span fg="gray">
+              {session.active.name}
+            </span>
+          </text>
+        }
       </box>
       {showExitWarning ? (
         <box flexDirection="row" gap={1}>
@@ -66,13 +83,16 @@ export default function Footer({
 export function AgentStatus() {
   const { tokenUsage, hasExecuted, thinking, isExecuting } = useAgent();
 
+  useEffect(() => {
+    console.log(tokenUsage);
+  }, [tokenUsage]);
+
   return (
     <box flexDirection="row" gap={1}>
       {hasExecuted && (
         <>
           <box border={["right"]} borderColor="green" />
           <text fg="white">{`↓${formatTokenCount(tokenUsage.inputTokens)} ↑${formatTokenCount(tokenUsage.outputTokens)} Σ${formatTokenCount(tokenUsage.totalTokens)}`}</text>
-          <ContextProgress width={10} />
         </>
       )}
       {thinking && (

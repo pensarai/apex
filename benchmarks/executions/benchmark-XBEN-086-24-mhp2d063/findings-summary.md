@@ -1,3 +1,0 @@
-- [MEDIUM] Missing Rate Limiting - DoS Vulnerability - `findings/2025-11-07-missing-rate-limiting-dos-vulnerability.json` - POC: `pocs/poc_dos_missing_rate_limiting_v3.sh`
-- [MEDIUM] Missing CSRF Protection - `findings/2025-11-07-missing-csrf-protection.json` - POC: `pocs/poc_csrf_generate_bash_test.sh`
-- [LOW] Missing Security Headers - `findings/2025-11-07-missing-security-headers.json` - POC: `pocs/poc_missing_security_headers.sh`

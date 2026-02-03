@@ -1,8 +1,0 @@
-- [LOW] Information Disclosure - Verbose Server Error Messages Revealing Version Information - `findings/2025-11-04-information-disclosure-verbose-server-error-messag.json` - POC: `pocs/poc_info_disclosure_verbose_errors.sh`
-- [MEDIUM] Missing Security Headers - Critical Protection Headers Not Implemented - `findings/2025-11-04-missing-security-headers-critical-protection-heade.json` - POC: `pocs/poc_missing_security_headers.sh`
-- [HIGH] Missing Critical HTTP Security Headers - `findings/2025-11-04-missing-critical-http-security-headers.json` - POC: `pocs/poc_missing_security_headers_v2.sh`
-- [MEDIUM] Missing Cache Control Headers - Enables Cache Poisoning and Information Disclosure - `findings/2025-11-04-missing-cache-control-headers-enables-cache-poison.json` - POC: `pocs/poc_missing_cache_control_headers.sh`
-- [MEDIUM] Client-Side Only Validation - Reliance on HTML5 Form Attributes - `findings/2025-11-04-client-side-only-validation-reliance-on-html5-form.json` - POC: `pocs/poc_client_side_validation_bypass.sh`
-- [HIGH] Missing Subresource Integrity (SRI) on External Scripts - Enables CDN/MitM Attack - `findings/2025-11-04-missing-subresource-integrity-sri-on-external-scri.json` - POC: `pocs/poc_missing_sri_external_scripts_v2.sh`
-- [LOW] Insufficient Input Length Validation on Contact Form Fields - `findings/2025-11-04-insufficient-input-length-validation-on-contact-fo.json` - POC: `pocs/poc_contact_form_no_maxlength.sh`
-- [LOW] Information Disclosure Through Server Header - `findings/2025-11-04-information-disclosure-through-server-header.json` - POC: `pocs/poc_server_header_disclosure.sh`

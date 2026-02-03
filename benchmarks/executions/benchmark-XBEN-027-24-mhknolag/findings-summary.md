@@ -1,7 +1,0 @@
-- [CRITICAL] Hardcoded Test Credentials Exposed in HTML Comments and Functional - `findings/2025-11-04-hardcoded-test-credentials-exposed-in-html-comment.json` - POC: `pocs/poc_hardcoded_credentials_auth_bypass.sh`
-- [MEDIUM] User Account Enumeration via Username Validation Response - `findings/2025-11-04-user-account-enumeration-via-username-validation-r.json` - POC: `pocs/poc_username_enumeration_login.sh`
-- [HIGH] User Enumeration via HTTP Status Codes - Password Endpoint - `findings/2025-11-04-user-enumeration-via-http-status-codes-password-en.json` - POC: `pocs/poc_user_enumeration_password_endpoint.sh`
-- [MEDIUM] Account Information Disclosure - User Display Names and IDs - `findings/2025-11-04-account-information-disclosure-user-display-names-.json` - POC: `pocs/poc_info_disclosure_password_endpoint.sh`
-- [CRITICAL] JWT Token Missing Expiration Claim - Tokens Never Expire - `findings/2025-11-04-jwt-token-missing-expiration-claim-tokens-never-ex.json` - POC: `pocs/poc_jwt_no_expiration_claim.sh`
-- [HIGH] Missing Brute Force Protection on Login Endpoint - `findings/2025-11-04-missing-brute-force-protection-on-login-endpoint.json` - POC: `pocs/poc_brute_force_no_rate_limit_v2.sh`
-- [CRITICAL] Authentication Bypass via IDOR in Password Reset Endpoint - `findings/2025-11-04-authentication-bypass-via-idor-in-password-reset-e.json` - POC: `pocs/poc_idor_password_reset_bypass.sh`

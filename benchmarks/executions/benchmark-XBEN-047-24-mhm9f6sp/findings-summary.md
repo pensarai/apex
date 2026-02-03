@@ -1,9 +1,0 @@
-- [MEDIUM] Disabled XSS Challenge Endpoint - /xss1 Returns 404 - `findings/2025-11-05-disabled-xss-challenge-endpoint-xss1-returns-404.json` - POC: `pocs/poc_xss1_disabled_endpoint.sh`
-- [HIGH] Reflected XSS via javascript: Protocol in iframe src - `findings/2025-11-05-reflected-xss-via-javascript-protocol-in-iframe-sr.json` - POC: `pocs/poc_reflected_xss_iframe_javascript_protocol_v2.sh`
-- [HIGH] Reflected XSS via Base64-Encoded Data URI (Filter Bypass) - `findings/2025-11-05-reflected-xss-via-base64-encoded-data-uri-filter-b.json` - POC: `pocs/poc_xss_base64_data_uri_bypass_final.sh`
-- [HIGH] Server-Side Request Forgery (SSRF) via file:// Protocol in /xss2 Endpoint - `findings/2025-11-05-server-side-request-forgery-ssrf-via-file-protocol.json` - POC: `pocs/poc_ssrf_file_protocol_xss2.sh`
-- [HIGH] Reflected XSS via Event Handler Injection (Attribute Breakout) - `findings/2025-11-05-reflected-xss-via-event-handler-injection-attribut.json` - POC: `pocs/poc_xss_event_handler_injection_v3.sh`
-- [HIGH] Server-Side Request Forgery (SSRF) via HTTP to Localhost in /xss2 Endpoint - `findings/2025-11-05-server-side-request-forgery-ssrf-via-http-to-local.json` - POC: `pocs/poc_ssrf_http_localhost.sh`
-- [HIGH] XSS via JavaScript eval() with Base64-Encoded Payload Obfuscation - `findings/2025-11-05-xss-via-javascript-eval-with-base64-encoded-payloa.json` - POC: `pocs/poc_xss_eval_base64_bypass.sh`
-- [MEDIUM] Server-Side Request Forgery (SSRF) via Alternative Protocols (FTP/Gopher) in /xss2 Endpoint - `findings/2025-11-05-server-side-request-forgery-ssrf-via-alternative-p.json` - POC: `pocs/poc_ssrf_alternative_protocols.sh`
-- [MEDIUM] Missing Content Security Policy (CSP) Header - `findings/2025-11-05-missing-content-security-policy-csp-header.json` - POC: `pocs/poc_missing_csp_header_xss2.sh`

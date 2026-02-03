@@ -1,4 +1,0 @@
-- [MEDIUM] Missing Security Headers on HTTP Responses - `findings/2025-11-06-missing-security-headers-on-http-responses.json` - POC: `pocs/poc_missing_security_headers.sh`
-- [MEDIUM] Missing CSRF Protection on Form - `findings/2025-11-06-missing-csrf-protection-on-form.json` - POC: `pocs/poc_csrf_missing_token_form.sh`
-- [LOW] Server Version Information Disclosure - `findings/2025-11-06-server-version-information-disclosure.json` - POC: `pocs/poc_server_version_disclosure_v2.sh`
-- [MEDIUM] Challenge Parameter Not Processed - Application Implementation Incomplete - `findings/2025-11-06-challenge-parameter-not-processed-application-impl.json` - POC: `pocs/poc_challenge_parameter_not_processed_v3.sh`

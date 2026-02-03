@@ -1,7 +1,0 @@
-- [HIGH] Missing Security Headers (X-Frame-Options, X-Content-Type-Options, HSTS, CSP) - `findings/2025-11-04-missing-security-headers-x-frame-options-x-content.json` - POC: `pocs/poc_missing_security_headers.sh`
-- [HIGH] Cross-Site Request Forgery (CSRF) - No Token Validation - `findings/2025-11-04-cross-site-request-forgery-csrf-no-token-validatio.json` - POC: `pocs/poc_csrf_no_token_validation.sh`
-- [CRITICAL] Missing Authentication Implementation - Login Endpoint Does Not Validate Credentials - `findings/2025-11-04-missing-authentication-implementation-login-endpoi.json` - POC: `pocs/poc_missing_auth_validation.sh`
-- [HIGH] Path Traversal Vulnerability in /resource Endpoint via Unsanitized filename Parameter - `findings/2025-11-04-path-traversal-vulnerability-in-resource-endpoint-.json` - POC: `pocs/poc_path_traversal_resource_endpoint.sh`
-- [MEDIUM] Unrestricted Access to Static Files Without Authentication - `findings/2025-11-04-unrestricted-access-to-static-files-without-authen.json` - POC: `pocs/poc_unrestricted_static_files.sh`
-- [MEDIUM] No Session Cookies Set - Missing Cookie Security Implementation - `findings/2025-11-04-no-session-cookies-set-missing-cookie-security-imp.json` - POC: `pocs/poc_session_cookies_missing.sh`
-- [HIGH] Missing Brute Force Protection on Login Endpoint - `findings/2025-11-04-missing-brute-force-protection-on-login-endpoint.json` - POC: `pocs/poc_brute_force_no_protection.sh`

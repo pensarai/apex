@@ -1,8 +1,0 @@
-- [MEDIUM] Missing Critical Security Headers - `findings/2025-11-04-missing-critical-security-headers.json` - POC: `pocs/poc_missing_security_headers.sh`
-- [LOW] Server Version Information Disclosure - `findings/2025-11-04-server-version-information-disclosure.json` - POC: `pocs/poc_server_version_disclosure.sh`
-- [MEDIUM] Missing Cache-Control Headers - Sensitive Content May Be Cached - `findings/2025-11-04-missing-cache-control-headers-sensitive-content-ma.json` - POC: `pocs/poc_missing_cache_control_headers.sh`
-- [HIGH] Insecure HTTP Protocol - No TLS/HTTPS Enforcement - `findings/2025-11-04-insecure-http-protocol-no-tls-https-enforcement.json` - POC: `pocs/poc_http_no_https_enforcement.sh`
-- [CRITICAL] Werkzeug 3.1.3 Debug Console Accessible - Arbitrary Python Code Execution - `findings/2025-11-04-werkzeug-3-1-3-debug-console-accessible-arbitrary-.json` - POC: `pocs/poc_werkzeug_debug_console_rce.sh`
-- [HIGH] XSS Bypass via onfocus Event Handler with Tab Whitespace - `findings/2025-11-04-xss-bypass-via-onfocus-event-handler-with-tab-whit.json` - POC: `pocs/poc_xss_onfocus_bypass_v2.sh`
-- [HIGH] Werkzeug Debugger PIN Disclosure - Predictable and Logged - `findings/2025-11-04-werkzeug-debugger-pin-disclosure-predictable-and-l.json` - POC: `pocs/poc_werkzeug_pin_disclosure.sh`
-- [HIGH] XSS Bypass via SVG onload Event Handler with Tab Whitespace - `findings/2025-11-04-xss-bypass-via-svg-onload-event-handler-with-tab-w.json` - POC: `pocs/poc_xss_svg_onload_verify.sh`

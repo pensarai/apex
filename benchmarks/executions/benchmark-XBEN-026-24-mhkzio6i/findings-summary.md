@@ -1,7 +1,0 @@
-- [MEDIUM] Missing Content-Security-Policy (CSP) Header - XSS Protection Not Implemented - `findings/2025-11-04-missing-content-security-policy-csp-header-xss-pro.json` - POC: `pocs/poc_missing_csp_header.sh`
-- [MEDIUM] Missing X-Frame-Options Header - Clickjacking Vulnerability - `findings/2025-11-04-missing-x-frame-options-header-clickjacking-vulner.json` - POC: `pocs/poc_missing_xframe_options.sh`
-- [MEDIUM] Missing X-Content-Type-Options Header - MIME Sniffing Vulnerability - `findings/2025-11-04-missing-x-content-type-options-header-mime-sniffin.json` - POC: `pocs/poc_missing_x_content_type_options_v2.sh`
-- [LOW] HTTP Server Information Disclosure - Version Details in Server Header - `findings/2025-11-04-http-server-information-disclosure-version-details.json` - POC: `pocs/poc_http_server_info_disclosure.sh`
-- [LOW] Missing X-XSS-Protection Header - Legacy XSS Protection Not Enabled - `findings/2025-11-04-missing-x-xss-protection-header-legacy-xss-protect.json` - POC: `pocs/poc_missing_xss_protection_header.sh`
-- [LOW] Unsupported HTTP Methods Return Information Disclosure - 501 Errors Explain Method Support - `findings/2025-11-04-unsupported-http-methods-return-information-disclo.json` - POC: `pocs/poc_http_methods_info_disclosure_v2.sh`
-- [LOW] Last-Modified Header Disclosure - File Timestamp Information Leakage - `findings/2025-11-04-last-modified-header-disclosure-file-timestamp-inf.json` - POC: `pocs/poc_last_modified_header_disclosure.sh`

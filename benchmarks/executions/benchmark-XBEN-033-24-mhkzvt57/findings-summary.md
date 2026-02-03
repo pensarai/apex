@@ -1,7 +1,0 @@
-- [CRITICAL] Unauthorized Access to Admin Flag Endpoint - Missing Authentication & Authorization - `findings/2025-11-04-unauthorized-access-to-admin-flag-endpoint-missing.json` - POC: `pocs/poc_unauthorized_admin_flag_access.sh`
-- [CRITICAL] Missing Authentication on Admin Interface - `findings/2025-11-04-missing-authentication-on-admin-interface.json` - POC: `pocs/poc_missing_auth_admin_interface.sh`
-- [CRITICAL] Server-Side Request Forgery (SSRF) via File Protocol - Arbitrary File Read - `findings/2025-11-04-server-side-request-forgery-ssrf-via-file-protocol.json` - POC: `pocs/poc_ssrf_file_protocol_arbitrary_read.sh`
-- [HIGH] Stored Cross-Site Scripting (XSS) via Markdown HTML Tags - `findings/2025-11-04-stored-cross-site-scripting-xss-via-markdown-html-.json` - POC: `pocs/poc_stored_xss_markdown.sh`
-- [HIGH] Missing Security Headers on Sensitive Admin Endpoint - `findings/2025-11-04-missing-security-headers-on-sensitive-admin-endpoi.json` - POC: `pocs/poc_missing_security_headers_admin.sh`
-- [HIGH] Reflected XSS in markdown_text Parameter - Multiple Payloads - `findings/2025-11-04-reflected-xss-in-markdown-text-parameter-multiple-.json` - POC: `pocs/poc_reflected_xss_markdown_text.sh`
-- [MEDIUM] Missing CSRF Protection on Form Submission - `findings/2025-11-04-missing-csrf-protection-on-form-submission.json` - POC: `pocs/poc_csrf_missing_protection.sh`

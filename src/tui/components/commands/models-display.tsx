@@ -1,206 +1,89 @@
 import { useKeyboard } from "@opentui/react";
 import { RGBA } from "@opentui/core";
-import { type ModelInfo } from "../../../core/ai";
-import { useAgent } from "../../agentProvider";
-import { useEffect, useState } from "react";
-import type { Config } from "../../../core/config/config";
-import { config } from "../../../core/config";
-import Input from "../input";
-import { AVAILABLE_MODELS } from "../../../core/ai/models";
+import { useAgent } from "../../context/agent";
+import { useRoute } from "../../context/route";
+import { useConfig } from "../../context/config";
+import { ModelPicker } from "../model-picker";
 
-export default function ModelsDisplay({
-  closeModels,
-}: {
-  closeModels: () => void;
-}) {
-  const [appConfig, setAppConfig] = useState<Config | null>(null);
-  const [models, setModels] = useState<ModelInfo[]>([]);
-  const { model: selectedModel, setModel } = useAgent();
-  const [customModel, setCustomModel] = useState<string>("");
-  const [focusArea, setFocusArea] = useState<"custom" | "list">("custom");
+const greenAccent = RGBA.fromInts(76, 175, 80, 255);
+const creamText = RGBA.fromInts(255, 248, 220, 255);
+const dimText = RGBA.fromInts(120, 120, 120, 255);
 
-  const [highlightedIndex, setHighlightedIndex] = useState(() =>
-    models.findIndex((m) => m.id === selectedModel.id)
-  );
-
-  useEffect(() => {
-    async function getConfig() {
-      const _config = await config.get();
-      setAppConfig(_config);
-      const openAiConfigured = !!_config.openAiAPIKey;
-      const anthropicConfigured = !!_config.anthropicAPIKey;
-      const bedrockConfigured = !!_config.bedrockAPIKey;
-      const openRouterConfigured = !!_config.openRouterAPIKey;
-      const _models = AVAILABLE_MODELS.filter((m) => {
-        if (m.provider === "openai") return openAiConfigured;
-        if (m.provider === "anthropic") return anthropicConfigured;
-        if (m.provider === "bedrock") return bedrockConfigured;
-        if (m.provider === "openrouter") return openRouterConfigured;
-        return false;
-      });
-
-      setModels(_models);
-    }
-    getConfig();
-  }, []);
+export default function ModelsDisplay() {
+  const route = useRoute();
+  const config = useConfig();
+  const { model, setModel, isModelUserSelected } = useAgent();
 
   useKeyboard((key) => {
     // Escape - Close models display
     if (key.name === "escape") {
-      closeModels();
+      route.navigate({
+        type: "base",
+        path: "home",
+      });
       return;
     }
 
-    // Tab focus switching between custom input and list
-    if (key.name === "tab" && !key.shift) {
-      setFocusArea((prev) => (prev === "custom" ? "list" : "custom"));
+    // Ctrl+P - Connect provider
+    if (key.ctrl && key.name === "p") {
+      route.navigate({
+        type: "base",
+        path: "providers",
+      });
       return;
     }
-    if (key.name === "tab" && key.shift) {
-      setFocusArea((prev) => (prev === "list" ? "custom" : "list"));
+
+    // Enter - Confirm selection and close
+    if (key.name === "return") {
+      route.navigate({
+        type: "base",
+        path: "home",
+      });
       return;
-    }
-
-    // When list is focused, handle navigation and selection
-    if (focusArea === "list") {
-      // Arrow Up - Previous model
-      if (key.name === "up" && models.length > 0) {
-        setHighlightedIndex((prev) =>
-          prev > 0 ? prev - 1 : models.length - 1
-        );
-        return;
-      }
-
-      // Arrow Down - Next model
-      if (key.name === "down" && models.length > 0) {
-        setHighlightedIndex((prev) =>
-          prev < models.length - 1 ? prev + 1 : 0
-        );
-        return;
-      }
-
-      // Enter - Select model
-      if (key.name === "return" && models.length > 0) {
-        const sel = models[highlightedIndex];
-        if (sel) {
-          setModel(sel);
-          closeModels();
-        }
-        return;
-      }
     }
   });
 
   return (
-    <box
-      alignItems="center"
-      justifyContent="center"
-      flexDirection="column"
-      backgroundColor={RGBA.fromInts(0, 0, 0, 100)}
-      width="100%"
-      maxHeight="100%"
-      flexGrow={1}
-      flexShrink={1}
-      overflow="hidden"
-      gap={1}
-    >
-      <box flexDirection="column" width="80%" gap={1}>
-        <text fg="green">Available Models</text>
-        <text fg="white">
-          Current: <span fg="green">{selectedModel.name}</span>
+    <box flexDirection="column" width="100%" paddingLeft={4} paddingTop={2}>
+      {/* Header */}
+      <text>
+        <span fg={greenAccent}>█ </span>
+        <span fg={creamText}>Select AI Model</span>
+        <span fg={dimText}> ({model.name})</span>
+        <span fg={dimText}> [{isModelUserSelected ? "user" : "default"}]</span>
+      </text>
+
+      {/* Model Picker */}
+      <box flexDirection="column" paddingLeft={2} marginTop={1}>
+        <ModelPicker
+          config={config.data}
+          selectedModel={model}
+          onSelectModel={setModel}
+          focused={true}
+          isModelUserSelected={isModelUserSelected}
+        />
+      </box>
+
+      {/* Footer */}
+      <box flexDirection="column" marginTop={2}>
+        <text>
+          <span fg={greenAccent}>█ </span>
+          <span fg={dimText}>Press </span>
+          <span fg={creamText}>[Enter]</span>
+          <span fg={dimText}> to confirm</span>
         </text>
-
-        <box flexDirection="column" gap={1}>
-          <Input
-            label="Custom local model (vLLM)"
-            description="Requires LOCAL_MODEL_URL env var. Press Enter to set."
-            value={customModel}
-            focused={focusArea === "custom"}
-            onChange={(value) =>
-              setCustomModel(typeof value === "string" ? value : "")
-            }
-            onPaste={(text: string) => {
-              const cleaned = String(text);
-              setCustomModel((prev) => `${prev}${cleaned}`);
-            }}
-            onSubmit={() => {
-              const id = customModel.trim();
-              if (!id) return;
-              const localModel: ModelInfo = { id, name: id, provider: "local" };
-              setModel(localModel);
-              setCustomModel("");
-              closeModels();
-            }}
-          />
-        </box>
-
-        <scrollbox
-          style={{
-            rootOptions: {
-              width: "100%",
-              maxWidth: "100%",
-              flexGrow: 1,
-              flexShrink: 1,
-              overflow: "hidden",
-              borderColor: "green",
-              focusedBorderColor: "green",
-              border: true,
-              paddingLeft: 1,
-              paddingRight: 1,
-            },
-            wrapperOptions: {
-              overflow: "hidden",
-            },
-            contentOptions: {
-              flexGrow: 1,
-              flexDirection: "column",
-              gap: 1,
-            },
-            scrollbarOptions: {
-              trackOptions: {
-                foregroundColor: "green",
-                backgroundColor: RGBA.fromInts(40, 40, 40, 255),
-              },
-            },
-          }}
-          focused={focusArea === "list"}
-        >
-          {models.map((model, index) => {
-            const isSelected = model.id === selectedModel.id;
-            const isHighlighted = index === highlightedIndex;
-
-            return (
-              <box
-                key={model.id}
-                flexDirection="column"
-                gap={0}
-                onMouseDown={() => {
-                  setModel(model);
-                  closeModels();
-                }}
-              >
-                <text
-                  fg={isHighlighted ? "green" : isSelected ? "white" : "gray"}
-                >
-                  {isHighlighted ? "▶ " : "  "}
-                  {model.name}
-                  {isSelected ? " ✓" : ""}
-                </text>
-                <text fg="gray"> {model.id}</text>
-                <text fg="gray"> {model.provider}</text>
-              </box>
-            );
-          })}
-        </scrollbox>
-
-        <box flexDirection="row" width="100%" gap={1}>
-          <text fg="gray">
-            <span fg="green">[TAB]</span> Focus input/list ·{" "}
-            <span fg="green">[↑↓]</span> Navigate list ·{" "}
-            <span fg="green">[ENTER]</span> Select ·{" "}
-            <span fg="green">[ESC]</span> Close
-          </text>
-        </box>
+        <text>
+          <span fg={greenAccent}>█ </span>
+          <span fg={dimText}>Press </span>
+          <span fg={creamText}>[ESC]</span>
+          <span fg={dimText}> to go back</span>
+        </text>
+        <text>
+          <span fg={greenAccent}>█ </span>
+          <span fg={dimText}>Press </span>
+          <span fg={creamText}>[Ctrl+P]</span>
+          <span fg={dimText}> to connect provider</span>
+        </text>
       </box>
     </box>
   );

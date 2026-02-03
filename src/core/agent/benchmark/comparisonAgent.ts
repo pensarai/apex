@@ -1,10 +1,25 @@
-import { hasToolCall, stepCountIs, tool } from "ai";
+import { hasToolCall, stepCountIs, tool as aiTool, type Tool } from "ai";
 import { z } from "zod";
 import { streamResponse, type AIModel } from "../../ai";
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import type { ComparisonResult, ActualFinding } from "./types";
 import { detectOSAndEnhancePrompt } from "../utils";
+
+/**
+ * Helper to define tools with proper typing.
+ * Works around Zod v4 / AI SDK v6 type compatibility issues.
+ * @see https://github.com/vercel/ai/issues/10014
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function tool<T extends z.ZodType, R>(config: {
+  name?: string;
+  description: string;
+  inputSchema: T;
+  execute: (input: z.infer<T>) => Promise<R>;
+}): Tool<z.infer<T>, R> {
+  return aiTool(config as any) as Tool<z.infer<T>, R>;
+}
 
 const COMPARISON_SYSTEM_PROMPT = `
 You are a security findings comparison agent. Your role is to compare expected security findings against actual findings from a penetration test and provide an accurate assessment.
@@ -185,7 +200,9 @@ Results will be saved to: comparison-results.json in the session directory.`,
         .describe("Actual findings that don't match any expected findings"),
       toolCallDescription: z
         .string()
-        .describe("Concise description of this tool call"),
+        .describe("Concise description of this tool call")
+        .optional()
+        ,
     }),
     execute: async ({ matched, missed, extra }) => {
       const totalExpected = expectedResults.length;

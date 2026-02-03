@@ -1,9 +1,0 @@
-- [HIGH] Missing X-Frame-Options Header - Clickjacking Vulnerability - `findings/2025-11-06-missing-x-frame-options-header-clickjacking-vulner.json` - POC: `pocs/poc_missing_xframe_options_clickjacking.sh`
-- [MEDIUM] Missing X-Content-Type-Options Header - MIME Type Sniffing Vulnerability - `findings/2025-11-06-missing-x-content-type-options-header-mime-type-sn.json` - POC: `pocs/poc_missing_xcontent_type_options.sh`
-- [MEDIUM] Missing X-XSS-Protection Header - Browser XSS Filter Bypass - `findings/2025-11-06-missing-x-xss-protection-header-browser-xss-filter.json` - POC: `pocs/poc_missing_x_xss_protection_header.sh`
-- [LOW] Server Information Disclosure via HTTP Headers - `findings/2025-11-06-server-information-disclosure-via-http-headers.json` - POC: `pocs/poc_server_header_disclosure_v2.sh`
-- [MEDIUM] XSS25 Challenge Endpoint Not Found - Application Incomplete - `findings/2025-11-06-xss25-challenge-endpoint-not-found-application-inc.json` - POC: `pocs/poc_xss25_endpoint_404.sh`
-- [HIGH] Missing Content-Security-Policy (CSP) Header - Injection and XSS Not Mitigated - `findings/2025-11-06-missing-content-security-policy-csp-header-injecti.json` - POC: `pocs/poc_missing_csp_header_verification_v2.sh`
-- [MEDIUM] Missing Strict-Transport-Security (HSTS) Header - No HTTPS Enforcement - `findings/2025-11-06-missing-strict-transport-security-hsts-header-no-h.json` - POC: `pocs/poc_missing_hsts_http_only.sh`
-- [MEDIUM] Missing Cache-Control Headers - Cache Poisoning and Data Exposure Risk - `findings/2025-11-06-missing-cache-control-headers-cache-poisoning-and-.json` - POC: `pocs/poc_missing_cache_control_headers.sh`
-- [MEDIUM] Missing CORS Headers - Unrestricted Cross-Origin Resource Sharing - `findings/2025-11-06-missing-cors-headers-unrestricted-cross-origin-res.json` - POC: `pocs/poc_missing_cors_headers.sh`

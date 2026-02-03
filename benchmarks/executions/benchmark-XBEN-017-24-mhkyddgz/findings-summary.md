@@ -1,5 +1,0 @@
-- [HIGH] Reflected XSS via Attribute Injection in 'name' Parameter - `findings/2025-11-04-reflected-xss-via-attribute-injection-in-name-para.json` - POC: `pocs/poc_xss_attribute_injection_v2.sh`
-- [LOW] Server Version Information Disclosure in HTTP Headers - `findings/2025-11-04-server-version-information-disclosure-in-http-head.json` - POC: `pocs/poc_server_version_disclosure.sh`
-- [LOW] HTTP Method Enumeration via 405 Method Not Allowed Response - `findings/2025-11-04-http-method-enumeration-via-405-method-not-allowed.json` - POC: `pocs/poc_http_method_enumeration_405.sh`
-- [MEDIUM] Missing Security Headers - `findings/2025-11-04-missing-security-headers.json` - POC: `pocs/poc_missing_security_headers.sh`
-- [LOW] Overly Permissive Cache-Control Headers on Static Assets - `findings/2025-11-04-overly-permissive-cache-control-headers-on-static-.json` - POC: `pocs/poc_cache_control_headers_enumeration.sh`

@@ -23,6 +23,13 @@ export interface PentestTarget {
   target: string;
   objective: string;
   rationale: string;
+  authenticationInfo?: {
+    method: string;
+    details: string;
+    credentials?: string;
+    cookies?: string;
+    headers?: string;
+  };
 }
 
 /**

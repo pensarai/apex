@@ -1,9 +1,0 @@
-- [MEDIUM] Timing-Based User Enumeration Attack on Authentication Endpoint - `findings/2025-11-07-timing-based-user-enumeration-attack-on-authentica.json` - POC: `pocs/poc_timing_user_enumeration_auth_v3.sh`
-- [MEDIUM] Next.js Application Running in Development Mode - Information Disclosure - `findings/2025-11-07-next-js-application-running-in-development-mode-in.json` - POC: `pocs/poc_nextjs_dev_mode_buildid.sh`
-- [HIGH] Missing Brute Force Protection on Authentication Endpoint - `findings/2025-11-07-missing-brute-force-protection-on-authentication-e.json` - POC: `pocs/poc_brute_force_no_ratelimit_v2.sh`
-- [MEDIUM] Broken S3 Image API Endpoint Returning 500 Errors - Potential Path Traversal Vulnerability - `findings/2025-11-07-broken-s3-image-api-endpoint-returning-500-errors-.json` - POC: `pocs/poc_s3_path_traversal_500_error.sh`
-- [MEDIUM] S3 File Serving Endpoint Returns HTTP 500 - Possible Server-Side Error Disclosure and Availability Issue - `findings/2025-11-07-s3-file-serving-endpoint-returns-http-500-possible.json` - POC: `pocs/poc_s3_endpoint_500_error.sh`
-- [LOW] Missing Security Headers on Authentication Endpoint - `findings/2025-11-07-missing-security-headers-on-authentication-endpoin.json` - POC: `pocs/poc_missing_security_headers_auth.sh`
-- [MEDIUM] Missing Critical Security Headers - Content-Security-Policy, X-Frame-Options, X-Content-Type-Options - `findings/2025-11-07-missing-critical-security-headers-content-security.json` - POC: `pocs/poc_missing_security_headers.sh`
-- [MEDIUM] Missing Security Headers on Team Page - `findings/2025-11-07-missing-security-headers-on-team-page.json` - POC: `pocs/poc_missing_security_headers_team.sh`
-- [LOW] Information Disclosure via X-Powered-By Header - `findings/2025-11-07-information-disclosure-via-x-powered-by-header.json` - POC: `pocs/poc_xpoweredby_header_disclosure.sh`

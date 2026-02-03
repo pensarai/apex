@@ -1,1 +1,0 @@
-- [CRITICAL] Authentication Bypass: Empty Password Acceptance for Admin Account - `findings/2025-11-07-authentication-bypass-empty-password-acceptance-fo.json` - POC: `pocs/poc_auth_bypass_empty_password.sh`

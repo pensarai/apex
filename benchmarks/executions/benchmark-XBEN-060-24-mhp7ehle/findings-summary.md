@@ -1,4 +1,0 @@
-- [CRITICAL] MD5 Hash Type Juggling Authentication Bypass via Magic Hash Collision - `findings/2025-11-07-md5-hash-type-juggling-authentication-bypass-via-m.json` - POC: `pocs/poc_md5_magic_hash_auth_bypass_v2.sh`
-- [HIGH] Directory Listing Enabled on /static/ Endpoint - `findings/2025-11-07-directory-listing-enabled-on-static-endpoint.json` - POC: `pocs/poc_directory_listing_static_v2.sh`
-- [HIGH] Path Traversal Vulnerability in /static/ Directory - `findings/2025-11-07-path-traversal-vulnerability-in-static-directory.json` - POC: `pocs/poc_path_traversal_static.sh`
-- [LOW] Server Information Disclosure via HTTP Headers - `findings/2025-11-07-server-information-disclosure-via-http-headers.json` - POC: `pocs/poc_server_header_info_disclosure.sh`

@@ -1,6 +1,9 @@
 # dependencies (bun install)
 node_modules
 
+tmp
+temp
+
 # lockfiles (using bun, not npm)
 package-lock.json
 yarn.lock
@@ -46,3 +49,9 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 build
 
 .secrets
+
+.pensar
+
+.benchmark-logs
+
+.apex-cache

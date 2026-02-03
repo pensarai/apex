@@ -1,3 +1,0 @@
-- [MEDIUM] Missing Content-Security-Policy (CSP) Header - `findings/2025-11-06-missing-content-security-policy-csp-header.json` - POC: `pocs/poc_missing_csp_header.sh`
-- [HIGH] Missing X-Frame-Options Header (Clickjacking Vulnerability) - `findings/2025-11-06-missing-x-frame-options-header-clickjacking-vulner.json` - POC: `pocs/poc_missing_xframe_options_v2.sh`
-- [MEDIUM] Missing Security Headers on Main Endpoint - `findings/2025-11-06-missing-security-headers-on-main-endpoint.json` - POC: `pocs/poc_missing_security_headers_main.sh`

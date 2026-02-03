@@ -1,3 +1,0 @@
-- [MEDIUM] Missing Security Headers - `findings/2025-11-06-missing-security-headers.json` - POC: `pocs/poc_missing_security_headers.sh`
-- [MEDIUM] Security Misconfiguration: Inaccessible XSS Challenge Endpoint (HTTP 404) - `findings/2025-11-06-security-misconfiguration-inaccessible-xss-challen.json` - POC: `pocs/poc_xss25_inaccessible_endpoint.sh`
-- [CRITICAL] Flask Debugger Console Accessible with Code Execution Capability - `findings/2025-11-06-flask-debugger-console-accessible-with-code-execut.json` - POC: `pocs/poc_flask_debugger_exposed.sh`

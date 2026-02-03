@@ -1,177 +1,149 @@
-import { render, useKeyboard } from "@opentui/react";
-import { ColoredAsciiArt } from "./components/ascii-art-component";
+import { createRoot } from "@opentui/react";
 import { useState, useEffect } from "react";
-import Header from "./components/header";
 import Footer from "./components/footer";
-import CommandInput from "./command-input";
-import { CommandProvider, useCommand } from "./command-provider";
-import { AgentProvider } from "./agentProvider";
-import HelpDialog from "./components/commands/help-dialog";
-import ConfigDialog from "./components/commands/config-dialog";
-import PentestAgentDisplay from "./components/commands/pentest-agent-display";
-import ThoroughPentestAgentDisplay from "./components/commands/thorough-pentest-agent-display";
+import { CommandProvider } from "./context/command";
+import { AgentProvider } from "./context/agent";
+import SessionView from "./components/session-view";
 import SessionsDisplay from "./components/commands/sessions-display";
-import ModelsDisplay from "./components/commands/models-display";
+import ConfigDialog from "./components/commands/config-dialog";
+import ChatApp from "./components/chat";
+import HITLWizard from "./components/commands/operator-wizard";
+import WebWizard from "./components/commands/web-wizard";
+import ProviderManager from "./components/commands/provider-manager";
 import type { Config } from "../core/config/config";
 import { config } from "../core/config";
-import AlertDialog from "./components/alert-dialog";
+import { createCliRenderer } from "@opentui/core";
+import { ConfigProvider, useConfig } from "./context/config";
+import { createSwitch } from "./components/switch";
+import { type RoutePath, RouteProvider, useRoute } from "./context/route";
+import { ResponsibleUseDisclosure } from "./components/responsible-use-disclosure";
+import { hasAnyProviderConfigured } from "../core/providers";
+import { SessionProvider } from "./context/session";
+import { InputProvider, useInput } from "./context/input";
+import { FocusProvider, useFocus } from "./context/focus";
+import { DialogProvider, useDialog } from "./context/dialog";
+import ShortcutsDialog from "./components/commands/shortcuts-dialog";
+import HelpDialog from "./components/commands/help-dialog";
+import { KeybindingProvider } from "./context/keybinding";
 
-// Pre-generated ASCII art (generated at build time with scripts/generate-ascii-art.ts)
-// This avoids needing sharp at runtime, which doesn't work in compiled binaries
-import generatedAsciiArt from "./generated-ascii-art.json";
+interface AppProps {
+  appConfig: Config;
+}
 
-// Use the pre-generated ASCII art
-const coloredAscii = generatedAsciiArt as {
-  char: string;
-  r: number;
-  g: number;
-  b: number;
-}[][];
-
-function App() {
-  const [appConfig, setAppConfig] = useState<Config | null>(null);
+function App(props: AppProps) {
+  const { appConfig } = props;
   const [focusIndex, setFocusIndex] = useState(0);
   const [cwd, setCwd] = useState(process.cwd());
   const [ctrlCPressTime, setCtrlCPressTime] = useState<number | null>(null);
   const [showExitWarning, setShowExitWarning] = useState(false);
   const [inputKey, setInputKey] = useState(0); // Force input remount on clear
+  const [showSessionsDialog, setShowSessionsDialog] = useState(false);
+  const [showShortcutsDialog, setShowShortcutsDialog] = useState(false);
 
   const navigableItems = ["command-input"]; // List of items that can be focused
 
-  useEffect(() => {
-    async function getConfig() {
-      const _config = await config.get();
-      setAppConfig(_config);
-    }
-    getConfig();
-  }, []);
-
-  const handleAcceptPolicy = async () => {
-    await config.update({ responsibleUseAccepted: true });
-    const updatedConfig = await config.get();
-    setAppConfig(updatedConfig);
-  };
-
   return (
-    <AgentProvider>
-      <CommandProvider>
-        <ResponsibleUseWarning
-          config={appConfig}
-          onAccept={handleAcceptPolicy}
-        />
-        <AppContent
-          focusIndex={focusIndex}
-          setFocusIndex={setFocusIndex}
-          cwd={cwd}
-          ctrlCPressTime={ctrlCPressTime}
-          setCtrlCPressTime={setCtrlCPressTime}
-          showExitWarning={showExitWarning}
-          setShowExitWarning={setShowExitWarning}
-          inputKey={inputKey}
-          setInputKey={setInputKey}
-          navigableItems={navigableItems}
-        />
-      </CommandProvider>
-    </AgentProvider>
-  );
-}
-
-function ResponsibleUseWarning({
-  config: appConfig,
-  onAccept,
-}: {
-  config: Config | null;
-  onAccept: () => void;
-}) {
-  if (!appConfig) return null;
-
-  useKeyboard((key) => {
-    if (!appConfig || appConfig.responsibleUseAccepted) return;
-
-    // Enter key accepts the policy
-    if (key.name === "return" || key.name === "enter") {
-      onAccept();
-    }
-  });
-
-  return (
-    <AlertDialog
-      disableEscape={true}
-      open={!appConfig.responsibleUseAccepted}
-      title="⚠️  Responsible Penetration Testing Policy"
-      onClose={() => {}}
-    >
-      <box flexDirection="column" gap={1}>
-        <text fg="yellow">IMPORTANT: Read Before Use</text>
-        <text fg="white">
-          This penetration testing tool is designedfor AUTHORIZED security
-          testing only.
-        </text>
-        <box flexDirection="column" marginBottom={1}>
-          <text fg="red">
-            You MUST have explicit written permission to test any systems,
-            networks, or applications
-          </text>
-        </box>
-        <text fg="white">By accepting, you agree to:</text>
-        <box flexDirection="column" marginLeft={2}>
-          <text>• Only test systems you own or have authorization</text>
-          <text fg="white">
-            • Comply with all applicable laws and regulations
-          </text>
-          <text fg="white">• Use this tool ethically and responsibly</text>
-          <text fg="white">• Not cause harm or disruption to services</text>
-          <text fg="white">• Document and report findings appropriately</text>
-        </box>
-        <box flexDirection="column">
-          <text fg="red">
-            Unauthorized access to computer systems is illegaland may result in
-            criminal prosecution.
-          </text>
-        </box>
-        <box>
-          <text fg="white">
-            Press <span fg="green">ENTER</span> to accept and continue
-          </text>
-        </box>
-      </box>
-    </AlertDialog>
+    <ConfigProvider config={appConfig}>
+      <SessionProvider>
+        <RouteProvider>
+          <FocusProvider>
+            <InputProvider>
+              <DialogProvider>
+                <AgentProvider>
+                  <CommandProvider>
+                    <KeybindingProvider
+                      deps={{
+                        ctrlCPressTime,
+                        setCtrlCPressTime,
+                        setShowExitWarning,
+                        setInputKey,
+                        setShowSessionsDialog,
+                        setShowShortcutsDialog,
+                        setFocusIndex,
+                        navigableItems,
+                      }}
+                    >
+                      <AppContent
+                        focusIndex={focusIndex}
+                        showSessionsDialog={showSessionsDialog}
+                        setShowSessionsDialog={setShowSessionsDialog}
+                        showShortcutsDialog={showShortcutsDialog}
+                        setShowShortcutsDialog={setShowShortcutsDialog}
+                        cwd={cwd}
+                        setCtrlCPressTime={setCtrlCPressTime}
+                        showExitWarning={showExitWarning}
+                        setShowExitWarning={setShowExitWarning}
+                        inputKey={inputKey}
+                        setInputKey={setInputKey}
+                      />
+                    </KeybindingProvider>
+                  </CommandProvider>
+                </AgentProvider>
+              </DialogProvider>
+            </InputProvider>
+          </FocusProvider>
+        </RouteProvider>
+      </SessionProvider>
+    </ConfigProvider>
   );
 }
 
 function AppContent({
   focusIndex,
-  setFocusIndex,
+  showSessionsDialog,
+  setShowSessionsDialog,
+  showShortcutsDialog,
+  setShowShortcutsDialog,
   cwd,
-  ctrlCPressTime,
   setCtrlCPressTime,
   showExitWarning,
   setShowExitWarning,
   inputKey,
   setInputKey,
-  navigableItems,
 }: {
   focusIndex: number;
-  setFocusIndex: (fn: (prev: number) => number) => void;
+  showSessionsDialog: boolean;
+  setShowSessionsDialog: (show: boolean) => void;
+  showShortcutsDialog: boolean;
+  setShowShortcutsDialog: (show: boolean) => void;
   cwd: string;
-  ctrlCPressTime: number | null;
   setCtrlCPressTime: (time: number | null) => void;
   showExitWarning: boolean;
   setShowExitWarning: (show: boolean) => void;
   inputKey: number;
   setInputKey: (fn: (prev: number) => number) => void;
-  navigableItems: string[];
 }) {
-  const {
-    pentestOpen,
-    closePentest,
-    thoroughPentestOpen,
-    closeThoroughPentest,
-    sessionsOpen,
-    closeSessions,
-    modelsOpen,
-    closeModels,
-  } = useCommand();
+  const route = useRoute();
+  const config = useConfig();
+
+  const { refocusPrompt } = useFocus();
+  const { setExternalDialogOpen } = useDialog();
+
+  // First check: responsible use disclosure
+  if (
+    !config.data.responsibleUseAccepted &&
+    route.data.type === "base" &&
+    route.data.path !== "disclosure"
+  ) {
+    route.navigate({
+      type: "base",
+      path: "disclosure",
+    });
+  }
+
+  // Second check: provider configuration (only if not already on providers page)
+  if (
+    config.data.responsibleUseAccepted &&
+    !hasAnyProviderConfigured(config.data) &&
+    route.data.type === "base" &&
+    route.data.path !== "providers" &&
+    route.data.path !== "disclosure"
+  ) {
+    route.navigate({
+      type: "base",
+      path: "providers",
+    });
+  }
 
   // Auto-clear the exit warning after 1 second
   useEffect(() => {
@@ -184,87 +156,52 @@ function AppContent({
     }
   }, [showExitWarning]);
 
-  // Navigation and command hotkey handlers
-  useKeyboard((key) => {
-    // Ctrl+C should always work, even when dialogs are open
-    if (key.ctrl && (key.name === "c" || key.sequence === "\x03")) {
-      const now = Date.now();
-      const lastPress = ctrlCPressTime;
+  const handleCloseSessionsDialog = () => {
+    setShowSessionsDialog(false);
+    setInputKey((prev) => prev + 1);
+    refocusPrompt();
+  };
 
-      if (lastPress && now - lastPress < 1000) {
-        process.exit(0);
-      } else {
-        setInputKey((prev) => prev + 1);
-        setCtrlCPressTime(now);
-        setShowExitWarning(true);
-      }
-      return;
-    }
+  const handleCloseShortcutsDialog = () => {
+    setShowShortcutsDialog(false);
+    setExternalDialogOpen(false);
+    setInputKey((prev) => prev + 1);
+    refocusPrompt();
+  };
 
-    // Escape - Close pentest display if open
-    if (key.name === "escape" && pentestOpen) {
-      closePentest();
-      return;
-    }
-
-    // Escape - Close thorough pentest display if open
-    if (key.name === "escape" && thoroughPentestOpen) {
-      closeThoroughPentest();
-      return;
-    }
-
-    // Escape - Close sessions display if open
-    if (key.name === "escape" && sessionsOpen) {
-      closeSessions();
-      return;
-    }
-
-    // Escape - Close models display if open
-    if (key.name === "escape" && modelsOpen) {
-      closeModels();
-      return;
-    }
-
-    // Tab - Next item
-    if (key.name === "tab" && !key.shift) {
-      setFocusIndex((prev) => (prev + 1) % navigableItems.length);
-      return;
-    }
-
-    // Shift+Tab - Previous item
-    if (key.name === "tab" && key.shift) {
-      setFocusIndex(
-        (prev) => (prev - 1 + navigableItems.length) % navigableItems.length
-      );
-      return;
-    }
-
-    // Reset ctrl+c timer on any other key
-    if (ctrlCPressTime) {
-      setCtrlCPressTime(null);
-      setShowExitWarning(false);
-    }
-  });
+  // Check if we're on the home route
+  const isHomeRoute = route.data.type === "base" && route.data.path === "home";
 
   return (
-    <CommandProvider>
-      <CommandOverlay>
-        <box
-          flexDirection="column"
-          alignItems="center"
-          flexGrow={1}
-          width="100%"
-          maxHeight="100%"
-          overflow="hidden"
-        >
-          <ColoredAsciiArt ascii={coloredAscii} />
-          <CommandDisplay focusIndex={focusIndex} inputKey={inputKey} />
-          <Footer cwd={cwd} showExitWarning={showExitWarning} />
-        </box>
-      </CommandOverlay>
-    </CommandProvider>
+    <box
+      flexDirection="column"
+      alignItems="center"
+      flexGrow={1}
+      width="100%"
+      maxHeight="100%"
+      overflow="hidden"
+      backgroundColor={"transparent"}
+    >
+      <CommandDisplay focusIndex={focusIndex} inputKey={inputKey} />
+
+      {/* Only show footer on non-home routes */}
+      <Footer cwd={cwd} showExitWarning={showExitWarning} />
+
+      {showSessionsDialog && (
+        <SessionsDisplay onClose={handleCloseSessionsDialog} />
+      )}
+
+      {showShortcutsDialog && (
+        <ShortcutsDialog
+          open={showShortcutsDialog}
+          onClose={handleCloseShortcutsDialog}
+        />
+      )}
+    </box>
   );
 }
+
+const RouteSwitch = createSwitch<RoutePath>();
 
 function CommandDisplay({
   focusIndex,
@@ -273,50 +210,126 @@ function CommandDisplay({
   focusIndex: number;
   inputKey: number;
 }) {
-  const {
-    pentestOpen,
-    thoroughPentestOpen,
-    sessionsOpen,
-    closeSessions,
-    modelsOpen,
-    closeModels,
-  } = useCommand();
+  const route = useRoute();
+  const _config = useConfig();
 
-  return (
-    <box
-      flexDirection="column"
-      width="100%"
-      maxHeight="100%"
-      alignItems="center"
-      justifyContent="center"
-      flexGrow={1}
-      flexShrink={1}
-      overflow="hidden"
-      gap={2}
-    >
-      {!pentestOpen && !thoroughPentestOpen && !sessionsOpen && !modelsOpen && (
-        <CommandInput focused={focusIndex === 0} inputKey={inputKey} />
-      )}
-      {pentestOpen && <PentestAgentDisplay />}
-      {thoroughPentestOpen && <ThoroughPentestAgentDisplay />}
-      {sessionsOpen && <SessionsDisplay closeSessions={closeSessions} />}
-      {modelsOpen && <ModelsDisplay closeModels={closeModels} />}
-    </box>
-  );
+  const handleAcceptPolicy = async () => {
+    await config.update({ responsibleUseAccepted: true });
+    route.navigate({
+      type: "base",
+      path: "home",
+    });
+  };
+
+  if (route.data.type === "base") {
+    const routePath = route.data.path;
+    return (
+      <box
+        flexDirection="column"
+        width="100%"
+        maxHeight="100%"
+        alignItems="center"
+        justifyContent="center"
+        flexGrow={1}
+        flexShrink={1}
+        overflow="hidden"
+        gap={2}
+        backgroundColor={"transparent"}
+      >
+        {/* routes to have: home (chat), responsible use, session, global config route */}
+        {/* when user either runs command or simply enters message: extract args etc, create session with related config, route to session */}
+        {/* on startup, check if responsible use has been agreed, if not route to resp use route */}
+
+        <RouteSwitch condition={routePath}>
+          <RouteSwitch.Case when="disclosure">
+            <ResponsibleUseDisclosure onAccept={handleAcceptPolicy} />
+          </RouteSwitch.Case>
+          <RouteSwitch.Case when="home">
+            <ChatApp />
+          </RouteSwitch.Case>
+          <RouteSwitch.Case when="config">
+            <ConfigDialog />
+          </RouteSwitch.Case>
+          <RouteSwitch.Case when="operator">
+            <HITLWizard
+              initialTarget={route.data.options?.target}
+              initialMode={route.data.options?.mode}
+              initialName={route.data.options?.name}
+              initialTier={route.data.options?.tier}
+              initialHosts={route.data.options?.hosts}
+              initialStrict={route.data.options?.strict}
+              initialModel={route.data.options?.model}
+            />
+          </RouteSwitch.Case>
+          <RouteSwitch.Case when="web">
+            <WebWizard
+              initialTarget={route.data.options?.target}
+              autoMode={route.data.options?.auto}
+              initialName={route.data.options?.name}
+              initialAuthUrl={route.data.options?.authUrl}
+              initialAuthUser={route.data.options?.authUser}
+              initialAuthPass={route.data.options?.authPass}
+              initialAuthInstructions={route.data.options?.authInstructions}
+              initialHosts={route.data.options?.hosts}
+              initialPorts={route.data.options?.ports}
+              initialStrict={route.data.options?.strict}
+              initialHeadersMode={route.data.options?.headersMode}
+              initialCustomHeaders={route.data.options?.customHeaders}
+              initialModel={route.data.options?.model}
+            />
+          </RouteSwitch.Case>
+          <RouteSwitch.Case when="providers">
+            <ProviderManager />
+          </RouteSwitch.Case>
+          <RouteSwitch.Case when="help">
+            <HelpDialog />
+          </RouteSwitch.Case>
+        </RouteSwitch>
+      </box>
+    );
+  }
+
+  // Session route - render SessionView which handles pentest execution
+  if (route.data.type === "session") {
+    return (
+      <SessionView
+        sessionId={route.data.sessionId}
+        isResume={route.data.isResume}
+      />
+    );
+  }
+
+  return null;
 }
 
-function CommandOverlay({ children }: { children: React.ReactNode }) {
-  const { helpOpen, closeHelp, configOpen, closeConfig } = useCommand();
+async function main() {
+  const appConfig = await config.get();
+  const renderer = await createCliRenderer({ exitOnCtrlC: false });
 
-  return (
-    <>
-      {children}
-      <HelpDialog helpOpen={helpOpen} closeHelp={closeHelp} />
-      <ConfigDialog configOpen={configOpen} closeConfig={closeConfig} />
-    </>
-  );
+  // Graceful shutdown handler
+  const cleanup = () => {
+    renderer.destroy();
+    process.exit(0);
+  };
+
+  // Handle process signals for graceful shutdown
+  process.on("SIGINT", cleanup);
+  process.on("SIGTERM", cleanup);
+
+  // Handle uncaught errors - cleanup terminal before crash
+  process.on("uncaughtException", (err) => {
+    renderer.destroy();
+    console.error("Uncaught exception:", err);
+    process.exit(1);
+  });
+
+  process.on("unhandledRejection", (reason) => {
+    renderer.destroy();
+    console.error("Unhandled rejection:", reason);
+    process.exit(1);
+  });
+
+  createRoot(renderer).render(<App appConfig={appConfig} />);
 }
 
-render(<App />, {
-  exitOnCtrlC: false, // We'll handle Ctrl+C manually
-});
+main();

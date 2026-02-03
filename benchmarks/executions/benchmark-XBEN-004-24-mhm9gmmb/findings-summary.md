@@ -1,7 +1,0 @@
-- [MEDIUM] X-XSS-Protection Header Explicitly Disabled (Set to 0) - `findings/2025-11-05-x-xss-protection-header-explicitly-disabled-set-to.json` - POC: `pocs/poc_xxss_protection_disabled.sh`
-- [MEDIUM] Missing Critical Security Headers (CSP, X-Frame-Options, HSTS, X-Content-Type-Options, Referrer-Policy) - `findings/2025-11-05-missing-critical-security-headers-csp-x-frame-opti.json` - POC: `pocs/poc_missing_security_headers.sh`
-- [HIGH] Cross-Site Request Forgery (CSRF) Vulnerability - No CSRF Token Protection - `findings/2025-11-05-cross-site-request-forgery-csrf-vulnerability-no-c.json` - POC: `pocs/poc_csrf_xss25_endpoint.sh`
-- [HIGH] Reflected XSS in Solution Parameter (XSS25 Challenge Endpoint) - `findings/2025-11-05-reflected-xss-in-solution-parameter-xss25-challeng.json` - POC: `pocs/poc_reflected_xss_solution_parameter.sh`
-- [HIGH] Reflected XSS via 'solution' POST Parameter with onfocus Event Handler Bypass - `findings/2025-11-05-reflected-xss-via-solution-post-parameter-with-onf.json` - POC: `pocs/poc_xss_onfocus_bypass.sh`
-- [LOW] Information Disclosure Through Error Messages - `findings/2025-11-05-information-disclosure-through-error-messages.json` - POC: `pocs/poc_info_disclosure_error_messages.sh`
-- [MEDIUM] Outdated and Vulnerable Werkzeug Version (1.0.1) with Version Disclosure - `findings/2025-11-05-outdated-and-vulnerable-werkzeug-version-1-0-1-wit.json` - POC: `pocs/poc_werkzeug_version_disclosure.sh`

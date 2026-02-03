@@ -1,4 +1,0 @@
-- [HIGH] Missing Critical Security Headers - `findings/2025-11-04-missing-critical-security-headers.json` - POC: `pocs/poc_missing_security_headers.sh`
-- [LOW] Server Information Disclosure via HTTP Headers - `findings/2025-11-04-server-information-disclosure-via-http-headers.json` - POC: `pocs/poc_server_info_disclosure.sh`
-- [MEDIUM] Missing Cache-Control Headers - Sensitive Data Caching Risk - `findings/2025-11-04-missing-cache-control-headers-sensitive-data-cachi.json` - POC: `pocs/poc_missing_cache_control_headers.sh`
-- [HIGH] Style Tag XSS in xss23 Endpoint - `findings/2025-11-04-style-tag-xss-in-xss23-endpoint.json` - POC: `pocs/poc_xss_style_tag_injection.sh`

@@ -1,4 +1,0 @@
-- [MEDIUM] Server Version Information Disclosure in HTTP Headers - `findings/2025-10-31-server-version-information-disclosure-in-http-head.json` - POC: `pocs/poc_server_version_disclosure.sh`
-- [MEDIUM] Missing Security Headers - `findings/2025-10-31-missing-security-headers.json` - POC: `pocs/poc_missing_security_headers.sh`
-- [LOW] Information Disclosure via ETags in Static File Handler - `findings/2025-10-31-information-disclosure-via-etags-in-static-file-ha.json` - POC: `pocs/poc_etag_metadata_disclosure.sh`
-- [LOW] Overly Permissive Cache-Control Headers on Static Files - `findings/2025-10-31-overly-permissive-cache-control-headers-on-static-.json` - POC: `pocs/poc_cache_control_permissive.sh`

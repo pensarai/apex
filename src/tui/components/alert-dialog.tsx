@@ -1,5 +1,5 @@
+import { useKeyboard, useTerminalDimensions, useRenderer } from "@opentui/react";
 import { RGBA } from "@opentui/core";
-import { useKeyboard } from "@opentui/react";
 import type { JSX } from "react";
 
 export interface AlertDialogProps {
@@ -9,6 +9,7 @@ export interface AlertDialogProps {
   onClose: () => void;
   children?: React.ReactNode;
   disableEscape?: boolean;
+  size?: "medium" | "large";
 }
 
 export default function AlertDialog({
@@ -18,35 +19,53 @@ export default function AlertDialog({
   onClose,
   children,
   disableEscape = false,
+  size = "medium",
 }: AlertDialogProps) {
+  const dimensions = useTerminalDimensions();
+  const renderer = useRenderer();
+
   useKeyboard((key) => {
     if (!open) return;
     // Escape closes dialog
     if (key.name === "escape" && !disableEscape) {
       onClose();
+      key.preventDefault();
     }
   });
 
   if (!open) return null as unknown as JSX.Element;
+
   return (
     <box
-      position="absolute"
-      top={0}
-      backgroundColor={RGBA.fromInts(0, 0, 0, 150)}
-      left={0}
-      zIndex={1000}
-      width="100%"
-      height="100%"
-      justifyContent="center"
+      onMouseUp={async () => {
+        if (renderer.getSelection()) return;
+        if (!disableEscape) {
+          onClose();
+        }
+      }}
+      width={dimensions.width}
+      height={dimensions.height}
       alignItems="center"
+      position="absolute"
+      paddingTop={dimensions.height / 4}
+      left={0}
+      top={0}
+      zIndex={1000}
+      backgroundColor={"transparent"}
     >
       <box
-        width={50}
+        onMouseUp={async (e: any) => {
+          if (renderer.getSelection()) return;
+          e.stopPropagation();
+        }}
+        width={size === "large" ? 80 : 60}
+        maxWidth={dimensions.width - 2}
         border={true}
         borderColor="green"
         backgroundColor="black"
         flexDirection="column"
         padding={1}
+        paddingTop={1}
       >
         {title ? (
           <box marginBottom={1}>

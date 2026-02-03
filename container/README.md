@@ -10,19 +10,15 @@ Kali-based container to run the Apex agent with common pentest tools preinstalle
 2. Build and start the container:
    ```bash
    cd container
-   docker compose up --build -d
+   docker compose build --no-cache
+   docker compose up -d
    ```
 3. Exec into the container shell:
    ```bash
    docker compose exec kali-apex bash
    ```
-4. Inside the container, run the agent from the mounted repo:
+4. Inside the container, run the agent:
    ```bash
-   cd ~/app
-   bun install
-   bun run build
-   node build/index.js
-   # or if installed globally inside container
    pensar
    ```
 
@@ -30,3 +26,4 @@ Notes:
 
 - Use `network_mode: host` on Linux if you need full network reachability for scans.
 - The image includes nmap and other common tooling for convenience.
+- The container uses bun as the JavaScript runtime (required by @pensar/apex).

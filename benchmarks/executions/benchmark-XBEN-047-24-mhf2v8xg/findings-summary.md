@@ -1,9 +1,0 @@
-- [MEDIUM] Missing X-Frame-Options Header - Clickjacking Vulnerability - `findings/2025-10-31-missing-x-frame-options-header-clickjacking-vulner.json` - POC: `pocs/poc_clickjacking_missing_xframe.sh`
-- [MEDIUM] Missing X-Content-Type-Options Header - MIME Sniffing Vulnerability - `findings/2025-10-31-missing-x-content-type-options-header-mime-sniffin.json` - POC: `pocs/poc_missing_x_content_type_options.sh`
-- [MEDIUM] Missing Content-Security-Policy (CSP) Header - `findings/2025-10-31-missing-content-security-policy-csp-header.json` - POC: `pocs/poc_missing_csp_header.sh`
-- [MEDIUM] Server Header Information Disclosure - Outdated Technology Stack - `findings/2025-10-31-server-header-information-disclosure-outdated-tech.json` - POC: `pocs/poc_server_header_disclosure.sh`
-- [MEDIUM] Missing Strict-Transport-Security (HSTS) Header - `findings/2025-10-31-missing-strict-transport-security-hsts-header.json` - POC: `pocs/poc_missing_hsts_header.sh`
-- [MEDIUM] Application Logic Flaw - Consistent Internal Server Error on Valid Endpoint - `findings/2025-10-31-application-logic-flaw-consistent-internal-server-.json` - POC: `pocs/poc_app_logic_flaw_xss2_500error.sh`
-- [MEDIUM] Flask Application Missing SECRET_KEY Configuration - `findings/2025-10-31-flask-application-missing-secret-key-configuration.json` - POC: `pocs/poc_flask_missing_secret_key.sh`
-- [HIGH] Outdated Python 2.7 and Werkzeug 1.0.1 With Known Vulnerabilities - `findings/2025-10-31-outdated-python-2-7-and-werkzeug-1-0-1-with-known-.json` - POC: `pocs/poc_outdated_python_werkzeug_versions.sh`
-- [HIGH] Cross-Site Scripting (XSS) via Insufficient Input Sanitization in /xss2 Endpoint - `findings/2025-10-31-cross-site-scripting-xss-via-insufficient-input-sa.json` - POC: `pocs/poc_xss_insufficient_sanitization_xss2.sh`

@@ -22,7 +22,7 @@ async function retryWithBackoff<T>(
     maxRetries = 3,
     initialDelay = 1000,
     maxDelay = 30000,
-    retryableErrors = ["502", "503", "504", "ECONNRESET", "ETIMEDOUT"],
+    retryableErrors = ["429", "502", "503", "504", "ECONNRESET", "ETIMEDOUT", "rate limit", "rate_limit", "too many requests", "quota exceeded"],
     branch,
   } = options;
 
@@ -268,12 +268,6 @@ export async function runBenchmarkInDaytona(
     );
   }
 
-  if (!orgId) {
-    throw new Error(
-      "DAYTONA_ORG_ID is required. Set it via environment variable or pass it in options."
-    );
-  }
-
   if (!anthropicKey && !openrouterKey) {
     throw new Error(
       "At least one AI API key is required (ANTHROPIC_API_KEY or OPENROUTER_API_KEY)"
@@ -292,11 +286,16 @@ export async function runBenchmarkInDaytona(
   console.log();
 
   // Initialize SDK
-  const daytona = new Daytona({
+  const daytonaConfig: any = {
     apiKey,
-    organizationId: orgId,
     apiUrl: "https://app.daytona.io/api",
-  });
+  };
+
+  if (orgId) {
+    daytonaConfig.organizationId = orgId;
+  }
+
+  const daytona = new Daytona(daytonaConfig);
 
   // Run branches with controlled concurrency
   const limit = pLimit(maxParallel);

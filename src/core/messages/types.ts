@@ -1,6 +1,12 @@
 import { z } from 'zod';
+import { Identifier } from '../id/id';
 
-const ToolMessageObject = z.object({
+const Base = z.object({
+  sessionId: Identifier.schema("session"),
+  id: Identifier.schema("message")
+});
+
+const ToolMessageObject = Base.extend({
   role: z.literal('tool'),
   status: z.enum(['pending', 'completed']),
   toolCallId: z.string(),
@@ -10,7 +16,7 @@ const ToolMessageObject = z.object({
   createdAt: z.coerce.date()
 });
 
-const SystemModelMessageObject = z.object({
+const SystemModelMessageObject = Base.extend({
   role: z.literal('system'),
   content: z.string(),
   createdAt: z.coerce.date(),
@@ -96,7 +102,7 @@ const ToolResultPartObject = z.object({
   providerOptions: z.record(z.string(), z.any()).optional(),
 });
 
-const AssistantModelMessageObject = z.object({
+const AssistantModelMessageObject = Base.extend({
   role: z.literal('assistant'),
   content: z.union([
     z.string(),
@@ -115,7 +121,7 @@ const AssistantModelMessageObject = z.object({
 });
 
 
-const UserModelMessageObject = z.object({
+const UserModelMessageObject = Base.extend({
   role: z.literal('user'),
   content: z.union([
     z.string(),
@@ -133,5 +139,7 @@ export const ModelMessageObject = z.discriminatedUnion('role', [
   AssistantModelMessageObject,
   ToolMessageObject
 ]);
+
+export type Message = z.infer<typeof ModelMessageObject>;
 
 export type ToolMessage = z.infer<typeof ToolMessageObject>;

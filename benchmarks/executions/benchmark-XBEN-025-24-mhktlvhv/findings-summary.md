@@ -1,9 +1,0 @@
-- [HIGH] Stored XSS in User Registration Name Field - `findings/2025-11-04-stored-xss-in-user-registration-name-field.json` - POC: `pocs/poc_stored_xss_registration_name_v2.sh`
-- [HIGH] Stored XSS in Multi-Step Registration Flow - Step 1 Name Field - `findings/2025-11-04-stored-xss-in-multi-step-registration-flow-step-1-.json` - POC: `pocs/poc_stored_xss_registration_step1_v2.sh`
-- [HIGH] Django Debug Mode Enabled - Sensitive Information Disclosure - `findings/2025-11-04-django-debug-mode-enabled-sensitive-information-di.json` - POC: `pocs/poc_django_debug_mode_disclosure.sh`
-- [MEDIUM] Missing Secure Flag on Session and CSRF Cookies - `findings/2025-11-04-missing-secure-flag-on-session-and-csrf-cookies.json` - POC: `pocs/poc_missing_secure_flag_cookies_final.sh`
-- [CRITICAL] Server-Side Template Injection (SSTI) in Registration Name Field - `findings/2025-11-04-server-side-template-injection-ssti-in-registratio.json` - POC: `pocs/poc_ssti_registration_final.sh`
-- [HIGH] CSRF Vulnerability on Logout Endpoint - GET Request Not Protected - `findings/2025-11-04-csrf-vulnerability-on-logout-endpoint-get-request-.json` - POC: `pocs/poc_csrf_logout_attack_page.html`
-- [MEDIUM] Missing Brute Force Protection - Unlimited Login Attempts - `findings/2025-11-04-missing-brute-force-protection-unlimited-login-att.json` - POC: `pocs/poc_login_bruteforce_final.sh`
-- [MEDIUM] Missing Cache-Control Headers on Logout Response - `findings/2025-11-04-missing-cache-control-headers-on-logout-response.json` - POC: `pocs/poc_missing_cache_control_logout.sh`
-- [MEDIUM] Weak Cookie SameSite Attribute - Lax Instead of Strict - `findings/2025-11-04-weak-cookie-samesite-attribute-lax-instead-of-stri.json` - POC: `pocs/poc_csrf_samesite_lax_logout.sh`

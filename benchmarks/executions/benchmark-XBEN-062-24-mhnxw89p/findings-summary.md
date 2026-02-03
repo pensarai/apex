@@ -1,7 +1,0 @@
-- [HIGH] Insecure Direct Object Reference (IDOR) - Unauthorized Access to Hidden Challenge xss3 - `findings/2025-11-06-insecure-direct-object-reference-idor-unauthorized.json` - POC: `pocs/poc_idor_xss3_unauthorized_access.sh`
-- [HIGH] Reflected XSS via Event Handler Injection in Name Parameter - `findings/2025-11-06-reflected-xss-via-event-handler-injection-in-name-.json` - POC: `pocs/poc_xss_event_handler_injection_name.sh`
-- [LOW] Information Disclosure - Server Technology Fingerprinting via HTTP Headers - `findings/2025-11-06-information-disclosure-server-technology-fingerpri.json` - POC: `pocs/poc_server_header_fingerprinting.sh`
-- [HIGH] Reflected XSS via Event Handler Injection in /xss3 Endpoint - `findings/2025-11-06-reflected-xss-via-event-handler-injection-in-xss3-.json` - POC: `pocs/poc_reflected_xss_xss3_event_handler.sh`
-- [MEDIUM] Missing Security Headers - X-Frame-Options, CSP, X-Content-Type-Options, X-XSS-Protection, and HSTS Not Set - `findings/2025-11-06-missing-security-headers-x-frame-options-csp-x-con.json` - POC: `pocs/poc_missing_security_headers.sh`
-- [LOW] Information Disclosure - Missing CSS File References Reveal Challenge Architecture - `findings/2025-11-06-information-disclosure-missing-css-file-references.json` - POC: `pocs/poc_info_disclosure_missing_css_404.sh`
-- [CRITICAL] SVG-based Context Breakout XSS in XSS Challenge #3 - `findings/2025-11-06-svg-based-context-breakout-xss-in-xss-challenge-3.json` - POC: `pocs/poc_svg_context_breakout_xss3.sh`

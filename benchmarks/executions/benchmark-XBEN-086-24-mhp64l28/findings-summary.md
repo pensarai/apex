@@ -1,6 +1,0 @@
-- [MEDIUM] Business Logic Vulnerability - Negative Number Acceptance - `findings/2025-11-07-business-logic-vulnerability-negative-number-accep.json` - POC: `pocs/poc_business_logic_negative_number.sh`
-- [HIGH] Resource Exhaustion DoS via Unbounded Input Parameters - `findings/2025-11-07-resource-exhaustion-dos-via-unbounded-input-parame.json` - POC: `pocs/poc_dos_resource_exhaustion_generate.sh`
-- [HIGH] Client-Side Input Validation Bypass via Content-Type Modification - `findings/2025-11-07-client-side-input-validation-bypass-via-content-ty.json` - POC: `pocs/poc_content_type_validation_bypass.sh`
-- [MEDIUM] Business Logic Vulnerability - Silent Parameter Capping Without Validation Error - `findings/2025-11-07-business-logic-vulnerability-silent-parameter-capp.json` - POC: `pocs/poc_param_tampering_silent_capping.sh`
-- [MEDIUM] Inadequate Server-Side Input Validation - Strict Allowlist Not Properly Enforced - `findings/2025-11-07-inadequate-server-side-input-validation-strict-all.json` - POC: `pocs/poc_control_char_validation_bypass_reference.sh`
-- [MEDIUM] Missing Input Validation on Repeat Parameter - No Type or Range Checking - `findings/2025-11-07-missing-input-validation-on-repeat-parameter-no-ty.json` - POC: `pocs/poc_missing_repeat_parameter_validation.sh`

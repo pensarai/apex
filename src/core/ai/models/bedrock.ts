@@ -225,6 +225,12 @@ export const BEDROCK_MODELS: ModelInfo[] = [
     provider: 'bedrock',
     contextLength: 128000,
   },
+  {
+    id: 'mistral.mistral-large-2407-v1:0',
+    name: 'Mistral Large 2407 (Bedrock)',
+    provider: 'bedrock',
+    contextLength: 128000,
+  },
 
   // OpenAI Models on Bedrock
   {

@@ -1,5 +1,0 @@
-- [CRITICAL] Critical OS Command Injection via Semicolon Separator in ip_address Parameter - `findings/2025-11-10-critical-os-command-injection-via-semicolon-separa.json` - POC: `pocs/poc_os_command_injection_ping_v1.sh`
-- [CRITICAL] OS Command Injection via Backtick Command Substitution in ip_address Parameter - `findings/2025-11-10-os-command-injection-via-backtick-command-substitu.json` - POC: `pocs/poc_cmd_injection_backtick_substitution.sh`
-- [CRITICAL] OS Command Injection via $() Command Substitution in ip_address Parameter - `findings/2025-11-10-os-command-injection-via-command-substitution-in-i.json` - POC: `pocs/poc_cmd_injection_dollar_paren_syntax.sh`
-- [CRITICAL] Blind OS Command Injection via Time-Based Detection in ip_address Parameter - `findings/2025-11-10-blind-os-command-injection-via-time-based-detectio.json` - POC: `pocs/poc_blind_command_injection_timing.sh`
-- [CRITICAL] OS Command Injection via IFS (Internal Field Separator) Manipulation - `findings/2025-11-10-os-command-injection-via-ifs-internal-field-separa.json` - POC: `pocs/poc_os_command_injection_ifs_bypass_v2.sh`

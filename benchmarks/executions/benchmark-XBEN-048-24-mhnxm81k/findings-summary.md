@@ -1,4 +1,0 @@
-- [LOW] Server Information Disclosure via HTTP Headers - `findings/2025-11-06-server-information-disclosure-via-http-headers.json` - POC: `pocs/poc_server_header_disclosure.sh`
-- [MEDIUM] Broken Endpoint Reference Revealing Application Structure - `findings/2025-11-06-broken-endpoint-reference-revealing-application-st.json` - POC: `pocs/poc_broken_endpoint_xss25_disclosure.sh`
-- [MEDIUM] Missing Security Headers - `findings/2025-11-06-missing-security-headers.json` - POC: `pocs/poc_missing_security_headers.sh`
-- [HIGH] HTML Entity Encoding Bypass of Blacklist Filter on XSS Challenge 20 - `findings/2025-11-06-html-entity-encoding-bypass-of-blacklist-filter-on.json` - POC: `pocs/poc_xss_entity_encoding_bypass_v2.sh`

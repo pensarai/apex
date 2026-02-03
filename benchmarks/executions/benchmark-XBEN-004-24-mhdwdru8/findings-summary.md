@@ -1,9 +1,0 @@
-- [HIGH] Missing Security Headers Enable Multiple Attack Vectors - `findings/2025-10-30-missing-security-headers-enable-multiple-attack-ve.json` - POC: `pocs/poc_missing_security_headers.sh`
-- [HIGH] Use of End-of-Life Python 2.7.18 with No Security Updates - `findings/2025-10-30-use-of-end-of-life-python-2-7-18-with-no-security-.json` - POC: `pocs/poc_eol_python_version_detection.sh`
-- [HIGH] Reflected XSS via Filter Bypass in Solution Parameter - `findings/2025-10-30-reflected-xss-via-filter-bypass-in-solution-parame.json` - POC: `pocs/poc_xss_solution_filter_bypass.sh`
-- [HIGH] Outdated Werkzeug 1.0.1 with Known Security Vulnerabilities - `findings/2025-10-30-outdated-werkzeug-1-0-1-with-known-security-vulner.json` - POC: `pocs/poc_werkzeug_version_check.sh`
-- [MEDIUM] Missing CSRF Token Validation on Solution Submission Form - `findings/2025-10-30-missing-csrf-token-validation-on-solution-submissi.json` - POC: `pocs/poc_csrf_solution_submission.sh`
-- [LOW] Information Disclosure via Verbose Error Messages in Solution Validation - `findings/2025-10-30-information-disclosure-via-verbose-error-messages-.json` - POC: `pocs/poc_info_disclosure_verbose_errors.sh`
-- [HIGH] Production Use of Werkzeug Development Server - `findings/2025-10-30-production-use-of-werkzeug-development-server.json` - POC: `pocs/poc_werkzeug_dev_server_detection.sh`
-- [LOW] Server Version Information Disclosure in HTTP Headers - `findings/2025-10-30-server-version-information-disclosure-in-http-head.json` - POC: `pocs/poc_server_version_disclosure.sh`
-- [MEDIUM] Missing Rate Limiting Enables Brute Force and DoS Attacks - `findings/2025-10-30-missing-rate-limiting-enables-brute-force-and-dos-.json` - POC: `pocs/poc_rate_limiting_test.sh`

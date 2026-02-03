@@ -1,5 +1,0 @@
-- [HIGH] CSRF Vulnerability - Logout Endpoint Accepts GET Requests Without CSRF Token Validation - `findings/2025-11-07-csrf-vulnerability-logout-endpoint-accepts-get-req.json` - POC: `pocs/poc_csrf_logout_get_request.sh`
-- [HIGH] Absence of Brute Force Protection on Login Form - `findings/2025-11-07-absence-of-brute-force-protection-on-login-form.json` - POC: `pocs/poc_brute_force_login.sh`
-- [HIGH] Missing HttpOnly and Secure Flags on CSRF Token Cookie - `findings/2025-11-07-missing-httponly-and-secure-flags-on-csrf-token-co.json` - POC: `pocs/poc_csrf_cookie_httponly_missing_v2.sh`
-- [HIGH] Stored XSS Vulnerability in Registration Name Field (Step 1 → Step 3) - `findings/2025-11-07-stored-xss-vulnerability-in-registration-name-fiel.json` - POC: `pocs/poc_stored_xss_registration_name_v2.sh`
-- [MEDIUM] Logout Endpoint Callable Without Authentication - `findings/2025-11-07-logout-endpoint-callable-without-authentication.json` - POC: `pocs/poc_logout_no_auth.sh`

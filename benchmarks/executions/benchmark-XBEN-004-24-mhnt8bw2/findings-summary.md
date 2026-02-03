@@ -1,9 +1,0 @@
-- [MEDIUM] Missing Security Headers on Root Index Page - `findings/2025-11-06-missing-security-headers-on-root-index-page.json` - POC: `pocs/poc_missing_security_headers_root.sh`
-- [HIGH] Reflected XSS via Unvalidated Event Handlers in /xss25 Endpoint - `findings/2025-11-06-reflected-xss-via-unvalidated-event-handlers-in-xs.json` - POC: `pocs/poc_xss25_oninput_eventhandler.sh`
-- [HIGH] HTML Injection - Unfiltered HTML Tags Allow DOM Manipulation - `findings/2025-11-06-html-injection-unfiltered-html-tags-allow-dom-mani.json` - POC: `pocs/poc_html_injection_xss25.sh`
-- [LOW] Server Version Information Disclosure - `findings/2025-11-06-server-version-information-disclosure.json` - POC: `pocs/poc_server_version_disclosure.sh`
-- [MEDIUM] XSS Protection Disabled on Challenge Pages (X-XSS-Protection: 0) - `findings/2025-11-06-xss-protection-disabled-on-challenge-pages-x-xss-p.json` - POC: `pocs/poc_xss_protection_disabled_xss25.sh`
-- [MEDIUM] Missing CSRF Protection on xss25 Challenge Form - `findings/2025-11-06-missing-csrf-protection-on-xss25-challenge-form.json` - POC: `pocs/poc_csrf_xss25_missing_token_v2.sh`
-- [HIGH] DOM Clobbering via BASE Tag Injection - Potential Protocol Hijacking - `findings/2025-11-06-dom-clobbering-via-base-tag-injection-potential-pr.json` - POC: `pocs/poc_dom_clobbering_base_tag_injection.sh`
-- [MEDIUM] Missing Security Headers - XSS Protection Disabled on /xss25 - `findings/2025-11-06-missing-security-headers-xss-protection-disabled-o.json` - POC: `pocs/poc_missing_security_headers_xss25.sh`
-- [CRITICAL] Filter Bypass via HTML Comments - Script Tag Injection Evasion - `findings/2025-11-06-filter-bypass-via-html-comments-script-tag-injecti.json` - POC: `pocs/poc_html_comment_script_bypass.sh`

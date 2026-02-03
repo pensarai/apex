@@ -1,11 +1,8 @@
-import { createAnthropic } from '@ai-sdk/anthropic';
 import type { AnthropicMessagesModelId } from '@ai-sdk/anthropic/internal';
-import { createOpenAI } from '@ai-sdk/openai';
 import type { OpenAIChatModelId } from '@ai-sdk/openai/internal';
-import { createOpenRouter } from '@openrouter/ai-sdk-provider';
-import { createAmazonBedrock } from '@ai-sdk/amazon-bedrock';
 import {
-  generateObject,
+  generateText,
+  Output,
   streamText,
   type LanguageModel,
   type ModelMessage,
@@ -13,8 +10,6 @@ import {
   type StreamTextOnFinishCallback,
   type StreamTextOnStepFinishCallback,
   type StreamTextResult,
-  type TextStreamPart,
-  type ToolCallRepairFunction,
   type ToolChoice,
   type ToolSet,
 } from 'ai';
@@ -22,8 +17,8 @@ import { z } from 'zod';
 import {
   checkIfContextLengthError,
   createSummarizationStream,
+  findSimilarTools,
   getProviderModel,
-  summarizeConversation,
   type AIAuthConfig,
 } from './utils';
 
@@ -34,7 +29,8 @@ export type AIModelProvider =
   | 'openai'
   | 'openrouter'
   | 'bedrock'
-  | 'local';
+  | 'local'
+  | 'baseten';
 
 // Helper function to wrap a stream with error handling for async errors
 function wrapStreamWithErrorHandler(
@@ -210,27 +206,30 @@ export function streamResponse(
         try {
           if (!silent) {
             console.log(
-              'Repairing tool call:',
-              toolCall.toolName,
-              'Error:',
-              error
+              `🔧 Repairing tool call: ${toolCall.toolName}`
             );
+            console.log(`   Error: ${error.message || error}`);
+
+            // Log specific details for common enum errors
+            if (error.message && (error.message.includes('severity') || error.message.includes('riskLevel'))) {
+              console.log(`   Note: This appears to be an enum validation error. Tool call repair will normalize the value.`);
+            }
           }
 
           // Get the actual tool definition which contains the Zod schema
           const tool = tools[toolCall.toolName];
           if (!tool || !tool.inputSchema) {
+            const fuzzyMatchedTool = findSimilarTools(toolCall.toolName, Object.keys(tools));
             throw new Error(
-              `Tool ${toolCall.toolName} not found or has no schema`
+              `Tool ${toolCall.toolName} not found or has no schema${fuzzyMatchedTool ? ` -> did you mean ${fuzzyMatchedTool}` : ""}`
             );
           }
 
-          // Get JSONSchema7 for display purposes
           const jsonSchema = inputSchema({ toolName: toolCall.toolName });
 
-          const { object: repairedArgs, usage: repairUsage } = await generateObject({
+          const { output: repairedArgs, usage: repairUsage } = await generateText({
             model: providerModel,
-            schema: tool.inputSchema, // Use the actual Zod schema from the tool
+            output: Output.object({ schema: tool.inputSchema }), // Use the actual Zod schema from the tool
             prompt: [
               `The model tried to call the tool "${toolCall.toolName}"` +
                 ` with the following inputs:`,
@@ -239,6 +238,9 @@ export function streamResponse(
               JSON.stringify(jsonSchema),
               `Error encountered: ${error}`,
               'Please fix the inputs to match the schema.',
+               "",
+              "IMPORTANT: For enum fields like 'severity' or 'riskLevel', use ONLY the exact values from the enum (e.g., 'HIGH', 'CRITICAL', 'MEDIUM', 'LOW').",
+              "Do not add prefixes, suffixes, or formatting characters like '>', '-', '!', etc.",
             ].join('\n'),
           });
 
@@ -331,18 +333,18 @@ export interface GenerateObjectOpts<T extends z.ZodType> {
 
 export async function generateObjectResponse<T extends z.ZodType>(
   opts: GenerateObjectOpts<T>
-) {
+): Promise<z.infer<T>> {
   const { model, schema, prompt, system, maxTokens, temperature, authConfig, onTokenUsage } =
     opts;
 
   const providerModel = getProviderModel(model, authConfig);
 
-  const { object, usage } = await generateObject({
+  const { output, usage } = await generateText({
     model: providerModel,
-    schema,
+    output: Output.object({ schema }),
     prompt,
     system,
-    maxTokens,
+    maxOutputTokens: maxTokens,
     temperature,
   });
 
@@ -351,5 +353,5 @@ export async function generateObjectResponse<T extends z.ZodType>(
     onTokenUsage(usage.inputTokens ?? 0, usage.outputTokens ?? 0);
   }
 
-  return object;
+  return output as z.infer<T>;
 }

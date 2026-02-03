@@ -56,6 +56,15 @@ if (command === "benchmark") {
 
   // Import and run pentest
   await import(pentestPath);
+} else if (command === "auth") {
+  // Run auth CLI
+  const authPath = join(__dirname, "..", "build", "auth.js");
+
+  // Remove "auth" from args and pass the rest to auth script
+  process.argv = [process.argv[0], authPath, ...args.slice(1)];
+
+  // Import and run auth
+  await import(authPath);
 } else if (
   command === "version" ||
   command === "--version" ||
@@ -77,6 +86,7 @@ if (command === "benchmark") {
   console.log(
     "  pensar swarm        Run parallel pentests on multiple targets"
   );
+  console.log("  pensar auth         Authenticate to a target application");
   console.log();
   console.log("Options:");
   console.log("  -h, --help         Show this help message");
@@ -149,6 +159,26 @@ if (command === "benchmark") {
     "  --header <name:value>    Add custom header (requires --headers custom)"
   );
   console.log();
+  console.log("Auth Usage:");
+  console.log("  pensar auth --target <url> [options]");
+  console.log();
+  console.log("Auth Options:");
+  console.log(
+    "  --target <url>           Target URL to authenticate against (required)"
+  );
+  console.log("  --username <user>        Username for login");
+  console.log("  --password <pass>        Password for login");
+  console.log("  --api-key <key>          API key for authentication");
+  console.log("  --bearer <token>         Bearer token to verify");
+  console.log("  --cookies <string>       Existing cookies to verify");
+  console.log(
+    "  --model <model>          AI model to use (default: claude-sonnet-4-5)"
+  );
+  console.log("  --no-browser             Disable browser tools");
+  console.log(
+    "  --discover-only          Only discover auth requirements, don't authenticate"
+  );
+  console.log();
   console.log("Header Modes (for quicktest, pentest, swarm):");
   console.log("  none                     No custom headers added to requests");
   console.log(
@@ -175,6 +205,15 @@ if (command === "benchmark") {
   );
   console.log("  pensar swarm targets.json");
   console.log("  pensar swarm targets.json --headers none");
+  console.log(
+    "  pensar auth --target http://localhost:3000 --discover-only"
+  );
+  console.log(
+    "  pensar auth --target http://localhost:3000 --username admin --password admin123"
+  );
+  console.log(
+    '  pensar auth --target http://localhost:3000 --bearer "eyJ..."'
+  );
 } else if (args.length === 0) {
   // No command specified, run the TUI
   const appPath = join(__dirname, "..", "build", "index.js");

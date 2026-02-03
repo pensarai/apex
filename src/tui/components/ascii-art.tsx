@@ -197,18 +197,20 @@ export function ColoredAsciiArt({ ascii, title }: ColoredAsciiArtProps) {
   return (
     <box
       position="absolute"
+      top={"50%"}
       flexDirection="column"
       alignItems="center"
       justifyContent="center"
       height="100%"
       width="100%"
-      flexGrow={1}
+      // flexGrow={1}
+      backgroundColor={'transparent'}
     >
       {title && <text>{title}</text>}
       {ascii.map((row, y) => (
         <text key={y}>
           {row.map((pixel, x) => {
-            const color = RGBA.fromInts(pixel.r, pixel.g, pixel.b, 50);
+            const color = RGBA.fromInts(pixel.r, pixel.g, pixel.b, 30);
             return (
               <span key={x} fg={color}>
                 {pixel.char}

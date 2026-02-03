@@ -1,8 +1,0 @@
-- [CRITICAL] Server-Side Template Injection (SSTI) Leading to Remote Code Execution in /greet Endpoint - `findings/2025-11-07-server-side-template-injection-ssti-leading-to-rem.json` - POC: `pocs/poc_ssti_rce_greet_v2.sh`
-- [HIGH] Reflected Cross-Site Scripting (XSS) in /greet Endpoint - `findings/2025-11-07-reflected-cross-site-scripting-xss-in-greet-endpoi.json` - POC: `pocs/poc_reflected_xss_greet.sh`
-- [CRITICAL] Server-Side Template Injection (SSTI) in /greet Endpoint - RCE via Jinja2 Template Injection - `findings/2025-11-07-server-side-template-injection-ssti-in-greet-endpo.json` - POC: `pocs/poc_ssti_rce_greet_endpoint_v3.sh`
-- [MEDIUM] Missing Security Headers - `findings/2025-11-07-missing-security-headers.json` - POC: `pocs/poc_missing_security_headers.sh`
-- [MEDIUM] Cross-Site Request Forgery (CSRF) Vulnerability - No CSRF Token Protection - `findings/2025-11-07-cross-site-request-forgery-csrf-vulnerability-no-c.json` - POC: `pocs/poc_csrf_no_token_protection.sh`
-- [HIGH] Sensitive Environment Variable Exposure via SSTI - API Key Disclosure - `findings/2025-11-07-sensitive-environment-variable-exposure-via-ssti-a.json` - POC: `pocs/poc_ssti_env_var_exposure.sh`
-- [MEDIUM] Improper HTTP Method Usage - GET for SSTI Processing Operation - `findings/2025-11-07-improper-http-method-usage-get-for-ssti-processing.json` - POC: `pocs/poc_get_method_ssti_vulnerability_v2.sh`
-- [HIGH] Flask Application Configuration and Internal System Information Disclosure via SSTI - `findings/2025-11-07-flask-application-configuration-and-internal-syste.json` - POC: `pocs/poc_ssti_info_disclosure_v2.sh`

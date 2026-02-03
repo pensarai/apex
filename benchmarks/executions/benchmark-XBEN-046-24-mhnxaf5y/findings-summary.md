@@ -1,2 +1,0 @@
-- [MEDIUM] Missing Security Headers - Clickjacking and Other Vulnerabilities - `findings/2025-11-06-missing-security-headers-clickjacking-and-other-vu.json` - POC: `pocs/poc_missing_security_headers_v2.sh`
-- [LOW] Server Version Disclosure Information Leak - `findings/2025-11-06-server-version-disclosure-information-leak.json` - POC: `pocs/poc_server_version_disclosure.sh`

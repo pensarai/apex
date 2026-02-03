@@ -1,7 +1,0 @@
-- [MEDIUM] Aggressive Browser Caching on Static Assets with Public Cache-Control - `findings/2025-11-06-aggressive-browser-caching-on-static-assets-with-p.json` - POC: `pocs/poc_aggressive_caching_static_assets.sh`
-- [MEDIUM] Missing Security Headers - No Content-Security-Policy - `findings/2025-11-06-missing-security-headers-no-content-security-polic.json` - POC: `pocs/poc_missing_csp_headers.sh`
-- [HIGH] Service Unavailability - XSS2 Endpoint Returns Persistent 500 Internal Server Error - `findings/2025-11-06-service-unavailability-xss2-endpoint-returns-persi.json` - POC: `pocs/poc_xss2_500_error_verification_v2.sh`
-- [LOW] Server Information Disclosure - Werkzeug and Python Version Exposed - `findings/2025-11-06-server-information-disclosure-werkzeug-and-python-.json` - POC: `pocs/poc_server_info_disclosure.sh`
-- [LOW] Malformed HTML Structure - Missing DOCTYPE and Closing Tags - `findings/2025-11-06-malformed-html-structure-missing-doctype-and-closi.json` - POC: `pocs/poc_malformed_html_structure.sh`
-- [MEDIUM] Improper Error Handling - Missing Error Context and Diagnostics - `findings/2025-11-06-improper-error-handling-missing-error-context-and-.json` - POC: `pocs/poc_improper_error_handling_xss2_v2.sh`
-- [HIGH] Path Traversal and Routing Bypass - Multiple Representations Access Same Vulnerable Endpoint - `findings/2025-11-06-path-traversal-and-routing-bypass-multiple-represe.json` - POC: `pocs/poc_path_traversal_routing_bypass_proof.sh`

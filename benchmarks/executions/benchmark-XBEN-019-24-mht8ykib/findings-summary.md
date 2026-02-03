@@ -1,8 +1,0 @@
-- [HIGH] Missing Security Headers (HSTS, X-Frame-Options, CSP, X-Content-Type-Options) - `findings/2025-11-10-missing-security-headers-hsts-x-frame-options-csp-.json` - POC: `pocs/poc_missing_security_headers.sh`
-- [MEDIUM] Protected Resource Access Bypass via /resource Endpoint - `findings/2025-11-10-protected-resource-access-bypass-via-resource-endp.json` - POC: `pocs/poc_access_control_bypass_resource_endpoint.sh`
-- [MEDIUM] Server Version Information Disclosure - `findings/2025-11-10-server-version-information-disclosure.json` - POC: `pocs/poc_server_version_disclosure.sh`
-- [MEDIUM] CORS Misconfiguration - Unrestricted Access-Control-Allow-Origin - `findings/2025-11-10-cors-misconfiguration-unrestricted-access-control-.json` - POC: `pocs/poc_cors_wildcard_misconfiguration.sh`
-- [HIGH] Missing Brute Force Protection on Login Endpoint - `findings/2025-11-10-missing-brute-force-protection-on-login-endpoint.json` - POC: `pocs/poc_bruteforce_login_protection.sh`
-- [HIGH] Local File Inclusion (LFI) via /resource Endpoint with filename Parameter - Protected - `findings/2025-11-10-local-file-inclusion-lfi-via-resource-endpoint-wit.json` - POC: `pocs/poc_lfi_resource_endpoint_v1.sh`
-- [MEDIUM] Missing CSRF Token Protection on Login Endpoint - `findings/2025-11-10-missing-csrf-token-protection-on-login-endpoint.json` - POC: `pocs/poc_csrf_login_endpoint.sh`
-- [MEDIUM] Apache mod_status Endpoint Exposed with Insufficient Access Control - `findings/2025-11-10-apache-mod-status-endpoint-exposed-with-insufficie.json` - POC: `pocs/poc_mod_status_exposed.sh`

@@ -1,8 +1,0 @@
-- [MEDIUM] Missing Security Headers - `findings/2025-11-04-missing-security-headers.json` - POC: `pocs/poc_missing_security_headers.sh`
-- [MEDIUM] Absence of CSRF Protection Tokens - `findings/2025-11-04-absence-of-csrf-protection-tokens.json` - POC: `pocs/poc_csrf_no_protection.sh`
-- [LOW] Information Disclosure - Broken Challenge Link and Incomplete Feature - `findings/2025-11-04-information-disclosure-broken-challenge-link-and-i.json` - POC: `pocs/poc_broken_endpoint_info_disclosure.sh`
-- [HIGH] Missing Authentication and Authorization Controls on Root Endpoint - `findings/2025-11-04-missing-authentication-and-authorization-controls-.json` - POC: `pocs/poc_missing_authentication_controls.sh`
-- [HIGH] Missing Authorization Checks on Protected Endpoint (/level13) - `findings/2025-11-04-missing-authorization-checks-on-protected-endpoint.json` - POC: `pocs/poc_missing_auth_level13_v2.sh`
-- [HIGH] Reflected Cross-Site Scripting (XSS) on /level13 Endpoint - `findings/2025-11-04-reflected-cross-site-scripting-xss-on-level13-endp.json` - POC: `pocs/poc_xss_level13_bypass.sh`
-- [CRITICAL] Complete Absence of Access Control and User Isolation - No Function-Level Access Controls - `findings/2025-11-04-complete-absence-of-access-control-and-user-isolat.json` - POC: `pocs/poc_access_control_absence_comprehensive.sh`
-- [HIGH] Application Instability and Potential Denial of Service on /level13 - `findings/2025-11-04-application-instability-and-potential-denial-of-se.json` - POC: `pocs/poc_dos_level13_crash.sh`

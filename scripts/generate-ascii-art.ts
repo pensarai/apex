@@ -22,9 +22,9 @@ const CONFIG = {
 
 async function main() {
   const svgPath = join(__dirname, "..", "pensar.svg");
-  
+
   console.log("Generating ASCII art from pensar.svg...");
-  
+
   const coloredAscii = await convertImageToColoredAscii(
     svgPath,
     CONFIG.scale,
@@ -32,13 +32,12 @@ async function main() {
     CONFIG.aspectRatio,
     CONFIG.invert
   );
-  
+
   const outputPath = join(__dirname, "..", "src", "tui", "generated-ascii-art.json");
   writeFileSync(outputPath, JSON.stringify(coloredAscii));
-  
+
   console.log(`Generated ASCII art: ${coloredAscii.length} rows x ${coloredAscii[0]?.length || 0} columns`);
   console.log(`Saved to: ${outputPath}`);
 }
 
 main().catch(console.error);
-

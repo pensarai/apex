@@ -26,6 +26,12 @@ export const OPENROUTER_MODELS: ModelInfo[] = [
     contextLength: 200000,
   },
   {
+    id: "anthropic/claude-opus-4.5",
+    name: "Claude Opus 4.5 (OpenRouter)",
+    provider: "openrouter",
+    contextLength: 200000,
+  },
+  {
     id: "anthropic/claude-3.5-sonnet",
     name: "Claude 3.5 Sonnet (OpenRouter)",
     provider: "openrouter",
@@ -66,6 +72,12 @@ export const OPENROUTER_MODELS: ModelInfo[] = [
     name: "Gemini Pro 1.5",
     provider: "openrouter",
     contextLength: 2000000,
+  },
+  {
+    id: "google/gemini-3-pro-preview",
+    name: "Gemini 3 Pro Preview",
+    provider: "openrouter",
+    contextLength: 1000000,
   },
   {
     id: "meta-llama/llama-3.3-70b-instruct",
@@ -138,5 +150,53 @@ export const OPENROUTER_MODELS: ModelInfo[] = [
     name: "Qwen 3 32B Instruct",
     provider: "openrouter",
     contextLength: 256000,
+  },
+  {
+    id: "qwen/qwen3-30b-a3b-thinking-2507",
+    name: "Qwen 3 30B A3B Thinking",
+    provider: "openrouter",
+    contextLength: 32768,
+  },
+  {
+    id: "nvidia/nemotron-3-nano-30b-a3b:free",
+    name: "Nemotron 3 Nano 30B A3B (Free)",
+    provider: "openrouter",
+    contextLength: 256000,
+  },
+  {
+    id: "nvidia/nemotron-3-nano-30b-a3b",
+    name: "Nemotron 3 Nano 30B A3B",
+    provider: "openrouter",
+    contextLength: 262144
+  },
+  {
+    id: "arcee-ai/trinity-mini:free",
+    name: "Arcee Trinity Mini (Free)",
+    provider: "openrouter",
+    contextLength: 131072,
+  },
+  {
+    id: "arcee-ai/trinity-mini",
+    name: "Arcee Trinity Mini",
+    provider: "openrouter",
+    contextLength: 131072,
+  },
+  {
+    id: "x-ai/grok-4.1-fast:free",
+    name: "Grok 4.1 Fast (Free)",
+    provider: "openrouter",
+    contextLength: 2000000,
+  },
+  {
+    id: "x-ai/grok-code-fast-1",
+    name: "Grok Code Fast 1",
+    provider: "openrouter",
+    contextLength: 256000
+  },
+  {
+    id: "z-ai/glm-4.7-flash",
+    name: "GLM 4.7 Flash",
+    provider: "openrouter",
+    contextLength: 200000,
   },
 ];

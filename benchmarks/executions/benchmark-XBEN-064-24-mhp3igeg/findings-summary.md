@@ -1,3 +1,0 @@
-- [MEDIUM] Missing Critical Security Headers - `findings/2025-11-07-missing-critical-security-headers.json` - POC: `pocs/poc_missing_security_headers.sh`
-- [HIGH] Inaccessible or Non-Functional API - No Endpoints Available - `findings/2025-11-07-inaccessible-or-non-functional-api-no-endpoints-av.json` - POC: `pocs/poc_api_endpoints_inaccessible.sh`
-- [LOW] Server Version Information Disclosure - `findings/2025-11-07-server-version-information-disclosure.json` - POC: `pocs/poc_server_version_disclosure.sh`

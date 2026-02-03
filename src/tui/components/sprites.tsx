@@ -40,7 +40,7 @@ function useGlobalTick() {
 }
 
 /** Animated spinner with rotating dots */
-export function SpinnerDots({ label, fg }: { label?: string; fg?: string }) {
+export function SpinnerDots({ label, fg }: { label?: string; fg?: string | RGBA }) {
   const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
   const tick = useGlobalTick();
   const frame = tick % frames.length;
@@ -107,11 +107,13 @@ export function ProgressBar({
   width?: number;
 }) {
   const barWidth = width || 15;
-  const filled = Math.floor((value / 100) * barWidth);
+  // Clamp value between 0 and 100, handle NaN
+  const safeValue = Math.max(0, Math.min(100, isNaN(value) ? 0 : value));
+  const filled = Math.floor((safeValue / 100) * barWidth);
   const empty = barWidth - filled;
   const bar = "█".repeat(filled) + "░".repeat(empty);
 
-  return <text fg="green" content={`[${bar}] ${value}%`} />;
+  return <text fg="green" content={`[${bar}] ${safeValue}%`} />;
 }
 
 /** Pulsing dot indicator */

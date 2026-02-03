@@ -1,44 +1,63 @@
 import {
   RGBA,
-  TextAttributes,
   StyledText,
-  type TextChunk,
 } from "@opentui/core";
 import { SpinnerDots } from "./sprites";
-import type { Message, ToolMessage } from "../../core/messages";
 import { useState, memo } from "react";
-import { marked } from "marked";
-import type { Subagent } from "./hooks/pentestAgent";
-import fs from "fs";
+import type { Message } from "../../core/messages/types";
+import { useTerminalDimensions } from "@opentui/react";
+import { markdownToStyledText, getStableMessageKey, getArgsPreview } from "./shared";
 
-// File logger
-const LOG_FILE = "/tmp/apex-debug.log";
-function logToFile(message: string, data?: any) {
-  const timestamp = new Date().toISOString();
-  const logLine = `[${timestamp}] ${message} ${data ? JSON.stringify(data, null, 2) : ''}\n`;
-  fs.appendFileSync(LOG_FILE, logLine);
-}
+export type Subagent = {
+  id: string;
+  name: string;
+  type: "attack-surface" | "pentest";
+  target: string;
+  messages: Message[];
+  createdAt: Date;
+  status: "pending" | "completed" | "failed";
+};
 
+/**
+ * Tool execution status.
+ */
+export type ToolStatus = "pending" | "completed" | "error";
+
+/**
+ * Display message type - flexible type for UI display.
+ *
+ * For tool messages: toolCallId, toolName, args, and status are required.
+ * For text messages: only role, content, and createdAt are required.
+ *
+ * Use isToolMessage() type guard for safe narrowing to tool messages.
+ */
+export type DisplayMessage = {
+  role: "user" | "assistant" | "system" | "tool";
+  content: string | unknown[];
+  createdAt: Date;
+  // Tool-specific fields (present when role === "tool")
+  toolCallId?: string;
+  toolName?: string;
+  args?: Record<string, unknown>;
+  result?: unknown;
+  status?: ToolStatus;
+  logs?: string[];
+};
 
 function getStableKey(
-  item: Message | Subagent,
+  item: DisplayMessage | Subagent,
   contextId: string = "root"
 ): string {
+  // Subagents have their own unique ID
   if ("messages" in item) {
     return `subagent-${item.id}`;
-  } else if (item.role === "tool" && "toolCallId" in item) {
-    return `${contextId}-tool-${(item as ToolMessage).toolCallId}`;
-  } else {
-    const content = typeof item.content === "string"
-      ? item.content
-      : JSON.stringify(item.content);
-    const contentHash = content.length;
-    return `${contextId}-${item.role}-${item.createdAt.getTime()}-${contentHash}`;
   }
+  // Use shared utility for display messages
+  return getStableMessageKey(item, contextId);
 }
 
 interface AgentDisplayProps {
-  messages: Message[];
+  messages: DisplayMessage[];
   isStreaming?: boolean;
   children?: React.ReactNode;
   subagents?: Subagent[];
@@ -48,114 +67,6 @@ interface AgentDisplayProps {
   focused?: boolean; // Controls whether this scrollbox responds to scroll events
 }
 
-// Utility function to convert markdown to StyledText
-function markdownToStyledText(content: string): StyledText {
-  try {
-    const tokens = marked.lexer(content);
-    const chunks: TextChunk[] = [];
-
-    function processInlineTokens(
-      inlineTokens: any[],
-      defaultAttrs: number = 0
-    ): void {
-      for (const token of inlineTokens) {
-        if (token.type === "text") {
-          chunks.push({
-            __isChunk: true,
-            text: token.text,
-            attributes: defaultAttrs,
-          });
-        } else if (token.type === "strong") {
-          processInlineTokens(token.tokens, defaultAttrs | TextAttributes.BOLD);
-        } else if (token.type === "em") {
-          processInlineTokens(
-            token.tokens,
-            defaultAttrs | TextAttributes.ITALIC
-          );
-        } else if (token.type === "codespan") {
-          chunks.push({
-            __isChunk: true,
-            text: token.text,
-            fg: RGBA.fromInts(100, 255, 100, 255), // green for code
-            attributes: defaultAttrs,
-          });
-        } else if (token.type === "link") {
-          chunks.push({
-            __isChunk: true,
-            text: token.text,
-            fg: RGBA.fromInts(100, 200, 255, 255), // cyan for links
-            attributes: defaultAttrs | TextAttributes.UNDERLINE,
-          });
-        } else if (token.type === "br") {
-          chunks.push({
-            __isChunk: true,
-            text: "\n",
-            attributes: defaultAttrs,
-          });
-        } else if (token.tokens) {
-          processInlineTokens(token.tokens, defaultAttrs);
-        }
-      }
-    }
-
-    for (const token of tokens) {
-      if (token.type === "paragraph") {
-        if (token.tokens) processInlineTokens(token.tokens);
-        chunks.push({ __isChunk: true, text: "\n\n", attributes: 0 });
-      } else if (token.type === "heading") {
-        if (token.tokens)
-          processInlineTokens(token.tokens, TextAttributes.BOLD);
-        chunks.push({ __isChunk: true, text: "\n\n", attributes: 0 });
-      } else if (token.type === "list") {
-        for (const item of token.items) {
-          chunks.push({
-            __isChunk: true,
-            text: token.ordered ? `${item.task ? "☐ " : "• "}` : "• ",
-            attributes: 0,
-          });
-          processInlineTokens(item.tokens[0]?.tokens || []);
-          chunks.push({ __isChunk: true, text: "\n", attributes: 0 });
-        }
-        chunks.push({ __isChunk: true, text: "\n", attributes: 0 });
-      } else if (token.type === "code") {
-        chunks.push({
-          __isChunk: true,
-          text: token.text + "\n\n",
-          fg: RGBA.fromInts(100, 255, 100, 255), // green for code blocks
-          attributes: 0,
-        });
-      } else if (token.type === "blockquote") {
-        if (token.tokens) processInlineTokens(token.tokens);
-        chunks.push({ __isChunk: true, text: "\n\n", attributes: 0 });
-      } else if (token.type === "space") {
-        chunks.push({ __isChunk: true, text: "\n", attributes: 0 });
-      }
-    }
-
-    // Remove trailing newlines from the last chunk
-    if (chunks.length > 0) {
-      const lastChunk = chunks[chunks.length - 1];
-      if (lastChunk && lastChunk.text) {
-        lastChunk.text = lastChunk.text.trimEnd();
-        // Remove the chunk entirely if it's now empty
-        if (lastChunk.text === "") {
-          chunks.pop();
-        }
-      }
-    }
-
-    return new StyledText(chunks);
-  } catch (error) {
-    // Fallback to plain text if parsing fails
-    return new StyledText([
-      {
-        __isChunk: true,
-        text: content,
-        attributes: 0,
-      },
-    ]);
-  }
-}
 
 export default function AgentDisplay({
   messages,
@@ -237,16 +148,12 @@ export default function AgentDisplay({
   );
 }
 
-const SubAgentDisplay = memo(function SubAgentDisplay({ subagent }: { subagent: Subagent }) {
+const SubAgentDisplay = memo(function SubAgentDisplay({
+  subagent,
+}: {
+  subagent: Subagent;
+}) {
   const [open, setOpen] = useState(false);
-
-  // LOG: Rendering subagent
-  logToFile(`[Render] SubAgentDisplay for ${subagent.id}:`, {
-    name: subagent.name,
-    nameLength: subagent.name?.length || 0,
-    status: subagent.status,
-    messageCount: subagent.messages.length
-  });
 
   return (
     <box
@@ -282,7 +189,12 @@ const SubAgentDisplay = memo(function SubAgentDisplay({ subagent }: { subagent: 
   );
 });
 
-const AgentMessage = memo(function AgentMessage({ message }: { message: Message }) {
+const AgentMessage = memo(function AgentMessage({
+  message,
+}: {
+  message: DisplayMessage;
+}) {
+  const dimensions = useTerminalDimensions();
   let content = "";
 
   if (typeof message.content === "string") {
@@ -300,24 +212,26 @@ const AgentMessage = memo(function AgentMessage({ message }: { message: Message 
     content = JSON.stringify(message.content, null, 2);
   }
 
-  // LOG: Rendering message
-  if (message.role === "tool") {
-    logToFile(`[Render] AgentMessage (tool):`, {
-      toolCallId: (message as ToolMessage).toolCallId,
-      content: content.substring(0, 50),
-      contentLength: content.length,
-      isEmpty: content === "",
-      status: (message as ToolMessage).status
-    });
-  }
-
   // Render markdown for assistant messages
   const displayContent =
     message.role === "assistant" ? markdownToStyledText(content) : content;
 
   // Check if this is a pending tool message
   const isPendingTool =
-    message.role === "tool" && (message as ToolMessage).status === "pending";
+    message.role === "tool" && message.status === "pending";
+  const isCompletedTool =
+    message.role === "tool" && message.status === "completed";
+  const isErrorTool =
+    message.role === "tool" && message.status === "error";
+
+  // Get args preview for tool messages
+  const argsPreview =
+    message.role === "tool" && message.args
+      ? getArgsPreview(message.toolName || "", message.args, 80)
+      : "";
+
+  // Get streaming logs for pending tools
+  const streamingLogs = message.logs || [];
 
   return (
     <box
@@ -342,20 +256,57 @@ const AgentMessage = memo(function AgentMessage({ message }: { message: Message 
           />
         )}
         <box
+          maxWidth={dimensions.width - 20}
           padding={message.role !== "tool" ? 1 : 0}
           backgroundColor={
             message.role !== "tool" ? RGBA.fromInts(40, 40, 40, 255) : undefined
           }
+          flexDirection="column"
         >
           {isPendingTool ? (
-            <SpinnerDots
-              label={
-                typeof displayContent === "string" ? displayContent : content
-              }
-              fg="green"
-            />
+            <>
+              <SpinnerDots
+                label={
+                  typeof displayContent === "string" ? displayContent : content
+                }
+                fg="green"
+              />
+              {/* Args preview for pending tools */}
+              {argsPreview && (
+                <text fg={RGBA.fromInts(120, 120, 120, 255)} content={`  ${argsPreview}`} />
+              )}
+              {/* Streaming logs for pending tools */}
+              {streamingLogs.length > 0 && (
+                <box flexDirection="column" marginTop={0} paddingLeft={2}>
+                  {streamingLogs.slice(-3).map((log, idx) => (
+                    <text
+                      key={idx}
+                      fg={RGBA.fromInts(100, 100, 100, 255)}
+                      content={log.length > 100 ? log.slice(0, 100) + "…" : log}
+                    />
+                  ))}
+                </box>
+              )}
+            </>
           ) : (
-            <text fg="white" content={displayContent} />
+            <>
+              {/* Completed/error tool indicator */}
+              {message.role === "tool" && (
+                <box flexDirection="row" gap={1}>
+                  <text fg={isErrorTool ? "red" : "green"}>
+                    {isErrorTool ? "✗" : "✓"}
+                  </text>
+                  <text fg="white" content={displayContent} />
+                </box>
+              )}
+              {message.role !== "tool" && (
+                <text fg="white" content={displayContent} />
+              )}
+              {/* Args preview for completed tools */}
+              {message.role === "tool" && argsPreview && (
+                <text fg={RGBA.fromInts(120, 120, 120, 255)} content={`  ${argsPreview}`} />
+              )}
+            </>
           )}
         </box>
         {message.role === "user" && (
@@ -367,28 +318,80 @@ const AgentMessage = memo(function AgentMessage({ message }: { message: Message 
           />
         )}
       </box>
-      <ToolArgs message={message} />
+      <ToolDetails message={message} />
     </box>
   );
 });
 
-function ToolArgs({ message }: { message: Message }) {
-  const [open, setOpen] = useState(false);
-  if (message.role !== "tool" || !("args" in message)) {
+function ToolDetails({ message }: { message: DisplayMessage }) {
+  const [showArgs, setShowArgs] = useState(false);
+  const [showResult, setShowResult] = useState(false);
+
+  if (message.role !== "tool") {
     return null;
   }
 
-  const args = message.args;
+  const hasArgs = "args" in message && message.args;
+  const hasResult = "result" in message && message.result !== undefined;
+
+  if (!hasArgs && !hasResult) {
+    return null;
+  }
+
+  // Format result for display (truncate if too long)
+  const formatResult = (result: unknown): string => {
+    try {
+      const str = JSON.stringify(result, null, 2);
+      // Truncate very long results
+      if (str.length > 2000) {
+        return str.substring(0, 2000) + "\n... (truncated)";
+      }
+      return str;
+    } catch {
+      return String(result);
+    }
+  };
 
   return (
-    <box onMouseDown={(e) => {
-      e.stopPropagation();
-      setOpen(!open);
-    }}>
-      <box flexDirection="row" alignItems="center" gap={1}>
-        <text>{open ? "▼ Hide args" : "▶ Show args"}</text>
-      </box>
-      {open && <text>{JSON.stringify(args, null, 2)}</text>}
+    <box flexDirection="column" gap={1}>
+      {hasArgs && (
+        <box
+          onMouseDown={(e) => {
+            e.stopPropagation();
+            setShowArgs(!showArgs);
+          }}
+        >
+          <box flexDirection="row" alignItems="center" gap={1}>
+            <text fg={RGBA.fromInts(150, 150, 150, 255)}>
+              {showArgs ? "▼ Hide args" : "▶ Show args"}
+            </text>
+          </box>
+          {showArgs && (
+            <text fg={RGBA.fromInts(180, 180, 180, 255)}>
+              {JSON.stringify(message.args, null, 2)}
+            </text>
+          )}
+        </box>
+      )}
+      {hasResult && (
+        <box
+          onMouseDown={(e) => {
+            e.stopPropagation();
+            setShowResult(!showResult);
+          }}
+        >
+          <box flexDirection="row" alignItems="center" gap={1}>
+            <text fg={RGBA.fromInts(100, 200, 100, 255)}>
+              {showResult ? "▼ Hide output" : "▶ Show output"}
+            </text>
+          </box>
+          {showResult && (
+            <text fg={RGBA.fromInts(150, 220, 150, 255)}>
+              {formatResult(message.result)}
+            </text>
+          )}
+        </box>
+      )}
     </box>
   );
 }

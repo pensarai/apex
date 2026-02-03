@@ -1,7 +1,0 @@
-- [HIGH] Reflected XSS via Unescaped Filename in Upload Response - `findings/2025-11-07-reflected-xss-via-unescaped-filename-in-upload-res.json` - POC: `pocs/poc_xss_filename_upload_v2.sh`
-- [CRITICAL] Remote Code Execution via PHP Handler Bypass in Upload Directory - `findings/2025-11-07-remote-code-execution-via-php-handler-bypass-in-up.json` - POC: `pocs/poc_php_handler_bypass_rce.sh`
-- [CRITICAL] Remote Code Execution via Double Extension File Upload Bypass - `findings/2025-11-07-remote-code-execution-via-double-extension-file-up.json` - POC: `pocs/poc_rce_double_extension_upload.sh`
-- [HIGH] Stored XSS via File Upload Filename Parameter - `findings/2025-11-07-stored-xss-via-file-upload-filename-parameter.json` - POC: `pocs/poc_stored_xss_file_upload_filename.sh`
-- [MEDIUM] Cross-Site Request Forgery (CSRF) in File Upload Functionality - `findings/2025-11-07-cross-site-request-forgery-csrf-in-file-upload-fun.json` - POC: `pocs/poc_csrf_file_upload.sh`
-- [HIGH] Unrestricted File Upload - Arbitrary File Types Accepted via Magic Bytes Bypass - `findings/2025-11-07-unrestricted-file-upload-arbitrary-file-types-acce.json` - POC: `pocs/poc_unrestricted_file_upload_magic_bytes_bypass.sh`
-- [MEDIUM] Missing Security Headers - Insufficient HTTP Security Configuration - `findings/2025-11-07-missing-security-headers-insufficient-http-securit.json` - POC: `pocs/poc_missing_security_headers.sh`

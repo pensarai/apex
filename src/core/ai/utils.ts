@@ -3,6 +3,7 @@ import { streamResponse, type AIModel, type StreamResponseOpts } from './ai';
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 import { createAmazonBedrock } from '@ai-sdk/amazon-bedrock';
 import { createAnthropic } from '@ai-sdk/anthropic';
+import { createBaseten } from '@ai-sdk/baseten';
 import { getModelInfo } from './models';
 import {
   generateText,
@@ -17,6 +18,7 @@ export type AIAuthConfig = {
   openAiAPIKey?: string;
   anthropicAPIKey?: string;
   openRouterAPIKey?: string;
+  basetenAPIKey?: string;
   bedrock?: {
     accessKeyId?: string;
     secretAccessKey?: string;
@@ -39,6 +41,8 @@ export function getProviderModel(
     authConfig?.anthropicAPIKey || process.env.ANTHROPIC_API_KEY;
   const openRouterAPIKey =
     authConfig?.openRouterAPIKey || process.env.OPENROUTER_API_KEY;
+  const basetenAPIKey =
+    authConfig?.basetenAPIKey || process.env.BASETEN_API_KEY;
   const bedrockAccessKeyId =
     authConfig?.bedrock?.accessKeyId || process.env.AWS_ACCESS_KEY_ID;
   const bedrockSecretAccessKey =
@@ -87,6 +91,13 @@ export function getProviderModel(
         baseURL: localBaseURL,
         apiKey: '',
       }).chat(model);
+      break;
+
+    case 'baseten':
+      const baseten = createBaseten({
+        apiKey: basetenAPIKey,
+      });
+      providerModel = baseten(model) as unknown as LanguageModel;
       break;
 
     default:
@@ -347,4 +358,60 @@ export async function consumeStream(
       onToolResult?.(delta);
     }
   }
+}
+
+
+const levenshtein = (s1: string, s2: string) => {
+
+  if(s1 === s2) return 0;
+  let row2: number[] = [];
+
+  if(s1.length && s2.length) {
+    let i1 = 0, i2 = 0;
+    let a: number;
+    let b: number = 0;
+    let c: number;
+    let c2: number;
+    let row = row2;
+
+    while(i1 < s1.length)
+      row[i1] = ++i1;
+    while(i2 < s2.length) {
+      c2 = s2.charCodeAt(i2);
+      a = i2;
+      ++i2;
+      b = i2;
+      
+      for(i1 = 0; i1 < s1.length; ++i1) {
+        c = a + (s1.charCodeAt(i1) === c2 ? 0 : 1);
+        a = row[i1];
+        b = b <a ? (b < c ? b + 1 : c) : (a < c ? a + 1 : c);
+        row[i1] = b;
+      }
+    }
+    return b;
+  } else {
+    return s1.length + s2.length;
+  }
+}
+
+export function findSimilarTools(
+  requestedTool: string,
+  availableTools: string[],
+) {
+  const normalizedRequestName = requestedTool.replace(/[_-]/g, "").toLowerCase();
+
+  let match: string | null = null;
+  let bestDistance = Infinity;
+
+  for(let i=0; i<availableTools.length; i++) {
+    let target = availableTools[i].replace(/[_-]/g, "").toLowerCase();
+    let dist = levenshtein(normalizedRequestName, target)
+    if(dist < bestDistance) {
+      match = availableTools[i];
+      bestDistance = dist;
+    }
+  }
+
+  return match;
 }

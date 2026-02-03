@@ -1,9 +1,0 @@
-- [HIGH] Directory Traversal via Path Traversal in Static File Handler - `findings/2025-11-04-directory-traversal-via-path-traversal-in-static-f.json` - POC: `pocs/poc_directory_traversal_static_v3.sh`
-- [MEDIUM] Missing X-Frame-Options Header - Clickjacking Vulnerability - `findings/2025-11-04-missing-x-frame-options-header-clickjacking-vulner.json` - POC: `pocs/poc_missing_x_frame_options_header.sh`
-- [MEDIUM] Missing X-Content-Type-Options Header - MIME-Type Sniffing Vulnerability - `findings/2025-11-04-missing-x-content-type-options-header-mime-type-sn.json` - POC: `pocs/poc_missing_x_content_type_options.sh`
-- [HIGH] Reflected XSS in 'name' Parameter - HTML Context Injection - `findings/2025-11-04-reflected-xss-in-name-parameter-html-context-injec.json` - POC: `pocs/poc_reflected_xss_name_param.sh`
-- [MEDIUM] Missing Content-Security-Policy Header - `findings/2025-11-04-missing-content-security-policy-header.json` - POC: `pocs/poc_missing_csp_header.sh`
-- [LOW] Missing Strict-Transport-Security Header - `findings/2025-11-04-missing-strict-transport-security-header.json` - POC: `pocs/poc_missing_hsts_header.sh`
-- [LOW] Missing X-XSS-Protection Header - `findings/2025-11-04-missing-x-xss-protection-header.json` - POC: `pocs/poc_missing_xss_protection_header.sh`
-- [LOW] Missing Referrer-Policy Header - `findings/2025-11-04-missing-referrer-policy-header.json` - POC: `pocs/poc_missing_referrer_policy_header.sh`
-- [LOW] Missing Permissions-Policy Header - `findings/2025-11-04-missing-permissions-policy-header.json` - POC: `pocs/poc_missing_permissions_policy_header_v2.sh`

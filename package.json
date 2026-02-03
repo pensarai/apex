@@ -1,10 +1,21 @@
 {
   "name": "@pensar/apex",
-  "version": "0.0.40",
+  "version": "0.0.45",
   "description": "AI-powered penetration testing CLI tool with terminal UI",
   "module": "src/tui/index.tsx",
   "main": "build/index.js",
   "type": "module",
+  "exports": {
+    ".": {
+      "import": "./build/index.js",
+      "default": "./build/index.js"
+    },
+    "./api": {
+      "import": "./src/api/index.ts",
+      "types": "./src/api/index.ts",
+      "default": "./src/api/index.ts"
+    }
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/pensarai/apex.git"
@@ -15,11 +26,12 @@
   "files": [
     "build",
     "bin",
+    "src",
     "pensar.svg",
     "LICENSE"
   ],
   "scripts": {
-    "build": "bun build src/tui/index.tsx --outdir build --target node --format esm --external sharp && bun build scripts/benchmark.ts --outdir build --target node --format esm --external sharp && bun build scripts/quicktest.ts --outdir build --target node --format esm --external sharp && bun build scripts/pentest.ts --outdir build --target node --format esm --external sharp && bun build scripts/swarm.ts --outdir build --target node --format esm --external sharp",
+    "build": "bun build src/tui/index.tsx --outdir build --target node --format esm --external sharp",
     "generate:ascii": "bun run scripts/generate-ascii-art.ts",
     "build:binary": "bun run generate:ascii && bun build src/cli.ts --compile --outfile pensar",
     "build:binary:macos-arm64": "bun build src/cli.ts --compile --target=bun-darwin-arm64 --outfile dist/pensar-darwin-arm64",
@@ -31,10 +43,6 @@
     "dev:debug": "SHOW_CONSOLE=true bun run scripts/watch.ts",
     "start": "bun run src/tui/index.tsx",
     "pensar": "node bin/pensar.js",
-    "benchmark": "bun run scripts/benchmark.ts",
-    "quicktest": "bun run scripts/quicktest.ts",
-    "pentest": "bun run scripts/pentest.ts",
-    "swarm": "bun run scripts/swarm.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "prepublishOnly": "npm run build"
@@ -49,13 +57,15 @@
     "tui"
   ],
   "author": "Pensar",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "engines": {
     "node": ">=18.0.0",
     "bun": ">=1.0.0"
   },
   "devDependencies": {
+    "@playwright/mcp": "^0.0.54",
     "@types/bun": "^1.3.0",
+    "@types/react": "^19.2.6",
     "dotenv": "^17.2.3",
     "vitest": "^2.1.8"
   },
@@ -64,18 +74,23 @@
   },
   "dependencies": {
     "@ai-sdk/amazon-bedrock": "^3.0.34",
-    "@ai-sdk/anthropic": "^2.0.26",
-    "@ai-sdk/openai": "^2.0.48",
+    "@ai-sdk/anthropic": "^3.0.0",
+    "@ai-sdk/baseten": "^1.0.20",
+    "@ai-sdk/openai": "^3.0.0",
     "@daytonaio/sdk": "^0.112.1",
-    "@openrouter/ai-sdk-provider": "^1.2.0",
-    "@opentui/core": "0.1.26",
-    "@opentui/react": "0.1.26",
-    "ai": "^5.0.68",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@openrouter/ai-sdk-provider": "^2.1.1",
+    "@opentui/core": "^0.1.74",
+    "@opentui/react": "^0.1.74",
+    "ai": "^6.0.0",
+    "glob": "^13.0.0",
+    "ignore": "^7.0.5",
     "marked": "^16.4.0",
     "nanoid": "^5.1.6",
     "p-limit": "^7.2.0",
     "react": "^19.2.0",
     "sharp": "^0.34.4",
+    "yaml": "^2.8.2",
     "zod": "^4.1.12"
   },
   "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"

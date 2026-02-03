@@ -1,67 +1,51 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useKeyboard } from "@opentui/react";
-import { RGBA } from "@opentui/core";
-import os from "os";
 import { exec } from "child_process";
-import { rmSync, existsSync } from "fs";
-import { join } from "path";
-import { listSessions, getSession } from "../../../core/agent/sessions";
-import type { Session } from "../../../core/agent/sessions";
-import { getMessages, type Message } from "../../../core/messages";
-import AgentDisplay from "../agent-display";
+import { existsSync } from "fs";
+import { useRoute } from "../../context/route";
+import { useSession } from "../../context/session";
+import { useFocus } from "../../context/focus";
+import { Session } from "../../../core/session";
+import { Storage } from "../../../core/storage";
+import { Dialog } from "../../context/dialog";
+import { Renderable, ScrollBoxRenderable } from "@opentui/core";
 
-export default function SessionsDisplay({
-  closeSessions,
-}: {
-  closeSessions: () => void;
-}) {
-  const [sessionIds, setSessionIds] = useState<string[]>([]);
-  const [sessions, setSessions] = useState<(Session | null)[]>([]);
+interface SessionsDisplayProps {
+  onClose: () => void;
+}
+
+export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
+  const { refocusPrompt } = useFocus();
+  const [sessions, setSessions] = useState<(Session.SessionInfo)[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [statusMessage, setStatusMessage] = useState<string>("");
-  const [openMessages, setOpenMessages] = useState<boolean>(false);
+  const [searchTerm, setSearchTerm] = useState<string>("");
+
+  const route = useRoute();
+  const session = useSession();
+
+  const scroll = useRef<ScrollBoxRenderable>(null);
+
+  async function loadSessions() {
+    setLoading(true);
+    try {
+      const _sessions = await Array.fromAsync(Session.list());
+      setSessions(_sessions);
+    } catch (error) {
+      console.error("Error loading sessions:", error);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    async function loadSessions() {
-      setLoading(true);
-      try {
-        const ids = listSessions();
-        setSessionIds(ids);
-
-        // Load session details for each ID
-        const sessionDetails = ids.map((id) => getSession(id));
-        setSessions(sessionDetails);
-      } catch (error) {
-        console.error("Error loading sessions:", error);
-      } finally {
-        setLoading(false);
-      }
-    }
-
     loadSessions();
   }, []);
 
-  function openFolder() {
-    const session = sessions[selectedIndex];
-    if (!session) return;
-
-    exec(`open "${session.rootPath}"`, (error) => {
-      if (error) {
-        console.error("Error opening folder:", error);
-        setStatusMessage("Error opening folder");
-        setTimeout(() => setStatusMessage(""), 2000);
-      } else {
-        setTimeout(() => setStatusMessage(""), 2000);
-      }
-    });
-  }
-
-  function openReport() {
-    const session = sessions[selectedIndex];
-    if (!session) return;
-
-    const reportPath = join(session.rootPath, "pentest-report.md");
+  async function openReport(sessionId: string) {
+    const session = await Session.get(sessionId);
+    const reportPath = await Storage.locate([session.id, "pentest-report"], ".md");
 
     if (!existsSync(reportPath)) {
       setStatusMessage("Report not found");
@@ -80,25 +64,136 @@ export default function SessionsDisplay({
     });
   }
 
-  function deleteSession() {
-    const session = sessions[selectedIndex];
-    if (!session) return;
 
+  function scrollToIndex(index: number, list: Session.SessionInfo[]) {
+    if (!scroll.current || list.length === 0) return;
+
+    const targetSession = list[index];
+    if (!targetSession) return;
+
+    // Find the target element by searching through date groups
+    let target: Renderable | undefined;
+    for (const group of scroll.current.getChildren()) {
+      const found = group.getChildren().find(child => child.id === targetSession.id);
+      if (found) {
+        target = found;
+        break;
+      }
+    }
+
+    if (!target) return;
+
+    // Calculate target's visual position relative to the scroll container
+    const targetVisualY = target.y - scroll.current.y;
+    const viewportHeight = scroll.current.height;
+    const targetHeight = target.height || 1;
+
+    // If first item, always scroll to top
+    if (index === 0) {
+      scroll.current.scrollTo(0);
+      return;
+    }
+
+    // If last item, scroll to bottom
+    if (index === list.length - 1) {
+      scroll.current.scrollTo(Infinity);
+      return;
+    }
+
+    // Check if target is below visible area (accounting for its height)
+    if (targetVisualY + targetHeight > viewportHeight) {
+      // Scroll down by the amount needed to bring target into view
+      scroll.current.scrollBy(targetVisualY - viewportHeight + targetHeight + 1);
+    }
+    // Check if target is above visible area
+    else if (targetVisualY < 0) {
+      // Scroll up by the amount needed (targetVisualY is negative)
+      scroll.current.scrollBy(targetVisualY);
+    }
+  }
+
+  // Filter sessions based on search term
+  const filteredSessions = sessions.filter(session => {
+    if (!searchTerm) return true;
+    const searchLower = searchTerm.toLowerCase();
+    return (
+      session.name.toLowerCase().includes(searchLower)
+    );
+  });
+
+  // Group sessions by date (without indices first)
+  const groupedSessionsRaw: { date: string; timestamp: number; sessions: Session.SessionInfo[] }[] = [];
+  filteredSessions.forEach((session) => {
+    const startDate = new Date(session.time.created);
+    const dateStr = startDate.toLocaleDateString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
+    });
+
+    let group = groupedSessionsRaw.find(g => g.date === dateStr);
+    if (!group) {
+      group = { date: dateStr, timestamp: startDate.getTime(), sessions: [] };
+      groupedSessionsRaw.push(group);
+    }
+    group.sessions.push(session);
+  });
+
+  // Sort groups by date (newest first)
+  groupedSessionsRaw.sort((a, b) => b.timestamp - a.timestamp);
+
+  // Sort sessions within each group by time (newest first)
+  groupedSessionsRaw.forEach(group => {
+    group.sessions.sort((a, b) =>
+      new Date(b.time.created).getTime() - new Date(a.time.created).getTime()
+    );
+  });
+
+  // Create flat list in visual order and assign indices
+  const visualOrderSessions: Session.SessionInfo[] = [];
+  groupedSessionsRaw.forEach(group => {
+    visualOrderSessions.push(...group.sessions);
+  });
+
+  // Now create grouped sessions with correct visual indices
+  const groupedSessions: { date: string; sessions: (Session.SessionInfo & { index: number })[] }[] = [];
+  let visualIndex = 0;
+  groupedSessionsRaw.forEach(rawGroup => {
+    const group: { date: string; sessions: (Session.SessionInfo & { index: number })[] } = {
+      date: rawGroup.date,
+      sessions: []
+    };
+    rawGroup.sessions.forEach(session => {
+      group.sessions.push({ ...session, index: visualIndex });
+      visualIndex++;
+    });
+    groupedSessions.push(group);
+  });
+
+  // Clamp selectedIndex when list changes
+  useEffect(() => {
+    if (visualOrderSessions.length > 0 && selectedIndex >= visualOrderSessions.length) {
+      setSelectedIndex(visualOrderSessions.length - 1);
+    } else if (visualOrderSessions.length === 0) {
+      setSelectedIndex(0);
+    }
+  }, [visualOrderSessions.length, selectedIndex]);
+
+  async function deleteSession(sessionId: string) {
     try {
-      rmSync(session.rootPath, { recursive: true, force: true });
+      await Session.remove({ sessionId });
       setStatusMessage("Session deleted");
       setTimeout(() => setStatusMessage(""), 2000);
 
       // Reload sessions
-      const ids = listSessions();
-      setSessionIds(ids);
-      const sessionDetails = ids.map((id) => getSession(id));
-      setSessions(sessionDetails);
+      await loadSessions();
 
-      // Adjust selected index if needed
-      if (selectedIndex >= ids.length && ids.length > 0) {
-        setSelectedIndex(ids.length - 1);
-      } else if (ids.length === 0) {
+      // Adjust selected index - use visualOrderSessions.length - 1 since one was deleted
+      const newLength = visualOrderSessions.length - 1;
+      if (selectedIndex >= newLength && newLength > 0) {
+        setSelectedIndex(newLength - 1);
+      } else if (newLength === 0) {
         setSelectedIndex(0);
       }
     } catch (error) {
@@ -108,217 +203,185 @@ export default function SessionsDisplay({
     }
   }
 
-  useKeyboard((key) => {
-    // Escape - Close message display or sessions display
+  useKeyboard(async (key) => {
+    // Escape - Close sessions display
     if (key.name === "escape") {
-      if (openMessages) {
-        setOpenMessages(false);
-      } else {
-        closeSessions();
-      }
+      refocusPrompt();
+      onClose();
       return;
     }
 
-    // O - Open messages/agent display
-    if (key.name === "o" && sessionIds.length > 0 && !openMessages) {
-      setOpenMessages(true);
+    // Enter - View existing session (load state from disk)
+    if (key.name === "return" && visualOrderSessions.length > 0) {
+      key.preventDefault();
+      const currentSelection = visualOrderSessions[selectedIndex];
+      if (!currentSelection) return;
+      const _session = await session.load(currentSelection.id);
+      if(!_session) {
+        console.error("Error loading session");
+        return;
+      }
+      refocusPrompt();
+      onClose();
+      route.navigate({
+        type: "session",
+        sessionId: _session.id,
+        isResume: true // Load existing state, don't start new pentest
+      });
       return;
     }
 
     // Arrow Up - Previous session
-    if (key.name === "up" && sessionIds.length > 0 && !openMessages) {
-      setSelectedIndex((prev) => (prev > 0 ? prev - 1 : sessionIds.length - 1));
+    if (key.name === "up" && visualOrderSessions.length > 0) {
+      const newIndex = selectedIndex > 0 ? selectedIndex - 1 : visualOrderSessions.length - 1;
+      setSelectedIndex(newIndex);
+      scrollToIndex(newIndex, visualOrderSessions);
       return;
     }
 
     // Arrow Down - Next session
-    if (key.name === "down" && sessionIds.length > 0 && !openMessages) {
-      setSelectedIndex((prev) => (prev < sessionIds.length - 1 ? prev + 1 : 0));
-      return;
-    }
-
-    // F - Open folder
-    if (key.name === "f" && sessionIds.length > 0 && !openMessages) {
-      openFolder();
+    if (key.name === "down" && visualOrderSessions.length > 0) {
+      const newIndex = selectedIndex < visualOrderSessions.length - 1 ? selectedIndex + 1 : 0;
+      setSelectedIndex(newIndex);
+      scrollToIndex(newIndex, visualOrderSessions);
       return;
     }
 
     // R - Open report
-    if (key.name === "r" && sessionIds.length > 0 && !openMessages) {
-      openReport();
+    if (key.name === "r" && visualOrderSessions.length > 0) {
+      const currentSelection = visualOrderSessions[selectedIndex];
+      if (!currentSelection) return;
+      openReport(currentSelection.id);
       return;
     }
 
-    // D - Delete session (with confirmation)
-    if (key.name === "d" && sessionIds.length > 0 && !openMessages) {
-      deleteSession();
+    // Ctrl+D - Delete session
+    if (key.ctrl && key.name === "d" && visualOrderSessions.length > 0) {
+      const currentSelection = visualOrderSessions[selectedIndex];
+      if (!currentSelection) return;
+      await deleteSession(currentSelection.id);
       return;
     }
   });
 
+
+  const handleClose = () => {
+    refocusPrompt();
+    onClose();
+  };
+
   return (
-    <>
-      {openMessages && (
-        <SessionMessagesDisplay session={sessions[selectedIndex]!} />
-      )}
-      {!openMessages && (
+    <Dialog size="large" onClose={handleClose}>
+      <box
+        flexDirection="column"
+        padding={2}
+        gap={2}
+        width="100%"
+      >
+        {/* Header */}
+        <box flexDirection="row" justifyContent="space-between" width="100%">
+          <text fg="white">Sessions</text>
+          <text fg="gray">esc to close</text>
+        </box>
+
+        {/* Search Input */}
         <box
-          alignItems="center"
-          justifyContent="center"
-          flexDirection="column"
-          backgroundColor={RGBA.fromInts(0, 0, 0, 100)}
           width="100%"
-          maxHeight="100%"
-          flexGrow={1}
-          flexShrink={1}
-          overflow="hidden"
-          gap={1}
+          border={["left"]}
+          borderColor="green"
+          backgroundColor="transparent"
         >
-          <box flexDirection="column" width="80%" gap={1}>
-            <text fg="green">Sessions</text>
-            <text fg="white">
-              Sessions folder:{" "}
-              <span fg="gray">~{os.homedir()}/.pensar/executions</span>
-            </text>
+          <input
+            paddingLeft={1}
+            backgroundColor="transparent"
+            placeholder="Search sessions..."
+            value={searchTerm}
+            onInput={setSearchTerm}
+            focused
+          />
+        </box>
 
-            {loading && <text fg="gray">Loading sessions...</text>}
+        {/* Sessions List */}
+        {loading ? (
+          <text fg="gray">Loading sessions...</text>
+        ) : visualOrderSessions.length === 0 ? (
+          <text fg="gray">No sessions found</text>
+        ) : (
+          <box flexDirection="column" gap={2} flexGrow={1} maxHeight={10} overflow="hidden">
+            <scrollbox
+              ref={scroll}
+              scrollbarOptions={{ visible: false }}
+              style={{
+                rootOptions: {
+                  maxHeight: 10,
+                  width: "100%",
+                  flexGrow: 1,
+                  flexShrink: 1,
+                  overflow: "hidden",
+                },
+                wrapperOptions: {
+                  overflow: "hidden",
+                },
+                contentOptions: {
+                  gap: 2,
+                  flexDirection: "column",
+                },
+              }}
+            >
+              {groupedSessions.map((group) => (
+                <box key={group.date} flexDirection="column" gap={1}>
+                  {/* Date Header */}
+                  <text fg="green">{group.date}</text>
 
-            {!loading && sessionIds.length === 0 && (
-              <text fg="yellow">No sessions found</text>
-            )}
+                  {/* Sessions in this date group */}
+                  {group.sessions.map((session) => {
+                    const isSelected = session.index === selectedIndex;
+                    const startTime = new Date(session.time.created);
+                    const timeStr = startTime.toLocaleTimeString('en-US', {
+                      hour: 'numeric',
+                      minute: '2-digit',
+                      hour12: true
+                    });
 
-            {!loading && sessionIds.length > 0 && (
-              <scrollbox
-                style={{
-                  rootOptions: {
-                    width: "100%",
-                    maxWidth: "100%",
-                    flexGrow: 1,
-                    flexShrink: 1,
-                    overflow: "hidden",
-                    borderColor: "green",
-                    focusedBorderColor: "green",
-                    border: true,
-                  },
-                  wrapperOptions: {
-                    overflow: "hidden",
-                  },
-                  contentOptions: {
-                    gap: 1,
-                    flexGrow: 1,
-                    flexDirection: "column",
-                  },
-                  scrollbarOptions: {
-                    trackOptions: {
-                      foregroundColor: "green",
-                      backgroundColor: RGBA.fromInts(40, 40, 40, 255),
-                    },
-                  },
-                }}
-                focused
-              >
-                {sessions.map((session, index) => {
-                  const isSelected = index === selectedIndex;
-                  const sessionId = sessionIds[index];
-
-                  if (!session) {
                     return (
-                      <box key={sessionId} flexDirection="row" gap={1}>
-                        <text fg={isSelected ? "green" : "gray"}>
-                          {isSelected ? ">" : " "} {sessionId || "Unknown"}
+                      <box
+                        id={session.id}
+                        key={session.id}
+                        onMouseDown={() => setSelectedIndex(session.index)}
+                        backgroundColor="transparent"
+                        border={isSelected ? ["left"] : undefined}
+                        borderColor={isSelected ? "green" : undefined}
+                        paddingLeft={2}
+                        flexDirection="row"
+                        justifyContent="space-between"
+                        width="100%"
+                      >
+                        <text fg={isSelected ? "white" : "gray"}>
+                          {isSelected ? "● " : "  "}{session.name}
                         </text>
-                        <text fg="red">(metadata not found)</text>
+                        <text fg="gray">{timeStr}</text>
                       </box>
                     );
-                  }
-
-                  const startDate = new Date(session.startTime);
-                  const formattedDate = startDate.toLocaleString();
-
-                  return (
-                    <box
-                      onMouseDown={() => setSelectedIndex(index)}
-                      key={session.id}
-                      flexDirection="column"
-                      gap={0}
-                      padding={1}
-                    >
-                      <text fg={isSelected ? "green" : "white"}>
-                        {isSelected ? "▶ " : "  "} {session.id}
-                      </text>
-                      <box paddingLeft={1} flexDirection="column" gap={0}>
-                        <text paddingLeft={4} fg="gray">
-                          {"  "}Target: {session.target}
-                        </text>
-                        <text paddingLeft={4} fg="gray">
-                          {"  "}Objective: {session.objective}
-                        </text>
-                        <text paddingLeft={4} fg="gray">
-                          {"  "}Started: {formattedDate}
-                        </text>
-                        <text paddingLeft={4} fg="gray">
-                          {"  "}Path: {session.rootPath}
-                        </text>
-                      </box>
-                    </box>
-                  );
-                })}
-              </scrollbox>
-            )}
-
-            {sessionIds.length > 0 && (
-              <box
-                flexDirection="column"
-                width="100%"
-                gap={1}
-                border={true}
-                borderColor="green"
-                padding={1}
-              >
-                <text fg="white">Actions for selected session:</text>
-                <box flexDirection="row" gap={2}>
-                  <text fg="green" onMouseDown={openReport}>
-                    [O] Open Session
-                  </text>
-                  <text fg="green" onMouseDown={openFolder}>
-                    [F] Open Folder
-                  </text>
-                  <text fg="green" onMouseDown={openReport}>
-                    [R] Open Report
-                  </text>
-
-                  <text fg="red" onMouseDown={deleteSession}>
-                    [D] Delete
-                  </text>
+                  })}
                 </box>
-                {statusMessage && <text fg="yellow">{statusMessage}</text>}
-              </box>
-            )}
-
-            <box flexDirection="row" width="100%" gap={1}>
-              <text fg="gray">
-                <span fg="green">[↑↓]</span> Navigate ·{" "}
-                <span fg="green">[O]</span> Open Messages ·{" "}
-                <span fg="green">[ESC]</span> Close
-              </text>
-            </box>
+              ))}
+            </scrollbox>
           </box>
-        </box>
-      )}
-    </>
+        )}
+
+        {/* Actions Footer */}
+        {visualOrderSessions.length > 0 && (
+          <box flexDirection="row" gap={2}>
+            <text fg="gray">
+              <span fg="green">[Enter]</span> Open · <span fg="green">[R]</span> Report · <span fg="green">[Ctrl+D]</span> Delete
+            </text>
+          </box>
+        )}
+
+        {statusMessage && (
+          <text fg="green">{statusMessage}</text>
+        )}
+      </box>
+    </Dialog>
   );
-}
-
-function SessionMessagesDisplay({ session }: { session: Session }) {
-  const [messages, setMessages] = useState<Message[]>([]);
-
-  useEffect(() => {
-    try {
-      setMessages(getMessages(session));
-    } catch (error) {
-      console.error("Error loading messages:", error);
-    }
-  }, [session]);
-
-  return <AgentDisplay messages={messages} />;
 }

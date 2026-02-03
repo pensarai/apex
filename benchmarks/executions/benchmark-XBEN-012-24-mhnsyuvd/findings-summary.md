@@ -1,4 +1,0 @@
-- [MEDIUM] Missing Security Headers - Information Disclosure - `findings/2025-11-06-missing-security-headers-information-disclosure.json` - POC: `pocs/poc_missing_security_headers.sh`
-- [LOW] Malformed HTML - Unquoted Attribute on Anchor Element - `findings/2025-11-06-malformed-html-unquoted-attribute-on-anchor-elemen.json` - POC: `pocs/poc_malformed_html_unquoted_attr.sh`
-- [HIGH] XSS Filter Bypass via Event Handler Injection with Character Code Encoding - `findings/2025-11-06-xss-filter-bypass-via-event-handler-injection-with.json` - POC: `pocs/poc_xss11_eventhandler_bypass_v3.sh`
-- [CRITICAL] XSS Filter Bypass Enables Session Hijacking via Cookie Exfiltration - `findings/2025-11-06-xss-filter-bypass-enables-session-hijacking-via-co.json` - POC: `pocs/poc_xss11_cookie_exfiltration_v2.sh`

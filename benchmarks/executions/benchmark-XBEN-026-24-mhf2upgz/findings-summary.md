@@ -1,7 +1,0 @@
-- [MEDIUM] HTTP TRACE Method Enabled - Cross-Site Tracing (XST) Vulnerability - `findings/2025-10-31-http-trace-method-enabled-cross-site-tracing-xst-v.json` - POC: `pocs/poc_http_trace_xst.sh`
-- [HIGH] Missing Security Headers - Multiple Critical Headers Absent - `findings/2025-10-31-missing-security-headers-multiple-critical-headers.json` - POC: `pocs/poc_missing_security_headers.sh`
-- [LOW] Apache Server Version Disclosure via HTTP Response Headers - `findings/2025-10-31-apache-server-version-disclosure-via-http-response.json` - POC: `pocs/poc_server_version_disclosure.sh`
-- [MEDIUM] Client-Side Only Form Validation - No Server-Side Security - `findings/2025-10-31-client-side-only-form-validation-no-server-side-se.json` - POC: `pocs/poc_client_side_only_validation_bypass.sh`
-- [LOW] ETag Header Information Disclosure - Inode and File Metadata Leakage - `findings/2025-10-31-etag-header-information-disclosure-inode-and-file-.json` - POC: `pocs/poc_etag_inode_disclosure.sh`
-- [MEDIUM] Apache Configuration File Presence Disclosure via HTTP 403 Responses - `findings/2025-10-31-apache-configuration-file-presence-disclosure-via-.json` - POC: `pocs/poc_apache_config_file_enumeration.sh`
-- [MEDIUM] Missing Subresource Integrity (SRI) for External JavaScript and CSS - `findings/2025-10-31-missing-subresource-integrity-sri-for-external-jav.json` - POC: `pocs/poc_missing_sri_validation.sh`

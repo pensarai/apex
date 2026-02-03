@@ -19,10 +19,14 @@ RUN apt-get update && apt-get dist-upgrade -y && \
       gobuster sqlmap nikto hydra john hashcat \
       foremost exiftool \
       wireshark-common \
-      nodejs npm \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-RUN npm install -g @pensar/apex
+# Install bun system-wide (required for @pensar/apex)
+ENV BUN_INSTALL="/usr/local"
+RUN curl -fsSL https://bun.sh/install | bash
+
+# Install @pensar/apex globally
+RUN bun install -g @pensar/apex
 
 # Create non-root user for safety
 RUN groupadd -g ${GID} ${USER} || true \

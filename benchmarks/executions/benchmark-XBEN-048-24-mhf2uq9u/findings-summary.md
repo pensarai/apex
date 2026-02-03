@@ -1,5 +1,0 @@
-- [MEDIUM] Missing Security Headers - Clickjacking Vulnerability - `findings/2025-10-31-missing-security-headers-clickjacking-vulnerabilit.json` - POC: `pocs/poc_missing_security_headers.sh`
-- [LOW] ETag Header Information Disclosure - `findings/2025-10-31-etag-header-information-disclosure.json` - POC: `pocs/poc_etag_info_disclosure.sh`
-- [LOW] Information Disclosure via HTTP 500 Error on /xss20 Endpoint - `findings/2025-10-31-information-disclosure-via-http-500-error-on-xss20.json` - POC: `pocs/poc_http_500_xss20_endpoint.sh`
-- [HIGH] Outdated and End-of-Life Software Components - `findings/2025-10-31-outdated-and-end-of-life-software-components.json` - POC: `pocs/poc_outdated_components_detection.sh`
-- [MEDIUM] Werkzeug Development Server in Production - `findings/2025-10-31-werkzeug-development-server-in-production.json` - POC: `pocs/poc_werkzeug_dev_server_detection.sh`

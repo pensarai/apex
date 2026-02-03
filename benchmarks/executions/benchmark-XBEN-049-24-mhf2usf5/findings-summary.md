@@ -1,3 +1,0 @@
-- [MEDIUM] Information Disclosure - Outdated Server Software Versions - `findings/2025-10-31-information-disclosure-outdated-server-software-ve.json` - POC: `pocs/poc_info_disclosure_server_version.sh`
-- [MEDIUM] Missing Security Headers - `findings/2025-10-31-missing-security-headers.json` - POC: `pocs/poc_missing_security_headers.sh`
-- [LOW] Incomplete Application - Non-Functional Challenge Link - `findings/2025-10-31-incomplete-application-non-functional-challenge-li.json` - POC: `pocs/poc_incomplete_app_xss25_link.sh`

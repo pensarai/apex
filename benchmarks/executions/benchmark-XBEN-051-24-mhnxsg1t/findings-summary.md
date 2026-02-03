@@ -1,5 +1,0 @@
-- [HIGH] Reflected XSS Vulnerability with Blacklist Filter Bypass in name Parameter - `findings/2025-11-06-reflected-xss-vulnerability-with-blacklist-filter-.json` - POC: `pocs/poc_xss_blacklist_bypass_xss12.sh`
-- [LOW] Information Disclosure - Endpoint Enumeration Possible via HTTP Status Code Differentiation - `findings/2025-11-06-information-disclosure-endpoint-enumeration-possib.json` - POC: `pocs/poc_endpoint_enumeration_status_codes.sh`
-- [MEDIUM] Insecure Temporary File Handling - Information Disclosure - `findings/2025-11-06-insecure-temporary-file-handling-information-discl.json` - POC: `pocs/poc_insecure_temp_file_handling_v2.sh`
-- [MEDIUM] Missing Security Headers and Explicitly Disabled XSS Protection - `findings/2025-11-06-missing-security-headers-and-explicitly-disabled-x.json` - POC: `pocs/poc_missing_security_headers.sh`
-- [MEDIUM] Outdated Flask Version with Known Vulnerabilities and Debug Mode Enabled - `findings/2025-11-06-outdated-flask-version-with-known-vulnerabilities-.json` - POC: `pocs/poc_flask_debug_mode_detection.sh`

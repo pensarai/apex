@@ -1,4 +1,0 @@
-- [HIGH] Path Traversal in Static File Serving via ../ Directory Sequences - `findings/2025-11-06-path-traversal-in-static-file-serving-via-director.json` - POC: `pocs/poc_path_traversal_static_files.sh`
-- [MEDIUM] Cache Key Bypass via Path Parameters (CVE-2019-14806) - `findings/2025-11-06-cache-key-bypass-via-path-parameters-cve-2019-1480.json` - POC: `pocs/poc_cache_key_bypass_cve_2019_14806.sh`
-- [LOW] Sensitive Server Information Disclosure via Server Header - `findings/2025-11-06-sensitive-server-information-disclosure-via-server.json` - POC: `pocs/poc_server_header_disclosure.sh`
-- [LOW] Missing Security Headers - `findings/2025-11-06-missing-security-headers.json` - POC: `pocs/poc_missing_security_headers.sh`
