@@ -118,7 +118,7 @@ export default function SessionView({
   useEffect(() => {
     if (session && !hasStarted && !loading && !isResume) {
       const mode = session.config?.mode;
-      if (mode === 'operator' || mode === 'driver') {
+      if (mode === "operator" || mode === "driver") {
         return; // These modes wait for user to initiate
       }
       setHasStarted(true);
@@ -146,6 +146,8 @@ export default function SessionView({
       setAbortController(controller);
 
       let currentDiscoveryText = "";
+      // Track accumulated text per pentest agent for real-time streaming
+      const pentestAgentTexts = new Map<string, string>();
 
       try {
         // Add discovery subagent
@@ -211,27 +213,32 @@ export default function SessionView({
                 }
               }
 
-              // Add tool calls
+              // Add tool calls (check if not already exists to avoid duplicates)
               if (toolCalls && toolCalls.length > 0) {
                 setThinking(false);
                 for (const tc of toolCalls) {
-                  // AI SDK v5.x uses 'input' instead of 'args'
-                  const args = (tc as any).input as
-                    | Record<string, unknown>
-                    | undefined;
-                  const toolDescription =
-                    typeof args?.toolCallDescription === "string"
-                      ? args.toolCallDescription
-                      : tc.toolName;
-                  newMessages.push({
-                    role: "tool",
-                    status: "pending",
-                    toolCallId: tc.toolCallId,
-                    toolName: tc.toolName,
-                    content: toolDescription,
-                    args: args,
-                    createdAt: new Date(),
-                  });
+                  const exists = newMessages.some(
+                    (m) => m.role === "tool" && m.toolCallId === tc.toolCallId
+                  );
+                  if (!exists) {
+                    // AI SDK v5.x uses 'input' instead of 'args'
+                    const args = (tc as any).input as
+                      | Record<string, unknown>
+                      | undefined;
+                    const toolDescription =
+                      typeof args?.toolCallDescription === "string"
+                        ? args.toolCallDescription
+                        : tc.toolName;
+                    newMessages.push({
+                      role: "tool",
+                      status: "pending",
+                      toolCallId: tc.toolCallId,
+                      toolName: tc.toolName,
+                      content: toolDescription,
+                      args: args,
+                      createdAt: new Date(),
+                    });
+                  }
                 }
               }
 
@@ -244,7 +251,7 @@ export default function SessionView({
                   );
                   if (msgIdx !== -1) {
                     const existingMsg = newMessages[msgIdx] as ToolUIMessage;
-                    // Use the stored toolCallDescription (in content) if available, fallback to toolName
+                    // Always update to completed (handles race conditions)
                     const description =
                       typeof existingMsg.content === "string" &&
                       existingMsg.content !== existingMsg.toolName
@@ -253,9 +260,20 @@ export default function SessionView({
                     newMessages[msgIdx] = {
                       ...existingMsg,
                       status: "completed",
-                      content: `✓ ${description}`,
-                      result: (tr as any).output, // Store the tool output
+                      content: `+ ${description}`,
+                      result: (tr as any).output,
                     };
+                  } else {
+                    // Tool result arrived before tool call - create as completed
+                    newMessages.push({
+                      role: "tool",
+                      status: "completed",
+                      toolCallId: tr.toolCallId,
+                      toolName: tr.toolName,
+                      content: `+ ${tr.toolName || "tool"}`,
+                      result: (tr as any).output,
+                      createdAt: new Date(),
+                    });
                   }
                 }
               }
@@ -265,14 +283,12 @@ export default function SessionView({
             });
           },
 
-          // Keep onDiscoveryStream as backup for real-time text streaming
+          // Real-time streaming for discovery agent
           onDiscoveryStream: (chunk) => {
-            // Only handle text-delta for real-time streaming effect
-            // Other chunk types are handled by onStepFinish for reliability
-            if (chunk.type === "text-delta" && chunk.textDelta) {
-              currentDiscoveryText += chunk.textDelta;
+            if (chunk.type === "text-delta" && chunk.text) {
+              currentDiscoveryText += chunk.text;
+              setThinking(false);
 
-              // Debounce updates - only update every 100ms worth of text
               if (currentDiscoveryText.trim()) {
                 setSubagents((prev) => {
                   const idx = prev.findIndex(
@@ -308,6 +324,97 @@ export default function SessionView({
                   return updated;
                 });
               }
+            } else if (chunk.type === "tool-call") {
+              // Real-time tool call streaming
+              setThinking(false);
+              const tc = chunk as any;
+              const toolCallId = tc.toolCallId;
+              const toolName = tc.toolName || "tool";
+              const args = tc.input ?? tc.args;
+              const toolDescription =
+                typeof args?.toolCallDescription === "string"
+                  ? args.toolCallDescription
+                  : toolName;
+
+              setSubagents((prev) => {
+                const idx = prev.findIndex(
+                  (s) => s.id === "attack-surface-discovery"
+                );
+                if (idx === -1) return prev;
+
+                const updated = [...prev];
+                const subagent = updated[idx]!;
+                const newMessages = [...subagent.messages];
+
+                // Check if tool call already exists
+                const exists = newMessages.some(
+                  (m) => m.role === "tool" && m.toolCallId === toolCallId
+                );
+                if (!exists) {
+                  newMessages.push({
+                    role: "tool",
+                    status: "pending",
+                    toolCallId,
+                    toolName,
+                    content: toolDescription,
+                    args,
+                    createdAt: new Date(),
+                  });
+                }
+
+                updated[idx] = { ...subagent, messages: newMessages };
+                return updated;
+              });
+            } else if (chunk.type === "tool-result") {
+              // Real-time tool result streaming
+              setThinking(true);
+              const tr = chunk as any;
+              const toolCallId = tr.toolCallId;
+              const toolName = tr.toolName || "tool";
+              const result = tr.output ?? tr.result;
+
+              setSubagents((prev) => {
+                const idx = prev.findIndex(
+                  (s) => s.id === "attack-surface-discovery"
+                );
+                if (idx === -1) return prev;
+
+                const updated = [...prev];
+                const subagent = updated[idx]!;
+                const newMessages = [...subagent.messages];
+
+                const msgIdx = newMessages.findIndex(
+                  (m) => m.role === "tool" && m.toolCallId === toolCallId
+                );
+                if (msgIdx !== -1) {
+                  const existingMsg = newMessages[msgIdx] as ToolUIMessage;
+                  const description =
+                    typeof existingMsg.content === "string" &&
+                    existingMsg.content !== existingMsg.toolName
+                      ? existingMsg.content
+                      : existingMsg.toolName || "tool";
+                  newMessages[msgIdx] = {
+                    ...existingMsg,
+                    status: "completed",
+                    content: `+ ${description}`,
+                    result,
+                  };
+                } else {
+                  // Tool result arrived before tool call
+                  newMessages.push({
+                    role: "tool",
+                    status: "completed",
+                    toolCallId,
+                    toolName,
+                    content: `+ ${toolName}`,
+                    result,
+                    createdAt: new Date(),
+                  });
+                }
+
+                updated[idx] = { ...subagent, messages: newMessages };
+                return updated;
+              });
             } else if (chunk.type === "step-finish") {
               // Reset accumulated text at step boundaries
               currentDiscoveryText = "";
@@ -337,8 +444,138 @@ export default function SessionView({
           },
 
           onPentestAgentStream: (event: SubAgentStreamEvent) => {
-            if (event.type === "step-finish" && event.data) {
-              const { text, toolCalls, toolResults, usage } = event.data;
+            const agentId = event.agentId;
+
+            // Handle real-time text streaming
+            if (event.type === "text-delta" && event.data?.text) {
+              const currentText = pentestAgentTexts.get(agentId) || "";
+              const newText = currentText + event.data.text;
+              pentestAgentTexts.set(agentId, newText);
+
+              if (newText.trim()) {
+                setSubagents((prev) => {
+                  const idx = prev.findIndex((s) => s.id === agentId);
+                  if (idx === -1) return prev;
+
+                  const updated = [...prev];
+                  const subagent = updated[idx]!;
+                  const lastMsg =
+                    subagent.messages[subagent.messages.length - 1];
+
+                  if (lastMsg && lastMsg.role === "assistant") {
+                    const newMessages = [...subagent.messages];
+                    newMessages[newMessages.length - 1] = {
+                      ...lastMsg,
+                      content: newText,
+                    };
+                    updated[idx] = { ...subagent, messages: newMessages };
+                  } else {
+                    updated[idx] = {
+                      ...subagent,
+                      messages: [
+                        ...subagent.messages,
+                        {
+                          role: "assistant",
+                          content: newText,
+                          createdAt: new Date(),
+                        },
+                      ],
+                    };
+                  }
+                  return updated;
+                });
+              }
+            }
+            // Handle real-time tool call streaming
+            else if (event.type === "tool-call") {
+              const tc = event.data as any;
+              const toolCallId = tc.toolCallId;
+              const toolName = tc.toolName || "tool";
+              const args = tc.input ?? tc.args;
+              const toolDescription =
+                typeof args?.toolCallDescription === "string"
+                  ? args.toolCallDescription
+                  : toolName;
+
+              setSubagents((prev) => {
+                const idx = prev.findIndex((s) => s.id === agentId);
+                if (idx === -1) return prev;
+
+                const updated = [...prev];
+                const subagent = updated[idx]!;
+                const newMessages = [...subagent.messages];
+
+                // Check if tool call already exists
+                const exists = newMessages.some(
+                  (m) => m.role === "tool" && m.toolCallId === toolCallId
+                );
+                if (!exists) {
+                  newMessages.push({
+                    role: "tool",
+                    status: "pending",
+                    toolCallId,
+                    toolName,
+                    content: toolDescription,
+                    args,
+                    createdAt: new Date(),
+                  });
+                }
+
+                updated[idx] = { ...subagent, messages: newMessages };
+                return updated;
+              });
+            }
+            // Handle real-time tool result streaming
+            else if (event.type === "tool-result") {
+              const tr = event.data as any;
+              const toolCallId = tr.toolCallId;
+              const toolName = tr.toolName || "tool";
+              const result = tr.output ?? tr.result;
+
+              setSubagents((prev) => {
+                const idx = prev.findIndex((s) => s.id === agentId);
+                if (idx === -1) return prev;
+
+                const updated = [...prev];
+                const subagent = updated[idx]!;
+                const newMessages = [...subagent.messages];
+
+                const msgIdx = newMessages.findIndex(
+                  (m) => m.role === "tool" && m.toolCallId === toolCallId
+                );
+                if (msgIdx !== -1) {
+                  const existingMsg = newMessages[msgIdx] as ToolUIMessage;
+                  const description =
+                    typeof existingMsg.content === "string" &&
+                    existingMsg.content !== existingMsg.toolName
+                      ? existingMsg.content
+                      : existingMsg.toolName || "tool";
+                  newMessages[msgIdx] = {
+                    ...existingMsg,
+                    status: "completed",
+                    content: `+ ${description}`,
+                    result,
+                  };
+                } else {
+                  // Tool result arrived before tool call
+                  newMessages.push({
+                    role: "tool",
+                    status: "completed",
+                    toolCallId,
+                    toolName,
+                    content: `+ ${toolName}`,
+                    result,
+                    createdAt: new Date(),
+                  });
+                }
+
+                updated[idx] = { ...subagent, messages: newMessages };
+                return updated;
+              });
+            }
+            // Handle step-finish for token tracking and resetting text accumulator
+            else if (event.type === "step-finish" && event.data) {
+              const { usage } = event.data;
 
               if (usage) {
                 const stepTokens =
@@ -350,78 +587,8 @@ export default function SessionView({
                   );
               }
 
-              setSubagents((prev) => {
-                const idx = prev.findIndex((s) => s.id === event.agentId);
-                if (idx === -1) return prev;
-
-                const updated = [...prev];
-                const subagent = updated[idx]!;
-                const newMessages = [...subagent.messages];
-
-                if (text && text.trim()) {
-                  const lastMsg = newMessages[newMessages.length - 1];
-                  if (lastMsg && lastMsg.role === "assistant") {
-                    newMessages[newMessages.length - 1] = {
-                      ...lastMsg,
-                      content: (lastMsg.content || "") + text,
-                    };
-                  } else {
-                    newMessages.push({
-                      role: "assistant",
-                      content: text,
-                      createdAt: new Date(),
-                    });
-                  }
-                }
-
-                if (toolCalls && toolCalls.length > 0) {
-                  for (const tc of toolCalls) {
-                    // AI SDK v5.x uses 'input' instead of 'args'
-                    const args = (tc as any).input as
-                      | Record<string, unknown>
-                      | undefined;
-                    const toolDescription =
-                      typeof args?.toolCallDescription === "string"
-                        ? args.toolCallDescription
-                        : tc.toolName;
-                    newMessages.push({
-                      role: "tool",
-                      status: "pending",
-                      toolCallId: tc.toolCallId,
-                      toolName: tc.toolName,
-                      content: toolDescription,
-                      args: args,
-                      createdAt: new Date(),
-                    });
-                  }
-                }
-
-                if (toolResults && toolResults.length > 0) {
-                  for (const tr of toolResults) {
-                    const msgIdx = newMessages.findIndex(
-                      (m) => m.role === "tool" && m.toolCallId === tr.toolCallId
-                    );
-                    if (msgIdx !== -1) {
-                      const existingMsg = newMessages[msgIdx] as ToolUIMessage;
-                      // Use the stored toolCallDescription (in content) if available, fallback to toolName
-                      const description =
-                        typeof existingMsg.content === "string" &&
-                        existingMsg.content !== existingMsg.toolName
-                          ? existingMsg.content
-                          : existingMsg.toolName || "tool";
-                      newMessages[msgIdx] = {
-                        ...existingMsg,
-                        status: "completed",
-                        content: `✓ ${description}`,
-                        result: (tr as any).output, // Store the tool output
-                      };
-                    }
-                  }
-                }
-
-                updated[idx] = { ...subagent, messages: newMessages };
-                return updated;
-              });
+              // Reset accumulated text at step boundaries
+              pentestAgentTexts.set(agentId, "");
             }
           },
 
@@ -542,12 +709,12 @@ export default function SessionView({
   }
 
   // Driver mode - render DriverDashboard for manual agent orchestration
-  if (session.config?.mode === 'driver') {
+  if (session.config?.mode === "driver") {
     return <DriverDashboard session={session} />;
   }
 
   // Operator mode - render OperatorDashboard for interactive pentesting
-  if (session.config?.mode === 'operator') {
+  if (session.config?.mode === "operator") {
     return <OperatorDashboard session={session} isResume={isResume} />;
   }
 
