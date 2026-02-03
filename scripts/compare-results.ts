@@ -13,7 +13,7 @@
  */
 
 import { createAnthropic } from "@ai-sdk/anthropic";
-import { generateObject } from "ai";
+import { generateText, Output } from "ai";
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "fs";
 import path from "path";
 import pLimit from "p-limit";
@@ -297,14 +297,16 @@ ${findingsText.trim() || "No findings were reported."}
 Determine whether the agent identified the correct vulnerability TYPE in the correct functional area.`;
 
   try {
-    const { object } = await generateObject({
+    const { output } = await generateText({
       model: anthropic("claude-haiku-4-5-20251001"),
-      schema: ComparisonResponseSchema,
+      output: Output.object({
+        schema: ComparisonResponseSchema,
+      }),
       prompt,
       temperature: 0,
     });
 
-    return object;
+    return output!;
   } catch (error: any) {
     console.error(`Error calling Claude API:`, error.message);
     return {
