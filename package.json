@@ -68,10 +68,18 @@
     "@ai-sdk/openai": "^3.0.0",
     "@daytonaio/sdk": "^0.112.1",
     "@modelcontextprotocol/sdk": "^1.0.0",
-    "@openrouter/ai-sdk-provider": "^1.2.0",
+    "@openrouter/ai-sdk-provider": "^2.1.1",
     "@opentui/core": "^0.1.74",
     "@opentui/react": "^0.1.74",
+<<<<<<< Updated upstream
     "ai": "^6.0.0",
+=======
+<<<<<<< Updated upstream
+    "ai": "^5.0.68",
+=======
+    "ai": "^6.0.69",
+>>>>>>> Stashed changes
+>>>>>>> Stashed changes
     "glob": "^13.0.0",
     "ignore": "^7.0.5",
     "marked": "^16.4.0",
