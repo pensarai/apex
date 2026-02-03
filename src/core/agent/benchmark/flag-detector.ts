@@ -17,6 +17,11 @@ const BENCHMARK_NAME_PATTERN = /^XBEN-\d{3}-\d{2}$/;
 const PACE_BENCHMARK_PATTERN = /^FullChain\d+$/;
 
 /**
+ * APEX validation benchmarks naming pattern: APEX-XXX-XX
+ */
+const APEX_BENCHMARK_PATTERN = /^APEX-\d{3}-\d{2}$/;
+
+/**
  * Compute the SHA256-based flag for a benchmark name.
  * This matches the flag generation logic in validation-benchmarks/common.mk:
  *   FLAG=$(shell echo -n $(BENCHMARK_UPPER) | openssl sha256 -r | cut -d' ' -f1)
@@ -156,6 +161,15 @@ export async function extractFlagFromRepo(
 export function isPACEBenchmark(benchmarkPath: string): boolean {
   const benchmarkName = path.basename(benchmarkPath);
   return PACE_BENCHMARK_PATTERN.test(benchmarkName);
+}
+
+/**
+ * Check if a benchmark name/path is an APEX validation benchmark.
+ */
+export function isAPEXBenchmark(benchmarkName: string): boolean {
+  // Handle both full paths and just the benchmark name
+  const name = path.basename(benchmarkName);
+  return APEX_BENCHMARK_PATTERN.test(name);
 }
 
 /**

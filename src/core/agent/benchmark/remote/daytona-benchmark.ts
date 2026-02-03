@@ -6,13 +6,14 @@ import {
   detectFlagInArtifacts,
   extractPACEFlags,
   detectMultipleFlagsInArtifacts,
+  isAPEXBenchmark,
 } from "../flag-detector";
 import { runComparisonAgent } from "../comparisonAgent";
 import { runAgent as runAttackSurfaceAgent } from "../../attackSurfaceAgent/agent";
 import { runPentestPipeline } from "../../orchestrator/pipeline";
 import { generatePentestReport } from "../../reportGeneratorAgent";
 import type { AttackSurfaceAnalysisResults } from "../../attackSurfaceAgent/types";
-import type { BenchmarkResults } from "../types";
+import type { BenchmarkResults, APEXBenchmarkResults, ComparisonResult } from "../types";
 import type {
   ExecuteCommandOpts,
   ExecuteCommandResult,
@@ -43,7 +44,7 @@ export interface DaytonaBenchmarkOptions {
   prefix?: string; // Prefix for session names and output directories
   dockerUsername?: string; // Docker Hub username for authenticated pulls
   dockerPassword?: string; // Docker Hub password/token for authenticated pulls
-  benchmarkType?: "xben" | "pace" | "target"; // Benchmark type: xben (default), pace (PACEbench), or target (custom)
+  benchmarkType?: "xben" | "pace" | "target" | "apex"; // Benchmark type: xben (default), pace (PACEbench), target (custom), or apex (APEX validation benchmarks)
   vulnsMode?: boolean; // If true, use vulnerability detection mode instead of flag detection
   // Sandbox resource configuration (per Daytona docs: min 2 vCPU, 4GiB for DinD)
   sandboxCpu?: number; // vCPUs for sandbox (default: 4)
@@ -666,12 +667,17 @@ export async function runBenchmarkWithDaytona(
 
     // Step 3: Extract flag(s) from local benchmark directory
     // For PACEbench, extract multiple flags; for XBEN, extract single flag
+    // For APEX, skip flag extraction (use vulnerability comparison instead)
     console.log(`[${benchmarkName}] 🔍 Extracting flag(s) from benchmark...`);
 
     let expectedFlag: string | null = null;
     let expectedFlags: Array<{ name: string; value: string }> = [];
 
-    if (options.benchmarkType === "pace") {
+    if (options.benchmarkType === "apex") {
+      // APEX benchmarks use vulnerability comparison, not flag detection
+      console.log(`[${benchmarkName}] ℹ️  APEX benchmark - using vulnerability comparison mode`);
+      // No flag to extract - APEX uses expected_results/*.json for comparison
+    } else if (options.benchmarkType === "pace") {
       // PACEbench: Extract multiple flags from flags/ directory
       expectedFlags = await extractPACEFlags(benchmarkPath, benchmarkName);
       if (expectedFlags.length > 0) {
@@ -1197,31 +1203,82 @@ export async function runBenchmarkWithDaytona(
       `[${benchmarkName}] ✅ Pentest completed. Total findings: ${pentestResult.totalFindings}`
     );
 
-    // Step 12: Detect flag in artifacts
-    console.log(`[${benchmarkName}] 🎯 Detecting flag in artifacts...`);
+    // Step 12: Detect flag in artifacts OR run comparison agent for APEX
     let flagDetection;
-    if (options.benchmarkType === "pace" && expectedFlags.length > 0) {
-      // PACEbench: Detect multiple flags
-      flagDetection = await detectMultipleFlagsInArtifacts(
-        session.rootPath,
-        expectedFlags,
-        benchmarkName
-      );
-    } else if (expectedFlag) {
-      // XBEN: Detect single flag
-      flagDetection = await detectFlagInArtifacts(
-        session.rootPath,
-        expectedFlag,
-        benchmarkName
-      );
+    let comparisonResult: ComparisonResult | undefined;
+
+    if (options.benchmarkType === "apex") {
+      // APEX benchmarks: Run comparison agent instead of flag detection
+      console.log(`[${benchmarkName}] 📊 Running comparison agent...`);
+      try {
+        // For APEX, benchmarkPath points to the branch root (e.g., /path/to/APEX-001-25)
+        // The expected_results/ directory is at benchmarkPath/../expected_results relative to src/
+        // But since we pass the full branch path, expected_results is a sibling to src/
+        const branchRootPath = benchmarkPath.includes('/src')
+          ? path.dirname(benchmarkPath) // If benchmarkPath ends with /src, go up one level
+          : benchmarkPath; // Otherwise use as-is
+
+        comparisonResult = await runComparisonAgent({
+          repoPath: branchRootPath,
+          sessionPath: session.rootPath,
+          model,
+        });
+
+        console.log(`[${benchmarkName}] ✅ Comparison complete:`);
+        console.log(`[${benchmarkName}]    Accuracy: ${Math.round(comparisonResult.accuracy * 100)}%`);
+        console.log(`[${benchmarkName}]    Precision: ${Math.round(comparisonResult.precision * 100)}%`);
+        console.log(`[${benchmarkName}]    Recall: ${Math.round(comparisonResult.recall * 100)}%`);
+        console.log(`[${benchmarkName}]    Matched: ${comparisonResult.matched.length}/${comparisonResult.totalExpected}`);
+
+        // For APEX, flag detection is based on whether we found any vulnerabilities
+        flagDetection = {
+          detected: comparisonResult.matched.length > 0,
+          flagValue: comparisonResult.matched.length > 0
+            ? `Matched ${comparisonResult.matched.length} of ${comparisonResult.totalExpected} vulnerabilities`
+            : null,
+          foundIn: comparisonResult.matched.map(m => m.location),
+          locations: [],
+          searchLocations: ["comparison-results.json"],
+        };
+      } catch (comparisonError: any) {
+        console.error(`[${benchmarkName}] ⚠️  Comparison agent failed: ${comparisonError.message}`);
+        logError("comparison_agent", {
+          message: comparisonError?.message || String(comparisonError),
+          stack: comparisonError?.stack,
+        });
+        flagDetection = {
+          detected: false,
+          flagValue: null,
+          foundIn: [],
+          locations: [],
+          searchLocations: [],
+        };
+      }
     } else {
-      flagDetection = {
-        detected: false,
-        flagValue: null,
-        foundIn: [],
-        locations: [],
-        searchLocations: [],
-      };
+      console.log(`[${benchmarkName}] 🎯 Detecting flag in artifacts...`);
+      if (options.benchmarkType === "pace" && expectedFlags.length > 0) {
+        // PACEbench: Detect multiple flags
+        flagDetection = await detectMultipleFlagsInArtifacts(
+          session.rootPath,
+          expectedFlags,
+          benchmarkName
+        );
+      } else if (expectedFlag) {
+        // XBEN: Detect single flag
+        flagDetection = await detectFlagInArtifacts(
+          session.rootPath,
+          expectedFlag,
+          benchmarkName
+        );
+      } else {
+        flagDetection = {
+          detected: false,
+          flagValue: null,
+          foundIn: [],
+          locations: [],
+          searchLocations: [],
+        };
+      }
     }
 
     // Step 13: Re-run all POCs in sandbox and save their outputs
@@ -1235,7 +1292,8 @@ export async function runBenchmarkWithDaytona(
     );
 
     // Step 14: Generate benchmark results
-    const results: BenchmarkResults = {
+    // For APEX benchmarks, include comparison results
+    const baseResults: BenchmarkResults = {
       repoPath: benchmarkPath,
       branch: benchmarkName,
       targetUrl,
@@ -1264,30 +1322,73 @@ export async function runBenchmarkWithDaytona(
       timestamp: new Date().toISOString(),
     };
 
+    // Extend results with APEX-specific fields if applicable
+    const results: BenchmarkResults | APEXBenchmarkResults = options.benchmarkType === "apex" && comparisonResult
+      ? {
+          ...baseResults,
+          comparison: comparisonResult,
+          expectedVulnerabilities: comparisonResult.totalExpected,
+          detectedVulnerabilities: comparisonResult.matched.length,
+        } as APEXBenchmarkResults
+      : baseResults;
+
     const reportPath = path.join(session.rootPath, "benchmark_results.json");
     writeFileSync(reportPath, JSON.stringify(results, null, 2));
 
     console.log(`\n[${benchmarkName}] 📄 Benchmark report saved to: ${reportPath}`);
-    console.log(
-      `\n[${benchmarkName}] 🎯 FLAG STATUS: ${flagDetection.detected ? "✅ DETECTED" : "❌ NOT DETECTED"}`
-    );
-    if (flagDetection.detected) {
-      console.log(
-        `[${benchmarkName}]    Found in: ${flagDetection.foundIn.join(", ")}`
-      );
-      if (flagDetection.locations && flagDetection.locations.length > 0) {
-        console.log(`[${benchmarkName}]    Exact locations:`);
-        for (const loc of flagDetection.locations.slice(0, 5)) {
-          // Show first 5 locations
-          console.log(`[${benchmarkName}]      ${loc.file}:${loc.line}`);
+
+    // Display results based on benchmark type
+    if (options.benchmarkType === "apex" && comparisonResult) {
+      // APEX: Show vulnerability comparison metrics
+      console.log(`\n[${benchmarkName}] 📊 VULNERABILITY COMPARISON RESULTS:`);
+      console.log(`[${benchmarkName}]    Matched: ${comparisonResult.matched.length}/${comparisonResult.totalExpected} vulnerabilities`);
+      console.log(`[${benchmarkName}]    Accuracy: ${Math.round(comparisonResult.accuracy * 100)}%`);
+      console.log(`[${benchmarkName}]    Precision: ${Math.round(comparisonResult.precision * 100)}%`);
+      console.log(`[${benchmarkName}]    Recall: ${Math.round(comparisonResult.recall * 100)}%`);
+
+      if (comparisonResult.matched.length > 0) {
+        console.log(`[${benchmarkName}]    ✅ Matched vulnerabilities:`);
+        for (const match of comparisonResult.matched.slice(0, 5)) {
+          console.log(`[${benchmarkName}]       - ${match.expectedTitle}`);
         }
-        if (flagDetection.locations.length > 5) {
-          console.log(
-            `[${benchmarkName}]      ... and ${flagDetection.locations.length - 5} more`
-          );
+        if (comparisonResult.matched.length > 5) {
+          console.log(`[${benchmarkName}]       ... and ${comparisonResult.matched.length - 5} more`);
+        }
+      }
+
+      if (comparisonResult.missed.length > 0) {
+        console.log(`[${benchmarkName}]    ❌ Missed vulnerabilities:`);
+        for (const miss of comparisonResult.missed.slice(0, 5)) {
+          console.log(`[${benchmarkName}]       - ${miss.title} (${miss.severity})`);
+        }
+        if (comparisonResult.missed.length > 5) {
+          console.log(`[${benchmarkName}]       ... and ${comparisonResult.missed.length - 5} more`);
+        }
+      }
+    } else {
+      // Non-APEX: Show flag detection status
+      console.log(
+        `\n[${benchmarkName}] 🎯 FLAG STATUS: ${flagDetection.detected ? "✅ DETECTED" : "❌ NOT DETECTED"}`
+      );
+      if (flagDetection.detected) {
+        console.log(
+          `[${benchmarkName}]    Found in: ${flagDetection.foundIn.join(", ")}`
+        );
+        if (flagDetection.locations && flagDetection.locations.length > 0) {
+          console.log(`[${benchmarkName}]    Exact locations:`);
+          for (const loc of flagDetection.locations.slice(0, 5)) {
+            // Show first 5 locations
+            console.log(`[${benchmarkName}]      ${loc.file}:${loc.line}`);
+          }
+          if (flagDetection.locations.length > 5) {
+            console.log(
+              `[${benchmarkName}]      ... and ${flagDetection.locations.length - 5} more`
+            );
+          }
         }
       }
     }
+
     if (pocRunResults.total > 0) {
       console.log(
         `\n[${benchmarkName}] 🧪 POC RESULTS: ${pocRunResults.passed}/${pocRunResults.total} passed`
@@ -1595,9 +1696,16 @@ export async function runMultipleBenchmarks(
     benchmarks.map((benchmarkName) =>
       limit(async (): Promise<BenchmarkExecutionResult> => {
         // Construct benchmark path based on benchmark type
-        const benchmarkPath = options.benchmarkType === "pace"
-          ? path.join(options.repoPath, "docker", "FullChain", benchmarkName)
-          : path.join(options.repoPath, "benchmarks", benchmarkName);
+        let benchmarkPath: string;
+        if (options.benchmarkType === "apex") {
+          // APEX: docker-compose is in the src/ subdirectory of the branch
+          // The repoPath should point to the branch root (e.g., /path/to/repo with branch checked out)
+          benchmarkPath = path.join(options.repoPath, "src");
+        } else if (options.benchmarkType === "pace") {
+          benchmarkPath = path.join(options.repoPath, "docker", "FullChain", benchmarkName);
+        } else {
+          benchmarkPath = path.join(options.repoPath, "benchmarks", benchmarkName);
+        }
 
         try {
           const result = await runBenchmarkWithDaytona({

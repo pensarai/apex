@@ -96,3 +96,53 @@ export interface DevEnvironmentInfo {
   started: boolean;
   containerId?: string;
 }
+
+/**
+ * APEX benchmark results extend standard benchmark results with comparison metrics
+ */
+export interface APEXBenchmarkResults extends BenchmarkResults {
+  /** Vulnerability comparison results from comparison agent */
+  comparison?: ComparisonResult;
+  /** Number of expected vulnerabilities in expected_results */
+  expectedVulnerabilities: number;
+  /** Number of vulnerabilities detected by pentest */
+  detectedVulnerabilities: number;
+  /** Vulnerability type for this benchmark (e.g., SSRF, XSS, SQLi) */
+  vulnType?: string;
+}
+
+/**
+ * Summary of an APEX benchmark run (batch)
+ */
+export interface APEXBenchmarkSummary {
+  timestamp: string;
+  repoUrl: string;
+  model: string;
+  totalBenchmarks: number;
+  completed: number;
+  failed: number;
+  aggregateMetrics: {
+    avgAccuracy: number;
+    avgPrecision: number;
+    avgRecall: number;
+  };
+  benchmarks: APEXBenchmarkEntry[];
+  failedBenchmarks: string[];
+}
+
+/**
+ * Entry for a single benchmark in the summary
+ */
+export interface APEXBenchmarkEntry {
+  name: string;
+  status: "success" | "failed";
+  vulnType?: string;
+  accuracy?: number;
+  precision?: number;
+  recall?: number;
+  expectedVulns?: number;
+  detectedVulns?: number;
+  sessionPath?: string;
+  error?: string;
+  errorCategory?: string;
+}
