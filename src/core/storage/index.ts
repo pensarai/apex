@@ -1,11 +1,11 @@
 import os from "os";
 import path from "path";
 import fs from "fs/promises";
+import { readdir } from "fs/promises";
 
 import z from "zod";
 import { NamedError } from "../../util/errors";
 import { Lock } from "../../util/lock";
-import { mkdir } from "fs/promises";
 
 export namespace Storage {
 
@@ -35,7 +35,9 @@ export namespace Storage {
         const target = path.join(dir, ...key) + (ext ? ext : ".json");
         return withErrorHandling(async () => {
             using _ = await Lock.write(target);
-            await Bun.write(target, JSON.stringify(content, null, 2));
+            // Ensure parent directory exists
+            await fs.mkdir(path.dirname(target), { recursive: true });
+            await fs.writeFile(target, JSON.stringify(content, null, 2), 'utf-8');
         });
     }
 
@@ -44,7 +46,7 @@ export namespace Storage {
         const target = path.join(dir, ...key);
         return withErrorHandling(async () => {
             using _ = await Lock.write(target);
-            await mkdir(target, { recursive: true });
+            await fs.mkdir(target, { recursive: true });
         });
     }
 
@@ -60,8 +62,8 @@ export namespace Storage {
             using _ = await Lock.write(target);
             // Ensure parent directory exists
             const parentDir = path.dirname(target);
-            await mkdir(parentDir, { recursive: true });
-            await Bun.write(target, content);
+            await fs.mkdir(parentDir, { recursive: true });
+            await fs.writeFile(target, content, 'utf-8');
         });
     }
 
@@ -77,7 +79,7 @@ export namespace Storage {
             using _ = await Lock.write(target);
             // Ensure parent directory exists
             const parentDir = path.dirname(target);
-            await mkdir(parentDir, { recursive: true });
+            await fs.mkdir(parentDir, { recursive: true });
             await fs.appendFile(target, content);
         });
     }
@@ -87,9 +89,8 @@ export namespace Storage {
         const target = path.join(dir, ...key) + (ext ? ext : ".json");
         return withErrorHandling(async () => {
             using _ = await Lock.read(target);
-            const result = ext ?
-                await Bun.file(target).text()
-                : await Bun.file(target).json();
+            const text = await fs.readFile(target, 'utf-8');
+            const result = ext ? text : JSON.parse(text);
             return result as T;
         });
     }
@@ -99,11 +100,10 @@ export namespace Storage {
         const target = path.join(dir, ...key) + (ext ? ext : ".json");
         return withErrorHandling(async () => {
             using _ = await Lock.write(target);
-            const content = ext ?
-                await Bun.file(target).text()
-                : await Bun.file(target).json();
+            const text = await fs.readFile(target, 'utf-8');
+            const content = ext ? text : JSON.parse(text);
             fn(content);
-            await Bun.write(target, JSON.stringify(content, null, 2));
+            await fs.writeFile(target, JSON.stringify(content, null, 2), 'utf-8');
             return content as T;
         });
     }
@@ -119,18 +119,36 @@ export namespace Storage {
         });
     }
 
-    const glob = new Bun.Glob("**/*");
+    /**
+     * Recursively list all files in a directory
+     */
+    async function listFilesRecursively(dir: string): Promise<string[]> {
+        const entries = await readdir(dir, { withFileTypes: true });
+        const files: string[] = [];
+        for (const entry of entries) {
+            const fullPath = path.join(dir, entry.name);
+            if (entry.isDirectory()) {
+                files.push(...await listFilesRecursively(fullPath));
+            } else {
+                files.push(fullPath);
+            }
+        }
+        return files;
+    }
+
     export async function list(prefix: string[]) {
         const dir = path.join(os.homedir(), ".pensar");
+        const targetDir = path.join(dir, ...prefix);
         try {
-            const result = await Array.fromAsync(
-                glob.scan({
-                    cwd: path.join(dir, ...prefix),
-                    onlyFiles: true
-                })
-            ).then((results) => results.map((x) => [...prefix, ...x.slice(0, -5).split(path.sep)]))
+            const files = await listFilesRecursively(targetDir);
+            // Convert absolute paths to relative paths and split into key segments
+            // Remove the .json extension (last 5 chars) and split by path separator
+            const result = files.map((filePath) => {
+                const relativePath = path.relative(targetDir, filePath);
+                return [...prefix, ...relativePath.slice(0, -5).split(path.sep)];
+            });
             result.sort();
-            return result
+            return result;
         } catch {
             return [];
         }
