@@ -9,6 +9,7 @@ import ConfigDialog from "./components/commands/config-dialog";
 import ChatApp from "./components/chat";
 import HITLWizard from "./components/commands/operator-wizard";
 import WebWizard from "./components/commands/web-wizard";
+import ResumeWizard from "./components/commands/resume-wizard";
 import ProviderManager from "./components/commands/provider-manager";
 import type { Config } from "../core/config/config";
 import { config } from "../core/config";
@@ -280,6 +281,9 @@ function CommandDisplay({
           </RouteSwitch.Case>
           <RouteSwitch.Case when="providers">
             <ProviderManager />
+          </RouteSwitch.Case>
+          <RouteSwitch.Case when="resume">
+            <ResumeWizard />
           </RouteSwitch.Case>
           <RouteSwitch.Case when="help">
             <HelpDialog />
