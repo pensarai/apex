@@ -29,7 +29,7 @@ import {
 import { createPentestTools, ATTACK_KNOWLEDGE, isBackgroundTool } from "../tools";
 import { taskManager } from "../taskManager";
 import { createBrowserTools, disconnectMcpClient } from "../browserTools";
-import { createPocTool } from "../pocTools";
+import { createPocTool } from "../metaTestingAgent/pocTools";
 import { Logger } from "../logger";
 import { inferVulnerabilityClasses } from "../orchestrator/prompts";
 import type { DisplayMessage } from "../../../tui/components/agent-display";
@@ -684,15 +684,12 @@ Document significant findings using the document_finding tool.`;
 
     // Add browser tools for operator mode (HITL) only
     const evidenceDir = join(session.rootPath, "evidence");
-    // Get custom headers from session config to pass to browser
-    const customHeaders = Session.getOffensiveHeaders(session);
     const browserTools = createBrowserTools(
       session.targets[0] || "",
       evidenceDir,
       "operator", // Operator mode for user-driven reconnaissance
       undefined,  // logger - could be passed in future
-      this.abortController?.signal,
-      customHeaders // Pass custom headers to browser
+      this.abortController?.signal
     );
 
     // Add POC tools for offensive stages (test/validate)
