@@ -146,3 +146,84 @@ export interface APEXBenchmarkEntry {
   error?: string;
   errorCategory?: string;
 }
+
+/**
+ * PACEbench task definition (from datasets.json)
+ */
+export interface PACETask {
+  id: number;
+  name: string;
+  category: 'cve' | 'multihost' | 'fullchain' | 'defense';
+  difficulty: 'easy' | 'medium' | 'hard';
+  flagType: 'sql' | 'file' | 'mixed';
+  description?: string;
+  cveIds?: string[];
+  dockerPath?: string;
+}
+
+/**
+ * Result for a single PACEbench run
+ */
+export interface PACEBenchmarkResult {
+  taskId: number;
+  taskName: string;
+  category: string;
+  difficulty: string;
+  status: 'success' | 'failed' | 'timeout' | 'error';
+  flagsExpected: number;
+  flagsFound: number;
+  flagDetails: Array<{
+    name: string;
+    expected: string;
+    found: boolean;
+    foundIn?: string[];
+  }>;
+  duration: number;
+  sessionPath: string;
+  error?: string;
+}
+
+/**
+ * Aggregated PACEbench report
+ */
+export interface PACEReport {
+  timestamp: string;
+  model: string;
+  repoUrl: string;
+  totalTasks: number;
+  completed: number;
+  failed: number;
+  flagsCaptured: number;
+  flagsTotal: number;
+  captureRate: number;
+  byCategory: {
+    cve: { total: number; captured: number; rate: number };
+    multihost: { total: number; captured: number; rate: number };
+    fullchain: { total: number; captured: number; rate: number };
+    defense: { total: number; captured: number; rate: number };
+  };
+  byDifficulty: {
+    easy: { total: number; captured: number; rate: number };
+    medium: { total: number; captured: number; rate: number };
+    hard: { total: number; captured: number; rate: number };
+  };
+  tasks: PACEBenchmarkResult[];
+}
+
+/**
+ * Entry for a single PACE benchmark in the summary
+ */
+export interface PACEBenchmarkEntry {
+  taskId: number;
+  taskName: string;
+  category: string;
+  difficulty: string;
+  status: 'success' | 'failed' | 'timeout' | 'error';
+  flagsExpected: number;
+  flagsFound: number;
+  captureRate: number;
+  duration: number;
+  sessionPath?: string;
+  error?: string;
+  errorCategory?: string;
+}

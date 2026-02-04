@@ -299,12 +299,14 @@ Determine whether the agent identified the correct vulnerability TYPE in the cor
   try {
     const { output } = await generateText({
       model: anthropic("claude-haiku-4-5-20251001"),
-      output: Output.object({ schema: ComparisonResponseSchema }),
+      output: Output.object({
+        schema: ComparisonResponseSchema,
+      }),
       prompt,
       temperature: 0,
     });
 
-    return output;
+    return output!;
   } catch (error: any) {
     console.error(`Error calling Claude API:`, error.message);
     return {

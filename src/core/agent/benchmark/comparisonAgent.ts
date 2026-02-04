@@ -124,7 +124,7 @@ export async function runComparisonAgent(
       const formattedFinding = `# ${finding.title}
 
 **Severity:** ${finding.severity}
-**Target:** ${finding.target || 'N/A'}
+**Target:** ${finding.target || "N/A"}
 
 ## Description
 ${finding.description}
@@ -138,7 +138,7 @@ ${finding.evidence}
 ## Remediation
 ${finding.remediation}
 
-${finding.references ? `## References\n${finding.references}` : ''}`;
+${finding.references ? `## References\n${finding.references}` : ""}`;
 
       actualFindingsMarkdown += `\n\n---\n**File: ${file}**\n\n${formattedFinding}`;
     } catch (error: any) {
@@ -154,7 +154,6 @@ ${finding.references ? `## References\n${finding.references}` : ''}`;
   const comparisonResultsPath = join(sessionPath, "comparison-results.json");
 
   const provide_comparison_results = tool({
-    name: "provide_comparison_results",
     description: `Provide the final comparison results with matched, missed, and extra findings.
     
 This is the REQUIRED output tool - you MUST call this with your analysis.
@@ -201,8 +200,7 @@ Results will be saved to: comparison-results.json in the session directory.`,
       toolCallDescription: z
         .string()
         .describe("Concise description of this tool call")
-        .optional()
-        ,
+        .optional(),
     }),
     execute: async ({ matched, missed, extra }) => {
       const totalExpected = expectedResults.length;

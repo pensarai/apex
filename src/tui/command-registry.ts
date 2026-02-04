@@ -13,7 +13,7 @@ import {
 export interface AppCommandContext {
   route: Route;
   navigate: (route: Route) => void;
-};
+}
 
 /**
  * Command option definition for help text and autocomplete
@@ -47,7 +47,7 @@ export const commands: CommandConfig[] = [
     handler: async (args, ctx) => {
       ctx.navigate({
         type: "base",
-        path: "help"
+        path: "help",
       });
     },
   },
@@ -58,7 +58,7 @@ export const commands: CommandConfig[] = [
     handler: async (args, ctx) => {
       ctx.navigate({
         type: "base",
-        path: "config"
+        path: "config",
       });
     },
   },
@@ -85,52 +85,148 @@ export const commands: CommandConfig[] = [
   //   },
   // },
   {
-    name: "web",
-    aliases: ["w"],
-    description: "Start web pentest session",
+    name: "pentest",
+    aliases: ["p", "web", "w"],
+    description: "Start autonomous pentest swarm",
     category: "Pentesting",
     options: [
-      { name: "--target", valueHint: "<url>", description: "Target URL to test" },
+      {
+        name: "--target",
+        valueHint: "<url>",
+        description: "Target URL to test",
+      },
       { name: "--name", valueHint: "<name>", description: "Session name" },
-      { name: "--swarm", description: "Use autonomous swarm mode" },
-      { name: "--mode", valueHint: "<plan|manual|auto>", description: "Operator mode" },
-      { name: "--tier", valueHint: "<1-5>", description: "Auto-approve permission tier" },
+      {
+        name: "--tier",
+        valueHint: "<1-5>",
+        description: "Auto-approve permission tier",
+      },
       { name: "--auth-url", valueHint: "<url>", description: "Login page URL" },
-      { name: "--auth-user", valueHint: "<user>", description: "Auth username" },
-      { name: "--auth-pass", valueHint: "<pass>", description: "Auth password" },
-      { name: "--auth-instructions", valueHint: "<text>", description: "Auth instructions" },
-      { name: "--hosts", valueHint: "<h1,h2,...>", description: "Allowed hosts" },
-      { name: "--ports", valueHint: "<p1,p2,...>", description: "Allowed ports" },
+      {
+        name: "--auth-user",
+        valueHint: "<user>",
+        description: "Auth username",
+      },
+      {
+        name: "--auth-pass",
+        valueHint: "<pass>",
+        description: "Auth password",
+      },
+      {
+        name: "--auth-instructions",
+        valueHint: "<text>",
+        description: "Auth instructions",
+      },
+      {
+        name: "--hosts",
+        valueHint: "<h1,h2,...>",
+        description: "Allowed hosts",
+      },
+      {
+        name: "--ports",
+        valueHint: "<p1,p2,...>",
+        description: "Allowed ports",
+      },
       { name: "--strict", description: "Enable strict scope mode" },
-      { name: "--headers", valueHint: "<none|default|custom>", description: "Headers mode" },
-      { name: "--header", valueHint: "<Name:Value>", description: "Custom header (repeatable)" },
+      {
+        name: "--headers",
+        valueHint: "<none|default|custom>",
+        description: "Headers mode",
+      },
+      {
+        name: "--header",
+        valueHint: "<Name:Value>",
+        description: "Custom header (repeatable)",
+      },
       { name: "--model", valueHint: "<model>", description: "AI model to use" },
     ],
     handler: async (args, ctx) => {
       const flags = parseWebFlags(args);
 
-      if (flags.swarm) {
-        // Swarm mode path
-        if (flags.target && hasEnoughFlagsToSkipWizard(flags)) {
-          try {
-            const session = await createSwarmSessionFromFlags(flags);
-            ctx.navigate({ type: "session", sessionId: session.id });
-            return;
-          } catch (e) {
-            // Fall through to wizard on error
-            console.error("Failed to create session:", e);
-          }
+      // Pentest command always uses swarm mode
+      if (flags.target && hasEnoughFlagsToSkipWizard(flags)) {
+        try {
+          const session = await createSwarmSessionFromFlags(flags);
+          ctx.navigate({ type: "session", sessionId: session.id });
+          return;
+        } catch (e) {
+          // Fall through to wizard on error
+          console.error("Failed to create session:", e);
         }
-        // Navigate to WebWizard (swarm wizard)
-        ctx.navigate({
-          type: "base",
-          path: "web",
-          options: { auto: true, ...flags }
-        });
-        return;
       }
+      // Navigate to WebWizard (swarm wizard) for target input
+      ctx.navigate({
+        type: "base",
+        path: "web",
+        options: { auto: true, ...flags },
+      });
+    },
+  },
+  {
+    name: "operator",
+    aliases: ["o"],
+    description: "Start interactive operator session",
+    category: "Pentesting",
+    options: [
+      {
+        name: "--target",
+        valueHint: "<url>",
+        description: "Target URL to test",
+      },
+      { name: "--name", valueHint: "<name>", description: "Session name" },
+      {
+        name: "--mode",
+        valueHint: "<plan|manual|auto>",
+        description: "Operator mode",
+      },
+      {
+        name: "--tier",
+        valueHint: "<1-5>",
+        description: "Auto-approve permission tier",
+      },
+      { name: "--auth-url", valueHint: "<url>", description: "Login page URL" },
+      {
+        name: "--auth-user",
+        valueHint: "<user>",
+        description: "Auth username",
+      },
+      {
+        name: "--auth-pass",
+        valueHint: "<pass>",
+        description: "Auth password",
+      },
+      {
+        name: "--auth-instructions",
+        valueHint: "<text>",
+        description: "Auth instructions",
+      },
+      {
+        name: "--hosts",
+        valueHint: "<h1,h2,...>",
+        description: "Allowed hosts",
+      },
+      {
+        name: "--ports",
+        valueHint: "<p1,p2,...>",
+        description: "Allowed ports",
+      },
+      { name: "--strict", description: "Enable strict scope mode" },
+      {
+        name: "--headers",
+        valueHint: "<none|default|custom>",
+        description: "Headers mode",
+      },
+      {
+        name: "--header",
+        valueHint: "<Name:Value>",
+        description: "Custom header (repeatable)",
+      },
+      { name: "--model", valueHint: "<model>", description: "AI model to use" },
+    ],
+    handler: async (args, ctx) => {
+      const flags = parseWebFlags(args);
 
-      // Operator mode path (default)
+      // Operator mode - interactive session with human guidance
       if (flags.target && hasEnoughFlagsToSkipWizard(flags)) {
         try {
           const session = await createOperatorSessionFromFlags(flags);
@@ -145,7 +241,7 @@ export const commands: CommandConfig[] = [
       ctx.navigate({
         type: "base",
         path: "operator",
-        options: flags as any
+        options: flags as any,
       });
     },
   },
@@ -156,7 +252,7 @@ export const commands: CommandConfig[] = [
     handler: async (args, ctx) => {
       ctx.navigate({
         type: "base",
-        path: "models"
+        path: "models",
       });
     },
   },
@@ -167,7 +263,7 @@ export const commands: CommandConfig[] = [
     handler: async (args, ctx) => {
       ctx.navigate({
         type: "base",
-        path: "providers"
+        path: "providers",
       });
     },
   },
@@ -179,7 +275,7 @@ export const commands: CommandConfig[] = [
     handler: async (args, ctx) => {
       ctx.navigate({
         type: "base",
-        path: "resume"
+        path: "resume",
       });
     },
   },
@@ -191,7 +287,7 @@ export const commands: CommandConfig[] = [
     handler: async (args, ctx) => {
       ctx.navigate({
         type: "base",
-        path: "chat"
+        path: "chat",
       });
     },
   },

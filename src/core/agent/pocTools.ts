@@ -1,18 +1,16 @@
 /**
  * POC Generation and Finding Documentation Tools
  *
- * These tools enable agents to:
+ * These tools enable the MetaTestingAgent to:
  * 1. Create and execute POC scripts (bash preferred, python supported)
  * 2. Document confirmed vulnerabilities with evidence
- *
- * Relocated from metaTestingAgent/pocTools.ts for broader use.
  */
 
-import { tool } from 'ai';
-import { z } from 'zod';
-import { join } from 'path';
-import { promisify } from 'util';
-import { exec } from 'child_process';
+import { tool } from "ai";
+import { z } from "zod";
+import { join } from "path";
+import { promisify } from "util";
+import { exec } from "child_process";
 import {
   existsSync,
   writeFileSync,
@@ -24,112 +22,20 @@ import {
   appendFileSync,
 } from "fs";
 import { nanoid } from "nanoid";
-import { Logger } from "./logger";
-import type { Session } from "../session";
-import type { ExecuteCommandOpts, ExecuteCommandResult } from "./tools";
-import { scoreFindingWithCVSS, DEFAULT_CVSS_MODEL } from "./cvssScorer";
-import type { AIModel } from "../ai";
-import type { CVSS4Metrics } from "../../lib/cvss";
-
-/**
- * POC types supported
- */
-export type PocType = "bash" | "python" | "javascript";
-
-/**
- * Zod schema for create_poc tool input
- */
-export const CreatePocSchema = z.object({
-  pocName: z
-    .string()
-    .describe("Descriptive name for the POC (e.g., sqli_union_extract)"),
-  pocType: z
-    .enum(["bash", "python", "javascript"])
-    .describe("Script type - bash/python/javascript (node)"),
-  pocContent: z.string().describe("Complete script content"),
-  description: z.string().describe("What vulnerability this POC demonstrates"),
-  toolCallDescription: z
-    .string()
-    .describe(
-      "A concise, human-readable description of what this tool call is doing (e.g., 'Creating SQL injection POC script')"
-    ),
-});
-
-export type CreatePocInput = z.infer<typeof CreatePocSchema>;
-
-/**
- * Result from create_poc tool
- */
-export interface CreatePocResult {
-  success: boolean;
-  pocPath?: string;
-  execution?: {
-    success: boolean;
-    exitCode?: number;
-    stdout?: string;
-    stderr?: string;
-  };
-  error?: string;
-  message: string;
-}
-
-/**
- * Zod schema for document_finding tool input
- */
-export const DocumentFindingSchema = z.object({
-  title: z.string().describe("Clear, concise finding title"),
-  severity: z.preprocess((val) => {
-    if (typeof val === "string") {
-      const upper = val.toUpperCase();
-      if (upper.includes("CRITICAL")) return "CRITICAL";
-      if (upper.includes("HIGH")) return "HIGH";
-      if (upper.includes("MEDIUM")) return "MEDIUM";
-      if (upper.includes("LOW")) return "LOW";
-    }
-    return val;
-  }, z.enum(["CRITICAL", "HIGH", "MEDIUM", "LOW"])),
-  description: z.string().describe("Detailed technical description"),
-  impact: z.string().describe("Potential impact if exploited"),
-  evidence: z
-    .string()
-    .describe("Evidence/proof of vulnerability including POC output"),
-  endpoint: z
-    .string()
-    .describe("Full URL endpoint (e.g., https://example.com/api/endpoint)"),
-  pocPath: z
-    .string()
-    .describe("Relative path to POC script (e.g., pocs/poc_sqli_login.sh)"),
-  remediation: z.string().describe("Steps to fix the vulnerability"),
-  references: z.string().optional().describe("CVE, CWE, or related references"),
-  toolCallDescription: z
-    .string()
-    .describe(
-      "A concise, human-readable description of what this tool call is doing (e.g., 'Documenting SQL injection vulnerability')"
-    ),
-});
-
-export type DocumentFindingInput = z.infer<typeof DocumentFindingSchema>;
-
-/**
- * Result from document_finding tool
- */
-export interface DocumentFindingResult {
-  success: boolean;
-  findingPath?: string;
-  error?: string;
-  message: string;
-}
-
-/**
- * Session info passed to POC tools
- */
-export interface PocSessionInfo {
-  id: string;
-  rootPath: string;
-  findingsPath: string;
-  logsPath: string;
-  pocsPath: string;
-}
+import { Logger } from "../logger";
+import type { Session } from "../../session";
+import type {
+  CreatePocInput,
+  CreatePocResult,
+  DocumentFindingInput,
+  DocumentFindingResult,
+  MetaTestingSessionInfo,
+} from "./types";
+import { CreatePocSchema, DocumentFindingSchema } from "./types";
+import type { ExecuteCommandOpts, ExecuteCommandResult } from "../tools";
+import { scoreFindingWithCVSS, DEFAULT_CVSS_MODEL } from "../cvssScorer";
+import type { AIModel } from "../../ai";
+import type { CVSS4Metrics } from "../../../lib/cvss";
 
 /** Options for CVSS scoring in document_finding tool */
 export interface DocumentFindingCVSSOptions {
@@ -148,14 +54,14 @@ const MAX_POC_ATTEMPTS = 3;
 function sanitizeFilename(str: string): string {
   return str
     .toLowerCase()
-    .replace(/[^a-z0-9_-]/g, '_')
-    .replace(/_+/g, '_')
-    .replace(/^_|_$/g, '')
+    .replace(/[^a-z0-9_-]/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_|_$/g, "")
     .substring(0, 50);
 }
 
 export function createPocTool(
-  session: PocSessionInfo,
+  session: MetaTestingSessionInfo,
   logger: Logger,
   toolOverride?: {
     execute_command?: (
@@ -204,11 +110,11 @@ Max ${MAX_POC_ATTEMPTS} attempts per approach before pivoting.`,
         }
 
         const extension =
-          poc.pocType === 'bash'
-            ? '.sh'
-            : poc.pocType === 'python'
-              ? '.py'
-              : '.js';
+          poc.pocType === "bash"
+            ? ".sh"
+            : poc.pocType === "python"
+            ? ".py"
+            : ".js";
         const sanitizedName = sanitizeFilename(poc.pocName);
         const filename = `poc_${sanitizedName}${extension}`;
         const pocPath = join(pocsPath, filename);
@@ -217,12 +123,12 @@ Max ${MAX_POC_ATTEMPTS} attempts per approach before pivoting.`,
         let pocContent = poc.pocContent.trim();
 
         // Add appropriate header if missing
-        if (poc.pocType === 'bash') {
-          if (!pocContent.startsWith('#!')) {
-            pocContent = '#!/bin/bash\n' + pocContent;
+        if (poc.pocType === "bash") {
+          if (!pocContent.startsWith("#!")) {
+            pocContent = "#!/bin/bash\n" + pocContent;
           }
           // Add header comment if not present
-          if (!pocContent.includes('# POC:')) {
+          if (!pocContent.includes("# POC:")) {
             const header = `#!/bin/bash
 # POC: ${poc.description}
 # Created: ${new Date().toISOString()}
@@ -231,62 +137,62 @@ Max ${MAX_POC_ATTEMPTS} attempts per approach before pivoting.`,
 set -e  # Exit on error
 
 `;
-            pocContent = header + pocContent.replace(/^#!\/bin\/bash\s*\n/, '');
+            pocContent = header + pocContent.replace(/^#!\/bin\/bash\s*\n/, "");
           }
-        } else if (poc.pocType === 'python') {
+        } else if (poc.pocType === "python") {
           // Python
-          if (!pocContent.startsWith('#!') && !pocContent.startsWith('#!/')) {
-            pocContent = '#!/usr/bin/env python3\n' + pocContent;
+          if (!pocContent.startsWith("#!") && !pocContent.startsWith("#!/")) {
+            pocContent = "#!/usr/bin/env python3\n" + pocContent;
           }
           // Add header comment if not present
-          if (!pocContent.includes('# POC:')) {
+          if (!pocContent.includes("# POC:")) {
             const header = `#!/usr/bin/env python3
 # POC: ${poc.description}
 # Created: ${new Date().toISOString()}
 # Attempt: ${currentAttempts}/${MAX_POC_ATTEMPTS}
 
 `;
-            pocContent = header + pocContent.replace(/^#!.*\n/, '');
+            pocContent = header + pocContent.replace(/^#!.*\n/, "");
           }
         } else {
           // JavaScript (Node.js)
-          if (!pocContent.startsWith('#!/')) {
-            pocContent = '#!/usr/bin/env node\n' + pocContent;
+          if (!pocContent.startsWith("#!/")) {
+            pocContent = "#!/usr/bin/env node\n" + pocContent;
           }
           // Add header comment if not present
-          if (!pocContent.includes('// POC:')) {
+          if (!pocContent.includes("// POC:")) {
             const header = `#!/usr/bin/env node
 // POC: ${poc.description}
 // Created: ${new Date().toISOString()}
 // Attempt: ${currentAttempts}/${MAX_POC_ATTEMPTS}
 
 `;
-            pocContent = header + pocContent.replace(/^#!.*\n/, '');
+            pocContent = header + pocContent.replace(/^#!.*\n/, "");
           }
         }
 
         writeFileSync(pocPath, pocContent);
         logger.info(`POC written to: ${relativePocPath}`);
 
-        let stdout = '';
-        let stderr = '';
+        let stdout = "";
+        let stderr = "";
         let exitCode = 0;
 
         try {
-          if (poc.pocType === 'bash' || poc.pocType === 'javascript') {
+          if (poc.pocType === "bash" || poc.pocType === "javascript") {
             chmodSync(pocPath, 0o755);
           }
 
           // Use sandboxed execute_command if available (for benchmark/remote execution)
           if (toolOverride?.execute_command) {
             // For sandbox execution, pass the POC content directly
-            const pocBase64 = Buffer.from(pocContent).toString('base64');
+            const pocBase64 = Buffer.from(pocContent).toString("base64");
             const execCommand =
-              poc.pocType === 'bash'
+              poc.pocType === "bash"
                 ? `echo '${pocBase64}' | base64 -d | bash`
-                : poc.pocType === 'python'
-                  ? `echo '${pocBase64}' | base64 -d | python3`
-                  : `echo '${pocBase64}' | base64 -d | node`;
+                : poc.pocType === "python"
+                ? `echo '${pocBase64}' | base64 -d | python3`
+                : `echo '${pocBase64}' | base64 -d | node`;
 
             const execResult = await toolOverride.execute_command({
               command: execCommand,
@@ -294,12 +200,12 @@ set -e  # Exit on error
               toolCallDescription: `Executing ${poc.pocType} POC: ${poc.pocName}`,
             });
 
-            stdout = execResult.stdout || '';
-            stderr = execResult.stderr || '';
+            stdout = execResult.stdout || "";
+            stderr = execResult.stderr || "";
 
             if (!execResult.success || execResult.error) {
               throw {
-                message: execResult.error || 'POC execution failed',
+                message: execResult.error || "POC execution failed",
                 code: 1,
                 stdout,
                 stderr,
@@ -308,11 +214,11 @@ set -e  # Exit on error
           } else {
             // Local execution
             const execCommand =
-              poc.pocType === 'bash'
+              poc.pocType === "bash"
                 ? pocPath
-                : poc.pocType === 'python'
-                  ? `python3 ${pocPath}`
-                  : `node ${pocPath}`;
+                : poc.pocType === "python"
+                ? `python3 ${pocPath}`
+                : `node ${pocPath}`;
 
             const result = await execAsync(execCommand, {
               timeout: 60000,
@@ -333,20 +239,20 @@ set -e  # Exit on error
             execution: {
               success: true,
               exitCode: 0,
-              stdout: stdout || '(no output)',
-              stderr: stderr || '(no errors)',
+              stdout: stdout || "(no output)",
+              stderr: stderr || "(no errors)",
             },
             message: `POC created and executed successfully at: ${relativePocPath}
 
 **Execution Output:**
 STDOUT:
 \`\`\`
-${stdout || '(no output)'}
+${stdout || "(no output)"}
 \`\`\`
 
 STDERR:
 \`\`\`
-${stderr || '(no errors)'}
+${stderr || "(no errors)"}
 \`\`\`
 
 **VALIDATION REQUIRED:** Analyze the output above.
@@ -365,7 +271,7 @@ VALIDATION: Outcome: [yes/no + evidence] | Confidence: BEFORE [X%] → AFTER [Y%
           pocPaths.push(relativePocPath);
 
           exitCode = execError.code || 1;
-          stdout = execError.stdout || '';
+          stdout = execError.stdout || "";
           stderr = execError.stderr || execError.message;
 
           const attemptsRemaining = MAX_POC_ATTEMPTS - currentAttempts;
@@ -373,20 +279,20 @@ VALIDATION: Outcome: [yes/no + evidence] | Confidence: BEFORE [X%] → AFTER [Y%
           // Check if this looks like a service unavailability issue
           const outputLower = (stdout + stderr).toLowerCase();
           const isServiceDown =
-            stdout.includes('Service unavailable') ||
-            stdout.includes('Connection refused') ||
-            stderr.includes('ECONNREFUSED') ||
-            stderr.includes('service unavailable') ||
-            outputLower.includes('connection refused') ||
-            outputLower.includes('econnrefused') ||
-            outputLower.includes('service unavailable') ||
-            outputLower.includes('connect etimedout') ||
-            outputLower.includes('socket hang up') ||
-            outputLower.includes('ehostunreach') ||
-            outputLower.includes('network is unreachable') ||
-            outputLower.includes('no route to host') ||
-            outputLower.includes('connection reset') ||
-            outputLower.includes('econnreset');
+            stdout.includes("Service unavailable") ||
+            stdout.includes("Connection refused") ||
+            stderr.includes("ECONNREFUSED") ||
+            stderr.includes("service unavailable") ||
+            outputLower.includes("connection refused") ||
+            outputLower.includes("econnrefused") ||
+            outputLower.includes("service unavailable") ||
+            outputLower.includes("connect etimedout") ||
+            outputLower.includes("socket hang up") ||
+            outputLower.includes("ehostunreach") ||
+            outputLower.includes("network is unreachable") ||
+            outputLower.includes("no route to host") ||
+            outputLower.includes("connection reset") ||
+            outputLower.includes("econnreset");
 
           return {
             success: false,
@@ -403,10 +309,14 @@ VALIDATION: Outcome: [yes/no + evidence] | Confidence: BEFORE [X%] → AFTER [Y%
 **Error:** ${execError.message}
 
 **POC file saved at:** ${relativePocPath}
-${isServiceDown ? '\n**NOTE:** Target service appears to be down/unavailable. POC may be valid but cannot be verified right now.\n' : ''}
+${
+  isServiceDown
+    ? "\n**NOTE:** Target service appears to be down/unavailable. POC may be valid but cannot be verified right now.\n"
+    : ""
+}
 STDOUT:
 \`\`\`
-${stdout || '(none)'}
+${stdout || "(none)"}
 \`\`\`
 
 STDERR:
@@ -421,12 +331,12 @@ ${
 - Otherwise, wait for service recovery or move to next target
 - The POC file has been saved and can be manually verified later`
     : attemptsRemaining > 0
-      ? `**Next Steps:**
+    ? `**Next Steps:**
 - Analyze the error and create an improved POC
 - Consider: syntax errors, missing dependencies, wrong assumptions
 - ${attemptsRemaining} attempts remaining for this approach
 - Call store_adaptation with worked=false and constraint_learned if you identified a blocker`
-      : `**Max attempts reached for this approach.**
+    : `**Max attempts reached for this approach.**
 - Call store_adaptation with worked=false to record this dead end
 - PIVOT to a different technique or vulnerability class
 - Do NOT retry the same approach`
@@ -453,7 +363,7 @@ This is a system error, not an exploitation failure. Check:
 }
 
 export function createDocumentFindingTool(
-  session: PocSessionInfo,
+  session: MetaTestingSessionInfo,
   logger: Logger,
   target: string,
   cvssOptions?: DocumentFindingCVSSOptions
@@ -496,7 +406,7 @@ This tool:
         if (!existsSync(fullPocPath)) {
           return {
             success: false,
-            error: 'POC_NOT_FOUND',
+            error: "POC_NOT_FOUND",
             message: `POC not found at: ${finding.pocPath}
 
 Create POC first using create_poc tool, then call document_finding.`,
@@ -511,14 +421,14 @@ Create POC first using create_poc tool, then call document_finding.`,
             (f.endpoint === finding.endpoint &&
               f.description
                 ?.toLowerCase()
-                .includes(finding.title.toLowerCase().split(' ')[0]))
+                .includes(finding.title.toLowerCase().split(" ")[0]))
         );
 
         if (isDuplicate) {
           logger.info(`Duplicate finding detected: ${finding.title}`);
           return {
             success: false,
-            error: 'DUPLICATE',
+            error: "DUPLICATE",
             message: `Duplicate finding - already documented.
 
 Continue testing for OTHER vulnerabilities at different endpoints.`,
@@ -601,16 +511,16 @@ Continue testing for OTHER vulnerabilities at different endpoints.`,
         };
 
         const safeTitle = sanitizeFilename(finding.title);
-        const filename = `${timestamp.split('T')[0]}-${safeTitle}.json`;
+        const filename = `${timestamp.split("T")[0]}-${safeTitle}.json`;
         const filepath = join(session.findingsPath, filename);
 
         writeFileSync(filepath, JSON.stringify(findingWithMeta, null, 2));
         findingPaths.push(filepath);
 
-        const summaryPath = join(session.rootPath, 'findings-summary.md');
+        const summaryPath = join(session.rootPath, "findings-summary.md");
         const cvssInfo = cvssData
           ? `\n  - CVSS 4.0: **${cvssData.score}** (${cvssData.severity})`
-          : '';
+          : "";
         const summaryEntry = `\n- **[${finding.severity}]** ${finding.title}${cvssInfo}\n  - Endpoint: \`${finding.endpoint}\`\n  - POC: \`${finding.pocPath}\`\n  - Finding: \`findings/${filename}\`\n`;
 
         try {
@@ -635,7 +545,7 @@ ${summaryEntry}`;
 
         const cvssMessage = cvssData
           ? `\n- CVSS 4.0: **${cvssData.score}** (${cvssData.severity})\n- Vector: \`${cvssData.vectorString}\``
-          : '';
+          : "";
 
         return {
           success: true,
@@ -671,11 +581,11 @@ function loadExistingFindings(findingsPath: string): any[] {
   }
 
   try {
-    const files = readdirSync(findingsPath).filter((f) => f.endsWith('.json'));
+    const files = readdirSync(findingsPath).filter((f) => f.endsWith(".json"));
     return files
       .map((f) => {
         try {
-          return JSON.parse(readFileSync(join(findingsPath, f), 'utf-8'));
+          return JSON.parse(readFileSync(join(findingsPath, f), "utf-8"));
         } catch {
           return null;
         }

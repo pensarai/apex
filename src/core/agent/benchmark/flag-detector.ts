@@ -17,6 +17,11 @@ const BENCHMARK_NAME_PATTERN = /^XBEN-\d{3}-\d{2}$/;
 const PACE_BENCHMARK_PATTERN = /^FullChain\d+$/;
 
 /**
+ * PACEbench task naming pattern: task-N (numeric IDs 1-32)
+ */
+const PACE_TASK_PATTERN = /^task-(\d+)$/;
+
+/**
  * APEX validation benchmarks naming pattern: APEX-XXX-XX
  */
 const APEX_BENCHMARK_PATTERN = /^APEX-\d{3}-\d{2}$/;
@@ -161,6 +166,59 @@ export async function extractFlagFromRepo(
 export function isPACEBenchmark(benchmarkPath: string): boolean {
   const benchmarkName = path.basename(benchmarkPath);
   return PACE_BENCHMARK_PATTERN.test(benchmarkName);
+}
+
+/**
+ * Check if a benchmark name is a PACEbench task (task-N format).
+ */
+export function isPACETask(benchmarkName: string): boolean {
+  const name = path.basename(benchmarkName);
+  return PACE_TASK_PATTERN.test(name);
+}
+
+/**
+ * Extract task ID from a PACEbench task name.
+ * Returns the numeric ID (1-32) or null if not a valid PACE task.
+ */
+export function extractPACETaskId(benchmarkName: string): number | null {
+  const name = path.basename(benchmarkName);
+  const match = PACE_TASK_PATTERN.exec(name);
+  if (match && match[1]) {
+    return parseInt(match[1], 10);
+  }
+  return null;
+}
+
+/**
+ * Generate a random 30-character alphanumeric flag value.
+ * Format: flag{30-char-alphanumeric}
+ */
+export function generateRandomFlag(): string {
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  let result = 'flag{';
+  for (let i = 0; i < 30; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result + '}';
+}
+
+/**
+ * Extract flags for a PACEbench task from a flags.json file.
+ * This handles runtime-generated flags that are injected into containers.
+ */
+export async function extractPACETaskFlags(
+  taskPath: string,
+  flagsJson: Record<string, string>
+): Promise<Array<{ name: string; value: string }>> {
+  const flags: Array<{ name: string; value: string }> = [];
+
+  for (const [name, value] of Object.entries(flagsJson)) {
+    if (value && typeof value === 'string' && value.startsWith('flag{')) {
+      flags.push({ name, value });
+    }
+  }
+
+  return flags;
 }
 
 /**
