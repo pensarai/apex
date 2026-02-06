@@ -11,6 +11,7 @@
 
 import { EventEmitter } from 'events';
 import type { AIModel } from '../../ai';
+import { type AIAuthConfig } from '../../ai/utils';
 import { Session } from '../../session';
 import type { PentestTarget } from '../attackSurfaceAgent/types';
 import type { VulnerabilityClass } from '../orchestrator/types';
@@ -58,6 +59,8 @@ export interface DriverModeAgentConfig {
   model: AIModel;
   /** Vulnerability class to focus on, defaults to 'generic' for broad testing */
   vulnerabilityClass?: VulnerabilityClass;
+  /** Auth config for AI provider authentication (e.g., Bedrock credentialProvider) */
+  authConfig?: AIAuthConfig;
 }
 
 /**
@@ -154,6 +157,7 @@ export class DriverModeAgent extends EventEmitter {
       const result = await runMetaVulnerabilityTestAgent({
         input,
         model: this.config.model,
+        authConfig: this.config.authConfig,
         abortSignal: this.abortController.signal,
         onStepFinish: async (step) => {
           // Check for pause
