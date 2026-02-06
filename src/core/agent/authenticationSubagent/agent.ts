@@ -10,6 +10,7 @@
 import { tool, hasToolCall, type StreamTextOnStepFinishCallback, type ToolSet } from "ai";
 import { z } from "zod";
 import { streamResponse, type AIModel } from "../../ai";
+import { type AIAuthConfig } from "../../ai/utils";
 import { Logger } from "../logger";
 import { Session } from "../../session";
 import { join } from "path";
@@ -134,6 +135,7 @@ function saveAgentMessages(
 export interface RunAuthenticationSubagentOpts {
   input: AuthenticationSubagentInput;
   model: AIModel;
+  authConfig?: AIAuthConfig;
   onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
   abortSignal?: AbortSignal;
   httpRequestOverride?: (opts: HttpRequestOpts) => Promise<HttpRequestResult>;
@@ -156,6 +158,7 @@ export async function runAuthenticationSubagent(
   const {
     input,
     model,
+    authConfig,
     onStepFinish,
     abortSignal,
     httpRequestOverride,
@@ -308,6 +311,7 @@ Provide a clear summary of the authentication outcome.`,
         system: systemPrompt,
         model,
         tools: tools as ToolSet,
+        authConfig,
         onStepFinish: (step) => {
           // Track messages for debugging
           if (step.toolCalls?.length > 0 || step.text) {
@@ -466,6 +470,7 @@ function buildDefaultSummary(state: AuthState, target: string): string {
 export interface DiscoverAuthenticationOpts {
   input: AuthDiscoveryInput;
   model: AIModel;
+  authConfig?: AIAuthConfig;
   onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
   abortSignal?: AbortSignal;
   enableBrowserTools?: boolean;
@@ -488,6 +493,7 @@ export async function discoverAuthentication(
   const {
     input,
     model,
+    authConfig,
     onStepFinish,
     abortSignal,
     enableBrowserTools = true,
@@ -626,6 +632,7 @@ Call this when you have analyzed the endpoint and determined:
         system: systemPrompt,
         model,
         tools: tools as ToolSet,
+        authConfig,
         onStepFinish: (step) => {
           if (step.toolCalls?.length > 0 || step.text) {
             messagesRef.current.push({
