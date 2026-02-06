@@ -510,7 +510,7 @@ function AgentCard({ agent, focused, onSelect }: AgentCardProps) {
       flexBasis={0}
       minWidth={40}
       border
-      borderColor={focused ? greenBullet : dimText}
+      borderColor={agent.status === "cancelled" ? cancelledColor : focused ? greenBullet : dimText}
       backgroundColor={darkBg}
       flexDirection="column"
       padding={1}
@@ -538,7 +538,9 @@ function AgentCard({ agent, focused, onSelect }: AgentCardProps) {
 
       {/* Activity / Status - single line */}
       <box height={1} overflow="hidden">
-        {agent.status === "pending" ? (
+        {agent.status === "cancelled" ? (
+          <text fg={cancelledColor}>⊘ Cancelled</text>
+        ) : agent.status === "pending" ? (
           <SpinnerDots label={lastActivity} fg="green" />
         ) : (
           <text fg={agent.status === "completed" ? greenBullet : dimText}>
@@ -604,16 +606,20 @@ interface MetricsBarProps {
   totalFindings: number;
   activeAgents: number;
   totalAgents: number;
+  cancelledAgents: number;
   duration: number;
   isExecuting: boolean;
+  showKillHint?: boolean;
 }
 
 function MetricsBar({
   totalFindings,
   activeAgents,
   totalAgents,
+  cancelledAgents,
   duration,
   isExecuting,
+  showKillHint,
 }: MetricsBarProps) {
   // Format duration as mm:ss
   const formattedDuration = useMemo(() => {
@@ -642,12 +648,27 @@ function MetricsBar({
           <span fg={isExecuting ? greenBullet : dimText}>{activeAgents}</span>
           <span fg={dimText}>/{totalAgents} active</span>
         </text>
+        {cancelledAgents > 0 && (
+          <>
+            <text fg={dimText}>|</text>
+            <text>
+              <span fg={cancelledColor}>{cancelledAgents}</span>
+              <span fg={dimText}> cancelled</span>
+            </text>
+          </>
+        )}
         <text fg={dimText}>|</text>
         <text fg={dimText}>{formattedDuration}</text>
       </box>
 
       {/* Right: Keyboard hints */}
       <box flexDirection="row" gap={2}>
+        {showKillHint && (
+          <text>
+            <span fg={greenBullet}>[K]</span>
+            <span fg={dimText}> Kill</span>
+          </text>
+        )}
         <text>
           <span fg={greenBullet}>[D]</span>
           <span fg={dimText}> Discovery</span>
@@ -679,6 +700,7 @@ function AgentDetailView({ agent, onBack }: AgentDetailViewProps) {
     pending: greenBullet,
     completed: greenBullet,
     failed: RGBA.fromInts(244, 67, 54, 255),
+    cancelled: cancelledColor,
   }[agent.status];
 
   return (
