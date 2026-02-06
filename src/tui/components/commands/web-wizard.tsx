@@ -630,7 +630,6 @@ export default function WebWizard({
           <box flexDirection="column" gap={0}>
             <Input
               label="Source Directory"
-              description="(current directory)"
               placeholder={process.cwd()}
               value={state.whitebox.sourceRoot}
               onInput={(v) => {
