@@ -33,6 +33,8 @@ export interface WebCommandOptions {
     headersMode?: 'none' | 'default' | 'custom';
     customHeaders?: Record<string, string>;
     model?: string;
+    whitebox?: boolean;
+    sourceRoot?: string;
 }
 
 export type Route =
