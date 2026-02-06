@@ -277,6 +277,8 @@ function CommandDisplay({
               initialHeadersMode={route.data.options?.headersMode}
               initialCustomHeaders={route.data.options?.customHeaders}
               initialModel={route.data.options?.model}
+              initialWhitebox={route.data.options?.whitebox}
+              initialSourceRoot={route.data.options?.sourceRoot}
             />
           </RouteSwitch.Case>
           <RouteSwitch.Case when="providers">

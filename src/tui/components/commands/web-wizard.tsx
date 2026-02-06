@@ -1,6 +1,9 @@
 import { useState, useEffect, useMemo } from "react";
 import { useKeyboard } from "@opentui/react";
 import { RGBA } from "@opentui/core";
+import { resolve } from "path";
+import { statSync } from "fs";
+import { execSync } from "child_process";
 import Input from "../input";
 import { useRoute } from "../../context/route";
 import { useConfig } from "../../context/config";
@@ -18,6 +21,10 @@ type WizardStep = "target" | "configure" | "creating";
 interface WizardState {
   name: string;
   target: string;
+  whitebox: {
+    enabled: boolean;
+    sourceRoot: string;
+  };
   auth: {
     loginUrl: string;
     username: string;
@@ -63,6 +70,10 @@ interface WebWizardProps {
   initialCustomHeaders?: Record<string, string>;
   /** Pre-filled model ID */
   initialModel?: string;
+  /** Pre-enable whitebox mode */
+  initialWhitebox?: boolean;
+  /** Pre-filled source directory for whitebox */
+  initialSourceRoot?: string;
 }
 
 // Color palette
@@ -84,6 +95,8 @@ export default function WebWizard({
   initialHeadersMode,
   initialCustomHeaders,
   initialModel,
+  initialWhitebox,
+  initialSourceRoot,
 }: WebWizardProps) {
   const route = useRoute();
   const config = useConfig();
@@ -182,6 +195,10 @@ export default function WebWizard({
   const [state, setState] = useState<WizardState>(() => ({
     name: initialName || generateRandomName(),
     target: initialTarget || "",
+    whitebox: {
+      enabled: initialWhitebox || false,
+      sourceRoot: initialSourceRoot || process.cwd(),
+    },
     auth: {
       loginUrl: initialAuthUrl || "",
       username: initialAuthUser || "",
@@ -200,7 +217,9 @@ export default function WebWizard({
   }));
 
   // UI state for target step
-  const [targetFocusedField, setTargetFocusedField] = useState(0); // 0=name, 1=target, 2=model (if multiple available)
+  // 0=name, 1=target, 2=whitebox toggle, 3=source directory (when whitebox enabled)
+  const [targetFocusedField, setTargetFocusedField] = useState(0);
+  const targetFieldCount = state.whitebox.enabled ? 4 : 3;
 
   // UI state for configure step
   const [focusedSection, setFocusedSection] = useState(0); // 0=auth, 1=scope, 2=headers
@@ -212,10 +231,39 @@ export default function WebWizard({
 
   // Error state
   const [error, setError] = useState<string | null>(null);
+  const [sourceError, setSourceError] = useState<string | null>(null);
+
+  // Validate source directory for whitebox mode
+  function validateSourceDirectory(dirPath: string): string | null {
+    const resolved = resolve(dirPath);
+    try {
+      const stats = statSync(resolved);
+      if (!stats.isDirectory()) {
+        return "Path is a file, not a directory";
+      }
+    } catch {
+      return "Directory not found";
+    }
+    try {
+      execSync("git rev-parse --git-dir", { cwd: resolved, stdio: "pipe" });
+    } catch {
+      return "Not a git repository (needed for change detection)";
+    }
+    return null;
+  }
 
   // Create session and navigate to session route
   async function createSessionAndNavigate() {
     if (!state.target.trim()) return;
+
+    // Validate source directory if whitebox is enabled
+    if (state.whitebox.enabled) {
+      const validationError = validateSourceDirectory(state.whitebox.sourceRoot);
+      if (validationError) {
+        setSourceError(validationError);
+        return;
+      }
+    }
 
     setCurrentStep("creating");
     setError(null);
@@ -227,6 +275,13 @@ export default function WebWizard({
         sessionType: 'web-app',
         mode: autoMode ? 'auto' : 'driver',
       };
+
+      // Whitebox config
+      if (state.whitebox.enabled) {
+        sessionConfig.whiteboxConfig = {
+          sourceRoot: resolve(state.whitebox.sourceRoot),
+        };
+      }
 
       // Auth config
       if (state.auth.instructions || state.auth.username) {
@@ -302,15 +357,35 @@ export default function WebWizard({
 
     // Target step: Enter to start, Tab to navigate/configure
     if (currentStep === "target") {
-      // Tab navigation between name and target fields
+      // Up/Down to toggle whitebox when focused on the toggle field
+      if ((key.name === "up" || key.name === "down") && targetFocusedField === 2) {
+        setState((prev) => ({
+          ...prev,
+          whitebox: { ...prev.whitebox, enabled: !prev.whitebox.enabled },
+        }));
+        setSourceError(null);
+        return;
+      }
+
+      // Tab navigation between fields
       if (key.name === "tab") {
         if (key.shift) {
           setTargetFocusedField((prev) => Math.max(0, prev - 1));
         } else {
-          if (targetFocusedField === 1 && state.target.trim()) {
+          const lastField = targetFieldCount - 1;
+          if (targetFocusedField >= lastField && state.target.trim()) {
+            // Validate source directory before advancing to configure step
+            if (state.whitebox.enabled) {
+              const validationError = validateSourceDirectory(state.whitebox.sourceRoot);
+              if (validationError) {
+                setSourceError(validationError);
+                return;
+              }
+              setSourceError(null);
+            }
             setCurrentStep("configure");
           } else {
-            setTargetFocusedField((prev) => Math.min(1, prev + 1));
+            setTargetFocusedField((prev) => Math.min(lastField, prev + 1));
           }
         }
         return;
@@ -542,6 +617,31 @@ export default function WebWizard({
           onInput={(v) => setState((prev) => ({ ...prev, target: v }))}
           focused={targetFocusedField === 1}
         />
+
+        <box flexDirection="row" gap={1}>
+          <text fg={targetFocusedField === 2 ? creamText : dimText}>Whitebox — analyze source code:</text>
+          <text fg={state.whitebox.enabled ? greenBullet : dimText}>
+            {state.whitebox.enabled ? "● Enabled" : "○ Disabled"}
+          </text>
+          {targetFocusedField === 2 && <text fg={dimText}>(↑/↓ to toggle)</text>}
+        </box>
+
+        {state.whitebox.enabled && (
+          <box flexDirection="column" gap={0}>
+            <Input
+              label="Source Directory"
+              description="(current directory)"
+              placeholder={process.cwd()}
+              value={state.whitebox.sourceRoot}
+              onInput={(v) => {
+                setState((prev) => ({ ...prev, whitebox: { ...prev.whitebox, sourceRoot: v } }));
+                setSourceError(null);
+              }}
+              focused={targetFocusedField === 3}
+            />
+            {sourceError && <text fg="red">  {sourceError}</text>}
+          </box>
+        )}
 
         <box flexDirection="column" gap={0} marginTop={1}>
           <text>

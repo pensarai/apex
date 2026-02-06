@@ -139,6 +139,11 @@ export const commands: CommandConfig[] = [
         description: "Custom header (repeatable)",
       },
       { name: "--model", valueHint: "<model>", description: "AI model to use" },
+      {
+        name: "--source",
+        valueHint: "<path>",
+        description: "Source directory for whitebox mode",
+      },
     ],
     handler: async (args, ctx) => {
       const flags = parseWebFlags(args);
@@ -159,6 +164,46 @@ export const commands: CommandConfig[] = [
         type: "base",
         path: "web",
         options: { auto: true, ...flags },
+      });
+    },
+  },
+  {
+    name: "whitebox",
+    aliases: ["wb"],
+    description: "Whitebox pentest — analyze source code before testing",
+    category: "Pentesting",
+    options: [
+      {
+        name: "--target",
+        valueHint: "<url>",
+        description: "Target URL to test",
+      },
+      {
+        name: "--source",
+        valueHint: "<path>",
+        description: "Source directory (defaults to cwd)",
+      },
+      { name: "--name", valueHint: "<name>", description: "Session name" },
+    ],
+    handler: async (args, ctx) => {
+      const flags = parseWebFlags(args);
+      flags.whitebox = true;
+      flags.sourceRoot = flags.sourceRoot || process.cwd();
+
+      if (flags.target && hasEnoughFlagsToSkipWizard(flags)) {
+        try {
+          const session = await createSwarmSessionFromFlags(flags);
+          ctx.navigate({ type: "session", sessionId: session.id });
+          return;
+        } catch (e) {
+          console.error("Failed to create session:", e);
+        }
+      }
+
+      ctx.navigate({
+        type: "base",
+        path: "web",
+        options: { auto: true, ...flags, whitebox: true, sourceRoot: flags.sourceRoot },
       });
     },
   },

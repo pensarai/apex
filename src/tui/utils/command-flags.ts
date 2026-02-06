@@ -5,6 +5,7 @@
  * Supports: --flag value, --flag=value, --boolean-flag
  */
 
+import { resolve } from "path";
 import { Session } from "../../core/session";
 import { generateRandomName } from "../../util/name";
 import type { OperatorMode, PermissionTier } from "../../core/operator";
@@ -137,6 +138,10 @@ export interface WebCommandFlags {
 
   // Model option
   model?: string;
+
+  // Whitebox options
+  whitebox?: boolean;
+  sourceRoot?: string;
 }
 
 /**
@@ -158,6 +163,7 @@ const webFlagSchema: FlagSchema = {
   headers: { type: "string" },
   header: { type: "array" },
   model: { type: "string" },
+  source: { type: "string", aliases: ["s"] },
   // Legacy --auto flag maps to --swarm
   auto: { type: "boolean" },
 };
@@ -232,6 +238,12 @@ export function parseWebFlags(args: string[]): WebCommandFlags {
   // Model option
   if (raw.model) flags.model = String(raw.model);
 
+  // Whitebox options
+  if (raw.source) {
+    flags.sourceRoot = resolve(String(raw.source));
+    flags.whitebox = true;
+  }
+
   return flags;
 }
 
@@ -242,6 +254,9 @@ export function parseWebFlags(args: string[]): WebCommandFlags {
 export function hasEnoughFlagsToSkipWizard(flags: WebCommandFlags): boolean {
   // Must have target to skip wizard
   if (!flags.target) return false;
+
+  // Whitebox sessions need target + sourceRoot
+  if (flags.whitebox) return !!flags.sourceRoot;
 
   // For operator mode, need at least mode or tier set to indicate intent
   // to skip wizard (otherwise user may want to configure)
@@ -359,6 +374,11 @@ export async function createSwarmSessionFromFlags(
       mode: flags.headersMode,
       headers: flags.headersMode === "custom" ? flags.customHeaders : undefined,
     };
+  }
+
+  // Whitebox config
+  if (flags.sourceRoot) {
+    sessionConfig.whiteboxConfig = { sourceRoot: flags.sourceRoot };
   }
 
   const session = await Session.create({
