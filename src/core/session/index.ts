@@ -348,6 +348,7 @@ Testing in progress...
         updated: Date.now(),
       },
       config: {
+        ...input.config,
         mode: input.config?.mode || "auto",
         offensiveHeaders: input.config?.offensiveHeaders || {
           mode: "default",
@@ -357,9 +358,6 @@ Testing in progress...
         },
         outcomeGuidance:
           input.config?.outcomeGuidance || DEFAULT_OUTCOME_GUIDANCE,
-        scopeConstraints: input.config?.scopeConstraints,
-        enableCvssScoring: input.config?.enableCvssScoring,
-        cvssModel: input.config?.cvssModel,
       },
       _rateLimiter: rateLimiter,
       rootPath,
