@@ -151,7 +151,7 @@ export default function SwarmDashboard({
         return;
       }
 
-      // Kill focused agent with K or Delete
+      // Kill focused agent with X or Delete
       if (
         (key.name === "x" || key.name === "X" || key.name === "delete") &&
         pentestAgents[focusedIndex]
