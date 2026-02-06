@@ -41,6 +41,8 @@ export interface SavedSubagentData {
   toolCallCount?: number;
   stepCount?: number;
   findingsCount?: number;
+  status?: string;
+  error?: string;
   messages: SavedMessage[];
 }
 
@@ -86,7 +88,7 @@ export interface UISubagent {
   target: string;
   messages: UIMessage[];
   createdAt: Date;
-  status: "pending" | "completed" | "failed";
+  status: "pending" | "completed" | "failed" | "canceled";
 }
 
 /**
@@ -238,9 +240,16 @@ function loadSubagents(rootPath: string): UISubagent[] {
 
       const messages = convertMessagesToUI(data.messages, timestamp);
 
-      // Determine status based on agent type and available data
-      let status: "pending" | "completed" | "failed" = "completed";
-      if (data.findingsCount !== undefined && data.findingsCount < 0) {
+      // Determine status: prefer explicit status field, fall back to findingsCount heuristic
+      let status: "pending" | "completed" | "failed" | "canceled" = "completed";
+      if (data.status === "canceled") {
+        status = "canceled";
+      } else if (data.status === "failed") {
+        status = "failed";
+      } else if (data.status === "completed") {
+        status = "completed";
+      } else if (data.findingsCount !== undefined && data.findingsCount < 0) {
+        // Legacy heuristic for files without explicit status
         status = "failed";
       }
 

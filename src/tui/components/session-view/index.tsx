@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useKeyboard } from "@opentui/react";
 import { RGBA } from "@opentui/core";
 import { useRoute } from "../../context/route";
@@ -23,6 +23,7 @@ import type {
   SubAgentStreamEvent,
 } from "../../../core/agent/orchestrator/orchestrator";
 import type { MetaVulnerabilityTestResult } from "../../../core/agent/metaTestingAgent";
+import { saveAgentMessages } from "../../../core/agent/metaTestingAgent";
 import { existsSync } from "fs";
 import { exec } from "child_process";
 import { SpinnerDots } from "../sprites";
@@ -65,6 +66,44 @@ export default function SessionView({
     useState<AbortController | null>(null);
   const [startTime, setStartTime] = useState<Date | null>(null);
   const [hasStarted, setHasStarted] = useState(false);
+
+  // Per-agent abort controllers for individual kill capability
+  const agentAbortControllers = useRef<Map<string, AbortController>>(new Map());
+
+  const killAgent = useCallback((agentId: string) => {
+    const controller = agentAbortControllers.current.get(agentId);
+    if (controller) {
+      controller.abort();
+      setSubagents(prev => {
+        const agent = prev.find(a => a.id === agentId);
+        // Persist canceled status to disk so it survives session resume
+        if (agent && session) {
+          try {
+            const messages = agent.messages.map(m => ({
+              role: m.role,
+              content: m.content,
+            }));
+            saveAgentMessages(
+              session.rootPath,
+              agent.id,
+              messages,
+              {
+                target: agent.target,
+                status: "canceled",
+              }
+            );
+          } catch (_e) {
+            // Best-effort persistence — don't break the kill flow
+          }
+        }
+        return prev.map(a =>
+          a.id === agentId
+            ? { ...a, status: "canceled" as const }
+            : a
+        );
+      });
+    }
+  }, [session]);
 
   // Load session on mount
   useEffect(() => {
@@ -170,6 +209,9 @@ export default function SessionView({
           session: execSession,
           sessionConfig: execSession.config,
           abortSignal: controller.signal,
+          onAgentAbortControllerCreated: (agentId, abortCtrl) => {
+            agentAbortControllers.current.set(agentId, abortCtrl);
+          },
 
           // Use onStepFinish for UI updates (like metavuln agent does)
           // This is more reliable than raw stream chunks which can be interrupted
@@ -598,7 +640,7 @@ export default function SessionView({
           ) => {
             setSubagents((prev) =>
               prev.map((sub) =>
-                sub.id === agentId
+                sub.id === agentId && sub.status !== "canceled"
                   ? {
                       ...sub,
                       status: agentResult.error ? "failed" : "completed",
@@ -728,6 +770,7 @@ export default function SessionView({
       isCompleted={isCompleted}
       onBack={handleBack}
       onViewReport={openReport}
+      onKillAgent={killAgent}
     />
   );
 }
