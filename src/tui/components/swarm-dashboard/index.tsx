@@ -22,7 +22,7 @@ export type Subagent = {
   target: string;
   messages: DisplayMessage[];
   createdAt: Date;
-  status: "pending" | "completed" | "failed";
+  status: "pending" | "completed" | "failed" | "cancelled";
 };
 
 interface SwarmDashboardProps {
@@ -33,6 +33,7 @@ interface SwarmDashboardProps {
   isCompleted?: boolean;
   onBack?: () => void;
   onViewReport?: () => void;
+  onKillAgent?: (agentId: string) => void;
   children?: React.ReactNode;
 }
 
@@ -44,6 +45,7 @@ export default function SwarmDashboard({
   isCompleted,
   onBack,
   onViewReport,
+  onKillAgent,
 }: SwarmDashboardProps) {
   const [currentView, setCurrentView] = useState<"overview" | "detail">(
     "overview"
@@ -82,6 +84,7 @@ export default function SwarmDashboard({
       totalFindings: findingsCount,
       activeAgents: subagents.filter((s) => s.status === "pending").length,
       completedAgents: subagents.filter((s) => s.status === "completed").length,
+      cancelledAgents: subagents.filter((s) => s.status === "cancelled").length,
       totalAgents: pentestAgents.length,
       duration: startTime
         ? Math.floor((Date.now() - startTime.getTime()) / 1000)
@@ -145,6 +148,18 @@ export default function SwarmDashboard({
       if (key.name === "up") {
         // Move up 2 (2-column grid)
         setFocusedIndex((prev) => Math.max(prev - 2, 0));
+        return;
+      }
+
+      // Kill focused agent with K or Delete
+      if (
+        (key.name === "k" || key.name === "K" || key.name === "delete") &&
+        pentestAgents[focusedIndex]
+      ) {
+        const focusedAgent = pentestAgents[focusedIndex]!;
+        if (focusedAgent.status === "pending") {
+          onKillAgent?.(focusedAgent.id);
+        }
         return;
       }
 
@@ -264,8 +279,10 @@ export default function SwarmDashboard({
         totalFindings={metrics.totalFindings}
         activeAgents={metrics.activeAgents}
         totalAgents={metrics.totalAgents}
+        cancelledAgents={metrics.cancelledAgents}
         duration={metrics.duration}
         isExecuting={isExecuting}
+        showKillHint={!!onKillAgent}
       />
     </box>
   );
@@ -445,17 +462,21 @@ interface AgentCardProps {
   onSelect: () => void;
 }
 
+const cancelledColor = RGBA.fromInts(186, 104, 200, 255);
+
 function AgentCard({ agent, focused, onSelect }: AgentCardProps) {
   const statusIcon = {
     pending: "◐",
     completed: "✓",
     failed: "✗",
+    cancelled: "⊘",
   }[agent.status];
 
   const statusColor = {
     pending: greenBullet,
     completed: greenBullet,
     failed: RGBA.fromInts(244, 67, 54, 255),
+    cancelled: cancelledColor,
   }[agent.status];
 
   // Get brief activity from last message (truncated to single line)

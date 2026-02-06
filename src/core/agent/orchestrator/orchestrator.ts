@@ -128,6 +128,9 @@ export interface PentestOrchestratorInput {
     result: MetaVulnerabilityTestResult
   ) => void;
 
+  /** Called when a per-agent AbortController is created, allowing callers to abort individual agents */
+  onAgentAbortControllerCreated?: (agentId: string, controller: AbortController) => void;
+
   /** Abort signal */
   abortSignal?: AbortSignal;
 
@@ -217,6 +220,7 @@ export async function runPentestOrchestrator(
     onAgentSpawn,
     onAgentStream,
     onAgentComplete,
+    onAgentAbortControllerCreated,
     abortSignal,
     toolOverride,
     concurrencyLimit = DEFAULT_CONCURRENCY_LIMIT,
@@ -339,6 +343,15 @@ export async function runPentestOrchestrator(
         ? `spawned-${task.vulnClass}-${Date.now()}`
         : `meta-vuln-${task.targetIndex}-${task.vulnClass}`;
 
+      // Create per-agent AbortController and combine with global signal
+      const agentAbortController = new AbortController();
+      const combinedSignal = abortSignal
+        ? AbortSignal.any([abortSignal, agentAbortController.signal])
+        : agentAbortController.signal;
+
+      // Register with caller so they can abort this specific agent
+      onAgentAbortControllerCreated?.(agentId, agentAbortController);
+
       // Notify spawn
       onAgentSpawn?.({
         id: agentId,
@@ -372,7 +385,7 @@ export async function runPentestOrchestrator(
           model,
           remoteSandboxUrl: sessionConfig?.remoteSandboxUrl,
           toolOverride,
-          abortSignal,
+          abortSignal: combinedSignal,
           // Handle spawned vulnerability tests - adds to the same unified queue
           onSpawnAgent: (request: SpawnVulnerabilityTestRequest) => {
             logger.info(
