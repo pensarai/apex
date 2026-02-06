@@ -8,6 +8,7 @@ import {
 } from "ai";
 import { mapMessages, Messages } from "../../messages";
 import { streamResponse, type AIModel } from "../../ai";
+import { type AIAuthConfig } from "../../ai/utils";
 import { SYSTEM } from "./prompts";
 import { createPentestTools } from "../tools";
 import { Session } from "../../session";
@@ -156,6 +157,7 @@ export interface RunAgentProps {
   onToolTokenUsage?: (inputTokens: number, outputTokens: number) => void;
   abortSignal?: AbortSignal;
   session?: Session.SessionInfo;
+  authConfig?: AIAuthConfig;
   toolOverride?: {
     execute_command?: (opts: any) => Promise<any>;
     http_request?: (opts: any) => Promise<any>;
@@ -183,6 +185,7 @@ export async function runAgent(opts: RunAgentProps): Promise<{
     toolOverride,
     persistence,
     existingState,
+    authConfig,
   } = opts;
 
   // Create a new session for this attack surface analysis
@@ -1293,6 +1296,7 @@ You MUST provide the final report using create_attack_surface_report tool.
     toolChoice: "auto", // Let the model decide when to use tools vs respond
     onStepFinish,
     abortSignal,
+    authConfig,
   });
 
   // Attach the session directly to the stream result object

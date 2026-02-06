@@ -9,6 +9,7 @@
  */
 
 import type { AIModel } from "../../ai";
+import { type AIAuthConfig } from "../../ai/utils";
 import type { PentestTarget } from "../attackSurfaceAgent/types";
 import {
   inferVulnerabilityClasses,
@@ -104,6 +105,9 @@ export interface PentestOrchestratorInput {
 
   /** Optional existing session */
   session?: Session.SessionInfo;
+
+  /** Auth config for AI provider authentication (e.g., Bedrock credentialProvider) */
+  authConfig?: AIAuthConfig;
 
   /** Session configuration */
   sessionConfig?: {
@@ -218,6 +222,7 @@ export async function runPentestOrchestrator(
   const {
     targets,
     model,
+    authConfig,
     sessionConfig,
     onProgress,
     onAgentSpawn,
@@ -383,6 +388,7 @@ export async function runPentestOrchestrator(
             },
           },
           model,
+          authConfig,
           remoteSandboxUrl: sessionConfig?.remoteSandboxUrl,
           toolOverride,
           abortSignal: abortSignal
