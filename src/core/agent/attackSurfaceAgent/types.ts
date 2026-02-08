@@ -23,6 +23,7 @@ export interface PentestTarget {
   target: string;
   objective: string;
   rationale: string;
+  riskScore?: number;
   authenticationInfo?: {
     method: string;
     details: string;

@@ -107,6 +107,7 @@ export const PentestTargetSchema = z.object({
   target: z.string().describe("Target URL, IP, or domain"),
   objective: z.string().describe("Pentest objective for this target"),
   rationale: z.string().describe("Why this target needs deep testing"),
+  riskScore: z.number().optional().describe("Risk score 1-10, higher = riskier. Used for priority sorting."),
   authenticationInfo: z
     .object({
       method: z.string(),
