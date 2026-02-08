@@ -183,6 +183,10 @@ function parseSubagentFilename(filename: string): {
     return { agentType: "attack-surface", name: "Attack Surface Discovery" };
   }
 
+  if (filename.startsWith("whitebox-recon-agent")) {
+    return { agentType: "attack-surface", name: "Attack Surface Discovery" };
+  }
+
   if (filename.startsWith("vuln-test-")) {
     // Extract vulnerability class from filename
     // e.g., vuln-test-command-injection-http---localhost-32768-applica-2025-12-05...
@@ -262,7 +266,8 @@ function loadSubagents(rootPath: string): UISubagent[] {
       subagents.push({
         id: `loaded-${file.replace(".json", "")}`,
         name:
-          data.agentName === "attack-surface-agent"
+          data.agentName === "attack-surface-agent" ||
+          data.agentName === "whitebox-recon-agent"
             ? "Attack Surface Discovery"
             : name,
         type: agentType,
