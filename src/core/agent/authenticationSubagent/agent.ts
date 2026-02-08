@@ -37,53 +37,7 @@ import type {
   AuthBarrier,
 } from "./types";
 
-// =============================================================================
-// Constants
-// =============================================================================
-
-const RETRY_CONFIG = {
-  maxRetries: 5,
-  initialDelayMs: 1000,
-  maxDelayMs: 60000,
-  backoffMultiplier: 2,
-};
-
-// =============================================================================
-// Helpers
-// =============================================================================
-
-function isOverloadedError(error: unknown): boolean {
-  const err = error as { message?: string; status?: number; statusCode?: number };
-  const message = err?.message?.toLowerCase() || "";
-  const status = err?.status || err?.statusCode;
-  return (
-    status === 429 ||
-    status === 529 ||
-    status === 503 ||
-    message.includes("overloaded") ||
-    message.includes("rate limit") ||
-    message.includes("too many requests") ||
-    message.includes("capacity") ||
-    message.includes("temporarily unavailable")
-  );
-}
-
-function isContextTooLongError(error: unknown): boolean {
-  const err = error as { message?: string; status?: number; statusCode?: number };
-  const message = err?.message?.toLowerCase() || "";
-  const status = err?.status || err?.statusCode;
-  return (
-    status === 400 &&
-    (message.includes("too long") ||
-      message.includes("context length") ||
-      message.includes("maximum context") ||
-      message.includes("input is too long"))
-  );
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+import { RETRY_CONFIG, isOverloadedError, isContextTooLongError, sleep } from "../retry";
 
 function extractHostFromTarget(target: string): string {
   try {
