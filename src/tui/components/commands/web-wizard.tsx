@@ -70,9 +70,7 @@ interface WebWizardProps {
   initialCustomHeaders?: Record<string, string>;
   /** Pre-filled model ID */
   initialModel?: string;
-  /** Pre-enable whitebox mode */
-  initialWhitebox?: boolean;
-  /** Pre-filled source directory for whitebox */
+  /** Pre-filled source directory for whitebox (presence enables whitebox mode) */
   initialSourceRoot?: string;
 }
 
@@ -95,7 +93,6 @@ export default function WebWizard({
   initialHeadersMode,
   initialCustomHeaders,
   initialModel,
-  initialWhitebox,
   initialSourceRoot,
 }: WebWizardProps) {
   const route = useRoute();
@@ -196,7 +193,7 @@ export default function WebWizard({
     name: initialName || generateRandomName(),
     target: initialTarget || "",
     whitebox: {
-      enabled: initialWhitebox || false,
+      enabled: !!initialSourceRoot,
       sourceRoot: initialSourceRoot || process.cwd(),
     },
     auth: {
@@ -276,11 +273,9 @@ export default function WebWizard({
         mode: autoMode ? 'auto' : 'driver',
       };
 
-      // Whitebox config
+      // Whitebox source root
       if (state.whitebox.enabled) {
-        sessionConfig.whiteboxConfig = {
-          sourceRoot: resolve(state.whitebox.sourceRoot),
-        };
+        sessionConfig.whiteboxSourceRoot = resolve(state.whitebox.sourceRoot);
       }
 
       // Auth config

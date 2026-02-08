@@ -139,8 +139,7 @@ export interface WebCommandFlags {
   // Model option
   model?: string;
 
-  // Whitebox options
-  whitebox?: boolean;
+  // Whitebox option — if set, enables whitebox mode
   sourceRoot?: string;
 }
 
@@ -238,10 +237,9 @@ export function parseWebFlags(args: string[]): WebCommandFlags {
   // Model option
   if (raw.model) flags.model = String(raw.model);
 
-  // Whitebox options
+  // Whitebox option
   if (raw.source) {
     flags.sourceRoot = resolve(String(raw.source));
-    flags.whitebox = true;
   }
 
   return flags;
@@ -255,8 +253,8 @@ export function hasEnoughFlagsToSkipWizard(flags: WebCommandFlags): boolean {
   // Must have target to skip wizard
   if (!flags.target) return false;
 
-  // Whitebox sessions need target + sourceRoot
-  if (flags.whitebox) return !!flags.sourceRoot;
+  // Whitebox sessions need target + sourceRoot (sourceRoot presence implies whitebox)
+  if (flags.sourceRoot) return true;
 
   // For operator mode, need at least mode or tier set to indicate intent
   // to skip wizard (otherwise user may want to configure)
@@ -376,9 +374,9 @@ export async function createSwarmSessionFromFlags(
     };
   }
 
-  // Whitebox config
+  // Whitebox source root
   if (flags.sourceRoot) {
-    sessionConfig.whiteboxConfig = { sourceRoot: flags.sourceRoot };
+    sessionConfig.whiteboxSourceRoot = flags.sourceRoot;
   }
 
   const session = await Session.create({

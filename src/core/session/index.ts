@@ -98,12 +98,8 @@ export namespace Session {
     cvssModel: z.string().optional(),
     /** Toolset state for controlling which tools are available */
     toolsetState: ToolsetStateSchema.optional(),
-    /** Whitebox pentest configuration (source-code-aware recon) */
-    whiteboxConfig: z
-      .object({
-        sourceRoot: z.string(),
-      })
-      .optional(),
+    /** Source root for whitebox pentesting (source-code-aware recon). If set, enables whitebox mode. */
+    whiteboxSourceRoot: z.string().optional(),
   });
 
   export type SessionConfig = z.infer<typeof SessionConfigObject>;

@@ -187,7 +187,6 @@ export const commands: CommandConfig[] = [
     ],
     handler: async (args, ctx) => {
       const flags = parseWebFlags(args);
-      flags.whitebox = true;
       flags.sourceRoot = flags.sourceRoot || process.cwd();
 
       if (flags.target && hasEnoughFlagsToSkipWizard(flags)) {
@@ -203,7 +202,7 @@ export const commands: CommandConfig[] = [
       ctx.navigate({
         type: "base",
         path: "web",
-        options: { auto: true, ...flags, whitebox: true, sourceRoot: flags.sourceRoot },
+        options: { auto: true, ...flags },
       });
     },
   },
