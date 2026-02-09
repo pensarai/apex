@@ -155,7 +155,7 @@ function convertMessagesToUI(
             : undefined;
           uiMessages.push({
             role: "tool",
-            content: `✓ ${toolDescription}`,
+            content: toolDescription,
             createdAt,
             toolCallId: part.toolCallId,
             toolName: part.toolName,

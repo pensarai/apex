@@ -40,6 +40,9 @@ import type { Endpoint, VerifiedVuln, Credential, Hypothesis, Evidence } from ".
 import ToolsPanel from "../components/tools-panel";
 import type { ToolsetState } from "../../core/toolset";
 
+import { loadSessionState } from "../../core/session/loader";
+import { adaptSwarmStateForOperator } from "./swarm-to-operator-adapter";
+
 // Session sub-components
 import { Header } from "../components/chat/header";
 import { MessageList } from "../components/chat/message-list";
@@ -59,6 +62,8 @@ export interface SessionProps {
   model?: ModelInfo;
   /** If true, restore saved state from disk instead of starting fresh */
   isResume?: boolean;
+  /** If true, synthesize operator context from swarm session data */
+  openAsOperator?: boolean;
   /** Initial directive to send when agent is ready */
   initialDirective?: string;
   /** Callback when exiting session */
@@ -106,6 +111,7 @@ export function SessionComponent({
   mode,
   model: propModel,
   isResume = false,
+  openAsOperator = false,
   initialDirective,
   onExit,
 }: SessionProps) {
@@ -229,7 +235,7 @@ export function SessionComponent({
   useEffect(() => {
     if (!isResume || resumeLoaded) return;
 
-    Session.loadOperatorState(session.id).then((savedState) => {
+    Session.loadOperatorState(session.id).then(async (savedState) => {
       if (savedState) {
         setOperatorMode(savedState.mode as OperatorMode);
         setAutoApproveTier(savedState.autoApproveTier as PermissionTier);
@@ -257,10 +263,17 @@ export function SessionComponent({
           history.filter((a: any) => a.decision === "approved" || a.decision === "auto-approved").length
         );
         setDeniedCount(history.filter((a: any) => a.decision === "denied").length);
+      } else if (openAsOperator) {
+        // Synthesize operator context from swarm session data
+        const swarmState = await loadSessionState(session);
+        const { messages: synthMessages, attackSurface } =
+          adaptSwarmStateForOperator(swarmState);
+        setMessages(synthMessages);
+        sidebar.updateState({ attackSurface });
       }
       setResumeLoaded(true);
     });
-  }, [isResume, session.id, resumeLoaded, setMessages, sidebar]);
+  }, [isResume, session.id, resumeLoaded, setMessages, sidebar, openAsOperator]);
 
   // ============================================
   // Agent Initialization

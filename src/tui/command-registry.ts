@@ -280,6 +280,18 @@ export const commands: CommandConfig[] = [
     },
   },
   {
+    name: "sessions",
+    aliases: ["s"],
+    description: "Browse previous sessions",
+    category: "Pentesting",
+    handler: async (args, ctx) => {
+      ctx.navigate({
+        type: "base",
+        path: "sessions",
+      });
+    },
+  },
+  {
     name: "chat",
     aliases: ["c"],
     description: "Open the Chat TUI interface",

@@ -44,11 +44,14 @@ interface SessionViewProps {
   sessionId: string;
   /** If true, load existing session state without starting a new pentest */
   isResume?: boolean;
+  /** If true, open an auto-mode session in operator mode */
+  openAsOperator?: boolean;
 }
 
 export default function SessionView({
   sessionId,
   isResume = false,
+  openAsOperator = false,
 }: SessionViewProps) {
   const route = useRoute();
   const { model, setThinking, isExecuting, addTokenUsage, setIsExecuting } =
@@ -121,8 +124,6 @@ export default function SessionView({
         if (isResume) {
           try {
             const state = await loadSessionState(loadedSession);
-
-            // Convert UISubagent to Subagent (they're compatible)
             const loadedSubagents: Subagent[] = state.subagents.map((s) => ({
               id: s.id,
               name: s.name,
@@ -132,14 +133,21 @@ export default function SessionView({
               createdAt: s.createdAt,
               status: s.status,
             }));
-
             setSubagents(loadedSubagents);
-            setIsCompleted(state.hasReport);
             setStartTime(new Date(loadedSession.time.created));
-            setHasStarted(true); // Mark as started so we don't trigger new pentest
+
+            if (state.hasReport) {
+              // COMPLETED — static display, no restart
+              setIsCompleted(true);
+              setHasStarted(true);
+            } else if (state.attackSurfaceResults) {
+              // MID-PENTEST — discovery done, pentest was interrupted
+              // Show loaded state as-is, don't restart from discovery
+              setHasStarted(true);
+            }
+            // else: PRE-DISCOVERY — let auto-start restart from scratch
           } catch (e) {
             console.error("Failed to load session state:", e);
-            // Fall through to show empty state - user can still view session
           }
         }
 
@@ -152,18 +160,16 @@ export default function SessionView({
     loadSession();
   }, [sessionId, isResume]);
 
-  // Start pentest once session is loaded (only if not resuming)
+  // Start pentest once session is loaded
   // Skip auto-start for operator/driver modes - they have their own start logic
   useEffect(() => {
-    if (session && !hasStarted && !loading && !isResume) {
+    if (session && !hasStarted && !loading) {
       const mode = session.config?.mode;
-      if (mode === "operator" || mode === "driver") {
-        return; // These modes wait for user to initiate
-      }
+      if (mode === "operator" || mode === "driver" || openAsOperator) return;
       setHasStarted(true);
       startPentest(session);
     }
-  }, [session, hasStarted, loading, isResume]);
+  }, [session, hasStarted, loading, openAsOperator]);
 
   // Cleanup: abort on unmount (safety net)
   useEffect(() => {
@@ -189,8 +195,9 @@ export default function SessionView({
       const pentestAgentTexts = new Map<string, string>();
 
       try {
-        // Add discovery subagent
-        setSubagents([
+        // Add discovery subagent (preserve any pre-existing logs from incomplete resume)
+        setSubagents((prev) => [
+          ...prev,
           {
             id: "attack-surface-discovery",
             name: "Attack Surface Discovery",
@@ -302,7 +309,7 @@ export default function SessionView({
                     newMessages[msgIdx] = {
                       ...existingMsg,
                       status: "completed",
-                      content: `+ ${description}`,
+                      content: description,
                       result: (tr as any).output,
                     };
                   } else {
@@ -438,7 +445,7 @@ export default function SessionView({
                   newMessages[msgIdx] = {
                     ...existingMsg,
                     status: "completed",
-                    content: `+ ${description}`,
+                    content: description,
                     result,
                   };
                 } else {
@@ -595,7 +602,7 @@ export default function SessionView({
                   newMessages[msgIdx] = {
                     ...existingMsg,
                     status: "completed",
-                    content: `+ ${description}`,
+                    content: description,
                     result,
                   };
                 } else {
@@ -756,8 +763,8 @@ export default function SessionView({
   }
 
   // Operator mode - render OperatorDashboard for interactive pentesting
-  if (session.config?.mode === "operator") {
-    return <OperatorDashboard session={session} isResume={isResume} />;
+  if (session.config?.mode === "operator" || openAsOperator) {
+    return <OperatorDashboard session={session} isResume={isResume} openAsOperator={openAsOperator} />;
   }
 
   // Auto mode - Render SwarmDashboard with streamlined pentest

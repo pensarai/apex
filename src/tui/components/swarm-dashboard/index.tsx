@@ -57,13 +57,37 @@ export default function SwarmDashboard({
 
   // Separate discovery and pentest agents
   const discoveryAgent = useMemo(
-    () => subagents.find((s) => s.type === "attack-surface") || null,
+    () =>
+      subagents.find(
+        (s) => s.type === "attack-surface" && s.status === "pending"
+      ) ||
+      subagents.find((s) => s.type === "attack-surface") ||
+      null,
     [subagents]
   );
   const pentestAgents = useMemo(
     () => subagents.filter((s) => s.type === "pentest"),
     [subagents]
   );
+
+  // Aggregate endpoints from ALL attack-surface agents (old loaded + new active)
+  const allEndpoints = useMemo(() => {
+    const endpointSet = new Set<string>();
+    const attackSurfaceAgents = subagents.filter(
+      (s) => s.type === "attack-surface"
+    );
+    for (const agent of attackSurfaceAgents) {
+      for (const msg of agent.messages) {
+        if (msg.role === "assistant" && typeof msg.content === "string") {
+          const urlMatches = msg.content.match(/\/[a-zA-Z0-9\/_.-]+/g);
+          if (urlMatches) {
+            urlMatches.forEach((u) => endpointSet.add(u));
+          }
+        }
+      }
+    }
+    return Array.from(endpointSet).slice(0, 50);
+  }, [subagents]);
 
   // Computed metrics
   const metrics = useMemo(() => {
@@ -204,6 +228,7 @@ export default function SwarmDashboard({
         {/* Left: Discovery panel */}
         <DiscoveryPanel
           agent={discoveryAgent}
+          endpoints={allEndpoints}
           showLogs={showDiscoveryLogs}
           onToggleLogs={() => setShowDiscoveryLogs((prev) => !prev)}
         />
@@ -294,31 +319,17 @@ export default function SwarmDashboard({
 
 interface DiscoveryPanelProps {
   agent: Subagent | null;
+  endpoints: string[];
   showLogs: boolean;
   onToggleLogs: () => void;
 }
 
 function DiscoveryPanel({
   agent,
+  endpoints,
   showLogs,
   onToggleLogs,
 }: DiscoveryPanelProps) {
-  // Extract endpoints from agent messages
-  const endpoints = useMemo(() => {
-    if (!agent) return [];
-    const endpointSet = new Set<string>();
-
-    for (const msg of agent.messages) {
-      if (msg.role === "assistant" && typeof msg.content === "string") {
-        // Look for URL patterns
-        const urlMatches = msg.content.match(/\/[a-zA-Z0-9\/_-]+/g);
-        if (urlMatches) {
-          urlMatches.forEach((u) => endpointSet.add(u));
-        }
-      }
-    }
-    return Array.from(endpointSet).slice(0, 50);
-  }, [agent?.messages]);
 
   // Expanded logs view
   if (showLogs && agent) {
