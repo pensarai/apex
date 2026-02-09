@@ -14,6 +14,7 @@
 // Main agents
 export {
   runMetaVulnerabilityTestAgent,
+  saveAgentMessages,
   type MetaVulnerabilityTestInput,
   type MetaVulnerabilityTestResult,
   type SpawnVulnerabilityTestRequest,

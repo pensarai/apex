@@ -50,7 +50,7 @@ function saveOrchestratorSummary(
     }>;
     totalFindings: number;
     concurrencyLimit: number;
-  }
+  },
 ): string {
   const subagentsDir = join(sessionRootPath, "subagents");
   if (!existsSync(subagentsDir)) {
@@ -129,7 +129,13 @@ export interface PentestOrchestratorInput {
   /** Callback when a sub-agent completes */
   onAgentComplete?: (
     agentId: string,
-    result: MetaVulnerabilityTestResult
+    result: MetaVulnerabilityTestResult,
+  ) => void;
+
+  /** Called when a per-agent AbortController is created, allowing callers to abort individual agents */
+  onAgentAbortControllerCreated?: (
+    agentId: string,
+    controller: AbortController,
   ) => void;
 
   /** Abort signal */
@@ -138,7 +144,7 @@ export interface PentestOrchestratorInput {
   /** Tool overrides for sandboxed execution */
   toolOverride?: {
     execute_command?: (
-      opts: ExecuteCommandOpts
+      opts: ExecuteCommandOpts,
     ) => Promise<ExecuteCommandResult>;
     http_request?: (opts: HttpRequestOpts) => Promise<HttpRequestResult>;
   };
@@ -211,7 +217,7 @@ interface TestTask {
  * a configurable concurrency limit (default: 20).
  */
 export async function runPentestOrchestrator(
-  input: PentestOrchestratorInput
+  input: PentestOrchestratorInput,
 ): Promise<PentestOrchestratorResult> {
   const {
     targets,
@@ -222,6 +228,7 @@ export async function runPentestOrchestrator(
     onAgentSpawn,
     onAgentStream,
     onAgentComplete,
+    onAgentAbortControllerCreated,
     abortSignal,
     toolOverride,
     concurrencyLimit = DEFAULT_CONCURRENCY_LIMIT,
@@ -264,7 +271,7 @@ export async function runPentestOrchestrator(
   }
 
   logger.info(
-    `Starting pentest orchestrator: ${targets.length} targets, ${testTasks.length} tasks, concurrency limit ${concurrencyLimit}`
+    `Starting pentest orchestrator: ${targets.length} targets, ${testTasks.length} tasks, concurrency limit ${concurrencyLimit}`,
   );
 
   // Progress tracking
@@ -344,6 +351,12 @@ export async function runPentestOrchestrator(
         ? `spawned-${task.vulnClass}-${Date.now()}`
         : `meta-vuln-${task.targetIndex}-${task.vulnClass}`;
 
+      // Create per-agent AbortController and combine with global signal
+      const agentAbortController = new AbortController();
+
+      // Register with caller so they can abort this specific agent
+      onAgentAbortControllerCreated?.(agentId, agentAbortController);
+
       // Notify spawn
       onAgentSpawn?.({
         id: agentId,
@@ -378,11 +391,13 @@ export async function runPentestOrchestrator(
           authConfig,
           remoteSandboxUrl: sessionConfig?.remoteSandboxUrl,
           toolOverride,
-          abortSignal,
+          abortSignal: abortSignal
+            ? AbortSignal.any([abortSignal, agentAbortController.signal])
+            : agentAbortController.signal,
           // Handle spawned vulnerability tests - adds to the same unified queue
           onSpawnAgent: (request: SpawnVulnerabilityTestRequest) => {
             logger.info(
-              `Agent ${agentId} spawning new test: ${request.vulnerabilityClass} for ${request.target}`
+              `Agent ${agentId} spawning new test: ${request.vulnerabilityClass} for ${request.target}`,
             );
 
             // Create a new task and add it to the unified queue
@@ -400,7 +415,7 @@ export async function runPentestOrchestrator(
             queueTask(spawnedTask);
 
             logger.info(
-              `Queued spawned task: ${request.vulnerabilityClass} (total queue: ${totalTasksQueued})`
+              `Queued spawned task: ${request.vulnerabilityClass} (total queue: ${totalTasksQueued})`,
             );
           },
           // Forward real-time stream chunks to caller
@@ -434,7 +449,7 @@ export async function runPentestOrchestrator(
         return taskResult;
       } catch (error: any) {
         logger.error(
-          `Error testing ${task.vulnClass} on ${task.target}: ${error.message}`
+          `Error testing ${task.vulnClass} on ${task.target}: ${error.message}`,
         );
         const taskResult = {
           task,
@@ -493,7 +508,7 @@ export async function runPentestOrchestrator(
   logger.info(
     `All tasks completed: ${allTaskResults.length} total (${
       testTasks.length
-    } initial + ${allTaskResults.length - testTasks.length} spawned)`
+    } initial + ${allTaskResults.length - testTasks.length} spawned)`,
   );
 
   // Aggregate results by target (includes both initial and spawned tasks)
@@ -515,7 +530,7 @@ export async function runPentestOrchestrator(
     const pentestTarget = targets[i];
     const vulnerabilityResults = resultsMap.get(i)!;
     const targetFindingsCount = Array.from(
-      vulnerabilityResults.values()
+      vulnerabilityResults.values(),
     ).reduce((sum, r) => sum + r.findingsCount, 0);
 
     targetResults.push({
@@ -528,7 +543,7 @@ export async function runPentestOrchestrator(
     });
 
     logger.info(
-      `Target ${pentestTarget.target} complete. Findings: ${targetFindingsCount}`
+      `Target ${pentestTarget.target} complete. Findings: ${targetFindingsCount}`,
     );
   }
 
@@ -585,7 +600,7 @@ export async function runPentestOrchestrator(
  */
 function generateSummary(
   targetResults: TargetTestResult[],
-  totalFindings: number
+  totalFindings: number,
 ): string {
   const lines: string[] = [
     "=".repeat(50),
@@ -602,13 +617,13 @@ function generateSummary(
     lines.push(`  - ${result.target}: ${result.totalFindings} findings`);
 
     for (const [vulnClass, vulnResult] of Array.from(
-      result.vulnerabilityResults.entries()
+      result.vulnerabilityResults.entries(),
     )) {
       if (vulnResult.findingsCount > 0) {
         lines.push(
           `    • ${getVulnerabilityClassName(vulnClass)}: ${
             vulnResult.findingsCount
-          }`
+          }`,
         );
       }
     }
