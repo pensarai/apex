@@ -28,9 +28,11 @@ import {
   type MetaVulnerabilityTestResult,
 } from "../../../core/agent/metaTestingAgent";
 import { saveAgentMessages } from "../../../core/agent/metaTestingAgent";
-import { existsSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { exec } from "child_process";
+import { join } from "path";
 import { SpinnerDots } from "../sprites";
+import type { AttackSurfaceAnalysisResults } from "../../../core/agent/attackSurfaceAgent/types";
 
 // Color palette
 const greenBullet = RGBA.fromInts(76, 175, 80, 255);
@@ -194,7 +196,7 @@ export default function SessionView({
 
   // Start the pentest
   const startPentest = useCallback(
-    async (execSession: Session.SessionInfo) => {
+    async (execSession: Session.SessionInfo, previousDiscoveryResults?: AttackSurfaceAnalysisResults) => {
       setIsExecuting(true);
       setThinking(true);
       setStartTime(new Date());
@@ -213,11 +215,11 @@ export default function SessionView({
             (s) => s.id === "attack-surface-discovery"
           );
           if (existingIdx !== -1) {
-            // Reuse existing entry: keep old messages, reset status to pending
+            // Reuse existing entry: keep old messages, update status
             const updated = [...prev];
             updated[existingIdx] = {
               ...updated[existingIdx]!,
-              status: "pending" as const,
+              status: previousDiscoveryResults ? "completed" as const : "pending" as const,
             };
             return updated;
           }
@@ -242,6 +244,7 @@ export default function SessionView({
           session: execSession,
           sessionConfig: execSession.config,
           abortSignal: controller.signal,
+          previousDiscoveryResults,
           onAgentAbortControllerCreated: (agentId, abortCtrl) => {
             agentAbortControllers.current.set(agentId, abortCtrl);
           },
@@ -739,10 +742,17 @@ export default function SessionView({
       );
       if (!paused) return;
 
-      // Discovery agents don't have resumeInfo — resume the full pipeline
-      // startPentest will reuse the existing agent entry, preserving old messages
+      // Discovery agents — resume the full pipeline, preserving old messages.
+      // If discovery completed before interruption, skip it entirely.
       if (paused.type === "attack-surface") {
-        await startPentest(session);
+        let previousResults: AttackSurfaceAnalysisResults | undefined;
+        const resultsPath = join(session.rootPath, "attack-surface-results.json");
+        if (existsSync(resultsPath)) {
+          try {
+            previousResults = JSON.parse(readFileSync(resultsPath, "utf-8"));
+          } catch {}
+        }
+        await startPentest(session, previousResults);
         return;
       }
 
