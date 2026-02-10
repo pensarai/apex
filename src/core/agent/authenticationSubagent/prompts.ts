@@ -225,6 +225,8 @@ export function buildAuthUserPrompt(input: {
     password?: string;
     apiKey?: string;
     loginUrl?: string;
+    role?: string;
+    context?: string;
     tokens?: {
       bearerToken?: string;
       cookies?: string;
@@ -232,6 +234,20 @@ export function buildAuthUserPrompt(input: {
       customHeaders?: Record<string, string>;
     };
   };
+  availableCredentials?: {
+    username?: string;
+    password?: string;
+    apiKey?: string;
+    loginUrl?: string;
+    role?: string;
+    context?: string;
+    tokens?: {
+      bearerToken?: string;
+      cookies?: string;
+      sessionToken?: string;
+      customHeaders?: Record<string, string>;
+    };
+  }[];
   authFlowHints?: {
     loginEndpoints?: string[];
     protectedEndpoints?: string[];
@@ -240,12 +256,13 @@ export function buildAuthUserPrompt(input: {
     captchaDetected?: boolean;
   };
 }): string {
-  const hasTokens = input.credentials?.tokens && (
-    input.credentials.tokens.bearerToken ||
-    input.credentials.tokens.cookies ||
-    input.credentials.tokens.sessionToken ||
-    (input.credentials.tokens.customHeaders && Object.keys(input.credentials.tokens.customHeaders).length > 0)
-  );
+  const hasTokens =
+    input.credentials?.tokens &&
+    (input.credentials.tokens.bearerToken ||
+      input.credentials.tokens.cookies ||
+      input.credentials.tokens.sessionToken ||
+      (input.credentials.tokens.customHeaders &&
+        Object.keys(input.credentials.tokens.customHeaders).length > 0));
 
   let prompt = `# Authentication Task
 
@@ -254,12 +271,59 @@ ${input.target}
 
 `;
 
+  // Show all available credentials stored on the domain as context
+  if (input.availableCredentials && input.availableCredentials.length > 0) {
+    prompt += `## Available Credentials (stored on domain)
+The following credentials are configured for this domain:
+
+`;
+    for (let i = 0; i < input.availableCredentials.length; i++) {
+      const cred = input.availableCredentials[i];
+      prompt += `### Credential ${i + 1}`;
+      if (cred.role) prompt += ` (${cred.role})`;
+      prompt += `\n`;
+      if (cred.context) prompt += `- Context: ${cred.context}\n`;
+      if (cred.username) prompt += `- Username: ${cred.username}\n`;
+      if (cred.password) prompt += `- Password: ${cred.password}\n`;
+      if (cred.apiKey) prompt += `- API Key: ${cred.apiKey}\n`;
+      if (cred.loginUrl) prompt += `- Login URL: ${cred.loginUrl}\n`;
+      if (cred.tokens) {
+        if (cred.tokens.bearerToken)
+          prompt += `- Bearer Token: ${cred.tokens.bearerToken}\n`;
+        if (cred.tokens.cookies)
+          prompt += `- Cookies: ${cred.tokens.cookies}\n`;
+        if (cred.tokens.sessionToken)
+          prompt += `- Session Token: ${cred.tokens.sessionToken}\n`;
+        if (
+          cred.tokens.customHeaders &&
+          Object.keys(cred.tokens.customHeaders).length > 0
+        ) {
+          prompt += `- Custom Headers:\n`;
+          for (const [key, value] of Object.entries(
+            cred.tokens.customHeaders
+          )) {
+            prompt += `  - ${key}: ${value}\n`;
+          }
+        }
+      }
+      prompt += `\n`;
+    }
+  }
+
   // If pre-existing tokens are provided, prioritize them
   if (hasTokens) {
     prompt += `## Pre-existing Tokens (VERIFY THESE FIRST)
 **Mode: Token Verification** - Your goal is to verify these tokens grant access.
 
 `;
+    if (input.credentials!.role) {
+      prompt += `- Role: ${input.credentials!.role}
+`;
+    }
+    if (input.credentials!.context) {
+      prompt += `- Context: ${input.credentials!.context}
+`;
+    }
     const tokens = input.credentials!.tokens!;
     if (tokens.bearerToken) {
       prompt += `- Bearer Token: ${tokens.bearerToken}
@@ -299,6 +363,14 @@ ${input.target}
   if (input.credentials && !hasTokens) {
     prompt += `## Provided Credentials - USE THESE NOW
 `;
+    if (input.credentials.role) {
+      prompt += `- Role: ${input.credentials.role}
+`;
+    }
+    if (input.credentials.context) {
+      prompt += `- Context: ${input.credentials.context}
+`;
+    }
     if (input.credentials.username) {
       prompt += `- Username: ${input.credentials.username}
 `;
@@ -339,7 +411,7 @@ You have working credentials. Your task is to USE THEM to authenticate.
 `;
     }
     if (input.authFlowHints.loginEndpoints?.length) {
-      prompt += `- Login Endpoints: ${input.authFlowHints.loginEndpoints.join(", ")}
+      prompt += `- Login Endpoints: ${input.authFlowHints.loginEndpoints.join(', ')}
 `;
     }
     if (input.authFlowHints.authScheme) {
@@ -359,21 +431,22 @@ You have working credentials. Your task is to USE THEM to authenticate.
   }
 
   // Check if we have any credentials at all
-  const hasCredentials = input.credentials && (
-    input.credentials.username ||
-    input.credentials.password ||
-    input.credentials.apiKey
-  );
+  const hasCredentials =
+    input.credentials &&
+    (input.credentials.username ||
+      input.credentials.password ||
+      input.credentials.apiKey);
 
   // Different instructions based on what is provided
   if (hasTokens) {
-    const hasProtectedEndpoints = input.authFlowHints?.protectedEndpoints?.length;
+    const hasProtectedEndpoints =
+      input.authFlowHints?.protectedEndpoints?.length;
     prompt += `## Instructions (Token Verification Mode)
 
 1. Use \`validate_session\` to test if the provided tokens grant authenticated access
 `;
     if (hasProtectedEndpoints) {
-      prompt += `   - Test against the protected endpoints provided above: ${input.authFlowHints!.protectedEndpoints!.join(", ")}
+      prompt += `   - Test against the protected endpoints provided above: ${input.authFlowHints!.protectedEndpoints!.join(', ')}
    - These are KNOWN to require auth - use them directly, don't guess endpoints
 `;
     } else {
@@ -576,7 +649,7 @@ ${input.target}
 
   if (input.additionalEndpoints?.length) {
     prompt += `## Additional Endpoints to Check
-${input.additionalEndpoints.map(e => `- ${e}`).join('\n')}
+${input.additionalEndpoints.map((e) => `- ${e}`).join('\n')}
 
 `;
   }

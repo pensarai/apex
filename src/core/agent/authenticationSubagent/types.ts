@@ -5,64 +5,59 @@
  * This module is for autonomous mode only - operator mode has separate auth handling.
  */
 
-import { z } from "zod";
-import type { Session } from "../../session";
+import { z } from 'zod';
+import type { Session } from '../../session';
 
 // =============================================================================
 // Constants
 // =============================================================================
 
 export const AUTH_METHODS = [
-  "form",
-  "json",
-  "basic",
-  "bearer",
-  "oauth",
-  "api_key",
+  'form',
+  'json',
+  'basic',
+  'bearer',
+  'oauth',
+  'api_key',
 ] as const;
 
 export const TOKEN_TYPES = [
-  "cookie",
-  "jwt",
-  "bearer",
-  "api_key",
-  "session_id",
+  'cookie',
+  'jwt',
+  'bearer',
+  'api_key',
+  'session_id',
 ] as const;
 
 export const AUTH_STATUSES = [
-  "pending",
-  "authenticating",
-  "active",
-  "expired",
-  "failed",
+  'pending',
+  'authenticating',
+  'active',
+  'expired',
+  'failed',
 ] as const;
 
-export const ROLE_LEVELS = [
-  "guest",
-  "user",
-  "admin",
-  "superadmin",
-] as const;
+export const ROLE_LEVELS = ['guest', 'user', 'admin', 'superadmin'] as const;
 
 export const AUTH_BARRIER_TYPES = [
-  "captcha",
-  "mfa",
-  "oauth_consent",
-  "rate_limit",
-  "invite_code",
-  "admin_approval",
-  "email_verification",
-  "phone_verification",
-  "unknown",
+  'captcha',
+  'mfa',
+  'oauth_consent',
+  'rate_limit',
+  'invite_code',
+  'admin_approval',
+  'email_verification',
+  'phone_verification',
+  'unknown',
 ] as const;
 
 export const REGISTRATION_BARRIERS = [
-  "invite_code",
-  "admin_approval",
-  "captcha",
-  "email_verification",
-  "phone_verification",
-  "closed",
+  'invite_code',
+  'admin_approval',
+  'captcha',
+  'email_verification',
+  'phone_verification',
+  'closed',
 ] as const;
 
 // =============================================================================
@@ -107,7 +102,7 @@ export interface AuthEndpoint {
 export interface AuthState {
   id: string;
   targetHost: string;
-  strategy: "provided" | "registration" | "extraction" | "verification";
+  strategy: 'provided' | 'registration' | 'extraction' | 'verification';
   status: AuthStatus;
   tokens: AuthToken[];
   authEndpoint?: AuthEndpoint;
@@ -135,7 +130,7 @@ export interface AuthBarrier {
  * CSRF token extraction configuration
  */
 export interface CsrfExtraction {
-  method: "meta_tag" | "input_hidden" | "cookie" | "header";
+  method: 'meta_tag' | 'input_hidden' | 'cookie' | 'header';
   selector?: string;
   cookieName?: string;
   headerName?: string;
@@ -145,7 +140,7 @@ export interface CsrfExtraction {
  * Token extraction configuration from response
  */
 export interface TokenExtractionConfig {
-  location: "header" | "body" | "cookie";
+  location: 'header' | 'body' | 'cookie';
   path?: string;
   headerName?: string;
   cookieName?: string;
@@ -156,7 +151,7 @@ export interface TokenExtractionConfig {
  */
 export interface BrowserFlowConfig {
   required: boolean;
-  reason?: "spa" | "oauth" | "captcha" | "mfa";
+  reason?: 'spa' | 'oauth' | 'captcha' | 'mfa';
   loginFormSelector?: string;
   submitButtonSelector?: string;
   postLoginIndicator?: string;
@@ -236,6 +231,11 @@ export interface AuthCredentials {
   loginUrl?: string;
   additionalFields?: Record<string, string>;
 
+  /** Role associated with this credential (e.g., "admin", "user") */
+  role?: string;
+  /** Additional context about this credential (e.g., how/where to use it) */
+  context?: string;
+
   /**
    * Pre-existing tokens to verify/use directly (bypasses login flow)
    * If provided, the agent will first try to verify these grant access
@@ -282,8 +282,10 @@ export interface AuthFlowHints {
 export interface AuthenticationSubagentInput {
   target: string;
   session: Session.SessionInfo;
-  strategy?: "provided" | "registration" | "extraction" | "verification";
+  strategy?: 'provided' | 'registration' | 'extraction' | 'verification';
   credentials?: AuthCredentials;
+  /** All credentials stored on the domain, provided as context to the agent */
+  availableCredentials?: AuthCredentials[];
   authFlowHints?: AuthFlowHints;
 }
 
@@ -293,7 +295,7 @@ export interface AuthenticationSubagentInput {
 export interface AuthenticationSubagentResult {
   success: boolean;
   authState: AuthState;
-  strategy: "provided" | "registration" | "extraction" | "verification";
+  strategy: 'provided' | 'registration' | 'extraction' | 'verification';
   exportedHeaders?: Record<string, string>;
   exportedCookies?: string;
   discoveredEndpoints?: {
@@ -327,8 +329,12 @@ export const TokenTypeSchema = z.enum(TOKEN_TYPES);
  * Schema for detect_auth_scheme tool input
  */
 export const DetectAuthSchemeInputSchema = z.object({
-  endpoint: z.string().describe("Target endpoint URL to analyze for auth requirements"),
-  toolCallDescription: z.string().describe("Why you are detecting auth scheme for this endpoint"),
+  endpoint: z
+    .string()
+    .describe('Target endpoint URL to analyze for auth requirements'),
+  toolCallDescription: z
+    .string()
+    .describe('Why you are detecting auth scheme for this endpoint'),
 });
 
 export type DetectAuthSchemeInput = z.infer<typeof DetectAuthSchemeInputSchema>;
@@ -337,24 +343,31 @@ export type DetectAuthSchemeInput = z.infer<typeof DetectAuthSchemeInputSchema>;
  * Schema for authenticate tool input
  */
 export const AuthenticateInputSchema = z.object({
-  loginUrl: z.string().describe("Login endpoint URL"),
-  method: z.enum(["form_post", "json_post", "basic_auth", "bearer", "api_key"])
-    .describe("Authentication method to use"),
+  loginUrl: z.string().describe('Login endpoint URL'),
+  method: z
+    .enum(['form_post', 'json_post', 'basic_auth', 'bearer', 'api_key'])
+    .describe('Authentication method to use'),
   credentials: z.object({
-    username: z.string().optional().describe("Username or email"),
-    password: z.string().optional().describe("Password"),
-    apiKey: z.string().optional().describe("API key if using api_key method"),
-    customFields: z.record(z.string(), z.string()).optional()
-      .describe("Additional fields required for authentication"),
+    username: z.string().optional().describe('Username or email'),
+    password: z.string().optional().describe('Password'),
+    apiKey: z.string().optional().describe('API key if using api_key method'),
+    customFields: z
+      .record(z.string(), z.string())
+      .optional()
+      .describe('Additional fields required for authentication'),
   }),
-  usernameField: z.string().default("username")
+  usernameField: z
+    .string()
+    .default('username')
     .describe("Form field name for username (e.g., 'email', 'user')"),
-  passwordField: z.string().default("password")
-    .describe("Form field name for password"),
-  csrfToken: z.string().optional()
-    .describe("CSRF token if required"),
-  toolCallDescription: z.string()
-    .describe("Why you are authenticating with these credentials"),
+  passwordField: z
+    .string()
+    .default('password')
+    .describe('Form field name for password'),
+  csrfToken: z.string().optional().describe('CSRF token if required'),
+  toolCallDescription: z
+    .string()
+    .describe('Why you are authenticating with these credentials'),
 });
 
 export type AuthenticateInput = z.infer<typeof AuthenticateInputSchema>;
@@ -363,18 +376,28 @@ export type AuthenticateInput = z.infer<typeof AuthenticateInputSchema>;
  * Schema for validate_session tool input
  */
 export const ValidateSessionInputSchema = z.object({
-  testEndpoint: z.string().describe("Protected endpoint to test access"),
-  expectedStatus: z.number().default(200)
-    .describe("Expected HTTP status code for valid session"),
-  toolCallDescription: z.string()
-    .describe("Why you are validating the session"),
+  testEndpoint: z.string().describe('Protected endpoint to test access'),
+  expectedStatus: z
+    .number()
+    .default(200)
+    .describe('Expected HTTP status code for valid session'),
+  toolCallDescription: z
+    .string()
+    .describe('Why you are validating the session'),
   // Optional: provide tokens directly to test (instead of using stored auth state)
-  providedTokens: z.object({
-    bearerToken: z.string().optional().describe("Bearer/JWT token to test"),
-    cookies: z.string().optional().describe("Cookie string to test"),
-    customHeaders: z.record(z.string(), z.string()).optional()
-      .describe("Custom headers to include (e.g., X-API-Key, X-Auth-Token)"),
-  }).optional().describe("Pre-existing tokens to validate. If provided, these will be tested and stored on success."),
+  providedTokens: z
+    .object({
+      bearerToken: z.string().optional().describe('Bearer/JWT token to test'),
+      cookies: z.string().optional().describe('Cookie string to test'),
+      customHeaders: z
+        .record(z.string(), z.string())
+        .optional()
+        .describe('Custom headers to include (e.g., X-API-Key, X-Auth-Token)'),
+    })
+    .optional()
+    .describe(
+      'Pre-existing tokens to validate. If provided, these will be tested and stored on success.'
+    ),
 });
 
 export type ValidateSessionInput = z.infer<typeof ValidateSessionInputSchema>;
@@ -383,12 +406,16 @@ export type ValidateSessionInput = z.infer<typeof ValidateSessionInputSchema>;
  * Schema for refresh_session tool input
  */
 export const RefreshSessionInputSchema = z.object({
-  refreshEndpoint: z.string().optional()
-    .describe("Token refresh endpoint URL"),
-  useOriginalCredentials: z.boolean().default(true)
-    .describe("Whether to re-authenticate with original credentials if refresh fails"),
-  toolCallDescription: z.string()
-    .describe("Why you are refreshing the session"),
+  refreshEndpoint: z.string().optional().describe('Token refresh endpoint URL'),
+  useOriginalCredentials: z
+    .boolean()
+    .default(true)
+    .describe(
+      'Whether to re-authenticate with original credentials if refresh fails'
+    ),
+  toolCallDescription: z
+    .string()
+    .describe('Why you are refreshing the session'),
 });
 
 export type RefreshSessionInput = z.infer<typeof RefreshSessionInputSchema>;
@@ -397,8 +424,9 @@ export type RefreshSessionInput = z.infer<typeof RefreshSessionInputSchema>;
  * Schema for get_auth_state tool input
  */
 export const GetAuthStateInputSchema = z.object({
-  toolCallDescription: z.string()
-    .describe("Why you need to check the current auth state"),
+  toolCallDescription: z
+    .string()
+    .describe('Why you need to check the current auth state'),
 });
 
 export type GetAuthStateInput = z.infer<typeof GetAuthStateInputSchema>;
@@ -407,21 +435,27 @@ export type GetAuthStateInput = z.infer<typeof GetAuthStateInputSchema>;
  * Schema for export_auth_for_agent tool input
  */
 export const ExportAuthForAgentInputSchema = z.object({
-  format: z.enum(["headers", "curl", "poc_script"]).default("headers")
-    .describe("Export format for auth information"),
-  toolCallDescription: z.string()
-    .describe("Why you are exporting auth for another agent"),
+  format: z
+    .enum(['headers', 'curl', 'poc_script'])
+    .default('headers')
+    .describe('Export format for auth information'),
+  toolCallDescription: z
+    .string()
+    .describe('Why you are exporting auth for another agent'),
 });
 
-export type ExportAuthForAgentInput = z.infer<typeof ExportAuthForAgentInputSchema>;
+export type ExportAuthForAgentInput = z.infer<
+  typeof ExportAuthForAgentInputSchema
+>;
 
 /**
  * Schema for load_auth_flow tool input
  */
 export const LoadAuthFlowInputSchema = z.object({
-  targetHost: z.string().describe("Target host to load auth flow for"),
-  toolCallDescription: z.string()
-    .describe("Why you are loading the documented auth flow"),
+  targetHost: z.string().describe('Target host to load auth flow for'),
+  toolCallDescription: z
+    .string()
+    .describe('Why you are loading the documented auth flow'),
 });
 
 export type LoadAuthFlowInput = z.infer<typeof LoadAuthFlowInputSchema>;
@@ -430,59 +464,94 @@ export type LoadAuthFlowInput = z.infer<typeof LoadAuthFlowInputSchema>;
  * Schema for document_auth_flow tool input
  */
 export const DocumentAuthFlowInputSchema = z.object({
-  targetHost: z.string().describe("Target host this flow applies to"),
+  targetHost: z.string().describe('Target host this flow applies to'),
   scheme: z.object({
-    method: AuthMethodSchema.describe("Authentication method discovered"),
-    loginUrl: z.string().describe("Login endpoint URL"),
-    logoutUrl: z.string().optional().describe("Logout endpoint URL if discovered"),
-    refreshUrl: z.string().optional().describe("Token refresh endpoint URL if discovered"),
+    method: AuthMethodSchema.describe('Authentication method discovered'),
+    loginUrl: z.string().describe('Login endpoint URL'),
+    logoutUrl: z
+      .string()
+      .optional()
+      .describe('Logout endpoint URL if discovered'),
+    refreshUrl: z
+      .string()
+      .optional()
+      .describe('Token refresh endpoint URL if discovered'),
   }),
   fields: z.object({
-    usernameField: z.string().describe("Form field name for username"),
-    passwordField: z.string().describe("Form field name for password"),
-    csrfField: z.string().optional().describe("CSRF token field name if required"),
-    additionalFields: z.record(z.string(), z.string()).optional()
-      .describe("Other required fields discovered"),
+    usernameField: z.string().describe('Form field name for username'),
+    passwordField: z.string().describe('Form field name for password'),
+    csrfField: z
+      .string()
+      .optional()
+      .describe('CSRF token field name if required'),
+    additionalFields: z
+      .record(z.string(), z.string())
+      .optional()
+      .describe('Other required fields discovered'),
   }),
-  csrfExtraction: z.object({
-    method: z.enum(["meta_tag", "input_hidden", "cookie", "header"])
-      .describe("How to extract CSRF token"),
-    selector: z.string().optional().describe("CSS selector if meta_tag or input_hidden"),
-    cookieName: z.string().optional().describe("Cookie name if from cookie"),
-    headerName: z.string().optional().describe("Header name if from response header"),
-  }).optional(),
+  csrfExtraction: z
+    .object({
+      method: z
+        .enum(['meta_tag', 'input_hidden', 'cookie', 'header'])
+        .describe('How to extract CSRF token'),
+      selector: z
+        .string()
+        .optional()
+        .describe('CSS selector if meta_tag or input_hidden'),
+      cookieName: z.string().optional().describe('Cookie name if from cookie'),
+      headerName: z
+        .string()
+        .optional()
+        .describe('Header name if from response header'),
+    })
+    .optional(),
   tokenExtraction: z.object({
-    accessToken: z.object({
-      location: z.enum(["header", "body", "cookie"]),
-      path: z.string().optional().describe("JSON path if in body"),
-      headerName: z.string().optional(),
-      cookieName: z.string().optional(),
-    }).optional(),
-    refreshToken: z.object({
-      location: z.enum(["header", "body", "cookie"]),
-      path: z.string().optional(),
-      headerName: z.string().optional(),
-      cookieName: z.string().optional(),
-    }).optional(),
-    sessionCookie: z.object({
-      name: z.string().describe("Session cookie name"),
-    }).optional(),
+    accessToken: z
+      .object({
+        location: z.enum(['header', 'body', 'cookie']),
+        path: z.string().optional().describe('JSON path if in body'),
+        headerName: z.string().optional(),
+        cookieName: z.string().optional(),
+      })
+      .optional(),
+    refreshToken: z
+      .object({
+        location: z.enum(['header', 'body', 'cookie']),
+        path: z.string().optional(),
+        headerName: z.string().optional(),
+        cookieName: z.string().optional(),
+      })
+      .optional(),
+    sessionCookie: z
+      .object({
+        name: z.string().describe('Session cookie name'),
+      })
+      .optional(),
   }),
-  browserFlow: z.object({
-    required: z.boolean().describe("Whether browser automation was needed"),
-    reason: z.enum(["spa", "oauth", "captcha", "mfa"]).optional()
-      .describe("Why browser was required"),
-    loginFormSelector: z.string().optional(),
-    submitButtonSelector: z.string().optional(),
-    postLoginIndicator: z.string().optional()
-      .describe("Element that appears after successful login"),
-    usernameInputSelector: z.string().optional(),
-    passwordInputSelector: z.string().optional(),
-  }).optional(),
-  notes: z.array(z.string()).optional()
-    .describe("Notes for future runs (rate limits, quirks, etc.)"),
-  toolCallDescription: z.string()
-    .describe("Why you are documenting this auth flow"),
+  browserFlow: z
+    .object({
+      required: z.boolean().describe('Whether browser automation was needed'),
+      reason: z
+        .enum(['spa', 'oauth', 'captcha', 'mfa'])
+        .optional()
+        .describe('Why browser was required'),
+      loginFormSelector: z.string().optional(),
+      submitButtonSelector: z.string().optional(),
+      postLoginIndicator: z
+        .string()
+        .optional()
+        .describe('Element that appears after successful login'),
+      usernameInputSelector: z.string().optional(),
+      passwordInputSelector: z.string().optional(),
+    })
+    .optional(),
+  notes: z
+    .array(z.string())
+    .optional()
+    .describe('Notes for future runs (rate limits, quirks, etc.)'),
+  toolCallDescription: z
+    .string()
+    .describe('Why you are documenting this auth flow'),
 });
 
 export type DocumentAuthFlowInput = z.infer<typeof DocumentAuthFlowInputSchema>;
@@ -491,32 +560,54 @@ export type DocumentAuthFlowInput = z.infer<typeof DocumentAuthFlowInputSchema>;
  * Schema for probe_auth_endpoints tool input
  */
 export const ProbeAuthEndpointsInputSchema = z.object({
-  baseUrl: z.string().describe("Base URL of the target (e.g., http://localhost:3002)"),
-  toolCallDescription: z.string().describe("Why you are probing for auth endpoints"),
+  baseUrl: z
+    .string()
+    .describe('Base URL of the target (e.g., http://localhost:3002)'),
+  toolCallDescription: z
+    .string()
+    .describe('Why you are probing for auth endpoints'),
 });
 
-export type ProbeAuthEndpointsInput = z.infer<typeof ProbeAuthEndpointsInputSchema>;
+export type ProbeAuthEndpointsInput = z.infer<
+  typeof ProbeAuthEndpointsInputSchema
+>;
 
 /**
  * Schema for probe_registration tool input
  */
 export const ProbeRegistrationInputSchema = z.object({
-  baseUrl: z.string().describe("Base URL of the target (e.g., http://localhost:3002)"),
-  toolCallDescription: z.string().describe("Why you are probing for registration functionality"),
+  baseUrl: z
+    .string()
+    .describe('Base URL of the target (e.g., http://localhost:3002)'),
+  toolCallDescription: z
+    .string()
+    .describe('Why you are probing for registration functionality'),
 });
 
-export type ProbeRegistrationInput = z.infer<typeof ProbeRegistrationInputSchema>;
+export type ProbeRegistrationInput = z.infer<
+  typeof ProbeRegistrationInputSchema
+>;
 
 /**
  * Schema for attempt_registration tool input
  */
 export const AttemptRegistrationInputSchema = z.object({
-  registrationUrl: z.string().describe("Registration endpoint URL discovered from probe_registration"),
-  requiredFields: z.record(z.string(), z.string()).describe("Required field values (e.g., { email: 'test@example.com', username: 'testuser', password: 'Test123!' })"),
-  toolCallDescription: z.string().describe("Why you are attempting registration"),
+  registrationUrl: z
+    .string()
+    .describe('Registration endpoint URL discovered from probe_registration'),
+  requiredFields: z
+    .record(z.string(), z.string())
+    .describe(
+      "Required field values (e.g., { email: 'test@example.com', username: 'testuser', password: 'Test123!' })"
+    ),
+  toolCallDescription: z
+    .string()
+    .describe('Why you are attempting registration'),
 });
 
-export type AttemptRegistrationInput = z.infer<typeof AttemptRegistrationInputSchema>;
+export type AttemptRegistrationInput = z.infer<
+  typeof AttemptRegistrationInputSchema
+>;
 
 // =============================================================================
 // Tool Result Types
@@ -626,7 +717,7 @@ export interface ProbeAuthEndpointsResult {
     path: string;
     methods: string[];
     authIndicators: string[];
-    likelyPurpose: "login" | "token" | "refresh" | "user" | "unknown";
+    likelyPurpose: 'login' | 'token' | 'refresh' | 'user' | 'unknown';
   }[];
   recommendedLoginEndpoint?: string;
   recommendedMethod?: string;
@@ -708,7 +799,15 @@ export interface AuthDiscoveryResult {
   requiresAuth: boolean;
 
   /** Detected authentication type */
-  authType: "none" | "form" | "json" | "basic" | "bearer" | "api_key" | "oauth" | "unknown";
+  authType:
+    | 'none'
+    | 'form'
+    | 'json'
+    | 'basic'
+    | 'bearer'
+    | 'api_key'
+    | 'oauth'
+    | 'unknown';
 
   /** Confidence level 0-100 */
   confidence: number;
