@@ -10,6 +10,7 @@ import ChatApp from "./components/chat";
 import HITLWizard from "./components/commands/operator-wizard";
 import WebWizard from "./components/commands/web-wizard";
 import SessionsBrowser from "./components/commands/sessions-browser";
+import ModelsDisplay from "./components/commands/models-display";
 import ProviderManager from "./components/commands/provider-manager";
 import type { Config } from "../core/config/config";
 import { config } from "../core/config";
@@ -278,6 +279,9 @@ function CommandDisplay({
               initialCustomHeaders={route.data.options?.customHeaders}
               initialModel={route.data.options?.model}
             />
+          </RouteSwitch.Case>
+          <RouteSwitch.Case when="models">
+            <ModelsDisplay />
           </RouteSwitch.Case>
           <RouteSwitch.Case when="providers">
             <ProviderManager />
