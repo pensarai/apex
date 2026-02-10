@@ -22,7 +22,13 @@ export type Subagent = {
   target: string;
   messages: DisplayMessage[];
   createdAt: Date;
-  status: "pending" | "completed" | "failed" | "canceled";
+  status: "pending" | "completed" | "failed" | "paused" | "canceled";
+  resumeInfo?: {
+    target: string;
+    objective: string;
+    vulnerabilityClass: string;
+    authenticationInfo?: any;
+  };
 };
 
 interface SwarmDashboardProps {
@@ -34,6 +40,7 @@ interface SwarmDashboardProps {
   onBack?: () => void;
   onViewReport?: () => void;
   onKillAgent?: (agentId: string) => void;
+  onResumeAgent?: (agentId: string) => void;
   children?: React.ReactNode;
 }
 
@@ -46,6 +53,7 @@ export default function SwarmDashboard({
   onBack,
   onViewReport,
   onKillAgent,
+  onResumeAgent,
 }: SwarmDashboardProps) {
   const [currentView, setCurrentView] = useState<"overview" | "detail">(
     "overview"
@@ -204,6 +212,11 @@ export default function SwarmDashboard({
         setSelectedAgentId(null);
         return;
       }
+      // R to resume paused agent
+      if ((key.name === "r" || key.name === "R") && selectedAgent?.status === "paused") {
+        onResumeAgent?.(selectedAgent.id);
+        return;
+      }
     }
   });
 
@@ -216,6 +229,7 @@ export default function SwarmDashboard({
           setCurrentView("overview");
           setSelectedAgentId(null);
         }}
+        onResume={selectedAgent.status === "paused" ? () => onResumeAgent?.(selectedAgent.id) : undefined}
       />
     );
   }
@@ -474,10 +488,13 @@ interface AgentCardProps {
 }
 
 function AgentCard({ agent, focused, onSelect }: AgentCardProps) {
+  const amberColor = RGBA.fromInts(255, 152, 0, 255);
+
   const statusIcon = {
     pending: "◐",
     completed: "✓",
     failed: "✗",
+    paused: "⏸",
     canceled: "⊘",
   }[agent.status];
 
@@ -485,6 +502,7 @@ function AgentCard({ agent, focused, onSelect }: AgentCardProps) {
     pending: greenBullet,
     completed: greenBullet,
     failed: RGBA.fromInts(244, 67, 54, 255),
+    paused: amberColor,
     canceled: dimText,
   }[agent.status];
 
@@ -551,6 +569,8 @@ function AgentCard({ agent, focused, onSelect }: AgentCardProps) {
           <text fg={dimText}>⊘ Canceled</text>
         ) : agent.status === "pending" ? (
           <SpinnerDots label={lastActivity} fg="green" />
+        ) : agent.status === "paused" ? (
+          <text fg={RGBA.fromInts(255, 152, 0, 255)}>⏸ Paused — press Enter then R to resume</text>
         ) : (
           <text fg={agent.status === "completed" ? greenBullet : dimText}>
             {agent.status === "completed" ? "✓ Complete" : lastActivity}
@@ -702,13 +722,15 @@ function MetricsBar({
 interface AgentDetailViewProps {
   agent: Subagent;
   onBack: () => void;
+  onResume?: () => void;
 }
 
-function AgentDetailView({ agent, onBack }: AgentDetailViewProps) {
+function AgentDetailView({ agent, onBack, onResume }: AgentDetailViewProps) {
   const statusColor = {
     pending: greenBullet,
     completed: greenBullet,
     failed: RGBA.fromInts(244, 67, 54, 255),
+    paused: RGBA.fromInts(255, 152, 0, 255),
     canceled: dimText,
   }[agent.status];
 
@@ -759,6 +781,12 @@ function AgentDetailView({ agent, onBack }: AgentDetailViewProps) {
           <span fg={dimText}>{agent.messages.length} messages</span>
         </text>
         <box flexDirection="row" gap={2}>
+          {agent.status === "paused" && onResume && (
+            <text>
+              <span fg={RGBA.fromInts(255, 152, 0, 255)}>[R]</span>
+              <span fg={dimText}> Resume</span>
+            </text>
+          )}
           <text>
             <span fg={greenBullet}>[ESC]</span>
             <span fg={dimText}> Back to swarm</span>

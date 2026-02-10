@@ -22,7 +22,10 @@ import type {
   SubAgentSpawnInfo,
   SubAgentStreamEvent,
 } from "../../../core/agent/orchestrator/orchestrator";
-import type { MetaVulnerabilityTestResult } from "../../../core/agent/metaTestingAgent";
+import {
+  runMetaVulnerabilityTestAgent,
+  type MetaVulnerabilityTestResult,
+} from "../../../core/agent/metaTestingAgent";
 import { saveAgentMessages } from "../../../core/agent/metaTestingAgent";
 import { existsSync } from "fs";
 import { exec } from "child_process";
@@ -132,6 +135,7 @@ export default function SessionView({
               messages: s.messages,
               createdAt: s.createdAt,
               status: s.status,
+              resumeInfo: s.resumeInfo,
             }));
             setSubagents(loadedSubagents);
             setStartTime(new Date(loadedSession.time.created));
@@ -143,6 +147,9 @@ export default function SessionView({
             } else if (state.attackSurfaceResults) {
               // MID-PENTEST — discovery done, pentest was interrupted
               // Show loaded state as-is, don't restart from discovery
+              setHasStarted(true);
+            } else if (state.interruptedDuringDiscovery) {
+              // INTERRUPTED DISCOVERY — show partial logs, don't auto-restart
               setHasStarted(true);
             }
             // else: PRE-DISCOVERY — let auto-start restart from scratch
@@ -702,6 +709,246 @@ export default function SessionView({
     [model.id, addTokenUsage, setThinking, setIsExecuting]
   );
 
+  // Resume a paused agent individually
+  const resumeAgent = useCallback(
+    async (agentId: string) => {
+      if (!session) return;
+
+      // Find the paused subagent
+      const paused = subagents.find(
+        (s) => s.id === agentId && s.status === "paused"
+      );
+      if (!paused || !paused.resumeInfo) return;
+
+      const { target, objective, vulnerabilityClass, authenticationInfo } =
+        paused.resumeInfo;
+
+      // Update status to pending (running)
+      setSubagents((prev) =>
+        prev.map((s) =>
+          s.id === agentId ? { ...s, status: "pending" as const } : s
+        )
+      );
+
+      setIsExecuting(true);
+      setThinking(true);
+
+      // Track text accumulation for streaming
+      let accumulatedText = "";
+
+      try {
+        const result = await runMetaVulnerabilityTestAgent({
+          input: {
+            target,
+            objective,
+            vulnerabilityClass: vulnerabilityClass as any,
+            authenticationInfo,
+            authenticationInstructions:
+              session.config?.authenticationInstructions,
+            outcomeGuidance:
+              session.config?.outcomeGuidance ||
+              "Find and document vulnerabilities",
+            session: {
+              id: session.id,
+              rootPath: session.rootPath,
+              findingsPath: session.findingsPath,
+              logsPath: session.logsPath,
+              pocsPath: session.rootPath + "/pocs",
+            },
+            sessionConfig: {
+              enableCvssScoring: session.config?.enableCvssScoring,
+              cvssModel: session.config?.cvssModel,
+            },
+          },
+          model: model.id,
+          abortSignal: abortController?.signal,
+          onChunk: (chunk) => {
+            if (chunk.type === "text-delta" && chunk.text) {
+              accumulatedText += chunk.text;
+              setThinking(false);
+
+              if (accumulatedText.trim()) {
+                setSubagents((prev) => {
+                  const idx = prev.findIndex((s) => s.id === agentId);
+                  if (idx === -1) return prev;
+
+                  const updated = [...prev];
+                  const subagent = updated[idx]!;
+                  const lastMsg =
+                    subagent.messages[subagent.messages.length - 1];
+
+                  if (lastMsg && lastMsg.role === "assistant") {
+                    const newMessages = [...subagent.messages];
+                    newMessages[newMessages.length - 1] = {
+                      ...lastMsg,
+                      content: accumulatedText,
+                    };
+                    updated[idx] = { ...subagent, messages: newMessages };
+                  } else {
+                    updated[idx] = {
+                      ...subagent,
+                      messages: [
+                        ...subagent.messages,
+                        {
+                          role: "assistant",
+                          content: accumulatedText,
+                          createdAt: new Date(),
+                        },
+                      ],
+                    };
+                  }
+                  return updated;
+                });
+              }
+            } else if (chunk.type === "tool-call") {
+              setThinking(false);
+              const tc = chunk as any;
+              const toolCallId = tc.toolCallId;
+              const toolName = tc.toolName || "tool";
+              const args = tc.input ?? tc.args;
+              const toolDescription =
+                typeof args?.toolCallDescription === "string"
+                  ? args.toolCallDescription
+                  : toolName;
+
+              setSubagents((prev) => {
+                const idx = prev.findIndex((s) => s.id === agentId);
+                if (idx === -1) return prev;
+
+                const updated = [...prev];
+                const subagent = updated[idx]!;
+                const newMessages = [...subagent.messages];
+
+                const exists = newMessages.some(
+                  (m) => m.role === "tool" && m.toolCallId === toolCallId
+                );
+                if (!exists) {
+                  newMessages.push({
+                    role: "tool",
+                    status: "pending",
+                    toolCallId,
+                    toolName,
+                    content: toolDescription,
+                    args,
+                    createdAt: new Date(),
+                  });
+                }
+
+                updated[idx] = { ...subagent, messages: newMessages };
+                return updated;
+              });
+            } else if (chunk.type === "tool-result") {
+              setThinking(true);
+              const tr = chunk as any;
+              const toolCallId = tr.toolCallId;
+              const toolName = tr.toolName || "tool";
+              const resultData = tr.output ?? tr.result;
+
+              setSubagents((prev) => {
+                const idx = prev.findIndex((s) => s.id === agentId);
+                if (idx === -1) return prev;
+
+                const updated = [...prev];
+                const subagent = updated[idx]!;
+                const newMessages = [...subagent.messages];
+
+                const msgIdx = newMessages.findIndex(
+                  (m) => m.role === "tool" && m.toolCallId === toolCallId
+                );
+                if (msgIdx !== -1) {
+                  const existingMsg = newMessages[msgIdx] as ToolUIMessage;
+                  const description =
+                    typeof existingMsg.content === "string" &&
+                    existingMsg.content !== existingMsg.toolName
+                      ? existingMsg.content
+                      : existingMsg.toolName || "tool";
+                  newMessages[msgIdx] = {
+                    ...existingMsg,
+                    status: "completed",
+                    content: description,
+                    result: resultData,
+                  };
+                } else {
+                  newMessages.push({
+                    role: "tool",
+                    status: "completed",
+                    toolCallId,
+                    toolName,
+                    content: `+ ${toolName}`,
+                    result: resultData,
+                    createdAt: new Date(),
+                  });
+                }
+
+                updated[idx] = { ...subagent, messages: newMessages };
+                return updated;
+              });
+            }
+          },
+          onStepFinish: (step) => {
+            // Token tracking
+            const usage = step.usage;
+            if (usage) {
+              const stepTokens =
+                (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0);
+              if (stepTokens > 0)
+                addTokenUsage(
+                  usage.inputTokens ?? 0,
+                  usage.outputTokens ?? 0
+                );
+            }
+            // Reset accumulated text at step boundaries
+            accumulatedText = "";
+          },
+        });
+
+        // On completion, update status
+        setSubagents((prev) =>
+          prev.map((s) =>
+            s.id === agentId
+              ? {
+                  ...s,
+                  status: result.error ? ("failed" as const) : ("completed" as const),
+                  resumeInfo: undefined,
+                  messages: [
+                    ...s.messages,
+                    {
+                      role: "assistant" as const,
+                      content: `${
+                        result.findingsCount > 0 ? "✅" : "⚪"
+                      } ${result.summary}`,
+                      createdAt: new Date(),
+                    },
+                  ],
+                }
+              : s
+          )
+        );
+      } catch (error) {
+        setSubagents((prev) =>
+          prev.map((s) =>
+            s.id === agentId
+              ? { ...s, status: "failed" as const, resumeInfo: undefined }
+              : s
+          )
+        );
+      }
+
+      setThinking(false);
+      // Only set isExecuting=false if no other agents are still running
+      setSubagents((prev) => {
+        const stillRunning = prev.some(
+          (s) => s.status === "pending" && s.id !== agentId
+        );
+        if (!stillRunning) {
+          setIsExecuting(false);
+        }
+        return prev;
+      });
+    },
+    [session, subagents, model.id, abortController, addTokenUsage, setThinking, setIsExecuting]
+  );
+
   // Open report
   const openReport = useCallback(() => {
     if (session?.rootPath) {
@@ -778,6 +1025,7 @@ export default function SessionView({
       onBack={handleBack}
       onViewReport={openReport}
       onKillAgent={killAgent}
+      onResumeAgent={resumeAgent}
     />
   );
 }

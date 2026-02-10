@@ -15,7 +15,7 @@ export type Subagent = {
   target: string;
   messages: Message[];
   createdAt: Date;
-  status: "pending" | "completed" | "failed";
+  status: "pending" | "completed" | "failed" | "paused";
 };
 
 /**
@@ -173,6 +173,9 @@ const SubAgentDisplay = memo(function SubAgentDisplay({
         )}
         {subagent.status === "failed" && (
           <text fg="red">✗ {subagent.name}</text>
+        )}
+        {subagent.status === "paused" && (
+          <text fg={RGBA.fromInts(255, 152, 0, 255)}>⏸ {subagent.name}</text>
         )}
         <text fg="gray">{open ? "▼" : "▶"}</text>
       </box>

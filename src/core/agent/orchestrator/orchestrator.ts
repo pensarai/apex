@@ -82,6 +82,8 @@ export interface SubAgentSpawnInfo {
   name: string;
   target: string;
   vulnerabilityClass: VulnerabilityClass;
+  objective: string;
+  authenticationInfo?: any;
 }
 
 /**
@@ -363,6 +365,8 @@ export async function runPentestOrchestrator(
         name: `${getVulnerabilityClassName(task.vulnClass)} on ${task.target}`,
         target: task.target,
         vulnerabilityClass: task.vulnClass,
+        objective: task.objective,
+        authenticationInfo: task.authenticationInfo,
       });
 
       try {
