@@ -207,19 +207,33 @@ export default function SessionView({
       const pentestAgentTexts = new Map<string, string>();
 
       try {
-        // Add discovery subagent (preserve any pre-existing logs from incomplete resume)
-        setSubagents((prev) => [
-          ...prev,
-          {
-            id: "attack-surface-discovery",
-            name: "Attack Surface Discovery",
-            type: "attack-surface",
-            target: execSession.targets[0],
-            messages: [],
-            status: "pending",
-            createdAt: new Date(),
-          },
-        ]);
+        // Add or reuse discovery subagent — preserve existing messages on resume
+        setSubagents((prev) => {
+          const existingIdx = prev.findIndex(
+            (s) => s.id === "attack-surface-discovery"
+          );
+          if (existingIdx !== -1) {
+            // Reuse existing entry: keep old messages, reset status to pending
+            const updated = [...prev];
+            updated[existingIdx] = {
+              ...updated[existingIdx]!,
+              status: "pending" as const,
+            };
+            return updated;
+          }
+          return [
+            ...prev,
+            {
+              id: "attack-surface-discovery",
+              name: "Attack Surface Discovery",
+              type: "attack-surface" as const,
+              target: execSession.targets[0],
+              messages: [],
+              status: "pending" as const,
+              createdAt: new Date(),
+            },
+          ];
+        });
 
         // Run streamlined pentest
         const result = await runStreamlinedPentest({
@@ -723,7 +737,16 @@ export default function SessionView({
       const paused = subagentsRef.current.find(
         (s) => s.id === agentId && s.status === "paused"
       );
-      if (!paused || !paused.resumeInfo) return;
+      if (!paused) return;
+
+      // Discovery agents don't have resumeInfo — resume the full pipeline
+      // startPentest will reuse the existing agent entry, preserving old messages
+      if (paused.type === "attack-surface") {
+        await startPentest(session);
+        return;
+      }
+
+      if (!paused.resumeInfo) return;
 
       const { target, objective, vulnerabilityClass, authenticationInfo } =
         paused.resumeInfo;
@@ -948,7 +971,7 @@ export default function SessionView({
         setIsExecuting(false);
       }
     },
-    [session, model.id, abortController, addTokenUsage, setThinking, setIsExecuting]
+    [session, model.id, abortController, addTokenUsage, setThinking, setIsExecuting, startPentest]
   );
 
   // Open report

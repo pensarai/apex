@@ -140,6 +140,12 @@ export default function SwarmDashboard({
         return;
       }
 
+      // R to resume paused discovery agent
+      if ((key.name === "r" || key.name === "R") && discoveryAgent?.status === "paused") {
+        onResumeAgent?.(discoveryAgent.id);
+        return;
+      }
+
       const agentCount = pentestAgents.length;
 
       // ESC to exit when no agents or close discovery logs first
@@ -256,7 +262,12 @@ export default function SwarmDashboard({
               backgroundColor={darkBg}
               padding={2}
             >
-              {discoveryAgent?.status === "pending" ? (
+              {discoveryAgent?.status === "paused" ? (
+                <box flexDirection="column" alignItems="center" gap={1}>
+                  <text fg={colors.orangeText}>⏸ Discovery was interrupted</text>
+                  <text fg={dimText}>Press <span fg={colors.orangeText}>[R]</span> to resume</text>
+                </box>
+              ) : discoveryAgent?.status === "pending" ? (
                 <box flexDirection="column" alignItems="center" gap={1}>
                   <SpinnerDots
                     label="Discovering attack surface..."
@@ -319,6 +330,7 @@ export default function SwarmDashboard({
         duration={metrics.duration}
         isExecuting={isExecuting}
         showKillHint={!!onKillAgent}
+        discoveryPaused={discoveryAgent?.status === "paused"}
       />
     </box>
   );
@@ -370,6 +382,9 @@ function DiscoveryPanel({
             )}
             {agent.status === "failed" && (
               <text fg="red">✗ Attack Surface Discovery</text>
+            )}
+            {agent.status === "paused" && (
+              <text fg={colors.orangeText}>⏸ Attack Surface Discovery (Paused)</text>
             )}
           </box>
           <text fg={dimText}>
@@ -431,6 +446,9 @@ function DiscoveryPanel({
             <text fg={greenBullet}>✓ Discovery</text>
           )}
           {agent?.status === "failed" && <text fg="red">✗ Discovery</text>}
+          {agent?.status === "paused" && (
+            <text fg={colors.orangeText}>⏸ Discovery</text>
+          )}
         </box>
         <text fg={dimText}>[D]</text>
       </box>
@@ -440,7 +458,7 @@ function DiscoveryPanel({
         <box flexDirection="column" padding={1} gap={1}>
           <text>
             <span fg={dimText}>Status: </span>
-            <span fg={agent.status === "pending" ? greenBullet : creamText}>
+            <span fg={agent.status === "pending" ? greenBullet : agent.status === "paused" ? colors.orangeText : creamText}>
               {agent.status}
             </span>
           </text>
@@ -452,6 +470,12 @@ function DiscoveryPanel({
             <span fg={dimText}>Endpoints: </span>
             <span fg={creamText}>{endpoints.length}</span>
           </text>
+          {agent.status === "paused" && (
+            <text>
+              <span fg={colors.orangeText}>[R]</span>
+              <span fg={dimText}> Resume</span>
+            </text>
+          )}
         </box>
       )}
 
@@ -634,6 +658,7 @@ interface MetricsBarProps {
   duration: number;
   isExecuting: boolean;
   showKillHint?: boolean;
+  discoveryPaused?: boolean;
 }
 
 function MetricsBar({
@@ -644,6 +669,7 @@ function MetricsBar({
   duration,
   isExecuting,
   showKillHint,
+  discoveryPaused,
 }: MetricsBarProps) {
   // Format duration as mm:ss
   const formattedDuration = useMemo(() => {
@@ -687,6 +713,12 @@ function MetricsBar({
 
       {/* Right: Keyboard hints */}
       <box flexDirection="row" gap={2}>
+        {discoveryPaused && (
+          <text>
+            <span fg={colors.orangeText}>[R]</span>
+            <span fg={dimText}> Resume</span>
+          </text>
+        )}
         {showKillHint && (
           <text>
             <span fg={greenBullet}>[X]</span>

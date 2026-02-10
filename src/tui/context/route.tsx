@@ -14,7 +14,6 @@ export type RoutePath =
     | "models"
     | "providers"
     | "disclosure"
-    | "resume"
     | "sessions";
 
 export interface WebCommandOptions {

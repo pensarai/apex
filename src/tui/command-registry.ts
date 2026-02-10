@@ -268,18 +268,6 @@ export const commands: CommandConfig[] = [
     },
   },
   {
-    name: "resume",
-    aliases: ["r"],
-    description: "Resume a previous pentest session",
-    category: "Pentesting",
-    handler: async (args, ctx) => {
-      ctx.navigate({
-        type: "base",
-        path: "resume",
-      });
-    },
-  },
-  {
     name: "sessions",
     aliases: ["s"],
     description: "Browse previous sessions",
