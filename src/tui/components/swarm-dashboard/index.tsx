@@ -4,6 +4,8 @@ import { RGBA } from "@opentui/core";
 import AgentDisplay, { type DisplayMessage } from "../agent-display";
 import { SpinnerDots } from "../sprites";
 import { useDialog } from "../../context/dialog";
+import type { ResumeInfo } from "../../../core/session/loader";
+import { colors } from "../../theme";
 
 // Color palette (matching home view)
 export const greenBullet = RGBA.fromInts(76, 175, 80, 255);
@@ -23,12 +25,7 @@ export type Subagent = {
   messages: DisplayMessage[];
   createdAt: Date;
   status: "pending" | "completed" | "failed" | "paused" | "canceled";
-  resumeInfo?: {
-    target: string;
-    objective: string;
-    vulnerabilityClass: string;
-    authenticationInfo?: any;
-  };
+  resumeInfo?: ResumeInfo;
 };
 
 interface SwarmDashboardProps {
@@ -488,8 +485,6 @@ interface AgentCardProps {
 }
 
 function AgentCard({ agent, focused, onSelect }: AgentCardProps) {
-  const amberColor = RGBA.fromInts(255, 152, 0, 255);
-
   const statusIcon = {
     pending: "◐",
     completed: "✓",
@@ -502,7 +497,7 @@ function AgentCard({ agent, focused, onSelect }: AgentCardProps) {
     pending: greenBullet,
     completed: greenBullet,
     failed: RGBA.fromInts(244, 67, 54, 255),
-    paused: amberColor,
+    paused: colors.orangeText,
     canceled: dimText,
   }[agent.status];
 
@@ -570,7 +565,7 @@ function AgentCard({ agent, focused, onSelect }: AgentCardProps) {
         ) : agent.status === "pending" ? (
           <SpinnerDots label={lastActivity} fg="green" />
         ) : agent.status === "paused" ? (
-          <text fg={RGBA.fromInts(255, 152, 0, 255)}>⏸ Paused — press Enter then R to resume</text>
+          <text fg={colors.orangeText}>⏸ Paused — press Enter then R to resume</text>
         ) : (
           <text fg={agent.status === "completed" ? greenBullet : dimText}>
             {agent.status === "completed" ? "✓ Complete" : lastActivity}
@@ -730,7 +725,7 @@ function AgentDetailView({ agent, onBack, onResume }: AgentDetailViewProps) {
     pending: greenBullet,
     completed: greenBullet,
     failed: RGBA.fromInts(244, 67, 54, 255),
-    paused: RGBA.fromInts(255, 152, 0, 255),
+    paused: colors.orangeText,
     canceled: dimText,
   }[agent.status];
 
@@ -783,7 +778,7 @@ function AgentDetailView({ agent, onBack, onResume }: AgentDetailViewProps) {
         <box flexDirection="row" gap={2}>
           {agent.status === "paused" && onResume && (
             <text>
-              <span fg={RGBA.fromInts(255, 152, 0, 255)}>[R]</span>
+              <span fg={colors.orangeText}>[R]</span>
               <span fg={dimText}> Resume</span>
             </text>
           )}

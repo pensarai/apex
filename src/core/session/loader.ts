@@ -8,6 +8,7 @@
 import { join } from "path";
 import { existsSync, readdirSync, readFileSync } from "fs";
 import type { Session } from "./index";
+import type { AuthenticationInfo } from "../agent/orchestrator/types";
 
 /**
  * Message content part from AI SDK format
@@ -79,6 +80,16 @@ export interface UIMessage {
 }
 
 /**
+ * Information needed to resume a paused agent
+ */
+export interface ResumeInfo {
+  target: string;
+  objective: string;
+  vulnerabilityClass: string;
+  authenticationInfo?: AuthenticationInfo;
+}
+
+/**
  * UI-compatible subagent format
  */
 export interface UISubagent {
@@ -89,12 +100,7 @@ export interface UISubagent {
   messages: UIMessage[];
   createdAt: Date;
   status: "pending" | "completed" | "failed" | "paused" | "canceled";
-  resumeInfo?: {
-    target: string;
-    objective: string;
-    vulnerabilityClass: string;
-    authenticationInfo?: any;
-  };
+  resumeInfo?: ResumeInfo;
 }
 
 /**
@@ -503,7 +509,10 @@ export async function loadSessionState(
   // Check for report
   const hasReportFile = hasReport(rootPath);
 
-  // Detect interrupted discovery: no results file, no report, but discovery logs exist
+  // Detect interrupted discovery: no results file, no report, but discovery logs exist.
+  // Assumption: each session has a unique root path, so stale logs from previous runs
+  // cannot cause false positives. If attack-surface-results.json is manually deleted,
+  // this will incorrectly mark the session as interrupted rather than allowing restart.
   const hasDiscoverySubagent = subagents.some(
     (s) => s.type === "attack-surface"
   );

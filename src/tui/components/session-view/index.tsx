@@ -22,6 +22,7 @@ import type {
   SubAgentSpawnInfo,
   SubAgentStreamEvent,
 } from "../../../core/agent/orchestrator/orchestrator";
+import type { VulnerabilityClass } from "../../../core/agent/orchestrator/types";
 import {
   runMetaVulnerabilityTestAgent,
   type MetaVulnerabilityTestResult,
@@ -75,6 +76,10 @@ export default function SessionView({
 
   // Per-agent abort controllers for individual kill capability
   const agentAbortControllers = useRef<Map<string, AbortController>>(new Map());
+
+  // Ref to access current subagents without adding to dependency arrays
+  const subagentsRef = useRef(subagents);
+  subagentsRef.current = subagents;
 
   const killAgent = useCallback((agentId: string) => {
     const controller = agentAbortControllers.current.get(agentId);
@@ -714,8 +719,8 @@ export default function SessionView({
     async (agentId: string) => {
       if (!session) return;
 
-      // Find the paused subagent
-      const paused = subagents.find(
+      // Read current subagents via ref to avoid stale closure
+      const paused = subagentsRef.current.find(
         (s) => s.id === agentId && s.status === "paused"
       );
       if (!paused || !paused.resumeInfo) return;
@@ -741,7 +746,7 @@ export default function SessionView({
           input: {
             target,
             objective,
-            vulnerabilityClass: vulnerabilityClass as any,
+            vulnerabilityClass: vulnerabilityClass as VulnerabilityClass,
             authenticationInfo,
             authenticationInstructions:
               session.config?.authenticationInstructions,
@@ -936,17 +941,14 @@ export default function SessionView({
 
       setThinking(false);
       // Only set isExecuting=false if no other agents are still running
-      setSubagents((prev) => {
-        const stillRunning = prev.some(
-          (s) => s.status === "pending" && s.id !== agentId
-        );
-        if (!stillRunning) {
-          setIsExecuting(false);
-        }
-        return prev;
-      });
+      const stillRunning = subagentsRef.current.some(
+        (s) => s.status === "pending" && s.id !== agentId
+      );
+      if (!stillRunning) {
+        setIsExecuting(false);
+      }
     },
-    [session, subagents, model.id, abortController, addTokenUsage, setThinking, setIsExecuting]
+    [session, model.id, abortController, addTokenUsage, setThinking, setIsExecuting]
   );
 
   // Open report

@@ -31,7 +31,7 @@ import type {
   HttpRequestOpts,
   HttpRequestResult,
 } from "../tools";
-import type { VulnerabilityClass } from "./types";
+import type { VulnerabilityClass, AuthenticationInfo } from "./types";
 import { generateRandomName } from "../../../util/name";
 
 /**
@@ -83,7 +83,7 @@ export interface SubAgentSpawnInfo {
   target: string;
   vulnerabilityClass: VulnerabilityClass;
   objective: string;
-  authenticationInfo?: any;
+  authenticationInfo?: AuthenticationInfo;
 }
 
 /**
@@ -202,7 +202,7 @@ interface TestTask {
   targetIndex: number;
   target: string;
   objective: string;
-  authenticationInfo?: any;
+  authenticationInfo?: AuthenticationInfo;
   vulnClass: VulnerabilityClass;
   /** Whether this task was dynamically spawned by another agent */
   isSpawned?: boolean;
