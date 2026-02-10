@@ -70,6 +70,9 @@ export function CommandProvider({ children }: CommandProviderProps) {
       // Find the original command config to get options
       const cmdConfig = commands.find((c) => c.name === cmd.name);
 
+      // Skip hidden commands (they still work, just don't show in menu)
+      if (cmdConfig?.hidden) continue;
+
       // Build description with options hint
       let description = cmd.description || "";
 
