@@ -7,7 +7,7 @@
  * - Centered command input with inline autocomplete
  */
 
-import { useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { RGBA } from "@opentui/core";
 import { useTerminalDimensions } from "@opentui/react";
 import { PetriAnimation } from "./petri-animation";
@@ -38,11 +38,20 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
   const { setInputValue } = useInput();
   const { promptRef } = useFocus();
 
+  const [hintMessage, setHintMessage] = useState<string | null>(null);
+
   const handleSubmit = useCallback((value: string) => {
-    // Commands are handled by PromptInput, this only gets non-command text
-    onStartSession(value);
+    // Commands are handled by PromptInput; non-command text shows a hint
+    setHintMessage("Type /help to get started");
     setInputValue("");
-  }, [onStartSession, setInputValue]);
+  }, [setInputValue]);
+
+  // Auto-clear hint after 3 seconds
+  useEffect(() => {
+    if (!hintMessage) return;
+    const timer = setTimeout(() => setHintMessage(null), 3000);
+    return () => clearTimeout(timer);
+  }, [hintMessage]);
 
   const handleCommandExecute = useCallback(async (command: string) => {
     await executeCommand(command);
@@ -100,6 +109,13 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
           onCommandExecute={handleCommandExecute}
           showPromptIndicator={true}
         />
+
+        {/* Hint message */}
+        {hintMessage && (
+          <box marginTop={1}>
+            <text fg={creamText}>{hintMessage}</text>
+          </box>
+        )}
 
         {/* Help text */}
         <box marginTop={1}>
