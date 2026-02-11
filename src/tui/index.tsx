@@ -25,6 +25,7 @@ import { FocusProvider, useFocus } from "./context/focus";
 import { DialogProvider, useDialog } from "./context/dialog";
 import ShortcutsDialog from "./components/commands/shortcuts-dialog";
 import HelpDialog from "./components/commands/help-dialog";
+import ModelsDisplay from "./components/commands/models-display";
 import { KeybindingProvider } from "./context/keybinding";
 
 interface AppProps {
@@ -287,6 +288,9 @@ function CommandDisplay({
           </RouteSwitch.Case>
           <RouteSwitch.Case when="help">
             <HelpDialog />
+          </RouteSwitch.Case>
+          <RouteSwitch.Case when="models">
+            <ModelsDisplay />
           </RouteSwitch.Case>
         </RouteSwitch>
       </box>

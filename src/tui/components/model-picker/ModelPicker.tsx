@@ -18,10 +18,15 @@ const providerNames: Record<string, string> = {
 
 const providerOrder = ["anthropic", "openai", "openrouter", "bedrock"];
 
+type NavigationItem =
+  | { type: "provider"; provider: string }
+  | { type: "model"; model: ModelInfo };
+
 export interface ModelPickerProps {
   config: Config | null;
   selectedModel: ModelInfo;
   onSelectModel: (model: ModelInfo) => void;
+  onConfirm?: () => void;
   focused?: boolean;
   isModelUserSelected?: boolean;
 }
@@ -30,6 +35,7 @@ export function ModelPicker({
   config,
   selectedModel,
   onSelectModel,
+  onConfirm,
   focused = true,
   isModelUserSelected = false,
 }: ModelPickerProps) {
@@ -38,6 +44,7 @@ export function ModelPicker({
   const [expandedProviders, setExpandedProviders] = useState<Set<string>>(
     new Set(["anthropic"])
   );
+  const [focusedIndex, setFocusedIndex] = useState(0);
 
   // Load models when config changes
   useEffect(() => {
@@ -77,38 +84,55 @@ export function ModelPicker({
     return groups;
   }, [availableModels, searchQuery]);
 
-  // Flat list of visible models for keyboard navigation
-  const visibleModels = useMemo(() => {
-    const result: ModelInfo[] = [];
+  // Flat navigation list: provider headers + expanded models
+  const navigationItems = useMemo(() => {
+    const items: NavigationItem[] = [];
     for (const provider of providerOrder) {
       const models = groupedModels[provider];
       if (!models || models.length === 0) continue;
+      items.push({ type: "provider", provider });
       if (expandedProviders.has(provider)) {
-        result.push(...models);
+        for (const m of models) {
+          items.push({ type: "model", model: m });
+        }
       }
     }
-    return result;
+    return items;
   }, [groupedModels, expandedProviders]);
+
+  // Sync focusedIndex when selected model changes (e.g. on initial load)
+  useEffect(() => {
+    const idx = navigationItems.findIndex(
+      (item) => item.type === "model" && item.model.id === selectedModel.id
+    );
+    if (idx !== -1) {
+      setFocusedIndex(idx);
+    }
+  }, [selectedModel.id, navigationItems]);
+
+  // Clamp focusedIndex when navigation items change
+  useEffect(() => {
+    setFocusedIndex((prev) =>
+      Math.min(prev, Math.max(0, navigationItems.length - 1))
+    );
+  }, [navigationItems.length]);
 
   // Handle keyboard navigation
   const handleKeyboard = useCallback(
     (key: any) => {
       if (!focused) return false;
+      if (navigationItems.length === 0) return false;
 
-      // Up/Down - navigate through visible models
+      // Up/Down - navigate through items
       if (key.name === "up" || key.name === "down") {
-        if (visibleModels.length > 0) {
-          const currentVisibleIndex = visibleModels.findIndex(
-            (m) => m.id === selectedModel.id
-          );
-          const newVisibleIndex =
-            key.name === "up"
-              ? Math.max(0, currentVisibleIndex - 1)
-              : Math.min(visibleModels.length - 1, currentVisibleIndex + 1);
-          const newModel = visibleModels[newVisibleIndex];
-          if (newModel) {
-            onSelectModel(newModel);
-          }
+        const newIndex =
+          key.name === "up"
+            ? Math.max(0, focusedIndex - 1)
+            : Math.min(navigationItems.length - 1, focusedIndex + 1);
+        setFocusedIndex(newIndex);
+        const item = navigationItems[newIndex];
+        if (item && item.type === "model") {
+          onSelectModel(item.model);
         }
         return true;
       }
@@ -125,17 +149,56 @@ export function ModelPicker({
         return true;
       }
 
-      // Left/Right - toggle provider expansion
-      if (key.name === "left" || key.name === "right") {
-        const currentProvider = selectedModel.provider;
-        if (key.name === "left") {
+      // Enter - confirm model selection or toggle provider header
+      if (key.name === "return") {
+        const currentItem = navigationItems[focusedIndex];
+        if (!currentItem) return false;
+
+        if (currentItem.type === "provider") {
+          // Toggle expansion when focused on a provider header
+          const targetProvider = currentItem.provider;
           setExpandedProviders((prev) => {
             const next = new Set(prev);
-            next.delete(currentProvider);
+            if (next.has(targetProvider)) {
+              next.delete(targetProvider);
+            } else {
+              next.add(targetProvider);
+            }
             return next;
           });
         } else {
-          setExpandedProviders((prev) => new Set([...prev, currentProvider]));
+          // Confirm selection when focused on a model
+          onConfirm?.();
+        }
+        return true;
+      }
+
+      // Left/Right - collapse/expand provider
+      if (key.name === "left" || key.name === "right") {
+        const currentItem = navigationItems[focusedIndex];
+        if (!currentItem) return false;
+
+        const targetProvider =
+          currentItem.type === "provider"
+            ? currentItem.provider
+            : currentItem.model.provider;
+
+        if (key.name === "left") {
+          setExpandedProviders((prev) => {
+            const next = new Set(prev);
+            next.delete(targetProvider);
+            return next;
+          });
+          // Move focus to the provider header when collapsing
+          const headerIdx = navigationItems.findIndex(
+            (item) =>
+              item.type === "provider" && item.provider === targetProvider
+          );
+          if (headerIdx !== -1) {
+            setFocusedIndex(headerIdx);
+          }
+        } else {
+          setExpandedProviders((prev) => new Set([...prev, targetProvider]));
         }
         return true;
       }
@@ -156,7 +219,14 @@ export function ModelPicker({
 
       return false;
     },
-    [focused, visibleModels, selectedModel, onSelectModel, searchQuery]
+    [
+      focused,
+      navigationItems,
+      focusedIndex,
+      onSelectModel,
+      onConfirm,
+      searchQuery,
+    ]
   );
 
   useKeyboard((key) => {
@@ -179,12 +249,29 @@ export function ModelPicker({
 
         const isExpanded = expandedProviders.has(provider);
         const providerName = providerNames[provider] || provider;
+        const isProviderFocused =
+          navigationItems[focusedIndex]?.type === "provider" &&
+          (
+            navigationItems[focusedIndex] as {
+              type: "provider";
+              provider: string;
+            }
+          ).provider === provider;
 
         return (
           <box key={provider} flexDirection="column" gap={0}>
             {/* Provider header */}
-            <text fg={isExpanded ? creamText : dimText}>
-              {isExpanded ? "▾" : "▸"} {providerName} ({models.length})
+            <text
+              fg={
+                isProviderFocused
+                  ? greenAccent
+                  : isExpanded
+                  ? creamText
+                  : dimText
+              }
+            >
+              {isProviderFocused ? "❯" : isExpanded ? "▾" : "▸"} {providerName}{" "}
+              ({models.length})
             </text>
 
             {/* Models list (when expanded) */}
@@ -192,10 +279,18 @@ export function ModelPicker({
               <box flexDirection="column" gap={0} paddingLeft={2}>
                 {models.map((m) => {
                   const isSelected = m.id === selectedModel.id;
+                  const isFocused =
+                    navigationItems[focusedIndex]?.type === "model" &&
+                    (
+                      navigationItems[focusedIndex] as {
+                        type: "model";
+                        model: ModelInfo;
+                      }
+                    ).model.id === m.id;
                   const isDefault =
                     m.id === "claude-haiku-4-5" || m.id === "gpt-4o-mini";
                   return (
-                    <text key={m.id} fg={isSelected ? greenAccent : dimText}>
+                    <text key={m.id} fg={isFocused ? greenAccent : dimText}>
                       {isSelected ? "●" : "○"} {m.name}
                       {isDefault && !isModelUserSelected && isSelected
                         ? " [default]"
@@ -210,7 +305,9 @@ export function ModelPicker({
       })}
 
       {/* Help text */}
-      <text fg={dimText}>↑/↓ select | Type to search | ←/→ collapse/expand</text>
+      <text fg={dimText}>
+        ↑/↓ navigate | ←/→ collapse/expand | Type to search
+      </text>
     </box>
   );
 }
