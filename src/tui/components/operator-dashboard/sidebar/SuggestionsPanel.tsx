@@ -2,13 +2,8 @@
  * Suggestions Panel - Shows [1]/[2]/[3] options from agent
  */
 
-import { RGBA } from "@opentui/core";
 import type { Suggestion } from "../types";
-
-const creamText = RGBA.fromInts(255, 248, 220, 255);
-const dimText = RGBA.fromInts(120, 120, 120, 255);
-const greenAccent = RGBA.fromInts(76, 175, 80, 255);
-const yellowText = RGBA.fromInts(255, 235, 59, 255);
+import { useColors } from "../../../theme";
 
 interface SuggestionsPanelProps {
   suggestions: Suggestion[];
@@ -16,6 +11,9 @@ interface SuggestionsPanelProps {
 }
 
 export function SuggestionsPanel({ suggestions }: SuggestionsPanelProps) {
+  const colors = useColors();
+  const { creamText, dimText, yellowText } = colors;
+
   return (
     <box flexDirection="column" gap={1}>
       <text fg={creamText}>Suggestions</text>

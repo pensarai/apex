@@ -1,5 +1,5 @@
 import { useKeyboard } from "@opentui/react";
-import { RGBA } from "@opentui/core";
+
 import { type ModelInfo } from "../../../core/ai";
 import { useAgent } from "../../context/agent";
 import { useEffect, useState } from "react";
@@ -9,10 +9,12 @@ import Input from "../input";
 import { AVAILABLE_MODELS } from "../../../core/ai/models";
 import { useRoute } from "../../context/route";
 import { useConfig } from "../../context/config";
+import { useColors } from "../../theme";
 
 export default function ModelsDisplay() {
   const route = useRoute();
   const _config = useConfig();
+  const colors = useColors();
   
   const [models, setModels] = useState<ModelInfo[]>([]);
   const { model: selectedModel, setModel } = useAgent();
@@ -101,7 +103,7 @@ export default function ModelsDisplay() {
       alignItems="center"
       justifyContent="center"
       flexDirection="column"
-      backgroundColor={RGBA.fromInts(0, 0, 0, 100)}
+      backgroundColor={colors.overlayBg}
       width="100%"
       maxHeight="100%"
       flexGrow={1}
@@ -110,9 +112,9 @@ export default function ModelsDisplay() {
       gap={1}
     >
       <box flexDirection="column" width="80%" gap={1}>
-        <text fg="green">Available Models</text>
-        <text fg="white">
-          Current: <span fg="green">{selectedModel.name}</span>
+        <text fg={colors.greenAccent}>Available Models</text>
+        <text fg={colors.primaryText}>
+          Current: <span fg={colors.greenAccent}>{selectedModel.name}</span>
         </text>
 
         <box flexDirection="column" gap={1}>
@@ -150,8 +152,8 @@ export default function ModelsDisplay() {
               flexGrow: 1,
               flexShrink: 1,
               overflow: "hidden",
-              borderColor: "green",
-              focusedBorderColor: "green",
+              borderColor: colors.greenAccent,
+              focusedBorderColor: colors.greenAccent,
               border: true,
               paddingLeft: 1,
               paddingRight: 1,
@@ -166,8 +168,8 @@ export default function ModelsDisplay() {
             },
             scrollbarOptions: {
               trackOptions: {
-                foregroundColor: "green",
-                backgroundColor: RGBA.fromInts(40, 40, 40, 255),
+                foregroundColor: colors.greenAccent,
+                backgroundColor: colors.backgroundDark,
               },
             },
           }}
@@ -191,25 +193,25 @@ export default function ModelsDisplay() {
                 }}
               >
                 <text
-                  fg={isHighlighted ? "green" : isSelected ? "white" : "gray"}
+                  fg={isHighlighted ? colors.greenAccent : isSelected ? colors.primaryText : colors.secondaryText}
                 >
                   {isHighlighted ? "▶ " : "  "}
                   {model.name}
                   {isSelected ? " ✓" : ""}
                 </text>
-                <text fg="gray"> {model.id}</text>
-                <text fg="gray"> {model.provider}</text>
+                <text fg={colors.secondaryText}> {model.id}</text>
+                <text fg={colors.secondaryText}> {model.provider}</text>
               </box>
             );
           })}
         </scrollbox>
 
         <box flexDirection="row" width="100%" gap={1}>
-          <text fg="gray">
-            <span fg="green">[TAB]</span> Focus input/list ·{" "}
-            <span fg="green">[↑↓]</span> Navigate list ·{" "}
-            <span fg="green">[ENTER]</span> Select ·{" "}
-            <span fg="green">[ESC]</span> Close
+          <text fg={colors.secondaryText}>
+            <span fg={colors.greenAccent}>[TAB]</span> Focus input/list ·{" "}
+            <span fg={colors.greenAccent}>[↑↓]</span> Navigate list ·{" "}
+            <span fg={colors.greenAccent}>[ENTER]</span> Select ·{" "}
+            <span fg={colors.greenAccent}>[ESC]</span> Close
           </text>
         </box>
       </box>

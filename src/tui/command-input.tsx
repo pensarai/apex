@@ -6,7 +6,7 @@ import { Session } from "../core/session";
 import Autocomplete from "./components/autocomplete";
 import os from "os";
 import type { InputRenderable } from "@opentui/core";
-import { RGBA } from "@opentui/core";
+import { useColors } from "./theme";
 
 interface CommandInputProps {
   focused?: boolean;
@@ -71,9 +71,8 @@ export default function CommandInput({
 
   const cwd = "~" + process.cwd().split(os.homedir()).pop() || "";
 
-  const greenAccent = RGBA.fromInts(76, 175, 80, 255);
-  const dimText = RGBA.fromInts(100, 100, 100, 255);
-  const creamText = RGBA.fromInts(255, 248, 220, 255);
+  const colors = useColors();
+  const { greenAccent, dimText, creamText } = colors;
 
   return (
     <box width={"100%"} flexDirection="column" marginTop={1} rowGap={1}>

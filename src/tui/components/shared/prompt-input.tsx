@@ -1,7 +1,7 @@
 import { useState, useEffect, useImperativeHandle, forwardRef, useRef, useMemo } from "react";
 import { useKeyboard } from "@opentui/react";
 import type { TextareaRenderable } from "@opentui/core";
-import { colors } from "../../theme/colors";
+import { useColors } from "../../theme";
 import { useInput } from "../../context/input";
 import { useFocus } from "../../context/focus";
 import type { AutocompleteOption } from "../autocomplete";
@@ -83,6 +83,7 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
     },
     ref
   ) {
+    const colors = useColors();
     const { inputValue, setInputValue } = useInput();
     const { registerPromptRef } = useFocus();
     const textareaRef = useRef<TextareaRenderable | null>(null);

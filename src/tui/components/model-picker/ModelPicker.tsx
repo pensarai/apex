@@ -1,13 +1,9 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useKeyboard } from "@opentui/react";
-import { RGBA } from "@opentui/core";
 import type { ModelInfo } from "../../../core/ai";
 import { getAvailableModels } from "../../../core/providers/utils";
 import type { Config } from "../../../core/config/config";
-
-const greenAccent = RGBA.fromInts(76, 175, 80, 255);
-const creamText = RGBA.fromInts(255, 248, 220, 255);
-const dimText = RGBA.fromInts(120, 120, 120, 255);
+import { useColors } from "../../theme";
 
 const providerNames: Record<string, string> = {
   anthropic: "Claude",
@@ -39,6 +35,8 @@ export function ModelPicker({
   focused = true,
   isModelUserSelected = false,
 }: ModelPickerProps) {
+  const colors = useColors();
+  const { greenAccent, creamText, dimText } = colors;
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedProviders, setExpandedProviders] = useState<Set<string>>(

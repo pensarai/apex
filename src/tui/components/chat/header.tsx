@@ -5,7 +5,7 @@
  * Layout: MODE | target URL | endpoints found | findings documented | tokens | tool calls
  */
 
-import { colors, formatTokenCount, getTierColor } from "../../theme";
+import { useColors, formatTokenCount, getTierColor } from "../../theme";
 import type { OperatorMode, OperatorStage, PermissionTier } from "../../../core/operator";
 
 export interface HeaderProps {
@@ -53,6 +53,8 @@ export function Header({
   findingsCount = 0,
   toolCallsCount = 0,
 }: HeaderProps) {
+  const colors = useColors();
+
   // Get mode display
   const getModeDisplay = () => {
     if (mode === "chat") {
@@ -119,7 +121,7 @@ export function Header({
         {autoApproveTier && mode === "operator" && (
           <>
             <text fg={colors.dimText}>│</text>
-            <text fg={getTierColor(autoApproveTier)}>T{autoApproveTier}</text>
+            <text fg={getTierColor(autoApproveTier, colors)}>T{autoApproveTier}</text>
           </>
         )}
       </box>

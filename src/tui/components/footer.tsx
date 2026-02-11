@@ -4,6 +4,7 @@ import { ProgressBar, SpinnerDots } from "./sprites";
 import { useSession } from "../context/session";
 import { useRoute } from "../context/route";
 import { useInput } from "../context/input";
+import { useColors } from "../theme";
 import { useEffect } from "react";
 
 interface FooterProps {
@@ -29,6 +30,7 @@ export default function Footer({
   const session = useSession();
   const route = useRoute();
   const { isInputEmpty } = useInput();
+  const colors = useColors();
 
   const hotkeys = isExecuting
     ? [{ key: "Ctrl+C", label: "Stop Execution" }]
@@ -46,17 +48,17 @@ export default function Footer({
       flexShrink={0}
     >
       <box flexDirection="row" gap={1}>
-        <text fg="gray">{cwd}</text>
-        <box border={["right"]} borderColor="green" />
-        <text fg="gray">
-          <span fg="white">{model.name}</span>
+        <text fg={colors.secondaryText}>{cwd}</text>
+        <box border={["right"]} borderColor={colors.greenAccent} />
+        <text fg={colors.secondaryText}>
+          <span fg={colors.primaryText}>{model.name}</span>
         </text>
         <AgentStatus />
         {
           route.data.type === "session" && session.active &&
-          <text fg="white">
+          <text fg={colors.primaryText}>
             Session:{' '}
-            <span fg="gray">
+            <span fg={colors.secondaryText}>
               {session.active.name}
             </span>
           </text>
@@ -64,14 +66,14 @@ export default function Footer({
       </box>
       {showExitWarning ? (
         <box flexDirection="row" gap={1}>
-          <text fg="yellow">⚠ Press Ctrl+C again to exit</text>
+          <text fg={colors.yellowText}>⚠ Press Ctrl+C again to exit</text>
         </box>
       ) : (
         <box flexDirection="row" gap={2}>
           {hotkeys.map((hotkey, index) => (
             <box key={index} flexDirection="row" gap={1}>
-              <text fg="green">[{hotkey.key}]</text>
-              <text fg="gray">{hotkey.label}</text>
+              <text fg={colors.greenAccent}>[{hotkey.key}]</text>
+              <text fg={colors.secondaryText}>{hotkey.label}</text>
             </box>
           ))}
         </box>
@@ -82,6 +84,7 @@ export default function Footer({
 
 export function AgentStatus() {
   const { tokenUsage, hasExecuted, thinking, isExecuting } = useAgent();
+  const colors = useColors();
 
   useEffect(() => {
     console.log(tokenUsage);
@@ -91,14 +94,14 @@ export function AgentStatus() {
     <box flexDirection="row" gap={1}>
       {hasExecuted && (
         <>
-          <box border={["right"]} borderColor="green" />
-          <text fg="white">{`↓${formatTokenCount(tokenUsage.inputTokens)} ↑${formatTokenCount(tokenUsage.outputTokens)} Σ${formatTokenCount(tokenUsage.totalTokens)}`}</text>
+          <box border={["right"]} borderColor={colors.greenAccent} />
+          <text fg={colors.primaryText}>{`↓${formatTokenCount(tokenUsage.inputTokens)} ↑${formatTokenCount(tokenUsage.outputTokens)} Σ${formatTokenCount(tokenUsage.totalTokens)}`}</text>
         </>
       )}
       {thinking && (
         <>
-          <box border={["right"]} borderColor="green" />
-          <SpinnerDots label="Thinking" fg="green" />
+          <box border={["right"]} borderColor={colors.greenAccent} />
+          <SpinnerDots label="Thinking" fg={colors.greenAccent} />
         </>
       )}
     </box>

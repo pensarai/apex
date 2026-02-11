@@ -3,14 +3,8 @@
  * Display only in Tier 1 (keyboard actions deferred to Tier 2)
  */
 
-import { RGBA } from "@opentui/core";
 import type { Credential } from "../types";
-
-const creamText = RGBA.fromInts(255, 248, 220, 255);
-const dimText = RGBA.fromInts(120, 120, 120, 255);
-const greenAccent = RGBA.fromInts(76, 175, 80, 255);
-const yellowText = RGBA.fromInts(255, 235, 59, 255);
-const blueText = RGBA.fromInts(100, 181, 246, 255);
+import { useColors } from "../../../theme";
 
 interface CredentialsPanelProps {
   credentials: Credential[];
@@ -18,6 +12,9 @@ interface CredentialsPanelProps {
 }
 
 export function CredentialsPanel({ credentials, maxVisible = 4 }: CredentialsPanelProps) {
+  const colors = useColors();
+  const { creamText, dimText, greenAccent, yellowText } = colors;
+  const blueText = colors.toolColor;
   const visible = credentials.slice(0, maxVisible);
   const remaining = credentials.length - maxVisible;
 

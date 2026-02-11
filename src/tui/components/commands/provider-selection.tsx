@@ -1,8 +1,9 @@
 import { useKeyboard } from "@opentui/react";
-import { RGBA } from "@opentui/core";
+
 import { useEffect, useState } from "react";
 import { useRoute } from "../../context/route";
 import { useConfig } from "../../context/config";
+import { useColors } from "../../theme";
 import {
   AVAILABLE_PROVIDERS,
   getConfiguredProviders,
@@ -20,6 +21,7 @@ export default function ProviderSelection({
 }: ProviderSelectionProps) {
   const route = useRoute();
   const _config = useConfig();
+  const colors = useColors();
   const [highlightedIndex, setHighlightedIndex] = useState(0);
 
   const configuredProviders = getConfiguredProviders(_config.data);
@@ -73,7 +75,7 @@ export default function ProviderSelection({
         width={70}
         maxHeight="80%"
         border={true}
-        borderColor="green"
+        borderColor={colors.greenAccent}
         backgroundColor="black"
         flexDirection="column"
         padding={2}
@@ -84,10 +86,10 @@ export default function ProviderSelection({
           justifyContent="space-between"
           marginBottom={2}
         >
-          <text fg="green">
+          <text fg={colors.greenAccent}>
             Select provider
           </text>
-          <text fg="gray">esc</text>
+          <text fg={colors.secondaryText}>esc</text>
         </box>
 
         {/* Provider List */}
@@ -109,13 +111,13 @@ export default function ProviderSelection({
             scrollbarOptions: {
               trackOptions: {
                 foregroundColor: "green",
-                backgroundColor: RGBA.fromInts(40, 40, 40, 255),
+                backgroundColor: colors.backgroundDark,
               },
             },
           }}
         >
           {/* Popular providers section */}
-          <text fg="gray" marginTop={1} marginBottom={1}>
+          <text fg={colors.secondaryText} marginTop={1} marginBottom={1}>
             Popular providers
           </text>
 
@@ -133,18 +135,18 @@ export default function ProviderSelection({
                 paddingLeft={1}
                 paddingRight={1}
                 backgroundColor={
-                  isHighlighted ? RGBA.fromInts(0, 80, 0, 100) : undefined
+                  isHighlighted ? colors.selectedBg : undefined
                 }
                 onMouseDown={() => onProviderSelected(provider.id)}
               >
-                <text fg={isHighlighted ? "green" : "white"} flexGrow={1}>
+                <text fg={isHighlighted ? colors.greenAccent : colors.primaryText} flexGrow={1}>
                   {provider.name}{" "}
                   {provider.description ? (
-                    <span fg="gray">({provider.description})</span>
+                    <span fg={colors.secondaryText}>({provider.description})</span>
                   ) : null}
                 </text>
                 {configured ? (
-                  <text fg="green">✓</text>
+                  <text fg={colors.greenAccent}>✓</text>
                 ) : null}
               </box>
             );
@@ -153,10 +155,10 @@ export default function ProviderSelection({
 
         {/* Footer help text */}
         <box marginTop={2}>
-          <text fg="gray">
-            <span fg="green">[↑↓]</span> Navigate ·{" "}
-            <span fg="green">[ENTER]</span> Select ·{" "}
-            <span fg="green">[ESC]</span> Close
+          <text fg={colors.secondaryText}>
+            <span fg={colors.greenAccent}>[↑↓]</span> Navigate ·{" "}
+            <span fg={colors.greenAccent}>[ENTER]</span> Select ·{" "}
+            <span fg={colors.greenAccent}>[ESC]</span> Close
           </text>
         </box>
       </box>

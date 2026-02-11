@@ -6,7 +6,7 @@
  */
 
 import { memo, useMemo } from "react";
-import { colors } from "../../theme";
+import { useColors } from "../../theme";
 import { markdownToStyledText } from "./markdown";
 import { ToolRenderer } from "./tool-renderer";
 import { isToolMessage } from "./type-guards";
@@ -34,6 +34,8 @@ export const MessageRenderer = memo(function MessageRenderer({
   variant = "operator",
   username = "user",
 }: MessageRendererProps) {
+  const colors = useColors();
+
   // Get string content
   const content =
     typeof message.content === "string"
@@ -42,8 +44,8 @@ export const MessageRenderer = memo(function MessageRenderer({
 
   // Memoize markdown conversion for assistant messages
   const displayContent = useMemo(
-    () => (message.role === "assistant" ? markdownToStyledText(content) : content),
-    [content, message.role]
+    () => (message.role === "assistant" ? markdownToStyledText(content, { codeColor: colors.codeColor, linkColor: colors.linkColor }) : content),
+    [content, message.role, colors.codeColor, colors.linkColor]
   );
 
   // Tool messages

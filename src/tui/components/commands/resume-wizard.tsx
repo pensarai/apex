@@ -6,16 +6,11 @@ import { useState, useEffect } from "react";
 import { useKeyboard } from "@opentui/react";
 import { existsSync, readdirSync } from "fs";
 import { join } from "path";
-import { RGBA } from "@opentui/core";
 import { useRoute } from "../../context/route";
 import { useSession } from "../../context/session";
 import { useFocus } from "../../context/focus";
 import { Session } from "../../../core/session";
-
-// Design system colors (matching web-wizard, operator-dashboard, etc.)
-const greenAccent = RGBA.fromInts(76, 175, 80, 255);
-const creamText = RGBA.fromInts(255, 248, 220, 255);
-const dimText = RGBA.fromInts(120, 120, 120, 255);
+import { useColors } from "../../theme";
 
 interface EnrichedSession extends Session.SessionInfo {
   findingsCount: number;
@@ -55,6 +50,8 @@ export default function ResumeWizard() {
   const route = useRoute();
   const { load: loadSession } = useSession();
   const { refocusPrompt } = useFocus();
+  const colors = useColors();
+  const { greenAccent, creamText, dimText } = colors;
 
   // Load sessions with operator state on mount
   useEffect(() => {

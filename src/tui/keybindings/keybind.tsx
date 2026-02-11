@@ -22,7 +22,7 @@ import {
 import { useKeyboard } from "@opentui/react";
 import { InputBuffer } from "./input-buffer";
 import { allActions, getAction, type Action, type ActionCategory } from "./actions";
-import { colors } from "../theme";
+import { useColors } from "../theme";
 
 // ============================================
 // Context Types
@@ -302,6 +302,8 @@ interface LeaderModeIndicatorProps {
 }
 
 function LeaderModeIndicator({ sequence }: LeaderModeIndicatorProps) {
+  const colors = useColors();
+
   return (
     <box
       position="absolute"
@@ -327,6 +329,8 @@ interface KeybindHelpOverlayProps {
 }
 
 function KeybindHelpOverlay({ onClose }: KeybindHelpOverlayProps) {
+  const colors = useColors();
+
   const categories: ActionCategory[] = [
     "movement",
     "selection",

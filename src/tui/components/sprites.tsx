@@ -1,5 +1,6 @@
 import { RGBA } from "@opentui/core";
 import { useState, useEffect, useMemo } from "react";
+import { useColors } from "../theme";
 
 // Global animation tick - shared by all spinners to avoid excessive re-renders
 let globalTick = 0;
@@ -184,6 +185,7 @@ export function BlinkingEye() {
 export function TypingIndicator() {
   const frames = ["   ", ".  ", ".. ", "..."];
   const [frame, setFrame] = useState(0);
+  const colors = useColors();
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -192,7 +194,7 @@ export function TypingIndicator() {
     return () => clearInterval(interval);
   }, []);
 
-  return <text fg="gray" content={`typing${frames[frame]}`} />;
+  return <text fg={colors.secondaryText} content={`typing${frames[frame]}`} />;
 }
 
 /** Rocket launch animation */

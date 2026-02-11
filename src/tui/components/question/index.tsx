@@ -12,7 +12,7 @@
 
 import { useState, useCallback, useMemo } from "react";
 import { useKeyboard } from "@opentui/react";
-import { colors } from "../../theme";
+import { useColors } from "../../theme";
 import {
   type Question,
   type QuestionComponentProps,
@@ -42,6 +42,8 @@ export function QuestionComponent({
   initialAnswers = {},
   showReview = true,
 }: QuestionComponentProps) {
+  const colors = useColors();
+
   // Initialize answers with defaults
   const initialAnswerMap = useMemo(() => {
     const map: AnswerMap = {};
@@ -245,6 +247,8 @@ function QuestionInput({
   error,
   focused = false,
 }: QuestionInputProps) {
+  const colors = useColors();
+
   return (
     <box flexDirection="column" gap={1}>
       {/* Label */}
@@ -320,6 +324,8 @@ function TextInput({
   placeholder?: string;
   focused?: boolean;
 }) {
+  const colors = useColors();
+
   return (
     <box flexDirection="row" gap={1}>
       <text fg={colors.greenAccent}>{">"}</text>
@@ -347,6 +353,8 @@ function PasswordInput({
   placeholder?: string;
   focused?: boolean;
 }) {
+  const colors = useColors();
+
   return (
     <box flexDirection="row" gap={1}>
       <text fg={colors.greenAccent}>{">"}</text>
@@ -370,6 +378,8 @@ function YesNoInput({
   value: boolean;
   onChange: (value: boolean) => void;
 }) {
+  const colors = useColors();
+
   useKeyboard((key) => {
     if (key.name === "y" || key.name === "Y") {
       onChange(true);
@@ -414,6 +424,7 @@ function ChoiceInput({
   value: string;
   onChange: (value: string) => void;
 }) {
+  const colors = useColors();
   const [focusIndex, setFocusIndex] = useState(
     Math.max(0, options.findIndex((o) => o.value === value))
   );
@@ -483,6 +494,7 @@ function MultiChoiceInput({
   value: string[];
   onChange: (value: string[]) => void;
 }) {
+  const colors = useColors();
   const [focusIndex, setFocusIndex] = useState(0);
 
   const toggleOption = (optionValue: string) => {
@@ -574,6 +586,7 @@ function ReviewScreen({
   onBack,
   errors,
 }: ReviewScreenProps) {
+  const colors = useColors();
   const hasErrors = Object.keys(errors).length > 0;
 
   return (

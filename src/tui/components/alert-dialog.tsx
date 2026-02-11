@@ -1,5 +1,6 @@
 import { useKeyboard, useTerminalDimensions, useRenderer } from "@opentui/react";
 import { RGBA } from "@opentui/core";
+import { useColors } from "../theme";
 import type { JSX } from "react";
 
 export interface AlertDialogProps {
@@ -23,6 +24,7 @@ export default function AlertDialog({
 }: AlertDialogProps) {
   const dimensions = useTerminalDimensions();
   const renderer = useRenderer();
+  const colors = useColors();
 
   useKeyboard((key) => {
     if (!open) return;
@@ -61,7 +63,7 @@ export default function AlertDialog({
         width={size === "large" ? 80 : 60}
         maxWidth={dimensions.width - 2}
         border={true}
-        borderColor="green"
+        borderColor={colors.greenAccent}
         backgroundColor="black"
         flexDirection="column"
         padding={1}
@@ -69,15 +71,15 @@ export default function AlertDialog({
       >
         {title ? (
           <box marginBottom={1}>
-            <text fg="green">{title}</text>
+            <text fg={colors.greenAccent}>{title}</text>
           </box>
         ) : null}
         <box flexDirection="column">
-          {message ? <text fg="white">{message}</text> : children}
+          {message ? <text fg={colors.primaryText}>{message}</text> : children}
         </box>
         {!disableEscape ? (
           <box marginTop={1}>
-            <text fg="gray">Press Esc to close</text>
+            <text fg={colors.secondaryText}>Press Esc to close</text>
           </box>
         ) : null}
       </box>

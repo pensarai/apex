@@ -1,15 +1,9 @@
 import { useState, useMemo } from "react";
 import { useKeyboard } from "@opentui/react";
-import { RGBA } from "@opentui/core";
 import AgentDisplay, { type DisplayMessage } from "../agent-display";
 import { SpinnerDots } from "../sprites";
 import { useDialog } from "../../context/dialog";
-
-// Color palette (matching home view)
-export const greenBullet = RGBA.fromInts(76, 175, 80, 255);
-export const creamText = RGBA.fromInts(255, 248, 220, 255);
-export const dimText = RGBA.fromInts(120, 120, 120, 255);
-export const darkBg = RGBA.fromInts(10, 10, 10, 255);
+import { useColors } from "../../theme";
 
 // Re-export DisplayMessage as UIMessage for backwards compatibility
 export type UIMessage = DisplayMessage;
@@ -54,6 +48,8 @@ export default function SwarmDashboard({
   const [focusedIndex, setFocusedIndex] = useState(0);
   const [showDiscoveryLogs, setShowDiscoveryLogs] = useState(false);
   const { stack, externalDialogOpen } = useDialog();
+  const colors = useColors();
+  const { greenAccent: greenBullet, creamText, dimText, backgroundDarker: darkBg } = colors;
 
   // Separate discovery and pentest agents
   const discoveryAgent = useMemo(
@@ -303,6 +299,9 @@ function DiscoveryPanel({
   showLogs,
   onToggleLogs,
 }: DiscoveryPanelProps) {
+  const colors = useColors();
+  const { greenAccent: greenBullet, creamText, dimText, backgroundDarker: darkBg } = colors;
+
   // Extract endpoints from agent messages
   const endpoints = useMemo(() => {
     if (!agent) return [];
@@ -463,6 +462,9 @@ interface AgentCardProps {
 }
 
 function AgentCard({ agent, focused, onSelect }: AgentCardProps) {
+  const colors = useColors();
+  const { greenAccent: greenBullet, creamText, dimText, backgroundDarker: darkBg } = colors;
+
   const statusIcon = {
     pending: "◐",
     completed: "✓",
@@ -473,7 +475,7 @@ function AgentCard({ agent, focused, onSelect }: AgentCardProps) {
   const statusColor = {
     pending: greenBullet,
     completed: greenBullet,
-    failed: RGBA.fromInts(244, 67, 54, 255),
+    failed: colors.errorColor,
     canceled: dimText,
   }[agent.status];
 
@@ -619,6 +621,9 @@ function MetricsBar({
   isExecuting,
   showKillHint,
 }: MetricsBarProps) {
+  const colors = useColors();
+  const { greenAccent: greenBullet, dimText } = colors;
+
   // Format duration as mm:ss
   const formattedDuration = useMemo(() => {
     const mins = Math.floor(duration / 60);
@@ -694,10 +699,13 @@ interface AgentDetailViewProps {
 }
 
 function AgentDetailView({ agent, onBack }: AgentDetailViewProps) {
+  const colors = useColors();
+  const { greenAccent: greenBullet, creamText, dimText } = colors;
+
   const statusColor = {
     pending: greenBullet,
     completed: greenBullet,
-    failed: RGBA.fromInts(244, 67, 54, 255),
+    failed: colors.errorColor,
     canceled: dimText,
   }[agent.status];
 

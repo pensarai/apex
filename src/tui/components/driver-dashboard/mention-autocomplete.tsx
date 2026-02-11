@@ -6,14 +6,8 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { useKeyboard } from "@opentui/react";
-import { RGBA } from "@opentui/core";
 import type { DiscoveredEndpoint } from "../../../core/agent/driverModeAgent/targetExtractor";
-
-// Color palette
-const greenBullet = RGBA.fromInts(76, 175, 80, 255);
-const creamText = RGBA.fromInts(255, 248, 220, 255);
-const dimText = RGBA.fromInts(120, 120, 120, 255);
-const darkBg = RGBA.fromInts(20, 20, 20, 255);
+import { useColors } from "../../theme";
 
 interface MentionAutocompleteProps {
   endpoints: DiscoveredEndpoint[];
@@ -29,6 +23,8 @@ export default function MentionAutocomplete({
   onClose,
 }: MentionAutocompleteProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const colors = useColors();
+  const { greenAccent: greenBullet, creamText, dimText, backgroundDarker: darkBg } = colors;
 
   // Filter endpoints based on query
   const filteredEndpoints = useMemo(() => {
@@ -126,6 +122,9 @@ function MentionItem({
   endpoint: DiscoveredEndpoint;
   selected: boolean;
 }) {
+  const colors = useColors();
+  const { greenAccent: greenBullet, creamText, backgroundDarker: darkBg } = colors;
+
   // Truncate URL for display
   const displayUrl = endpoint.url.length > 50
     ? endpoint.url.substring(0, 47) + '...'

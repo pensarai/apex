@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
 import { useKeyboard } from "@opentui/react";
-import { RGBA } from "@opentui/core";
 import Input from "../input";
 import { useRoute } from "../../context/route";
 import { useConfig } from "../../context/config";
@@ -12,6 +11,7 @@ import type { OperatorMode, PermissionTier } from "../../../core/operator";
 import { OPERATOR_MODES, PERMISSION_TIERS } from "../../../core/operator";
 import type { ModelInfo } from "../../../core/ai";
 import { getAvailableModels } from "../../../core/providers/utils";
+import { useColors } from "../../theme";
 
 type WizardStep = "target" | "mode" | "creating";
 
@@ -41,12 +41,6 @@ interface HITLWizardProps {
   initialCustomHeaders?: Record<string, string>;
   initialModel?: string;
 }
-
-const greenBullet = RGBA.fromInts(76, 175, 80, 255);
-const creamText = RGBA.fromInts(255, 248, 220, 255);
-const dimText = RGBA.fromInts(120, 120, 120, 255);
-const yellowText = RGBA.fromInts(255, 235, 59, 255);
-const blueText = RGBA.fromInts(100, 181, 246, 255);
 
 const providerNames: Record<string, string> = {
   anthropic: "Claude",
@@ -89,6 +83,9 @@ export default function HITLWizard(props: HITLWizardProps) {
   const route = useRoute();
   const config = useConfig();
   const { model, setModel, isModelUserSelected } = useAgent();
+  const colors = useColors();
+  const { greenAccent: greenBullet, creamText, dimText, yellowText } = colors;
+  const blueText = colors.toolColor;
 
   const initialStep: WizardStep = initialTarget ? "mode" : "target";
 

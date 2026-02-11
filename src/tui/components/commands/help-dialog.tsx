@@ -8,21 +8,14 @@
 
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
-import { RGBA, ScrollBoxRenderable } from "@opentui/core";
+import { ScrollBoxRenderable } from "@opentui/core";
 import { useCommand } from "../../context/command";
 import { useRoute } from "../../context/route";
+import { useColors } from "../../theme";
 import type { CommandConfig } from "../../command-registry";
 
-// Colors (matching tools-panel)
-const bgOverlay = RGBA.fromInts(0, 0, 0, 200);
-const bgPanel = RGBA.fromInts(20, 20, 20, 255);
-const borderColor = RGBA.fromInts(60, 60, 60, 255);
-const greenAccent = RGBA.fromInts(76, 175, 80, 255);
-const dimText = RGBA.fromInts(120, 120, 120, 255);
-const selectedBg = RGBA.fromInts(40, 40, 60, 255);
-const white = RGBA.fromInts(255, 255, 255, 255);
-
 export default function HelpDialog() {
+  const colors = useColors();
   const { commands } = useCommand();
   const route = useRoute();
   const dimensions = useTerminalDimensions();
@@ -149,43 +142,43 @@ export default function HelpDialog() {
         position="absolute"
         left={0}
         top={0}
-        backgroundColor={bgOverlay}
+        backgroundColor={colors.overlayBg}
       >
         <box
           width={panelWidth}
           height={detailHeight}
-          backgroundColor={bgPanel}
-          borderColor={greenAccent}
+          backgroundColor={colors.panelBg}
+          borderColor={colors.greenAccent}
           borderStyle="single"
           flexDirection="column"
         >
           {/* Detail Header */}
           <box width="100%" padding={1} flexDirection="row">
-            <text fg={greenAccent}>
+            <text fg={colors.greenAccent}>
               /{selectedCommand.name}
             </text>
-            <text fg={dimText}>
+            <text fg={colors.dimText}>
               {`  (${selectedCommand.category || "General"})`}
             </text>
           </box>
 
           {/* Separator */}
           <box width="100%" height={1}>
-            <text fg={borderColor}>{"─".repeat(panelWidth - 2)}</text>
+            <text fg={colors.panelBorder}>{"─".repeat(panelWidth - 2)}</text>
           </box>
 
           {/* Detail Content */}
           <box width="100%" padding={2} flexDirection="column" flexGrow={1}>
             {/* Description */}
-            <text fg={white}>
+            <text fg={colors.primaryText}>
               {selectedCommand.description || "No description available"}
             </text>
 
             {/* Aliases */}
             {selectedCommand.aliases && selectedCommand.aliases.length > 0 && (
               <box flexDirection="row" marginTop={1}>
-                <text fg={dimText}>Aliases: </text>
-                <text fg={white}>
+                <text fg={colors.dimText}>Aliases: </text>
+                <text fg={colors.primaryText}>
                   {selectedCommand.aliases.map(a => `/${a}`).join(", ")}
                 </text>
               </box>
@@ -195,17 +188,17 @@ export default function HelpDialog() {
             {hasOptions && (
               <>
                 <box height={1} />
-                <text fg={dimText}>Options:</text>
+                <text fg={colors.dimText}>Options:</text>
                 <box height={1} />
                 {selectedCommand.options?.map((opt, idx) => (
                   <box key={idx} flexDirection="row" paddingLeft={2}>
-                    <text fg={greenAccent}>
+                    <text fg={colors.greenAccent}>
                       {opt.name}
                     </text>
                     {opt.valueHint && (
-                      <text fg={dimText}>{` ${opt.valueHint}`}</text>
+                      <text fg={colors.dimText}>{` ${opt.valueHint}`}</text>
                     )}
-                    <text fg={white}>{`  ${opt.description}`}</text>
+                    <text fg={colors.primaryText}>{`  ${opt.description}`}</text>
                   </box>
                 ))}
               </>
@@ -214,12 +207,12 @@ export default function HelpDialog() {
 
           {/* Separator */}
           <box width="100%" height={1}>
-            <text fg={borderColor}>{"─".repeat(panelWidth - 2)}</text>
+            <text fg={colors.panelBorder}>{"─".repeat(panelWidth - 2)}</text>
           </box>
 
           {/* Detail Footer */}
           <box width="100%" padding={1} flexDirection="row">
-            <text fg={dimText}>
+            <text fg={colors.dimText}>
               [enter/esc] back
             </text>
           </box>
@@ -238,34 +231,34 @@ export default function HelpDialog() {
       position="absolute"
       left={0}
       top={0}
-      backgroundColor={bgOverlay}
+      backgroundColor={colors.overlayBg}
     >
       <box
         width={panelWidth}
         height={panelHeight}
-        backgroundColor={bgPanel}
-        borderColor={borderColor}
+        backgroundColor={colors.panelBg}
+        borderColor={colors.panelBorder}
         borderStyle="single"
         flexDirection="column"
       >
         {/* Header */}
         <box width="100%" padding={1} flexDirection="row">
-          <text fg={greenAccent}>
+          <text fg={colors.greenAccent}>
             {"Help - Available Commands".padEnd(panelWidth - 20)}
           </text>
-          <text fg={dimText}>
+          <text fg={colors.dimText}>
             {`${flatCommands.length} commands`}
           </text>
         </box>
 
         {/* Separator */}
         <box width="100%" height={1}>
-          <text fg={borderColor}>{"─".repeat(panelWidth - 2)}</text>
+          <text fg={colors.panelBorder}>{"─".repeat(panelWidth - 2)}</text>
         </box>
 
         {/* Column Headers */}
         <box width="100%" paddingLeft={2} paddingRight={2} flexDirection="row">
-          <text fg={dimText}>
+          <text fg={colors.dimText}>
             {"Command".padEnd(18)}{"Category".padEnd(14)}{"Description"}
           </text>
         </box>
@@ -297,21 +290,21 @@ export default function HelpDialog() {
                 key={cmd.name}
                 id={cmd.name}
                 width="100%"
-                backgroundColor={isSelected ? selectedBg : undefined}
+                backgroundColor={isSelected ? colors.selectedBg : undefined}
                 flexDirection="row"
                 paddingLeft={1}
               >
-                <text fg={isSelected ? greenAccent : white}>
+                <text fg={isSelected ? colors.greenAccent : colors.primaryText}>
                   {name}
                 </text>
-                <text fg={dimText}>
+                <text fg={colors.dimText}>
                   {category}
                 </text>
-                <text fg={isSelected ? white : dimText}>
+                <text fg={isSelected ? colors.primaryText : colors.dimText}>
                   {desc}
                 </text>
                 {hasOptions && (
-                  <text fg={greenAccent}>{optionHint}</text>
+                  <text fg={colors.greenAccent}>{optionHint}</text>
                 )}
               </box>
             );
@@ -320,12 +313,12 @@ export default function HelpDialog() {
 
         {/* Separator */}
         <box width="100%" height={1}>
-          <text fg={borderColor}>{"─".repeat(panelWidth - 2)}</text>
+          <text fg={colors.panelBorder}>{"─".repeat(panelWidth - 2)}</text>
         </box>
 
         {/* Footer */}
         <box width="100%" padding={1} flexDirection="row">
-          <text fg={dimText}>
+          <text fg={colors.dimText}>
             [j/k] navigate  [enter/v] details  [esc] close
           </text>
         </box>

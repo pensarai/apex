@@ -7,7 +7,7 @@
 
 import type { DisplayMessage } from "../agent-display";
 import type { PendingApproval } from "../../../core/operator";
-import { colors } from "../../theme";
+import { useColors } from "../../theme";
 import {
   MessageRenderer,
   InlineApprovalPrompt,
@@ -35,6 +35,7 @@ export function ChatView({
   verboseMode,
   expandedLogs,
 }: ChatViewProps) {
+  const colors = useColors();
   const isRunning = status === "running";
   const hasPendingApproval = pendingApprovals.length > 0;
   const lastMessage = messages[messages.length - 1];

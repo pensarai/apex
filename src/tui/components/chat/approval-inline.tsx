@@ -5,7 +5,7 @@
  * Provides visual context for pending approvals.
  */
 
-import { colors, getTierColor } from "../../theme";
+import { useColors, getTierColor } from "../../theme";
 import { getToolSummary } from "../shared/tool-registry";
 import type { PendingApproval } from "../../../core/operator";
 
@@ -18,7 +18,8 @@ interface InlineApprovalPromptProps {
  * Displayed in the chat flow.
  */
 export function InlineApprovalPrompt({ approval }: InlineApprovalPromptProps) {
-  const tierColor = getTierColor(approval.tier);
+  const colors = useColors();
+  const tierColor = getTierColor(approval.tier, colors);
 
   // Get the description if provided
   const description = approval.args?.toolCallDescription as string | undefined;

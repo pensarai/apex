@@ -13,7 +13,7 @@ import {
 } from "@opentui/core";
 import { marked } from "marked";
 
-// Shared color constants
+// Default color constants (dark theme fallback)
 export const codeColor = RGBA.fromInts(100, 255, 100, 255); // green for code
 export const linkColor = RGBA.fromInts(100, 200, 255, 255); // cyan for links
 
@@ -31,7 +31,7 @@ export const linkColor = RGBA.fromInts(100, 200, 255, 255); // cyan for links
  * - Blockquotes (>)
  * - Paragraphs
  */
-export function markdownToStyledText(content: string): StyledText {
+export function markdownToStyledText(content: string, themeColors?: { codeColor: RGBA; linkColor: RGBA }): StyledText {
   // Handle empty or whitespace-only content
   if (!content || !content.trim()) {
     return new StyledText([
@@ -65,14 +65,14 @@ export function markdownToStyledText(content: string): StyledText {
           chunks.push({
             __isChunk: true,
             text: token.text,
-            fg: codeColor,
+            fg: themeColors?.codeColor ?? codeColor,
             attributes: defaultAttrs,
           });
         } else if (token.type === "link") {
           chunks.push({
             __isChunk: true,
             text: token.text,
-            fg: linkColor,
+            fg: themeColors?.linkColor ?? linkColor,
             attributes: defaultAttrs | TextAttributes.UNDERLINE,
           });
         } else if (token.type === "br") {
@@ -109,7 +109,7 @@ export function markdownToStyledText(content: string): StyledText {
         chunks.push({
           __isChunk: true,
           text: token.text + "\n",
-          fg: codeColor,
+          fg: themeColors?.codeColor ?? codeColor,
           attributes: 0,
         });
       } else if (token.type === "blockquote") {

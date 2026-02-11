@@ -1,18 +1,16 @@
 import { useKeyboard } from "@opentui/react";
-import { RGBA } from "@opentui/core";
 import { useAgent } from "../../context/agent";
 import { useRoute } from "../../context/route";
 import { useConfig } from "../../context/config";
 import { ModelPicker } from "../model-picker";
-
-const greenAccent = RGBA.fromInts(76, 175, 80, 255);
-const creamText = RGBA.fromInts(255, 248, 220, 255);
-const dimText = RGBA.fromInts(120, 120, 120, 255);
+import { useColors } from "../../theme";
 
 export default function ModelsDisplay() {
   const route = useRoute();
   const config = useConfig();
   const { model, setModel, isModelUserSelected } = useAgent();
+  const colors = useColors();
+  const { greenAccent, creamText, dimText } = colors;
 
   const goHome = () => {
     route.navigate({

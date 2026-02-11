@@ -1,7 +1,8 @@
 import { useKeyboard } from "@opentui/react";
-import { RGBA } from "@opentui/core";
+
 import { useState } from "react";
 import Input from "../input";
+import { useColors } from "../../theme";
 import { type ProviderType } from "../../../core/providers";
 
 interface APIKeyInputProps {
@@ -18,6 +19,7 @@ export default function APIKeyInput({
   onCancel,
 }: APIKeyInputProps) {
   const [apiKey, setApiKey] = useState("");
+  const colors = useColors();
 
   useKeyboard((key) => {
     // Escape - Cancel
@@ -52,12 +54,12 @@ export default function APIKeyInput({
       height="100%"
       justifyContent="center"
       alignItems="center"
-      backgroundColor={RGBA.fromInts(0, 0, 0, 200)}
+      backgroundColor={colors.overlayBg}
     >
       <box
         width={70}
         border={true}
-        borderColor="green"
+        borderColor={colors.greenAccent}
         backgroundColor="black"
         flexDirection="column"
         padding={2}
@@ -68,15 +70,15 @@ export default function APIKeyInput({
           justifyContent="space-between"
           marginBottom={2}
         >
-          <text fg="green">
+          <text fg={colors.greenAccent}>
             Connect {providerName}
           </text>
-          <text fg="gray">esc</text>
+          <text fg={colors.secondaryText}>esc</text>
         </box>
 
         {/* Instructions */}
         <box marginBottom={2}>
-          <text fg="gray">{getProviderInstructions(provider)}</text>
+          <text fg={colors.secondaryText}>{getProviderInstructions(provider)}</text>
         </box>
 
         {/* Input */}
@@ -104,9 +106,9 @@ export default function APIKeyInput({
 
         {/* Footer help text */}
         <box marginTop={1}>
-          <text fg="gray">
-            <span fg="green">[ENTER]</span> Save ·{" "}
-            <span fg="green">[ESC]</span> Cancel
+          <text fg={colors.secondaryText}>
+            <span fg={colors.greenAccent}>[ENTER]</span> Save ·{" "}
+            <span fg={colors.greenAccent}>[ESC]</span> Cancel
           </text>
         </box>
       </box>

@@ -4,14 +4,9 @@
  * Shows discovered endpoints from recon with ability to spawn agents.
  */
 
-import { RGBA } from "@opentui/core";
 import type { DiscoveredEndpoint } from "../../../core/agent/driverModeAgent/targetExtractor";
 import { SpinnerDots } from "../sprites";
-
-// Color palette
-const greenBullet = RGBA.fromInts(76, 175, 80, 255);
-const creamText = RGBA.fromInts(255, 248, 220, 255);
-const dimText = RGBA.fromInts(120, 120, 120, 255);
+import { useColors } from "../../theme";
 
 interface EndpointSidebarProps {
   endpoints: DiscoveredEndpoint[];
@@ -26,6 +21,9 @@ export default function EndpointSidebar({
   reconStatus,
   onSelectEndpoint,
 }: EndpointSidebarProps) {
+  const colors = useColors();
+  const { greenAccent: greenBullet, creamText, dimText } = colors;
+
   return (
     <box
       flexDirection="column"
@@ -86,6 +84,9 @@ function EndpointItem({
   focused: boolean;
   onSelect: () => void;
 }) {
+  const colors = useColors();
+  const { greenAccent: greenBullet, creamText, dimText } = colors;
+
   // Truncate URL for display
   const displayUrl = endpoint.url.length > 40
     ? endpoint.url.substring(0, 37) + '...'

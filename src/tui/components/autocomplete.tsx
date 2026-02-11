@@ -2,7 +2,8 @@ import { useState, useEffect, forwardRef } from "react";
 import { useKeyboard } from "@opentui/react";
 import Input from "./input";
 import type { InputProps } from "@opentui/react";
-import { RGBA, type InputRenderable, type SubmitEvent } from "@opentui/core";
+import { type InputRenderable, type SubmitEvent } from "@opentui/core";
+import { useColors } from "../theme";
 
 export interface AutocompleteOption {
   value: string;
@@ -34,6 +35,7 @@ const Autocomplete = forwardRef<InputRenderable, AutocompleteProps>(
   ) {
     const [selectedIndex, setSelectedIndex] = useState(-1);
     const [showSuggestions, setShowSuggestions] = useState(false);
+    const colors = useColors();
 
     // Filter suggestions based on input value
     const getSuggestions = (): AutocompleteOption[] => {
@@ -141,20 +143,17 @@ const Autocomplete = forwardRef<InputRenderable, AutocompleteProps>(
           <box marginTop={1} marginLeft={2} flexDirection="column">
             {suggestions.map((suggestion, index) => {
               const isSelected = index === selectedIndex;
-              const greenAccent = RGBA.fromInts(76, 175, 80, 255);
-              const creamText = RGBA.fromInts(255, 248, 220, 255);
-              const dimText = RGBA.fromInts(100, 100, 100, 255);
 
               return (
                 <box key={suggestion.value} flexDirection="row" gap={1}>
-                  <text fg={isSelected ? greenAccent : dimText}>
+                  <text fg={isSelected ? colors.greenAccent : colors.dimText}>
                     {isSelected ? "█" : "░"}
                   </text>
-                  <text fg={isSelected ? creamText : dimText}>
+                  <text fg={isSelected ? colors.creamText : colors.dimText}>
                     {suggestion.label}
                   </text>
                   {suggestion.description ? (
-                    <text fg={dimText}> {suggestion.description}</text>
+                    <text fg={colors.dimText}> {suggestion.description}</text>
                   ) : null}
                 </box>
               );

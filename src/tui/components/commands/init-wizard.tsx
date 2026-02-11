@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { useKeyboard } from "@opentui/react";
-import { RGBA } from "@opentui/core";
 import Input from "../input";
 import { useRoute } from "../../context/route";
 import { Session } from "../../../core/session";
 import { SpinnerDots } from "../sprites";
 import { generateRandomName } from "../../../util/name";
+import { useColors } from "../../theme";
 
 // Simplified wizard step types
 type WizardStep = "target" | "configure" | "creating";
@@ -31,13 +31,10 @@ interface WizardState {
   };
 }
 
-// Home view color palette
-const greenBullet = RGBA.fromInts(76, 175, 80, 255);
-const creamText = RGBA.fromInts(255, 248, 220, 255);
-const dimText = RGBA.fromInts(120, 120, 120, 255);
-
 export default function InitWizard() {
   const route = useRoute();
+  const colors = useColors();
+  const { greenAccent: greenBullet, creamText, dimText } = colors;
 
   // Wizard state
   const [currentStep, setCurrentStep] = useState<WizardStep>("target");

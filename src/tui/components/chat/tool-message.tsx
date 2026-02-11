@@ -9,7 +9,7 @@
  */
 
 import { memo, useState } from "react";
-import { colors } from "../../theme";
+import { useColors } from "../../theme";
 import { AsciiSpinner } from "../shared/ascii-spinner";
 import { getToolSummary } from "../shared/tool-registry";
 import { getResultSummary, type ResultSummary } from "../shared/result-registry";
@@ -43,6 +43,7 @@ export const ToolMessage = memo(function ToolMessage({
   verbose = false,
   expandedLogs = false,
 }: ToolMessageProps) {
+  const colors = useColors();
   const [showArgs, setShowArgs] = useState(false);
   const [showOutput, setShowOutput] = useState(false);
 

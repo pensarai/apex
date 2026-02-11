@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useKeyboard } from "@opentui/react";
-import { RGBA } from "@opentui/core";
 import { useRoute } from "../../context/route";
 import { useAgent } from "../../context/agent";
+import { useColors } from "../../theme";
 import SwarmDashboard, {
   type UIMessage,
   type Subagent,
@@ -28,11 +28,6 @@ import { existsSync } from "fs";
 import { exec } from "child_process";
 import { SpinnerDots } from "../sprites";
 
-// Color palette
-const greenBullet = RGBA.fromInts(76, 175, 80, 255);
-const creamText = RGBA.fromInts(255, 248, 220, 255);
-const dimText = RGBA.fromInts(120, 120, 120, 255);
-
 // UIMessage helper for tool messages
 type ToolUIMessage = UIMessage & {
   role: "tool";
@@ -51,6 +46,7 @@ export default function SessionView({
   isResume = false,
 }: SessionViewProps) {
   const route = useRoute();
+  const colors = useColors();
   const { model, setThinking, isExecuting, addTokenUsage, setIsExecuting } =
     useAgent();
 
@@ -745,7 +741,7 @@ export default function SessionView({
         gap={2}
       >
         <text fg="red">Error: {error || "Session not found"}</text>
-        <text fg={dimText}>Press ESC to return home</text>
+        <text fg={colors.dimText}>Press ESC to return home</text>
       </box>
     );
   }

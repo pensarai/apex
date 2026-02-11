@@ -3,16 +3,8 @@
  * Markers: ✔ confirmed, ⚠ suspicious, ✖ clean, ⊘ blocked, (space) untested
  */
 
-import { RGBA } from "@opentui/core";
 import type { Endpoint, EndpointStatus } from "../types";
-
-const creamText = RGBA.fromInts(255, 248, 220, 255);
-const dimText = RGBA.fromInts(120, 120, 120, 255);
-const greenAccent = RGBA.fromInts(76, 175, 80, 255);
-const blueText = RGBA.fromInts(100, 181, 246, 255);
-const yellowText = RGBA.fromInts(255, 235, 59, 255);
-const redText = RGBA.fromInts(244, 67, 54, 255);
-const orangeText = RGBA.fromInts(255, 152, 0, 255);
+import { useColors, type ThemeColors } from "../../../theme";
 
 interface AttackSurfacePanelProps {
   endpoints: Endpoint[];
@@ -20,6 +12,8 @@ interface AttackSurfacePanelProps {
 }
 
 export function AttackSurfacePanel({ endpoints, maxVisible = 5 }: AttackSurfacePanelProps) {
+  const colors = useColors();
+  const { creamText, dimText, greenAccent } = colors;
   const visible = endpoints.slice(0, maxVisible);
   const remaining = endpoints.length - maxVisible;
 
@@ -36,9 +30,9 @@ export function AttackSurfacePanel({ endpoints, maxVisible = 5 }: AttackSurfaceP
           {visible.map((ep) => (
             <box key={ep.id} flexDirection="row" gap={1}>
               {/* Status marker */}
-              <text fg={getStatusColor(ep.status)}>{getStatusMarker(ep.status)}</text>
+              <text fg={getStatusColor(ep.status, colors)}>{getStatusMarker(ep.status)}</text>
               {/* Method */}
-              <text fg={getMethodColor(ep.method)}>{ep.method.padEnd(4)}</text>
+              <text fg={getMethodColor(ep.method, colors)}>{ep.method.padEnd(4)}</text>
               {/* Path */}
               <text fg={dimText}>{truncatePath(ep.path, 14)}</text>
               {/* Vuln type if confirmed */}
@@ -82,35 +76,35 @@ function getStatusMarker(status?: EndpointStatus): string {
 /**
  * Get color for status marker
  */
-function getStatusColor(status?: EndpointStatus) {
+function getStatusColor(status: EndpointStatus | undefined, colors: ThemeColors) {
   switch (status) {
     case "confirmed":
-      return greenAccent;
+      return colors.greenAccent;
     case "suspicious":
-      return yellowText;
+      return colors.yellowText;
     case "clean":
-      return dimText;
+      return colors.dimText;
     case "blocked":
-      return orangeText;
+      return colors.orangeText;
     case "untested":
     default:
-      return dimText;
+      return colors.dimText;
   }
 }
 
-function getMethodColor(method: string) {
+function getMethodColor(method: string, colors: ThemeColors) {
   switch (method.toUpperCase()) {
     case "GET":
-      return greenAccent;
+      return colors.greenAccent;
     case "POST":
-      return blueText;
+      return colors.toolColor;
     case "PUT":
     case "PATCH":
-      return RGBA.fromInts(255, 152, 0, 255); // orange
+      return colors.orangeText;
     case "DELETE":
-      return RGBA.fromInts(244, 67, 54, 255); // red
+      return colors.redText;
     default:
-      return dimText;
+      return colors.dimText;
   }
 }
 

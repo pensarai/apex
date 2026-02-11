@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
 import { useKeyboard } from "@opentui/react";
-import { RGBA } from "@opentui/core";
 import Input from "../input";
 import { useRoute } from "../../context/route";
 import { useConfig } from "../../context/config";
@@ -10,6 +9,7 @@ import { SpinnerDots } from "../sprites";
 import { generateRandomName } from "../../../util/name";
 import { type ModelInfo } from "../../../core/ai";
 import { getAvailableModels } from "../../../core/providers/utils";
+import { useColors } from "../../theme";
 
 // Wizard step types
 type WizardStep = "target" | "configure" | "creating";
@@ -65,11 +65,6 @@ interface WebWizardProps {
   initialModel?: string;
 }
 
-// Color palette
-const greenBullet = RGBA.fromInts(76, 175, 80, 255);
-const creamText = RGBA.fromInts(255, 248, 220, 255);
-const dimText = RGBA.fromInts(120, 120, 120, 255);
-
 export default function WebWizard({
   initialTarget,
   autoMode = false,
@@ -88,6 +83,8 @@ export default function WebWizard({
   const route = useRoute();
   const config = useConfig();
   const { model, setModel, isModelUserSelected } = useAgent();
+  const colors = useColors();
+  const { greenAccent: greenBullet, creamText, dimText } = colors;
 
   // Available models based on configured API keys
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);

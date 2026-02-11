@@ -7,17 +7,12 @@
 
 import { useState, useCallback } from "react";
 import { useKeyboard } from "@opentui/react";
-import { RGBA } from "@opentui/core";
 import type { PentestTarget } from "../../../core/agent/attackSurfaceAgent/types";
 import type { DiscoveredEndpoint } from "../../../core/agent/driverModeAgent/targetExtractor";
 import type { DisplayMessage } from "../agent-display";
 import AgentDisplay from "../agent-display";
 import MentionAutocomplete from "./mention-autocomplete";
-
-// Color palette
-const greenBullet = RGBA.fromInts(76, 175, 80, 255);
-const creamText = RGBA.fromInts(255, 248, 220, 255);
-const dimText = RGBA.fromInts(120, 120, 120, 255);
+import { useColors } from "../../theme";
 
 /**
  * Agent type expected by the chat view
@@ -48,6 +43,8 @@ export default function AgentChatView({
   const [inputValue, setInputValue] = useState('');
   const [showMentions, setShowMentions] = useState(false);
   const [mentionQuery, setMentionQuery] = useState('');
+  const colors = useColors();
+  const { greenAccent: greenBullet, creamText, dimText } = colors;
 
   // Status display
   const statusIcon = {
@@ -59,9 +56,9 @@ export default function AgentChatView({
 
   const statusColor = {
     running: greenBullet,
-    paused: RGBA.fromInts(255, 193, 7, 255),
+    paused: colors.yellowText,
     completed: greenBullet,
-    failed: RGBA.fromInts(244, 67, 54, 255),
+    failed: colors.errorColor,
   }[agent.status];
 
   // Handle input changes

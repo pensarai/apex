@@ -9,7 +9,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useKeyboard } from "@opentui/react";
-import { colors, getTierColor } from "../../theme";
+import { useColors, getTierColor } from "../../theme";
 import { PromptInput, type PromptInputRef } from "../shared/prompt-input";
 import { InputProvider, useInput } from "../../context/input";
 import type { PendingApproval, OperatorMode } from "../../../core/operator";
@@ -61,6 +61,7 @@ function NormalInputAreaInner({
   verboseMode = false,
   expandedLogs = false,
 }: Omit<InputAreaProps, 'pendingApproval' | 'onApprove' | 'onAutoApprove' | 'lastDeclineNote'>) {
+  const colors = useColors();
   const { inputValue, setInputValue } = useInput();
   const promptRef = useRef<PromptInputRef>(null);
   const isExternalUpdate = useRef(false);
@@ -212,8 +213,9 @@ function ApprovalInputArea({
   setRedirectInput,
   lastDeclineNote,
 }: ApprovalInputAreaProps) {
+  const colors = useColors();
   const [focusedElement, setFocusedElement] = useState(0); // 0=Yes, 1=Auto, 2=Input
-  const tierColor = getTierColor(approval.tier);
+  const tierColor = getTierColor(approval.tier, colors);
 
   useKeyboard((key) => {
     // Navigation

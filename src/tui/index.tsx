@@ -27,13 +27,15 @@ import ShortcutsDialog from "./components/commands/shortcuts-dialog";
 import HelpDialog from "./components/commands/help-dialog";
 import ModelsDisplay from "./components/commands/models-display";
 import { KeybindingProvider } from "./context/keybinding";
+import { detectColorScheme, ThemeProvider, type ColorScheme } from "./theme";
 
 interface AppProps {
   appConfig: Config;
+  colorScheme: ColorScheme;
 }
 
 function App(props: AppProps) {
-  const { appConfig } = props;
+  const { appConfig, colorScheme } = props;
   const [focusIndex, setFocusIndex] = useState(0);
   const [cwd, setCwd] = useState(process.cwd());
   const [ctrlCPressTime, setCtrlCPressTime] = useState<number | null>(null);
@@ -45,6 +47,7 @@ function App(props: AppProps) {
   const navigableItems = ["command-input"]; // List of items that can be focused
 
   return (
+    <ThemeProvider scheme={colorScheme}>
     <ConfigProvider config={appConfig}>
       <SessionProvider>
         <RouteProvider>
@@ -87,6 +90,7 @@ function App(props: AppProps) {
         </RouteProvider>
       </SessionProvider>
     </ConfigProvider>
+    </ThemeProvider>
   );
 }
 
@@ -311,6 +315,7 @@ function CommandDisplay({
 }
 
 async function main() {
+  const colorScheme = detectColorScheme();
   const appConfig = await config.get();
   const renderer = await createCliRenderer({ exitOnCtrlC: false });
 
@@ -337,7 +342,7 @@ async function main() {
     process.exit(1);
   });
 
-  createRoot(renderer).render(<App appConfig={appConfig} />);
+  createRoot(renderer).render(<App appConfig={appConfig} colorScheme={colorScheme} />);
 }
 
 main();

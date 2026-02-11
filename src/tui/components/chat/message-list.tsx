@@ -5,7 +5,7 @@
  * Unified for both chat and operator modes.
  */
 
-import { colors } from "../../theme";
+import { useColors } from "../../theme";
 import { MessageRenderer, getStableMessageKey, isToolMessage } from "../shared";
 import type { DisplayMessage } from "../agent-display";
 import type { PendingApproval } from "../../../core/operator";
@@ -86,6 +86,7 @@ export function MessageList({
   hasPendingTool = false,
   lastApprovedAction = null,
 }: MessageListProps) {
+  const colors = useColors();
   const hasMessages = messages.length > 0;
   const lastMessage = messages[messages.length - 1];
   const isLastAssistant = lastMessage?.role === "assistant";

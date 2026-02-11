@@ -6,6 +6,7 @@ import { SpinnerDots } from "./sprites";
 import { useState, memo } from "react";
 import type { Message } from "../../core/messages/types";
 import { useTerminalDimensions } from "@opentui/react";
+import { useColors } from "../theme";
 import { markdownToStyledText, getStableMessageKey, getArgsPreview } from "./shared";
 
 export type Subagent = {
@@ -78,6 +79,7 @@ export default function AgentDisplay({
   contextId = "root",
   focused = true,
 }: AgentDisplayProps) {
+  const colors = useColors();
   // Sort messages and subagents by creation time
   // Don't use useMemo to ensure we always have fresh data during rapid updates
   const messagesAndSubagents = [...messages, ...(subagents ?? [])].sort(
@@ -101,8 +103,8 @@ export default function AgentDisplay({
         },
         scrollbarOptions: {
           trackOptions: {
-            foregroundColor: "green",
-            backgroundColor: RGBA.fromInts(40, 40, 40, 255),
+            foregroundColor: colors.greenAccent,
+            backgroundColor: colors.backgroundDark,
           },
         },
       }}
@@ -139,7 +141,7 @@ export default function AgentDisplay({
 
       {isStreaming && (
         <box flexDirection="row" alignItems="center">
-          <SpinnerDots label="Thinking..." fg="green" />
+          <SpinnerDots label="Thinking..." fg={colors.greenAccent} />
         </box>
       )}
 
@@ -154,6 +156,7 @@ const SubAgentDisplay = memo(function SubAgentDisplay({
   subagent: Subagent;
 }) {
   const [open, setOpen] = useState(false);
+  const colors = useColors();
 
   return (
     <box
@@ -161,20 +164,20 @@ const SubAgentDisplay = memo(function SubAgentDisplay({
       onMouseDown={() => setOpen(!open)}
       width="100%"
       border={true}
-      borderColor="green"
-      backgroundColor={RGBA.fromInts(10, 10, 10, 255)}
+      borderColor={colors.greenAccent}
+      backgroundColor={colors.backgroundDarker}
     >
       <box flexDirection="row" alignItems="center" gap={1}>
         {subagent.status === "pending" && (
-          <SpinnerDots label={subagent.name} fg="green" />
+          <SpinnerDots label={subagent.name} fg={colors.greenAccent} />
         )}
         {subagent.status === "completed" && (
-          <text fg="green"> ✓ {subagent.name}</text>
+          <text fg={colors.greenAccent}> ✓ {subagent.name}</text>
         )}
         {subagent.status === "failed" && (
-          <text fg="red">✗ {subagent.name}</text>
+          <text fg={colors.redText}>✗ {subagent.name}</text>
         )}
-        <text fg="gray">{open ? "▼" : "▶"}</text>
+        <text fg={colors.secondaryText}>{open ? "▼" : "▶"}</text>
       </box>
       {open && (
         <AgentDisplay
@@ -195,6 +198,7 @@ const AgentMessage = memo(function AgentMessage({
   message: DisplayMessage;
 }) {
   const dimensions = useTerminalDimensions();
+  const colors = useColors();
   let content = "";
 
   if (typeof message.content === "string") {
@@ -242,7 +246,7 @@ const AgentMessage = memo(function AgentMessage({
     >
       {message.role !== "tool" && (
         <text
-          fg="green"
+          fg={colors.greenAccent}
           content={message.role === "user" ? "→ User" : "← Assistant"}
         />
       )}
@@ -252,14 +256,14 @@ const AgentMessage = memo(function AgentMessage({
             width={0}
             borderStyle="heavy"
             border={["right"]}
-            borderColor={RGBA.fromInts(30, 30, 30, 255)}
+            borderColor={colors.borderDark}
           />
         )}
         <box
           maxWidth={dimensions.width - 20}
           padding={message.role !== "tool" ? 1 : 0}
           backgroundColor={
-            message.role !== "tool" ? RGBA.fromInts(40, 40, 40, 255) : undefined
+            message.role !== "tool" ? colors.backgroundDark : undefined
           }
           flexDirection="column"
         >
@@ -269,11 +273,11 @@ const AgentMessage = memo(function AgentMessage({
                 label={
                   typeof displayContent === "string" ? displayContent : content
                 }
-                fg="green"
+                fg={colors.greenAccent}
               />
               {/* Args preview for pending tools */}
               {argsPreview && (
-                <text fg={RGBA.fromInts(120, 120, 120, 255)} content={`  ${argsPreview}`} />
+                <text fg={colors.dimText} content={`  ${argsPreview}`} />
               )}
               {/* Streaming logs for pending tools */}
               {streamingLogs.length > 0 && (
@@ -281,7 +285,7 @@ const AgentMessage = memo(function AgentMessage({
                   {streamingLogs.slice(-3).map((log, idx) => (
                     <text
                       key={idx}
-                      fg={RGBA.fromInts(100, 100, 100, 255)}
+                      fg={colors.dimText}
                       content={log.length > 100 ? log.slice(0, 100) + "…" : log}
                     />
                   ))}
@@ -293,18 +297,18 @@ const AgentMessage = memo(function AgentMessage({
               {/* Completed/error tool indicator */}
               {message.role === "tool" && (
                 <box flexDirection="row" gap={1}>
-                  <text fg={isErrorTool ? "red" : "green"}>
+                  <text fg={isErrorTool ? colors.redText : colors.greenAccent}>
                     {isErrorTool ? "✗" : "✓"}
                   </text>
-                  <text fg="white" content={displayContent} />
+                  <text fg={colors.primaryText} content={displayContent} />
                 </box>
               )}
               {message.role !== "tool" && (
-                <text fg="white" content={displayContent} />
+                <text fg={colors.primaryText} content={displayContent} />
               )}
               {/* Args preview for completed tools */}
               {message.role === "tool" && argsPreview && (
-                <text fg={RGBA.fromInts(120, 120, 120, 255)} content={`  ${argsPreview}`} />
+                <text fg={colors.dimText} content={`  ${argsPreview}`} />
               )}
             </>
           )}
@@ -314,7 +318,7 @@ const AgentMessage = memo(function AgentMessage({
             width={0}
             borderStyle="heavy"
             border={["left"]}
-            borderColor={RGBA.fromInts(30, 30, 30, 255)}
+            borderColor={colors.borderDark}
           />
         )}
       </box>
@@ -326,6 +330,7 @@ const AgentMessage = memo(function AgentMessage({
 function ToolDetails({ message }: { message: DisplayMessage }) {
   const [showArgs, setShowArgs] = useState(false);
   const [showResult, setShowResult] = useState(false);
+  const colors = useColors();
 
   if (message.role !== "tool") {
     return null;
@@ -362,12 +367,12 @@ function ToolDetails({ message }: { message: DisplayMessage }) {
           }}
         >
           <box flexDirection="row" alignItems="center" gap={1}>
-            <text fg={RGBA.fromInts(150, 150, 150, 255)}>
+            <text fg={colors.secondaryText}>
               {showArgs ? "▼ Hide args" : "▶ Show args"}
             </text>
           </box>
           {showArgs && (
-            <text fg={RGBA.fromInts(180, 180, 180, 255)}>
+            <text fg={colors.secondaryText}>
               {JSON.stringify(message.args, null, 2)}
             </text>
           )}
@@ -381,12 +386,12 @@ function ToolDetails({ message }: { message: DisplayMessage }) {
           }}
         >
           <box flexDirection="row" alignItems="center" gap={1}>
-            <text fg={RGBA.fromInts(100, 200, 100, 255)}>
+            <text fg={colors.successColor}>
               {showResult ? "▼ Hide output" : "▶ Show output"}
             </text>
           </box>
           {showResult && (
-            <text fg={RGBA.fromInts(150, 220, 150, 255)}>
+            <text fg={colors.successColor}>
               {formatResult(message.result)}
             </text>
           )}

@@ -2,11 +2,7 @@
  * Target State Panel - Shows host and discovered ports
  */
 
-import { RGBA } from "@opentui/core";
-
-const creamText = RGBA.fromInts(255, 248, 220, 255);
-const dimText = RGBA.fromInts(120, 120, 120, 255);
-const greenAccent = RGBA.fromInts(76, 175, 80, 255);
+import { useColors } from "../../../theme";
 
 interface TargetStatePanelProps {
   host: string;
@@ -14,6 +10,8 @@ interface TargetStatePanelProps {
 }
 
 export function TargetStatePanel({ host, ports }: TargetStatePanelProps) {
+  const colors = useColors();
+  const { creamText, dimText, greenAccent } = colors;
   const portsStr = ports.length > 0
     ? ports.map(p => p.port).join(", ")
     : "—";

@@ -6,18 +6,12 @@
  */
 
 import { useState, useCallback, useEffect } from "react";
-import { RGBA } from "@opentui/core";
 import { useKeyboard } from "@opentui/react";
 import { ModelPicker } from "../model-picker/ModelPicker";
 import type { ModelInfo } from "../../../core/ai";
 import { getAvailableModels } from "../../../core/providers/utils";
 import type { Config } from "../../../core/config/config";
-
-// Colors
-const greenAccent = RGBA.fromInts(76, 175, 80, 255);
-const creamText = RGBA.fromInts(255, 248, 220, 255);
-const dimText = RGBA.fromInts(120, 120, 120, 255);
-const borderColor = RGBA.fromInts(60, 60, 60, 255);
+import { useColors } from "../../theme";
 
 type FocusedField = "url" | "scope" | "model" | "start";
 
@@ -34,6 +28,9 @@ export interface SessionConfig {
 }
 
 export function ConfigView({ config, onBack, onStart }: ConfigViewProps) {
+  const colors = useColors();
+  const { greenAccent, creamText, dimText, borderDark: borderColor } = colors;
+
   // Form state
   const [targetUrl, setTargetUrl] = useState("https://");
   const [strictScope, setStrictScope] = useState(true);
@@ -234,7 +231,7 @@ export function ConfigView({ config, onBack, onStart }: ConfigViewProps) {
       {/* Validation hint */}
       {!isValid && targetUrl.length > 8 && (
         <box marginTop={1}>
-          <text fg={RGBA.fromInts(244, 67, 54, 255)}>
+          <text fg={colors.errorColor}>
             Please enter a valid URL (https://...)
           </text>
         </box>

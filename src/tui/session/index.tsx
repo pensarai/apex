@@ -32,7 +32,7 @@ import { useRoute } from "../context/route";
 import { useInput } from "../context/input";
 import { useFocus } from "../context/focus";
 import { useAgent } from "../context/agent";
-import { colors } from "../theme";
+import { useColors } from "../theme";
 import type { DisplayMessage } from "../components/agent-display";
 import { isToolMessage, useMessageState } from "../components/shared";
 import type { ModelInfo } from "../../core/ai";
@@ -109,6 +109,7 @@ export function SessionComponent({
   initialDirective,
   onExit,
 }: SessionProps) {
+  const colors = useColors();
   const route = useRoute();
   const { model: agentModel, addTokenUsage, tokenUsage } = useAgent();
   const { setInputValue } = useInput();

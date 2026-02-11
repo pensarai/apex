@@ -9,7 +9,7 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
-import { colors } from "../../theme";
+import { useColors } from "../../theme";
 import type { Endpoint, VerifiedVuln, Credential } from "../operator-dashboard/types";
 
 // ============================================
@@ -46,6 +46,8 @@ interface SidebarProps {
  * Collapsible sidebar for session context
  */
 export function Sidebar({ collapsed, state, width = "30%" }: SidebarProps) {
+  const colors = useColors();
+
   if (collapsed) {
     return null;
   }
@@ -85,6 +87,7 @@ interface TargetPanelProps {
 }
 
 function TargetPanel({ host, ports }: TargetPanelProps) {
+  const colors = useColors();
   const portsStr =
     ports.length > 0 ? ports.map((p) => p.port).join(", ") : "—";
 
@@ -110,6 +113,7 @@ interface AttackSurfacePanelProps {
 }
 
 function AttackSurfacePanel({ endpoints, maxVisible = 4 }: AttackSurfacePanelProps) {
+  const colors = useColors();
   const [expanded, setExpanded] = useState(false);
   const visibleEndpoints = expanded ? endpoints : endpoints.slice(0, maxVisible);
   const hasMore = endpoints.length > maxVisible;
@@ -181,6 +185,7 @@ interface CredentialsPanelProps {
 }
 
 function CredentialsPanel({ credentials, maxVisible = 3 }: CredentialsPanelProps) {
+  const colors = useColors();
   const [expanded, setExpanded] = useState(false);
   const visibleCreds = expanded ? credentials : credentials.slice(0, maxVisible);
   const hasMore = credentials.length > maxVisible;
@@ -244,6 +249,7 @@ interface VulnsPanelProps {
 }
 
 function VulnsPanel({ vulns, maxVisible = 3 }: VulnsPanelProps) {
+  const colors = useColors();
   const [expanded, setExpanded] = useState(false);
   const visibleVulns = expanded ? vulns : vulns.slice(0, maxVisible);
   const hasMore = vulns.length > maxVisible;

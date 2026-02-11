@@ -8,6 +8,7 @@ import { useFocus } from "../../context/focus";
 import { Session } from "../../../core/session";
 import { Storage } from "../../../core/storage";
 import { Dialog } from "../../context/dialog";
+import { useColors } from "../../theme";
 import { Renderable, ScrollBoxRenderable } from "@opentui/core";
 
 interface SessionsDisplayProps {
@@ -16,6 +17,7 @@ interface SessionsDisplayProps {
 
 export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
   const { refocusPrompt } = useFocus();
+  const colors = useColors();
   const [sessions, setSessions] = useState<(Session.SessionInfo)[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -280,15 +282,15 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
       >
         {/* Header */}
         <box flexDirection="row" justifyContent="space-between" width="100%">
-          <text fg="white">Sessions</text>
-          <text fg="gray">esc to close</text>
+          <text fg={colors.primaryText}>Sessions</text>
+          <text fg={colors.secondaryText}>esc to close</text>
         </box>
 
         {/* Search Input */}
         <box
           width="100%"
           border={["left"]}
-          borderColor="green"
+          borderColor={colors.greenAccent}
           backgroundColor="transparent"
         >
           <input
@@ -303,9 +305,9 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
 
         {/* Sessions List */}
         {loading ? (
-          <text fg="gray">Loading sessions...</text>
+          <text fg={colors.secondaryText}>Loading sessions...</text>
         ) : visualOrderSessions.length === 0 ? (
-          <text fg="gray">No sessions found</text>
+          <text fg={colors.secondaryText}>No sessions found</text>
         ) : (
           <box flexDirection="column" gap={2} flexGrow={1} maxHeight={10} overflow="hidden">
             <scrollbox
@@ -331,7 +333,7 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
               {groupedSessions.map((group) => (
                 <box key={group.date} flexDirection="column" gap={1}>
                   {/* Date Header */}
-                  <text fg="green">{group.date}</text>
+                  <text fg={colors.greenAccent}>{group.date}</text>
 
                   {/* Sessions in this date group */}
                   {group.sessions.map((session) => {
@@ -350,16 +352,16 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
                         onMouseDown={() => setSelectedIndex(session.index)}
                         backgroundColor="transparent"
                         border={isSelected ? ["left"] : undefined}
-                        borderColor={isSelected ? "green" : undefined}
+                        borderColor={isSelected ? colors.greenAccent : undefined}
                         paddingLeft={2}
                         flexDirection="row"
                         justifyContent="space-between"
                         width="100%"
                       >
-                        <text fg={isSelected ? "white" : "gray"}>
+                        <text fg={isSelected ? colors.primaryText : colors.secondaryText}>
                           {isSelected ? "● " : "  "}{session.name}
                         </text>
-                        <text fg="gray">{timeStr}</text>
+                        <text fg={colors.secondaryText}>{timeStr}</text>
                       </box>
                     );
                   })}
@@ -372,14 +374,14 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
         {/* Actions Footer */}
         {visualOrderSessions.length > 0 && (
           <box flexDirection="row" gap={2}>
-            <text fg="gray">
-              <span fg="green">[Enter]</span> Open · <span fg="green">[R]</span> Report · <span fg="green">[Ctrl+D]</span> Delete
+            <text fg={colors.secondaryText}>
+              <span fg={colors.greenAccent}>[Enter]</span> Open · <span fg={colors.greenAccent}>[R]</span> Report · <span fg={colors.greenAccent}>[Ctrl+D]</span> Delete
             </text>
           </box>
         )}
 
         {statusMessage && (
-          <text fg="green">{statusMessage}</text>
+          <text fg={colors.greenAccent}>{statusMessage}</text>
         )}
       </box>
     </Dialog>

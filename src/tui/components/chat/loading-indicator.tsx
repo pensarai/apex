@@ -5,7 +5,7 @@
  */
 
 import { useState, useEffect } from "react";
-import { colors } from "../../theme";
+import { useColors } from "../../theme";
 
 // Braille spinner frames for smooth animation
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -34,6 +34,7 @@ export function LoadingIndicator({
   action,
   toolName,
 }: LoadingIndicatorProps) {
+  const colors = useColors();
   const [spinnerFrame, setSpinnerFrame] = useState(0);
   const [dotsFrame, setDotsFrame] = useState(0);
 

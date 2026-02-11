@@ -10,8 +10,8 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useKeyboard } from "@opentui/react";
-import { RGBA } from "@opentui/core";
 import { existsSync, readFileSync } from "fs";
+import { useColors } from "../../theme";
 import { join } from "path";
 import { Session } from "../../../core/session";
 import type {
@@ -37,11 +37,6 @@ import EndpointSidebar from "./endpoint-sidebar";
 import AgentChatView from "./agent-chat-view";
 import MentionAutocomplete from "./mention-autocomplete";
 
-// Color palette
-const greenBullet = RGBA.fromInts(76, 175, 80, 255);
-const creamText = RGBA.fromInts(255, 248, 220, 255);
-const dimText = RGBA.fromInts(120, 120, 120, 255);
-const darkBg = RGBA.fromInts(10, 10, 10, 255);
 
 /**
  * Agent state in the driver dashboard
@@ -64,6 +59,8 @@ export default function DriverDashboard({ session }: DriverDashboardProps) {
   const route = useRoute();
   const { model } = useAgent();
   const { stack, externalDialogOpen } = useDialog();
+  const colors = useColors();
+  const { greenAccent: greenBullet, creamText, dimText, backgroundDarker: darkBg } = colors;
 
   // State
   const [currentView, setCurrentView] = useState<
@@ -705,7 +702,7 @@ export default function DriverDashboard({ session }: DriverDashboardProps) {
               textColor={loading ? "gray" : "white"}
               placeholder="@http://localhost:3000/api/user test for SQL injection..."
             />
-            {loading && <SpinnerDots fg="gray" />}
+            {loading && <SpinnerDots fg={colors.secondaryText} />}
           </box>
         </box>
       )}
@@ -745,6 +742,9 @@ function AgentCard({
   agent: DriverAgent;
   focused: boolean;
 }) {
+  const colors = useColors();
+  const { greenAccent: greenBullet, creamText, dimText } = colors;
+
   const statusIcon = {
     running: "◐",
     paused: "◑",
@@ -754,9 +754,9 @@ function AgentCard({
 
   const statusColor = {
     running: greenBullet,
-    paused: RGBA.fromInts(255, 193, 7, 255),
+    paused: colors.yellowText,
     completed: greenBullet,
-    failed: RGBA.fromInts(244, 67, 54, 255),
+    failed: colors.errorColor,
   }[agent.status];
 
   return (

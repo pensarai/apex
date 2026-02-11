@@ -6,7 +6,7 @@
  */
 
 import { memo, useState } from "react";
-import { colors } from "../../theme";
+import { useColors } from "../../theme";
 import { AsciiSpinner } from "./ascii-spinner";
 import { getToolSummary } from "./tool-registry";
 import { getResultSummary, type ResultSummary } from "./result-registry";
@@ -27,6 +27,7 @@ export const ToolRenderer = memo(function ToolRenderer({
   verbose = false,
   expandedLogs = false,
 }: ToolRendererProps) {
+  const colors = useColors();
   const [showOutput, setShowOutput] = useState(false);
 
   // Type guard ensures we have a tool message
