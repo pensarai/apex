@@ -22,7 +22,7 @@ export type Subagent = {
   target: string;
   messages: DisplayMessage[];
   createdAt: Date;
-  status: "pending" | "completed" | "failed";
+  status: "pending" | "completed" | "failed" | "canceled";
 };
 
 interface SwarmDashboardProps {
@@ -33,6 +33,7 @@ interface SwarmDashboardProps {
   isCompleted?: boolean;
   onBack?: () => void;
   onViewReport?: () => void;
+  onKillAgent?: (agentId: string) => void;
   children?: React.ReactNode;
 }
 
@@ -44,6 +45,7 @@ export default function SwarmDashboard({
   isCompleted,
   onBack,
   onViewReport,
+  onKillAgent,
 }: SwarmDashboardProps) {
   const [currentView, setCurrentView] = useState<"overview" | "detail">(
     "overview"
@@ -82,6 +84,7 @@ export default function SwarmDashboard({
       totalFindings: findingsCount,
       activeAgents: subagents.filter((s) => s.status === "pending").length,
       completedAgents: subagents.filter((s) => s.status === "completed").length,
+      canceledAgents: subagents.filter((s) => s.status === "canceled").length,
       totalAgents: pentestAgents.length,
       duration: startTime
         ? Math.floor((Date.now() - startTime.getTime()) / 1000)
@@ -145,6 +148,18 @@ export default function SwarmDashboard({
       if (key.name === "up") {
         // Move up 2 (2-column grid)
         setFocusedIndex((prev) => Math.max(prev - 2, 0));
+        return;
+      }
+
+      // Kill focused agent with X or Delete
+      if (
+        (key.name === "x" || key.name === "X" || key.name === "delete") &&
+        pentestAgents[focusedIndex]
+      ) {
+        const focusedAgent = pentestAgents[focusedIndex]!;
+        if (focusedAgent.status === "pending") {
+          onKillAgent?.(focusedAgent.id);
+        }
         return;
       }
 
@@ -264,8 +279,10 @@ export default function SwarmDashboard({
         totalFindings={metrics.totalFindings}
         activeAgents={metrics.activeAgents}
         totalAgents={metrics.totalAgents}
+        canceledAgents={metrics.canceledAgents}
         duration={metrics.duration}
         isExecuting={isExecuting}
+        showKillHint={!!onKillAgent}
       />
     </box>
   );
@@ -450,12 +467,14 @@ function AgentCard({ agent, focused, onSelect }: AgentCardProps) {
     pending: "◐",
     completed: "✓",
     failed: "✗",
+    canceled: "⊘",
   }[agent.status];
 
   const statusColor = {
     pending: greenBullet,
     completed: greenBullet,
     failed: RGBA.fromInts(244, 67, 54, 255),
+    canceled: dimText,
   }[agent.status];
 
   // Get brief activity from last message (truncated to single line)
@@ -517,7 +536,9 @@ function AgentCard({ agent, focused, onSelect }: AgentCardProps) {
 
       {/* Activity / Status - single line */}
       <box height={1} overflow="hidden">
-        {agent.status === "pending" ? (
+        {agent.status === "canceled" ? (
+          <text fg={dimText}>⊘ Canceled</text>
+        ) : agent.status === "pending" ? (
           <SpinnerDots label={lastActivity} fg="green" />
         ) : (
           <text fg={agent.status === "completed" ? greenBullet : dimText}>
@@ -583,16 +604,20 @@ interface MetricsBarProps {
   totalFindings: number;
   activeAgents: number;
   totalAgents: number;
+  canceledAgents: number;
   duration: number;
   isExecuting: boolean;
+  showKillHint?: boolean;
 }
 
 function MetricsBar({
   totalFindings,
   activeAgents,
   totalAgents,
+  canceledAgents,
   duration,
   isExecuting,
+  showKillHint,
 }: MetricsBarProps) {
   // Format duration as mm:ss
   const formattedDuration = useMemo(() => {
@@ -621,12 +646,27 @@ function MetricsBar({
           <span fg={isExecuting ? greenBullet : dimText}>{activeAgents}</span>
           <span fg={dimText}>/{totalAgents} active</span>
         </text>
+        {canceledAgents > 0 && (
+          <>
+            <text fg={dimText}>|</text>
+            <text>
+              <span fg={dimText}>{canceledAgents}</span>
+              <span fg={dimText}> canceled</span>
+            </text>
+          </>
+        )}
         <text fg={dimText}>|</text>
         <text fg={dimText}>{formattedDuration}</text>
       </box>
 
       {/* Right: Keyboard hints */}
       <box flexDirection="row" gap={2}>
+        {showKillHint && (
+          <text>
+            <span fg={greenBullet}>[X]</span>
+            <span fg={dimText}> Kill</span>
+          </text>
+        )}
         <text>
           <span fg={greenBullet}>[D]</span>
           <span fg={dimText}> Discovery</span>
@@ -658,6 +698,7 @@ function AgentDetailView({ agent, onBack }: AgentDetailViewProps) {
     pending: greenBullet,
     completed: greenBullet,
     failed: RGBA.fromInts(244, 67, 54, 255),
+    canceled: dimText,
   }[agent.status];
 
   return (

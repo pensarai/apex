@@ -50,7 +50,7 @@ function useGlobalTick() {
 
 // Green color gradient
 const greenColors = [
-  RGBA.fromInts(0, 60, 30, 255),    // Darkest
+  RGBA.fromInts(0, 60, 30, 255), // Darkest
   RGBA.fromInts(0, 90, 45, 255),
   RGBA.fromInts(0, 120, 60, 255),
   RGBA.fromInts(0, 150, 75, 255),
@@ -58,7 +58,7 @@ const greenColors = [
   RGBA.fromInts(40, 200, 100, 255),
   RGBA.fromInts(60, 220, 110, 255),
   RGBA.fromInts(80, 240, 120, 255),
-  RGBA.fromInts(100, 255, 130, 255),  // Brightest
+  RGBA.fromInts(100, 255, 130, 255), // Brightest
 ];
 
 interface PetriAnimationProps {
@@ -82,7 +82,9 @@ export function PetriAnimation({
     if (typeof height === "number" && height <= 1) {
       return Math.floor(dimensions.height * height);
     }
-    return typeof height === "number" ? height : Math.floor(dimensions.height * 0.4);
+    return typeof height === "number"
+      ? height
+      : Math.floor(dimensions.height * 0.4);
   }, [height, dimensions.height]);
 
   const actualWidth = useMemo(() => {
@@ -90,9 +92,9 @@ export function PetriAnimation({
       return Math.floor(dimensions.width * width);
     }
     if (width === "100%") {
-      return dimensions.width - 8; // Account for padding
+      return dimensions.width;
     }
-    return typeof width === "number" ? width : dimensions.width - 8;
+    return typeof width === "number" ? width : dimensions.width;
   }, [width, dimensions.width]);
 
   // Initialize or resize simulation
@@ -122,17 +124,9 @@ export function PetriAnimation({
   }
 
   return (
-    <box
-      flexDirection="column"
-      width={actualWidth}
-      height={actualHeight}
-    >
+    <box flexDirection="column" width={actualWidth} height={actualHeight}>
       {frame.map((row, idx) => (
-        <text
-          key={idx}
-          fg={getRowColor(idx, actualHeight)}
-          content={row}
-        />
+        <text key={idx} fg={getRowColor(idx, actualHeight)} content={row} />
       ))}
     </box>
   );

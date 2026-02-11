@@ -14,13 +14,17 @@ export default function ModelsDisplay() {
   const config = useConfig();
   const { model, setModel, isModelUserSelected } = useAgent();
 
+  const goHome = () => {
+    route.navigate({
+      type: "base",
+      path: "home",
+    });
+  };
+
   useKeyboard((key) => {
-    // Escape - Close models display
+    // Escape - Go back
     if (key.name === "escape") {
-      route.navigate({
-        type: "base",
-        path: "home",
-      });
+      goHome();
       return;
     }
 
@@ -29,15 +33,6 @@ export default function ModelsDisplay() {
       route.navigate({
         type: "base",
         path: "providers",
-      });
-      return;
-    }
-
-    // Enter - Confirm selection and close
-    if (key.name === "return") {
-      route.navigate({
-        type: "base",
-        path: "home",
       });
       return;
     }
@@ -59,6 +54,7 @@ export default function ModelsDisplay() {
           config={config.data}
           selectedModel={model}
           onSelectModel={setModel}
+          onConfirm={goHome}
           focused={true}
           isModelUserSelected={isModelUserSelected}
         />

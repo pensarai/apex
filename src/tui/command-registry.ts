@@ -287,7 +287,7 @@ export const commands: CommandConfig[] = [
     handler: async (args, ctx) => {
       ctx.navigate({
         type: "base",
-        path: "chat",
+        path: "home",
       });
     },
   },

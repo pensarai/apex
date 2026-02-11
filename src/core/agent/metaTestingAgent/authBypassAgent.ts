@@ -13,6 +13,7 @@
 import { tool, hasToolCall } from "ai";
 import { z } from "zod";
 import { streamResponse, type AIModel } from "../../ai";
+import { type AIAuthConfig } from "../../ai/utils";
 import type {
   ExecuteCommandOpts,
   ExecuteCommandResult,
@@ -215,6 +216,7 @@ function saveAgentMessages(
 export async function runAuthBypassAgent(opts: {
   input: AuthBypassAgentInput;
   model: AIModel;
+  authConfig?: AIAuthConfig;
   toolOverride?: {
     execute_command?: (
       opts: ExecuteCommandOpts
@@ -223,7 +225,7 @@ export async function runAuthBypassAgent(opts: {
   };
   abortSignal?: AbortSignal;
 }): Promise<AuthBypassAgentResult> {
-  const { input, model, toolOverride, abortSignal } = opts;
+  const { input, model, authConfig, toolOverride, abortSignal } = opts;
   const { session } = input;
 
   const logger = new Logger(
@@ -367,6 +369,7 @@ export async function runAuthBypassAgent(opts: {
       system: AUTH_BYPASS_SYSTEM_PROMPT,
       model,
       tools,
+      authConfig,
       stopWhen: hasToolCall("complete_testing"),
       abortSignal,
       silent: true,
@@ -429,7 +432,8 @@ export function createAuthBypassTool(
       opts: ExecuteCommandOpts
     ) => Promise<ExecuteCommandResult>;
     http_request?: (opts: HttpRequestOpts) => Promise<HttpRequestResult>;
-  }
+  },
+  authConfig?: AIAuthConfig
 ) {
   return tool({
     description: `Spawn a specialized Authorization Bypass Testing Agent.
@@ -497,6 +501,7 @@ Provide the authentication context you've discovered (endpoints, parameters, cre
           session: sessionInfo,
         },
         model,
+        authConfig,
         toolOverride,
       });
 

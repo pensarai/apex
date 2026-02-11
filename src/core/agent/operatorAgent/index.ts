@@ -11,6 +11,7 @@ import { appendFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import type { AIModel } from "../../ai";
 import { streamResponse } from "../../ai/ai";
+import { type AIAuthConfig } from "../../ai/utils";
 import { Session } from "../../session";
 import {
   ApprovalGate,
@@ -88,6 +89,8 @@ export interface OperatorAgentConfig {
   previousAttackSurface?: AttackSurfaceEndpoint[];
   /** Callback for token usage updates (called after each step) */
   onTokenUsage?: (inputTokens: number, outputTokens: number) => void;
+  /** Auth config for AI provider authentication (e.g., Bedrock credentialProvider) */
+  authConfig?: AIAuthConfig;
 }
 
 export interface OperatorAgentResult {
@@ -838,6 +841,7 @@ This tool requires user approval (T3 tier - Probing).`,
           tools: wrappedTools,
           stopWhen: stepCountIs(100), // Allow multi-step tool execution within each iteration
           abortSignal: this.abortController?.signal,
+          authConfig: this.config.authConfig,
           onStepFinish: (step) => {
             console.log(step.usage)
             console.log(this.config.onTokenUsage)
