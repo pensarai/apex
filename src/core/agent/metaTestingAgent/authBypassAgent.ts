@@ -433,7 +433,7 @@ export function createAuthBypassTool(
     ) => Promise<ExecuteCommandResult>;
     http_request?: (opts: HttpRequestOpts) => Promise<HttpRequestResult>;
   },
-  authConfig?: AIAuthConfig,
+  authConfig?: AIAuthConfig
 ) {
   return tool({
     description: `Spawn a specialized Authorization Bypass Testing Agent.

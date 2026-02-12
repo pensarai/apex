@@ -176,7 +176,7 @@ export async function initializeMcpClient(): Promise<Client> {
   isConnecting = true;
   connectionPromise = (async () => {
     try {
-      const args = ['@playwright/mcp@latest'];
+      const args = ['@playwright/mcp@latest', '--isolated'];
       if (configuredHeadless) {
         args.push('--headless');
       }
