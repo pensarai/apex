@@ -146,7 +146,7 @@ Return a JSON object with:
       maxTokens: 500,
       temperature: 0.3,
       onTokenUsage,
-    });
+    }) as ExtractedTarget;
 
     return {
       target: result.target,

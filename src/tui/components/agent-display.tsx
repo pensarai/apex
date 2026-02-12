@@ -7,6 +7,7 @@ import { useState, memo } from "react";
 import type { Message } from "../../core/messages/types";
 import { useTerminalDimensions } from "@opentui/react";
 import { markdownToStyledText, getStableMessageKey, getArgsPreview } from "./shared";
+import { colors } from "../theme";
 
 export type Subagent = {
   id: string;
@@ -15,7 +16,7 @@ export type Subagent = {
   target: string;
   messages: Message[];
   createdAt: Date;
-  status: "pending" | "completed" | "failed";
+  status: "pending" | "completed" | "failed" | "paused";
 };
 
 /**
@@ -173,6 +174,9 @@ const SubAgentDisplay = memo(function SubAgentDisplay({
         )}
         {subagent.status === "failed" && (
           <text fg="red">✗ {subagent.name}</text>
+        )}
+        {subagent.status === "paused" && (
+          <text fg={colors.orangeText}>⏸ {subagent.name}</text>
         )}
         <text fg="gray">{open ? "▼" : "▶"}</text>
       </box>

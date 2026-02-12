@@ -224,7 +224,7 @@ export async function scoreFindingWithCVSS(
     schema: CVSSMetricsOutputSchema,
     prompt,
     system: CVSS_SCORER_SYSTEM_PROMPT,
-  });
+  }) as z.infer<typeof CVSSMetricsOutputSchema>;
 
   // Calculate final score using the CVSS calculator
   const cvssResult = calculateCVSS4Score({

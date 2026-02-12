@@ -3424,7 +3424,7 @@ test_parameter({
             },
             model,
             onTokenUsage
-          );
+          ) as z.infer<typeof PayloadSchema>;
 
           console.log(`  Payload: ${payloadData.payload}`);
           console.log(`  Reasoning: ${payloadData.reasoning}`);
@@ -3463,7 +3463,7 @@ test_parameter({
             },
             model,
             onTokenUsage
-          );
+          ) as z.infer<typeof AnalysisSchema>;
 
           console.log(`  Analysis: ${analysis.reasoning}`);
           console.log(

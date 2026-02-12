@@ -9,7 +9,8 @@ import ConfigDialog from "./components/commands/config-dialog";
 import ChatApp from "./components/chat";
 import HITLWizard from "./components/commands/operator-wizard";
 import WebWizard from "./components/commands/web-wizard";
-import ResumeWizard from "./components/commands/resume-wizard";
+import SessionsBrowser from "./components/commands/sessions-browser";
+import ModelsDisplay from "./components/commands/models-display";
 import ProviderManager from "./components/commands/provider-manager";
 import type { Config } from "../core/config/config";
 import { config } from "../core/config";
@@ -280,11 +281,14 @@ function CommandDisplay({
               initialModel={route.data.options?.model}
             />
           </RouteSwitch.Case>
+          <RouteSwitch.Case when="models">
+            <ModelsDisplay />
+          </RouteSwitch.Case>
           <RouteSwitch.Case when="providers">
             <ProviderManager />
           </RouteSwitch.Case>
-          <RouteSwitch.Case when="resume">
-            <ResumeWizard />
+          <RouteSwitch.Case when="sessions">
+            <SessionsBrowser />
           </RouteSwitch.Case>
           <RouteSwitch.Case when="help">
             <HelpDialog />
@@ -303,6 +307,7 @@ function CommandDisplay({
       <SessionView
         sessionId={route.data.sessionId}
         isResume={route.data.isResume}
+        openAsOperator={route.data.openAsOperator}
       />
     );
   }
