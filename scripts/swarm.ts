@@ -2,11 +2,11 @@ import { promisify } from "node:util";
 import type {
   ExecuteCommandOpts,
   ExecuteCommandResult,
-} from "../src/core/agent/tools";
+} from "../src/core/agents/legacy/tools";
 import type { AIModel } from "../src/core/ai";
 import { Session } from "../src/core/session";
 import { exec as _exec } from "node:child_process";
-import { runStreamlinedPentest } from "../src/core/agent/thoroughPentestAgent";
+import { runStreamlinedPentest } from "../src/core/agents/legacy/thoroughPentestAgent";
 
 const exec = promisify(_exec);
 
@@ -101,13 +101,22 @@ async function runSwarmTest(options: SwarmAgentOptions) {
         stderr,
         error: "",
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      const stdout =
+        error instanceof Error && "stdout" in error
+          ? (error.stdout as string) || ""
+          : "";
+      const stderr =
+        error instanceof Error && "stderr" in error
+          ? (error.stderr as string) || ""
+          : "";
       return {
         command: opts.command,
         success: false,
-        stdout: error.stdout || "",
-        stderr: error.stderr || error.message || String(error),
-        error: error.message || String(error),
+        stdout: stdout,
+        stderr: stderr,
+        error: message,
       };
     }
   };
@@ -213,8 +222,9 @@ async function main() {
       benchmarkPath,
       model,
     });
-  } catch (error: any) {
-    console.error("Fatal error:", error.message);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("Fatal error:", message);
     process.exit(1);
   }
 }

@@ -17,16 +17,16 @@ import { Session } from "../../../core/session";
 import type {
   PentestTarget,
   AttackSurfaceAnalysisResults,
-} from "../../../core/agent/attackSurfaceAgent/types";
-import { runAgent as runAttackSurfaceAgent } from "../../../core/agent/attackSurfaceAgent";
+} from "../../../core/agents/legacy/attackSurfaceAgent/types";
+import { runAgent as runAttackSurfaceAgent } from "../../../core/agents/legacy/attackSurfaceAgent";
 import {
   createDriverModeAgent,
   type DriverModeAgent,
-} from "../../../core/agent/driverModeAgent";
+} from "../../../core/agents/legacy/driverModeAgent";
 import {
   extractPentestTarget,
   type DiscoveredEndpoint,
-} from "../../../core/agent/driverModeAgent/targetExtractor";
+} from "../../../core/agents/legacy/driverModeAgent/targetExtractor";
 import type { DisplayMessage } from "../agent-display";
 import AgentDisplay from "../agent-display";
 import { SpinnerDots } from "../sprites";

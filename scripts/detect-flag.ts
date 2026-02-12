@@ -22,7 +22,7 @@ import {
   extractFlagFromRepo,
   computeBenchmarkFlag,
   extractBenchmarkName,
-} from "../src/core/agent/benchmark/flag-detector";
+} from "../src/core/agents/legacy/benchmark/flag-detector";
 
 interface SessionJson {
   target?: {

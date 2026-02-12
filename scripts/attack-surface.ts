@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 
-import { runAgent } from "../src/core/agent/attackSurfaceAgent/agent";
+import { runAgent } from "../src/core/agents/legacy/attackSurfaceAgent/agent";
 import { Session } from "../src/core/session";
 import type { AIModel } from "../src/core/ai";
 import { readFileSync, existsSync } from "fs";
@@ -160,10 +160,12 @@ async function runAttackSurface(options: AttackSurfaceOptions): Promise<void> {
           console.log(
             `\n\nTargets for Deep Testing: ${results.targets.length}`,
           );
-          results.targets.forEach((target: any, index: number) => {
-            console.log(`  ${index + 1}. ${target.target}`);
-            console.log(`     Objective: ${target.objective}`);
-          });
+          results.targets.forEach(
+            (target: { target: string; objective: string }, index: number) => {
+              console.log(`  ${index + 1}. ${target.target}`);
+              console.log(`     Objective: ${target.objective}`);
+            },
+          );
         }
 
         console.log();
@@ -174,11 +176,13 @@ async function runAttackSurface(options: AttackSurfaceOptions): Promise<void> {
         "\nNote: Could not read attack surface results for endpoint display",
       );
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("=".repeat(80));
     console.error("ATTACK SURFACE ANALYSIS FAILED");
     console.error("=".repeat(80));
-    console.error(`✗ Error: ${error.message}`);
+    console.error(
+      `✗ Error: ${error instanceof Error ? error.message : String(error)}`,
+    );
     console.error();
     throw error;
   }
@@ -418,8 +422,11 @@ async function main() {
       ...(allowedHosts.length > 0 && { allowedHosts }),
       ...(allowedPorts.length > 0 && { allowedPorts }),
     });
-  } catch (error: any) {
-    console.error("Fatal error:", error.message);
+  } catch (error: unknown) {
+    console.error(
+      "Fatal error:",
+      error instanceof Error ? error.message : String(error),
+    );
     process.exit(1);
   }
 }

@@ -13,22 +13,24 @@ import { loadSessionState } from "../../../core/session/loader";
 import {
   runStreamlinedPentest,
   type StreamlinedPentestProgress,
-} from "../../../core/agent/thoroughPentestAgent/streamlined";
+} from "../../../core/agents/legacy/thoroughPentestAgent/streamlined";
 import type {
   SubAgentSpawnInfo,
   SubAgentStreamEvent,
-} from "../../../core/agent/orchestrator/orchestrator";
-import type { VulnerabilityClass } from "../../../core/agent/orchestrator/types";
+} from "../../../core/agents/legacy/orchestrator/orchestrator";
+import type {
+  MetaVulnerabilityTestResult,
+  VulnerabilityClass,
+} from "../../../core/agents/legacy/metaTestingAgent";
 import {
   runMetaVulnerabilityTestAgent,
-  type MetaVulnerabilityTestResult,
-} from "../../../core/agent/metaTestingAgent";
-import { saveAgentMessages } from "../../../core/agent/metaTestingAgent";
+  saveAgentMessages,
+} from "../../../core/agents/legacy/metaTestingAgent";
 import { existsSync, readFileSync } from "fs";
 import { exec } from "child_process";
 import { join } from "path";
 import { SpinnerDots } from "../sprites";
-import type { AttackSurfaceAnalysisResults } from "../../../core/agent/attackSurfaceAgent/types";
+import type { AttackSurfaceAnalysisResults } from "../../../core/agents/legacy/attackSurfaceAgent/types";
 
 // Color palette
 const greenBullet = RGBA.fromInts(76, 175, 80, 255);

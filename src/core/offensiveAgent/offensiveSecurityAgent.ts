@@ -1,0 +1,154 @@
+import { streamResponse } from "../ai";
+import type { StreamTextResult, TextStreamPart, ToolSet } from "ai";
+import type { OffensiveSecurityAgentInput, ConsumeCallbacks } from "./types";
+import { createAllTools } from "./tools";
+
+/**
+ * General-purpose offensive security agent harness.
+ *
+ * The agent **owns tool creation** — all available tools are built from
+ * the session context, and specific agents select which ones to activate
+ * via the `activeTools` array (passed through to the AI SDK).
+ *
+ * The stream starts **immediately on construction** — no need to call a
+ * separate `.run()` method.
+ *
+ * @typeParam TResult - The type returned by {@link consume}. When the input
+ *   includes a `resolveResult` function, `consume()` awaits it after the
+ *   stream finishes and returns the value. Defaults to `void`.
+ *
+ * ## Consumption (pick one — stream is single-read)
+ *
+ * **1. Typed callbacks via `.consume()` → `TResult`**
+ * ```ts
+ * const result = await agent.consume({
+ *   onTextDelta: (d) => process.stdout.write(d.text),
+ *   onToolCall:  (d) => console.log(`→ ${d.toolName}`),
+ * });
+ * ```
+ *
+ * **2. `for await` directly on the agent**
+ * ```ts
+ * for await (const chunk of agent) { ... }
+ * ```
+ *
+ * **3. Raw stream access**
+ * ```ts
+ * for await (const chunk of agent.fullStream) { ... }
+ * ```
+ */
+export class OffensiveSecurityAgent<TResult = void> {
+  /** The underlying Vercel AI SDK stream result — escape hatch for advanced use. */
+  public readonly streamResult: StreamTextResult<ToolSet, never>;
+
+  private readonly resolveResult?: (
+    streamResult: StreamTextResult<ToolSet, never>
+  ) => TResult | Promise<TResult>;
+
+  constructor(input: OffensiveSecurityAgentInput<TResult>) {
+    this.resolveResult = input.resolveResult;
+
+    // -- Tools ----------------------------------------------------------------
+    const tools = createAllTools({
+      session: input.session,
+      target: input.target,
+      abortSignal: input.abortSignal,
+      model: input.model,
+      authConfig: input.authConfig,
+      persistence: input.persistence,
+    });
+
+    // -- Stream ---------------------------------------------------------------
+    // streamResponse returns synchronously; the actual LLM I/O is lazy.
+    this.streamResult = streamResponse({
+      prompt: input.prompt,
+      system: input.system,
+      model: input.model,
+      messages: input.messages,
+      tools,
+      activeTools: input.activeTools as string[],
+      stopWhen: input.stopWhen,
+      toolChoice: input.toolChoice,
+      onStepFinish: input.onStepFinish,
+      onFinish: input.onFinish,
+      abortSignal: input.abortSignal,
+      authConfig: input.authConfig,
+      silent: true,
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Stream access
+  // ---------------------------------------------------------------------------
+
+  /**
+   * The raw async-iterable stream of chunks.
+   * Equivalent to `streamResult.fullStream`.
+   */
+  get fullStream(): AsyncIterable<TextStreamPart<ToolSet>> {
+    return this.streamResult.fullStream;
+  }
+
+  /**
+   * Makes the agent instance itself async-iterable so callers can write:
+   * ```ts
+   * for await (const chunk of agent) { ... }
+   * ```
+   *
+   * **Note:** The underlying stream can only be consumed once.
+   */
+  async *[Symbol.asyncIterator](): AsyncIterator<TextStreamPart<ToolSet>> {
+    for await (const chunk of this.streamResult.fullStream) {
+      yield chunk;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Convenience helpers
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Consume the stream with typed callbacks, then resolve the final result.
+   *
+   * Dispatches each chunk to the appropriate callback, and after the stream
+   * is fully consumed, calls `resolveResult` (if provided at construction)
+   * to produce a typed return value.
+   *
+   * @returns The value produced by `resolveResult`, or `void` if none was provided.
+   */
+  async consume(callbacks: ConsumeCallbacks = {}): Promise<TResult> {
+    const { onTextDelta, onToolCall, onToolResult, onError } = callbacks;
+
+    for await (const chunk of this.streamResult.fullStream) {
+      switch (chunk.type) {
+        case "text-delta":
+          onTextDelta?.(chunk);
+          break;
+        case "tool-call":
+          onToolCall?.(chunk);
+          break;
+        case "tool-result":
+          onToolResult?.(chunk);
+          break;
+        case "error":
+          if (onError) {
+            onError((chunk as { type: "error"; error: unknown }).error);
+          }
+          break;
+      }
+    }
+
+    if (this.resolveResult) {
+      return this.resolveResult(this.streamResult);
+    }
+    return undefined as TResult; // TResult is void when resolveResult is absent
+  }
+
+  /**
+   * Promise that resolves to the final response metadata once the stream
+   * has been fully consumed. Await this *after* iterating the stream.
+   */
+  get response() {
+    return this.streamResult.response;
+  }
+}

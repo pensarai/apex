@@ -5,7 +5,7 @@
  */
 
 import { RGBA } from "@opentui/core";
-import type { DiscoveredEndpoint } from "../../../core/agent/driverModeAgent/targetExtractor";
+import type { DiscoveredEndpoint } from "../../../core/agents/legacy/driverModeAgent/targetExtractor";
 import { SpinnerDots } from "../sprites";
 
 // Color palette

@@ -8,8 +8,8 @@
 import { useState, useCallback } from "react";
 import { useKeyboard } from "@opentui/react";
 import { RGBA } from "@opentui/core";
-import type { PentestTarget } from "../../../core/agent/attackSurfaceAgent/types";
-import type { DiscoveredEndpoint } from "../../../core/agent/driverModeAgent/targetExtractor";
+import type { PentestTarget } from "../../../core/agents/legacy/attackSurfaceAgent/types";
+import type { DiscoveredEndpoint } from "../../../core/agents/legacy/driverModeAgent/targetExtractor";
 import type { DisplayMessage } from "../agent-display";
 import AgentDisplay from "../agent-display";
 import MentionAutocomplete from "./mention-autocomplete";

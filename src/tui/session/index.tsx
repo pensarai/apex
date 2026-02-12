@@ -22,7 +22,7 @@ import { Session } from "../../core/session";
 import {
   createOperatorAgent,
   type OperatorAgent,
-} from "../../core/agent/operatorAgent";
+} from "../../core/agents/legacy/operatorAgent";
 import type {
   OperatorMode,
   OperatorStage,

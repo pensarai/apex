@@ -16,8 +16,8 @@
 import { Daytona, Image, Sandbox } from "@daytonaio/sdk";
 import { existsSync, statSync, readdirSync, readFileSync } from "fs";
 import path from "path";
-import { parseDockerComposePort } from "../src/core/agent/benchmark/docker-utils";
-import { extractFlagFromRepo } from "../src/core/agent/benchmark/flag-detector";
+import { parseDockerComposePort } from "../src/core/agents/legacy/benchmark/docker-utils";
+import { extractFlagFromRepo } from "../src/core/agents/legacy/benchmark/flag-detector";
 
 // Global sandbox reference for cleanup
 let sandbox: Sandbox | undefined;
@@ -87,10 +87,12 @@ async function cleanup(
           30000,
         );
         console.log(`[${benchmarkName}] ✅ Docker compose stopped`);
-      } catch (dockerError: any) {
-        console.log(
-          `[${benchmarkName}] ⚠️  Docker stop failed: ${dockerError.message}`,
-        );
+      } catch (dockerError: unknown) {
+        const message =
+          dockerError instanceof Error
+            ? dockerError.message
+            : String(dockerError);
+        console.log(`[${benchmarkName}] ⚠️  Docker stop failed: ${message}`);
       }
     }
 
@@ -114,8 +116,9 @@ async function cleanup(
     console.log(`[${benchmarkName}] 🗑️  Deleting sandbox...`);
     await sandbox.delete();
     console.log(`[${benchmarkName}] ✅ Sandbox deleted successfully`);
-  } catch (error: any) {
-    console.error(`[${benchmarkName}] ❌ Cleanup error: ${error.message}`);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`[${benchmarkName}] ❌ Cleanup error: ${message}`);
     if (sandbox) {
       console.error(
         `[${benchmarkName}] ⚠️  You may need to manually delete sandbox: ${sandbox.id}`,
@@ -521,9 +524,10 @@ async function main() {
       // Keep the event loop active with a long interval
       setInterval(() => {}, 1 << 30);
     });
-  } catch (error: any) {
-    console.error(`\n[${benchmarkName}] ❌ Error: ${error.message}`);
-    if (error.stack) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`\n[${benchmarkName}] ❌ Error: ${message}`);
+    if (error instanceof Error && error.stack) {
       console.error(error.stack);
     }
 

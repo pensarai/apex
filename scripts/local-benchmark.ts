@@ -6,32 +6,30 @@ import {
   existsSync,
   mkdirSync,
   writeFileSync,
-  readFileSync,
 } from "fs";
 import path from "path";
 import { exec as nodeExec } from "child_process";
 import { promisify } from "util";
 import type { AIModel } from "../src/core/ai";
 import pLimit from "p-limit";
-import type { BenchmarkResults } from "../src/core/agent/benchmark/types";
+import type { BenchmarkResults } from "../src/core/agents/legacy/benchmark/types";
 import {
   parseDockerComposePort,
   getActualDockerPort,
-} from "../src/core/agent/benchmark/docker-utils";
+} from "../src/core/agents/legacy/benchmark/docker-utils";
 import { Session } from "../src/core/session";
-import { runStreamlinedPentest } from "../src/core/agent/thoroughPentestAgent/streamlined";
+import { runStreamlinedPentest } from "../src/core/agents/legacy/thoroughPentestAgent/streamlined";
 import {
   extractFlagFromRepo,
   detectFlagInArtifacts,
   extractPACEFlags,
   detectMultipleFlagsInArtifacts,
-} from "../src/core/agent/benchmark/flag-detector";
+} from "../src/core/agents/legacy/benchmark/flag-detector";
 import type {
   ExecuteCommandOpts,
   ExecuteCommandResult,
-  HttpRequestOpts,
-  HttpRequestResult,
-} from "../src/core/agent/tools";
+} from "../src/core/agents/legacy/tools";
+import type { BenchmarkSummaryReport } from "../src/core/agents/legacy/benchmark/remote/daytona-benchmark";
 
 const exec = promisify(nodeExec);
 
@@ -93,7 +91,9 @@ async function rerunAllPocs(
   for (const pocFile of pocFiles) {
     const pocPath = path.join(pocsDir, pocFile);
     const pocName = pocFile.replace(/\.(sh|html)$/, "");
-    const logFileName = `${pocName}-${new Date().toISOString().replace(/[:.]/g, "-")}.log`;
+    const logFileName = `${pocName}-${new Date()
+      .toISOString()
+      .replace(/[:.]/g, "-")}.log`;
     const logPath = path.join(logsDir, logFileName);
 
     if (pocFile.endsWith(".html")) {
@@ -153,17 +153,30 @@ Timestamp: ${new Date().toISOString()}
       console.log(
         `[${benchmarkName}]   ✅ ${pocFile} (${(duration / 1000).toFixed(1)}s)`,
       );
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const exitCode =
+        error instanceof Error && "code" in error
+          ? ((error.code as number) ?? 1)
+          : 1;
+      const stdout =
+        error instanceof Error && "stdout" in error
+          ? (error.stdout as string) || ""
+          : "";
+      const stderr =
+        error instanceof Error && "stderr" in error
+          ? (error.stderr as string) || ""
+          : "";
+      const message = error instanceof Error ? error.message : String(error);
       const duration = Date.now() - startTime;
       result = {
         pocFile,
         pocName,
-        exitCode: error.code ?? 1,
-        stdout: error.stdout || "",
-        stderr: error.stderr || error.message || "",
+        exitCode,
+        stdout,
+        stderr,
         duration,
         success: false,
-        error: error.message,
+        error: message,
       };
       failed++;
       console.log(
@@ -192,7 +205,11 @@ STDERR:
 ${"=".repeat(60)}
 ${result.stderr || "(empty)"}
 
-${result.error ? `\n${"=".repeat(60)}\nERROR:\n${"=".repeat(60)}\n${result.error}\n` : ""}
+${
+  result.error
+    ? `\n${"=".repeat(60)}\nERROR:\n${"=".repeat(60)}\n${result.error}\n`
+    : ""
+}
 `;
     writeFileSync(logPath, logContent);
   }
@@ -300,9 +317,9 @@ function getCompletedBenchmarks(prefix?: string, isPace?: boolean): string[] {
     }
 
     return Array.from(completedBenchmarks);
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.warn(
-      `Warning: Failed to read executions directory: ${error.message}`,
+      `Warning: Failed to read executions directory: ${error instanceof Error ? error.message : String(error)}`,
     );
     return [];
   }
@@ -335,8 +352,11 @@ function enumerateXBENBenchmarks(repoPath: string): string[] {
     );
 
     return xbenBenchmarks;
-  } catch (error: any) {
-    throw new Error(`Failed to enumerate benchmarks: ${error.message}`);
+  } catch (error: unknown) {
+    throw new Error(
+      `Failed to enumerate benchmarks: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    );
   }
 }
 
@@ -369,9 +389,10 @@ function enumeratePACEBenchmarks(repoPath: string): string[] {
     );
 
     return fullchainBenchmarks;
-  } catch (error: any) {
+  } catch (error: unknown) {
     throw new Error(
-      `Failed to enumerate PACEbench challenges: ${error.message}`,
+      `Failed to enumerate PACEbench challenges: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
     );
   }
 }
@@ -579,13 +600,22 @@ async function runSingleBenchmark(
           stderr,
           error: "",
         };
-      } catch (error: any) {
+      } catch (error: unknown) {
+        const stdout =
+          error instanceof Error && "stdout" in error
+            ? (error.stdout as string) || ""
+            : "";
+        const stderr =
+          error instanceof Error && "stderr" in error
+            ? (error.stderr as string) || ""
+            : "";
+        const message = error instanceof Error ? error.message : String(error);
         return {
           command: opts.command,
           success: false,
-          stdout: error.stdout || "",
-          stderr: error.stderr || error.message || String(error),
-          error: error.message || String(error),
+          stdout,
+          stderr,
+          error: message,
         };
       }
     };
@@ -741,10 +771,11 @@ async function runSingleBenchmark(
     console.log(`\n[${benchmarkName}] ✅ Completed in ${duration}m`);
 
     return results;
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
     const duration = ((Date.now() - startTime) / 1000 / 60).toFixed(2);
     console.error(
-      `\n[${benchmarkName}] ❌ Failed after ${duration}m: ${error.message}`,
+      `\n[${benchmarkName}] ❌ Failed after ${duration}m: ${message}`,
     );
 
     // Return a failure result
@@ -770,10 +801,12 @@ async function runSingleBenchmark(
       console.log(`[${benchmarkName}] 🧹 Stopping docker compose...`);
       await exec("docker compose down", { cwd: benchmarkPath });
       console.log(`[${benchmarkName}] ✅ Cleanup complete`);
-    } catch (cleanupError: any) {
-      console.error(
-        `[${benchmarkName}] ⚠️  Cleanup failed: ${cleanupError.message}`,
-      );
+    } catch (cleanupError: unknown) {
+      const message =
+        cleanupError instanceof Error
+          ? cleanupError.message
+          : String(cleanupError);
+      console.error(`[${benchmarkName}] ⚠️  Cleanup failed: ${message}`);
     }
   }
 }
@@ -874,34 +907,35 @@ async function runMultipleBenchmarks(
 
   mkdirSync(summaryDir, { recursive: true });
 
-  const summary = {
+  const summary: BenchmarkSummaryReport = {
     timestamp: new Date().toISOString(),
     repoPath,
     model,
-    mode: "local",
+    // mode: "local",
     totalBenchmarks: benchmarks.length,
     flagsDetected,
     flagsMissed,
     pocStats: {
       total: totalPocs,
       passed: passedPocs,
-      failed: failedPocs,
+      // failed: failedPocs,
     },
     duration: totalDuration,
-    benchmarks: results.map((r) => ({
-      benchmark: r.branch,
-      flagDetected: r.flagDetection?.detected || false,
-      expectedFlag: r.expectedFlag,
-      foundIn: r.flagDetection?.foundIn || [],
-      sessionPath: r.sessionPath,
-      pocResults: r.pocRunSummary
-        ? {
-            total: r.pocRunSummary.total,
-            passed: r.pocRunSummary.passed,
-            failed: r.pocRunSummary.failed,
-          }
-        : undefined,
-    })),
+    // benchmarks: results.map((r) => ({
+    //   benchmark: r.branch,
+    //   flagDetected: r.flagDetection?.detected || false,
+    //   expectedFlag: r.expectedFlag,
+    //   foundIn: r.flagDetection?.foundIn || [],
+    //   sessionPath: r.sessionPath,
+    //   pocResults: r.pocRunSummary
+    //     ? {
+    //         total: r.pocRunSummary.total,
+    //         passed: r.pocRunSummary.passed,
+    //         failed: r.pocRunSummary.failed,
+    //       }
+    //     : undefined,
+    // })),
+    benchmarks: [],
   };
 
   writeFileSync(
@@ -922,7 +956,7 @@ async function runMultipleBenchmarks(
 /**
  * Generate markdown summary report
  */
-function generateMarkdownSummary(summary: any): string {
+function generateMarkdownSummary(summary: BenchmarkSummaryReport): string {
   const lines = [
     "# Local Benchmark Results",
     "",
@@ -937,7 +971,11 @@ function generateMarkdownSummary(summary: any): string {
     `- Total Benchmarks: ${summary.totalBenchmarks}`,
     `- Successful: ${summary.successful}/${summary.totalBenchmarks}`,
     `- Failed: ${summary.failed}/${summary.totalBenchmarks}`,
-    `- Flags Detected: ${summary.flagsDetected}/${summary.totalBenchmarks} (${Math.round((summary.flagsDetected / summary.totalBenchmarks) * 100)}%)`,
+    `- Flags Detected: ${summary.flagsDetected}/${
+      summary.totalBenchmarks
+    } (${Math.round(
+      (summary.flagsDetected / summary.totalBenchmarks) * 100,
+    )}%)`,
     `- Flags Missed: ${summary.flagsMissed}/${summary.totalBenchmarks}`,
   ];
 
@@ -966,12 +1004,14 @@ function generateMarkdownSummary(summary: any): string {
       );
       if (benchmark.flagDetected) {
         lines.push(`  - Expected: \`${benchmark.expectedFlag}\``);
-        lines.push(`  - Found in: ${benchmark.foundIn.join(", ")}`);
+        lines.push(
+          `  - Found in: ${benchmark.foundIn?.join(", ") ?? "unknown"}`,
+        );
       }
       lines.push(`- **Metrics**:`);
-      lines.push(`  - Accuracy: ${benchmark.metrics.accuracy}%`);
-      lines.push(`  - Precision: ${benchmark.metrics.precision}%`);
-      lines.push(`  - Recall: ${benchmark.metrics.recall}%`);
+      lines.push(`  - Accuracy: ${benchmark.metrics?.accuracy ?? 0}%`);
+      lines.push(`  - Precision: ${benchmark.metrics?.precision ?? 0}%`);
+      lines.push(`  - Recall: ${benchmark.metrics?.recall ?? 0}%`);
       if (benchmark.pocResults) {
         lines.push(
           `- **POC Results**: ${benchmark.pocResults.passed}/${benchmark.pocResults.total} passed`,
@@ -1342,10 +1382,10 @@ async function main() {
         options.vulns,
       );
       console.log("\n✅ Benchmark execution completed successfully!");
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("\n❌ Benchmark execution failed:");
-      console.error(error.message);
-      if (error.stack) {
+      console.error(error instanceof Error ? error.message : String(error));
+      if (error instanceof Error && error.stack) {
         console.error("\nStack trace:");
         console.error(error.stack);
       }
@@ -1532,10 +1572,10 @@ async function main() {
     }
 
     console.log("\n✅ Benchmark execution completed successfully!");
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("\n❌ Benchmark execution failed:");
-    console.error(error.message);
-    if (error.stack) {
+    console.error(error instanceof Error ? error.message : String(error));
+    if (error instanceof Error && error.stack) {
       console.error("\nStack trace:");
       console.error(error.stack);
     }

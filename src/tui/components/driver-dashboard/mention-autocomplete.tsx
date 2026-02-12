@@ -7,7 +7,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { useKeyboard } from "@opentui/react";
 import { RGBA } from "@opentui/core";
-import type { DiscoveredEndpoint } from "../../../core/agent/driverModeAgent/targetExtractor";
+import type { DiscoveredEndpoint } from "../../../core/agents/legacy/driverModeAgent/targetExtractor";
 
 // Color palette
 const greenBullet = RGBA.fromInts(76, 175, 80, 255);

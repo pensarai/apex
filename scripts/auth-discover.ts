@@ -10,7 +10,7 @@
  *   tsx scripts/auth-discover.ts --target https://example.com/api/users
  */
 
-import { discoverAuthentication } from "../src/core/agent/authenticationSubagent";
+import { discoverAuthentication } from "../src/core/agents/legacy/authenticationSubagent";
 import { Session } from "../src/core/session";
 import type { AIModel } from "../src/core/ai";
 
@@ -166,15 +166,17 @@ async function runAuthDiscover(options: AuthDiscoverOptions): Promise<void> {
     console.log(`Session Path: ${session.rootPath}`);
     console.log(`Logs: ${session.rootPath}/logs/auth-discovery.log`);
     console.log();
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("=".repeat(80));
     console.error("DISCOVERY FAILED");
     console.error("=".repeat(80));
-    console.error(`Error: ${error.message}`);
-    if (error.stack) {
+    console.error(
+      `Error: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    if (error instanceof Error && error.stack) {
       console.error(`Stack: ${error.stack}`);
     }
-    if (error.cause) {
+    if (error instanceof Error && error.cause) {
       console.error(`Cause: ${JSON.stringify(error.cause)}`);
     }
     console.error();
@@ -274,8 +276,11 @@ async function main() {
       ...(additionalEndpoints.length > 0 && { additionalEndpoints }),
       enableBrowser: !noBrowser,
     });
-  } catch (error: any) {
-    console.error("Fatal error:", error.message);
+  } catch (error: unknown) {
+    console.error(
+      "Fatal error:",
+      error instanceof Error ? error.message : String(error),
+    );
     process.exit(1);
   }
 }

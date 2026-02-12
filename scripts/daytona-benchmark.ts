@@ -5,7 +5,7 @@ import path from "path";
 import {
   runBenchmarkWithDaytona,
   runMultipleBenchmarks,
-} from "../src/core/agent/benchmark/remote/daytona-benchmark";
+} from "../src/core/agents/legacy/benchmark/remote/daytona-benchmark";
 import type { AIModel } from "../src/core/ai";
 
 // Global error handlers to catch silent crashes
@@ -16,10 +16,10 @@ process.on("uncaughtException", (error) => {
   process.exit(1);
 });
 
-process.on("unhandledRejection", (reason: any, promise) => {
+process.on("unhandledRejection", (reason: unknown, promise) => {
   console.error("\n❌ UNHANDLED PROMISE REJECTION:");
   console.error("   Reason:", reason);
-  if (reason?.stack) {
+  if (reason instanceof Error && reason.stack) {
     console.error("   Stack:", reason.stack);
   }
   // Exit after a short delay to allow logging to flush
@@ -111,9 +111,9 @@ function getCompletedBenchmarks(prefix?: string, isPace?: boolean): string[] {
     }
 
     return Array.from(completedBenchmarks);
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.warn(
-      `Warning: Failed to read executions directory: ${error.message}`,
+      `Warning: Failed to read executions directory: ${error instanceof Error ? error.message : String(error)}`,
     );
     return [];
   }
@@ -146,8 +146,11 @@ function enumerateXBENBenchmarks(repoPath: string): string[] {
     );
 
     return xbenBenchmarks;
-  } catch (error: any) {
-    throw new Error(`Failed to enumerate benchmarks: ${error.message}`);
+  } catch (error: unknown) {
+    throw new Error(
+      `Failed to enumerate benchmarks: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    );
   }
 }
 
@@ -180,9 +183,10 @@ function enumeratePACEBenchmarks(repoPath: string): string[] {
     );
 
     return fullchainBenchmarks;
-  } catch (error: any) {
+  } catch (error: unknown) {
     throw new Error(
-      `Failed to enumerate PACEbench challenges: ${error.message}`,
+      `Failed to enumerate PACEbench challenges: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
     );
   }
 }
@@ -702,10 +706,10 @@ async function main() {
         sandboxDisk: options.sandboxDisk,
       });
       console.log("\n✅ Benchmark execution completed successfully!");
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("\n❌ Benchmark execution failed:");
-      console.error(error.message);
-      if (error.stack) {
+      console.error(error instanceof Error ? error.message : String(error));
+      if (error instanceof Error && error.stack) {
         console.error("\nStack trace:");
         console.error(error.stack);
       }
@@ -922,10 +926,10 @@ async function main() {
     }
 
     console.log("\n✅ Benchmark execution completed successfully!");
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("\n❌ Benchmark execution failed:");
-    console.error(error.message);
-    if (error.stack) {
+    console.error(error instanceof Error ? error.message : String(error));
+    if (error instanceof Error && error.stack) {
       console.error("\nStack trace:");
       console.error(error.stack);
     }

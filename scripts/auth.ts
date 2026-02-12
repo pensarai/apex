@@ -23,10 +23,10 @@
 import {
   discoverAuthentication,
   runAuthenticationSubagent,
-} from "../src/core/agent/authenticationSubagent";
+} from "../src/core/agents/legacy/authenticationSubagent";
 import { Session } from "../src/core/session";
 import type { AIModel } from "../src/core/ai";
-import type { AuthCredentials } from "../src/core/agent/authenticationSubagent/types";
+import type { AuthCredentials } from "../src/core/agents/legacy/authenticationSubagent/types";
 import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 
@@ -373,15 +373,17 @@ async function runAuth(options: AuthOptions): Promise<void> {
     console.log(`Session Path: ${session.rootPath}`);
     console.log(`Logs: ${session.rootPath}/logs/auth-subagent.log`);
     console.log();
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("=".repeat(80));
     console.error("AUTHENTICATION FAILED");
     console.error("=".repeat(80));
-    console.error(`Error: ${error.message}`);
-    if (error.stack) {
+    console.error(
+      `Error: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    if (error instanceof Error && error.stack) {
       console.error(`Stack: ${error.stack}`);
     }
-    if (error.cause) {
+    if (error instanceof Error && error.cause) {
       console.error(`Cause: ${JSON.stringify(error.cause)}`);
     }
     console.error();
@@ -588,8 +590,11 @@ async function main() {
       noBrowser,
       discoverOnly,
     });
-  } catch (error: any) {
-    console.error("Fatal error:", error.message);
+  } catch (error: unknown) {
+    console.error(
+      "Fatal error:",
+      error instanceof Error ? error.message : String(error),
+    );
     process.exit(1);
   }
 }
