@@ -324,7 +324,9 @@ export class AuthStateManager
     let script = "#!/bin/bash\n\n# Authentication headers\n";
 
     for (const [name, value] of Object.entries(headers)) {
-      script += `AUTH_HEADER_${name.toUpperCase().replace(/-/g, "_")}="${value}"\n`;
+      script += `AUTH_HEADER_${name
+        .toUpperCase()
+        .replace(/-/g, "_")}="${value}"\n`;
     }
 
     if (cookies) {

@@ -138,9 +138,12 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
         for (const step of steps) {
           for (const tr of step.toolResults) {
             if (tr.toolName === "complete_authentication") {
-              const r = (tr as any).output ?? (tr as any).result;
-              success = r?.authenticated ?? false;
-              summary = r?.summary ?? summary;
+              const trRecord = tr as unknown as Record<string, unknown>;
+              const r = (trRecord.output ?? trRecord.result) as
+                | Record<string, unknown>
+                | undefined;
+              success = (r?.authenticated as boolean) ?? false;
+              summary = (r?.summary as string) ?? summary;
             }
           }
         }

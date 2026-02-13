@@ -29,10 +29,7 @@ export type {
 } from "../agents/targetedPentestAgent";
 
 // Attack surface discovery
-export {
-  AttackSurfaceAgent,
-  runAttackSurfaceAgent,
-} from "../agents/attackSurfaceAgent";
+export { AttackSurfaceAgent } from "../agents/attackSurfaceAgent";
 export type {
   AttackSurfaceAgentInput,
   AttackSurfaceResult,
@@ -59,10 +56,7 @@ export type {
 } from "../agents/authenticationAgent";
 
 // Benchmark comparison
-export {
-  BenchmarkComparisonAgent,
-  runBenchmarkComparisonAgent,
-} from "../agents/benchmarkComparisonAgent";
+export { BenchmarkComparisonAgent } from "../agents/benchmarkComparisonAgent";
 export type {
   BenchmarkComparisonAgentInput,
   BenchmarkComparisonResult,

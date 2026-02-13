@@ -1,7 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import type { ToolContext } from "./types";
-import { generatePentestReport } from "../../agents/legacy/reportGeneratorAgent";
+import { generatePentestReport } from "../../agents/legacy/reportGeneratorAgent/agent";
 
 /**
  * Factory for the `generate_report` tool.

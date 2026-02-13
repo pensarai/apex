@@ -149,10 +149,11 @@ Returns detected scheme and required fields for authentication.`,
           scheme: undefined,
           message: `No clear auth scheme detected at ${endpoint} (status: ${response.status})`,
         };
-      } catch (error: any) {
+      } catch (error: unknown) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
         return {
           success: false,
-          error: error.message,
+          error: errorMsg,
         };
       }
     },

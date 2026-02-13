@@ -31,7 +31,13 @@ Use this to:
       try {
         const { endpoints, sessionCookie } = params;
 
-        const results: Array<any> = [];
+        const results: Array<{
+          endpoint: string;
+          status: number;
+          accessible: boolean;
+          contentLength?: number;
+          error?: string;
+        }> = [];
         const accessible: Array<string> = [];
         const inaccessible: Array<string> = [];
 
@@ -57,12 +63,13 @@ Use this to:
             } else {
               inaccessible.push(endpoint);
             }
-          } catch (error: any) {
+          } catch (error: unknown) {
+            const errorMsg = error instanceof Error ? error.message : String(error);
             results.push({
               endpoint,
               status: 0,
               accessible: false,
-              error: error.message,
+              error: errorMsg,
             });
             inaccessible.push(endpoint);
           }
@@ -77,10 +84,11 @@ Use this to:
           accessibleEndpoints: accessible,
           message: `Tested ${endpoints.length} endpoints. ${accessible.length} accessible, ${inaccessible.length} not accessible.`,
         };
-      } catch (error: any) {
+      } catch (error: unknown) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
         return {
           success: false,
-          message: `Endpoint testing error: ${error.message}`,
+          message: `Endpoint testing error: ${errorMsg}`,
         };
       }
     },

@@ -135,15 +135,18 @@ COMMON TESTING PATTERNS:
           url: response.url,
           redirected: response.redirected,
         };
-      } catch (error: any) {
+      } catch (error: unknown) {
         if (timeoutId) clearTimeout(timeoutId);
 
-        const errorMsg =
-          error.name === "AbortError"
-            ? ctx.abortSignal?.aborted
-              ? "Request aborted by user"
-              : `Request timeout after ${timeout}ms`
-            : error.message;
+        const isAbort =
+          error instanceof Error && error.name === "AbortError";
+        const errorMsg = isAbort
+          ? ctx.abortSignal?.aborted
+            ? "Request aborted by user"
+            : `Request timeout after ${timeout}ms`
+          : error instanceof Error
+            ? error.message
+            : String(error);
 
         return {
           success: false,

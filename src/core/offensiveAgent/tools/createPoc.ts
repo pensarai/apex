@@ -152,10 +152,11 @@ Max ${MAX_POC_ATTEMPTS} attempts per approach before pivoting.`,
               ? `POC exited with code ${exitCode}. ${MAX_POC_ATTEMPTS - currentAttempts} attempts remaining.`
               : undefined,
         };
-      } catch (error: any) {
+      } catch (error: unknown) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
         return {
           success: false,
-          error: error.message,
+          error: errorMsg,
           attemptsRemaining: MAX_POC_ATTEMPTS - currentAttempts,
         };
       }

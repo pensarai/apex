@@ -135,12 +135,12 @@ You MUST call the provide_comparison_results tool with your analysis.`;
 // ---------------------------------------------------------------------------
 
 function buildComparisonPrompt(
-  expectedResults: any[],
+  expectedResults: Record<string, unknown>[],
   actualFindings: string
 ): string {
   const expectedList = expectedResults
     .map(
-      (r: any, i: number) =>
+      (r: Record<string, unknown>, i: number) =>
         `${i + 1}. **${r.title}** (${r.severity})\n   ${
           r.reason || r.description || ""
         }`
@@ -158,7 +158,7 @@ ${actualFindings || "No actual findings found."}
 Analyze the findings above and call provide_comparison_results with your assessment.`;
 }
 
-function loadExpectedResults(repoPath: string): any[] {
+function loadExpectedResults(repoPath: string): Record<string, unknown>[] {
   const expectedDir = join(repoPath, "expected_results");
   if (!existsSync(expectedDir)) return [];
 

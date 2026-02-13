@@ -83,13 +83,14 @@ Returns:
           keyFindings: result.results?.keyFindings ?? [],
           message: `Attack surface analysis complete. Discovered ${targetCount} targets for deep testing.`,
         };
-      } catch (error: any) {
-        console.error(`✗ Attack surface agent failed: ${error.message}`);
+      } catch (error: unknown) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        console.error(`✗ Attack surface agent failed: ${errorMsg}`);
         return {
           success: false,
           targets: [],
           totalTargets: 0,
-          message: `Attack surface analysis failed: ${error.message}`,
+          message: `Attack surface analysis failed: ${errorMsg}`,
         };
       }
     },

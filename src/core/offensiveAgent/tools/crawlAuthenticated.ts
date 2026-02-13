@@ -1,6 +1,9 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { extractJavascriptEndpoints } from "../../agents/legacy/attackSurfaceAgent/jsExtraction";
+import {
+  extractJavascriptEndpoints,
+  type EndpointInfo,
+} from "../../agents/legacy/attackSurfaceAgent/jsExtraction";
 
 /**
  * Factory for the `crawl_authenticated_area` tool.
@@ -37,7 +40,13 @@ export function crawlAuthenticated(_ctx: unknown) {
         const toVisit: Array<{ url: string; depth: number }> = [
           { url: startUrl, depth: 0 },
         ];
-        const pages: Array<any> = [];
+        const pages: Array<{
+          url: string;
+          status: number;
+          links: string[];
+          forms: string[];
+          jsEndpoints: unknown[];
+        }> = [];
         const allEndpoints = new Set<string>();
 
         while (toVisit.length > 0 && visited.size < maxPages) {
@@ -85,7 +94,7 @@ export function crawlAuthenticated(_ctx: unknown) {
               });
 
               if (jsEndpoints.endpoints) {
-                jsEndpoints.endpoints.forEach((ep: any) =>
+                jsEndpoints.endpoints.forEach((ep: EndpointInfo) =>
                   allEndpoints.add(ep.endpoint)
                 );
               }
@@ -112,10 +121,11 @@ export function crawlAuthenticated(_ctx: unknown) {
           allDiscoveredEndpoints: Array.from(allEndpoints),
           message: `Crawled ${visited.size} pages. Discovered ${allEndpoints.size} unique endpoints from JavaScript.`,
         };
-      } catch (error: any) {
+      } catch (error: unknown) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
         return {
           success: false,
-          message: `Crawl error: ${error.message}`,
+          message: `Crawl error: ${errorMsg}`,
         };
       }
     },

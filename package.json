@@ -31,6 +31,7 @@
     "dev:debug": "SHOW_CONSOLE=true bun run scripts/watch.ts",
     "start": "bun run src/tui/index.tsx",
     "pensar": "node bin/pensar.js",
+    "tsc": "tsc --noEmit",
     "daytona-benchmark": "bun run scripts/daytona-benchmark.ts",
     "local-benchmark": "bun run scripts/local-benchmark.ts",
     "test": "vitest run",

@@ -132,11 +132,12 @@ ${finding.references ? `## References\n\n${finding.references}` : ""}
           filepath: mdPath,
           message: `Finding documented: [${finding.severity}] ${finding.title}`,
         };
-      } catch (error: any) {
+      } catch (error: unknown) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
         return {
           success: false,
-          error: error.message,
-          message: `Failed to document finding: ${error.message}`,
+          error: errorMsg,
+          message: `Failed to document finding: ${errorMsg}`,
         };
       }
     },

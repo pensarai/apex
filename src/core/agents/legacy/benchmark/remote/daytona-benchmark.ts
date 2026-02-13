@@ -7,7 +7,7 @@ import {
   extractPACEFlags,
   detectMultipleFlagsInArtifacts,
 } from "../flag-detector";
-import { runStreamlinedPentest } from "../../thoroughPentestAgent/streamlined";
+import { runStreamlinedPentest } from "../../../legacy/thoroughPentestAgent/streamlined";
 import type { BenchmarkResults } from "../types";
 import type {
   ExecuteCommandOpts,

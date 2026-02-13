@@ -57,7 +57,7 @@ Use this to:
           additionalFields,
         } = params;
 
-        let authRequest: RequestInit = { method: "POST" };
+        const authRequest: RequestInit = { method: "POST" };
 
         if (method === "form_post") {
           const formData = {
@@ -116,11 +116,12 @@ Use this to:
             ? `Successfully authenticated as ${username}. Session cookie saved for use with other tools.`
             : `Authentication failed. Status: ${result.status}.`,
         };
-      } catch (error: any) {
+      } catch (error: unknown) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
         return {
           success: false,
           authenticated: false,
-          message: `Authentication error: ${error.message}`,
+          message: `Authentication error: ${errorMsg}`,
         };
       }
     },
