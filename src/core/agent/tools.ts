@@ -3430,14 +3430,9 @@ test_parameter({
               round,
             },
             model,
-<<<<<<< HEAD
-            onTokenUsage
-          ) as z.infer<typeof PayloadSchema>;
-=======
             onTokenUsage,
             authConfig
           );
->>>>>>> 19a3667 (Wired auth config)
 
           console.log(`  Payload: ${payloadData.payload}`);
           console.log(`  Reasoning: ${payloadData.reasoning}`);
