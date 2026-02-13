@@ -213,7 +213,7 @@ function CommandDisplay({
   inputKey: number;
 }) {
   const route = useRoute();
-  const _config = useConfig();
+  const config = useConfig();
 
   const handleAcceptPolicy = async () => {
     await config.update({ responsibleUseAccepted: true });

@@ -1,14 +1,21 @@
 import { useKeyboard } from "@opentui/react";
+import { useRef } from "react";
 
 export function ResponsibleUseDisclosure({
   onAccept,
 }: {
   onAccept: () => void;
 }) {
+    const processedRef = useRef(false);
+
     useKeyboard((key) => {
-        // Enter key accepts the policy
-        if (key.name === "return" || key.name === "enter") {
-        onAccept();
+        // Enter key accepts the policy - prevent duplicate processing
+        if ((key.name === "return" || key.name === "enter") && !processedRef.current) {
+            processedRef.current = true;
+            // Small delay to ensure state updates process correctly
+            setTimeout(() => {
+                onAccept();
+            }, 50);
         }
     });
 
