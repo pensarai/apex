@@ -5,29 +5,29 @@ import {
   type StreamTextOnStepFinishCallback,
   tool,
   hasToolCall,
-} from "ai";
-import { mapMessages, Messages } from "../../messages";
-import { streamResponse, type AIModel } from "../../ai";
-import { type AIAuthConfig } from "../../ai/utils";
-import { SYSTEM } from "./prompts";
-import { createPentestTools } from "../tools";
-import { Session } from "../../session";
-import { z } from "zod";
-import { join } from "path";
-import { writeFileSync, mkdirSync, existsSync } from "fs";
-import { detectOSAndEnhancePrompt } from "../utils";
-import { getScopeDescription } from "../scope";
-import { extractJavascriptEndpoints } from "./jsExtraction";
-import { generateRandomName } from "../../../util/name";
-import { nanoid } from "nanoid";
+} from 'ai';
+import { mapMessages, Messages } from '../../messages';
+import { streamResponse, type AIModel } from '../../ai';
+import { type AIAuthConfig } from '../../ai/utils';
+import { SYSTEM } from './prompts';
+import { createPentestTools } from '../tools';
+import { Session } from '../../session';
+import { z } from 'zod';
+import { join } from 'path';
+import { writeFileSync, mkdirSync, existsSync } from 'fs';
+import { detectOSAndEnhancePrompt } from '../utils';
+import { getScopeDescription } from '../scope';
+import { extractJavascriptEndpoints } from './jsExtraction';
+import { generateRandomName } from '../../../util/name';
+import { nanoid } from 'nanoid';
 import {
   createBrowserTools,
   disconnectMcpClient,
-} from "../browserTools/playwrightMcp";
+} from '../browserTools/playwrightMcp';
 import {
   runAuthenticationSubagent,
   type AuthCredentials,
-} from "../authenticationSubagent";
+} from '../authenticationSubagent';
 import {
   DocumentAssetSchema,
   AttackSurfaceReportSchema,
@@ -37,7 +37,7 @@ import {
   type DocumentAssetInput,
   type DocumentedAssetRecord,
   type AttackSurfaceReport,
-} from "./schemas";
+} from './schemas';
 
 /**
  * Merge session-level credentials with explicitly passed credentials.
@@ -210,19 +210,19 @@ export async function runAgent(opts: RunAgentProps): Promise<{
     console.log(`\n🎯 SCOPE CONSTRAINTS ENABLED:`);
     if (scopeConstraints.allowedHosts) {
       console.log(
-        `   Allowed hosts: ${scopeConstraints.allowedHosts.join(", ")}`
+        `   Allowed hosts: ${scopeConstraints.allowedHosts.join(', ')}`
       );
     }
     if (scopeConstraints.allowedPorts) {
       console.log(
-        `   Allowed ports: ${scopeConstraints.allowedPorts.join(", ")}`
+        `   Allowed ports: ${scopeConstraints.allowedPorts.join(', ')}`
       );
     }
     console.log(`   Mode: STRICT - Only in-scope targets will be tested\n`);
   }
 
   // Create assets directory for attack surface agent
-  const assetsPath = join(session.rootPath, "assets");
+  const assetsPath = join(session.rootPath, 'assets');
   if (!existsSync(assetsPath)) {
     mkdirSync(assetsPath, { recursive: true });
   }
@@ -245,11 +245,11 @@ export async function runAgent(opts: RunAgentProps): Promise<{
   );
 
   // Create browser tools for JavaScript-heavy page analysis
-  const evidenceDir = join(session.rootPath, "evidence");
+  const evidenceDir = join(session.rootPath, 'evidence');
   const browserTools = createBrowserTools(
     target,
     evidenceDir,
-    "operator", // Attack surface uses operator mode (reconnaissance-focused)
+    'operator', // Attack surface uses operator mode (reconnaissance-focused)
     undefined, // No logger needed for attack surface
     abortSignal
   );
@@ -276,17 +276,17 @@ Each asset creates a JSON file in the assets directory for tracking and analysis
         ),
       assetType: z
         .enum([
-          "domain",
-          "subdomain",
-          "web_application",
-          "api",
-          "admin_panel",
-          "infrastructure_service",
-          "cloud_resource",
-          "development_asset",
-          "endpoint",
+          'domain',
+          'subdomain',
+          'web_application',
+          'api',
+          'admin_panel',
+          'infrastructure_service',
+          'cloud_resource',
+          'development_asset',
+          'endpoint',
         ])
-        .describe("Type of asset discovered"),
+        .describe('Type of asset discovered'),
       description: z
         .string()
         .describe(
@@ -296,7 +296,7 @@ Each asset creates a JSON file in the assets directory for tracking and analysis
         .preprocess(
           (val) => {
             // If a string is provided, try to parse it as JSON
-            if (typeof val === "string") {
+            if (typeof val === 'string') {
               try {
                 return JSON.parse(val);
               } catch {
@@ -307,9 +307,9 @@ Each asset creates a JSON file in the assets directory for tracking and analysis
             return val;
           },
           z.object({
-            url: z.string().optional().describe("URL if applicable"),
-            ip: z.string().optional().describe("IP address if known"),
-            ports: z.array(z.number()).optional().describe("Open ports"),
+            url: z.string().optional().describe('URL if applicable'),
+            ip: z.string().optional().describe('IP address if known'),
+            ports: z.array(z.number()).optional().describe('Open ports'),
             services: z
               .array(z.string())
               .optional()
@@ -323,38 +323,41 @@ Each asset creates a JSON file in the assets directory for tracking and analysis
             endpoints: z
               .array(z.string())
               .optional()
-              .describe("Discovered endpoints for web apps/APIs"),
+              .describe('Discovered endpoints for web apps/APIs'),
             authentication: z
               .string()
               .optional()
-              .describe("Authentication type if known"),
+              .describe('Authentication type if known'),
             status: z
               .union([z.string(), z.number()])
               .optional()
               .describe(
-                "Status (active, inactive, redirect, error) or HTTP status code"
+                'Status (active, inactive, redirect, error) or HTTP status code'
               ),
           })
         )
-        .describe("Additional details about the asset"),
+        .describe('Additional details about the asset'),
       riskLevel: z
-        .preprocess((val) => {
-          // Extract enum value from strings like ">HIGH", "HIGH!", "- CRITICAL", etc.
-          if (typeof val === "string") {
-            const upper = val.toUpperCase();
-            // Try to extract the severity level
-            if (upper.includes("CRITICAL")) return "CRITICAL";
-            if (upper.includes("HIGH")) return "HIGH";
-            if (upper.includes("MEDIUM")) return "MEDIUM";
-            if (upper.includes("LOW")) return "LOW";
-          }
-          return val;
-        }, z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]))
-        .describe("Risk level: LOW-CRITICAL (exposed/sensitive)"),
+        .preprocess(
+          (val) => {
+            // Extract enum value from strings like ">HIGH", "HIGH!", "- CRITICAL", etc.
+            if (typeof val === 'string') {
+              const upper = val.toUpperCase();
+              // Try to extract the severity level
+              if (upper.includes('CRITICAL')) return 'CRITICAL';
+              if (upper.includes('HIGH')) return 'HIGH';
+              if (upper.includes('MEDIUM')) return 'MEDIUM';
+              if (upper.includes('LOW')) return 'LOW';
+            }
+            return val;
+          },
+          z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'])
+        )
+        .describe('Risk level: LOW-CRITICAL (exposed/sensitive)'),
       notes: z
         .string()
         .optional()
-        .describe("Additional notes or observations about the asset"),
+        .describe('Additional notes or observations about the asset'),
       toolCallDescription: z
         .string()
         .describe(
@@ -365,8 +368,8 @@ Each asset creates a JSON file in the assets directory for tracking and analysis
       // Create a sanitized filename from asset name
       const sanitizedName = asset.assetName
         .toLowerCase()
-        .replace(/[^a-z0-9-_.]/g, "_");
-      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+        .replace(/[^a-z0-9-_.]/g, '_');
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const filename = `asset_${sanitizedName}_${timestamp}.json`;
       const filepath = join(assetsPath, filename);
 
@@ -386,7 +389,7 @@ Each asset creates a JSON file in the assets directory for tracking and analysis
         try {
           await persistence.onAssetDocumented(assetRecord);
         } catch (err) {
-          console.error("Persistence callback error (onAssetDocumented):", err);
+          console.error('Persistence callback error (onAssetDocumented):', err);
           // Don't fail the tool call - file was written successfully
         }
       }
@@ -395,7 +398,7 @@ Each asset creates a JSON file in the assets directory for tracking and analysis
       if (persistence?.onProgressUpdate) {
         try {
           await persistence.onProgressUpdate({
-            type: "asset_discovered",
+            type: 'asset_discovered',
             data: {
               name: asset.assetName,
               assetType: asset.assetType,
@@ -403,7 +406,7 @@ Each asset creates a JSON file in the assets directory for tracking and analysis
             },
           });
         } catch (err) {
-          console.error("Progress update callback error:", err);
+          console.error('Progress update callback error:', err);
         }
       }
 
@@ -427,25 +430,25 @@ Use this to:
 - Obtain session cookies for authenticated exploration
 - Access protected areas of the application`,
     inputSchema: z.object({
-      loginUrl: z.string().describe("Login endpoint URL"),
-      username: z.string().describe("Username to authenticate with"),
-      password: z.string().describe("Password to authenticate with"),
+      loginUrl: z.string().describe('Login endpoint URL'),
+      username: z.string().describe('Username to authenticate with'),
+      password: z.string().describe('Password to authenticate with'),
       method: z
-        .enum(["form_post", "json_post", "basic_auth"])
-        .default("form_post")
-        .describe("Authentication method"),
+        .enum(['form_post', 'json_post', 'basic_auth'])
+        .default('form_post')
+        .describe('Authentication method'),
       usernameField: z
         .string()
-        .default("username")
-        .describe("Name of username field"),
+        .default('username')
+        .describe('Name of username field'),
       passwordField: z
         .string()
-        .default("password")
-        .describe("Name of password field"),
+        .default('password')
+        .describe('Name of password field'),
       additionalFields: z
         .record(z.string(), z.string())
         .optional()
-        .describe("Additional form fields (e.g., csrf tokens)"),
+        .describe('Additional form fields (e.g., csrf tokens)'),
       toolCallDescription: z
         .string()
         .describe(
@@ -465,9 +468,9 @@ Use this to:
         } = params;
 
         // Use http_request to perform authentication
-        let authRequest: BunFetchRequestInit = { method: "POST" };
+        let authRequest: BunFetchRequestInit = { method: 'POST' };
 
-        if (method === "form_post") {
+        if (method === 'form_post') {
           const formData = {
             [usernameField]: username,
             [passwordField]: password,
@@ -475,18 +478,18 @@ Use this to:
           };
           authRequest.body = new URLSearchParams(formData).toString();
           authRequest.headers = {
-            "Content-Type": "application/x-www-form-urlencoded",
+            'Content-Type': 'application/x-www-form-urlencoded',
           };
-        } else if (method === "json_post") {
+        } else if (method === 'json_post') {
           authRequest.body = JSON.stringify({
             [usernameField]: username,
             [passwordField]: password,
             ...additionalFields,
           });
-          authRequest.headers = { "Content-Type": "application/json" };
-        } else if (method === "basic_auth") {
+          authRequest.headers = { 'Content-Type': 'application/json' };
+        } else if (method === 'basic_auth') {
           const authHeader = Buffer.from(`${username}:${password}`).toString(
-            "base64"
+            'base64'
           );
           authRequest.headers = { Authorization: `Basic ${authHeader}` };
         }
@@ -498,7 +501,7 @@ Use this to:
         const sessionCookies = Array.isArray(setCookieHeader)
           ? setCookieHeader
           : [setCookieHeader];
-        const cookieString = sessionCookies.join("; ");
+        const cookieString = sessionCookies.join('; ');
 
         // Check if authentication was successful
         const authenticated =
@@ -507,7 +510,7 @@ Use this to:
           cookieString.length > 0;
 
         // Save session info to session directory for reuse
-        const sessionInfoPath = join(session.rootPath, "session-info.json");
+        const sessionInfoPath = join(session.rootPath, 'session-info.json');
         const sessionInfo = {
           authenticated,
           username,
@@ -572,60 +575,60 @@ When to use delegate_to_auth_subagent vs authenticate_and_maintain_session:
 - If authenticate_and_maintain_session fails → delegate_to_auth_subagent
 - Token verification needed → delegate_to_auth_subagent`,
     inputSchema: z.object({
-      target: z.string().describe("Target URL requiring authentication"),
-      loginUrl: z.string().optional().describe("Discovered login URL if known"),
-      username: z.string().optional().describe("Username if available"),
-      password: z.string().optional().describe("Password if available"),
-      apiKey: z.string().optional().describe("API key if available"),
+      target: z.string().describe('Target URL requiring authentication'),
+      loginUrl: z.string().optional().describe('Discovered login URL if known'),
+      username: z.string().optional().describe('Username if available'),
+      password: z.string().optional().describe('Password if available'),
+      apiKey: z.string().optional().describe('API key if available'),
       tokens: z
         .object({
           bearerToken: z
             .string()
             .optional()
-            .describe("Bearer/JWT token to verify"),
-          cookies: z.string().optional().describe("Cookie string to verify"),
+            .describe('Bearer/JWT token to verify'),
+          cookies: z.string().optional().describe('Cookie string to verify'),
           sessionToken: z
             .string()
             .optional()
-            .describe("Session ID or token value"),
+            .describe('Session ID or token value'),
           customHeaders: z
             .record(z.string(), z.string())
             .optional()
             .describe(
-              "Custom headers to verify (e.g., X-API-Key, X-Auth-Token)"
+              'Custom headers to verify (e.g., X-API-Key, X-Auth-Token)'
             ),
         })
         .optional()
         .describe(
-          "Pre-existing tokens to verify (skips login flow, just validates these work)"
+          'Pre-existing tokens to verify (skips login flow, just validates these work)'
         ),
       authHints: z
         .object({
           authScheme: z
             .string()
             .optional()
-            .describe("Detected auth scheme (form, json, oauth, etc.)"),
+            .describe('Detected auth scheme (form, json, oauth, etc.)'),
           csrfRequired: z
             .boolean()
             .optional()
-            .describe("Whether CSRF protection was detected"),
+            .describe('Whether CSRF protection was detected'),
           browserRequired: z
             .boolean()
             .optional()
-            .describe("Whether browser automation is needed"),
+            .describe('Whether browser automation is needed'),
           protectedEndpoints: z
             .array(z.string())
             .optional()
             .describe(
-              "Protected endpoints discovered during recon that require auth (for token verification)"
+              'Protected endpoints discovered during recon that require auth (for token verification)'
             ),
         })
         .optional()
-        .describe("Hints about the auth flow from discovery"),
-      reason: z.string().describe("Why you are delegating to auth subagent"),
+        .describe('Hints about the auth flow from discovery'),
+      reason: z.string().describe('Why you are delegating to auth subagent'),
       toolCallDescription: z
         .string()
-        .describe("A concise description of what this tool call is doing"),
+        .describe('A concise description of what this tool call is doing'),
     }),
     execute: async ({
       target,
@@ -649,7 +652,7 @@ When to use delegate_to_auth_subagent vs authenticate_and_maintain_session:
         if (tokens?.cookies) console.log(`   Cookies: [PROVIDED]`);
         if (tokens?.customHeaders)
           console.log(
-            `   Custom Headers: ${Object.keys(tokens.customHeaders).join(", ")}`
+            `   Custom Headers: ${Object.keys(tokens.customHeaders).join(', ')}`
           );
 
         // Log session-level credentials that will be inherited
@@ -668,11 +671,11 @@ When to use delegate_to_auth_subagent vs authenticate_and_maintain_session:
             console.log(
               `   Session Custom Headers: ${Object.keys(
                 sessionCreds.tokens.customHeaders
-              ).join(", ")}`
+              ).join(', ')}`
             );
         }
         if (authHints) {
-          console.log(`   Auth Scheme: ${authHints.authScheme || "unknown"}`);
+          console.log(`   Auth Scheme: ${authHints.authScheme || 'unknown'}`);
           console.log(`   CSRF Required: ${authHints.csrfRequired || false}`);
           console.log(
             `   Browser Required: ${authHints.browserRequired || false}`
@@ -680,7 +683,7 @@ When to use delegate_to_auth_subagent vs authenticate_and_maintain_session:
           if (authHints.protectedEndpoints?.length) {
             console.log(
               `   Protected Endpoints: ${authHints.protectedEndpoints.join(
-                ", "
+                ', '
               )}`
             );
           }
@@ -715,11 +718,11 @@ When to use delegate_to_auth_subagent vs authenticate_and_maintain_session:
 
         if (result.success) {
           // Save session info for other tools to use
-          const sessionInfoPath = join(session.rootPath, "session-info.json");
+          const sessionInfoPath = join(session.rootPath, 'session-info.json');
           const sessionInfo = {
             authenticated: true,
-            username: username || "via_subagent",
-            sessionCookie: result.exportedCookies || "",
+            username: username || 'via_subagent',
+            sessionCookie: result.exportedCookies || '',
             headers: result.exportedHeaders || {},
             loginUrl: target,
             timestamp: new Date().toISOString(),
@@ -735,10 +738,10 @@ When to use delegate_to_auth_subagent vs authenticate_and_maintain_session:
         const hasCookies =
           result.exportedCookies && result.exportedCookies.length > 0;
 
-        let usageInstructions = "";
+        let usageInstructions = '';
         if (result.success && (hasHeaders || hasCookies)) {
           usageInstructions =
-            "\n\nTo make authenticated requests, use the returned values:\n";
+            '\n\nTo make authenticated requests, use the returned values:\n';
           if (hasCookies) {
             usageInstructions += `- Pass sessionCookie to crawl_authenticated_area, extract_javascript_endpoints, and test_endpoint_variations tools\n`;
             usageInstructions += `- For http_request, include Cookie header: "${result.exportedCookies}"\n`;
@@ -746,7 +749,7 @@ When to use delegate_to_auth_subagent vs authenticate_and_maintain_session:
           if (hasHeaders) {
             const headerList = Object.entries(result.exportedHeaders!)
               .map(([k, v]) => `${k}: ${v}`)
-              .join(", ");
+              .join(', ');
             usageInstructions += `- Include these headers in http_request calls: ${headerList}\n`;
           }
         }
@@ -755,7 +758,7 @@ When to use delegate_to_auth_subagent vs authenticate_and_maintain_session:
           success: result.success,
           authenticated: result.success,
           strategy: result.strategy,
-          sessionCookie: result.exportedCookies || "",
+          sessionCookie: result.exportedCookies || '',
           headers: result.exportedHeaders || {},
           authBarrier: result.authBarrier,
           summary: result.summary,
@@ -764,7 +767,7 @@ When to use delegate_to_auth_subagent vs authenticate_and_maintain_session:
             : `Authentication subagent failed. ${result.summary}${
                 result.authBarrier
                   ? ` Barrier: ${result.authBarrier.type} - ${result.authBarrier.details}`
-                  : ""
+                  : ''
               }`,
         };
       } catch (error: any) {
@@ -790,15 +793,15 @@ Uses regex patterns to find:
 
 Returns all discovered endpoint patterns.`,
     inputSchema: z.object({
-      url: z.string().describe("URL of the page to analyze"),
+      url: z.string().describe('URL of the page to analyze'),
       sessionCookie: z
         .string()
         .optional()
-        .describe("Session cookie for authenticated pages"),
+        .describe('Session cookie for authenticated pages'),
       includeExternalJS: z
         .boolean()
         .default(true)
-        .describe("Whether to download and analyze external JS files"),
+        .describe('Whether to download and analyze external JS files'),
       toolCallDescription: z
         .string()
         .describe(
@@ -819,12 +822,12 @@ Returns all discovered endpoint patterns.`,
 - Calls extract_javascript_endpoints on each discovered page
 - Returns comprehensive map of discovered pages and endpoints`,
     inputSchema: z.object({
-      startUrl: z.string().describe("Starting URL (e.g., /dashboard)"),
+      startUrl: z.string().describe('Starting URL (e.g., /dashboard)'),
       sessionCookie: z
         .string()
-        .describe("Session cookie from authenticate_and_maintain_session"),
-      maxDepth: z.number().default(3).describe("Maximum crawl depth"),
-      maxPages: z.number().default(50).describe("Maximum pages to visit"),
+        .describe('Session cookie from authenticate_and_maintain_session'),
+      maxDepth: z.number().default(3).describe('Maximum crawl depth'),
+      maxPages: z.number().default(50).describe('Maximum pages to visit'),
       toolCallDescription: z
         .string()
         .describe(
@@ -851,14 +854,14 @@ Returns all discovered endpoint patterns.`,
           try {
             // Fetch page
             const pageResult = await fetch(url, {
-              method: "GET",
+              method: 'GET',
               headers: {
                 cookie: sessionCookie,
               },
             });
 
             if (pageResult.status >= 200 && pageResult.status < 400) {
-              const html = pageResult.body || "";
+              const html = pageResult.body || '';
 
               // Extract links
               const linkRegex = /<a[^>]+href=['"]([^'"]+)['"]/gi;
@@ -866,7 +869,7 @@ Returns all discovered endpoint patterns.`,
               let linkMatch;
               while ((linkMatch = linkRegex.exec(html.toString())) !== null) {
                 const link = linkMatch[1];
-                if (link.startsWith("/") && !link.startsWith("//")) {
+                if (link.startsWith('/') && !link.startsWith('//')) {
                   links.push(link);
                   if (!visited.has(link)) {
                     toVisit.push({ url: link, depth: depth + 1 });
@@ -936,11 +939,11 @@ Use this to:
 - Test related endpoints that follow similar patterns
 - Systematically probe endpoint variations you've identified`,
     inputSchema: z.object({
-      endpoints: z.array(z.string()).describe("Array of endpoint URLs to test"),
+      endpoints: z.array(z.string()).describe('Array of endpoint URLs to test'),
       sessionCookie: z
         .string()
         .optional()
-        .describe("Session cookie if authentication required"),
+        .describe('Session cookie if authentication required'),
       toolCallDescription: z
         .string()
         .describe(
@@ -958,7 +961,7 @@ Use this to:
         // Test each endpoint
         for (const endpoint of endpoints) {
           try {
-            const request: BunFetchRequestInit = { method: "GET" };
+            const request: BunFetchRequestInit = { method: 'GET' };
             if (sessionCookie) {
               request.headers = { Cookie: sessionCookie };
             }
@@ -1020,16 +1023,16 @@ Returns a confidence score and identifies potential gaps based on:
     inputSchema: z.object({
       discoveredEndpoints: z
         .array(z.string())
-        .describe("All discovered endpoints"),
+        .describe('All discovered endpoints'),
       authenticatedWithCredentials: z
         .boolean()
-        .describe("Whether you authenticated with any discovered credentials"),
+        .describe('Whether you authenticated with any discovered credentials'),
       pagesWithJSAnalyzed: z
         .array(z.string())
-        .describe("Pages where you ran extract_javascript_endpoints"),
+        .describe('Pages where you ran extract_javascript_endpoints'),
       credentialsFound: z
         .boolean()
-        .describe("Whether any credentials were discovered"),
+        .describe('Whether any credentials were discovered'),
       toolCallDescription: z
         .string()
         .describe(
@@ -1054,10 +1057,10 @@ Returns a confidence score and identifies potential gaps based on:
       // Check: Authenticated if credentials found
       if (credentialsFound && !authenticatedWithCredentials) {
         gaps.push({
-          gap: "Credentials found but never used for authentication",
-          severity: "CRITICAL",
+          gap: 'Credentials found but never used for authentication',
+          severity: 'CRITICAL',
           recommendation:
-            "Use authenticate_and_maintain_session with discovered credentials, then use crawl_authenticated_area to explore authenticated sections",
+            'Use authenticate_and_maintain_session with discovered credentials, then use crawl_authenticated_area to explore authenticated sections',
         });
         confidence -= 40;
       }
@@ -1065,29 +1068,29 @@ Returns a confidence score and identifies potential gaps based on:
       // Check: JavaScript analysis on authenticated pages
       if (authenticatedWithCredentials && pagesWithJSAnalyzed.length === 0) {
         gaps.push({
-          gap: "Authenticated but no JavaScript analysis performed",
-          severity: "CRITICAL",
+          gap: 'Authenticated but no JavaScript analysis performed',
+          severity: 'CRITICAL',
           recommendation:
-            "Use extract_javascript_endpoints on /dashboard, /orders, and other authenticated pages",
+            'Use extract_javascript_endpoints on /dashboard, /orders, and other authenticated pages',
         });
         confidence -= 30;
       }
 
       // Check: CRUD enumeration for resource patterns
       const resourcePatterns = discoveredEndpoints.filter((ep) =>
-        ep.includes("{id}")
+        ep.includes('{id}')
       );
       if (
         resourcePatterns.length > 0 &&
         !discoveredEndpoints.some(
-          (ep) => ep.includes("receipt") || ep.includes("archive")
+          (ep) => ep.includes('receipt') || ep.includes('archive')
         )
       ) {
         gaps.push({
-          gap: "Resource patterns found but CRUD operations not enumerated",
-          severity: "HIGH",
+          gap: 'Resource patterns found but CRUD operations not enumerated',
+          severity: 'HIGH',
           recommendation:
-            "Use enumerate_crud_operations to test all CRUD variations (receipt, archive, delete, edit, etc.)",
+            'Use enumerate_crud_operations to test all CRUD variations (receipt, archive, delete, edit, etc.)',
         });
         confidence -= 20;
       }
@@ -1095,10 +1098,10 @@ Returns a confidence score and identifies potential gaps based on:
       // Check: Minimum endpoint discovery
       if (discoveredEndpoints.length < 5) {
         gaps.push({
-          gap: "Very few endpoints discovered (less than 5)",
-          severity: "MEDIUM",
+          gap: 'Very few endpoints discovered (less than 5)',
+          severity: 'MEDIUM',
           recommendation:
-            "Ensure you crawled authenticated areas, analyzed JavaScript, and tested common paths",
+            'Ensure you crawled authenticated areas, analyzed JavaScript, and tested common paths',
         });
         confidence -= 10;
       }
@@ -1114,10 +1117,10 @@ Returns a confidence score and identifies potential gaps based on:
           : `Discovery is only ${confidence}% complete. ${gaps.length} critical gaps found.`,
         readyForReport: complete,
         message: complete
-          ? "Validation passed. You can now call create_attack_surface_report."
+          ? 'Validation passed. You can now call create_attack_surface_report.'
           : `Validation failed. Address these gaps before reporting: ${gaps
               .map((g) => g.gap)
-              .join("; ")}`,
+              .join('; ')}`,
       };
     },
   });
@@ -1138,7 +1141,7 @@ Call this at the END of your analysis with:
           totalDomains: z.number(),
           analysisComplete: z.boolean(),
         })
-        .describe("Summary statistics"),
+        .describe('Summary statistics'),
       discoveredAssets: z
         .array(z.string())
         .describe(
@@ -1147,14 +1150,14 @@ Call this at the END of your analysis with:
       targets: z
         .array(
           z.object({
-            target: z.string().describe("Target URL, IP, or domain"),
-            objective: z.string().describe("Pentest objective for this target"),
+            target: z.string().describe('Target URL, IP, or domain'),
+            objective: z.string().describe('Pentest objective for this target'),
             rationale: z
               .string()
-              .describe("Why this target needs deep testing"),
+              .describe('Why this target needs deep testing'),
           })
         )
-        .describe("ALL targets for deep penetration testing"),
+        .describe('ALL targets for deep penetration testing'),
       keyFindings: z.preprocess(
         (val) => (Array.isArray(val) ? val : [val]),
         z
@@ -1171,7 +1174,7 @@ Call this at the END of your analysis with:
     }),
     execute: async (results) => {
       // Save the results to the session for the orchestrator to access
-      const resultsPath = join(session.rootPath, "attack-surface-results.json");
+      const resultsPath = join(session.rootPath, 'attack-surface-results.json');
       writeFileSync(resultsPath, JSON.stringify(results, null, 2));
 
       // Call persistence callback if provided (for external DB storage)
@@ -1179,7 +1182,7 @@ Call this at the END of your analysis with:
         try {
           await persistence.onReportCreated(results as AttackSurfaceReport);
         } catch (err) {
-          console.error("Persistence callback error (onReportCreated):", err);
+          console.error('Persistence callback error (onReportCreated):', err);
           // Don't fail the tool call - file was written successfully
         }
       }
@@ -1188,7 +1191,7 @@ Call this at the END of your analysis with:
       if (persistence?.onProgressUpdate) {
         try {
           await persistence.onProgressUpdate({
-            type: "report_created",
+            type: 'report_created',
             data: {
               totalAssets: results.summary.totalAssets,
               totalDomains: results.summary.totalDomains,
@@ -1197,7 +1200,7 @@ Call this at the END of your analysis with:
             },
           });
         } catch (err) {
-          console.error("Progress update callback error:", err);
+          console.error('Progress update callback error:', err);
         }
       }
 
@@ -1229,7 +1232,7 @@ CRITICAL: When identifying targets for penetration testing, YOU MUST include the
 </authentication_instructions>
 
 `
-    : ""
+    : ''
 }
 SCOPE CONSTRAINTS:
 ${scopeDescription}
@@ -1295,7 +1298,7 @@ You MUST provide the final report using create_attack_surface_report tool.
       ...browserTools,
     },
     stopWhen: stepCountIs(10000),
-    toolChoice: "auto", // Let the model decide when to use tools vs respond
+    toolChoice: 'auto', // Let the model decide when to use tools vs respond
     onStepFinish,
     abortSignal,
     authConfig,
