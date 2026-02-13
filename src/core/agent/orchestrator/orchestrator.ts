@@ -31,7 +31,7 @@ import type {
   HttpRequestOpts,
   HttpRequestResult,
 } from "../tools";
-import type { VulnerabilityClass } from "./types";
+import type { VulnerabilityClass, AuthenticationInfo } from "./types";
 import { generateRandomName } from "../../../util/name";
 
 /**
@@ -82,6 +82,8 @@ export interface SubAgentSpawnInfo {
   name: string;
   target: string;
   vulnerabilityClass: VulnerabilityClass;
+  objective: string;
+  authenticationInfo?: AuthenticationInfo;
 }
 
 /**
@@ -200,7 +202,7 @@ interface TestTask {
   targetIndex: number;
   target: string;
   objective: string;
-  authenticationInfo?: any;
+  authenticationInfo?: AuthenticationInfo;
   vulnClass: VulnerabilityClass;
   /** Whether this task was dynamically spawned by another agent */
   isSpawned?: boolean;
@@ -363,6 +365,8 @@ export async function runPentestOrchestrator(
         name: `${getVulnerabilityClassName(task.vulnClass)} on ${task.target}`,
         target: task.target,
         vulnerabilityClass: task.vulnClass,
+        objective: task.objective,
+        authenticationInfo: task.authenticationInfo,
       });
 
       try {

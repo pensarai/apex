@@ -1,0 +1,151 @@
+/**
+ * Shared hook for loading, enriching, filtering, and grouping sessions.
+ * Used by SessionsBrowser and SessionsDisplay.
+ */
+
+import { useState, useEffect, useCallback } from "react";
+import { existsSync, readdirSync } from "fs";
+import { join } from "path";
+import { Session } from "../../core/session";
+
+export interface EnrichedSession extends Session.SessionInfo {
+  findingsCount: number;
+  hasOperatorState: boolean;
+  hasReport: boolean;
+}
+
+export interface DateGroup {
+  date: string;
+  timestamp: number;
+  sessions: (EnrichedSession & { index: number })[];
+}
+
+function countFindings(findingsPath: string): number {
+  try {
+    if (!existsSync(findingsPath)) return 0;
+    return readdirSync(findingsPath).filter((f) => f.endsWith(".json")).length;
+  } catch {
+    return 0;
+  }
+}
+
+function checkHasReport(rootPath: string): boolean {
+  return existsSync(join(rootPath, "comprehensive-pentest-report.md"));
+}
+
+export function formatRelativeTime(timestamp: number): string {
+  const now = Date.now();
+  const diff = now - timestamp;
+  const minutes = Math.floor(diff / 60000);
+  const hours = Math.floor(diff / 3600000);
+  const days = Math.floor(diff / 86400000);
+
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  if (hours < 24) return `${hours}h ago`;
+  if (days === 1) return "yesterday";
+  if (days < 7) return `${days}d ago`;
+  return new Date(timestamp).toLocaleDateString();
+}
+
+export function useSessionsList() {
+  const [sessions, setSessions] = useState<EnrichedSession[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState("");
+
+  const loadSessions = useCallback(async () => {
+    setLoading(true);
+    try {
+      const enriched: EnrichedSession[] = [];
+      for await (const session of Session.list()) {
+        const hasOperatorState = existsSync(
+          join(session.rootPath, "operator-state.json")
+        );
+        const findingsCount = countFindings(session.findingsPath);
+        const hasReport = checkHasReport(session.rootPath);
+        enriched.push({ ...session, findingsCount, hasOperatorState, hasReport });
+      }
+      // Sort by updated time (newest first)
+      enriched.sort((a, b) => b.time.updated - a.time.updated);
+      setSessions(enriched);
+    } catch (error) {
+      console.error("Error loading sessions:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadSessions();
+  }, [loadSessions]);
+
+  const deleteSession = useCallback(
+    async (id: string) => {
+      await Session.remove({ sessionId: id });
+      await loadSessions();
+    },
+    [loadSessions]
+  );
+
+  // Filter by search term
+  const filtered = searchTerm
+    ? sessions.filter((s) =>
+        s.name.toLowerCase().includes(searchTerm.toLowerCase())
+      )
+    : sessions;
+
+  // Group by date
+  const groupsMap = new Map<
+    string,
+    { date: string; timestamp: number; sessions: EnrichedSession[] }
+  >();
+  for (const session of filtered) {
+    const d = new Date(session.time.created);
+    const dateStr = d.toLocaleDateString("en-US", {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+    let group = groupsMap.get(dateStr);
+    if (!group) {
+      group = { date: dateStr, timestamp: d.getTime(), sessions: [] };
+      groupsMap.set(dateStr, group);
+    }
+    group.sessions.push(session);
+  }
+
+  const rawGroups = Array.from(groupsMap.values());
+  rawGroups.sort((a, b) => b.timestamp - a.timestamp);
+  for (const g of rawGroups) {
+    g.sessions.sort(
+      (a, b) =>
+        new Date(b.time.created).getTime() - new Date(a.time.created).getTime()
+    );
+  }
+
+  // Build visual-order flat list and indexed groups
+  const visualOrderSessions: EnrichedSession[] = [];
+  const groupedSessions: DateGroup[] = [];
+  let idx = 0;
+  for (const raw of rawGroups) {
+    const group: DateGroup = { date: raw.date, timestamp: raw.timestamp, sessions: [] };
+    for (const s of raw.sessions) {
+      visualOrderSessions.push(s);
+      group.sessions.push({ ...s, index: idx });
+      idx++;
+    }
+    groupedSessions.push(group);
+  }
+
+  return {
+    sessions: filtered,
+    groupedSessions,
+    visualOrderSessions,
+    loading,
+    searchTerm,
+    setSearchTerm,
+    deleteSession,
+    reload: loadSessions,
+  };
+}

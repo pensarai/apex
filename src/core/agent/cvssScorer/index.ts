@@ -10,6 +10,7 @@
 
 import { z } from 'zod';
 import { generateObjectResponse, type AIModel } from '../../ai';
+import { type AIAuthConfig } from '../../ai/utils';
 import {
   calculateCVSS4Score,
   type CVSS4Metrics,
@@ -57,52 +58,78 @@ export interface CVSSScorerResult {
 const CVSSMetricsOutputSchema = z.object({
   metrics: z.object({
     // Base Metrics - Exploitability
-    AV: z.enum(['N', 'A', 'L', 'P']).describe(
-      'Attack Vector: N=Network (remotely exploitable), A=Adjacent network, L=Local access required, P=Physical access required'
-    ),
-    AC: z.enum(['L', 'H']).describe(
-      'Attack Complexity: L=Low (no special conditions), H=High (requires specific conditions/bypassing)'
-    ),
-    AT: z.enum(['N', 'P']).describe(
-      'Attack Requirements: N=None (works in most configs), P=Present (requires race conditions/specific setup)'
-    ),
-    PR: z.enum(['N', 'L', 'H']).describe(
-      'Privileges Required: N=None (unauthenticated), L=Low (basic user), H=High (admin)'
-    ),
-    UI: z.enum(['N', 'P', 'A']).describe(
-      'User Interaction: N=None, P=Passive (user visits page), A=Active (user must click/interact)'
-    ),
+    AV: z
+      .enum(['N', 'A', 'L', 'P'])
+      .describe(
+        'Attack Vector: N=Network (remotely exploitable), A=Adjacent network, L=Local access required, P=Physical access required'
+      ),
+    AC: z
+      .enum(['L', 'H'])
+      .describe(
+        'Attack Complexity: L=Low (no special conditions), H=High (requires specific conditions/bypassing)'
+      ),
+    AT: z
+      .enum(['N', 'P'])
+      .describe(
+        'Attack Requirements: N=None (works in most configs), P=Present (requires race conditions/specific setup)'
+      ),
+    PR: z
+      .enum(['N', 'L', 'H'])
+      .describe(
+        'Privileges Required: N=None (unauthenticated), L=Low (basic user), H=High (admin)'
+      ),
+    UI: z
+      .enum(['N', 'P', 'A'])
+      .describe(
+        'User Interaction: N=None, P=Passive (user visits page), A=Active (user must click/interact)'
+      ),
 
     // Base Metrics - Vulnerable System Impact
-    VC: z.enum(['H', 'L', 'N']).describe(
-      'Confidentiality Impact on Vulnerable System: H=High (total loss), L=Low (partial), N=None'
-    ),
-    VI: z.enum(['H', 'L', 'N']).describe(
-      'Integrity Impact on Vulnerable System: H=High (total loss), L=Low (partial), N=None'
-    ),
-    VA: z.enum(['H', 'L', 'N']).describe(
-      'Availability Impact on Vulnerable System: H=High (total loss), L=Low (partial), N=None'
-    ),
+    VC: z
+      .enum(['H', 'L', 'N'])
+      .describe(
+        'Confidentiality Impact on Vulnerable System: H=High (total loss), L=Low (partial), N=None'
+      ),
+    VI: z
+      .enum(['H', 'L', 'N'])
+      .describe(
+        'Integrity Impact on Vulnerable System: H=High (total loss), L=Low (partial), N=None'
+      ),
+    VA: z
+      .enum(['H', 'L', 'N'])
+      .describe(
+        'Availability Impact on Vulnerable System: H=High (total loss), L=Low (partial), N=None'
+      ),
 
     // Base Metrics - Subsequent System Impact
-    SC: z.enum(['H', 'L', 'N']).describe(
-      'Confidentiality Impact on Subsequent Systems: H=High, L=Low, N=None (no pivoting)'
-    ),
-    SI: z.enum(['H', 'L', 'N']).describe(
-      'Integrity Impact on Subsequent Systems: H=High, L=Low, N=None'
-    ),
-    SA: z.enum(['H', 'L', 'N']).describe(
-      'Availability Impact on Subsequent Systems: H=High, L=Low, N=None'
-    ),
+    SC: z
+      .enum(['H', 'L', 'N'])
+      .describe(
+        'Confidentiality Impact on Subsequent Systems: H=High, L=Low, N=None (no pivoting)'
+      ),
+    SI: z
+      .enum(['H', 'L', 'N'])
+      .describe(
+        'Integrity Impact on Subsequent Systems: H=High, L=Low, N=None'
+      ),
+    SA: z
+      .enum(['H', 'L', 'N'])
+      .describe(
+        'Availability Impact on Subsequent Systems: H=High, L=Low, N=None'
+      ),
 
     // Threat Metric
-    E: z.enum(['A', 'P', 'U']).describe(
-      'Exploit Maturity: A=Attacked (working exploit exists), P=POC available, U=Unreported'
-    ),
+    E: z
+      .enum(['A', 'P', 'U'])
+      .describe(
+        'Exploit Maturity: A=Attacked (working exploit exists), P=POC available, U=Unreported'
+      ),
   }),
-  reasoning: z.string().describe(
-    'Brief explanation (2-3 sentences) of the key factors that influenced the metric choices'
-  ),
+  reasoning: z
+    .string()
+    .describe(
+      'Brief explanation (2-3 sentences) of the key factors that influenced the metric choices'
+    ),
 });
 
 type CVSSMetricsOutput = z.infer<typeof CVSSMetricsOutputSchema>;
@@ -214,7 +241,8 @@ Always provide brief reasoning explaining your key decisions.`;
  */
 export async function scoreFindingWithCVSS(
   input: CVSSScorerInput,
-  model: AIModel
+  model: AIModel,
+  authConfig?: AIAuthConfig
 ): Promise<CVSSScorerResult> {
   const prompt = buildScoringPrompt(input);
 
@@ -224,6 +252,7 @@ export async function scoreFindingWithCVSS(
     schema: CVSSMetricsOutputSchema,
     prompt,
     system: CVSS_SCORER_SYSTEM_PROMPT,
+    authConfig,
   });
 
   // Calculate final score using the CVSS calculator
@@ -312,8 +341,12 @@ function extractContextSummary(messages: any[]): string {
     // Extract assistant reasoning
     if (message.role === 'assistant' && typeof message.content === 'string') {
       // Look for hypothesis/validation blocks
-      const hypothesisMatch = message.content.match(/HYPOTHESIS:[\s\S]*?(?=VALIDATION:|$)/);
-      const validationMatch = message.content.match(/VALIDATION:[\s\S]*?(?=HYPOTHESIS:|$)/);
+      const hypothesisMatch = message.content.match(
+        /HYPOTHESIS:[\s\S]*?(?=VALIDATION:|$)/
+      );
+      const validationMatch = message.content.match(
+        /VALIDATION:[\s\S]*?(?=HYPOTHESIS:|$)/
+      );
 
       if (hypothesisMatch) {
         contextParts.push(`- ${hypothesisMatch[0].substring(0, 300)}...`);
@@ -327,7 +360,8 @@ function extractContextSummary(messages: any[]): string {
     if (message.role === 'assistant' && Array.isArray(message.content)) {
       for (const part of message.content) {
         if (part.type === 'tool-call' && part.toolName) {
-          const desc = part.input?.toolCallDescription || `Used ${part.toolName}`;
+          const desc =
+            part.input?.toolCallDescription || `Used ${part.toolName}`;
           contextParts.push(`- Tool: ${desc}`);
           foundToolCalls++;
         }

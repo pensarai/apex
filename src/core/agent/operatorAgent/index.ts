@@ -5,14 +5,14 @@
  * Unlike SwarmMode, this runs one agent that waits for approval on risky actions.
  */
 
-import { EventEmitter } from "events";
-import { stepCountIs } from "ai";
-import { appendFileSync, existsSync, mkdirSync } from "fs";
-import { join } from "path";
-import type { AIModel } from "../../ai";
-import { streamResponse } from "../../ai/ai";
-import { type AIAuthConfig } from "../../ai/utils";
-import { Session } from "../../session";
+import { EventEmitter } from 'events';
+import { stepCountIs } from 'ai';
+import { appendFileSync, existsSync, mkdirSync } from 'fs';
+import { join } from 'path';
+import type { AIModel } from '../../ai';
+import { streamResponse } from '../../ai/ai';
+import { type AIAuthConfig } from '../../ai/utils';
+import { Session } from '../../session';
 import {
   ApprovalGate,
   ApprovalBlockedError,
@@ -26,18 +26,22 @@ import {
   type ActionHistoryEntry,
   type OperatorEvent,
   OPERATOR_STAGES,
-} from "../../operator";
-import { createPentestTools, ATTACK_KNOWLEDGE, isBackgroundTool } from "../tools";
-import { taskManager } from "../taskManager";
-import { createBrowserTools, disconnectMcpClient } from "../browserTools";
-import { createPocTool } from "../metaTestingAgent/pocTools";
-import { Logger } from "../logger";
-import { inferVulnerabilityClasses } from "../orchestrator/prompts";
-import type { DisplayMessage } from "../../../tui/components/agent-display";
-import { runAuthenticationSubagent } from "../authenticationSubagent";
-import { tool } from "ai";
-import { z } from "zod";
-import { getActiveToolNames } from "../../toolset";
+} from '../../operator';
+import {
+  createPentestTools,
+  ATTACK_KNOWLEDGE,
+  isBackgroundTool,
+} from '../tools';
+import { taskManager } from '../taskManager';
+import { createBrowserTools, disconnectMcpClient } from '../browserTools';
+import { createPocTool } from '../metaTestingAgent/pocTools';
+import { Logger } from '../logger';
+import { inferVulnerabilityClasses } from '../orchestrator/prompts';
+import type { DisplayMessage } from '../../../tui/components/agent-display';
+import { runAuthenticationSubagent } from '../authenticationSubagent';
+import { tool } from 'ai';
+import { z } from 'zod';
+import { getActiveToolNames } from '../../toolset';
 
 /**
  * Cognitive testing loop for offensive stages (test/validate)
@@ -67,7 +71,13 @@ VALIDATION:
 - Create POCs with create_poc to prove findings (supports bash, python, javascript)
 `;
 
-export type OperatorAgentStatus = "idle" | "running" | "waiting" | "paused" | "completed" | "failed";
+export type OperatorAgentStatus =
+  | 'idle'
+  | 'running'
+  | 'waiting'
+  | 'paused'
+  | 'completed'
+  | 'failed';
 
 /** Attack surface endpoint for resume context */
 export interface AttackSurfaceEndpoint {
@@ -104,12 +114,12 @@ export interface OperatorAgentResult {
  * OperatorAgent class - single agent with approval gates
  */
 export class OperatorAgent extends EventEmitter {
-  private _status: OperatorAgentStatus = "idle";
+  private _status: OperatorAgentStatus = 'idle';
   private config: OperatorAgentConfig;
   private abortController: AbortController | null = null;
   private messages: DisplayMessage[];
   private userDirectives: string[] = [];
-  private findingsSummary: string = "";
+  private findingsSummary: string = '';
   private logPath: string;
   private runId: string;
   private isResume: boolean = false;
@@ -129,55 +139,57 @@ export class OperatorAgent extends EventEmitter {
     this.messages = config.previousMessages ?? [];
 
     // Track if this is a resume (has previous messages loaded)
-    this.isResume = !!(config.previousMessages && config.previousMessages.length > 0);
+    this.isResume = !!(
+      config.previousMessages && config.previousMessages.length > 0
+    );
 
     // Store attack surface from previous session (for resume context)
     this.attackSurface = config.previousAttackSurface ?? [];
 
     // Initialize logging
     this.runId = `run_${Date.now()}`;
-    const logsDir = join(config.session.rootPath, "logs");
+    const logsDir = join(config.session.rootPath, 'logs');
     if (!existsSync(logsDir)) {
       mkdirSync(logsDir, { recursive: true });
     }
     this.logPath = join(logsDir, `operator_${this.runId}.jsonl`);
-    this.log("session_start", {
+    this.log('session_start', {
       sessionId: config.session.id,
       target: config.session.targets[0],
-      mode: config.initialMode || "manual",
+      mode: config.initialMode || 'manual',
       autoApproveTier: config.autoApproveTier || 2,
       model: config.model,
     });
 
     // Initialize approval gate with offensive stage tools for auto-approval in test/validate
     this.approvalGate = new ApprovalGate({
-      mode: config.initialMode || "manual",
+      mode: config.initialMode || 'manual',
       autoApproveTier: config.autoApproveTier || 2,
-      currentStage: config.initialStage || "setup",
-      offensiveStageTools: ["test_parameter", "fuzz_endpoint", "create_poc"],
+      currentStage: config.initialStage || 'setup',
+      offensiveStageTools: ['test_parameter', 'fuzz_endpoint', 'create_poc'],
     });
 
     // Initialize stage manager
-    this.stageManager = new StageManager(config.initialStage || "setup");
+    this.stageManager = new StageManager(config.initialStage || 'setup');
 
     // Forward approval gate events
-    this.approvalGate.on("operator-event", (event: OperatorEvent) => {
-      this.emit("operator-event", event);
-      this.log("operator_event", event);
-      if (event.type === "approval-needed") {
-        this.setStatus("waiting");
+    this.approvalGate.on('operator-event', (event: OperatorEvent) => {
+      this.emit('operator-event', event);
+      this.log('operator_event', event);
+      if (event.type === 'approval-needed') {
+        this.setStatus('waiting');
       }
-      if (event.type === "approval-resolved") {
-        if (this._status === "waiting") {
-          this.setStatus("running");
+      if (event.type === 'approval-resolved') {
+        if (this._status === 'waiting') {
+          this.setStatus('running');
         }
       }
     });
 
     // Forward stage manager events
-    this.stageManager.on("operator-event", (event: OperatorEvent) => {
-      this.emit("operator-event", event);
-      this.log("operator_event", event);
+    this.stageManager.on('operator-event', (event: OperatorEvent) => {
+      this.emit('operator-event', event);
+      this.log('operator_event', event);
     });
   }
 
@@ -192,7 +204,7 @@ export class OperatorAgent extends EventEmitter {
       ...data,
     };
     try {
-      appendFileSync(this.logPath, JSON.stringify(entry) + "\n");
+      appendFileSync(this.logPath, JSON.stringify(entry) + '\n');
     } catch (e) {
       // Silently fail if logging fails
     }
@@ -221,8 +233,8 @@ export class OperatorAgent extends EventEmitter {
   private setStatus(status: OperatorAgentStatus): void {
     const prevStatus = this._status;
     this._status = status;
-    this.log("status_change", { from: prevStatus, to: status });
-    this.emit("status-change", status);
+    this.log('status_change', { from: prevStatus, to: status });
+    this.emit('status-change', status);
   }
 
   private addMessage(message: DisplayMessage): void {
@@ -231,30 +243,30 @@ export class OperatorAgent extends EventEmitter {
 
     // Index tool messages by toolCallId for O(1) lookup
     const toolCallId = (message as any).toolCallId;
-    if (message.role === "tool" && toolCallId) {
+    if (message.role === 'tool' && toolCallId) {
       this.toolCallIdToIndex.set(toolCallId, index);
     }
 
-    this.log("message", {
+    this.log('message', {
       role: message.role,
       content: message.content,
       toolName: (message as any).toolName,
       toolCallId,
       args: (message as any).args,
     });
-    this.emit("message", message);
+    this.emit('message', message);
   }
 
   private updateMessage(index: number, message: DisplayMessage): void {
     this.messages[index] = message;
-    this.log("message_updated", {
+    this.log('message_updated', {
       index,
       role: message.role,
       content: message.content,
       status: (message as any).status,
       result: (message as any).result,
     });
-    this.emit("message-updated", { index, message });
+    this.emit('message-updated', { index, message });
   }
 
   /**
@@ -265,7 +277,7 @@ export class OperatorAgent extends EventEmitter {
     if (msgIdx === undefined) return;
 
     const existingMsg = this.messages[msgIdx];
-    if (!existingMsg || existingMsg.role !== "tool") return;
+    if (!existingMsg || existingMsg.role !== 'tool') return;
 
     const currentLogs = existingMsg.logs || [];
     const updatedMsg = {
@@ -279,16 +291,16 @@ export class OperatorAgent extends EventEmitter {
    * Change the operating mode
    */
   setMode(mode: OperatorMode): void {
-    this.log("mode_change", { mode });
+    this.log('mode_change', { mode });
     this.approvalGate.updateConfig({ mode });
-    this.emit("operator-event", { type: "mode-changed", mode });
+    this.emit('operator-event', { type: 'mode-changed', mode });
   }
 
   /**
    * Change the auto-approve tier
    */
   setAutoApproveTier(tier: PermissionTier): void {
-    this.log("tier_change", { tier });
+    this.log('tier_change', { tier });
     this.approvalGate.updateConfig({ autoApproveTier: tier });
   }
 
@@ -319,8 +331,14 @@ export class OperatorAgent extends EventEmitter {
    * Approve a pending action
    */
   approve(approvalId: string): void {
-    const pending = this.approvalGate.getPendingApprovals().find(p => p.id === approvalId);
-    this.log("action_approved", { approvalId, toolName: pending?.toolName, args: pending?.args });
+    const pending = this.approvalGate
+      .getPendingApprovals()
+      .find((p) => p.id === approvalId);
+    this.log('action_approved', {
+      approvalId,
+      toolName: pending?.toolName,
+      args: pending?.args,
+    });
     this.approvalGate.approve(approvalId);
   }
 
@@ -328,8 +346,14 @@ export class OperatorAgent extends EventEmitter {
    * Deny a pending action
    */
   deny(approvalId: string): void {
-    const pending = this.approvalGate.getPendingApprovals().find(p => p.id === approvalId);
-    this.log("action_denied", { approvalId, toolName: pending?.toolName, args: pending?.args });
+    const pending = this.approvalGate
+      .getPendingApprovals()
+      .find((p) => p.id === approvalId);
+    this.log('action_denied', {
+      approvalId,
+      toolName: pending?.toolName,
+      args: pending?.args,
+    });
     this.approvalGate.deny(approvalId);
   }
 
@@ -337,7 +361,7 @@ export class OperatorAgent extends EventEmitter {
    * Batch approve multiple actions
    */
   batchApprove(approvalIds: string[]): void {
-    this.log("batch_approved", { approvalIds, count: approvalIds.length });
+    this.log('batch_approved', { approvalIds, count: approvalIds.length });
     this.approvalGate.batchApprove(approvalIds);
   }
 
@@ -345,49 +369,55 @@ export class OperatorAgent extends EventEmitter {
    * Start the agent with an initial directive
    */
   async start(directive?: string): Promise<OperatorAgentResult> {
-    if (this._status === "running" || this._status === "waiting") {
-      throw new Error("Agent is already running");
+    if (this._status === 'running' || this._status === 'waiting') {
+      throw new Error('Agent is already running');
     }
 
-    this.log("agent_start", { directive, stage: this.currentStage });
-    this.setStatus("running");
+    this.log('agent_start', { directive, stage: this.currentStage });
+    this.setStatus('running');
     this.abortController = new AbortController();
 
     // Mark setup stage as completed, move to recon
-    if (this.currentStage === "setup") {
-      this.stageManager.transitionTo("recon");
+    if (this.currentStage === 'setup') {
+      this.stageManager.transitionTo('recon');
     }
 
     const session = this.config.session;
-    const target = session.targets[0] || "";
+    const target = session.targets[0] || '';
     const stageDef = OPERATOR_STAGES[this.currentStage];
 
     // Initial user message
-    const userMessage = directive || `Begin ${stageDef.name.toLowerCase()} phase for target: ${target}`;
+    const userMessage =
+      directive ||
+      `Begin ${stageDef.name.toLowerCase()} phase for target: ${target}`;
 
     // Build initial system message (with attack knowledge based on directive)
     const systemMessage = this.buildSystemPrompt(target, stageDef, directive);
 
     // Always add the user's message so it appears in chat
     this.addMessage({
-      role: "user",
+      role: 'user',
       content: userMessage,
       createdAt: new Date(),
     });
 
     try {
       const result = await this.runAgentLoop(systemMessage, userMessage);
-      this.log("agent_completed", { result });
-      this.setStatus("idle"); // Back to idle, ready for new input
+      this.log('agent_completed', { result });
+      this.setStatus('idle'); // Back to idle, ready for new input
       return result;
     } catch (error: any) {
       if (this.abortController?.signal.aborted) {
-        this.log("agent_stopped", { reason: "user_abort" });
-        this.setStatus("idle"); // Back to idle after stop
-        return { findingsCount: 0, pocPaths: [], summary: "Agent stopped by user" };
+        this.log('agent_stopped', { reason: 'user_abort' });
+        this.setStatus('idle'); // Back to idle after stop
+        return {
+          findingsCount: 0,
+          pocPaths: [],
+          summary: 'Agent stopped by user',
+        };
       }
-      this.log("agent_error", { error: error?.message || String(error) });
-      this.setStatus("failed");
+      this.log('agent_error', { error: error?.message || String(error) });
+      this.setStatus('failed');
       throw error;
     }
   }
@@ -396,12 +426,12 @@ export class OperatorAgent extends EventEmitter {
    * Send a directive to the agent
    */
   async sendDirective(directive: string): Promise<void> {
-    this.log("user_directive", { directive, currentStatus: this._status });
+    this.log('user_directive', { directive, currentStatus: this._status });
 
     // Auto-infer stage from directive intent
     const inference = inferStageFromDirective(directive);
     if (inference && inference.stage !== this.currentStage) {
-      this.log("stage_inferred", {
+      this.log('stage_inferred', {
         from: this.currentStage,
         to: inference.stage,
         confidence: inference.confidence,
@@ -410,7 +440,7 @@ export class OperatorAgent extends EventEmitter {
       this.setStage(inference.stage);
     }
 
-    if (this._status !== "running" && this._status !== "waiting") {
+    if (this._status !== 'running' && this._status !== 'waiting') {
       // If idle or completed, start a new loop with this directive
       await this.start(directive);
       return;
@@ -418,7 +448,7 @@ export class OperatorAgent extends EventEmitter {
 
     this.userDirectives.push(directive);
     this.addMessage({
-      role: "user",
+      role: 'user',
       content: directive,
       createdAt: new Date(),
     });
@@ -428,7 +458,7 @@ export class OperatorAgent extends EventEmitter {
    * Stop the agent
    */
   stop(): void {
-    this.log("agent_stop", { reason: "user_initiated" });
+    this.log('agent_stop', { reason: 'user_initiated' });
     if (this.abortController) {
       this.abortController.abort();
     }
@@ -436,44 +466,49 @@ export class OperatorAgent extends EventEmitter {
     disconnectMcpClient().catch(() => {});
     // Deny all pending approvals
     this.approvalGate.denyAll();
-    this.setStatus("idle"); // Ready for new input
+    this.setStatus('idle'); // Ready for new input
   }
 
   /**
    * Get attack knowledge based on user directive
    */
   private getAttackKnowledge(directive?: string): string {
-    if (!["test", "validate"].includes(this.currentStage)) return "";
+    if (!['test', 'validate'].includes(this.currentStage)) return '';
 
     // Use existing inferVulnerabilityClasses to detect vuln types
-    const vulnClasses = inferVulnerabilityClasses(directive || "");
-    if (vulnClasses.length === 0) return "";
+    const vulnClasses = inferVulnerabilityClasses(directive || '');
+    if (vulnClasses.length === 0) return '';
 
     // Map vuln classes to ATTACK_KNOWLEDGE keys
     const keyMap: Record<string, keyof typeof ATTACK_KNOWLEDGE> = {
-      sqli: "sql_injection",
-      xss: "xss_reflected",
-      idor: "idor",
-      command_injection: "command_injection",
-      lfi: "path_traversal",
-      ssti: "ssti",
+      sqli: 'sql_injection',
+      xss: 'xss_reflected',
+      idor: 'idor',
+      command_injection: 'command_injection',
+      lfi: 'path_traversal',
+      ssti: 'ssti',
       // Note: ssrf, crypto, jwt don't have direct matches - skip them
     };
 
     // Get attack knowledge for top 2 detected classes
-    const sections = vulnClasses.slice(0, 2)
-      .map(vc => {
+    const sections = vulnClasses
+      .slice(0, 2)
+      .map((vc) => {
         const key = keyMap[vc];
         if (!key || !ATTACK_KNOWLEDGE[key]) return null;
         const knowledge = ATTACK_KNOWLEDGE[key] as any;
         if (!knowledge.techniques || !knowledge.indicators) return null;
-        return `### ${String(key).toUpperCase()}\n**Techniques:**\n${
-          knowledge.techniques.map((t: any) => `- ${t.name}: ${t.how}`).join("\n")
-        }\n**Vulnerable indicators:** ${knowledge.indicators.vulnerable.join(", ")}\n**Not vulnerable:** ${knowledge.indicators.notVulnerable.join(", ")}`;
+        return `### ${String(key).toUpperCase()}\n**Techniques:**\n${knowledge.techniques
+          .map((t: any) => `- ${t.name}: ${t.how}`)
+          .join(
+            '\n'
+          )}\n**Vulnerable indicators:** ${knowledge.indicators.vulnerable.join(', ')}\n**Not vulnerable:** ${knowledge.indicators.notVulnerable.join(', ')}`;
       })
       .filter(Boolean);
 
-    return sections.length > 0 ? `\n## Attack Knowledge\n${sections.join("\n\n")}` : "";
+    return sections.length > 0
+      ? `\n## Attack Knowledge\n${sections.join('\n\n')}`
+      : '';
   }
 
   /**
@@ -481,42 +516,55 @@ export class OperatorAgent extends EventEmitter {
    * Provides the agent with a summary of prior discoveries when resuming
    */
   private buildResumeContext(): string {
-    if (!this.isResume) return "";
+    if (!this.isResume) return '';
 
     const sections: string[] = [];
 
     // Attack surface summary - list known endpoints
     if (this.attackSurface && this.attackSurface.length > 0) {
-      const endpoints = this.attackSurface.map(e => {
-        const status = e.status && e.status !== "untested" ? ` [${e.status}]` : "";
-        return `  - ${e.method} ${e.path}${status}`;
-      }).join('\n');
-      sections.push(`**Known Attack Surface (${this.attackSurface.length} endpoints):**\n${endpoints}`);
+      const endpoints = this.attackSurface
+        .map((e) => {
+          const status =
+            e.status && e.status !== 'untested' ? ` [${e.status}]` : '';
+          return `  - ${e.method} ${e.path}${status}`;
+        })
+        .join('\n');
+      sections.push(
+        `**Known Attack Surface (${this.attackSurface.length} endpoints):**\n${endpoints}`
+      );
     }
 
     // Extract key findings from message history
     const findings: string[] = [];
     for (const msg of this.messages) {
-      if (msg.role === "assistant" && typeof msg.content === "string") {
+      if (msg.role === 'assistant' && typeof msg.content === 'string') {
         const content = msg.content;
         // Look for structured findings patterns
-        if (content.includes("Summary") || content.includes("discovered") ||
-            content.includes("Endpoint") || content.includes("vulnerability") ||
-            content.includes("Status") || content.includes("found")) {
-          const lines = content.split('\n').filter(l => {
-            const trimmed = l.trim();
-            return (
-              trimmed.startsWith('-') ||
-              trimmed.startsWith('•') ||
-              trimmed.includes('GET ') ||
-              trimmed.includes('POST ') ||
-              trimmed.includes('/api/') ||
-              trimmed.includes('Status') ||
-              trimmed.includes('401') ||
-              trimmed.includes('200') ||
-              trimmed.includes('404')
-            );
-          }).slice(0, 15);
+        if (
+          content.includes('Summary') ||
+          content.includes('discovered') ||
+          content.includes('Endpoint') ||
+          content.includes('vulnerability') ||
+          content.includes('Status') ||
+          content.includes('found')
+        ) {
+          const lines = content
+            .split('\n')
+            .filter((l) => {
+              const trimmed = l.trim();
+              return (
+                trimmed.startsWith('-') ||
+                trimmed.startsWith('•') ||
+                trimmed.includes('GET ') ||
+                trimmed.includes('POST ') ||
+                trimmed.includes('/api/') ||
+                trimmed.includes('Status') ||
+                trimmed.includes('401') ||
+                trimmed.includes('200') ||
+                trimmed.includes('404')
+              );
+            })
+            .slice(0, 15);
           findings.push(...lines);
         }
       }
@@ -529,7 +577,7 @@ export class OperatorAgent extends EventEmitter {
     }
 
     if (sections.length === 0) {
-      return "Session resumed - continuing from previous context.";
+      return 'Session resumed - continuing from previous context.';
     }
 
     return `---
@@ -545,9 +593,13 @@ ${sections.join('\n\n')}
   /**
    * Build system prompt for current stage
    */
-  private buildSystemPrompt(target: string, stageDef: typeof OPERATOR_STAGES[OperatorStage], directive?: string): string {
+  private buildSystemPrompt(
+    target: string,
+    stageDef: (typeof OPERATOR_STAGES)[OperatorStage],
+    directive?: string
+  ): string {
     const session = this.config.session;
-    const isOffensiveStage = ["test", "validate"].includes(this.currentStage);
+    const isOffensiveStage = ['test', 'validate'].includes(this.currentStage);
 
     // Build base prompt
     let prompt = `You are an expert penetration tester working alongside a human colleague.
@@ -588,10 +640,10 @@ If no response after ~10 seconds, proceed with the most promising approach.
 ## Current Assessment
 Target: ${target}
 Stage: ${stageDef.name} - ${stageDef.description}
-${session.config?.authenticationInstructions ? `\nSession context: ${session.config.authenticationInstructions}` : ""}
+${session.config?.authenticationInstructions ? `\nSession context: ${session.config.authenticationInstructions}` : ''}
 
 ## What We Know So Far
-${this.isResume ? this.buildResumeContext() : (this.findingsSummary || "Just starting - no findings yet.")}
+${this.isResume ? this.buildResumeContext() : this.findingsSummary || 'Just starting - no findings yet.'}
 
 ## Testing Guidance
 ${session.config?.outcomeGuidance || Session.DEFAULT_OUTCOME_GUIDANCE}
@@ -653,26 +705,29 @@ Document significant findings using the document_finding tool.`;
   /**
    * Run the main agent loop
    */
-  private async runAgentLoop(systemMessage: string, initialUserMessage: string): Promise<OperatorAgentResult> {
-
+  private async runAgentLoop(
+    systemMessage: string,
+    initialUserMessage: string
+  ): Promise<OperatorAgentResult> {
     const session = this.config.session;
-    const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
-      { role: "system", content: systemMessage },
-    ];
+    const messages: Array<{
+      role: 'system' | 'user' | 'assistant';
+      content: string;
+    }> = [{ role: 'system', content: systemMessage }];
 
     // On resume, include recent conversation history for context
     // This gives the AI model awareness of previous interactions
     if (this.isResume && this.messages.length > 0) {
       const recentMessages = this.messages.slice(-20); // Last 20 messages for context
       for (const msg of recentMessages) {
-        if (msg.role === "user" || msg.role === "assistant") {
+        if (msg.role === 'user' || msg.role === 'assistant') {
           messages.push({ role: msg.role, content: String(msg.content) });
         }
       }
     }
 
     // Add current user directive
-    messages.push({ role: "user", content: initialUserMessage });
+    messages.push({ role: 'user', content: initialUserMessage });
 
     // Create tools with approval gate wrapper
     // Pass operatorMode: true to enable streaming stdout logs
@@ -682,30 +737,31 @@ Document significant findings using the document_finding tool.`;
       undefined, // toolOverride
       undefined, // onTokenUsage
       this.abortController?.signal,
-      true // operatorMode - enables streaming stdout
+      true, // operatorMode - enables streaming stdout
+      this.config.authConfig
     );
 
     // Add browser tools for operator mode (HITL) only
-    const evidenceDir = join(session.rootPath, "evidence");
+    const evidenceDir = join(session.rootPath, 'evidence');
     const browserTools = createBrowserTools(
-      session.targets[0] || "",
+      session.targets[0] || '',
       evidenceDir,
-      "operator", // Operator mode for user-driven reconnaissance
-      undefined,  // logger - could be passed in future
+      'operator', // Operator mode for user-driven reconnaissance
+      undefined, // logger - could be passed in future
       this.abortController?.signal
     );
 
     // Add POC tools for offensive stages (test/validate)
     let pocTools: Record<string, any> = {};
-    if (["test", "validate"].includes(this.currentStage)) {
+    if (['test', 'validate'].includes(this.currentStage)) {
       const logger = new Logger(session, 'operator-agent.log');
       const { create_poc } = createPocTool(
         {
           id: session.id,
           rootPath: session.rootPath,
-          pocsPath: join(session.rootPath, "pocs"),
-          findingsPath: join(session.rootPath, "findings"),
-          logsPath: join(session.rootPath, "logs"),
+          pocsPath: join(session.rootPath, 'pocs'),
+          findingsPath: join(session.rootPath, 'findings'),
+          logsPath: join(session.rootPath, 'logs'),
         },
         logger
       );
@@ -714,11 +770,13 @@ Document significant findings using the document_finding tool.`;
 
     // Add authentication subagent tool - define schema first for type inference
     const RunAuthSubagentInput = z.object({
-      target: z.string().describe("Target URL to authenticate against"),
-      username: z.string().optional().describe("Username if available"),
-      password: z.string().optional().describe("Password if available"),
-      reason: z.string().describe("Why you need to run authentication"),
-      toolCallDescription: z.string().describe("A concise description of what this tool call is doing"),
+      target: z.string().describe('Target URL to authenticate against'),
+      username: z.string().optional().describe('Username if available'),
+      password: z.string().optional().describe('Password if available'),
+      reason: z.string().describe('Why you need to run authentication'),
+      toolCallDescription: z
+        .string()
+        .describe('A concise description of what this tool call is doing'),
     });
 
     const run_auth_subagent = tool({
@@ -735,31 +793,41 @@ and probe for self-registration if available.
 
 This tool requires user approval (T3 tier - Probing).`,
       inputSchema: RunAuthSubagentInput,
-      execute: async ({ target, username, password, reason }: z.infer<typeof RunAuthSubagentInput>) => {
+      execute: async ({
+        target,
+        username,
+        password,
+        reason,
+      }: z.infer<typeof RunAuthSubagentInput>) => {
         // Emit event for UI to show auth in progress
-        this.emit("operator-event", { type: "auth-subagent-started", target });
-        this.log("auth_subagent_started", { target, reason, hasCredentials: !!(username || password) });
+        this.emit('operator-event', { type: 'auth-subagent-started', target });
+        this.log('auth_subagent_started', {
+          target,
+          reason,
+          hasCredentials: !!(username || password),
+        });
 
         try {
           const result = await runAuthenticationSubagent({
             input: {
               target,
               session,
-              credentials: username || password ? { username, password } : undefined,
+              credentials:
+                username || password ? { username, password } : undefined,
             },
             model: this.config.model,
             enableBrowserTools: true,
           });
 
           // Emit result
-          this.emit("operator-event", {
-            type: "auth-subagent-completed",
+          this.emit('operator-event', {
+            type: 'auth-subagent-completed',
             success: result.success,
             cookies: result.exportedCookies,
             headers: result.exportedHeaders,
           });
 
-          this.log("auth_subagent_completed", {
+          this.log('auth_subagent_completed', {
             success: result.success,
             strategy: result.strategy,
             summary: result.summary,
@@ -769,20 +837,20 @@ This tool requires user approval (T3 tier - Probing).`,
             success: result.success,
             authenticated: result.success,
             strategy: result.strategy,
-            sessionCookie: result.exportedCookies || "",
+            sessionCookie: result.exportedCookies || '',
             headers: result.exportedHeaders || {},
             authBarrier: result.authBarrier,
             summary: result.summary,
             message: result.success
               ? `Authentication successful. Strategy: ${result.strategy}. ${result.summary}`
-              : `Authentication failed. ${result.summary}${result.authBarrier ? ` Barrier: ${result.authBarrier.type}` : ""}`,
+              : `Authentication failed. ${result.summary}${result.authBarrier ? ` Barrier: ${result.authBarrier.type}` : ''}`,
           };
         } catch (error: any) {
-          this.emit("operator-event", {
-            type: "auth-subagent-completed",
+          this.emit('operator-event', {
+            type: 'auth-subagent-completed',
             success: false,
           });
-          this.log("auth_subagent_error", { error: error.message });
+          this.log('auth_subagent_error', { error: error.message });
           return {
             success: false,
             authenticated: false,
@@ -795,7 +863,12 @@ This tool requires user approval (T3 tier - Probing).`,
     const authTools = { run_auth_subagent };
 
     // Merge all tools and wrap with approval checking
-    const allTools = { ...baseTools, ...browserTools, ...pocTools, ...authTools };
+    const allTools = {
+      ...baseTools,
+      ...browserTools,
+      ...pocTools,
+      ...authTools,
+    };
 
     // Filter tools based on toolset state
     const activeToolNames = getActiveToolNames(session.config?.toolsetState);
@@ -821,12 +894,12 @@ This tool requires user approval (T3 tier - Probing).`,
       // Check for user directives
       if (this.userDirectives.length > 0) {
         const directive = this.userDirectives.shift()!;
-        messages.push({ role: "user", content: directive });
+        messages.push({ role: 'user', content: directive });
       }
 
       try {
         // Log the full model input for trajectory collection
-        this.log("model_turn_start", {
+        this.log('model_turn_start', {
           iteration: iterations,
           system: systemMessage,
           messages: messages.slice(1), // Full conversation context
@@ -843,37 +916,41 @@ This tool requires user approval (T3 tier - Probing).`,
           abortSignal: this.abortController?.signal,
           authConfig: this.config.authConfig,
           onStepFinish: (step) => {
-            console.log(step.usage)
-            console.log(this.config.onTokenUsage)
+            console.log(step.usage);
+            console.log(this.config.onTokenUsage);
             if (step.usage && this.config.onTokenUsage) {
-              console.log(step.usage)
+              console.log(step.usage);
               this.config.onTokenUsage(
                 step.usage.inputTokens ?? 0,
                 step.usage.outputTokens ?? 0
               );
             }
-          }
+          },
         });
 
         // Process stream events in order
         // ensures text appears before tool calls in the UI
-        let assistantContent = "";
+        let assistantContent = '';
         let currentAssistantMsgIndex = -1;
 
         for await (const chunk of streamResult.fullStream) {
           // Check for user directives - interrupt to process them
-          if (this.userDirectives.length > 0 && this.abortController && !this.abortController.signal.aborted) {
+          if (
+            this.userDirectives.length > 0 &&
+            this.abortController &&
+            !this.abortController.signal.aborted
+          ) {
             this.abortController.abort();
           }
 
           switch (chunk.type) {
-            case "text-delta":
+            case 'text-delta':
               // Accumulate text and update/create assistant message
               assistantContent += chunk.text;
               if (currentAssistantMsgIndex === -1) {
                 // Create new assistant message
                 this.addMessage({
-                  role: "assistant",
+                  role: 'assistant',
                   content: chunk.text,
                   createdAt: new Date(),
                 });
@@ -883,25 +960,25 @@ This tool requires user approval (T3 tier - Probing).`,
                 const existingMsg = this.messages[currentAssistantMsgIndex];
                 this.updateMessage(currentAssistantMsgIndex, {
                   ...existingMsg,
-                  content: (existingMsg.content || "") + chunk.text,
+                  content: (existingMsg.content || '') + chunk.text,
                 });
               }
               break;
 
-            case "tool-call":
+            case 'tool-call':
               // Add pending tool message (comes after text in stream order)
               const args = (chunk as any).input || (chunk as any).args || {};
               const description = args.toolCallDescription || chunk.toolName;
 
-              this.log("tool_call", {
+              this.log('tool_call', {
                 toolCallId: chunk.toolCallId,
                 toolName: chunk.toolName,
                 args,
               });
 
               this.addMessage({
-                role: "tool",
-                status: "pending",
+                role: 'tool',
+                status: 'pending',
                 toolCallId: chunk.toolCallId,
                 toolName: chunk.toolName,
                 content: description,
@@ -912,7 +989,7 @@ This tool requires user approval (T3 tier - Probing).`,
               currentAssistantMsgIndex = -1;
               break;
 
-            case "tool-result":
+            case 'tool-result':
               // Update tool message to completed
               // Note: AI SDK uses 'output' not 'result' for tool-result chunks
               const msgIdx = this.toolCallIdToIndex.get(chunk.toolCallId) ?? -1;
@@ -920,7 +997,7 @@ This tool requires user approval (T3 tier - Probing).`,
                 const existingMsg = this.messages[msgIdx];
                 const toolOutput = (chunk as any).output;
 
-                this.log("tool_result", {
+                this.log('tool_result', {
                   toolCallId: chunk.toolCallId,
                   toolName: existingMsg.toolName,
                   result: toolOutput,
@@ -928,13 +1005,13 @@ This tool requires user approval (T3 tier - Probing).`,
 
                 this.updateMessage(msgIdx, {
                   ...existingMsg,
-                  status: "completed",
+                  status: 'completed',
                   content: `+ ${existingMsg.content}`,
                   result: toolOutput,
                 });
 
                 // Extract findings and emit sidebar events
-                this.extractFindings(existingMsg.toolName || "", toolOutput);
+                this.extractFindings(existingMsg.toolName || '', toolOutput);
                 this.emitSidebarEvents(toolOutput);
               }
               break;
@@ -947,7 +1024,7 @@ This tool requires user approval (T3 tier - Probing).`,
         const usage = await finalResult.usage;
 
         // Log complete model output for trajectory collection
-        this.log("model_turn_end", {
+        this.log('model_turn_end', {
           iteration: iterations,
           assistantContent,
           toolCalls: toolCalls?.map((tc: any) => ({
@@ -960,7 +1037,7 @@ This tool requires user approval (T3 tier - Probing).`,
 
         // Add assistant message to history
         if (assistantContent) {
-          messages.push({ role: "assistant", content: assistantContent });
+          messages.push({ role: 'assistant', content: assistantContent });
         }
 
         // Check if we should continue
@@ -973,16 +1050,18 @@ This tool requires user approval (T3 tier - Probing).`,
         }
 
         // Check for complete_testing tool call (but still process pending directives)
-        if (toolCalls?.some((tc: any) => tc.toolName === "complete_testing") && !hasPendingDirectives) {
+        if (
+          toolCalls?.some((tc: any) => tc.toolName === 'complete_testing') &&
+          !hasPendingDirectives
+        ) {
           continueLoop = false;
         }
-
       } catch (error: any) {
         if (error instanceof ApprovalBlockedError) {
           // Action was blocked in plan mode - add message and continue
-          this.log("action_blocked", { error: error.message });
+          this.log('action_blocked', { error: error.message });
           this.addMessage({
-            role: "system",
+            role: 'system',
             content: `Action blocked: ${error.message}`,
             createdAt: new Date(),
           });
@@ -990,16 +1069,19 @@ This tool requires user approval (T3 tier - Probing).`,
         }
         if (error instanceof ApprovalDeniedError) {
           // User denied action - add message and continue
-          this.log("action_denied_error", { error: error.message });
+          this.log('action_denied_error', { error: error.message });
           this.addMessage({
-            role: "system",
+            role: 'system',
             content: `Action denied by user`,
             createdAt: new Date(),
           });
           continue;
         }
         // Check if aborted due to user directive - continue to process it
-        if (this.abortController?.signal.aborted && this.userDirectives.length > 0) {
+        if (
+          this.abortController?.signal.aborted &&
+          this.userDirectives.length > 0
+        ) {
           // Reset abort controller for next iteration
           this.abortController = new AbortController();
           continue;
@@ -1017,7 +1099,11 @@ This tool requires user approval (T3 tier - Probing).`,
       pocPaths,
       summary: `Completed ${iterations} iterations in ${this.currentStage} stage`,
     };
-    this.log("agent_loop_completed", { iterations, stage: this.currentStage, result });
+    this.log('agent_loop_completed', {
+      iterations,
+      stage: this.currentStage,
+      result,
+    });
     return result;
   }
 
@@ -1027,24 +1113,26 @@ This tool requires user approval (T3 tier - Probing).`,
   /**
    * Tools that support streaming stdout (don't show progress animation)
    */
-  private static STREAMING_TOOLS = new Set(["execute_command"]);
+  private static STREAMING_TOOLS = new Set(['execute_command']);
 
   /**
    * Cute ASCII animation frames for non-streaming tools
    * Bouncing dot in a track
    */
   private static PROGRESS_FRAMES = [
-    "∙ ● ∙ ∙ ∙",
-    "∙ ∙ ● ∙ ∙",
-    "∙ ∙ ∙ ● ∙",
-    "∙ ∙ ∙ ∙ ●",
-    "∙ ∙ ∙ ● ∙",
-    "∙ ∙ ● ∙ ∙",
-    "∙ ● ∙ ∙ ∙",
-    "● ∙ ∙ ∙ ∙",
+    '∙ ● ∙ ∙ ∙',
+    '∙ ∙ ● ∙ ∙',
+    '∙ ∙ ∙ ● ∙',
+    '∙ ∙ ∙ ∙ ●',
+    '∙ ∙ ∙ ● ∙',
+    '∙ ∙ ● ∙ ∙',
+    '∙ ● ∙ ∙ ∙',
+    '● ∙ ∙ ∙ ∙',
   ];
 
-  private wrapToolsWithApproval(tools: Record<string, any>): Record<string, any> {
+  private wrapToolsWithApproval(
+    tools: Record<string, any>
+  ): Record<string, any> {
     const wrapped: Record<string, any> = {};
 
     for (const [name, tool] of Object.entries(tools)) {
@@ -1070,11 +1158,14 @@ This tool requires user approval (T3 tier - Probing).`,
             // Check if this tool should run in background by default
             if (isBackgroundTool(name)) {
               const task = taskManager.createTask(name);
-              this.addToolLog(toolCallId, `→ running in background (task: ${task.id})`);
+              this.addToolLog(
+                toolCallId,
+                `→ running in background (task: ${task.id})`
+              );
 
               // Fire and forget - do NOT await
               (async () => {
-                taskManager.updateStatus(task.id, "running");
+                taskManager.updateStatus(task.id, 'running');
                 try {
                   const result = await tool.execute(args, extendedContext);
                   taskManager.setResult(task.id, result);
@@ -1101,7 +1192,8 @@ This tool requires user approval (T3 tier - Probing).`,
               progressInterval = setInterval(() => {
                 const frame = OperatorAgent.PROGRESS_FRAMES[frameIndex];
                 this.addToolLog(toolCallId, frame);
-                frameIndex = (frameIndex + 1) % OperatorAgent.PROGRESS_FRAMES.length;
+                frameIndex =
+                  (frameIndex + 1) % OperatorAgent.PROGRESS_FRAMES.length;
               }, 200);
             }
 
@@ -1129,7 +1221,10 @@ This tool requires user approval (T3 tier - Probing).`,
               }
             }
           } catch (error) {
-            if (error instanceof ApprovalBlockedError || error instanceof ApprovalDeniedError) {
+            if (
+              error instanceof ApprovalBlockedError ||
+              error instanceof ApprovalDeniedError
+            ) {
               // Return a message indicating the action was blocked/denied
               return {
                 success: false,
@@ -1151,21 +1246,21 @@ This tool requires user approval (T3 tier - Probing).`,
    */
   private getToolStartLog(toolName: string, args: any): string {
     switch (toolName) {
-      case "execute_command":
-        const cmd = String(args.command || "").slice(0, 50);
-        return `$ ${cmd}${args.command?.length > 50 ? "..." : ""}`;
-      case "http_request":
-        const method = (args.method || "GET").toUpperCase();
-        const url = String(args.url || "").slice(0, 40);
-        return `${method} ${url}${args.url?.length > 40 ? "..." : ""}`;
-      case "browser_navigate":
-        return `navigating to ${String(args.url || "").slice(0, 40)}`;
-      case "Grep":
-      case "grep":
-        return `searching for "${String(args.pattern || "").slice(0, 30)}"`;
-      case "Read":
-      case "read_file":
-        return `reading ${String(args.file_path || args.path || "").slice(0, 40)}`;
+      case 'execute_command':
+        const cmd = String(args.command || '').slice(0, 50);
+        return `$ ${cmd}${args.command?.length > 50 ? '...' : ''}`;
+      case 'http_request':
+        const method = (args.method || 'GET').toUpperCase();
+        const url = String(args.url || '').slice(0, 40);
+        return `${method} ${url}${args.url?.length > 40 ? '...' : ''}`;
+      case 'browser_navigate':
+        return `navigating to ${String(args.url || '').slice(0, 40)}`;
+      case 'Grep':
+      case 'grep':
+        return `searching for "${String(args.pattern || '').slice(0, 30)}"`;
+      case 'Read':
+      case 'read_file':
+        return `reading ${String(args.file_path || args.path || '').slice(0, 40)}`;
       default:
         return `executing ${toolName}`;
     }
@@ -1185,27 +1280,27 @@ This tool requires user approval (T3 tier - Probing).`,
     // HTTP request results
     if (result.status !== undefined && result.statusText !== undefined) {
       const bodyPreview = result.body
-        ? ` - ${String(result.body).slice(0, 50)}${result.body.length > 50 ? "..." : ""}`
-        : "";
+        ? ` - ${String(result.body).slice(0, 50)}${result.body.length > 50 ? '...' : ''}`
+        : '';
       return `→ ${result.status} ${result.statusText}${bodyPreview}`;
     }
 
     // Command results with stdout
     if (result.stdout !== undefined) {
       const stdout = String(result.stdout).trim();
-      if (stdout && stdout !== "(no output)") {
-        const lines = stdout.split("\n").filter(Boolean);
+      if (stdout && stdout !== '(no output)') {
+        const lines = stdout.split('\n').filter(Boolean);
         if (lines.length > 0) {
           const firstLine = lines[0].slice(0, 70);
           if (lines.length > 1) {
-            return `→ ${firstLine}${firstLine.length < lines[0].length ? "..." : ""} (+${lines.length - 1} more lines)`;
+            return `→ ${firstLine}${firstLine.length < lines[0].length ? '...' : ''} (+${lines.length - 1} more lines)`;
           }
           return `→ ${firstLine}`;
         }
       }
       // Command succeeded but no meaningful output
       if (result.success) {
-        return "→ done (no output)";
+        return '→ done (no output)';
       }
     }
 
@@ -1216,11 +1311,12 @@ This tool requires user approval (T3 tier - Probing).`,
 
     // Array results (endpoints, urls, etc)
     if (Array.isArray(result)) {
-      if (result.length === 0) return "→ found 0 items";
-      const preview = typeof result[0] === "string"
-        ? result[0].slice(0, 40)
-        : JSON.stringify(result[0]).slice(0, 40);
-      return `→ found ${result.length} items (${preview}${result.length > 1 ? ", ..." : ""})`;
+      if (result.length === 0) return '→ found 0 items';
+      const preview =
+        typeof result[0] === 'string'
+          ? result[0].slice(0, 40)
+          : JSON.stringify(result[0]).slice(0, 40);
+      return `→ found ${result.length} items (${preview}${result.length > 1 ? ', ...' : ''})`;
     }
 
     // Object with endpoints array
@@ -1245,25 +1341,30 @@ This tool requires user approval (T3 tier - Probing).`,
 
     // Generic success
     if (result.success === true) {
-      return "→ done";
+      return '→ done';
     }
 
     // Fallback: try to summarize the object
-    if (typeof result === "object") {
+    if (typeof result === 'object') {
       const keys = Object.keys(result);
-      const importantKeys = keys.filter(k =>
-        !["success", "error", "command", "toolCallDescription"].includes(k)
+      const importantKeys = keys.filter(
+        (k) =>
+          !['success', 'error', 'command', 'toolCallDescription'].includes(k)
       );
       if (importantKeys.length > 0) {
-        const previews = importantKeys.slice(0, 2).map(k => {
-          const val = result[k];
-          if (Array.isArray(val)) return `${k}: ${val.length} items`;
-          if (typeof val === "string") return `${k}: ${val.slice(0, 20)}${val.length > 20 ? "..." : ""}`;
-          if (typeof val === "number") return `${k}: ${val}`;
-          return null;
-        }).filter(Boolean);
+        const previews = importantKeys
+          .slice(0, 2)
+          .map((k) => {
+            const val = result[k];
+            if (Array.isArray(val)) return `${k}: ${val.length} items`;
+            if (typeof val === 'string')
+              return `${k}: ${val.slice(0, 20)}${val.length > 20 ? '...' : ''}`;
+            if (typeof val === 'number') return `${k}: ${val}`;
+            return null;
+          })
+          .filter(Boolean);
         if (previews.length > 0) {
-          return `→ ${previews.join(", ")}`;
+          return `→ ${previews.join(', ')}`;
         }
       }
     }
@@ -1275,33 +1376,33 @@ This tool requires user approval (T3 tier - Probing).`,
    * Emit sidebar events for tool results that update UI state
    */
   private emitSidebarEvents(output: any): void {
-    if (!output || typeof output !== "object") return;
+    if (!output || typeof output !== 'object') return;
 
     // Attack surface updates
     if (output.endpoints && Array.isArray(output.endpoints)) {
-      this.emit("operator-event", {
-        type: "attack-surface-updated",
+      this.emit('operator-event', {
+        type: 'attack-surface-updated',
         endpoints: output.endpoints,
       });
     }
     // Credential discoveries
     if (output.credential) {
-      this.emit("operator-event", {
-        type: "credential-found",
+      this.emit('operator-event', {
+        type: 'credential-found',
         credential: output.credential,
       });
     }
     // Verified findings
     if (output.finding) {
-      this.emit("operator-event", {
-        type: "finding-verified",
+      this.emit('operator-event', {
+        type: 'finding-verified',
         finding: output.finding,
       });
     }
     // Endpoint status changes
     if (output.endpointId && output.status) {
-      this.emit("operator-event", {
-        type: "endpoint-status-changed",
+      this.emit('operator-event', {
+        type: 'endpoint-status-changed',
         endpointId: output.endpointId,
         status: output.status,
         vulnType: output.vulnType,
@@ -1315,31 +1416,40 @@ This tool requires user approval (T3 tier - Probing).`,
   private extractFindings(toolName: string, result: any): void {
     if (!result) return;
 
-    const resultStr = typeof result === "string" ? result : JSON.stringify(result);
+    const resultStr =
+      typeof result === 'string' ? result : JSON.stringify(result);
     const findings: string[] = [];
 
     // HTTP response analysis
-    if (toolName === "http_request") {
+    if (toolName === 'http_request') {
       const status = result?.status || result?.statusCode;
-      const url = result?.url || "";
+      const url = result?.url || '';
 
       // Interesting status codes
       if (status === 403) {
-        findings.push(`- 403 Forbidden at ${url} (potential access control to bypass)`);
+        findings.push(
+          `- 403 Forbidden at ${url} (potential access control to bypass)`
+        );
       } else if (status === 401) {
         findings.push(`- 401 Unauthorized at ${url} (auth required)`);
       } else if (status === 500) {
-        findings.push(`- 500 Error at ${url} (potential for error-based info leak)`);
+        findings.push(
+          `- 500 Error at ${url} (potential for error-based info leak)`
+        );
       }
 
       // Check for sensitive data patterns in response
-      if (resultStr.includes("password") || resultStr.includes("token") || resultStr.includes("api_key")) {
+      if (
+        resultStr.includes('password') ||
+        resultStr.includes('token') ||
+        resultStr.includes('api_key')
+      ) {
         findings.push(`- Sensitive keywords found in response from ${url}`);
       }
     }
 
     // Crawl results
-    if (toolName === "crawl" && result?.urls) {
+    if (toolName === 'crawl' && result?.urls) {
       const urlCount = Array.isArray(result.urls) ? result.urls.length : 0;
       if (urlCount > 0) {
         findings.push(`- Discovered ${urlCount} URLs from crawling`);
@@ -1347,28 +1457,28 @@ This tool requires user approval (T3 tier - Probing).`,
     }
 
     // Document finding tool (explicit finding)
-    if (toolName === "document_finding") {
-      const title = result?.title || result?.name || "Finding";
+    if (toolName === 'document_finding') {
+      const title = result?.title || result?.name || 'Finding';
       findings.push(`- FINDING: ${title}`);
     }
 
     // Update summary if we found something notable
     if (findings.length > 0) {
       const timestamp = new Date().toLocaleTimeString();
-      const newFindings = findings.map((f) => `[${timestamp}] ${f}`).join("\n");
+      const newFindings = findings.map((f) => `[${timestamp}] ${f}`).join('\n');
 
-      this.log("findings_extracted", { toolName, findings });
+      this.log('findings_extracted', { toolName, findings });
 
       if (this.findingsSummary) {
-        this.findingsSummary += "\n" + newFindings;
+        this.findingsSummary += '\n' + newFindings;
       } else {
         this.findingsSummary = newFindings;
       }
 
       // Keep summary bounded (last ~20 findings)
-      const lines = this.findingsSummary.split("\n");
+      const lines = this.findingsSummary.split('\n');
       if (lines.length > 20) {
-        this.findingsSummary = lines.slice(-20).join("\n");
+        this.findingsSummary = lines.slice(-20).join('\n');
       }
     }
   }
@@ -1377,8 +1487,16 @@ This tool requires user approval (T3 tier - Probing).`,
 /**
  * Create a new Operator agent
  */
-export function createOperatorAgent(config: OperatorAgentConfig): OperatorAgent {
+export function createOperatorAgent(
+  config: OperatorAgentConfig
+): OperatorAgent {
   return new OperatorAgent(config);
 }
 
-export type { OperatorMode, OperatorStage, PermissionTier, PendingApproval, ActionHistoryEntry };
+export type {
+  OperatorMode,
+  OperatorStage,
+  PermissionTier,
+  PendingApproval,
+  ActionHistoryEntry,
+};

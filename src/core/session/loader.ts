@@ -8,6 +8,7 @@
 import { join } from "path";
 import { existsSync, readdirSync, readFileSync } from "fs";
 import type { Session } from "./index";
+import type { AuthenticationInfo } from "../agent/orchestrator/types";
 
 /**
  * Message content part from AI SDK format
@@ -79,6 +80,16 @@ export interface UIMessage {
 }
 
 /**
+ * Information needed to resume a paused agent
+ */
+export interface ResumeInfo {
+  target: string;
+  objective: string;
+  vulnerabilityClass: string;
+  authenticationInfo?: AuthenticationInfo;
+}
+
+/**
  * UI-compatible subagent format
  */
 export interface UISubagent {
@@ -88,7 +99,8 @@ export interface UISubagent {
   target: string;
   messages: UIMessage[];
   createdAt: Date;
-  status: "pending" | "completed" | "failed" | "canceled";
+  status: "pending" | "completed" | "failed" | "paused" | "canceled";
+  resumeInfo?: ResumeInfo;
 }
 
 /**
@@ -100,6 +112,7 @@ export interface LoadedSessionState {
   attackSurfaceResults: AttackSurfaceResults | null;
   isComplete: boolean;
   hasReport: boolean;
+  interruptedDuringDiscovery: boolean;
 }
 
 /**
@@ -155,7 +168,7 @@ function convertMessagesToUI(
             : undefined;
           uiMessages.push({
             role: "tool",
-            content: `✓ ${toolDescription}`,
+            content: toolDescription,
             createdAt,
             toolCallId: part.toolCallId,
             toolName: part.toolName,
@@ -402,11 +415,118 @@ export async function loadSessionState(
     }
   }
 
+  // Detect paused agents from manifest (agents that were running when session was interrupted)
+  const manifestPath = join(rootPath, "agent-manifest.json");
+  if (existsSync(manifestPath)) {
+    try {
+      const manifest: Array<{
+        id: string;
+        name: string;
+        target: string;
+        vulnerabilityClass: string;
+        objective: string;
+        authInfo?: any;
+        status: "running" | "completed";
+        spawnedAt: string;
+        completedAt?: string;
+      }> = JSON.parse(readFileSync(manifestPath, "utf-8"));
+
+      for (const entry of manifest) {
+        if (entry.status !== "running") continue;
+
+        const resumeInfo = {
+          target: entry.target,
+          objective: entry.objective,
+          vulnerabilityClass: entry.vulnerabilityClass,
+          authenticationInfo: entry.authInfo,
+        };
+
+        // Match by vulnerability class slug in filename + same target
+        const vulnSlug = entry.vulnerabilityClass.toLowerCase().replace(/\s+/g, "-");
+        const existingIndex = subagents.findIndex(
+          (s) =>
+            s.type === "pentest" &&
+            s.id.includes(`-${vulnSlug}-`) &&
+            s.target === entry.target
+        );
+
+        if (existingIndex >= 0) {
+          // File exists but manifest says running → interrupted after partial save
+          // Convert the "completed" entry to "paused" with resumeInfo
+          subagents[existingIndex] = {
+            ...subagents[existingIndex],
+            status: "paused",
+            resumeInfo,
+          };
+        } else {
+          // No file — try to load any partial messages from subagent files
+          let messages: UIMessage[] = [];
+          const subagentsPath = join(rootPath, "subagents");
+          if (existsSync(subagentsPath)) {
+            try {
+              const files = readdirSync(subagentsPath).filter((f) =>
+                f.endsWith(".json")
+              );
+              const matchingFile = files.find((f) => {
+                if (vulnSlug && f.includes(vulnSlug)) return true;
+                return false;
+              });
+              if (matchingFile) {
+                const data = JSON.parse(
+                  readFileSync(join(subagentsPath, matchingFile), "utf-8")
+                ) as SavedSubagentData;
+                messages = convertMessagesToUI(
+                  data.messages,
+                  new Date(entry.spawnedAt)
+                );
+              }
+            } catch {
+              // Ignore errors loading partial messages
+            }
+          }
+
+          // Create a paused entry
+          subagents.push({
+            id: entry.id,
+            name: entry.name,
+            type: "pentest",
+            target: entry.target,
+            messages,
+            createdAt: new Date(entry.spawnedAt),
+            status: "paused",
+            resumeInfo,
+          });
+        }
+      }
+    } catch (e) {
+      console.error("Failed to load agent manifest:", e);
+    }
+  }
+
   // Load attack surface results
   const attackSurfaceResults = loadAttackSurfaceResults(rootPath);
 
   // Check for report
   const hasReportFile = hasReport(rootPath);
+
+  // Detect interrupted discovery: no results file, no report, but discovery logs exist.
+  // Assumption: each session has a unique root path, so stale logs from previous runs
+  // cannot cause false positives. If attack-surface-results.json is manually deleted,
+  // this will incorrectly mark the session as interrupted rather than allowing restart.
+  const hasDiscoverySubagent = subagents.some(
+    (s) => s.type === "attack-surface"
+  );
+  const interruptedDuringDiscovery =
+    !attackSurfaceResults && !hasReportFile && hasDiscoverySubagent;
+
+  // If discovery was interrupted, mark the discovery subagent as paused (not completed)
+  if (interruptedDuringDiscovery) {
+    for (let i = 0; i < subagents.length; i++) {
+      if (subagents[i].type === "attack-surface" && subagents[i].status === "completed") {
+        subagents[i] = { ...subagents[i], status: "paused" };
+      }
+    }
+  }
 
   // Determine if session is complete
   const isComplete =
@@ -420,5 +540,6 @@ export async function loadSessionState(
     attackSurfaceResults,
     isComplete,
     hasReport: hasReportFile,
+    interruptedDuringDiscovery,
   };
 }
