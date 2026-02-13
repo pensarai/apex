@@ -244,7 +244,8 @@ export async function runAuthBypassAgent(opts: {
   const { document_finding, findingPaths } = createDocumentFindingTool(
     session,
     logger,
-    input.baseUrl
+    input.baseUrl,
+    { authConfig }
   );
 
   // Create http_request tool

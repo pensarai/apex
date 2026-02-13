@@ -239,7 +239,9 @@ export async function runAgent(opts: RunAgentProps): Promise<{
     model,
     toolOverride,
     onToolTokenUsage,
-    abortSignal
+    abortSignal,
+    undefined, // operatorMode
+    authConfig
   );
 
   // Create browser tools for JavaScript-heavy page analysis

@@ -14,7 +14,7 @@ import { join } from "path";
 import { Session } from "../session";
 import type { AIModel } from "../ai";
 import { generateObjectResponse } from "../ai";
-import { getProviderModel } from "../ai/utils";
+import { getProviderModel, type AIAuthConfig } from "../ai/utils";
 import { generateText } from "ai";
 import pLimit from "p-limit";
 
@@ -3118,7 +3118,8 @@ async function generateTestStrategy(
     context?: any;
   },
   model: AIModel,
-  onTokenUsage?: OnTokenUsage
+  onTokenUsage?: OnTokenUsage,
+  authConfig?: AIAuthConfig
 ) {
   const prompt = `You are a penetration testing expert. Generate a concise testing strategy:
 
@@ -3142,7 +3143,7 @@ Generate a 2-3 sentence testing strategy:
 Be tactical and specific.`;
 
   try {
-    const providerModel = getProviderModel(model);
+    const providerModel = getProviderModel(model, authConfig);
 
     const result = await generateText({
       model: providerModel,
@@ -3174,7 +3175,8 @@ async function generatePayload(
     round: number;
   },
   model: AIModel,
-  onTokenUsage?: OnTokenUsage
+  onTokenUsage?: OnTokenUsage,
+  authConfig?: AIAuthConfig
 ) {
   const prompt = `Generate ONE ${params.knowledge.name} payload for testing.
 
@@ -3208,6 +3210,7 @@ Generate ONE specific payload. Return ONLY JSON:
       schema: PayloadSchema,
       prompt,
       onTokenUsage,
+      authConfig,
     });
 
     return result;
@@ -3237,7 +3240,8 @@ async function analyzeResponse(
     previousResults: any[];
   },
   model: AIModel,
-  onTokenUsage?: OnTokenUsage
+  onTokenUsage?: OnTokenUsage,
+  authConfig?: AIAuthConfig
 ) {
   const prompt = `Analyze this security test response:
 
@@ -3271,6 +3275,7 @@ Analyze: Is this vulnerable? Return ONLY JSON:
       schema: AnalysisSchema,
       prompt,
       onTokenUsage,
+      authConfig,
     });
 
     return result;
@@ -3311,7 +3316,8 @@ Analyze: Is this vulnerable? Return ONLY JSON:
 function createSmartTestTool(
   session: Session.SessionInfo,
   model: AIModel,
-  onTokenUsage?: OnTokenUsage
+  onTokenUsage?: OnTokenUsage,
+  authConfig?: AIAuthConfig
 ) {
   return tool({
     description: `Intelligently test a parameter for a vulnerability using AI-powered adaptive testing.
@@ -3400,7 +3406,8 @@ test_parameter({
             context,
           },
           model,
-          onTokenUsage
+          onTokenUsage,
+          authConfig
         );
 
         console.log(`Strategy: ${strategy}`);
@@ -3423,8 +3430,14 @@ test_parameter({
               round,
             },
             model,
+<<<<<<< HEAD
             onTokenUsage
           ) as z.infer<typeof PayloadSchema>;
+=======
+            onTokenUsage,
+            authConfig
+          );
+>>>>>>> 19a3667 (Wired auth config)
 
           console.log(`  Payload: ${payloadData.payload}`);
           console.log(`  Reasoning: ${payloadData.reasoning}`);
@@ -3462,8 +3475,9 @@ test_parameter({
               previousResults: results,
             },
             model,
-            onTokenUsage
-          ) as z.infer<typeof AnalysisSchema>;
+            onTokenUsage,
+            authConfig
+          );
 
           console.log(`  Analysis: ${analysis.reasoning}`);
           console.log(
@@ -4195,7 +4209,9 @@ export function createPentestTools(
   onTokenUsage?: (inputTokens: number, outputTokens: number) => void,
   abortSignal?: AbortSignal,
   /** Enable streaming stdout logs for operator mode (human-in-the-loop) */
-  operatorMode?: boolean
+  operatorMode?: boolean,
+  /** Auth config for AI provider authentication (e.g., Bedrock credentialProvider) */
+  authConfig?: AIAuthConfig
 ) {
   // Get offensive headers from session config
   const offensiveHeaders = Session.getOffensiveHeaders(session);
@@ -4928,7 +4944,8 @@ Example flow:
     test_parameter: createSmartTestTool(
       session,
       model || "claude-sonnet-4-20250514",
-      onTokenUsage
+      onTokenUsage,
+      authConfig
     ),
     check_testing_coverage: createCheckTestingCoverageTool(session),
     validate_completeness: createValidateCompletenessTool(session),

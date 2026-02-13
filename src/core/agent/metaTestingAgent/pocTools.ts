@@ -35,6 +35,7 @@ import { CreatePocSchema, DocumentFindingSchema } from "./types";
 import type { ExecuteCommandOpts, ExecuteCommandResult } from "../tools";
 import { scoreFindingWithCVSS, DEFAULT_CVSS_MODEL } from "../cvssScorer";
 import type { AIModel } from "../../ai";
+import type { AIAuthConfig } from "../../ai/utils";
 import type { CVSS4Metrics } from "../../../lib/cvss";
 
 /** Options for CVSS scoring in document_finding tool */
@@ -45,6 +46,8 @@ export interface DocumentFindingCVSSOptions {
   cvssModel?: AIModel;
   /** Callback to get current agent messages for context */
   getMessages?: () => any[];
+  /** Auth config for AI provider authentication (e.g., Bedrock credentialProvider) */
+  authConfig?: AIAuthConfig;
 }
 
 const execAsync = promisify(exec);
@@ -473,7 +476,8 @@ Continue testing for OTHER vulnerabilities at different endpoints.`,
                 },
                 agentMessages: messages,
               },
-              cvssModel
+              cvssModel,
+              cvssOptions?.authConfig
             );
 
             cvssData = {

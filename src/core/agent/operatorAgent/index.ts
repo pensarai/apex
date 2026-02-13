@@ -682,7 +682,8 @@ Document significant findings using the document_finding tool.`;
       undefined, // toolOverride
       undefined, // onTokenUsage
       this.abortController?.signal,
-      true // operatorMode - enables streaming stdout
+      true, // operatorMode - enables streaming stdout
+      this.config.authConfig
     );
 
     // Add browser tools for operator mode (HITL) only
