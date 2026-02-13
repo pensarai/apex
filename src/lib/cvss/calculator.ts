@@ -107,7 +107,7 @@ export function parseVectorString(vectorString: string): CVSS4Metrics {
   for (const pair of pairs) {
     const [key, value] = pair.split(':');
     if (key && value) {
-      (metrics as any)[key] = value;
+      (metrics as Record<string, string | undefined>)[key] = value;
     }
   }
 
@@ -134,12 +134,12 @@ function getEffectiveValue(
   modifiedMetric?: string
 ): string {
   if (modifiedMetric) {
-    const modValue = (metrics as any)[modifiedMetric];
+    const modValue = (metrics as unknown as Record<string, string | undefined>)[modifiedMetric];
     if (modValue && modValue !== 'X') {
       return modValue;
     }
   }
-  return (metrics as any)[baseMetric];
+  return (metrics as unknown as Record<string, string | undefined>)[baseMetric] ?? '';
 }
 
 /**
@@ -318,10 +318,11 @@ function getMetricDistance(metrics: CVSS4Metrics, metric: string): number {
 
   // Handle modified metrics
   const modifiedMetric = 'M' + metric;
-  if ((metrics as any)[modifiedMetric] && (metrics as any)[modifiedMetric] !== 'X') {
-    value = (metrics as any)[modifiedMetric];
+  const metricsRecord = metrics as unknown as Record<string, string | undefined>;
+  if (metricsRecord[modifiedMetric] && metricsRecord[modifiedMetric] !== 'X') {
+    value = metricsRecord[modifiedMetric] ?? '';
   } else {
-    value = (metrics as any)[metric];
+    value = metricsRecord[metric] ?? '';
   }
 
   // Handle special case for E metric default
@@ -525,7 +526,7 @@ function getScoreType(metrics: CVSS4Metrics): CVSS4ScoreType {
 export function validateMetrics(metrics: Partial<CVSS4Metrics>): metrics is CVSS4Metrics {
   const requiredMetrics = ['AV', 'AC', 'AT', 'PR', 'UI', 'VC', 'VI', 'VA', 'SC', 'SI', 'SA'];
   for (const metric of requiredMetrics) {
-    if (!(metric in metrics) || (metrics as any)[metric] === undefined) {
+    if (!(metric in metrics) || (metrics as unknown as Record<string, string | undefined>)[metric] === undefined) {
       return false;
     }
   }

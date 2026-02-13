@@ -44,7 +44,7 @@ export function parseFlags(args: string[], schema: FlagSchema): ParsedFlags {
   }
 
   while (i < args.length) {
-    let arg = args[i];
+    const arg = args[i];
 
     // Check for --flag or -f
     if (arg.startsWith("--") || (arg.startsWith("-") && arg.length === 2)) {

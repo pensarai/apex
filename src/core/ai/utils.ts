@@ -21,7 +21,7 @@ export type AIAuthConfig = {
     accessKeyId?: string;
     secretAccessKey?: string;
     region?: string;
-    credentialProvider?: any;
+    credentialProvider?: unknown;
   };
   local?: {
     baseURL: string;
@@ -52,29 +52,32 @@ export function getProviderModel(
   let providerModel;
 
   switch (provider) {
-    case 'openai':
+    case 'openai': {
       const openai = createOpenAI({
         apiKey: openAiAPIKey,
       });
       providerModel = openai(model);
       break;
+    }
 
-    case 'openrouter':
+    case 'openrouter': {
       const openrouter = createOpenRouter({
         apiKey: openRouterAPIKey,
       });
       providerModel = openrouter(model);
       break;
+    }
 
-    case 'bedrock':
+    case 'bedrock': {
       const bedrock = createAmazonBedrock({
         region: bedrockRegion,
         accessKeyId: bedrockAccessKeyId,
         secretAccessKey: bedrockSecretAccessKey,
-        credentialProvider: authConfig?.bedrock?.credentialProvider,
+        credentialProvider: authConfig?.bedrock?.credentialProvider as NonNullable<Parameters<typeof createAmazonBedrock>[0]>['credentialProvider'],
       });
       providerModel = bedrock(model);
       break;
+    }
 
     case 'anthropic':
       providerModel = createAnthropic({
@@ -89,12 +92,13 @@ export function getProviderModel(
       }).chat(model);
       break;
 
-    default:
+    default: {
       const anthropic = createAnthropic({
         apiKey: anthropicAPIKey,
       });
       providerModel = anthropic(model);
       break;
+    }
   }
 
   return providerModel;
@@ -112,8 +116,8 @@ export async function summarizeConversation(
       // If content is an array, filter out tool-use and tool-result blocks
       if (Array.isArray(msg.content)) {
         const textContent = msg.content
-          .filter((part: any) => part.type === 'text')
-          .map((part: any) => part.text)
+          .filter((part: { type: string; text?: string }) => part.type === 'text')
+          .map((part: { type: string; text?: string }) => part.text)
           .join('\n');
 
         // Skip messages that have no text content
@@ -193,7 +197,7 @@ export async function summarizeConversation(
       providerMetadata: undefined,
       stepType: 'initial',
       isContinued: false,
-    } as any);
+    } as unknown as Parameters<NonNullable<typeof opts.onStepFinish>>[0]);
   }
 
   // For very long prompts, replace with just the summary instead of appending
@@ -214,9 +218,10 @@ export async function summarizeConversation(
 }
 
 // Helper function to check if an error is related to context length
-export function checkIfContextLengthError(error: any): boolean {
-  const errorMessage = error?.message?.toLowerCase() || '';
-  const errorCode = String(error?.code || '').toLowerCase();
+export function checkIfContextLengthError(error: unknown): boolean {
+  const errObj = typeof error === 'object' && error !== null ? (error as Record<string, unknown>) : {};
+  const errorMessage = (typeof errObj.message === 'string' ? errObj.message : '').toLowerCase();
+  const errorCode = String(typeof errObj.code === 'string' ? errObj.code : '').toLowerCase();
 
   return (
     errorMessage.includes('context length') ||
@@ -243,31 +248,29 @@ export function createSummarizationStream(
 
   // We need to handle this asynchronously but return synchronously
   // Create a promise that will hold the resumed stream
-  let resumedStreamPromise: Promise<StreamTextResult<ToolSet, never>>;
-
   // Start the summarization process
-  resumedStreamPromise = summarizeConversation(messages, opts, model);
+  const resumedStreamPromise: Promise<StreamTextResult<ToolSet, never>> = summarizeConversation(messages, opts, model);
 
   // Create a custom async generator that wraps the resumed stream
   const wrappedFullStream = (async function* () {
     // First, emit a synthetic tool-call event
-    const toolCallEvent: any = {
-      type: 'tool-call',
+    const toolCallEvent = {
+      type: 'tool-call' as const,
       toolCallId,
       toolName: 'summarize_conversation',
       input: JSON.stringify({
         reason: 'Context length exceeded, summarizing conversation to continue',
         messageCount: messages.length,
       }),
-    };
+    } as unknown as TextStreamPart<ToolSet>;
     yield toolCallEvent;
 
     // Wait for the summarization to complete
     const resumedStream = await resumedStreamPromise;
 
     // Emit a synthetic tool-result event
-    const toolResultEvent: any = {
-      type: 'tool-result',
+    const toolResultEvent = {
+      type: 'tool-result' as const,
       toolCallId,
       toolName: 'summarize_conversation',
       input: JSON.stringify({
@@ -276,7 +279,7 @@ export function createSummarizationStream(
       }),
       result:
         'Conversation summarized successfully. Resuming with condensed context...',
-    };
+    } as unknown as TextStreamPart<ToolSet>;
     yield toolResultEvent;
 
     // Now yield all events from the resumed stream
@@ -305,14 +308,14 @@ export function createSummarizationStream(
     sources: resumedStreamPromise.then((s) => s.sources),
     staticToolCalls: resumedStreamPromise.then((s) => s.staticToolCalls),
     dynamicToolCalls: resumedStreamPromise.then((s) => s.dynamicToolCalls),
-    pipeTextStreamToResponse: async (response: any, init?: any) => {
+    pipeTextStreamToResponse: async (response: unknown, init?: unknown) => {
       const stream = await resumedStreamPromise;
-      return stream.pipeTextStreamToResponse(response, init);
+      return stream.pipeTextStreamToResponse(response as Parameters<StreamTextResult<ToolSet, never>['pipeTextStreamToResponse']>[0], init as Parameters<StreamTextResult<ToolSet, never>['pipeTextStreamToResponse']>[1]);
     },
-    toDataStream: (options?: any) => {
+    toDataStream: (_options?: unknown) => {
       throw new Error('toDataStream not supported on summarization stream');
     },
-    toDataStreamResponse: (options?: any) => {
+    toDataStreamResponse: (_options?: unknown) => {
       throw new Error(
         'toDataStreamResponse not supported on summarization stream'
       );

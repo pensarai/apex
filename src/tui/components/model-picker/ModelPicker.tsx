@@ -119,7 +119,7 @@ export function ModelPicker({
 
   // Handle keyboard navigation
   const handleKeyboard = useCallback(
-    (key: any) => {
+    (key: { name?: string; sequence?: string; ctrl?: boolean; shift?: boolean; meta?: boolean }) => {
       if (!focused) return false;
       if (navigationItems.length === 0) return false;
 

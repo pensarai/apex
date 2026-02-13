@@ -43,9 +43,9 @@ export function CommandProvider({ children }: CommandProviderProps) {
   const ctx = useMemo(() => {
     const ctx: AppCommandContext = {
       route: route.data,
-      navigate: route.navigate
-    }
-    return ctx
+      navigate: route.navigate,
+    };
+    return ctx;
   }, [route]);
 
   // Create router with context - initialized once
@@ -58,7 +58,6 @@ export function CommandProvider({ children }: CommandProviderProps) {
     }
 
     return router;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Generate autocomplete options from router commands
@@ -74,7 +73,7 @@ export function CommandProvider({ children }: CommandProviderProps) {
       if (cmdConfig?.hidden) continue;
 
       // Build description with options hint
-      let description = cmd.description || "";
+      const description = cmd.description || "";
 
       // Add main command (aliases hidden but still work via router)
       options.push({
@@ -101,11 +100,7 @@ export function CommandProvider({ children }: CommandProviderProps) {
       executeCommand,
       commands,
     }),
-    [
-      router,
-      autocompleteOptions,
-      executeCommand,
-    ]
+    [router, autocompleteOptions, executeCommand]
   );
 
   return (

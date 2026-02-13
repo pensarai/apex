@@ -28,7 +28,7 @@ export function Dialog({ size = "medium", onClose, children }: DialogProps) {
       backgroundColor={RGBA.fromInts(0, 0, 0, 150)}
     >
       <box
-        onMouseUp={async (e: any) => {
+        onMouseUp={async (e: { stopPropagation: () => void }) => {
           if (renderer.getSelection()) return;
           e.stopPropagation();
         }}

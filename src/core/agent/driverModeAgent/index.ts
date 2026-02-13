@@ -189,7 +189,7 @@ export class DriverModeAgent extends EventEmitter {
           // Add tool calls
           if (toolCalls && toolCalls.length > 0) {
             for (const tc of toolCalls) {
-              const args = (tc as any).input as Record<string, unknown> | undefined;
+              const args = (tc as unknown as { input?: Record<string, unknown> }).input;
               const toolDescription =
                 typeof args?.toolCallDescription === 'string'
                   ? args.toolCallDescription
@@ -210,7 +210,7 @@ export class DriverModeAgent extends EventEmitter {
           if (toolResults && toolResults.length > 0) {
             for (const tr of toolResults) {
               const msgIdx = this.messages.findIndex(
-                (m) => m.role === 'tool' && (m as any).toolCallId === tr.toolCallId
+                (m) => m.role === 'tool' && m.toolCallId === tr.toolCallId
               );
               if (msgIdx !== -1) {
                 const existingMsg = this.messages[msgIdx] as DisplayMessage & { toolName?: string; toolCallId?: string };
@@ -223,7 +223,7 @@ export class DriverModeAgent extends EventEmitter {
                   ...existingMsg,
                   status: 'completed',
                   content: `✓ ${description}`,
-                  result: (tr as any).output,
+                  result: (tr as unknown as { output?: unknown }).output,
                 };
                 this.emit('message', this.messages[msgIdx]);
               }

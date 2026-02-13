@@ -8,14 +8,10 @@
  * severity scoring based on the CVSS 4.0 specification.
  */
 
-import { z } from 'zod';
-import { generateObjectResponse, type AIModel } from '../../ai';
-import { type AIAuthConfig } from '../../ai/utils';
-import {
-  calculateCVSS4Score,
-  type CVSS4Metrics,
-  type CVSS4Score,
-} from '../../../lib/cvss';
+import { z } from "zod";
+import { generateObjectResponse, type AIModel } from "../../ai";
+import { type AIAuthConfig } from "../../ai/utils";
+import { calculateCVSS4Score, type CVSS4Metrics } from "../../../lib/cvss";
 
 // =============================================================================
 // Types
@@ -33,7 +29,7 @@ export interface CVSSScorerInput {
     remediation?: string;
   };
   /** Messages from the meta testing agent's conversation (for context) */
-  agentMessages: any[];
+  agentMessages: Record<string, unknown>[];
 }
 
 export interface CVSSScorerResult {
@@ -59,80 +55,78 @@ const CVSSMetricsOutputSchema = z.object({
   metrics: z.object({
     // Base Metrics - Exploitability
     AV: z
-      .enum(['N', 'A', 'L', 'P'])
+      .enum(["N", "A", "L", "P"])
       .describe(
-        'Attack Vector: N=Network (remotely exploitable), A=Adjacent network, L=Local access required, P=Physical access required'
+        "Attack Vector: N=Network (remotely exploitable), A=Adjacent network, L=Local access required, P=Physical access required"
       ),
     AC: z
-      .enum(['L', 'H'])
+      .enum(["L", "H"])
       .describe(
-        'Attack Complexity: L=Low (no special conditions), H=High (requires specific conditions/bypassing)'
+        "Attack Complexity: L=Low (no special conditions), H=High (requires specific conditions/bypassing)"
       ),
     AT: z
-      .enum(['N', 'P'])
+      .enum(["N", "P"])
       .describe(
-        'Attack Requirements: N=None (works in most configs), P=Present (requires race conditions/specific setup)'
+        "Attack Requirements: N=None (works in most configs), P=Present (requires race conditions/specific setup)"
       ),
     PR: z
-      .enum(['N', 'L', 'H'])
+      .enum(["N", "L", "H"])
       .describe(
-        'Privileges Required: N=None (unauthenticated), L=Low (basic user), H=High (admin)'
+        "Privileges Required: N=None (unauthenticated), L=Low (basic user), H=High (admin)"
       ),
     UI: z
-      .enum(['N', 'P', 'A'])
+      .enum(["N", "P", "A"])
       .describe(
-        'User Interaction: N=None, P=Passive (user visits page), A=Active (user must click/interact)'
+        "User Interaction: N=None, P=Passive (user visits page), A=Active (user must click/interact)"
       ),
 
     // Base Metrics - Vulnerable System Impact
     VC: z
-      .enum(['H', 'L', 'N'])
+      .enum(["H", "L", "N"])
       .describe(
-        'Confidentiality Impact on Vulnerable System: H=High (total loss), L=Low (partial), N=None'
+        "Confidentiality Impact on Vulnerable System: H=High (total loss), L=Low (partial), N=None"
       ),
     VI: z
-      .enum(['H', 'L', 'N'])
+      .enum(["H", "L", "N"])
       .describe(
-        'Integrity Impact on Vulnerable System: H=High (total loss), L=Low (partial), N=None'
+        "Integrity Impact on Vulnerable System: H=High (total loss), L=Low (partial), N=None"
       ),
     VA: z
-      .enum(['H', 'L', 'N'])
+      .enum(["H", "L", "N"])
       .describe(
-        'Availability Impact on Vulnerable System: H=High (total loss), L=Low (partial), N=None'
+        "Availability Impact on Vulnerable System: H=High (total loss), L=Low (partial), N=None"
       ),
 
     // Base Metrics - Subsequent System Impact
     SC: z
-      .enum(['H', 'L', 'N'])
+      .enum(["H", "L", "N"])
       .describe(
-        'Confidentiality Impact on Subsequent Systems: H=High, L=Low, N=None (no pivoting)'
+        "Confidentiality Impact on Subsequent Systems: H=High, L=Low, N=None (no pivoting)"
       ),
     SI: z
-      .enum(['H', 'L', 'N'])
+      .enum(["H", "L", "N"])
       .describe(
-        'Integrity Impact on Subsequent Systems: H=High, L=Low, N=None'
+        "Integrity Impact on Subsequent Systems: H=High, L=Low, N=None"
       ),
     SA: z
-      .enum(['H', 'L', 'N'])
+      .enum(["H", "L", "N"])
       .describe(
-        'Availability Impact on Subsequent Systems: H=High, L=Low, N=None'
+        "Availability Impact on Subsequent Systems: H=High, L=Low, N=None"
       ),
 
     // Threat Metric
     E: z
-      .enum(['A', 'P', 'U'])
+      .enum(["A", "P", "U"])
       .describe(
-        'Exploit Maturity: A=Attacked (working exploit exists), P=POC available, U=Unreported'
+        "Exploit Maturity: A=Attacked (working exploit exists), P=POC available, U=Unreported"
       ),
   }),
   reasoning: z
     .string()
     .describe(
-      'Brief explanation (2-3 sentences) of the key factors that influenced the metric choices'
+      "Brief explanation (2-3 sentences) of the key factors that influenced the metric choices"
     ),
 });
-
-type CVSSMetricsOutput = z.infer<typeof CVSSMetricsOutputSchema>;
 
 // =============================================================================
 // System Prompt
@@ -281,7 +275,7 @@ function buildScoringPrompt(input: CVSSScorerInput): string {
 ## Finding Details
 
 **Title:** ${finding.title}
-**Vulnerability Class:** ${finding.vulnerabilityClass || 'Unknown'}
+**Vulnerability Class:** ${finding.vulnerabilityClass || "Unknown"}
 **Endpoint:** ${finding.endpoint}
 
 ### Description
@@ -330,7 +324,7 @@ Provide your metrics assessment and brief reasoning.
 /**
  * Extract relevant context from agent conversation messages
  */
-function extractContextSummary(messages: any[]): string {
+function extractContextSummary(messages: Record<string, unknown>[]): string {
   const contextParts: string[] = [];
   let foundToolCalls = 0;
   const maxToolCalls = 5; // Limit context size
@@ -339,7 +333,7 @@ function extractContextSummary(messages: any[]): string {
     if (foundToolCalls >= maxToolCalls) break;
 
     // Extract assistant reasoning
-    if (message.role === 'assistant' && typeof message.content === 'string') {
+    if (message.role === "assistant" && typeof message.content === "string") {
       // Look for hypothesis/validation blocks
       const hypothesisMatch = message.content.match(
         /HYPOTHESIS:[\s\S]*?(?=VALIDATION:|$)/
@@ -357,12 +351,13 @@ function extractContextSummary(messages: any[]): string {
     }
 
     // Extract tool call descriptions
-    if (message.role === 'assistant' && Array.isArray(message.content)) {
-      for (const part of message.content) {
-        if (part.type === 'tool-call' && part.toolName) {
-          const desc =
-            part.input?.toolCallDescription || `Used ${part.toolName}`;
-          contextParts.push(`- Tool: ${desc}`);
+    if (message.role === "assistant" && Array.isArray(message.content)) {
+      for (const rawPart of message.content) {
+        const part = rawPart as Record<string, unknown>;
+        if (part.type === "tool-call" && part.toolName) {
+          const input = part.input as Record<string, unknown> | undefined;
+          const desc = input?.toolCallDescription || `Used ${part.toolName}`;
+          contextParts.push(`- Tool: ${String(desc)}`);
           foundToolCalls++;
         }
       }
@@ -370,10 +365,10 @@ function extractContextSummary(messages: any[]): string {
   }
 
   if (contextParts.length === 0) {
-    return 'No additional context available from testing conversation.\n';
+    return "No additional context available from testing conversation.\n";
   }
 
-  return contextParts.join('\n') + '\n';
+  return contextParts.join("\n") + "\n";
 }
 
 // =============================================================================
@@ -381,4 +376,4 @@ function extractContextSummary(messages: any[]): string {
 // =============================================================================
 
 /** Default model for CVSS scoring (fast and cost-effective) */
-export const DEFAULT_CVSS_MODEL: AIModel = 'claude-4-5-haiku';
+export const DEFAULT_CVSS_MODEL: AIModel = "claude-4-5-haiku";

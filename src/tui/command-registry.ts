@@ -243,7 +243,7 @@ export const commands: CommandConfig[] = [
       ctx.navigate({
         type: "base",
         path: "operator",
-        options: flags as any,
+        options: flags as Record<string, unknown>,
       });
     },
   },

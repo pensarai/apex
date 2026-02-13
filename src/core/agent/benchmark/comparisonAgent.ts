@@ -126,8 +126,9 @@ ${finding.remediation}
 ${finding.references ? `## References\n${finding.references}` : ""}`;
 
       actualFindingsMarkdown += `\n\n---\n**File: ${file}**\n\n${formattedFinding}`;
-    } catch (error: any) {
-      console.error(`Failed to read finding file ${file}:`, error.message);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`Failed to read finding file ${file}:`, message);
     }
   }
 

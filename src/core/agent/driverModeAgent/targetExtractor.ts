@@ -192,7 +192,8 @@ Return a JSON object with:
     }
 
     throw new Error(
-      'Could not extract target from message. Please specify a URL or @mention an endpoint.'
+      'Could not extract target from message. Please specify a URL or @mention an endpoint.',
+      { cause: error }
     );
   }
 }

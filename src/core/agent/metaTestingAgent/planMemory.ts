@@ -97,12 +97,13 @@ Phase statuses:
             plan.total_phases
           }${checkpointMsg}`,
         };
-      } catch (error: any) {
-        logger.error(`Failed to store plan: ${error.message}`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.error(`Failed to store plan: ${message}`);
         return {
           success: false,
-          error: error.message,
-          message: `Failed to store plan: ${error.message}`,
+          error: message,
+          message: `Failed to store plan: ${message}`,
         };
       }
     },
@@ -191,12 +192,13 @@ ${phasesDisplay}
 
 Update plan with store_plan after evaluation.`,
         };
-      } catch (error: any) {
-        logger.error(`Failed to get plan: ${error.message}`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.error(`Failed to get plan: ${message}`);
         return {
           success: false,
-          error: error.message,
-          message: `Failed to retrieve plan: ${error.message}`,
+          error: message,
+          message: `Failed to retrieve plan: ${message}`,
         };
       }
     },
@@ -274,12 +276,13 @@ ${
     : ""
 }`,
         };
-      } catch (error: any) {
-        logger.error(`Failed to store adaptation: ${error.message}`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.error(`Failed to store adaptation: ${message}`);
         return {
           success: false,
-          error: error.message,
-          message: `Failed to store adaptation: ${error.message}`,
+          error: message,
+          message: `Failed to store adaptation: ${message}`,
         };
       }
     },

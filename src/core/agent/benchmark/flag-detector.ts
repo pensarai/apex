@@ -141,8 +141,8 @@ export async function extractFlagFromRepo(
         console.log(`[${branch}] ✅ FLAG found in ${file}: ${flag.substring(0, 20)}...`);
         return flag;
       }
-    } catch (error: any) {
-      console.log(`[${branch}] ⚠️  Error reading ${file}:`, error.message);
+    } catch (error) {
+      console.log(`[${branch}] ⚠️  Error reading ${file}:`, error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -191,8 +191,8 @@ export async function extractPACEFlags(
           }
         }
       }
-    } catch (error: any) {
-      console.log(`[${benchmarkName}] ⚠️  Error reading flags/ directory: ${error.message}`);
+    } catch (error) {
+      console.log(`[${benchmarkName}] ⚠️  Error reading flags/ directory: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -213,8 +213,8 @@ export async function extractPACEFlags(
           }
         }
       }
-    } catch (error: any) {
-      console.log(`[${benchmarkName}] ⚠️  Error reading flag_without_ignore/ directory: ${error.message}`);
+    } catch (error) {
+      console.log(`[${benchmarkName}] ⚠️  Error reading flag_without_ignore/ directory: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -325,7 +325,7 @@ function extractFlagFromContent(content: string, filename: string): string | nul
       if (parsed?.services) {
         for (const service of Object.values(parsed.services)) {
           if (typeof service === 'object' && service !== null) {
-            const env = (service as any).environment;
+            const env = (service as Record<string, unknown>).environment;
             if (env) {
               if (Array.isArray(env)) {
                 for (const envVar of env) {
@@ -334,8 +334,9 @@ function extractFlagFromContent(content: string, filename: string): string | nul
                   }
                 }
               } else if (typeof env === 'object') {
-                if (env.FLAG) return String(env.FLAG);
-                if (env.flag) return String(env.flag);
+                const envObj = env as Record<string, unknown>;
+                if (envObj.FLAG) return String(envObj.FLAG);
+                if (envObj.flag) return String(envObj.flag);
               }
             }
           }
@@ -428,8 +429,8 @@ export async function detectFlagInArtifacts(
         locations.push(...fileLocations);
         return true;
       }
-    } catch (error: any) {
-      console.log(`[${branch}] ⚠️  Error reading ${file}:`, error.message);
+    } catch (error) {
+      console.log(`[${branch}] ⚠️  Error reading ${file}:`, error instanceof Error ? error.message : String(error));
     }
     return false;
   }
