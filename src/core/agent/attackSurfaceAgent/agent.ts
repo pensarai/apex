@@ -4,13 +4,17 @@ import {
   type ToolSet,
   type StreamTextOnStepFinishCallback,
   tool,
-  hasToolCall,
 } from "ai";
-import { mapMessages, Messages } from "../../messages";
 import { streamResponse, type AIModel } from "../../ai";
 import { type AIAuthConfig } from "../../ai/utils";
 import { SYSTEM } from "./prompts";
-import { createPentestTools } from "../tools";
+import {
+  createPentestTools,
+  type ExecuteCommandOpts,
+  type ExecuteCommandResult,
+  type HttpRequestOpts,
+  type HttpRequestResult,
+} from "../tools";
 import { Session } from "../../session";
 import { z } from "zod";
 import { join } from "path";
@@ -20,21 +24,13 @@ import { getScopeDescription } from "../scope";
 import { extractJavascriptEndpoints } from "./jsExtraction";
 import { generateRandomName } from "../../../util/name";
 import { nanoid } from "nanoid";
-import {
-  createBrowserTools,
-  disconnectMcpClient,
-} from "../browserTools/playwrightMcp";
+import { createBrowserTools } from "../browserTools/playwrightMcp";
 import {
   runAuthenticationSubagent,
   type AuthCredentials,
 } from "../authenticationSubagent";
+import type { AuthMethod } from "../authenticationSubagent/types";
 import {
-  DocumentAssetSchema,
-  AttackSurfaceReportSchema,
-  AssetDetailsSchema,
-  AssetTypeEnum,
-  RiskLevelEnum,
-  type DocumentAssetInput,
   type DocumentedAssetRecord,
   type AttackSurfaceReport,
 } from "./schemas";
@@ -159,8 +155,10 @@ export interface RunAgentProps {
   session?: Session.SessionInfo;
   authConfig?: AIAuthConfig;
   toolOverride?: {
-    execute_command?: (opts: any) => Promise<any>;
-    http_request?: (opts: any) => Promise<any>;
+    execute_command?: (
+      opts: ExecuteCommandOpts
+    ) => Promise<ExecuteCommandResult>;
+    http_request?: (opts: HttpRequestOpts) => Promise<HttpRequestResult>;
   };
   /** Optional persistence callbacks for external storage integration */
   persistence?: PersistenceCallbacks;
@@ -239,7 +237,9 @@ export async function runAgent(opts: RunAgentProps): Promise<{
     model,
     toolOverride,
     onToolTokenUsage,
-    abortSignal
+    abortSignal,
+    undefined, // operatorMode
+    authConfig
   );
 
   // Create browser tools for JavaScript-heavy page analysis
@@ -463,7 +463,7 @@ Use this to:
         } = params;
 
         // Use http_request to perform authentication
-        let authRequest: BunFetchRequestInit = { method: "POST" };
+        const authRequest: BunFetchRequestInit = { method: "POST" };
 
         if (method === "form_post") {
           const formData = {
@@ -524,11 +524,13 @@ Use this to:
             ? `Successfully authenticated as ${username}. Session cookie saved for use with other tools.`
             : `Authentication failed. Status: ${result.status}.`,
         };
-      } catch (error: any) {
+      } catch (error) {
         return {
           success: false,
           authenticated: false,
-          message: `Authentication error: ${error.message}`,
+          message: `Authentication error: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
         };
       }
     },
@@ -702,7 +704,7 @@ When to use delegate_to_auth_subagent vs authenticate_and_maintain_session:
               ? {
                   loginEndpoints: loginUrl ? [loginUrl] : undefined,
                   protectedEndpoints: authHints.protectedEndpoints,
-                  authScheme: authHints.authScheme as any,
+                  authScheme: authHints.authScheme as AuthMethod | undefined,
                   csrfRequired: authHints.csrfRequired,
                 }
               : undefined,
@@ -765,11 +767,13 @@ When to use delegate_to_auth_subagent vs authenticate_and_maintain_session:
                   : ""
               }`,
         };
-      } catch (error: any) {
+      } catch (error) {
         return {
           success: false,
           authenticated: false,
-          message: `Auth subagent delegation failed: ${error.message}`,
+          message: `Auth subagent delegation failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
         };
       }
     },
@@ -837,7 +841,13 @@ Returns all discovered endpoint patterns.`,
         const toVisit: Array<{ url: string; depth: number }> = [
           { url: startUrl, depth: 0 },
         ];
-        const pages: Array<any> = [];
+        const pages: Array<{
+          url: string;
+          status: number;
+          links: string[];
+          forms: string[];
+          jsEndpoints: unknown[];
+        }> = [];
         const allEndpoints = new Set<string>();
 
         while (toVisit.length > 0 && visited.size < maxPages) {
@@ -888,7 +898,7 @@ Returns all discovered endpoint patterns.`,
               });
 
               if (jsEndpoints.endpoints) {
-                jsEndpoints.endpoints.forEach((ep: any) =>
+                jsEndpoints.endpoints.forEach((ep) =>
                   allEndpoints.add(ep.endpoint)
                 );
               }
@@ -916,10 +926,12 @@ Returns all discovered endpoint patterns.`,
           allDiscoveredEndpoints: Array.from(allEndpoints),
           message: `Crawled ${visited.size} pages. Discovered ${allEndpoints.size} unique endpoints from JavaScript.`,
         };
-      } catch (error: any) {
+      } catch (error) {
         return {
           success: false,
-          message: `Crawl error: ${error.message}`,
+          message: `Crawl error: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
         };
       }
     },
@@ -949,7 +961,13 @@ Use this to:
       try {
         const { endpoints, sessionCookie } = params;
 
-        const results: Array<any> = [];
+        const results: Array<{
+          endpoint: string;
+          status: number;
+          accessible: boolean;
+          contentLength?: number;
+          error?: string;
+        }> = [];
         const accessible: Array<string> = [];
         const inaccessible: Array<string> = [];
 
@@ -977,12 +995,12 @@ Use this to:
             } else {
               inaccessible.push(endpoint);
             }
-          } catch (error: any) {
+          } catch (error) {
             results.push({
               endpoint,
               status: 0,
               accessible: false,
-              error: error.message,
+              error: error instanceof Error ? error.message : String(error),
             });
             inaccessible.push(endpoint);
           }
@@ -997,10 +1015,12 @@ Use this to:
           accessibleEndpoints: accessible,
           message: `Tested ${endpoints.length} endpoints. ${accessible.length} accessible, ${inaccessible.length} not accessible.`,
         };
-      } catch (error: any) {
+      } catch (error) {
         return {
           success: false,
-          message: `Endpoint testing error: ${error.message}`,
+          message: `Endpoint testing error: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
         };
       }
     },
@@ -1300,7 +1320,7 @@ You MUST provide the final report using create_attack_surface_report tool.
   });
 
   // Attach the session directly to the stream result object
-  (streamResult as any).session = session;
+  Object.assign(streamResult, { session });
 
   return { streamResult: streamResult as RunAgentResult, session };
 }

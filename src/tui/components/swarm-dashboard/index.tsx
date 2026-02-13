@@ -4,6 +4,7 @@ import AgentDisplay, { type DisplayMessage } from "../agent-display";
 import { SpinnerDots } from "../sprites";
 import { useDialog } from "../../context/dialog";
 import { useColors } from "../../theme";
+import type { ResumeInfo } from "../../../core/session/loader";
 
 // Re-export DisplayMessage as UIMessage for backwards compatibility
 export type UIMessage = DisplayMessage;
@@ -16,7 +17,8 @@ export type Subagent = {
   target: string;
   messages: DisplayMessage[];
   createdAt: Date;
-  status: "pending" | "completed" | "failed" | "canceled";
+  status: "pending" | "completed" | "failed" | "paused" | "canceled";
+  resumeInfo?: ResumeInfo;
 };
 
 interface SwarmDashboardProps {
@@ -28,6 +30,7 @@ interface SwarmDashboardProps {
   onBack?: () => void;
   onViewReport?: () => void;
   onKillAgent?: (agentId: string) => void;
+  onResumeAgent?: (agentId: string) => void;
   children?: React.ReactNode;
 }
 
@@ -40,6 +43,7 @@ export default function SwarmDashboard({
   onBack,
   onViewReport,
   onKillAgent,
+  onResumeAgent,
 }: SwarmDashboardProps) {
   const [currentView, setCurrentView] = useState<"overview" | "detail">(
     "overview"
@@ -53,13 +57,37 @@ export default function SwarmDashboard({
 
   // Separate discovery and pentest agents
   const discoveryAgent = useMemo(
-    () => subagents.find((s) => s.type === "attack-surface") || null,
+    () =>
+      subagents.find(
+        (s) => s.type === "attack-surface" && s.status === "pending"
+      ) ||
+      subagents.find((s) => s.type === "attack-surface") ||
+      null,
     [subagents]
   );
   const pentestAgents = useMemo(
     () => subagents.filter((s) => s.type === "pentest"),
     [subagents]
   );
+
+  // Aggregate endpoints from ALL attack-surface agents (old loaded + new active)
+  const allEndpoints = useMemo(() => {
+    const endpointSet = new Set<string>();
+    const attackSurfaceAgents = subagents.filter(
+      (s) => s.type === "attack-surface"
+    );
+    for (const agent of attackSurfaceAgents) {
+      for (const msg of agent.messages) {
+        if (msg.role === "assistant" && typeof msg.content === "string") {
+          const urlMatches = msg.content.match(/\/[a-zA-Z0-9\/_.-]+/g);
+          if (urlMatches) {
+            urlMatches.forEach((u) => endpointSet.add(u));
+          }
+        }
+      }
+    }
+    return Array.from(endpointSet).slice(0, 50);
+  }, [subagents]);
 
   // Computed metrics
   const metrics = useMemo(() => {
@@ -104,6 +132,12 @@ export default function SwarmDashboard({
       // D to toggle discovery logs
       if (key.name === "d" || key.name === "D") {
         setShowDiscoveryLogs((prev) => !prev);
+        return;
+      }
+
+      // R to resume paused discovery agent
+      if ((key.name === "r" || key.name === "R") && discoveryAgent?.status === "paused") {
+        onResumeAgent?.(discoveryAgent.id);
         return;
       }
 
@@ -176,6 +210,11 @@ export default function SwarmDashboard({
         setSelectedAgentId(null);
         return;
       }
+      // R to resume paused agent
+      if ((key.name === "r" || key.name === "R") && selectedAgent?.status === "paused") {
+        onResumeAgent?.(selectedAgent.id);
+        return;
+      }
     }
   });
 
@@ -188,6 +227,7 @@ export default function SwarmDashboard({
           setCurrentView("overview");
           setSelectedAgentId(null);
         }}
+        onResume={selectedAgent.status === "paused" ? () => onResumeAgent?.(selectedAgent.id) : undefined}
       />
     );
   }
@@ -200,6 +240,7 @@ export default function SwarmDashboard({
         {/* Left: Discovery panel */}
         <DiscoveryPanel
           agent={discoveryAgent}
+          endpoints={allEndpoints}
           showLogs={showDiscoveryLogs}
           onToggleLogs={() => setShowDiscoveryLogs((prev) => !prev)}
         />
@@ -216,7 +257,12 @@ export default function SwarmDashboard({
               backgroundColor={darkBg}
               padding={2}
             >
-              {discoveryAgent?.status === "pending" ? (
+              {discoveryAgent?.status === "paused" ? (
+                <box flexDirection="column" alignItems="center" gap={1}>
+                  <text fg={colors.orangeText}>⏸ Discovery was interrupted</text>
+                  <text fg={dimText}>Press <span fg={colors.orangeText}>[R]</span> to resume</text>
+                </box>
+              ) : discoveryAgent?.status === "pending" ? (
                 <box flexDirection="column" alignItems="center" gap={1}>
                   <SpinnerDots
                     label="Discovering attack surface..."
@@ -279,6 +325,7 @@ export default function SwarmDashboard({
         duration={metrics.duration}
         isExecuting={isExecuting}
         showKillHint={!!onKillAgent}
+        discoveryPaused={discoveryAgent?.status === "paused"}
       />
     </box>
   );
@@ -290,34 +337,19 @@ export default function SwarmDashboard({
 
 interface DiscoveryPanelProps {
   agent: Subagent | null;
+  endpoints: string[];
   showLogs: boolean;
   onToggleLogs: () => void;
 }
 
 function DiscoveryPanel({
   agent,
+  endpoints,
   showLogs,
   onToggleLogs,
 }: DiscoveryPanelProps) {
   const colors = useColors();
   const { greenAccent: greenBullet, creamText, dimText, backgroundDarker: darkBg } = colors;
-
-  // Extract endpoints from agent messages
-  const endpoints = useMemo(() => {
-    if (!agent) return [];
-    const endpointSet = new Set<string>();
-
-    for (const msg of agent.messages) {
-      if (msg.role === "assistant" && typeof msg.content === "string") {
-        // Look for URL patterns
-        const urlMatches = msg.content.match(/\/[a-zA-Z0-9\/_-]+/g);
-        if (urlMatches) {
-          urlMatches.forEach((u) => endpointSet.add(u));
-        }
-      }
-    }
-    return Array.from(endpointSet).slice(0, 50);
-  }, [agent?.messages]);
 
   // Expanded logs view
   if (showLogs && agent) {
@@ -347,6 +379,9 @@ function DiscoveryPanel({
             )}
             {agent.status === "failed" && (
               <text fg="red">✗ Attack Surface Discovery</text>
+            )}
+            {agent.status === "paused" && (
+              <text fg={colors.orangeText}>⏸ Attack Surface Discovery (Paused)</text>
             )}
           </box>
           <text fg={dimText}>
@@ -408,6 +443,9 @@ function DiscoveryPanel({
             <text fg={greenBullet}>✓ Discovery</text>
           )}
           {agent?.status === "failed" && <text fg="red">✗ Discovery</text>}
+          {agent?.status === "paused" && (
+            <text fg={colors.orangeText}>⏸ Discovery</text>
+          )}
         </box>
         <text fg={dimText}>[D]</text>
       </box>
@@ -417,7 +455,7 @@ function DiscoveryPanel({
         <box flexDirection="column" padding={1} gap={1}>
           <text>
             <span fg={dimText}>Status: </span>
-            <span fg={agent.status === "pending" ? greenBullet : creamText}>
+            <span fg={agent.status === "pending" ? greenBullet : agent.status === "paused" ? colors.orangeText : creamText}>
               {agent.status}
             </span>
           </text>
@@ -429,6 +467,12 @@ function DiscoveryPanel({
             <span fg={dimText}>Endpoints: </span>
             <span fg={creamText}>{endpoints.length}</span>
           </text>
+          {agent.status === "paused" && (
+            <text>
+              <span fg={colors.orangeText}>[R]</span>
+              <span fg={dimText}> Resume</span>
+            </text>
+          )}
         </box>
       )}
 
@@ -469,6 +513,7 @@ function AgentCard({ agent, focused, onSelect }: AgentCardProps) {
     pending: "◐",
     completed: "✓",
     failed: "✗",
+    paused: "⏸",
     canceled: "⊘",
   }[agent.status];
 
@@ -476,6 +521,7 @@ function AgentCard({ agent, focused, onSelect }: AgentCardProps) {
     pending: greenBullet,
     completed: greenBullet,
     failed: colors.errorColor,
+    paused: colors.orangeText,
     canceled: dimText,
   }[agent.status];
 
@@ -542,6 +588,8 @@ function AgentCard({ agent, focused, onSelect }: AgentCardProps) {
           <text fg={dimText}>⊘ Canceled</text>
         ) : agent.status === "pending" ? (
           <SpinnerDots label={lastActivity} fg="green" />
+        ) : agent.status === "paused" ? (
+          <text fg={colors.orangeText}>⏸ Paused — press Enter then R to resume</text>
         ) : (
           <text fg={agent.status === "completed" ? greenBullet : dimText}>
             {agent.status === "completed" ? "✓ Complete" : lastActivity}
@@ -610,6 +658,7 @@ interface MetricsBarProps {
   duration: number;
   isExecuting: boolean;
   showKillHint?: boolean;
+  discoveryPaused?: boolean;
 }
 
 function MetricsBar({
@@ -620,6 +669,7 @@ function MetricsBar({
   duration,
   isExecuting,
   showKillHint,
+  discoveryPaused,
 }: MetricsBarProps) {
   const colors = useColors();
   const { greenAccent: greenBullet, dimText } = colors;
@@ -666,6 +716,12 @@ function MetricsBar({
 
       {/* Right: Keyboard hints */}
       <box flexDirection="row" gap={2}>
+        {discoveryPaused && (
+          <text>
+            <span fg={colors.orangeText}>[R]</span>
+            <span fg={dimText}> Resume</span>
+          </text>
+        )}
         {showKillHint && (
           <text>
             <span fg={greenBullet}>[X]</span>
@@ -696,9 +752,10 @@ function MetricsBar({
 interface AgentDetailViewProps {
   agent: Subagent;
   onBack: () => void;
+  onResume?: () => void;
 }
 
-function AgentDetailView({ agent, onBack }: AgentDetailViewProps) {
+function AgentDetailView({ agent, onBack, onResume }: AgentDetailViewProps) {
   const colors = useColors();
   const { greenAccent: greenBullet, creamText, dimText } = colors;
 
@@ -706,6 +763,7 @@ function AgentDetailView({ agent, onBack }: AgentDetailViewProps) {
     pending: greenBullet,
     completed: greenBullet,
     failed: colors.errorColor,
+    paused: colors.orangeText,
     canceled: dimText,
   }[agent.status];
 
@@ -756,6 +814,12 @@ function AgentDetailView({ agent, onBack }: AgentDetailViewProps) {
           <span fg={dimText}>{agent.messages.length} messages</span>
         </text>
         <box flexDirection="row" gap={2}>
+          {agent.status === "paused" && onResume && (
+            <text>
+              <span fg={colors.orangeText}>[R]</span>
+              <span fg={dimText}> Resume</span>
+            </text>
+          )}
           <text>
             <span fg={greenBullet}>[ESC]</span>
             <span fg={dimText}> Back to swarm</span>

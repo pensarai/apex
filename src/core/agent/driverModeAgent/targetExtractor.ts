@@ -7,6 +7,7 @@
 
 import { z } from 'zod';
 import { generateObjectResponse, type AIModel } from '../../ai';
+import type { AIAuthConfig } from '../../ai/utils';
 import type { PentestTarget } from '../attackSurfaceAgent/types';
 
 /**
@@ -32,6 +33,8 @@ export interface ExtractTargetInput {
   model: AIModel;
   /** Optional callback for token usage tracking */
   onTokenUsage?: (inputTokens: number, outputTokens: number) => void;
+  /** Auth config for AI provider authentication (e.g., Bedrock credentialProvider) */
+  authConfig?: AIAuthConfig;
 }
 
 /**
@@ -40,8 +43,12 @@ export interface ExtractTargetInput {
 const ExtractedTargetSchema = z.object({
   target: z.string().describe('The target URL to test'),
   objective: z.string().describe('What to test for / the security objective'),
-  reasoning: z.string().describe('Why this target and objective were extracted'),
-  confidence: z.enum(['high', 'medium', 'low']).describe('Confidence in the extraction'),
+  reasoning: z
+    .string()
+    .describe('Why this target and objective were extracted'),
+  confidence: z
+    .enum(['high', 'medium', 'low'])
+    .describe('Confidence in the extraction'),
 });
 
 type ExtractedTarget = z.infer<typeof ExtractedTargetSchema>;
@@ -68,11 +75,13 @@ export function findEndpoint(
   endpoints: DiscoveredEndpoint[]
 ): DiscoveredEndpoint | undefined {
   // Try exact ID match first
-  let endpoint = endpoints.find(e => e.id === mention);
+  let endpoint = endpoints.find((e) => e.id === mention);
   if (endpoint) return endpoint;
 
   // Try URL contains match
-  endpoint = endpoints.find(e => e.url.includes(mention) || mention.includes(e.url));
+  endpoint = endpoints.find(
+    (e) => e.url.includes(mention) || mention.includes(e.url)
+  );
   if (endpoint) return endpoint;
 
   // Try index match (e.g., @1, @2)
@@ -95,7 +104,8 @@ export function findEndpoint(
 export async function extractPentestTarget(
   input: ExtractTargetInput
 ): Promise<PentestTarget> {
-  const { userMessage, discoveredEndpoints, model, onTokenUsage } = input;
+  const { userMessage, discoveredEndpoints, model, onTokenUsage, authConfig } =
+    input;
 
   // First, check for @mentions
   const mentions = parseAtMentions(userMessage);
@@ -105,7 +115,10 @@ export async function extractPentestTarget(
       const endpoint = findEndpoint(mention, discoveredEndpoints);
       if (endpoint) {
         // Extract objective from the rest of the message or use default
-        const objectiveFromMessage = extractObjectiveFromMessage(userMessage, endpoint);
+        const objectiveFromMessage = extractObjectiveFromMessage(
+          userMessage,
+          endpoint
+        );
         return {
           target: endpoint.url,
           objective: objectiveFromMessage || endpoint.suggestedObjective,
@@ -116,9 +129,12 @@ export async function extractPentestTarget(
   }
 
   // If no valid @mention, use LLM to extract target and objective
-  const endpointsList = discoveredEndpoints.length > 0
-    ? discoveredEndpoints.map((e, i) => `${i}. ${e.url} - ${e.suggestedObjective}`).join('\n')
-    : 'No discovered endpoints available.';
+  const endpointsList =
+    discoveredEndpoints.length > 0
+      ? discoveredEndpoints
+          .map((e, i) => `${i}. ${e.url} - ${e.suggestedObjective}`)
+          .join('\n')
+      : 'No discovered endpoints available.';
 
   const prompt = `You are helping extract a penetration testing target and objective from a user's message.
 
@@ -146,6 +162,7 @@ Return a JSON object with:
       maxTokens: 500,
       temperature: 0.3,
       onTokenUsage,
+      authConfig,
     });
 
     return {
@@ -174,7 +191,10 @@ Return a JSON object with:
       };
     }
 
-    throw new Error('Could not extract target from message. Please specify a URL or @mention an endpoint.');
+    throw new Error(
+      'Could not extract target from message. Please specify a URL or @mention an endpoint.',
+      { cause: error }
+    );
   }
 }
 
@@ -194,22 +214,43 @@ function extractObjectiveFromMessage(
 
   // Common testing keywords
   const testKeywords = [
-    'test', 'check', 'find', 'look for', 'scan', 'attack',
-    'exploit', 'verify', 'probe', 'assess', 'analyze'
+    'test',
+    'check',
+    'find',
+    'look for',
+    'scan',
+    'attack',
+    'exploit',
+    'verify',
+    'probe',
+    'assess',
+    'analyze',
   ];
 
   // Vulnerability keywords
   const vulnKeywords = [
-    'sql', 'sqli', 'injection', 'xss', 'cross-site',
-    'idor', 'authorization', 'auth', 'bypass',
-    'ssrf', 'xxe', 'command', 'rce', 'lfi', 'rfi'
+    'sql',
+    'sqli',
+    'injection',
+    'xss',
+    'cross-site',
+    'idor',
+    'authorization',
+    'auth',
+    'bypass',
+    'ssrf',
+    'xxe',
+    'command',
+    'rce',
+    'lfi',
+    'rfi',
   ];
 
   const lowerMessage = cleanMessage.toLowerCase();
 
   // Check if message contains testing intent
-  const hasTestIntent = testKeywords.some(k => lowerMessage.includes(k));
-  const hasVulnType = vulnKeywords.some(k => lowerMessage.includes(k));
+  const hasTestIntent = testKeywords.some((k) => lowerMessage.includes(k));
+  const hasVulnType = vulnKeywords.some((k) => lowerMessage.includes(k));
 
   if (hasTestIntent || hasVulnType) {
     return cleanMessage;
@@ -221,7 +262,9 @@ function extractObjectiveFromMessage(
 /**
  * Validate that a PentestTarget has required fields
  */
-export function isValidPentestTarget(target: Partial<PentestTarget>): target is PentestTarget {
+export function isValidPentestTarget(
+  target: Partial<PentestTarget>
+): target is PentestTarget {
   return (
     typeof target.target === 'string' &&
     target.target.length > 0 &&

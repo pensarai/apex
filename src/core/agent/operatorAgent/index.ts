@@ -6,7 +6,7 @@
  */
 
 import { EventEmitter } from "events";
-import { stepCountIs } from "ai";
+import { stepCountIs, type ToolSet } from "ai";
 import { appendFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import type { AIModel } from "../../ai";
@@ -27,7 +27,11 @@ import {
   type OperatorEvent,
   OPERATOR_STAGES,
 } from "../../operator";
-import { createPentestTools, ATTACK_KNOWLEDGE, isBackgroundTool } from "../tools";
+import {
+  createPentestTools,
+  ATTACK_KNOWLEDGE,
+  isBackgroundTool,
+} from "../tools";
 import { taskManager } from "../taskManager";
 import { createBrowserTools, disconnectMcpClient } from "../browserTools";
 import { createPocTool } from "../metaTestingAgent/pocTools";
@@ -67,7 +71,13 @@ VALIDATION:
 - Create POCs with create_poc to prove findings (supports bash, python, javascript)
 `;
 
-export type OperatorAgentStatus = "idle" | "running" | "waiting" | "paused" | "completed" | "failed";
+export type OperatorAgentStatus =
+  | "idle"
+  | "running"
+  | "waiting"
+  | "paused"
+  | "completed"
+  | "failed";
 
 /** Attack surface endpoint for resume context */
 export interface AttackSurfaceEndpoint {
@@ -129,7 +139,9 @@ export class OperatorAgent extends EventEmitter {
     this.messages = config.previousMessages ?? [];
 
     // Track if this is a resume (has previous messages loaded)
-    this.isResume = !!(config.previousMessages && config.previousMessages.length > 0);
+    this.isResume = !!(
+      config.previousMessages && config.previousMessages.length > 0
+    );
 
     // Store attack surface from previous session (for resume context)
     this.attackSurface = config.previousAttackSurface ?? [];
@@ -184,7 +196,7 @@ export class OperatorAgent extends EventEmitter {
   /**
    * Log an event to the JSONL file
    */
-  private log(type: string, data: any): void {
+  private log(type: string, data: Record<string, unknown>): void {
     const entry = {
       timestamp: new Date().toISOString(),
       runId: this.runId,
@@ -230,17 +242,17 @@ export class OperatorAgent extends EventEmitter {
     this.messages.push(message);
 
     // Index tool messages by toolCallId for O(1) lookup
-    const toolCallId = (message as any).toolCallId;
+    const toolCallId = message.toolCallId;
     if (message.role === "tool" && toolCallId) {
       this.toolCallIdToIndex.set(toolCallId, index);
     }
 
     this.log("message", {
       role: message.role,
-      content: message.content,
-      toolName: (message as any).toolName,
+      content: message.content as unknown as string,
+      toolName: message.toolName,
       toolCallId,
-      args: (message as any).args,
+      args: message.args,
     });
     this.emit("message", message);
   }
@@ -250,9 +262,9 @@ export class OperatorAgent extends EventEmitter {
     this.log("message_updated", {
       index,
       role: message.role,
-      content: message.content,
-      status: (message as any).status,
-      result: (message as any).result,
+      content: message.content as unknown as string,
+      status: message.status,
+      result: message.result,
     });
     this.emit("message-updated", { index, message });
   }
@@ -319,8 +331,14 @@ export class OperatorAgent extends EventEmitter {
    * Approve a pending action
    */
   approve(approvalId: string): void {
-    const pending = this.approvalGate.getPendingApprovals().find(p => p.id === approvalId);
-    this.log("action_approved", { approvalId, toolName: pending?.toolName, args: pending?.args });
+    const pending = this.approvalGate
+      .getPendingApprovals()
+      .find((p) => p.id === approvalId);
+    this.log("action_approved", {
+      approvalId,
+      toolName: pending?.toolName,
+      args: pending?.args,
+    });
     this.approvalGate.approve(approvalId);
   }
 
@@ -328,8 +346,14 @@ export class OperatorAgent extends EventEmitter {
    * Deny a pending action
    */
   deny(approvalId: string): void {
-    const pending = this.approvalGate.getPendingApprovals().find(p => p.id === approvalId);
-    this.log("action_denied", { approvalId, toolName: pending?.toolName, args: pending?.args });
+    const pending = this.approvalGate
+      .getPendingApprovals()
+      .find((p) => p.id === approvalId);
+    this.log("action_denied", {
+      approvalId,
+      toolName: pending?.toolName,
+      args: pending?.args,
+    });
     this.approvalGate.deny(approvalId);
   }
 
@@ -363,7 +387,9 @@ export class OperatorAgent extends EventEmitter {
     const stageDef = OPERATOR_STAGES[this.currentStage];
 
     // Initial user message
-    const userMessage = directive || `Begin ${stageDef.name.toLowerCase()} phase for target: ${target}`;
+    const userMessage =
+      directive ||
+      `Begin ${stageDef.name.toLowerCase()} phase for target: ${target}`;
 
     // Build initial system message (with attack knowledge based on directive)
     const systemMessage = this.buildSystemPrompt(target, stageDef, directive);
@@ -380,13 +406,19 @@ export class OperatorAgent extends EventEmitter {
       this.log("agent_completed", { result });
       this.setStatus("idle"); // Back to idle, ready for new input
       return result;
-    } catch (error: any) {
+    } catch (error) {
       if (this.abortController?.signal.aborted) {
         this.log("agent_stopped", { reason: "user_abort" });
         this.setStatus("idle"); // Back to idle after stop
-        return { findingsCount: 0, pocPaths: [], summary: "Agent stopped by user" };
+        return {
+          findingsCount: 0,
+          pocPaths: [],
+          summary: "Agent stopped by user",
+        };
       }
-      this.log("agent_error", { error: error?.message || String(error) });
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      this.log("agent_error", { error: errorMessage });
       this.setStatus("failed");
       throw error;
     }
@@ -461,19 +493,36 @@ export class OperatorAgent extends EventEmitter {
     };
 
     // Get attack knowledge for top 2 detected classes
-    const sections = vulnClasses.slice(0, 2)
-      .map(vc => {
+    const sections = vulnClasses
+      .slice(0, 2)
+      .map((vc) => {
         const key = keyMap[vc];
         if (!key || !ATTACK_KNOWLEDGE[key]) return null;
-        const knowledge = ATTACK_KNOWLEDGE[key] as any;
-        if (!knowledge.techniques || !knowledge.indicators) return null;
-        return `### ${String(key).toUpperCase()}\n**Techniques:**\n${
-          knowledge.techniques.map((t: any) => `- ${t.name}: ${t.how}`).join("\n")
-        }\n**Vulnerable indicators:** ${knowledge.indicators.vulnerable.join(", ")}\n**Not vulnerable:** ${knowledge.indicators.notVulnerable.join(", ")}`;
+        const knowledge = ATTACK_KNOWLEDGE[key];
+        if (!("techniques" in knowledge) || !("indicators" in knowledge))
+          return null;
+        const k = knowledge as {
+          techniques: readonly { name: string; how: string }[];
+          indicators: {
+            vulnerable: readonly string[];
+            notVulnerable: readonly string[];
+          };
+        };
+        return `### ${String(
+          key
+        ).toUpperCase()}\n**Techniques:**\n${k.techniques
+          .map((t: { name: string; how: string }) => `- ${t.name}: ${t.how}`)
+          .join(
+            "\n"
+          )}\n**Vulnerable indicators:** ${k.indicators.vulnerable.join(
+          ", "
+        )}\n**Not vulnerable:** ${k.indicators.notVulnerable.join(", ")}`;
       })
       .filter(Boolean);
 
-    return sections.length > 0 ? `\n## Attack Knowledge\n${sections.join("\n\n")}` : "";
+    return sections.length > 0
+      ? `\n## Attack Knowledge\n${sections.join("\n\n")}`
+      : "";
   }
 
   /**
@@ -487,11 +536,16 @@ export class OperatorAgent extends EventEmitter {
 
     // Attack surface summary - list known endpoints
     if (this.attackSurface && this.attackSurface.length > 0) {
-      const endpoints = this.attackSurface.map(e => {
-        const status = e.status && e.status !== "untested" ? ` [${e.status}]` : "";
-        return `  - ${e.method} ${e.path}${status}`;
-      }).join('\n');
-      sections.push(`**Known Attack Surface (${this.attackSurface.length} endpoints):**\n${endpoints}`);
+      const endpoints = this.attackSurface
+        .map((e) => {
+          const status =
+            e.status && e.status !== "untested" ? ` [${e.status}]` : "";
+          return `  - ${e.method} ${e.path}${status}`;
+        })
+        .join("\n");
+      sections.push(
+        `**Known Attack Surface (${this.attackSurface.length} endpoints):**\n${endpoints}`
+      );
     }
 
     // Extract key findings from message history
@@ -500,23 +554,31 @@ export class OperatorAgent extends EventEmitter {
       if (msg.role === "assistant" && typeof msg.content === "string") {
         const content = msg.content;
         // Look for structured findings patterns
-        if (content.includes("Summary") || content.includes("discovered") ||
-            content.includes("Endpoint") || content.includes("vulnerability") ||
-            content.includes("Status") || content.includes("found")) {
-          const lines = content.split('\n').filter(l => {
-            const trimmed = l.trim();
-            return (
-              trimmed.startsWith('-') ||
-              trimmed.startsWith('•') ||
-              trimmed.includes('GET ') ||
-              trimmed.includes('POST ') ||
-              trimmed.includes('/api/') ||
-              trimmed.includes('Status') ||
-              trimmed.includes('401') ||
-              trimmed.includes('200') ||
-              trimmed.includes('404')
-            );
-          }).slice(0, 15);
+        if (
+          content.includes("Summary") ||
+          content.includes("discovered") ||
+          content.includes("Endpoint") ||
+          content.includes("vulnerability") ||
+          content.includes("Status") ||
+          content.includes("found")
+        ) {
+          const lines = content
+            .split("\n")
+            .filter((l) => {
+              const trimmed = l.trim();
+              return (
+                trimmed.startsWith("-") ||
+                trimmed.startsWith("•") ||
+                trimmed.includes("GET ") ||
+                trimmed.includes("POST ") ||
+                trimmed.includes("/api/") ||
+                trimmed.includes("Status") ||
+                trimmed.includes("401") ||
+                trimmed.includes("200") ||
+                trimmed.includes("404")
+              );
+            })
+            .slice(0, 15);
           findings.push(...lines);
         }
       }
@@ -525,7 +587,7 @@ export class OperatorAgent extends EventEmitter {
     // Deduplicate findings
     const uniqueFindings = [...new Set(findings)].slice(0, 20);
     if (uniqueFindings.length > 0) {
-      sections.push(`**Previous Discoveries:**\n${uniqueFindings.join('\n')}`);
+      sections.push(`**Previous Discoveries:**\n${uniqueFindings.join("\n")}`);
     }
 
     if (sections.length === 0) {
@@ -538,14 +600,18 @@ This session has prior context. You have already performed reconnaissance.
 Do NOT restart reconnaissance or call get_attack_surface/smart_enumerate again.
 Proceed directly with the user's current request using the information below.
 
-${sections.join('\n\n')}
+${sections.join("\n\n")}
 ---`;
   }
 
   /**
    * Build system prompt for current stage
    */
-  private buildSystemPrompt(target: string, stageDef: typeof OPERATOR_STAGES[OperatorStage], directive?: string): string {
+  private buildSystemPrompt(
+    target: string,
+    stageDef: (typeof OPERATOR_STAGES)[OperatorStage],
+    directive?: string
+  ): string {
     const session = this.config.session;
     const isOffensiveStage = ["test", "validate"].includes(this.currentStage);
 
@@ -588,10 +654,18 @@ If no response after ~10 seconds, proceed with the most promising approach.
 ## Current Assessment
 Target: ${target}
 Stage: ${stageDef.name} - ${stageDef.description}
-${session.config?.authenticationInstructions ? `\nSession context: ${session.config.authenticationInstructions}` : ""}
+${
+  session.config?.authenticationInstructions
+    ? `\nSession context: ${session.config.authenticationInstructions}`
+    : ""
+}
 
 ## What We Know So Far
-${this.isResume ? this.buildResumeContext() : (this.findingsSummary || "Just starting - no findings yet.")}
+${
+  this.isResume
+    ? this.buildResumeContext()
+    : this.findingsSummary || "Just starting - no findings yet."
+}
 
 ## Testing Guidance
 ${session.config?.outcomeGuidance || Session.DEFAULT_OUTCOME_GUIDANCE}
@@ -653,12 +727,15 @@ Document significant findings using the document_finding tool.`;
   /**
    * Run the main agent loop
    */
-  private async runAgentLoop(systemMessage: string, initialUserMessage: string): Promise<OperatorAgentResult> {
-
+  private async runAgentLoop(
+    systemMessage: string,
+    initialUserMessage: string
+  ): Promise<OperatorAgentResult> {
     const session = this.config.session;
-    const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
-      { role: "system", content: systemMessage },
-    ];
+    const messages: Array<{
+      role: "system" | "user" | "assistant";
+      content: string;
+    }> = [{ role: "system", content: systemMessage }];
 
     // On resume, include recent conversation history for context
     // This gives the AI model awareness of previous interactions
@@ -682,7 +759,8 @@ Document significant findings using the document_finding tool.`;
       undefined, // toolOverride
       undefined, // onTokenUsage
       this.abortController?.signal,
-      true // operatorMode - enables streaming stdout
+      true, // operatorMode - enables streaming stdout
+      this.config.authConfig
     );
 
     // Add browser tools for operator mode (HITL) only
@@ -691,14 +769,14 @@ Document significant findings using the document_finding tool.`;
       session.targets[0] || "",
       evidenceDir,
       "operator", // Operator mode for user-driven reconnaissance
-      undefined,  // logger - could be passed in future
+      undefined, // logger - could be passed in future
       this.abortController?.signal
     );
 
     // Add POC tools for offensive stages (test/validate)
-    let pocTools: Record<string, any> = {};
+    let pocTools: Record<string, unknown> = {};
     if (["test", "validate"].includes(this.currentStage)) {
-      const logger = new Logger(session, 'operator-agent.log');
+      const logger = new Logger(session, "operator-agent.log");
       const { create_poc } = createPocTool(
         {
           id: session.id,
@@ -718,7 +796,9 @@ Document significant findings using the document_finding tool.`;
       username: z.string().optional().describe("Username if available"),
       password: z.string().optional().describe("Password if available"),
       reason: z.string().describe("Why you need to run authentication"),
-      toolCallDescription: z.string().describe("A concise description of what this tool call is doing"),
+      toolCallDescription: z
+        .string()
+        .describe("A concise description of what this tool call is doing"),
     });
 
     const run_auth_subagent = tool({
@@ -735,17 +815,27 @@ and probe for self-registration if available.
 
 This tool requires user approval (T3 tier - Probing).`,
       inputSchema: RunAuthSubagentInput,
-      execute: async ({ target, username, password, reason }: z.infer<typeof RunAuthSubagentInput>) => {
+      execute: async ({
+        target,
+        username,
+        password,
+        reason,
+      }: z.infer<typeof RunAuthSubagentInput>) => {
         // Emit event for UI to show auth in progress
         this.emit("operator-event", { type: "auth-subagent-started", target });
-        this.log("auth_subagent_started", { target, reason, hasCredentials: !!(username || password) });
+        this.log("auth_subagent_started", {
+          target,
+          reason,
+          hasCredentials: !!(username || password),
+        });
 
         try {
           const result = await runAuthenticationSubagent({
             input: {
               target,
               session,
-              credentials: username || password ? { username, password } : undefined,
+              credentials:
+                username || password ? { username, password } : undefined,
             },
             model: this.config.model,
             enableBrowserTools: true,
@@ -775,18 +865,24 @@ This tool requires user approval (T3 tier - Probing).`,
             summary: result.summary,
             message: result.success
               ? `Authentication successful. Strategy: ${result.strategy}. ${result.summary}`
-              : `Authentication failed. ${result.summary}${result.authBarrier ? ` Barrier: ${result.authBarrier.type}` : ""}`,
+              : `Authentication failed. ${result.summary}${
+                  result.authBarrier
+                    ? ` Barrier: ${result.authBarrier.type}`
+                    : ""
+                }`,
           };
-        } catch (error: any) {
+        } catch (error) {
           this.emit("operator-event", {
             type: "auth-subagent-completed",
             success: false,
           });
-          this.log("auth_subagent_error", { error: error.message });
+          const message =
+            error instanceof Error ? error.message : String(error);
+          this.log("auth_subagent_error", { error: message });
           return {
             success: false,
             authenticated: false,
-            message: `Auth subagent error: ${error.message}`,
+            message: `Auth subagent error: ${message}`,
           };
         }
       },
@@ -795,11 +891,16 @@ This tool requires user approval (T3 tier - Probing).`,
     const authTools = { run_auth_subagent };
 
     // Merge all tools and wrap with approval checking
-    const allTools = { ...baseTools, ...browserTools, ...pocTools, ...authTools };
+    const allTools = {
+      ...baseTools,
+      ...browserTools,
+      ...pocTools,
+      ...authTools,
+    };
 
     // Filter tools based on toolset state
     const activeToolNames = getActiveToolNames(session.config?.toolsetState);
-    const filteredTools: Record<string, any> = {};
+    const filteredTools: Record<string, unknown> = {};
     for (const [toolName, tool] of Object.entries(allTools)) {
       if (activeToolNames.includes(toolName)) {
         filteredTools[toolName] = tool;
@@ -809,8 +910,8 @@ This tool requires user approval (T3 tier - Probing).`,
     // Wrap filtered tools with approval checking
     const wrappedTools = this.wrapToolsWithApproval(filteredTools);
 
-    let findingsCount = 0;
-    let pocPaths: string[] = [];
+    const findingsCount = 0;
+    const pocPaths: string[] = [];
     let continueLoop = true;
     let iterations = 0;
     const maxIterations = 50;
@@ -837,22 +938,25 @@ This tool requires user approval (T3 tier - Probing).`,
           prompt: initialUserMessage,
           model: this.config.model,
           system: systemMessage,
-          messages: messages.slice(1) as any, // exclude system message (passed separately)
-          tools: wrappedTools,
+          messages: messages.slice(1) as Array<{
+            role: "user" | "assistant";
+            content: string;
+          }>, // exclude system message (passed separately)
+          tools: wrappedTools as ToolSet,
           stopWhen: stepCountIs(100), // Allow multi-step tool execution within each iteration
           abortSignal: this.abortController?.signal,
           authConfig: this.config.authConfig,
           onStepFinish: (step) => {
-            console.log(step.usage)
-            console.log(this.config.onTokenUsage)
+            console.log(step.usage);
+            console.log(this.config.onTokenUsage);
             if (step.usage && this.config.onTokenUsage) {
-              console.log(step.usage)
+              console.log(step.usage);
               this.config.onTokenUsage(
                 step.usage.inputTokens ?? 0,
                 step.usage.outputTokens ?? 0
               );
             }
-          }
+          },
         });
 
         // Process stream events in order
@@ -862,7 +966,11 @@ This tool requires user approval (T3 tier - Probing).`,
 
         for await (const chunk of streamResult.fullStream) {
           // Check for user directives - interrupt to process them
-          if (this.userDirectives.length > 0 && this.abortController && !this.abortController.signal.aborted) {
+          if (
+            this.userDirectives.length > 0 &&
+            this.abortController &&
+            !this.abortController.signal.aborted
+          ) {
             this.abortController.abort();
           }
 
@@ -888,10 +996,20 @@ This tool requires user approval (T3 tier - Probing).`,
               }
               break;
 
-            case "tool-call":
+            case "tool-call": {
               // Add pending tool message (comes after text in stream order)
-              const args = (chunk as any).input || (chunk as any).args || {};
-              const description = args.toolCallDescription || chunk.toolName;
+              const args =
+                (
+                  chunk as unknown as {
+                    input?: Record<string, unknown>;
+                    args?: Record<string, unknown>;
+                  }
+                ).input ||
+                (chunk as unknown as { args?: Record<string, unknown> }).args ||
+                {};
+              const description = String(
+                args.toolCallDescription || chunk.toolName
+              );
 
               this.log("tool_call", {
                 toolCallId: chunk.toolCallId,
@@ -911,14 +1029,16 @@ This tool requires user approval (T3 tier - Probing).`,
               // Reset so next text creates a new assistant message
               currentAssistantMsgIndex = -1;
               break;
+            }
 
-            case "tool-result":
+            case "tool-result": {
               // Update tool message to completed
               // Note: AI SDK uses 'output' not 'result' for tool-result chunks
               const msgIdx = this.toolCallIdToIndex.get(chunk.toolCallId) ?? -1;
               if (msgIdx !== -1) {
                 const existingMsg = this.messages[msgIdx];
-                const toolOutput = (chunk as any).output;
+                const toolOutput = (chunk as unknown as { output?: unknown })
+                  .output;
 
                 this.log("tool_result", {
                   toolCallId: chunk.toolCallId,
@@ -938,6 +1058,7 @@ This tool requires user approval (T3 tier - Probing).`,
                 this.emitSidebarEvents(toolOutput);
               }
               break;
+            }
           }
         }
 
@@ -950,11 +1071,18 @@ This tool requires user approval (T3 tier - Probing).`,
         this.log("model_turn_end", {
           iteration: iterations,
           assistantContent,
-          toolCalls: toolCalls?.map((tc: any) => ({
-            toolName: tc.toolName,
-            toolCallId: tc.toolCallId,
-            args: tc.input || tc.args,
-          })),
+          toolCalls: toolCalls?.map(
+            (tc: {
+              toolName?: string;
+              toolCallId?: string;
+              input?: unknown;
+              args?: unknown;
+            }) => ({
+              toolName: tc.toolName,
+              toolCallId: tc.toolCallId,
+              args: tc.input || tc.args,
+            })
+          ),
           usage, // token counts
         });
 
@@ -973,11 +1101,15 @@ This tool requires user approval (T3 tier - Probing).`,
         }
 
         // Check for complete_testing tool call (but still process pending directives)
-        if (toolCalls?.some((tc: any) => tc.toolName === "complete_testing") && !hasPendingDirectives) {
+        if (
+          toolCalls?.some(
+            (tc: { toolName?: string }) => tc.toolName === "complete_testing"
+          ) &&
+          !hasPendingDirectives
+        ) {
           continueLoop = false;
         }
-
-      } catch (error: any) {
+      } catch (error) {
         if (error instanceof ApprovalBlockedError) {
           // Action was blocked in plan mode - add message and continue
           this.log("action_blocked", { error: error.message });
@@ -999,7 +1131,10 @@ This tool requires user approval (T3 tier - Probing).`,
           continue;
         }
         // Check if aborted due to user directive - continue to process it
-        if (this.abortController?.signal.aborted && this.userDirectives.length > 0) {
+        if (
+          this.abortController?.signal.aborted &&
+          this.userDirectives.length > 0
+        ) {
           // Reset abort controller for next iteration
           this.abortController = new AbortController();
           continue;
@@ -1017,7 +1152,11 @@ This tool requires user approval (T3 tier - Probing).`,
       pocPaths,
       summary: `Completed ${iterations} iterations in ${this.currentStage} stage`,
     };
-    this.log("agent_loop_completed", { iterations, stage: this.currentStage, result });
+    this.log("agent_loop_completed", {
+      iterations,
+      stage: this.currentStage,
+      result,
+    });
     return result;
   }
 
@@ -1044,14 +1183,26 @@ This tool requires user approval (T3 tier - Probing).`,
     "● ∙ ∙ ∙ ∙",
   ];
 
-  private wrapToolsWithApproval(tools: Record<string, any>): Record<string, any> {
-    const wrapped: Record<string, any> = {};
+  private wrapToolsWithApproval(
+    tools: Record<string, unknown>
+  ): Record<string, unknown> {
+    const wrapped: Record<string, unknown> = {};
 
     for (const [name, tool] of Object.entries(tools)) {
+      const toolObj = tool as {
+        execute?: (
+          args: Record<string, unknown>,
+          context?: Record<string, unknown>
+        ) => Promise<unknown>;
+        [key: string]: unknown;
+      };
       wrapped[name] = {
-        ...tool,
-        execute: async (args: any, context: any) => {
-          const toolCallId = context?.toolCallId || `tc-${Date.now()}`;
+        ...toolObj,
+        execute: async (
+          args: Record<string, unknown>,
+          context: Record<string, unknown>
+        ) => {
+          const toolCallId = String(context?.toolCallId || `tc-${Date.now()}`);
 
           try {
             // Check approval
@@ -1070,16 +1221,22 @@ This tool requires user approval (T3 tier - Probing).`,
             // Check if this tool should run in background by default
             if (isBackgroundTool(name)) {
               const task = taskManager.createTask(name);
-              this.addToolLog(toolCallId, `→ running in background (task: ${task.id})`);
+              this.addToolLog(
+                toolCallId,
+                `→ running in background (task: ${task.id})`
+              );
 
               // Fire and forget - do NOT await
               (async () => {
                 taskManager.updateStatus(task.id, "running");
                 try {
-                  const result = await tool.execute(args, extendedContext);
+                  const result = await toolObj.execute!(args, extendedContext);
                   taskManager.setResult(task.id, result);
-                } catch (err: any) {
-                  taskManager.setError(task.id, err.message);
+                } catch (err) {
+                  taskManager.setError(
+                    task.id,
+                    err instanceof Error ? err.message : String(err)
+                  );
                 }
               })();
 
@@ -1099,15 +1256,16 @@ This tool requires user approval (T3 tier - Probing).`,
             if (!supportsStreaming) {
               let frameIndex = 0;
               progressInterval = setInterval(() => {
-                const frame = OperatorAgent.PROGRESS_FRAMES[frameIndex];
+                const frame = OperatorAgent.PROGRESS_FRAMES[frameIndex] ?? "●";
                 this.addToolLog(toolCallId, frame);
-                frameIndex = (frameIndex + 1) % OperatorAgent.PROGRESS_FRAMES.length;
+                frameIndex =
+                  (frameIndex + 1) % OperatorAgent.PROGRESS_FRAMES.length;
               }, 200);
             }
 
             try {
               // Execute original tool with extended context
-              const result = await tool.execute(args, extendedContext);
+              const result = await toolObj.execute!(args, extendedContext);
 
               // Clear progress interval if set
               if (progressInterval) {
@@ -1129,7 +1287,10 @@ This tool requires user approval (T3 tier - Probing).`,
               }
             }
           } catch (error) {
-            if (error instanceof ApprovalBlockedError || error instanceof ApprovalDeniedError) {
+            if (
+              error instanceof ApprovalBlockedError ||
+              error instanceof ApprovalDeniedError
+            ) {
               // Return a message indicating the action was blocked/denied
               return {
                 success: false,
@@ -1149,15 +1310,22 @@ This tool requires user approval (T3 tier - Probing).`,
   /**
    * Get a starting log message for a tool
    */
-  private getToolStartLog(toolName: string, args: any): string {
+  private getToolStartLog(
+    toolName: string,
+    args: Record<string, unknown>
+  ): string {
     switch (toolName) {
-      case "execute_command":
-        const cmd = String(args.command || "").slice(0, 50);
-        return `$ ${cmd}${args.command?.length > 50 ? "..." : ""}`;
-      case "http_request":
-        const method = (args.method || "GET").toUpperCase();
-        const url = String(args.url || "").slice(0, 40);
-        return `${method} ${url}${args.url?.length > 40 ? "..." : ""}`;
+      case "execute_command": {
+        const cmdStr = String(args.command || "");
+        return `$ ${cmdStr.slice(0, 50)}${cmdStr.length > 50 ? "..." : ""}`;
+      }
+      case "http_request": {
+        const method = String(args.method || "GET").toUpperCase();
+        const urlStr = String(args.url || "");
+        return `${method} ${urlStr.slice(0, 40)}${
+          urlStr.length > 40 ? "..." : ""
+        }`;
+      }
       case "browser_navigate":
         return `navigating to ${String(args.url || "").slice(0, 40)}`;
       case "Grep":
@@ -1165,7 +1333,10 @@ This tool requires user approval (T3 tier - Probing).`,
         return `searching for "${String(args.pattern || "").slice(0, 30)}"`;
       case "Read":
       case "read_file":
-        return `reading ${String(args.file_path || args.path || "").slice(0, 40)}`;
+        return `reading ${String(args.file_path || args.path || "").slice(
+          0,
+          40
+        )}`;
       default:
         return `executing ${toolName}`;
     }
@@ -1174,97 +1345,108 @@ This tool requires user approval (T3 tier - Probing).`,
   /**
    * Get a result summary log for a tool
    */
-  private getToolResultLog(toolName: string, result: any): string | null {
+  private getToolResultLog(toolName: string, result: unknown): string | null {
     if (!result) return null;
 
+    // Array results (endpoints, urls, etc)
+    if (Array.isArray(result)) {
+      if (result.length === 0) return "→ found 0 items";
+      const preview =
+        typeof result[0] === "string"
+          ? result[0].slice(0, 40)
+          : JSON.stringify(result[0]).slice(0, 40);
+      return `→ found ${result.length} items (${preview}${
+        result.length > 1 ? ", ..." : ""
+      })`;
+    }
+
+    if (typeof result !== "object") return null;
+    const r = result as Record<string, unknown>;
+
     // Error results
-    if (result.success === false && result.error) {
-      return `✗ ${String(result.error).slice(0, 80)}`;
+    if (r.success === false && r.error) {
+      return `✗ ${String(r.error).slice(0, 80)}`;
     }
 
     // HTTP request results
-    if (result.status !== undefined && result.statusText !== undefined) {
-      const bodyPreview = result.body
-        ? ` - ${String(result.body).slice(0, 50)}${result.body.length > 50 ? "..." : ""}`
+    if (r.status !== undefined && r.statusText !== undefined) {
+      const bodyStr = String(r.body || "");
+      const bodyPreview = r.body
+        ? ` - ${bodyStr.slice(0, 50)}${bodyStr.length > 50 ? "..." : ""}`
         : "";
-      return `→ ${result.status} ${result.statusText}${bodyPreview}`;
+      return `→ ${r.status} ${r.statusText}${bodyPreview}`;
     }
 
     // Command results with stdout
-    if (result.stdout !== undefined) {
-      const stdout = String(result.stdout).trim();
+    if (r.stdout !== undefined) {
+      const stdout = String(r.stdout).trim();
       if (stdout && stdout !== "(no output)") {
         const lines = stdout.split("\n").filter(Boolean);
         if (lines.length > 0) {
           const firstLine = lines[0].slice(0, 70);
           if (lines.length > 1) {
-            return `→ ${firstLine}${firstLine.length < lines[0].length ? "..." : ""} (+${lines.length - 1} more lines)`;
+            return `→ ${firstLine}${
+              firstLine.length < lines[0].length ? "..." : ""
+            } (+${lines.length - 1} more lines)`;
           }
           return `→ ${firstLine}`;
         }
       }
       // Command succeeded but no meaningful output
-      if (result.success) {
+      if (r.success) {
         return "→ done (no output)";
       }
     }
 
     // Background task started
-    if (result.background && result.taskId) {
-      return `→ background task: ${result.taskId}`;
-    }
-
-    // Array results (endpoints, urls, etc)
-    if (Array.isArray(result)) {
-      if (result.length === 0) return "→ found 0 items";
-      const preview = typeof result[0] === "string"
-        ? result[0].slice(0, 40)
-        : JSON.stringify(result[0]).slice(0, 40);
-      return `→ found ${result.length} items (${preview}${result.length > 1 ? ", ..." : ""})`;
+    if (r.background && r.taskId) {
+      return `→ background task: ${r.taskId}`;
     }
 
     // Object with endpoints array
-    if (result.endpoints?.length !== undefined) {
-      return `→ found ${result.endpoints.length} endpoints`;
+    if (Array.isArray(r.endpoints)) {
+      return `→ found ${r.endpoints.length} endpoints`;
     }
 
     // Object with urls array
-    if (result.urls?.length !== undefined) {
-      return `→ found ${result.urls.length} URLs`;
+    if (Array.isArray(r.urls)) {
+      return `→ found ${r.urls.length} URLs`;
     }
 
     // Object with findings
-    if (result.findings?.length !== undefined) {
-      return `→ found ${result.findings.length} findings`;
+    if (Array.isArray(r.findings)) {
+      return `→ found ${r.findings.length} findings`;
     }
 
     // Generic success with message
-    if (result.success && result.message) {
-      return `→ ${String(result.message).slice(0, 80)}`;
+    if (r.success && r.message) {
+      return `→ ${String(r.message).slice(0, 80)}`;
     }
 
     // Generic success
-    if (result.success === true) {
+    if (r.success === true) {
       return "→ done";
     }
 
     // Fallback: try to summarize the object
-    if (typeof result === "object") {
-      const keys = Object.keys(result);
-      const importantKeys = keys.filter(k =>
-        !["success", "error", "command", "toolCallDescription"].includes(k)
-      );
-      if (importantKeys.length > 0) {
-        const previews = importantKeys.slice(0, 2).map(k => {
-          const val = result[k];
+    const keys = Object.keys(r);
+    const importantKeys = keys.filter(
+      (k) => !["success", "error", "command", "toolCallDescription"].includes(k)
+    );
+    if (importantKeys.length > 0) {
+      const previews = importantKeys
+        .slice(0, 2)
+        .map((k) => {
+          const val = r[k];
           if (Array.isArray(val)) return `${k}: ${val.length} items`;
-          if (typeof val === "string") return `${k}: ${val.slice(0, 20)}${val.length > 20 ? "..." : ""}`;
+          if (typeof val === "string")
+            return `${k}: ${val.slice(0, 20)}${val.length > 20 ? "..." : ""}`;
           if (typeof val === "number") return `${k}: ${val}`;
           return null;
-        }).filter(Boolean);
-        if (previews.length > 0) {
-          return `→ ${previews.join(", ")}`;
-        }
+        })
+        .filter(Boolean);
+      if (previews.length > 0) {
+        return `→ ${previews.join(", ")}`;
       }
     }
 
@@ -1274,37 +1456,38 @@ This tool requires user approval (T3 tier - Probing).`,
   /**
    * Emit sidebar events for tool results that update UI state
    */
-  private emitSidebarEvents(output: any): void {
+  private emitSidebarEvents(output: unknown): void {
     if (!output || typeof output !== "object") return;
+    const o = output as Record<string, unknown>;
 
     // Attack surface updates
-    if (output.endpoints && Array.isArray(output.endpoints)) {
+    if (o.endpoints && Array.isArray(o.endpoints)) {
       this.emit("operator-event", {
         type: "attack-surface-updated",
-        endpoints: output.endpoints,
+        endpoints: o.endpoints,
       });
     }
     // Credential discoveries
-    if (output.credential) {
+    if (o.credential) {
       this.emit("operator-event", {
         type: "credential-found",
-        credential: output.credential,
+        credential: o.credential,
       });
     }
     // Verified findings
-    if (output.finding) {
+    if (o.finding) {
       this.emit("operator-event", {
         type: "finding-verified",
-        finding: output.finding,
+        finding: o.finding,
       });
     }
     // Endpoint status changes
-    if (output.endpointId && output.status) {
+    if (o.endpointId && o.status) {
       this.emit("operator-event", {
         type: "endpoint-status-changed",
-        endpointId: output.endpointId,
-        status: output.status,
-        vulnType: output.vulnType,
+        endpointId: o.endpointId,
+        status: o.status,
+        vulnType: o.vulnType,
       });
     }
   }
@@ -1312,35 +1495,48 @@ This tool requires user approval (T3 tier - Probing).`,
   /**
    * Extract key findings from tool results and update the summary
    */
-  private extractFindings(toolName: string, result: any): void {
+  private extractFindings(toolName: string, result: unknown): void {
     if (!result) return;
 
-    const resultStr = typeof result === "string" ? result : JSON.stringify(result);
+    const resultStr =
+      typeof result === "string" ? result : JSON.stringify(result);
     const findings: string[] = [];
+    const r =
+      typeof result === "object" && result !== null
+        ? (result as Record<string, unknown>)
+        : ({} as Record<string, unknown>);
 
     // HTTP response analysis
     if (toolName === "http_request") {
-      const status = result?.status || result?.statusCode;
-      const url = result?.url || "";
+      const status = r.status || r.statusCode;
+      const url = r.url || "";
 
       // Interesting status codes
       if (status === 403) {
-        findings.push(`- 403 Forbidden at ${url} (potential access control to bypass)`);
+        findings.push(
+          `- 403 Forbidden at ${url} (potential access control to bypass)`
+        );
       } else if (status === 401) {
         findings.push(`- 401 Unauthorized at ${url} (auth required)`);
       } else if (status === 500) {
-        findings.push(`- 500 Error at ${url} (potential for error-based info leak)`);
+        findings.push(
+          `- 500 Error at ${url} (potential for error-based info leak)`
+        );
       }
 
       // Check for sensitive data patterns in response
-      if (resultStr.includes("password") || resultStr.includes("token") || resultStr.includes("api_key")) {
+      if (
+        resultStr.includes("password") ||
+        resultStr.includes("token") ||
+        resultStr.includes("api_key")
+      ) {
         findings.push(`- Sensitive keywords found in response from ${url}`);
       }
     }
 
     // Crawl results
-    if (toolName === "crawl" && result?.urls) {
-      const urlCount = Array.isArray(result.urls) ? result.urls.length : 0;
+    if (toolName === "crawl" && r.urls) {
+      const urlCount = Array.isArray(r.urls) ? r.urls.length : 0;
       if (urlCount > 0) {
         findings.push(`- Discovered ${urlCount} URLs from crawling`);
       }
@@ -1348,7 +1544,7 @@ This tool requires user approval (T3 tier - Probing).`,
 
     // Document finding tool (explicit finding)
     if (toolName === "document_finding") {
-      const title = result?.title || result?.name || "Finding";
+      const title = r.title || r.name || "Finding";
       findings.push(`- FINDING: ${title}`);
     }
 
@@ -1377,8 +1573,16 @@ This tool requires user approval (T3 tier - Probing).`,
 /**
  * Create a new Operator agent
  */
-export function createOperatorAgent(config: OperatorAgentConfig): OperatorAgent {
+export function createOperatorAgent(
+  config: OperatorAgentConfig
+): OperatorAgent {
   return new OperatorAgent(config);
 }
 
-export type { OperatorMode, OperatorStage, PermissionTier, PendingApproval, ActionHistoryEntry };
+export type {
+  OperatorMode,
+  OperatorStage,
+  PermissionTier,
+  PendingApproval,
+  ActionHistoryEntry,
+};

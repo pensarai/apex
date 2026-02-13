@@ -61,13 +61,13 @@ export async function get(): Promise<Config> {
   return {
     ...parsedConfig,
     version: version,
-    openAiAPIKey: process.env.OPENAI_API_KEY,
-    anthropicAPIKey: process.env.ANTHROPIC_API_KEY,
-    openRouterAPIKey: process.env.OPENROUTER_API_KEY,
-    bedrockAPIKey: process.env.BEDROCK_API_KEY,
-    daytonaAPIKey: process.env.DAYTONA_API_KEY,
-    daytonaOrgId: process.env.DAYTONA_ORG_ID,
-    runloopAPIKey: process.env.RUNLOOP_API_KEY,
+    openAiAPIKey: process.env.OPENAI_API_KEY ?? parsedConfig.openAiAPIKey,
+    anthropicAPIKey: process.env.ANTHROPIC_API_KEY ?? parsedConfig.anthropicAPIKey,
+    openRouterAPIKey: process.env.OPENROUTER_API_KEY ?? parsedConfig.openRouterAPIKey,
+    bedrockAPIKey: process.env.BEDROCK_API_KEY ?? parsedConfig.bedrockAPIKey,
+    daytonaAPIKey: process.env.DAYTONA_API_KEY ?? parsedConfig.daytonaAPIKey,
+    daytonaOrgId: process.env.DAYTONA_ORG_ID ?? parsedConfig.daytonaOrgId,
+    runloopAPIKey: process.env.RUNLOOP_API_KEY ?? parsedConfig.runloopAPIKey,
   };
 }
 

@@ -1,0 +1,68 @@
+name: Bug report
+description: Report an issue that should be fixed
+labels: ["bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Describe the bug you encountered
+      placeholder: What happened?
+    validations:
+      required: true
+
+  - type: input
+    id: apex-version
+    attributes:
+      label: Apex version
+      description: What version of Apex are you using? (run `pensar --version`)
+    validations:
+      required: false
+
+  - type: input
+    id: ai-provider
+    attributes:
+      label: AI Provider
+      description: Which AI provider are you using?
+      placeholder: e.g., Anthropic, OpenAI, AWS Bedrock, vLLM
+    validations:
+      required: false
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: How can we reproduce this issue?
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: false
+
+  - type: textarea
+    id: screenshot-or-logs
+    attributes:
+      label: Screenshots or logs
+      description: Attach a screenshot or paste relevant log output
+      placeholder: Paste logs or drag and drop screenshot here
+    validations:
+      required: false
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating System
+      description: What OS are you using?
+      placeholder: e.g., macOS 15.0, Ubuntu 22.04, Windows 11, Kali Linux (container)
+    validations:
+      required: false
+
+  - type: input
+    id: terminal
+    attributes:
+      label: Terminal
+      description: What terminal are you using?
+      placeholder: e.g., iTerm2, Ghostty, Alacritty, Windows Terminal
+    validations:
+      required: false

@@ -4,7 +4,7 @@ import { useColors } from "../theme";
 
 // Global animation tick - shared by all spinners to avoid excessive re-renders
 let globalTick = 0;
-let globalListeners = new Set<() => void>();
+const globalListeners = new Set<() => void>();
 let globalInterval: NodeJS.Timeout | null = null;
 
 function startGlobalTick() {

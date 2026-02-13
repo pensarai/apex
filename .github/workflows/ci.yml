@@ -1,3 +1,9 @@
+# CI Pipeline
+# ===========
+# Runs lint, typecheck, and build in parallel on every PR and push.
+# Each job is a reusable workflow and shows as a separate check in the
+# GitHub PR UI.
+
 name: CI
 
 on:
@@ -5,30 +11,11 @@ on:
   push:
 
 jobs:
-  build-and-typecheck:
-    name: Build and Type Check
-    runs-on: ubuntu-latest
+  lint:
+    uses: ./.github/workflows/lint.yml
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+  typecheck:
+    uses: ./.github/workflows/typecheck.yml
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Generate ASCII art
-        run: bun run generate:ascii
-
-      - name: Run type check
-        run: bunx tsc --noEmit
-
-      - name: Run build
-        run: bun run build
-
-      # - name: Run tests
-      #   run: bun run test
+  build:
+    uses: ./.github/workflows/build.yml

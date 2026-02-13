@@ -22,11 +22,17 @@ import type {
   SubAgentSpawnInfo,
   SubAgentStreamEvent,
 } from "../../../core/agent/orchestrator/orchestrator";
-import type { MetaVulnerabilityTestResult } from "../../../core/agent/metaTestingAgent";
+import type { VulnerabilityClass } from "../../../core/agent/orchestrator/types";
+import {
+  runMetaVulnerabilityTestAgent,
+  type MetaVulnerabilityTestResult,
+} from "../../../core/agent/metaTestingAgent";
 import { saveAgentMessages } from "../../../core/agent/metaTestingAgent";
-import { existsSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { exec } from "child_process";
+import { join } from "path";
 import { SpinnerDots } from "../sprites";
+import type { AttackSurfaceAnalysisResults } from "../../../core/agent/attackSurfaceAgent/types";
 
 // UIMessage helper for tool messages
 type ToolUIMessage = UIMessage & {
@@ -35,15 +41,54 @@ type ToolUIMessage = UIMessage & {
   toolName: string;
 };
 
+/** Type for tool call chunks from AI SDK stream */
+interface StreamToolCall {
+  toolCallId: string;
+  toolName: string;
+  input?: Record<string, unknown>;
+  args?: Record<string, unknown>;
+}
+
+/** Type for tool result chunks from AI SDK stream */
+interface StreamToolResult {
+  toolCallId: string;
+  toolName: string;
+  output?: unknown;
+  result?: unknown;
+}
+
+/** Type guard for stream chunks */
+interface StreamChunk {
+  type: string;
+  text?: string;
+  toolCallId?: string;
+  toolName?: string;
+  [key: string]: unknown;
+}
+
+function isStreamChunk(chunk: unknown): chunk is StreamChunk {
+  return typeof chunk === 'object' && chunk !== null && 'type' in chunk;
+}
+
+/** Type for step-finish event data with usage info */
+interface StepFinishData {
+  usage?: { inputTokens?: number; outputTokens?: number };
+  text?: string;
+  [key: string]: unknown;
+}
+
 interface SessionViewProps {
   sessionId: string;
   /** If true, load existing session state without starting a new pentest */
   isResume?: boolean;
+  /** If true, open an auto-mode session in operator mode */
+  openAsOperator?: boolean;
 }
 
 export default function SessionView({
   sessionId,
   isResume = false,
+  openAsOperator = false,
 }: SessionViewProps) {
   const route = useRoute();
   const colors = useColors();
@@ -65,6 +110,10 @@ export default function SessionView({
 
   // Per-agent abort controllers for individual kill capability
   const agentAbortControllers = useRef<Map<string, AbortController>>(new Map());
+
+  // Ref to access current subagents without adding to dependency arrays
+  const subagentsRef = useRef(subagents);
+  subagentsRef.current = subagents;
 
   const killAgent = useCallback((agentId: string) => {
     const controller = agentAbortControllers.current.get(agentId);
@@ -117,8 +166,6 @@ export default function SessionView({
         if (isResume) {
           try {
             const state = await loadSessionState(loadedSession);
-
-            // Convert UISubagent to Subagent (they're compatible)
             const loadedSubagents: Subagent[] = state.subagents.map((s) => ({
               id: s.id,
               name: s.name,
@@ -127,15 +174,26 @@ export default function SessionView({
               messages: s.messages,
               createdAt: s.createdAt,
               status: s.status,
+              resumeInfo: s.resumeInfo,
             }));
-
             setSubagents(loadedSubagents);
-            setIsCompleted(state.hasReport);
             setStartTime(new Date(loadedSession.time.created));
-            setHasStarted(true); // Mark as started so we don't trigger new pentest
+
+            if (state.hasReport) {
+              // COMPLETED — static display, no restart
+              setIsCompleted(true);
+              setHasStarted(true);
+            } else if (state.attackSurfaceResults) {
+              // MID-PENTEST — discovery done, pentest was interrupted
+              // Show loaded state as-is, don't restart from discovery
+              setHasStarted(true);
+            } else if (state.interruptedDuringDiscovery) {
+              // INTERRUPTED DISCOVERY — show partial logs, don't auto-restart
+              setHasStarted(true);
+            }
+            // else: PRE-DISCOVERY — let auto-start restart from scratch
           } catch (e) {
             console.error("Failed to load session state:", e);
-            // Fall through to show empty state - user can still view session
           }
         }
 
@@ -148,18 +206,16 @@ export default function SessionView({
     loadSession();
   }, [sessionId, isResume]);
 
-  // Start pentest once session is loaded (only if not resuming)
+  // Start pentest once session is loaded
   // Skip auto-start for operator/driver modes - they have their own start logic
   useEffect(() => {
-    if (session && !hasStarted && !loading && !isResume) {
+    if (session && !hasStarted && !loading) {
       const mode = session.config?.mode;
-      if (mode === "operator" || mode === "driver") {
-        return; // These modes wait for user to initiate
-      }
+      if (mode === "operator" || mode === "driver" || openAsOperator) return;
       setHasStarted(true);
       startPentest(session);
     }
-  }, [session, hasStarted, loading, isResume]);
+  }, [session, hasStarted, loading, openAsOperator]);
 
   // Cleanup: abort on unmount (safety net)
   useEffect(() => {
@@ -172,7 +228,7 @@ export default function SessionView({
 
   // Start the pentest
   const startPentest = useCallback(
-    async (execSession: Session.SessionInfo) => {
+    async (execSession: Session.SessionInfo, previousDiscoveryResults?: AttackSurfaceAnalysisResults) => {
       setIsExecuting(true);
       setThinking(true);
       setStartTime(new Date());
@@ -185,18 +241,33 @@ export default function SessionView({
       const pentestAgentTexts = new Map<string, string>();
 
       try {
-        // Add discovery subagent
-        setSubagents([
-          {
-            id: "attack-surface-discovery",
-            name: "Attack Surface Discovery",
-            type: "attack-surface",
-            target: execSession.targets[0],
-            messages: [],
-            status: "pending",
-            createdAt: new Date(),
-          },
-        ]);
+        // Add or reuse discovery subagent — preserve existing messages on resume
+        setSubagents((prev) => {
+          const existingIdx = prev.findIndex(
+            (s) => s.id === "attack-surface-discovery"
+          );
+          if (existingIdx !== -1) {
+            // Reuse existing entry: keep old messages, update status
+            const updated = [...prev];
+            updated[existingIdx] = {
+              ...updated[existingIdx]!,
+              status: previousDiscoveryResults ? "completed" as const : "pending" as const,
+            };
+            return updated;
+          }
+          return [
+            ...prev,
+            {
+              id: "attack-surface-discovery",
+              name: "Attack Surface Discovery",
+              type: "attack-surface" as const,
+              target: execSession.targets[0],
+              messages: [],
+              status: "pending" as const,
+              createdAt: new Date(),
+            },
+          ];
+        });
 
         // Run streamlined pentest
         const result = await runStreamlinedPentest({
@@ -205,6 +276,7 @@ export default function SessionView({
           session: execSession,
           sessionConfig: execSession.config,
           abortSignal: controller.signal,
+          previousDiscoveryResults,
           onAgentAbortControllerCreated: (agentId, abortCtrl) => {
             agentAbortControllers.current.set(agentId, abortCtrl);
           },
@@ -260,9 +332,7 @@ export default function SessionView({
                   );
                   if (!exists) {
                     // AI SDK v5.x uses 'input' instead of 'args'
-                    const args = (tc as any).input as
-                      | Record<string, unknown>
-                      | undefined;
+                    const args = (tc as unknown as StreamToolCall).input;
                     const toolDescription =
                       typeof args?.toolCallDescription === "string"
                         ? args.toolCallDescription
@@ -298,8 +368,8 @@ export default function SessionView({
                     newMessages[msgIdx] = {
                       ...existingMsg,
                       status: "completed",
-                      content: `+ ${description}`,
-                      result: (tr as any).output,
+                      content: description,
+                      result: (tr as unknown as StreamToolResult).output,
                     };
                   } else {
                     // Tool result arrived before tool call - create as completed
@@ -309,7 +379,7 @@ export default function SessionView({
                       toolCallId: tr.toolCallId,
                       toolName: tr.toolName,
                       content: `+ ${tr.toolName || "tool"}`,
-                      result: (tr as any).output,
+                      result: (tr as unknown as StreamToolResult).output,
                       createdAt: new Date(),
                     });
                   }
@@ -322,7 +392,8 @@ export default function SessionView({
           },
 
           // Real-time streaming for discovery agent
-          onDiscoveryStream: (chunk) => {
+          onDiscoveryStream: (chunk: unknown) => {
+            if (!isStreamChunk(chunk)) return;
             if (chunk.type === "text-delta" && chunk.text) {
               currentDiscoveryText += chunk.text;
               setThinking(false);
@@ -365,7 +436,7 @@ export default function SessionView({
             } else if (chunk.type === "tool-call") {
               // Real-time tool call streaming
               setThinking(false);
-              const tc = chunk as any;
+              const tc = chunk as unknown as StreamToolCall;
               const toolCallId = tc.toolCallId;
               const toolName = tc.toolName || "tool";
               const args = tc.input ?? tc.args;
@@ -406,7 +477,7 @@ export default function SessionView({
             } else if (chunk.type === "tool-result") {
               // Real-time tool result streaming
               setThinking(true);
-              const tr = chunk as any;
+              const tr = chunk as unknown as StreamToolResult;
               const toolCallId = tr.toolCallId;
               const toolName = tr.toolName || "tool";
               const result = tr.output ?? tr.result;
@@ -434,7 +505,7 @@ export default function SessionView({
                   newMessages[msgIdx] = {
                     ...existingMsg,
                     status: "completed",
-                    content: `+ ${description}`,
+                    content: description,
                     result,
                   };
                 } else {
@@ -483,11 +554,12 @@ export default function SessionView({
 
           onPentestAgentStream: (event: SubAgentStreamEvent) => {
             const agentId = event.agentId;
+            const eventData = event.data as Record<string, unknown> | undefined;
 
             // Handle real-time text streaming
-            if (event.type === "text-delta" && event.data?.text) {
+            if (event.type === "text-delta" && eventData?.text) {
               const currentText = pentestAgentTexts.get(agentId) || "";
-              const newText = currentText + event.data.text;
+              const newText = currentText + (eventData.text as string);
               pentestAgentTexts.set(agentId, newText);
 
               if (newText.trim()) {
@@ -526,7 +598,7 @@ export default function SessionView({
             }
             // Handle real-time tool call streaming
             else if (event.type === "tool-call") {
-              const tc = event.data as any;
+              const tc = event.data as StreamToolCall;
               const toolCallId = tc.toolCallId;
               const toolName = tc.toolName || "tool";
               const args = tc.input ?? tc.args;
@@ -565,7 +637,7 @@ export default function SessionView({
             }
             // Handle real-time tool result streaming
             else if (event.type === "tool-result") {
-              const tr = event.data as any;
+              const tr = event.data as StreamToolResult;
               const toolCallId = tr.toolCallId;
               const toolName = tr.toolName || "tool";
               const result = tr.output ?? tr.result;
@@ -591,7 +663,7 @@ export default function SessionView({
                   newMessages[msgIdx] = {
                     ...existingMsg,
                     status: "completed",
-                    content: `+ ${description}`,
+                    content: description,
                     result,
                   };
                 } else {
@@ -612,8 +684,8 @@ export default function SessionView({
               });
             }
             // Handle step-finish for token tracking and resetting text accumulator
-            else if (event.type === "step-finish" && event.data) {
-              const { usage } = event.data;
+            else if (event.type === "step-finish" && eventData) {
+              const { usage } = eventData as StepFinishData;
 
               if (usage) {
                 const stepTokens =
@@ -691,6 +763,261 @@ export default function SessionView({
     [model.id, addTokenUsage, setThinking, setIsExecuting]
   );
 
+  // Resume a paused agent individually
+  const resumeAgent = useCallback(
+    async (agentId: string) => {
+      if (!session) return;
+
+      // Read current subagents via ref to avoid stale closure
+      const paused = subagentsRef.current.find(
+        (s) => s.id === agentId && s.status === "paused"
+      );
+      if (!paused) return;
+
+      // Discovery agents — resume the full pipeline, preserving old messages.
+      // If discovery completed before interruption, skip it entirely.
+      if (paused.type === "attack-surface") {
+        let previousResults: AttackSurfaceAnalysisResults | undefined;
+        const resultsPath = join(session.rootPath, "attack-surface-results.json");
+        if (existsSync(resultsPath)) {
+          try {
+            previousResults = JSON.parse(readFileSync(resultsPath, "utf-8"));
+          } catch {
+            // ignored
+          }
+        }
+        await startPentest(session, previousResults);
+        return;
+      }
+
+      if (!paused.resumeInfo) return;
+
+      const { target, objective, vulnerabilityClass, authenticationInfo } =
+        paused.resumeInfo;
+
+      // Update status to pending (running)
+      setSubagents((prev) =>
+        prev.map((s) =>
+          s.id === agentId ? { ...s, status: "pending" as const } : s
+        )
+      );
+
+      setIsExecuting(true);
+      setThinking(true);
+
+      // Track text accumulation for streaming
+      let accumulatedText = "";
+
+      try {
+        const result = await runMetaVulnerabilityTestAgent({
+          input: {
+            target,
+            objective,
+            vulnerabilityClass: vulnerabilityClass as VulnerabilityClass,
+            authenticationInfo,
+            authenticationInstructions:
+              session.config?.authenticationInstructions,
+            outcomeGuidance:
+              session.config?.outcomeGuidance ||
+              "Find and document vulnerabilities",
+            session: {
+              id: session.id,
+              rootPath: session.rootPath,
+              findingsPath: session.findingsPath,
+              logsPath: session.logsPath,
+              pocsPath: session.rootPath + "/pocs",
+            },
+            sessionConfig: {
+              enableCvssScoring: session.config?.enableCvssScoring,
+              cvssModel: session.config?.cvssModel,
+            },
+          },
+          model: model.id,
+          abortSignal: abortController?.signal,
+          onChunk: (chunk) => {
+            if (chunk.type === "text-delta" && chunk.text) {
+              accumulatedText += chunk.text;
+              setThinking(false);
+
+              if (accumulatedText.trim()) {
+                setSubagents((prev) => {
+                  const idx = prev.findIndex((s) => s.id === agentId);
+                  if (idx === -1) return prev;
+
+                  const updated = [...prev];
+                  const subagent = updated[idx]!;
+                  const lastMsg =
+                    subagent.messages[subagent.messages.length - 1];
+
+                  if (lastMsg && lastMsg.role === "assistant") {
+                    const newMessages = [...subagent.messages];
+                    newMessages[newMessages.length - 1] = {
+                      ...lastMsg,
+                      content: accumulatedText,
+                    };
+                    updated[idx] = { ...subagent, messages: newMessages };
+                  } else {
+                    updated[idx] = {
+                      ...subagent,
+                      messages: [
+                        ...subagent.messages,
+                        {
+                          role: "assistant",
+                          content: accumulatedText,
+                          createdAt: new Date(),
+                        },
+                      ],
+                    };
+                  }
+                  return updated;
+                });
+              }
+            } else if (chunk.type === "tool-call") {
+              setThinking(false);
+              const tc = chunk as unknown as StreamToolCall;
+              const toolCallId = tc.toolCallId;
+              const toolName = tc.toolName || "tool";
+              const args = tc.input ?? tc.args;
+              const toolDescription =
+                typeof args?.toolCallDescription === "string"
+                  ? args.toolCallDescription
+                  : toolName;
+
+              setSubagents((prev) => {
+                const idx = prev.findIndex((s) => s.id === agentId);
+                if (idx === -1) return prev;
+
+                const updated = [...prev];
+                const subagent = updated[idx]!;
+                const newMessages = [...subagent.messages];
+
+                const exists = newMessages.some(
+                  (m) => m.role === "tool" && m.toolCallId === toolCallId
+                );
+                if (!exists) {
+                  newMessages.push({
+                    role: "tool",
+                    status: "pending",
+                    toolCallId,
+                    toolName,
+                    content: toolDescription,
+                    args,
+                    createdAt: new Date(),
+                  });
+                }
+
+                updated[idx] = { ...subagent, messages: newMessages };
+                return updated;
+              });
+            } else if (chunk.type === "tool-result") {
+              setThinking(true);
+              const tr = chunk as unknown as StreamToolResult;
+              const toolCallId = tr.toolCallId;
+              const toolName = tr.toolName || "tool";
+              const resultData = tr.output ?? tr.result;
+
+              setSubagents((prev) => {
+                const idx = prev.findIndex((s) => s.id === agentId);
+                if (idx === -1) return prev;
+
+                const updated = [...prev];
+                const subagent = updated[idx]!;
+                const newMessages = [...subagent.messages];
+
+                const msgIdx = newMessages.findIndex(
+                  (m) => m.role === "tool" && m.toolCallId === toolCallId
+                );
+                if (msgIdx !== -1) {
+                  const existingMsg = newMessages[msgIdx] as ToolUIMessage;
+                  const description =
+                    typeof existingMsg.content === "string" &&
+                    existingMsg.content !== existingMsg.toolName
+                      ? existingMsg.content
+                      : existingMsg.toolName || "tool";
+                  newMessages[msgIdx] = {
+                    ...existingMsg,
+                    status: "completed",
+                    content: description,
+                    result: resultData,
+                  };
+                } else {
+                  newMessages.push({
+                    role: "tool",
+                    status: "completed",
+                    toolCallId,
+                    toolName,
+                    content: `+ ${toolName}`,
+                    result: resultData,
+                    createdAt: new Date(),
+                  });
+                }
+
+                updated[idx] = { ...subagent, messages: newMessages };
+                return updated;
+              });
+            }
+          },
+          onStepFinish: (step) => {
+            // Token tracking
+            const usage = step.usage;
+            if (usage) {
+              const stepTokens =
+                (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0);
+              if (stepTokens > 0)
+                addTokenUsage(
+                  usage.inputTokens ?? 0,
+                  usage.outputTokens ?? 0
+                );
+            }
+            // Reset accumulated text at step boundaries
+            accumulatedText = "";
+          },
+        });
+
+        // On completion, update status
+        setSubagents((prev) =>
+          prev.map((s) =>
+            s.id === agentId
+              ? {
+                  ...s,
+                  status: result.error ? ("failed" as const) : ("completed" as const),
+                  resumeInfo: undefined,
+                  messages: [
+                    ...s.messages,
+                    {
+                      role: "assistant" as const,
+                      content: `${
+                        result.findingsCount > 0 ? "✅" : "⚪"
+                      } ${result.summary}`,
+                      createdAt: new Date(),
+                    },
+                  ],
+                }
+              : s
+          )
+        );
+      } catch (error) {
+        setSubagents((prev) =>
+          prev.map((s) =>
+            s.id === agentId
+              ? { ...s, status: "failed" as const, resumeInfo: undefined }
+              : s
+          )
+        );
+      }
+
+      setThinking(false);
+      // Only set isExecuting=false if no other agents are still running
+      const stillRunning = subagentsRef.current.some(
+        (s) => s.status === "pending" && s.id !== agentId
+      );
+      if (!stillRunning) {
+        setIsExecuting(false);
+      }
+    },
+    [session, model.id, abortController, addTokenUsage, setThinking, setIsExecuting, startPentest]
+  );
+
   // Open report
   const openReport = useCallback(() => {
     if (session?.rootPath) {
@@ -752,8 +1079,8 @@ export default function SessionView({
   }
 
   // Operator mode - render OperatorDashboard for interactive pentesting
-  if (session.config?.mode === "operator") {
-    return <OperatorDashboard session={session} isResume={isResume} />;
+  if (session.config?.mode === "operator" || openAsOperator) {
+    return <OperatorDashboard session={session} isResume={isResume} openAsOperator={openAsOperator} />;
   }
 
   // Auto mode - Render SwarmDashboard with streamlined pentest
@@ -767,6 +1094,7 @@ export default function SessionView({
       onBack={handleBack}
       onViewReport={openReport}
       onKillAgent={killAgent}
+      onResumeAgent={resumeAgent}
     />
   );
 }

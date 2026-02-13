@@ -117,7 +117,7 @@ Test authorization bypass patterns:
 function buildAuthBypassPrompt(input: AuthBypassAgentInput): string {
   const { authContext, baseUrl, objective } = input;
 
-  let prompt = `# Authorization Bypass Testing Assignment
+  const prompt = `# Authorization Bypass Testing Assignment
 
 ## Target
 - **Base URL**: ${baseUrl}
@@ -183,8 +183,8 @@ Start by making requests to understand the authentication mechanism, then system
 function saveAgentMessages(
   sessionRootPath: string,
   agentName: string,
-  messages: any[],
-  metadata?: Record<string, any>
+  messages: unknown[],
+  metadata?: Record<string, unknown>
 ): string {
   const subagentsDir = join(sessionRootPath, "subagents");
   if (!existsSync(subagentsDir)) {
@@ -233,7 +233,7 @@ export async function runAuthBypassAgent(opts: {
       id: session.id,
       rootPath: session.rootPath,
       logsPath: session.logsPath,
-    } as any,
+    } as unknown as ConstructorParameters<typeof Logger>[0],
     "auth-bypass-agent.log"
   );
 
@@ -244,7 +244,8 @@ export async function runAuthBypassAgent(opts: {
   const { document_finding, findingPaths } = createDocumentFindingTool(
     session,
     logger,
-    input.baseUrl
+    input.baseUrl,
+    { authConfig }
   );
 
   // Create http_request tool
@@ -311,10 +312,10 @@ export async function runAuthBypassAgent(opts: {
           url: response.url,
           redirected: response.redirected,
         };
-      } catch (error: any) {
+      } catch (error) {
         return {
           success: false,
-          error: error.message,
+          error: error instanceof Error ? error.message : String(error),
           url,
           status: 0,
           statusText: "",
@@ -397,8 +398,10 @@ export async function runAuthBypassAgent(opts: {
           }
         );
       }
-    } catch (e: any) {
-      logger.error(`Failed to save messages: ${e.message}`);
+    } catch (e) {
+      logger.error(
+        `Failed to save messages: ${e instanceof Error ? e.message : String(e)}`
+      );
     }
 
     return {
@@ -410,15 +413,16 @@ export async function runAuthBypassAgent(opts: {
         testingSummary ||
         `Authorization bypass testing completed for ${input.baseUrl}`,
     };
-  } catch (error: any) {
-    logger.error(`AuthBypassAgent error: ${error.message}`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error(`AuthBypassAgent error: ${message}`);
     return {
       success: false,
       vulnerabilitiesFound: findings.length > 0,
       findings,
       findingPaths,
-      summary: `Testing failed: ${error.message}`,
-      error: error.message,
+      summary: `Testing failed: ${message}`,
+      error: message,
     };
   }
 }

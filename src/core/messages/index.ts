@@ -75,7 +75,7 @@ export function mapMessages(messages: Message[]): Message[] {
   const result: Message[] = [];
 
   // First pass: collect tool results to know which tool calls have completed
-  const toolResults = new Map<string, any>();
+  const toolResults = new Map<string, unknown>();
   for (const message of messages) {
     if (message.role === "tool") {
       const content = message.content;
@@ -157,7 +157,7 @@ export function mapMessages(messages: Message[]): Message[] {
       const toolCalls: Array<{
         toolCallId: string;
         toolName: string;
-        input: any;
+        input: unknown;
       }> = [];
 
       for (const part of content) {
@@ -188,9 +188,9 @@ export function mapMessages(messages: Message[]): Message[] {
 
       // Add tool messages for each tool call
       for (const toolCall of toolCalls) {
-        const input = toolCall.input as Record<string, any>;
+        const input = toolCall.input as Record<string, unknown>;
         const toolCallDescription =
-          input?.toolCallDescription || `Executing ${toolCall.toolName}`;
+          String(input?.toolCallDescription || `Executing ${toolCall.toolName}`);
 
         // Check if we have a result for this tool call
         const hasResult = toolResults.has(toolCall.toolCallId);

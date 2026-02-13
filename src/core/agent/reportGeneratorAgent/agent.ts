@@ -57,10 +57,11 @@ export async function generatePentestReport(
       reportContent,
       findingsCount,
     };
-  } catch (error: any) {
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     return {
       success: false,
-      error: error.message,
+      error: message,
       findingsCount: { critical: 0, high: 0, medium: 0, low: 0, total: 0 },
     };
   }

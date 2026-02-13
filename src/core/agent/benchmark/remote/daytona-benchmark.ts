@@ -161,7 +161,7 @@ async function waitForServiceReady(
       }
 
       console.log(`[${benchmarkName}] ⏳ Attempt ${attempt}: Service not ready yet (HTTP ${httpCode}), retrying...`);
-    } catch (error: any) {
+    } catch (_error) {
       console.log(`[${benchmarkName}] ⏳ Attempt ${attempt}: Connection failed, retrying...`);
     }
 
@@ -307,21 +307,22 @@ Timestamp: ${new Date().toISOString()}
           `[${benchmarkName}]   ❌ ${pocFile} (exit code: ${result.exitCode})`
         );
       }
-    } catch (error: any) {
+    } catch (error) {
       const duration = Date.now() - startTime;
+      const message = error instanceof Error ? error.message : String(error);
       result = {
         pocFile,
         pocName,
         exitCode: 1,
         stdout: "",
-        stderr: error.message || "",
+        stderr: message,
         duration,
         success: false,
-        error: error.message,
+        error: message,
       };
       failed++;
       console.log(
-        `[${benchmarkName}]   ❌ ${pocFile} (error: ${error.message})`
+        `[${benchmarkName}]   ❌ ${pocFile} (error: ${message})`
       );
     }
 
@@ -647,18 +648,22 @@ export async function runBenchmarkWithDaytona(
       console.log(
         `[${benchmarkName}] ✅ Benchmark uploaded to ${remoteBenchmarkPath}`
       );
-    } catch (uploadError: any) {
-      console.error(`[${benchmarkName}] ❌ Upload failed: ${uploadError.message}`);
-      if (uploadError.response) {
-        console.error(
-          `[${benchmarkName}] Response status: ${uploadError.response.status}`
-        );
-        console.error(
-          `[${benchmarkName}] Response data:`,
-          uploadError.response.data
-        );
+    } catch (uploadError) {
+      const uploadMessage = uploadError instanceof Error ? uploadError.message : String(uploadError);
+      console.error(`[${benchmarkName}] ❌ Upload failed: ${uploadMessage}`);
+      if (typeof uploadError === 'object' && uploadError !== null && 'response' in uploadError) {
+        const { response } = uploadError as { response?: { status?: unknown; data?: unknown } };
+        if (response) {
+          console.error(
+            `[${benchmarkName}] Response status: ${response.status}`
+          );
+          console.error(
+            `[${benchmarkName}] Response data:`,
+            response.data
+          );
+        }
       }
-      throw new Error(`File upload failed: ${uploadError.message}`);
+      throw new Error(`File upload failed: ${uploadMessage}`, { cause: uploadError });
     }
 
     // Step 3: Extract flag(s) from local benchmark directory
@@ -797,15 +802,15 @@ export async function runBenchmarkWithDaytona(
     sessionRootPath = session.rootPath; // Store for catch block error logging
 
     // Helper to log errors to session's logs directory
-    const logError = (phase: string, error: any) => {
+    const logError = (phase: string, error: Record<string, unknown>) => {
       try {
         const errorLogFile = path.join(session.rootPath, "logs", "benchmark-errors.jsonl");
         const entry = {
           timestamp: new Date().toISOString(),
           benchmarkName,
           phase,
-          error: error?.message || String(error),
-          stack: error?.stack,
+          error: error.message ?? String(error),
+          stack: error.stack,
         };
         const { appendFileSync } = require("fs");
         appendFileSync(errorLogFile, JSON.stringify(entry) + "\n");
@@ -902,8 +907,8 @@ export async function runBenchmarkWithDaytona(
               effectiveTimeout
             );
             return result;
-          } catch (daytonaError: any) {
-            console.error(`[${benchmarkName}] ❌ Daytona SDK error during command execution:`, daytonaError?.message || daytonaError);
+          } catch (daytonaError) {
+            console.error(`[${benchmarkName}] ❌ Daytona SDK error during command execution:`, daytonaError instanceof Error ? daytonaError.message : String(daytonaError));
             throw daytonaError;
           }
         })();
@@ -925,18 +930,20 @@ export async function runBenchmarkWithDaytona(
           stderr: success ? "" : output,
           error: success ? "" : output,
         };
-      } catch (error: any) {
-        console.error(`[${benchmarkName}] ❌ executeCommandOverride error:`, error?.message || error);
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorStack = error instanceof Error ? error.stack : undefined;
+        console.error(`[${benchmarkName}] ❌ executeCommandOverride error:`, errorMessage);
         console.error(`[${benchmarkName}]    Command: ${opts.command.substring(0, 100)}...`);
 
         // Log full stack trace for debugging
-        if (error?.stack) {
-          console.error(`[${benchmarkName}]    Stack:`, error.stack.split('\n').slice(0, 5).join('\n'));
+        if (errorStack) {
+          console.error(`[${benchmarkName}]    Stack:`, errorStack.split('\n').slice(0, 5).join('\n'));
         }
 
         logError("execute_command", {
-          message: error?.message || String(error),
-          stack: error?.stack,
+          message: errorMessage,
+          stack: errorStack,
           command: opts.command.substring(0, 500),
         });
 
@@ -944,8 +951,8 @@ export async function runBenchmarkWithDaytona(
           command: opts.command,
           success: false,
           stdout: "",
-          stderr: error?.message || String(error),
-          error: error?.message || String(error),
+          stderr: errorMessage,
+          error: errorMessage,
         };
       }
     };
@@ -1066,12 +1073,14 @@ export async function runBenchmarkWithDaytona(
           url: opts.url,
           redirected,
         };
-      } catch (error: any) {
-        console.error(`[${benchmarkName}] ❌ httpRequestOverride error:`, error?.message || error);
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorStack = error instanceof Error ? error.stack : undefined;
+        console.error(`[${benchmarkName}] ❌ httpRequestOverride error:`, errorMessage);
 
         logError("http_request", {
-          message: error?.message || String(error),
-          stack: error?.stack,
+          message: errorMessage,
+          stack: errorStack,
           url: opts.url,
           method: opts.method,
         });
@@ -1124,11 +1133,12 @@ export async function runBenchmarkWithDaytona(
           }
         },
       });
-    } catch (pentestError: any) {
-      console.error(`[${benchmarkName}] ❌ Pentest threw an exception: ${pentestError.message}`);
+    } catch (pentestError) {
+      const pentestMessage = pentestError instanceof Error ? pentestError.message : String(pentestError);
+      console.error(`[${benchmarkName}] ❌ Pentest threw an exception: ${pentestMessage}`);
       logError("pentest_execution", {
-        message: pentestError?.message || String(pentestError),
-        stack: pentestError?.stack,
+        message: pentestMessage,
+        stack: pentestError instanceof Error ? pentestError.stack : undefined,
       });
       // Re-throw to be handled by the outer catch
       throw pentestError;
@@ -1248,11 +1258,13 @@ export async function runBenchmarkWithDaytona(
     console.log(`\n[${benchmarkName}] ✅ Completed in ${duration}m`);
 
     return results;
-  } catch (error: any) {
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : undefined;
     const duration = ((Date.now() - startTime) / 1000 / 60).toFixed(2);
-    console.error(`\n[${benchmarkName}] ❌ Failed after ${duration}m: ${error.message}`);
-    if (error.stack) {
-      console.error(`[${benchmarkName}] Stack: ${error.stack}`);
+    console.error(`\n[${benchmarkName}] ❌ Failed after ${duration}m: ${errorMessage}`);
+    if (errorStack) {
+      console.error(`[${benchmarkName}] Stack: ${errorStack}`);
     }
 
     // Log error to session's logs directory if session was created
@@ -1263,8 +1275,8 @@ export async function runBenchmarkWithDaytona(
           timestamp: new Date().toISOString(),
           benchmarkName,
           phase: "benchmark_fatal",
-          error: error?.message || String(error),
-          stack: error?.stack,
+          error: errorMessage,
+          stack: errorStack,
           duration,
         };
         const { appendFileSync } = require("fs");
@@ -1307,10 +1319,10 @@ export async function runBenchmarkWithDaytona(
               undefined,
               30000
             );
-          } catch (dockerError: any) {
+          } catch (dockerError) {
             // Don't fail cleanup if docker stop fails (might not have started)
             console.log(
-              `[${benchmarkName}] ⚠️  Docker stop failed (may not have started): ${dockerError.message}`
+              `[${benchmarkName}] ⚠️  Docker stop failed (may not have started): ${dockerError instanceof Error ? dockerError.message : String(dockerError)}`
             );
           }
         }
@@ -1324,9 +1336,9 @@ export async function runBenchmarkWithDaytona(
             if (sandbox.state !== "stopping" && sandbox.state !== "starting") {
               break;
             }
-          } catch (refreshError: any) {
+          } catch (refreshError) {
             console.log(
-              `[${benchmarkName}] ⚠️  Refresh failed (attempt ${attempts + 1}): ${refreshError.message}`
+              `[${benchmarkName}] ⚠️  Refresh failed (attempt ${attempts + 1}): ${refreshError instanceof Error ? refreshError.message : String(refreshError)}`
             );
           }
           await new Promise((resolve) => setTimeout(resolve, 3000));
@@ -1338,16 +1350,16 @@ export async function runBenchmarkWithDaytona(
           console.log(`[${benchmarkName}] 🗑️  Deleting sandbox...`);
           await sandbox.delete();
           console.log(`[${benchmarkName}] ✅ Cleanup complete`);
-        } catch (deleteError: any) {
+        } catch (deleteError) {
           console.error(
-            `[${benchmarkName}] ⚠️  Failed to delete sandbox: ${deleteError.message}`
+            `[${benchmarkName}] ⚠️  Failed to delete sandbox: ${deleteError instanceof Error ? deleteError.message : String(deleteError)}`
           );
           console.error(
             `[${benchmarkName}] ⚠️  You may need to manually delete sandbox: ${sandbox.id}`
           );
         }
-      } catch (error: any) {
-        console.error(`[${benchmarkName}] ⚠️  Cleanup error: ${error.message}`);
+      } catch (error) {
+        console.error(`[${benchmarkName}] ⚠️  Cleanup error: ${error instanceof Error ? error.message : String(error)}`);
         console.error(
           `[${benchmarkName}] ⚠️  Sandbox may still be running: ${sandbox.id}`
         );
@@ -1357,9 +1369,54 @@ export async function runBenchmarkWithDaytona(
 }
 
 /**
+ * Summary report shape used by generateMarkdownSummary
+ */
+interface BenchmarkSummaryReport {
+  timestamp: string;
+  repoPath: string;
+  model: string;
+  totalBenchmarks: number;
+  successful?: number;
+  failed?: number;
+  failureBreakdown?: {
+    rateLimited: number;
+    transient: number;
+    permanent: number;
+    unknown: number;
+  };
+  flagsDetected: number;
+  flagsMissed?: number;
+  pocStats?: {
+    total: number;
+    passed: number;
+  };
+  duration: string;
+  benchmarks: Array<{
+    benchmark: string;
+    status: string;
+    flagDetected?: boolean;
+    expectedFlag?: string | null;
+    foundIn?: string[];
+    metrics?: {
+      accuracy: number;
+      precision: number;
+      recall: number;
+    };
+    pocResults?: {
+      total: number;
+      passed: number;
+    };
+    sessionPath?: string;
+    errorCategory?: string;
+    error?: string;
+  }>;
+  failedBenchmarks?: string[];
+}
+
+/**
  * Generate markdown summary report
  */
-function generateMarkdownSummary(summary: any): string {
+function generateMarkdownSummary(summary: BenchmarkSummaryReport): string {
   const successful = summary.successful ?? summary.totalBenchmarks;
   const failed = summary.failed ?? 0;
 
@@ -1415,7 +1472,7 @@ function generateMarkdownSummary(summary: any): string {
       );
       if (benchmark.flagDetected) {
         lines.push(`  - Expected: \`${benchmark.expectedFlag}\``);
-        lines.push(`  - Found in: ${benchmark.foundIn.join(", ")}`);
+        lines.push(`  - Found in: ${benchmark.foundIn?.join(", ") ?? "unknown"}`);
       }
       if (benchmark.metrics) {
         lines.push(`- **Metrics**:`);
@@ -1460,8 +1517,8 @@ type ErrorCategory = 'rate_limit' | 'transient' | 'permanent' | 'unknown';
 /**
  * Categorize an error to determine if it's retriable
  */
-function categorizeError(error: any): ErrorCategory {
-  const message = (error?.message || error?.toString() || '').toLowerCase();
+function categorizeError(error: unknown): ErrorCategory {
+  const message = (error instanceof Error ? error.message : String(error ?? '')).toLowerCase();
 
   // Rate limit errors
   if (
@@ -1572,13 +1629,14 @@ export async function runMultipleBenchmarks(
             status: 'success',
             result,
           };
-        } catch (error: any) {
+        } catch (error) {
           const errorCategory = categorizeError(error);
-          console.error(`\n❌ [${benchmarkName}] FAILED (${errorCategory}): ${error.message}`);
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          console.error(`\n❌ [${benchmarkName}] FAILED (${errorCategory}): ${errorMessage}`);
           return {
             benchmarkName,
             status: 'failed',
-            error: error.message,
+            error: errorMessage,
             errorCategory,
           };
         }

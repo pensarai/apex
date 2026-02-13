@@ -99,7 +99,7 @@ export default function CommandInput({
           onSubmit={handleSubmit}
           focused={focused}
           placeholder="Type a command..."
-          maxSuggestions={6}
+          maxSuggestions={10}
         />
       </box>
 

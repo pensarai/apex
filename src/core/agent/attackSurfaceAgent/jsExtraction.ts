@@ -125,10 +125,11 @@ export async function extractJavascriptEndpoints(
       filesAnalyzed: 1 + jsFiles.length,
       message: `Found ${uniqueEndpoints.length} unique endpoints in JavaScript (${endpoints.length} total calls).`,
     };
-  } catch (error: any) {
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     return {
       success: false,
-      message: `JavaScript extraction error: ${error.message}`,
+      message: `JavaScript extraction error: ${message}`,
     };
   }
 }

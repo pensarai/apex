@@ -66,7 +66,7 @@ export function parseDockerComposePort(benchmarkPath: string): DockerComposePort
           }
 
           if (typeof service === "object" && service !== null) {
-            const serviceObj = service as any;
+            const serviceObj = service as Record<string, unknown>;
             const ports = serviceObj.ports;
 
             if (ports && Array.isArray(ports) && ports.length > 0) {
@@ -108,7 +108,7 @@ export function parseDockerComposePort(benchmarkPath: string): DockerComposePort
               if (!serviceObj.ports) {
                 serviceObj.ports = [];
               }
-              serviceObj.ports.push(`${port}:${port}`);
+              (serviceObj.ports as string[]).push(`${port}:${port}`);
 
               // Write back the modified compose file
               writeFileSync(composePath, yaml.stringify(parsed));
@@ -136,14 +136,14 @@ export function parseDockerComposePort(benchmarkPath: string): DockerComposePort
             continue;
           }
 
-          const serviceObj = service as any;
+          const serviceObj = service as Record<string, unknown>;
 
           // Add common web port mapping
           const defaultPort = 80;
           if (!serviceObj.ports) {
             serviceObj.ports = [];
           }
-          serviceObj.ports.push(`${defaultPort}:${defaultPort}`);
+          (serviceObj.ports as string[]).push(`${defaultPort}:${defaultPort}`);
 
           writeFileSync(composePath, yaml.stringify(parsed));
           console.log(`  ✅ Added default port mapping ${defaultPort}:${defaultPort} to ${serviceName}`);
@@ -157,8 +157,9 @@ export function parseDockerComposePort(benchmarkPath: string): DockerComposePort
           };
         }
       }
-    } catch (error: any) {
-      console.error(`Warning: Failed to parse ${composePath}: ${error.message}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`Warning: Failed to parse ${composePath}: ${message}`);
     }
   }
 
@@ -210,8 +211,9 @@ export async function getActualDockerPort(
 
     console.log(`  ⚠️  Could not parse port mapping, using container port: ${containerPort}`);
     return containerPort;
-  } catch (error: any) {
-    console.error(`  ⚠️  Error getting Docker port mapping: ${error.message}`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`  ⚠️  Error getting Docker port mapping: ${message}`);
     return containerPort;
   }
 }

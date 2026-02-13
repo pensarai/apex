@@ -14,7 +14,7 @@ import { join } from "path";
 import { Session } from "../session";
 import type { AIModel } from "../ai";
 import { generateObjectResponse } from "../ai";
-import { getProviderModel } from "../ai/utils";
+import { getProviderModel, type AIAuthConfig } from "../ai/utils";
 import { generateText } from "ai";
 import pLimit from "p-limit";
 
@@ -1170,9 +1170,9 @@ Round 3: Secret Attacks & Advanced
 - TEST 1: Try common secrets with jwt_tool
 - jwt_tool <token> -C -d /path/to/common-secrets.txt
 - TEST 2: If kid parameter exists, try path traversal
-- {\"kid\": \"../../../../dev/null\"}
+- {"kid": "../../../../dev/null"}
 - TEST 3: Try jku header injection
-- {\"jku\": \"http://attacker.com/jwks.json\"}
+- {"jku": "http://attacker.com/jwks.json"}
 
 CRITICAL: JWT tokens often in:
 - Authorization: Bearer <token> header
@@ -1666,7 +1666,7 @@ EXAMPLE:
         original: payload,
         mutations,
         recommendedOrder: recommendedOrder.filter((t) =>
-          typesToApply.includes(t as any)
+          (typesToApply as readonly string[]).includes(t)
         ),
       };
     },
@@ -1798,13 +1798,18 @@ recommendations for further testing based on the technology stack.`,
               command: cmd,
               error: "",
             };
-          } catch (execError: any) {
+          } catch (execError) {
+            const execErr = execError as { stdout?: string; stderr?: string };
+            const errorMessage =
+              execError instanceof Error
+                ? execError.message
+                : String(execError);
             result = {
               success: false,
-              stdout: execError.stdout || "",
-              stderr: execError.stderr || execError.message,
+              stdout: execErr.stdout || "",
+              stderr: execErr.stderr || errorMessage,
               command: cmd,
-              error: execError.message,
+              error: errorMessage,
             };
           }
         }
@@ -1914,7 +1919,8 @@ recommendations for further testing based on the technology stack.`,
           totalDiscovered: uniqueEndpoints.length,
           scanDuration,
         };
-      } catch (error: any) {
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
         return {
           success: false,
           targetUrl: url,
@@ -1923,7 +1929,7 @@ recommendations for further testing based on the technology stack.`,
           recommendations: [],
           totalDiscovered: 0,
           scanDuration: (Date.now() - startTime) / 1000,
-          error: error.message,
+          error: message,
         };
       }
     },
@@ -2132,11 +2138,27 @@ Results are cached to disk (24h TTL) for faster subsequent lookups.`,
           };
         }
 
-        const searchData = (await searchResponse.json()) as Record<string, any>;
+        interface NucleiSearchResult {
+          id?: string;
+          template_id?: string;
+          name?: string;
+          severity?: string;
+          description?: string;
+          tags?: string[];
+          raw?: string;
+          uri?: string;
+          dir?: string;
+          filename?: string;
+        }
+
+        const searchData = (await searchResponse.json()) as Record<
+          string,
+          unknown
+        >;
         const searchResults = (searchData.results ||
           searchData.data ||
           searchData.templates ||
-          []) as any[];
+          []) as NucleiSearchResult[];
 
         if (searchResults.length === 0) {
           const result: CVELookupResult = {
@@ -2227,7 +2249,10 @@ Results are cached to disk (24h TTL) for faster subsequent lookups.`,
           query,
           techFilter,
           templateType,
-          total_found: searchData.total || templates.length,
+          total_found:
+            typeof searchData.total === "number"
+              ? searchData.total
+              : templates.length,
           templates,
           detectedTechs: Array.from(detectedTechsSet),
           fromCache: false,
@@ -2239,7 +2264,8 @@ Results are cached to disk (24h TTL) for faster subsequent lookups.`,
         }
 
         return result;
-      } catch (error: any) {
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
         return {
           success: false,
           query,
@@ -2247,7 +2273,7 @@ Results are cached to disk (24h TTL) for faster subsequent lookups.`,
           templateType,
           total_found: 0,
           templates: [],
-          error: `CVE lookup failed: ${error.message}`,
+          error: `CVE lookup failed: ${message}`,
         };
       }
     },
@@ -2395,11 +2421,12 @@ ${finding.references ? `## References\n\n${finding.references}` : ""}
           filepath,
           message: `Finding documented: [${finding.severity}] ${finding.title}`,
         };
-      } catch (error: any) {
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
         return {
           success: false,
-          error: error.message,
-          message: `Failed to document finding: ${error.message}`,
+          error: message,
+          message: `Failed to document finding: ${message}`,
         };
       }
     },
@@ -2452,10 +2479,10 @@ The scratchpad is session-specific and helps maintain context during long assess
           message: "Note added to scratchpad",
           timestamp,
         };
-      } catch (error: any) {
+      } catch (error) {
         return {
           success: false,
-          error: error.message,
+          error: error instanceof Error ? error.message : String(error),
         };
       }
     },
@@ -2619,7 +2646,12 @@ The report will be saved as 'pentest-report.md' in the session root directory.`,
         ); // minutes
 
         // Read all findings from the findings directory
-        const findings: any[] = [];
+        const findings: Array<{
+          title: string;
+          severity: string;
+          file: string;
+          content: string;
+        }> = [];
         const severityCounts = {
           CRITICAL: 0,
           HIGH: 0,
@@ -2940,11 +2972,12 @@ This report should be treated as confidential and distributed only to authorized
           },
           message: `Comprehensive report generated successfully at ${reportPath}`,
         };
-      } catch (error: any) {
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
         return {
           success: false,
-          error: error.message,
-          message: `Failed to generate report: ${error.message}`,
+          error: message,
+          message: `Failed to generate report: ${message}`,
         };
       }
     },
@@ -3008,11 +3041,12 @@ async function recordTestResultCore(
         ? "Use document_finding to create a formal vulnerability report"
         : "Continue testing other attack types or parameters",
     };
-  } catch (error: any) {
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     return {
       success: false,
-      error: error.message,
-      message: `Failed to record test result: ${error.message}`,
+      error: message,
+      message: `Failed to record test result: ${message}`,
     };
   }
 }
@@ -3108,17 +3142,45 @@ Example workflow:
 // Token usage callback type
 type OnTokenUsage = (inputTokens: number, outputTokens: number) => void;
 
+/** Type for individual attack knowledge entries from ATTACK_KNOWLEDGE */
+interface AttackKnowledgeEntry {
+  name: string;
+  description: string;
+  objective: string;
+  techniques: readonly {
+    name: string;
+    how: string;
+    context?: string;
+    example: string;
+  }[];
+  indicators: {
+    vulnerable: readonly string[];
+    notVulnerable: readonly string[];
+  };
+  adaptiveStrategy: string;
+}
+
+/** Type for test results tracked during adaptive testing */
+interface AdaptiveTestResult {
+  payload: string;
+  result: string;
+  vulnerable: boolean;
+  description?: string;
+  confidence?: string;
+}
+
 // Generate AI-powered test strategy
 async function generateTestStrategy(
   params: {
     attackType: string;
-    knowledge: any;
+    knowledge: AttackKnowledgeEntry;
     parameter: string;
     endpoint: string;
-    context?: any;
+    context?: Record<string, unknown>;
   },
   model: AIModel,
-  onTokenUsage?: OnTokenUsage
+  onTokenUsage?: OnTokenUsage,
+  authConfig?: AIAuthConfig
 ) {
   const prompt = `You are a penetration testing expert. Generate a concise testing strategy:
 
@@ -3128,7 +3190,7 @@ Objective: ${params.knowledge.objective}
 
 Techniques available:
 ${params.knowledge.techniques
-  .map((t: any) => `- ${t.name}: ${t.how}`)
+  .map((t: { name: string; how: string }) => `- ${t.name}: ${t.how}`)
   .join("\n")}
 
 Target: ${params.endpoint} parameter "${params.parameter}"
@@ -3142,7 +3204,7 @@ Generate a 2-3 sentence testing strategy:
 Be tactical and specific.`;
 
   try {
-    const providerModel = getProviderModel(model);
+    const providerModel = getProviderModel(model, authConfig);
 
     const result = await generateText({
       model: providerModel,
@@ -3168,19 +3230,20 @@ Be tactical and specific.`;
 async function generatePayload(
   params: {
     attackType: string;
-    knowledge: any;
-    context: any;
-    previousResults: any[];
+    knowledge: AttackKnowledgeEntry;
+    context: Record<string, unknown>;
+    previousResults: AdaptiveTestResult[];
     round: number;
   },
   model: AIModel,
-  onTokenUsage?: OnTokenUsage
+  onTokenUsage?: OnTokenUsage,
+  authConfig?: AIAuthConfig
 ) {
   const prompt = `Generate ONE ${params.knowledge.name} payload for testing.
 
 Techniques:
 ${params.knowledge.techniques
-  .map((t: any) => `- ${t.name}: ${t.example}`)
+  .map((t: { name: string; example: string }) => `- ${t.name}: ${t.example}`)
   .join("\n")}
 
 ${
@@ -3188,7 +3251,10 @@ ${
     ? `
 Previous attempts:
 ${params.previousResults
-  .map((r: any) => `- ${r.payload}: ${r.result} (vulnerable: ${r.vulnerable})`)
+  .map(
+    (r: AdaptiveTestResult) =>
+      `- ${r.payload}: ${r.result} (vulnerable: ${r.vulnerable})`
+  )
   .join("\n")}
 `
     : ""
@@ -3208,6 +3274,7 @@ Generate ONE specific payload. Return ONLY JSON:
       schema: PayloadSchema,
       prompt,
       onTokenUsage,
+      authConfig,
     });
 
     return result;
@@ -3230,14 +3297,19 @@ Generate ONE specific payload. Return ONLY JSON:
 // Analyze response with AI
 async function analyzeResponse(
   params: {
-    response: any;
-    payload: any;
+    response: {
+      status: number;
+      body?: string;
+      headers?: Record<string, string>;
+    };
+    payload: { payload: string; reasoning: string; technique: string };
     attackType: string;
-    knowledge: any;
-    previousResults: any[];
+    knowledge: AttackKnowledgeEntry;
+    previousResults: AdaptiveTestResult[];
   },
   model: AIModel,
-  onTokenUsage?: OnTokenUsage
+  onTokenUsage?: OnTokenUsage,
+  authConfig?: AIAuthConfig
 ) {
   const prompt = `Analyze this security test response:
 
@@ -3271,6 +3343,7 @@ Analyze: Is this vulnerable? Return ONLY JSON:
       schema: AnalysisSchema,
       prompt,
       onTokenUsage,
+      authConfig,
     });
 
     return result;
@@ -3311,7 +3384,8 @@ Analyze: Is this vulnerable? Return ONLY JSON:
 function createSmartTestTool(
   session: Session.SessionInfo,
   model: AIModel,
-  onTokenUsage?: OnTokenUsage
+  onTokenUsage?: OnTokenUsage,
+  authConfig?: AIAuthConfig
 ) {
   return tool({
     description: `Intelligently test a parameter for a vulnerability using AI-powered adaptive testing.
@@ -3400,7 +3474,8 @@ test_parameter({
             context,
           },
           model,
-          onTokenUsage
+          onTokenUsage,
+          authConfig
         );
 
         console.log(`Strategy: ${strategy}`);
@@ -3423,7 +3498,8 @@ test_parameter({
               round,
             },
             model,
-            onTokenUsage
+            onTokenUsage,
+            authConfig
           );
 
           console.log(`  Payload: ${payloadData.payload}`);
@@ -3444,10 +3520,10 @@ test_parameter({
               body: body.substring(0, 1000), // Limit for analysis
               headers: Object.fromEntries(response.headers.entries()),
             };
-          } catch (error: any) {
+          } catch (error) {
             response = {
               status: 0,
-              body: error.message,
+              body: error instanceof Error ? error.message : String(error),
               headers: {},
             };
           }
@@ -3462,7 +3538,8 @@ test_parameter({
               previousResults: results,
             },
             model,
-            onTokenUsage
+            onTokenUsage,
+            authConfig
           );
 
           console.log(`  Analysis: ${analysis.reasoning}`);
@@ -3497,26 +3574,21 @@ test_parameter({
           }
         }
 
-        // Record test result
-        const recordTool = createRecordTestResultTool(session);
-        await recordTool.execute!(
-          {
-            parameter,
-            endpoint,
-            attackType,
-            vulnerable,
-            payloadsTested: results,
-            conclusion: vulnerable
-              ? `VULNERABLE to ${knowledge.name} with ${finalConfidence} confidence`
-              : `NOT VULNERABLE to ${knowledge.name} after ${results.length} tests`,
-            evidence: vulnerable
-              ? JSON.stringify(results.filter((r) => r.vulnerable))
-              : undefined,
-            confidence: finalConfidence as any,
-            toolCallDescription: "Recording automated test result",
-          },
-          {} as any
-        );
+        // Record test result directly (avoid tool wrapper overhead)
+        await recordTestResultCore(session, {
+          parameter,
+          endpoint,
+          attackType,
+          vulnerable,
+          payloadsTested: results,
+          conclusion: vulnerable
+            ? `VULNERABLE to ${knowledge.name} with ${finalConfidence} confidence`
+            : `NOT VULNERABLE to ${knowledge.name} after ${results.length} tests`,
+          evidence: vulnerable
+            ? JSON.stringify(results.filter((r) => r.vulnerable))
+            : undefined,
+          confidence: finalConfidence as "high" | "medium" | "low",
+        });
 
         return {
           success: true,
@@ -3529,11 +3601,12 @@ test_parameter({
             : `✓ Parameter appears secure against ${knowledge.name}. Continue testing other attack types or parameters.`,
           nextAction: vulnerable ? "document_finding" : "continue_testing",
         };
-      } catch (error: any) {
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
         return {
           success: false,
-          error: error.message,
-          message: `Test failed: ${error.message}`,
+          error: message,
+          message: `Test failed: ${message}`,
         };
       }
     },
@@ -3764,11 +3837,12 @@ Use this when:
               : ["Coverage looks good. Review findings and prepare report."],
           message: `Analyzed ${testResults.length} tests across ${parametersTested.size} parameters and ${attackTypesCovered.size} attack types.`,
         };
-      } catch (error: any) {
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
         return {
           success: false,
-          error: error.message,
-          message: `Failed to analyze coverage: ${error.message}`,
+          error: message,
+          message: `Failed to analyze coverage: ${message}`,
         };
       }
     },
@@ -3815,7 +3889,24 @@ This is the difference between amateur and professional pentesting.`,
     }) => {
       try {
         const coverageTool = createCheckTestingCoverageTool(session);
-        const coverageResult: any = await (coverageTool.execute as any)({
+
+        interface CoverageCheckResult {
+          success: boolean;
+          error?: string;
+          totalTests?: number;
+          parametersCount?: number;
+          endpointsCount?: number;
+          attackTypesCount?: number;
+          vulnerableCount?: number;
+          safeCount?: number;
+          suggestions?: string[];
+        }
+
+        const coverageExecute = coverageTool.execute as unknown as (args: {
+          objective: string;
+          toolCallDescription: string;
+        }) => Promise<CoverageCheckResult>;
+        const coverageResult = await coverageExecute({
           objective,
           toolCallDescription: "Checking test coverage for validation",
         });
@@ -3940,11 +4031,12 @@ This is the difference between amateur and professional pentesting.`,
             safeCount: coverageResult.safeCount || 0,
           },
         };
-      } catch (error: any) {
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
         return {
           success: false,
-          error: error.message,
-          message: `Validation failed: ${error.message}`,
+          error: message,
+          message: `Validation failed: ${message}`,
         };
       }
     },
@@ -4195,7 +4287,9 @@ export function createPentestTools(
   onTokenUsage?: (inputTokens: number, outputTokens: number) => void,
   abortSignal?: AbortSignal,
   /** Enable streaming stdout logs for operator mode (human-in-the-loop) */
-  operatorMode?: boolean
+  operatorMode?: boolean,
+  /** Auth config for AI provider authentication (e.g., Bedrock credentialProvider) */
+  authConfig?: AIAuthConfig
 ) {
   // Get offensive headers from session config
   const offensiveHeaders = Session.getOffensiveHeaders(session);
@@ -4325,12 +4419,13 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
     inputSchema: ExecuteCommandInput,
     execute: async (
       { command, timeout = 30000, background = false, toolCallDescription },
-      context?: any
+      options
     ) => {
       // Extract emitLog callback from context (injected by operatorAgent wrapper)
       // Only stream logs in operator mode (human-in-the-loop)
+      const context = options as unknown as Record<string, unknown> | undefined;
       const emitLog: ((line: string) => void) | undefined = operatorMode
-        ? context?.emitLog
+        ? (context?.emitLog as ((line: string) => void) | undefined)
         : undefined;
 
       // Wrap command with User-Agent headers if offensive headers are configured
@@ -4491,8 +4586,11 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
                 taskManager.addLog(task.id, line)
               );
               taskManager.setResult(task.id, result);
-            } catch (err: any) {
-              taskManager.setError(task.id, err.message);
+            } catch (err) {
+              taskManager.setError(
+                task.id,
+                err instanceof Error ? err.message : String(err)
+              );
             }
           })();
 
@@ -4510,10 +4608,10 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
 
         // FOREGROUND MODE: Execute with streaming stdout
         return await executeWithSpawn(emitLog);
-      } catch (error: any) {
+      } catch (error) {
         return {
           success: false,
-          error: error.message,
+          error: error instanceof Error ? error.message : String(error),
           stdout: "",
           stderr: "",
           command,
@@ -4632,11 +4730,11 @@ COMMON TESTING PATTERNS:
           url: response.url,
           redirected: response.redirected,
         };
-      } catch (error: any) {
+      } catch (error) {
         if (timeoutId) clearTimeout(timeoutId);
 
         // Distinguish between user abort and timeout
-        if (error.name === "AbortError") {
+        if (error instanceof Error && error.name === "AbortError") {
           const errorMsg = abortSignal?.aborted
             ? "Request aborted by user"
             : `Request timeout after ${timeout}ms`;
@@ -4655,7 +4753,7 @@ COMMON TESTING PATTERNS:
 
         return {
           success: false,
-          error: error.message,
+          error: error instanceof Error ? error.message : String(error),
           url,
           method,
           status: 0,
@@ -4928,7 +5026,8 @@ Example flow:
     test_parameter: createSmartTestTool(
       session,
       model || "claude-sonnet-4-20250514",
-      onTokenUsage
+      onTokenUsage,
+      authConfig
     ),
     check_testing_coverage: createCheckTestingCoverageTool(session),
     validate_completeness: createValidateCompletenessTool(session),

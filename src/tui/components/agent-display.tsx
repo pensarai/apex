@@ -16,7 +16,7 @@ export type Subagent = {
   target: string;
   messages: Message[];
   createdAt: Date;
-  status: "pending" | "completed" | "failed";
+  status: "pending" | "completed" | "failed" | "paused";
 };
 
 /**
@@ -113,7 +113,7 @@ export default function AgentDisplay({
       focused={focused}
       onMouseScroll={
         !focused
-          ? (event: any) => {
+          ? (event: { stopPropagation: () => void }) => {
               // Stop scroll events from propagating to parent scrollbox
               event.stopPropagation();
             }
@@ -177,6 +177,9 @@ const SubAgentDisplay = memo(function SubAgentDisplay({
         {subagent.status === "failed" && (
           <text fg={colors.redText}>✗ {subagent.name}</text>
         )}
+        {subagent.status === "paused" && (
+          <text fg={colors.orangeText}>⏸ {subagent.name}</text>
+        )}
         <text fg={colors.secondaryText}>{open ? "▼" : "▶"}</text>
       </box>
       {open && (
@@ -206,9 +209,9 @@ const AgentMessage = memo(function AgentMessage({
   } else if (Array.isArray(message.content)) {
     // Handle array of content parts
     content = message.content
-      .map((part: any) => {
+      .map((part: unknown) => {
         if (typeof part === "string") return part;
-        if (part.type === "text") return part.text;
+        if (typeof part === "object" && part !== null && "type" in part && (part as Record<string, unknown>).type === "text") return (part as Record<string, unknown>).text as string;
         return JSON.stringify(part);
       })
       .join("");

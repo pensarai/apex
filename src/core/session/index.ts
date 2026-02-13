@@ -334,7 +334,7 @@ Testing in progress...
 
     const result: SessionInfo = {
       id: id,
-      version: await Installation.getVersion(),
+      version: (await Installation.getVersion()) ?? "unknown",
       targets: input.targets,
       name: input.name,
       time: {
@@ -477,21 +477,21 @@ Testing in progress...
     /** Current stage: setup, recon, foothold, etc. */
     currentStage: string;
     /** Chat messages history */
-    messages: any[];
+    messages: unknown[];
     /** Discovered attack surface endpoints */
-    attackSurface: any[];
+    attackSurface: unknown[];
     /** Found credentials */
-    credentials: any[];
+    credentials: unknown[];
     /** Verified vulnerabilities */
-    verifiedVulns: any[];
+    verifiedVulns: unknown[];
     /** Target state (host, phase, objective) */
-    targetState: any;
+    targetState: unknown;
     /** Tracked hypotheses */
-    hypotheses: any[];
+    hypotheses: unknown[];
     /** Collected evidence */
-    evidence: any[];
+    evidence: unknown[];
     /** Action approval history */
-    actionHistory: any[];
+    actionHistory: unknown[];
     /** When the session was paused */
     pausedAt: string;
     /** Last run ID for log correlation */

@@ -33,6 +33,8 @@ export interface CommandConfig {
   description?: string;
   category?: string;
   options?: CommandOption[];
+  /** If true, command works but doesn't appear in the autocomplete menu */
+  hidden?: boolean;
   handler: (args: string[], ctx: AppCommandContext) => void | Promise<void>;
 }
 
@@ -241,7 +243,7 @@ export const commands: CommandConfig[] = [
       ctx.navigate({
         type: "base",
         path: "operator",
-        options: flags as any,
+        options: flags as Record<string, unknown>,
       });
     },
   },
@@ -268,14 +270,14 @@ export const commands: CommandConfig[] = [
     },
   },
   {
-    name: "resume",
-    aliases: ["r"],
-    description: "Resume a previous pentest session",
+    name: "sessions",
+    aliases: ["s"],
+    description: "Browse previous sessions",
     category: "Pentesting",
     handler: async (args, ctx) => {
       ctx.navigate({
         type: "base",
-        path: "resume",
+        path: "sessions",
       });
     },
   },
@@ -284,6 +286,7 @@ export const commands: CommandConfig[] = [
     aliases: ["c"],
     description: "Open the Chat TUI interface",
     category: "General",
+    hidden: true,
     handler: async (args, ctx) => {
       ctx.navigate({
         type: "base",
@@ -296,6 +299,7 @@ export const commands: CommandConfig[] = [
     aliases: ["t"],
     description: "View and manage active tools (session only)",
     category: "Session",
+    hidden: true,
     handler: async (args, ctx) => {
       // This command is handled by the session view when in a session
       // From home, it does nothing - tools panel only works in session context

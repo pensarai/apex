@@ -35,6 +35,7 @@ import { CreatePocSchema, DocumentFindingSchema } from "./types";
 import type { ExecuteCommandOpts, ExecuteCommandResult } from "../tools";
 import { scoreFindingWithCVSS, DEFAULT_CVSS_MODEL } from "../cvssScorer";
 import type { AIModel } from "../../ai";
+import type { AIAuthConfig } from "../../ai/utils";
 import type { CVSS4Metrics } from "../../../lib/cvss";
 
 /** Options for CVSS scoring in document_finding tool */
@@ -44,7 +45,10 @@ export interface DocumentFindingCVSSOptions {
   /** Model to use for CVSS scoring (default: claude-4-5-haiku) */
   cvssModel?: AIModel;
   /** Callback to get current agent messages for context */
-  getMessages?: () => any[];
+  getMessages?: () => unknown[];
+
+  /** Auth config for AI provider authentication (e.g., Bedrock credentialProvider) */
+  authConfig?: AIAuthConfig;
 }
 
 const execAsync = promisify(exec);
@@ -262,7 +266,7 @@ ${stderr || "(no errors)"}
 Remember to update your confidence based on this result:
 VALIDATION: Outcome: [yes/no + evidence] | Confidence: BEFORE [X%] → AFTER [Y%]`,
           };
-        } catch (execError: any) {
+        } catch (execError) {
           // Execution failed - but KEEP the POC file for:
           // 1. Manual execution/verification later
           // 2. Documentation purposes (the POC content is valid, target may just be down)
@@ -270,9 +274,15 @@ VALIDATION: Outcome: [yes/no + evidence] | Confidence: BEFORE [X%] → AFTER [Y%
           logger.info(`POC execution failed but keeping file: ${filename}`);
           pocPaths.push(relativePocPath);
 
-          exitCode = execError.code || 1;
-          stdout = execError.stdout || "";
-          stderr = execError.stderr || execError.message;
+          const execErr = execError as {
+            message?: string;
+            code?: number;
+            stdout?: string;
+            stderr?: string;
+          };
+          exitCode = execErr.code || 1;
+          stdout = execErr.stdout || "";
+          stderr = execErr.stderr || execErr.message || "";
 
           const attemptsRemaining = MAX_POC_ATTEMPTS - currentAttempts;
 
@@ -297,7 +307,7 @@ VALIDATION: Outcome: [yes/no + evidence] | Confidence: BEFORE [X%] → AFTER [Y%
           return {
             success: false,
             pocPath: relativePocPath, // Include path even on failure - file still exists
-            error: execError.message,
+            error: execErr.message,
             execution: {
               success: false,
               exitCode,
@@ -306,7 +316,7 @@ VALIDATION: Outcome: [yes/no + evidence] | Confidence: BEFORE [X%] → AFTER [Y%
             },
             message: `POC execution FAILED (attempt ${currentAttempts}/${MAX_POC_ATTEMPTS})
 
-**Error:** ${execError.message}
+**Error:** ${execErr.message || "Unknown error"}
 
 **POC file saved at:** ${relativePocPath}
 ${
@@ -343,12 +353,13 @@ ${
 }`,
           };
         }
-      } catch (error: any) {
-        logger.error(`POC creation error: ${error.message}`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.error(`POC creation error: ${message}`);
         return {
           success: false,
-          error: error.message,
-          message: `Failed to create POC: ${error.message}
+          error: message,
+          message: `Failed to create POC: ${message}
 
 This is a system error, not an exploitation failure. Check:
 - File permissions
@@ -417,10 +428,12 @@ Create POC first using create_poc tool, then call document_finding.`,
         const existingFindings = loadExistingFindings(session.findingsPath);
         const isDuplicate = existingFindings.some(
           (f) =>
-            f.title?.toLowerCase() === finding.title.toLowerCase() ||
+            (typeof f.title === "string" &&
+              f.title.toLowerCase() === finding.title.toLowerCase()) ||
             (f.endpoint === finding.endpoint &&
+              typeof f.description === "string" &&
               f.description
-                ?.toLowerCase()
+                .toLowerCase()
                 .includes(finding.title.toLowerCase().split(" ")[0]))
         );
 
@@ -468,12 +481,15 @@ Continue testing for OTHER vulnerabilities at different endpoints.`,
                   impact: finding.impact,
                   evidence: finding.evidence,
                   endpoint: finding.endpoint,
-                  vulnerabilityClass: (finding as any).vulnerabilityClass,
+                  vulnerabilityClass: (
+                    finding as unknown as { vulnerabilityClass?: string }
+                  ).vulnerabilityClass,
                   remediation: finding.remediation,
                 },
-                agentMessages: messages,
+                agentMessages: messages as Record<string, unknown>[],
               },
-              cvssModel
+              cvssModel,
+              cvssOptions?.authConfig
             );
 
             cvssData = {
@@ -488,9 +504,15 @@ Continue testing for OTHER vulnerabilities at different endpoints.`,
             logger.info(
               `CVSS 4.0 Score: ${cvssResult.score} (${cvssResult.severity}) - ${cvssResult.vectorString}`
             );
-          } catch (cvssError: any) {
+          } catch (cvssError) {
             // Non-blocking: log error and continue without CVSS
-            logger.error(`CVSS scoring failed: ${cvssError.message}`);
+            logger.error(
+              `CVSS scoring failed: ${
+                cvssError instanceof Error
+                  ? cvssError.message
+                  : String(cvssError)
+              }`
+            );
           }
         }
 
@@ -561,12 +583,13 @@ ${summaryEntry}`;
 2. Continue testing for additional vulnerabilities
 3. Consider testing related endpoints or similar attack vectors`,
         };
-      } catch (error: any) {
-        logger.error(`Document finding error: ${error.message}`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.error(`Document finding error: ${message}`);
         return {
           success: false,
-          error: error.message,
-          message: `Failed to document finding: ${error.message}`,
+          error: message,
+          message: `Failed to document finding: ${message}`,
         };
       }
     },
@@ -575,7 +598,7 @@ ${summaryEntry}`;
   return { document_finding, findingPaths };
 }
 
-function loadExistingFindings(findingsPath: string): any[] {
+function loadExistingFindings(findingsPath: string): Record<string, unknown>[] {
   if (!existsSync(findingsPath)) {
     return [];
   }

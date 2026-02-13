@@ -30,7 +30,7 @@ export function Dialog({ size = "medium", onClose, children }: DialogProps) {
       backgroundColor={colors.overlayBg}
     >
       <box
-        onMouseUp={async (e: any) => {
+        onMouseUp={async (e: { stopPropagation: () => void }) => {
           if (renderer.getSelection()) return;
           e.stopPropagation();
         }}
