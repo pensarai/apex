@@ -35,7 +35,7 @@ export function VerifiedVulnsPanel({ vulns, maxVisible = 5 }: VerifiedVulnsPanel
           {visible.map((v) => (
             <box key={v.id} flexDirection="row" gap={1}>
               <text fg={greenAccent}>+</text>
-              <text fg={getSeverityColor(v.severity)}>{((v as any).type || (v as any).title || 'FINDING').toUpperCase()}</text>
+              <text fg={getSeverityColor(v.severity)}>{(v.type || 'FINDING').toUpperCase()}</text>
               <text fg={dimText}>{truncatePath(v.endpoint || '', 14)}</text>
             </box>
           ))}

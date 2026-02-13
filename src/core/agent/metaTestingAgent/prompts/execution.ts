@@ -370,7 +370,7 @@ export function buildUserPrompt(params: {
   targets: Array<{
     target: string;
     objective: string;
-    authenticationInfo?: any;
+    authenticationInfo?: Record<string, unknown>;
   }>;
   authenticationInstructions?: string;
 }): string {

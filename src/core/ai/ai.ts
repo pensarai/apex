@@ -46,10 +46,10 @@ function wrapStreamWithErrorHandler(
   silent?: boolean
 ): StreamTextResult<ToolSet, never> {
   // Create a lazy getter for fullStream that wraps it with error handling
-  let wrappedStream: any = null;
+  let wrappedStream: AsyncIterable<TextStreamPart<ToolSet>> | null = null;
 
   const handler = {
-    get(target: any, prop: string) {
+    get(target: StreamTextResult<ToolSet, never>, prop: string | symbol) {
       // Intercept access to fullStream
       if (prop === "fullStream") {
         if (!wrappedStream) {
@@ -57,15 +57,16 @@ function wrapStreamWithErrorHandler(
             try {
               for await (const chunk of originalStream.fullStream) {
                 // Check if this chunk contains an error
-                if (chunk.type === "error" || (chunk as any).error) {
-                  const error = (chunk as any).error || chunk;
+                if (chunk.type === "error" || "error" in chunk) {
+                  const error = "error" in chunk ? (chunk as unknown as { error: unknown }).error : chunk;
                   throw error;
                 }
 
                 yield chunk;
               }
-            } catch (error: any) {
+            } catch (error) {
               // Check if it's a context length error
+              const errorMessage = error instanceof Error ? error.message : String(error);
 
               const isContextLengthError = checkIfContextLengthError(error);
 
@@ -84,7 +85,7 @@ function wrapStreamWithErrorHandler(
                 if (!silent) {
                   console.warn(
                     `Context length error in wrapper, summarizing ${messagesContainer.current.length} messages: `,
-                    error.message
+                    errorMessage
                   );
                 }
 
@@ -100,7 +101,7 @@ function wrapStreamWithErrorHandler(
                 if (!silent) {
                   console.error(
                     "Non-context length error, re-throwing",
-                    error.message
+                    errorMessage
                   );
                 }
                 // Re-throw if it's not a context length error
@@ -113,7 +114,7 @@ function wrapStreamWithErrorHandler(
       }
 
       // For all other properties, return the original
-      return (originalStream as any)[prop];
+      return (originalStream as unknown as Record<string | symbol, unknown>)[prop];
     },
   };
 
@@ -184,10 +185,11 @@ export function streamResponse(
         messagesContainer.current = opts.messages;
         return undefined;
       },
-      onError: async ({ error }: { error: any }) => {
+      onError: async ({ error }: { error: unknown }) => {
+        const errorMessage = error instanceof Error ? error.message : String(error);
         if (
-          error.message.toLowerCase().includes("too many tokens") ||
-          error.message.toLowerCase().includes("overloaded")
+          errorMessage.toLowerCase().includes("too many tokens") ||
+          errorMessage.toLowerCase().includes("overloaded")
         ) {
           rateLimitRetryCount++;
           await new Promise((resolve) =>
@@ -282,14 +284,14 @@ export function streamResponse(
               providerMetadata: undefined,
               stepType: "initial",
               isContinued: false,
-            } as any);
+            } as unknown as Parameters<StreamTextOnStepFinishCallback<ToolSet>>[0]);
           }
 
           // Return the tool call with stringified repaired arguments
           return { ...toolCall, input: JSON.stringify(repairedArgs) };
-        } catch (repairError: any) {
+        } catch (repairError) {
           if (!silent) {
-            console.error("Error repairing tool call:", repairError.message);
+            console.error("Error repairing tool call:", repairError instanceof Error ? repairError.message : String(repairError));
           }
           throw repairError;
         }
@@ -305,15 +307,16 @@ export function streamResponse(
       providerModel,
       silent
     );
-  } catch (error: any) {
+  } catch (error) {
     // Check if the error is related to context length
     const isContextLengthError = checkIfContextLengthError(error);
+    const outerErrorMessage = error instanceof Error ? error.message : String(error);
 
     if (isContextLengthError) {
       if (!silent) {
         console.warn(
           `Context length error, summarizing ${messagesContainer.current.length} messages: `,
-          error.message
+          outerErrorMessage
         );
       }
       // Return a wrapped stream that shows summarization and then continues
@@ -324,7 +327,7 @@ export function streamResponse(
       );
     }
     if (!silent) {
-      console.error("Non-context length error, re-throwing", error.message);
+      console.error("Non-context length error, re-throwing", outerErrorMessage);
     }
 
     // Re-throw if it's not a context length error

@@ -499,7 +499,6 @@ NOTE: For SPAs or JavaScript-heavy apps, use browser tools instead (browser_navi
       authStateManager.setStatus('authenticating');
 
       try {
-        let response: HttpRequestResult;
         const headers: Record<string, string> = {};
         let body: string | undefined;
 
@@ -568,7 +567,7 @@ NOTE: For SPAs or JavaScript-heavy apps, use browser tools instead (browser_navi
           }
         }
 
-        response = await makeRequest({
+        const response = await makeRequest({
           url: loginUrl,
           method:
             method === 'basic_auth' ||

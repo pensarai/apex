@@ -226,7 +226,7 @@ describeOrSkip("AI Stream Response", () => {
         age: z.number().describe("A person's age in years"),
         email: z.string().email().describe("A valid email address"),
       }),
-      execute: async ({ name, age, email }: any) => {
+      execute: async ({ name, age, email }: { name: string; age: number; email: string }) => {
         console.log(
           `\n[Tool Executed] name=${name}, age=${age}, email=${email}`
         );
@@ -235,7 +235,7 @@ describeOrSkip("AI Stream Response", () => {
     };
 
     let toolCallCount = 0;
-    let toolRepairAttempted = false;
+    const toolRepairAttempted = false;
     let toolExecuted = false;
 
     const stream = streamResponse({

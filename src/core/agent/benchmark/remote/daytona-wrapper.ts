@@ -1,4 +1,4 @@
-import { Daytona } from "@daytonaio/sdk";
+import { Daytona, type Sandbox } from "@daytonaio/sdk";
 import type { AIModel } from "../../../ai";
 import path from "path";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "fs";
@@ -33,14 +33,16 @@ async function retryWithBackoff<T>(
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       return await fn();
-    } catch (error: any) {
-      lastError = error;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+
+      const errorMessage = error instanceof Error ? error.message : undefined;
 
       // Check if error is retryable
       const isRetryable = retryableErrors.some(
         (retryableError) =>
-          error.message?.includes(retryableError) ||
-          error.toString().includes(retryableError)
+          errorMessage?.includes(retryableError) ||
+          String(error).includes(retryableError)
       );
 
       // Don't retry on last attempt or non-retryable error
@@ -49,7 +51,7 @@ async function retryWithBackoff<T>(
       }
 
       console.log(
-        `${prefix}⚠️  Retry ${attempt + 1}/${maxRetries} after ${delay}ms (Error: ${error.message})`
+        `${prefix}⚠️  Retry ${attempt + 1}/${maxRetries} after ${delay}ms (Error: ${errorMessage ?? String(error)})`
       );
 
       // Wait with exponential backoff
@@ -90,9 +92,9 @@ interface BenchmarkResults {
   targetUrl: string;
   sessionId: string;
   sessionPath: string;
-  expectedResults: any[];
-  actualResults: any[];
-  comparison: any;
+  expectedResults: unknown[];
+  actualResults: unknown[];
+  comparison: Record<string, unknown>;
   timestamp: string;
 }
 
@@ -100,7 +102,7 @@ interface BenchmarkResults {
  * Run benchmark for a single branch in its own dedicated sandbox
  */
 async function runSingleBranchBenchmark(
-  daytona: any,
+  daytona: Daytona,
   options: {
     repoUrl: string;
     branch: string;
@@ -110,7 +112,7 @@ async function runSingleBranchBenchmark(
   }
 ): Promise<BenchmarkResults> {
   const { branch, repoUrl, model, anthropicKey, openrouterKey } = options;
-  let sandbox: any;
+  let sandbox: Sandbox | undefined;
   const startTime = Date.now();
 
   try {
@@ -143,9 +145,12 @@ async function runSingleBranchBenchmark(
 
     console.log(`[${branch}] ✅ Sandbox created: ${sandbox.id}`);
 
+    // Capture definite reference for use in closures
+    const sbx = sandbox;
+
     // Disable auto-stop for long-running benchmarks
     await retryWithBackoff(
-      () => sandbox.setAutostopInterval(0),
+      () => sbx.setAutostopInterval(0),
       { branch }
     );
     console.log(`[${branch}] ✅ Auto-stop disabled`);
@@ -159,7 +164,7 @@ async function runSingleBranchBenchmark(
 
     console.log(`[${branch}] 🔬 Creating benchmark session...`);
     await retryWithBackoff(
-      () => sandbox.process.createSession("benchmark"),
+      () => sbx.process.createSession("benchmark"),
       { branch }
     );
 
@@ -213,9 +218,10 @@ async function runSingleBranchBenchmark(
     console.log(`[${branch}] ✅ Completed in ${duration}m`);
 
     return results;
-  } catch (error: any) {
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     const duration = ((Date.now() - startTime) / 1000 / 60).toFixed(2);
-    console.error(`[${branch}] ❌ Failed after ${duration}m: ${error.message}`);
+    console.error(`[${branch}] ❌ Failed after ${duration}m: ${message}`);
     return {
       repoPath: repoUrl,
       branch,
@@ -224,7 +230,7 @@ async function runSingleBranchBenchmark(
       sessionPath: "",
       expectedResults: [],
       actualResults: [],
-      comparison: { error: error.message },
+      comparison: { error: message },
       timestamp: new Date().toISOString(),
     };
   } finally {
@@ -244,8 +250,8 @@ async function runSingleBranchBenchmark(
 
         await sandbox.delete();
         console.log(`[${branch}] ✅ Cleanup complete`);
-      } catch (cleanupError: any) {
-        console.error(`[${branch}] ⚠️  Cleanup failed: ${cleanupError.message}`);
+      } catch (cleanupError) {
+        console.error(`[${branch}] ⚠️  Cleanup failed: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`);
       }
     }
   }
@@ -286,16 +292,11 @@ export async function runBenchmarkInDaytona(
   console.log();
 
   // Initialize SDK
-  const daytonaConfig: any = {
+  const daytona = new Daytona({
     apiKey,
     apiUrl: "https://app.daytona.io/api",
-  };
-
-  if (orgId) {
-    daytonaConfig.organizationId = orgId;
-  }
-
-  const daytona = new Daytona(daytonaConfig);
+    ...(orgId ? { organizationId: orgId } : {}),
+  } as ConstructorParameters<typeof Daytona>[0]);
 
   // Run branches with controlled concurrency
   const limit = pLimit(maxParallel);
@@ -334,7 +335,7 @@ export async function runBenchmarkInDaytona(
 /**
  * Install Bun runtime
  */
-async function installBun(sandbox: any, branch?: string): Promise<void> {
+async function installBun(sandbox: Sandbox, branch?: string): Promise<void> {
   const prefix = branch ? `[${branch}] ` : "";
   console.log(`${prefix}📦 Installing Bun...`);
 
@@ -362,7 +363,7 @@ async function installBun(sandbox: any, branch?: string): Promise<void> {
 /**
  * Install Apex using bun
  */
-async function installApex(sandbox: any, branch?: string): Promise<void> {
+async function installApex(sandbox: Sandbox, branch?: string): Promise<void> {
   const prefix = branch ? `[${branch}] ` : "";
   console.log(`${prefix}📦 Installing Apex globally via bun...`);
 
@@ -387,8 +388,8 @@ async function installApex(sandbox: any, branch?: string): Promise<void> {
     }
 
     console.log(`${prefix}✅ Apex installed at: ${installedPath}`);
-  } catch (error: any) {
-    throw new Error(`Failed to install Apex: ${error.message}`);
+  } catch (error) {
+    throw new Error(`Failed to install Apex: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }
 }
 
@@ -396,7 +397,7 @@ async function installApex(sandbox: any, branch?: string): Promise<void> {
  * Clone repository using Daytona's git API
  */
 async function cloneRepo(
-  sandbox: any,
+  sandbox: Sandbox,
   repoUrl: string,
   branch: string
 ): Promise<void> {
@@ -416,7 +417,7 @@ async function cloneRepo(
  * Download benchmark results from sandbox
  */
 async function downloadResults(
-  sandbox: any,
+  sandbox: Sandbox,
   branch: string
 ): Promise<BenchmarkResults> {
   const prefix = `[${branch}] `;
@@ -435,7 +436,7 @@ async function downloadResults(
   const files = await retryWithBackoff(
     () => sandbox.fs.listFiles(executionsPath),
     { branch }
-  ) as Array<{ name: string; isDirectory: boolean }>;
+  ) as unknown as Array<{ name: string; isDirectory: boolean }>;
   console.log(`${prefix}Found ${files.length} execution directories`);
 
   // Find the session for this branch (most recent)
@@ -497,7 +498,7 @@ async function downloadResults(
  * Recursively download a directory and all its contents
  */
 async function downloadDirectoryRecursive(
-  sandbox: any,
+  sandbox: Sandbox,
   remotePath: string,
   localPath: string,
   branch?: string
@@ -510,7 +511,7 @@ async function downloadDirectoryRecursive(
   const files = await retryWithBackoff(
     () => sandbox.fs.listFiles(remotePath),
     { branch }
-  ) as Array<{ name: string; isDirectory: boolean }>;
+  ) as unknown as Array<{ name: string; isDirectory: boolean }>;
 
   for (const file of files) {
     const remoteFilePath = path.join(remotePath, file.name);
@@ -528,16 +529,17 @@ async function downloadDirectoryRecursive(
           { branch }
         );
       }
-    } catch (error: any) {
-      if (error.message?.includes("file not found") || error.message?.includes("invalid")) {
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage?.includes("file not found") || errorMessage?.includes("invalid")) {
         console.log(`${prefix}  📁 Retrying ${file.name} as directory...`);
         try {
           await downloadDirectoryRecursive(sandbox, remoteFilePath, localFilePath, branch);
-        } catch (retryError: any) {
-          console.error(`${prefix}  ⚠️  Skipping ${file.name}: ${retryError.message}`);
+        } catch (retryError) {
+          console.error(`${prefix}  ⚠️  Skipping ${file.name}: ${retryError instanceof Error ? retryError.message : String(retryError)}`);
         }
       } else {
-        console.error(`${prefix}  ⚠️  Skipping ${file.name}: ${error.message}`);
+        console.error(`${prefix}  ⚠️  Skipping ${file.name}: ${errorMessage}`);
       }
     }
   }

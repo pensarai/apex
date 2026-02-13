@@ -74,7 +74,7 @@ export namespace Keybind {
       else parts.push(info.name);
     }
 
-    let result = parts.join("+");
+    const result = parts.join("+");
 
     return result
   }

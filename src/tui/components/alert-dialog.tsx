@@ -54,7 +54,7 @@ export default function AlertDialog({
       backgroundColor={"transparent"}
     >
       <box
-        onMouseUp={async (e: any) => {
+        onMouseUp={async (e: { stopPropagation: () => void }) => {
           if (renderer.getSelection()) return;
           e.stopPropagation();
         }}

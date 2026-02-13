@@ -137,13 +137,14 @@ export function classifyToolCall(ctx: ToolClassificationContext): PermissionTier
       tier = classifyFuzzingTool(args, tier);
       break;
 
-    case "create_poc":
+    case "create_poc": {
       // If POC contains dangerous patterns, escalate
       const pocContent = String(args.script || args.content || "");
       if (containsExploitPatterns(pocContent)) {
         tier = 5;
       }
       break;
+    }
   }
 
   return tier;

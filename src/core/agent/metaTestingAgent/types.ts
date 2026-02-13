@@ -292,7 +292,7 @@ export interface MetaTestingAgentInput {
   targets: PentestTarget[];
 
   /** AI model to use */
-  model: any; // AIModel type
+  model: string; // AIModel type
 
   /** Session for this pentest run */
   session: Session.SessionInfo;
@@ -300,7 +300,7 @@ export interface MetaTestingAgentInput {
   /** Session configuration */
   sessionConfig?: {
     outcomeGuidance?: string;
-    scopeConstraints?: any;
+    scopeConstraints?: Record<string, unknown>;
     authenticationInstructions?: string;
   };
 

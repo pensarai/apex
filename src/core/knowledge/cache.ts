@@ -37,7 +37,7 @@ const DEFAULT_CONFIG: CacheConfig = {
  */
 export class KnowledgeCache {
   private config: CacheConfig;
-  private memoryCache: Map<string, CacheEntry<any>> = new Map();
+  private memoryCache: Map<string, CacheEntry<unknown>> = new Map();
 
   constructor(config: Partial<CacheConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -136,7 +136,7 @@ export class KnowledgeCache {
   /**
    * Check if entry has expired
    */
-  private isExpired(entry: CacheEntry<any>): boolean {
+  private isExpired(entry: CacheEntry<unknown>): boolean {
     return Date.now() > entry.timestamp + entry.ttl;
   }
 
@@ -151,7 +151,7 @@ export class KnowledgeCache {
 
     try {
       const content = readFileSync(filePath, 'utf-8');
-      const entry: CacheEntry<any> = JSON.parse(content);
+      const entry: CacheEntry<unknown> = JSON.parse(content);
       return {
         timestamp: entry.timestamp,
         ttl: entry.ttl,
@@ -282,7 +282,7 @@ export class KnowledgeCache {
         const filePath = join(this.config.cacheDir, file);
         try {
           const content = readFileSync(filePath, 'utf-8');
-          const entry: CacheEntry<any> = JSON.parse(content);
+          const entry: CacheEntry<unknown> = JSON.parse(content);
           if (this.isExpired(entry)) {
             unlinkSync(filePath);
             this.memoryCache.delete(file.replace('.json', ''));
@@ -320,7 +320,7 @@ export class KnowledgeCache {
         const filePath = join(this.config.cacheDir, file);
         try {
           const content = readFileSync(filePath, 'utf-8');
-          const entry: CacheEntry<any> = JSON.parse(content);
+          const entry: CacheEntry<unknown> = JSON.parse(content);
           const stats = statSync(filePath);
           entries.push({ file, timestamp: entry.timestamp, size: stats.size });
         } catch {

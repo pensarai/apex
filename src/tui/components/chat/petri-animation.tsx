@@ -12,7 +12,7 @@ import { WaveSimulation } from "./lib/wave-simulation";
 
 // Global tick system for animations (shared across components)
 let globalTick = 0;
-let globalListeners = new Set<() => void>();
+const globalListeners = new Set<() => void>();
 let globalInterval: ReturnType<typeof setInterval> | null = null;
 
 function startGlobalTick() {

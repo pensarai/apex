@@ -46,6 +46,42 @@ type ToolUIMessage = UIMessage & {
   toolName: string;
 };
 
+/** Type for tool call chunks from AI SDK stream */
+interface StreamToolCall {
+  toolCallId: string;
+  toolName: string;
+  input?: Record<string, unknown>;
+  args?: Record<string, unknown>;
+}
+
+/** Type for tool result chunks from AI SDK stream */
+interface StreamToolResult {
+  toolCallId: string;
+  toolName: string;
+  output?: unknown;
+  result?: unknown;
+}
+
+/** Type guard for stream chunks */
+interface StreamChunk {
+  type: string;
+  text?: string;
+  toolCallId?: string;
+  toolName?: string;
+  [key: string]: unknown;
+}
+
+function isStreamChunk(chunk: unknown): chunk is StreamChunk {
+  return typeof chunk === 'object' && chunk !== null && 'type' in chunk;
+}
+
+/** Type for step-finish event data with usage info */
+interface StepFinishData {
+  usage?: { inputTokens?: number; outputTokens?: number };
+  text?: string;
+  [key: string]: unknown;
+}
+
 interface SessionViewProps {
   sessionId: string;
   /** If true, load existing session state without starting a new pentest */
@@ -300,9 +336,7 @@ export default function SessionView({
                   );
                   if (!exists) {
                     // AI SDK v5.x uses 'input' instead of 'args'
-                    const args = (tc as any).input as
-                      | Record<string, unknown>
-                      | undefined;
+                    const args = (tc as unknown as StreamToolCall).input;
                     const toolDescription =
                       typeof args?.toolCallDescription === "string"
                         ? args.toolCallDescription
@@ -339,7 +373,7 @@ export default function SessionView({
                       ...existingMsg,
                       status: "completed",
                       content: description,
-                      result: (tr as any).output,
+                      result: (tr as unknown as StreamToolResult).output,
                     };
                   } else {
                     // Tool result arrived before tool call - create as completed
@@ -349,7 +383,7 @@ export default function SessionView({
                       toolCallId: tr.toolCallId,
                       toolName: tr.toolName,
                       content: `+ ${tr.toolName || "tool"}`,
-                      result: (tr as any).output,
+                      result: (tr as unknown as StreamToolResult).output,
                       createdAt: new Date(),
                     });
                   }
@@ -362,7 +396,8 @@ export default function SessionView({
           },
 
           // Real-time streaming for discovery agent
-          onDiscoveryStream: (chunk) => {
+          onDiscoveryStream: (chunk: unknown) => {
+            if (!isStreamChunk(chunk)) return;
             if (chunk.type === "text-delta" && chunk.text) {
               currentDiscoveryText += chunk.text;
               setThinking(false);
@@ -405,7 +440,7 @@ export default function SessionView({
             } else if (chunk.type === "tool-call") {
               // Real-time tool call streaming
               setThinking(false);
-              const tc = chunk as any;
+              const tc = chunk as unknown as StreamToolCall;
               const toolCallId = tc.toolCallId;
               const toolName = tc.toolName || "tool";
               const args = tc.input ?? tc.args;
@@ -446,7 +481,7 @@ export default function SessionView({
             } else if (chunk.type === "tool-result") {
               // Real-time tool result streaming
               setThinking(true);
-              const tr = chunk as any;
+              const tr = chunk as unknown as StreamToolResult;
               const toolCallId = tr.toolCallId;
               const toolName = tr.toolName || "tool";
               const result = tr.output ?? tr.result;
@@ -523,11 +558,12 @@ export default function SessionView({
 
           onPentestAgentStream: (event: SubAgentStreamEvent) => {
             const agentId = event.agentId;
+            const eventData = event.data as Record<string, unknown> | undefined;
 
             // Handle real-time text streaming
-            if (event.type === "text-delta" && event.data?.text) {
+            if (event.type === "text-delta" && eventData?.text) {
               const currentText = pentestAgentTexts.get(agentId) || "";
-              const newText = currentText + event.data.text;
+              const newText = currentText + (eventData.text as string);
               pentestAgentTexts.set(agentId, newText);
 
               if (newText.trim()) {
@@ -566,7 +602,7 @@ export default function SessionView({
             }
             // Handle real-time tool call streaming
             else if (event.type === "tool-call") {
-              const tc = event.data as any;
+              const tc = event.data as StreamToolCall;
               const toolCallId = tc.toolCallId;
               const toolName = tc.toolName || "tool";
               const args = tc.input ?? tc.args;
@@ -605,7 +641,7 @@ export default function SessionView({
             }
             // Handle real-time tool result streaming
             else if (event.type === "tool-result") {
-              const tr = event.data as any;
+              const tr = event.data as StreamToolResult;
               const toolCallId = tr.toolCallId;
               const toolName = tr.toolName || "tool";
               const result = tr.output ?? tr.result;
@@ -652,8 +688,8 @@ export default function SessionView({
               });
             }
             // Handle step-finish for token tracking and resetting text accumulator
-            else if (event.type === "step-finish" && event.data) {
-              const { usage } = event.data;
+            else if (event.type === "step-finish" && eventData) {
+              const { usage } = eventData as StepFinishData;
 
               if (usage) {
                 const stepTokens =
@@ -750,7 +786,9 @@ export default function SessionView({
         if (existsSync(resultsPath)) {
           try {
             previousResults = JSON.parse(readFileSync(resultsPath, "utf-8"));
-          } catch {}
+          } catch {
+            // ignored
+          }
         }
         await startPentest(session, previousResults);
         return;
@@ -840,7 +878,7 @@ export default function SessionView({
               }
             } else if (chunk.type === "tool-call") {
               setThinking(false);
-              const tc = chunk as any;
+              const tc = chunk as unknown as StreamToolCall;
               const toolCallId = tc.toolCallId;
               const toolName = tc.toolName || "tool";
               const args = tc.input ?? tc.args;
@@ -877,7 +915,7 @@ export default function SessionView({
               });
             } else if (chunk.type === "tool-result") {
               setThinking(true);
-              const tr = chunk as any;
+              const tr = chunk as unknown as StreamToolResult;
               const toolCallId = tr.toolCallId;
               const toolName = tr.toolName || "tool";
               const resultData = tr.output ?? tr.result;

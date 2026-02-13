@@ -162,12 +162,13 @@ ${failed
 2. Avoid exhausted approaches
 3. Build on working approaches`,
         };
-      } catch (error: any) {
-        logger.error(`Failed to optimize prompt: ${error.message}`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.error(`Failed to optimize prompt: ${message}`);
         return {
           success: false,
-          error: error.message,
-          message: `Failed to optimize prompt: ${error.message}`,
+          error: message,
+          message: `Failed to optimize prompt: ${message}`,
         };
       }
     },

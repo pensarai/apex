@@ -8,7 +8,7 @@
 
 import type { LoadedSessionState } from "../../core/session/loader";
 import type { DisplayMessage } from "../components/agent-display";
-import type { Endpoint } from "../components/operator-dashboard/types";
+import type { Endpoint, EndpointStatus } from "../components/operator-dashboard/types";
 
 export function adaptSwarmStateForOperator(state: LoadedSessionState): {
   messages: DisplayMessage[];
@@ -49,7 +49,7 @@ export function adaptSwarmStateForOperator(state: LoadedSessionState): {
         id: `synth-${attackSurface.length}`,
         method: "GET",
         path: target.target,
-        status: "discovered" as any,
+        status: "untested" as EndpointStatus,
         category: target.objective || "unknown",
       });
     }

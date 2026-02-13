@@ -36,7 +36,7 @@ import { colors } from "../theme";
 import type { DisplayMessage } from "../components/agent-display";
 import { isToolMessage, useMessageState } from "../components/shared";
 import type { ModelInfo } from "../../core/ai";
-import type { Endpoint, VerifiedVuln, Credential, Hypothesis, Evidence } from "../components/operator-dashboard/types";
+import type { Endpoint, EndpointStatus, VerifiedVuln, Credential, Hypothesis, Evidence } from "../components/operator-dashboard/types";
 import ToolsPanel from "../components/tools-panel";
 import type { ToolsetState } from "../../core/toolset";
 
@@ -242,7 +242,7 @@ export function SessionComponent({
         setCurrentStage(savedState.currentStage as OperatorStage);
 
         // Deserialize messages with proper date conversion
-        const restoredMessages = (savedState.messages || []).map((msg: any) => ({
+        const restoredMessages = (savedState.messages as DisplayMessage[] || []).map((msg) => ({
           ...msg,
           createdAt: msg.createdAt ? new Date(msg.createdAt) : new Date(),
           status: msg.role === "tool" && msg.status === "pending" ? "completed" : msg.status,
@@ -251,18 +251,18 @@ export function SessionComponent({
 
         // Restore sidebar state
         sidebar.updateState({
-          attackSurface: savedState.attackSurface || [],
-          credentials: savedState.credentials || [],
-          verifiedVulns: savedState.verifiedVulns || [],
-          ports: savedState.targetState?.ports || [],
+          attackSurface: (savedState.attackSurface || []) as Endpoint[],
+          credentials: (savedState.credentials || []) as Credential[],
+          verifiedVulns: (savedState.verifiedVulns || []) as VerifiedVuln[],
+          ports: ((savedState.targetState as { ports?: Array<{ port: number; service?: string }> })?.ports || []),
         });
 
-        setActionHistory(savedState.actionHistory || []);
-        const history = savedState.actionHistory || [];
+        setActionHistory((savedState.actionHistory || []) as ActionHistoryEntry[]);
+        const history = (savedState.actionHistory || []) as ActionHistoryEntry[];
         setApprovedCount(
-          history.filter((a: any) => a.decision === "approved" || a.decision === "auto-approved").length
+          history.filter((a) => a.decision === "approved" || a.decision === "auto-approved").length
         );
-        setDeniedCount(history.filter((a: any) => a.decision === "denied").length);
+        setDeniedCount(history.filter((a) => a.decision === "denied").length);
       } else if (openAsOperator) {
         // Synthesize operator context from swarm session data
         const swarmState = await loadSessionState(session);
@@ -330,26 +330,28 @@ export function SessionComponent({
     });
 
     // Operator events
-    operatorAgent.on("operator-event", (event: any) => {
+    operatorAgent.on("operator-event", (event: { type: string; mode?: OperatorMode; stage?: OperatorStage; approval?: PendingApproval; id?: string; entry?: ActionHistoryEntry; endpoints?: Endpoint[]; finding?: VerifiedVuln; state?: { ports?: Array<{ port: number; service?: string }> }; credential?: Credential; endpointId?: string; status?: string; vulnType?: string }) => {
       switch (event.type) {
         case "mode-changed":
-          setOperatorMode(event.mode);
+          setOperatorMode(event.mode ?? operatorMode);
           break;
         case "stage-changed":
-          setCurrentStage(event.stage);
+          setCurrentStage(event.stage ?? currentStage);
           break;
         case "approval-needed":
-          setPendingApprovals((prev) => [...prev, event.approval]);
+          if (event.approval) setPendingApprovals((prev) => [...prev, event.approval!]);
           break;
         case "approval-resolved":
           setPendingApprovals((prev) => prev.filter((a) => a.id !== event.id));
           break;
         case "action-completed":
-          setActionHistory((prev) => [...prev, event.entry]);
-          if (event.entry.decision === "approved" || event.entry.decision === "auto-approved") {
-            setApprovedCount((c) => c + 1);
-          } else if (event.entry.decision === "denied") {
-            setDeniedCount((c) => c + 1);
+          if (event.entry) {
+            setActionHistory((prev) => [...prev, event.entry!]);
+            if (event.entry.decision === "approved" || event.entry.decision === "auto-approved") {
+              setApprovedCount((c) => c + 1);
+            } else if (event.entry.decision === "denied") {
+              setDeniedCount((c) => c + 1);
+            }
           }
           break;
         case "attack-surface-updated":
@@ -366,14 +368,16 @@ export function SessionComponent({
           });
           break;
         case "finding-verified":
-          sidebar.updateState({
-            verifiedVulns: [...sidebar.state.verifiedVulns, event.finding],
-          });
+          if (event.finding) {
+            sidebar.updateState({
+              verifiedVulns: [...sidebar.state.verifiedVulns, event.finding],
+            });
+          }
           break;
         case "target-state-updated":
           if (event.state?.ports) {
             const existingPorts = new Set(sidebar.state.ports.map((p) => p.port));
-            const newPorts = event.state.ports.filter((p: any) => !existingPorts.has(p.port));
+            const newPorts = event.state.ports.filter((p: { port: number; service?: string }) => !existingPorts.has(p.port));
             if (newPorts.length > 0) {
               sidebar.updateState({
                 ports: [...sidebar.state.ports, ...newPorts],
@@ -382,7 +386,7 @@ export function SessionComponent({
           }
           break;
         case "credential-found":
-          if (!sidebar.state.credentials.some((c) => c.id === event.credential.id)) {
+          if (event.credential && !sidebar.state.credentials.some((c) => c.id === event.credential!.id)) {
             sidebar.updateState({
               credentials: [...sidebar.state.credentials, event.credential],
             });
@@ -392,7 +396,7 @@ export function SessionComponent({
           sidebar.updateState({
             attackSurface: sidebar.state.attackSurface.map((ep) =>
               ep.id === event.endpointId
-                ? { ...ep, status: event.status, vulnType: event.vulnType }
+                ? { ...ep, status: event.status as EndpointStatus | undefined, vulnType: event.vulnType }
                 : ep
             ),
           });

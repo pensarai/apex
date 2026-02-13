@@ -336,7 +336,7 @@ function createDiscoveryFromLogs(
     const lines = logContent.split("\n").filter(Boolean);
 
     const messages: UIMessage[] = [];
-    let stepBuffer = "";
+    const stepBuffer = "";
 
     for (const line of lines) {
       const match = line.match(
@@ -425,7 +425,7 @@ export async function loadSessionState(
         target: string;
         vulnerabilityClass: string;
         objective: string;
-        authInfo?: any;
+        authInfo?: Record<string, unknown>;
         status: "running" | "completed";
         spawnedAt: string;
         completedAt?: string;
@@ -434,11 +434,11 @@ export async function loadSessionState(
       for (const entry of manifest) {
         if (entry.status !== "running") continue;
 
-        const resumeInfo = {
+        const resumeInfo: ResumeInfo = {
           target: entry.target,
           objective: entry.objective,
           vulnerabilityClass: entry.vulnerabilityClass,
-          authenticationInfo: entry.authInfo,
+          authenticationInfo: entry.authInfo as AuthenticationInfo | undefined,
         };
 
         // Match by vulnerability class slug in filename + same target

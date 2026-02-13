@@ -34,11 +34,15 @@ function readOsRelease(): Record<string, string> {
 function detectDocker(): boolean {
   try {
     if (existsSync("/.dockerenv")) return true;
-  } catch {}
+  } catch {
+    // ignored
+  }
   try {
     const cgroup = readFileSync("/proc/1/cgroup", "utf8");
     if (/docker|containerd|kubepods/i.test(cgroup)) return true;
-  } catch {}
+  } catch {
+    // ignored
+  }
   return false;
 }
 
