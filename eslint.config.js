@@ -12,6 +12,7 @@ export default tseslint.config(
       "@typescript-eslint/no-require-imports": "off",
       "no-unused-vars": "off",
       "no-useless-assignment": "off",
+      "no-useless-escape": "off",
       "react-hooks/exhaustive-deps": "off",
     },
   },

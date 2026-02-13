@@ -19,7 +19,10 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useKeyboard } from "@opentui/react";
 import { Session } from "../../core/session";
-import { createOperatorAgent, type OperatorAgent } from "../../core/agent/operatorAgent";
+import {
+  createOperatorAgent,
+  type OperatorAgent,
+} from "../../core/agent/operatorAgent";
 import type {
   OperatorMode,
   OperatorStage,
@@ -27,7 +30,12 @@ import type {
   PendingApproval,
   ActionHistoryEntry,
 } from "../../core/operator";
-import { OPERATOR_STAGES, OPERATOR_MODES, PERMISSION_TIERS, getStagesInOrder } from "../../core/operator";
+import {
+  OPERATOR_STAGES,
+  OPERATOR_MODES,
+  PERMISSION_TIERS,
+  getStagesInOrder,
+} from "../../core/operator";
 import { useRoute } from "../context/route";
 import { useInput } from "../context/input";
 import { useFocus } from "../context/focus";
@@ -36,7 +44,14 @@ import { colors } from "../theme";
 import type { DisplayMessage } from "../components/agent-display";
 import { isToolMessage, useMessageState } from "../components/shared";
 import type { ModelInfo } from "../../core/ai";
-import type { Endpoint, EndpointStatus, VerifiedVuln, Credential, Hypothesis, Evidence } from "../components/operator-dashboard/types";
+import type {
+  Endpoint,
+  EndpointStatus,
+  VerifiedVuln,
+  Credential,
+  Hypothesis,
+  Evidence,
+} from "../components/operator-dashboard/types";
 import ToolsPanel from "../components/tools-panel";
 import type { ToolsetState } from "../../core/toolset";
 
@@ -47,7 +62,11 @@ import { adaptSwarmStateForOperator } from "./swarm-to-operator-adapter";
 import { Header } from "../components/chat/header";
 import { MessageList } from "../components/chat/message-list";
 import { InputArea } from "../components/chat/input-area";
-import { Sidebar, useSidebarState, type SidebarState } from "../components/chat/sidebar";
+import {
+  Sidebar,
+  useSidebarState,
+  type SidebarState,
+} from "../components/chat/sidebar";
 
 // ============================================
 // Types
@@ -146,7 +165,8 @@ export function SessionComponent({
     hasPendingTool,
   } = useMessageState();
   const [status, setStatus] = useState<string>("idle");
-  const [streamingMessageIndex, setStreamingMessageIndex] = useState<number>(-1);
+  const [streamingMessageIndex, setStreamingMessageIndex] =
+    useState<number>(-1);
 
   // ============================================
   // Operator State
@@ -159,7 +179,9 @@ export function SessionComponent({
     operatorSettings.autoApproveTier as PermissionTier
   );
   const [currentStage, setCurrentStage] = useState<OperatorStage>("setup");
-  const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
+  const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>(
+    []
+  );
   const [actionHistory, setActionHistory] = useState<ActionHistoryEntry[]>([]);
 
   // Pre-computed stats counters
@@ -176,7 +198,9 @@ export function SessionComponent({
   const [verboseMode, setVerboseMode] = useState(false);
   const [expandedLogs, setExpandedLogs] = useState(false);
   const { refocusPrompt } = useFocus();
-  const [lastApprovedAction, setLastApprovedAction] = useState<string | null>(null);
+  const [lastApprovedAction, setLastApprovedAction] = useState<string | null>(
+    null
+  );
   const [lastDeclineNote, setLastDeclineNote] = useState<string | null>(null);
   const [resumeLoaded, setResumeLoaded] = useState(false);
 
@@ -209,24 +233,33 @@ export function SessionComponent({
   // State Gathering for Persistence
   // ============================================
 
-  const gatherOperatorState = useCallback((): Session.OperatorSessionState => ({
-    mode: operatorMode,
-    autoApproveTier,
-    currentStage,
-    messages,
-    attackSurface: sidebar.state.attackSurface,
-    credentials: sidebar.state.credentials,
-    verifiedVulns: sidebar.state.verifiedVulns,
-    targetState: { host: targetHost, ports: sidebar.state.ports },
-    hypotheses: [],
-    evidence: [],
-    actionHistory,
-    pausedAt: new Date().toISOString(),
-    lastRunId: agent?.currentRunId || "",
-  }), [
-    operatorMode, autoApproveTier, currentStage, messages,
-    sidebar.state, targetHost, actionHistory, agent,
-  ]);
+  const gatherOperatorState = useCallback(
+    (): Session.OperatorSessionState => ({
+      mode: operatorMode,
+      autoApproveTier,
+      currentStage,
+      messages,
+      attackSurface: sidebar.state.attackSurface,
+      credentials: sidebar.state.credentials,
+      verifiedVulns: sidebar.state.verifiedVulns,
+      targetState: { host: targetHost, ports: sidebar.state.ports },
+      hypotheses: [],
+      evidence: [],
+      actionHistory,
+      pausedAt: new Date().toISOString(),
+      lastRunId: agent?.currentRunId || "",
+    }),
+    [
+      operatorMode,
+      autoApproveTier,
+      currentStage,
+      messages,
+      sidebar.state,
+      targetHost,
+      actionHistory,
+      agent,
+    ]
+  );
 
   // ============================================
   // Resume State Loading
@@ -242,10 +275,15 @@ export function SessionComponent({
         setCurrentStage(savedState.currentStage as OperatorStage);
 
         // Deserialize messages with proper date conversion
-        const restoredMessages = (savedState.messages as DisplayMessage[] || []).map((msg) => ({
+        const restoredMessages = (
+          (savedState.messages as DisplayMessage[]) || []
+        ).map((msg) => ({
           ...msg,
           createdAt: msg.createdAt ? new Date(msg.createdAt) : new Date(),
-          status: msg.role === "tool" && msg.status === "pending" ? "completed" : msg.status,
+          status:
+            msg.role === "tool" && msg.status === "pending"
+              ? "completed"
+              : msg.status,
         }));
         setMessages(restoredMessages);
 
@@ -254,13 +292,23 @@ export function SessionComponent({
           attackSurface: (savedState.attackSurface || []) as Endpoint[],
           credentials: (savedState.credentials || []) as Credential[],
           verifiedVulns: (savedState.verifiedVulns || []) as VerifiedVuln[],
-          ports: ((savedState.targetState as { ports?: Array<{ port: number; service?: string }> })?.ports || []),
+          ports:
+            (
+              savedState.targetState as {
+                ports?: Array<{ port: number; service?: string }>;
+              }
+            )?.ports || [],
         });
 
-        setActionHistory((savedState.actionHistory || []) as ActionHistoryEntry[]);
-        const history = (savedState.actionHistory || []) as ActionHistoryEntry[];
+        setActionHistory(
+          (savedState.actionHistory || []) as ActionHistoryEntry[]
+        );
+        const history = (savedState.actionHistory ||
+          []) as ActionHistoryEntry[];
         setApprovedCount(
-          history.filter((a) => a.decision === "approved" || a.decision === "auto-approved").length
+          history.filter(
+            (a) => a.decision === "approved" || a.decision === "auto-approved"
+          ).length
         );
         setDeniedCount(history.filter((a) => a.decision === "denied").length);
       } else if (openAsOperator) {
@@ -273,7 +321,14 @@ export function SessionComponent({
       }
       setResumeLoaded(true);
     });
-  }, [isResume, session.id, resumeLoaded, setMessages, sidebar, openAsOperator]);
+  }, [
+    isResume,
+    session.id,
+    resumeLoaded,
+    setMessages,
+    sidebar,
+    openAsOperator,
+  ]);
 
   // ============================================
   // Agent Initialization
@@ -316,98 +371,149 @@ export function SessionComponent({
     });
 
     // Message update
-    operatorAgent.on("message-updated", ({ index, message }: { index: number; message: DisplayMessage }) => {
-      if (isToolMessage(message)) {
-        updateTool(message.toolCallId, {
-          status: message.status,
-          result: message.result,
-          logs: message.logs,
-        });
-      } else {
-        // Update assistant/system messages by index
-        updateByIndex(index, message);
+    operatorAgent.on(
+      "message-updated",
+      ({ index, message }: { index: number; message: DisplayMessage }) => {
+        if (isToolMessage(message)) {
+          updateTool(message.toolCallId, {
+            status: message.status,
+            result: message.result,
+            logs: message.logs,
+          });
+        } else {
+          // Update assistant/system messages by index
+          updateByIndex(index, message);
+        }
       }
-    });
+    );
 
     // Operator events
-    operatorAgent.on("operator-event", (event: { type: string; mode?: OperatorMode; stage?: OperatorStage; approval?: PendingApproval; id?: string; entry?: ActionHistoryEntry; endpoints?: Endpoint[]; finding?: VerifiedVuln; state?: { ports?: Array<{ port: number; service?: string }> }; credential?: Credential; endpointId?: string; status?: string; vulnType?: string }) => {
-      switch (event.type) {
-        case "mode-changed":
-          setOperatorMode(event.mode ?? operatorMode);
-          break;
-        case "stage-changed":
-          setCurrentStage(event.stage ?? currentStage);
-          break;
-        case "approval-needed":
-          if (event.approval) setPendingApprovals((prev) => [...prev, event.approval!]);
-          break;
-        case "approval-resolved":
-          setPendingApprovals((prev) => prev.filter((a) => a.id !== event.id));
-          break;
-        case "action-completed":
-          if (event.entry) {
-            setActionHistory((prev) => [...prev, event.entry!]);
-            if (event.entry.decision === "approved" || event.entry.decision === "auto-approved") {
-              setApprovedCount((c) => c + 1);
-            } else if (event.entry.decision === "denied") {
-              setDeniedCount((c) => c + 1);
+    operatorAgent.on(
+      "operator-event",
+      (event: {
+        type: string;
+        mode?: OperatorMode;
+        stage?: OperatorStage;
+        approval?: PendingApproval;
+        id?: string;
+        entry?: ActionHistoryEntry;
+        endpoints?: Endpoint[];
+        finding?: VerifiedVuln;
+        state?: { ports?: Array<{ port: number; service?: string }> };
+        credential?: Credential;
+        endpointId?: string;
+        status?: string;
+        vulnType?: string;
+      }) => {
+        switch (event.type) {
+          case "mode-changed":
+            setOperatorMode(event.mode ?? operatorMode);
+            break;
+          case "stage-changed":
+            setCurrentStage(event.stage ?? currentStage);
+            break;
+          case "approval-needed":
+            if (event.approval)
+              setPendingApprovals((prev) => [...prev, event.approval!]);
+            break;
+          case "approval-resolved":
+            setPendingApprovals((prev) =>
+              prev.filter((a) => a.id !== event.id)
+            );
+            break;
+          case "action-completed":
+            if (event.entry) {
+              setActionHistory((prev) => [...prev, event.entry!]);
+              if (
+                event.entry.decision === "approved" ||
+                event.entry.decision === "auto-approved"
+              ) {
+                setApprovedCount((c) => c + 1);
+              } else if (event.entry.decision === "denied") {
+                setDeniedCount((c) => c + 1);
+              }
             }
-          }
-          break;
-        case "attack-surface-updated":
-          sidebar.updateState({
-            attackSurface: [
-              ...sidebar.state.attackSurface,
-              ...(event.endpoints || []).filter(
-                (e: Endpoint) =>
-                  !sidebar.state.attackSurface.some(
-                    (existing) => `${existing.method}:${existing.path}` === `${e.method}:${e.path}`
-                  )
-              ),
-            ],
-          });
-          break;
-        case "finding-verified":
-          if (event.finding) {
+            break;
+          case "attack-surface-updated":
             sidebar.updateState({
-              verifiedVulns: [...sidebar.state.verifiedVulns, event.finding],
+              attackSurface: [
+                ...sidebar.state.attackSurface,
+                ...(event.endpoints || []).filter(
+                  (e: Endpoint) =>
+                    !sidebar.state.attackSurface.some(
+                      (existing) =>
+                        `${existing.method}:${existing.path}` ===
+                        `${e.method}:${e.path}`
+                    )
+                ),
+              ],
             });
-          }
-          break;
-        case "target-state-updated":
-          if (event.state?.ports) {
-            const existingPorts = new Set(sidebar.state.ports.map((p) => p.port));
-            const newPorts = event.state.ports.filter((p: { port: number; service?: string }) => !existingPorts.has(p.port));
-            if (newPorts.length > 0) {
+            break;
+          case "finding-verified":
+            if (event.finding) {
               sidebar.updateState({
-                ports: [...sidebar.state.ports, ...newPorts],
+                verifiedVulns: [...sidebar.state.verifiedVulns, event.finding],
               });
             }
-          }
-          break;
-        case "credential-found":
-          if (event.credential && !sidebar.state.credentials.some((c) => c.id === event.credential!.id)) {
+            break;
+          case "target-state-updated":
+            if (event.state?.ports) {
+              const existingPorts = new Set(
+                sidebar.state.ports.map((p) => p.port)
+              );
+              const newPorts = event.state.ports.filter(
+                (p: { port: number; service?: string }) =>
+                  !existingPorts.has(p.port)
+              );
+              if (newPorts.length > 0) {
+                sidebar.updateState({
+                  ports: [...sidebar.state.ports, ...newPorts],
+                });
+              }
+            }
+            break;
+          case "credential-found":
+            if (
+              event.credential &&
+              !sidebar.state.credentials.some(
+                (c) => c.id === event.credential!.id
+              )
+            ) {
+              sidebar.updateState({
+                credentials: [...sidebar.state.credentials, event.credential],
+              });
+            }
+            break;
+          case "endpoint-status-changed":
             sidebar.updateState({
-              credentials: [...sidebar.state.credentials, event.credential],
+              attackSurface: sidebar.state.attackSurface.map((ep) =>
+                ep.id === event.endpointId
+                  ? {
+                      ...ep,
+                      status: event.status as EndpointStatus | undefined,
+                      vulnType: event.vulnType,
+                    }
+                  : ep
+              ),
             });
-          }
-          break;
-        case "endpoint-status-changed":
-          sidebar.updateState({
-            attackSurface: sidebar.state.attackSurface.map((ep) =>
-              ep.id === event.endpointId
-                ? { ...ep, status: event.status as EndpointStatus | undefined, vulnType: event.vulnType }
-                : ep
-            ),
-          });
-          break;
+            break;
+        }
       }
-    });
+    );
 
     // Token usage
-    operatorAgent.on("token-usage", ({ inputTokens, outputTokens }: { inputTokens: number; outputTokens: number }) => {
-      addTokenUsage(inputTokens, outputTokens);
-    });
+    operatorAgent.on(
+      "token-usage",
+      ({
+        inputTokens,
+        outputTokens,
+      }: {
+        inputTokens: number;
+        outputTokens: number;
+      }) => {
+        addTokenUsage(inputTokens, outputTokens);
+      }
+    );
 
     setAgent(operatorAgent);
 
@@ -416,7 +522,6 @@ export function SessionComponent({
     };
     // Note: We intentionally exclude messages.length from dependencies
     // The agent should only be created once, not re-created on message changes
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, model.id, isResume, resumeLoaded]);
 
   // ============================================
@@ -437,166 +542,202 @@ export function SessionComponent({
   // Event Handlers
   // ============================================
 
-  const handleModeChange = useCallback((newMode: OperatorMode) => {
-    agent?.setMode(newMode);
-    setOperatorMode(newMode);
-  }, [agent]);
+  const handleModeChange = useCallback(
+    (newMode: OperatorMode) => {
+      agent?.setMode(newMode);
+      setOperatorMode(newMode);
+    },
+    [agent]
+  );
 
-  const cycleMode = useCallback((reverse: boolean = false) => {
-    const modes: OperatorMode[] = ["plan", "manual", "auto"];
-    const currentIdx = modes.indexOf(operatorMode);
-    const nextIdx = reverse
-      ? (currentIdx - 1 + modes.length) % modes.length
-      : (currentIdx + 1) % modes.length;
-    handleModeChange(modes[nextIdx]);
-  }, [operatorMode, handleModeChange]);
+  const cycleMode = useCallback(
+    (reverse: boolean = false) => {
+      const modes: OperatorMode[] = ["plan", "manual", "auto"];
+      const currentIdx = modes.indexOf(operatorMode);
+      const nextIdx = reverse
+        ? (currentIdx - 1 + modes.length) % modes.length
+        : (currentIdx + 1) % modes.length;
+      handleModeChange(modes[nextIdx]);
+    },
+    [operatorMode, handleModeChange]
+  );
 
-  const handleStageChange = useCallback((newStage: OperatorStage) => {
-    agent?.setStage(newStage);
-    setCurrentStage(newStage);
-    setShowStageMenu(false);
-  }, [agent]);
+  const handleStageChange = useCallback(
+    (newStage: OperatorStage) => {
+      agent?.setStage(newStage);
+      setCurrentStage(newStage);
+      setShowStageMenu(false);
+    },
+    [agent]
+  );
 
-  const handleApprove = useCallback((approvalId: string) => {
-    const approval = pendingApprovals.find((a) => a.id === approvalId);
-    if (approval) {
-      const args = approval.args || {};
-      let actionDesc = approval.toolName;
-      if (approval.toolName === "http_request" && args.method && args.url) {
-        actionDesc = `${args.method} ${args.url}`;
-      } else if (approval.toolName === "execute_command" && args.command) {
-        actionDesc = `$ ${String(args.command).slice(0, 50)}`;
-      }
-      setLastApprovedAction(actionDesc);
-    }
-    setLastDeclineNote(null);
-    agent?.approve(approvalId);
-  }, [agent, pendingApprovals]);
-
-  const handleDeny = useCallback((approvalId: string) => {
-    agent?.deny(approvalId);
-  }, [agent]);
-
-  const handleAutoApproveTier = useCallback((tier: PermissionTier) => {
-    setOperatorMode("auto");
-    agent?.setMode("auto");
-    setAutoApproveTier(tier);
-    agent?.setAutoApproveTier(tier);
-
-    pendingApprovals.forEach((approval) => {
-      if (approval.tier <= tier) {
-        agent?.approve(approval.id);
-      }
-    });
-  }, [agent, pendingApprovals]);
-
-  const handleSendDirective = useCallback(async (directive: string) => {
-    if (!directive.trim()) return;
-    const trimmed = directive.trim();
-    setDirectiveInput("");
-
-    // Handle slash commands
-    if (trimmed.startsWith("/")) {
-      const parts = trimmed.slice(1).split(/\s+/);
-      const cmd = parts[0]?.toLowerCase();
-      const arg = parts[1];
-
-      // /mode <plan|manual|auto>
-      if (cmd === "mode") {
-        const validModes: OperatorMode[] = ["plan", "manual", "auto"];
-        if (arg && validModes.includes(arg as OperatorMode)) {
-          handleModeChange(arg as OperatorMode);
-          Session.updateOperatorSettings(session.id, { initialMode: arg as OperatorMode }).catch(() => {});
-          addMessage({
-            role: "system",
-            content: `Mode changed to ${OPERATOR_MODES[arg as OperatorMode].name}`,
-            createdAt: new Date(),
-          });
-        } else {
-          addMessage({
-            role: "system",
-            content: `Current mode: ${OPERATOR_MODES[operatorMode].name}\nUsage: /mode <plan|manual|auto>`,
-            createdAt: new Date(),
-          });
+  const handleApprove = useCallback(
+    (approvalId: string) => {
+      const approval = pendingApprovals.find((a) => a.id === approvalId);
+      if (approval) {
+        const args = approval.args || {};
+        let actionDesc = approval.toolName;
+        if (approval.toolName === "http_request" && args.method && args.url) {
+          actionDesc = `${args.method} ${args.url}`;
+        } else if (approval.toolName === "execute_command" && args.command) {
+          actionDesc = `$ ${String(args.command).slice(0, 50)}`;
         }
-        return;
+        setLastApprovedAction(actionDesc);
       }
-
-      // /tier <1-5>
-      if (cmd === "tier") {
-        const tierNum = parseInt(arg || "", 10);
-        if (tierNum >= 1 && tierNum <= 5) {
-          const newTier = tierNum as PermissionTier;
-          setAutoApproveTier(newTier);
-          agent?.setAutoApproveTier(newTier);
-          Session.updateOperatorSettings(session.id, { autoApproveTier: newTier }).catch(() => {});
-          addMessage({
-            role: "system",
-            content: `Auto-approve tier set to T${newTier} (${PERMISSION_TIERS[newTier].name})`,
-            createdAt: new Date(),
-          });
-        } else {
-          addMessage({
-            role: "system",
-            content: `Current tier: T${autoApproveTier} (${PERMISSION_TIERS[autoApproveTier].name})\nUsage: /tier <1-5>`,
-            createdAt: new Date(),
-          });
-        }
-        return;
-      }
-
-      // /config
-      if (cmd === "config") {
-        const config = [
-          `Session: ${session.name || session.id}`,
-          `Target: ${session.targets[0]}`,
-          `Mode: ${OPERATOR_MODES[operatorMode].name}`,
-          `Auto-approve Tier: T${autoApproveTier}`,
-          `Stage: ${OPERATOR_STAGES[currentStage].name}`,
-          `Verbose: ${verboseMode ? "on" : "off"}`,
-          "",
-          `Commands: /mode <plan|manual|auto>, /tier <1-5>, /config, /tools`,
-        ].join("\n");
-        addMessage({
-          role: "system",
-          content: config,
-          createdAt: new Date(),
-        });
-        return;
-      }
-
-      // /tools - Open tools panel
-      if (cmd === "tools" || cmd === "t") {
-        setShowToolsPanel(true);
-        return;
-      }
-    }
-
-    // Not a slash command - send as directive
-    if (!agent) return;
-
-    // If there's a pending approval, deny it and send as redirect
-    if (pendingApprovals.length > 0) {
-      const approval = pendingApprovals[0];
-      try {
-        agent.deny(approval.id);
-      } catch {
-        // Approval may have already been resolved - ignore
-      }
-      setLastDeclineNote(trimmed);
-    } else {
       setLastDeclineNote(null);
-    }
+      agent?.approve(approvalId);
+    },
+    [agent, pendingApprovals]
+  );
 
-    await agent.sendDirective(trimmed);
-  }, [
-    agent, pendingApprovals, operatorMode, autoApproveTier, currentStage, session,
-    handleModeChange, verboseMode, addMessage,
-  ]);
+  const handleDeny = useCallback(
+    (approvalId: string) => {
+      agent?.deny(approvalId);
+    },
+    [agent]
+  );
+
+  const handleAutoApproveTier = useCallback(
+    (tier: PermissionTier) => {
+      setOperatorMode("auto");
+      agent?.setMode("auto");
+      setAutoApproveTier(tier);
+      agent?.setAutoApproveTier(tier);
+
+      pendingApprovals.forEach((approval) => {
+        if (approval.tier <= tier) {
+          agent?.approve(approval.id);
+        }
+      });
+    },
+    [agent, pendingApprovals]
+  );
+
+  const handleSendDirective = useCallback(
+    async (directive: string) => {
+      if (!directive.trim()) return;
+      const trimmed = directive.trim();
+      setDirectiveInput("");
+
+      // Handle slash commands
+      if (trimmed.startsWith("/")) {
+        const parts = trimmed.slice(1).split(/\s+/);
+        const cmd = parts[0]?.toLowerCase();
+        const arg = parts[1];
+
+        // /mode <plan|manual|auto>
+        if (cmd === "mode") {
+          const validModes: OperatorMode[] = ["plan", "manual", "auto"];
+          if (arg && validModes.includes(arg as OperatorMode)) {
+            handleModeChange(arg as OperatorMode);
+            Session.updateOperatorSettings(session.id, {
+              initialMode: arg as OperatorMode,
+            }).catch(() => {});
+            addMessage({
+              role: "system",
+              content: `Mode changed to ${
+                OPERATOR_MODES[arg as OperatorMode].name
+              }`,
+              createdAt: new Date(),
+            });
+          } else {
+            addMessage({
+              role: "system",
+              content: `Current mode: ${OPERATOR_MODES[operatorMode].name}\nUsage: /mode <plan|manual|auto>`,
+              createdAt: new Date(),
+            });
+          }
+          return;
+        }
+
+        // /tier <1-5>
+        if (cmd === "tier") {
+          const tierNum = parseInt(arg || "", 10);
+          if (tierNum >= 1 && tierNum <= 5) {
+            const newTier = tierNum as PermissionTier;
+            setAutoApproveTier(newTier);
+            agent?.setAutoApproveTier(newTier);
+            Session.updateOperatorSettings(session.id, {
+              autoApproveTier: newTier,
+            }).catch(() => {});
+            addMessage({
+              role: "system",
+              content: `Auto-approve tier set to T${newTier} (${PERMISSION_TIERS[newTier].name})`,
+              createdAt: new Date(),
+            });
+          } else {
+            addMessage({
+              role: "system",
+              content: `Current tier: T${autoApproveTier} (${PERMISSION_TIERS[autoApproveTier].name})\nUsage: /tier <1-5>`,
+              createdAt: new Date(),
+            });
+          }
+          return;
+        }
+
+        // /config
+        if (cmd === "config") {
+          const config = [
+            `Session: ${session.name || session.id}`,
+            `Target: ${session.targets[0]}`,
+            `Mode: ${OPERATOR_MODES[operatorMode].name}`,
+            `Auto-approve Tier: T${autoApproveTier}`,
+            `Stage: ${OPERATOR_STAGES[currentStage].name}`,
+            `Verbose: ${verboseMode ? "on" : "off"}`,
+            "",
+            `Commands: /mode <plan|manual|auto>, /tier <1-5>, /config, /tools`,
+          ].join("\n");
+          addMessage({
+            role: "system",
+            content: config,
+            createdAt: new Date(),
+          });
+          return;
+        }
+
+        // /tools - Open tools panel
+        if (cmd === "tools" || cmd === "t") {
+          setShowToolsPanel(true);
+          return;
+        }
+      }
+
+      // Not a slash command - send as directive
+      if (!agent) return;
+
+      // If there's a pending approval, deny it and send as redirect
+      if (pendingApprovals.length > 0) {
+        const approval = pendingApprovals[0];
+        try {
+          agent.deny(approval.id);
+        } catch {
+          // Approval may have already been resolved - ignore
+        }
+        setLastDeclineNote(trimmed);
+      } else {
+        setLastDeclineNote(null);
+      }
+
+      await agent.sendDirective(trimmed);
+    },
+    [
+      agent,
+      pendingApprovals,
+      operatorMode,
+      autoApproveTier,
+      currentStage,
+      session,
+      handleModeChange,
+      verboseMode,
+      addMessage,
+    ]
+  );
 
   const handleExit = useCallback(() => {
     // Save state before exiting
-    Session.saveOperatorState(session.id, gatherOperatorState()).catch(() => {});
+    Session.saveOperatorState(session.id, gatherOperatorState()).catch(
+      () => {}
+    );
     agent?.stop();
     if (onExit) {
       onExit();
@@ -670,7 +811,9 @@ export function SessionComponent({
         setDirectiveInput("");
         return;
       }
-      Session.saveOperatorState(session.id, gatherOperatorState()).catch(() => {});
+      Session.saveOperatorState(session.id, gatherOperatorState()).catch(
+        () => {}
+      );
       agent?.stop();
       return;
     }
@@ -730,12 +873,15 @@ export function SessionComponent({
         <text fg={colors.creamText}>Select Stage:</text>
         <text fg={colors.dimText}> </text>
         {stages.map((s, idx) => (
-          <text key={s.stage} fg={currentStage === s.stage ? colors.greenAccent : colors.dimText}>
+          <text
+            key={s.stage}
+            fg={currentStage === s.stage ? colors.greenAccent : colors.dimText}
+          >
             {"  "}[{idx + 1}] {s.name} - {s.description}
           </text>
         ))}
         <text fg={colors.dimText}> </text>
-        <text fg={colors.dimText}>  [ESC] Cancel</text>
+        <text fg={colors.dimText}> [ESC] Cancel</text>
       </box>
     );
   }
@@ -797,18 +943,20 @@ export function SessionComponent({
             verboseMode={verboseMode}
             expandedLogs={expandedLogs}
             pendingApproval={pendingApprovals[0]}
-            onApprove={() => pendingApprovals[0] && handleApprove(pendingApprovals[0].id)}
-            onAutoApprove={() => pendingApprovals[0] && handleAutoApproveTier(pendingApprovals[0].tier)}
+            onApprove={() =>
+              pendingApprovals[0] && handleApprove(pendingApprovals[0].id)
+            }
+            onAutoApprove={() =>
+              pendingApprovals[0] &&
+              handleAutoApproveTier(pendingApprovals[0].tier)
+            }
             lastDeclineNote={lastDeclineNote}
           />
         </box>
 
         {/* Sidebar (visible in operator mode or when explicitly shown) */}
         {mode === "operator" && (
-          <Sidebar
-            collapsed={sidebar.collapsed}
-            state={sidebar.state}
-          />
+          <Sidebar collapsed={sidebar.collapsed} state={sidebar.state} />
         )}
       </box>
 
@@ -826,7 +974,8 @@ export function SessionComponent({
           // Agent will pick up the new state on next tool call
           addMessage({
             role: "system",
-            content: "Toolset updated. Changes will apply to future agent actions.",
+            content:
+              "Toolset updated. Changes will apply to future agent actions.",
             createdAt: new Date(),
           });
         }}
@@ -842,7 +991,14 @@ export default SessionComponent;
 export { Header } from "../components/chat/header";
 export { MessageList } from "../components/chat/message-list";
 export { InputArea } from "../components/chat/input-area";
-export { Sidebar, useSidebarState, type SidebarState } from "../components/chat/sidebar";
+export {
+  Sidebar,
+  useSidebarState,
+  type SidebarState,
+} from "../components/chat/sidebar";
 export { InlineApprovalPrompt } from "../components/chat/approval-inline";
 export { ToolMessage } from "../components/chat/tool-message";
-export { LoadingIndicator, type LoadingState } from "../components/chat/loading-indicator";
+export {
+  LoadingIndicator,
+  type LoadingState,
+} from "../components/chat/loading-indicator";
