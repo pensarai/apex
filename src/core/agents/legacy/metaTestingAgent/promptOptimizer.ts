@@ -15,17 +15,8 @@ import { tool } from "ai";
 import { z } from "zod";
 import { join } from "path";
 import { existsSync, writeFileSync, readFileSync } from "fs";
-<<<<<<< HEAD:src/core/agent/metaTestingAgent/promptOptimizer.ts
-import { Logger } from "../logger";
-import type { PromptOptimization, MetaTestingSessionInfo } from "./types";
-=======
 import { Logger } from "../../../logger";
-import type {
-  Adaptation,
-  PromptOptimization,
-  MetaTestingSessionInfo,
-} from "./types";
->>>>>>> a7a0c038 (Initial implementation of general offensive security agent harness):src/core/agents/legacy/metaTestingAgent/promptOptimizer.ts
+import type { PromptOptimization, MetaTestingSessionInfo } from "./types";
 import { loadAdaptations } from "./planMemory";
 
 const BASE_OPTIMIZATION_PROMPT = `
