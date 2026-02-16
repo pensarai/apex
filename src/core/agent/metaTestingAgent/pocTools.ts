@@ -7,7 +7,6 @@
  */
 
 import { tool } from "ai";
-import { z } from "zod";
 import { join } from "path";
 import { promisify } from "util";
 import { exec } from "child_process";
@@ -15,7 +14,6 @@ import {
   existsSync,
   writeFileSync,
   chmodSync,
-  unlinkSync,
   mkdirSync,
   readdirSync,
   readFileSync,
@@ -23,7 +21,6 @@ import {
 } from "fs";
 import { nanoid } from "nanoid";
 import { Logger } from "../logger";
-import type { Session } from "../../session";
 import type {
   CreatePocInput,
   CreatePocResult,

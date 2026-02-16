@@ -18,7 +18,6 @@ import type { VulnerabilityClass } from "../orchestrator/types";
 import {
   runMetaVulnerabilityTestAgent,
   type MetaVulnerabilityTestInput,
-  type MetaVulnerabilityTestResult,
 } from "../metaTestingAgent/metaVulnerabilityTestAgent";
 import type { DisplayMessage } from "../../../tui/components/agent-display";
 

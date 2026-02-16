@@ -1,9 +1,5 @@
-import { createAnthropic } from "@ai-sdk/anthropic";
 import type { AnthropicMessagesModelId } from "@ai-sdk/anthropic/internal";
-import { createOpenAI } from "@ai-sdk/openai";
 import type { OpenAIChatModelId } from "@ai-sdk/openai/internal";
-import { createOpenRouter } from "@openrouter/ai-sdk-provider";
-import { createAmazonBedrock } from "@ai-sdk/amazon-bedrock";
 import {
   generateText,
   Output,
@@ -15,7 +11,6 @@ import {
   type StreamTextOnStepFinishCallback,
   type StreamTextResult,
   type TextStreamPart,
-  type ToolCallRepairFunction,
   type ToolChoice,
   type ToolSet,
 } from "ai";
@@ -24,7 +19,6 @@ import {
   checkIfContextLengthError,
   createSummarizationStream,
   getProviderModel,
-  summarizeConversation,
   type AIAuthConfig,
 } from "./utils";
 

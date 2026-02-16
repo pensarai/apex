@@ -5,7 +5,7 @@
  * Layout: MODE | target URL | endpoints found | findings documented | tokens | tool calls
  */
 
-import { colors, formatTokenCount, getTierColor } from "../../theme";
+import { colors, getTierColor } from "../../theme";
 import type {
   OperatorMode,
   OperatorStage,

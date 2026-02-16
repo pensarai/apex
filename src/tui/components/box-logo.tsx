@@ -1,6 +1,3 @@
-import React from "react";
-import { RGBA } from "@opentui/core";
-
 /**
  * A box-style logo component that renders the letter "A" using colored block characters
  * in a green gradient style, similar to the Minecraft-style pixel art logo.

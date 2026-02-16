@@ -3,7 +3,6 @@ import {
   useTerminalDimensions,
   useRenderer,
 } from "@opentui/react";
-import { RGBA } from "@opentui/core";
 import type { JSX } from "react";
 
 export interface AlertDialogProps {

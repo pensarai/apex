@@ -16,11 +16,7 @@ import { z } from "zod";
 import { join } from "path";
 import { existsSync, writeFileSync, readFileSync } from "fs";
 import { Logger } from "../logger";
-import type {
-  Adaptation,
-  PromptOptimization,
-  MetaTestingSessionInfo,
-} from "./types";
+import type { PromptOptimization, MetaTestingSessionInfo } from "./types";
 import { loadAdaptations } from "./planMemory";
 
 const BASE_OPTIMIZATION_PROMPT = `

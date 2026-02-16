@@ -10,7 +10,7 @@
  * - Sensing: Agents sense trail ahead and turn toward stronger concentrations
  */
 
-import { vec2, add, mul, norm, fromAngle, type Vec2 } from "./play-core/vec2";
+import { vec2, add, fromAngle, type Vec2 } from "./play-core/vec2";
 import { clamp, random, mod } from "./play-core/num";
 
 // Simulation parameters (tuned for terminal)

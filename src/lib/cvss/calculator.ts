@@ -5,21 +5,13 @@
  * Reference: https://www.first.org/cvss/v4-0/specification-document
  */
 
-import type {
-  CVSS4Metrics,
-  CVSS4Score,
-  CVSS4ScoreType,
-  CVSS4Severity,
-} from "./types";
+import type { CVSS4Metrics, CVSS4Score, CVSS4ScoreType } from "./types";
 import { getSeverityFromScore } from "./types";
 import {
   MACROVECTOR_LOOKUP,
   METRIC_LEVELS,
   MAX_SEVERITY,
-  MAX_COMPOSED,
-  NO_IMPACT_METRICS,
   STEP,
-  EPSILON,
 } from "./macrovector-scores";
 
 // =============================================================================

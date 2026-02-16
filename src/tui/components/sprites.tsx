@@ -1,5 +1,5 @@
 import { RGBA } from "@opentui/core";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 
 // Global animation tick - shared by all spinners to avoid excessive re-renders
 let globalTick = 0;

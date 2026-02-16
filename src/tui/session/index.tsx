@@ -49,8 +49,6 @@ import type {
   EndpointStatus,
   VerifiedVuln,
   Credential,
-  Hypothesis,
-  Evidence,
 } from "../components/operator-dashboard/types";
 import ToolsPanel from "../components/tools-panel";
 import type { ToolsetState } from "../../core/toolset";
@@ -62,11 +60,7 @@ import { adaptSwarmStateForOperator } from "./swarm-to-operator-adapter";
 import { Header } from "../components/chat/header";
 import { MessageList } from "../components/chat/message-list";
 import { InputArea } from "../components/chat/input-area";
-import {
-  Sidebar,
-  useSidebarState,
-  type SidebarState,
-} from "../components/chat/sidebar";
+import { Sidebar, useSidebarState } from "../components/chat/sidebar";
 
 // ============================================
 // Types

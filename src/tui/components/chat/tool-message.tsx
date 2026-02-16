@@ -16,7 +16,7 @@ import {
   getResultSummary,
   type ResultSummary,
 } from "../shared/result-registry";
-import { isToolMessage, type ToolDisplayMessage } from "../shared/type-guards";
+import { isToolMessage } from "../shared/type-guards";
 import type { DisplayMessage } from "../agent-display";
 
 // Tool category icons

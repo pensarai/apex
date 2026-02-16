@@ -3,8 +3,6 @@ import { RGBA } from "@opentui/core";
 import { type ModelInfo } from "../../../core/ai";
 import { useAgent } from "../../context/agent";
 import { useEffect, useState } from "react";
-import type { Config } from "../../../core/config/config";
-import { config } from "../../../core/config";
 import Input from "../input";
 import { AVAILABLE_MODELS } from "../../../core/ai/models";
 import { useRoute } from "../../context/route";

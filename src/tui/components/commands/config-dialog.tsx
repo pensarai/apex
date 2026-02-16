@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import AlertDialog from "../alert-dialog";
 import { config } from "../../../core/config";
 import type { Config } from "../../../core/config/config";
