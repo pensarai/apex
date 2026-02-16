@@ -1,6 +1,5 @@
 import { useAgent } from "../context/agent";
 import { AgentStatus } from "./footer";
-import { SpinnerDots } from "./sprites";
 
 export default function Header() {
   const { thinking } = useAgent();

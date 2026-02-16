@@ -1,4 +1,4 @@
-import { RGBA, StyledText } from "@opentui/core";
+import { RGBA } from "@opentui/core";
 import { SpinnerDots } from "./sprites";
 import { useState, memo } from "react";
 import type { Message } from "../../core/messages/types";

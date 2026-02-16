@@ -1,10 +1,9 @@
-import { hasToolCall, stepCountIs, tool } from "ai";
+import { stepCountIs, tool } from "ai";
 import { z } from "zod";
 import { streamResponse, type AIModel } from "../../ai";
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "fs";
 import { join } from "path";
-import type { ComparisonResult, ActualFinding } from "./types";
-import { detectOSAndEnhancePrompt } from "../utils";
+import type { ComparisonResult } from "./types";
 
 const COMPARISON_SYSTEM_PROMPT = `
 You are a security findings comparison agent. Your role is to compare expected security findings against actual findings from a penetration test and provide an accurate assessment.

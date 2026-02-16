@@ -7,7 +7,6 @@ import {
   extractPACEFlags,
   detectMultipleFlagsInArtifacts,
 } from "../flag-detector";
-import { runComparisonAgent } from "../comparisonAgent";
 import { runStreamlinedPentest } from "../../thoroughPentestAgent/streamlined";
 import type { BenchmarkResults } from "../types";
 import type {

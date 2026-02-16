@@ -9,7 +9,7 @@ import { useState } from "react";
 import { useKeyboard } from "@opentui/react";
 import { colors, getTierColor } from "../../theme";
 import { getToolSummary } from "./tool-registry";
-import type { PendingApproval, PermissionTier } from "../../../core/operator";
+import type { PendingApproval } from "../../../core/operator";
 
 interface InlineApprovalPromptProps {
   approval: PendingApproval;

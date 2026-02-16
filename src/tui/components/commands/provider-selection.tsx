@@ -1,6 +1,6 @@
 import { useKeyboard } from "@opentui/react";
 import { RGBA } from "@opentui/core";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRoute } from "../../context/route";
 import { useConfig } from "../../context/config";
 import {

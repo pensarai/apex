@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useKeyboard } from "@opentui/react";
 import { RGBA } from "@opentui/core";
 import { useRoute } from "../../context/route";
 import { useAgent } from "../../context/agent";
@@ -10,10 +9,7 @@ import SwarmDashboard, {
 import DriverDashboard from "../driver-dashboard";
 import OperatorDashboard from "../operator-dashboard";
 import { Session } from "../../../core/session";
-import {
-  loadSessionState,
-  type UISubagent,
-} from "../../../core/session/loader";
+import { loadSessionState } from "../../../core/session/loader";
 import {
   runStreamlinedPentest,
   type StreamlinedPentestProgress,

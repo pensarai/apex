@@ -9,7 +9,6 @@ import {
   useState,
   useCallback,
   useRef,
-  useEffect,
   type ReactNode,
 } from "react";
 import { RGBA, type Renderable } from "@opentui/core";

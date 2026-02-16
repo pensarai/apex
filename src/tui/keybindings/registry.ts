@@ -1,5 +1,5 @@
 import { useRenderer } from "@opentui/react";
-import { useRoute, type Route } from "../context/route";
+import { useRoute } from "../context/route";
 import { useFocus } from "../context/focus";
 import { useInput } from "../context/input";
 

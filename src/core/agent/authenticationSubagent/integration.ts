@@ -10,7 +10,6 @@ import type { Session } from "../../session";
 import { runAuthenticationSubagent } from "./agent";
 import { AuthStateManager } from "./authStateManager";
 import type {
-  AuthenticationSubagentInput,
   AuthenticationSubagentResult,
   AuthCredentials,
   AuthFlowHints,

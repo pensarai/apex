@@ -10,7 +10,7 @@ import { colors } from "../../theme";
 import { AsciiSpinner } from "./ascii-spinner";
 import { getToolSummary } from "./tool-registry";
 import { getResultSummary, type ResultSummary } from "./result-registry";
-import { isToolMessage, type ToolDisplayMessage } from "./type-guards";
+import { isToolMessage } from "./type-guards";
 import type { DisplayMessage } from "../agent-display";
 
 interface ToolRendererProps {
