@@ -32,10 +32,24 @@ export {
 } from "./agent";
 
 // State management
-export { AuthStateManager, parseJWT, getJWTExpiration, buildAuthHeaders, formatCookies, extractCookiesFromHeaders } from "./authStateManager";
+export {
+  AuthStateManager,
+  parseJWT,
+  getJWTExpiration,
+  buildAuthHeaders,
+  formatCookies,
+  extractCookiesFromHeaders,
+} from "./authStateManager";
 
 // Tools factory
-export { createAuthenticationTools, type AuthToolsConfig, type HttpRequestOpts, type HttpRequestResult, type BrowserTools, type AuthenticationTools } from "./tools";
+export {
+  createAuthenticationTools,
+  type AuthToolsConfig,
+  type HttpRequestOpts,
+  type HttpRequestResult,
+  type BrowserTools,
+  type AuthenticationTools,
+} from "./tools";
 
 // Types
 export type {
@@ -84,7 +98,13 @@ export type {
 } from "./types";
 
 // Constants
-export { AUTH_METHODS, TOKEN_TYPES, AUTH_STATUSES, ROLE_LEVELS, AUTH_BARRIER_TYPES } from "./types";
+export {
+  AUTH_METHODS,
+  TOKEN_TYPES,
+  AUTH_STATUSES,
+  ROLE_LEVELS,
+  AUTH_BARRIER_TYPES,
+} from "./types";
 
 // Zod schemas (for consumers who need validation)
 export {

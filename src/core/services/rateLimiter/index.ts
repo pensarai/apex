@@ -1,7 +1,7 @@
-import type { RateLimiterConfig } from './types';
+import type { RateLimiterConfig } from "./types";
 
 function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**

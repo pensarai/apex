@@ -37,7 +37,7 @@ interface HITLWizardProps {
   initialAuthInstructions?: string;
   initialHosts?: string[];
   initialStrict?: boolean;
-  initialHeadersMode?: 'none' | 'default' | 'custom';
+  initialHeadersMode?: "none" | "default" | "custom";
   initialCustomHeaders?: Record<string, string>;
   initialModel?: string;
 }
@@ -103,7 +103,9 @@ export default function HITLWizard(props: HITLWizardProps) {
       }
     }
     // Combine with any explicitly provided hosts (avoiding duplicates)
-    const combinedHosts = [...new Set([...hostsFromTarget, ...(initialHosts || [])])];
+    const combinedHosts = [
+      ...new Set([...hostsFromTarget, ...(initialHosts || [])]),
+    ];
 
     return {
       name: initialName || generateRandomName(),
@@ -125,7 +127,9 @@ export default function HITLWizard(props: HITLWizardProps) {
   // Model picker state
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
   const [modelSearchQuery, setModelSearchQuery] = useState("");
-  const [expandedProviders, setExpandedProviders] = useState<Set<string>>(new Set(["anthropic"]));
+  const [expandedProviders, setExpandedProviders] = useState<Set<string>>(
+    new Set(["anthropic"]),
+  );
 
   // Load available models
   useEffect(() => {
@@ -135,14 +139,14 @@ export default function HITLWizard(props: HITLWizardProps) {
       if (models.length > 0) {
         // If initialModel was provided, try to set it
         if (initialModel) {
-          const targetModel = models.find(m => m.id === initialModel);
+          const targetModel = models.find((m) => m.id === initialModel);
           if (targetModel) {
             setModel(targetModel);
             setExpandedProviders(new Set([targetModel.provider]));
             return;
           }
         }
-        const currentModel = models.find(m => m.id === model.id) || models[0];
+        const currentModel = models.find((m) => m.id === model.id) || models[0];
         if (currentModel) {
           setExpandedProviders(new Set([currentModel.provider]));
         }
@@ -155,7 +159,11 @@ export default function HITLWizard(props: HITLWizardProps) {
     const groups: Record<string, ModelInfo[]> = {};
     const query = modelSearchQuery.toLowerCase().trim();
     for (const m of availableModels) {
-      if (query && !m.name.toLowerCase().includes(query) && !m.id.toLowerCase().includes(query)) {
+      if (
+        query &&
+        !m.name.toLowerCase().includes(query) &&
+        !m.id.toLowerCase().includes(query)
+      ) {
         continue;
       }
       if (!groups[m.provider]) groups[m.provider] = [];
@@ -339,8 +347,11 @@ export default function HITLWizard(props: HITLWizardProps) {
 
         // Model selection (field 4)
         if (actualField === 4 && visibleModels.length > 0) {
-          const currentIdx = visibleModels.findIndex(m => m.id === model.id);
-          const newIdx = Math.max(0, Math.min(visibleModels.length - 1, currentIdx + delta));
+          const currentIdx = visibleModels.findIndex((m) => m.id === model.id);
+          const newIdx = Math.max(
+            0,
+            Math.min(visibleModels.length - 1, currentIdx + delta),
+          );
           const newModel = visibleModels[newIdx];
           if (newModel) setModel(newModel);
           return;
@@ -353,7 +364,10 @@ export default function HITLWizard(props: HITLWizardProps) {
         if (actualField === 2 && hostInput.trim()) {
           setState((prev) => ({
             ...prev,
-            scope: { ...prev.scope, allowedHosts: [...prev.scope.allowedHosts, hostInput.trim()] },
+            scope: {
+              ...prev.scope,
+              allowedHosts: [...prev.scope.allowedHosts, hostInput.trim()],
+            },
           }));
           setHostInput("");
           return;
@@ -377,11 +391,24 @@ export default function HITLWizard(props: HITLWizardProps) {
     }
   });
 
-  const modeColor = state.mode === "plan" ? yellowText : state.mode === "auto" ? greenBullet : blueText;
+  const modeColor =
+    state.mode === "plan"
+      ? yellowText
+      : state.mode === "auto"
+        ? greenBullet
+        : blueText;
 
   if (currentStep === "creating") {
     return (
-      <box flexDirection="column" width="100%" height="100%" alignItems="center" justifyContent="center" flexGrow={1} gap={2}>
+      <box
+        flexDirection="column"
+        width="100%"
+        height="100%"
+        alignItems="center"
+        justifyContent="center"
+        flexGrow={1}
+        gap={2}
+      >
         <SpinnerDots label="Creating HITL session..." fg="green" />
         <text fg={dimText}>Target: {state.target}</text>
         <text fg={modeColor}>Mode: {OPERATOR_MODES[state.mode].name}</text>
@@ -393,7 +420,9 @@ export default function HITLWizard(props: HITLWizardProps) {
     return (
       <box width="100%" flexDirection="column" gap={2} paddingLeft={4}>
         <text fg={creamText}>Interactive Pentesting (Operator Mode)</text>
-        <text fg={dimText}>Human-in-the-Loop - Approval gates for risky actions</text>
+        <text fg={dimText}>
+          Human-in-the-Loop - Approval gates for risky actions
+        </text>
 
         {error && <text fg="red">Error: {error}</text>}
 
@@ -457,7 +486,9 @@ export default function HITLWizard(props: HITLWizardProps) {
 
       {/* Mode Selection - Field 0 */}
       <box flexDirection="row" gap={1}>
-        <text fg={actualField === 0 ? greenBullet : dimText}>{actualField === 0 ? "▸" : " "}</text>
+        <text fg={actualField === 0 ? greenBullet : dimText}>
+          {actualField === 0 ? "▸" : " "}
+        </text>
         <text fg={actualField === 0 ? creamText : dimText}>Mode:</text>
         <text fg={modeColor}>{modeDef.name}</text>
         <text fg={dimText}>- {modeDef.description}</text>
@@ -467,9 +498,15 @@ export default function HITLWizard(props: HITLWizardProps) {
       {/* Auto-approve Tier - Field 1 (hidden in plan mode) */}
       {state.mode !== "plan" && (
         <box flexDirection="row" gap={1}>
-          <text fg={actualField === 1 ? greenBullet : dimText}>{actualField === 1 ? "▸" : " "}</text>
-          <text fg={actualField === 1 ? creamText : dimText}>Auto-approve:</text>
-          <text fg={greenBullet}>T{state.autoApproveTier} - {tierDef.name}</text>
+          <text fg={actualField === 1 ? greenBullet : dimText}>
+            {actualField === 1 ? "▸" : " "}
+          </text>
+          <text fg={actualField === 1 ? creamText : dimText}>
+            Auto-approve:
+          </text>
+          <text fg={greenBullet}>
+            T{state.autoApproveTier} - {tierDef.name}
+          </text>
           <text fg={dimText}>({tierDef.examples.slice(0, 2).join(", ")})</text>
           {actualField === 1 && <text fg={dimText}>(←/→)</text>}
         </box>
@@ -477,7 +514,9 @@ export default function HITLWizard(props: HITLWizardProps) {
 
       {/* Add Allowed Host - Field 2 */}
       <box flexDirection="row" gap={1}>
-        <text fg={actualField === 2 ? greenBullet : dimText}>{actualField === 2 ? "▸" : " "}</text>
+        <text fg={actualField === 2 ? greenBullet : dimText}>
+          {actualField === 2 ? "▸" : " "}
+        </text>
         <text fg={actualField === 2 ? creamText : dimText}>Add host:</text>
         {actualField === 2 ? (
           <input
@@ -499,14 +538,19 @@ export default function HITLWizard(props: HITLWizardProps) {
       {state.scope.allowedHosts.length > 0 && (
         <box flexDirection="column" paddingLeft={3}>
           {state.scope.allowedHosts.map((h, i) => (
-            <text key={i} fg={dimText}>  • {h}</text>
+            <text key={i} fg={dimText}>
+              {" "}
+              • {h}
+            </text>
           ))}
         </box>
       )}
 
       {/* Strict Scope - Field 3 */}
       <box flexDirection="row" gap={1}>
-        <text fg={actualField === 3 ? greenBullet : dimText}>{actualField === 3 ? "▸" : " "}</text>
+        <text fg={actualField === 3 ? greenBullet : dimText}>
+          {actualField === 3 ? "▸" : " "}
+        </text>
         <text fg={actualField === 3 ? creamText : dimText}>Strict scope:</text>
         <text fg={state.scope.strictScope ? greenBullet : dimText}>
           {state.scope.strictScope ? "Enabled" : "Disabled"}
@@ -516,7 +560,9 @@ export default function HITLWizard(props: HITLWizardProps) {
 
       {/* Model Selection - Field 4 */}
       <box flexDirection="row" gap={1}>
-        <text fg={actualField === 4 ? greenBullet : dimText}>{actualField === 4 ? "▸" : " "}</text>
+        <text fg={actualField === 4 ? greenBullet : dimText}>
+          {actualField === 4 ? "▸" : " "}
+        </text>
         <text fg={actualField === 4 ? creamText : dimText}>Model:</text>
         <text fg={greenBullet}>{model.name}</text>
         {actualField === 4 && <text fg={dimText}>(←/→)</text>}
@@ -524,13 +570,13 @@ export default function HITLWizard(props: HITLWizardProps) {
 
       {/* Submit Button - Field 5 */}
       <box flexDirection="row" gap={1} marginTop={1}>
-        <text fg={actualField === 5 ? greenBullet : dimText}>{actualField === 5 ? "▸" : " "}</text>
+        <text fg={actualField === 5 ? greenBullet : dimText}>
+          {actualField === 5 ? "▸" : " "}
+        </text>
         <text fg={actualField === 5 ? greenBullet : dimText}>
           {actualField === 5 ? "[" : " "}
         </text>
-        <text fg={actualField === 5 ? creamText : dimText}>
-          Start Session
-        </text>
+        <text fg={actualField === 5 ? creamText : dimText}>Start Session</text>
         <text fg={actualField === 5 ? greenBullet : dimText}>
           {actualField === 5 ? "]" : " "}
         </text>
@@ -538,7 +584,9 @@ export default function HITLWizard(props: HITLWizardProps) {
 
       {/* Help text */}
       <box flexDirection="column" gap={0} marginTop={2}>
-        <text fg={dimText}>↑/↓ navigate | ←/→ change value | Enter select | ESC back</text>
+        <text fg={dimText}>
+          ↑/↓ navigate | ←/→ change value | Enter select | ESC back
+        </text>
       </box>
     </box>
   );

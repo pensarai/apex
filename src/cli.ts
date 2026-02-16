@@ -33,7 +33,7 @@ if (command === "version" || command === "--version" || command === "-v") {
   console.log(`v${version}`);
 } else if (command === "help" || command === "--help" || command === "-h") {
   showHelp();
-}else if (args.length === 0) {
+} else if (args.length === 0) {
   // No command specified, run the TUI
   await import("./tui/index.tsx");
 } else {

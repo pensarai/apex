@@ -36,7 +36,7 @@ export interface PentestTarget {
  * Helper function to load attack surface results from a session
  */
 export function loadAttackSurfaceResults(
-  resultsPath: string
+  resultsPath: string,
 ): AttackSurfaceAnalysisResults {
   const data = readFileSync(resultsPath, "utf-8");
   return JSON.parse(data) as AttackSurfaceAnalysisResults;
@@ -47,7 +47,7 @@ export function loadAttackSurfaceResults(
  * Useful for orchestrator to spawn sub-agents
  */
 export function extractPentestTargets(
-  results: AttackSurfaceAnalysisResults
+  results: AttackSurfaceAnalysisResults,
 ): Array<{ target: string; objective: string }> {
   return results.targets.map((target) => ({
     target: target.target,
@@ -92,7 +92,7 @@ export function parseKeyFinding(finding: string): {
  * Get high priority targets
  */
 export function getHighPriorityKeywords(
-  results: AttackSurfaceAnalysisResults
+  results: AttackSurfaceAnalysisResults,
 ): string[] {
   return results.keyFindings
     .filter((f) => f.startsWith("[CRITICAL]") || f.startsWith("[HIGH]"))

@@ -36,15 +36,15 @@ export interface ExtractJavascriptEndpointsResult {
  * - URL assignments
  */
 export async function extractJavascriptEndpoints(
-  params: ExtractJavascriptEndpointsParams
+  params: ExtractJavascriptEndpointsParams,
 ): Promise<ExtractJavascriptEndpointsResult> {
   try {
     const { url, sessionCookie, includeExternalJS = true } = params;
 
     // Fetch the page
-    const fetchRequest: RequestInit = { method: 'GET' };
+    const fetchRequest: RequestInit = { method: "GET" };
     if (sessionCookie) {
-      fetchRequest.headers = { 'Cookie': sessionCookie };
+      fetchRequest.headers = { Cookie: sessionCookie };
     }
 
     const pageResult = await fetch(url, fetchRequest);
@@ -85,11 +85,11 @@ export async function extractJavascriptEndpoints(
         const patternCopy = new RegExp(pattern.source, pattern.flags);
         while ((match = patternCopy.exec(scriptContent)) !== null) {
           const endpoint = match[1] || match[2];
-          if (endpoint && endpoint.startsWith('/')) {
+          if (endpoint && endpoint.startsWith("/")) {
             endpoints.push({
               endpoint,
-              pattern: pattern.source.substring(0, 30) + '...',
-              source: 'inline-script'
+              pattern: pattern.source.substring(0, 30) + "...",
+              source: "inline-script",
             });
           }
         }
@@ -106,20 +106,23 @@ export async function extractJavascriptEndpoints(
     }
 
     // Deduplicate endpoints
-    const uniqueEndpoints = Array.from(new Set(endpoints.map(e => e.endpoint)))
-      .map(ep => endpoints.find(e => e.endpoint === ep)!);
+    const uniqueEndpoints = Array.from(
+      new Set(endpoints.map((e) => e.endpoint)),
+    ).map((ep) => endpoints.find((e) => e.endpoint === ep)!);
 
     // Parameterize endpoints (replace numeric IDs with {id})
-    const parameterizedEndpoints = uniqueEndpoints.map(e => ({
+    const parameterizedEndpoints = uniqueEndpoints.map((e) => ({
       ...e,
-      pattern: e.endpoint.replace(/\/\d+/g, '/{id}')
+      pattern: e.endpoint.replace(/\/\d+/g, "/{id}"),
     }));
 
     return {
       success: true,
       url,
       endpoints: uniqueEndpoints,
-      parameterizedPatterns: Array.from(new Set(parameterizedEndpoints.map(e => e.pattern))),
+      parameterizedPatterns: Array.from(
+        new Set(parameterizedEndpoints.map((e) => e.pattern)),
+      ),
       totalAjaxCalls: endpoints.length,
       externalJSFiles: jsFiles,
       filesAnalyzed: 1 + jsFiles.length,

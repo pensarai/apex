@@ -43,10 +43,12 @@ export default function ToolsPanel({
 }: ToolsPanelProps) {
   const dimensions = useTerminalDimensions();
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [categoryFilter, setCategoryFilter] = useState<ToolCategory | null>(null);
+  const [categoryFilter, setCategoryFilter] = useState<ToolCategory | null>(
+    null,
+  );
   const [showDetail, setShowDetail] = useState(false);
   const [toolsetState, setToolsetState] = useState<ToolsetState | null>(
-    session.config?.toolsetState || null
+    session.config?.toolsetState || null,
   );
   const scrollboxRef = useRef<ScrollBoxRenderable | null>(null);
 
@@ -79,7 +81,7 @@ export default function ToolsPanel({
     const selectedTool = filteredTools[selectedIndex];
     if (!selectedTool) return;
 
-    const target = children.find(child => child.id === selectedTool.id);
+    const target = children.find((child) => child.id === selectedTool.id);
     if (!target) return;
 
     // Calculate target's visual position relative to the scroll container
@@ -102,7 +104,7 @@ export default function ToolsPanel({
       if (!toolsetState) return true;
       return toolsetState.enabledTools[toolId] ?? true;
     },
-    [toolsetState]
+    [toolsetState],
   );
 
   // Toggle a tool
@@ -135,7 +137,7 @@ export default function ToolsPanel({
         console.error("Failed to toggle tool:", e);
       }
     },
-    [toolsetState, isToolEnabled, session.id, onToolsetChange]
+    [toolsetState, isToolEnabled, session.id, onToolsetChange],
   );
 
   // Keyboard handling
@@ -161,7 +163,7 @@ export default function ToolsPanel({
       case "k":
         evt.preventDefault();
         setSelectedIndex((prev) =>
-          prev > 0 ? prev - 1 : filteredTools.length - 1
+          prev > 0 ? prev - 1 : filteredTools.length - 1,
         );
         break;
 
@@ -169,7 +171,7 @@ export default function ToolsPanel({
       case "j":
         evt.preventDefault();
         setSelectedIndex((prev) =>
-          prev < filteredTools.length - 1 ? prev + 1 : 0
+          prev < filteredTools.length - 1 ? prev + 1 : 0,
         );
         break;
 
@@ -257,12 +259,10 @@ export default function ToolsPanel({
         >
           {/* Detail Header */}
           <box width="100%" padding={1} flexDirection="row">
-            <text fg={greenAccent}>
-              {selectedTool.name}
-            </text>
-            <text fg={dimText}>
-              {`  (${getCategoryDisplayName(selectedTool.category)})`}
-            </text>
+            <text fg={greenAccent}>{selectedTool.name}</text>
+            <text
+              fg={dimText}
+            >{`  (${getCategoryDisplayName(selectedTool.category)})`}</text>
           </box>
 
           {/* Separator */}
@@ -277,7 +277,7 @@ export default function ToolsPanel({
               <text fg={white}>{selectedTool.id}</text>
             </box>
             <box flexDirection="row">
-              <text fg={dimText}>Status:  </text>
+              <text fg={dimText}>Status: </text>
               <text fg={isToolEnabled(selectedTool.id) ? greenAccent : dimText}>
                 {isToolEnabled(selectedTool.id) ? "Enabled" : "Disabled"}
               </text>
@@ -295,9 +295,7 @@ export default function ToolsPanel({
 
           {/* Detail Footer */}
           <box width="100%" padding={1} flexDirection="row">
-            <text fg={dimText}>
-              [space] toggle  [enter/esc] back
-            </text>
+            <text fg={dimText}>[space] toggle [enter/esc] back</text>
           </box>
         </box>
       </box>
@@ -326,12 +324,8 @@ export default function ToolsPanel({
       >
         {/* Header */}
         <box width="100%" padding={1} flexDirection="row">
-          <text fg={greenAccent}>
-            {"Tools Panel".padEnd(panelWidth - 22)}
-          </text>
-          <text fg={dimText}>
-            {`${enabled}/${total} enabled`}
-          </text>
+          <text fg={greenAccent}>{"Tools Panel".padEnd(panelWidth - 22)}</text>
+          <text fg={dimText}>{`${enabled}/${total} enabled`}</text>
         </box>
 
         {/* Separator */}
@@ -360,7 +354,9 @@ export default function ToolsPanel({
         {/* Column Headers */}
         <box width="100%" paddingLeft={2} paddingRight={2} flexDirection="row">
           <text fg={dimText}>
-            {"     Name".padEnd(22)}{"Category".padEnd(12)}{"Description"}
+            {"     Name".padEnd(22)}
+            {"Category".padEnd(12)}
+            {"Description"}
           </text>
         </box>
 
@@ -383,7 +379,9 @@ export default function ToolsPanel({
             const isEnabled = isToolEnabled(tool.id);
             const checkbox = isEnabled ? "[x]" : "[ ]";
             const name = tool.name.padEnd(18).slice(0, 18);
-            const cat = getCategoryDisplayName(tool.category).slice(0, 10).padEnd(12);
+            const cat = getCategoryDisplayName(tool.category)
+              .slice(0, 10)
+              .padEnd(12);
             const desc = tool.description;
 
             return (
@@ -395,18 +393,10 @@ export default function ToolsPanel({
                 flexDirection="row"
                 paddingLeft={1}
               >
-                <text fg={isSelected ? white : dimText}>
-                  {checkbox}
-                </text>
-                <text fg={isEnabled ? greenAccent : dimText}>
-                  {` ${name}`}
-                </text>
-                <text fg={dimText}>
-                  {cat}
-                </text>
-                <text fg={isSelected ? white : dimText}>
-                  {desc}
-                </text>
+                <text fg={isSelected ? white : dimText}>{checkbox}</text>
+                <text fg={isEnabled ? greenAccent : dimText}>{` ${name}`}</text>
+                <text fg={dimText}>{cat}</text>
+                <text fg={isSelected ? white : dimText}>{desc}</text>
               </box>
             );
           })}
@@ -420,7 +410,8 @@ export default function ToolsPanel({
         {/* Footer */}
         <box width="100%" padding={1} flexDirection="row">
           <text fg={dimText}>
-            [j/k] navigate  [space] toggle  [enter/v] details  [0-5] filter  [esc] close
+            [j/k] navigate [space] toggle [enter/v] details [0-5] filter [esc]
+            close
           </text>
         </box>
       </box>

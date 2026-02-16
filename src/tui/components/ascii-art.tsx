@@ -26,7 +26,7 @@ const ASCII_CHARS = ASCII_SETS.medium; // Using simpler set for clearer output
 export async function convertImageToAscii(
   path: string,
   width: number,
-  invert: boolean = false
+  invert: boolean = false,
 ): Promise<string[]> {
   // Convert to grayscale and get pixel data
   const image = await sharp(path, {
@@ -54,7 +54,7 @@ export async function convertImageToAscii(
 
       // Map brightness to ASCII character
       const charIndex = Math.floor(
-        (brightness / 255) * (ASCII_CHARS.length - 1)
+        (brightness / 255) * (ASCII_CHARS.length - 1),
       );
       line += ASCII_CHARS[charIndex];
     }
@@ -80,7 +80,7 @@ export async function convertImageToColoredAscii(
   scale: number = 1.0,
   maxWidth?: number,
   aspectRatio: number = 0.5,
-  invert: boolean = false
+  invert: boolean = false,
 ): Promise<{ char: string; r: number; g: number; b: number }[][]> {
   // First, get the original image dimensions
   const metadata = await sharp(input, { density: 300 }).metadata();
@@ -162,7 +162,7 @@ export async function convertImageToColoredAscii(
       }
 
       const charIndex = Math.floor(
-        (brightness / 255) * (ASCII_CHARS.length - 1)
+        (brightness / 255) * (ASCII_CHARS.length - 1),
       );
 
       row.push({
@@ -204,7 +204,7 @@ export function ColoredAsciiArt({ ascii, title }: ColoredAsciiArtProps) {
       height="100%"
       width="100%"
       // flexGrow={1}
-      backgroundColor={'transparent'}
+      backgroundColor={"transparent"}
     >
       {title && <text>{title}</text>}
       {ascii.map((row, y) => (

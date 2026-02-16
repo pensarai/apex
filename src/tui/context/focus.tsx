@@ -1,4 +1,10 @@
-import { createContext, useContext, useRef, useCallback, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useRef,
+  useCallback,
+  type ReactNode,
+} from "react";
 import type { PromptInputRef } from "../components/shared/prompt-input";
 
 interface FocusContextType {
@@ -28,8 +34,14 @@ export function FocusProvider({ children }: { children: ReactNode }) {
   const focusPrompt = useCallback(() => promptRef.current?.focus(), []);
   const blurPrompt = useCallback(() => promptRef.current?.blur(), []);
   const resetPrompt = useCallback(() => promptRef.current?.reset(), []);
-  const setPromptValue = useCallback((value: string) => promptRef.current?.setValue(value), []);
-  const getPromptValue = useCallback(() => promptRef.current?.getValue() ?? "", []);
+  const setPromptValue = useCallback(
+    (value: string) => promptRef.current?.setValue(value),
+    [],
+  );
+  const getPromptValue = useCallback(
+    () => promptRef.current?.getValue() ?? "",
+    [],
+  );
   const registerPromptRef = useCallback((ref: PromptInputRef | null) => {
     promptRef.current = ref;
   }, []);

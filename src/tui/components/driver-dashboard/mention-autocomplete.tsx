@@ -36,10 +36,11 @@ export default function MentionAutocomplete({
 
     const lowerQuery = query.toLowerCase();
     return endpoints
-      .filter(e =>
-        e.id.toLowerCase().includes(lowerQuery) ||
-        e.url.toLowerCase().includes(lowerQuery) ||
-        e.suggestedObjective.toLowerCase().includes(lowerQuery)
+      .filter(
+        (e) =>
+          e.id.toLowerCase().includes(lowerQuery) ||
+          e.url.toLowerCase().includes(lowerQuery) ||
+          e.suggestedObjective.toLowerCase().includes(lowerQuery),
       )
       .slice(0, 5);
   }, [endpoints, query]);
@@ -51,29 +52,31 @@ export default function MentionAutocomplete({
 
   // Keyboard navigation
   useKeyboard((key) => {
-    if (key.name === 'up') {
-      setSelectedIndex(prev => Math.max(0, prev - 1));
+    if (key.name === "up") {
+      setSelectedIndex((prev) => Math.max(0, prev - 1));
       return;
     }
 
-    if (key.name === 'down') {
-      setSelectedIndex(prev => Math.min(filteredEndpoints.length - 1, prev + 1));
+    if (key.name === "down") {
+      setSelectedIndex((prev) =>
+        Math.min(filteredEndpoints.length - 1, prev + 1),
+      );
       return;
     }
 
-    if (key.name === 'return') {
+    if (key.name === "return") {
       if (filteredEndpoints[selectedIndex]) {
         onSelect(filteredEndpoints[selectedIndex]);
       }
       return;
     }
 
-    if (key.name === 'escape') {
+    if (key.name === "escape") {
       onClose();
       return;
     }
 
-    if (key.name === 'tab') {
+    if (key.name === "tab") {
       if (filteredEndpoints[selectedIndex]) {
         onSelect(filteredEndpoints[selectedIndex]);
       }
@@ -83,12 +86,7 @@ export default function MentionAutocomplete({
 
   if (filteredEndpoints.length === 0) {
     return (
-      <box
-        border
-        borderColor={dimText}
-        backgroundColor={darkBg}
-        padding={1}
-      >
+      <box border borderColor={dimText} backgroundColor={darkBg} padding={1}>
         <text fg={dimText}>No matching endpoints</text>
       </box>
     );
@@ -103,7 +101,9 @@ export default function MentionAutocomplete({
       padding={1}
       gap={0}
     >
-      <text fg={dimText}>Select endpoint (↑↓ to navigate, Enter to select)</text>
+      <text fg={dimText}>
+        Select endpoint (↑↓ to navigate, Enter to select)
+      </text>
 
       {filteredEndpoints.map((endpoint, index) => (
         <MentionItem
@@ -127,15 +127,16 @@ function MentionItem({
   selected: boolean;
 }) {
   // Truncate URL for display
-  const displayUrl = endpoint.url.length > 50
-    ? endpoint.url.substring(0, 47) + '...'
-    : endpoint.url;
+  const displayUrl =
+    endpoint.url.length > 50
+      ? endpoint.url.substring(0, 47) + "..."
+      : endpoint.url;
 
   return (
     <box
       flexDirection="row"
       gap={1}
-      backgroundColor={selected ? greenBullet : 'transparent'}
+      backgroundColor={selected ? greenBullet : "transparent"}
     >
       <text fg={selected ? darkBg : greenBullet}>@{endpoint.id}</text>
       <text fg={selected ? darkBg : creamText}>{displayUrl}</text>

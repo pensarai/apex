@@ -9,34 +9,38 @@
  * - Stream events back to UI
  */
 
-import { EventEmitter } from 'events';
-import type { AIModel } from '../../ai';
-import { type AIAuthConfig } from '../../ai/utils';
-import { Session } from '../../session';
-import type { PentestTarget } from '../attackSurfaceAgent/types';
-import type { VulnerabilityClass } from '../orchestrator/types';
+import { EventEmitter } from "events";
+import type { AIModel } from "../../ai";
+import { type AIAuthConfig } from "../../ai/utils";
+import { Session } from "../../session";
+import type { PentestTarget } from "../attackSurfaceAgent/types";
+import type { VulnerabilityClass } from "../orchestrator/types";
 import {
   runMetaVulnerabilityTestAgent,
   type MetaVulnerabilityTestInput,
-  type MetaVulnerabilityTestResult,
-} from '../metaTestingAgent/metaVulnerabilityTestAgent';
-import type { DisplayMessage } from '../../../tui/components/agent-display';
+} from "../metaTestingAgent/metaVulnerabilityTestAgent";
+import type { DisplayMessage } from "../../../tui/components/agent-display";
 
 /**
  * Status of a driver mode agent
  */
-export type DriverAgentStatus = 'idle' | 'running' | 'paused' | 'completed' | 'failed';
+export type DriverAgentStatus =
+  | "idle"
+  | "running"
+  | "paused"
+  | "completed"
+  | "failed";
 
 /**
  * Events emitted by the driver mode agent
  */
 export interface DriverAgentEvents {
-  'status-change': (status: DriverAgentStatus) => void;
-  'message': (message: DisplayMessage) => void;
-  'tool-call': (message: DisplayMessage) => void;
-  'tool-result': (message: DisplayMessage) => void;
-  'complete': (result: DriverAgentResult) => void;
-  'error': (error: Error) => void;
+  "status-change": (status: DriverAgentStatus) => void;
+  message: (message: DisplayMessage) => void;
+  "tool-call": (message: DisplayMessage) => void;
+  "tool-result": (message: DisplayMessage) => void;
+  complete: (result: DriverAgentResult) => void;
+  error: (error: Error) => void;
 }
 
 /**
@@ -69,7 +73,7 @@ export interface DriverModeAgentConfig {
  * Wraps MetaVulnerabilityTestAgent for interactive use in driver mode.
  */
 export class DriverModeAgent extends EventEmitter {
-  private _status: DriverAgentStatus = 'idle';
+  private _status: DriverAgentStatus = "idle";
   private abortController: AbortController | null = null;
   private pausePromise: Promise<void> | null = null;
   private pauseResolve: (() => void) | null = null;
@@ -102,7 +106,7 @@ export class DriverModeAgent extends EventEmitter {
    */
   private setStatus(status: DriverAgentStatus): void {
     this._status = status;
-    this.emit('status-change', status);
+    this.emit("status-change", status);
   }
 
   /**
@@ -110,25 +114,25 @@ export class DriverModeAgent extends EventEmitter {
    */
   private addMessage(message: DisplayMessage): void {
     this.messages.push(message);
-    this.emit('message', message);
+    this.emit("message", message);
   }
 
   /**
    * Start the agent with a specific target
    */
   async start(target: PentestTarget): Promise<void> {
-    if (this._status === 'running') {
-      throw new Error('Agent is already running');
+    if (this._status === "running") {
+      throw new Error("Agent is already running");
     }
 
     this.currentTarget = target;
-    this.setStatus('running');
+    this.setStatus("running");
     this.abortController = new AbortController();
     this.messages = [];
 
     // Add initial user message showing the target
     this.addMessage({
-      role: 'user',
+      role: "user",
       content: `Testing target: ${target.target}\nObjective: ${target.objective}`,
       createdAt: new Date(),
     });
@@ -137,10 +141,13 @@ export class DriverModeAgent extends EventEmitter {
       const input: MetaVulnerabilityTestInput = {
         target: target.target,
         objective: target.objective,
-        vulnerabilityClass: this.config.vulnerabilityClass || 'generic',
+        vulnerabilityClass: this.config.vulnerabilityClass || "generic",
         authenticationInfo: target.authenticationInfo,
-        authenticationInstructions: this.config.session.config?.authenticationInstructions,
-        outcomeGuidance: this.config.session.config?.outcomeGuidance || Session.DEFAULT_OUTCOME_GUIDANCE,
+        authenticationInstructions:
+          this.config.session.config?.authenticationInstructions,
+        outcomeGuidance:
+          this.config.session.config?.outcomeGuidance ||
+          Session.DEFAULT_OUTCOME_GUIDANCE,
         session: {
           id: this.config.session.id,
           rootPath: this.config.session.rootPath,
@@ -170,16 +177,16 @@ export class DriverModeAgent extends EventEmitter {
           // Add text content
           if (text && text.trim()) {
             const lastMsg = this.messages[this.messages.length - 1];
-            if (lastMsg && lastMsg.role === 'assistant') {
+            if (lastMsg && lastMsg.role === "assistant") {
               // Append to existing assistant message
               this.messages[this.messages.length - 1] = {
                 ...lastMsg,
-                content: (lastMsg.content || '') + text,
+                content: (lastMsg.content || "") + text,
               };
-              this.emit('message', this.messages[this.messages.length - 1]);
+              this.emit("message", this.messages[this.messages.length - 1]);
             } else {
               this.addMessage({
-                role: 'assistant',
+                role: "assistant",
                 content: text,
                 createdAt: new Date(),
               });
@@ -189,14 +196,16 @@ export class DriverModeAgent extends EventEmitter {
           // Add tool calls
           if (toolCalls && toolCalls.length > 0) {
             for (const tc of toolCalls) {
-              const args = (tc as unknown as { input?: Record<string, unknown> }).input;
+              const args = (
+                tc as unknown as { input?: Record<string, unknown> }
+              ).input;
               const toolDescription =
-                typeof args?.toolCallDescription === 'string'
+                typeof args?.toolCallDescription === "string"
                   ? args.toolCallDescription
                   : tc.toolName;
               this.addMessage({
-                role: 'tool',
-                status: 'pending',
+                role: "tool",
+                status: "pending",
                 toolCallId: tc.toolCallId,
                 toolName: tc.toolName,
                 content: toolDescription,
@@ -210,22 +219,25 @@ export class DriverModeAgent extends EventEmitter {
           if (toolResults && toolResults.length > 0) {
             for (const tr of toolResults) {
               const msgIdx = this.messages.findIndex(
-                (m) => m.role === 'tool' && m.toolCallId === tr.toolCallId
+                (m) => m.role === "tool" && m.toolCallId === tr.toolCallId,
               );
               if (msgIdx !== -1) {
-                const existingMsg = this.messages[msgIdx] as DisplayMessage & { toolName?: string; toolCallId?: string };
+                const existingMsg = this.messages[msgIdx] as DisplayMessage & {
+                  toolName?: string;
+                  toolCallId?: string;
+                };
                 const description =
-                  typeof existingMsg.content === 'string' &&
+                  typeof existingMsg.content === "string" &&
                   existingMsg.content !== existingMsg.toolName
                     ? existingMsg.content
-                    : existingMsg.toolName || 'tool';
+                    : existingMsg.toolName || "tool";
                 this.messages[msgIdx] = {
                   ...existingMsg,
-                  status: 'completed',
+                  status: "completed",
                   content: `✓ ${description}`,
                   result: (tr as unknown as { output?: unknown }).output,
                 };
-                this.emit('message', this.messages[msgIdx]);
+                this.emit("message", this.messages[msgIdx]);
               }
             }
           }
@@ -235,7 +247,7 @@ export class DriverModeAgent extends EventEmitter {
             const injected = this.userInjectedMessages.shift();
             if (injected) {
               this.addMessage({
-                role: 'user',
+                role: "user",
                 content: `[User Instruction] ${injected}`,
                 createdAt: new Date(),
               });
@@ -244,8 +256,8 @@ export class DriverModeAgent extends EventEmitter {
         },
       });
 
-      if (this._status !== 'paused') {
-        this.setStatus('completed');
+      if (this._status !== "paused") {
+        this.setStatus("completed");
         const agentResult: DriverAgentResult = {
           vulnerabilitiesFound: result.vulnerabilitiesFound,
           findingsCount: result.findingsCount,
@@ -254,17 +266,20 @@ export class DriverModeAgent extends EventEmitter {
           summary: result.summary,
           error: result.error,
         };
-        this.emit('complete', agentResult);
+        this.emit("complete", agentResult);
       }
     } catch (error) {
       if (this.abortController?.signal.aborted) {
         // Agent was stopped intentionally
-        if (this._status !== 'paused') {
-          this.setStatus('completed');
+        if (this._status !== "paused") {
+          this.setStatus("completed");
         }
       } else {
-        this.setStatus('failed');
-        this.emit('error', error instanceof Error ? error : new Error(String(error)));
+        this.setStatus("failed");
+        this.emit(
+          "error",
+          error instanceof Error ? error : new Error(String(error)),
+        );
       }
     }
   }
@@ -274,21 +289,21 @@ export class DriverModeAgent extends EventEmitter {
    * The message will be processed at the next step
    */
   async injectUserMessage(message: string): Promise<void> {
-    if (this._status !== 'running' && this._status !== 'paused') {
-      throw new Error('Cannot inject message when agent is not running');
+    if (this._status !== "running" && this._status !== "paused") {
+      throw new Error("Cannot inject message when agent is not running");
     }
 
     this.userInjectedMessages.push(message);
 
     // Add the user message to display immediately
     this.addMessage({
-      role: 'user',
+      role: "user",
       content: message,
       createdAt: new Date(),
     });
 
     // If paused, resume to process the message
-    if (this._status === 'paused') {
+    if (this._status === "paused") {
       this.resume();
     }
   }
@@ -297,21 +312,21 @@ export class DriverModeAgent extends EventEmitter {
    * Pause execution (can be resumed)
    */
   pause(): void {
-    if (this._status !== 'running') {
+    if (this._status !== "running") {
       return;
     }
 
     this.pausePromise = new Promise((resolve) => {
       this.pauseResolve = resolve;
     });
-    this.setStatus('paused');
+    this.setStatus("paused");
   }
 
   /**
    * Resume after pause
    */
   resume(): void {
-    if (this._status !== 'paused') {
+    if (this._status !== "paused") {
       return;
     }
 
@@ -320,7 +335,7 @@ export class DriverModeAgent extends EventEmitter {
       this.pauseResolve = null;
       this.pausePromise = null;
     }
-    this.setStatus('running');
+    this.setStatus("running");
   }
 
   /**
@@ -333,14 +348,15 @@ export class DriverModeAgent extends EventEmitter {
     if (this.pauseResolve) {
       this.pauseResolve();
     }
-    this.setStatus('completed');
+    this.setStatus("completed");
   }
-
 }
 
 /**
  * Create a new driver mode agent
  */
-export function createDriverModeAgent(config: DriverModeAgentConfig): DriverModeAgent {
+export function createDriverModeAgent(
+  config: DriverModeAgentConfig,
+): DriverModeAgent {
   return new DriverModeAgent(config);
 }

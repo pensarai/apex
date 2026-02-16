@@ -12,26 +12,25 @@ import {
   hasToolCall,
   type StreamTextOnStepFinishCallback,
   type ToolSet,
-} from 'ai';
-import { z } from 'zod';
-import { streamResponse, type AIModel } from '../../ai';
-import { type AIAuthConfig } from '../../ai/utils';
-import { Logger } from '../logger';
-import { Session } from '../../session';
-import { join } from 'path';
-import { existsSync, mkdirSync, writeFileSync } from 'fs';
+} from "ai";
+import { z } from "zod";
+import { streamResponse, type AIModel } from "../../ai";
+import { type AIAuthConfig } from "../../ai/utils";
+import { Logger } from "../logger";
+import { join } from "path";
+import { existsSync, mkdirSync, writeFileSync } from "fs";
 
-import { AuthStateManager } from './authStateManager';
+import { AuthStateManager } from "./authStateManager";
 import {
   createAuthenticationTools,
   type HttpRequestOpts,
   type HttpRequestResult,
   type BrowserTools,
-} from './tools';
+} from "./tools";
 import {
   createBrowserTools,
   disconnectMcpClient,
-} from '../browserTools/playwrightMcp';
+} from "../browserTools/playwrightMcp";
 import {
   AUTH_SUBAGENT_SYSTEM_PROMPT,
   AUTH_DISCOVERY_SYSTEM_PROMPT,
@@ -39,7 +38,7 @@ import {
   buildAuthDiscoveryPrompt,
   CONTEXT_RECOVERY_REMINDER,
   BROWSER_FLOW_GUIDANCE,
-} from './prompts';
+} from "./prompts";
 import type {
   AuthenticationSubagentInput,
   AuthenticationSubagentResult,
@@ -48,7 +47,7 @@ import type {
   AuthDiscoveryEvidence,
   AuthState,
   AuthBarrier,
-} from './types';
+} from "./types";
 
 // =============================================================================
 // Constants
@@ -71,17 +70,17 @@ function isOverloadedError(error: unknown): boolean {
     status?: number;
     statusCode?: number;
   };
-  const message = err?.message?.toLowerCase() || '';
+  const message = err?.message?.toLowerCase() || "";
   const status = err?.status || err?.statusCode;
   return (
     status === 429 ||
     status === 529 ||
     status === 503 ||
-    message.includes('overloaded') ||
-    message.includes('rate limit') ||
-    message.includes('too many requests') ||
-    message.includes('capacity') ||
-    message.includes('temporarily unavailable')
+    message.includes("overloaded") ||
+    message.includes("rate limit") ||
+    message.includes("too many requests") ||
+    message.includes("capacity") ||
+    message.includes("temporarily unavailable")
   );
 }
 
@@ -91,14 +90,14 @@ function isContextTooLongError(error: unknown): boolean {
     status?: number;
     statusCode?: number;
   };
-  const message = err?.message?.toLowerCase() || '';
+  const message = err?.message?.toLowerCase() || "";
   const status = err?.status || err?.statusCode;
   return (
     status === 400 &&
-    (message.includes('too long') ||
-      message.includes('context length') ||
-      message.includes('maximum context') ||
-      message.includes('input is too long'))
+    (message.includes("too long") ||
+      message.includes("context length") ||
+      message.includes("maximum context") ||
+      message.includes("input is too long"))
   );
 }
 
@@ -120,15 +119,15 @@ function saveAgentMessages(
   sessionRootPath: string,
   agentName: string,
   messages: unknown[],
-  metadata?: Record<string, unknown>
+  metadata?: Record<string, unknown>,
 ): string {
-  const subagentsDir = join(sessionRootPath, 'subagents');
+  const subagentsDir = join(sessionRootPath, "subagents");
   if (!existsSync(subagentsDir)) {
     mkdirSync(subagentsDir, { recursive: true });
   }
 
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const sanitizedName = agentName.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const sanitizedName = agentName.toLowerCase().replace(/[^a-z0-9-]/g, "-");
   const filename = `${sanitizedName}-${timestamp}.json`;
   const filepath = join(subagentsDir, filename);
 
@@ -142,8 +141,8 @@ function saveAgentMessages(
         messages,
       },
       null,
-      2
-    )
+      2,
+    ),
   );
 
   return filepath;
@@ -174,7 +173,7 @@ export interface RunAuthenticationSubagentOpts {
  * Uses cognitive loop reasoning pattern for reliable auth handling.
  */
 export async function runAuthenticationSubagent(
-  opts: RunAuthenticationSubagentOpts
+  opts: RunAuthenticationSubagentOpts,
 ): Promise<AuthenticationSubagentResult> {
   const {
     input,
@@ -199,12 +198,12 @@ export async function runAuthenticationSubagent(
         Object.keys(credentials.tokens.customHeaders).length > 0));
 
   // Use verification strategy if tokens are provided, otherwise use the specified strategy or default to "provided"
-  const strategy = hasTokens ? 'verification' : input.strategy || 'provided';
+  const strategy = hasTokens ? "verification" : input.strategy || "provided";
 
   const targetHost = extractHostFromTarget(target);
 
   // Create logger
-  const logger = new Logger(session, 'auth-subagent.log');
+  const logger = new Logger(session, "auth-subagent.log");
 
   logger.info(`Starting AuthenticationSubagent for ${target}`);
   logger.info(`Strategy: ${strategy}`);
@@ -218,11 +217,11 @@ export async function runAuthenticationSubagent(
     targetHost,
     (state) => {
       logger.info(`Auth state changed: ${state.status}`);
-    }
+    },
   );
 
   // Ensure evidence directory exists (for browser screenshots)
-  const evidenceDir = join(session.rootPath, 'evidence');
+  const evidenceDir = join(session.rootPath, "evidence");
   if (!existsSync(evidenceDir)) {
     mkdirSync(evidenceDir, { recursive: true });
   }
@@ -234,11 +233,11 @@ export async function runAuthenticationSubagent(
       browserTools = createBrowserTools(
         target,
         evidenceDir,
-        'auth',
+        "auth",
         logger,
-        abortSignal
+        abortSignal,
       );
-      logger.info('Browser tools enabled for auth subagent');
+      logger.info("Browser tools enabled for auth subagent");
     } catch (error) {
       logger.error(`Failed to create browser tools: ${error}`);
       // Continue without browser tools
@@ -256,7 +255,7 @@ export async function runAuthenticationSubagent(
   });
 
   // Result tracking
-  let authSummary = '';
+  let authSummary = "";
   let detectedBarrier: AuthBarrier | undefined;
   let agentReportedSuccess: boolean | undefined;
 
@@ -272,23 +271,23 @@ Call when:
 
 Provide a clear summary of the authentication outcome.`,
     inputSchema: z.object({
-      success: z.boolean().describe('Whether authentication was successful'),
+      success: z.boolean().describe("Whether authentication was successful"),
       summary: z
         .string()
-        .describe('Summary of authentication process and result'),
+        .describe("Summary of authentication process and result"),
       authBarrier: z
         .object({
           type: z.enum([
-            'captcha',
-            'mfa',
-            'oauth_consent',
-            'rate_limit',
-            'unknown',
+            "captcha",
+            "mfa",
+            "oauth_consent",
+            "rate_limit",
+            "unknown",
           ]),
           details: z.string(),
         })
         .optional()
-        .describe('Auth barrier if one was encountered'),
+        .describe("Auth barrier if one was encountered"),
     }),
     execute: async (result) => {
       authSummary = result.summary;
@@ -297,9 +296,9 @@ Provide a clear summary of the authentication outcome.`,
         detectedBarrier = result.authBarrier;
       }
       logger.info(
-        `Authentication complete: ${result.success ? 'SUCCESS' : 'FAILED'}`
+        `Authentication complete: ${result.success ? "SUCCESS" : "FAILED"}`,
       );
-      return { success: true, message: 'Authentication process completed.' };
+      return { success: true, message: "Authentication process completed." };
     },
   });
 
@@ -318,11 +317,11 @@ Provide a clear summary of the authentication outcome.`,
   let systemPrompt = AUTH_SUBAGENT_SYSTEM_PROMPT;
 
   // Add context recovery reminder
-  systemPrompt += '\n\n' + CONTEXT_RECOVERY_REMINDER;
+  systemPrompt += "\n\n" + CONTEXT_RECOVERY_REMINDER;
 
   // Add browser flow guidance if browser tools enabled
   if (browserTools) {
-    systemPrompt += '\n\n' + BROWSER_FLOW_GUIDANCE;
+    systemPrompt += "\n\n" + BROWSER_FLOW_GUIDANCE;
   }
 
   // Build user prompt
@@ -344,7 +343,7 @@ Provide a clear summary of the authentication outcome.`,
 
     try {
       logger.info(
-        `Running auth agent (attempt ${attempt}/${RETRY_CONFIG.maxRetries})`
+        `Running auth agent (attempt ${attempt}/${RETRY_CONFIG.maxRetries})`,
       );
 
       const streamResult = streamResponse({
@@ -357,28 +356,28 @@ Provide a clear summary of the authentication outcome.`,
           // Track messages for debugging
           if (step.toolCalls?.length > 0 || step.text) {
             messagesRef.current.push({
-              role: 'assistant',
-              content: step.text || '',
+              role: "assistant",
+              content: step.text || "",
               toolCalls: step.toolCalls,
             });
           }
           if (step.toolResults?.length > 0) {
             messagesRef.current.push({
-              role: 'tool',
+              role: "tool",
               content: step.toolResults,
             });
           }
           // Call original onStepFinish if provided
           onStepFinish?.(step);
         },
-        stopWhen: hasToolCall('complete_authentication'),
+        stopWhen: hasToolCall("complete_authentication"),
         abortSignal,
         silent: true,
       });
 
       // Consume stream
       for await (const chunk of streamResult.fullStream) {
-        if (chunk.type === 'error') {
+        if (chunk.type === "error") {
           const error = (chunk as { error?: unknown }).error;
           if (isOverloadedError(error)) {
             throw error;
@@ -386,14 +385,14 @@ Provide a clear summary of the authentication outcome.`,
         }
       }
 
-      logger.info('Authentication agent finished');
+      logger.info("Authentication agent finished");
 
       // Save agent messages
       try {
         const response = await streamResult.response;
         if (response.messages?.length > 0) {
           const sanitizedTarget = target
-            .replace(/[^a-z0-9]/gi, '-')
+            .replace(/[^a-z0-9]/gi, "-")
             .substring(0, 30);
           saveAgentMessages(
             session.rootPath,
@@ -402,8 +401,8 @@ Provide a clear summary of the authentication outcome.`,
             {
               target,
               strategy,
-              success: authStateManager.getState().status === 'active',
-            }
+              success: authStateManager.getState().status === "active",
+            },
           );
         }
       } catch (e) {
@@ -416,7 +415,7 @@ Provide a clear summary of the authentication outcome.`,
       // 1. AuthStateManager has active tokens (HTTP-based auth)
       // 2. Agent explicitly reported success (browser-based auth where cookies are httpOnly)
       const hasActiveTokens =
-        finalState.status === 'active' && finalState.tokens.length > 0;
+        finalState.status === "active" && finalState.tokens.length > 0;
       const success =
         hasActiveTokens || (agentReportedSuccess === true && !detectedBarrier);
 
@@ -452,7 +451,7 @@ Provide a clear summary of the authentication outcome.`,
         const delay = Math.min(
           RETRY_CONFIG.initialDelayMs *
             Math.pow(RETRY_CONFIG.backoffMultiplier, attempt - 1),
-          RETRY_CONFIG.maxDelayMs
+          RETRY_CONFIG.maxDelayMs,
         );
         logger.info(`API overloaded, retrying in ${delay / 1000}s...`);
         await sleep(delay);
@@ -495,7 +494,7 @@ Provide a clear summary of the authentication outcome.`,
   authStateManager.cleanup();
 
   logger.error(
-    `Failed after ${RETRY_CONFIG.maxRetries} attempts: ${lastError}`
+    `Failed after ${RETRY_CONFIG.maxRetries} attempts: ${lastError}`,
   );
   throw new Error(`Max retries exhausted. Last error: ${lastError}`);
 }
@@ -506,15 +505,15 @@ Provide a clear summary of the authentication outcome.`,
 
 function buildDefaultSummary(state: AuthState, target: string): string {
   switch (state.status) {
-    case 'active':
+    case "active":
       return `Successfully authenticated to ${target}. Obtained ${state.tokens.length} token(s).`;
-    case 'expired':
+    case "expired":
       return `Authentication session for ${target} has expired.`;
-    case 'failed':
+    case "failed":
       return `Authentication failed for ${target}.`;
-    case 'authenticating':
+    case "authenticating":
       return `Authentication in progress for ${target}.`;
-    case 'pending':
+    case "pending":
     default:
       return `Authentication pending for ${target}.`;
   }
@@ -545,7 +544,7 @@ export interface DiscoverAuthenticationOpts {
  * and does NOT attempt to authenticate. It only performs reconnaissance.
  */
 export async function discoverAuthentication(
-  opts: DiscoverAuthenticationOpts
+  opts: DiscoverAuthenticationOpts,
 ): Promise<AuthDiscoveryResult> {
   const {
     input,
@@ -560,14 +559,14 @@ export async function discoverAuthentication(
   const targetHost = extractHostFromTarget(target);
 
   // Create logger
-  const logger = new Logger(session, 'auth-discovery.log');
+  const logger = new Logger(session, "auth-discovery.log");
   logger.info(`Starting auth discovery for ${target}`);
 
   // Create auth state manager (for detect_auth_scheme tool)
   const authStateManager = new AuthStateManager(session, targetHost);
 
   // Create evidence directory for browser screenshots
-  const evidenceDir = join(session.rootPath, 'evidence');
+  const evidenceDir = join(session.rootPath, "evidence");
   if (!existsSync(evidenceDir)) {
     mkdirSync(evidenceDir, { recursive: true });
   }
@@ -579,11 +578,11 @@ export async function discoverAuthentication(
       browserTools = createBrowserTools(
         target,
         evidenceDir,
-        'auth',
+        "auth",
         logger,
-        abortSignal
+        abortSignal,
       );
-      logger.info('Browser tools enabled for auth discovery');
+      logger.info("Browser tools enabled for auth discovery");
     } catch (error) {
       logger.error(`Failed to create browser tools: ${error}`);
     }
@@ -601,11 +600,11 @@ export async function discoverAuthentication(
   // Result tracking
   let discoveryResult: AuthDiscoveryResult = {
     requiresAuth: false,
-    authType: 'unknown',
+    authType: "unknown",
     confidence: 0,
     reasoning: [],
     evidence: [],
-    summary: '',
+    summary: "",
   };
 
   // Completion tool for discovery mode
@@ -619,34 +618,34 @@ Call this when you have analyzed the endpoint and determined:
     inputSchema: z.object({
       requiresAuth: z
         .boolean()
-        .describe('Whether authentication is required to access the endpoint'),
+        .describe("Whether authentication is required to access the endpoint"),
       authType: z
         .enum([
-          'none',
-          'form',
-          'json',
-          'basic',
-          'bearer',
-          'api_key',
-          'oauth',
-          'unknown',
+          "none",
+          "form",
+          "json",
+          "basic",
+          "bearer",
+          "api_key",
+          "oauth",
+          "unknown",
         ])
-        .describe('Type of authentication detected'),
+        .describe("Type of authentication detected"),
       confidence: z
         .number()
         .min(0)
         .max(100)
-        .describe('Confidence level in your determination (0-100)'),
-      loginUrl: z.string().optional().describe('Discovered login URL if found'),
+        .describe("Confidence level in your determination (0-100)"),
+      loginUrl: z.string().optional().describe("Discovered login URL if found"),
       reasoning: z
         .array(z.string())
         .describe(
-          'Step-by-step reasoning chain explaining how you arrived at this conclusion'
+          "Step-by-step reasoning chain explaining how you arrived at this conclusion",
         ),
       recommendedApproach: z
         .string()
         .optional()
-        .describe('Recommended approach for authenticating'),
+        .describe("Recommended approach for authenticating"),
       evidence: z
         .array(
           z.object({
@@ -657,25 +656,25 @@ Call this when you have analyzed the endpoint and determined:
             redirectsToLogin: z.boolean().optional(),
             loginUrl: z.string().optional(),
             notes: z.string(),
-          })
+          }),
         )
-        .describe('Evidence collected during discovery'),
+        .describe("Evidence collected during discovery"),
       barriers: z
         .array(
           z.object({
             type: z.enum([
-              'captcha',
-              'mfa',
-              'oauth_consent',
-              'rate_limit',
-              'unknown',
+              "captcha",
+              "mfa",
+              "oauth_consent",
+              "rate_limit",
+              "unknown",
             ]),
             details: z.string(),
-          })
+          }),
         )
         .optional()
-        .describe('Auth barriers detected (CAPTCHA, MFA, etc.)'),
-      summary: z.string().describe('Summary of your findings'),
+        .describe("Auth barriers detected (CAPTCHA, MFA, etc.)"),
+      summary: z.string().describe("Summary of your findings"),
     }),
     execute: async (result) => {
       discoveryResult = {
@@ -690,9 +689,9 @@ Call this when you have analyzed the endpoint and determined:
         summary: result.summary,
       };
       logger.info(
-        `Discovery complete: requiresAuth=${result.requiresAuth} authType=${result.authType} confidence=${result.confidence}%`
+        `Discovery complete: requiresAuth=${result.requiresAuth} authType=${result.authType} confidence=${result.confidence}%`,
       );
-      return { success: true, message: 'Auth discovery completed.' };
+      return { success: true, message: "Auth discovery completed." };
     },
   });
 
@@ -724,7 +723,7 @@ Call this when you have analyzed the endpoint and determined:
 
     try {
       logger.info(
-        `Running auth discovery (attempt ${attempt}/${RETRY_CONFIG.maxRetries})`
+        `Running auth discovery (attempt ${attempt}/${RETRY_CONFIG.maxRetries})`,
       );
 
       const streamResult = streamResponse({
@@ -736,27 +735,27 @@ Call this when you have analyzed the endpoint and determined:
         onStepFinish: (step) => {
           if (step.toolCalls?.length > 0 || step.text) {
             messagesRef.current.push({
-              role: 'assistant',
-              content: step.text || '',
+              role: "assistant",
+              content: step.text || "",
               toolCalls: step.toolCalls,
             });
           }
           if (step.toolResults?.length > 0) {
             messagesRef.current.push({
-              role: 'tool',
+              role: "tool",
               content: step.toolResults,
             });
           }
           onStepFinish?.(step);
         },
-        stopWhen: hasToolCall('complete_auth_discovery'),
+        stopWhen: hasToolCall("complete_auth_discovery"),
         abortSignal,
         silent: true,
       });
 
       // Consume stream
       for await (const chunk of streamResult.fullStream) {
-        if (chunk.type === 'error') {
+        if (chunk.type === "error") {
           const error = (chunk as { error?: unknown }).error;
           if (isOverloadedError(error)) {
             throw error;
@@ -764,14 +763,14 @@ Call this when you have analyzed the endpoint and determined:
         }
       }
 
-      logger.info('Auth discovery agent finished');
+      logger.info("Auth discovery agent finished");
 
       // Save agent messages
       try {
         const response = await streamResult.response;
         if (response.messages?.length > 0) {
           const sanitizedTarget = target
-            .replace(/[^a-z0-9]/gi, '-')
+            .replace(/[^a-z0-9]/gi, "-")
             .substring(0, 30);
           saveAgentMessages(
             session.rootPath,
@@ -781,7 +780,7 @@ Call this when you have analyzed the endpoint and determined:
               target,
               requiresAuth: discoveryResult.requiresAuth,
               authType: discoveryResult.authType,
-            }
+            },
           );
         }
       } catch (e) {
@@ -806,7 +805,7 @@ Call this when you have analyzed the endpoint and determined:
         const delay = Math.min(
           RETRY_CONFIG.initialDelayMs *
             Math.pow(RETRY_CONFIG.backoffMultiplier, attempt - 1),
-          RETRY_CONFIG.maxDelayMs
+          RETRY_CONFIG.maxDelayMs,
         );
         logger.info(`API overloaded, retrying in ${delay / 1000}s...`);
         await sleep(delay);
@@ -827,11 +826,11 @@ Call this when you have analyzed the endpoint and determined:
 
         return {
           requiresAuth: false,
-          authType: 'unknown',
+          authType: "unknown",
           confidence: 0,
-          reasoning: ['Discovery terminated: Context exceeded model limits'],
+          reasoning: ["Discovery terminated: Context exceeded model limits"],
           evidence: [],
-          summary: 'Discovery failed due to context length limits',
+          summary: "Discovery failed due to context length limits",
         };
       }
 
@@ -850,7 +849,7 @@ Call this when you have analyzed the endpoint and determined:
   authStateManager.cleanup();
 
   logger.error(
-    `Discovery failed after ${RETRY_CONFIG.maxRetries} attempts: ${lastError}`
+    `Discovery failed after ${RETRY_CONFIG.maxRetries} attempts: ${lastError}`,
   );
   throw new Error(`Max retries exhausted. Last error: ${lastError}`);
 }

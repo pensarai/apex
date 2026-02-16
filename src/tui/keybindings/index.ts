@@ -9,7 +9,7 @@
 
 import type { ParsedKey } from "@opentui/core";
 
- export {
+export {
   LeaderKeyProvider,
   useLeaderKey,
   type LeaderKeyState,
@@ -22,7 +22,7 @@ export {
   type Selection,
   type UndoEntry,
 } from "./input-buffer";
-  
+
 export {
   allActions,
   getAction,
@@ -45,8 +45,10 @@ export {
 } from "./registry";
 
 export namespace Keybind {
-
-  export type Info = Pick<ParsedKey, "name" | "ctrl" | "meta" | "shift" | "super"> & {
+  export type Info = Pick<
+    ParsedKey,
+    "name" | "ctrl" | "meta" | "shift" | "super"
+  > & {
     sequence?: string;
   };
 
@@ -58,7 +60,7 @@ export namespace Keybind {
       shift: key.shift,
       super: key.super ?? false,
       sequence: key.sequence,
-    }
+    };
   }
 
   export function toString(info: Info | undefined): string {
@@ -70,73 +72,74 @@ export namespace Keybind {
     if (info.super) parts.push("super");
     if (info.shift) parts.push("shift");
     if (info.name) {
-      if (info.name === "delete") parts.push("del")
+      if (info.name === "delete") parts.push("del");
       else parts.push(info.name);
     }
 
     const result = parts.join("+");
 
-    return result
+    return result;
   }
 
   export function parse(key: string): Info[] {
-    if(key === "none") return [];
-
+    if (key === "none") return [];
 
     return key.split(",").map((c) => {
       const parts = c.split("+");
 
       const info: Info = {
-          ctrl: false,
-          meta: false,
-          shift: false,
-          name: "",
-          sequence: undefined,
+        ctrl: false,
+        meta: false,
+        shift: false,
+        name: "",
+        sequence: undefined,
       };
 
       for (const part of parts) {
-          const lowerPart = part.toLowerCase();
-          switch (lowerPart) {
-            case "ctrl":
-              info.ctrl = true;
-              break;
-            case "alt":
-            case "meta":
-            case "option":
-              info.meta = true;
-              break;
-            case "super":
-              info.super = true;
-              break;
-            case "shift":
-              info.shift = true;
-              break;
-            case "esc":
-              info.name = "escape";
-              break;
-            default:
-              // If it's a single character that differs from lowercase, treat as sequence
-              // e.g., "?" or "!" - these are produced by shift+key combos
-              if (part.length === 1 && part !== lowerPart) {
-                info.sequence = part;
-              } else {
-                info.name = lowerPart;
-              }
-              break;
-          }
+        const lowerPart = part.toLowerCase();
+        switch (lowerPart) {
+          case "ctrl":
+            info.ctrl = true;
+            break;
+          case "alt":
+          case "meta":
+          case "option":
+            info.meta = true;
+            break;
+          case "super":
+            info.super = true;
+            break;
+          case "shift":
+            info.shift = true;
+            break;
+          case "esc":
+            info.name = "escape";
+            break;
+          default:
+            // If it's a single character that differs from lowercase, treat as sequence
+            // e.g., "?" or "!" - these are produced by shift+key combos
+            if (part.length === 1 && part !== lowerPart) {
+              info.sequence = part;
+            } else {
+              info.name = lowerPart;
+            }
+            break;
+        }
       }
 
       return info;
-    })
+    });
   }
 
   export function matches(pressed: Info, combo: Info): boolean {
     // If combo has a sequence defined, match by sequence
     if (combo.sequence) {
-      return pressed.sequence === combo.sequence &&
+      return (
+        pressed.sequence === combo.sequence &&
         pressed.ctrl === combo.ctrl &&
         pressed.meta === combo.meta &&
-        (pressed.super ?? false) === (combo.super ?? false);
+        (pressed.super ?? false) === (combo.super ?? false)
+      );
     }
 
     // Handle control character sequences (e.g., "\x03" for Ctrl+C)
@@ -146,18 +149,21 @@ export namespace Keybind {
       if (charCode >= 1 && charCode <= 26) {
         const expectedChar = String.fromCharCode(charCode + 96); // 1 -> 'a', 2 -> 'b', etc.
         if (combo.name === expectedChar) {
-          return pressed.meta === combo.meta &&
-            (pressed.super ?? false) === (combo.super ?? false);
+          return (
+            pressed.meta === combo.meta &&
+            (pressed.super ?? false) === (combo.super ?? false)
+          );
         }
       }
     }
 
     // Otherwise match by name and modifiers
-    return pressed.name === combo.name &&
+    return (
+      pressed.name === combo.name &&
       pressed.ctrl === combo.ctrl &&
       pressed.meta === combo.meta &&
       pressed.shift === combo.shift &&
-      (pressed.super ?? false) === (combo.super ?? false);
+      (pressed.super ?? false) === (combo.super ?? false)
+    );
   }
 }
-

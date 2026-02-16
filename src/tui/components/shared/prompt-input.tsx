@@ -1,4 +1,11 @@
-import { useState, useEffect, useImperativeHandle, forwardRef, useRef, useMemo } from "react";
+import {
+  useState,
+  useEffect,
+  useImperativeHandle,
+  forwardRef,
+  useRef,
+  useMemo,
+} from "react";
 import { useKeyboard } from "@opentui/react";
 import type { TextareaRenderable } from "@opentui/core";
 import { colors } from "../../theme/colors";
@@ -81,7 +88,7 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
       onCommandExecute,
       showPromptIndicator = false,
     },
-    ref
+    ref,
   ) {
     const { inputValue, setInputValue } = useInput();
     const { registerPromptRef } = useFocus();
@@ -97,13 +104,13 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
       if (!enableAutocomplete || !autocompleteOptions || !inputValue) return [];
       const input = inputValue.toLowerCase().trim();
 
-      if(!(input[0] === "/")) return [];
-      
+      if (!(input[0] === "/")) return [];
+
       return autocompleteOptions
         .filter(
           (opt) =>
             opt.value.toLowerCase().includes(input) ||
-            opt.label.toLowerCase().includes(input)
+            opt.label.toLowerCase().includes(input),
         )
         .slice(0, maxSuggestions);
     }, [enableAutocomplete, autocompleteOptions, inputValue, maxSuggestions]);
@@ -159,13 +166,13 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
 
       if (key.name === "up") {
         setSelectedSuggestionIndex((prev) =>
-          prev <= 0 ? suggestions.length - 1 : prev - 1
+          prev <= 0 ? suggestions.length - 1 : prev - 1,
         );
         return;
       }
       if (key.name === "down") {
         setSelectedSuggestionIndex((prev) =>
-          prev >= suggestions.length - 1 ? 0 : prev + 1
+          prev >= suggestions.length - 1 ? 0 : prev + 1,
         );
         return;
       }
@@ -173,7 +180,10 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
       if (key.name === "tab") {
         key.preventDefault?.();
         const currentSelectedIndex = selectedIndexRef.current;
-        if (currentSelectedIndex >= 0 && currentSelectedIndex < suggestions.length) {
+        if (
+          currentSelectedIndex >= 0 &&
+          currentSelectedIndex < suggestions.length
+        ) {
           const selected = suggestions[currentSelectedIndex];
           if (selected) {
             textareaRef.current?.setText(selected.value);
@@ -249,19 +259,17 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
             focusedBackgroundColor={focusedBackgroundColor}
             cursorColor={cursorColor}
             // keyBindings={keyBindings}
-            keyBindings={
-              [
-                {
-                  action: "submit",
-                  name: "return"
-                },
-                {
-                  action: "newline",
-                  meta: true,
-                  name: "return"
-                }
-              ]
-            }
+            keyBindings={[
+              {
+                action: "submit",
+                name: "return",
+              },
+              {
+                action: "newline",
+                meta: true,
+                name: "return",
+              },
+            ]}
             onContentChange={handleContentChange}
             onSubmit={handleSubmit}
           />
@@ -290,7 +298,7 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
         )}
       </box>
     );
-  }
+  },
 );
 
 export default PromptInput;

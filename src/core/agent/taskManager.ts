@@ -100,7 +100,7 @@ class TaskManager {
    */
   getRunningTasks(): BackgroundTask[] {
     return Array.from(this.tasks.values()).filter(
-      (t) => t.status === "running" || t.status === "pending"
+      (t) => t.status === "running" || t.status === "pending",
     );
   }
 
@@ -119,7 +119,7 @@ class TaskManager {
       .filter((t) => t.status === "completed" || t.status === "failed")
       .sort(
         (a, b) =>
-          (b.completedAt?.getTime() || 0) - (a.completedAt?.getTime() || 0)
+          (b.completedAt?.getTime() || 0) - (a.completedAt?.getTime() || 0),
       );
 
     completed.slice(keepLast).forEach((t) => this.tasks.delete(t.id));

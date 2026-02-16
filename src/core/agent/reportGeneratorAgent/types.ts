@@ -2,7 +2,7 @@
  * Types for ReportGeneratorAgent
  */
 
-import type { CVSS4Metrics } from '../../../lib/cvss';
+import type { CVSS4Metrics } from "../../../lib/cvss";
 
 /** CVSS 4.0 score data attached to a finding */
 export interface FindingCVSSData {
@@ -23,7 +23,7 @@ export interface FindingCVSSData {
 export interface Finding {
   id: string;
   title: string;
-  severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
+  severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
   description: string;
   impact: string;
   evidence: string;
@@ -81,11 +81,11 @@ export interface FindingsCount {
     averageScore: number;
     maxScore: number;
     byRange: {
-      critical: number;  // 9.0-10.0
-      high: number;      // 7.0-8.9
-      medium: number;    // 4.0-6.9
-      low: number;       // 0.1-3.9
-      none: number;      // 0.0
+      critical: number; // 9.0-10.0
+      high: number; // 7.0-8.9
+      medium: number; // 4.0-6.9
+      low: number; // 0.1-3.9
+      none: number; // 0.0
     };
   };
 }

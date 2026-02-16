@@ -17,14 +17,20 @@ interface CredentialsPanelProps {
   maxVisible?: number;
 }
 
-export function CredentialsPanel({ credentials, maxVisible = 4 }: CredentialsPanelProps) {
+export function CredentialsPanel({
+  credentials,
+  maxVisible = 4,
+}: CredentialsPanelProps) {
   const visible = credentials.slice(0, maxVisible);
   const remaining = credentials.length - maxVisible;
 
   return (
     <box flexDirection="column" gap={1}>
       <text fg={creamText}>
-        Credentials {credentials.length > 0 && <span fg={dimText}>({credentials.length})</span>}
+        Credentials{" "}
+        {credentials.length > 0 && (
+          <span fg={dimText}>({credentials.length})</span>
+        )}
       </text>
 
       {credentials.length === 0 ? (
@@ -47,13 +53,11 @@ export function CredentialsPanel({ credentials, maxVisible = 4 }: CredentialsPan
               </box>
               {/* Source on next line if active */}
               {cred.isActive && cred.source && (
-                <text fg={dimText}>  from: {truncate(cred.source, 18)}</text>
+                <text fg={dimText}> from: {truncate(cred.source, 18)}</text>
               )}
             </box>
           ))}
-          {remaining > 0 && (
-            <text fg={dimText}>... +{remaining} more</text>
-          )}
+          {remaining > 0 && <text fg={dimText}>... +{remaining} more</text>}
         </>
       )}
     </box>
@@ -66,7 +70,7 @@ export function CredentialsPanel({ credentials, maxVisible = 4 }: CredentialsPan
 function redactSecret(secret: string): string {
   if (!secret || secret.length === 0) return "****";
   if (secret.length <= 2) return "****";
-  return "****";  // Full redaction for security
+  return "****"; // Full redaction for security
 }
 
 function truncate(str: string, maxLen: number): string {

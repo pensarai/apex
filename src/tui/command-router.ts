@@ -2,7 +2,7 @@ import type { AppCommandContext } from "./command-registry";
 
 export type CommandHandler<TContext = AppCommandContext> = (
   args: string[],
-  ctx: TContext
+  ctx: TContext,
 ) => void | Promise<void>;
 
 export interface Command<TContext = AppCommandContext> {
@@ -14,7 +14,7 @@ export interface Command<TContext = AppCommandContext> {
 
 // Command definition that accepts context
 export type CommandDefinition<TContext = AppCommandContext> = (
-  ctx: TContext
+  ctx: TContext,
 ) => Omit<Command<TContext>, "handler"> & {
   handler: (args: string[]) => void | Promise<void>;
 };
@@ -26,7 +26,7 @@ export class CommandRouter<TContext = AppCommandContext> {
   register(command: Command<TContext>) {
     this.commands.push(command);
     const names = [command.name, ...(command.aliases ?? [])].map((n) =>
-      n.toLowerCase()
+      n.toLowerCase(),
     );
     for (const n of names) this.nameToCommand.set(n, command);
   }

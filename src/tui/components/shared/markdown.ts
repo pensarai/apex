@@ -43,11 +43,16 @@ export function markdownToStyledText(content: string): StyledText {
     const tokens = marked.lexer(content);
     const chunks: TextChunk[] = [];
 
-    type InlineToken = { type?: string; text?: string; tokens?: InlineToken[]; [key: string]: unknown };
+    type InlineToken = {
+      type?: string;
+      text?: string;
+      tokens?: InlineToken[];
+      [key: string]: unknown;
+    };
 
     function processInlineTokens(
       inlineTokens: InlineToken[],
-      defaultAttrs: number = 0
+      defaultAttrs: number = 0,
     ): void {
       for (const token of inlineTokens) {
         if (token.type === "text") {
@@ -57,11 +62,14 @@ export function markdownToStyledText(content: string): StyledText {
             attributes: defaultAttrs,
           });
         } else if (token.type === "strong") {
-          processInlineTokens(token.tokens || [], defaultAttrs | TextAttributes.BOLD);
+          processInlineTokens(
+            token.tokens || [],
+            defaultAttrs | TextAttributes.BOLD,
+          );
         } else if (token.type === "em") {
           processInlineTokens(
             token.tokens || [],
-            defaultAttrs | TextAttributes.ITALIC
+            defaultAttrs | TextAttributes.ITALIC,
           );
         } else if (token.type === "codespan") {
           chunks.push({
@@ -91,11 +99,15 @@ export function markdownToStyledText(content: string): StyledText {
 
     for (const token of tokens) {
       if (token.type === "paragraph") {
-        if (token.tokens) processInlineTokens(token.tokens as unknown as InlineToken[]);
+        if (token.tokens)
+          processInlineTokens(token.tokens as unknown as InlineToken[]);
         chunks.push({ __isChunk: true, text: "\n", attributes: 0 });
       } else if (token.type === "heading") {
         if (token.tokens)
-          processInlineTokens(token.tokens as unknown as InlineToken[], TextAttributes.BOLD);
+          processInlineTokens(
+            token.tokens as unknown as InlineToken[],
+            TextAttributes.BOLD,
+          );
         chunks.push({ __isChunk: true, text: "\n", attributes: 0 });
       } else if (token.type === "list") {
         for (const item of token.items) {
@@ -122,7 +134,8 @@ export function markdownToStyledText(content: string): StyledText {
           fg: RGBA.fromInts(150, 150, 150, 255),
           attributes: 0,
         });
-        if (token.tokens) processInlineTokens(token.tokens as unknown as InlineToken[]);
+        if (token.tokens)
+          processInlineTokens(token.tokens as unknown as InlineToken[]);
         chunks.push({ __isChunk: true, text: "\n", attributes: 0 });
       } else if (token.type === "space") {
         chunks.push({ __isChunk: true, text: "\n", attributes: 0 });

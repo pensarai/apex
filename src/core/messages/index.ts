@@ -1,7 +1,5 @@
 import fs from "fs";
 import { z } from "zod";
-import { nanoid } from "nanoid";
-import { ModelMessageObject } from "./types";
 import type { ToolMessage, Message } from "./types";
 import { Identifier } from "../id/id";
 import { Storage } from "../storage";
@@ -14,7 +12,7 @@ export namespace Messages {
 
   export async function* stream(input: z.output<typeof StreamInput>) {
     const list = await Array.fromAsync(
-      await Storage.list(["message", input.sessionId])
+      await Storage.list(["message", input.sessionId]),
     );
     for (let i = list.length - 1; i >= 0; i--) {
       yield await get({
@@ -40,14 +38,14 @@ export namespace Messages {
   export function save(session: Session.SessionInfo, messages: Message[]) {
     fs.writeFileSync(
       session.rootPath + "/messages.json",
-      JSON.stringify(messages, null, 2)
+      JSON.stringify(messages, null, 2),
     );
   }
 
   export function saveSubagentMessages(
     orchestratorSession: Session.SessionInfo,
     subagentId: string,
-    messages: Message[]
+    messages: Message[],
   ) {
     const subagentDir = `${orchestratorSession.rootPath}/subagents/${subagentId}`;
 
@@ -66,7 +64,7 @@ export namespace Messages {
     // Save messages
     fs.writeFileSync(
       `${subagentDir}/messages.json`,
-      JSON.stringify(messages, null, 2)
+      JSON.stringify(messages, null, 2),
     );
   }
 }
@@ -189,8 +187,9 @@ export function mapMessages(messages: Message[]): Message[] {
       // Add tool messages for each tool call
       for (const toolCall of toolCalls) {
         const input = toolCall.input as Record<string, unknown>;
-        const toolCallDescription =
-          String(input?.toolCallDescription || `Executing ${toolCall.toolName}`);
+        const toolCallDescription = String(
+          input?.toolCallDescription || `Executing ${toolCall.toolName}`,
+        );
 
         // Check if we have a result for this tool call
         const hasResult = toolResults.has(toolCall.toolCallId);

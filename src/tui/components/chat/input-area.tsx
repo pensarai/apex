@@ -60,7 +60,10 @@ function NormalInputAreaInner({
   operatorMode,
   verboseMode = false,
   expandedLogs = false,
-}: Omit<InputAreaProps, 'pendingApproval' | 'onApprove' | 'onAutoApprove' | 'lastDeclineNote'>) {
+}: Omit<
+  InputAreaProps,
+  "pendingApproval" | "onApprove" | "onAutoApprove" | "lastDeclineNote"
+>) {
   const { inputValue, setInputValue } = useInput();
   const promptRef = useRef<PromptInputRef>(null);
   const isExternalUpdate = useRef(false);
@@ -119,10 +122,21 @@ function NormalInputAreaInner({
 
       {/* Shortcuts row for operator mode */}
       {mode === "operator" && (
-        <box flexDirection="row" gap={2} marginTop={1} backgroundColor="transparent">
-          {operatorMode === "plan" && <text fg={colors.yellowText}>{"PLAN"}</text>}
-          {operatorMode === "auto" && <text fg={colors.greenAccent}>{"AUTO"}</text>}
-          {operatorMode === "manual" && <text fg={colors.dimText}>{"MANUAL"}</text>}
+        <box
+          flexDirection="row"
+          gap={2}
+          marginTop={1}
+          backgroundColor="transparent"
+        >
+          {operatorMode === "plan" && (
+            <text fg={colors.yellowText}>{"PLAN"}</text>
+          )}
+          {operatorMode === "auto" && (
+            <text fg={colors.greenAccent}>{"AUTO"}</text>
+          )}
+          {operatorMode === "manual" && (
+            <text fg={colors.dimText}>{"MANUAL"}</text>
+          )}
           <text fg={verboseMode ? colors.greenAccent : colors.dimText}>
             {verboseMode ? "verbose:on" : "verbose"}
           </text>
@@ -136,7 +150,12 @@ function NormalInputAreaInner({
 
       {/* Shortcuts row for chat mode */}
       {mode === "chat" && (
-        <box flexDirection="row" gap={2} marginTop={1} backgroundColor="transparent">
+        <box
+          flexDirection="row"
+          gap={2}
+          marginTop={1}
+          backgroundColor="transparent"
+        >
           <text fg={colors.dimText}>^C {value.trim() ? "clear" : "stop"}</text>
           <text fg={colors.dimText}>^B sidebar</text>
           <text fg={colors.dimText}>ESC quit</text>

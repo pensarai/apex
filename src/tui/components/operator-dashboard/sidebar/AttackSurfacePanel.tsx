@@ -19,14 +19,18 @@ interface AttackSurfacePanelProps {
   maxVisible?: number;
 }
 
-export function AttackSurfacePanel({ endpoints, maxVisible = 5 }: AttackSurfacePanelProps) {
+export function AttackSurfacePanel({
+  endpoints,
+  maxVisible = 5,
+}: AttackSurfacePanelProps) {
   const visible = endpoints.slice(0, maxVisible);
   const remaining = endpoints.length - maxVisible;
 
   return (
     <box flexDirection="column" gap={1}>
       <text fg={creamText}>
-        Attack Surface {endpoints.length > 0 && <span fg={dimText}>({endpoints.length})</span>}
+        Attack Surface{" "}
+        {endpoints.length > 0 && <span fg={dimText}>({endpoints.length})</span>}
       </text>
 
       {endpoints.length === 0 ? (
@@ -36,24 +40,22 @@ export function AttackSurfacePanel({ endpoints, maxVisible = 5 }: AttackSurfaceP
           {visible.map((ep) => (
             <box key={ep.id} flexDirection="row" gap={1}>
               {/* Status marker */}
-              <text fg={getStatusColor(ep.status)}>{getStatusMarker(ep.status)}</text>
+              <text fg={getStatusColor(ep.status)}>
+                {getStatusMarker(ep.status)}
+              </text>
               {/* Method */}
               <text fg={getMethodColor(ep.method)}>{ep.method.padEnd(4)}</text>
               {/* Path */}
               <text fg={dimText}>{truncatePath(ep.path, 14)}</text>
               {/* Vuln type if confirmed */}
-              {ep.status === 'confirmed' && ep.vulnType && (
+              {ep.status === "confirmed" && ep.vulnType && (
                 <text fg={greenAccent}>{ep.vulnType}</text>
               )}
               {/* Show "clean" text if clean */}
-              {ep.status === 'clean' && (
-                <text fg={dimText}>clean</text>
-              )}
+              {ep.status === "clean" && <text fg={dimText}>clean</text>}
             </box>
           ))}
-          {remaining > 0 && (
-            <text fg={dimText}>... +{remaining} more</text>
-          )}
+          {remaining > 0 && <text fg={dimText}>... +{remaining} more</text>}
         </>
       )}
     </box>

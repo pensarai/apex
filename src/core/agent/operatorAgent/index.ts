@@ -508,14 +508,12 @@ export class OperatorAgent extends EventEmitter {
             notVulnerable: readonly string[];
           };
         };
-        return `### ${String(
-          key
-        ).toUpperCase()}\n**Techniques:**\n${k.techniques
+        return `### ${String(key).toUpperCase()}\n**Techniques:**\n${k.techniques
           .map((t: { name: string; how: string }) => `- ${t.name}: ${t.how}`)
           .join(
-            "\n"
+            "\n",
           )}\n**Vulnerable indicators:** ${k.indicators.vulnerable.join(
-          ", "
+          ", ",
         )}\n**Not vulnerable:** ${k.indicators.notVulnerable.join(", ")}`;
       })
       .filter(Boolean);
@@ -544,7 +542,7 @@ export class OperatorAgent extends EventEmitter {
         })
         .join("\n");
       sections.push(
-        `**Known Attack Surface (${this.attackSurface.length} endpoints):**\n${endpoints}`
+        `**Known Attack Surface (${this.attackSurface.length} endpoints):**\n${endpoints}`,
       );
     }
 
@@ -610,7 +608,7 @@ ${sections.join("\n\n")}
   private buildSystemPrompt(
     target: string,
     stageDef: (typeof OPERATOR_STAGES)[OperatorStage],
-    directive?: string
+    directive?: string,
   ): string {
     const session = this.config.session;
     const isOffensiveStage = ["test", "validate"].includes(this.currentStage);
@@ -729,7 +727,7 @@ Document significant findings using the document_finding tool.`;
    */
   private async runAgentLoop(
     systemMessage: string,
-    initialUserMessage: string
+    initialUserMessage: string,
   ): Promise<OperatorAgentResult> {
     const session = this.config.session;
     const messages: Array<{
@@ -760,7 +758,7 @@ Document significant findings using the document_finding tool.`;
       undefined, // onTokenUsage
       this.abortController?.signal,
       true, // operatorMode - enables streaming stdout
-      this.config.authConfig
+      this.config.authConfig,
     );
 
     // Add browser tools for operator mode (HITL) only
@@ -770,7 +768,7 @@ Document significant findings using the document_finding tool.`;
       evidenceDir,
       "operator", // Operator mode for user-driven reconnaissance
       undefined, // logger - could be passed in future
-      this.abortController?.signal
+      this.abortController?.signal,
     );
 
     // Add POC tools for offensive stages (test/validate)
@@ -785,7 +783,7 @@ Document significant findings using the document_finding tool.`;
           findingsPath: join(session.rootPath, "findings"),
           logsPath: join(session.rootPath, "logs"),
         },
-        logger
+        logger,
       );
       pocTools = { create_poc };
     }
@@ -953,7 +951,7 @@ This tool requires user approval (T3 tier - Probing).`,
               console.log(step.usage);
               this.config.onTokenUsage(
                 step.usage.inputTokens ?? 0,
-                step.usage.outputTokens ?? 0
+                step.usage.outputTokens ?? 0,
               );
             }
           },
@@ -1008,7 +1006,7 @@ This tool requires user approval (T3 tier - Probing).`,
                 (chunk as unknown as { args?: Record<string, unknown> }).args ||
                 {};
               const description = String(
-                args.toolCallDescription || chunk.toolName
+                args.toolCallDescription || chunk.toolName,
               );
 
               this.log("tool_call", {
@@ -1081,7 +1079,7 @@ This tool requires user approval (T3 tier - Probing).`,
               toolName: tc.toolName,
               toolCallId: tc.toolCallId,
               args: tc.input || tc.args,
-            })
+            }),
           ),
           usage, // token counts
         });
@@ -1103,7 +1101,7 @@ This tool requires user approval (T3 tier - Probing).`,
         // Check for complete_testing tool call (but still process pending directives)
         if (
           toolCalls?.some(
-            (tc: { toolName?: string }) => tc.toolName === "complete_testing"
+            (tc: { toolName?: string }) => tc.toolName === "complete_testing",
           ) &&
           !hasPendingDirectives
         ) {
@@ -1184,7 +1182,7 @@ This tool requires user approval (T3 tier - Probing).`,
   ];
 
   private wrapToolsWithApproval(
-    tools: Record<string, unknown>
+    tools: Record<string, unknown>,
   ): Record<string, unknown> {
     const wrapped: Record<string, unknown> = {};
 
@@ -1192,7 +1190,7 @@ This tool requires user approval (T3 tier - Probing).`,
       const toolObj = tool as {
         execute?: (
           args: Record<string, unknown>,
-          context?: Record<string, unknown>
+          context?: Record<string, unknown>,
         ) => Promise<unknown>;
         [key: string]: unknown;
       };
@@ -1200,7 +1198,7 @@ This tool requires user approval (T3 tier - Probing).`,
         ...toolObj,
         execute: async (
           args: Record<string, unknown>,
-          context: Record<string, unknown>
+          context: Record<string, unknown>,
         ) => {
           const toolCallId = String(context?.toolCallId || `tc-${Date.now()}`);
 
@@ -1223,7 +1221,7 @@ This tool requires user approval (T3 tier - Probing).`,
               const task = taskManager.createTask(name);
               this.addToolLog(
                 toolCallId,
-                `→ running in background (task: ${task.id})`
+                `→ running in background (task: ${task.id})`,
               );
 
               // Fire and forget - do NOT await
@@ -1235,7 +1233,7 @@ This tool requires user approval (T3 tier - Probing).`,
                 } catch (err) {
                   taskManager.setError(
                     task.id,
-                    err instanceof Error ? err.message : String(err)
+                    err instanceof Error ? err.message : String(err),
                   );
                 }
               })();
@@ -1312,7 +1310,7 @@ This tool requires user approval (T3 tier - Probing).`,
    */
   private getToolStartLog(
     toolName: string,
-    args: Record<string, unknown>
+    args: Record<string, unknown>,
   ): string {
     switch (toolName) {
       case "execute_command": {
@@ -1322,9 +1320,7 @@ This tool requires user approval (T3 tier - Probing).`,
       case "http_request": {
         const method = String(args.method || "GET").toUpperCase();
         const urlStr = String(args.url || "");
-        return `${method} ${urlStr.slice(0, 40)}${
-          urlStr.length > 40 ? "..." : ""
-        }`;
+        return `${method} ${urlStr.slice(0, 40)}${urlStr.length > 40 ? "..." : ""}`;
       }
       case "browser_navigate":
         return `navigating to ${String(args.url || "").slice(0, 40)}`;
@@ -1333,10 +1329,7 @@ This tool requires user approval (T3 tier - Probing).`,
         return `searching for "${String(args.pattern || "").slice(0, 30)}"`;
       case "Read":
       case "read_file":
-        return `reading ${String(args.file_path || args.path || "").slice(
-          0,
-          40
-        )}`;
+        return `reading ${String(args.file_path || args.path || "").slice(0, 40)}`;
       default:
         return `executing ${toolName}`;
     }
@@ -1355,9 +1348,7 @@ This tool requires user approval (T3 tier - Probing).`,
         typeof result[0] === "string"
           ? result[0].slice(0, 40)
           : JSON.stringify(result[0]).slice(0, 40);
-      return `→ found ${result.length} items (${preview}${
-        result.length > 1 ? ", ..." : ""
-      })`;
+      return `→ found ${result.length} items (${preview}${result.length > 1 ? ", ..." : ""})`;
     }
 
     if (typeof result !== "object") return null;
@@ -1431,7 +1422,8 @@ This tool requires user approval (T3 tier - Probing).`,
     // Fallback: try to summarize the object
     const keys = Object.keys(r);
     const importantKeys = keys.filter(
-      (k) => !["success", "error", "command", "toolCallDescription"].includes(k)
+      (k) =>
+        !["success", "error", "command", "toolCallDescription"].includes(k),
     );
     if (importantKeys.length > 0) {
       const previews = importantKeys
@@ -1514,13 +1506,13 @@ This tool requires user approval (T3 tier - Probing).`,
       // Interesting status codes
       if (status === 403) {
         findings.push(
-          `- 403 Forbidden at ${url} (potential access control to bypass)`
+          `- 403 Forbidden at ${url} (potential access control to bypass)`,
         );
       } else if (status === 401) {
         findings.push(`- 401 Unauthorized at ${url} (auth required)`);
       } else if (status === 500) {
         findings.push(
-          `- 500 Error at ${url} (potential for error-based info leak)`
+          `- 500 Error at ${url} (potential for error-based info leak)`,
         );
       }
 
@@ -1574,7 +1566,7 @@ This tool requires user approval (T3 tier - Probing).`,
  * Create a new Operator agent
  */
 export function createOperatorAgent(
-  config: OperatorAgentConfig
+  config: OperatorAgentConfig,
 ): OperatorAgent {
   return new OperatorAgent(config);
 }

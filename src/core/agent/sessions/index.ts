@@ -1,16 +1,6 @@
-import {
-  mkdirSync,
-  existsSync,
-  writeFileSync,
-  readFileSync,
-  readdirSync,
-  statSync,
-  rmSync,
-} from "fs";
+import { mkdirSync } from "fs";
 import { join } from "path";
-import { homedir } from "os";
-import { randomBytes } from "crypto";
-import { RateLimiter, type RateLimiterConfig } from '../../services/rateLimiter';
+
 import { Identifier } from "../../id/id";
 
 /**
@@ -90,9 +80,9 @@ export function createSession(
   target: string,
   objective?: string,
   prefix?: string,
-  config?: Session.SessionConfig
+  config?: Session.SessionConfig,
 ): Session.SessionInfo {
-  const id = `${prefix ? prefix : ""}` + Identifier.descending('session');
+  const id = `${prefix ? prefix : ""}` + Identifier.descending("session");
   const rootPath = Session.getExecutionRoot(id);
 
   // Create directories synchronously

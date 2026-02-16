@@ -26,7 +26,7 @@ export function getSuggestedActions(
     target?: string;
     findingsCount?: number;
     endpointsFound?: number;
-  }
+  },
 ): ActionSuggestion[] {
   const stageDef = OPERATOR_STAGES[currentStage];
   const suggestions: ActionSuggestion[] = [];
@@ -38,8 +38,10 @@ export function getSuggestedActions(
   // Filter out actions that have already been completed
   const completedActions = new Set(
     actionHistory
-      .filter((a) => a.decision === "approved" || a.decision === "auto-approved")
-      .map((a) => a.toolName)
+      .filter(
+        (a) => a.decision === "approved" || a.decision === "auto-approved",
+      )
+      .map((a) => a.toolName),
   );
 
   // Add "advance to next stage" suggestion if we've done some work
@@ -48,7 +50,8 @@ export function getSuggestedActions(
       id: "advance-stage",
       label: "Advance to next stage",
       description: `Move to the next phase of testing`,
-      directive: "Let's advance to the next testing stage. Summarize what we found and move on.",
+      directive:
+        "Let's advance to the next testing stage. Summarize what we found and move on.",
       stage: currentStage,
       priority: "medium",
     });
@@ -62,7 +65,11 @@ export function getSuggestedActions(
  */
 function getStageSpecificSuggestions(
   stage: OperatorStage,
-  context?: { target?: string; findingsCount?: number; endpointsFound?: number }
+  context?: {
+    target?: string;
+    findingsCount?: number;
+    endpointsFound?: number;
+  },
 ): ActionSuggestion[] {
   const target = context?.target || "the target";
 
@@ -81,7 +88,8 @@ function getStageSpecificSuggestions(
           id: "check-scope",
           label: "Review scope",
           description: "Review allowed testing boundaries",
-          directive: "Review the scope constraints and confirm what we're allowed to test",
+          directive:
+            "Review the scope constraints and confirm what we're allowed to test",
           stage,
           priority: "medium",
         },
@@ -101,7 +109,8 @@ function getStageSpecificSuggestions(
           id: "identify-tech",
           label: "Identify technologies",
           description: "Fingerprint frameworks and services",
-          directive: "Identify the technologies, frameworks, and services used by this application",
+          directive:
+            "Identify the technologies, frameworks, and services used by this application",
           stage,
           priority: "high",
         },
@@ -109,7 +118,8 @@ function getStageSpecificSuggestions(
           id: "find-apis",
           label: "Find API endpoints",
           description: "Look for REST/GraphQL APIs",
-          directive: "Search for API endpoints - REST, GraphQL, or other API patterns",
+          directive:
+            "Search for API endpoints - REST, GraphQL, or other API patterns",
           stage,
           priority: "medium",
         },
@@ -117,7 +127,8 @@ function getStageSpecificSuggestions(
           id: "check-robots",
           label: "Check robots.txt",
           description: "Look for hidden paths",
-          directive: "Check robots.txt and sitemap.xml for hidden or interesting paths",
+          directive:
+            "Check robots.txt and sitemap.xml for hidden or interesting paths",
           stage,
           priority: "medium",
         },
@@ -129,7 +140,8 @@ function getStageSpecificSuggestions(
           id: "authenticate-to-target",
           label: "Authenticate to application",
           description: "Run auth subagent to obtain authenticated session",
-          directive: "Authenticate to the target application using the auth subagent",
+          directive:
+            "Authenticate to the target application using the auth subagent",
           stage,
           priority: "high",
         },
@@ -145,7 +157,8 @@ function getStageSpecificSuggestions(
           id: "find-auth-endpoints",
           label: "Find auth endpoints",
           description: "Locate login, register, password reset",
-          directive: "Find all authentication-related endpoints: login, register, password reset, etc.",
+          directive:
+            "Find all authentication-related endpoints: login, register, password reset, etc.",
           stage,
           priority: "high",
         },
@@ -153,7 +166,8 @@ function getStageSpecificSuggestions(
           id: "identify-ids",
           label: "Find ID patterns",
           description: "Look for sequential or predictable IDs",
-          directive: "Identify ID patterns in URLs and parameters that might be vulnerable to IDOR",
+          directive:
+            "Identify ID patterns in URLs and parameters that might be vulnerable to IDOR",
           stage,
           priority: "medium",
         },
@@ -165,7 +179,8 @@ function getStageSpecificSuggestions(
           id: "test-sqli",
           label: "Test SQL injection",
           description: "Probe for SQLi vulnerabilities",
-          directive: "Test all identified parameters for SQL injection vulnerabilities",
+          directive:
+            "Test all identified parameters for SQL injection vulnerabilities",
           stage,
           priority: "high",
         },
@@ -173,7 +188,8 @@ function getStageSpecificSuggestions(
           id: "test-xss",
           label: "Test XSS",
           description: "Probe for cross-site scripting",
-          directive: "Test input fields for reflected and stored XSS vulnerabilities",
+          directive:
+            "Test input fields for reflected and stored XSS vulnerabilities",
           stage,
           priority: "high",
         },
@@ -189,7 +205,8 @@ function getStageSpecificSuggestions(
           id: "test-auth",
           label: "Test authentication",
           description: "Check auth bypass and session handling",
-          directive: "Test authentication mechanisms for bypass vulnerabilities and weak session handling",
+          directive:
+            "Test authentication mechanisms for bypass vulnerabilities and weak session handling",
           stage,
           priority: "medium",
         },
@@ -197,7 +214,8 @@ function getStageSpecificSuggestions(
           id: "test-authz",
           label: "Test authorization",
           description: "Check privilege escalation",
-          directive: "Test authorization boundaries - can lower-privileged users access admin functions?",
+          directive:
+            "Test authorization boundaries - can lower-privileged users access admin functions?",
           stage,
           priority: "medium",
         },
@@ -217,7 +235,8 @@ function getStageSpecificSuggestions(
           id: "verify-findings",
           label: "Verify findings",
           description: "Confirm discovered vulnerabilities",
-          directive: "Verify each discovered vulnerability to confirm it's exploitable",
+          directive:
+            "Verify each discovered vulnerability to confirm it's exploitable",
           stage,
           priority: "high",
         },
@@ -225,7 +244,8 @@ function getStageSpecificSuggestions(
           id: "create-pocs",
           label: "Create POCs",
           description: "Generate proof-of-concept scripts",
-          directive: "Create proof-of-concept scripts for each confirmed vulnerability",
+          directive:
+            "Create proof-of-concept scripts for each confirmed vulnerability",
           stage,
           priority: "high",
         },
@@ -245,7 +265,8 @@ function getStageSpecificSuggestions(
           id: "generate-report",
           label: "Generate report",
           description: "Create final penetration test report",
-          directive: "Generate the final penetration test report with all findings",
+          directive:
+            "Generate the final penetration test report with all findings",
           stage,
           priority: "high",
         },
@@ -253,7 +274,8 @@ function getStageSpecificSuggestions(
           id: "review-findings",
           label: "Review findings",
           description: "Summary of all discovered issues",
-          directive: "Provide a summary of all findings discovered during this assessment",
+          directive:
+            "Provide a summary of all findings discovered during this assessment",
           stage,
           priority: "high",
         },
@@ -267,11 +289,17 @@ function getStageSpecificSuggestions(
 /**
  * Get quick action suggestions (for toolbar/shortcuts)
  */
-export function getQuickActions(stage: OperatorStage): Array<{ key: string; label: string; directive: string }> {
+export function getQuickActions(
+  stage: OperatorStage,
+): Array<{ key: string; label: string; directive: string }> {
   switch (stage) {
     case "recon":
       return [
-        { key: "c", label: "Crawl", directive: "Crawl the application to discover endpoints" },
+        {
+          key: "c",
+          label: "Crawl",
+          directive: "Crawl the application to discover endpoints",
+        },
         { key: "t", label: "Tech", directive: "Identify technologies used" },
       ];
     case "test":

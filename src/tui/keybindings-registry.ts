@@ -10,11 +10,11 @@ export interface Keybinding {
 export const keybindings: Keybinding[] = [
   {
     key: "Ctrl+C",
-    description: "Clear input / Exit application (press twice)"
+    description: "Clear input / Exit application (press twice)",
   },
   {
     key: "Ctrl+K",
-    description: "Toggle console"
+    description: "Toggle console",
   },
   // {
   //   key: "Ctrl+N",
@@ -22,22 +22,22 @@ export const keybindings: Keybinding[] = [
   // },
   {
     key: "Ctrl+S",
-    description: "Show sessions"
+    description: "Show sessions",
   },
   {
     key: "Escape",
-    description: "Return to home"
+    description: "Return to home",
   },
   {
     key: "Tab",
-    description: "Next item"
+    description: "Next item",
   },
   {
     key: "Shift+Tab",
-    description: "Previous item"
+    description: "Previous item",
   },
   {
     key: "?",
-    description: "Show keyboard shortcuts"
-  }
+    description: "Show keyboard shortcuts",
+  },
 ];

@@ -1,4 +1,4 @@
-import React, { type ReactElement, type ReactNode } from 'react';
+import React, { type ReactElement, type ReactNode } from "react";
 
 // Define types for props
 export interface CaseProps<T extends string> {
@@ -16,18 +16,20 @@ export interface SwitchProps<T extends string> {
 }
 
 // Symbols for runtime identification
-const CaseSymbol = Symbol('Switch.Case');
-const DefaultSymbol = Symbol('Switch.Default');
+const CaseSymbol = Symbol("Switch.Case");
+const DefaultSymbol = Symbol("Switch.Default");
 
 // Case component
-function CaseComponent<T extends string>({ children }: CaseProps<T>): ReactElement {
-  return <>{children}</> as ReactElement;
+function CaseComponent<T extends string>({
+  children,
+}: CaseProps<T>): ReactElement {
+  return (<>{children}</>) as ReactElement;
 }
 (CaseComponent as unknown as Record<symbol, boolean>)[CaseSymbol] = true;
 
 // Default component
 function DefaultComponent({ children }: DefaultProps): ReactElement {
-  return <>{children}</> as ReactElement;
+  return (<>{children}</>) as ReactElement;
 }
 (DefaultComponent as unknown as Record<symbol, boolean>)[DefaultSymbol] = true;
 
@@ -46,13 +48,15 @@ function SwitchComponent<T extends string>({
         if (caseChild.props.when === condition) {
           matchedChild = child;
         }
-      } else if ((child.type as unknown as Record<symbol, boolean>)[DefaultSymbol]) {
+      } else if (
+        (child.type as unknown as Record<symbol, boolean>)[DefaultSymbol]
+      ) {
         defaultChild = child;
       }
     }
   });
 
-  return <>{matchedChild || defaultChild}</> as ReactElement;
+  return (<>{matchedChild || defaultChild}</>) as ReactElement;
 }
 
 // Helper function that creates a typed Switch with bound Case component

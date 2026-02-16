@@ -139,7 +139,7 @@ ${
     ? `### Credentials Available
 ${authContext.credentials
   .map(
-    (c) => `- ${c.username}:${c.password}${c.context ? ` (${c.context})` : ""}`
+    (c) => `- ${c.username}:${c.password}${c.context ? ` (${c.context})` : ""}`,
   )
   .join("\n")}`
     : ""
@@ -184,7 +184,7 @@ function saveAgentMessages(
   sessionRootPath: string,
   agentName: string,
   messages: unknown[],
-  metadata?: Record<string, unknown>
+  metadata?: Record<string, unknown>,
 ): string {
   const subagentsDir = join(sessionRootPath, "subagents");
   if (!existsSync(subagentsDir)) {
@@ -206,8 +206,8 @@ function saveAgentMessages(
         messages,
       },
       null,
-      2
-    )
+      2,
+    ),
   );
 
   return filepath;
@@ -219,7 +219,7 @@ export async function runAuthBypassAgent(opts: {
   authConfig?: AIAuthConfig;
   toolOverride?: {
     execute_command?: (
-      opts: ExecuteCommandOpts
+      opts: ExecuteCommandOpts,
     ) => Promise<ExecuteCommandResult>;
     http_request?: (opts: HttpRequestOpts) => Promise<HttpRequestResult>;
   };
@@ -234,7 +234,7 @@ export async function runAuthBypassAgent(opts: {
       rootPath: session.rootPath,
       logsPath: session.logsPath,
     } as unknown as ConstructorParameters<typeof Logger>[0],
-    "auth-bypass-agent.log"
+    "auth-bypass-agent.log",
   );
 
   logger.info(`Starting AuthBypassAgent for ${input.baseUrl}`);
@@ -245,7 +245,7 @@ export async function runAuthBypassAgent(opts: {
     session,
     logger,
     input.baseUrl,
-    { authConfig }
+    { authConfig },
   );
 
   // Create http_request tool
@@ -342,7 +342,7 @@ export async function runAuthBypassAgent(opts: {
             description: z.string(),
             evidence: z.string(),
             severity: z.enum(["critical", "high", "medium", "low"]),
-          })
+          }),
         )
         .describe("Authorization bypasses found"),
     }),
@@ -350,7 +350,7 @@ export async function runAuthBypassAgent(opts: {
       testingSummary = summary;
       findings.push(...bypassesFound);
       logger.info(
-        `Auth bypass testing complete: ${bypassesFound.length} bypasses found`
+        `Auth bypass testing complete: ${bypassesFound.length} bypasses found`,
       );
       return { success: true, message: "Testing completed" };
     },
@@ -395,12 +395,12 @@ export async function runAuthBypassAgent(opts: {
             baseUrl: input.baseUrl,
             endpoints: input.authContext.endpoints,
             findingsCount: findings.length,
-          }
+          },
         );
       }
     } catch (e) {
       logger.error(
-        `Failed to save messages: ${e instanceof Error ? e.message : String(e)}`
+        `Failed to save messages: ${e instanceof Error ? e.message : String(e)}`,
       );
     }
 
@@ -433,11 +433,11 @@ export function createAuthBypassTool(
   model: AIModel,
   toolOverride?: {
     execute_command?: (
-      opts: ExecuteCommandOpts
+      opts: ExecuteCommandOpts,
     ) => Promise<ExecuteCommandResult>;
     http_request?: (opts: HttpRequestOpts) => Promise<HttpRequestResult>;
   },
-  authConfig?: AIAuthConfig
+  authConfig?: AIAuthConfig,
 ) {
   return tool({
     description: `Spawn a specialized Authorization Bypass Testing Agent.
@@ -468,7 +468,7 @@ Provide the authentication context you've discovered (endpoints, parameters, cre
                 username: z.string(),
                 password: z.string(),
                 context: z.string().optional(),
-              })
+              }),
             )
             .optional()
             .describe("Any credentials discovered"),
@@ -480,7 +480,7 @@ Provide the authentication context you've discovered (endpoints, parameters, cre
             .string()
             .optional()
             .describe(
-              "Any other relevant observations about the auth mechanism"
+              "Any other relevant observations about the auth mechanism",
             ),
         })
         .describe("Authentication context discovered during reconnaissance"),

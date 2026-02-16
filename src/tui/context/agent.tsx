@@ -1,4 +1,12 @@
-import { createContext, useContext, useState, useMemo, useCallback, useEffect, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useState,
+  useMemo,
+  useCallback,
+  useEffect,
+  type ReactNode,
+} from "react";
 import { type ModelInfo } from "../../core/ai";
 import { AVAILABLE_MODELS } from "../../core/ai/models";
 import { get as getConfig } from "../../core/config/config";
@@ -49,7 +57,8 @@ interface AgentProviderProps {
 
 export function AgentProvider({ children }: AgentProviderProps) {
   const [model, setModelInternal] = useState<ModelInfo>(AVAILABLE_MODELS[0]!);
-  const [isModelUserSelected, setIsModelUserSelected] = useState<boolean>(false);
+  const [isModelUserSelected, setIsModelUserSelected] =
+    useState<boolean>(false);
   const [tokenUsage, setTokenUsage] = useState<TokenUsage>({
     inputTokens: 0,
     outputTokens: 0,
@@ -70,43 +79,45 @@ export function AgentProvider({ children }: AgentProviderProps) {
   // 2. Fall back to GPT-4o Mini if OpenAI is configured
   // 3. Otherwise use first available model
   useEffect(() => {
-    getConfig().then((config) => {
-      const available = getAvailableModels(config);
-      if (available.length === 0) return;
+    getConfig()
+      .then((config) => {
+        const available = getAvailableModels(config);
+        if (available.length === 0) return;
 
-      // Group available models by provider
-      const byProvider = new Map<string, ModelInfo[]>();
-      for (const m of available) {
-        const list = byProvider.get(m.provider) || [];
-        list.push(m);
-        byProvider.set(m.provider, list);
-      }
-
-      // Find best default based on provider preference
-      let selectedModel: ModelInfo | null = null;
-      for (const provider of PROVIDER_PREFERENCE) {
-        const models = byProvider.get(provider);
-        if (!models || models.length === 0) continue;
-
-        // Try to find the preferred model for this provider
-        const preferredId = PREFERRED_DEFAULTS[provider];
-        if (preferredId) {
-          const preferred = models.find(m => m.id === preferredId);
-          if (preferred) {
-            selectedModel = preferred;
-            break;
-          }
+        // Group available models by provider
+        const byProvider = new Map<string, ModelInfo[]>();
+        for (const m of available) {
+          const list = byProvider.get(m.provider) || [];
+          list.push(m);
+          byProvider.set(m.provider, list);
         }
-        // Fall back to first model from this provider
-        selectedModel = models[0]!;
-        break;
-      }
 
-      if (selectedModel) {
-        setModelInternal(selectedModel);
-        // Don't mark as user-selected since this is auto-default
-      }
-    }).catch(() => {});
+        // Find best default based on provider preference
+        let selectedModel: ModelInfo | null = null;
+        for (const provider of PROVIDER_PREFERENCE) {
+          const models = byProvider.get(provider);
+          if (!models || models.length === 0) continue;
+
+          // Try to find the preferred model for this provider
+          const preferredId = PREFERRED_DEFAULTS[provider];
+          if (preferredId) {
+            const preferred = models.find((m) => m.id === preferredId);
+            if (preferred) {
+              selectedModel = preferred;
+              break;
+            }
+          }
+          // Fall back to first model from this provider
+          selectedModel = models[0]!;
+          break;
+        }
+
+        if (selectedModel) {
+          setModelInternal(selectedModel);
+          // Don't mark as user-selected since this is auto-default
+        }
+      })
+      .catch(() => {});
   }, []);
 
   const addTokenUsage = useCallback((input: number, output: number) => {
@@ -137,7 +148,17 @@ export function AgentProvider({ children }: AgentProviderProps) {
       isExecuting,
       setIsExecuting,
     }),
-    [model, setModel, isModelUserSelected, tokenUsage, hasExecuted, thinking, isExecuting, addTokenUsage, resetTokenUsage]
+    [
+      model,
+      setModel,
+      isModelUserSelected,
+      tokenUsage,
+      hasExecuted,
+      thinking,
+      isExecuting,
+      addTokenUsage,
+      resetTokenUsage,
+    ],
   );
 
   return (

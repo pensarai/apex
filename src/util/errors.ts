@@ -6,7 +6,7 @@ export abstract class NamedError extends Error {
 
   static create<Name extends string, Data extends z.ZodTypeAny>(
     name: Name,
-    data: Data
+    data: Data,
   ) {
     const schema = z.object({
       name: z.literal(name),
@@ -17,14 +17,20 @@ export abstract class NamedError extends Error {
 
       public override readonly name = name as Name;
 
-      constructor(public readonly data: z.input<Data>, options?: ErrorOptions) {
+      constructor(
+        public readonly data: z.input<Data>,
+        options?: ErrorOptions,
+      ) {
         super(name, options);
         this.name = name;
       }
 
       static isInstance(input: unknown): input is InstanceType<typeof result> {
         return (
-          typeof input === "object" && input !== null && "name" in input && input.name === name
+          typeof input === "object" &&
+          input !== null &&
+          "name" in input &&
+          input.name === name
         );
       }
 
@@ -47,6 +53,6 @@ export abstract class NamedError extends Error {
     "UnknownError",
     z.object({
       message: z.string(),
-    })
+    }),
   );
 }

@@ -53,7 +53,7 @@ export default function SwarmDashboard({
   onResumeAgent,
 }: SwarmDashboardProps) {
   const [currentView, setCurrentView] = useState<"overview" | "detail">(
-    "overview"
+    "overview",
   );
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [focusedIndex, setFocusedIndex] = useState(0);
@@ -64,22 +64,22 @@ export default function SwarmDashboard({
   const discoveryAgent = useMemo(
     () =>
       subagents.find(
-        (s) => s.type === "attack-surface" && s.status === "pending"
+        (s) => s.type === "attack-surface" && s.status === "pending",
       ) ||
       subagents.find((s) => s.type === "attack-surface") ||
       null,
-    [subagents]
+    [subagents],
   );
   const pentestAgents = useMemo(
     () => subagents.filter((s) => s.type === "pentest"),
-    [subagents]
+    [subagents],
   );
 
   // Aggregate endpoints from ALL attack-surface agents (old loaded + new active)
   const allEndpoints = useMemo(() => {
     const endpointSet = new Set<string>();
     const attackSurfaceAgents = subagents.filter(
-      (s) => s.type === "attack-surface"
+      (s) => s.type === "attack-surface",
     );
     for (const agent of attackSurfaceAgents) {
       for (const msg of agent.messages) {
@@ -104,7 +104,7 @@ export default function SwarmDashboard({
             m.role === "assistant" &&
             typeof m.content === "string" &&
             (m.content.includes("finding") ||
-              m.content.includes("vulnerability"))
+              m.content.includes("vulnerability")),
         ).length
       );
     }, 0);
@@ -125,7 +125,7 @@ export default function SwarmDashboard({
   const selectedAgent = useMemo(
     () =>
       selectedAgentId ? subagents.find((s) => s.id === selectedAgentId) : null,
-    [subagents, selectedAgentId]
+    [subagents, selectedAgentId],
   );
 
   // Keyboard navigation
@@ -141,7 +141,10 @@ export default function SwarmDashboard({
       }
 
       // R to resume paused discovery agent
-      if ((key.name === "r" || key.name === "R") && discoveryAgent?.status === "paused") {
+      if (
+        (key.name === "r" || key.name === "R") &&
+        discoveryAgent?.status === "paused"
+      ) {
         onResumeAgent?.(discoveryAgent.id);
         return;
       }
@@ -216,7 +219,10 @@ export default function SwarmDashboard({
         return;
       }
       // R to resume paused agent
-      if ((key.name === "r" || key.name === "R") && selectedAgent?.status === "paused") {
+      if (
+        (key.name === "r" || key.name === "R") &&
+        selectedAgent?.status === "paused"
+      ) {
         onResumeAgent?.(selectedAgent.id);
         return;
       }
@@ -232,7 +238,11 @@ export default function SwarmDashboard({
           setCurrentView("overview");
           setSelectedAgentId(null);
         }}
-        onResume={selectedAgent.status === "paused" ? () => onResumeAgent?.(selectedAgent.id) : undefined}
+        onResume={
+          selectedAgent.status === "paused"
+            ? () => onResumeAgent?.(selectedAgent.id)
+            : undefined
+        }
       />
     );
   }
@@ -264,8 +274,12 @@ export default function SwarmDashboard({
             >
               {discoveryAgent?.status === "paused" ? (
                 <box flexDirection="column" alignItems="center" gap={1}>
-                  <text fg={colors.orangeText}>⏸ Discovery was interrupted</text>
-                  <text fg={dimText}>Press <span fg={colors.orangeText}>[R]</span> to resume</text>
+                  <text fg={colors.orangeText}>
+                    ⏸ Discovery was interrupted
+                  </text>
+                  <text fg={dimText}>
+                    Press <span fg={colors.orangeText}>[R]</span> to resume
+                  </text>
                 </box>
               ) : discoveryAgent?.status === "pending" ? (
                 <box flexDirection="column" alignItems="center" gap={1}>
@@ -353,7 +367,6 @@ function DiscoveryPanel({
   showLogs,
   onToggleLogs,
 }: DiscoveryPanelProps) {
-
   // Expanded logs view
   if (showLogs && agent) {
     return (
@@ -384,7 +397,9 @@ function DiscoveryPanel({
               <text fg="red">✗ Attack Surface Discovery</text>
             )}
             {agent.status === "paused" && (
-              <text fg={colors.orangeText}>⏸ Attack Surface Discovery (Paused)</text>
+              <text fg={colors.orangeText}>
+                ⏸ Attack Surface Discovery (Paused)
+              </text>
             )}
           </box>
           <text fg={dimText}>
@@ -458,7 +473,15 @@ function DiscoveryPanel({
         <box flexDirection="column" padding={1} gap={1}>
           <text>
             <span fg={dimText}>Status: </span>
-            <span fg={agent.status === "pending" ? greenBullet : agent.status === "paused" ? colors.orangeText : creamText}>
+            <span
+              fg={
+                agent.status === "pending"
+                  ? greenBullet
+                  : agent.status === "paused"
+                    ? colors.orangeText
+                    : creamText
+              }
+            >
               {agent.status}
             </span>
           </text>
@@ -589,7 +612,9 @@ function AgentCard({ agent, focused, onSelect }: AgentCardProps) {
         ) : agent.status === "pending" ? (
           <SpinnerDots label={lastActivity} fg="green" />
         ) : agent.status === "paused" ? (
-          <text fg={colors.orangeText}>⏸ Paused — press Enter then R to resume</text>
+          <text fg={colors.orangeText}>
+            ⏸ Paused — press Enter then R to resume
+          </text>
         ) : (
           <text fg={agent.status === "completed" ? greenBullet : dimText}>
             {agent.status === "completed" ? "✓ Complete" : lastActivity}

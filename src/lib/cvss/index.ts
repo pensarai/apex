@@ -50,10 +50,10 @@ export type {
   CVSS4Severity,
   CVSS4ScoreType,
   CVSS4Score,
-} from './types';
+} from "./types";
 
 // Type utilities
-export { SEVERITY_RATINGS, getSeverityFromScore } from './types';
+export { SEVERITY_RATINGS, getSeverityFromScore } from "./types";
 
 // Calculator functions
 export {
@@ -62,7 +62,7 @@ export {
   parseVectorString,
   computeMacroVector,
   validateMetrics,
-} from './calculator';
+} from "./calculator";
 
 // Lookup tables (for advanced usage)
-export { MACROVECTOR_LOOKUP, METRIC_LEVELS } from './macrovector-scores';
+export { MACROVECTOR_LOOKUP, METRIC_LEVELS } from "./macrovector-scores";

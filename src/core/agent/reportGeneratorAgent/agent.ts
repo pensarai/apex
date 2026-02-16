@@ -4,20 +4,20 @@
  * Generates comprehensive penetration testing reports from session findings.
  */
 
-import { join } from 'path';
-import { readdirSync, readFileSync, writeFileSync, existsSync } from 'fs';
+import { join } from "path";
+import { readdirSync, readFileSync, writeFileSync, existsSync } from "fs";
 import type {
   ReportGeneratorInput,
   ReportGeneratorResult,
   Finding,
   FindingsCount,
-} from './types';
+} from "./types";
 
 /**
  * Generate a penetration testing report from session findings
  */
 export async function generatePentestReport(
-  input: ReportGeneratorInput
+  input: ReportGeneratorInput,
 ): Promise<ReportGeneratorResult> {
   const {
     sessionRootPath,
@@ -25,13 +25,13 @@ export async function generatePentestReport(
     target,
     startTime,
     endTime,
-    reportTitle = 'Penetration Test Report',
+    reportTitle = "Penetration Test Report",
     includeMethodology = true,
   } = input;
 
   try {
     // Load findings
-    const findingsPath = join(sessionRootPath, 'findings');
+    const findingsPath = join(sessionRootPath, "findings");
     const findings = loadFindings(findingsPath);
     const findingsCount = countBySeverity(findings);
 
@@ -48,7 +48,7 @@ export async function generatePentestReport(
     });
 
     // Write report
-    const reportPath = join(sessionRootPath, 'pentest-report.md');
+    const reportPath = join(sessionRootPath, "pentest-report.md");
     writeFileSync(reportPath, reportContent);
 
     return {
@@ -75,12 +75,12 @@ function loadFindings(findingsPath: string): Finding[] {
     return [];
   }
 
-  const files = readdirSync(findingsPath).filter((f) => f.endsWith('.json'));
+  const files = readdirSync(findingsPath).filter((f) => f.endsWith(".json"));
 
   return files
     .map((f) => {
       try {
-        const content = readFileSync(join(findingsPath, f), 'utf-8');
+        const content = readFileSync(join(findingsPath, f), "utf-8");
         return JSON.parse(content) as Finding;
       } catch {
         return null;
@@ -94,10 +94,10 @@ function loadFindings(findingsPath: string): Finding[] {
  */
 function countBySeverity(findings: Finding[]): FindingsCount {
   const baseCounts: FindingsCount = {
-    critical: findings.filter((f) => f.severity === 'CRITICAL').length,
-    high: findings.filter((f) => f.severity === 'HIGH').length,
-    medium: findings.filter((f) => f.severity === 'MEDIUM').length,
-    low: findings.filter((f) => f.severity === 'LOW').length,
+    critical: findings.filter((f) => f.severity === "CRITICAL").length,
+    high: findings.filter((f) => f.severity === "HIGH").length,
+    medium: findings.filter((f) => f.severity === "MEDIUM").length,
+    low: findings.filter((f) => f.severity === "LOW").length,
     total: findings.length,
   };
 
@@ -106,13 +106,21 @@ function countBySeverity(findings: Finding[]): FindingsCount {
   if (cvssFindings.length > 0) {
     const scores = cvssFindings.map((f) => f.cvss!.score);
     baseCounts.cvss = {
-      averageScore: Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10,
+      averageScore:
+        Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) /
+        10,
       maxScore: Math.max(...scores),
       byRange: {
         critical: cvssFindings.filter((f) => f.cvss!.score >= 9.0).length,
-        high: cvssFindings.filter((f) => f.cvss!.score >= 7.0 && f.cvss!.score < 9.0).length,
-        medium: cvssFindings.filter((f) => f.cvss!.score >= 4.0 && f.cvss!.score < 7.0).length,
-        low: cvssFindings.filter((f) => f.cvss!.score >= 0.1 && f.cvss!.score < 4.0).length,
+        high: cvssFindings.filter(
+          (f) => f.cvss!.score >= 7.0 && f.cvss!.score < 9.0,
+        ).length,
+        medium: cvssFindings.filter(
+          (f) => f.cvss!.score >= 4.0 && f.cvss!.score < 7.0,
+        ).length,
+        low: cvssFindings.filter(
+          (f) => f.cvss!.score >= 0.1 && f.cvss!.score < 4.0,
+        ).length,
         none: cvssFindings.filter((f) => f.cvss!.score === 0).length,
       },
     };
@@ -151,7 +159,9 @@ function buildReportContent(params: {
   sections.push(`# ${title}\n`);
 
   // Executive Summary
-  sections.push(buildExecutiveSummary(target, findingsCount, startTime, endTime));
+  sections.push(
+    buildExecutiveSummary(target, findingsCount, startTime, endTime),
+  );
 
   // Findings Summary Table
   sections.push(buildFindingsSummaryTable(findingsCount));
@@ -170,7 +180,7 @@ function buildReportContent(params: {
   // Appendix
   sections.push(buildAppendix(sessionId, findings));
 
-  return sections.join('\n\n---\n\n');
+  return sections.join("\n\n---\n\n");
 }
 
 /**
@@ -180,7 +190,7 @@ function buildExecutiveSummary(
   target: string,
   findingsCount: FindingsCount,
   startTime?: string,
-  endTime?: string
+  endTime?: string,
 ): string {
   const riskLevel = getRiskLevel(findingsCount);
 
@@ -197,7 +207,7 @@ function buildExecutiveSummary(
     if (endTime) {
       summary += ` to ${endTime}`;
     }
-    summary += '\n\n';
+    summary += "\n\n";
   }
 
   // Risk breakdown
@@ -232,11 +242,11 @@ function buildExecutiveSummary(
  * Get overall risk level based on findings
  */
 function getRiskLevel(findingsCount: FindingsCount): string {
-  if (findingsCount.critical > 0) return '🔴 CRITICAL';
-  if (findingsCount.high > 0) return '🟠 HIGH';
-  if (findingsCount.medium > 0) return '🟡 MEDIUM';
-  if (findingsCount.low > 0) return '🟢 LOW';
-  return '✅ MINIMAL';
+  if (findingsCount.critical > 0) return "🔴 CRITICAL";
+  if (findingsCount.high > 0) return "🟠 HIGH";
+  if (findingsCount.medium > 0) return "🟡 MEDIUM";
+  if (findingsCount.low > 0) return "🟢 LOW";
+  return "✅ MINIMAL";
 }
 
 /**
@@ -360,7 +370,7 @@ No vulnerabilities were identified during this assessment.
     }
 
     content += `**Endpoint:** \`${finding.endpoint}\`
-**Vulnerability Class:** ${finding.vulnerabilityClass || 'N/A'}
+**Vulnerability Class:** ${finding.vulnerabilityClass || "N/A"}
 
 #### Description
 
@@ -411,11 +421,11 @@ ${finding.references}
  * Get CVSS score badge emoji
  */
 function getCVSSBadge(score: number): string {
-  if (score >= 9.0) return '🔴';
-  if (score >= 7.0) return '🟠';
-  if (score >= 4.0) return '🟡';
-  if (score > 0) return '🟢';
-  return '⚪';
+  if (score >= 9.0) return "🔴";
+  if (score >= 7.0) return "🟠";
+  if (score >= 4.0) return "🟡";
+  if (score > 0) return "🟢";
+  return "⚪";
 }
 
 /**
@@ -423,16 +433,16 @@ function getCVSSBadge(score: number): string {
  */
 function getSeverityBadge(severity: string): string {
   switch (severity) {
-    case 'CRITICAL':
-      return '🔴';
-    case 'HIGH':
-      return '🟠';
-    case 'MEDIUM':
-      return '🟡';
-    case 'LOW':
-      return '🟢';
+    case "CRITICAL":
+      return "🔴";
+    case "HIGH":
+      return "🟠";
+    case "MEDIUM":
+      return "🟡";
+    case "LOW":
+      return "🟢";
     default:
-      return '⚪';
+      return "⚪";
   }
 }
 
@@ -459,7 +469,9 @@ No specific remediation actions are required at this time. Continue to:
     if (!remediations.has(key)) {
       remediations.set(key, []);
     }
-    remediations.get(key)!.push(`- ${finding.title}: ${finding.remediation.split('\n')[0]}`);
+    remediations
+      .get(key)!
+      .push(`- ${finding.title}: ${finding.remediation.split("\n")[0]}`);
   }
 
   let content = `## Recommendations
@@ -468,35 +480,36 @@ No specific remediation actions are required at this time. Continue to:
 
 `;
 
-  const critical = remediations.get('CRITICAL') || [];
-  const high = remediations.get('HIGH') || [];
+  const critical = remediations.get("CRITICAL") || [];
+  const high = remediations.get("HIGH") || [];
 
   if (critical.length > 0 || high.length > 0) {
-    content += [...critical, ...high].join('\n') + '\n\n';
+    content += [...critical, ...high].join("\n") + "\n\n";
   } else {
-    content += 'No critical or high-severity findings require immediate action.\n\n';
+    content +=
+      "No critical or high-severity findings require immediate action.\n\n";
   }
 
   content += `### Short-Term Actions (Medium)
 
 `;
 
-  const medium = remediations.get('MEDIUM') || [];
+  const medium = remediations.get("MEDIUM") || [];
   if (medium.length > 0) {
-    content += medium.join('\n') + '\n\n';
+    content += medium.join("\n") + "\n\n";
   } else {
-    content += 'No medium-severity findings identified.\n\n';
+    content += "No medium-severity findings identified.\n\n";
   }
 
   content += `### Long-Term Improvements (Low)
 
 `;
 
-  const low = remediations.get('LOW') || [];
+  const low = remediations.get("LOW") || [];
   if (low.length > 0) {
-    content += low.join('\n') + '\n\n';
+    content += low.join("\n") + "\n\n";
   } else {
-    content += 'No low-severity findings identified.\n\n';
+    content += "No low-severity findings identified.\n\n";
   }
 
   content += `### General Security Recommendations

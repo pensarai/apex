@@ -10,7 +10,7 @@ import { colors } from "../../theme";
 import { AsciiSpinner } from "./ascii-spinner";
 import { getToolSummary } from "./tool-registry";
 import { getResultSummary, type ResultSummary } from "./result-registry";
-import { isToolMessage, type ToolDisplayMessage } from "./type-guards";
+import { isToolMessage } from "./type-guards";
 import type { DisplayMessage } from "../agent-display";
 
 interface ToolRendererProps {
@@ -50,8 +50,8 @@ export const ToolRenderer = memo(function ToolRenderer({
   const borderColor = isError
     ? colors.errorColor
     : isPending
-    ? colors.yellowText
-    : colors.toolColor;
+      ? colors.yellowText
+      : colors.toolColor;
 
   return (
     <box flexDirection="row" marginTop={0}>
@@ -87,11 +87,15 @@ export const ToolRenderer = memo(function ToolRenderer({
           <box flexDirection="column" marginLeft={2}>
             {/* Summary line - always visible */}
             <box flexDirection="row" gap={1}>
-              <text fg={resultDisplay.isError ? colors.errorColor : colors.dimText}>
+              <text
+                fg={resultDisplay.isError ? colors.errorColor : colors.dimText}
+              >
                 {resultDisplay.isError ? "✗" : "→"}
               </text>
               <text
-                fg={resultDisplay.isError ? colors.errorColor : colors.creamText}
+                fg={
+                  resultDisplay.isError ? colors.errorColor : colors.creamText
+                }
               >
                 {resultDisplay.text}
               </text>

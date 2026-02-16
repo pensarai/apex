@@ -62,13 +62,13 @@ export const DocumentAssetSchema = z.object({
   assetName: z
     .string()
     .describe(
-      "Unique name for the asset (e.g., 'example.com', 'api.example.com', 'admin-panel')"
+      "Unique name for the asset (e.g., 'example.com', 'api.example.com', 'admin-panel')",
     ),
   assetType: AssetTypeEnum.describe("Type of asset discovered"),
   description: z
     .string()
     .describe(
-      "Detailed description of the asset including what it is and why it's relevant"
+      "Detailed description of the asset including what it is and why it's relevant",
     ),
   details: z
     .preprocess((val) => {
@@ -135,7 +135,7 @@ export const AttackSurfaceReportSchema = z.object({
   discoveredAssets: z
     .array(z.string())
     .describe(
-      "List of discovered assets with descriptions. Format: 'example.com - Web server (nginx) - Ports 80,443'"
+      "List of discovered assets with descriptions. Format: 'example.com - Web server (nginx) - Ports 80,443'",
     ),
   targets: z
     .array(PentestTargetSchema)
@@ -145,8 +145,8 @@ export const AttackSurfaceReportSchema = z.object({
     z
       .array(z.string())
       .describe(
-        "Key findings from reconnaissance. Format: '[SEVERITY] Finding description'"
-      )
+        "Key findings from reconnaissance. Format: '[SEVERITY] Finding description'",
+      ),
   ),
 });
 

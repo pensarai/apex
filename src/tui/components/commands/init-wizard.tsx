@@ -99,10 +99,15 @@ export default function InitWizard() {
       }
 
       // Scope constraints
-      if (state.scope.allowedHosts.length > 0 || state.scope.allowedPorts.length > 0) {
+      if (
+        state.scope.allowedHosts.length > 0 ||
+        state.scope.allowedPorts.length > 0
+      ) {
         sessionConfig.scopeConstraints = {
           allowedHosts: state.scope.allowedHosts,
-          allowedPorts: state.scope.allowedPorts.map(p => parseInt(p, 10)).filter(p => !isNaN(p)),
+          allowedPorts: state.scope.allowedPorts
+            .map((p) => parseInt(p, 10))
+            .filter((p) => !isNaN(p)),
           strictScope: state.scope.strictScope,
         };
       }
@@ -111,7 +116,10 @@ export default function InitWizard() {
       if (state.headers.mode !== "default") {
         sessionConfig.offensiveHeaders = {
           mode: state.headers.mode,
-          headers: state.headers.mode === "custom" ? state.headers.customHeaders : undefined,
+          headers:
+            state.headers.mode === "custom"
+              ? state.headers.customHeaders
+              : undefined,
         };
       }
 
@@ -127,7 +135,7 @@ export default function InitWizard() {
         targets: [state.target],
         name: state.name,
         config: sessionConfig,
-      })
+      });
 
       // Navigate to session route - SessionView will handle execution
       route.navigate({
@@ -192,7 +200,10 @@ export default function InitWizard() {
         if (focusedSection === 1 && focusedField === 0 && hostInput.trim()) {
           setState((prev) => ({
             ...prev,
-            scope: { ...prev.scope, allowedHosts: [...prev.scope.allowedHosts, hostInput.trim()] },
+            scope: {
+              ...prev.scope,
+              allowedHosts: [...prev.scope.allowedHosts, hostInput.trim()],
+            },
           }));
           setHostInput("");
           return;
@@ -200,17 +211,28 @@ export default function InitWizard() {
         if (focusedSection === 1 && focusedField === 1 && portInput.trim()) {
           setState((prev) => ({
             ...prev,
-            scope: { ...prev.scope, allowedPorts: [...prev.scope.allowedPorts, portInput.trim()] },
+            scope: {
+              ...prev.scope,
+              allowedPorts: [...prev.scope.allowedPorts, portInput.trim()],
+            },
           }));
           setPortInput("");
           return;
         }
-        if (focusedSection === 2 && state.headers.mode === "custom" && focusedField === 2 && headerNameInput.trim()) {
+        if (
+          focusedSection === 2 &&
+          state.headers.mode === "custom" &&
+          focusedField === 2 &&
+          headerNameInput.trim()
+        ) {
           setState((prev) => ({
             ...prev,
             headers: {
               ...prev.headers,
-              customHeaders: { ...prev.headers.customHeaders, [headerNameInput.trim()]: headerValueInput },
+              customHeaders: {
+                ...prev.headers.customHeaders,
+                [headerNameInput.trim()]: headerValueInput,
+              },
             },
           }));
           setHeaderNameInput("");
@@ -253,11 +275,16 @@ export default function InitWizard() {
           return;
         }
         if (focusedSection === 2 && focusedField === 0) {
-          const modes: Array<"none" | "default" | "custom"> = ["none", "default", "custom"];
+          const modes: Array<"none" | "default" | "custom"> = [
+            "none",
+            "default",
+            "custom",
+          ];
           const currentIndex = modes.indexOf(state.headers.mode);
-          const newIndex = key.name === "up"
-            ? (currentIndex - 1 + modes.length) % modes.length
-            : (currentIndex + 1) % modes.length;
+          const newIndex =
+            key.name === "up"
+              ? (currentIndex - 1 + modes.length) % modes.length
+              : (currentIndex + 1) % modes.length;
           setState((prev) => ({
             ...prev,
             headers: { ...prev.headers, mode: modes[newIndex]! },
@@ -270,10 +297,14 @@ export default function InitWizard() {
 
   function getMaxFieldsForSection(section: number): number {
     switch (section) {
-      case 0: return 4;
-      case 1: return 3;
-      case 2: return state.headers.mode === "custom" ? 3 : 1;
-      default: return 1;
+      case 0:
+        return 4;
+      case 1:
+        return 3;
+      case 2:
+        return state.headers.mode === "custom" ? 3 : 1;
+      default:
+        return 1;
     }
   }
 
@@ -350,14 +381,18 @@ export default function InitWizard() {
     <box width="100%" flexDirection="column" gap={2} paddingLeft={4}>
       <box flexDirection="column">
         <text fg={creamText}>Optional Configuration</text>
-        <text fg={dimText}>All fields are optional - configure only what you need</text>
+        <text fg={dimText}>
+          All fields are optional - configure only what you need
+        </text>
       </box>
 
       {/* Auth Section */}
       <box flexDirection="column" gap={1}>
         <text>
           <span fg={greenBullet}>█ </span>
-          <span fg={focusedSection === 0 ? creamText : dimText}>Authentication</span>
+          <span fg={focusedSection === 0 ? creamText : dimText}>
+            Authentication
+          </span>
         </text>
         {focusedSection === 0 && (
           <box flexDirection="column" gap={1} paddingLeft={2}>
@@ -365,28 +400,48 @@ export default function InitWizard() {
               label="Login URL"
               placeholder="https://example.com/login"
               value={state.auth.loginUrl}
-              onInput={(v) => setState((prev) => ({ ...prev, auth: { ...prev.auth, loginUrl: v } }))}
+              onInput={(v) =>
+                setState((prev) => ({
+                  ...prev,
+                  auth: { ...prev.auth, loginUrl: v },
+                }))
+              }
               focused={focusedField === 0}
             />
             <Input
               label="Username"
               placeholder="admin"
               value={state.auth.username}
-              onInput={(v) => setState((prev) => ({ ...prev, auth: { ...prev.auth, username: v } }))}
+              onInput={(v) =>
+                setState((prev) => ({
+                  ...prev,
+                  auth: { ...prev.auth, username: v },
+                }))
+              }
               focused={focusedField === 1}
             />
             <Input
               label="Password"
               placeholder="••••••••"
               value={state.auth.password}
-              onInput={(v) => setState((prev) => ({ ...prev, auth: { ...prev.auth, password: v } }))}
+              onInput={(v) =>
+                setState((prev) => ({
+                  ...prev,
+                  auth: { ...prev.auth, password: v },
+                }))
+              }
               focused={focusedField === 2}
             />
             <Input
               label="Auth Instructions"
               placeholder="Use OAuth flow, extract bearer token..."
               value={state.auth.instructions}
-              onInput={(v) => setState((prev) => ({ ...prev, auth: { ...prev.auth, instructions: v } }))}
+              onInput={(v) =>
+                setState((prev) => ({
+                  ...prev,
+                  auth: { ...prev.auth, instructions: v },
+                }))
+              }
               focused={focusedField === 3}
             />
           </box>
@@ -397,7 +452,9 @@ export default function InitWizard() {
       <box flexDirection="column" gap={1}>
         <text>
           <span fg={greenBullet}>█ </span>
-          <span fg={focusedSection === 1 ? creamText : dimText}>Scope Constraints</span>
+          <span fg={focusedSection === 1 ? creamText : dimText}>
+            Scope Constraints
+          </span>
         </text>
         {focusedSection === 1 && (
           <box flexDirection="column" gap={1} paddingLeft={2}>
@@ -412,7 +469,9 @@ export default function InitWizard() {
             {state.scope.allowedHosts.length > 0 && (
               <box flexDirection="column" paddingLeft={2}>
                 {state.scope.allowedHosts.map((h, i) => (
-                  <text key={i} fg={dimText}>• {h}</text>
+                  <text key={i} fg={dimText}>
+                    • {h}
+                  </text>
                 ))}
               </box>
             )}
@@ -427,12 +486,16 @@ export default function InitWizard() {
             {state.scope.allowedPorts.length > 0 && (
               <box flexDirection="column" paddingLeft={2}>
                 {state.scope.allowedPorts.map((p, i) => (
-                  <text key={i} fg={dimText}>• {p}</text>
+                  <text key={i} fg={dimText}>
+                    • {p}
+                  </text>
                 ))}
               </box>
             )}
             <box flexDirection="row" gap={1}>
-              <text fg={focusedField === 2 ? creamText : dimText}>Strict Scope:</text>
+              <text fg={focusedField === 2 ? creamText : dimText}>
+                Strict Scope:
+              </text>
               <text fg={state.scope.strictScope ? greenBullet : dimText}>
                 {state.scope.strictScope ? "● Enabled" : "○ Disabled"}
               </text>
@@ -446,7 +509,9 @@ export default function InitWizard() {
       <box flexDirection="column" gap={1}>
         <text>
           <span fg={greenBullet}>█ </span>
-          <span fg={focusedSection === 2 ? creamText : dimText}>Request Headers</span>
+          <span fg={focusedSection === 2 ? creamText : dimText}>
+            Request Headers
+          </span>
         </text>
         {focusedSection === 2 && (
           <box flexDirection="column" gap={1} paddingLeft={2}>
@@ -454,10 +519,15 @@ export default function InitWizard() {
               <text fg={state.headers.mode === "none" ? greenBullet : dimText}>
                 {state.headers.mode === "none" ? "●" : "○"} None
               </text>
-              <text fg={state.headers.mode === "default" ? greenBullet : dimText}>
-                {state.headers.mode === "default" ? "●" : "○"} Default (User-Agent: pensar-apex)
+              <text
+                fg={state.headers.mode === "default" ? greenBullet : dimText}
+              >
+                {state.headers.mode === "default" ? "●" : "○"} Default
+                (User-Agent: pensar-apex)
               </text>
-              <text fg={state.headers.mode === "custom" ? greenBullet : dimText}>
+              <text
+                fg={state.headers.mode === "custom" ? greenBullet : dimText}
+              >
                 {state.headers.mode === "custom" ? "●" : "○"} Custom
               </text>
             </box>
@@ -481,9 +551,13 @@ export default function InitWizard() {
                 />
                 {Object.keys(state.headers.customHeaders).length > 0 && (
                   <box flexDirection="column">
-                    {Object.entries(state.headers.customHeaders).map(([k, v]) => (
-                      <text key={k} fg={dimText}>• {k}: {v}</text>
-                    ))}
+                    {Object.entries(state.headers.customHeaders).map(
+                      ([k, v]) => (
+                        <text key={k} fg={dimText}>
+                          • {k}: {v}
+                        </text>
+                      ),
+                    )}
                   </box>
                 )}
               </box>

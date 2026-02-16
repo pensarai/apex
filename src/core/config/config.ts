@@ -39,7 +39,7 @@ export async function init() {
   }
 
   const version = await Installation.getVersion();
-  return {...DEFAULT_CONFIG, version };
+  return { ...DEFAULT_CONFIG, version };
 }
 
 export async function get(): Promise<Config> {
@@ -62,8 +62,10 @@ export async function get(): Promise<Config> {
     ...parsedConfig,
     version: version,
     openAiAPIKey: process.env.OPENAI_API_KEY ?? parsedConfig.openAiAPIKey,
-    anthropicAPIKey: process.env.ANTHROPIC_API_KEY ?? parsedConfig.anthropicAPIKey,
-    openRouterAPIKey: process.env.OPENROUTER_API_KEY ?? parsedConfig.openRouterAPIKey,
+    anthropicAPIKey:
+      process.env.ANTHROPIC_API_KEY ?? parsedConfig.anthropicAPIKey,
+    openRouterAPIKey:
+      process.env.OPENROUTER_API_KEY ?? parsedConfig.openRouterAPIKey,
     bedrockAPIKey: process.env.BEDROCK_API_KEY ?? parsedConfig.bedrockAPIKey,
     daytonaAPIKey: process.env.DAYTONA_API_KEY ?? parsedConfig.daytonaAPIKey,
     daytonaOrgId: process.env.DAYTONA_ORG_ID ?? parsedConfig.daytonaOrgId,

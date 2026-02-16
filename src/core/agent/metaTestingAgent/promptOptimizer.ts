@@ -16,11 +16,7 @@ import { z } from "zod";
 import { join } from "path";
 import { existsSync, writeFileSync, readFileSync } from "fs";
 import { Logger } from "../logger";
-import type {
-  Adaptation,
-  PromptOptimization,
-  MetaTestingSessionInfo,
-} from "./types";
+import type { PromptOptimization, MetaTestingSessionInfo } from "./types";
 import { loadAdaptations } from "./planMemory";
 
 const BASE_OPTIMIZATION_PROMPT = `
@@ -32,11 +28,11 @@ Use this information to guide your approach selection.
 
 export function createPromptOptimizerTool(
   session: MetaTestingSessionInfo,
-  logger: Logger
+  logger: Logger,
 ) {
   const optimizedPromptPath = join(
     session.rootPath,
-    "execution_prompt_optimized.md"
+    "execution_prompt_optimized.md",
   );
 
   const optimize_prompt = tool({
@@ -65,7 +61,7 @@ This is meta-prompting: the agent optimizing its own guidance based on experienc
       toolCallDescription: z
         .string()
         .describe(
-          "A concise, human-readable description of what this tool call is doing (e.g., 'Optimizing execution prompt based on learned patterns')"
+          "A concise, human-readable description of what this tool call is doing (e.g., 'Optimizing execution prompt based on learned patterns')",
         ),
     }),
     execute: async () => {
@@ -107,12 +103,12 @@ Then call optimize_prompt to generate optimized guidance.`,
 
         writeFileSync(optimizedPromptPath, optimizedPrompt);
         logger.info(
-          `Optimized prompt generated: ${worked.length} working, ${failed.length} failed, ${constraints.length} constraints`
+          `Optimized prompt generated: ${worked.length} working, ${failed.length} failed, ${constraints.length} constraints`,
         );
 
         const optimizationPath = join(
           session.rootPath,
-          "prompt_optimization.json"
+          "prompt_optimization.json",
         );
         writeFileSync(optimizationPath, JSON.stringify(optimization, null, 2));
 
@@ -150,9 +146,9 @@ ${
 ${failed
   .slice(-5)
   .map((f) => `- ${f.approach}`)
-  .join("\n")}${
-        failed.length > 5 ? `\n  ... and ${failed.length - 5} more` : ""
-      }
+  .join(
+    "\n",
+  )}${failed.length > 5 ? `\n  ... and ${failed.length - 5} more` : ""}
 `
     : ""
 }
@@ -176,7 +172,6 @@ ${failed
 
   return { optimize_prompt };
 }
-
 
 function generateOptimizedPrompt(opt: PromptOptimization): string {
   let prompt = `# Optimized Execution Guidance
@@ -237,9 +232,7 @@ Do NOT retry these exact approaches - pivot to different techniques.
       prompt += `- **FAILED:** ${tactic}\n`;
     }
     if (uniqueFailed.length > 10) {
-      prompt += `- ... and ${
-        uniqueFailed.length - 10
-      } more failed approaches\n`;
+      prompt += `- ... and ${uniqueFailed.length - 10} more failed approaches\n`;
     }
     prompt += "\n";
   }
@@ -275,7 +268,7 @@ Remember: Direct-first economics - always prefer the shortest path to your objec
 export function loadOptimizedPrompt(sessionRootPath: string): string | null {
   const optimizedPromptPath = join(
     sessionRootPath,
-    "execution_prompt_optimized.md"
+    "execution_prompt_optimized.md",
   );
 
   if (!existsSync(optimizedPromptPath)) {
@@ -290,7 +283,7 @@ export function loadOptimizedPrompt(sessionRootPath: string): string | null {
 }
 
 export function loadOptimization(
-  sessionRootPath: string
+  sessionRootPath: string,
 ): PromptOptimization | null {
   const optimizationPath = join(sessionRootPath, "prompt_optimization.json");
 

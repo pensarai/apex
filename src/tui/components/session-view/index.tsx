@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useKeyboard } from "@opentui/react";
 import { RGBA } from "@opentui/core";
 import { useRoute } from "../../context/route";
 import { useAgent } from "../../context/agent";
@@ -10,10 +9,7 @@ import SwarmDashboard, {
 import DriverDashboard from "../driver-dashboard";
 import OperatorDashboard from "../operator-dashboard";
 import { Session } from "../../../core/session";
-import {
-  loadSessionState,
-  type UISubagent,
-} from "../../../core/session/loader";
+import { loadSessionState } from "../../../core/session/loader";
 import {
   runStreamlinedPentest,
   type StreamlinedPentestProgress,
@@ -72,7 +68,7 @@ interface StreamChunk {
 }
 
 function isStreamChunk(chunk: unknown): chunk is StreamChunk {
-  return typeof chunk === 'object' && chunk !== null && 'type' in chunk;
+  return typeof chunk === "object" && chunk !== null && "type" in chunk;
 }
 
 /** Type for step-finish event data with usage info */
@@ -119,40 +115,36 @@ export default function SessionView({
   const subagentsRef = useRef(subagents);
   subagentsRef.current = subagents;
 
-  const killAgent = useCallback((agentId: string) => {
-    const controller = agentAbortControllers.current.get(agentId);
-    if (controller) {
-      controller.abort();
-      setSubagents(prev => {
-        const agent = prev.find(a => a.id === agentId);
-        // Persist canceled status to disk so it survives session resume
-        if (agent && session) {
-          try {
-            const messages = agent.messages.map(m => ({
-              role: m.role,
-              content: m.content,
-            }));
-            saveAgentMessages(
-              session.rootPath,
-              agent.id,
-              messages,
-              {
+  const killAgent = useCallback(
+    (agentId: string) => {
+      const controller = agentAbortControllers.current.get(agentId);
+      if (controller) {
+        controller.abort();
+        setSubagents((prev) => {
+          const agent = prev.find((a) => a.id === agentId);
+          // Persist canceled status to disk so it survives session resume
+          if (agent && session) {
+            try {
+              const messages = agent.messages.map((m) => ({
+                role: m.role,
+                content: m.content,
+              }));
+              saveAgentMessages(session.rootPath, agent.id, messages, {
                 target: agent.target,
                 status: "canceled",
-              }
-            );
-          } catch (_e) {
-            // Best-effort persistence — don't break the kill flow
+              });
+            } catch (_e) {
+              // Best-effort persistence — don't break the kill flow
+            }
           }
-        }
-        return prev.map(a =>
-          a.id === agentId
-            ? { ...a, status: "canceled" as const }
-            : a
-        );
-      });
-    }
-  }, [session]);
+          return prev.map((a) =>
+            a.id === agentId ? { ...a, status: "canceled" as const } : a,
+          );
+        });
+      }
+    },
+    [session],
+  );
 
   // Load session on mount
   useEffect(() => {
@@ -232,7 +224,10 @@ export default function SessionView({
 
   // Start the pentest
   const startPentest = useCallback(
-    async (execSession: Session.SessionInfo, previousDiscoveryResults?: AttackSurfaceAnalysisResults) => {
+    async (
+      execSession: Session.SessionInfo,
+      previousDiscoveryResults?: AttackSurfaceAnalysisResults,
+    ) => {
       setIsExecuting(true);
       setThinking(true);
       setStartTime(new Date());
@@ -248,14 +243,16 @@ export default function SessionView({
         // Add or reuse discovery subagent — preserve existing messages on resume
         setSubagents((prev) => {
           const existingIdx = prev.findIndex(
-            (s) => s.id === "attack-surface-discovery"
+            (s) => s.id === "attack-surface-discovery",
           );
           if (existingIdx !== -1) {
             // Reuse existing entry: keep old messages, update status
             const updated = [...prev];
             updated[existingIdx] = {
               ...updated[existingIdx]!,
-              status: previousDiscoveryResults ? "completed" as const : "pending" as const,
+              status: previousDiscoveryResults
+                ? ("completed" as const)
+                : ("pending" as const),
             };
             return updated;
           }
@@ -293,7 +290,7 @@ export default function SessionView({
             if (stepTokens > 0)
               addTokenUsage(
                 step.usage.inputTokens ?? 0,
-                step.usage.outputTokens ?? 0
+                step.usage.outputTokens ?? 0,
               );
 
             // Update messages from step data (same pattern as onPentestAgentStream)
@@ -301,7 +298,7 @@ export default function SessionView({
 
             setSubagents((prev) => {
               const idx = prev.findIndex(
-                (s) => s.id === "attack-surface-discovery"
+                (s) => s.id === "attack-surface-discovery",
               );
               if (idx === -1) return prev;
 
@@ -332,7 +329,7 @@ export default function SessionView({
                 setThinking(false);
                 for (const tc of toolCalls) {
                   const exists = newMessages.some(
-                    (m) => m.role === "tool" && m.toolCallId === tc.toolCallId
+                    (m) => m.role === "tool" && m.toolCallId === tc.toolCallId,
                   );
                   if (!exists) {
                     // AI SDK v5.x uses 'input' instead of 'args'
@@ -359,7 +356,7 @@ export default function SessionView({
                 setThinking(true);
                 for (const tr of toolResults) {
                   const msgIdx = newMessages.findIndex(
-                    (m) => m.role === "tool" && m.toolCallId === tr.toolCallId
+                    (m) => m.role === "tool" && m.toolCallId === tr.toolCallId,
                   );
                   if (msgIdx !== -1) {
                     const existingMsg = newMessages[msgIdx] as ToolUIMessage;
@@ -405,7 +402,7 @@ export default function SessionView({
               if (currentDiscoveryText.trim()) {
                 setSubagents((prev) => {
                   const idx = prev.findIndex(
-                    (s) => s.id === "attack-surface-discovery"
+                    (s) => s.id === "attack-surface-discovery",
                   );
                   if (idx === -1) return prev;
 
@@ -451,7 +448,7 @@ export default function SessionView({
 
               setSubagents((prev) => {
                 const idx = prev.findIndex(
-                  (s) => s.id === "attack-surface-discovery"
+                  (s) => s.id === "attack-surface-discovery",
                 );
                 if (idx === -1) return prev;
 
@@ -461,7 +458,7 @@ export default function SessionView({
 
                 // Check if tool call already exists
                 const exists = newMessages.some(
-                  (m) => m.role === "tool" && m.toolCallId === toolCallId
+                  (m) => m.role === "tool" && m.toolCallId === toolCallId,
                 );
                 if (!exists) {
                   newMessages.push({
@@ -488,7 +485,7 @@ export default function SessionView({
 
               setSubagents((prev) => {
                 const idx = prev.findIndex(
-                  (s) => s.id === "attack-surface-discovery"
+                  (s) => s.id === "attack-surface-discovery",
                 );
                 if (idx === -1) return prev;
 
@@ -497,7 +494,7 @@ export default function SessionView({
                 const newMessages = [...subagent.messages];
 
                 const msgIdx = newMessages.findIndex(
-                  (m) => m.role === "tool" && m.toolCallId === toolCallId
+                  (m) => m.role === "tool" && m.toolCallId === toolCallId,
                 );
                 if (msgIdx !== -1) {
                   const existingMsg = newMessages[msgIdx] as ToolUIMessage;
@@ -539,7 +536,7 @@ export default function SessionView({
               const updated = prev.map((s) =>
                 s.id === "attack-surface-discovery" && s.status === "pending"
                   ? { ...s, status: "completed" as const }
-                  : s
+                  : s,
               );
               return [
                 ...updated,
@@ -621,7 +618,7 @@ export default function SessionView({
 
                 // Check if tool call already exists
                 const exists = newMessages.some(
-                  (m) => m.role === "tool" && m.toolCallId === toolCallId
+                  (m) => m.role === "tool" && m.toolCallId === toolCallId,
                 );
                 if (!exists) {
                   newMessages.push({
@@ -655,7 +652,7 @@ export default function SessionView({
                 const newMessages = [...subagent.messages];
 
                 const msgIdx = newMessages.findIndex(
-                  (m) => m.role === "tool" && m.toolCallId === toolCallId
+                  (m) => m.role === "tool" && m.toolCallId === toolCallId,
                 );
                 if (msgIdx !== -1) {
                   const existingMsg = newMessages[msgIdx] as ToolUIMessage;
@@ -697,7 +694,7 @@ export default function SessionView({
                 if (stepTokens > 0)
                   addTokenUsage(
                     usage.inputTokens ?? 0,
-                    usage.outputTokens ?? 0
+                    usage.outputTokens ?? 0,
                   );
               }
 
@@ -708,7 +705,7 @@ export default function SessionView({
 
           onPentestAgentComplete: (
             agentId: string,
-            agentResult: MetaVulnerabilityTestResult
+            agentResult: MetaVulnerabilityTestResult,
           ) => {
             setSubagents((prev) =>
               prev.map((sub) =>
@@ -727,8 +724,8 @@ export default function SessionView({
                         },
                       ],
                     }
-                  : sub
-              )
+                  : sub,
+              ),
             );
           },
 
@@ -742,7 +739,7 @@ export default function SessionView({
           if (
             (result.reportPath && existsSync(result.reportPath)) ||
             existsSync(
-              result.session.rootPath + "/comprehensive-pentest-report.md"
+              result.session.rootPath + "/comprehensive-pentest-report.md",
             )
           ) {
             setIsCompleted(true);
@@ -759,12 +756,12 @@ export default function SessionView({
           // Aborted by user
         } else {
           setError(
-            error instanceof Error ? error.message : "Unknown error occurred"
+            error instanceof Error ? error.message : "Unknown error occurred",
           );
         }
       }
     },
-    [model.id, addTokenUsage, setThinking, setIsExecuting]
+    [model.id, addTokenUsage, setThinking, setIsExecuting],
   );
 
   // Resume a paused agent individually
@@ -774,7 +771,7 @@ export default function SessionView({
 
       // Read current subagents via ref to avoid stale closure
       const paused = subagentsRef.current.find(
-        (s) => s.id === agentId && s.status === "paused"
+        (s) => s.id === agentId && s.status === "paused",
       );
       if (!paused) return;
 
@@ -782,7 +779,10 @@ export default function SessionView({
       // If discovery completed before interruption, skip it entirely.
       if (paused.type === "attack-surface") {
         let previousResults: AttackSurfaceAnalysisResults | undefined;
-        const resultsPath = join(session.rootPath, "attack-surface-results.json");
+        const resultsPath = join(
+          session.rootPath,
+          "attack-surface-results.json",
+        );
         if (existsSync(resultsPath)) {
           try {
             previousResults = JSON.parse(readFileSync(resultsPath, "utf-8"));
@@ -802,8 +802,8 @@ export default function SessionView({
       // Update status to pending (running)
       setSubagents((prev) =>
         prev.map((s) =>
-          s.id === agentId ? { ...s, status: "pending" as const } : s
-        )
+          s.id === agentId ? { ...s, status: "pending" as const } : s,
+        ),
       );
 
       setIsExecuting(true);
@@ -896,7 +896,7 @@ export default function SessionView({
                 const newMessages = [...subagent.messages];
 
                 const exists = newMessages.some(
-                  (m) => m.role === "tool" && m.toolCallId === toolCallId
+                  (m) => m.role === "tool" && m.toolCallId === toolCallId,
                 );
                 if (!exists) {
                   newMessages.push({
@@ -929,7 +929,7 @@ export default function SessionView({
                 const newMessages = [...subagent.messages];
 
                 const msgIdx = newMessages.findIndex(
-                  (m) => m.role === "tool" && m.toolCallId === toolCallId
+                  (m) => m.role === "tool" && m.toolCallId === toolCallId,
                 );
                 if (msgIdx !== -1) {
                   const existingMsg = newMessages[msgIdx] as ToolUIMessage;
@@ -968,10 +968,7 @@ export default function SessionView({
               const stepTokens =
                 (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0);
               if (stepTokens > 0)
-                addTokenUsage(
-                  usage.inputTokens ?? 0,
-                  usage.outputTokens ?? 0
-                );
+                addTokenUsage(usage.inputTokens ?? 0, usage.outputTokens ?? 0);
             }
             // Reset accumulated text at step boundaries
             accumulatedText = "";
@@ -984,42 +981,50 @@ export default function SessionView({
             s.id === agentId
               ? {
                   ...s,
-                  status: result.error ? ("failed" as const) : ("completed" as const),
+                  status: result.error
+                    ? ("failed" as const)
+                    : ("completed" as const),
                   resumeInfo: undefined,
                   messages: [
                     ...s.messages,
                     {
                       role: "assistant" as const,
-                      content: `${
-                        result.findingsCount > 0 ? "✅" : "⚪"
-                      } ${result.summary}`,
+                      content: `${result.findingsCount > 0 ? "✅" : "⚪"} ${result.summary}`,
                       createdAt: new Date(),
                     },
                   ],
                 }
-              : s
-          )
+              : s,
+          ),
         );
       } catch (error) {
         setSubagents((prev) =>
           prev.map((s) =>
             s.id === agentId
               ? { ...s, status: "failed" as const, resumeInfo: undefined }
-              : s
-          )
+              : s,
+          ),
         );
       }
 
       setThinking(false);
       // Only set isExecuting=false if no other agents are still running
       const stillRunning = subagentsRef.current.some(
-        (s) => s.status === "pending" && s.id !== agentId
+        (s) => s.status === "pending" && s.id !== agentId,
       );
       if (!stillRunning) {
         setIsExecuting(false);
       }
     },
-    [session, model.id, abortController, addTokenUsage, setThinking, setIsExecuting, startPentest]
+    [
+      session,
+      model.id,
+      abortController,
+      addTokenUsage,
+      setThinking,
+      setIsExecuting,
+      startPentest,
+    ],
   );
 
   // Open report
@@ -1084,7 +1089,13 @@ export default function SessionView({
 
   // Operator mode - render OperatorDashboard for interactive pentesting
   if (session.config?.mode === "operator" || openAsOperator) {
-    return <OperatorDashboard session={session} isResume={isResume} openAsOperator={openAsOperator} />;
+    return (
+      <OperatorDashboard
+        session={session}
+        isResume={isResume}
+        openAsOperator={openAsOperator}
+      />
+    );
   }
 
   // Auto mode - Render SwarmDashboard with streamlined pentest

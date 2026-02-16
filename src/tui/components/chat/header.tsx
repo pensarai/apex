@@ -5,8 +5,12 @@
  * Layout: MODE | target URL | endpoints found | findings documented | tokens | tool calls
  */
 
-import { colors, formatTokenCount, getTierColor } from "../../theme";
-import type { OperatorMode, OperatorStage, PermissionTier } from "../../../core/operator";
+import { colors, getTierColor } from "../../theme";
+import type {
+  OperatorMode,
+  OperatorStage,
+  PermissionTier,
+} from "../../../core/operator";
 
 export interface HeaderProps {
   /** Session mode */
@@ -85,9 +89,7 @@ export function Header({
       {/* Left side: MODE | target | endpoints | findings */}
       <box flexDirection="row" gap={1}>
         {/* Mode indicator */}
-        <text fg={modeDisplay.color}>
-          {modeDisplay.text}
-        </text>
+        <text fg={modeDisplay.color}>{modeDisplay.text}</text>
 
         {/* Target URL */}
         {target && (
