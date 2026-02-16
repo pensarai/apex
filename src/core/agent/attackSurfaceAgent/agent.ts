@@ -52,7 +52,7 @@ function mergeAuthCredentials(
       sessionToken?: string;
       customHeaders?: Record<string, string>;
     };
-  }
+  },
 ): AuthCredentials | undefined {
   const hasExplicit =
     explicit.username ||
@@ -156,7 +156,7 @@ export interface RunAgentProps {
   authConfig?: AIAuthConfig;
   toolOverride?: {
     execute_command?: (
-      opts: ExecuteCommandOpts
+      opts: ExecuteCommandOpts,
     ) => Promise<ExecuteCommandResult>;
     http_request?: (opts: HttpRequestOpts) => Promise<HttpRequestResult>;
   };
@@ -208,12 +208,12 @@ export async function runAgent(opts: RunAgentProps): Promise<{
     console.log(`\n🎯 SCOPE CONSTRAINTS ENABLED:`);
     if (scopeConstraints.allowedHosts) {
       console.log(
-        `   Allowed hosts: ${scopeConstraints.allowedHosts.join(", ")}`
+        `   Allowed hosts: ${scopeConstraints.allowedHosts.join(", ")}`,
       );
     }
     if (scopeConstraints.allowedPorts) {
       console.log(
-        `   Allowed ports: ${scopeConstraints.allowedPorts.join(", ")}`
+        `   Allowed ports: ${scopeConstraints.allowedPorts.join(", ")}`,
       );
     }
     console.log(`   Mode: STRICT - Only in-scope targets will be tested\n`);
@@ -239,7 +239,7 @@ export async function runAgent(opts: RunAgentProps): Promise<{
     onToolTokenUsage,
     abortSignal,
     undefined, // operatorMode
-    authConfig
+    authConfig,
   );
 
   // Create browser tools for JavaScript-heavy page analysis
@@ -249,7 +249,7 @@ export async function runAgent(opts: RunAgentProps): Promise<{
     evidenceDir,
     "operator", // Attack surface uses operator mode (reconnaissance-focused)
     undefined, // No logger needed for attack surface
-    abortSignal
+    abortSignal,
   );
 
   // Attack Surface specific tool: document_asset
@@ -270,7 +270,7 @@ Each asset creates a JSON file in the assets directory for tracking and analysis
       assetName: z
         .string()
         .describe(
-          "Unique name for the asset (e.g., 'example.com', 'api.example.com', 'admin-panel')"
+          "Unique name for the asset (e.g., 'example.com', 'api.example.com', 'admin-panel')",
         ),
       assetType: z
         .enum([
@@ -288,7 +288,7 @@ Each asset creates a JSON file in the assets directory for tracking and analysis
       description: z
         .string()
         .describe(
-          "Detailed description of the asset including what it is and why it's relevant"
+          "Detailed description of the asset including what it is and why it's relevant",
         ),
       details: z
         .preprocess(
@@ -316,7 +316,7 @@ Each asset creates a JSON file in the assets directory for tracking and analysis
               .array(z.string())
               .optional()
               .describe(
-                "Technology stack (e.g., 'Node.js', 'Express', 'MongoDB')"
+                "Technology stack (e.g., 'Node.js', 'Express', 'MongoDB')",
               ),
             endpoints: z
               .array(z.string())
@@ -330,24 +330,27 @@ Each asset creates a JSON file in the assets directory for tracking and analysis
               .union([z.string(), z.number()])
               .optional()
               .describe(
-                "Status (active, inactive, redirect, error) or HTTP status code"
+                "Status (active, inactive, redirect, error) or HTTP status code",
               ),
-          })
+          }),
         )
         .describe("Additional details about the asset"),
       riskLevel: z
-        .preprocess((val) => {
-          // Extract enum value from strings like ">HIGH", "HIGH!", "- CRITICAL", etc.
-          if (typeof val === "string") {
-            const upper = val.toUpperCase();
-            // Try to extract the severity level
-            if (upper.includes("CRITICAL")) return "CRITICAL";
-            if (upper.includes("HIGH")) return "HIGH";
-            if (upper.includes("MEDIUM")) return "MEDIUM";
-            if (upper.includes("LOW")) return "LOW";
-          }
-          return val;
-        }, z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]))
+        .preprocess(
+          (val) => {
+            // Extract enum value from strings like ">HIGH", "HIGH!", "- CRITICAL", etc.
+            if (typeof val === "string") {
+              const upper = val.toUpperCase();
+              // Try to extract the severity level
+              if (upper.includes("CRITICAL")) return "CRITICAL";
+              if (upper.includes("HIGH")) return "HIGH";
+              if (upper.includes("MEDIUM")) return "MEDIUM";
+              if (upper.includes("LOW")) return "LOW";
+            }
+            return val;
+          },
+          z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]),
+        )
         .describe("Risk level: LOW-CRITICAL (exposed/sensitive)"),
       notes: z
         .string()
@@ -356,7 +359,7 @@ Each asset creates a JSON file in the assets directory for tracking and analysis
       toolCallDescription: z
         .string()
         .describe(
-          "A concise, human-readable description of what this tool call is doing (e.g., 'Documenting discovered API endpoint')"
+          "A concise, human-readable description of what this tool call is doing (e.g., 'Documenting discovered API endpoint')",
         ),
     }),
     execute: async (asset) => {
@@ -447,7 +450,7 @@ Use this to:
       toolCallDescription: z
         .string()
         .describe(
-          "A concise, human-readable description of what this tool call is doing (e.g., 'Authenticating with admin credentials')"
+          "A concise, human-readable description of what this tool call is doing (e.g., 'Authenticating with admin credentials')",
         ),
     }),
     execute: async (params) => {
@@ -484,7 +487,7 @@ Use this to:
           authRequest.headers = { "Content-Type": "application/json" };
         } else if (method === "basic_auth") {
           const authHeader = Buffer.from(`${username}:${password}`).toString(
-            "base64"
+            "base64",
           );
           authRequest.headers = { Authorization: `Basic ${authHeader}` };
         }
@@ -592,12 +595,12 @@ When to use delegate_to_auth_subagent vs authenticate_and_maintain_session:
             .record(z.string(), z.string())
             .optional()
             .describe(
-              "Custom headers to verify (e.g., X-API-Key, X-Auth-Token)"
+              "Custom headers to verify (e.g., X-API-Key, X-Auth-Token)",
             ),
         })
         .optional()
         .describe(
-          "Pre-existing tokens to verify (skips login flow, just validates these work)"
+          "Pre-existing tokens to verify (skips login flow, just validates these work)",
         ),
       authHints: z
         .object({
@@ -617,7 +620,7 @@ When to use delegate_to_auth_subagent vs authenticate_and_maintain_session:
             .array(z.string())
             .optional()
             .describe(
-              "Protected endpoints discovered during recon that require auth (for token verification)"
+              "Protected endpoints discovered during recon that require auth (for token verification)",
             ),
         })
         .optional()
@@ -649,7 +652,7 @@ When to use delegate_to_auth_subagent vs authenticate_and_maintain_session:
         if (tokens?.cookies) console.log(`   Cookies: [PROVIDED]`);
         if (tokens?.customHeaders)
           console.log(
-            `   Custom Headers: ${Object.keys(tokens.customHeaders).join(", ")}`
+            `   Custom Headers: ${Object.keys(tokens.customHeaders).join(", ")}`,
           );
 
         // Log session-level credentials that will be inherited
@@ -667,21 +670,19 @@ When to use delegate_to_auth_subagent vs authenticate_and_maintain_session:
           if (sessionCreds.tokens?.customHeaders)
             console.log(
               `   Session Custom Headers: ${Object.keys(
-                sessionCreds.tokens.customHeaders
-              ).join(", ")}`
+                sessionCreds.tokens.customHeaders,
+              ).join(", ")}`,
             );
         }
         if (authHints) {
           console.log(`   Auth Scheme: ${authHints.authScheme || "unknown"}`);
           console.log(`   CSRF Required: ${authHints.csrfRequired || false}`);
           console.log(
-            `   Browser Required: ${authHints.browserRequired || false}`
+            `   Browser Required: ${authHints.browserRequired || false}`,
           );
           if (authHints.protectedEndpoints?.length) {
             console.log(
-              `   Protected Endpoints: ${authHints.protectedEndpoints.join(
-                ", "
-              )}`
+              `   Protected Endpoints: ${authHints.protectedEndpoints.join(", ")}`,
             );
           }
         }
@@ -804,7 +805,7 @@ Returns all discovered endpoint patterns.`,
       toolCallDescription: z
         .string()
         .describe(
-          "A concise, human-readable description of what this tool call is doing (e.g., 'Extracting API endpoints from JavaScript')"
+          "A concise, human-readable description of what this tool call is doing (e.g., 'Extracting API endpoints from JavaScript')",
         ),
     }),
     execute: async (params) => {
@@ -830,7 +831,7 @@ Returns all discovered endpoint patterns.`,
       toolCallDescription: z
         .string()
         .describe(
-          "A concise, human-readable description of what this tool call is doing (e.g., 'Crawling authenticated dashboard area')"
+          "A concise, human-readable description of what this tool call is doing (e.g., 'Crawling authenticated dashboard area')",
         ),
     }),
     execute: async (params) => {
@@ -899,7 +900,7 @@ Returns all discovered endpoint patterns.`,
 
               if (jsEndpoints.endpoints) {
                 jsEndpoints.endpoints.forEach((ep) =>
-                  allEndpoints.add(ep.endpoint)
+                  allEndpoints.add(ep.endpoint),
                 );
               }
 
@@ -929,9 +930,7 @@ Returns all discovered endpoint patterns.`,
       } catch (error) {
         return {
           success: false,
-          message: `Crawl error: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
+          message: `Crawl error: ${error instanceof Error ? error.message : String(error)}`,
         };
       }
     },
@@ -954,7 +953,7 @@ Use this to:
       toolCallDescription: z
         .string()
         .describe(
-          "A concise, human-readable description of what this tool call is doing (e.g., 'Testing endpoint variations for authorization issues')"
+          "A concise, human-readable description of what this tool call is doing (e.g., 'Testing endpoint variations for authorization issues')",
         ),
     }),
     execute: async (params) => {
@@ -1051,7 +1050,7 @@ Returns a confidence score and identifies potential gaps based on:
       toolCallDescription: z
         .string()
         .describe(
-          "A concise, human-readable description of what this tool call is doing (e.g., 'Validating discovery completeness')"
+          "A concise, human-readable description of what this tool call is doing (e.g., 'Validating discovery completeness')",
         ),
     }),
     execute: async (params) => {
@@ -1093,12 +1092,12 @@ Returns a confidence score and identifies potential gaps based on:
 
       // Check: CRUD enumeration for resource patterns
       const resourcePatterns = discoveredEndpoints.filter((ep) =>
-        ep.includes("{id}")
+        ep.includes("{id}"),
       );
       if (
         resourcePatterns.length > 0 &&
         !discoveredEndpoints.some(
-          (ep) => ep.includes("receipt") || ep.includes("archive")
+          (ep) => ep.includes("receipt") || ep.includes("archive"),
         )
       ) {
         gaps.push({
@@ -1160,7 +1159,7 @@ Call this at the END of your analysis with:
       discoveredAssets: z
         .array(z.string())
         .describe(
-          "List of discovered assets with descriptions. Format: 'example.com - Web server (nginx) - Ports 80,443'"
+          "List of discovered assets with descriptions. Format: 'example.com - Web server (nginx) - Ports 80,443'",
         ),
       targets: z
         .array(
@@ -1170,7 +1169,7 @@ Call this at the END of your analysis with:
             rationale: z
               .string()
               .describe("Why this target needs deep testing"),
-          })
+          }),
         )
         .describe("ALL targets for deep penetration testing"),
       keyFindings: z.preprocess(
@@ -1178,13 +1177,13 @@ Call this at the END of your analysis with:
         z
           .array(z.string())
           .describe(
-            "Key findings from reconnaissance. Format: '[SEVERITY] Finding description'"
-          )
+            "Key findings from reconnaissance. Format: '[SEVERITY] Finding description'",
+          ),
       ),
       toolCallDescription: z
         .string()
         .describe(
-          "A concise, human-readable description of what this tool call is doing (e.g., 'Creating attack surface report')"
+          "A concise, human-readable description of what this tool call is doing (e.g., 'Creating attack surface report')",
         ),
     }),
     execute: async (results) => {

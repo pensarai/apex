@@ -34,7 +34,7 @@ export default function Footer({
     ? [{ key: "Ctrl+C", label: "Stop Execution" }]
     : [
         { key: "Ctrl+C", label: "Clear/Exit" },
-        ...(isInputEmpty ? [{ key: "?", label: "Shortcuts" }] : [])
+        ...(isInputEmpty ? [{ key: "?", label: "Shortcuts" }] : []),
       ];
 
   return (
@@ -52,15 +52,11 @@ export default function Footer({
           <span fg="white">{model.name}</span>
         </text>
         <AgentStatus />
-        {
-          route.data.type === "session" && session.active &&
+        {route.data.type === "session" && session.active && (
           <text fg="white">
-            Session:{' '}
-            <span fg="gray">
-              {session.active.name}
-            </span>
+            Session: <span fg="gray">{session.active.name}</span>
           </text>
-        }
+        )}
       </box>
       {showExitWarning ? (
         <box flexDirection="row" gap={1}>
@@ -109,8 +105,12 @@ function ContextProgress({ width }: { width?: number }) {
   const { model, tokenUsage, thinking } = useAgent();
   if (!thinking || tokenUsage.totalTokens === 0) return null;
   const contextLength = model.contextLength ?? 200000;
-  const contextProgress = Math.max(0, Math.min(100, Number(
-    ((tokenUsage.totalTokens / contextLength) * 100).toFixed(2)
-  )));
+  const contextProgress = Math.max(
+    0,
+    Math.min(
+      100,
+      Number(((tokenUsage.totalTokens / contextLength) * 100).toFixed(2)),
+    ),
+  );
   return <ProgressBar value={contextProgress} width={width} />;
 }

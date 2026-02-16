@@ -59,11 +59,16 @@ export function useSessionsList() {
       const enriched: EnrichedSession[] = [];
       for await (const session of Session.list()) {
         const hasOperatorState = existsSync(
-          join(session.rootPath, "operator-state.json")
+          join(session.rootPath, "operator-state.json"),
         );
         const findingsCount = countFindings(session.findingsPath);
         const hasReport = checkHasReport(session.rootPath);
-        enriched.push({ ...session, findingsCount, hasOperatorState, hasReport });
+        enriched.push({
+          ...session,
+          findingsCount,
+          hasOperatorState,
+          hasReport,
+        });
       }
       // Sort by updated time (newest first)
       enriched.sort((a, b) => b.time.updated - a.time.updated);
@@ -84,13 +89,13 @@ export function useSessionsList() {
       await Session.remove({ sessionId: id });
       await loadSessions();
     },
-    [loadSessions]
+    [loadSessions],
   );
 
   // Filter by search term
   const filtered = searchTerm
     ? sessions.filter((s) =>
-        s.name.toLowerCase().includes(searchTerm.toLowerCase())
+        s.name.toLowerCase().includes(searchTerm.toLowerCase()),
       )
     : sessions;
 
@@ -120,7 +125,7 @@ export function useSessionsList() {
   for (const g of rawGroups) {
     g.sessions.sort(
       (a, b) =>
-        new Date(b.time.created).getTime() - new Date(a.time.created).getTime()
+        new Date(b.time.created).getTime() - new Date(a.time.created).getTime(),
     );
   }
 
@@ -129,7 +134,11 @@ export function useSessionsList() {
   const groupedSessions: DateGroup[] = [];
   let idx = 0;
   for (const raw of rawGroups) {
-    const group: DateGroup = { date: raw.date, timestamp: raw.timestamp, sessions: [] };
+    const group: DateGroup = {
+      date: raw.date,
+      timestamp: raw.timestamp,
+      sessions: [],
+    };
     for (const s of raw.sessions) {
       visualOrderSessions.push(s);
       group.sessions.push({ ...s, index: idx });

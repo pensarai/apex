@@ -6,11 +6,11 @@ import { useRoute } from "../../context/route";
 
 export default function ConfigDialog() {
   const route = useRoute();
-  
+
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    if(route.data.type === "base" && route.data.path === "config") {
+    if (route.data.type === "base" && route.data.path === "config") {
       setOpen(true);
     } else {
       setOpen(false);
@@ -21,9 +21,9 @@ export default function ConfigDialog() {
     setOpen(false);
     route.navigate({
       type: "base",
-      path: "home"
+      path: "home",
     });
-  }
+  };
 
   const [appConfig, setAppConfig] = useState<Config | null>(null);
 

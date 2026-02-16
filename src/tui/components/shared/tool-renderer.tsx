@@ -50,8 +50,8 @@ export const ToolRenderer = memo(function ToolRenderer({
   const borderColor = isError
     ? colors.errorColor
     : isPending
-    ? colors.yellowText
-    : colors.toolColor;
+      ? colors.yellowText
+      : colors.toolColor;
 
   return (
     <box flexDirection="row" marginTop={0}>
@@ -87,11 +87,15 @@ export const ToolRenderer = memo(function ToolRenderer({
           <box flexDirection="column" marginLeft={2}>
             {/* Summary line - always visible */}
             <box flexDirection="row" gap={1}>
-              <text fg={resultDisplay.isError ? colors.errorColor : colors.dimText}>
+              <text
+                fg={resultDisplay.isError ? colors.errorColor : colors.dimText}
+              >
                 {resultDisplay.isError ? "✗" : "→"}
               </text>
               <text
-                fg={resultDisplay.isError ? colors.errorColor : colors.creamText}
+                fg={
+                  resultDisplay.isError ? colors.errorColor : colors.creamText
+                }
               >
                 {resultDisplay.text}
               </text>

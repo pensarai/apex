@@ -60,7 +60,7 @@ export interface EnsureAuthenticatedResult {
  * Use this in the orchestrator before spawning test agents.
  */
 export async function ensureAuthenticated(
-  opts: EnsureAuthenticatedOptions
+  opts: EnsureAuthenticatedOptions,
 ): Promise<EnsureAuthenticatedResult> {
   const { config, model, forceRefresh = false, abortSignal } = opts;
   const { target, session, credentials, authFlowHints } = config;
@@ -73,7 +73,11 @@ export async function ensureAuthenticated(
   const existingState = authStateManager.getState();
 
   // If we have valid auth and not forcing refresh, use existing
-  if (!forceRefresh && existingState.status === "active" && !authStateManager.isExpired()) {
+  if (
+    !forceRefresh &&
+    existingState.status === "active" &&
+    !authStateManager.isExpired()
+  ) {
     return {
       success: true,
       authInfo: authStateManager.exportForAgent(),
@@ -83,12 +87,13 @@ export async function ensureAuthenticated(
   }
 
   // Check if we have tokens to verify
-  const hasTokensToVerify = credentials?.tokens && (
-    credentials.tokens.bearerToken ||
-    credentials.tokens.cookies ||
-    credentials.tokens.sessionToken ||
-    (credentials.tokens.customHeaders && Object.keys(credentials.tokens.customHeaders).length > 0)
-  );
+  const hasTokensToVerify =
+    credentials?.tokens &&
+    (credentials.tokens.bearerToken ||
+      credentials.tokens.cookies ||
+      credentials.tokens.sessionToken ||
+      (credentials.tokens.customHeaders &&
+        Object.keys(credentials.tokens.customHeaders).length > 0));
 
   // No valid auth or forcing refresh - run auth subagent
   if (!credentials?.username && !credentials?.apiKey && !hasTokensToVerify) {
@@ -144,7 +149,7 @@ export async function ensureAuthenticated(
  */
 export function checkAuthStatus(
   session: Session.SessionInfo,
-  target: string
+  target: string,
 ): { valid: boolean; needsRefresh: boolean; status: string } {
   const targetHost = extractHost(target);
   const authStateManager = new AuthStateManager(session, targetHost);
@@ -170,7 +175,7 @@ export function checkAuthStatus(
  */
 export function getExistingAuth(
   session: Session.SessionInfo,
-  target: string
+  target: string,
 ): ExportedAuthInfo | undefined {
   const targetHost = extractHost(target);
   const authStateManager = new AuthStateManager(session, targetHost);
@@ -194,16 +199,24 @@ export function getExistingAuth(
  * by the orchestrator and test agents.
  */
 export function buildTargetAuthInfo(
-  result: AuthenticationSubagentResult
-): { method: string; details: string; cookies?: string; headers?: string } | undefined {
+  result: AuthenticationSubagentResult,
+):
+  | { method: string; details: string; cookies?: string; headers?: string }
+  | undefined {
   if (!result.success) {
     return undefined;
   }
 
-  const authInfo: { method: string; details: string; cookies?: string; headers?: string } = {
-    method: result.authState.tokens.length > 0
-      ? result.authState.tokens[0].type
-      : "unknown",
+  const authInfo: {
+    method: string;
+    details: string;
+    cookies?: string;
+    headers?: string;
+  } = {
+    method:
+      result.authState.tokens.length > 0
+        ? result.authState.tokens[0].type
+        : "unknown",
     details: result.summary,
   };
 
@@ -211,7 +224,10 @@ export function buildTargetAuthInfo(
     authInfo.cookies = result.exportedCookies;
   }
 
-  if (result.exportedHeaders && Object.keys(result.exportedHeaders).length > 0) {
+  if (
+    result.exportedHeaders &&
+    Object.keys(result.exportedHeaders).length > 0
+  ) {
     authInfo.headers = Object.entries(result.exportedHeaders)
       .map(([k, v]) => `${k}: ${v}`)
       .join("; ");

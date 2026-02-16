@@ -16,7 +16,7 @@ interface SessionsDisplayProps {
 
 export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
   const { refocusPrompt } = useFocus();
-  const [sessions, setSessions] = useState<(Session.SessionInfo)[]>([]);
+  const [sessions, setSessions] = useState<Session.SessionInfo[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [statusMessage, setStatusMessage] = useState<string>("");
@@ -45,7 +45,10 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
 
   async function openReport(sessionId: string) {
     const session = await Session.get(sessionId);
-    const reportPath = await Storage.locate([session.id, "pentest-report"], ".md");
+    const reportPath = await Storage.locate(
+      [session.id, "pentest-report"],
+      ".md",
+    );
 
     if (!existsSync(reportPath)) {
       setStatusMessage("Report not found");
@@ -64,7 +67,6 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
     });
   }
 
-
   function scrollToIndex(index: number, list: Session.SessionInfo[]) {
     if (!scroll.current || list.length === 0) return;
 
@@ -74,7 +76,9 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
     // Find the target element by searching through date groups
     let target: Renderable | undefined;
     for (const group of scroll.current.getChildren()) {
-      const found = group.getChildren().find(child => child.id === targetSession.id);
+      const found = group
+        .getChildren()
+        .find((child) => child.id === targetSession.id);
       if (found) {
         target = found;
         break;
@@ -103,7 +107,9 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
     // Check if target is below visible area (accounting for its height)
     if (targetVisualY + targetHeight > viewportHeight) {
       // Scroll down by the amount needed to bring target into view
-      scroll.current.scrollBy(targetVisualY - viewportHeight + targetHeight + 1);
+      scroll.current.scrollBy(
+        targetVisualY - viewportHeight + targetHeight + 1,
+      );
     }
     // Check if target is above visible area
     else if (targetVisualY < 0) {
@@ -113,26 +119,28 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
   }
 
   // Filter sessions based on search term
-  const filteredSessions = sessions.filter(session => {
+  const filteredSessions = sessions.filter((session) => {
     if (!searchTerm) return true;
     const searchLower = searchTerm.toLowerCase();
-    return (
-      session.name.toLowerCase().includes(searchLower)
-    );
+    return session.name.toLowerCase().includes(searchLower);
   });
 
   // Group sessions by date (without indices first)
-  const groupedSessionsRaw: { date: string; timestamp: number; sessions: Session.SessionInfo[] }[] = [];
+  const groupedSessionsRaw: {
+    date: string;
+    timestamp: number;
+    sessions: Session.SessionInfo[];
+  }[] = [];
   filteredSessions.forEach((session) => {
     const startDate = new Date(session.time.created);
-    const dateStr = startDate.toLocaleDateString('en-US', {
-      weekday: 'short',
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric'
+    const dateStr = startDate.toLocaleDateString("en-US", {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      year: "numeric",
     });
 
-    let group = groupedSessionsRaw.find(g => g.date === dateStr);
+    let group = groupedSessionsRaw.find((g) => g.date === dateStr);
     if (!group) {
       group = { date: dateStr, timestamp: startDate.getTime(), sessions: [] };
       groupedSessionsRaw.push(group);
@@ -144,27 +152,34 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
   groupedSessionsRaw.sort((a, b) => b.timestamp - a.timestamp);
 
   // Sort sessions within each group by time (newest first)
-  groupedSessionsRaw.forEach(group => {
-    group.sessions.sort((a, b) =>
-      new Date(b.time.created).getTime() - new Date(a.time.created).getTime()
+  groupedSessionsRaw.forEach((group) => {
+    group.sessions.sort(
+      (a, b) =>
+        new Date(b.time.created).getTime() - new Date(a.time.created).getTime(),
     );
   });
 
   // Create flat list in visual order and assign indices
   const visualOrderSessions: Session.SessionInfo[] = [];
-  groupedSessionsRaw.forEach(group => {
+  groupedSessionsRaw.forEach((group) => {
     visualOrderSessions.push(...group.sessions);
   });
 
   // Now create grouped sessions with correct visual indices
-  const groupedSessions: { date: string; sessions: (Session.SessionInfo & { index: number })[] }[] = [];
+  const groupedSessions: {
+    date: string;
+    sessions: (Session.SessionInfo & { index: number })[];
+  }[] = [];
   let visualIndex = 0;
-  groupedSessionsRaw.forEach(rawGroup => {
-    const group: { date: string; sessions: (Session.SessionInfo & { index: number })[] } = {
+  groupedSessionsRaw.forEach((rawGroup) => {
+    const group: {
+      date: string;
+      sessions: (Session.SessionInfo & { index: number })[];
+    } = {
       date: rawGroup.date,
-      sessions: []
+      sessions: [],
     };
-    rawGroup.sessions.forEach(session => {
+    rawGroup.sessions.forEach((session) => {
       group.sessions.push({ ...session, index: visualIndex });
       visualIndex++;
     });
@@ -173,7 +188,10 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
 
   // Clamp selectedIndex when list changes
   useEffect(() => {
-    if (visualOrderSessions.length > 0 && selectedIndex >= visualOrderSessions.length) {
+    if (
+      visualOrderSessions.length > 0 &&
+      selectedIndex >= visualOrderSessions.length
+    ) {
       setSelectedIndex(visualOrderSessions.length - 1);
     } else if (visualOrderSessions.length === 0) {
       setSelectedIndex(0);
@@ -217,7 +235,7 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
       const currentSelection = visualOrderSessions[selectedIndex];
       if (!currentSelection) return;
       const _session = await session.load(currentSelection.id);
-      if(!_session) {
+      if (!_session) {
         console.error("Error loading session");
         return;
       }
@@ -226,14 +244,15 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
       route.navigate({
         type: "session",
         sessionId: _session.id,
-        isResume: true // Load existing state, don't start new pentest
+        isResume: true, // Load existing state, don't start new pentest
       });
       return;
     }
 
     // Arrow Up - Previous session
     if (key.name === "up" && visualOrderSessions.length > 0) {
-      const newIndex = selectedIndex > 0 ? selectedIndex - 1 : visualOrderSessions.length - 1;
+      const newIndex =
+        selectedIndex > 0 ? selectedIndex - 1 : visualOrderSessions.length - 1;
       setSelectedIndex(newIndex);
       scrollToIndex(newIndex, visualOrderSessions);
       return;
@@ -241,7 +260,8 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
 
     // Arrow Down - Next session
     if (key.name === "down" && visualOrderSessions.length > 0) {
-      const newIndex = selectedIndex < visualOrderSessions.length - 1 ? selectedIndex + 1 : 0;
+      const newIndex =
+        selectedIndex < visualOrderSessions.length - 1 ? selectedIndex + 1 : 0;
       setSelectedIndex(newIndex);
       scrollToIndex(newIndex, visualOrderSessions);
       return;
@@ -264,7 +284,6 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
     }
   });
 
-
   const handleClose = () => {
     refocusPrompt();
     onClose();
@@ -272,12 +291,7 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
 
   return (
     <Dialog size="large" onClose={handleClose}>
-      <box
-        flexDirection="column"
-        padding={2}
-        gap={2}
-        width="100%"
-      >
+      <box flexDirection="column" padding={2} gap={2} width="100%">
         {/* Header */}
         <box flexDirection="row" justifyContent="space-between" width="100%">
           <text fg="white">Sessions</text>
@@ -307,7 +321,13 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
         ) : visualOrderSessions.length === 0 ? (
           <text fg="gray">No sessions found</text>
         ) : (
-          <box flexDirection="column" gap={2} flexGrow={1} maxHeight={10} overflow="hidden">
+          <box
+            flexDirection="column"
+            gap={2}
+            flexGrow={1}
+            maxHeight={10}
+            overflow="hidden"
+          >
             <scrollbox
               ref={scroll}
               scrollbarOptions={{ visible: false }}
@@ -337,10 +357,10 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
                   {group.sessions.map((session) => {
                     const isSelected = session.index === selectedIndex;
                     const startTime = new Date(session.time.created);
-                    const timeStr = startTime.toLocaleTimeString('en-US', {
-                      hour: 'numeric',
-                      minute: '2-digit',
-                      hour12: true
+                    const timeStr = startTime.toLocaleTimeString("en-US", {
+                      hour: "numeric",
+                      minute: "2-digit",
+                      hour12: true,
                     });
 
                     return (
@@ -357,7 +377,8 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
                         width="100%"
                       >
                         <text fg={isSelected ? "white" : "gray"}>
-                          {isSelected ? "● " : "  "}{session.name}
+                          {isSelected ? "● " : "  "}
+                          {session.name}
                         </text>
                         <text fg="gray">{timeStr}</text>
                       </box>
@@ -373,14 +394,13 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
         {visualOrderSessions.length > 0 && (
           <box flexDirection="row" gap={2}>
             <text fg="gray">
-              <span fg="green">[Enter]</span> Open · <span fg="green">[R]</span> Report · <span fg="green">[Ctrl+D]</span> Delete
+              <span fg="green">[Enter]</span> Open · <span fg="green">[R]</span>{" "}
+              Report · <span fg="green">[Ctrl+D]</span> Delete
             </text>
           </box>
         )}
 
-        {statusMessage && (
-          <text fg="green">{statusMessage}</text>
-        )}
+        {statusMessage && <text fg="green">{statusMessage}</text>}
       </box>
     </Dialog>
   );

@@ -1,28 +1,28 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 /**
  * Supported vulnerability classes for testing
  */
 export type VulnerabilityClass =
-  | 'sqli'             // SQL/NoSQL Injection
-  | 'idor'             // IDOR/Authorization/Access Control
-  | 'xss'              // Cross-Site Scripting
-  | 'command-injection' // Command/OS Injection
-  | 'lfi'              // Local File Inclusion / Path Traversal
-  | 'ssrf'             // Server-Side Request Forgery
-  | 'crypto'           // Cryptographic vulnerabilities (malleability, padding oracle, weak algorithms)
-  | 'cve'              // Known CVE exploitation (version-specific vulnerabilities)
-  | 'generic';         // XXE, SSTI, CSRF, etc.
+  | "sqli" // SQL/NoSQL Injection
+  | "idor" // IDOR/Authorization/Access Control
+  | "xss" // Cross-Site Scripting
+  | "command-injection" // Command/OS Injection
+  | "lfi" // Local File Inclusion / Path Traversal
+  | "ssrf" // Server-Side Request Forgery
+  | "crypto" // Cryptographic vulnerabilities (malleability, padding oracle, weak algorithms)
+  | "cve" // Known CVE exploitation (version-specific vulnerabilities)
+  | "generic"; // XXE, SSTI, CSRF, etc.
 
 /**
  * Authentication information for testing
  */
 export interface AuthenticationInfo {
-  method: string;        // e.g., "cookie-based session", "bearer token"
-  details: string;       // How to authenticate
-  credentials?: string;  // username:password
-  cookies?: string;      // Session cookies
-  headers?: string;      // Auth headers
+  method: string; // e.g., "cookie-based session", "bearer token"
+  details: string; // How to authenticate
+  credentials?: string; // username:password
+  cookies?: string; // Session cookies
+  headers?: string; // Auth headers
 }
 
 /**
@@ -89,27 +89,33 @@ export interface VulnerabilityTestResult {
  * Zod schema for document_finding tool input
  */
 export const DocumentFindingSchema = z.object({
-  title: z.string().describe('Clear, concise finding title'),
+  title: z.string().describe("Clear, concise finding title"),
   severity: z.preprocess(
     (val) => {
-      if (typeof val === 'string') {
+      if (typeof val === "string") {
         const upper = val.toUpperCase();
-        if (upper.includes('CRITICAL')) return 'CRITICAL';
-        if (upper.includes('HIGH')) return 'HIGH';
-        if (upper.includes('MEDIUM')) return 'MEDIUM';
-        if (upper.includes('LOW')) return 'LOW';
+        if (upper.includes("CRITICAL")) return "CRITICAL";
+        if (upper.includes("HIGH")) return "HIGH";
+        if (upper.includes("MEDIUM")) return "MEDIUM";
+        if (upper.includes("LOW")) return "LOW";
       }
       return val;
     },
-    z.enum(['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'])
+    z.enum(["CRITICAL", "HIGH", "MEDIUM", "LOW"]),
   ),
-  description: z.string().describe('Detailed technical description'),
-  impact: z.string().describe('Potential impact if exploited'),
-  evidence: z.string().describe('Evidence/proof of vulnerability including POC output'),
-  endpoint: z.string().describe('Full URL endpoint (e.g., https://example.com/api/endpoint)'),
-  pocPath: z.string().describe('Relative path to POC script (e.g., pocs/poc_sqli_login.sh)'),
-  remediation: z.string().describe('Steps to fix the vulnerability'),
-  references: z.string().optional().describe('CVE, CWE, or related references'),
+  description: z.string().describe("Detailed technical description"),
+  impact: z.string().describe("Potential impact if exploited"),
+  evidence: z
+    .string()
+    .describe("Evidence/proof of vulnerability including POC output"),
+  endpoint: z
+    .string()
+    .describe("Full URL endpoint (e.g., https://example.com/api/endpoint)"),
+  pocPath: z
+    .string()
+    .describe("Relative path to POC script (e.g., pocs/poc_sqli_login.sh)"),
+  remediation: z.string().describe("Steps to fix the vulnerability"),
+  references: z.string().optional().describe("CVE, CWE, or related references"),
 });
 
 export type DocumentFindingInput = z.infer<typeof DocumentFindingSchema>;
@@ -118,10 +124,16 @@ export type DocumentFindingInput = z.infer<typeof DocumentFindingSchema>;
  * Zod schema for create_poc tool input
  */
 export const CreatePocSchema = z.object({
-  pocName: z.string().describe('POC filename without extension (e.g., sqli_login_bypass)'),
-  pocType: z.enum(['bash', 'html']).describe('POC type: bash for scripts, html for browser-based'),
-  pocContent: z.string().describe('Complete POC content'),
-  description: z.string().describe('Brief description of what the POC demonstrates'),
+  pocName: z
+    .string()
+    .describe("POC filename without extension (e.g., sqli_login_bypass)"),
+  pocType: z
+    .enum(["bash", "html"])
+    .describe("POC type: bash for scripts, html for browser-based"),
+  pocContent: z.string().describe("Complete POC content"),
+  description: z
+    .string()
+    .describe("Brief description of what the POC demonstrates"),
 });
 
 export type CreatePocInput = z.infer<typeof CreatePocSchema>;

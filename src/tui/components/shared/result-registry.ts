@@ -21,7 +21,7 @@ export interface ResultSummary {
  */
 export function getResultSummary(
   result: unknown,
-  toolName?: string
+  toolName?: string,
 ): ResultSummary | null {
   if (result === null || result === undefined) {
     return null;
@@ -111,7 +111,10 @@ export function getResultSummary(
         if (typeof result === "object" && result !== null) {
           const obj = result as Record<string, unknown>;
           if (obj.endpoints && Array.isArray(obj.endpoints)) {
-            return { text: `Found ${obj.endpoints.length} endpoints`, isError: false };
+            return {
+              text: `Found ${obj.endpoints.length} endpoints`,
+              isError: false,
+            };
           }
         }
         return { text: "Enumeration complete", isError: false };
@@ -123,7 +126,10 @@ export function getResultSummary(
         if (typeof result === "object" && result !== null) {
           const obj = result as Record<string, unknown>;
           if (obj.findings && Array.isArray(obj.findings)) {
-            return { text: `Found ${obj.findings.length} vulnerabilities`, isError: false };
+            return {
+              text: `Found ${obj.findings.length} vulnerabilities`,
+              isError: false,
+            };
           }
         }
         return { text: "Scan complete", isError: false };
@@ -162,7 +168,10 @@ export function getResultSummary(
         if (typeof result === "object" && result !== null) {
           const obj = result as Record<string, unknown>;
           if (obj.endpoints && Array.isArray(obj.endpoints)) {
-            return { text: `Found ${obj.endpoints.length} endpoints`, isError: false };
+            return {
+              text: `Found ${obj.endpoints.length} endpoints`,
+              isError: false,
+            };
           }
         }
         return { text: "Enumeration complete", isError: false };
@@ -209,7 +218,10 @@ export function getResultSummary(
         if (typeof result === "object" && result !== null) {
           const obj = result as Record<string, unknown>;
           if (obj.console && Array.isArray(obj.console)) {
-            return { text: `${obj.console.length} console messages`, isError: false };
+            return {
+              text: `${obj.console.length} console messages`,
+              isError: false,
+            };
           }
         }
         return { text: "Console retrieved", isError: false };
@@ -287,7 +299,10 @@ export function getResultSummary(
 
     // Collections
     if (obj.endpoints && Array.isArray(obj.endpoints)) {
-      const endpoints = obj.endpoints as Array<{ method?: string; path: string }>;
+      const endpoints = obj.endpoints as Array<{
+        method?: string;
+        path: string;
+      }>;
       return {
         text: `Found ${endpoints.length} endpoints`,
         isError: false,
@@ -344,7 +359,7 @@ export function getResultSummary(
  */
 export function formatResultDetail(
   result: unknown,
-  maxLength: number = 2000
+  maxLength: number = 2000,
 ): string {
   try {
     const str = JSON.stringify(result, null, 2);

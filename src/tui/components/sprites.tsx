@@ -40,7 +40,13 @@ function useGlobalTick() {
 }
 
 /** Animated spinner with rotating dots */
-export function SpinnerDots({ label, fg }: { label?: string; fg?: string | RGBA }) {
+export function SpinnerDots({
+  label,
+  fg,
+}: {
+  label?: string;
+  fg?: string | RGBA;
+}) {
   const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
   const tick = useGlobalTick();
   const frame = tick % frames.length;

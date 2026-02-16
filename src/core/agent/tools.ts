@@ -1332,12 +1332,12 @@ export const ExecuteCommandInput = z.object({
     .boolean()
     .optional()
     .describe(
-      "Run command in background. Returns immediately with a task ID. Use check_task_status to poll for results. Good for long-running commands like full port scans."
+      "Run command in background. Returns immediately with a task ID. Use check_task_status to poll for results. Good for long-running commands like full port scans.",
     ),
   toolCallDescription: z
     .string()
     .describe(
-      "A concise, human-readable description of what this tool call is doing (e.g., 'Scanning for open ports on target')"
+      "A concise, human-readable description of what this tool call is doing (e.g., 'Scanning for open ports on target')",
     ),
 });
 
@@ -1372,13 +1372,13 @@ export const HttpRequestInput = z.object({
     .boolean()
     .default(false)
     .describe(
-      "Whether to follow HTTP redirects (3xx). Defaults to false so you can see redirect responses with Location and Set-Cookie headers. Set to true to automatically follow redirects."
+      "Whether to follow HTTP redirects (3xx). Defaults to false so you can see redirect responses with Location and Set-Cookie headers. Set to true to automatically follow redirects.",
     ),
   timeout: z.number().default(10000),
   toolCallDescription: z
     .string()
     .describe(
-      "A concise, human-readable description of what this tool call is doing (e.g., 'Testing SQL injection on login endpoint')"
+      "A concise, human-readable description of what this tool call is doing (e.g., 'Testing SQL injection on login endpoint')",
     ),
 });
 
@@ -1412,22 +1412,22 @@ export const MutatePayloadInput = z.object({
         "path_normalization",
         "backslash",
         "double_slash",
-      ])
+      ]),
     )
     .optional()
     .describe(
-      "Specific mutation types to apply. If not provided, all mutations will be generated."
+      "Specific mutation types to apply. If not provided, all mutations will be generated.",
     ),
   context: z
     .enum(["lfi", "xss", "sqli", "command_injection", "ssti", "general"])
     .optional()
     .describe(
-      "The vulnerability context to optimize mutations for. Helps prioritize which mutations are most relevant."
+      "The vulnerability context to optimize mutations for. Helps prioritize which mutations are most relevant.",
     ),
   toolCallDescription: z
     .string()
     .describe(
-      "A concise, human-readable description of what this tool call is doing (e.g., 'Generating URL-encoded variants of LFI payload')"
+      "A concise, human-readable description of what this tool call is doing (e.g., 'Generating URL-encoded variants of LFI payload')",
     ),
 });
 
@@ -1666,7 +1666,7 @@ EXAMPLE:
         original: payload,
         mutations,
         recommendedOrder: recommendedOrder.filter((t) =>
-          (typesToApply as readonly string[]).includes(t)
+          (typesToApply as readonly string[]).includes(t),
         ),
       };
     },
@@ -1697,7 +1697,7 @@ export const SmartEnumerateInput = z.object({
   toolCallDescription: z
     .string()
     .describe(
-      "A concise, human-readable description of what this tool call is doing"
+      "A concise, human-readable description of what this tool call is doing",
     ),
 });
 
@@ -1733,7 +1733,7 @@ export interface SmartEnumerateResult {
  * - Smart directory enumeration with AI-generated wordlists
  */
 function createSmartEnumerateTool(
-  executeCommand?: (opts: ExecuteCommandOpts) => Promise<ExecuteCommandResult>
+  executeCommand?: (opts: ExecuteCommandOpts) => Promise<ExecuteCommandResult>,
 ) {
   return tool({
     description: `AI-powered endpoint enumeration using feroxagent.
@@ -1907,7 +1907,8 @@ recommendations for further testing based on the technology stack.`,
 
         // Deduplicate endpoints by URL
         const uniqueEndpoints = endpoints.filter(
-          (ep, index, self) => self.findIndex((e) => e.url === ep.url) === index
+          (ep, index, self) =>
+            self.findIndex((e) => e.url === ep.url) === index,
         );
 
         return {
@@ -1941,20 +1942,20 @@ const CVELookupInput = z.object({
   query: z
     .string()
     .describe(
-      "Search query - can be a CVE ID (e.g., 'CVE-2023-1234'), software name (e.g., 'nginx'), software with version (e.g., 'openssh 8.0'), or vulnerability type (e.g., 'rce wordpress')"
+      "Search query - can be a CVE ID (e.g., 'CVE-2023-1234'), software name (e.g., 'nginx'), software with version (e.g., 'openssh 8.0'), or vulnerability type (e.g., 'rce wordpress')",
     ),
   techFilter: z
     .string()
     .optional()
     .describe(
-      "Filter results by technology tag (e.g., 'wordpress', 'express', 'graphql', 'django'). Adds 'tags:{tech}' to query."
+      "Filter results by technology tag (e.g., 'wordpress', 'express', 'graphql', 'django'). Adds 'tags:{tech}' to query.",
     ),
   templateType: z
     .enum(["cve", "technique", "all"])
     .optional()
     .default("all")
     .describe(
-      "Type of templates to return: 'cve' for CVE-specific, 'technique' for attack techniques, 'all' for both"
+      "Type of templates to return: 'cve' for CVE-specific, 'technique' for attack techniques, 'all' for both",
     ),
   limit: z
     .number()
@@ -1969,7 +1970,7 @@ const CVELookupInput = z.object({
   toolCallDescription: z
     .string()
     .describe(
-      "A concise, human-readable description of what this tool call is doing"
+      "A concise, human-readable description of what this tool call is doing",
     )
     .optional(),
 });
@@ -2058,7 +2059,7 @@ Results are cached to disk (24h TTL) for faster subsequent lookups.`,
     }): Promise<CVELookupResult> => {
       // Generate cache key
       const cacheKey = CacheKeys.cveTemplates(
-        `${query}_${techFilter || ""}_${templateType}`
+        `${query}_${techFilter || ""}_${templateType}`,
       );
 
       // Check cache first
@@ -2111,7 +2112,7 @@ Results are cached to disk (24h TTL) for faster subsequent lookups.`,
         }
 
         const searchUrl = new URL(
-          "https://api.projectdiscovery.io/v2/template/search"
+          "https://api.projectdiscovery.io/v2/template/search",
         );
         searchUrl.searchParams.set("q", searchQuery);
         searchUrl.searchParams.set("limit", String(limit));
@@ -2340,7 +2341,7 @@ FINDING STRUCTURE:
       toolCallDescription: z
         .string()
         .describe(
-          "A concise, human-readable description of what this tool call is doing (e.g., 'Documenting SQL injection finding')"
+          "A concise, human-readable description of what this tool call is doing (e.g., 'Documenting SQL injection finding')",
         ),
     }),
     execute: async (finding) => {
@@ -2456,7 +2457,7 @@ The scratchpad is session-specific and helps maintain context during long assess
       toolCallDescription: z
         .string()
         .describe(
-          "A concise, human-readable description of what this tool call is doing (e.g., 'Recording interesting endpoint behavior')"
+          "A concise, human-readable description of what this tool call is doing (e.g., 'Recording interesting endpoint behavior')",
         ),
     }),
     execute: async ({ note, category }) => {
@@ -2521,7 +2522,7 @@ Provides guidance on:
     toolCallDescription: z
       .string()
       .describe(
-        "A concise, human-readable description of what this tool call is doing (e.g., 'Analyzing port scan results')"
+        "A concise, human-readable description of what this tool call is doing (e.g., 'Analyzing port scan results')",
       ),
   }),
   execute: async ({ scanType, results, target }) => {
@@ -2552,12 +2553,12 @@ Provides guidance on:
           analysis.openPorts.includes("443")
         ) {
           analysis.recommendations.push(
-            "Run web application scans (nikto, gobuster)"
+            "Run web application scans (nikto, gobuster)",
           );
         }
         if (analysis.openPorts.includes("22")) {
           analysis.recommendations.push(
-            "Test SSH authentication methods and banners"
+            "Test SSH authentication methods and banners",
           );
         }
         if (
@@ -2565,7 +2566,7 @@ Provides guidance on:
           analysis.openPorts.includes("5432")
         ) {
           analysis.recommendations.push(
-            "Database port exposed - test for default credentials"
+            "Database port exposed - test for default credentials",
           );
         }
       }
@@ -2614,7 +2615,7 @@ The report will be saved as 'pentest-report.md' in the session root directory.`,
         .describe("Additional details about the scope and limitations"),
       keyFindings: z.preprocess(
         (val) => (Array.isArray(val) ? val : [val]),
-        z.array(z.string()).describe("List of the most critical findings")
+        z.array(z.string()).describe("List of the most critical findings"),
       ),
       recommendations: z
         .string()
@@ -2626,7 +2627,7 @@ The report will be saved as 'pentest-report.md' in the session root directory.`,
       toolCallDescription: z
         .string()
         .describe(
-          "A concise, human-readable description of what this tool call is doing (e.g., 'Generating final pentest report')"
+          "A concise, human-readable description of what this tool call is doing (e.g., 'Generating final pentest report')",
         ),
     }),
     execute: async ({
@@ -2642,7 +2643,7 @@ The report will be saved as 'pentest-report.md' in the session root directory.`,
         const startDate = new Date(session.time.created);
         const endDate = new Date(endTime);
         const duration = Math.round(
-          (endDate.getTime() - startDate.getTime()) / (1000 * 60)
+          (endDate.getTime() - startDate.getTime()) / (1000 * 60),
         ); // minutes
 
         // Read all findings from the findings directory
@@ -2661,7 +2662,7 @@ The report will be saved as 'pentest-report.md' in the session root directory.`,
 
         if (existsSync(session.findingsPath)) {
           const findingFiles = readdirSync(session.findingsPath).filter((f) =>
-            f.endsWith(".json")
+            f.endsWith(".json"),
           );
 
           for (const file of findingFiles) {
@@ -2670,7 +2671,7 @@ The report will be saved as 'pentest-report.md' in the session root directory.`,
 
             // Extract severity from the markdown
             const severityMatch = content.match(
-              /\*\*Severity:\*\*\s+(CRITICAL|HIGH|MEDIUM|LOW)/
+              /\*\*Severity:\*\*\s+(CRITICAL|HIGH|MEDIUM|LOW)/,
             );
             const titleMatch = content.match(/^#\s+(.+)$/m);
 
@@ -2697,7 +2698,7 @@ The report will be saved as 'pentest-report.md' in the session root directory.`,
         findings.sort(
           (a, b) =>
             severityOrder[a.severity as keyof typeof severityOrder] -
-            severityOrder[b.severity as keyof typeof severityOrder]
+            severityOrder[b.severity as keyof typeof severityOrder],
         );
 
         const totalFindings = findings.length;
@@ -2714,7 +2715,7 @@ The report will be saved as 'pentest-report.md' in the session root directory.`,
         let testResultsSummary = "";
         const testResultsFile = join(
           session.scratchpadPath,
-          "test-results.jsonl"
+          "test-results.jsonl",
         );
         if (existsSync(testResultsFile)) {
           const testLines = readFileSync(testResultsFile, "utf-8")
@@ -2732,7 +2733,7 @@ The report will be saved as 'pentest-report.md' in the session root directory.`,
 
           const totalTests = testResults.length;
           const vulnerableTests = testResults.filter(
-            (t) => t.vulnerable
+            (t) => t.vulnerable,
           ).length;
           const notVulnerableTests = totalTests - vulnerableTests;
 
@@ -2761,7 +2762,7 @@ ${Object.entries(byAttackType)
     ([type, stats]) =>
       `- ${type}: ${stats.total} test${stats.total > 1 ? "s" : ""} (${
         stats.vulnerable
-      } vulnerable)`
+      } vulnerable)`,
   )
   .join("\n")}
 
@@ -2773,9 +2774,7 @@ This demonstrates systematic testing methodology and proves thoroughness beyond 
 
 **Target:** ${session.targets[0]}  
 **Session ID:** ${session.id}  
-**Test Period:** ${new Date(
-          session.time.created
-        ).toLocaleString()} - ${endDate.toLocaleString()}  
+**Test Period:** ${new Date(session.time.created).toLocaleString()} - ${endDate.toLocaleString()}  
 **Duration:** ${duration} minutes  
 **Report Generated:** ${endTime}
 
@@ -2799,8 +2798,8 @@ ${
   criticalAndHigh > 0
     ? `⚠️ **HIGH RISK** - ${criticalAndHigh} critical or high severity findings require immediate attention.`
     : severityCounts.MEDIUM > 0
-    ? `⚠️ **MEDIUM RISK** - ${severityCounts.MEDIUM} medium severity findings should be addressed.`
-    : `✓ **LOW RISK** - No critical or high severity findings identified.`
+      ? `⚠️ **MEDIUM RISK** - ${severityCounts.MEDIUM} medium severity findings should be addressed.`
+      : `✓ **LOW RISK** - No critical or high severity findings identified.`
 }
 
 ---
@@ -2847,7 +2846,7 @@ ${
   "See detailed finding document for full information."
 }
 
-`
+`,
         )
         .join("\n")
 }
@@ -2896,9 +2895,7 @@ ${
 
 ### Appendix A: Findings Summary
 
-${findings
-  .map((f) => `- [${f.severity}] ${f.title} - \`findings/${f.file}\``)
-  .join("\n")}
+${findings.map((f) => `- [${f.severity}] ${f.title} - \`findings/${f.file}\``).join("\n")}
 
 ### Appendix B: Session Information
 
@@ -2911,7 +2908,7 @@ ${
   scratchpadNotes
     ? `\n### Appendix C: Testing Notes\n\nExtracted from scratchpad:\n\n${scratchpadNotes.substring(
         0,
-        5000
+        5000,
       )}${
         scratchpadNotes.length > 5000
           ? "\n\n[Truncated - see scratchpad/notes.md for full notes]"
@@ -2944,7 +2941,7 @@ This report should be treated as confidential and distributed only to authorized
           let readme = readFileSync(readmePath, "utf-8");
           readme = readme.replace(
             "Testing in progress...",
-            `Testing completed on ${endDate.toLocaleString()}\n\n**Final Report:** \`pentest-report.md\``
+            `Testing completed on ${endDate.toLocaleString()}\n\n**Final Report:** \`pentest-report.md\``,
           );
           writeFileSync(readmePath, readme);
         }
@@ -3002,13 +2999,11 @@ async function recordTestResultCore(
     conclusion: string;
     evidence?: string;
     confidence?: "high" | "medium" | "low";
-  }
+  },
 ) {
   try {
     const timestamp = new Date().toISOString();
-    const testId = `test-${Date.now()}-${params.attackType}-${
-      params.parameter
-    }`;
+    const testId = `test-${Date.now()}-${params.attackType}-${params.parameter}`;
 
     const testResult = {
       id: testId,
@@ -3113,7 +3108,7 @@ Example workflow:
             payload: z.string(),
             description: z.string(),
             result: z.string(),
-          })
+          }),
         )
         .describe("List of payloads tested and their results"),
       conclusion: z.string().describe("Overall conclusion of the test"),
@@ -3128,7 +3123,7 @@ Example workflow:
       toolCallDescription: z
         .string()
         .describe(
-          "A concise, human-readable description of what this tool call is doing (e.g., 'Recording SQL injection test on login endpoint')"
+          "A concise, human-readable description of what this tool call is doing (e.g., 'Recording SQL injection test on login endpoint')",
         ),
     }),
     execute: async (params) => recordTestResultCore(session, params),
@@ -3180,7 +3175,7 @@ async function generateTestStrategy(
   },
   model: AIModel,
   onTokenUsage?: OnTokenUsage,
-  authConfig?: AIAuthConfig
+  authConfig?: AIAuthConfig,
 ) {
   const prompt = `You are a penetration testing expert. Generate a concise testing strategy:
 
@@ -3215,7 +3210,7 @@ Be tactical and specific.`;
     if (onTokenUsage && result.usage) {
       onTokenUsage(
         result.usage.inputTokens ?? 0,
-        result.usage.outputTokens ?? 0
+        result.usage.outputTokens ?? 0,
       );
     }
 
@@ -3237,7 +3232,7 @@ async function generatePayload(
   },
   model: AIModel,
   onTokenUsage?: OnTokenUsage,
-  authConfig?: AIAuthConfig
+  authConfig?: AIAuthConfig,
 ) {
   const prompt = `Generate ONE ${params.knowledge.name} payload for testing.
 
@@ -3253,7 +3248,7 @@ Previous attempts:
 ${params.previousResults
   .map(
     (r: AdaptiveTestResult) =>
-      `- ${r.payload}: ${r.result} (vulnerable: ${r.vulnerable})`
+      `- ${r.payload}: ${r.result} (vulnerable: ${r.vulnerable})`,
   )
   .join("\n")}
 `
@@ -3309,7 +3304,7 @@ async function analyzeResponse(
   },
   model: AIModel,
   onTokenUsage?: OnTokenUsage,
-  authConfig?: AIAuthConfig
+  authConfig?: AIAuthConfig,
 ) {
   const prompt = `Analyze this security test response:
 
@@ -3319,14 +3314,10 @@ HTTP Status: ${params.response.status}
 Response Body: ${params.response.body?.substring(0, 500) || "N/A"}
 
 Vulnerable indicators:
-${params.knowledge.indicators.vulnerable
-  .map((i: string) => `- ${i}`)
-  .join("\n")}
+${params.knowledge.indicators.vulnerable.map((i: string) => `- ${i}`).join("\n")}
 
 Secure indicators:
-${params.knowledge.indicators.notVulnerable
-  .map((i: string) => `- ${i}`)
-  .join("\n")}
+${params.knowledge.indicators.notVulnerable.map((i: string) => `- ${i}`).join("\n")}
 
 Analyze: Is this vulnerable? Return ONLY JSON:
 {
@@ -3357,12 +3348,12 @@ Analyze: Is this vulnerable? Return ONLY JSON:
   const notVulnerableIndicators = params.knowledge.indicators.notVulnerable;
 
   const foundVulnIndicator = vulnerableIndicators.some((indicator: string) =>
-    responseStr.includes(indicator.toLowerCase().substring(0, 20))
+    responseStr.includes(indicator.toLowerCase().substring(0, 20)),
   );
 
   const foundSecureIndicator = notVulnerableIndicators.some(
     (indicator: string) =>
-      responseStr.includes(indicator.toLowerCase().substring(0, 20))
+      responseStr.includes(indicator.toLowerCase().substring(0, 20)),
   );
 
   return {
@@ -3371,8 +3362,8 @@ Analyze: Is this vulnerable? Return ONLY JSON:
     reasoning: foundVulnIndicator
       ? "Response contains vulnerability indicators"
       : foundSecureIndicator
-      ? "Response shows secure implementation"
-      : "Inconclusive - no clear indicators",
+        ? "Response shows secure implementation"
+        : "Inconclusive - no clear indicators",
     certainlyNotVulnerable: foundSecureIndicator,
     suggestedNextTest: "Try alternative payload or technique",
   };
@@ -3385,7 +3376,7 @@ function createSmartTestTool(
   session: Session.SessionInfo,
   model: AIModel,
   onTokenUsage?: OnTokenUsage,
-  authConfig?: AIAuthConfig
+  authConfig?: AIAuthConfig,
 ) {
   return tool({
     description: `Intelligently test a parameter for a vulnerability using AI-powered adaptive testing.
@@ -3439,7 +3430,7 @@ test_parameter({
       toolCallDescription: z
         .string()
         .describe(
-          "A concise, human-readable description of what this tool call is doing (e.g., 'Testing username parameter for SQL injection')"
+          "A concise, human-readable description of what this tool call is doing (e.g., 'Testing username parameter for SQL injection')",
         ),
     }),
 
@@ -3475,7 +3466,7 @@ test_parameter({
           },
           model,
           onTokenUsage,
-          authConfig
+          authConfig,
         );
 
         console.log(`Strategy: ${strategy}`);
@@ -3499,7 +3490,7 @@ test_parameter({
             },
             model,
             onTokenUsage,
-            authConfig
+            authConfig,
           );
 
           console.log(`  Payload: ${payloadData.payload}`);
@@ -3539,12 +3530,12 @@ test_parameter({
             },
             model,
             onTokenUsage,
-            authConfig
+            authConfig,
           );
 
           console.log(`  Analysis: ${analysis.reasoning}`);
           console.log(
-            `  Vulnerable: ${analysis.vulnerable} (confidence: ${analysis.confidence})`
+            `  Vulnerable: ${analysis.vulnerable} (confidence: ${analysis.confidence})`,
           );
 
           results.push({
@@ -3568,7 +3559,7 @@ test_parameter({
                 analysis.certainlyNotVulnerable
                   ? "Certainly not vulnerable"
                   : "High confidence vulnerability found"
-              }`
+              }`,
             );
             break;
           }
@@ -3622,7 +3613,7 @@ function getAttackSurfaceAgent() {
       toolCallDescription: z
         .string()
         .describe(
-          "A concise, human-readable description of what this tool call is doing (e.g., 'Discovering attack surface')"
+          "A concise, human-readable description of what this tool call is doing (e.g., 'Discovering attack surface')",
         ),
     }),
     execute: async ({ target }) => {
@@ -3667,12 +3658,12 @@ Use this when:
         .string()
         .optional()
         .describe(
-          "The penetration testing objective to compare coverage against"
+          "The penetration testing objective to compare coverage against",
         ),
       toolCallDescription: z
         .string()
         .describe(
-          "A concise, human-readable description of what this tool call is doing (e.g., 'Checking test coverage status')"
+          "A concise, human-readable description of what this tool call is doing (e.g., 'Checking test coverage status')",
         ),
     }),
 
@@ -3680,7 +3671,7 @@ Use this when:
       try {
         const testResultsPath = join(
           session.scratchpadPath,
-          "test-results.jsonl"
+          "test-results.jsonl",
         );
 
         if (!existsSync(testResultsPath)) {
@@ -3756,13 +3747,13 @@ Use this when:
             vulnerabilitiesFound: stats.vulnerable,
             parametersTested: Array.from(stats.parameters),
             parametersCount: stats.parameters.size,
-          })
+          }),
         );
 
         // Identify gaps
         const allAttackTypes = Object.keys(ATTACK_KNOWLEDGE);
         const untestedAttackTypes = allAttackTypes.filter(
-          (at) => !attackTypesCovered.has(at)
+          (at) => !attackTypesCovered.has(at),
         );
 
         // Generate suggestions
@@ -3783,7 +3774,7 @@ Use this when:
               objectiveLower.includes(knowledge.name.toLowerCase())
             ) {
               suggestions.push(
-                `⚠️ Objective mentions "${knowledge.name}" but no tests performed yet`
+                `⚠️ Objective mentions "${knowledge.name}" but no tests performed yet`,
               );
             }
           }
@@ -3798,9 +3789,7 @@ Use this when:
           const untestedForParam = untestedAttackTypes.slice(0, 3);
           if (untestedForParam.length > 0) {
             suggestions.push(
-              `Consider testing "${sampleParameter}" for: ${untestedForParam.join(
-                ", "
-              )}`
+              `Consider testing "${sampleParameter}" for: ${untestedForParam.join(", ")}`,
             );
           }
         }
@@ -3808,7 +3797,7 @@ Use this when:
         // Suggest thoroughness improvements
         if (testResults.length < 5) {
           suggestions.push(
-            "Coverage is low. Consider testing more parameters and attack types."
+            "Coverage is low. Consider testing more parameters and attack types.",
           );
         }
 
@@ -3878,7 +3867,7 @@ This is the difference between amateur and professional pentesting.`,
       toolCallDescription: z
         .string()
         .describe(
-          "A concise, human-readable description of what this tool call is doing (e.g., 'Validating pentest completeness')"
+          "A concise, human-readable description of what this tool call is doing (e.g., 'Validating pentest completeness')",
         ),
     }),
 
@@ -3925,11 +3914,11 @@ This is the difference between amateur and professional pentesting.`,
 
         if (discoveryAttempts < 3) {
           issues.push(
-            `⚠️ Only ${discoveryAttempts} discovery attempts - need at least 3 to ensure completeness`
+            `⚠️ Only ${discoveryAttempts} discovery attempts - need at least 3 to ensure completeness`,
           );
         } else {
           passes.push(
-            `✓ Made ${discoveryAttempts} discovery attempts - likely found everything`
+            `✓ Made ${discoveryAttempts} discovery attempts - likely found everything`,
           );
         }
 
@@ -3939,11 +3928,11 @@ This is the difference between amateur and professional pentesting.`,
 
         if (totalTests < 5) {
           issues.push(
-            `⚠️ Only ${totalTests} tests performed - likely insufficient coverage`
+            `⚠️ Only ${totalTests} tests performed - likely insufficient coverage`,
           );
         } else {
           passes.push(
-            `✓ Performed ${totalTests} tests across ${parametersCount} parameters and ${endpointsCount} endpoints`
+            `✓ Performed ${totalTests} tests across ${parametersCount} parameters and ${endpointsCount} endpoints`,
           );
         }
 
@@ -3951,7 +3940,7 @@ This is the difference between amateur and professional pentesting.`,
         const attackTypesCount = coverageResult.attackTypesCount || 0;
         if (attackTypesCount < 3) {
           warnings.push(
-            `⚠️ Only tested ${attackTypesCount} attack types - consider broader coverage`
+            `⚠️ Only tested ${attackTypesCount} attack types - consider broader coverage`,
           );
         } else {
           passes.push(`✓ Tested ${attackTypesCount} different attack types`);
@@ -3960,11 +3949,11 @@ This is the difference between amateur and professional pentesting.`,
         // Check 4: Anomaly investigation
         if (anomaliesInvestigated.length === 0) {
           warnings.push(
-            "⚠️ No anomalies investigated - did you encounter no errors at all?"
+            "⚠️ No anomalies investigated - did you encounter no errors at all?",
           );
         } else {
           passes.push(
-            `✓ Investigated ${anomaliesInvestigated.length} anomalies/errors`
+            `✓ Investigated ${anomaliesInvestigated.length} anomalies/errors`,
           );
         }
 
@@ -3972,7 +3961,7 @@ This is the difference between amateur and professional pentesting.`,
         const vulnerableCount = coverageResult.vulnerableCount || 0;
         if (vulnerableCount === 0 && totalTests > 10) {
           warnings.push(
-            "⚠️ No vulnerabilities found despite extensive testing - verify test payloads are working"
+            "⚠️ No vulnerabilities found despite extensive testing - verify test payloads are working",
           );
         } else if (vulnerableCount > 0) {
           passes.push(`✓ Found ${vulnerableCount} vulnerabilities`);
@@ -3981,11 +3970,11 @@ This is the difference between amateur and professional pentesting.`,
         // Check 6: Objective alignment
         if (objective && coverageResult.suggestions) {
           const hasObjectiveWarnings = coverageResult.suggestions.some(
-            (s: string) => s.includes("Objective mentions")
+            (s: string) => s.includes("Objective mentions"),
           );
           if (hasObjectiveWarnings) {
             issues.push(
-              "⚠️ Objective mentions attack types that weren't tested - see coverage suggestions"
+              "⚠️ Objective mentions attack types that weren't tested - see coverage suggestions",
             );
           } else {
             passes.push("✓ Testing aligns with objective");
@@ -3996,7 +3985,7 @@ This is the difference between amateur and professional pentesting.`,
         const totalChecks = 6;
         const passedChecks = passes.length;
         const completenessScore = Math.round(
-          (passedChecks / totalChecks) * 100
+          (passedChecks / totalChecks) * 100,
         );
 
         // Determine if ready to report
@@ -4014,14 +4003,14 @@ This is the difference between amateur and professional pentesting.`,
           recommendation: isReady
             ? "✅ Assessment is complete and thorough. Ready to generate_report."
             : isComplete
-            ? "⚠️ Assessment is acceptable but could be more thorough. Consider addressing warnings before generate_report."
-            : "❌ Assessment is incomplete. Address issues before generate_report.",
+              ? "⚠️ Assessment is acceptable but could be more thorough. Consider addressing warnings before generate_report."
+              : "❌ Assessment is incomplete. Address issues before generate_report.",
           nextActions:
             issues.length > 0
               ? issues.map((issue) => issue.replace("⚠️ ", "TODO: "))
               : warnings.length > 0
-              ? warnings.map((warn) => warn.replace("⚠️ ", "Consider: "))
-              : ["Generate final report"],
+                ? warnings.map((warn) => warn.replace("⚠️ ", "Consider: "))
+                : ["Generate final report"],
           coverageDetails: {
             totalTests,
             parametersCount,
@@ -4077,7 +4066,7 @@ This tool is faster than manual curl loops and automatically records results.`,
       toolCallDescription: z
         .string()
         .describe(
-          "A concise, human-readable description of what this tool call is doing (e.g., 'Enumerating API endpoints')"
+          "A concise, human-readable description of what this tool call is doing (e.g., 'Enumerating API endpoints')",
         ),
     }),
 
@@ -4085,7 +4074,7 @@ This tool is faster than manual curl loops and automatically records results.`,
       const discovered = [];
 
       console.log(
-        `\n[*] Enumerating ${baseUrl}${pattern} from ${range.min} to ${range.max}...`
+        `\n[*] Enumerating ${baseUrl}${pattern} from ${range.min} to ${range.max}...`,
       );
 
       // Generate bash script for enumeration
@@ -4106,7 +4095,7 @@ This tool is faster than manual curl loops and automatically records results.`,
                 status: response.status,
               });
               console.log(
-                `  Found: ${endpoint} [${method}] → HTTP ${response.status}`
+                `  Found: ${endpoint} [${method}] → HTTP ${response.status}`,
               );
             }
           } catch (error) {
@@ -4118,13 +4107,9 @@ This tool is faster than manual curl loops and automatically records results.`,
       // Record discovery in scratchpad
       const note = `Endpoint Enumeration Results for ${pattern}:
 Found ${discovered.length} endpoints:
-${discovered
-  .map((d) => `- ${d.endpoint} [${d.method}] → HTTP ${d.status}`)
-  .join("\n")}
+${discovered.map((d) => `- ${d.endpoint} [${d.method}] → HTTP ${d.status}`).join("\n")}
 
-Not found: ${
-        range.max - range.min + 1 - discovered.length
-      } endpoints returned 404`;
+Not found: ${range.max - range.min + 1 - discovered.length} endpoints returned 404`;
 
       // Record in scratchpad directly
       try {
@@ -4148,9 +4133,7 @@ Not found: ${
         total: range.max - range.min + 1,
         foundCount: discovered.length,
         notFoundCount: range.max - range.min + 1 - discovered.length,
-        message: `Found ${discovered.length}/${
-          range.max - range.min + 1
-        } endpoints`,
+        message: `Found ${discovered.length}/${range.max - range.min + 1} endpoints`,
         nextAction:
           discovered.length > 0
             ? `Test each discovered endpoint for vulnerabilities`
@@ -4165,7 +4148,7 @@ Not found: ${
  */
 function wrapCommandWithHeaders(
   command: string,
-  headers: Record<string, string>
+  headers: Record<string, string>,
 ): string {
   const userAgent = headers["User-Agent"];
   if (!userAgent) return command;
@@ -4198,7 +4181,7 @@ function wrapCommandWithHeaders(
     if (command.includes("--script-args")) {
       wrapped = wrapped.replace(
         /--script-args\s+([^\s]+)/,
-        `--script-args $1,http.useragent="${userAgent}"`
+        `--script-args $1,http.useragent="${userAgent}"`,
       );
     } else {
       wrapped = `${wrapped} --script-args http.useragent="${userAgent}"`;
@@ -4218,7 +4201,7 @@ function wrapCommandWithHeaders(
   if (command.includes("ffuf") && !command.includes("User-Agent:")) {
     wrapped = wrapped.replace(
       /\bffuf\s+/,
-      `ffuf -H "User-Agent: ${userAgent}" `
+      `ffuf -H "User-Agent: ${userAgent}" `,
     );
   }
 
@@ -4226,7 +4209,7 @@ function wrapCommandWithHeaders(
   if (command.includes("sqlmap") && !command.includes("--user-agent")) {
     wrapped = wrapped.replace(
       /\bsqlmap\s+/,
-      `sqlmap --user-agent="${userAgent}" `
+      `sqlmap --user-agent="${userAgent}" `,
     );
   }
 
@@ -4238,7 +4221,7 @@ function wrapCommandWithHeaders(
   ) {
     wrapped = wrapped.replace(
       /\bwfuzz\s+/,
-      `wfuzz -H "User-Agent: ${userAgent}" `
+      `wfuzz -H "User-Agent: ${userAgent}" `,
     );
   }
 
@@ -4251,7 +4234,7 @@ function wrapCommandWithHeaders(
   if (command.includes("wpscan") && !command.includes("--user-agent")) {
     wrapped = wrapped.replace(
       /\bwpscan\s+/,
-      `wpscan --user-agent "${userAgent}" `
+      `wpscan --user-agent "${userAgent}" `,
     );
   }
 
@@ -4259,7 +4242,7 @@ function wrapCommandWithHeaders(
   if (command.includes("nuclei") && !command.includes("-H")) {
     wrapped = wrapped.replace(
       /\bnuclei\s+/,
-      `nuclei -H "User-Agent: ${userAgent}" `
+      `nuclei -H "User-Agent: ${userAgent}" `,
     );
   }
 
@@ -4267,7 +4250,7 @@ function wrapCommandWithHeaders(
   if (command.includes("httpx") && !command.includes("-H")) {
     wrapped = wrapped.replace(
       /\bhttpx\s+/,
-      `httpx -H "User-Agent: ${userAgent}" `
+      `httpx -H "User-Agent: ${userAgent}" `,
     );
   }
 
@@ -4280,7 +4263,7 @@ export function createPentestTools(
   model?: AIModel,
   toolOverride?: {
     execute_command?: (
-      opts: ExecuteCommandOpts
+      opts: ExecuteCommandOpts,
     ) => Promise<ExecuteCommandResult>;
     http_request?: (opts: HttpRequestOpts) => Promise<HttpRequestResult>;
   },
@@ -4289,7 +4272,7 @@ export function createPentestTools(
   /** Enable streaming stdout logs for operator mode (human-in-the-loop) */
   operatorMode?: boolean,
   /** Auth config for AI provider authentication (e.g., Bedrock credentialProvider) */
-  authConfig?: AIAuthConfig
+  authConfig?: AIAuthConfig,
 ) {
   // Get offensive headers from session config
   const offensiveHeaders = Session.getOffensiveHeaders(session);
@@ -4301,7 +4284,7 @@ export function createPentestTools(
       url: z
         .string()
         .describe(
-          "The base url/endpoint to make fuzzing requests against. Wrap dyanmic parameters in {}, e.g. {userId}."
+          "The base url/endpoint to make fuzzing requests against. Wrap dyanmic parameters in {}, e.g. {userId}.",
         ),
       parameter: z
         .string()
@@ -4318,7 +4301,7 @@ export function createPentestTools(
       toolCallDescription: z
         .string()
         .describe(
-          "A concise, human-readable description of what this tool call is doing (e.g., 'Fuzzing user IDs for IDOR vulnerability')"
+          "A concise, human-readable description of what this tool call is doing (e.g., 'Fuzzing user IDs for IDOR vulnerability')",
         ),
     }),
     execute: async ({
@@ -4348,7 +4331,7 @@ export function createPentestTools(
             method: method,
             headers: { ...offensiveHeaders, ...headers },
             signal: abortSignal,
-          }
+          },
         );
         const body = await result.text();
         return body;
@@ -4419,7 +4402,7 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
     inputSchema: ExecuteCommandInput,
     execute: async (
       { command, timeout = 30000, background = false, toolCallDescription },
-      options
+      options,
     ) => {
       // Extract emitLog callback from context (injected by operatorAgent wrapper)
       // Only stream logs in operator mode (human-in-the-loop)
@@ -4437,7 +4420,7 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
        * Execute command with spawn for real-time stdout streaming
        */
       const executeWithSpawn = (
-        logFn?: (line: string) => void
+        logFn?: (line: string) => void,
       ): Promise<ExecuteCommandResult> => {
         return new Promise((resolve) => {
           const shellCmd = process.platform === "win32" ? "cmd" : "bash";
@@ -4498,7 +4481,7 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
                 stdout.length > 50000
                   ? `${stdout.substring(
                       0,
-                      50000
+                      50000,
                     )}...\n\n(truncated) call the command again with grep / tail to paginate`
                   : stdout || "(no output)",
               stderr: stderr || "",
@@ -4506,8 +4489,8 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
               error: killed
                 ? "Command timed out"
                 : code !== 0
-                ? `Exit code: ${code}`
-                : "",
+                  ? `Exit code: ${code}`
+                  : "",
             });
           });
 
@@ -4583,13 +4566,13 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
             taskManager.updateStatus(task.id, "running");
             try {
               const result = await executeWithSpawn((line) =>
-                taskManager.addLog(task.id, line)
+                taskManager.addLog(task.id, line),
               );
               taskManager.setResult(task.id, result);
             } catch (err) {
               taskManager.setError(
                 task.id,
-                err instanceof Error ? err.message : String(err)
+                err instanceof Error ? err.message : String(err),
               );
             }
           })();
@@ -4725,7 +4708,7 @@ COMMON TESTING PATTERNS:
           headers: responseHeaders,
           body: `${responseBody.substring(
             0,
-            5000
+            5000,
           )}... \n\n (truncated) use execute_command with grep / tail to paginate the response`,
           url: response.url,
           redirected: response.redirected,
@@ -4793,7 +4776,7 @@ This helps the operator visualize the attack surface as testing progresses.`,
               .array(z.string())
               .optional()
               .describe("Parameter names found at this endpoint"),
-          })
+          }),
         )
         .describe("Array of discovered endpoints"),
       toolCallDescription: z.string().optional(),
@@ -4828,7 +4811,7 @@ Call this when you find:
       secret: z
         .string()
         .describe(
-          "The credential value (will be partially redacted in display)"
+          "The credential value (will be partially redacted in display)",
         ),
       type: z
         .enum(["password", "cookie", "jwt", "ssh_key", "api_key"])
@@ -4836,12 +4819,12 @@ Call this when you find:
       source: z
         .string()
         .describe(
-          "Where this was found (e.g., 'wp-config.php', 'login response')"
+          "Where this was found (e.g., 'wp-config.php', 'login response')",
         ),
       scope: z
         .string()
         .describe(
-          "Where this credential works (e.g., 'HTTP basic auth', 'MySQL', 'SSH')"
+          "Where this credential works (e.g., 'HTTP basic auth', 'MySQL', 'SSH')",
         ),
       toolCallDescription: z.string().optional(),
     }),
@@ -4885,7 +4868,7 @@ Status markers:
         .string()
         .optional()
         .describe(
-          "If confirmed, the vulnerability type (e.g., SQLi, XSS, IDOR)"
+          "If confirmed, the vulnerability type (e.g., SQLi, XSS, IDOR)",
         ),
       toolCallDescription: z.string().optional(),
     }),
@@ -4915,7 +4898,7 @@ This is separate from document_finding - this updates the live sidebar display.`
       type: z
         .string()
         .describe(
-          "Vulnerability type (e.g., sqli, idor, xss, rce, auth_bypass)"
+          "Vulnerability type (e.g., sqli, idor, xss, rce, auth_bypass)",
         ),
       endpoint: z.string().describe("Affected endpoint"),
       severity: z.enum(["critical", "high", "medium", "low", "info"]),
@@ -5027,7 +5010,7 @@ Example flow:
       session,
       model || "claude-sonnet-4-20250514",
       onTokenUsage,
-      authConfig
+      authConfig,
     ),
     check_testing_coverage: createCheckTestingCoverageTool(session),
     validate_completeness: createValidateCompletenessTool(session),

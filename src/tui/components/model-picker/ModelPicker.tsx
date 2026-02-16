@@ -42,7 +42,7 @@ export function ModelPicker({
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedProviders, setExpandedProviders] = useState<Set<string>>(
-    new Set(["anthropic"])
+    new Set(["anthropic"]),
   );
   const [focusedIndex, setFocusedIndex] = useState(0);
 
@@ -103,7 +103,7 @@ export function ModelPicker({
   // Sync focusedIndex when selected model changes (e.g. on initial load)
   useEffect(() => {
     const idx = navigationItems.findIndex(
-      (item) => item.type === "model" && item.model.id === selectedModel.id
+      (item) => item.type === "model" && item.model.id === selectedModel.id,
     );
     if (idx !== -1) {
       setFocusedIndex(idx);
@@ -113,13 +113,19 @@ export function ModelPicker({
   // Clamp focusedIndex when navigation items change
   useEffect(() => {
     setFocusedIndex((prev) =>
-      Math.min(prev, Math.max(0, navigationItems.length - 1))
+      Math.min(prev, Math.max(0, navigationItems.length - 1)),
     );
   }, [navigationItems.length]);
 
   // Handle keyboard navigation
   const handleKeyboard = useCallback(
-    (key: { name?: string; sequence?: string; ctrl?: boolean; shift?: boolean; meta?: boolean }) => {
+    (key: {
+      name?: string;
+      sequence?: string;
+      ctrl?: boolean;
+      shift?: boolean;
+      meta?: boolean;
+    }) => {
       if (!focused) return false;
       if (navigationItems.length === 0) return false;
 
@@ -192,7 +198,7 @@ export function ModelPicker({
           // Move focus to the provider header when collapsing
           const headerIdx = navigationItems.findIndex(
             (item) =>
-              item.type === "provider" && item.provider === targetProvider
+              item.type === "provider" && item.provider === targetProvider,
           );
           if (headerIdx !== -1) {
             setFocusedIndex(headerIdx);
@@ -226,7 +232,7 @@ export function ModelPicker({
       onSelectModel,
       onConfirm,
       searchQuery,
-    ]
+    ],
   );
 
   useKeyboard((key) => {
@@ -266,8 +272,8 @@ export function ModelPicker({
                 isProviderFocused
                   ? greenAccent
                   : isExpanded
-                  ? creamText
-                  : dimText
+                    ? creamText
+                    : dimText
               }
             >
               {isProviderFocused ? "❯" : isExpanded ? "▾" : "▸"} {providerName}{" "}

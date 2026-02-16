@@ -57,74 +57,74 @@ const CVSSMetricsOutputSchema = z.object({
     AV: z
       .enum(["N", "A", "L", "P"])
       .describe(
-        "Attack Vector: N=Network (remotely exploitable), A=Adjacent network, L=Local access required, P=Physical access required"
+        "Attack Vector: N=Network (remotely exploitable), A=Adjacent network, L=Local access required, P=Physical access required",
       ),
     AC: z
       .enum(["L", "H"])
       .describe(
-        "Attack Complexity: L=Low (no special conditions), H=High (requires specific conditions/bypassing)"
+        "Attack Complexity: L=Low (no special conditions), H=High (requires specific conditions/bypassing)",
       ),
     AT: z
       .enum(["N", "P"])
       .describe(
-        "Attack Requirements: N=None (works in most configs), P=Present (requires race conditions/specific setup)"
+        "Attack Requirements: N=None (works in most configs), P=Present (requires race conditions/specific setup)",
       ),
     PR: z
       .enum(["N", "L", "H"])
       .describe(
-        "Privileges Required: N=None (unauthenticated), L=Low (basic user), H=High (admin)"
+        "Privileges Required: N=None (unauthenticated), L=Low (basic user), H=High (admin)",
       ),
     UI: z
       .enum(["N", "P", "A"])
       .describe(
-        "User Interaction: N=None, P=Passive (user visits page), A=Active (user must click/interact)"
+        "User Interaction: N=None, P=Passive (user visits page), A=Active (user must click/interact)",
       ),
 
     // Base Metrics - Vulnerable System Impact
     VC: z
       .enum(["H", "L", "N"])
       .describe(
-        "Confidentiality Impact on Vulnerable System: H=High (total loss), L=Low (partial), N=None"
+        "Confidentiality Impact on Vulnerable System: H=High (total loss), L=Low (partial), N=None",
       ),
     VI: z
       .enum(["H", "L", "N"])
       .describe(
-        "Integrity Impact on Vulnerable System: H=High (total loss), L=Low (partial), N=None"
+        "Integrity Impact on Vulnerable System: H=High (total loss), L=Low (partial), N=None",
       ),
     VA: z
       .enum(["H", "L", "N"])
       .describe(
-        "Availability Impact on Vulnerable System: H=High (total loss), L=Low (partial), N=None"
+        "Availability Impact on Vulnerable System: H=High (total loss), L=Low (partial), N=None",
       ),
 
     // Base Metrics - Subsequent System Impact
     SC: z
       .enum(["H", "L", "N"])
       .describe(
-        "Confidentiality Impact on Subsequent Systems: H=High, L=Low, N=None (no pivoting)"
+        "Confidentiality Impact on Subsequent Systems: H=High, L=Low, N=None (no pivoting)",
       ),
     SI: z
       .enum(["H", "L", "N"])
       .describe(
-        "Integrity Impact on Subsequent Systems: H=High, L=Low, N=None"
+        "Integrity Impact on Subsequent Systems: H=High, L=Low, N=None",
       ),
     SA: z
       .enum(["H", "L", "N"])
       .describe(
-        "Availability Impact on Subsequent Systems: H=High, L=Low, N=None"
+        "Availability Impact on Subsequent Systems: H=High, L=Low, N=None",
       ),
 
     // Threat Metric
     E: z
       .enum(["A", "P", "U"])
       .describe(
-        "Exploit Maturity: A=Attacked (working exploit exists), P=POC available, U=Unreported"
+        "Exploit Maturity: A=Attacked (working exploit exists), P=POC available, U=Unreported",
       ),
   }),
   reasoning: z
     .string()
     .describe(
-      "Brief explanation (2-3 sentences) of the key factors that influenced the metric choices"
+      "Brief explanation (2-3 sentences) of the key factors that influenced the metric choices",
     ),
 });
 
@@ -236,7 +236,7 @@ Always provide brief reasoning explaining your key decisions.`;
 export async function scoreFindingWithCVSS(
   input: CVSSScorerInput,
   model: AIModel,
-  authConfig?: AIAuthConfig
+  authConfig?: AIAuthConfig,
 ): Promise<CVSSScorerResult> {
   const prompt = buildScoringPrompt(input);
 
@@ -336,10 +336,10 @@ function extractContextSummary(messages: Record<string, unknown>[]): string {
     if (message.role === "assistant" && typeof message.content === "string") {
       // Look for hypothesis/validation blocks
       const hypothesisMatch = message.content.match(
-        /HYPOTHESIS:[\s\S]*?(?=VALIDATION:|$)/
+        /HYPOTHESIS:[\s\S]*?(?=VALIDATION:|$)/,
       );
       const validationMatch = message.content.match(
-        /VALIDATION:[\s\S]*?(?=HYPOTHESIS:|$)/
+        /VALIDATION:[\s\S]*?(?=HYPOTHESIS:|$)/,
       );
 
       if (hypothesisMatch) {

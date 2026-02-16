@@ -67,7 +67,7 @@ export default function HelpDialog() {
     const selectedCmd = flatCommands[selectedIndex];
     if (!selectedCmd) return;
 
-    const target = children.find(child => child.id === selectedCmd.name);
+    const target = children.find((child) => child.id === selectedCmd.name);
     if (!target) return;
 
     const targetVisualY = target.y - scroll.y;
@@ -83,7 +83,7 @@ export default function HelpDialog() {
   const handleClose = () => {
     route.navigate({
       type: "base",
-      path: "home"
+      path: "home",
     });
   };
 
@@ -108,7 +108,7 @@ export default function HelpDialog() {
       case "k":
         evt.preventDefault();
         setSelectedIndex((prev) =>
-          prev > 0 ? prev - 1 : flatCommands.length - 1
+          prev > 0 ? prev - 1 : flatCommands.length - 1,
         );
         break;
 
@@ -116,7 +116,7 @@ export default function HelpDialog() {
       case "j":
         evt.preventDefault();
         setSelectedIndex((prev) =>
-          prev < flatCommands.length - 1 ? prev + 1 : 0
+          prev < flatCommands.length - 1 ? prev + 1 : 0,
         );
         break;
 
@@ -137,8 +137,12 @@ export default function HelpDialog() {
 
   // Detail view
   if (showDetail && selectedCommand) {
-    const hasOptions = selectedCommand.options && selectedCommand.options.length > 0;
-    const detailHeight = Math.min(hasOptions ? 16 + (selectedCommand.options?.length || 0) * 2 : 12, dimensions.height - 4);
+    const hasOptions =
+      selectedCommand.options && selectedCommand.options.length > 0;
+    const detailHeight = Math.min(
+      hasOptions ? 16 + (selectedCommand.options?.length || 0) * 2 : 12,
+      dimensions.height - 4,
+    );
 
     return (
       <box
@@ -161,12 +165,10 @@ export default function HelpDialog() {
         >
           {/* Detail Header */}
           <box width="100%" padding={1} flexDirection="row">
-            <text fg={greenAccent}>
-              /{selectedCommand.name}
-            </text>
-            <text fg={dimText}>
-              {`  (${selectedCommand.category || "General"})`}
-            </text>
+            <text fg={greenAccent}>/{selectedCommand.name}</text>
+            <text
+              fg={dimText}
+            >{`  (${selectedCommand.category || "General"})`}</text>
           </box>
 
           {/* Separator */}
@@ -186,7 +188,7 @@ export default function HelpDialog() {
               <box flexDirection="row" marginTop={1}>
                 <text fg={dimText}>Aliases: </text>
                 <text fg={white}>
-                  {selectedCommand.aliases.map(a => `/${a}`).join(", ")}
+                  {selectedCommand.aliases.map((a) => `/${a}`).join(", ")}
                 </text>
               </box>
             )}
@@ -199,9 +201,7 @@ export default function HelpDialog() {
                 <box height={1} />
                 {selectedCommand.options?.map((opt, idx) => (
                   <box key={idx} flexDirection="row" paddingLeft={2}>
-                    <text fg={greenAccent}>
-                      {opt.name}
-                    </text>
+                    <text fg={greenAccent}>{opt.name}</text>
                     {opt.valueHint && (
                       <text fg={dimText}>{` ${opt.valueHint}`}</text>
                     )}
@@ -219,9 +219,7 @@ export default function HelpDialog() {
 
           {/* Detail Footer */}
           <box width="100%" padding={1} flexDirection="row">
-            <text fg={dimText}>
-              [enter/esc] back
-            </text>
+            <text fg={dimText}>[enter/esc] back</text>
           </box>
         </box>
       </box>
@@ -253,9 +251,7 @@ export default function HelpDialog() {
           <text fg={greenAccent}>
             {"Help - Available Commands".padEnd(panelWidth - 20)}
           </text>
-          <text fg={dimText}>
-            {`${flatCommands.length} commands`}
-          </text>
+          <text fg={dimText}>{`${flatCommands.length} commands`}</text>
         </box>
 
         {/* Separator */}
@@ -266,7 +262,9 @@ export default function HelpDialog() {
         {/* Column Headers */}
         <box width="100%" paddingLeft={2} paddingRight={2} flexDirection="row">
           <text fg={dimText}>
-            {"Command".padEnd(18)}{"Category".padEnd(14)}{"Description"}
+            {"Command".padEnd(18)}
+            {"Category".padEnd(14)}
+            {"Description"}
           </text>
         </box>
 
@@ -288,7 +286,9 @@ export default function HelpDialog() {
             const isSelected = idx === selectedIndex;
             const hasOptions = cmd.options && cmd.options.length > 0;
             const name = `/${cmd.name}`.padEnd(17).slice(0, 17);
-            const category = (cmd.category || "General").slice(0, 12).padEnd(14);
+            const category = (cmd.category || "General")
+              .slice(0, 12)
+              .padEnd(14);
             const desc = cmd.description || "";
             const optionHint = hasOptions ? " [...]" : "";
 
@@ -301,18 +301,10 @@ export default function HelpDialog() {
                 flexDirection="row"
                 paddingLeft={1}
               >
-                <text fg={isSelected ? greenAccent : white}>
-                  {name}
-                </text>
-                <text fg={dimText}>
-                  {category}
-                </text>
-                <text fg={isSelected ? white : dimText}>
-                  {desc}
-                </text>
-                {hasOptions && (
-                  <text fg={greenAccent}>{optionHint}</text>
-                )}
+                <text fg={isSelected ? greenAccent : white}>{name}</text>
+                <text fg={dimText}>{category}</text>
+                <text fg={isSelected ? white : dimText}>{desc}</text>
+                {hasOptions && <text fg={greenAccent}>{optionHint}</text>}
               </box>
             );
           })}
@@ -325,9 +317,7 @@ export default function HelpDialog() {
 
         {/* Footer */}
         <box width="100%" padding={1} flexDirection="row">
-          <text fg={dimText}>
-            [j/k] navigate  [enter/v] details  [esc] close
-          </text>
+          <text fg={dimText}>[j/k] navigate [enter/v] details [esc] close</text>
         </box>
       </box>
     </box>

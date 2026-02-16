@@ -6,15 +6,15 @@
  * and exporting auth state for other agents.
  */
 
-import { tool } from 'ai';
-import { z } from 'zod';
-import type { Session } from '../../session';
-import type { Logger } from '../logger';
+import { tool } from "ai";
+import { z } from "zod";
+import type { Session } from "../../session";
+import type { Logger } from "../logger";
 import {
   AuthStateManager,
   extractCookiesFromHeaders,
   getJWTExpiration,
-} from './authStateManager';
+} from "./authStateManager";
 import {
   DetectAuthSchemeInputSchema,
   AuthenticateInputSchema,
@@ -41,7 +41,7 @@ import {
   type AuthToken,
   type AuthBarrier,
   type RegistrationBarrier,
-} from './types';
+} from "./types";
 
 // =============================================================================
 // Types
@@ -70,7 +70,7 @@ export interface HttpRequestResult {
 // BrowserTools is the return type from createBrowserTools
 // We use a generic record type to be compatible with the actual tool structure
 export type BrowserTools = ReturnType<
-  typeof import('../browserTools/playwrightMcp').createBrowserTools
+  typeof import("../browserTools/playwrightMcp").createBrowserTools
 >;
 
 export interface AuthToolsConfig {
@@ -87,20 +87,20 @@ export interface AuthToolsConfig {
 // =============================================================================
 
 async function defaultHttpRequest(
-  opts: HttpRequestOpts
+  opts: HttpRequestOpts,
 ): Promise<HttpRequestResult> {
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(
       () => controller.abort(),
-      opts.timeout || 30000
+      opts.timeout || 30000,
     );
 
     const response = await fetch(opts.url, {
       method: opts.method,
       headers: opts.headers,
       body: opts.body,
-      redirect: opts.followRedirects !== false ? 'follow' : 'manual',
+      redirect: opts.followRedirects !== false ? "follow" : "manual",
       signal: controller.signal,
     });
 
@@ -109,7 +109,7 @@ async function defaultHttpRequest(
     const headers: Record<string, string | string[]> = {};
     response.headers.forEach((value, key) => {
       // Handle multiple Set-Cookie headers
-      if (key.toLowerCase() === 'set-cookie') {
+      if (key.toLowerCase() === "set-cookie") {
         const existing = headers[key];
         if (Array.isArray(existing)) {
           existing.push(value);
@@ -138,9 +138,9 @@ async function defaultHttpRequest(
     return {
       success: false,
       status: 0,
-      statusText: '',
+      statusText: "",
       headers: {},
-      body: '',
+      body: "",
       error: error instanceof Error ? error.message : String(error),
     };
   }
@@ -152,20 +152,20 @@ async function defaultHttpRequest(
 
 function detectAuthBarrier(
   responseBody: string,
-  statusCode: number
+  statusCode: number,
 ): AuthBarrier | null {
   const bodyLower = responseBody.toLowerCase();
 
   // CAPTCHA detection — these are specific enough to avoid false positives
   if (
-    bodyLower.includes('captcha') ||
-    bodyLower.includes('recaptcha') ||
-    bodyLower.includes('hcaptcha') ||
-    bodyLower.includes('g-recaptcha')
+    bodyLower.includes("captcha") ||
+    bodyLower.includes("recaptcha") ||
+    bodyLower.includes("hcaptcha") ||
+    bodyLower.includes("g-recaptcha")
   ) {
     return {
-      type: 'captcha',
-      details: 'CAPTCHA detected on login form',
+      type: "captcha",
+      details: "CAPTCHA detected on login form",
     };
   }
 
@@ -193,12 +193,12 @@ function detectAuthBarrier(
   // Rate limiting
   if (
     statusCode === 429 ||
-    bodyLower.includes('rate limit') ||
-    bodyLower.includes('too many')
+    bodyLower.includes("rate limit") ||
+    bodyLower.includes("too many")
   ) {
     return {
-      type: 'rate_limit',
-      details: 'Rate limiting detected',
+      type: "rate_limit",
+      details: "Rate limiting detected",
     };
   }
 
@@ -289,14 +289,14 @@ Returns detected scheme and required fields for authentication.`,
 
       // Check if aborted
       if (abortSignal?.aborted) {
-        return { success: false, error: 'Request aborted' };
+        return { success: false, error: "Request aborted" };
       }
 
       try {
         // First, make a GET request to the endpoint
         const response = await makeRequest({
           url: endpoint,
-          method: 'GET',
+          method: "GET",
           followRedirects: false,
           timeout: 30000,
         });
@@ -319,24 +319,24 @@ Returns detected scheme and required fields for authentication.`,
 
         // Check WWW-Authenticate header for Basic/Bearer auth
         const wwwAuth =
-          headers['www-authenticate'] || headers['WWW-Authenticate'];
+          headers["www-authenticate"] || headers["WWW-Authenticate"];
         if (wwwAuth) {
           const authHeader = Array.isArray(wwwAuth) ? wwwAuth[0] : wwwAuth;
-          if (authHeader.toLowerCase().startsWith('basic')) {
+          if (authHeader.toLowerCase().startsWith("basic")) {
             return {
               success: true,
               scheme: {
-                method: 'basic',
+                method: "basic",
                 loginUrl: endpoint,
-                fields: ['username', 'password'],
+                fields: ["username", "password"],
               },
             };
           }
-          if (authHeader.toLowerCase().startsWith('bearer')) {
+          if (authHeader.toLowerCase().startsWith("bearer")) {
             return {
               success: true,
               scheme: {
-                method: 'bearer',
+                method: "bearer",
                 loginUrl: endpoint,
               },
             };
@@ -349,21 +349,21 @@ Returns detected scheme and required fields for authentication.`,
           response.status === 302 ||
           response.status === 303
         ) {
-          const location = headers['location'] || headers['Location'];
+          const location = headers["location"] || headers["Location"];
           if (location) {
             const loginUrl = Array.isArray(location) ? location[0] : location;
             if (
-              loginUrl.includes('login') ||
-              loginUrl.includes('signin') ||
-              loginUrl.includes('auth')
+              loginUrl.includes("login") ||
+              loginUrl.includes("signin") ||
+              loginUrl.includes("auth")
             ) {
               return {
                 success: true,
                 scheme: {
-                  method: 'form',
+                  method: "form",
                   loginUrl,
                   browserRequired: true,
-                  browserReason: 'Redirect to login page detected',
+                  browserReason: "Redirect to login page detected",
                 },
               };
             }
@@ -385,39 +385,39 @@ Returns detected scheme and required fields for authentication.`,
             bodyLower.includes('name="username"') ||
             bodyLower.includes('name="user"')
           ) {
-            fields.push('username');
+            fields.push("username");
           } else if (bodyLower.includes('name="email"')) {
-            fields.push('email');
+            fields.push("email");
           } else {
-            fields.push('username');
+            fields.push("username");
           }
 
           // Password field
-          fields.push('password');
+          fields.push("password");
 
           // CSRF token
           const csrfRequired =
-            bodyLower.includes('csrf') ||
-            bodyLower.includes('_token') ||
-            bodyLower.includes('authenticity_token');
+            bodyLower.includes("csrf") ||
+            bodyLower.includes("_token") ||
+            bodyLower.includes("authenticity_token");
 
           // Check if browser is required (SPA indicators)
           const browserRequired =
-            bodyLower.includes('__next_data__') ||
-            bodyLower.includes('react') ||
-            bodyLower.includes('vue') ||
-            bodyLower.includes('angular');
+            bodyLower.includes("__next_data__") ||
+            bodyLower.includes("react") ||
+            bodyLower.includes("vue") ||
+            bodyLower.includes("angular");
 
           return {
             success: true,
             scheme: {
-              method: 'form',
+              method: "form",
               loginUrl: endpoint,
               fields,
               csrfRequired,
               browserRequired,
               browserReason: browserRequired
-                ? 'SPA framework detected'
+                ? "SPA framework detected"
                 : undefined,
             },
           };
@@ -426,19 +426,19 @@ Returns detected scheme and required fields for authentication.`,
         // Check for JSON API login patterns
         if (response.status === 401) {
           const contentType =
-            headers['content-type'] || headers['Content-Type'];
+            headers["content-type"] || headers["Content-Type"];
           const isJson =
             contentType &&
             (Array.isArray(contentType)
               ? contentType[0]
               : contentType
-            ).includes('json');
+            ).includes("json");
 
           if (isJson) {
             return {
               success: true,
               scheme: {
-                method: 'json',
+                method: "json",
                 loginUrl: endpoint,
               },
             };
@@ -488,23 +488,23 @@ NOTE: For SPAs or JavaScript-heavy apps, use browser tools instead (browser_navi
       toolCallDescription,
     }): Promise<AuthenticateResult> => {
       logger?.info(
-        `authenticate: ${loginUrl} method=${method} hasUsername=${!!credentials.username} hasPassword=${!!credentials.password} hasApiKey=${!!credentials.apiKey}`
+        `authenticate: ${loginUrl} method=${method} hasUsername=${!!credentials.username} hasPassword=${!!credentials.password} hasApiKey=${!!credentials.apiKey}`,
       );
 
       // Check if aborted
       if (abortSignal?.aborted) {
-        return { success: false, message: 'Request aborted', error: 'Aborted' };
+        return { success: false, message: "Request aborted", error: "Aborted" };
       }
 
-      authStateManager.setStatus('authenticating');
+      authStateManager.setStatus("authenticating");
 
       try {
         const headers: Record<string, string> = {};
         let body: string | undefined;
 
         switch (method) {
-          case 'form_post': {
-            headers['Content-Type'] = 'application/x-www-form-urlencoded';
+          case "form_post": {
+            headers["Content-Type"] = "application/x-www-form-urlencoded";
             const params = new URLSearchParams();
             if (credentials.username) {
               params.set(usernameField, credentials.username);
@@ -513,11 +513,11 @@ NOTE: For SPAs or JavaScript-heavy apps, use browser tools instead (browser_navi
               params.set(passwordField, credentials.password);
             }
             if (csrfToken) {
-              params.set('_token', csrfToken);
+              params.set("_token", csrfToken);
             }
             if (credentials.customFields) {
               for (const [key, value] of Object.entries(
-                credentials.customFields
+                credentials.customFields,
               )) {
                 params.set(key, value);
               }
@@ -526,8 +526,8 @@ NOTE: For SPAs or JavaScript-heavy apps, use browser tools instead (browser_navi
             break;
           }
 
-          case 'json_post': {
-            headers['Content-Type'] = 'application/json';
+          case "json_post": {
+            headers["Content-Type"] = "application/json";
             const jsonBody: Record<string, string> = {};
             if (credentials.username) {
               jsonBody[usernameField] = credentials.username;
@@ -542,26 +542,26 @@ NOTE: For SPAs or JavaScript-heavy apps, use browser tools instead (browser_navi
             break;
           }
 
-          case 'basic_auth': {
+          case "basic_auth": {
             if (credentials.username && credentials.password) {
               const encoded = Buffer.from(
-                `${credentials.username}:${credentials.password}`
-              ).toString('base64');
-              headers['Authorization'] = `Basic ${encoded}`;
+                `${credentials.username}:${credentials.password}`,
+              ).toString("base64");
+              headers["Authorization"] = `Basic ${encoded}`;
             }
             break;
           }
 
-          case 'bearer': {
+          case "bearer": {
             if (credentials.apiKey) {
-              headers['Authorization'] = `Bearer ${credentials.apiKey}`;
+              headers["Authorization"] = `Bearer ${credentials.apiKey}`;
             }
             break;
           }
 
-          case 'api_key': {
+          case "api_key": {
             if (credentials.apiKey) {
-              headers['X-API-Key'] = credentials.apiKey;
+              headers["X-API-Key"] = credentials.apiKey;
             }
             break;
           }
@@ -570,11 +570,11 @@ NOTE: For SPAs or JavaScript-heavy apps, use browser tools instead (browser_navi
         const response = await makeRequest({
           url: loginUrl,
           method:
-            method === 'basic_auth' ||
-            method === 'bearer' ||
-            method === 'api_key'
-              ? 'GET'
-              : 'POST',
+            method === "basic_auth" ||
+            method === "bearer" ||
+            method === "api_key"
+              ? "GET"
+              : "POST",
           headers,
           body,
           followRedirects: true,
@@ -605,14 +605,14 @@ NOTE: For SPAs or JavaScript-heavy apps, use browser tools instead (browser_navi
         if (
           response.status === 401 ||
           response.status === 403 ||
-          response.body.toLowerCase().includes('invalid credentials') ||
-          response.body.toLowerCase().includes('incorrect password') ||
-          response.body.toLowerCase().includes('login failed')
+          response.body.toLowerCase().includes("invalid credentials") ||
+          response.body.toLowerCase().includes("incorrect password") ||
+          response.body.toLowerCase().includes("login failed")
         ) {
-          authStateManager.markFailed('Invalid credentials');
+          authStateManager.markFailed("Invalid credentials");
           return {
             success: false,
-            message: 'Authentication failed: Invalid credentials',
+            message: "Authentication failed: Invalid credentials",
           };
         }
 
@@ -621,7 +621,7 @@ NOTE: For SPAs or JavaScript-heavy apps, use browser tools instead (browser_navi
 
         // Extract cookies from Set-Cookie headers
         const cookieTokens = extractCookiesFromHeaders(
-          response.headers as Record<string, string | string[]>
+          response.headers as Record<string, string | string[]>,
         );
         tokens.push(...cookieTokens);
 
@@ -633,16 +633,16 @@ NOTE: For SPAs or JavaScript-heavy apps, use browser tools instead (browser_navi
               bodyJson.token || bodyJson.access_token || bodyJson.accessToken;
             const expiration = getJWTExpiration(jwtValue);
             tokens.push({
-              type: 'jwt',
-              name: 'Authorization',
+              type: "jwt",
+              name: "Authorization",
               value: jwtValue,
               expiresAt: expiration || undefined,
             });
           }
           if (bodyJson.refresh_token || bodyJson.refreshToken) {
             tokens.push({
-              type: 'jwt',
-              name: 'refresh_token',
+              type: "jwt",
+              name: "refresh_token",
               value: bodyJson.refresh_token || bodyJson.refreshToken,
             });
           }
@@ -652,17 +652,17 @@ NOTE: For SPAs or JavaScript-heavy apps, use browser tools instead (browser_navi
 
         // Check for auth header in response (some APIs return it)
         const authHeader =
-          response.headers['authorization'] ||
-          response.headers['Authorization'];
+          response.headers["authorization"] ||
+          response.headers["Authorization"];
         if (authHeader) {
           const tokenValue = Array.isArray(authHeader)
             ? authHeader[0]
             : authHeader;
-          if (tokenValue.startsWith('Bearer ')) {
+          if (tokenValue.startsWith("Bearer ")) {
             const jwtValue = tokenValue.substring(7);
             tokens.push({
-              type: 'bearer',
-              name: 'Authorization',
+              type: "bearer",
+              name: "Authorization",
               value: jwtValue,
               expiresAt: getJWTExpiration(jwtValue) || undefined,
             });
@@ -673,14 +673,14 @@ NOTE: For SPAs or JavaScript-heavy apps, use browser tools instead (browser_navi
           // Check if login was successful based on redirect or status
           if (response.status === 200 || response.status === 302) {
             // Might be successful but no tokens extracted
-            authStateManager.setStatus('active');
+            authStateManager.setStatus("active");
             authStateManager.updateState({ authenticatedAt: Date.now() });
             return {
               success: true,
               tokens: [],
               authState: authStateManager.getState(),
               message:
-                'Authentication appears successful but no tokens were extracted. Check cookies or response for session info.',
+                "Authentication appears successful but no tokens were extracted. Check cookies or response for session info.",
             };
           }
         }
@@ -694,12 +694,12 @@ NOTE: For SPAs or JavaScript-heavy apps, use browser tools instead (browser_navi
         authStateManager.setAuthEndpoint({
           url: loginUrl,
           method:
-            method === 'json_post'
-              ? 'POST'
-              : method === 'form_post'
-                ? 'POST'
-                : 'GET',
-          contentType: headers['Content-Type'] || 'text/html',
+            method === "json_post"
+              ? "POST"
+              : method === "form_post"
+                ? "POST"
+                : "GET",
+          contentType: headers["Content-Type"] || "text/html",
           usernameField,
           passwordField,
         });
@@ -758,15 +758,15 @@ Persists to auth/auth-flow.json in session directory.`,
 
         return {
           success: true,
-          flowPath: 'auth/auth-flow.json',
+          flowPath: "auth/auth-flow.json",
           message: `Auth flow documented for ${input.targetHost}. Future runs will skip discovery.`,
         };
       } catch (error) {
         return {
           success: false,
-          flowPath: '',
+          flowPath: "",
           error: error instanceof Error ? error.message : String(error),
-          message: 'Failed to document auth flow',
+          message: "Failed to document auth flow",
         };
       }
     },
@@ -796,15 +796,15 @@ Updates session validity status in auth state.`,
       providedTokens,
     }): Promise<ValidateSessionResult> => {
       logger?.info(
-        `validate_session: ${testEndpoint} expectedStatus=${expectedStatus} hasProvidedTokens=${!!providedTokens}`
+        `validate_session: ${testEndpoint} expectedStatus=${expectedStatus} hasProvidedTokens=${!!providedTokens}`,
       );
 
       if (abortSignal?.aborted) {
         return {
           success: false,
           valid: false,
-          message: 'Request aborted',
-          error: 'Aborted',
+          message: "Request aborted",
+          error: "Aborted",
         };
       }
 
@@ -815,10 +815,10 @@ Updates session validity status in auth state.`,
         if (providedTokens) {
           // Use provided tokens directly
           if (providedTokens.bearerToken) {
-            headers['Authorization'] = `Bearer ${providedTokens.bearerToken}`;
+            headers["Authorization"] = `Bearer ${providedTokens.bearerToken}`;
           }
           if (providedTokens.cookies) {
-            headers['Cookie'] = providedTokens.cookies;
+            headers["Cookie"] = providedTokens.cookies;
           }
           if (providedTokens.customHeaders) {
             Object.assign(headers, providedTokens.customHeaders);
@@ -828,13 +828,13 @@ Updates session validity status in auth state.`,
           Object.assign(headers, authStateManager.getAuthHeaders());
           const cookies = authStateManager.getCookieString();
           if (cookies) {
-            headers['Cookie'] = cookies;
+            headers["Cookie"] = cookies;
           }
         }
 
         const response = await makeRequest({
           url: testEndpoint,
-          method: 'GET',
+          method: "GET",
           headers,
           followRedirects: false,
           timeout: 30000,
@@ -856,24 +856,24 @@ Updates session validity status in auth state.`,
           response.status === 303
         ) {
           const location =
-            response.headers['location'] || response.headers['Location'];
+            response.headers["location"] || response.headers["Location"];
           if (location) {
             const locationStr = Array.isArray(location)
               ? location[0]
               : location;
             if (
-              locationStr.includes('login') ||
-              locationStr.includes('signin') ||
-              locationStr.includes('auth')
+              locationStr.includes("login") ||
+              locationStr.includes("signin") ||
+              locationStr.includes("auth")
             ) {
               if (!providedTokens) {
-                authStateManager.setStatus('expired');
+                authStateManager.setStatus("expired");
               }
               return {
                 success: true,
                 valid: false,
                 statusCode: response.status,
-                message: 'Session expired - redirected to login page',
+                message: "Session expired - redirected to login page",
               };
             }
           }
@@ -882,7 +882,7 @@ Updates session validity status in auth state.`,
         // Check status code
         if (response.status === 401 || response.status === 403) {
           if (!providedTokens) {
-            authStateManager.setStatus('expired');
+            authStateManager.setStatus("expired");
           }
           return {
             success: true,
@@ -899,8 +899,8 @@ Updates session validity status in auth state.`,
             if (providedTokens.bearerToken) {
               const expiration = getJWTExpiration(providedTokens.bearerToken);
               authStateManager.addToken({
-                type: 'bearer',
-                name: 'Authorization',
+                type: "bearer",
+                name: "Authorization",
                 value: providedTokens.bearerToken,
                 expiresAt: expiration || undefined,
               });
@@ -908,15 +908,15 @@ Updates session validity status in auth state.`,
             if (providedTokens.cookies) {
               // Parse and store cookies
               const cookieParts = providedTokens.cookies
-                .split(';')
+                .split(";")
                 .map((c) => c.trim());
               for (const cookie of cookieParts) {
-                const [name, ...valueParts] = cookie.split('=');
+                const [name, ...valueParts] = cookie.split("=");
                 if (name && valueParts.length > 0) {
                   authStateManager.addToken({
-                    type: 'cookie',
+                    type: "cookie",
                     name: name.trim(),
-                    value: valueParts.join('=').trim(),
+                    value: valueParts.join("=").trim(),
                   });
                 }
               }
@@ -924,10 +924,10 @@ Updates session validity status in auth state.`,
             if (providedTokens.customHeaders) {
               // Store custom headers as tokens
               for (const [headerName, headerValue] of Object.entries(
-                providedTokens.customHeaders
+                providedTokens.customHeaders,
               )) {
                 authStateManager.addToken({
-                  type: 'api_key',
+                  type: "api_key",
                   name: headerName,
                   value: headerValue,
                 });
@@ -982,26 +982,26 @@ Automatically updates stored tokens on success.`,
       toolCallDescription,
     }): Promise<RefreshSessionResult> => {
       logger?.info(
-        `refresh_session: refreshEndpoint=${refreshEndpoint} useOriginalCredentials=${useOriginalCredentials}`
+        `refresh_session: refreshEndpoint=${refreshEndpoint} useOriginalCredentials=${useOriginalCredentials}`,
       );
 
       if (abortSignal?.aborted) {
-        return { success: false, message: 'Request aborted', error: 'Aborted' };
+        return { success: false, message: "Request aborted", error: "Aborted" };
       }
 
       try {
         // Try refresh token first
         const tokens = authStateManager.getTokens();
         const refreshToken = tokens.find(
-          (t) => t.name === 'refresh_token' || t.name === 'refreshToken'
+          (t) => t.name === "refresh_token" || t.name === "refreshToken",
         );
 
         if (refreshEndpoint && refreshToken) {
           const response = await makeRequest({
             url: refreshEndpoint,
-            method: 'POST',
+            method: "POST",
             headers: {
-              'Content-Type': 'application/json',
+              "Content-Type": "application/json",
             },
             body: JSON.stringify({ refresh_token: refreshToken.value }),
             timeout: 30000,
@@ -1022,8 +1022,8 @@ Automatically updates stored tokens on success.`,
                   bodyJson.access_token ||
                   bodyJson.accessToken;
                 newTokens.push({
-                  type: 'jwt',
-                  name: 'Authorization',
+                  type: "jwt",
+                  name: "Authorization",
                   value: jwtValue,
                   expiresAt: getJWTExpiration(jwtValue) || undefined,
                 });
@@ -1031,8 +1031,8 @@ Automatically updates stored tokens on success.`,
 
               if (bodyJson.refresh_token || bodyJson.refreshToken) {
                 newTokens.push({
-                  type: 'jwt',
-                  name: 'refresh_token',
+                  type: "jwt",
+                  name: "refresh_token",
                   value: bodyJson.refresh_token || bodyJson.refreshToken,
                 });
               }
@@ -1059,8 +1059,8 @@ Automatically updates stored tokens on success.`,
             return {
               success: false,
               message:
-                'Refresh token failed. Use authenticate tool to re-authenticate with original credentials.',
-              error: 'Refresh failed, re-authentication required',
+                "Refresh token failed. Use authenticate tool to re-authenticate with original credentials.",
+              error: "Refresh failed, re-authentication required",
             };
           }
         }
@@ -1068,8 +1068,8 @@ Automatically updates stored tokens on success.`,
         return {
           success: false,
           message:
-            'Unable to refresh session. No refresh endpoint or original credentials available.',
-          error: 'No refresh method available',
+            "Unable to refresh session. No refresh endpoint or original credentials available.",
+          error: "No refresh method available",
         };
       } catch (error) {
         return {
@@ -1098,13 +1098,13 @@ Returns:
 Use this to check authentication status before making requests.`,
     inputSchema: GetAuthStateInputSchema,
     execute: async ({ toolCallDescription }): Promise<GetAuthStateResult> => {
-      logger?.info('get_auth_state');
+      logger?.info("get_auth_state");
 
       const state = authStateManager.getState();
       const headers = authStateManager.getAuthHeaders();
       const cookies = authStateManager.getCookieString();
       const isValid =
-        !authStateManager.isExpired() && state.status === 'active';
+        !authStateManager.isExpired() && state.status === "active";
 
       return {
         success: true,
@@ -1141,23 +1141,23 @@ The stored credentials will be available via exportedCookies and exportedHeaders
             path: z.string().optional(),
             httpOnly: z.boolean().optional(),
             secure: z.boolean().optional(),
-          })
+          }),
         )
         .optional()
-        .describe('Cookies array from browser_get_cookies'),
+        .describe("Cookies array from browser_get_cookies"),
       bearerToken: z
         .string()
         .optional()
         .describe(
-          "Bearer/JWT token from localStorage or sessionStorage (e.g., from browser_evaluate extracting localStorage.getItem('token'))"
+          "Bearer/JWT token from localStorage or sessionStorage (e.g., from browser_evaluate extracting localStorage.getItem('token'))",
         ),
       accessToken: z
         .string()
         .optional()
-        .describe('Access token if different from bearer token'),
+        .describe("Access token if different from bearer token"),
       toolCallDescription: z
         .string()
-        .describe('Why you are storing these credentials'),
+        .describe("Why you are storing these credentials"),
     }),
     execute: async ({
       cookies,
@@ -1172,7 +1172,7 @@ The stored credentials will be available via exportedCookies and exportedHeaders
       authHeader?: string;
     }> => {
       logger?.info(
-        `store_browser_cookies: Storing ${cookies?.length || 0} cookies, bearer: ${!!bearerToken}`
+        `store_browser_cookies: Storing ${cookies?.length || 0} cookies, bearer: ${!!bearerToken}`,
       );
 
       try {
@@ -1182,7 +1182,7 @@ The stored credentials will be available via exportedCookies and exportedHeaders
         if (cookies && cookies.length > 0) {
           for (const cookie of cookies) {
             authStateManager.addToken({
-              type: 'cookie',
+              type: "cookie",
               name: cookie.name,
               value: cookie.value,
               expiresAt: undefined,
@@ -1194,8 +1194,8 @@ The stored credentials will be available via exportedCookies and exportedHeaders
         // Store bearer token
         if (bearerToken) {
           authStateManager.addToken({
-            type: 'bearer',
-            name: 'Authorization',
+            type: "bearer",
+            name: "Authorization",
             value: bearerToken,
             expiresAt: undefined,
           });
@@ -1205,8 +1205,8 @@ The stored credentials will be available via exportedCookies and exportedHeaders
         // Store access token (if different)
         if (accessToken && accessToken !== bearerToken) {
           authStateManager.addToken({
-            type: 'bearer',
-            name: 'access_token',
+            type: "bearer",
+            name: "access_token",
             value: accessToken,
             expiresAt: undefined,
           });
@@ -1214,17 +1214,17 @@ The stored credentials will be available via exportedCookies and exportedHeaders
         }
 
         // Mark auth as active
-        authStateManager.setStatus('active');
+        authStateManager.setStatus("active");
         authStateManager.updateState({ authenticatedAt: Date.now() });
 
         // Build response with ready-to-use headers
         const cookieHeader =
-          cookies?.map((c) => `${c.name}=${c.value}`).join('; ') || '';
+          cookies?.map((c) => `${c.name}=${c.value}`).join("; ") || "";
         const authHeader = bearerToken ? `Bearer ${bearerToken}` : undefined;
 
         return {
           success: true,
-          message: `Stored ${storedCount} credential(s). Auth state is now active.${authHeader ? ' Bearer token available.' : ''}${cookieHeader ? ' Cookies available.' : ''}`,
+          message: `Stored ${storedCount} credential(s). Auth state is now active.${authHeader ? " Bearer token available." : ""}${cookieHeader ? " Cookies available." : ""}`,
           tokenCount: storedCount,
           cookieHeader: cookieHeader || undefined,
           authHeader,
@@ -1268,40 +1268,40 @@ This allows other agents (vulnerability testers) to make authenticated requests.
       const authInfo = authStateManager.exportForAgent();
 
       switch (format) {
-        case 'headers':
+        case "headers":
           return {
             success: true,
             format,
             headers: authStateManager.getAuthHeaders(),
             authenticationInfo: authInfo,
-            message: 'Auth exported as headers dict',
+            message: "Auth exported as headers dict",
           };
 
-        case 'curl':
+        case "curl":
           return {
             success: true,
             format,
             curlFlags: authStateManager.exportAsCurlFlags(),
             authenticationInfo: authInfo,
-            message: 'Auth exported as curl flags',
+            message: "Auth exported as curl flags",
           };
 
-        case 'poc_script':
+        case "poc_script":
           return {
             success: true,
             format,
             pocScript: authStateManager.exportAsPocScript(),
             authenticationInfo: authInfo,
-            message: 'Auth exported as POC script snippet',
+            message: "Auth exported as POC script snippet",
           };
 
         default:
           return {
             success: true,
-            format: 'headers',
+            format: "headers",
             headers: authStateManager.getAuthHeaders(),
             authenticationInfo: authInfo,
-            message: 'Auth exported as headers dict (default)',
+            message: "Auth exported as headers dict (default)",
           };
       }
     },
@@ -1314,58 +1314,58 @@ This allows other agents (vulnerability testers) to make authenticated requests.
   // Common auth endpoint patterns to probe
   const AUTH_ENDPOINT_PATTERNS = {
     login: [
-      '/api/login',
-      '/api/auth/login',
-      '/api/v1/login',
-      '/api/v1/auth/login',
-      '/api/signin',
-      '/api/auth/signin',
-      '/api/authenticate',
-      '/auth/login',
-      '/auth/signin',
-      '/login',
-      '/signin',
+      "/api/login",
+      "/api/auth/login",
+      "/api/v1/login",
+      "/api/v1/auth/login",
+      "/api/signin",
+      "/api/auth/signin",
+      "/api/authenticate",
+      "/auth/login",
+      "/auth/signin",
+      "/login",
+      "/signin",
     ],
     token: [
-      '/api/token',
-      '/api/auth/token',
-      '/api/oauth/token',
-      '/oauth/token',
-      '/token',
-      '/api/session',
+      "/api/token",
+      "/api/auth/token",
+      "/api/oauth/token",
+      "/oauth/token",
+      "/token",
+      "/api/session",
     ],
     user: [
-      '/api/me',
-      '/api/user',
-      '/api/profile',
-      '/api/users/me',
-      '/me',
-      '/user',
-      '/api/account',
-      '/account',
+      "/api/me",
+      "/api/user",
+      "/api/profile",
+      "/api/users/me",
+      "/me",
+      "/user",
+      "/api/account",
+      "/account",
     ],
     refresh: [
-      '/api/refresh',
-      '/api/auth/refresh',
-      '/api/token/refresh',
-      '/refresh',
+      "/api/refresh",
+      "/api/auth/refresh",
+      "/api/token/refresh",
+      "/refresh",
     ],
     // Protected resources that may reveal auth requirements (401/403)
     protected: [
-      '/api/data',
-      '/api/protected',
-      '/api/private',
-      '/api/secure',
-      '/data',
-      '/protected',
-      '/private',
-      '/secure',
-      '/api/v1/data',
-      '/api/v1/protected',
-      '/admin',
-      '/api/admin',
-      '/dashboard',
-      '/api/dashboard',
+      "/api/data",
+      "/api/protected",
+      "/api/private",
+      "/api/secure",
+      "/data",
+      "/protected",
+      "/private",
+      "/secure",
+      "/api/v1/data",
+      "/api/v1/protected",
+      "/admin",
+      "/api/admin",
+      "/dashboard",
+      "/api/dashboard",
     ],
   };
 
@@ -1393,37 +1393,37 @@ Returns discovered endpoints and recommended login approach.`,
       logger?.info(`probe_auth_endpoints: ${baseUrl}`);
 
       if (abortSignal?.aborted) {
-        return { success: false, endpoints: [], message: 'Request aborted' };
+        return { success: false, endpoints: [], message: "Request aborted" };
       }
 
-      const discoveredEndpoints: ProbeAuthEndpointsResult['endpoints'] = [];
+      const discoveredEndpoints: ProbeAuthEndpointsResult["endpoints"] = [];
       const allPatterns = [
         ...AUTH_ENDPOINT_PATTERNS.login.map((p) => ({
           path: p,
-          purpose: 'login' as const,
+          purpose: "login" as const,
         })),
         ...AUTH_ENDPOINT_PATTERNS.token.map((p) => ({
           path: p,
-          purpose: 'token' as const,
+          purpose: "token" as const,
         })),
         ...AUTH_ENDPOINT_PATTERNS.user.map((p) => ({
           path: p,
-          purpose: 'user' as const,
+          purpose: "user" as const,
         })),
         ...AUTH_ENDPOINT_PATTERNS.refresh.map((p) => ({
           path: p,
-          purpose: 'refresh' as const,
+          purpose: "refresh" as const,
         })),
         ...AUTH_ENDPOINT_PATTERNS.protected.map((p) => ({
           path: p,
-          purpose: 'unknown' as const,
+          purpose: "unknown" as const,
         })),
       ];
 
       for (const { path, purpose } of allPatterns) {
         if (abortSignal?.aborted) break;
 
-        const url = baseUrl.replace(/\/$/, '') + path;
+        const url = baseUrl.replace(/\/$/, "") + path;
         const methods: string[] = [];
         const authIndicators: string[] = [];
 
@@ -1431,28 +1431,28 @@ Returns discovered endpoints and recommended login approach.`,
         try {
           const getResult = await makeRequest({
             url,
-            method: 'GET',
+            method: "GET",
             timeout: 5000,
           });
           if (getResult.status !== 404 && getResult.status !== 0) {
-            methods.push('GET');
+            methods.push("GET");
             if (getResult.status === 401)
-              authIndicators.push('requires auth (401)');
+              authIndicators.push("requires auth (401)");
             if (getResult.status === 200)
-              authIndicators.push('accessible (200)');
+              authIndicators.push("accessible (200)");
             if (getResult.status === 403)
-              authIndicators.push('forbidden (403)');
+              authIndicators.push("forbidden (403)");
 
             // Check WWW-Authenticate header for Basic/Bearer auth
             const wwwAuth =
-              getResult.headers['www-authenticate'] ||
-              getResult.headers['WWW-Authenticate'];
+              getResult.headers["www-authenticate"] ||
+              getResult.headers["WWW-Authenticate"];
             if (wwwAuth) {
               const authHeader = Array.isArray(wwwAuth) ? wwwAuth[0] : wwwAuth;
-              if (authHeader.toLowerCase().includes('basic')) {
-                authIndicators.push('HTTP Basic Auth');
-              } else if (authHeader.toLowerCase().includes('bearer')) {
-                authIndicators.push('Bearer token required');
+              if (authHeader.toLowerCase().includes("basic")) {
+                authIndicators.push("HTTP Basic Auth");
+              } else if (authHeader.toLowerCase().includes("bearer")) {
+                authIndicators.push("Bearer token required");
               }
             }
           }
@@ -1464,31 +1464,31 @@ Returns discovered endpoints and recommended login approach.`,
         try {
           const postResult = await makeRequest({
             url,
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: '{}',
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: "{}",
             timeout: 5000,
           });
           if (postResult.status !== 404 && postResult.status !== 0) {
-            methods.push('POST');
+            methods.push("POST");
             if (postResult.status === 400)
-              authIndicators.push('expects body (400)');
+              authIndicators.push("expects body (400)");
             if (postResult.status === 401)
-              authIndicators.push('invalid credentials (401)');
+              authIndicators.push("invalid credentials (401)");
             if (postResult.status === 200)
-              authIndicators.push('POST accessible (200)');
+              authIndicators.push("POST accessible (200)");
             // Check for JSON response with auth-related fields
             if (
-              postResult.body.includes('username') ||
-              postResult.body.includes('password')
+              postResult.body.includes("username") ||
+              postResult.body.includes("password")
             ) {
-              authIndicators.push('expects credentials');
+              authIndicators.push("expects credentials");
             }
             if (
-              postResult.body.includes('token') ||
-              postResult.body.includes('jwt')
+              postResult.body.includes("token") ||
+              postResult.body.includes("jwt")
             ) {
-              authIndicators.push('returns tokens');
+              authIndicators.push("returns tokens");
             }
           }
         } catch {
@@ -1507,31 +1507,31 @@ Returns discovered endpoints and recommended login approach.`,
 
       // Check for HTTP Basic Auth endpoints
       const basicAuthEndpoint = discoveredEndpoints.find((e) =>
-        e.authIndicators.includes('HTTP Basic Auth')
+        e.authIndicators.includes("HTTP Basic Auth"),
       );
 
       // Find recommended login endpoint - prefer POST endpoints with auth indicators
       const loginEndpoint =
         discoveredEndpoints.find(
           (e) =>
-            e.likelyPurpose === 'login' &&
-            e.methods.includes('POST') &&
-            (e.authIndicators.includes('expects body (400)') ||
-              e.authIndicators.includes('invalid credentials (401)') ||
-              e.authIndicators.includes('expects credentials'))
+            e.likelyPurpose === "login" &&
+            e.methods.includes("POST") &&
+            (e.authIndicators.includes("expects body (400)") ||
+              e.authIndicators.includes("invalid credentials (401)") ||
+              e.authIndicators.includes("expects credentials")),
         ) ||
         discoveredEndpoints.find(
-          (e) => e.likelyPurpose === 'login' && e.methods.includes('POST')
+          (e) => e.likelyPurpose === "login" && e.methods.includes("POST"),
         );
 
       logger?.info(
-        `probe_auth_endpoints: found ${discoveredEndpoints.length} endpoints`
+        `probe_auth_endpoints: found ${discoveredEndpoints.length} endpoints`,
       );
 
       // Build result message
-      let message = '';
+      let message = "";
       if (discoveredEndpoints.length === 0) {
-        message = 'No auth endpoints found at common paths';
+        message = "No auth endpoints found at common paths";
       } else if (basicAuthEndpoint) {
         message = `Found HTTP Basic Auth protected endpoint: ${basicAuthEndpoint.path}. Use Authorization: Basic base64(username:password) header.`;
       } else if (loginEndpoint) {
@@ -1546,9 +1546,9 @@ Returns discovered endpoints and recommended login approach.`,
         recommendedLoginEndpoint:
           basicAuthEndpoint?.path || loginEndpoint?.path,
         recommendedMethod: basicAuthEndpoint
-          ? 'GET (with Basic Auth header)'
+          ? "GET (with Basic Auth header)"
           : loginEndpoint
-            ? 'POST'
+            ? "POST"
             : undefined,
         message,
       };
@@ -1561,28 +1561,28 @@ Returns discovered endpoints and recommended login approach.`,
 
   // Common registration endpoint patterns to probe
   const REGISTRATION_ENDPOINT_PATTERNS = [
-    '/register',
-    '/signup',
-    '/sign-up',
-    '/create-account',
-    '/join',
-    '/api/register',
-    '/api/signup',
-    '/api/sign-up',
-    '/api/users/register',
-    '/api/v1/register',
-    '/api/v1/signup',
-    '/api/v1/users',
-    '/auth/register',
-    '/auth/signup',
-    '/api/auth/register',
-    '/api/auth/signup',
-    '/account/register',
-    '/account/signup',
-    '/account/create',
-    '/users/new',
-    '/user/create',
-    '/membership/register',
+    "/register",
+    "/signup",
+    "/sign-up",
+    "/create-account",
+    "/join",
+    "/api/register",
+    "/api/signup",
+    "/api/sign-up",
+    "/api/users/register",
+    "/api/v1/register",
+    "/api/v1/signup",
+    "/api/v1/users",
+    "/auth/register",
+    "/auth/signup",
+    "/api/auth/register",
+    "/api/auth/signup",
+    "/account/register",
+    "/account/signup",
+    "/account/create",
+    "/users/new",
+    "/user/create",
+    "/membership/register",
   ];
 
   const probe_registration = tool({
@@ -1612,8 +1612,8 @@ Returns whether registration is possible and what barriers exist.`,
           canRegister: false,
           barriers: [],
           requiredFields: [],
-          message: 'Request aborted',
-          error: 'Aborted',
+          message: "Request aborted",
+          error: "Aborted",
         };
       }
 
@@ -1621,19 +1621,19 @@ Returns whether registration is possible and what barriers exist.`,
       const barriers: RegistrationBarrier[] = [];
       const requiredFields: string[] = [];
       const optionalFields: string[] = [];
-      let notes = '';
+      let notes = "";
 
       // Probe each registration endpoint
       for (const path of REGISTRATION_ENDPOINT_PATTERNS) {
         if (abortSignal?.aborted) break;
 
-        const url = baseUrl.replace(/\/$/, '') + path;
+        const url = baseUrl.replace(/\/$/, "") + path;
 
         try {
           // Try GET first to see if it's a registration page/form
           const getResult = await makeRequest({
             url,
-            method: 'GET',
+            method: "GET",
             timeout: 5000,
           });
 
@@ -1643,40 +1643,40 @@ Returns whether registration is possible and what barriers exist.`,
 
             // Detect barriers
             if (
-              bodyLower.includes('invite') ||
-              bodyLower.includes('invitation')
+              bodyLower.includes("invite") ||
+              bodyLower.includes("invitation")
             ) {
-              barriers.push('invite_code');
-              notes += 'Requires invitation code. ';
+              barriers.push("invite_code");
+              notes += "Requires invitation code. ";
             }
             if (
-              bodyLower.includes('admin approval') ||
-              bodyLower.includes('pending approval')
+              bodyLower.includes("admin approval") ||
+              bodyLower.includes("pending approval")
             ) {
-              barriers.push('admin_approval');
-              notes += 'Requires admin approval after registration. ';
+              barriers.push("admin_approval");
+              notes += "Requires admin approval after registration. ";
             }
             if (
-              bodyLower.includes('captcha') ||
-              bodyLower.includes('recaptcha') ||
-              bodyLower.includes('hcaptcha')
+              bodyLower.includes("captcha") ||
+              bodyLower.includes("recaptcha") ||
+              bodyLower.includes("hcaptcha")
             ) {
-              barriers.push('captcha');
-              notes += 'CAPTCHA required. ';
+              barriers.push("captcha");
+              notes += "CAPTCHA required. ";
             }
             if (
-              bodyLower.includes('verify your email') ||
-              bodyLower.includes('email verification')
+              bodyLower.includes("verify your email") ||
+              bodyLower.includes("email verification")
             ) {
-              barriers.push('email_verification');
-              notes += 'Email verification required. ';
+              barriers.push("email_verification");
+              notes += "Email verification required. ";
             }
             if (
-              bodyLower.includes('phone verification') ||
-              bodyLower.includes('sms verification')
+              bodyLower.includes("phone verification") ||
+              bodyLower.includes("sms verification")
             ) {
-              barriers.push('phone_verification');
-              notes += 'Phone verification required. ';
+              barriers.push("phone_verification");
+              notes += "Phone verification required. ";
             }
 
             // Detect required fields from form
@@ -1685,40 +1685,40 @@ Returns whether registration is possible and what barriers exist.`,
               bodyLower.includes('name="user_email"') ||
               bodyLower.includes('"email"')
             ) {
-              requiredFields.push('email');
+              requiredFields.push("email");
             }
             if (
               bodyLower.includes('name="username"') ||
               bodyLower.includes('name="user"') ||
               bodyLower.includes('"username"')
             ) {
-              requiredFields.push('username');
+              requiredFields.push("username");
             }
             if (
               bodyLower.includes('name="password"') ||
               bodyLower.includes('"password"')
             ) {
-              requiredFields.push('password');
+              requiredFields.push("password");
             }
             if (
               bodyLower.includes('name="password_confirmation"') ||
               bodyLower.includes('name="confirm_password"') ||
               bodyLower.includes('"confirmPassword"')
             ) {
-              requiredFields.push('password_confirmation');
+              requiredFields.push("password_confirmation");
             }
             if (
               bodyLower.includes('name="name"') ||
               bodyLower.includes('name="full_name"') ||
               bodyLower.includes('"name"')
             ) {
-              optionalFields.push('name');
+              optionalFields.push("name");
             }
             if (
               bodyLower.includes('name="phone"') ||
               bodyLower.includes('"phone"')
             ) {
-              optionalFields.push('phone');
+              optionalFields.push("phone");
             }
 
             // If we found a registration page, stop probing
@@ -1728,9 +1728,9 @@ Returns whether registration is possible and what barriers exist.`,
           // Try POST to see if it's a JSON API registration endpoint
           const postResult = await makeRequest({
             url,
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: '{}',
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: "{}",
             timeout: 5000,
           });
 
@@ -1740,23 +1740,23 @@ Returns whether registration is possible and what barriers exist.`,
             const bodyLower = postResult.body.toLowerCase();
 
             // Try to detect required fields from error message
-            if (bodyLower.includes('email') || bodyLower.includes('"email"')) {
-              requiredFields.push('email');
+            if (bodyLower.includes("email") || bodyLower.includes('"email"')) {
+              requiredFields.push("email");
             }
             if (
-              bodyLower.includes('username') ||
+              bodyLower.includes("username") ||
               bodyLower.includes('"username"')
             ) {
-              requiredFields.push('username');
+              requiredFields.push("username");
             }
             if (
-              bodyLower.includes('password') ||
+              bodyLower.includes("password") ||
               bodyLower.includes('"password"')
             ) {
-              requiredFields.push('password');
+              requiredFields.push("password");
             }
 
-            notes = 'JSON API registration endpoint. ';
+            notes = "JSON API registration endpoint. ";
             break;
           }
         } catch {
@@ -1765,21 +1765,21 @@ Returns whether registration is possible and what barriers exist.`,
       }
 
       // Determine if registration is possible
-      const canRegister = !!registrationUrl && !barriers.includes('closed');
+      const canRegister = !!registrationUrl && !barriers.includes("closed");
 
       // Ensure basic fields if nothing detected
       if (registrationUrl && requiredFields.length === 0) {
-        requiredFields.push('email', 'password');
+        requiredFields.push("email", "password");
       }
 
       const message = registrationUrl
         ? canRegister
-          ? `Registration available at ${registrationUrl}. Required fields: ${requiredFields.join(', ')}${barriers.length > 0 ? `. Barriers: ${barriers.join(', ')}` : ''}`
-          : `Registration endpoint found at ${registrationUrl} but blocked by: ${barriers.join(', ')}`
-        : 'No registration endpoint found at common paths';
+          ? `Registration available at ${registrationUrl}. Required fields: ${requiredFields.join(", ")}${barriers.length > 0 ? `. Barriers: ${barriers.join(", ")}` : ""}`
+          : `Registration endpoint found at ${registrationUrl} but blocked by: ${barriers.join(", ")}`
+        : "No registration endpoint found at common paths";
 
       logger?.info(
-        `probe_registration: canRegister=${canRegister}, url=${registrationUrl}, barriers=${barriers.join(',')}`
+        `probe_registration: canRegister=${canRegister}, url=${registrationUrl}, barriers=${barriers.join(",")}`,
       );
 
       return {
@@ -1820,14 +1820,14 @@ Returns the credentials if successful, or barriers if blocked.`,
       toolCallDescription,
     }): Promise<AttemptRegistrationResult> => {
       logger?.info(
-        `attempt_registration: ${registrationUrl} fields=${Object.keys(requiredFields).join(',')}`
+        `attempt_registration: ${registrationUrl} fields=${Object.keys(requiredFields).join(",")}`,
       );
 
       if (abortSignal?.aborted) {
         return {
           success: false,
-          message: 'Request aborted',
-          error: 'Aborted',
+          message: "Request aborted",
+          error: "Aborted",
         };
       }
 
@@ -1835,13 +1835,13 @@ Returns the credentials if successful, or barriers if blocked.`,
         // Determine if it's a JSON API or form-based registration
         const getResult = await makeRequest({
           url: registrationUrl,
-          method: 'GET',
+          method: "GET",
           timeout: 5000,
         });
         const isJsonApi =
           getResult.status === 405 ||
           getResult.status === 404 ||
-          !getResult.body.includes('<html');
+          !getResult.body.includes("<html");
 
         let response: HttpRequestResult;
 
@@ -1849,8 +1849,8 @@ Returns the credentials if successful, or barriers if blocked.`,
           // JSON API registration
           response = await makeRequest({
             url: registrationUrl,
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify(requiredFields),
             timeout: 30000,
           });
@@ -1863,8 +1863,8 @@ Returns the credentials if successful, or barriers if blocked.`,
 
           response = await makeRequest({
             url: registrationUrl,
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
             body: params.toString(),
             followRedirects: true,
             timeout: 30000,
@@ -1883,26 +1883,26 @@ Returns the credentials if successful, or barriers if blocked.`,
         const barriers: RegistrationBarrier[] = [];
 
         // Check for barriers in response
-        if (bodyLower.includes('captcha') || bodyLower.includes('recaptcha')) {
-          barriers.push('captcha');
+        if (bodyLower.includes("captcha") || bodyLower.includes("recaptcha")) {
+          barriers.push("captcha");
         }
         if (
-          bodyLower.includes('invite') ||
-          bodyLower.includes('invitation code')
+          bodyLower.includes("invite") ||
+          bodyLower.includes("invitation code")
         ) {
-          barriers.push('invite_code');
+          barriers.push("invite_code");
         }
         if (
-          bodyLower.includes('admin approval') ||
-          bodyLower.includes('pending approval')
+          bodyLower.includes("admin approval") ||
+          bodyLower.includes("pending approval")
         ) {
-          barriers.push('admin_approval');
+          barriers.push("admin_approval");
         }
         if (
-          bodyLower.includes('verify your email') ||
-          bodyLower.includes('check your email')
+          bodyLower.includes("verify your email") ||
+          bodyLower.includes("check your email")
         ) {
-          barriers.push('email_verification');
+          barriers.push("email_verification");
         }
 
         // Check for success indicators
@@ -1910,32 +1910,32 @@ Returns the credentials if successful, or barriers if blocked.`,
           response.status === 200 ||
           response.status === 201 ||
           response.status === 302 ||
-          bodyLower.includes('success') ||
-          bodyLower.includes('account created') ||
-          bodyLower.includes('welcome') ||
-          bodyLower.includes('registration complete') ||
-          bodyLower.includes('thank you for registering');
+          bodyLower.includes("success") ||
+          bodyLower.includes("account created") ||
+          bodyLower.includes("welcome") ||
+          bodyLower.includes("registration complete") ||
+          bodyLower.includes("thank you for registering");
 
         // Check for failure indicators
         const isFailure =
           response.status === 400 ||
           response.status === 422 ||
           response.status === 409 ||
-          bodyLower.includes('already exists') ||
-          bodyLower.includes('already taken') ||
-          bodyLower.includes('error') ||
-          bodyLower.includes('invalid');
+          bodyLower.includes("already exists") ||
+          bodyLower.includes("already taken") ||
+          bodyLower.includes("error") ||
+          bodyLower.includes("invalid");
 
         if (isSuccess && barriers.length === 0) {
           // Extract credentials from the fields provided
           const credentials = {
-            username: requiredFields.username || requiredFields.email || '',
-            password: requiredFields.password || '',
+            username: requiredFields.username || requiredFields.email || "",
+            password: requiredFields.password || "",
             email: requiredFields.email,
           };
 
           logger?.info(
-            `attempt_registration: SUCCESS - created account ${credentials.username}`
+            `attempt_registration: SUCCESS - created account ${credentials.username}`,
           );
 
           return {
@@ -1948,19 +1948,19 @@ Returns the credentials if successful, or barriers if blocked.`,
 
         if (barriers.length > 0) {
           logger?.info(
-            `attempt_registration: BLOCKED by ${barriers.join(', ')}`
+            `attempt_registration: BLOCKED by ${barriers.join(", ")}`,
           );
           return {
             success: false,
             barriers,
             statusCode: response.status,
-            message: `Registration blocked by: ${barriers.join(', ')}`,
+            message: `Registration blocked by: ${barriers.join(", ")}`,
           };
         }
 
         if (isFailure) {
           // Try to extract error message
-          let errorMsg = 'Registration failed';
+          let errorMsg = "Registration failed";
           try {
             const jsonBody = JSON.parse(response.body);
             if (jsonBody.error) errorMsg = jsonBody.error;
@@ -1969,7 +1969,7 @@ Returns the credentials if successful, or barriers if blocked.`,
           } catch {
             // Not JSON, try to find error in HTML
             const errorMatch = response.body.match(
-              /<div[^>]*class="[^"]*error[^"]*"[^>]*>([^<]+)<\/div>/i
+              /<div[^>]*class="[^"]*error[^"]*"[^>]*>([^<]+)<\/div>/i,
             );
             if (errorMatch) errorMsg = errorMatch[1];
           }

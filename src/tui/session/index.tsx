@@ -173,14 +173,14 @@ export function SessionComponent({
   // ============================================
 
   const [operatorMode, setOperatorMode] = useState<OperatorMode>(
-    operatorSettings.initialMode
+    operatorSettings.initialMode,
   );
   const [autoApproveTier, setAutoApproveTier] = useState<PermissionTier>(
-    operatorSettings.autoApproveTier as PermissionTier
+    operatorSettings.autoApproveTier as PermissionTier,
   );
   const [currentStage, setCurrentStage] = useState<OperatorStage>("setup");
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>(
-    []
+    [],
   );
   const [actionHistory, setActionHistory] = useState<ActionHistoryEntry[]>([]);
 
@@ -199,7 +199,7 @@ export function SessionComponent({
   const [expandedLogs, setExpandedLogs] = useState(false);
   const { refocusPrompt } = useFocus();
   const [lastApprovedAction, setLastApprovedAction] = useState<string | null>(
-    null
+    null,
   );
   const [lastDeclineNote, setLastDeclineNote] = useState<string | null>(null);
   const [resumeLoaded, setResumeLoaded] = useState(false);
@@ -258,7 +258,7 @@ export function SessionComponent({
       targetHost,
       actionHistory,
       agent,
-    ]
+    ],
   );
 
   // ============================================
@@ -301,14 +301,14 @@ export function SessionComponent({
         });
 
         setActionHistory(
-          (savedState.actionHistory || []) as ActionHistoryEntry[]
+          (savedState.actionHistory || []) as ActionHistoryEntry[],
         );
         const history = (savedState.actionHistory ||
           []) as ActionHistoryEntry[];
         setApprovedCount(
           history.filter(
-            (a) => a.decision === "approved" || a.decision === "auto-approved"
-          ).length
+            (a) => a.decision === "approved" || a.decision === "auto-approved",
+          ).length,
         );
         setDeniedCount(history.filter((a) => a.decision === "denied").length);
       } else if (openAsOperator) {
@@ -384,7 +384,7 @@ export function SessionComponent({
           // Update assistant/system messages by index
           updateByIndex(index, message);
         }
-      }
+      },
     );
 
     // Operator events
@@ -418,7 +418,7 @@ export function SessionComponent({
             break;
           case "approval-resolved":
             setPendingApprovals((prev) =>
-              prev.filter((a) => a.id !== event.id)
+              prev.filter((a) => a.id !== event.id),
             );
             break;
           case "action-completed":
@@ -443,8 +443,8 @@ export function SessionComponent({
                     !sidebar.state.attackSurface.some(
                       (existing) =>
                         `${existing.method}:${existing.path}` ===
-                        `${e.method}:${e.path}`
-                    )
+                        `${e.method}:${e.path}`,
+                    ),
                 ),
               ],
             });
@@ -459,11 +459,11 @@ export function SessionComponent({
           case "target-state-updated":
             if (event.state?.ports) {
               const existingPorts = new Set(
-                sidebar.state.ports.map((p) => p.port)
+                sidebar.state.ports.map((p) => p.port),
               );
               const newPorts = event.state.ports.filter(
                 (p: { port: number; service?: string }) =>
-                  !existingPorts.has(p.port)
+                  !existingPorts.has(p.port),
               );
               if (newPorts.length > 0) {
                 sidebar.updateState({
@@ -476,7 +476,7 @@ export function SessionComponent({
             if (
               event.credential &&
               !sidebar.state.credentials.some(
-                (c) => c.id === event.credential!.id
+                (c) => c.id === event.credential!.id,
               )
             ) {
               sidebar.updateState({
@@ -493,12 +493,12 @@ export function SessionComponent({
                       status: event.status as EndpointStatus | undefined,
                       vulnType: event.vulnType,
                     }
-                  : ep
+                  : ep,
               ),
             });
             break;
         }
-      }
+      },
     );
 
     // Token usage
@@ -512,7 +512,7 @@ export function SessionComponent({
         outputTokens: number;
       }) => {
         addTokenUsage(inputTokens, outputTokens);
-      }
+      },
     );
 
     setAgent(operatorAgent);
@@ -547,7 +547,7 @@ export function SessionComponent({
       agent?.setMode(newMode);
       setOperatorMode(newMode);
     },
-    [agent]
+    [agent],
   );
 
   const cycleMode = useCallback(
@@ -559,7 +559,7 @@ export function SessionComponent({
         : (currentIdx + 1) % modes.length;
       handleModeChange(modes[nextIdx]);
     },
-    [operatorMode, handleModeChange]
+    [operatorMode, handleModeChange],
   );
 
   const handleStageChange = useCallback(
@@ -568,7 +568,7 @@ export function SessionComponent({
       setCurrentStage(newStage);
       setShowStageMenu(false);
     },
-    [agent]
+    [agent],
   );
 
   const handleApprove = useCallback(
@@ -587,14 +587,14 @@ export function SessionComponent({
       setLastDeclineNote(null);
       agent?.approve(approvalId);
     },
-    [agent, pendingApprovals]
+    [agent, pendingApprovals],
   );
 
   const handleDeny = useCallback(
     (approvalId: string) => {
       agent?.deny(approvalId);
     },
-    [agent]
+    [agent],
   );
 
   const handleAutoApproveTier = useCallback(
@@ -610,7 +610,7 @@ export function SessionComponent({
         }
       });
     },
-    [agent, pendingApprovals]
+    [agent, pendingApprovals],
   );
 
   const handleSendDirective = useCallback(
@@ -635,9 +635,7 @@ export function SessionComponent({
             }).catch(() => {});
             addMessage({
               role: "system",
-              content: `Mode changed to ${
-                OPERATOR_MODES[arg as OperatorMode].name
-              }`,
+              content: `Mode changed to ${OPERATOR_MODES[arg as OperatorMode].name}`,
               createdAt: new Date(),
             });
           } else {
@@ -730,13 +728,13 @@ export function SessionComponent({
       handleModeChange,
       verboseMode,
       addMessage,
-    ]
+    ],
   );
 
   const handleExit = useCallback(() => {
     // Save state before exiting
     Session.saveOperatorState(session.id, gatherOperatorState()).catch(
-      () => {}
+      () => {},
     );
     agent?.stop();
     if (onExit) {
@@ -812,7 +810,7 @@ export function SessionComponent({
         return;
       }
       Session.saveOperatorState(session.id, gatherOperatorState()).catch(
-        () => {}
+        () => {},
       );
       agent?.stop();
       return;

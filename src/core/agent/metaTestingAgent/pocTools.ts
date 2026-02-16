@@ -69,9 +69,9 @@ export function createPocTool(
   logger: Logger,
   toolOverride?: {
     execute_command?: (
-      opts: ExecuteCommandOpts
+      opts: ExecuteCommandOpts,
     ) => Promise<ExecuteCommandResult>;
-  }
+  },
 ) {
   // Track POC attempts per approach
   const pocAttempts = new Map<string, number>();
@@ -104,7 +104,7 @@ Max ${MAX_POC_ATTEMPTS} attempts per approach before pivoting.`,
       pocAttempts.set(approachKey, currentAttempts);
 
       logger.info(
-        `POC attempt ${currentAttempts}/${MAX_POC_ATTEMPTS}: ${poc.pocName} (${poc.pocType})`
+        `POC attempt ${currentAttempts}/${MAX_POC_ATTEMPTS}: ${poc.pocName} (${poc.pocType})`,
       );
 
       try {
@@ -117,8 +117,8 @@ Max ${MAX_POC_ATTEMPTS} attempts per approach before pivoting.`,
           poc.pocType === "bash"
             ? ".sh"
             : poc.pocType === "python"
-            ? ".py"
-            : ".js";
+              ? ".py"
+              : ".js";
         const sanitizedName = sanitizeFilename(poc.pocName);
         const filename = `poc_${sanitizedName}${extension}`;
         const pocPath = join(pocsPath, filename);
@@ -195,8 +195,8 @@ set -e  # Exit on error
               poc.pocType === "bash"
                 ? `echo '${pocBase64}' | base64 -d | bash`
                 : poc.pocType === "python"
-                ? `echo '${pocBase64}' | base64 -d | python3`
-                : `echo '${pocBase64}' | base64 -d | node`;
+                  ? `echo '${pocBase64}' | base64 -d | python3`
+                  : `echo '${pocBase64}' | base64 -d | node`;
 
             const execResult = await toolOverride.execute_command({
               command: execCommand,
@@ -221,8 +221,8 @@ set -e  # Exit on error
               poc.pocType === "bash"
                 ? pocPath
                 : poc.pocType === "python"
-                ? `python3 ${pocPath}`
-                : `node ${pocPath}`;
+                  ? `python3 ${pocPath}`
+                  : `node ${pocPath}`;
 
             const result = await execAsync(execCommand, {
               timeout: 60000,
@@ -341,12 +341,12 @@ ${
 - Otherwise, wait for service recovery or move to next target
 - The POC file has been saved and can be manually verified later`
     : attemptsRemaining > 0
-    ? `**Next Steps:**
+      ? `**Next Steps:**
 - Analyze the error and create an improved POC
 - Consider: syntax errors, missing dependencies, wrong assumptions
 - ${attemptsRemaining} attempts remaining for this approach
 - Call store_adaptation with worked=false and constraint_learned if you identified a blocker`
-    : `**Max attempts reached for this approach.**
+      : `**Max attempts reached for this approach.**
 - Call store_adaptation with worked=false to record this dead end
 - PIVOT to a different technique or vulnerability class
 - Do NOT retry the same approach`
@@ -377,7 +377,7 @@ export function createDocumentFindingTool(
   session: MetaTestingSessionInfo,
   logger: Logger,
   target: string,
-  cvssOptions?: DocumentFindingCVSSOptions
+  cvssOptions?: DocumentFindingCVSSOptions,
 ) {
   const findingPaths: string[] = [];
 
@@ -402,10 +402,10 @@ This tool:
 - Confidence > 80%`,
     inputSchema: DocumentFindingSchema,
     execute: async (
-      finding: DocumentFindingInput
+      finding: DocumentFindingInput,
     ): Promise<DocumentFindingResult> => {
       logger.info(
-        `Documenting finding: ${finding.title} [${finding.severity}]`
+        `Documenting finding: ${finding.title} [${finding.severity}]`,
       );
 
       try {
@@ -434,7 +434,7 @@ Create POC first using create_poc tool, then call document_finding.`,
               typeof f.description === "string" &&
               f.description
                 .toLowerCase()
-                .includes(finding.title.toLowerCase().split(" ")[0]))
+                .includes(finding.title.toLowerCase().split(" ")[0])),
         );
 
         if (isDuplicate) {
@@ -489,7 +489,7 @@ Continue testing for OTHER vulnerabilities at different endpoints.`,
                 agentMessages: messages as Record<string, unknown>[],
               },
               cvssModel,
-              cvssOptions?.authConfig
+              cvssOptions?.authConfig,
             );
 
             cvssData = {
@@ -502,7 +502,7 @@ Continue testing for OTHER vulnerabilities at different endpoints.`,
             };
 
             logger.info(
-              `CVSS 4.0 Score: ${cvssResult.score} (${cvssResult.severity}) - ${cvssResult.vectorString}`
+              `CVSS 4.0 Score: ${cvssResult.score} (${cvssResult.severity}) - ${cvssResult.vectorString}`,
             );
           } catch (cvssError) {
             // Non-blocking: log error and continue without CVSS
@@ -511,7 +511,7 @@ Continue testing for OTHER vulnerabilities at different endpoints.`,
                 cvssError instanceof Error
                   ? cvssError.message
                   : String(cvssError)
-              }`
+              }`,
             );
           }
         }

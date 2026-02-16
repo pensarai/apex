@@ -68,7 +68,9 @@ function generateAuthId(): string {
  *
  * Implements TokenStorage, AuthExporter, and FlowDocumenter interfaces.
  */
-export class AuthStateManager implements TokenStorage, AuthExporter, FlowDocumenter {
+export class AuthStateManager
+  implements TokenStorage, AuthExporter, FlowDocumenter
+{
   private state: AuthState;
   private authDir: string;
   private statePath: string;
@@ -79,7 +81,7 @@ export class AuthStateManager implements TokenStorage, AuthExporter, FlowDocumen
   constructor(
     session: Session.SessionInfo,
     targetHost: string,
-    onStateChange?: StateChangeCallback
+    onStateChange?: StateChangeCallback,
   ) {
     this.onStateChange = onStateChange;
 
@@ -330,7 +332,8 @@ export class AuthStateManager implements TokenStorage, AuthExporter, FlowDocumen
     }
 
     script += "\n# Example usage:\n";
-    script += "# curl -H \"Authorization: $AUTH_HEADER_AUTHORIZATION\" -b \"$AUTH_COOKIES\" $TARGET_URL\n";
+    script +=
+      '# curl -H "Authorization: $AUTH_HEADER_AUTHORIZATION" -b "$AUTH_COOKIES" $TARGET_URL\n';
 
     return script;
   }
@@ -606,7 +609,7 @@ export function formatCookies(tokens: AuthToken[]): string {
  * Extract cookies from Set-Cookie headers
  */
 export function extractCookiesFromHeaders(
-  headers: Record<string, string | string[]>
+  headers: Record<string, string | string[]>,
 ): AuthToken[] {
   const tokens: AuthToken[] = [];
   const setCookie = headers["set-cookie"] || headers["Set-Cookie"];

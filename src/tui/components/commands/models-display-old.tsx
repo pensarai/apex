@@ -13,16 +13,15 @@ import { useConfig } from "../../context/config";
 export default function ModelsDisplay() {
   const route = useRoute();
   const _config = useConfig();
-  
+
   const [models, setModels] = useState<ModelInfo[]>([]);
   const { model: selectedModel, setModel } = useAgent();
   const [customModel, setCustomModel] = useState<string>("");
   const [focusArea, setFocusArea] = useState<"custom" | "list">("custom");
 
   const [highlightedIndex, setHighlightedIndex] = useState(() =>
-    models.findIndex((m) => m.id === selectedModel.id)
+    models.findIndex((m) => m.id === selectedModel.id),
   );
-
 
   useEffect(() => {
     async function getConfig() {
@@ -48,7 +47,7 @@ export default function ModelsDisplay() {
     if (key.name === "escape") {
       route.navigate({
         type: "base",
-        path: "home"
+        path: "home",
       });
       return;
     }
@@ -68,7 +67,7 @@ export default function ModelsDisplay() {
       // Arrow Up - Previous model
       if (key.name === "up" && models.length > 0) {
         setHighlightedIndex((prev) =>
-          prev > 0 ? prev - 1 : models.length - 1
+          prev > 0 ? prev - 1 : models.length - 1,
         );
         return;
       }
@@ -76,7 +75,7 @@ export default function ModelsDisplay() {
       // Arrow Down - Next model
       if (key.name === "down" && models.length > 0) {
         setHighlightedIndex((prev) =>
-          prev < models.length - 1 ? prev + 1 : 0
+          prev < models.length - 1 ? prev + 1 : 0,
         );
         return;
       }
@@ -88,7 +87,7 @@ export default function ModelsDisplay() {
           setModel(sel);
           route.navigate({
             type: "base",
-            path: "home"
+            path: "home",
           });
         }
         return;
@@ -136,7 +135,7 @@ export default function ModelsDisplay() {
               setCustomModel("");
               route.navigate({
                 type: "base",
-                path: "home"
+                path: "home",
               });
             }}
           />
@@ -186,7 +185,7 @@ export default function ModelsDisplay() {
                   setModel(model);
                   route.navigate({
                     type: "base",
-                    path: "home"
+                    path: "home",
                   });
                 }}
               >

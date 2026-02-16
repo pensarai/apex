@@ -1,15 +1,13 @@
 import type { Config } from "../config/config";
 import { AVAILABLE_MODELS } from "../ai/models";
 import { type ModelInfo } from "../ai";
-import  {
+import {
   AVAILABLE_PROVIDERS,
   type ConfiguredProvider,
   type ProviderType,
 } from "./types";
 
-export function getConfiguredProviders(
-  config: Config
-): ConfiguredProvider[] {
+export function getConfiguredProviders(config: Config): ConfiguredProvider[] {
   return AVAILABLE_PROVIDERS.map((provider) => {
     const configured = isProviderConfigured(provider.id, config);
     return {
@@ -22,7 +20,7 @@ export function getConfiguredProviders(
 
 export function isProviderConfigured(
   providerId: ProviderType,
-  config: Config
+  config: Config,
 ): boolean {
   switch (providerId) {
     case "anthropic":
@@ -47,9 +45,7 @@ export function hasAnyProviderConfigured(config: Config): boolean {
   );
 }
 
-export function getModelsByProvider(
-  providerId: ProviderType
-): ModelInfo[] {
+export function getModelsByProvider(providerId: ProviderType): ModelInfo[] {
   return AVAILABLE_MODELS.filter((model) => model.provider === providerId);
 }
 

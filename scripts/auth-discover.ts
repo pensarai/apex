@@ -79,9 +79,14 @@ async function runAuthDiscover(options: AuthDiscoverOptions): Promise<void> {
         }
         if (step.toolCalls?.length) {
           for (const toolCall of step.toolCalls) {
-            const tc = toolCall as { toolName: string; args?: Record<string, unknown> };
+            const tc = toolCall as {
+              toolName: string;
+              args?: Record<string, unknown>;
+            };
             const desc = tc.args?.toolCallDescription;
-            console.log(`\n[Tool Call] ${tc.toolName}${desc ? `: ${desc}` : ""}`);
+            console.log(
+              `\n[Tool Call] ${tc.toolName}${desc ? `: ${desc}` : ""}`,
+            );
           }
         }
         if (step.toolResults?.length) {
@@ -104,7 +109,9 @@ async function runAuthDiscover(options: AuthDiscoverOptions): Promise<void> {
     console.log();
 
     // Display structured results
-    console.log(`Authentication Required: ${result.requiresAuth ? "YES" : "NO"}`);
+    console.log(
+      `Authentication Required: ${result.requiresAuth ? "YES" : "NO"}`,
+    );
     console.log(`Auth Type: ${result.authType}`);
     console.log(`Confidence: ${result.confidence}%`);
     if (result.loginUrl) {
@@ -142,7 +149,9 @@ async function runAuthDiscover(options: AuthDiscoverOptions): Promise<void> {
     if (result.barriers?.length) {
       console.log("Auth Barriers Detected:");
       result.barriers.forEach((barrier, i) => {
-        console.log(`  ${i + 1}. [${barrier.type.toUpperCase()}] ${barrier.details}`);
+        console.log(
+          `  ${i + 1}. [${barrier.type.toUpperCase()}] ${barrier.details}`,
+        );
       });
       console.log();
     }
@@ -157,7 +166,6 @@ async function runAuthDiscover(options: AuthDiscoverOptions): Promise<void> {
     console.log(`Session Path: ${session.rootPath}`);
     console.log(`Logs: ${session.rootPath}/logs/auth-discovery.log`);
     console.log();
-
   } catch (error: any) {
     console.error("=".repeat(80));
     console.error("DISCOVERY FAILED");
@@ -179,27 +187,43 @@ async function main() {
   const args = process.argv.slice(2);
 
   if (args.length === 0 || args.includes("--help") || args.includes("-h")) {
-    console.error("Usage: tsx scripts/auth-discover.ts --target <url> [options]");
+    console.error(
+      "Usage: tsx scripts/auth-discover.ts --target <url> [options]",
+    );
     console.error();
     console.error("Required:");
     console.error("  --target <url>           Target endpoint URL to analyze");
     console.error();
     console.error("Options:");
-    console.error("  --model <model>          AI model (default: claude-sonnet-4-5)");
-    console.error("                           Options: claude-sonnet-4-5, claude-opus-4, claude-haiku-4");
-    console.error("  --endpoint <url>         Additional endpoint to check (can be repeated)");
+    console.error(
+      "  --model <model>          AI model (default: claude-sonnet-4-5)",
+    );
+    console.error(
+      "                           Options: claude-sonnet-4-5, claude-opus-4, claude-haiku-4",
+    );
+    console.error(
+      "  --endpoint <url>         Additional endpoint to check (can be repeated)",
+    );
     console.error("  --no-browser             Disable browser tools");
     console.error();
     console.error("Examples:");
     console.error("  # Basic auth discovery");
-    console.error("  tsx scripts/auth-discover.ts --target https://example.com/api/users");
+    console.error(
+      "  tsx scripts/auth-discover.ts --target https://example.com/api/users",
+    );
     console.error();
     console.error("  # With additional endpoints to check");
-    console.error("  tsx scripts/auth-discover.ts --target https://example.com/dashboard \\");
-    console.error("    --endpoint https://example.com/login --endpoint https://example.com/api/me");
+    console.error(
+      "  tsx scripts/auth-discover.ts --target https://example.com/dashboard \\",
+    );
+    console.error(
+      "    --endpoint https://example.com/login --endpoint https://example.com/api/me",
+    );
     console.error();
     console.error("  # Use faster model");
-    console.error("  tsx scripts/auth-discover.ts --target https://api.example.com --model claude-haiku-4");
+    console.error(
+      "  tsx scripts/auth-discover.ts --target https://api.example.com --model claude-haiku-4",
+    );
     console.error();
     process.exit(args.length === 0 ? 1 : 0);
   }

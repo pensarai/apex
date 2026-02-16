@@ -34,7 +34,7 @@ export default function ProviderSelection({
     // Arrow Up - Previous provider
     if (key.name === "up") {
       setHighlightedIndex((prev) =>
-        prev > 0 ? prev - 1 : AVAILABLE_PROVIDERS.length - 1
+        prev > 0 ? prev - 1 : AVAILABLE_PROVIDERS.length - 1,
       );
       return;
     }
@@ -42,7 +42,7 @@ export default function ProviderSelection({
     // Arrow Down - Next provider
     if (key.name === "down") {
       setHighlightedIndex((prev) =>
-        prev < AVAILABLE_PROVIDERS.length - 1 ? prev + 1 : 0
+        prev < AVAILABLE_PROVIDERS.length - 1 ? prev + 1 : 0,
       );
       return;
     }
@@ -84,9 +84,7 @@ export default function ProviderSelection({
           justifyContent="space-between"
           marginBottom={2}
         >
-          <text fg="green">
-            Select provider
-          </text>
+          <text fg="green">Select provider</text>
           <text fg="gray">esc</text>
         </box>
 
@@ -122,7 +120,7 @@ export default function ProviderSelection({
           {AVAILABLE_PROVIDERS.map((provider, index) => {
             const isHighlighted = index === highlightedIndex;
             const configured = configuredProviders.find(
-              (p) => p.id === provider.id
+              (p) => p.id === provider.id,
             )?.configured;
 
             return (
@@ -143,9 +141,7 @@ export default function ProviderSelection({
                     <span fg="gray">({provider.description})</span>
                   ) : null}
                 </text>
-                {configured ? (
-                  <text fg="green">✓</text>
-                ) : null}
+                {configured ? <text fg="green">✓</text> : null}
               </box>
             );
           })}

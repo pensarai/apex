@@ -19,7 +19,11 @@ interface OperatorDashboardProps {
 /**
  * Operator Dashboard - uses unified Session component in operator mode
  */
-export default function OperatorDashboard({ session, isResume = false, openAsOperator }: OperatorDashboardProps) {
+export default function OperatorDashboard({
+  session,
+  isResume = false,
+  openAsOperator,
+}: OperatorDashboardProps) {
   return (
     <SessionComponent
       session={session}
@@ -31,4 +35,10 @@ export default function OperatorDashboard({ session, isResume = false, openAsOpe
 }
 
 // Re-export types for backward compatibility
-export type { Endpoint, VerifiedVuln, Credential, Hypothesis, Evidence } from "./types";
+export type {
+  Endpoint,
+  VerifiedVuln,
+  Credential,
+  Hypothesis,
+  Evidence,
+} from "./types";

@@ -1,5 +1,5 @@
-# Reusable lint workflow
-# Runs ESLint across the codebase.
+# Reusable lint & format workflow
+# Runs ESLint, then checks Prettier formatting.
 
 name: Lint
 
@@ -24,3 +24,6 @@ jobs:
 
       - name: Lint
         run: bun run lint
+
+      - name: Check formatting
+        run: bun run format:check

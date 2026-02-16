@@ -8,7 +8,10 @@
 
 import type { LoadedSessionState } from "../../core/session/loader";
 import type { DisplayMessage } from "../components/agent-display";
-import type { Endpoint, EndpointStatus } from "../components/operator-dashboard/types";
+import type {
+  Endpoint,
+  EndpointStatus,
+} from "../components/operator-dashboard/types";
 
 export function adaptSwarmStateForOperator(state: LoadedSessionState): {
   messages: DisplayMessage[];
@@ -29,7 +32,7 @@ export function adaptSwarmStateForOperator(state: LoadedSessionState): {
       (m) =>
         m.role === "assistant" &&
         typeof m.content === "string" &&
-        m.content.trim()
+        m.content.trim(),
     );
     const lastSummary = assistantMsgs[assistantMsgs.length - 1];
     if (lastSummary) {

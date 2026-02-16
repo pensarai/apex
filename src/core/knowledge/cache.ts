@@ -5,8 +5,16 @@
  * with configurable TTL to minimize API calls during engagements.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, statSync, unlinkSync } from 'fs';
-import { join } from 'path';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+  readdirSync,
+  statSync,
+  unlinkSync,
+} from "fs";
+import { join } from "path";
 
 export interface CacheEntry<T> {
   data: T;
@@ -25,7 +33,7 @@ export interface CacheConfig {
 }
 
 const DEFAULT_CONFIG: CacheConfig = {
-  cacheDir: '.apex-cache/knowledge',
+  cacheDir: ".apex-cache/knowledge",
   defaultTTL: 24 * 60 * 60 * 1000, // 24 hours
   maxSizeMB: 100,
 };
@@ -52,7 +60,7 @@ export class KnowledgeCache {
 
   private getCacheFilePath(key: string): string {
     // Sanitize key for filesystem
-    const safeKey = key.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const safeKey = key.replace(/[^a-zA-Z0-9_-]/g, "_");
     return join(this.config.cacheDir, `${safeKey}.json`);
   }
 
@@ -73,7 +81,7 @@ export class KnowledgeCache {
     }
 
     try {
-      const content = readFileSync(filePath, 'utf-8');
+      const content = readFileSync(filePath, "utf-8");
       const entry: CacheEntry<T> = JSON.parse(content);
 
       if (this.isExpired(entry)) {
@@ -95,12 +103,16 @@ export class KnowledgeCache {
   /**
    * Store data in cache with optional custom TTL
    */
-  set<T>(key: string, data: T, options: { ttl?: number; source?: string } = {}): void {
+  set<T>(
+    key: string,
+    data: T,
+    options: { ttl?: number; source?: string } = {},
+  ): void {
     const entry: CacheEntry<T> = {
       data,
       timestamp: Date.now(),
       ttl: options.ttl ?? this.config.defaultTTL,
-      source: options.source ?? 'unknown',
+      source: options.source ?? "unknown",
     };
 
     // Store in memory
@@ -143,14 +155,19 @@ export class KnowledgeCache {
   /**
    * Get cache entry metadata without data
    */
-  getMetadata(key: string): { timestamp: number; ttl: number; source: string; isExpired: boolean } | null {
+  getMetadata(key: string): {
+    timestamp: number;
+    ttl: number;
+    source: string;
+    isExpired: boolean;
+  } | null {
     const filePath = this.getCacheFilePath(key);
     if (!existsSync(filePath)) {
       return null;
     }
 
     try {
-      const content = readFileSync(filePath, 'utf-8');
+      const content = readFileSync(filePath, "utf-8");
       const entry: CacheEntry<unknown> = JSON.parse(content);
       return {
         timestamp: entry.timestamp,
@@ -174,7 +191,7 @@ export class KnowledgeCache {
    * Invalidate all entries matching a pattern
    */
   invalidatePattern(pattern: string | RegExp): number {
-    const regex = typeof pattern === 'string' ? new RegExp(pattern) : pattern;
+    const regex = typeof pattern === "string" ? new RegExp(pattern) : pattern;
     let count = 0;
 
     // Clear from memory
@@ -189,7 +206,7 @@ export class KnowledgeCache {
     if (existsSync(this.config.cacheDir)) {
       const files = readdirSync(this.config.cacheDir);
       for (const file of files) {
-        if (file.endsWith('.json') && regex.test(file.replace('.json', ''))) {
+        if (file.endsWith(".json") && regex.test(file.replace(".json", ""))) {
           try {
             unlinkSync(join(this.config.cacheDir, file));
             count++;
@@ -212,7 +229,7 @@ export class KnowledgeCache {
     if (existsSync(this.config.cacheDir)) {
       const files = readdirSync(this.config.cacheDir);
       for (const file of files) {
-        if (file.endsWith('.json')) {
+        if (file.endsWith(".json")) {
           try {
             unlinkSync(join(this.config.cacheDir, file));
           } catch {
@@ -234,7 +251,7 @@ export class KnowledgeCache {
     let totalSize = 0;
     const files = readdirSync(this.config.cacheDir);
     for (const file of files) {
-      if (file.endsWith('.json')) {
+      if (file.endsWith(".json")) {
         try {
           const stats = statSync(join(this.config.cacheDir, file));
           totalSize += stats.size;
@@ -278,14 +295,14 @@ export class KnowledgeCache {
 
     const files = readdirSync(this.config.cacheDir);
     for (const file of files) {
-      if (file.endsWith('.json')) {
+      if (file.endsWith(".json")) {
         const filePath = join(this.config.cacheDir, file);
         try {
-          const content = readFileSync(filePath, 'utf-8');
+          const content = readFileSync(filePath, "utf-8");
           const entry: CacheEntry<unknown> = JSON.parse(content);
           if (this.isExpired(entry)) {
             unlinkSync(filePath);
-            this.memoryCache.delete(file.replace('.json', ''));
+            this.memoryCache.delete(file.replace(".json", ""));
             count++;
           }
         } catch {
@@ -312,14 +329,15 @@ export class KnowledgeCache {
     }
 
     // Get all entries with timestamps
-    const entries: Array<{ file: string; timestamp: number; size: number }> = [];
+    const entries: Array<{ file: string; timestamp: number; size: number }> =
+      [];
     const files = readdirSync(this.config.cacheDir);
 
     for (const file of files) {
-      if (file.endsWith('.json')) {
+      if (file.endsWith(".json")) {
         const filePath = join(this.config.cacheDir, file);
         try {
-          const content = readFileSync(filePath, 'utf-8');
+          const content = readFileSync(filePath, "utf-8");
           const entry: CacheEntry<unknown> = JSON.parse(content);
           const stats = statSync(filePath);
           entries.push({ file, timestamp: entry.timestamp, size: stats.size });
@@ -340,7 +358,7 @@ export class KnowledgeCache {
       }
       try {
         unlinkSync(join(this.config.cacheDir, entry.file));
-        this.memoryCache.delete(entry.file.replace('.json', ''));
+        this.memoryCache.delete(entry.file.replace(".json", ""));
         currentSize -= entry.size;
       } catch {
         // Ignore errors
@@ -358,8 +376,8 @@ export class KnowledgeCache {
 
     const files = readdirSync(this.config.cacheDir);
     return files
-      .filter(f => f.endsWith('.json'))
-      .map(f => f.replace('.json', ''));
+      .filter((f) => f.endsWith(".json"))
+      .map((f) => f.replace(".json", ""));
   }
 
   /**
@@ -405,7 +423,9 @@ let globalCache: KnowledgeCache | null = null;
 /**
  * Get the global knowledge cache instance
  */
-export function getKnowledgeCache(config?: Partial<CacheConfig>): KnowledgeCache {
+export function getKnowledgeCache(
+  config?: Partial<CacheConfig>,
+): KnowledgeCache {
   if (!globalCache) {
     globalCache = new KnowledgeCache(config);
   }
@@ -425,7 +445,8 @@ export function resetKnowledgeCache(): void {
 // Cache key generators for consistent naming
 export const CacheKeys = {
   techKnowledge: (tech: string) => `tech_${tech.toLowerCase()}`,
-  cveTemplates: (query: string) => `cve_${query.toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
-  techDiscovery: () => 'tech_discovery',
+  cveTemplates: (query: string) =>
+    `cve_${query.toLowerCase().replace(/[^a-z0-9]/g, "_")}`,
+  techDiscovery: () => "tech_discovery",
   wordlist: (tech: string, type: string) => `wordlist_${tech}_${type}`,
 };

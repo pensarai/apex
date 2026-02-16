@@ -44,7 +44,10 @@ export default function SessionsBrowser() {
 
   // Clamp selected index when list changes
   useEffect(() => {
-    if (visualOrderSessions.length > 0 && selectedIndex >= visualOrderSessions.length) {
+    if (
+      visualOrderSessions.length > 0 &&
+      selectedIndex >= visualOrderSessions.length
+    ) {
       setSelectedIndex(visualOrderSessions.length - 1);
     } else if (visualOrderSessions.length === 0) {
       setSelectedIndex(0);
@@ -70,14 +73,14 @@ export default function SessionsBrowser() {
         openAsOperator: asOperator || undefined,
       });
     },
-    [loadSession, route, showStatus]
+    [loadSession, route, showStatus],
   );
 
   const openReport = useCallback(
     async (session: EnrichedSession) => {
       const reportPath = await Storage.locate(
         [session.id, "pentest-report"],
-        ".md"
+        ".md",
       );
       if (!existsSync(reportPath)) {
         showStatus("Report not found");
@@ -87,7 +90,7 @@ export default function SessionsBrowser() {
         if (error) showStatus("Error opening report");
       });
     },
-    [showStatus]
+    [showStatus],
   );
 
   useKeyboard(async (key) => {
@@ -142,17 +145,13 @@ export default function SessionsBrowser() {
 
     // Up
     if (key.name === "up" && visualOrderSessions.length > 0) {
-      setSelectedIndex((i) =>
-        i > 0 ? i - 1 : visualOrderSessions.length - 1
-      );
+      setSelectedIndex((i) => (i > 0 ? i - 1 : visualOrderSessions.length - 1));
       return;
     }
 
     // Down
     if (key.name === "down" && visualOrderSessions.length > 0) {
-      setSelectedIndex((i) =>
-        i < visualOrderSessions.length - 1 ? i + 1 : 0
-      );
+      setSelectedIndex((i) => (i < visualOrderSessions.length - 1 ? i + 1 : 0));
       return;
     }
   });
@@ -222,8 +221,7 @@ export default function SessionsBrowser() {
                 const isSelected = session.index === selectedIndex;
                 const age = formatRelativeTime(session.time.updated);
                 const mode = session.config?.mode || "auto";
-                const modeBadge =
-                  mode === "operator" ? "[operator]" : "[auto]";
+                const modeBadge = mode === "operator" ? "[operator]" : "[auto]";
                 const findingsText =
                   session.findingsCount > 0
                     ? `${session.findingsCount} finding${session.findingsCount > 1 ? "s" : ""}`
@@ -246,11 +244,7 @@ export default function SessionsBrowser() {
                         {isSelected ? "▸ " : "  "}
                         {session.name}
                       </text>
-                      <text
-                        fg={
-                          mode === "operator" ? greenAccent : dimText
-                        }
-                      >
+                      <text fg={mode === "operator" ? greenAccent : dimText}>
                         {modeBadge}
                       </text>
                       {findingsText ? (

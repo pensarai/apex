@@ -68,9 +68,7 @@ export default function APIKeyInput({
           justifyContent="space-between"
           marginBottom={2}
         >
-          <text fg="green">
-            Connect {providerName}
-          </text>
+          <text fg="green">Connect {providerName}</text>
           <text fg="gray">esc</text>
         </box>
 
@@ -105,8 +103,8 @@ export default function APIKeyInput({
         {/* Footer help text */}
         <box marginTop={1}>
           <text fg="gray">
-            <span fg="green">[ENTER]</span> Save ·{" "}
-            <span fg="green">[ESC]</span> Cancel
+            <span fg="green">[ENTER]</span> Save · <span fg="green">[ESC]</span>{" "}
+            Cancel
           </text>
         </box>
       </box>

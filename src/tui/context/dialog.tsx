@@ -1,5 +1,17 @@
-import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
-import { createContext, useContext, useState, useCallback, useRef, useEffect, type ReactNode } from "react";
+import {
+  useKeyboard,
+  useRenderer,
+  useTerminalDimensions,
+} from "@opentui/react";
+import {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  useRef,
+  useEffect,
+  type ReactNode,
+} from "react";
 import { RGBA, type Renderable } from "@opentui/core";
 
 interface DialogProps {
@@ -96,16 +108,19 @@ export function DialogProvider({ children }: { children: ReactNode }) {
     refocus();
   }, [stack, refocus]);
 
-  const replace = useCallback((element: ReactNode, onClose?: () => void) => {
-    if (stack.length === 0) {
-      focusRef.current = renderer.currentFocusedRenderable;
-    }
-    for (const item of stack) {
-      if (item.onClose) item.onClose();
-    }
-    setSize("medium");
-    setStack([{ element, onClose }]);
-  }, [stack, renderer]);
+  const replace = useCallback(
+    (element: ReactNode, onClose?: () => void) => {
+      if (stack.length === 0) {
+        focusRef.current = renderer.currentFocusedRenderable;
+      }
+      for (const item of stack) {
+        if (item.onClose) item.onClose();
+      }
+      setSize("medium");
+      setStack([{ element, onClose }]);
+    },
+    [stack, renderer],
+  );
 
   useKeyboard((evt) => {
     if (evt.name === "escape" && stack.length > 0) {

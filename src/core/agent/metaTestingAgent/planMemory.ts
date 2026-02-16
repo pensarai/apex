@@ -21,7 +21,7 @@ export const BUDGET_CHECKPOINTS = [20, 40, 60, 80];
 
 export function createPlanMemoryTools(
   session: MetaTestingSessionInfo,
-  logger: Logger
+  logger: Logger,
 ) {
   const planPath = join(session.rootPath, "plan.json");
   const adaptationsPath = join(session.rootPath, "adaptations.json");
@@ -69,11 +69,11 @@ Phase statuses:
 
         writeFileSync(planPath, JSON.stringify(fullPlan, null, 2));
         logger.info(
-          `Plan stored: Phase ${plan.current_phase}/${plan.total_phases}, Budget: ${plan.budget_used}%`
+          `Plan stored: Phase ${plan.current_phase}/${plan.total_phases}, Budget: ${plan.budget_used}%`,
         );
 
         const checkpoint = BUDGET_CHECKPOINTS.find(
-          (cp) => plan.budget_used >= cp && plan.budget_used < cp + 20
+          (cp) => plan.budget_used >= cp && plan.budget_used < cp + 20,
         );
 
         let checkpointMsg = "";
@@ -125,7 +125,7 @@ This helps maintain strategic coherence across long operations.`,
       toolCallDescription: z
         .string()
         .describe(
-          "A concise, human-readable description of what this tool call is doing (e.g., 'Retrieving current pentest plan')"
+          "A concise, human-readable description of what this tool call is doing (e.g., 'Retrieving current pentest plan')",
         ),
     }),
     execute: async () => {
@@ -145,7 +145,7 @@ This helps maintain strategic coherence across long operations.`,
 
         const plan: PentestPlan = JSON.parse(readFileSync(planPath, "utf-8"));
         logger.info(
-          `Plan retrieved: Phase ${plan.current_phase}/${plan.total_phases}`
+          `Plan retrieved: Phase ${plan.current_phase}/${plan.total_phases}`,
         );
 
         // Format phases for display
@@ -164,7 +164,7 @@ This helps maintain strategic coherence across long operations.`,
           .join("\n");
 
         const nextCheckpoint = BUDGET_CHECKPOINTS.find(
-          (cp) => plan.budget_used < cp
+          (cp) => plan.budget_used < cp,
         );
 
         return {
@@ -176,11 +176,7 @@ Objective: ${plan.objective}
 Target: ${plan.target}
 Current Phase: ${plan.current_phase}/${plan.total_phases}
 Budget Used: ${plan.budget_used}%
-${
-  nextCheckpoint
-    ? `Next Checkpoint: ${nextCheckpoint}%`
-    : "All checkpoints passed"
-}
+${nextCheckpoint ? `Next Checkpoint: ${nextCheckpoint}%` : "All checkpoints passed"}
 
 **Phases:**
 ${phasesDisplay}
@@ -243,27 +239,19 @@ This data is used by optimize_prompt to:
         const workedCount = adaptations.filter((a) => a.worked).length;
         const failedCount = adaptations.filter((a) => !a.worked).length;
         const constraintsCount = adaptations.filter(
-          (a) => a.constraint_learned
+          (a) => a.constraint_learned,
         ).length;
 
         logger.info(
-          `Adaptation stored: ${adaptation.approach} (${
-            adaptation.worked ? "SUCCESS" : "FAILED"
-          })`
+          `Adaptation stored: ${adaptation.approach} (${adaptation.worked ? "SUCCESS" : "FAILED"})`,
         );
 
         return {
           success: true,
-          message: `Adaptation recorded: ${
-            adaptation.worked ? "✅ SUCCESS" : "❌ FAILED"
-          }
+          message: `Adaptation recorded: ${adaptation.worked ? "✅ SUCCESS" : "❌ FAILED"}
 
 Approach: "${adaptation.approach}"
-${
-  adaptation.constraint_learned
-    ? `Constraint learned: "${adaptation.constraint_learned}"`
-    : ""
-}
+${adaptation.constraint_learned ? `Constraint learned: "${adaptation.constraint_learned}"` : ""}
 
 **Running totals:**
 - Successful approaches: ${workedCount}

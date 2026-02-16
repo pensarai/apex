@@ -90,7 +90,7 @@ export function CommandProvider({ children }: CommandProviderProps) {
     async (input: string): Promise<boolean> => {
       return await router.execute(input, ctx);
     },
-    [router, ctx]
+    [router, ctx],
   );
 
   const value: CommandContextValue = useMemo(
@@ -100,7 +100,7 @@ export function CommandProvider({ children }: CommandProviderProps) {
       executeCommand,
       commands,
     }),
-    [router, autocompleteOptions, executeCommand]
+    [router, autocompleteOptions, executeCommand],
   );
 
   return (

@@ -218,7 +218,11 @@ export function QuestionComponent({
       <box flexDirection="row" gap={2} marginTop={2}>
         {!isFirstQuestion && <text fg={colors.dimText}>← Back</text>}
         <text fg={colors.dimText}>
-          {isLastQuestion ? (showReview ? "Tab → Review" : "Tab → Submit") : "Tab → Next"}
+          {isLastQuestion
+            ? showReview
+              ? "Tab → Review"
+              : "Tab → Submit"
+            : "Tab → Next"}
         </text>
         {onCancel && <text fg={colors.dimText}>ESC Cancel</text>}
       </box>
@@ -381,21 +385,13 @@ function YesNoInput({
 
   return (
     <box flexDirection="row" gap={2}>
-      <box
-        flexDirection="row"
-        gap={1}
-        onMouseDown={() => onChange(true)}
-      >
+      <box flexDirection="row" gap={1} onMouseDown={() => onChange(true)}>
         <text fg={value ? colors.greenAccent : colors.dimText}>
           {value ? "●" : "○"}
         </text>
         <text fg={value ? colors.creamText : colors.dimText}>Yes</text>
       </box>
-      <box
-        flexDirection="row"
-        gap={1}
-        onMouseDown={() => onChange(false)}
-      >
+      <box flexDirection="row" gap={1} onMouseDown={() => onChange(false)}>
         <text fg={!value ? colors.greenAccent : colors.dimText}>
           {!value ? "●" : "○"}
         </text>
@@ -410,12 +406,20 @@ function ChoiceInput({
   value,
   onChange,
 }: {
-  options: { value: string; label: string; description?: string; disabled?: boolean }[];
+  options: {
+    value: string;
+    label: string;
+    description?: string;
+    disabled?: boolean;
+  }[];
   value: string;
   onChange: (value: string) => void;
 }) {
   const [focusIndex, setFocusIndex] = useState(
-    Math.max(0, options.findIndex((o) => o.value === value))
+    Math.max(
+      0,
+      options.findIndex((o) => o.value === value),
+    ),
   );
 
   useKeyboard((key) => {
@@ -458,8 +462,8 @@ function ChoiceInput({
                 isDisabled
                   ? colors.dimText
                   : isSelected
-                  ? colors.creamText
-                  : colors.dimText
+                    ? colors.creamText
+                    : colors.dimText
               }
             >
               {option.label}
@@ -479,7 +483,12 @@ function MultiChoiceInput({
   value,
   onChange,
 }: {
-  options: { value: string; label: string; description?: string; disabled?: boolean }[];
+  options: {
+    value: string;
+    label: string;
+    description?: string;
+    disabled?: boolean;
+  }[];
   value: string[];
   onChange: (value: string[]) => void;
 }) {
@@ -533,8 +542,8 @@ function MultiChoiceInput({
                 isDisabled
                   ? colors.dimText
                   : isSelected
-                  ? colors.creamText
-                  : colors.dimText
+                    ? colors.creamText
+                    : colors.dimText
               }
             >
               {option.label}
@@ -580,9 +589,7 @@ function ReviewScreen({
     <box flexDirection="column" width="100%" padding={2}>
       {/* Header */}
       <text fg={colors.creamText}>{title || "Review Your Answers"}</text>
-      <text fg={colors.dimText}>
-        Review your answers before submitting.
-      </text>
+      <text fg={colors.dimText}>Review your answers before submitting.</text>
 
       {/* Answers */}
       <box flexDirection="column" gap={1} marginTop={2}>
@@ -599,9 +606,7 @@ function ReviewScreen({
                   {displayValue}
                 </text>
               </box>
-              {error && (
-                <text fg={colors.errorColor}>⚠ {error}</text>
-              )}
+              {error && <text fg={colors.errorColor}>⚠ {error}</text>}
             </box>
           );
         })}
@@ -609,11 +614,7 @@ function ReviewScreen({
 
       {/* Actions */}
       <box flexDirection="row" gap={4} marginTop={2}>
-        <box
-          onMouseDown={onBack}
-          flexDirection="row"
-          gap={1}
-        >
+        <box onMouseDown={onBack} flexDirection="row" gap={1}>
           <text fg={colors.dimText}>←</text>
           <text fg={colors.dimText}>Back</text>
         </box>
@@ -636,7 +637,10 @@ function ReviewScreen({
 // Helpers
 // ============================================
 
-function formatAnswerForDisplay(question: Question, answer: AnswerValue): string {
+function formatAnswerForDisplay(
+  question: Question,
+  answer: AnswerValue,
+): string {
   if (answer === null || answer === undefined || answer === "") {
     return "(not answered)";
   }

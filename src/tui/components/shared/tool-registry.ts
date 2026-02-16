@@ -43,10 +43,12 @@ const TOOL_SUMMARY_MAP: Record<string, ToolSummaryFn> = {
   browser_screenshot: () => "screenshot",
 
   // Security tools
-  nuclei_scan: (args) => `nuclei ${args.templates || "all"} -> ${args.target || ""}`,
+  nuclei_scan: (args) =>
+    `nuclei ${args.templates || "all"} -> ${args.target || ""}`,
   document_finding: (args) => `finding: ${args.title || args.name || ""}`,
   smart_enumerate: (args) => `smart_enumerate ${args.target || args.url || ""}`,
-  get_attack_surface: (args) => `get_attack_surface ${args.target || args.url || ""}`,
+  get_attack_surface: (args) =>
+    `get_attack_surface ${args.target || args.url || ""}`,
 
   // Task/Agent tools
   Task: (args) => (args.description as string) || "Task",
@@ -65,7 +67,7 @@ const TOOL_SUMMARY_MAP: Record<string, ToolSummaryFn> = {
  */
 export function getToolSummary(
   toolName: string,
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
 ): string {
   // Check registry first
   const summaryFn = TOOL_SUMMARY_MAP[toolName];
@@ -112,11 +114,11 @@ export function hasToolSummary(name: string): boolean {
 export function getArgsPreview(
   toolName: string,
   args: Record<string, unknown>,
-  maxLength: number = 60
+  maxLength: number = 60,
 ): string {
   // Filter out description fields
   const filteredArgs = Object.entries(args).filter(
-    ([k]) => !k.toLowerCase().includes("description")
+    ([k]) => !k.toLowerCase().includes("description"),
   );
 
   if (filteredArgs.length === 0) return "";
@@ -130,7 +132,10 @@ export function getArgsPreview(
 
   // For multi-arg tools, show key:value pairs
   const parts = filteredArgs.map(([key, value]) => {
-    const shortKey = key.replace(/([A-Z])/g, "_$1").toLowerCase().replace(/^_/, "");
+    const shortKey = key
+      .replace(/([A-Z])/g, "_$1")
+      .toLowerCase()
+      .replace(/^_/, "");
     let shortValue: string;
     if (typeof value === "string") {
       shortValue = value.length > 20 ? value.slice(0, 20) + "…" : value;
@@ -147,5 +152,7 @@ export function getArgsPreview(
   });
 
   const preview = parts.join(" ");
-  return preview.length > maxLength ? preview.slice(0, maxLength) + "…" : preview;
+  return preview.length > maxLength
+    ? preview.slice(0, maxLength) + "…"
+    : preview;
 }

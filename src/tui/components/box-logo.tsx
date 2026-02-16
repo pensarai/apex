@@ -24,11 +24,11 @@ const GREEN_GRADIENT = [
   { r: 144, g: 238, b: 144 }, // Light green
   { r: 124, g: 218, b: 124 },
   { r: 100, g: 200, b: 100 },
-  { r: 76, g: 175, b: 80 },   // Medium green
+  { r: 76, g: 175, b: 80 }, // Medium green
   { r: 56, g: 155, b: 60 },
   { r: 46, g: 125, b: 50 },
   { r: 36, g: 100, b: 40 },
-  { r: 27, g: 80, b: 33 },    // Dark green
+  { r: 27, g: 80, b: 33 }, // Dark green
 ];
 
 const BLOCK_CHAR = "█";

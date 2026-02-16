@@ -9,7 +9,13 @@
 // Question Types
 // ============================================
 
-export type QuestionType = "text" | "yesno" | "choice" | "multichoice" | "file" | "password";
+export type QuestionType =
+  | "text"
+  | "yesno"
+  | "choice"
+  | "multichoice"
+  | "file"
+  | "password";
 
 export interface BaseQuestion {
   id: string;
@@ -186,7 +192,7 @@ export function getDefaultValue(question: Question): AnswerValue {
 
 export function validateAnswers(
   questions: Question[],
-  answers: AnswerMap
+  answers: AnswerMap,
 ): ValidationResult {
   const errors: ValidationError[] = [];
 

@@ -1,6 +1,6 @@
 # CI Pipeline
 # ===========
-# Runs lint, typecheck, and build in parallel on every PR and push.
+# Runs lint/format, typecheck, and build in parallel on every PR and push.
 # Each job is a reusable workflow and shows as a separate check in the
 # GitHub PR UI.
 

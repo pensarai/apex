@@ -28,7 +28,7 @@ function hashContent(content: string): string {
  */
 export function getStableMessageKey(
   item: DisplayMessage,
-  contextId: string = "root"
+  contextId: string = "root",
 ): string {
   // Tool messages use toolCallId (most stable identifier)
   if (isToolMessage(item)) {
@@ -56,7 +56,13 @@ export function getMessageContent(message: DisplayMessage): string {
     return message.content
       .map((part: unknown) => {
         if (typeof part === "string") return part;
-        if (typeof part === "object" && part !== null && "type" in part && (part as Record<string, unknown>).type === "text") return (part as Record<string, unknown>).text as string;
+        if (
+          typeof part === "object" &&
+          part !== null &&
+          "type" in part &&
+          (part as Record<string, unknown>).type === "text"
+        )
+          return (part as Record<string, unknown>).text as string;
         return JSON.stringify(part);
       })
       .join("");
@@ -68,7 +74,10 @@ export function getMessageContent(message: DisplayMessage): string {
 /**
  * Format a result value for display (truncate if too long).
  */
-export function formatResult(result: unknown, maxLength: number = 2000): string {
+export function formatResult(
+  result: unknown,
+  maxLength: number = 2000,
+): string {
   try {
     const str = JSON.stringify(result, null, 2);
     if (str.length > maxLength) {

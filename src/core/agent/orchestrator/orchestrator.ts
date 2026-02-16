@@ -452,7 +452,8 @@ export async function runPentestOrchestrator(
         allTaskResults.push(taskResult);
         return taskResult;
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
         logger.error(
           `Error testing ${task.vulnClass} on ${task.target}: ${errorMessage}`,
         );
@@ -579,7 +580,9 @@ export async function runPentestOrchestrator(
     });
     logger.info(`Orchestrator summary saved to: ${savedPath}`);
   } catch (e) {
-    logger.error(`Failed to save orchestrator summary: ${e instanceof Error ? e.message : String(e)}`);
+    logger.error(
+      `Failed to save orchestrator summary: ${e instanceof Error ? e.message : String(e)}`,
+    );
   }
 
   const spawnedCount = allTaskResults.filter((r) => r.task.isSpawned).length;
@@ -626,9 +629,7 @@ function generateSummary(
     )) {
       if (vulnResult.findingsCount > 0) {
         lines.push(
-          `    • ${getVulnerabilityClassName(vulnClass)}: ${
-            vulnResult.findingsCount
-          }`,
+          `    • ${getVulnerabilityClassName(vulnClass)}: ${vulnResult.findingsCount}`,
         );
       }
     }

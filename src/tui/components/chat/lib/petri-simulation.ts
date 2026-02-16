@@ -15,7 +15,7 @@ import { clamp, random, mod } from "./play-core/num";
 
 // Simulation parameters (tuned for terminal)
 const AGENT_COUNT = 400;
-const SENS_DIST = 4;          // Sensing distance
+const SENS_DIST = 4; // Sensing distance
 const SENS_ANGLE = Math.PI / 5; // ~36 degrees
 const MOVE_SPEED = 1.0;
 const TURN_SPEED = 0.4;
@@ -62,7 +62,7 @@ export class PetriSimulation {
 
       this.agents.push({
         pos: vec2(x, y),
-        angle: angle + Math.PI + random(-0.5, 0.5) // Point roughly inward
+        angle: angle + Math.PI + random(-0.5, 0.5), // Point roughly inward
       });
     }
   }
