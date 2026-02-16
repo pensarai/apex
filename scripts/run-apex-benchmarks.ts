@@ -16,11 +16,12 @@ import { execSync, spawn } from "child_process";
 import pLimit from "p-limit";
 import type { AIModel } from "../src/core/ai";
 import { runBenchmarkWithDaytona } from "../src/core/agent/benchmark/remote/daytona-benchmark";
-import type { APEXBenchmarkResults, APEXBenchmarkSummary, APEXBenchmarkEntry, ComparisonResult } from "../src/core/agent/benchmark/types";
+import type { APEXBenchmarkResults, APEXBenchmarkSummary, APEXBenchmarkEntry, ComparisonResult, TokenMetrics } from "../src/core/agent/benchmark/types";
 import type { BenchmarkResults } from "../src/core/agent/benchmark/types";
 
-// APEX benchmark branch names (APEX-001-25 through APEX-019-25)
+// APEX benchmark branch names (APEX-001-25 through APEX-060-25)
 const APEX_BRANCHES = [
+  // Single-vulnerability benchmarks (001-019)
   "APEX-001-25", // SSRF in URL Preview
   "APEX-002-25", // Cross-Site Scripting (XSS)
   "APEX-003-25", // Authentication/Session Issue
@@ -40,10 +41,54 @@ const APEX_BRANCHES = [
   "APEX-017-25", // Session Fixation to Account Takeover
   "APEX-018-25", // LDAP Injection Authentication Bypass
   "APEX-019-25", // Mass Assignment Privilege Escalation
+  // Intermediate benchmarks (020-040)
+  "APEX-020-25", // SSTI
+  "APEX-021-25", // SSRF/Redis Injection
+  "APEX-022-25", // XXE
+  "APEX-023-25", // IDOR
+  "APEX-024-25", // Host Header Injection
+  "APEX-025-25", // SpEL Injection
+  "APEX-026-25", // Type Juggling Auth
+  "APEX-027-25", // Subdomain Takeover
+  "APEX-028-25", // Cache Poisoning
+  "APEX-029-25", // Blind XSS
+  "APEX-030-25", // API Versioning
+  "APEX-031-25", // ImageMagick RCE
+  "APEX-032-25", // ORM Injection
+  "APEX-033-25", // GraphQL Auth Bypass
+  "APEX-034-25", // Business Logic Abuse
+  "APEX-035-25", // Race Condition
+  "APEX-036-25", // MFA Bypass
+  "APEX-037-25", // Weak PRNG
+  "APEX-038-25", // Prototype Pollution
+  "APEX-039-25", // CRLF Injection
+  "APEX-040-25", // Full Chain (The Gauntlet)
+  // Multi-step chain benchmarks (041-060)
+  "APEX-041-25", // SaaS Admin Takeover
+  "APEX-042-25", // CI/CD Pipeline Poisoning
+  "APEX-043-25", // HealthGuard Patient Data Breach
+  "APEX-044-25", // CryptoVault Heist
+  "APEX-045-25", // SmartHome IoT Compromise
+  "APEX-046-25", // CloudGate SSO Bypass
+  "APEX-047-25", // DataPipeline Exfiltration
+  "APEX-048-25", // MeshBreaker Service Mesh Exploit
+  "APEX-049-25", // GameServer RCE Chain
+  "APEX-050-25", // SupplyChain NPM Takeover
+  "APEX-051-25", // EdgeRouter Firmware Exploit
+  "APEX-052-25", // ContainerEscape K8s Chain
+  "APEX-053-25", // PaymentGateway Fraud Chain
+  "APEX-054-25", // IdentityForge SSO Token Chain
+  "APEX-055-25", // ChatOps Bot Command Injection
+  "APEX-056-25", // LambdaJack Serverless Exploitation
+  "APEX-057-25", // TenantEscape Isolation Failure
+  "APEX-058-25", // DefenseMatrix Evasion
+  "APEX-059-25", // DocuLeaks Document Processing Chain
+  "APEX-060-25", // The Labyrinth (Final Boss)
 ];
 
 // Vulnerability type mapping for each benchmark
 const VULN_TYPE_MAP: Record<string, string> = {
+  // 001-019: Single-vulnerability
   "APEX-001-25": "SSRF",
   "APEX-002-25": "XSS",
   "APEX-003-25": "Auth/Session",
@@ -63,6 +108,49 @@ const VULN_TYPE_MAP: Record<string, string> = {
   "APEX-017-25": "Session Fixation",
   "APEX-018-25": "LDAP Injection",
   "APEX-019-25": "Mass Assignment",
+  // 020-040: Intermediate
+  "APEX-020-25": "SSTI",
+  "APEX-021-25": "SSRF/Redis",
+  "APEX-022-25": "XXE",
+  "APEX-023-25": "IDOR",
+  "APEX-024-25": "Host Header",
+  "APEX-025-25": "SpEL Injection",
+  "APEX-026-25": "Type Juggling",
+  "APEX-027-25": "Subdomain Takeover",
+  "APEX-028-25": "Cache Poisoning",
+  "APEX-029-25": "Blind XSS",
+  "APEX-030-25": "API Versioning",
+  "APEX-031-25": "ImageMagick RCE",
+  "APEX-032-25": "ORM Injection",
+  "APEX-033-25": "GraphQL Auth Bypass",
+  "APEX-034-25": "Business Logic",
+  "APEX-035-25": "Race Condition",
+  "APEX-036-25": "MFA Bypass",
+  "APEX-037-25": "Weak PRNG",
+  "APEX-038-25": "Prototype Pollution",
+  "APEX-039-25": "CRLF Injection",
+  "APEX-040-25": "Full Chain",
+  // 041-060: Multi-step chain
+  "APEX-041-25": "SaaS Takeover Chain",
+  "APEX-042-25": "CI/CD Poisoning Chain",
+  "APEX-043-25": "Healthcare Breach Chain",
+  "APEX-044-25": "CryptoVault Chain",
+  "APEX-045-25": "IoT Compromise Chain",
+  "APEX-046-25": "SSO Bypass Chain",
+  "APEX-047-25": "Data Pipeline Chain",
+  "APEX-048-25": "Service Mesh Chain",
+  "APEX-049-25": "GameServer RCE Chain",
+  "APEX-050-25": "Supply Chain Attack",
+  "APEX-051-25": "Firmware Exploit Chain",
+  "APEX-052-25": "K8s Escape Chain",
+  "APEX-053-25": "Payment Fraud Chain",
+  "APEX-054-25": "SSO Token Chain",
+  "APEX-055-25": "ChatOps Injection Chain",
+  "APEX-056-25": "Serverless Exploit Chain",
+  "APEX-057-25": "Tenant Escape Chain",
+  "APEX-058-25": "Defense Evasion Chain",
+  "APEX-059-25": "Doc Processing Chain",
+  "APEX-060-25": "Full Chain (Final Boss)",
 };
 
 interface APEXBenchmarkConfig {
@@ -109,12 +197,13 @@ async function setupRepository(repoUrl: string, localPath: string): Promise<void
  */
 async function checkoutBranch(repoPath: string, branch: string): Promise<boolean> {
   try {
-    // Try direct checkout first (for existing local branches)
-    // If that fails, create a local tracking branch from origin
+    // Checkout the branch and reset to latest remote to pick up any pushed changes
     execSync(
       `git checkout ${branch} 2>/dev/null || git checkout -b ${branch} origin/${branch}`,
       { cwd: repoPath, stdio: "pipe" }
     );
+    // Always reset to the latest remote version
+    execSync(`git reset --hard origin/${branch}`, { cwd: repoPath, stdio: "pipe" });
     return true;
   } catch (error: any) {
     console.error(`❌ Failed to checkout ${branch}: ${error.message}`);
@@ -178,6 +267,7 @@ async function runSingleAPEXBenchmark(
     if (result.sessionPath && existsSync(result.sessionPath)) {
       const resultsFile = path.join(result.sessionPath, "benchmark_results.json");
       const comparisonFile = path.join(result.sessionPath, "comparison-results.json");
+      const tokenMetricsFile = path.join(result.sessionPath, "token-metrics.json");
 
       if (existsSync(resultsFile)) {
         const resultsContent = readFileSync(resultsFile, "utf-8");
@@ -188,11 +278,31 @@ async function runSingleAPEXBenchmark(
         const comparisonContent = readFileSync(comparisonFile, "utf-8");
         writeFileSync(path.join(benchmarkOutputDir, "comparison-results.json"), comparisonContent);
       }
+
+      if (existsSync(tokenMetricsFile)) {
+        const tokenMetricsContent = readFileSync(tokenMetricsFile, "utf-8");
+        writeFileSync(path.join(benchmarkOutputDir, "token-metrics.json"), tokenMetricsContent);
+      }
     }
 
     // Extract comparison metrics
     const apexResult = result as APEXBenchmarkResults;
     const comparison = apexResult.comparison;
+
+    // Check if the benchmark actually ran successfully
+    // A failed benchmark will have empty sessionPath and no comparison results
+    const actuallySucceeded = result.sessionPath && result.sessionId;
+
+    if (!actuallySucceeded) {
+      console.error(`\n❌ ${benchmarkName} FAILED: Benchmark returned empty session (Daytona may have failed)`);
+      return {
+        name: benchmarkName,
+        status: "failed",
+        vulnType: VULN_TYPE_MAP[benchmarkName],
+        error: "Benchmark returned empty session - Daytona sandbox creation may have failed",
+        errorCategory: "transient",
+      };
+    }
 
     return {
       name: benchmarkName,
@@ -204,6 +314,7 @@ async function runSingleAPEXBenchmark(
       expectedVulns: comparison?.totalExpected,
       detectedVulns: comparison?.matched.length,
       sessionPath: result.sessionPath,
+      tokenMetrics: result.tokenMetrics,
     };
   } catch (error: any) {
     console.error(`\n❌ ${benchmarkName} FAILED: ${error.message}`);
@@ -295,9 +406,21 @@ async function runBenchmarksInBatches(
         );
 
         // Clone from the original remote URL (not local repo) so remote branches are available
-        if (!existsSync(benchmarkRepoPath)) {
+        // Verify existing directory is a valid git repo with correct remote; re-clone if not
+        const isValidRepo = existsSync(benchmarkRepoPath) && existsSync(path.join(benchmarkRepoPath, ".git"));
+        if (!isValidRepo) {
+          if (existsSync(benchmarkRepoPath)) {
+            execSync(`rm -rf ${benchmarkRepoPath}`, { stdio: "pipe" });
+          }
           mkdirSync(path.dirname(benchmarkRepoPath), { recursive: true });
           execSync(`git clone ${repoUrl} ${benchmarkRepoPath}`, { stdio: "pipe" });
+        } else {
+          // Fetch latest changes so we always run against the newest code
+          try {
+            execSync("git fetch --all", { cwd: benchmarkRepoPath, stdio: "pipe" });
+          } catch (e: any) {
+            console.log(`⚠️  Failed to fetch updates for ${benchmarkName}: ${e.message}`);
+          }
         }
 
         return runSingleAPEXBenchmark(benchmarkRepoPath, benchmarkName, model, outputDir);
@@ -357,6 +480,13 @@ async function runBenchmarksInBatches(
     ? successfulResults.reduce((sum, r) => sum + (r.recall || 0), 0) / successfulResults.length
     : 0;
 
+  // Aggregate token metrics
+  const totalInputTokens = allResults.reduce((sum, r) => sum + (r.tokenMetrics?.inputTokens || 0), 0);
+  const totalOutputTokens = allResults.reduce((sum, r) => sum + (r.tokenMetrics?.outputTokens || 0), 0);
+  const totalTokens = totalInputTokens + totalOutputTokens;
+  const totalEstimatedCostUsd = allResults.reduce((sum, r) => sum + (r.tokenMetrics?.estimatedCostUsd || 0), 0);
+  const totalDurationMs = allResults.reduce((sum, r) => sum + (r.tokenMetrics?.durationMs || 0), 0);
+
   // Generate summary
   const summary: APEXBenchmarkSummary = {
     timestamp: new Date().toISOString(),
@@ -369,6 +499,11 @@ async function runBenchmarksInBatches(
       avgAccuracy: Math.round(avgAccuracy * 10) / 10,
       avgPrecision: Math.round(avgPrecision * 10) / 10,
       avgRecall: Math.round(avgRecall * 10) / 10,
+      totalInputTokens,
+      totalOutputTokens,
+      totalTokens,
+      totalEstimatedCostUsd: Math.round(totalEstimatedCostUsd * 100) / 100,
+      totalDurationMs,
     },
     benchmarks: allResults,
     failedBenchmarks: failedResults.map(r => r.name),
@@ -392,6 +527,14 @@ async function runBenchmarksInBatches(
   console.log(`Avg Accuracy: ${summary.aggregateMetrics.avgAccuracy}%`);
   console.log(`Avg Precision: ${summary.aggregateMetrics.avgPrecision}%`);
   console.log(`Avg Recall: ${summary.aggregateMetrics.avgRecall}%`);
+  if (totalTokens > 0) {
+    console.log(`${"─".repeat(40)}`);
+    console.log(`Total Input Tokens: ${totalInputTokens.toLocaleString()}`);
+    console.log(`Total Output Tokens: ${totalOutputTokens.toLocaleString()}`);
+    console.log(`Total Tokens: ${totalTokens.toLocaleString()}`);
+    console.log(`Estimated Cost: $${totalEstimatedCostUsd.toFixed(2)}`);
+    console.log(`Total Duration: ${(totalDurationMs / 1000 / 60).toFixed(1)}m`);
+  }
   console.log(`${"=".repeat(80)}`);
   console.log(`\n📄 Results saved to: ${outputDir}`);
 
@@ -425,6 +568,13 @@ function generateMarkdownReport(summary: APEXBenchmarkSummary, batches: BatchRes
   lines.push(`| Avg Accuracy | ${summary.aggregateMetrics.avgAccuracy}% |`);
   lines.push(`| Avg Precision | ${summary.aggregateMetrics.avgPrecision}% |`);
   lines.push(`| Avg Recall | ${summary.aggregateMetrics.avgRecall}% |`);
+  if (summary.aggregateMetrics.totalTokens > 0) {
+    lines.push(`| Total Input Tokens | ${summary.aggregateMetrics.totalInputTokens.toLocaleString()} |`);
+    lines.push(`| Total Output Tokens | ${summary.aggregateMetrics.totalOutputTokens.toLocaleString()} |`);
+    lines.push(`| Total Tokens | ${summary.aggregateMetrics.totalTokens.toLocaleString()} |`);
+    lines.push(`| Estimated Cost | $${summary.aggregateMetrics.totalEstimatedCostUsd.toFixed(2)} |`);
+    lines.push(`| Total Duration | ${(summary.aggregateMetrics.totalDurationMs / 1000 / 60).toFixed(1)}m |`);
+  }
   lines.push("");
 
   lines.push("## Results by Benchmark\n");
@@ -440,6 +590,30 @@ function generateMarkdownReport(summary: APEXBenchmarkSummary, batches: BatchRes
     lines.push(`| ${benchmark.name} | ${benchmark.vulnType || "-"} | ${statusIcon} | ${benchmark.accuracy ?? "-"}% | ${benchmark.precision ?? "-"}% | ${benchmark.recall ?? "-"}% | ${matched} |`);
   }
   lines.push("");
+
+  // Token usage table (only if any benchmark has token data)
+  const hasTokenData = summary.benchmarks.some(b => b.tokenMetrics && b.tokenMetrics.totalTokens > 0);
+  if (hasTokenData) {
+    lines.push("## Token Usage\n");
+    lines.push(`| Benchmark | Input Tokens | Output Tokens | Est. Cost | Duration |`);
+    lines.push(`|-----------|-------------|---------------|-----------|----------|`);
+
+    for (const benchmark of summary.benchmarks) {
+      if (benchmark.tokenMetrics && benchmark.tokenMetrics.totalTokens > 0) {
+        const tm = benchmark.tokenMetrics;
+        const durationMin = (tm.durationMs / 1000 / 60).toFixed(1);
+        lines.push(`| ${benchmark.name} | ${tm.inputTokens.toLocaleString()} | ${tm.outputTokens.toLocaleString()} | $${tm.estimatedCostUsd.toFixed(2)} | ${durationMin}m |`);
+      } else {
+        lines.push(`| ${benchmark.name} | - | - | - | - |`);
+      }
+    }
+
+    if (summary.aggregateMetrics.totalTokens > 0) {
+      const totalDurMin = (summary.aggregateMetrics.totalDurationMs / 1000 / 60).toFixed(1);
+      lines.push(`| **Total** | **${summary.aggregateMetrics.totalInputTokens.toLocaleString()}** | **${summary.aggregateMetrics.totalOutputTokens.toLocaleString()}** | **$${summary.aggregateMetrics.totalEstimatedCostUsd.toFixed(2)}** | **${totalDurMin}m** |`);
+    }
+    lines.push("");
+  }
 
   // Batch results
   if (batches.length > 0) {
@@ -483,7 +657,7 @@ function parseArgs(): APEXBenchmarkConfig {
 
   let repoUrl = "https://github.com/Yuvanesh-ux/argus-validation-benchmarks";
   let branches: string[] = [];
-  let maxParallel = 3;
+  let maxParallel = 1; // Default to 1 to avoid connection exhaustion issues
   let batchSize = 5;
   let model: AIModel = "claude-sonnet-4-20250514";
   let outputDir = "";
@@ -560,15 +734,25 @@ Usage:
 Options:
   --repo <url>         Repository URL (default: argus-validation-benchmarks)
   --branches <list>    Comma-separated list of branch names (e.g., APEX-001-25,APEX-002-25)
-  --all                Run all 19 APEX benchmarks
-  --parallel <n>       Max parallel Daytona sandboxes (default: 3)
+  --all                Run all 60 APEX benchmarks
+  --parallel <n>       Max parallel Daytona sandboxes (default: 1)
+                       Note: Keep low to avoid API connection exhaustion
   --batch-size <n>     Benchmarks per batch (default: 5)
   --model <model>      AI model to use (default: claude-sonnet-4-20250514)
   --output <dir>       Output directory for results
   --help, -h           Show this help message
 
+Troubleshooting:
+  If you encounter "Cannot connect to API" errors, try:
+  1. Use Node.js instead of Bun: npm run apex-benchmark:node -- --branches APEX-001-25
+  2. Reduce parallelism: --parallel 1
+  3. Check network connectivity to api.anthropic.com
+
 Examples:
-  # Run all benchmarks with 3 parallel sandboxes
+  # Run all benchmarks (sequential by default)
+  bun run scripts/run-apex-benchmarks.ts --all
+
+  # Run all benchmarks with higher parallelism (may cause connection issues)
   bun run scripts/run-apex-benchmarks.ts --all --parallel 3
 
   # Run specific benchmarks
@@ -587,6 +771,13 @@ Environment Variables:
 
 // Main execution
 async function main() {
+  // Catch unhandled rejections to prevent silent process exit
+  process.on("unhandledRejection", (reason: any) => {
+    console.error("Unhandled promise rejection in benchmark runner:", reason?.message || reason);
+    console.error("Stack:", reason?.stack || "no stack");
+    // Don't exit - let the benchmark continue if possible
+  });
+
   const config = parseArgs();
 
   console.log(`

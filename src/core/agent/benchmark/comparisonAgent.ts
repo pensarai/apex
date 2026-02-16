@@ -68,12 +68,13 @@ interface ComparisonAgentProps {
   repoPath: string;
   sessionPath: string;
   model: AIModel;
+  onStepFinish?: (step: any) => void;
 }
 
 export async function runComparisonAgent(
   props: ComparisonAgentProps
 ): Promise<ComparisonResult> {
-  const { repoPath, sessionPath, model } = props;
+  const { repoPath, sessionPath, model, onStepFinish } = props;
 
   // Load expected results from expected_results folder
   const expectedResultsDir = join(repoPath, "expected_results");
@@ -100,7 +101,11 @@ export async function runComparisonAgent(
   );
 
   const expectedData = readFileSync(expectedResultsPath, "utf-8");
-  const expectedResults = JSON.parse(expectedData);
+  const expectedResultsRaw = JSON.parse(expectedData);
+  // Handle both array format and object with vulnerabilities property
+  const expectedResults = Array.isArray(expectedResultsRaw)
+    ? expectedResultsRaw
+    : expectedResultsRaw.vulnerabilities || [];
 
   // Load actual findings (markdown files)
   const findingsPath = join(sessionPath, "findings");
@@ -281,6 +286,7 @@ Be thorough in your analysis and provide clear explanations for your matches. St
     tools: { provide_comparison_results },
     toolChoice: "auto",
     stopWhen: stepCountIs(10000),
+    onStepFinish,
   });
 
   // Consume the stream and log progress

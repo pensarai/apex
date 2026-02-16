@@ -17,6 +17,18 @@ export interface PocRunSummary {
   }>;
 }
 
+export interface TokenMetrics {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  estimatedCostUsd: number;
+  durationMs: number;
+  // Cache breakdown
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  noCacheInputTokens?: number; // inputTokens - cacheRead - cacheWrite
+}
+
 export interface BenchmarkResults {
   repoPath: string;
   branch: string;
@@ -26,6 +38,7 @@ export interface BenchmarkResults {
   flagDetection: FlagDetectionResult;
   expectedFlag: string | null;
   pocRunSummary?: PocRunSummary;
+  tokenMetrics?: TokenMetrics;
   timestamp: string;
 }
 
@@ -125,6 +138,11 @@ export interface APEXBenchmarkSummary {
     avgAccuracy: number;
     avgPrecision: number;
     avgRecall: number;
+    totalInputTokens: number;
+    totalOutputTokens: number;
+    totalTokens: number;
+    totalEstimatedCostUsd: number;
+    totalDurationMs: number;
   };
   benchmarks: APEXBenchmarkEntry[];
   failedBenchmarks: string[];
@@ -143,6 +161,7 @@ export interface APEXBenchmarkEntry {
   expectedVulns?: number;
   detectedVulns?: number;
   sessionPath?: string;
+  tokenMetrics?: TokenMetrics;
   error?: string;
   errorCategory?: string;
 }

@@ -1,3 +1,43 @@
+## Argus Benchmark Runner
+
+This branch contains the **Argus benchmark runner** infrastructure for evaluating Apex against the APEX and PACE benchmark suites. Benchmarks run in remote sandboxed environments via [Daytona](https://www.daytona.io/).
+
+### Quick Start
+
+```bash
+# Run specific branches
+bun run scripts/run-apex-benchmarks.ts --branches APEX-001-25 --model claude-haiku-4-5
+
+# Run all benchmarks
+bun run scripts/run-apex-benchmarks.ts --all --model claude-sonnet-4-5
+
+# Run in parallel with batch size
+bun run scripts/run-apex-benchmarks.ts --all --parallel --batch-size 5
+
+# Save results to a specific directory
+bun run scripts/run-apex-benchmarks.ts --all --output ./results
+
+# Compare results across runs
+bun run scripts/compare-results.ts <run1-dir> <run2-dir>
+```
+
+### Key Flags
+
+| Flag | Description |
+|------|-------------|
+| `--branches <ids>` | Comma-separated benchmark branch IDs |
+| `--all` | Run all available benchmarks |
+| `--model <model>` | AI model to use |
+| `--parallel` | Run benchmarks in parallel |
+| `--batch-size <n>` | Number of parallel benchmarks |
+| `--output <dir>` | Output directory for results |
+
+### Requirements
+
+- **Daytona API key**: Set `DAYTONA_API_KEY` environment variable for remote sandboxed execution
+
+---
+
 <h1 align="center">Pensar Apex</h1>
 
 <p align="center">

@@ -13,7 +13,7 @@ import { runAgent as runAttackSurfaceAgent } from "../../attackSurfaceAgent/agen
 import { runPentestPipeline } from "../../orchestrator/pipeline";
 import { generatePentestReport } from "../../reportGeneratorAgent";
 import type { AttackSurfaceAnalysisResults } from "../../attackSurfaceAgent/types";
-import type { BenchmarkResults, APEXBenchmarkResults, ComparisonResult } from "../types";
+import type { BenchmarkResults, APEXBenchmarkResults, ComparisonResult, TokenMetrics } from "../types";
 import type {
   ExecuteCommandOpts,
   ExecuteCommandResult,
@@ -387,6 +387,35 @@ ${result.error ? `\n${"=".repeat(60)}\nERROR:\n${"=".repeat(60)}\n${result.error
 }
 
 /**
+ * Estimate cost in USD based on model and token counts.
+ * Pricing per 1M tokens (as of 2026).
+ */
+function estimateCost(
+  model: string,
+  inputTokens: number,
+  outputTokens: number,
+  cacheReadTokens: number = 0,
+  cacheWriteTokens: number = 0,
+): number {
+  const pricing: Record<string, { input: number; output: number }> = {
+    "claude-sonnet-4-20250514": { input: 3, output: 15 },
+    "claude-haiku-4-5": { input: 0.80, output: 4 },
+    "claude-opus-4-6": { input: 15, output: 75 },
+  };
+  const p = pricing[model] ?? pricing["claude-sonnet-4-20250514"]!;
+
+  // inputTokens is the total (includes cache read + write + noCache)
+  // Deduct cache tokens and apply their special rates
+  const noCacheInputTokens = inputTokens - cacheReadTokens - cacheWriteTokens;
+  const inputCost = noCacheInputTokens * p.input;
+  const cacheReadCost = cacheReadTokens * p.input * 0.1;    // 90% discount
+  const cacheWriteCost = cacheWriteTokens * p.input * 1.25;  // 25% surcharge
+  const outputCost = outputTokens * p.output;
+
+  return (inputCost + cacheReadCost + cacheWriteCost + outputCost) / 1_000_000;
+}
+
+/**
  * Run a single benchmark with Daytona sandbox using Docker-in-Docker.
  *
  * Architecture:
@@ -403,6 +432,21 @@ export async function runBenchmarkWithDaytona(
   const apiKey = options.apiKey || process.env.DAYTONA_API_KEY;
   const orgId = options.orgId || process.env.DAYTONA_ORG_ID;
   const startTime = Date.now();
+
+  // Token tracking accumulator
+  let totalInputTokens = 0;
+  let totalOutputTokens = 0;
+  let totalCacheReadTokens = 0;
+  let totalCacheWriteTokens = 0;
+
+  const tokenTrackingStepFinish = (step: any) => {
+    if (step.usage) {
+      totalInputTokens += step.usage.inputTokens ?? 0;
+      totalOutputTokens += step.usage.outputTokens ?? 0;
+      totalCacheReadTokens += step.usage.inputTokenDetails?.cacheReadTokens ?? 0;
+      totalCacheWriteTokens += step.usage.inputTokenDetails?.cacheWriteTokens ?? 0;
+    }
+  };
 
   if (!apiKey) {
     throw new Error("DAYTONA_API_KEY is required");
@@ -623,46 +667,82 @@ export async function runBenchmarkWithDaytona(
       ),
     }));
 
-    // Upload files in batches to avoid overwhelming the API
-    const BATCH_SIZE = 10;
-    const batches = [];
-    for (let i = 0; i < uploadFiles.length; i += BATCH_SIZE) {
-      batches.push(uploadFiles.slice(i, i + BATCH_SIZE));
-    }
+    // Upload all files in a single batch to avoid 403 rate limiting from Daytona's nginx proxy.
+    // Previous approach of batching by 10 caused consistent 403 Forbidden on subsequent batches.
+    // If the single batch fails, retry with exponential backoff before falling back to
+    // individual file uploads via shell commands.
+    const MAX_UPLOAD_RETRIES = 3;
+    let uploadSuccess = false;
 
-    try {
-      console.log(
-        `[${benchmarkName}] 📤 Uploading ${uploadFiles.length} files in ${batches.length} batch(es)...`
-      );
-
-      for (let i = 0; i < batches.length; i++) {
-        const batch = batches[i]!;
+    for (let attempt = 1; attempt <= MAX_UPLOAD_RETRIES; attempt++) {
+      try {
         console.log(
-          `[${benchmarkName}] 📦 Batch ${i + 1}/${batches.length}: ${batch.length} files...`
+          `[${benchmarkName}] 📤 Uploading ${uploadFiles.length} files (attempt ${attempt}/${MAX_UPLOAD_RETRIES})...`
         );
-        await sandbox.fs.uploadFiles(batch, 300);
-
-        // Small delay between batches to avoid rate limiting
-        if (i < batches.length - 1) {
-          await new Promise((resolve) => setTimeout(resolve, 1000));
+        await sandbox.fs.uploadFiles(uploadFiles, 300);
+        console.log(
+          `[${benchmarkName}] ✅ Benchmark uploaded to ${remoteBenchmarkPath}`
+        );
+        uploadSuccess = true;
+        break;
+      } catch (uploadError: any) {
+        console.error(`[${benchmarkName}] ❌ Upload attempt ${attempt} failed: ${uploadError.message}`);
+        if (uploadError.response) {
+          console.error(
+            `[${benchmarkName}] Response status: ${uploadError.response.status}`
+          );
+        }
+        if (attempt < MAX_UPLOAD_RETRIES) {
+          const delay = attempt * 3000; // 3s, 6s backoff
+          console.log(`[${benchmarkName}] ⏳ Retrying upload in ${delay / 1000}s...`);
+          await new Promise((resolve) => setTimeout(resolve, delay));
         }
       }
+    }
 
-      console.log(
-        `[${benchmarkName}] ✅ Benchmark uploaded to ${remoteBenchmarkPath}`
-      );
-    } catch (uploadError: any) {
-      console.error(`[${benchmarkName}] ❌ Upload failed: ${uploadError.message}`);
-      if (uploadError.response) {
-        console.error(
-          `[${benchmarkName}] Response status: ${uploadError.response.status}`
+    // Fallback: upload files individually via shell commands if bulk upload failed
+    if (!uploadSuccess) {
+      console.log(`[${benchmarkName}] 📤 Falling back to shell-based file upload...`);
+      try {
+        // Create the remote benchmark directory
+        await sandbox.process.executeCommand(
+          `mkdir -p ${remoteBenchmarkPath}`,
+          undefined,
+          undefined,
+          30000
         );
-        console.error(
-          `[${benchmarkName}] Response data:`,
-          uploadError.response.data
+
+        for (const file of uploadFiles) {
+          // Create parent directory
+          const parentDir = file.destination.substring(0, file.destination.lastIndexOf('/'));
+          if (parentDir) {
+            await sandbox.process.executeCommand(
+              `mkdir -p ${parentDir}`,
+              undefined,
+              undefined,
+              10000
+            );
+          }
+
+          // Write file content via base64-encoded shell command to handle binary/special chars
+          const contentBase64 = Buffer.isBuffer(file.source)
+            ? file.source.toString("base64")
+            : Buffer.from(file.source as any).toString("base64");
+          await sandbox.process.executeCommand(
+            `echo '${contentBase64}' | base64 -d > ${file.destination}`,
+            undefined,
+            undefined,
+            30000
+          );
+        }
+
+        console.log(
+          `[${benchmarkName}] ✅ Benchmark uploaded via shell fallback to ${remoteBenchmarkPath}`
         );
+      } catch (shellError: any) {
+        console.error(`[${benchmarkName}] ❌ Shell upload fallback also failed: ${shellError.message}`);
+        throw new Error(`File upload failed after ${MAX_UPLOAD_RETRIES} bulk attempts and shell fallback: ${shellError.message}`);
       }
-      throw new Error(`File upload failed: ${uploadError.message}`);
     }
 
     // Step 3: Extract flag(s) from local benchmark directory
@@ -753,6 +833,30 @@ export async function runBenchmarkWithDaytona(
     );
 
     if (startDockerResult.exitCode !== 0) {
+      // Fetch container logs and status for debugging before throwing
+      console.error(`[${benchmarkName}] ⚠️ docker compose --wait failed, fetching diagnostics...`);
+      try {
+        const logsResult = await sandbox.process.executeCommand(
+          `cd ${remoteBenchmarkPath} && docker compose logs --tail=80 2>&1`,
+          undefined, undefined, 30000
+        );
+        console.error(`[${benchmarkName}] 📋 Container logs:\n${logsResult.result}`);
+
+        const psResult = await sandbox.process.executeCommand(
+          `cd ${remoteBenchmarkPath} && docker compose ps -a 2>&1`,
+          undefined, undefined, 15000
+        );
+        console.error(`[${benchmarkName}] 📋 Container status:\n${psResult.result}`);
+
+        const inspectResult = await sandbox.process.executeCommand(
+          `cd ${remoteBenchmarkPath} && docker inspect --format='{{.State.Status}} {{.State.Health.Status}} {{range .State.Health.Log}}{{.ExitCode}}:{{.Output}}{{end}}' $(docker compose ps -q) 2>&1`,
+          undefined, undefined, 15000
+        );
+        console.error(`[${benchmarkName}] 📋 Health inspect:\n${inspectResult.result}`);
+      } catch (diagError: any) {
+        console.error(`[${benchmarkName}] Could not fetch diagnostics: ${diagError.message}`);
+      }
+
       throw new Error(
         `Failed to start docker compose: ${startDockerResult.result} CODE: ${startDockerResult.exitCode}`
       );
@@ -895,10 +999,12 @@ export async function runBenchmarkWithDaytona(
         // Execute command with timeout wrapper
         // Use Promise.race to ensure we don't hang indefinitely on Daytona SDK issues
         const effectiveTimeout = opts.timeout || 120000;
+        const raceTimeout = effectiveTimeout + 30000; // Add 30s buffer beyond the Daytona timeout
+        let timeoutId: ReturnType<typeof setTimeout>;
         const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => {
-            reject(new Error(`Command timed out after ${effectiveTimeout}ms: ${opts.command.substring(0, 50)}...`));
-          }, effectiveTimeout + 30000); // Add 30s buffer beyond the Daytona timeout
+          timeoutId = setTimeout(() => {
+            reject(new Error(`Command timed out after ${raceTimeout}ms: ${opts.command.substring(0, 50)}...`));
+          }, raceTimeout);
         });
 
         const executePromise = (async () => {
@@ -917,7 +1023,18 @@ export async function runBenchmarkWithDaytona(
           }
         })();
 
-        const result = await Promise.race([executePromise, timeoutPromise]);
+        // Swallow late rejections from the losing promise to prevent unhandled rejection crashes
+        executePromise.catch(() => {});
+        timeoutPromise.catch(() => {});
+
+        let result;
+        try {
+          result = await Promise.race([executePromise, timeoutPromise]);
+          clearTimeout(timeoutId!);
+        } catch (raceError) {
+          clearTimeout(timeoutId!);
+          throw raceError;
+        }
 
         if (isLongRunningCommand) {
           console.log(`[${benchmarkName}] ✅ Long-running command completed with exit code: ${result.exitCode}`);
@@ -1115,6 +1232,7 @@ export async function runBenchmarkWithDaytona(
         objective: "Comprehensive attack surface discovery and target identification",
         model,
         session,
+        onStepFinish: tokenTrackingStepFinish,
         toolOverride: {
           execute_command: executeCommandOverride,
           http_request: httpRequestOverride,
@@ -1151,6 +1269,7 @@ export async function runBenchmarkWithDaytona(
             toolOverride: {
               execute_command: executeCommandOverride,
             },
+            onStepFinish: tokenTrackingStepFinish,
             onSubAgentStart: (subagentId, endpoint, vulnClass) => {
               console.log(`[${benchmarkName}] [testing] Starting ${vulnClass} on ${endpoint}`);
             },
@@ -1222,6 +1341,7 @@ export async function runBenchmarkWithDaytona(
           repoPath: branchRootPath,
           sessionPath: session.rootPath,
           model,
+          onStepFinish: tokenTrackingStepFinish,
         });
 
         console.log(`[${benchmarkName}] ✅ Comparison complete:`);
@@ -1291,7 +1411,25 @@ export async function runBenchmarkWithDaytona(
       targetUrl
     );
 
-    // Step 14: Generate benchmark results
+    // Step 14: Calculate token metrics
+    const durationMs = Date.now() - startTime;
+    const tokenMetrics: TokenMetrics = {
+      inputTokens: totalInputTokens,
+      outputTokens: totalOutputTokens,
+      totalTokens: totalInputTokens + totalOutputTokens,
+      estimatedCostUsd: estimateCost(
+        String(model), totalInputTokens, totalOutputTokens,
+        totalCacheReadTokens, totalCacheWriteTokens
+      ),
+      durationMs,
+      cacheReadTokens: totalCacheReadTokens,
+      cacheWriteTokens: totalCacheWriteTokens,
+      noCacheInputTokens: totalInputTokens - totalCacheReadTokens - totalCacheWriteTokens,
+    };
+
+    console.log(`[${benchmarkName}] 📊 Token usage: ${totalInputTokens.toLocaleString()} input (${totalCacheReadTokens.toLocaleString()} cache read, ${totalCacheWriteTokens.toLocaleString()} cache write), ${totalOutputTokens.toLocaleString()} output (est. $${tokenMetrics.estimatedCostUsd.toFixed(2)})`);
+
+    // Step 15: Generate benchmark results
     // For APEX benchmarks, include comparison results
     const baseResults: BenchmarkResults = {
       repoPath: benchmarkPath,
@@ -1319,6 +1457,7 @@ export async function runBenchmarkWithDaytona(
               })),
             }
           : undefined,
+      tokenMetrics,
       timestamp: new Date().toISOString(),
     };
 
@@ -1335,7 +1474,12 @@ export async function runBenchmarkWithDaytona(
     const reportPath = path.join(session.rootPath, "benchmark_results.json");
     writeFileSync(reportPath, JSON.stringify(results, null, 2));
 
+    // Write token metrics as a separate file for easy extraction
+    const tokenMetricsPath = path.join(session.rootPath, "token-metrics.json");
+    writeFileSync(tokenMetricsPath, JSON.stringify(tokenMetrics, null, 2));
+
     console.log(`\n[${benchmarkName}] 📄 Benchmark report saved to: ${reportPath}`);
+    console.log(`[${benchmarkName}] 📊 Token metrics saved to: ${tokenMetricsPath}`);
 
     // Display results based on benchmark type
     if (options.benchmarkType === "apex" && comparisonResult) {
