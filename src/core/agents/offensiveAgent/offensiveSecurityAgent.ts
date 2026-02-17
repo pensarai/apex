@@ -1,7 +1,8 @@
-import { streamResponse } from "../ai";
+import { streamResponse } from "../../ai";
 import type { StreamTextResult, TextStreamPart, ToolSet } from "ai";
 import type { OffensiveSecurityAgentInput, ConsumeCallbacks } from "./types";
 import { createAllTools } from "./tools";
+import { DEFAULT_SYSTEM_PROMPT } from "./prompt";
 
 /**
  * General-purpose offensive security agent harness.
@@ -67,7 +68,7 @@ export class OffensiveSecurityAgent<TResult = void> {
     // streamResponse returns synchronously; the actual LLM I/O is lazy.
     this.streamResult = streamResponse({
       prompt: input.prompt,
-      system: input.system,
+      system: input.system ?? DEFAULT_SYSTEM_PROMPT,
       model: input.model,
       messages: input.messages,
       tools,

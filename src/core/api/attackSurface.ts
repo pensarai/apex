@@ -1,7 +1,7 @@
 import {
   BlackboxAttackSurfaceAgent,
   type AttackSurfaceAgentInput,
-} from "../agents/attackSurface/blackboxAgent";
+} from "../agents/specialized/attackSurface/blackboxAgent";
 // ---------------------------------------------------------------------------
 // Convenience runner
 // ---------------------------------------------------------------------------

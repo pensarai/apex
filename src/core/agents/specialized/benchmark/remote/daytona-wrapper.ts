@@ -1,5 +1,5 @@
 import { Daytona, type Sandbox } from "@daytonaio/sdk";
-import type { AIModel } from "../../../ai";
+import type { AIModel } from "../../../../ai";
 import path from "path";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "fs";
 import pLimit from "p-limit";

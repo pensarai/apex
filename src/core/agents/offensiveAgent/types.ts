@@ -8,9 +8,9 @@ import type {
   ToolChoice,
   ToolSet,
 } from "ai";
-import type { AIModel } from "../ai";
-import type { AIAuthConfig } from "../ai/utils";
-import type { SessionInfo } from "../session";
+import type { AIModel } from "../../ai";
+import type { AIAuthConfig } from "../../ai/utils";
+import type { SessionInfo } from "../../session";
 import type { ToolName } from "./tools";
 import { z } from "zod";
 

@@ -1,6 +1,6 @@
-import type { AIModel } from "../../ai";
-import type { AIAuthConfig } from "../../ai/utils";
-import type { SessionInfo } from "../../session";
+import type { AIModel } from "../../../ai";
+import type { AIAuthConfig } from "../../../ai/utils";
+import type { SessionInfo } from "../../../session";
 
 import type { ConsumeCallbacks, SubagentConsumeCallbacks } from "../types";
 

@@ -1,7 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import type { ToolContext } from "./types";
-import type { AttackSurfaceResult } from "../../agents/attackSurface/blackboxAgent";
+import type { AttackSurfaceResult } from "../../specialized/attackSurface/blackboxAgent";
 
 /**
  * Factory for the `run_attack_surface` tool.
@@ -51,7 +51,7 @@ Returns:
         // Dynamic import to break circular dependency:
         // AttackSurfaceAgent → OffensiveSecurityAgent → tools/index → runAttackSurface → AttackSurfaceAgent
         const { BlackboxAttackSurfaceAgent } =
-          await import("../../agents/attackSurface/blackboxAgent");
+          await import("../../specialized/attackSurface/blackboxAgent");
 
         const agent = new BlackboxAttackSurfaceAgent({
           target,

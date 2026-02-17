@@ -3,7 +3,7 @@ import { z } from "zod";
 import {
   extractJavascriptEndpoints,
   type EndpointInfo,
-} from "../../agents/attackSurface/jsExtraction";
+} from "../../specialized/attackSurface/jsExtraction";
 
 /**
  * Factory for the `crawl_authenticated_area` tool.

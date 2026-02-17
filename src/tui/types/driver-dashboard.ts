@@ -3,7 +3,7 @@
  * Used in driver mode for manual agent orchestration
  */
 
-import type { PentestTarget } from "../../core/agents/attackSurface/types";
+import type { PentestTarget } from "../../core/agents/specialized/attackSurface/types";
 import type { DisplayMessage } from "../components/agent-display";
 import type { SessionInfo } from "../../core/session";
 

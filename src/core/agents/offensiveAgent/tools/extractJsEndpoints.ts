@@ -1,6 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { extractJavascriptEndpoints } from "../../agents/attackSurface/jsExtraction";
+import { extractJavascriptEndpoints } from "../../specialized/attackSurface/jsExtraction";
 
 /**
  * Factory for the `extract_js_endpoints` tool.

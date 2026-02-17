@@ -1,7 +1,7 @@
 import {
   BenchmarkComparisonAgent,
   type BenchmarkComparisonAgentInput,
-} from "../agents/benchmarkComparisonAgent";
+} from "../agents/specialized/benchmarkComparisonAgent";
 // ---------------------------------------------------------------------------
 // Convenience runner
 // ---------------------------------------------------------------------------

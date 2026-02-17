@@ -1,7 +1,7 @@
 import {
   AuthenticationAgent,
   type AuthenticationAgentInput,
-} from "../agents/authenticationAgent/agent";
+} from "../agents/specialized/authenticationAgent/agent";
 // ---------------------------------------------------------------------------
 // Convenience runner
 // ---------------------------------------------------------------------------

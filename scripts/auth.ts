@@ -22,7 +22,7 @@
 
 import { sessions } from "../src/core/session";
 import type { AIModel } from "../src/core/ai";
-import type { AuthCredentials } from "../src/core/agents/authenticationAgent/types";
+import type { AuthCredentials } from "../src/core/agents/specialized/authenticationAgent/types";
 import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { runAuthenticationAgent } from "../src/core/api";

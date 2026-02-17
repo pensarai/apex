@@ -2,8 +2,8 @@ import { tool } from "ai";
 import { z } from "zod";
 import { join } from "path";
 import { writeFileSync } from "fs";
-import type { ToolContext } from "../../agents/offensiveAgent/tools/types";
-import { type AuthCredentials } from "../../agents/specialized/authenticationAgent/types";
+import type { ToolContext } from "./types";
+import { type AuthCredentials } from "../../../agents/specialized/authenticationAgent/types";
 // runAuthenticationAgent is dynamically imported inside execute() to break
 // the circular dependency: authAgent → offensiveSecurityAgent → tools → delegateAuth → authAgent
 
@@ -237,7 +237,7 @@ When to use delegate_to_auth_subagent vs authenticate_session:
         // Dynamic import to break circular dependency:
         // authAgent → offensiveSecurityAgent → tools/index → delegateAuth → api/authentication → authAgent
         const { runAuthenticationAgent } =
-          await import("../../api/authentication");
+          await import("../../../api/authentication");
 
         const result = await runAuthenticationAgent({
           target,

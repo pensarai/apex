@@ -6,7 +6,7 @@
  */
 
 import { z } from "zod";
-import type { SessionInfo } from "../../session";
+import type { SessionInfo } from "../../../session";
 
 // =============================================================================
 // Constants
@@ -68,7 +68,6 @@ export type AuthMethod = (typeof AUTH_METHODS)[number];
 export type TokenType = (typeof TOKEN_TYPES)[number];
 export type AuthStatus = (typeof AUTH_STATUSES)[number];
 export type RoleLevel = (typeof ROLE_LEVELS)[number];
-export type AuthBarrierType = (typeof AUTH_BARRIER_TYPES)[number];
 export type RegistrationBarrier = (typeof REGISTRATION_BARRIERS)[number];
 
 /**
@@ -112,6 +111,8 @@ export interface AuthState {
   roleLevel?: RoleLevel;
   discoveredScopes?: string[];
 }
+
+export type AuthBarrierType = (typeof AUTH_BARRIER_TYPES)[number];
 
 /**
  * Authentication barrier information
