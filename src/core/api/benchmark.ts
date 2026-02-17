@@ -7,7 +7,7 @@ import {
 // ---------------------------------------------------------------------------
 
 export async function runBenchmarkComparisonAgent(
-  input: BenchmarkComparisonAgentInput
+  input: BenchmarkComparisonAgentInput,
 ) {
   const agent = new BenchmarkComparisonAgent(input);
 
@@ -22,7 +22,7 @@ export async function runBenchmarkComparisonAgent(
     console.log(
       `\nComparison: ${comparison.matched.length}/${comparison.totalExpected} matched, ` +
         `Precision: ${Math.round(comparison.precision * 100)}%, ` +
-        `Recall: ${Math.round(comparison.recall * 100)}%`
+        `Recall: ${Math.round(comparison.recall * 100)}%`,
     );
   }
   console.log(`Results: ${resultsPath}`);

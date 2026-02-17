@@ -24,7 +24,7 @@ Use this to:
       toolCallDescription: z
         .string()
         .describe(
-          "A concise, human-readable description of what this tool call is doing"
+          "A concise, human-readable description of what this tool call is doing",
         ),
     }),
     execute: async (params) => {
@@ -64,7 +64,8 @@ Use this to:
               inaccessible.push(endpoint);
             }
           } catch (error: unknown) {
-            const errorMsg = error instanceof Error ? error.message : String(error);
+            const errorMsg =
+              error instanceof Error ? error.message : String(error);
             results.push({
               endpoint,
               status: 0,

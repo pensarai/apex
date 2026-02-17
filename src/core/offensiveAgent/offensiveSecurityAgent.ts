@@ -42,7 +42,7 @@ export class OffensiveSecurityAgent<TResult = void> {
   public readonly streamResult: StreamTextResult<ToolSet, never>;
 
   private readonly resolveResult?: (
-    streamResult: StreamTextResult<ToolSet, never>
+    streamResult: StreamTextResult<ToolSet, never>,
   ) => TResult | Promise<TResult>;
 
   constructor(input: OffensiveSecurityAgentInput<TResult>) {

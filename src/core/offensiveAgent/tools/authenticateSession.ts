@@ -42,7 +42,7 @@ Use this to:
       toolCallDescription: z
         .string()
         .describe(
-          "A concise, human-readable description of what this tool call is doing"
+          "A concise, human-readable description of what this tool call is doing",
         ),
     }),
     execute: async (params) => {
@@ -78,7 +78,7 @@ Use this to:
           authRequest.headers = { "Content-Type": "application/json" };
         } else if (method === "basic_auth") {
           const authHeader = Buffer.from(`${username}:${password}`).toString(
-            "base64"
+            "base64",
           );
           authRequest.headers = { Authorization: `Basic ${authHeader}` };
         }

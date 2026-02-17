@@ -81,7 +81,7 @@ export class BenchmarkComparisonAgent extends OffensiveSecurityAgent<BenchmarkCo
         if (existsSync(resultsPath)) {
           try {
             comparison = JSON.parse(
-              readFileSync(resultsPath, "utf-8")
+              readFileSync(resultsPath, "utf-8"),
             ) as ComparisonResult;
           } catch {
             // May not have been written
@@ -136,14 +136,14 @@ You MUST call the provide_comparison_results tool with your analysis.`;
 
 function buildComparisonPrompt(
   expectedResults: Record<string, unknown>[],
-  actualFindings: string
+  actualFindings: string,
 ): string {
   const expectedList = expectedResults
     .map(
       (r: Record<string, unknown>, i: number) =>
         `${i + 1}. **${r.title}** (${r.severity})\n   ${
           r.reason || r.description || ""
-        }`
+        }`,
     )
     .join("\n");
 

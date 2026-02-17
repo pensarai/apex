@@ -32,7 +32,7 @@ Returns a confidence score and identifies potential gaps based on:
       toolCallDescription: z
         .string()
         .describe(
-          "A concise, human-readable description of what this tool call is doing"
+          "A concise, human-readable description of what this tool call is doing",
         ),
     }),
     execute: async (params) => {
@@ -74,12 +74,12 @@ Returns a confidence score and identifies potential gaps based on:
 
       // Check: CRUD enumeration for resource patterns
       const resourcePatterns = discoveredEndpoints.filter((ep) =>
-        ep.includes("{id}")
+        ep.includes("{id}"),
       );
       if (
         resourcePatterns.length > 0 &&
         !discoveredEndpoints.some(
-          (ep) => ep.includes("receipt") || ep.includes("archive")
+          (ep) => ep.includes("receipt") || ep.includes("archive"),
         )
       ) {
         gaps.push({

@@ -190,7 +190,7 @@ Returns discovered endpoints and recommended login approach.`,
       }
 
       const basicAuthEndpoint = discoveredEndpoints.find((e) =>
-        e.authIndicators.includes("HTTP Basic Auth")
+        e.authIndicators.includes("HTTP Basic Auth"),
       );
 
       const loginEndpoint =
@@ -200,10 +200,10 @@ Returns discovered endpoints and recommended login approach.`,
             e.methods.includes("POST") &&
             (e.authIndicators.includes("expects body (400)") ||
               e.authIndicators.includes("invalid credentials (401)") ||
-              e.authIndicators.includes("expects credentials"))
+              e.authIndicators.includes("expects credentials")),
         ) ||
         discoveredEndpoints.find(
-          (e) => e.likelyPurpose === "login" && e.methods.includes("POST")
+          (e) => e.likelyPurpose === "login" && e.methods.includes("POST"),
         );
 
       let message = "";
@@ -225,8 +225,8 @@ Returns discovered endpoints and recommended login approach.`,
         recommendedMethod: basicAuthEndpoint
           ? "GET (with Basic Auth header)"
           : loginEndpoint
-          ? "POST"
-          : undefined,
+            ? "POST"
+            : undefined,
         message,
       };
     },

@@ -12,7 +12,7 @@ export const executeCommandInputSchema = z.object({
   toolCallDescription: z
     .string()
     .describe(
-      "A concise, human-readable description of what this tool call is doing (e.g., 'Scanning for open ports on target')"
+      "A concise, human-readable description of what this tool call is doing (e.g., 'Scanning for open ports on target')",
     ),
 });
 
@@ -108,8 +108,8 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
             error: killed
               ? "Command timed out"
               : code !== 0
-              ? `Exit code: ${code}`
-              : "",
+                ? `Exit code: ${code}`
+                : "",
           });
         });
 

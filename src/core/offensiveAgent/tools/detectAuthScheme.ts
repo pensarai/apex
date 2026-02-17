@@ -96,19 +96,19 @@ Returns detected scheme and required fields for authentication.`,
           const fields: Record<string, string> = {};
           // Detect username field
           const usernameMatch = body.match(
-            /name=['"]?(username|user|email|login|user_name)['"]?/i
+            /name=['"]?(username|user|email|login|user_name)['"]?/i,
           );
           if (usernameMatch) fields.usernameField = usernameMatch[1];
 
           // Detect password field
           const passwordMatch = body.match(
-            /name=['"]?(password|pass|passwd)['"]?/i
+            /name=['"]?(password|pass|passwd)['"]?/i,
           );
           if (passwordMatch) fields.passwordField = passwordMatch[1];
 
           // Detect CSRF
           const csrfMatch = body.match(
-            /name=['"]?(csrf|_csrf|csrfmiddlewaretoken|_token|authenticity_token)['"]?\s+value=['"]?([^'"]+)['"]?/i
+            /name=['"]?(csrf|_csrf|csrfmiddlewaretoken|_token|authenticity_token)['"]?\s+value=['"]?([^'"]+)['"]?/i,
           );
           const csrfRequired = !!csrfMatch;
 
@@ -162,7 +162,7 @@ Returns detected scheme and required fields for authentication.`,
 
 function detectBarrier(
   bodyLower: string,
-  statusCode: number
+  statusCode: number,
 ): { type: string; details: string } | null {
   if (
     bodyLower.includes("captcha") ||

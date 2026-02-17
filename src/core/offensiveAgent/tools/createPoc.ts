@@ -2,7 +2,13 @@ import { tool } from "ai";
 import { z } from "zod";
 import { join } from "path";
 import { spawn } from "child_process";
-import { existsSync, writeFileSync, chmodSync, unlinkSync, mkdirSync } from "fs";
+import {
+  existsSync,
+  writeFileSync,
+  chmodSync,
+  unlinkSync,
+  mkdirSync,
+} from "fs";
 import type { ToolContext } from "./types";
 
 const MAX_POC_ATTEMPTS = 3;
@@ -18,15 +24,13 @@ function sanitizeFilename(str: string): string {
 
 export const createPocInputSchema = z.object({
   pocName: z.string().describe("Short descriptive name for the POC"),
-  pocType: z
-    .enum(["bash", "python", "javascript"])
-    .describe("Script language"),
+  pocType: z.enum(["bash", "python", "javascript"]).describe("Script language"),
   pocContent: z.string().describe("The full POC script content"),
   description: z.string().describe("What this POC demonstrates"),
   toolCallDescription: z
     .string()
     .describe(
-      "A concise, human-readable description of what this tool call is doing"
+      "A concise, human-readable description of what this tool call is doing",
     ),
 });
 
@@ -89,8 +93,8 @@ Max ${MAX_POC_ATTEMPTS} attempts per approach before pivoting.`,
           poc.pocType === "bash"
             ? ".sh"
             : poc.pocType === "python"
-            ? ".py"
-            : ".js";
+              ? ".py"
+              : ".js";
         const sanitizedName = sanitizeFilename(poc.pocName);
         const filename = `poc_${sanitizedName}${extension}`;
         const pocPath = join(pocsPath, filename);
@@ -110,7 +114,10 @@ Max ${MAX_POC_ATTEMPTS} attempts per approach before pivoting.`,
         // Add header comment
         const commentChar = poc.pocType === "javascript" ? "//" : "#";
         const header = `${commentChar} POC: ${poc.description}\n${commentChar} Created: ${new Date().toISOString()}\n${commentChar} Attempt: ${currentAttempts}/${MAX_POC_ATTEMPTS}\n\n`;
-        const afterShebang = pocContent.replace(/^#!.*\n/, (match) => match + header);
+        const afterShebang = pocContent.replace(
+          /^#!.*\n/,
+          (match) => match + header,
+        );
         pocContent = afterShebang;
 
         writeFileSync(pocPath, pocContent);
@@ -121,14 +128,14 @@ Max ${MAX_POC_ATTEMPTS} attempts per approach before pivoting.`,
           poc.pocType === "bash"
             ? "bash"
             : poc.pocType === "python"
-            ? "python3"
-            : "node";
+              ? "python3"
+              : "node";
 
         const { stdout, stderr, exitCode } = await runScript(
           runner,
           pocPath,
           60000,
-          ctx.abortSignal
+          ctx.abortSignal,
         );
 
         // Delete on failure
@@ -172,7 +179,7 @@ function runScript(
   runner: string,
   scriptPath: string,
   timeout: number,
-  abortSignal?: AbortSignal
+  abortSignal?: AbortSignal,
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   return new Promise((resolve) => {
     const child = spawn(runner, [scriptPath], {
@@ -202,7 +209,7 @@ function runScript(
       const handler = () => child.kill("SIGTERM");
       abortSignal.addEventListener("abort", handler, { once: true });
       child.on("close", () =>
-        abortSignal.removeEventListener("abort", handler)
+        abortSignal.removeEventListener("abort", handler),
       );
     }
   });

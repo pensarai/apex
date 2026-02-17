@@ -80,7 +80,7 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    * If omitted, `consume()` returns `void`.
    */
   resolveResult?: (
-    streamResult: StreamTextResult<ToolSet, never>
+    streamResult: StreamTextResult<ToolSet, never>,
   ) => TResult | Promise<TResult>;
 };
 
@@ -90,13 +90,13 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
  */
 export type ConsumeCallbacks = {
   onTextDelta?: (
-    delta: Extract<TextStreamPart<ToolSet>, { type: "text-delta" }>
+    delta: Extract<TextStreamPart<ToolSet>, { type: "text-delta" }>,
   ) => void;
   onToolCall?: (
-    delta: Extract<TextStreamPart<ToolSet>, { type: "tool-call" }>
+    delta: Extract<TextStreamPart<ToolSet>, { type: "tool-call" }>,
   ) => void;
   onToolResult?: (
-    delta: Extract<TextStreamPart<ToolSet>, { type: "tool-result" }>
+    delta: Extract<TextStreamPart<ToolSet>, { type: "tool-result" }>,
   ) => void;
   onError?: (error: unknown) => void;
 };

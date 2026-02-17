@@ -17,7 +17,7 @@ export async function runAuthenticationAgent(input: AuthenticationAgentInput) {
   });
 
   console.log(
-    `\nAuthentication ${success ? "succeeded" : "failed"}: ${summary}`
+    `\nAuthentication ${success ? "succeeded" : "failed"}: ${summary}`,
   );
   return { success, summary };
 }

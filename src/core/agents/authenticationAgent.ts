@@ -161,7 +161,7 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
 function buildAuthPrompt(
   target: string,
   credentials?: AuthenticationAgentInput["credentials"],
-  authHints?: AuthenticationAgentInput["authHints"]
+  authHints?: AuthenticationAgentInput["authHints"],
 ): string {
   const parts: string[] = [`TARGET: ${target}\n`];
 
@@ -175,7 +175,7 @@ function buildAuthPrompt(
     parts.push("");
   } else {
     parts.push(
-      "No credentials provided. Discover authentication requirements and attempt registration if possible.\n"
+      "No credentials provided. Discover authentication requirements and attempt registration if possible.\n",
     );
   }
 
@@ -188,7 +188,7 @@ function buildAuthPrompt(
       parts.push("- Browser automation may be needed");
     if (authHints.protectedEndpoints?.length) {
       parts.push(
-        `- Protected endpoints: ${authHints.protectedEndpoints.join(", ")}`
+        `- Protected endpoints: ${authHints.protectedEndpoints.join(", ")}`,
       );
     }
     parts.push("");
@@ -219,7 +219,7 @@ export async function runAuthenticationAgent(input: AuthenticationAgentInput) {
   });
 
   console.log(
-    `\nAuthentication ${success ? "succeeded" : "failed"}: ${summary}`
+    `\nAuthentication ${success ? "succeeded" : "failed"}: ${summary}`,
   );
   return { success, summary };
 }

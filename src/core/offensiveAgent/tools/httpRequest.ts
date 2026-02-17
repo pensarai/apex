@@ -24,13 +24,13 @@ export const httpRequestInputSchema = z.object({
     .boolean()
     .default(false)
     .describe(
-      "Whether to follow HTTP redirects (3xx). Defaults to false so you can see redirect responses with Location and Set-Cookie headers."
+      "Whether to follow HTTP redirects (3xx). Defaults to false so you can see redirect responses with Location and Set-Cookie headers.",
     ),
   timeout: z.number().default(10000),
   toolCallDescription: z
     .string()
     .describe(
-      "A concise, human-readable description of what this tool call is doing (e.g., 'Testing SQL injection on login endpoint')"
+      "A concise, human-readable description of what this tool call is doing (e.g., 'Testing SQL injection on login endpoint')",
     ),
 });
 
@@ -138,8 +138,7 @@ COMMON TESTING PATTERNS:
       } catch (error: unknown) {
         if (timeoutId) clearTimeout(timeoutId);
 
-        const isAbort =
-          error instanceof Error && error.name === "AbortError";
+        const isAbort = error instanceof Error && error.name === "AbortError";
         const errorMsg = isAbort
           ? ctx.abortSignal?.aborted
             ? "Request aborted by user"

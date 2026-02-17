@@ -42,7 +42,7 @@ This tool marks the end of the authentication flow.`,
     }),
     execute: async (result) => {
       console.log(
-        `Authentication complete: ${result.success ? "SUCCESS" : "FAILED"}`
+        `Authentication complete: ${result.success ? "SUCCESS" : "FAILED"}`,
       );
       return {
         success: true,

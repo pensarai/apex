@@ -15,14 +15,11 @@ export const documentFindingInputSchema = z.object({
     .string()
     .describe("Relative path to the POC script (e.g., pocs/poc_sqli.sh)"),
   remediation: z.string().describe("Steps to fix the issue"),
-  references: z
-    .string()
-    .optional()
-    .describe("CVE, CWE, or related references"),
+  references: z.string().optional().describe("CVE, CWE, or related references"),
   toolCallDescription: z
     .string()
     .describe(
-      "A concise, human-readable description of what this tool call is doing (e.g., 'Documenting SQL injection finding')"
+      "A concise, human-readable description of what this tool call is doing (e.g., 'Documenting SQL injection finding')",
     ),
 });
 

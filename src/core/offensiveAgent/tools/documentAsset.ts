@@ -32,7 +32,7 @@ Each asset creates a JSON file in the assets directory for tracking and analysis
       assetName: z
         .string()
         .describe(
-          "Unique name for the asset (e.g., 'example.com', 'api.example.com', 'admin-panel')"
+          "Unique name for the asset (e.g., 'example.com', 'api.example.com', 'admin-panel')",
         ),
       assetType: z
         .enum([
@@ -50,7 +50,7 @@ Each asset creates a JSON file in the assets directory for tracking and analysis
       description: z
         .string()
         .describe(
-          "Detailed description of the asset including what it is and why it's relevant"
+          "Detailed description of the asset including what it is and why it's relevant",
         ),
       details: z
         .preprocess(
@@ -76,7 +76,7 @@ Each asset creates a JSON file in the assets directory for tracking and analysis
               .array(z.string())
               .optional()
               .describe(
-                "Technology stack (e.g., 'Node.js', 'Express', 'MongoDB')"
+                "Technology stack (e.g., 'Node.js', 'Express', 'MongoDB')",
               ),
             endpoints: z
               .array(z.string())
@@ -90,22 +90,25 @@ Each asset creates a JSON file in the assets directory for tracking and analysis
               .union([z.string(), z.number()])
               .optional()
               .describe(
-                "Status (active, inactive, redirect, error) or HTTP status code"
+                "Status (active, inactive, redirect, error) or HTTP status code",
               ),
-          })
+          }),
         )
         .describe("Additional details about the asset"),
       riskLevel: z
-        .preprocess((val) => {
-          if (typeof val === "string") {
-            const upper = val.toUpperCase();
-            if (upper.includes("CRITICAL")) return "CRITICAL";
-            if (upper.includes("HIGH")) return "HIGH";
-            if (upper.includes("MEDIUM")) return "MEDIUM";
-            if (upper.includes("LOW")) return "LOW";
-          }
-          return val;
-        }, z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]))
+        .preprocess(
+          (val) => {
+            if (typeof val === "string") {
+              const upper = val.toUpperCase();
+              if (upper.includes("CRITICAL")) return "CRITICAL";
+              if (upper.includes("HIGH")) return "HIGH";
+              if (upper.includes("MEDIUM")) return "MEDIUM";
+              if (upper.includes("LOW")) return "LOW";
+            }
+            return val;
+          },
+          z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]),
+        )
         .describe("Risk level: LOW-CRITICAL (exposed/sensitive)"),
       notes: z
         .string()
@@ -114,7 +117,7 @@ Each asset creates a JSON file in the assets directory for tracking and analysis
       toolCallDescription: z
         .string()
         .describe(
-          "A concise, human-readable description of what this tool call is doing"
+          "A concise, human-readable description of what this tool call is doing",
         ),
     }),
     execute: async (asset) => {

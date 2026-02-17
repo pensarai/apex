@@ -27,7 +27,7 @@ Results will be saved to: comparison-results.json in the session directory.`,
             matchReason: z
               .string()
               .describe("Explanation for why these findings match"),
-          })
+          }),
         )
         .describe("Findings that were successfully matched"),
       missed: z
@@ -38,7 +38,7 @@ Results will be saved to: comparison-results.json in the session directory.`,
             reason: z
               .string()
               .describe("Explanation for why this finding was missed"),
-          })
+          }),
         )
         .describe("Expected findings that were not found"),
       extra: z
@@ -50,9 +50,9 @@ Results will be saved to: comparison-results.json in the session directory.`,
             assessment: z
               .string()
               .describe(
-                "Assessment of whether this is a false positive or new discovery"
+                "Assessment of whether this is a false positive or new discovery",
               ),
-          })
+          }),
         )
         .describe("Actual findings that don't match any expected findings"),
       toolCallDescription: z
@@ -98,7 +98,7 @@ Results will be saved to: comparison-results.json in the session directory.`,
         message: `Comparison complete. Matched: ${
           matched.length
         }/${totalExpected}, Precision: ${Math.round(
-          precision * 100
+          precision * 100,
         )}%, Recall: ${Math.round(recall * 100)}%`,
       };
     },

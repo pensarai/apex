@@ -35,7 +35,7 @@ Returns:
       toolCallDescription: z
         .string()
         .describe(
-          "A concise, human-readable description of what this tool call is doing"
+          "A concise, human-readable description of what this tool call is doing",
         ),
     }),
     execute: async ({ target }) => {
@@ -66,7 +66,7 @@ Returns:
 
         const targetCount = result.targets.length;
         console.log(
-          `\n✓ Attack surface complete: ${targetCount} targets identified`
+          `\n✓ Attack surface complete: ${targetCount} targets identified`,
         );
 
         return {

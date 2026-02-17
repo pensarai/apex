@@ -47,6 +47,6 @@ export function createBrowserToolset(ctx: ToolContext) {
     evidenceDir,
     "operator", // generic mode — works for recon, auth, and pentest
     undefined, // no Logger (tools use console)
-    ctx.abortSignal
+    ctx.abortSignal,
   );
 }

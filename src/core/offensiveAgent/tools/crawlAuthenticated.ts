@@ -29,7 +29,7 @@ export function crawlAuthenticated(_ctx: unknown) {
       toolCallDescription: z
         .string()
         .describe(
-          "A concise, human-readable description of what this tool call is doing"
+          "A concise, human-readable description of what this tool call is doing",
         ),
     }),
     execute: async (params) => {
@@ -95,7 +95,7 @@ export function crawlAuthenticated(_ctx: unknown) {
 
               if (jsEndpoints.endpoints) {
                 jsEndpoints.endpoints.forEach((ep: EndpointInfo) =>
-                  allEndpoints.add(ep.endpoint)
+                  allEndpoints.add(ep.endpoint),
                 );
               }
 

@@ -120,7 +120,7 @@ export interface LoadedSessionState {
  */
 function convertMessagesToUI(
   messages: SavedMessage[],
-  baseTime: Date
+  baseTime: Date,
 ): UIMessage[] {
   const uiMessages: UIMessage[] = [];
   let messageIndex = 0;
@@ -240,7 +240,7 @@ function loadSubagents(rootPath: string): UISubagent[] {
     try {
       const filePath = join(subagentsPath, file);
       const data = JSON.parse(
-        readFileSync(filePath, "utf-8")
+        readFileSync(filePath, "utf-8"),
       ) as SavedSubagentData;
 
       const { agentType, name } = parseSubagentFilename(file);
@@ -296,7 +296,7 @@ function loadSubagents(rootPath: string): UISubagent[] {
  * Load attack surface results
  */
 function loadAttackSurfaceResults(
-  rootPath: string
+  rootPath: string,
 ): AttackSurfaceResults | null {
   const resultsPath = join(rootPath, "attack-surface-results.json");
   if (!existsSync(resultsPath)) {
@@ -324,7 +324,7 @@ function hasReport(rootPath: string): boolean {
  */
 function createDiscoveryFromLogs(
   rootPath: string,
-  session: Session.SessionInfo
+  session: Session.SessionInfo,
 ): UISubagent | null {
   const logPath = join(rootPath, "logs", "streamlined-pentest.log");
   if (!existsSync(logPath)) {
@@ -340,7 +340,7 @@ function createDiscoveryFromLogs(
 
     for (const line of lines) {
       const match = line.match(
-        /^(\d{4}-\d{2}-\d{2}T[\d:.]+Z) - \[(\w+)\] (.+)$/
+        /^(\d{4}-\d{2}-\d{2}T[\d:.]+Z) - \[(\w+)\] (.+)$/,
       );
       if (!match) continue;
 
@@ -395,7 +395,7 @@ function createDiscoveryFromLogs(
  * Load complete session state from execution directory
  */
 export async function loadSessionState(
-  session: Session.SessionInfo
+  session: Session.SessionInfo,
 ): Promise<LoadedSessionState> {
   const rootPath = session.rootPath;
 
@@ -404,7 +404,7 @@ export async function loadSessionState(
 
   // Check if we have attack surface agent in subagents
   const hasAttackSurfaceAgent = subagents.some(
-    (s) => s.type === "attack-surface"
+    (s) => s.type === "attack-surface",
   );
 
   // If no attack surface agent saved, try to reconstruct from logs
