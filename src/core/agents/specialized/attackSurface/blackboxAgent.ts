@@ -9,8 +9,8 @@ import { SYSTEM as ATTACK_SURFACE_SYSTEM_PROMPT } from "./prompts";
 import { detectOSAndEnhancePrompt } from "../utils";
 import type { AttackSurfaceAnalysisResults, PentestTarget } from "./types";
 import { loadAttackSurfaceResults } from "./types";
-import { OffensiveSecurityAgent } from "../../offensiveAgent/offensiveSecurityAgent";
-import type { ConsumeCallbacks } from "../../offensiveAgent/types";
+import { OffensiveSecurityAgent } from "../../offSecAgent/offensiveSecurityAgent";
+import type { ConsumeCallbacks } from "../../offSecAgent/types";
 
 // ---------------------------------------------------------------------------
 // Types
