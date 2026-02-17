@@ -17,11 +17,11 @@ export { createAllTools, ALL_TOOL_NAMES, type ToolName } from "./tools";
 export {
   TargetedPentestAgent,
   runPentestAgent,
-} from "../agents/targetedPentestAgent";
+} from "../agents/targetedPentest/agent";
 export type {
   PentestAgentInput,
   PentestResult,
-} from "../agents/targetedPentestAgent";
+} from "../agents/targetedPentest/agent";
 
 // Attack surface discovery
 export { BlackboxAttackSurfaceAgent } from "../agents/attackSurface/blackboxAgent";
@@ -31,11 +31,11 @@ export type {
 } from "../agents/attackSurface/blackboxAgent";
 
 // Blackbox pentest (full end-to-end: recon → test → report)
-export { BlackboxPentestAgent } from "../agents/blackboxPentestAgent";
+export { BlackboxPentestAgent } from "../agents/blackboxPentest/agent";
 export type {
   BlackboxPentestAgentInput,
   BlackboxPentestResult,
-} from "../agents/blackboxPentestAgent";
+} from "../agents/blackboxPentest/agent";
 
 // Authentication
 export {

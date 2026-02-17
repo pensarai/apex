@@ -20,7 +20,6 @@
  *   tsx scripts/auth.ts --target https://example.com
  */
 
-import { runAuthenticationSubagent } from "../src/core/agents/legacy/authenticationSubagent";
 import { sessions } from "../src/core/session";
 import type { AIModel } from "../src/core/ai";
 import type { AuthCredentials } from "../src/core/agents/authenticationAgent/types";
@@ -180,44 +179,11 @@ async function runAuth(options: AuthOptions): Promise<void> {
       console.log();
     }
 
-    const result = await runAuthenticationSubagent({
-      input: {
-        target,
-        session,
-        credentials: hasCredentials ? credentials : undefined,
-        authFlowHints: protectedEndpoints?.length
-          ? { protectedEndpoints }
-          : undefined,
-      },
+    const result = await runAuthenticationAgent({
+      target,
+      session,
+      credentials: hasCredentials ? credentials : undefined,
       model: model as AIModel,
-      enableBrowserTools: !noBrowser,
-      onStepFinish: (step) => {
-        if (step.text) {
-          process.stdout.write(step.text);
-        }
-        if (step.toolCalls?.length) {
-          for (const toolCall of step.toolCalls) {
-            const tc = toolCall as {
-              toolName: string;
-              args?: Record<string, unknown>;
-            };
-            const desc = tc.args?.toolCallDescription;
-            console.log(
-              `\n[Tool Call] ${tc.toolName}${desc ? `: ${desc}` : ""}`,
-            );
-          }
-        }
-        if (step.toolResults?.length) {
-          for (const toolResult of step.toolResults) {
-            try {
-              const resultStr = JSON.stringify(toolResult, null, 2);
-              console.log(`[Tool Result]`, resultStr.slice(0, 800));
-            } catch {
-              console.log(`[Tool Result]`, String(toolResult));
-            }
-          }
-        }
-      },
     });
 
     console.log();
@@ -228,8 +194,6 @@ async function runAuth(options: AuthOptions): Promise<void> {
 
     console.log(`Success: ${result.success ? "YES" : "NO"}`);
     console.log(`Strategy: ${result.strategy}`);
-    console.log(`Auth State: ${result.authState.status}`);
-    console.log(`Tokens Obtained: ${result.authState.tokens.length}`);
     console.log();
 
     if (
@@ -274,9 +238,6 @@ async function runAuth(options: AuthOptions): Promise<void> {
             success: true,
             headers: result.exportedHeaders,
             cookies: result.exportedCookies,
-            tokens: result.authState.tokens,
-            authenticatedAt: result.authState.authenticatedAt,
-            expiresAt: result.authState.expiresAt,
           },
           null,
           2,
@@ -294,7 +255,6 @@ async function runAuth(options: AuthOptions): Promise<void> {
           target,
           success: result.success,
           strategy: result.strategy,
-          authState: result.authState,
           authBarrier: result.authBarrier,
           summary: result.summary,
           documentedAt: new Date().toISOString(),

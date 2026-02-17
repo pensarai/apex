@@ -3,7 +3,7 @@ import { z } from "zod";
 import { join } from "path";
 import { writeFileSync } from "fs";
 import type { ToolContext } from "./types";
-import { type AuthCredentials } from "../../agents/legacy/authenticationSubagent";
+import { type AuthCredentials } from "../../agents/authenticationAgent/types";
 // runAuthenticationAgent is dynamically imported inside execute() to break
 // the circular dependency: authAgent → offensiveSecurityAgent → tools → delegateAuth → authAgent
 
