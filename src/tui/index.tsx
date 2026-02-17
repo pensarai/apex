@@ -27,6 +27,7 @@ import HelpDialog from "./components/commands/help-dialog";
 import ModelsDisplay from "./components/commands/models-display";
 import { KeybindingProvider } from "./context/keybinding";
 import Pentest from "./components/pentest/pentest";
+import OperatorDashboard from "./components/operator-dashboard";
 
 interface AppProps {
   appConfig: Config;
@@ -301,7 +302,11 @@ function CommandDisplay({
   }
 
   // Session route - render SessionView which handles pentest execution
-  if (route.data.type === "session") {
+  if (route.data.type === "operator") {
+    return <OperatorDashboard sessionId={route.data.sessionId} />;
+  }
+
+  if (route.data.type === "pentest") {
     return <Pentest sessionId={route.data.sessionId} />;
   }
 

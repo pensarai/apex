@@ -216,7 +216,7 @@ export default function HITLWizard(props: HITLWizardProps) {
       });
 
       route.navigate({
-        type: "session",
+        type: "operator",
         sessionId: session.id,
       });
     } catch (e) {

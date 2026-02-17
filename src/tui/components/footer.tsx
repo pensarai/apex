@@ -52,7 +52,7 @@ export default function Footer({
           <span fg="white">{model.name}</span>
         </text>
         <AgentStatus />
-        {route.data.type === "session" && session.active && (
+        {route.data.type === "pentest" && session.active && (
           <text fg="white">
             Session: <span fg="gray">{session.active.name}</span>
           </text>

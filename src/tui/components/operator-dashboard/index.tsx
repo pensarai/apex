@@ -5,10 +5,10 @@
  * Provides operator-specific configuration and routing.
  */
 
-import type { SessionInfo } from "../../../core/session";
+import { sessions } from "../../../core/session";
 
 interface OperatorDashboardProps {
-  session: SessionInfo;
+  sessionId: string;
   /** If true, restore saved state from disk instead of starting fresh */
   isResume?: boolean;
   /** If true, synthesize operator context from swarm session data */
@@ -19,11 +19,12 @@ interface OperatorDashboardProps {
  * Operator Dashboard - uses unified Session component in operator mode
  */
 export default function OperatorDashboard({
-  session,
+  sessionId,
   isResume = false,
   openAsOperator,
 }: OperatorDashboardProps) {
-  return null;
+  const session = sessions.get(sessionId);
+  return <text>Operator Dashboard</text>;
 }
 
 // Re-export types for backward compatibility

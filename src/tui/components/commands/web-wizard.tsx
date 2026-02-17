@@ -286,7 +286,7 @@ export default function WebWizard({
 
       // Navigate to session route - SessionView will handle execution based on mode
       route.navigate({
-        type: "session",
+        type: "pentest",
         sessionId: session.id,
       });
     } catch (e) {

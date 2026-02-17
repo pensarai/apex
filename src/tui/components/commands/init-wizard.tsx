@@ -139,7 +139,7 @@ export default function InitWizard() {
 
       // Navigate to session route - SessionView will handle execution
       route.navigate({
-        type: "session",
+        type: "pentest",
         sessionId: session.id,
       });
     } catch (e) {

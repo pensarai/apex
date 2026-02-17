@@ -242,7 +242,7 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
       refocusPrompt();
       onClose();
       route.navigate({
-        type: "session",
+        type: "pentest",
         sessionId: _session.id,
         isResume: true, // Load existing state, don't start new pentest
       });
