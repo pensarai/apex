@@ -58,7 +58,7 @@ jobs:
 
       - name: Install console dependencies
         working-directory: console
-        run: npm ci
+        run: npm install
 
       - name: Install SST providers
         working-directory: console
