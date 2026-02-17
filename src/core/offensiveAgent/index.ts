@@ -7,12 +7,7 @@ export type { OffensiveSecurityAgentInput, ConsumeCallbacks } from "./types";
 // ---------------------------------------------------------------------------
 // Tools
 // ---------------------------------------------------------------------------
-export {
-  createAllTools,
-  ALL_TOOL_NAMES,
-  type ToolName,
-  type PersistenceCallbacks,
-} from "./tools";
+export { createAllTools, ALL_TOOL_NAMES, type ToolName } from "./tools";
 
 // ---------------------------------------------------------------------------
 // Agents — OffensiveSecurityAgent subclasses
@@ -29,17 +24,14 @@ export type {
 } from "../agents/targetedPentestAgent";
 
 // Attack surface discovery
-export { AttackSurfaceAgent } from "../agents/attackSurfaceAgent/agent";
+export { BlackboxAttackSurfaceAgent } from "../agents/attackSurface/blackboxAgent";
 export type {
   AttackSurfaceAgentInput,
   AttackSurfaceResult,
-} from "../agents/attackSurfaceAgent/agent";
+} from "../agents/attackSurface/blackboxAgent";
 
 // Blackbox pentest (full end-to-end: recon → test → report)
-export {
-  BlackboxPentestAgent,
-  runBlackboxPentestAgent,
-} from "../agents/blackboxPentestAgent";
+export { BlackboxPentestAgent } from "../agents/blackboxPentestAgent";
 export type {
   BlackboxPentestAgentInput,
   BlackboxPentestResult,

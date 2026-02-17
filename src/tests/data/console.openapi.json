@@ -1,0 +1,1037 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Pensar Console API",
+    "description": "The Pensar Console API provides programmatic access to security scanning, CI/CD integration, report downloads, and webhook integrations for the Pensar application security platform.",
+    "version": "1.0.0",
+    "contact": {
+      "name": "Pensar",
+      "url": "https://pensar.dev"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://staging-api.pensar.dev",
+      "description": "Staging"
+    }
+  ],
+  "tags": [
+    {
+      "name": "CI/CD",
+      "description": "Endpoints for CI/CD pipeline integration — dispatch scans and check status"
+    },
+    {
+      "name": "Reports",
+      "description": "Download scan reports"
+    },
+    {
+      "name": "Webhooks",
+      "description": "Incoming webhook endpoints for third-party integrations"
+    },
+    {
+      "name": "OAuth",
+      "description": "OAuth flows for third-party integrations (Thoropass, GitHub)"
+    },
+    {
+      "name": "Integrations",
+      "description": "Integration setup endpoints"
+    },
+    {
+      "name": "Auth",
+      "description": "Next.js authentication routes"
+    },
+    {
+      "name": "Streaming",
+      "description": "Server-Sent Event (SSE) streaming endpoints"
+    }
+  ],
+  "paths": {
+    "/ci/dispatch": {
+      "post": {
+        "operationId": "dispatchScan",
+        "summary": "Dispatch a security scan",
+        "description": "Creates and queues a new whitebox penetration test scan for a project. The scan runs asynchronously — use the status endpoint to poll for completion. Requires an API key for authentication.",
+        "tags": ["CI/CD"],
+        "security": [{ "apiKeyBearer": [] }, { "apiKeyHeader": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DispatchScanRequest"
+              },
+              "examples": {
+                "byProjectId": {
+                  "summary": "Dispatch by project ID",
+                  "value": {
+                    "projectId": "proj_abc123",
+                    "branch": "main",
+                    "scanLevel": "full"
+                  }
+                },
+                "byRepoId": {
+                  "summary": "Dispatch by repository ID",
+                  "value": {
+                    "repoId": 12345,
+                    "scanLevel": "priority"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Scan successfully queued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DispatchScanResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Project does not belong to this workspace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ci/status/{scanId}": {
+      "get": {
+        "operationId": "getScanStatus",
+        "summary": "Get scan status",
+        "description": "Returns the current status and metadata for a scan, including issue count and whether the report is ready for download. Requires an API key for authentication.",
+        "tags": ["CI/CD"],
+        "security": [{ "apiKeyBearer": [] }, { "apiKeyHeader": [] }],
+        "parameters": [
+          {
+            "name": "scanId",
+            "in": "path",
+            "required": true,
+            "description": "The unique identifier of the scan",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Scan status retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanStatusResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing scanId parameter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Access denied to this scan",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Scan not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/reports/{scanId}/download": {
+      "get": {
+        "operationId": "downloadReport",
+        "summary": "Download a scan report",
+        "description": "Generates a presigned S3 URL for downloading the PDF report of a completed scan. The URL is valid for a limited time. Requires a WorkOS JWT Bearer token and the user must have access to the project.",
+        "tags": ["Reports"],
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "scanId",
+            "in": "path",
+            "required": true,
+            "description": "The unique identifier of the scan whose report to download",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Presigned download URL generated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportDownloadResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing scan ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid authorization token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "User does not have access to this project",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Scan or report not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    { "$ref": "#/components/schemas/Error" },
+                    { "$ref": "#/components/schemas/ReportNotFoundResponse" }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/webhooks/stripe": {
+      "post": {
+        "operationId": "stripeWebhook",
+        "summary": "Stripe webhook",
+        "description": "Receives and processes Stripe webhook events (checkout sessions, subscription updates, etc.). Verifies the `stripe-signature` header before processing.",
+        "tags": ["Webhooks"],
+        "security": [],
+        "parameters": [
+          {
+            "name": "stripe-signature",
+            "in": "header",
+            "required": true,
+            "description": "Stripe webhook signature for payload verification",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "Raw Stripe event payload",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "Stripe event object — see Stripe API docs for event schemas"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Webhook processed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "received": {
+                      "type": "boolean",
+                      "example": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing signature/body or webhook handling error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/webhooks/github": {
+      "post": {
+        "operationId": "githubWebhook",
+        "summary": "GitHub webhook",
+        "description": "Receives GitHub App webhook events. Handles `installation` (new app installs), `push` (code pushes), `pull_request` (PR open/close/merge), and `pull_request_review_comment` (@pensarai mentions) events.",
+        "tags": ["Webhooks"],
+        "security": [],
+        "parameters": [
+          {
+            "name": "x-github-event",
+            "in": "header",
+            "required": true,
+            "description": "The type of GitHub event",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "installation",
+                "push",
+                "pull_request",
+                "pull_request_review_comment"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "GitHub webhook event payload — schema varies by event type",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "GitHub event payload. See GitHub Webhooks documentation for schemas."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Webhook processed or unsupported event type ignored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing event body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/webhooks/bitbucket": {
+      "post": {
+        "operationId": "bitbucketWebhook",
+        "summary": "Bitbucket webhook",
+        "description": "Receives Bitbucket webhook events. Handles `repo:push`, `pullrequest:created`, `pullrequest:updated`, and `pullrequest:merged` events. Authenticates via a webhook secret query parameter and optional HMAC signature.",
+        "tags": ["Webhooks"],
+        "security": [],
+        "parameters": [
+          {
+            "name": "secret",
+            "in": "query",
+            "required": true,
+            "description": "Webhook secret for workspace identification and authentication",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-event-key",
+            "in": "header",
+            "required": true,
+            "description": "The type of Bitbucket event",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "repo:push",
+                "pullrequest:created",
+                "pullrequest:updated",
+                "pullrequest:merged"
+              ]
+            }
+          },
+          {
+            "name": "x-hub-signature-256",
+            "in": "header",
+            "required": false,
+            "description": "Optional HMAC-SHA256 signature for payload verification",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "Bitbucket webhook event payload",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "Bitbucket event payload. See Bitbucket Webhooks documentation for schemas."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Webhook processed or unsupported event type ignored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing body, event key, or webhook secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid webhook secret or signature",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/webhooks/workos": {
+      "post": {
+        "operationId": "workosWebhook",
+        "summary": "WorkOS webhook",
+        "description": "Receives WorkOS webhook events for user and organization membership lifecycle management. Handles `user.created`, `user.updated`, `authentication.mfa_succeeded`, `organization_membership.created`, and `organization_membership.deleted` events.",
+        "tags": ["Webhooks"],
+        "security": [],
+        "parameters": [
+          {
+            "name": "workos-signature",
+            "in": "header",
+            "required": true,
+            "description": "WorkOS webhook signature for payload verification",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "WorkOS webhook event payload",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "WorkOS event payload. See WorkOS Webhooks documentation for schemas."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Webhook processed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "received": {
+                      "type": "boolean",
+                      "example": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing signature/body or verification error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/oauth/thoropass/authurl": {
+      "get": {
+        "operationId": "getThoropassAuthUrl",
+        "summary": "Get Thoropass OAuth URL",
+        "description": "Returns the Thoropass OAuth authorization URL to initiate the OAuth flow for compliance integration.",
+        "tags": ["OAuth"],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Authorization URL returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "url": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "The Thoropass OAuth authorization URL"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/oauth/thoropass/callback": {
+      "get": {
+        "operationId": "thoropassOAuthCallback",
+        "summary": "Thoropass OAuth callback",
+        "description": "OAuth redirect callback for Thoropass. Exchanges the authorization code for access and refresh tokens, then redirects the user back to the console with tokens as query parameters.",
+        "tags": ["OAuth"],
+        "security": [],
+        "parameters": [
+          {
+            "name": "code",
+            "in": "query",
+            "required": true,
+            "description": "The OAuth authorization code from Thoropass",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "301": {
+            "description": "Redirects to the console with access and refresh tokens",
+            "headers": {
+              "Location": {
+                "description": "Redirect URL with accessToken and refreshToken query params",
+                "schema": {
+                  "type": "string",
+                  "format": "uri"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/oauth/thoropass/authorize": {
+      "post": {
+        "operationId": "authorizeThoropass",
+        "summary": "Store Thoropass tokens",
+        "description": "Stores the Thoropass OAuth access and refresh tokens on the user's workspace. Requires Bearer token authentication.",
+        "tags": ["OAuth"],
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "access_token",
+            "in": "query",
+            "required": true,
+            "description": "Thoropass OAuth access token",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "refresh_token",
+            "in": "query",
+            "required": true,
+            "description": "Thoropass OAuth refresh token",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tokens stored successfully"
+          },
+          "401": {
+            "description": "Missing or invalid authorization"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/integrations/github/callback": {
+      "post": {
+        "operationId": "initGithubIntegration",
+        "summary": "Initialize GitHub integration",
+        "description": "Completes the GitHub App installation flow. Exchanges the OAuth code for a token, then links the GitHub installation ID to the user's workspace.",
+        "tags": ["Integrations"],
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "installationId",
+            "in": "query",
+            "required": true,
+            "description": "GitHub App installation ID",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "code",
+            "in": "query",
+            "required": false,
+            "description": "GitHub OAuth authorization code",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "setup_action",
+            "in": "query",
+            "required": false,
+            "description": "GitHub setup action type",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "GitHub integration initialized successfully"
+          },
+          "401": {
+            "description": "Missing or invalid authorization"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    }
+  },
+  "webhooks": {
+    "stripe": {
+      "post": {
+        "summary": "Stripe event",
+        "description": "Stripe sends checkout session completions, subscription updates, and other billing events",
+        "tags": ["Webhooks"],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "Stripe event object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Event acknowledged"
+          }
+        }
+      }
+    },
+    "github": {
+      "post": {
+        "summary": "GitHub App event",
+        "description": "GitHub sends installation, push, pull_request, and pull_request_review_comment events",
+        "tags": ["Webhooks"],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "GitHub event payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Event acknowledged"
+          }
+        }
+      }
+    },
+    "bitbucket": {
+      "post": {
+        "summary": "Bitbucket event",
+        "description": "Bitbucket sends repo:push, pullrequest:created, pullrequest:updated, and pullrequest:merged events",
+        "tags": ["Webhooks"],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "Bitbucket event payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Event acknowledged"
+          }
+        }
+      }
+    },
+    "workos": {
+      "post": {
+        "summary": "WorkOS event",
+        "description": "WorkOS sends user lifecycle and organization membership events",
+        "tags": ["Webhooks"],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "WorkOS event payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Event acknowledged"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "DispatchScanRequest": {
+        "type": "object",
+        "description": "Request body for dispatching a new scan. Either `projectId` or `repoId` must be provided.",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "description": "The Pensar project ID to scan"
+          },
+          "repoId": {
+            "type": "number",
+            "description": "The VCS repository ID (e.g. GitHub repository ID) to scan"
+          },
+          "branch": {
+            "type": "string",
+            "description": "The branch to scan. If omitted, the default branch is used."
+          },
+          "scanLevel": {
+            "type": "string",
+            "enum": ["priority", "full"],
+            "description": "Scan depth level. `priority` scans critical paths only; `full` scans the entire codebase.",
+            "default": "full"
+          }
+        },
+        "anyOf": [{ "required": ["projectId"] }, { "required": ["repoId"] }]
+      },
+      "DispatchScanResponse": {
+        "type": "object",
+        "required": ["scanId", "label", "status"],
+        "properties": {
+          "scanId": {
+            "type": "string",
+            "description": "Unique identifier for the created scan"
+          },
+          "label": {
+            "type": "string",
+            "description": "Human-readable label for the scan (e.g. scan number)"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["queued"],
+            "description": "Initial status is always `queued`"
+          }
+        }
+      },
+      "ScanStatusResponse": {
+        "type": "object",
+        "required": ["scanId", "label", "status", "issuesCount", "reportReady"],
+        "properties": {
+          "scanId": {
+            "type": "string",
+            "description": "Unique identifier for the scan"
+          },
+          "label": {
+            "type": "string",
+            "description": "Human-readable scan label"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["queued", "running", "completed", "failed", "paused"],
+            "description": "Current status of the scan"
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Timestamp when the scan started running"
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Timestamp when the scan completed"
+          },
+          "errorMessage": {
+            "type": "string",
+            "nullable": true,
+            "description": "Error message if the scan failed"
+          },
+          "issuesCount": {
+            "type": "integer",
+            "description": "Number of security issues found"
+          },
+          "reportReady": {
+            "type": "boolean",
+            "description": "Whether the PDF report is available for download"
+          }
+        }
+      },
+      "ReportDownloadResponse": {
+        "type": "object",
+        "required": ["url", "expiresAt"],
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Presigned S3 URL for downloading the report PDF"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the presigned URL expires"
+          }
+        }
+      },
+      "ReportNotFoundResponse": {
+        "type": "object",
+        "required": ["error", "regenerate"],
+        "properties": {
+          "error": {
+            "type": "string",
+            "enum": ["REPORT_NOT_FOUND"],
+            "description": "Error code indicating the report has not been generated yet"
+          },
+          "regenerate": {
+            "type": "boolean",
+            "description": "If true, the client should trigger report regeneration"
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Error message"
+          }
+        }
+      },
+      "ValidationError": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Error summary"
+          },
+          "details": {
+            "type": "array",
+            "description": "Zod validation issue details",
+            "items": {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "MessageResponse": {
+        "type": "object",
+        "required": ["message"],
+        "properties": {
+          "message": {
+            "type": "string",
+            "description": "Human-readable message"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "WorkOS JWT token obtained via AuthKit sign-in flow"
+      },
+      "apiKeyBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Pensar API key passed as a Bearer token in the Authorization header"
+      },
+      "apiKeyHeader": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-api-key",
+        "description": "Pensar API key passed via the x-api-key header"
+      }
+    }
+  }
+}

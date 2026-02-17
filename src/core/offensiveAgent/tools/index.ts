@@ -1,4 +1,4 @@
-export { type ToolContext, type PersistenceCallbacks } from "./types";
+export { type ToolContext } from "./types";
 
 // Browser automation tools
 export { createBrowserToolset, BROWSER_TOOL_NAMES } from "./browserTools";

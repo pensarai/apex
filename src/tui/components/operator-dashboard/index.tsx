@@ -5,7 +5,6 @@
  * Provides operator-specific configuration and routing.
  */
 
-import { Session as SessionComponent } from "../../session";
 import type { SessionInfo } from "../../../core/session";
 
 interface OperatorDashboardProps {
@@ -24,14 +23,7 @@ export default function OperatorDashboard({
   isResume = false,
   openAsOperator,
 }: OperatorDashboardProps) {
-  return (
-    <SessionComponent
-      session={session}
-      mode="operator"
-      isResume={isResume}
-      openAsOperator={openAsOperator}
-    />
-  );
+  return null;
 }
 
 // Re-export types for backward compatibility

@@ -59,7 +59,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       abortSignal: input.abortSignal,
       model: input.model,
       authConfig: input.authConfig,
-      persistence: input.persistence,
+      callbacks: input.callbacks,
       subagentCallbacks: input.subagentCallbacks,
     });
 
@@ -73,7 +73,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       tools,
       activeTools: input.activeTools as string[],
       stopWhen: input.stopWhen,
-      toolChoice: input.toolChoice,
+      toolChoice: "auto",
       onStepFinish: input.onStepFinish,
       onFinish: input.onFinish,
       abortSignal: input.abortSignal,

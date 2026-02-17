@@ -7,7 +7,7 @@ import {
 } from "ai";
 import { streamResponse, type AIModel } from "../../../ai";
 import { type AIAuthConfig } from "../../../ai/utils";
-import { SYSTEM } from "../../attackSurfaceAgent/prompts";
+import { SYSTEM } from "../../attackSurface/prompts";
 import {
   createPentestTools,
   type ExecuteCommandOpts,

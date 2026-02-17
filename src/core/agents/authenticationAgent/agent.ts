@@ -6,6 +6,8 @@ import { type SessionInfo } from "../../session";
 import { AUTH_SUBAGENT_SYSTEM_PROMPT } from "./prompts";
 import { detectOSAndEnhancePrompt } from "../legacy/utils";
 import { OffensiveSecurityAgent } from "../../offensiveAgent/offensiveSecurityAgent";
+import type { ConsumeCallbacks } from "../../offensiveAgent/types";
+import type { AuthBarrier } from "../legacy/authenticationSubagent";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -45,6 +47,9 @@ export interface AuthenticationAgentInput {
 
   /** AbortSignal to cancel mid-run */
   abortSignal?: AbortSignal;
+
+  /** Optional persistence callbacks for external storage integration */
+  callbacks?: ConsumeCallbacks;
 }
 
 /** The typed result returned by `AuthenticationAgent.consume()`. */
@@ -53,6 +58,14 @@ export interface AuthenticationResult {
   success: boolean;
   /** Summary of the authentication process */
   summary: string;
+  /** Exported cookies from the authentication process */
+  exportedCookies: string;
+  /** Exported headers from the authentication process */
+  exportedHeaders: Record<string, string>;
+  /** Strategy used for authentication */
+  strategy: string;
+  /** Auth barrier encountered during authentication */
+  authBarrier: AuthBarrier | undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -106,13 +119,13 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
       authConfig,
       onStepFinish,
       abortSignal,
-
+      toolChoice: "auto",
       activeTools: [
         // Auth flow tools
         "execute_command",
-        "http_request",
-        "detect_auth_scheme",
-        "probe_auth_endpoints",
+        // "http_request",
+        // "detect_auth_scheme",
+        // "probe_auth_endpoints",
         "authenticate_session",
         "delegate_to_auth_subagent",
         "complete_authentication",
@@ -134,6 +147,10 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
         const steps = await streamResult.steps;
         let success = false;
         let summary = "Authentication process completed.";
+        let exportedCookies = "";
+        let exportedHeaders = {};
+        let strategy = "unknown";
+        let authBarrier = undefined;
 
         for (const step of steps) {
           for (const tr of step.toolResults) {
@@ -144,11 +161,23 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
                 | undefined;
               success = (r?.authenticated as boolean) ?? false;
               summary = (r?.summary as string) ?? summary;
+              exportedCookies = (r?.exportedCookies as string) ?? "";
+              exportedHeaders =
+                (r?.exportedHeaders as Record<string, string>) ?? {};
+              strategy = (r?.strategy as string) ?? "unknown";
+              authBarrier = (r?.authBarrier as AuthBarrier) ?? undefined;
             }
           }
         }
 
-        return { success, summary };
+        return {
+          success,
+          summary,
+          exportedCookies,
+          exportedHeaders,
+          strategy,
+          authBarrier,
+        };
       },
     });
   }
@@ -175,7 +204,7 @@ function buildAuthPrompt(
     parts.push("");
   } else {
     parts.push(
-      "No credentials provided. Discover authentication requirements and attempt registration if possible.\n",
+      "No credentials provided. Probe the target to discover auth requirements.\n",
     );
   }
 
@@ -194,12 +223,19 @@ function buildAuthPrompt(
     parts.push("");
   }
 
-  parts.push(`INSTRUCTIONS:
-1. Detect the authentication scheme using detect_auth_scheme
-2. If unclear, probe for auth endpoints with probe_auth_endpoints
-3. Attempt authentication with authenticate_session
-4. If that fails, delegate to the auth sub-agent with delegate_to_auth_subagent
-5. Call complete_authentication when done (success or failure)`);
+  if (credentials?.loginUrl || credentials?.username) {
+    parts.push(`INSTRUCTIONS:
+You have credentials — authenticate immediately.
+1. Use authenticate_session (API) or the browser tools depending on the target
+2. If authenticate_session fails, try via browser or delegate_to_auth_subagent
+3. Call complete_authentication when done (success or failure)`);
+  } else {
+    parts.push(`INSTRUCTIONS:
+1. Probe the target with execute_command (curl) to determine the auth mechanism
+2. Attempt authentication with authenticate_session or the browser tools
+3. If that fails, try delegate_to_auth_subagent as a fallback
+4. Call complete_authentication when done (success or failure)`);
+  }
 
   return parts.join("\n");
 }

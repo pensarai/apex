@@ -313,7 +313,8 @@ const jsonPath = args[0]!;
 try {
   const report = generateReport(jsonPath);
   console.log(report);
-} catch (error: any) {
-  console.error(`Error: ${error.message}`);
+} catch (error: unknown) {
+  const errorMessage = error instanceof Error ? error.message : String(error);
+  console.error(`Error: ${errorMessage}`);
   process.exit(1);
 }

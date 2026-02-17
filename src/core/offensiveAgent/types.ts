@@ -11,7 +11,7 @@ import type {
 import type { AIModel } from "../ai";
 import type { AIAuthConfig } from "../ai/utils";
 import type { SessionInfo } from "../session";
-import type { ToolName, PersistenceCallbacks } from "./tools";
+import type { ToolName } from "./tools";
 
 /**
  * Input for the general-purpose OffensiveSecurityAgent harness.
@@ -68,9 +68,6 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
   /** Per-provider API key overrides */
   authConfig?: AIAuthConfig;
 
-  /** Optional persistence callbacks for external storage integration */
-  persistence?: PersistenceCallbacks;
-
   /**
    * Called after the stream is fully consumed to produce a typed result.
    *
@@ -94,6 +91,9 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    * sub-agent events back to the top-level consumer.
    */
   subagentCallbacks?: SubagentConsumeCallbacks;
+
+  /** Callbacks for persisting agent discoveries to external storage (e.g., database). */
+  callbacks?: ConsumeCallbacks;
 };
 
 /**
@@ -119,6 +119,24 @@ export type ConsumeCallbacks = {
  * Pass to `subagent.consume()` for ergonomic stream processing.
  */
 export type SubagentConsumeCallbacks = {
+  onSubagentSpawn?: ({
+    subagentId,
+    input,
+    status,
+  }: {
+    subagentId: string;
+    input: unknown;
+    status: "pending" | "completed" | "failed";
+  }) => void;
+  onSubagentComplete?: ({
+    subagentId,
+    input,
+    status,
+  }: {
+    subagentId: string;
+    input: unknown;
+    status: "completed" | "failed";
+  }) => void;
   onTextDelta?: (
     delta: Extract<TextStreamPart<ToolSet>, { type: "text-delta" }> & {
       subagentId?: string;

@@ -8,7 +8,7 @@
 import { join } from "path";
 import { existsSync, readdirSync, readFileSync } from "fs";
 import type { SessionInfo } from "./index";
-import type { AuthenticationInfo } from "../agents/legacy/orchestrator/types";
+import type { AuthenticationInfo } from "./types";
 
 /**
  * Message content part from AI SDK format

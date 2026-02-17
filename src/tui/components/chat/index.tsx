@@ -14,7 +14,6 @@ import { useConfig } from "../../context/config";
 import { useAgent } from "../../context/agent";
 import { HomeView } from "./home-view";
 import { ConfigView, type SessionConfig } from "./config-view";
-import { Session as SessionComponent } from "../../session";
 import type { ModelInfo } from "../../../core/ai";
 
 type ChatAppView = "home" | "config" | "chat";
@@ -150,17 +149,6 @@ export function ChatApp({
           config={config.data}
           onBack={handleBackFromConfig}
           onStart={handleConfigSubmit}
-        />
-      )}
-
-      {currentView === "chat" && activeSession && (
-        <SessionComponent
-          session={activeSession}
-          mode="chat"
-          model={sessionModel}
-          isResume={isResume}
-          initialDirective={initialDirective}
-          onExit={handleExitChat}
         />
       )}
     </box>

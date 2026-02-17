@@ -1,10 +1,13 @@
 #!/usr/bin/env tsx
 
-import { runAgent } from "../src/core/agents/legacy/attackSurfaceAgent/agent";
 import type { AIModel } from "../src/core/ai";
 import { readFileSync, existsSync } from "fs";
 import { join } from "path";
 import { sessions } from "../src/core/session";
+import { runAttackSurfaceAgent } from "../src/core/api";
+import { config } from "dotenv";
+
+config();
 
 interface AttackSurfaceOptions {
   target: string;
@@ -81,21 +84,36 @@ async function runAttackSurface(options: AttackSurfaceOptions): Promise<void> {
       }),
     };
 
-    // Create session with config
+    const TARGET_URL = "staging-console.pensar.dev";
+
     const session = await sessions.create({
-      targets: [target],
-      name: objective,
-      prefix: "attack-surface",
-      config: sessionConfig,
+      name: "Test Attack Surface",
+      targets: [TARGET_URL],
+      config: {
+        authCredentials: {
+          loginUrl: "https://staging-console.pensar.dev/login",
+          username: process.env.TEST_AUTH_USERNAME,
+          password: process.env.TEST_AUTH_PASSWORD,
+        },
+        enumerateSubdomains: false,
+      },
     });
 
-    // Run the attack surface agent
-    const { streamResult } = await runAgent({
-      target,
-      objective,
-      model: model as AIModel,
-      session,
-    });
+    const { results, targets, resultsPath, assetsPath } =
+      await runAttackSurfaceAgent({
+        target: TARGET_URL,
+        model: "claude-haiku-4-5",
+        session,
+        callbacks: {
+          onTextDelta: (d) => process.stdout.write(d.text),
+          onToolCall: (d) =>
+            console.log(
+              `\n→ calling ${d.toolName} \n ${JSON.stringify(d.input, null, 2)}`,
+            ),
+          onToolResult: (d) => console.log(`✓ ${d.toolName} completed`),
+          onError: (e) => console.error(e),
+        },
+      });
 
     console.log(`Session ID: ${session.id}`);
     console.log(`Session Path: ${session.rootPath}`);
@@ -105,23 +123,6 @@ async function runAttackSurface(options: AttackSurfaceOptions): Promise<void> {
     console.log("ANALYSIS OUTPUT");
     console.log("=".repeat(80));
     console.log();
-
-    // Consume the stream and display progress
-    for await (const delta of streamResult.fullStream) {
-      if (delta.type === "text-delta") {
-        process.stdout.write(delta.text);
-      } else if (delta.type === "tool-call") {
-        console.log(
-          `\n[Tool Call] ${delta.toolName}${
-            delta.input.toolCallDescription
-              ? `: ${delta.input.toolCallDescription}`
-              : ""
-          }`,
-        );
-      } else if (delta.type === "tool-result") {
-        console.log(`[Tool Result] Completed\n`);
-      }
-    }
 
     console.log();
     console.log("=".repeat(80));

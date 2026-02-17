@@ -1,8 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import type { ToolContext } from "./types";
-import { AttackSurfaceAgent } from "../../agents/attackSurfaceAgent/agent";
-import type { AttackSurfaceResult } from "../../agents/attackSurfaceAgent/agent";
+import type { AttackSurfaceResult } from "../../agents/attackSurface/blackboxAgent";
 
 /**
  * Factory for the `run_attack_surface` tool.
@@ -49,13 +48,18 @@ Returns:
       const subagentId = "attack-surface-agent";
 
       try {
-        const agent = new AttackSurfaceAgent({
+        // Dynamic import to break circular dependency:
+        // AttackSurfaceAgent → OffensiveSecurityAgent → tools/index → runAttackSurface → AttackSurfaceAgent
+        const { BlackboxAttackSurfaceAgent } =
+          await import("../../agents/attackSurface/blackboxAgent");
+
+        const agent = new BlackboxAttackSurfaceAgent({
           target,
           model: ctx.model,
           session: ctx.session,
           authConfig: ctx.authConfig,
           abortSignal: ctx.abortSignal,
-          persistence: ctx.persistence,
+          callbacks: ctx.callbacks,
         });
 
         const result: AttackSurfaceResult = await agent.consume({

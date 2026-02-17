@@ -9,15 +9,30 @@ import {
 export async function runAuthenticationAgent(input: AuthenticationAgentInput) {
   const agent = new AuthenticationAgent(input);
 
-  const { success, summary } = await agent.consume({
-    onTextDelta: (d) => process.stdout.write(d.text),
-    onToolCall: (d) => console.log(`→ calling ${d.toolName}`),
-    onToolResult: (d) => console.log(`✓ ${d.toolName} completed`),
-    onError: (e) => console.error("Agent error:", e),
+  const {
+    success,
+    summary,
+    exportedCookies,
+    exportedHeaders,
+    strategy,
+    authBarrier,
+  } = await agent.consume({
+    onTextDelta: (d) => input.callbacks?.onTextDelta?.(d),
+    onToolCall: (d) => input.callbacks?.onToolCall?.(d),
+    onToolResult: (d) => input.callbacks?.onToolResult?.(d),
+    onError: (e) => input.callbacks?.onError?.(e),
+    subagentCallbacks: input.callbacks?.subagentCallbacks,
   });
 
   console.log(
     `\nAuthentication ${success ? "succeeded" : "failed"}: ${summary}`,
   );
-  return { success, summary };
+  return {
+    success,
+    summary,
+    exportedCookies,
+    exportedHeaders,
+    strategy,
+    authBarrier,
+  };
 }

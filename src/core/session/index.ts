@@ -97,6 +97,8 @@ const SessionConfigObject = z.object({
   cvssModel: z.string().optional(),
   /** Toolset state for controlling which tools are available */
   toolsetState: ToolsetStateSchema.optional(),
+  /** Whether to enumerate subdomains during attack surface discovery (default: false) */
+  enumerateSubdomains: z.boolean().optional(),
 });
 
 export type SessionConfig = z.infer<typeof SessionConfigObject>;
@@ -341,6 +343,7 @@ export async function create(input: CreateInputProps) {
       updated: Date.now(),
     },
     config: {
+      ...input.config,
       mode: input.config?.mode || "auto",
       offensiveHeaders: input.config?.offensiveHeaders || {
         mode: "default",
@@ -350,9 +353,6 @@ export async function create(input: CreateInputProps) {
       },
       outcomeGuidance:
         input.config?.outcomeGuidance || DEFAULT_OUTCOME_GUIDANCE,
-      scopeConstraints: input.config?.scopeConstraints,
-      enableCvssScoring: input.config?.enableCvssScoring,
-      cvssModel: input.config?.cvssModel,
     },
     _rateLimiter: rateLimiter,
     rootPath,

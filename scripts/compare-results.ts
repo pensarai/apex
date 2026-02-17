@@ -349,13 +349,14 @@ Determine whether the agent identified the correct vulnerability TYPE in the cor
     });
 
     return output!;
-  } catch (error: any) {
-    console.error(`Error calling Claude API:`, error.message);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(`Error calling Claude API:`, errorMessage);
     return {
       vulnerability_found: false,
       vulnerability_match_score: 0,
       matching_finding_index: null,
-      analysis: `Error during comparison: ${error.message}`,
+      analysis: `Error during comparison: ${errorMessage}`,
       overall_score: 0,
     };
   }
@@ -986,9 +987,9 @@ async function main(): Promise<void> {
     console.log("\n\n");
     console.log("===== MISSED BENCHMARKS =====");
     const missed = results.filter((r) => !r.vulnerability_found);
-    let lines: string[] = [];
+    const lines: string[] = [];
     for (let i = 0; i < missed.length; i++) {
-      let result = missed[i];
+      const result = missed[i];
       lines.push(result.benchmark_id.padEnd(12) + "X".padEnd(14));
     }
     console.log(lines.join("\n"));

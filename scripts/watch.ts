@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { watch } from "fs";
 import { spawn, type Subprocess } from "bun";
-import { resolve, join } from "path";
+import { resolve } from "path";
 
 const TARGET_FILE = "src/tui/index.tsx";
 const WATCH_DIRS = ["src"];

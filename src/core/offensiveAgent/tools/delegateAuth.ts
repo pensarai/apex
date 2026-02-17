@@ -3,11 +3,9 @@ import { z } from "zod";
 import { join } from "path";
 import { writeFileSync } from "fs";
 import type { ToolContext } from "./types";
-import {
-  runAuthenticationSubagent,
-  type AuthCredentials,
-  type AuthMethod,
-} from "../../agents/legacy/authenticationSubagent";
+import { type AuthCredentials } from "../../agents/legacy/authenticationSubagent";
+// runAuthenticationAgent is dynamically imported inside execute() to break
+// the circular dependency: authAgent → offensiveSecurityAgent → tools → delegateAuth → authAgent
 
 /**
  * Merge session-level credentials with explicitly passed credentials.
@@ -236,22 +234,19 @@ When to use delegate_to_auth_subagent vs authenticate_session:
           tokens,
         });
 
-        const result = await runAuthenticationSubagent({
-          input: {
-            target,
-            session: ctx.session,
-            credentials,
-            authFlowHints: authHints
-              ? {
-                  loginEndpoints: loginUrl ? [loginUrl] : undefined,
-                  protectedEndpoints: authHints.protectedEndpoints,
-                  authScheme: authHints.authScheme as AuthMethod,
-                  csrfRequired: authHints.csrfRequired,
-                }
-              : undefined,
-          },
+        // Dynamic import to break circular dependency:
+        // authAgent → offensiveSecurityAgent → tools/index → delegateAuth → api/authentication → authAgent
+        const { runAuthenticationAgent } =
+          await import("../../api/authentication");
+
+        const result = await runAuthenticationAgent({
+          target,
+          session: ctx.session,
+          credentials,
+          authHints,
           model: ctx.model,
-          enableBrowserTools: authHints?.browserRequired !== false,
+          abortSignal: ctx.abortSignal,
+          callbacks: ctx.callbacks,
         });
 
         if (result.success) {

@@ -28,6 +28,7 @@ interface WizardState {
     allowedHosts: string[];
     allowedPorts: string[];
     strictScope: boolean;
+    enumerateSubdomains: boolean;
   };
   headers: {
     mode: "none" | "default" | "custom";
@@ -198,6 +199,7 @@ export default function WebWizard({
       allowedHosts: initialHosts || [],
       allowedPorts: initialPorts?.map(String) || [],
       strictScope: initialStrict || false,
+      enumerateSubdomains: false,
     },
     headers: {
       mode: initialHeadersMode || "default",
@@ -258,6 +260,11 @@ export default function WebWizard({
             .filter((p) => !isNaN(p)),
           strictScope: state.scope.strictScope,
         };
+      }
+
+      // Subdomain enumeration
+      if (state.scope.enumerateSubdomains) {
+        sessionConfig.enumerateSubdomains = true;
       }
 
       // Headers config
@@ -419,6 +426,16 @@ export default function WebWizard({
           }));
           return;
         }
+        if (focusedSection === 1 && focusedField === 3) {
+          setState((prev) => ({
+            ...prev,
+            scope: {
+              ...prev.scope,
+              enumerateSubdomains: !prev.scope.enumerateSubdomains,
+            },
+          }));
+          return;
+        }
         if (focusedSection === 2 && focusedField === 0) {
           const modes: Array<"none" | "default" | "custom"> = [
             "none",
@@ -529,7 +546,7 @@ export default function WebWizard({
       case 0:
         return 4; // Auth
       case 1:
-        return 3; // Scope
+        return 4; // Scope (host, port, strictScope, enumerateSubdomains)
       case 2:
         return state.headers.mode === "custom" ? 3 : 1; // Headers
       case 3:
@@ -649,6 +666,16 @@ export default function WebWizard({
                   auth: { ...prev.auth, loginUrl: v },
                 }))
               }
+              onPaste={(event) => {
+                const cleaned = String(event.text).replace(/\r?\n/g, " ");
+                setState((prev) => ({
+                  ...prev,
+                  auth: {
+                    ...prev.auth,
+                    loginUrl: prev.auth.loginUrl + cleaned,
+                  },
+                }));
+              }}
               focused={focusedField === 0}
             />
             <Input
@@ -661,6 +688,16 @@ export default function WebWizard({
                   auth: { ...prev.auth, username: v },
                 }))
               }
+              onPaste={(event) => {
+                const cleaned = String(event.text).replace(/\r?\n/g, " ");
+                setState((prev) => ({
+                  ...prev,
+                  auth: {
+                    ...prev.auth,
+                    username: prev.auth.username + cleaned,
+                  },
+                }));
+              }}
               focused={focusedField === 1}
             />
             <Input
@@ -673,6 +710,16 @@ export default function WebWizard({
                   auth: { ...prev.auth, password: v },
                 }))
               }
+              onPaste={(event) => {
+                const cleaned = String(event.text).replace(/\r?\n/g, " ");
+                setState((prev) => ({
+                  ...prev,
+                  auth: {
+                    ...prev.auth,
+                    password: prev.auth.password + cleaned,
+                  },
+                }));
+              }}
               focused={focusedField === 2}
             />
             <Input
@@ -685,6 +732,16 @@ export default function WebWizard({
                   auth: { ...prev.auth, instructions: v },
                 }))
               }
+              onPaste={(event) => {
+                const cleaned = String(event.text).replace(/\r?\n/g, " ");
+                setState((prev) => ({
+                  ...prev,
+                  auth: {
+                    ...prev.auth,
+                    instructions: prev.auth.instructions + cleaned,
+                  },
+                }));
+              }}
               focused={focusedField === 3}
             />
           </box>
@@ -743,6 +800,17 @@ export default function WebWizard({
                 {state.scope.strictScope ? "● Enabled" : "○ Disabled"}
               </text>
               {focusedField === 2 && <text fg={dimText}>(↑/↓ to toggle)</text>}
+            </box>
+            <box flexDirection="row" gap={1}>
+              <text fg={focusedField === 3 ? creamText : dimText}>
+                Enumerate Subdomains:
+              </text>
+              <text
+                fg={state.scope.enumerateSubdomains ? greenBullet : dimText}
+              >
+                {state.scope.enumerateSubdomains ? "● Enabled" : "○ Disabled"}
+              </text>
+              {focusedField === 3 && <text fg={dimText}>(↑/↓ to toggle)</text>}
             </box>
           </box>
         )}

@@ -281,6 +281,7 @@ export function streamResponse(
                 id: "tool-repair",
                 timestamp: new Date(),
                 modelId: "",
+                messages: [],
               },
               providerMetadata: undefined,
               stepType: "initial",
@@ -291,6 +292,11 @@ export function streamResponse(
           }
 
           // Return the tool call with stringified repaired arguments
+          if (repairedArgs === undefined || repairedArgs === null) {
+            throw new Error(
+              `Tool call repair for "${toolCall.toolName}" produced no valid output`,
+            );
+          }
           return { ...toolCall, input: JSON.stringify(repairedArgs) };
         } catch (repairError) {
           if (!silent) {

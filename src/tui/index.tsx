@@ -3,7 +3,6 @@ import { useState, useEffect } from "react";
 import Footer from "./components/footer";
 import { CommandProvider } from "./context/command";
 import { AgentProvider } from "./context/agent";
-import SessionView from "./components/session-view";
 import SessionsDisplay from "./components/commands/sessions-display";
 import ConfigDialog from "./components/commands/config-dialog";
 import ChatApp from "./components/chat";
@@ -27,6 +26,7 @@ import ShortcutsDialog from "./components/commands/shortcuts-dialog";
 import HelpDialog from "./components/commands/help-dialog";
 import ModelsDisplay from "./components/commands/models-display";
 import { KeybindingProvider } from "./context/keybinding";
+import Pentest from "./components/pentest/pentest";
 
 interface AppProps {
   appConfig: Config;
@@ -302,13 +302,7 @@ function CommandDisplay({
 
   // Session route - render SessionView which handles pentest execution
   if (route.data.type === "session") {
-    return (
-      <SessionView
-        sessionId={route.data.sessionId}
-        isResume={route.data.isResume}
-        openAsOperator={route.data.openAsOperator}
-      />
-    );
+    return <Pentest sessionId={route.data.sessionId} />;
   }
 
   return null;

@@ -1,6 +1,6 @@
 export * from "./agent";
 export * from "../tools";
-export * from "../../attackSurfaceAgent/prompts";
+export * from "../../attackSurface/prompts";
 // Explicitly export from types, excluding names that conflict with schemas
 export {
   type AttackSurfaceAnalysisResults,
