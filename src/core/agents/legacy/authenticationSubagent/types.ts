@@ -6,7 +6,7 @@
  */
 
 import { z } from "zod";
-import type { Session } from "../../../session";
+import type { SessionInfo } from "../../../session";
 
 // =============================================================================
 // Constants
@@ -281,7 +281,7 @@ export interface AuthFlowHints {
  */
 export interface AuthenticationSubagentInput {
   target: string;
-  session: Session.SessionInfo;
+  session: SessionInfo;
   strategy?: "provided" | "registration" | "extraction" | "verification";
   credentials?: AuthCredentials;
   /** All credentials stored on the domain, provided as context to the agent */
@@ -773,7 +773,7 @@ export interface AttemptRegistrationResult {
  */
 export interface AuthDiscoveryInput {
   target: string;
-  session: Session.SessionInfo;
+  session: SessionInfo;
   additionalEndpoints?: string[];
 }
 

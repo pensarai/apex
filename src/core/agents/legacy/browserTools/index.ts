@@ -16,4 +16,4 @@ export {
   type BrowserFillResult,
   type BrowserEvaluateResult,
   type BrowserConsoleResult,
-} from "./playwrightMcp";
+} from "../../../offensiveAgent/tools/playwrightMcp";

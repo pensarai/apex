@@ -36,7 +36,7 @@ import { taskManager } from "../taskManager";
 import {
   createBrowserTools,
   disconnectMcpClient,
-} from "../browserTools/playwrightMcp";
+} from "../../../offensiveAgent/tools/playwrightMcp";
 import { createPocTool } from "../metaTestingAgent/pocTools";
 import { Logger } from "../../../logger";
 import { inferVulnerabilityClasses } from "../orchestrator/prompts";

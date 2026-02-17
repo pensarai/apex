@@ -13,7 +13,7 @@
  */
 
 import { join } from "path";
-import { createBrowserTools } from "../../agents/legacy/browserTools/playwrightMcp";
+import { createBrowserTools } from "./playwrightMcp";
 import type { ToolContext } from "./types";
 
 /**

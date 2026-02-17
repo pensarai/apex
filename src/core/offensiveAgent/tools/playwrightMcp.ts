@@ -14,7 +14,7 @@ import { tool } from "ai";
 import { z } from "zod";
 import { writeFileSync, mkdirSync, existsSync } from "fs";
 import { join, dirname } from "path";
-import type { Logger } from "../../../logger";
+import type { Logger } from "../../logger";
 
 // Types for tool results
 export interface BrowserNavigateResult {

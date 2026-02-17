@@ -1,11 +1,11 @@
 import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
 import { hasToolCall } from "ai";
-import type { AIModel } from "../ai";
-import type { AIAuthConfig } from "../ai/utils";
-import { type SessionInfo } from "../session";
-import { AUTH_SUBAGENT_SYSTEM_PROMPT } from "./legacy/authenticationSubagent/prompts";
-import { detectOSAndEnhancePrompt } from "./legacy/utils";
-import { OffensiveSecurityAgent } from "../offensiveAgent/offensiveSecurityAgent";
+import type { AIModel } from "../../ai";
+import type { AIAuthConfig } from "../../ai/utils";
+import { type SessionInfo } from "../../session";
+import { AUTH_SUBAGENT_SYSTEM_PROMPT } from "./prompts";
+import { detectOSAndEnhancePrompt } from "../legacy/utils";
+import { OffensiveSecurityAgent } from "../../offensiveAgent/offensiveSecurityAgent";
 
 // ---------------------------------------------------------------------------
 // Types

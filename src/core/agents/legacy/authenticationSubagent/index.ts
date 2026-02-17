@@ -128,7 +128,7 @@ export {
   buildAuthDiscoveryPrompt,
   CONTEXT_RECOVERY_REMINDER,
   BROWSER_FLOW_GUIDANCE,
-} from "./prompts";
+} from "../../authenticationAgent/prompts";
 
 // Strategies
 export {

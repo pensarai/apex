@@ -5,7 +5,7 @@
 
 import type { PentestTarget } from "../../core/agents/legacy/attackSurfaceAgent/types";
 import type { DisplayMessage } from "../components/agent-display";
-import type { Session } from "../../core/session";
+import type { SessionInfo } from "../../core/session";
 
 /**
  * Endpoint discovered during recon
@@ -69,7 +69,7 @@ export interface DriverAgent {
  * State for the driver dashboard
  */
 export interface DriverDashboardState {
-  session: Session.SessionInfo;
+  session: SessionInfo;
   endpoints: DiscoveredEndpoint[];
   agents: DriverAgent[];
   reconStatus: "idle" | "running" | "completed";

@@ -8,14 +8,13 @@ import {
   type AuthCredentials,
   type AuthMethod,
 } from "../../agents/legacy/authenticationSubagent";
-import type { Session } from "../../session";
 
 /**
  * Merge session-level credentials with explicitly passed credentials.
  * Explicit values take precedence over session defaults.
  */
 function mergeAuthCredentials(
-  sessionCreds: Session.AuthCredentials | undefined,
+  sessionCreds: AuthCredentials | undefined,
   explicit: {
     username?: string;
     password?: string;

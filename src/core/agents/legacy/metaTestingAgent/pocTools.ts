@@ -30,7 +30,7 @@ import type {
 } from "./types";
 import { CreatePocSchema, DocumentFindingSchema } from "./types";
 import type { ExecuteCommandOpts, ExecuteCommandResult } from "../tools";
-import { scoreFindingWithCVSS, DEFAULT_CVSS_MODEL } from "../cvssScorer";
+import { scoreFindingWithCVSS, DEFAULT_CVSS_MODEL } from "../../cvssScorer";
 import type { AIModel } from "../../../ai";
 import type { CVSS4Metrics } from "../../../../lib/cvss";
 import type { AIAuthConfig } from "../../../ai/utils";

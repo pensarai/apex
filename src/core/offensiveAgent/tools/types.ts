@@ -1,10 +1,11 @@
 import type { AIModel } from "../../ai";
 import type { AIAuthConfig } from "../../ai/utils";
-import type { Session } from "../../session";
+import type { SessionInfo } from "../../session";
 import type {
   DocumentedAssetRecord,
   AttackSurfaceReport,
 } from "../../agents/legacy/attackSurfaceAgent/schemas";
+import type { SubagentConsumeCallbacks } from "../types";
 
 /**
  * Shared context passed to every tool factory.
@@ -15,7 +16,7 @@ import type {
  */
 export type ToolContext = {
   /** Session providing paths for findings, POCs, logs, scratchpad, etc. */
-  session: Session.SessionInfo;
+  session: SessionInfo;
 
   /** The target URL / host — needed by browser tools for context */
   target?: string;
@@ -31,6 +32,9 @@ export type ToolContext = {
 
   /** Optional persistence callbacks for external storage integration */
   persistence?: PersistenceCallbacks;
+
+  /** Callbacks for forwarding subagent stream events to the parent consumer */
+  subagentCallbacks?: SubagentConsumeCallbacks;
 };
 
 /**

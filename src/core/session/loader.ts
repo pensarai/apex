@@ -7,7 +7,7 @@
 
 import { join } from "path";
 import { existsSync, readdirSync, readFileSync } from "fs";
-import type { Session } from "./index";
+import type { SessionInfo } from "./index";
 import type { AuthenticationInfo } from "../agents/legacy/orchestrator/types";
 
 /**
@@ -107,7 +107,7 @@ export interface UISubagent {
  * Loaded session state
  */
 export interface LoadedSessionState {
-  session: Session.SessionInfo;
+  session: SessionInfo;
   subagents: UISubagent[];
   attackSurfaceResults: AttackSurfaceResults | null;
   isComplete: boolean;
@@ -324,7 +324,7 @@ function hasReport(rootPath: string): boolean {
  */
 function createDiscoveryFromLogs(
   rootPath: string,
-  session: Session.SessionInfo,
+  session: SessionInfo,
 ): UISubagent | null {
   const logPath = join(rootPath, "logs", "streamlined-pentest.log");
   if (!existsSync(logPath)) {
@@ -395,7 +395,7 @@ function createDiscoveryFromLogs(
  * Load complete session state from execution directory
  */
 export async function loadSessionState(
-  session: Session.SessionInfo,
+  session: SessionInfo,
 ): Promise<LoadedSessionState> {
   const rootPath = session.rootPath;
 

@@ -7,7 +7,7 @@ import {
 } from "ai";
 import { streamResponse, type AIModel } from "../../../ai";
 import { type AIAuthConfig } from "../../../ai/utils";
-import { SYSTEM } from "./prompts";
+import { SYSTEM } from "../../attackSurfaceAgent/prompts";
 import {
   createPentestTools,
   type ExecuteCommandOpts,
@@ -23,7 +23,7 @@ import { getScopeDescription } from "../scope";
 import { extractJavascriptEndpoints } from "./jsExtraction";
 import { generateRandomName } from "../../../../util/name";
 import { nanoid } from "nanoid";
-import { createBrowserTools } from "../browserTools/playwrightMcp";
+import { createBrowserTools } from "../../../offensiveAgent/tools/playwrightMcp";
 import {
   runAuthenticationSubagent,
   type AuthCredentials,

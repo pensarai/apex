@@ -29,11 +29,11 @@ export type {
 } from "../agents/targetedPentestAgent";
 
 // Attack surface discovery
-export { AttackSurfaceAgent } from "../agents/attackSurfaceAgent";
+export { AttackSurfaceAgent } from "../agents/attackSurfaceAgent/agent";
 export type {
   AttackSurfaceAgentInput,
   AttackSurfaceResult,
-} from "../agents/attackSurfaceAgent";
+} from "../agents/attackSurfaceAgent/agent";
 
 // Blackbox pentest (full end-to-end: recon → test → report)
 export {
@@ -49,11 +49,11 @@ export type {
 export {
   AuthenticationAgent,
   runAuthenticationAgent,
-} from "../agents/authenticationAgent";
+} from "../agents/authenticationAgent/agent";
 export type {
   AuthenticationAgentInput,
   AuthenticationResult,
-} from "../agents/authenticationAgent";
+} from "../agents/authenticationAgent/agent";
 
 // Benchmark comparison
 export { BenchmarkComparisonAgent } from "../agents/benchmarkComparisonAgent";

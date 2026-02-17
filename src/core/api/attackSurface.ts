@@ -1,7 +1,7 @@
 import {
   AttackSurfaceAgent,
   type AttackSurfaceAgentInput,
-} from "../agents/attackSurfaceAgent";
+} from "../agents/attackSurfaceAgent/agent";
 // ---------------------------------------------------------------------------
 // Convenience runner
 // ---------------------------------------------------------------------------

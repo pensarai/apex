@@ -8,7 +8,7 @@
 
 import { tool } from "ai";
 import { z } from "zod";
-import type { Session } from "../../../session";
+import type { SessionInfo } from "../../../session";
 import type { Logger } from "../../../logger";
 import {
   AuthStateManager,
@@ -70,11 +70,11 @@ export interface HttpRequestResult {
 // BrowserTools is the return type from createBrowserTools
 // We use a generic record type to be compatible with the actual tool structure
 export type BrowserTools = ReturnType<
-  typeof import("../browserTools/playwrightMcp").createBrowserTools
+  typeof import("../../../offensiveAgent/tools/playwrightMcp").createBrowserTools
 >;
 
 export interface AuthToolsConfig {
-  session: Session.SessionInfo;
+  session: SessionInfo;
   authStateManager: AuthStateManager;
   httpRequest?: (opts: HttpRequestOpts) => Promise<HttpRequestResult>;
   browserTools?: BrowserTools;

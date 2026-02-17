@@ -45,8 +45,12 @@ export class OffensiveSecurityAgent<TResult = void> {
     streamResult: StreamTextResult<ToolSet, never>,
   ) => TResult | Promise<TResult>;
 
+  /** Identifier for this agent when it is running as a subagent. */
+  private readonly subagentId?: string;
+
   constructor(input: OffensiveSecurityAgentInput<TResult>) {
     this.resolveResult = input.resolveResult;
+    this.subagentId = input.subagentId;
 
     // -- Tools ----------------------------------------------------------------
     const tools = createAllTools({
@@ -56,6 +60,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       model: input.model,
       authConfig: input.authConfig,
       persistence: input.persistence,
+      subagentCallbacks: input.subagentCallbacks,
     });
 
     // -- Stream ---------------------------------------------------------------
@@ -117,23 +122,35 @@ export class OffensiveSecurityAgent<TResult = void> {
    * @returns The value produced by `resolveResult`, or `void` if none was provided.
    */
   async consume(callbacks: ConsumeCallbacks = {}): Promise<TResult> {
-    const { onTextDelta, onToolCall, onToolResult, onError } = callbacks;
+    const {
+      onTextDelta,
+      onToolCall,
+      onToolResult,
+      onError,
+      subagentCallbacks,
+    } = callbacks;
+
+    const sid = this.subagentId;
 
     for await (const chunk of this.streamResult.fullStream) {
       switch (chunk.type) {
         case "text-delta":
           onTextDelta?.(chunk);
+          subagentCallbacks?.onTextDelta?.({ ...chunk, subagentId: sid });
           break;
         case "tool-call":
           onToolCall?.(chunk);
+          subagentCallbacks?.onToolCall?.({ ...chunk, subagentId: sid });
           break;
         case "tool-result":
           onToolResult?.(chunk);
+          subagentCallbacks?.onToolResult?.({ ...chunk, subagentId: sid });
           break;
         case "error":
           if (onError) {
             onError((chunk as { type: "error"; error: unknown }).error);
           }
+          subagentCallbacks?.onError?.(chunk.error);
           break;
       }
     }

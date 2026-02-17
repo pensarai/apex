@@ -66,7 +66,7 @@ import { provideComparisonResults } from "./provideComparisonResults";
  * pick which ones to activate via the `activeTools` string array — the
  * AI SDK handles the filtering at the model level.
  */
-export function createAllTools(ctx: ToolContext) {
+export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
   return {
     // Browser automation tools (8 tools from Playwright MCP)
     ...createBrowserToolset(ctx),

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { Session } from "../../../session";
+import type { SessionInfo } from "../../../session";
 import type { PentestTarget } from "../attackSurfaceAgent/types";
 import type {
   ExecuteCommandOpts,
@@ -298,7 +298,7 @@ export interface MetaTestingAgentInput {
   model: string; // AIModel type
 
   /** Session for this pentest run */
-  session: Session.SessionInfo;
+  session: SessionInfo;
 
   /** Session configuration */
   sessionConfig?: {
@@ -341,7 +341,7 @@ export interface MetaTestingProgressStatus {
  */
 export interface MetaTestingAgentResult {
   success: boolean;
-  session: Session.SessionInfo;
+  session: SessionInfo;
   totalFindings: number;
   pocPaths: string[];
   findingPaths: string[];

@@ -6,7 +6,7 @@
  */
 
 import type { AIModel } from "../../../ai";
-import type { Session } from "../../../session";
+import type { SessionInfo } from "../../../session";
 import { runAuthenticationSubagent } from "./agent";
 import { AuthStateManager } from "./authStateManager";
 import type {
@@ -22,7 +22,7 @@ import type {
 
 export interface AuthenticationConfig {
   target: string;
-  session: Session.SessionInfo;
+  session: SessionInfo;
   credentials?: AuthCredentials;
   authFlowHints?: AuthFlowHints;
 }
@@ -147,7 +147,7 @@ export async function ensureAuthenticated(
  * Use this for quick checks without the overhead of running the agent.
  */
 export function checkAuthStatus(
-  session: Session.SessionInfo,
+  session: SessionInfo,
   target: string,
 ): { valid: boolean; needsRefresh: boolean; status: string } {
   const targetHost = extractHost(target);
@@ -173,7 +173,7 @@ export function checkAuthStatus(
  * Returns auth headers/cookies if available, or undefined if not.
  */
 export function getExistingAuth(
-  session: Session.SessionInfo,
+  session: SessionInfo,
   target: string,
 ): ExportedAuthInfo | undefined {
   const targetHost = extractHost(target);

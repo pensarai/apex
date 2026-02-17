@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { Session } from "../../core/session";
+import type { SessionInfo } from "../../core/session";
 import { useSession } from "../context/session";
 
 interface SessionDisplayProps {
@@ -9,7 +9,7 @@ interface SessionDisplayProps {
 export function SessionDisplay(props: SessionDisplayProps) {
   const { sessionId } = props;
   const _session = useSession();
-  const [session, setSession] = useState<Session.SessionInfo>();
+  const [session, setSession] = useState<SessionInfo>();
 
   const loadSession = async (id: string) => {
     const sessionData = await _session.load(sessionId);

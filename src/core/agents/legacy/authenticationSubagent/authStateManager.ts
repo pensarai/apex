@@ -7,7 +7,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
-import type { Session } from "../../../session";
+import type { SessionInfo } from "../../../session";
 import type {
   AuthState,
   AuthToken,
@@ -79,7 +79,7 @@ export class AuthStateManager
   private onStateChange?: StateChangeCallback;
 
   constructor(
-    session: Session.SessionInfo,
+    session: SessionInfo,
     targetHost: string,
     onStateChange?: StateChangeCallback,
   ) {

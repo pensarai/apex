@@ -1,8 +1,8 @@
 import { tool } from "ai";
 import { z } from "zod";
 import type { ToolContext } from "./types";
-import { AttackSurfaceAgent } from "../../agents/attackSurfaceAgent";
-import type { AttackSurfaceResult } from "../../agents/attackSurfaceAgent";
+import { AttackSurfaceAgent } from "../../agents/attackSurfaceAgent/agent";
+import type { AttackSurfaceResult } from "../../agents/attackSurfaceAgent/agent";
 
 /**
  * Factory for the `run_attack_surface` tool.
@@ -46,7 +46,7 @@ Returns:
         };
       }
 
-      console.log(`\n🔍 Launching attack surface agent for ${target}`);
+      const subagentId = "attack-surface-agent";
 
       try {
         const agent = new AttackSurfaceAgent({
@@ -59,9 +59,28 @@ Returns:
         });
 
         const result: AttackSurfaceResult = await agent.consume({
-          onTextDelta: (d) => process.stdout.write(d.text),
           onToolCall: (d) => console.log(`  [recon] → ${d.toolName}`),
           onToolResult: (d) => console.log(`  [recon] ✓ ${d.toolName}`),
+          subagentCallbacks: ctx.subagentCallbacks
+            ? {
+                onTextDelta: (d) =>
+                  ctx.subagentCallbacks!.onTextDelta?.({
+                    ...d,
+                    subagentId,
+                  }),
+                onToolCall: (d) =>
+                  ctx.subagentCallbacks!.onToolCall?.({
+                    ...d,
+                    subagentId,
+                  }),
+                onToolResult: (d) =>
+                  ctx.subagentCallbacks!.onToolResult?.({
+                    ...d,
+                    subagentId,
+                  }),
+                onError: (e) => ctx.subagentCallbacks!.onError?.(e),
+              }
+            : undefined,
         });
 
         const targetCount = result.targets.length;

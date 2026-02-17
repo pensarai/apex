@@ -30,7 +30,7 @@ import {
 import {
   createBrowserTools,
   disconnectMcpClient,
-} from "../browserTools/playwrightMcp";
+} from "../../../offensiveAgent/tools/playwrightMcp";
 import {
   AUTH_SUBAGENT_SYSTEM_PROMPT,
   AUTH_DISCOVERY_SYSTEM_PROMPT,
@@ -38,7 +38,7 @@ import {
   buildAuthDiscoveryPrompt,
   CONTEXT_RECOVERY_REMINDER,
   BROWSER_FLOW_GUIDANCE,
-} from "./prompts";
+} from "../../authenticationAgent/prompts";
 import type {
   AuthenticationSubagentInput,
   AuthenticationSubagentResult,

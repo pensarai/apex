@@ -10,7 +10,7 @@ import type {
 } from "ai";
 import type { AIModel } from "../ai";
 import type { AIAuthConfig } from "../ai/utils";
-import type { Session } from "../session";
+import type { SessionInfo } from "../session";
 import type { ToolName, PersistenceCallbacks } from "./tools";
 
 /**
@@ -32,7 +32,7 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
   model: AIModel;
 
   /** Session providing paths for findings, POCs, logs, etc. */
-  session: Session.SessionInfo;
+  session: SessionInfo;
 
   /** The target URL / host — passed to browser tools for context */
   target?: string;
@@ -82,6 +82,18 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
   resolveResult?: (
     streamResult: StreamTextResult<ToolSet, never>,
   ) => TResult | Promise<TResult>;
+
+  /** The subagent ID if this agent is a subagent */
+  subagentId?: string;
+
+  /**
+   * Callbacks for forwarding subagent stream events to the parent consumer.
+   *
+   * Passed through to the tool context so orchestration tools
+   * (run_attack_surface, spawn_pentest_swarm) can forward their
+   * sub-agent events back to the top-level consumer.
+   */
+  subagentCallbacks?: SubagentConsumeCallbacks;
 };
 
 /**
@@ -97,6 +109,30 @@ export type ConsumeCallbacks = {
   ) => void;
   onToolResult?: (
     delta: Extract<TextStreamPart<ToolSet>, { type: "tool-result" }>,
+  ) => void;
+  onError?: (error: unknown) => void;
+  subagentCallbacks?: SubagentConsumeCallbacks;
+};
+
+/**
+ * Typed callbacks for consuming the subagent's output stream.
+ * Pass to `subagent.consume()` for ergonomic stream processing.
+ */
+export type SubagentConsumeCallbacks = {
+  onTextDelta?: (
+    delta: Extract<TextStreamPart<ToolSet>, { type: "text-delta" }> & {
+      subagentId?: string;
+    },
+  ) => void;
+  onToolCall?: (
+    delta: Extract<TextStreamPart<ToolSet>, { type: "tool-call" }> & {
+      subagentId?: string;
+    },
+  ) => void;
+  onToolResult?: (
+    delta: Extract<TextStreamPart<ToolSet>, { type: "tool-result" }> & {
+      subagentId?: string;
+    },
   ) => void;
   onError?: (error: unknown) => void;
 };

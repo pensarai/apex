@@ -2,19 +2,19 @@ import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
 import { hasToolCall, stepCountIs } from "ai";
 import { join } from "path";
 import { existsSync } from "fs";
-import type { AIModel } from "../ai";
-import type { AIAuthConfig } from "../ai/utils";
-import { type SessionInfo } from "../session";
-import { SYSTEM as ATTACK_SURFACE_SYSTEM_PROMPT } from "./legacy/attackSurfaceAgent/prompts";
-import { detectOSAndEnhancePrompt } from "./legacy/utils";
-import { getScopeDescription } from "./legacy/scope";
+import type { AIModel } from "../../ai";
+import type { AIAuthConfig } from "../../ai/utils";
+import { type SessionInfo } from "../../session";
+import { SYSTEM as ATTACK_SURFACE_SYSTEM_PROMPT } from "./prompts";
+import { detectOSAndEnhancePrompt } from "../legacy/utils";
+import { getScopeDescription } from "../legacy/scope";
 import type {
   AttackSurfaceAnalysisResults,
   PentestTarget,
-} from "./legacy/attackSurfaceAgent/types";
-import { loadAttackSurfaceResults } from "./legacy/attackSurfaceAgent/types";
-import { OffensiveSecurityAgent } from "../offensiveAgent/offensiveSecurityAgent";
-import type { PersistenceCallbacks } from "../offensiveAgent/tools";
+} from "../legacy/attackSurfaceAgent/types";
+import { loadAttackSurfaceResults } from "../legacy/attackSurfaceAgent/types";
+import { OffensiveSecurityAgent } from "../../offensiveAgent/offensiveSecurityAgent";
+import type { PersistenceCallbacks } from "../../offensiveAgent/tools";
 
 // ---------------------------------------------------------------------------
 // Types
