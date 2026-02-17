@@ -14,7 +14,6 @@ on:
 jobs:
   console-typecheck:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout apex (this repo)
         uses: actions/checkout@v4
@@ -52,11 +51,20 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: "22"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
 
       - name: Install console dependencies
         working-directory: console
-        run: npm install
+        run: npm ci
+
+      - name: Install SST providers
+        working-directory: console
+        run: |
+          npx sst version
+          npx sst install
 
       - name: Typecheck console
         working-directory: console
