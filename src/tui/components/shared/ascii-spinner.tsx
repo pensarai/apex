@@ -21,7 +21,10 @@ interface AsciiSpinnerProps {
 /**
  * Animated ASCII spinner for pending operations.
  */
-export function AsciiSpinner({ label, fg = colors.toolColor }: AsciiSpinnerProps) {
+export function AsciiSpinner({
+  label,
+  fg = colors.toolColor,
+}: AsciiSpinnerProps) {
   const [frame, setFrame] = useState(0);
 
   useEffect(() => {

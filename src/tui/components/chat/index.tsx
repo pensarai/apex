@@ -38,10 +38,13 @@ export function ChatApp({
 
   // View state
   const [currentView, setCurrentView] = useState<ChatAppView>(initialView);
-  const [activeSession, setActiveSession] = useState<Session.SessionInfo | null>(null);
+  const [activeSession, setActiveSession] =
+    useState<Session.SessionInfo | null>(null);
   const [isResume, setIsResume] = useState(initialIsResume);
   const [sessionModel, setSessionModel] = useState<ModelInfo>(model);
-  const [initialDirective, setInitialDirective] = useState<string | undefined>(undefined);
+  const [initialDirective, setInitialDirective] = useState<string | undefined>(
+    undefined,
+  );
 
   // Load initial session if provided
   useEffect(() => {
@@ -57,23 +60,26 @@ export function ChatApp({
   }, [initialSessionId]);
 
   // Handle view navigation
-  const handleNavigate = useCallback((
-    view: ChatAppView,
-    options?: { sessionId?: string; isResume?: boolean }
-  ) => {
-    if (view === "chat" && options?.sessionId) {
-      // Resume session
-      Session.get(options.sessionId).then((session) => {
-        if (session) {
-          setActiveSession(session);
-          setIsResume(options.isResume ?? false);
-          setCurrentView("chat");
-        }
-      });
-    } else {
-      setCurrentView(view);
-    }
-  }, []);
+  const handleNavigate = useCallback(
+    (
+      view: ChatAppView,
+      options?: { sessionId?: string; isResume?: boolean },
+    ) => {
+      if (view === "chat" && options?.sessionId) {
+        // Resume session
+        Session.get(options.sessionId).then((session) => {
+          if (session) {
+            setActiveSession(session);
+            setIsResume(options.isResume ?? false);
+            setCurrentView("chat");
+          }
+        });
+      } else {
+        setCurrentView(view);
+      }
+    },
+    [],
+  );
 
   // Handle starting a new session from home (exploration mode)
   const handleStartSession = useCallback(async (directive: string) => {

@@ -18,7 +18,9 @@ export default function CommandInput({
   inputKey = 0,
 }: CommandInputProps) {
   const [command, setCommand] = useState("");
-  const [recentSessions, setRecentSessions] = useState<Session.SessionInfo[]>([]);
+  const [recentSessions, setRecentSessions] = useState<Session.SessionInfo[]>(
+    [],
+  );
   const { executeCommand, autocompleteOptions } = useCommand();
   const config = useConfig();
   const { setInputValue } = useInput();
@@ -110,13 +112,13 @@ export default function CommandInput({
           <span>Press </span>
           <span fg={creamText}>/</span>
           <span> for commands</span>
-          <span>  •  </span>
+          <span> • </span>
           <span fg={creamText}>{`[↓][↑]`}</span>
           <span> navigate</span>
-          <span>  •  </span>
+          <span> • </span>
           <span fg={creamText}>[tab]</span>
           <span> complete</span>
-          <span>  •  </span>
+          <span> • </span>
           <span fg={creamText}>[enter]</span>
           <span> run</span>
         </text>

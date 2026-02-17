@@ -37,7 +37,7 @@
 //   //     return;
 //   //   } catch (err) {
 //   //     setError("Failed to create session");
-//   //     console.error(err); 
+//   //     console.error(err);
 //   //   }
 //   // }
 

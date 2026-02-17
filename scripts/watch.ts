@@ -81,7 +81,7 @@ for (const dir of WATCH_DIRS) {
         console.log(`\x1b[36m[watch]\x1b[0m File changed: ${filename}`);
         startApp();
       }, 100);
-    }
+    },
   );
 }
 

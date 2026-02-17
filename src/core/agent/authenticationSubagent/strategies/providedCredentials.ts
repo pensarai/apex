@@ -8,7 +8,11 @@
  * Browser-based: SPA login forms, OAuth flows, JS-rendered pages
  */
 
-import type { AuthCredentials, AuthFlowDocumentation, AuthMethod } from "../types";
+import type {
+  AuthCredentials,
+  AuthFlowDocumentation,
+  AuthMethod,
+} from "../types";
 
 // =============================================================================
 // Types
@@ -56,14 +60,17 @@ export function selectAuthStrategy(
     browserRequired?: boolean;
     browserReason?: string;
   },
-  credentials: AuthCredentials
+  credentials: AuthCredentials,
 ): AuthStrategyResult {
   // If browser is explicitly required
   if (detectedScheme.browserRequired) {
     return {
       useHttp: false,
       useBrowser: true,
-      browserConfig: buildBrowserConfig(detectedScheme.loginUrl || "", detectedScheme),
+      browserConfig: buildBrowserConfig(
+        detectedScheme.loginUrl || "",
+        detectedScheme,
+      ),
       reason: detectedScheme.browserReason || "Browser authentication required",
     };
   }
@@ -147,7 +154,10 @@ export function selectAuthStrategy(
       return {
         useHttp: false,
         useBrowser: true,
-        browserConfig: buildBrowserConfig(detectedScheme.loginUrl || "", detectedScheme),
+        browserConfig: buildBrowserConfig(
+          detectedScheme.loginUrl || "",
+          detectedScheme,
+        ),
         reason: "OAuth flow requires browser",
       };
 
@@ -171,7 +181,10 @@ export function selectAuthStrategy(
       return {
         useHttp: false,
         useBrowser: true,
-        browserConfig: buildBrowserConfig(detectedScheme.loginUrl || "", detectedScheme),
+        browserConfig: buildBrowserConfig(
+          detectedScheme.loginUrl || "",
+          detectedScheme,
+        ),
         reason: "Unable to determine HTTP method, trying browser",
       };
   }
@@ -186,7 +199,7 @@ export function selectAuthStrategy(
  */
 function buildBrowserConfig(
   loginUrl: string,
-  scheme: { fields?: string[] }
+  scheme: { fields?: string[] },
 ): BrowserAuthConfig {
   return {
     loginUrl,
@@ -207,7 +220,14 @@ function detectUsernameField(fields?: string[]): string {
   }
 
   // Common username field names in order of preference
-  const usernameVariants = ["username", "user", "email", "login", "userid", "user_id"];
+  const usernameVariants = [
+    "username",
+    "user",
+    "email",
+    "login",
+    "userid",
+    "user_id",
+  ];
 
   for (const variant of usernameVariants) {
     if (fields.some((f) => f.toLowerCase() === variant)) {
@@ -216,7 +236,9 @@ function detectUsernameField(fields?: string[]): string {
   }
 
   // Return first non-password field
-  const nonPasswordField = fields.find((f) => !f.toLowerCase().includes("password"));
+  const nonPasswordField = fields.find(
+    (f) => !f.toLowerCase().includes("password"),
+  );
   return nonPasswordField || "username";
 }
 
@@ -294,13 +316,16 @@ export function buildAuthFlowDocumentation(
     accessTokenPath?: string;
     refreshTokenPath?: string;
     sessionCookieName?: string;
-  }
+  },
 ): Omit<AuthFlowDocumentation, "documentedAt"> {
   const flow: Omit<AuthFlowDocumentation, "documentedAt"> = {
     targetHost,
     scheme: {
       method: determineAuthMethod(strategyResult),
-      loginUrl: strategyResult.httpConfig?.loginUrl || strategyResult.browserConfig?.loginUrl || "",
+      loginUrl:
+        strategyResult.httpConfig?.loginUrl ||
+        strategyResult.browserConfig?.loginUrl ||
+        "",
     },
     fields: {
       usernameField: strategyResult.httpConfig?.usernameField || "username",
@@ -314,7 +339,8 @@ export function buildAuthFlowDocumentation(
     flow.fields.csrfField = "_token";
     flow.csrfExtraction = {
       method: "input_hidden",
-      selector: 'input[name="_token"], input[name="csrf_token"], input[name="authenticity_token"]',
+      selector:
+        'input[name="_token"], input[name="csrf_token"], input[name="authenticity_token"]',
     };
   }
 
@@ -343,7 +369,11 @@ export function buildAuthFlowDocumentation(
   if (strategyResult.useBrowser && strategyResult.browserConfig) {
     flow.browserFlow = {
       required: true,
-      reason: strategyResult.reason.includes("SPA") ? "spa" : strategyResult.reason.includes("OAuth") ? "oauth" : undefined,
+      reason: strategyResult.reason.includes("SPA")
+        ? "spa"
+        : strategyResult.reason.includes("OAuth")
+          ? "oauth"
+          : undefined,
       loginFormSelector: strategyResult.browserConfig.usernameSelector,
       submitButtonSelector: strategyResult.browserConfig.submitSelector,
       postLoginIndicator: strategyResult.browserConfig.postLoginIndicator,
@@ -385,7 +415,7 @@ function determineAuthMethod(result: AuthStrategyResult): AuthMethod {
  */
 export function validateCredentials(
   credentials: AuthCredentials,
-  strategy: AuthStrategyResult
+  strategy: AuthStrategyResult,
 ): { valid: boolean; missing: string[] } {
   const missing: string[] = [];
 
@@ -445,7 +475,7 @@ export const COMMON_LOGIN_ENDPOINTS = [
  */
 export function getLoginEndpointsToTry(
   baseUrl: string,
-  hints?: { loginEndpoints?: string[] }
+  hints?: { loginEndpoints?: string[] },
 ): string[] {
   const endpoints: string[] = [];
 

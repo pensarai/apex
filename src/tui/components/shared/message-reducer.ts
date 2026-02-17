@@ -39,7 +39,10 @@ type MessageAction =
 /**
  * Reducer function for message state.
  */
-function messageReducer(state: MessageState, action: MessageAction): MessageState {
+function messageReducer(
+  state: MessageState,
+  action: MessageAction,
+): MessageState {
   switch (action.type) {
     case "ADD_MESSAGE": {
       const newMessages = [...state.messages, action.message];
@@ -151,29 +154,32 @@ export function useMessageState(initialMessages?: DisplayMessage[]) {
   const [state, dispatch] = useReducer(
     messageReducer,
     initialMessages,
-    createInitialState
+    createInitialState,
   );
 
-  const addMessage = useCallback((message: DisplayMessage) => {
-    dispatch({ type: "ADD_MESSAGE", message });
-    return state.messages.length; // Return new index
-  }, [state.messages.length]);
+  const addMessage = useCallback(
+    (message: DisplayMessage) => {
+      dispatch({ type: "ADD_MESSAGE", message });
+      return state.messages.length; // Return new index
+    },
+    [state.messages.length],
+  );
 
   const updateTool = useCallback(
     (
       toolCallId: string,
-      updates: Partial<{ status: ToolStatus; result: unknown; logs: string[] }>
+      updates: Partial<{ status: ToolStatus; result: unknown; logs: string[] }>,
     ) => {
       dispatch({ type: "UPDATE_TOOL", toolCallId, updates });
     },
-    []
+    [],
   );
 
   const updateByIndex = useCallback(
     (index: number, message: DisplayMessage) => {
       dispatch({ type: "UPDATE_BY_INDEX", index, message });
     },
-    []
+    [],
   );
 
   const clearMessages = useCallback(() => {
@@ -189,14 +195,14 @@ export function useMessageState(initialMessages?: DisplayMessage[]) {
       const idx = state.toolCallIndex.get(toolCallId);
       return idx !== undefined ? state.messages[idx] : undefined;
     },
-    [state.messages, state.toolCallIndex]
+    [state.messages, state.toolCallIndex],
   );
 
   // Memoize check for pending tools in recent messages
   const hasPendingTool = useMemo(() => {
     const recentMessages = state.messages.slice(-5);
     return recentMessages.some(
-      (m) => isToolMessage(m) && m.status === "pending"
+      (m) => isToolMessage(m) && m.status === "pending",
     );
   }, [state.messages]);
 

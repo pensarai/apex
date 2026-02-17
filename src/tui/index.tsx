@@ -20,7 +20,7 @@ import { type RoutePath, RouteProvider, useRoute } from "./context/route";
 import { ResponsibleUseDisclosure } from "./components/responsible-use-disclosure";
 import { hasAnyProviderConfigured } from "../core/providers";
 import { SessionProvider } from "./context/session";
-import { InputProvider, useInput } from "./context/input";
+import { InputProvider } from "./context/input";
 import { FocusProvider, useFocus } from "./context/focus";
 import { DialogProvider, useDialog } from "./context/dialog";
 import ShortcutsDialog from "./components/commands/shortcuts-dialog";

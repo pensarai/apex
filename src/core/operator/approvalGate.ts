@@ -82,7 +82,7 @@ export class ApprovalGate extends EventEmitter {
   async check(
     toolName: string,
     toolCallId: string,
-    args: Record<string, unknown>
+    args: Record<string, unknown>,
   ): Promise<ApprovalDecision> {
     const tier = classifyToolCall({ toolName, args });
 
@@ -92,15 +92,22 @@ export class ApprovalGate extends EventEmitter {
       this.emitEvent({ type: "action-completed", entry });
       throw new ApprovalBlockedError(
         `Action blocked in plan mode (tier ${tier})`,
-        tier
+        tier,
       );
     }
 
     // Stage-aware auto-approval: Auto-approve offensive tools in test/validate stages
-    const isOffensiveStage = ["test", "validate"].includes(this.config.currentStage || "");
+    const isOffensiveStage = ["test", "validate"].includes(
+      this.config.currentStage || "",
+    );
     const isOffensiveTool = this.config.offensiveStageTools?.includes(toolName);
     if (isOffensiveStage && isOffensiveTool && tier <= 3) {
-      const entry = this.recordAction(toolName, toolCallId, tier, "auto-approved");
+      const entry = this.recordAction(
+        toolName,
+        toolCallId,
+        tier,
+        "auto-approved",
+      );
       this.emitEvent({ type: "action-completed", entry });
       return "auto-approved";
     }
@@ -109,7 +116,12 @@ export class ApprovalGate extends EventEmitter {
     const result = checkPermission(tier, this.config);
 
     if (result.autoApproved) {
-      const entry = this.recordAction(toolName, toolCallId, tier, "auto-approved");
+      const entry = this.recordAction(
+        toolName,
+        toolCallId,
+        tier,
+        "auto-approved",
+      );
       this.emitEvent({ type: "action-completed", entry });
       return "auto-approved";
     }
@@ -125,7 +137,7 @@ export class ApprovalGate extends EventEmitter {
     toolName: string,
     toolCallId: string,
     args: Record<string, unknown>,
-    tier: PermissionTier
+    tier: PermissionTier,
   ): Promise<ApprovalDecision> {
     const approval: PendingApproval = {
       id: `apr_${Date.now()}_${randomBytes(4).toString("hex")}`,
@@ -159,10 +171,14 @@ export class ApprovalGate extends EventEmitter {
       deferred.approval.toolName,
       deferred.approval.toolCallId,
       deferred.approval.tier,
-      "approved"
+      "approved",
     );
 
-    this.emitEvent({ type: "approval-resolved", id: approvalId, decision: "approved" });
+    this.emitEvent({
+      type: "approval-resolved",
+      id: approvalId,
+      decision: "approved",
+    });
     this.emitEvent({ type: "action-completed", entry });
 
     deferred.resolve("approved");
@@ -182,10 +198,14 @@ export class ApprovalGate extends EventEmitter {
       deferred.approval.toolName,
       deferred.approval.toolCallId,
       deferred.approval.tier,
-      "denied"
+      "denied",
     );
 
-    this.emitEvent({ type: "approval-resolved", id: approvalId, decision: "denied" });
+    this.emitEvent({
+      type: "approval-resolved",
+      id: approvalId,
+      decision: "denied",
+    });
     this.emitEvent({ type: "action-completed", entry });
 
     deferred.reject(new ApprovalDeniedError("Action denied by user"));
@@ -229,7 +249,7 @@ export class ApprovalGate extends EventEmitter {
     toolName: string,
     toolCallId: string,
     tier: PermissionTier,
-    decision: ApprovalDecision
+    decision: ApprovalDecision,
   ): ActionHistoryEntry {
     const entry: ActionHistoryEntry = {
       id: `act_${Date.now()}_${randomBytes(4).toString("hex")}`,
@@ -285,13 +305,17 @@ export class ApprovalDeniedError extends Error {
 /**
  * Create a tool wrapper that integrates with the approval gate
  */
-export function wrapToolWithApproval<TArgs extends Record<string, unknown>, TResult>(
+export function wrapToolWithApproval<
+  TArgs extends Record<string, unknown>,
+  TResult,
+>(
   gate: ApprovalGate,
   toolName: string,
-  originalTool: (args: TArgs) => Promise<TResult>
+  originalTool: (args: TArgs) => Promise<TResult>,
 ): (args: TArgs & { toolCallId?: string }) => Promise<TResult> {
   return async (args) => {
-    const toolCallId = args.toolCallId || `tc_${Date.now()}_${randomBytes(4).toString("hex")}`;
+    const toolCallId =
+      args.toolCallId || `tc_${Date.now()}_${randomBytes(4).toString("hex")}`;
     const { toolCallId: _, ...toolArgs } = args;
 
     // Check approval

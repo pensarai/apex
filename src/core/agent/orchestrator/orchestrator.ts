@@ -92,7 +92,7 @@ export interface SubAgentSpawnInfo {
 export interface SubAgentStreamEvent {
   type: "text-delta" | "tool-call" | "tool-result" | "step-finish";
   agentId: string;
-  data: any;
+  data: unknown;
 }
 
 /**
@@ -114,7 +114,7 @@ export interface PentestOrchestratorInput {
   /** Session configuration */
   sessionConfig?: {
     outcomeGuidance?: string;
-    scopeConstraints?: any;
+    scopeConstraints?: Session.ScopeConstraints;
     authenticationInstructions?: string;
     remoteSandboxUrl?: string;
   };
@@ -425,7 +425,7 @@ export async function runPentestOrchestrator(
           // Forward real-time stream chunks to caller
           onChunk: (chunk) => {
             onAgentStream?.({
-              type: chunk.type as any,
+              type: chunk.type as SubAgentStreamEvent["type"],
               agentId,
               data: chunk,
             });
@@ -451,9 +451,11 @@ export async function runPentestOrchestrator(
         const taskResult = { task, result };
         allTaskResults.push(taskResult);
         return taskResult;
-      } catch (error: any) {
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
         logger.error(
-          `Error testing ${task.vulnClass} on ${task.target}: ${error.message}`,
+          `Error testing ${task.vulnClass} on ${task.target}: ${errorMessage}`,
         );
         const taskResult = {
           task,
@@ -462,8 +464,8 @@ export async function runPentestOrchestrator(
             findingsCount: 0,
             pocPaths: [],
             findingPaths: [],
-            summary: `Error: ${error.message}`,
-            error: error.message,
+            summary: `Error: ${errorMessage}`,
+            error: errorMessage,
           } as MetaVulnerabilityTestResult,
         };
         allTaskResults.push(taskResult);
@@ -577,8 +579,10 @@ export async function runPentestOrchestrator(
       concurrencyLimit,
     });
     logger.info(`Orchestrator summary saved to: ${savedPath}`);
-  } catch (e: any) {
-    logger.error(`Failed to save orchestrator summary: ${e.message}`);
+  } catch (e) {
+    logger.error(
+      `Failed to save orchestrator summary: ${e instanceof Error ? e.message : String(e)}`,
+    );
   }
 
   const spawnedCount = allTaskResults.filter((r) => r.task.isSpawned).length;
@@ -625,9 +629,7 @@ function generateSummary(
     )) {
       if (vulnResult.findingsCount > 0) {
         lines.push(
-          `    • ${getVulnerabilityClassName(vulnClass)}: ${
-            vulnResult.findingsCount
-          }`,
+          `    • ${getVulnerabilityClassName(vulnClass)}: ${vulnResult.findingsCount}`,
         );
       }
     }

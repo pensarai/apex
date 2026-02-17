@@ -1,12 +1,13 @@
-import {
-  RGBA,
-  StyledText,
-} from "@opentui/core";
+import { RGBA } from "@opentui/core";
 import { SpinnerDots } from "./sprites";
 import { useState, memo } from "react";
 import type { Message } from "../../core/messages/types";
 import { useTerminalDimensions } from "@opentui/react";
-import { markdownToStyledText, getStableMessageKey, getArgsPreview } from "./shared";
+import {
+  markdownToStyledText,
+  getStableMessageKey,
+  getArgsPreview,
+} from "./shared";
 import { colors } from "../theme";
 
 export type Subagent = {
@@ -47,7 +48,7 @@ export type DisplayMessage = {
 
 function getStableKey(
   item: DisplayMessage | Subagent,
-  contextId: string = "root"
+  contextId: string = "root",
 ): string {
   // Subagents have their own unique ID
   if ("messages" in item) {
@@ -68,7 +69,6 @@ interface AgentDisplayProps {
   focused?: boolean; // Controls whether this scrollbox responds to scroll events
 }
 
-
 export default function AgentDisplay({
   messages,
   isStreaming = false,
@@ -82,7 +82,7 @@ export default function AgentDisplay({
   // Sort messages and subagents by creation time
   // Don't use useMemo to ensure we always have fresh data during rapid updates
   const messagesAndSubagents = [...messages, ...(subagents ?? [])].sort(
-    (a, b) => a.createdAt.getTime() - b.createdAt.getTime()
+    (a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
   );
 
   return (
@@ -112,7 +112,7 @@ export default function AgentDisplay({
       focused={focused}
       onMouseScroll={
         !focused
-          ? (event: any) => {
+          ? (event: { stopPropagation: () => void }) => {
               // Stop scroll events from propagating to parent scrollbox
               event.stopPropagation();
             }
@@ -206,9 +206,15 @@ const AgentMessage = memo(function AgentMessage({
   } else if (Array.isArray(message.content)) {
     // Handle array of content parts
     content = message.content
-      .map((part: any) => {
+      .map((part: unknown) => {
         if (typeof part === "string") return part;
-        if (part.type === "text") return part.text;
+        if (
+          typeof part === "object" &&
+          part !== null &&
+          "type" in part &&
+          (part as Record<string, unknown>).type === "text"
+        )
+          return (part as Record<string, unknown>).text as string;
         return JSON.stringify(part);
       })
       .join("");
@@ -221,12 +227,10 @@ const AgentMessage = memo(function AgentMessage({
     message.role === "assistant" ? markdownToStyledText(content) : content;
 
   // Check if this is a pending tool message
-  const isPendingTool =
-    message.role === "tool" && message.status === "pending";
+  const isPendingTool = message.role === "tool" && message.status === "pending";
   const isCompletedTool =
     message.role === "tool" && message.status === "completed";
-  const isErrorTool =
-    message.role === "tool" && message.status === "error";
+  const isErrorTool = message.role === "tool" && message.status === "error";
 
   // Get args preview for tool messages
   const argsPreview =
@@ -277,7 +281,10 @@ const AgentMessage = memo(function AgentMessage({
               />
               {/* Args preview for pending tools */}
               {argsPreview && (
-                <text fg={RGBA.fromInts(120, 120, 120, 255)} content={`  ${argsPreview}`} />
+                <text
+                  fg={RGBA.fromInts(120, 120, 120, 255)}
+                  content={`  ${argsPreview}`}
+                />
               )}
               {/* Streaming logs for pending tools */}
               {streamingLogs.length > 0 && (
@@ -308,7 +315,10 @@ const AgentMessage = memo(function AgentMessage({
               )}
               {/* Args preview for completed tools */}
               {message.role === "tool" && argsPreview && (
-                <text fg={RGBA.fromInts(120, 120, 120, 255)} content={`  ${argsPreview}`} />
+                <text
+                  fg={RGBA.fromInts(120, 120, 120, 255)}
+                  content={`  ${argsPreview}`}
+                />
               )}
             </>
           )}

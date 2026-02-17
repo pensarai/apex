@@ -88,7 +88,7 @@ const ToolResultOutputObject = z.discriminatedUnion("type", [
           data: z.string(),
           mediaType: z.string(),
         }),
-      ])
+      ]),
     ),
   }),
 ]);
@@ -112,7 +112,7 @@ const AssistantModelMessageObject = Base.extend({
         ReasoningPartObject,
         ToolCallPartObject,
         ToolResultPartObject,
-      ])
+      ]),
     ),
   ]),
   createdAt: z.coerce.date(),

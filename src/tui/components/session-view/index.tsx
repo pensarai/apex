@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useKeyboard } from "@opentui/react";
 import { RGBA } from "@opentui/core";
 import { useRoute } from "../../context/route";
 import { useAgent } from "../../context/agent";
@@ -10,10 +9,7 @@ import SwarmDashboard, {
 import DriverDashboard from "../driver-dashboard";
 import OperatorDashboard from "../operator-dashboard";
 import { Session } from "../../../core/session";
-import {
-  loadSessionState,
-  type UISubagent,
-} from "../../../core/session/loader";
+import { loadSessionState } from "../../../core/session/loader";
 import {
   runStreamlinedPentest,
   type StreamlinedPentestProgress,
@@ -45,6 +41,42 @@ type ToolUIMessage = UIMessage & {
   toolCallId: string;
   toolName: string;
 };
+
+/** Type for tool call chunks from AI SDK stream */
+interface StreamToolCall {
+  toolCallId: string;
+  toolName: string;
+  input?: Record<string, unknown>;
+  args?: Record<string, unknown>;
+}
+
+/** Type for tool result chunks from AI SDK stream */
+interface StreamToolResult {
+  toolCallId: string;
+  toolName: string;
+  output?: unknown;
+  result?: unknown;
+}
+
+/** Type guard for stream chunks */
+interface StreamChunk {
+  type: string;
+  text?: string;
+  toolCallId?: string;
+  toolName?: string;
+  [key: string]: unknown;
+}
+
+function isStreamChunk(chunk: unknown): chunk is StreamChunk {
+  return typeof chunk === "object" && chunk !== null && "type" in chunk;
+}
+
+/** Type for step-finish event data with usage info */
+interface StepFinishData {
+  usage?: { inputTokens?: number; outputTokens?: number };
+  text?: string;
+  [key: string]: unknown;
+}
 
 interface SessionViewProps {
   sessionId: string;
@@ -83,40 +115,36 @@ export default function SessionView({
   const subagentsRef = useRef(subagents);
   subagentsRef.current = subagents;
 
-  const killAgent = useCallback((agentId: string) => {
-    const controller = agentAbortControllers.current.get(agentId);
-    if (controller) {
-      controller.abort();
-      setSubagents(prev => {
-        const agent = prev.find(a => a.id === agentId);
-        // Persist canceled status to disk so it survives session resume
-        if (agent && session) {
-          try {
-            const messages = agent.messages.map(m => ({
-              role: m.role,
-              content: m.content,
-            }));
-            saveAgentMessages(
-              session.rootPath,
-              agent.id,
-              messages,
-              {
+  const killAgent = useCallback(
+    (agentId: string) => {
+      const controller = agentAbortControllers.current.get(agentId);
+      if (controller) {
+        controller.abort();
+        setSubagents((prev) => {
+          const agent = prev.find((a) => a.id === agentId);
+          // Persist canceled status to disk so it survives session resume
+          if (agent && session) {
+            try {
+              const messages = agent.messages.map((m) => ({
+                role: m.role,
+                content: m.content,
+              }));
+              saveAgentMessages(session.rootPath, agent.id, messages, {
                 target: agent.target,
                 status: "canceled",
-              }
-            );
-          } catch (_e) {
-            // Best-effort persistence — don't break the kill flow
+              });
+            } catch (_e) {
+              // Best-effort persistence — don't break the kill flow
+            }
           }
-        }
-        return prev.map(a =>
-          a.id === agentId
-            ? { ...a, status: "canceled" as const }
-            : a
-        );
-      });
-    }
-  }, [session]);
+          return prev.map((a) =>
+            a.id === agentId ? { ...a, status: "canceled" as const } : a,
+          );
+        });
+      }
+    },
+    [session],
+  );
 
   // Load session on mount
   useEffect(() => {
@@ -196,7 +224,10 @@ export default function SessionView({
 
   // Start the pentest
   const startPentest = useCallback(
-    async (execSession: Session.SessionInfo, previousDiscoveryResults?: AttackSurfaceAnalysisResults) => {
+    async (
+      execSession: Session.SessionInfo,
+      previousDiscoveryResults?: AttackSurfaceAnalysisResults,
+    ) => {
       setIsExecuting(true);
       setThinking(true);
       setStartTime(new Date());
@@ -212,14 +243,16 @@ export default function SessionView({
         // Add or reuse discovery subagent — preserve existing messages on resume
         setSubagents((prev) => {
           const existingIdx = prev.findIndex(
-            (s) => s.id === "attack-surface-discovery"
+            (s) => s.id === "attack-surface-discovery",
           );
           if (existingIdx !== -1) {
             // Reuse existing entry: keep old messages, update status
             const updated = [...prev];
             updated[existingIdx] = {
               ...updated[existingIdx]!,
-              status: previousDiscoveryResults ? "completed" as const : "pending" as const,
+              status: previousDiscoveryResults
+                ? ("completed" as const)
+                : ("pending" as const),
             };
             return updated;
           }
@@ -257,7 +290,7 @@ export default function SessionView({
             if (stepTokens > 0)
               addTokenUsage(
                 step.usage.inputTokens ?? 0,
-                step.usage.outputTokens ?? 0
+                step.usage.outputTokens ?? 0,
               );
 
             // Update messages from step data (same pattern as onPentestAgentStream)
@@ -265,7 +298,7 @@ export default function SessionView({
 
             setSubagents((prev) => {
               const idx = prev.findIndex(
-                (s) => s.id === "attack-surface-discovery"
+                (s) => s.id === "attack-surface-discovery",
               );
               if (idx === -1) return prev;
 
@@ -296,13 +329,11 @@ export default function SessionView({
                 setThinking(false);
                 for (const tc of toolCalls) {
                   const exists = newMessages.some(
-                    (m) => m.role === "tool" && m.toolCallId === tc.toolCallId
+                    (m) => m.role === "tool" && m.toolCallId === tc.toolCallId,
                   );
                   if (!exists) {
                     // AI SDK v5.x uses 'input' instead of 'args'
-                    const args = (tc as any).input as
-                      | Record<string, unknown>
-                      | undefined;
+                    const args = (tc as unknown as StreamToolCall).input;
                     const toolDescription =
                       typeof args?.toolCallDescription === "string"
                         ? args.toolCallDescription
@@ -325,7 +356,7 @@ export default function SessionView({
                 setThinking(true);
                 for (const tr of toolResults) {
                   const msgIdx = newMessages.findIndex(
-                    (m) => m.role === "tool" && m.toolCallId === tr.toolCallId
+                    (m) => m.role === "tool" && m.toolCallId === tr.toolCallId,
                   );
                   if (msgIdx !== -1) {
                     const existingMsg = newMessages[msgIdx] as ToolUIMessage;
@@ -339,7 +370,7 @@ export default function SessionView({
                       ...existingMsg,
                       status: "completed",
                       content: description,
-                      result: (tr as any).output,
+                      result: (tr as unknown as StreamToolResult).output,
                     };
                   } else {
                     // Tool result arrived before tool call - create as completed
@@ -349,7 +380,7 @@ export default function SessionView({
                       toolCallId: tr.toolCallId,
                       toolName: tr.toolName,
                       content: `+ ${tr.toolName || "tool"}`,
-                      result: (tr as any).output,
+                      result: (tr as unknown as StreamToolResult).output,
                       createdAt: new Date(),
                     });
                   }
@@ -362,7 +393,8 @@ export default function SessionView({
           },
 
           // Real-time streaming for discovery agent
-          onDiscoveryStream: (chunk) => {
+          onDiscoveryStream: (chunk: unknown) => {
+            if (!isStreamChunk(chunk)) return;
             if (chunk.type === "text-delta" && chunk.text) {
               currentDiscoveryText += chunk.text;
               setThinking(false);
@@ -370,7 +402,7 @@ export default function SessionView({
               if (currentDiscoveryText.trim()) {
                 setSubagents((prev) => {
                   const idx = prev.findIndex(
-                    (s) => s.id === "attack-surface-discovery"
+                    (s) => s.id === "attack-surface-discovery",
                   );
                   if (idx === -1) return prev;
 
@@ -405,7 +437,7 @@ export default function SessionView({
             } else if (chunk.type === "tool-call") {
               // Real-time tool call streaming
               setThinking(false);
-              const tc = chunk as any;
+              const tc = chunk as unknown as StreamToolCall;
               const toolCallId = tc.toolCallId;
               const toolName = tc.toolName || "tool";
               const args = tc.input ?? tc.args;
@@ -416,7 +448,7 @@ export default function SessionView({
 
               setSubagents((prev) => {
                 const idx = prev.findIndex(
-                  (s) => s.id === "attack-surface-discovery"
+                  (s) => s.id === "attack-surface-discovery",
                 );
                 if (idx === -1) return prev;
 
@@ -426,7 +458,7 @@ export default function SessionView({
 
                 // Check if tool call already exists
                 const exists = newMessages.some(
-                  (m) => m.role === "tool" && m.toolCallId === toolCallId
+                  (m) => m.role === "tool" && m.toolCallId === toolCallId,
                 );
                 if (!exists) {
                   newMessages.push({
@@ -446,14 +478,14 @@ export default function SessionView({
             } else if (chunk.type === "tool-result") {
               // Real-time tool result streaming
               setThinking(true);
-              const tr = chunk as any;
+              const tr = chunk as unknown as StreamToolResult;
               const toolCallId = tr.toolCallId;
               const toolName = tr.toolName || "tool";
               const result = tr.output ?? tr.result;
 
               setSubagents((prev) => {
                 const idx = prev.findIndex(
-                  (s) => s.id === "attack-surface-discovery"
+                  (s) => s.id === "attack-surface-discovery",
                 );
                 if (idx === -1) return prev;
 
@@ -462,7 +494,7 @@ export default function SessionView({
                 const newMessages = [...subagent.messages];
 
                 const msgIdx = newMessages.findIndex(
-                  (m) => m.role === "tool" && m.toolCallId === toolCallId
+                  (m) => m.role === "tool" && m.toolCallId === toolCallId,
                 );
                 if (msgIdx !== -1) {
                   const existingMsg = newMessages[msgIdx] as ToolUIMessage;
@@ -504,7 +536,7 @@ export default function SessionView({
               const updated = prev.map((s) =>
                 s.id === "attack-surface-discovery" && s.status === "pending"
                   ? { ...s, status: "completed" as const }
-                  : s
+                  : s,
               );
               return [
                 ...updated,
@@ -523,11 +555,12 @@ export default function SessionView({
 
           onPentestAgentStream: (event: SubAgentStreamEvent) => {
             const agentId = event.agentId;
+            const eventData = event.data as Record<string, unknown> | undefined;
 
             // Handle real-time text streaming
-            if (event.type === "text-delta" && event.data?.text) {
+            if (event.type === "text-delta" && eventData?.text) {
               const currentText = pentestAgentTexts.get(agentId) || "";
-              const newText = currentText + event.data.text;
+              const newText = currentText + (eventData.text as string);
               pentestAgentTexts.set(agentId, newText);
 
               if (newText.trim()) {
@@ -566,7 +599,7 @@ export default function SessionView({
             }
             // Handle real-time tool call streaming
             else if (event.type === "tool-call") {
-              const tc = event.data as any;
+              const tc = event.data as StreamToolCall;
               const toolCallId = tc.toolCallId;
               const toolName = tc.toolName || "tool";
               const args = tc.input ?? tc.args;
@@ -585,7 +618,7 @@ export default function SessionView({
 
                 // Check if tool call already exists
                 const exists = newMessages.some(
-                  (m) => m.role === "tool" && m.toolCallId === toolCallId
+                  (m) => m.role === "tool" && m.toolCallId === toolCallId,
                 );
                 if (!exists) {
                   newMessages.push({
@@ -605,7 +638,7 @@ export default function SessionView({
             }
             // Handle real-time tool result streaming
             else if (event.type === "tool-result") {
-              const tr = event.data as any;
+              const tr = event.data as StreamToolResult;
               const toolCallId = tr.toolCallId;
               const toolName = tr.toolName || "tool";
               const result = tr.output ?? tr.result;
@@ -619,7 +652,7 @@ export default function SessionView({
                 const newMessages = [...subagent.messages];
 
                 const msgIdx = newMessages.findIndex(
-                  (m) => m.role === "tool" && m.toolCallId === toolCallId
+                  (m) => m.role === "tool" && m.toolCallId === toolCallId,
                 );
                 if (msgIdx !== -1) {
                   const existingMsg = newMessages[msgIdx] as ToolUIMessage;
@@ -652,8 +685,8 @@ export default function SessionView({
               });
             }
             // Handle step-finish for token tracking and resetting text accumulator
-            else if (event.type === "step-finish" && event.data) {
-              const { usage } = event.data;
+            else if (event.type === "step-finish" && eventData) {
+              const { usage } = eventData as StepFinishData;
 
               if (usage) {
                 const stepTokens =
@@ -661,7 +694,7 @@ export default function SessionView({
                 if (stepTokens > 0)
                   addTokenUsage(
                     usage.inputTokens ?? 0,
-                    usage.outputTokens ?? 0
+                    usage.outputTokens ?? 0,
                   );
               }
 
@@ -672,7 +705,7 @@ export default function SessionView({
 
           onPentestAgentComplete: (
             agentId: string,
-            agentResult: MetaVulnerabilityTestResult
+            agentResult: MetaVulnerabilityTestResult,
           ) => {
             setSubagents((prev) =>
               prev.map((sub) =>
@@ -691,8 +724,8 @@ export default function SessionView({
                         },
                       ],
                     }
-                  : sub
-              )
+                  : sub,
+              ),
             );
           },
 
@@ -706,7 +739,7 @@ export default function SessionView({
           if (
             (result.reportPath && existsSync(result.reportPath)) ||
             existsSync(
-              result.session.rootPath + "/comprehensive-pentest-report.md"
+              result.session.rootPath + "/comprehensive-pentest-report.md",
             )
           ) {
             setIsCompleted(true);
@@ -723,12 +756,12 @@ export default function SessionView({
           // Aborted by user
         } else {
           setError(
-            error instanceof Error ? error.message : "Unknown error occurred"
+            error instanceof Error ? error.message : "Unknown error occurred",
           );
         }
       }
     },
-    [model.id, addTokenUsage, setThinking, setIsExecuting]
+    [model.id, addTokenUsage, setThinking, setIsExecuting],
   );
 
   // Resume a paused agent individually
@@ -738,7 +771,7 @@ export default function SessionView({
 
       // Read current subagents via ref to avoid stale closure
       const paused = subagentsRef.current.find(
-        (s) => s.id === agentId && s.status === "paused"
+        (s) => s.id === agentId && s.status === "paused",
       );
       if (!paused) return;
 
@@ -746,11 +779,16 @@ export default function SessionView({
       // If discovery completed before interruption, skip it entirely.
       if (paused.type === "attack-surface") {
         let previousResults: AttackSurfaceAnalysisResults | undefined;
-        const resultsPath = join(session.rootPath, "attack-surface-results.json");
+        const resultsPath = join(
+          session.rootPath,
+          "attack-surface-results.json",
+        );
         if (existsSync(resultsPath)) {
           try {
             previousResults = JSON.parse(readFileSync(resultsPath, "utf-8"));
-          } catch {}
+          } catch {
+            // ignored
+          }
         }
         await startPentest(session, previousResults);
         return;
@@ -764,8 +802,8 @@ export default function SessionView({
       // Update status to pending (running)
       setSubagents((prev) =>
         prev.map((s) =>
-          s.id === agentId ? { ...s, status: "pending" as const } : s
-        )
+          s.id === agentId ? { ...s, status: "pending" as const } : s,
+        ),
       );
 
       setIsExecuting(true);
@@ -840,7 +878,7 @@ export default function SessionView({
               }
             } else if (chunk.type === "tool-call") {
               setThinking(false);
-              const tc = chunk as any;
+              const tc = chunk as unknown as StreamToolCall;
               const toolCallId = tc.toolCallId;
               const toolName = tc.toolName || "tool";
               const args = tc.input ?? tc.args;
@@ -858,7 +896,7 @@ export default function SessionView({
                 const newMessages = [...subagent.messages];
 
                 const exists = newMessages.some(
-                  (m) => m.role === "tool" && m.toolCallId === toolCallId
+                  (m) => m.role === "tool" && m.toolCallId === toolCallId,
                 );
                 if (!exists) {
                   newMessages.push({
@@ -877,7 +915,7 @@ export default function SessionView({
               });
             } else if (chunk.type === "tool-result") {
               setThinking(true);
-              const tr = chunk as any;
+              const tr = chunk as unknown as StreamToolResult;
               const toolCallId = tr.toolCallId;
               const toolName = tr.toolName || "tool";
               const resultData = tr.output ?? tr.result;
@@ -891,7 +929,7 @@ export default function SessionView({
                 const newMessages = [...subagent.messages];
 
                 const msgIdx = newMessages.findIndex(
-                  (m) => m.role === "tool" && m.toolCallId === toolCallId
+                  (m) => m.role === "tool" && m.toolCallId === toolCallId,
                 );
                 if (msgIdx !== -1) {
                   const existingMsg = newMessages[msgIdx] as ToolUIMessage;
@@ -930,10 +968,7 @@ export default function SessionView({
               const stepTokens =
                 (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0);
               if (stepTokens > 0)
-                addTokenUsage(
-                  usage.inputTokens ?? 0,
-                  usage.outputTokens ?? 0
-                );
+                addTokenUsage(usage.inputTokens ?? 0, usage.outputTokens ?? 0);
             }
             // Reset accumulated text at step boundaries
             accumulatedText = "";
@@ -946,42 +981,50 @@ export default function SessionView({
             s.id === agentId
               ? {
                   ...s,
-                  status: result.error ? ("failed" as const) : ("completed" as const),
+                  status: result.error
+                    ? ("failed" as const)
+                    : ("completed" as const),
                   resumeInfo: undefined,
                   messages: [
                     ...s.messages,
                     {
                       role: "assistant" as const,
-                      content: `${
-                        result.findingsCount > 0 ? "✅" : "⚪"
-                      } ${result.summary}`,
+                      content: `${result.findingsCount > 0 ? "✅" : "⚪"} ${result.summary}`,
                       createdAt: new Date(),
                     },
                   ],
                 }
-              : s
-          )
+              : s,
+          ),
         );
       } catch (error) {
         setSubagents((prev) =>
           prev.map((s) =>
             s.id === agentId
               ? { ...s, status: "failed" as const, resumeInfo: undefined }
-              : s
-          )
+              : s,
+          ),
         );
       }
 
       setThinking(false);
       // Only set isExecuting=false if no other agents are still running
       const stillRunning = subagentsRef.current.some(
-        (s) => s.status === "pending" && s.id !== agentId
+        (s) => s.status === "pending" && s.id !== agentId,
       );
       if (!stillRunning) {
         setIsExecuting(false);
       }
     },
-    [session, model.id, abortController, addTokenUsage, setThinking, setIsExecuting, startPentest]
+    [
+      session,
+      model.id,
+      abortController,
+      addTokenUsage,
+      setThinking,
+      setIsExecuting,
+      startPentest,
+    ],
   );
 
   // Open report
@@ -1046,7 +1089,13 @@ export default function SessionView({
 
   // Operator mode - render OperatorDashboard for interactive pentesting
   if (session.config?.mode === "operator" || openAsOperator) {
-    return <OperatorDashboard session={session} isResume={isResume} openAsOperator={openAsOperator} />;
+    return (
+      <OperatorDashboard
+        session={session}
+        isResume={isResume}
+        openAsOperator={openAsOperator}
+      />
+    );
   }
 
   // Auto mode - Render SwarmDashboard with streamlined pentest

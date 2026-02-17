@@ -1,9 +1,9 @@
 import { RGBA } from "@opentui/core";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 
 // Global animation tick - shared by all spinners to avoid excessive re-renders
 let globalTick = 0;
-let globalListeners = new Set<() => void>();
+const globalListeners = new Set<() => void>();
 let globalInterval: NodeJS.Timeout | null = null;
 
 function startGlobalTick() {
@@ -40,7 +40,13 @@ function useGlobalTick() {
 }
 
 /** Animated spinner with rotating dots */
-export function SpinnerDots({ label, fg }: { label?: string; fg?: string | RGBA }) {
+export function SpinnerDots({
+  label,
+  fg,
+}: {
+  label?: string;
+  fg?: string | RGBA;
+}) {
   const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
   const tick = useGlobalTick();
   const frame = tick % frames.length;

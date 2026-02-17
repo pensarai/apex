@@ -58,7 +58,7 @@ interface WebWizardProps {
   /** Enable strict scope */
   initialStrict?: boolean;
   /** Pre-filled headers mode */
-  initialHeadersMode?: 'none' | 'default' | 'custom';
+  initialHeadersMode?: "none" | "default" | "custom";
   /** Pre-filled custom headers */
   initialCustomHeaders?: Record<string, string>;
   /** Pre-filled model ID */
@@ -95,7 +95,9 @@ export default function WebWizard({
 
   // Model picker state
   const [modelSearchQuery, setModelSearchQuery] = useState("");
-  const [expandedProviders, setExpandedProviders] = useState<Set<string>>(new Set(["anthropic"]));
+  const [expandedProviders, setExpandedProviders] = useState<Set<string>>(
+    new Set(["anthropic"]),
+  );
 
   // Provider display names
   const providerNames: Record<string, string> = {
@@ -115,7 +117,11 @@ export default function WebWizard({
 
     for (const m of availableModels) {
       // Fuzzy match: check if query matches model name or id
-      if (query && !m.name.toLowerCase().includes(query) && !m.id.toLowerCase().includes(query)) {
+      if (
+        query &&
+        !m.name.toLowerCase().includes(query) &&
+        !m.id.toLowerCase().includes(query)
+      ) {
         continue;
       }
       if (!groups[m.provider]) {
@@ -147,10 +153,10 @@ export default function WebWizard({
 
       // If initialModel was provided, try to set it
       if (initialModel) {
-        const targetModel = models.find(m => m.id === initialModel);
+        const targetModel = models.find((m) => m.id === initialModel);
         if (targetModel) {
           setModel(targetModel);
-          const newIndex = models.findIndex(m => m.id === targetModel.id);
+          const newIndex = models.findIndex((m) => m.id === targetModel.id);
           if (newIndex >= 0) {
             setSelectedModelIndex(newIndex);
           }
@@ -160,13 +166,13 @@ export default function WebWizard({
       }
 
       // Find current model in the list
-      const currentIndex = models.findIndex(m => m.id === model.id);
+      const currentIndex = models.findIndex((m) => m.id === model.id);
       if (currentIndex >= 0) {
         setSelectedModelIndex(currentIndex);
       }
       // Auto-expand provider of current model
       if (models.length > 0) {
-        const currentModel = models.find(m => m.id === model.id) || models[0];
+        const currentModel = models.find((m) => m.id === model.id) || models[0];
         if (currentModel) {
           setExpandedProviders(new Set([currentModel.provider]));
         }
@@ -224,8 +230,8 @@ export default function WebWizard({
       // Build session config
       const sessionConfig: Session.SessionConfig = {
         // Set session type and mode for web app pentesting
-        sessionType: 'web-app',
-        mode: autoMode ? 'auto' : 'driver',
+        sessionType: "web-app",
+        mode: autoMode ? "auto" : "driver",
       };
 
       // Auth config
@@ -241,10 +247,15 @@ export default function WebWizard({
       }
 
       // Scope constraints
-      if (state.scope.allowedHosts.length > 0 || state.scope.allowedPorts.length > 0) {
+      if (
+        state.scope.allowedHosts.length > 0 ||
+        state.scope.allowedPorts.length > 0
+      ) {
         sessionConfig.scopeConstraints = {
           allowedHosts: state.scope.allowedHosts,
-          allowedPorts: state.scope.allowedPorts.map(p => parseInt(p, 10)).filter(p => !isNaN(p)),
+          allowedPorts: state.scope.allowedPorts
+            .map((p) => parseInt(p, 10))
+            .filter((p) => !isNaN(p)),
           strictScope: state.scope.strictScope,
         };
       }
@@ -253,7 +264,10 @@ export default function WebWizard({
       if (state.headers.mode !== "default") {
         sessionConfig.offensiveHeaders = {
           mode: state.headers.mode,
-          headers: state.headers.mode === "custom" ? state.headers.customHeaders : undefined,
+          headers:
+            state.headers.mode === "custom"
+              ? state.headers.customHeaders
+              : undefined,
         };
       }
 
@@ -331,7 +345,10 @@ export default function WebWizard({
         if (focusedSection === 1 && focusedField === 0 && hostInput.trim()) {
           setState((prev) => ({
             ...prev,
-            scope: { ...prev.scope, allowedHosts: [...prev.scope.allowedHosts, hostInput.trim()] },
+            scope: {
+              ...prev.scope,
+              allowedHosts: [...prev.scope.allowedHosts, hostInput.trim()],
+            },
           }));
           setHostInput("");
           return;
@@ -339,17 +356,28 @@ export default function WebWizard({
         if (focusedSection === 1 && focusedField === 1 && portInput.trim()) {
           setState((prev) => ({
             ...prev,
-            scope: { ...prev.scope, allowedPorts: [...prev.scope.allowedPorts, portInput.trim()] },
+            scope: {
+              ...prev.scope,
+              allowedPorts: [...prev.scope.allowedPorts, portInput.trim()],
+            },
           }));
           setPortInput("");
           return;
         }
-        if (focusedSection === 2 && state.headers.mode === "custom" && focusedField === 2 && headerNameInput.trim()) {
+        if (
+          focusedSection === 2 &&
+          state.headers.mode === "custom" &&
+          focusedField === 2 &&
+          headerNameInput.trim()
+        ) {
           setState((prev) => ({
             ...prev,
             headers: {
               ...prev.headers,
-              customHeaders: { ...prev.headers.customHeaders, [headerNameInput.trim()]: headerValueInput },
+              customHeaders: {
+                ...prev.headers.customHeaders,
+                [headerNameInput.trim()]: headerValueInput,
+              },
             },
           }));
           setHeaderNameInput("");
@@ -392,11 +420,16 @@ export default function WebWizard({
           return;
         }
         if (focusedSection === 2 && focusedField === 0) {
-          const modes: Array<"none" | "default" | "custom"> = ["none", "default", "custom"];
+          const modes: Array<"none" | "default" | "custom"> = [
+            "none",
+            "default",
+            "custom",
+          ];
           const currentIndex = modes.indexOf(state.headers.mode);
-          const newIndex = key.name === "up"
-            ? (currentIndex - 1 + modes.length) % modes.length
-            : (currentIndex + 1) % modes.length;
+          const newIndex =
+            key.name === "up"
+              ? (currentIndex - 1 + modes.length) % modes.length
+              : (currentIndex + 1) % modes.length;
           setState((prev) => ({
             ...prev,
             headers: { ...prev.headers, mode: modes[newIndex]! },
@@ -405,14 +438,19 @@ export default function WebWizard({
         }
         // Model selection - navigate through visible models
         if (focusedSection === 3 && visibleModels.length > 0) {
-          const currentVisibleIndex = visibleModels.findIndex(m => m.id === model.id);
-          const newVisibleIndex = key.name === "up"
-            ? Math.max(0, currentVisibleIndex - 1)
-            : Math.min(visibleModels.length - 1, currentVisibleIndex + 1);
+          const currentVisibleIndex = visibleModels.findIndex(
+            (m) => m.id === model.id,
+          );
+          const newVisibleIndex =
+            key.name === "up"
+              ? Math.max(0, currentVisibleIndex - 1)
+              : Math.min(visibleModels.length - 1, currentVisibleIndex + 1);
           const newModel = visibleModels[newVisibleIndex];
           if (newModel) {
             setModel(newModel);
-            const newGlobalIndex = availableModels.findIndex(m => m.id === newModel.id);
+            const newGlobalIndex = availableModels.findIndex(
+              (m) => m.id === newModel.id,
+            );
             if (newGlobalIndex >= 0) {
               setSelectedModelIndex(newGlobalIndex);
             }
@@ -425,7 +463,7 @@ export default function WebWizard({
       if (focusedSection === 3) {
         // Backspace - remove last char from search
         if (key.name === "backspace") {
-          setModelSearchQuery(prev => prev.slice(0, -1));
+          setModelSearchQuery((prev) => prev.slice(0, -1));
           return;
         }
         // Escape - clear search
@@ -438,25 +476,29 @@ export default function WebWizard({
           // Find which provider the current model belongs to
           const currentProvider = model.provider;
           if (key.name === "left") {
-            setExpandedProviders(prev => {
+            setExpandedProviders((prev) => {
               const next = new Set(prev);
               next.delete(currentProvider);
               return next;
             });
           } else {
-            setExpandedProviders(prev => new Set([...prev, currentProvider]));
+            setExpandedProviders((prev) => new Set([...prev, currentProvider]));
           }
           return;
         }
         // Tab in model section - toggle next provider expansion
         if (key.name === "tab" && !key.shift) {
-          const availableProviders = providerOrder.filter(p => groupedModels[p]?.length > 0);
+          const availableProviders = providerOrder.filter(
+            (p) => groupedModels[p]?.length > 0,
+          );
           if (availableProviders.length > 0) {
             // Find next provider to toggle
             const currentExpanded = [...expandedProviders];
-            const nextToExpand = availableProviders.find(p => !expandedProviders.has(p));
+            const nextToExpand = availableProviders.find(
+              (p) => !expandedProviders.has(p),
+            );
             if (nextToExpand) {
-              setExpandedProviders(prev => new Set([...prev, nextToExpand]));
+              setExpandedProviders((prev) => new Set([...prev, nextToExpand]));
             } else {
               // All expanded, go to next section
               setFocusedSection(0);
@@ -466,8 +508,12 @@ export default function WebWizard({
           }
         }
         // Printable character - add to search
-        if (key.sequence && key.sequence.length === 1 && /[a-zA-Z0-9\-_.]/.test(key.sequence)) {
-          setModelSearchQuery(prev => prev + key.sequence);
+        if (
+          key.sequence &&
+          key.sequence.length === 1 &&
+          /[a-zA-Z0-9\-_.]/.test(key.sequence)
+        ) {
+          setModelSearchQuery((prev) => prev + key.sequence);
           // Auto-expand all providers when searching
           if (!modelSearchQuery) {
             setExpandedProviders(new Set(providerOrder));
@@ -480,11 +526,16 @@ export default function WebWizard({
 
   function getMaxFieldsForSection(section: number): number {
     switch (section) {
-      case 0: return 4; // Auth
-      case 1: return 3; // Scope
-      case 2: return state.headers.mode === "custom" ? 3 : 1; // Headers
-      case 3: return 1; // Model
-      default: return 1;
+      case 0:
+        return 4; // Auth
+      case 1:
+        return 3; // Scope
+      case 2:
+        return state.headers.mode === "custom" ? 3 : 1; // Headers
+      case 3:
+        return 1; // Model
+      default:
+        return 1;
     }
   }
 
@@ -573,14 +624,18 @@ export default function WebWizard({
       <box flexDirection="column">
         <text fg={creamText}>Configure Web App Pentest - {modeLabel}</text>
         <text fg={dimText}>Target: {state.target}</text>
-        <text fg={dimText}>All fields are optional - configure only what you need</text>
+        <text fg={dimText}>
+          All fields are optional - configure only what you need
+        </text>
       </box>
 
       {/* Auth Section */}
       <box flexDirection="column" gap={1}>
         <text>
           <span fg={greenBullet}>█ </span>
-          <span fg={focusedSection === 0 ? creamText : dimText}>Authentication</span>
+          <span fg={focusedSection === 0 ? creamText : dimText}>
+            Authentication
+          </span>
         </text>
         {focusedSection === 0 && (
           <box flexDirection="column" gap={1} paddingLeft={2}>
@@ -588,28 +643,48 @@ export default function WebWizard({
               label="Login URL"
               placeholder="https://example.com/login"
               value={state.auth.loginUrl}
-              onInput={(v) => setState((prev) => ({ ...prev, auth: { ...prev.auth, loginUrl: v } }))}
+              onInput={(v) =>
+                setState((prev) => ({
+                  ...prev,
+                  auth: { ...prev.auth, loginUrl: v },
+                }))
+              }
               focused={focusedField === 0}
             />
             <Input
               label="Username"
               placeholder="admin"
               value={state.auth.username}
-              onInput={(v) => setState((prev) => ({ ...prev, auth: { ...prev.auth, username: v } }))}
+              onInput={(v) =>
+                setState((prev) => ({
+                  ...prev,
+                  auth: { ...prev.auth, username: v },
+                }))
+              }
               focused={focusedField === 1}
             />
             <Input
               label="Password"
               placeholder="••••••••"
               value={state.auth.password}
-              onInput={(v) => setState((prev) => ({ ...prev, auth: { ...prev.auth, password: v } }))}
+              onInput={(v) =>
+                setState((prev) => ({
+                  ...prev,
+                  auth: { ...prev.auth, password: v },
+                }))
+              }
               focused={focusedField === 2}
             />
             <Input
               label="Auth Instructions"
               placeholder="Use OAuth flow, extract bearer token..."
               value={state.auth.instructions}
-              onInput={(v) => setState((prev) => ({ ...prev, auth: { ...prev.auth, instructions: v } }))}
+              onInput={(v) =>
+                setState((prev) => ({
+                  ...prev,
+                  auth: { ...prev.auth, instructions: v },
+                }))
+              }
               focused={focusedField === 3}
             />
           </box>
@@ -620,7 +695,9 @@ export default function WebWizard({
       <box flexDirection="column" gap={1}>
         <text>
           <span fg={greenBullet}>█ </span>
-          <span fg={focusedSection === 1 ? creamText : dimText}>Scope Constraints</span>
+          <span fg={focusedSection === 1 ? creamText : dimText}>
+            Scope Constraints
+          </span>
         </text>
         {focusedSection === 1 && (
           <box flexDirection="column" gap={1} paddingLeft={2}>
@@ -635,7 +712,9 @@ export default function WebWizard({
             {state.scope.allowedHosts.length > 0 && (
               <box flexDirection="column" paddingLeft={2}>
                 {state.scope.allowedHosts.map((h, i) => (
-                  <text key={i} fg={dimText}>• {h}</text>
+                  <text key={i} fg={dimText}>
+                    • {h}
+                  </text>
                 ))}
               </box>
             )}
@@ -650,12 +729,16 @@ export default function WebWizard({
             {state.scope.allowedPorts.length > 0 && (
               <box flexDirection="column" paddingLeft={2}>
                 {state.scope.allowedPorts.map((p, i) => (
-                  <text key={i} fg={dimText}>• {p}</text>
+                  <text key={i} fg={dimText}>
+                    • {p}
+                  </text>
                 ))}
               </box>
             )}
             <box flexDirection="row" gap={1}>
-              <text fg={focusedField === 2 ? creamText : dimText}>Strict Scope:</text>
+              <text fg={focusedField === 2 ? creamText : dimText}>
+                Strict Scope:
+              </text>
               <text fg={state.scope.strictScope ? greenBullet : dimText}>
                 {state.scope.strictScope ? "● Enabled" : "○ Disabled"}
               </text>
@@ -669,7 +752,9 @@ export default function WebWizard({
       <box flexDirection="column" gap={1}>
         <text>
           <span fg={greenBullet}>█ </span>
-          <span fg={focusedSection === 2 ? creamText : dimText}>Request Headers</span>
+          <span fg={focusedSection === 2 ? creamText : dimText}>
+            Request Headers
+          </span>
         </text>
         {focusedSection === 2 && (
           <box flexDirection="column" gap={1} paddingLeft={2}>
@@ -677,10 +762,15 @@ export default function WebWizard({
               <text fg={state.headers.mode === "none" ? greenBullet : dimText}>
                 {state.headers.mode === "none" ? "●" : "○"} None
               </text>
-              <text fg={state.headers.mode === "default" ? greenBullet : dimText}>
-                {state.headers.mode === "default" ? "●" : "○"} Default (User-Agent: pensar-apex)
+              <text
+                fg={state.headers.mode === "default" ? greenBullet : dimText}
+              >
+                {state.headers.mode === "default" ? "●" : "○"} Default
+                (User-Agent: pensar-apex)
               </text>
-              <text fg={state.headers.mode === "custom" ? greenBullet : dimText}>
+              <text
+                fg={state.headers.mode === "custom" ? greenBullet : dimText}
+              >
                 {state.headers.mode === "custom" ? "●" : "○"} Custom
               </text>
             </box>
@@ -704,9 +794,13 @@ export default function WebWizard({
                 />
                 {Object.keys(state.headers.customHeaders).length > 0 && (
                   <box flexDirection="column">
-                    {Object.entries(state.headers.customHeaders).map(([k, v]) => (
-                      <text key={k} fg={dimText}>• {k}: {v}</text>
-                    ))}
+                    {Object.entries(state.headers.customHeaders).map(
+                      ([k, v]) => (
+                        <text key={k} fg={dimText}>
+                          • {k}: {v}
+                        </text>
+                      ),
+                    )}
                   </box>
                 )}
               </box>
@@ -721,7 +815,10 @@ export default function WebWizard({
           <span fg={greenBullet}>█ </span>
           <span fg={focusedSection === 3 ? creamText : dimText}>AI Model</span>
           <span fg={dimText}> ({model.name})</span>
-          <span fg={dimText}> [{isModelUserSelected ? "user" : "default"}]</span>
+          <span fg={dimText}>
+            {" "}
+            [{isModelUserSelected ? "user" : "default"}]
+          </span>
         </text>
         {focusedSection === 3 && (
           <box flexDirection="column" gap={0} paddingLeft={2}>
@@ -734,7 +831,7 @@ export default function WebWizard({
             )}
 
             {/* Provider groups */}
-            {providerOrder.map(provider => {
+            {providerOrder.map((provider) => {
               const models = groupedModels[provider];
               if (!models || models.length === 0) return null;
 
@@ -744,9 +841,7 @@ export default function WebWizard({
               return (
                 <box key={provider} flexDirection="column" gap={0}>
                   {/* Provider header */}
-                  <text
-                    fg={isExpanded ? creamText : dimText}
-                  >
+                  <text fg={isExpanded ? creamText : dimText}>
                     {isExpanded ? "▾" : "▸"} {providerName} ({models.length})
                   </text>
 
@@ -755,11 +850,17 @@ export default function WebWizard({
                     <box flexDirection="column" gap={0} paddingLeft={2}>
                       {models.map((m) => {
                         const isSelected = m.id === model.id;
-                        const isDefault = m.id === "claude-haiku-4-5" || m.id === "gpt-4o-mini";
+                        const isDefault =
+                          m.id === "claude-haiku-4-5" || m.id === "gpt-4o-mini";
                         return (
-                          <text key={m.id} fg={isSelected ? greenBullet : dimText}>
+                          <text
+                            key={m.id}
+                            fg={isSelected ? greenBullet : dimText}
+                          >
                             {isSelected ? "●" : "○"} {m.name}
-                            {isDefault && !isModelUserSelected && isSelected ? " [default]" : ""}
+                            {isDefault && !isModelUserSelected && isSelected
+                              ? " [default]"
+                              : ""}
                           </text>
                         );
                       })}
@@ -770,7 +871,9 @@ export default function WebWizard({
             })}
 
             {/* Help text */}
-            <text fg={dimText}>↑/↓ select • Type to search • ←/→ collapse/expand</text>
+            <text fg={dimText}>
+              ↑/↓ select • Type to search • ←/→ collapse/expand
+            </text>
           </box>
         )}
       </box>

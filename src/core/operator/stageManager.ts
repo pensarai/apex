@@ -1,9 +1,5 @@
 import { EventEmitter } from "events";
-import type {
-  OperatorStage,
-  StageProgress,
-  OperatorEvent,
-} from "./types";
+import type { OperatorStage, StageProgress, OperatorEvent } from "./types";
 import { OPERATOR_STAGES, getStagesInOrder, getNextStage } from "./types";
 
 /**
@@ -145,10 +141,9 @@ export class StageManager extends EventEmitter {
       stage: def.stage,
       name: def.name,
       order: def.order,
-      status:
-        this.stageProgress[def.stage].completed
-          ? "completed"
-          : def.stage === this.currentStage
+      status: this.stageProgress[def.stage].completed
+        ? "completed"
+        : def.stage === this.currentStage
           ? "current"
           : "pending",
     }));
@@ -165,7 +160,10 @@ export class StageManager extends EventEmitter {
   /**
    * Serialize state for persistence
    */
-  toJSON(): { currentStage: OperatorStage; stageProgress: Record<OperatorStage, StageProgress> } {
+  toJSON(): {
+    currentStage: OperatorStage;
+    stageProgress: Record<OperatorStage, StageProgress>;
+  } {
     return {
       currentStage: this.currentStage,
       stageProgress: this.stageProgress,

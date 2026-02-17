@@ -21,7 +21,7 @@ export function map(
   inMin: number,
   inMax: number,
   outMin: number,
-  outMax: number
+  outMax: number,
 ): number {
   return outMin + ((value - inMin) / (inMax - inMin)) * (outMax - outMin);
 }
@@ -82,7 +82,12 @@ export function hash2(x: number, y: number): number {
 }
 
 /** Exponential decay */
-export function expDecay(a: number, b: number, decay: number, dt: number): number {
+export function expDecay(
+  a: number,
+  b: number,
+  decay: number,
+  dt: number,
+): number {
   return b + (a - b) * Math.exp(-decay * dt);
 }
 

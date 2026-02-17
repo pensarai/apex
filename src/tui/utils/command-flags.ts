@@ -44,7 +44,7 @@ export function parseFlags(args: string[], schema: FlagSchema): ParsedFlags {
   }
 
   while (i < args.length) {
-    let arg = args[i];
+    const arg = args[i];
 
     // Check for --flag or -f
     if (arg.startsWith("--") || (arg.startsWith("-") && arg.length === 2)) {
@@ -64,7 +64,9 @@ export function parseFlags(args: string[], schema: FlagSchema): ParsedFlags {
       const resolvedName = aliasMap[flagName] || flagName;
 
       // Convert kebab-case to camelCase
-      const camelName = resolvedName.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+      const camelName = resolvedName.replace(/-([a-z])/g, (_, c) =>
+        c.toUpperCase(),
+      );
 
       const config = schema[resolvedName] || schema[camelName];
       if (config) {
@@ -192,11 +194,15 @@ export function parseWebFlags(args: string[]): WebCommandFlags {
   if (raw.authUrl) flags.authUrl = String(raw.authUrl);
   if (raw.authUser) flags.authUser = String(raw.authUser);
   if (raw.authPass) flags.authPass = String(raw.authPass);
-  if (raw.authInstructions) flags.authInstructions = String(raw.authInstructions);
+  if (raw.authInstructions)
+    flags.authInstructions = String(raw.authInstructions);
 
   // Scope options
   if (raw.hosts) {
-    flags.hosts = String(raw.hosts).split(",").map((h) => h.trim()).filter(Boolean);
+    flags.hosts = String(raw.hosts)
+      .split(",")
+      .map((h) => h.trim())
+      .filter(Boolean);
   }
   if (raw.ports) {
     flags.ports = String(raw.ports)
@@ -267,7 +273,7 @@ export function hasEnoughFlagsToSkipWizard(flags: WebCommandFlags): boolean {
  * Create an operator session from CLI flags
  */
 export async function createOperatorSessionFromFlags(
-  flags: WebCommandFlags
+  flags: WebCommandFlags,
 ): Promise<Session.SessionInfo> {
   const sessionConfig: Session.SessionConfig = {
     sessionType: "web-app",
@@ -323,7 +329,7 @@ export async function createOperatorSessionFromFlags(
  * Create a swarm session from CLI flags
  */
 export async function createSwarmSessionFromFlags(
-  flags: WebCommandFlags
+  flags: WebCommandFlags,
 ): Promise<Session.SessionInfo> {
   const sessionConfig: Session.SessionConfig = {
     sessionType: "web-app",

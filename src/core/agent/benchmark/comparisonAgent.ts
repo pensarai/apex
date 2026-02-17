@@ -1,10 +1,9 @@
-import { hasToolCall, stepCountIs, tool } from "ai";
+import { stepCountIs, tool } from "ai";
 import { z } from "zod";
 import { streamResponse, type AIModel } from "../../ai";
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "fs";
 import { join } from "path";
-import type { ComparisonResult, ActualFinding } from "./types";
-import { detectOSAndEnhancePrompt } from "../utils";
+import type { ComparisonResult } from "./types";
 
 const COMPARISON_SYSTEM_PROMPT = `
 You are a security findings comparison agent. Your role is to compare expected security findings against actual findings from a penetration test and provide an accurate assessment.
@@ -56,7 +55,7 @@ interface ComparisonAgentProps {
 }
 
 export async function runComparisonAgent(
-  props: ComparisonAgentProps
+  props: ComparisonAgentProps,
 ): Promise<ComparisonResult> {
   const { repoPath, sessionPath, model } = props;
 
@@ -64,7 +63,7 @@ export async function runComparisonAgent(
   const expectedResultsDir = join(repoPath, "expected_results");
   if (!existsSync(expectedResultsDir)) {
     throw new Error(
-      `Expected results directory not found at: ${expectedResultsDir}`
+      `Expected results directory not found at: ${expectedResultsDir}`,
     );
   }
 
@@ -74,14 +73,14 @@ export async function runComparisonAgent(
 
   if (jsonFiles.length === 0) {
     throw new Error(
-      `No JSON file found in expected_results directory: ${expectedResultsDir}`
+      `No JSON file found in expected_results directory: ${expectedResultsDir}`,
     );
   }
 
   const expectedResultsFile = jsonFiles[0]!;
   const expectedResultsPath = join(expectedResultsDir, expectedResultsFile);
   console.log(
-    `[ComparisonAgent] Loading expected results from: ${expectedResultsPath}`
+    `[ComparisonAgent] Loading expected results from: ${expectedResultsPath}`,
   );
 
   const expectedData = readFileSync(expectedResultsPath, "utf-8");
@@ -126,8 +125,9 @@ ${finding.remediation}
 ${finding.references ? `## References\n${finding.references}` : ""}`;
 
       actualFindingsMarkdown += `\n\n---\n**File: ${file}**\n\n${formattedFinding}`;
-    } catch (error: any) {
-      console.error(`Failed to read finding file ${file}:`, error.message);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`Failed to read finding file ${file}:`, message);
     }
   }
 
@@ -154,7 +154,7 @@ Results will be saved to: comparison-results.json in the session directory.`,
             matchReason: z
               .string()
               .describe("Explanation for why these findings match"),
-          })
+          }),
         )
         .describe("Findings that were successfully matched"),
       missed: z
@@ -165,7 +165,7 @@ Results will be saved to: comparison-results.json in the session directory.`,
             reason: z
               .string()
               .describe("Explanation for why this finding was missed"),
-          })
+          }),
         )
         .describe("Expected findings that were not found"),
       extra: z
@@ -177,9 +177,9 @@ Results will be saved to: comparison-results.json in the session directory.`,
             assessment: z
               .string()
               .describe(
-                "Assessment of whether this is a false positive or new discovery"
+                "Assessment of whether this is a false positive or new discovery",
               ),
-          })
+          }),
         )
         .describe("Actual findings that don't match any expected findings"),
       toolCallDescription: z
@@ -220,7 +220,7 @@ Results will be saved to: comparison-results.json in the session directory.`,
 
       // Save comparison results to file
       console.log(
-        `[ComparisonAgent] Saving results to: ${comparisonResultsPath}`
+        `[ComparisonAgent] Saving results to: ${comparisonResultsPath}`,
       );
       writeFileSync(comparisonResultsPath, JSON.stringify(result, null, 2));
 
@@ -230,7 +230,7 @@ Results will be saved to: comparison-results.json in the session directory.`,
         message: `Comparison complete. Matched: ${
           matched.length
         }/${totalExpected}, Precision: ${Math.round(
-          precision * 100
+          precision * 100,
         )}%, Recall: ${Math.round(recall * 100)}%
 
 Results saved to: ${comparisonResultsPath}`,
@@ -282,7 +282,7 @@ Be thorough in your analysis and provide clear explanations for your matches. St
           delta.input?.toolCallDescription
             ? `: ${delta.input.toolCallDescription}`
             : ""
-        }`
+        }`,
       );
     } else if (delta.type === "tool-result") {
       console.log(`[Tool Complete]\n`);
@@ -314,12 +314,12 @@ Be thorough in your analysis and provide clear explanations for your matches. St
   // Read comparison results from file
   if (!existsSync(comparisonResultsPath)) {
     throw new Error(
-      "Comparison agent did not save results to file: " + comparisonResultsPath
+      "Comparison agent did not save results to file: " + comparisonResultsPath,
     );
   }
 
   console.log(
-    `[ComparisonAgent] Reading results from: ${comparisonResultsPath}`
+    `[ComparisonAgent] Reading results from: ${comparisonResultsPath}`,
   );
   const savedResults = readFileSync(comparisonResultsPath, "utf-8");
   const comparisonResultFromFile = JSON.parse(savedResults) as ComparisonResult;
@@ -329,13 +329,13 @@ Be thorough in your analysis and provide clear explanations for your matches. St
   console.log(`  - Missed: ${comparisonResultFromFile.missed.length}`);
   console.log(`  - Extra: ${comparisonResultFromFile.extra.length}`);
   console.log(
-    `  - Accuracy: ${Math.round(comparisonResultFromFile.accuracy * 100)}%`
+    `  - Accuracy: ${Math.round(comparisonResultFromFile.accuracy * 100)}%`,
   );
   console.log(
-    `  - Precision: ${Math.round(comparisonResultFromFile.precision * 100)}%`
+    `  - Precision: ${Math.round(comparisonResultFromFile.precision * 100)}%`,
   );
   console.log(
-    `  - Recall: ${Math.round(comparisonResultFromFile.recall * 100)}%`
+    `  - Recall: ${Math.round(comparisonResultFromFile.recall * 100)}%`,
   );
 
   return comparisonResultFromFile;

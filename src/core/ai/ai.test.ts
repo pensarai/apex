@@ -57,7 +57,7 @@ describeOrSkip("AI Stream Response", () => {
 
     console.log(`Loaded content: ${exhaustContent.length} characters`);
     console.log(
-      "Attempting to send to API (should trigger context length error)...\n"
+      "Attempting to send to API (should trigger context length error)...\n",
     );
 
     const stream = streamResponse({
@@ -84,7 +84,7 @@ describeOrSkip("AI Stream Response", () => {
         if (toolCall.toolName === "summarize_conversation") {
           sawSummarization = true;
           console.log(
-            "\n✓ Context length exceeded - automatic summarization triggered!"
+            "\n✓ Context length exceeded - automatic summarization triggered!",
           );
         }
       },
@@ -161,7 +161,7 @@ describeOrSkip("AI Stream Response", () => {
     expect(summarizationCount).toBeGreaterThanOrEqual(1);
 
     console.log(
-      `\n✅ Test passed! System handled ${summarizationCount} level(s) of recursive summarization`
+      `\n✅ Test passed! System handled ${summarizationCount} level(s) of recursive summarization`,
     );
   });
 
@@ -176,7 +176,7 @@ describeOrSkip("AI Stream Response", () => {
 
     console.log(`Created ${messages.length} messages in history`);
     console.log(
-      "Attempting to send to API (should trigger context length error)...\n"
+      "Attempting to send to API (should trigger context length error)...\n",
     );
 
     const stream = streamResponse({
@@ -226,16 +226,24 @@ describeOrSkip("AI Stream Response", () => {
         age: z.number().describe("A person's age in years"),
         email: z.string().email().describe("A valid email address"),
       }),
-      execute: async ({ name, age, email }: any) => {
+      execute: async ({
+        name,
+        age,
+        email,
+      }: {
+        name: string;
+        age: number;
+        email: string;
+      }) => {
         console.log(
-          `\n[Tool Executed] name=${name}, age=${age}, email=${email}`
+          `\n[Tool Executed] name=${name}, age=${age}, email=${email}`,
         );
         return `Processed: ${name}, ${age}, ${email}`;
       },
     };
 
     let toolCallCount = 0;
-    let toolRepairAttempted = false;
+    const toolRepairAttempted = false;
     let toolExecuted = false;
 
     const stream = streamResponse({

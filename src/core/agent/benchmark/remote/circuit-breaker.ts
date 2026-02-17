@@ -16,14 +16,14 @@ export class CircuitBreaker {
 
   constructor(
     private options: {
-      failureThreshold: number;  // Number of failures before opening
-      resetTimeout: number;      // Time to wait before attempting recovery (ms)
-      successThreshold: number;  // Number of successes needed to close
+      failureThreshold: number; // Number of failures before opening
+      resetTimeout: number; // Time to wait before attempting recovery (ms)
+      successThreshold: number; // Number of successes needed to close
     } = {
-      failureThreshold: 5,    // Open after 5 failures
-      resetTimeout: 60000,    // Try again after 60s
-      successThreshold: 2,    // Close after 2 successes
-    }
+      failureThreshold: 5, // Open after 5 failures
+      resetTimeout: 60000, // Try again after 60s
+      successThreshold: 2, // Close after 2 successes
+    },
   ) {}
 
   async execute<T>(fn: () => Promise<T>): Promise<T> {
@@ -33,12 +33,16 @@ export class CircuitBreaker {
       const timeSinceLastFailure = now - this.lastFailureTime;
 
       if (timeSinceLastFailure >= this.options.resetTimeout) {
-        console.log("🟡 Circuit breaker: Entering HALF_OPEN state (attempting recovery)");
+        console.log(
+          "🟡 Circuit breaker: Entering HALF_OPEN state (attempting recovery)",
+        );
         this.state = "HALF_OPEN";
       } else {
-        const waitTimeSeconds = Math.ceil((this.options.resetTimeout - timeSinceLastFailure) / 1000);
+        const waitTimeSeconds = Math.ceil(
+          (this.options.resetTimeout - timeSinceLastFailure) / 1000,
+        );
         throw new Error(
-          `Circuit breaker is OPEN. Too many failures (${this.failures}). Will retry in ${waitTimeSeconds}s`
+          `Circuit breaker is OPEN. Too many failures (${this.failures}). Will retry in ${waitTimeSeconds}s`,
         );
       }
     }
@@ -74,9 +78,12 @@ export class CircuitBreaker {
     this.successes = 0;
     this.lastFailureTime = Date.now();
 
-    if (this.failures >= this.options.failureThreshold && this.state !== "OPEN") {
+    if (
+      this.failures >= this.options.failureThreshold &&
+      this.state !== "OPEN"
+    ) {
       console.error(
-        `🔴 Circuit breaker: OPENING circuit after ${this.failures} consecutive failures`
+        `🔴 Circuit breaker: OPENING circuit after ${this.failures} consecutive failures`,
       );
       this.state = "OPEN";
     }

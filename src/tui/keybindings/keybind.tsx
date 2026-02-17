@@ -21,7 +21,12 @@ import {
 } from "react";
 import { useKeyboard } from "@opentui/react";
 import { InputBuffer } from "./input-buffer";
-import { allActions, getAction, type Action, type ActionCategory } from "./actions";
+import {
+  allActions,
+  getAction,
+  type Action,
+  type ActionCategory,
+} from "./actions";
 import { colors } from "../theme";
 
 // ============================================
@@ -175,7 +180,7 @@ export function LeaderKeyProvider({
       }
       return false;
     },
-    [buffer, onTextChange]
+    [buffer, onTextChange],
   );
 
   // Buffer accessors
@@ -187,12 +192,12 @@ export function LeaderKeyProvider({
         onTextChange(text);
       }
     },
-    [buffer, onTextChange]
+    [buffer, onTextChange],
   );
   const getCursor = useCallback(() => buffer.getCursor(), [buffer]);
   const hasSelection = useCallback(
     () => buffer.getSelection() !== null,
-    [buffer]
+    [buffer],
   );
 
   // Handle keyboard input
@@ -281,7 +286,7 @@ export function LeaderKeyProvider({
       setText,
       getCursor,
       hasSelection,
-    ]
+    ],
   );
 
   return (
@@ -400,4 +405,9 @@ function KeybindHelpOverlay({ onClose }: KeybindHelpOverlayProps) {
 // ============================================
 
 export { InputBuffer } from "./input-buffer";
-export { allActions, getAction, type Action, type ActionCategory } from "./actions";
+export {
+  allActions,
+  getAction,
+  type Action,
+  type ActionCategory,
+} from "./actions";

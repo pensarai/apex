@@ -25,7 +25,10 @@ const dimText = RGBA.fromInts(120, 120, 120, 255);
 type ViewType = "home" | "config" | "chat";
 
 interface HomeViewProps {
-  onNavigate: (view: ViewType, options?: { sessionId?: string; isResume?: boolean }) => void;
+  onNavigate: (
+    view: ViewType,
+    options?: { sessionId?: string; isResume?: boolean },
+  ) => void;
   onStartSession: (directive: string) => void;
 }
 
@@ -40,11 +43,14 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
 
   const [hintMessage, setHintMessage] = useState<string | null>(null);
 
-  const handleSubmit = useCallback((value: string) => {
-    // Commands are handled by PromptInput; non-command text shows a hint
-    setHintMessage("Type /help to get started");
-    setInputValue("");
-  }, [setInputValue]);
+  const handleSubmit = useCallback(
+    (value: string) => {
+      // Commands are handled by PromptInput; non-command text shows a hint
+      setHintMessage("Type /help to get started");
+      setInputValue("");
+    },
+    [setInputValue],
+  );
 
   // Auto-clear hint after 3 seconds
   useEffect(() => {
@@ -53,21 +59,19 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
     return () => clearTimeout(timer);
   }, [hintMessage]);
 
-  const handleCommandExecute = useCallback(async (command: string) => {
-    await executeCommand(command);
-  }, [executeCommand]);
+  const handleCommandExecute = useCallback(
+    async (command: string) => {
+      await executeCommand(command);
+    },
+    [executeCommand],
+  );
 
   // Calculate layout dimensions
   const animationHeight = Math.max(6, Math.floor(dimensions.height * 0.2));
   const inputWidth = Math.min(80, dimensions.width - 10);
 
   return (
-    <box
-      flexDirection="column"
-      width="100%"
-      height="100%"
-      alignItems="center"
-    >
+    <box flexDirection="column" width="100%" height="100%" alignItems="center">
       {/* Petri Animation */}
       <box height={animationHeight} width="100%">
         <PetriAnimation height={animationHeight} />
@@ -87,7 +91,7 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
         width={inputWidth}
         marginTop={8}
         padding={1}
-        border={['left', 'right']}
+        border={["left", "right"]}
         borderColor={greenAccent}
       >
         {/* Input with built-in autocomplete */}
@@ -123,13 +127,13 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
             <span>Type </span>
             <span fg={creamText}>/</span>
             <span> for commands</span>
-            <span>  •  </span>
+            <span> • </span>
             <span fg={creamText}>[↓][↑]</span>
             <span> navigate</span>
-            <span>  •  </span>
+            <span> • </span>
             <span fg={creamText}>[tab]</span>
             <span> complete</span>
-            <span>  •  </span>
+            <span> • </span>
             <span fg={creamText}>[enter]</span>
             <span> run</span>
           </text>

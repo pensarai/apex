@@ -18,7 +18,7 @@ export function sdCircle(p: Vec2, center: Vec2, radius: number): number {
 export function sdBox(p: Vec2, center: Vec2, halfSize: Vec2): number {
   const d: Vec2 = [
     Math.abs(p[0] - center[0]) - halfSize[0],
-    Math.abs(p[1] - center[1]) - halfSize[1]
+    Math.abs(p[1] - center[1]) - halfSize[1],
   ];
   const outside = length([Math.max(d[0], 0), Math.max(d[1], 0)]);
   const inside = Math.min(Math.max(d[0], d[1]), 0);
@@ -39,14 +39,22 @@ export function sdCapsule(p: Vec2, a: Vec2, b: Vec2, radius: number): number {
 }
 
 /** Distance to ring */
-export function sdRing(p: Vec2, center: Vec2, innerRadius: number, outerRadius: number): number {
+export function sdRing(
+  p: Vec2,
+  center: Vec2,
+  innerRadius: number,
+  outerRadius: number,
+): number {
   const d = length(sub(p, center));
-  return Math.abs(d - (innerRadius + outerRadius) / 2) - (outerRadius - innerRadius) / 2;
+  return (
+    Math.abs(d - (innerRadius + outerRadius) / 2) -
+    (outerRadius - innerRadius) / 2
+  );
 }
 
 /** Union of two SDFs (smooth blend) */
 export function opSmoothUnion(d1: number, d2: number, k: number): number {
-  const h = clampNum(0.5 + 0.5 * (d2 - d1) / k, 0, 1);
+  const h = clampNum(0.5 + (0.5 * (d2 - d1)) / k, 0, 1);
   return d2 * (1 - h) + d1 * h - k * h * (1 - h);
 }
 
@@ -63,7 +71,7 @@ export function opSubtraction(d1: number, d2: number): number {
 /** Repeat SDF in a grid */
 export function opRepeat(p: Vec2, spacing: Vec2): Vec2 {
   return [
-    ((p[0] % spacing[0]) + spacing[0]) % spacing[0] - spacing[0] / 2,
-    ((p[1] % spacing[1]) + spacing[1]) % spacing[1] - spacing[1] / 2
+    (((p[0] % spacing[0]) + spacing[0]) % spacing[0]) - spacing[0] / 2,
+    (((p[1] % spacing[1]) + spacing[1]) % spacing[1]) - spacing[1] / 2,
   ];
 }

@@ -186,7 +186,7 @@ export namespace Session {
    * └── pocs/             # Proof-of-concept scripts
    */
   export async function createExecution(
-    input: CreateExecutionInput
+    input: CreateExecutionInput,
   ): Promise<void> {
     const { session } = input;
 
@@ -239,7 +239,7 @@ Testing in progress...
    * Get an execution session by ID
    */
   export async function getExecution(
-    sessionId: string
+    sessionId: string,
   ): Promise<ExecutionSession | null> {
     try {
       const metadata = await Storage.read<
@@ -261,7 +261,7 @@ Testing in progress...
    * Resolve offensive headers based on session config
    */
   export function getOffensiveHeaders(
-    session: SessionInfo
+    session: SessionInfo,
   ): Record<string, string> | undefined {
     const config = session.config?.offensiveHeaders;
 
@@ -334,7 +334,7 @@ Testing in progress...
 
     const result: SessionInfo = {
       id: id,
-      version: await Installation.getVersion(),
+      version: (await Installation.getVersion()) ?? "unknown",
       targets: input.targets,
       name: input.name,
       time: {
@@ -395,14 +395,14 @@ Testing in progress...
 
   export async function update(
     id: string,
-    editor: (session: SessionInfo) => void
+    editor: (session: SessionInfo) => void,
   ) {
     const result = await Storage.update<SessionInfo>(
       ["session", id],
       (draft) => {
         editor(draft);
         draft.time.updated = Date.now();
-      }
+      },
     );
     console.info("updated session", result);
     return result;
@@ -456,7 +456,7 @@ Testing in progress...
   });
 
   export const removeMessage = async (
-    input: z.output<typeof RemoveMsgInput>
+    input: z.output<typeof RemoveMsgInput>,
   ) => {
     await Storage.remove(["message", input.sessionId, input.messageId]);
     return input.messageId;
@@ -477,21 +477,21 @@ Testing in progress...
     /** Current stage: setup, recon, foothold, etc. */
     currentStage: string;
     /** Chat messages history */
-    messages: any[];
+    messages: unknown[];
     /** Discovered attack surface endpoints */
-    attackSurface: any[];
+    attackSurface: unknown[];
     /** Found credentials */
-    credentials: any[];
+    credentials: unknown[];
     /** Verified vulnerabilities */
-    verifiedVulns: any[];
+    verifiedVulns: unknown[];
     /** Target state (host, phase, objective) */
-    targetState: any;
+    targetState: unknown;
     /** Tracked hypotheses */
-    hypotheses: any[];
+    hypotheses: unknown[];
     /** Collected evidence */
-    evidence: any[];
+    evidence: unknown[];
     /** Action approval history */
-    actionHistory: any[];
+    actionHistory: unknown[];
     /** When the session was paused */
     pausedAt: string;
     /** Last run ID for log correlation */
@@ -503,7 +503,7 @@ Testing in progress...
    */
   export async function saveOperatorState(
     sessionId: string,
-    state: OperatorSessionState
+    state: OperatorSessionState,
   ): Promise<void> {
     const session = await get(sessionId);
     const statePath = path.join(session.rootPath, "operator-state.json");
@@ -515,7 +515,7 @@ Testing in progress...
    * Load operator dashboard state for session resumption
    */
   export async function loadOperatorState(
-    sessionId: string
+    sessionId: string,
   ): Promise<OperatorSessionState | null> {
     try {
       const session = await get(sessionId);
@@ -547,7 +547,7 @@ Testing in progress...
    */
   export async function updateOperatorSettings(
     sessionId: string,
-    settings: Partial<OperatorSettings>
+    settings: Partial<OperatorSettings>,
   ): Promise<SessionInfo> {
     return await update(sessionId, (session) => {
       if (!session.config) {
@@ -585,7 +585,7 @@ Testing in progress...
    */
   export async function updateToolsetState(
     sessionId: string,
-    toolsetState: ToolsetState
+    toolsetState: ToolsetState,
   ): Promise<SessionInfo> {
     return await update(sessionId, (session) => {
       if (!session.config) {
@@ -601,7 +601,7 @@ Testing in progress...
   export async function toggleTool(
     sessionId: string,
     toolId: string,
-    enabled: boolean
+    enabled: boolean,
   ): Promise<SessionInfo> {
     return await update(sessionId, (session) => {
       if (!session.config) {
@@ -615,7 +615,7 @@ Testing in progress...
       session.config.toolsetState = toolsetToggle(
         session.config.toolsetState!,
         toolId,
-        enabled
+        enabled,
       );
     });
   }

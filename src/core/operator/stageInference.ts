@@ -26,37 +26,79 @@ export interface StageInferenceResult {
  * inferStageFromDirective("Tell me about the target")
  * // → null (no clear stage intent)
  */
-export function inferStageFromDirective(directive: string): StageInferenceResult | null {
+export function inferStageFromDirective(
+  directive: string,
+): StageInferenceResult | null {
   const lower = directive.toLowerCase();
 
   // Report stage - documentation intent
-  if (/\b(report|document|write.?up|summarize|export|generate.?report)\b/.test(lower)) {
-    return { stage: "report", confidence: "high", reason: "documentation intent" };
+  if (
+    /\b(report|document|write.?up|summarize|export|generate.?report)\b/.test(
+      lower,
+    )
+  ) {
+    return {
+      stage: "report",
+      confidence: "high",
+      reason: "documentation intent",
+    };
   }
 
   // Validate stage - exploitation/POC intent
-  if (/\b(prove|poc|exploit|demonstrate|confirm.*(vuln|finding)|verify.*(vuln|finding)|create.?poc)\b/.test(lower)) {
-    return { stage: "validate", confidence: "high", reason: "exploitation/POC intent" };
+  if (
+    /\b(prove|poc|exploit|demonstrate|confirm.*(vuln|finding)|verify.*(vuln|finding)|create.?poc)\b/.test(
+      lower,
+    )
+  ) {
+    return {
+      stage: "validate",
+      confidence: "high",
+      reason: "exploitation/POC intent",
+    };
   }
 
   // Test stage - vulnerability testing intent
-  if (/\b(test|find.*(vuln|injection|xss|sqli|idor|bypass)|check.*(for|auth)|inject|fuzz|attack|exploit)\b/.test(lower)) {
-    return { stage: "test", confidence: "high", reason: "vulnerability testing intent" };
+  if (
+    /\b(test|find.*(vuln|injection|xss|sqli|idor|bypass)|check.*(for|auth)|inject|fuzz|attack|exploit)\b/.test(
+      lower,
+    )
+  ) {
+    return {
+      stage: "test",
+      confidence: "high",
+      reason: "vulnerability testing intent",
+    };
   }
 
   // Enumerate stage - parameter/input mapping intent
-  if (/\b(parameter|input|form|hidden|api.?endpoint|map.*(param|input)|catalog|inventory)\b/.test(lower)) {
-    return { stage: "enumerate", confidence: "medium", reason: "parameter enumeration intent" };
+  if (
+    /\b(parameter|input|form|hidden|api.?endpoint|map.*(param|input)|catalog|inventory)\b/.test(
+      lower,
+    )
+  ) {
+    return {
+      stage: "enumerate",
+      confidence: "medium",
+      reason: "parameter enumeration intent",
+    };
   }
 
   // Recon stage - discovery intent
-  if (/\b(explore|discover|crawl|attack.?surface|recon|find.?endpoint|enumerate|scan|fingerprint|identify)\b/.test(lower)) {
+  if (
+    /\b(explore|discover|crawl|attack.?surface|recon|find.?endpoint|enumerate|scan|fingerprint|identify)\b/.test(
+      lower,
+    )
+  ) {
     return { stage: "recon", confidence: "high", reason: "discovery intent" };
   }
 
   // Setup stage - configuration intent
   if (/\b(setup|configure|set.?up|initialize|scope|target)\b/.test(lower)) {
-    return { stage: "setup", confidence: "medium", reason: "configuration intent" };
+    return {
+      stage: "setup",
+      confidence: "medium",
+      reason: "configuration intent",
+    };
   }
 
   // No clear intent - return null to keep current stage

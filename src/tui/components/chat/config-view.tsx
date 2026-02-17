@@ -53,7 +53,8 @@ export function ConfigView({ config, onBack, onStart }: ConfigViewProps) {
       const models = getAvailableModels(config);
       if (models.length > 0 && !isModelUserSelected) {
         // Default to first anthropic model or first available
-        const defaultModel = models.find(m => m.provider === "anthropic") || models[0];
+        const defaultModel =
+          models.find((m) => m.provider === "anthropic") || models[0];
         setSelectedModel(defaultModel);
       }
     }
@@ -88,15 +89,19 @@ export function ConfigView({ config, onBack, onStart }: ConfigViewProps) {
         return;
       }
 
-      const nextIdx = key.name === "up"
-        ? Math.max(0, currentIdx - 1)
-        : Math.min(fields.length - 1, currentIdx + 1);
+      const nextIdx =
+        key.name === "up"
+          ? Math.max(0, currentIdx - 1)
+          : Math.min(fields.length - 1, currentIdx + 1);
       setFocusedField(fields[nextIdx]);
       return;
     }
 
     // Space/Enter to toggle scope
-    if (focusedField === "scope" && (key.name === "space" || key.name === "return")) {
+    if (
+      focusedField === "scope" &&
+      (key.name === "space" || key.name === "return")
+    ) {
       setStrictScope(!strictScope);
       return;
     }
@@ -177,9 +182,7 @@ export function ConfigView({ config, onBack, onStart }: ConfigViewProps) {
           <text fg={strictScope ? greenAccent : dimText}>
             [{strictScope ? "●" : " "}]
           </text>
-          <text fg={creamText}>
-            Strict - only target host allowed
-          </text>
+          <text fg={creamText}>Strict - only target host allowed</text>
         </box>
       </box>
 
@@ -216,7 +219,9 @@ export function ConfigView({ config, onBack, onStart }: ConfigViewProps) {
         </text>
         <box
           border={true}
-          borderColor={focusedField === "start" && isValid ? greenAccent : borderColor}
+          borderColor={
+            focusedField === "start" && isValid ? greenAccent : borderColor
+          }
           paddingLeft={2}
           paddingRight={2}
           onMouseDown={() => {
@@ -225,9 +230,7 @@ export function ConfigView({ config, onBack, onStart }: ConfigViewProps) {
             }
           }}
         >
-          <text fg={isValid ? creamText : dimText}>
-            [ Start Session ]
-          </text>
+          <text fg={isValid ? creamText : dimText}>[ Start Session ]</text>
         </box>
       </box>
 

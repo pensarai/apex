@@ -359,7 +359,7 @@ Begin testing now. Remember: HYPOTHESIS → ACTION → VALIDATION for every step
 export function buildMetaTestingPrompt(outcomeGuidance: string): string {
   return META_TESTING_SYSTEM_PROMPT.replace(
     OUTCOME_GUIDANCE_TEMPLATE,
-    outcomeGuidance
+    outcomeGuidance,
   );
 }
 
@@ -370,7 +370,7 @@ export function buildUserPrompt(params: {
   targets: Array<{
     target: string;
     objective: string;
-    authenticationInfo?: any;
+    authenticationInfo?: Record<string, unknown>;
   }>;
   authenticationInstructions?: string;
 }): string {
@@ -389,9 +389,7 @@ export function buildUserPrompt(params: {
 - **Objective:** ${t.objective}
 `;
     if (t.authenticationInfo) {
-      prompt += `- **Auth:** ${
-        t.authenticationInfo.method || "See instructions"
-      }
+      prompt += `- **Auth:** ${t.authenticationInfo.method || "See instructions"}
 `;
     }
   }

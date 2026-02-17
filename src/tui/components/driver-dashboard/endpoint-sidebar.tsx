@@ -16,7 +16,7 @@ const dimText = RGBA.fromInts(120, 120, 120, 255);
 interface EndpointSidebarProps {
   endpoints: DiscoveredEndpoint[];
   focusedIndex: number;
-  reconStatus: 'idle' | 'running' | 'completed';
+  reconStatus: "idle" | "running" | "completed";
   onSelectEndpoint: (endpoint: DiscoveredEndpoint) => void;
 }
 
@@ -39,17 +39,17 @@ export default function EndpointSidebar({
         Discovered Endpoints ({endpoints.length})
       </text>
 
-      {reconStatus === 'running' && (
+      {reconStatus === "running" && (
         <box paddingTop={1} paddingBottom={1}>
           <SpinnerDots label="Discovering..." fg="green" />
         </box>
       )}
 
-      {reconStatus === 'idle' && endpoints.length === 0 && (
+      {reconStatus === "idle" && endpoints.length === 0 && (
         <text fg={dimText}>Recon will start automatically...</text>
       )}
 
-      {reconStatus === 'completed' && endpoints.length === 0 && (
+      {reconStatus === "completed" && endpoints.length === 0 && (
         <text fg={dimText}>No endpoints discovered.</text>
       )}
 
@@ -65,9 +65,7 @@ export default function EndpointSidebar({
         ))}
       </scrollbox>
 
-      {endpoints.length > 0 && (
-        <text fg={dimText}>[Enter] to spawn agent</text>
-      )}
+      {endpoints.length > 0 && <text fg={dimText}>[Enter] to spawn agent</text>}
     </box>
   );
 }
@@ -87,14 +85,16 @@ function EndpointItem({
   onSelect: () => void;
 }) {
   // Truncate URL for display
-  const displayUrl = endpoint.url.length > 40
-    ? endpoint.url.substring(0, 37) + '...'
-    : endpoint.url;
+  const displayUrl =
+    endpoint.url.length > 40
+      ? endpoint.url.substring(0, 37) + "..."
+      : endpoint.url;
 
   // Truncate objective for display
-  const displayObjective = endpoint.suggestedObjective.length > 50
-    ? endpoint.suggestedObjective.substring(0, 47) + '...'
-    : endpoint.suggestedObjective;
+  const displayObjective =
+    endpoint.suggestedObjective.length > 50
+      ? endpoint.suggestedObjective.substring(0, 47) + "..."
+      : endpoint.suggestedObjective;
 
   return (
     <box
@@ -108,9 +108,7 @@ function EndpointItem({
         <span fg={greenBullet}>@{index} </span>
         {endpoint.method} {displayUrl}
       </text>
-      <text fg={dimText}>
-        └─ {displayObjective}
-      </text>
+      <text fg={dimText}>└─ {displayObjective}</text>
     </box>
   );
 }

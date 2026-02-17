@@ -34,11 +34,15 @@ function readOsRelease(): Record<string, string> {
 function detectDocker(): boolean {
   try {
     if (existsSync("/.dockerenv")) return true;
-  } catch {}
+  } catch {
+    // ignored
+  }
   try {
     const cgroup = readFileSync("/proc/1/cgroup", "utf8");
     if (/docker|containerd|kubepods/i.test(cgroup)) return true;
-  } catch {}
+  } catch {
+    // ignored
+  }
   return false;
 }
 
@@ -70,7 +74,7 @@ function detectEnvironment(): DetectedEnvironment {
   const idLike = osRelease["ID_LIKE"];
 
   const isKali = Boolean(
-    (id && /kali/.test(id)) || (prettyName && /kali/i.test(prettyName))
+    (id && /kali/.test(id)) || (prettyName && /kali/i.test(prettyName)),
   );
   const isDocker = detectDocker();
 
@@ -108,7 +112,7 @@ export function detectOSAndEnhancePrompt(prompt: string): string {
     lines.push(
       `OS: ${env.prettyName ?? process.platform} | InDocker: ${
         env.isDocker ? "yes" : "no"
-      } | Kali: ${env.isKali ? "yes" : "no"}`
+      } | Kali: ${env.isKali ? "yes" : "no"}`,
     );
     if (env.availableTools.length > 0) {
       lines.push(`Tools available: ${env.availableTools.sort().join(", ")}`);

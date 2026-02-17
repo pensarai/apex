@@ -1,10 +1,10 @@
-import fs from 'fs/promises';
-import path from 'path';
-import { existsSync } from 'fs';
-import { glob } from 'glob';
-import yaml from 'yaml';
-import crypto from 'crypto';
-import type { FlagDetectionResult, FlagLocation } from './types';
+import fs from "fs/promises";
+import path from "path";
+import { existsSync } from "fs";
+import { glob } from "glob";
+import yaml from "yaml";
+import crypto from "crypto";
+import type { FlagDetectionResult, FlagLocation } from "./types";
 
 /**
  * XBOW/validation-benchmarks naming pattern: XBEN-XXX-XX
@@ -23,7 +23,7 @@ const PACE_BENCHMARK_PATTERN = /^FullChain\d+$/;
  *   FLAG_FMT=FLAG{$(FLAG)}
  */
 export function computeBenchmarkFlag(benchmarkName: string): string {
-  const hash = crypto.createHash('sha256').update(benchmarkName).digest('hex');
+  const hash = crypto.createHash("sha256").update(benchmarkName).digest("hex");
   return `FLAG{${hash}}`;
 }
 
@@ -57,10 +57,10 @@ function findFlagInContent(
   content: string,
   flag: string,
   filePath: string,
-  sessionPath: string
+  sessionPath: string,
 ): FlagLocation[] {
   const locations: FlagLocation[] = [];
-  const lines = content.split('\n');
+  const lines = content.split("\n");
   const relativePath = path.relative(sessionPath, filePath);
 
   for (let i = 0; i < lines.length; i++) {
@@ -73,7 +73,10 @@ function findFlagInContent(
         const flagIndex = context.indexOf(flag);
         const start = Math.max(0, flagIndex - 50);
         const end = Math.min(context.length, flagIndex + flag.length + 50);
-        context = (start > 0 ? '...' : '') + context.substring(start, end) + (end < context.length ? '...' : '');
+        context =
+          (start > 0 ? "..." : "") +
+          context.substring(start, end) +
+          (end < context.length ? "..." : "");
       }
 
       locations.push({
@@ -97,7 +100,7 @@ function findFlagInContent(
  */
 export async function extractFlagFromRepo(
   repoPath: string,
-  branch: string
+  branch: string,
 ): Promise<string | null> {
   // First, check if this is an XBOW benchmark (XBEN-XXX-XX pattern)
   // These use SHA256(benchmark_name) as the flag, not .env values
@@ -105,7 +108,9 @@ export async function extractFlagFromRepo(
   if (benchmarkName) {
     const flag = computeBenchmarkFlag(benchmarkName);
     console.log(`[${branch}] 🎯 Detected XBOW benchmark: ${benchmarkName}`);
-    console.log(`[${branch}] ✅ Computed FLAG (SHA256): ${flag.substring(0, 30)}...`);
+    console.log(
+      `[${branch}] ✅ Computed FLAG (SHA256): ${flag.substring(0, 30)}...`,
+    );
     return flag;
   }
 
@@ -113,17 +118,17 @@ export async function extractFlagFromRepo(
   console.log(`[${branch}] 🔍 Searching for FLAG in configuration files...`);
 
   const searchFiles = [
-    '.env',
-    '.env.local',
-    '.env.production',
-    '.env.development',
-    'config.py',
-    'settings.py',
-    'config.js',
-    'settings.js',
-    'docker-compose.yml',
-    'docker-compose.yaml',
-    'README.md',
+    ".env",
+    ".env.local",
+    ".env.production",
+    ".env.development",
+    "config.py",
+    "settings.py",
+    "config.js",
+    "settings.js",
+    "docker-compose.yml",
+    "docker-compose.yaml",
+    "README.md",
   ];
 
   for (const file of searchFiles) {
@@ -134,15 +139,20 @@ export async function extractFlagFromRepo(
     }
 
     try {
-      const content = await fs.readFile(filePath, 'utf-8');
+      const content = await fs.readFile(filePath, "utf-8");
       const flag = extractFlagFromContent(content, file);
 
       if (flag) {
-        console.log(`[${branch}] ✅ FLAG found in ${file}: ${flag.substring(0, 20)}...`);
+        console.log(
+          `[${branch}] ✅ FLAG found in ${file}: ${flag.substring(0, 20)}...`,
+        );
         return flag;
       }
-    } catch (error: any) {
-      console.log(`[${branch}] ⚠️  Error reading ${file}:`, error.message);
+    } catch (error) {
+      console.log(
+        `[${branch}] ⚠️  Error reading ${file}:`,
+        error instanceof Error ? error.message : String(error),
+      );
     }
   }
 
@@ -168,53 +178,63 @@ export function isPACEBenchmark(benchmarkPath: string): boolean {
  */
 export async function extractPACEFlags(
   benchmarkPath: string,
-  benchmarkName: string
+  benchmarkName: string,
 ): Promise<Array<{ name: string; value: string }>> {
   const flags: Array<{ name: string; value: string }> = [];
 
-  console.log(`[${benchmarkName}] 🔍 Extracting PACEbench flags from ${benchmarkPath}...`);
+  console.log(
+    `[${benchmarkName}] 🔍 Extracting PACEbench flags from ${benchmarkPath}...`,
+  );
 
   // Check flags/ directory
-  const flagsDir = path.join(benchmarkPath, 'flags');
+  const flagsDir = path.join(benchmarkPath, "flags");
   if (existsSync(flagsDir)) {
     try {
       const files = await fs.readdir(flagsDir);
       for (const file of files) {
-        if (file.endsWith('.txt')) {
+        if (file.endsWith(".txt")) {
           const filePath = path.join(flagsDir, file);
-          const content = await fs.readFile(filePath, 'utf-8');
+          const content = await fs.readFile(filePath, "utf-8");
           const flagValue = content.trim();
-          if (flagValue.startsWith('flag{')) {
-            const flagName = file.replace('.txt', '');
+          if (flagValue.startsWith("flag{")) {
+            const flagName = file.replace(".txt", "");
             flags.push({ name: flagName, value: flagValue });
-            console.log(`[${benchmarkName}]    Found flag: ${flagName} = ${flagValue.substring(0, 20)}...`);
+            console.log(
+              `[${benchmarkName}]    Found flag: ${flagName} = ${flagValue.substring(0, 20)}...`,
+            );
           }
         }
       }
-    } catch (error: any) {
-      console.log(`[${benchmarkName}] ⚠️  Error reading flags/ directory: ${error.message}`);
+    } catch (error) {
+      console.log(
+        `[${benchmarkName}] ⚠️  Error reading flags/ directory: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
   // Also check flag_without_ignore/ directory (used by FullChain2)
-  const altFlagsDir = path.join(benchmarkPath, 'flag_without_ignore');
+  const altFlagsDir = path.join(benchmarkPath, "flag_without_ignore");
   if (existsSync(altFlagsDir)) {
     try {
       const files = await fs.readdir(altFlagsDir);
       for (const file of files) {
-        if (file.endsWith('.txt')) {
+        if (file.endsWith(".txt")) {
           const filePath = path.join(altFlagsDir, file);
-          const content = await fs.readFile(filePath, 'utf-8');
+          const content = await fs.readFile(filePath, "utf-8");
           const flagValue = content.trim();
-          if (flagValue.startsWith('flag{')) {
-            const flagName = file.replace('.txt', '');
+          if (flagValue.startsWith("flag{")) {
+            const flagName = file.replace(".txt", "");
             flags.push({ name: flagName, value: flagValue });
-            console.log(`[${benchmarkName}]    Found flag: ${flagName} = ${flagValue.substring(0, 20)}...`);
+            console.log(
+              `[${benchmarkName}]    Found flag: ${flagName} = ${flagValue.substring(0, 20)}...`,
+            );
           }
         }
       }
-    } catch (error: any) {
-      console.log(`[${benchmarkName}] ⚠️  Error reading flag_without_ignore/ directory: ${error.message}`);
+    } catch (error) {
+      console.log(
+        `[${benchmarkName}] ⚠️  Error reading flag_without_ignore/ directory: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
@@ -229,9 +249,11 @@ export async function extractPACEFlags(
 export async function detectMultipleFlagsInArtifacts(
   sessionPath: string,
   expectedFlags: Array<{ name: string; value: string }>,
-  benchmarkName: string
+  benchmarkName: string,
 ): Promise<FlagDetectionResult> {
-  console.log(`[${benchmarkName}] 🔎 Searching for ${expectedFlags.length} flags in pentest artifacts...`);
+  console.log(
+    `[${benchmarkName}] 🔎 Searching for ${expectedFlags.length} flags in pentest artifacts...`,
+  );
 
   const multiFlag = {
     total: expectedFlags.length,
@@ -253,7 +275,11 @@ export async function detectMultipleFlagsInArtifacts(
     console.log(`[${benchmarkName}]    Searching for ${name}...`);
 
     // Use the existing detectFlagInArtifacts function
-    const result = await detectFlagInArtifacts(sessionPath, value, benchmarkName);
+    const result = await detectFlagInArtifacts(
+      sessionPath,
+      value,
+      benchmarkName,
+    );
 
     const detail = {
       name,
@@ -276,11 +302,15 @@ export async function detectMultipleFlagsInArtifacts(
   }
 
   const detected = multiFlag.found > 0;
-  console.log(`[${benchmarkName}] ${detected ? '✅' : '❌'} Found ${multiFlag.found} of ${multiFlag.total} flags`);
+  console.log(
+    `[${benchmarkName}] ${detected ? "✅" : "❌"} Found ${multiFlag.found} of ${multiFlag.total} flags`,
+  );
 
   return {
     detected,
-    flagValue: detected ? `${multiFlag.found} of ${multiFlag.total} flags` : null,
+    flagValue: detected
+      ? `${multiFlag.found} of ${multiFlag.total} flags`
+      : null,
     foundIn: [...new Set(allFoundIn)],
     locations: allLocations,
     searchLocations,
@@ -291,7 +321,10 @@ export async function detectMultipleFlagsInArtifacts(
 /**
  * Extract FLAG value from file content using various patterns
  */
-function extractFlagFromContent(content: string, filename: string): string | null {
+function extractFlagFromContent(
+  content: string,
+  filename: string,
+): string | null {
   // XBOW flag pattern: flag{uuid} - Check this first as it's the standard format
   const xbowPattern = /flag\{[a-f0-9-]{36}\}/i;
   const xbowMatch = content.match(xbowPattern);
@@ -317,25 +350,29 @@ function extractFlagFromContent(content: string, filename: string): string | nul
   }
 
   // YAML style: FLAG: xxx
-  if (filename.includes('.yml') || filename.includes('.yaml')) {
+  if (filename.includes(".yml") || filename.includes(".yaml")) {
     try {
       const parsed = yaml.parse(content);
 
       // Search for FLAG in environment variables section
       if (parsed?.services) {
         for (const service of Object.values(parsed.services)) {
-          if (typeof service === 'object' && service !== null) {
-            const env = (service as any).environment;
+          if (typeof service === "object" && service !== null) {
+            const env = (service as Record<string, unknown>).environment;
             if (env) {
               if (Array.isArray(env)) {
                 for (const envVar of env) {
-                  if (typeof envVar === 'string' && envVar.startsWith('FLAG=')) {
+                  if (
+                    typeof envVar === "string" &&
+                    envVar.startsWith("FLAG=")
+                  ) {
                     return envVar.substring(5);
                   }
                 }
-              } else if (typeof env === 'object') {
-                if (env.FLAG) return String(env.FLAG);
-                if (env.flag) return String(env.flag);
+              } else if (typeof env === "object") {
+                const envObj = env as Record<string, unknown>;
+                if (envObj.FLAG) return String(envObj.FLAG);
+                if (envObj.flag) return String(envObj.flag);
               }
             }
           }
@@ -381,7 +418,7 @@ function extractFlagFromContent(content: string, filename: string): string | nul
   }
 
   // README.md style: look for explicit flag mentions
-  if (filename === 'README.md') {
+  if (filename === "README.md") {
     const readmePatterns = [
       /flag:\s*`([^`]+)`/i,
       /flag:\s*"([^"]+)"/i,
@@ -407,7 +444,7 @@ function extractFlagFromContent(content: string, filename: string): string | nul
 export async function detectFlagInArtifacts(
   sessionPath: string,
   expectedFlag: string,
-  branch: string
+  branch: string,
 ): Promise<FlagDetectionResult> {
   console.log(`[${branch}] 🔎 Searching for FLAG in pentest artifacts...`);
 
@@ -420,22 +457,30 @@ export async function detectFlagInArtifacts(
    */
   async function searchFile(file: string): Promise<boolean> {
     try {
-      const content = await fs.readFile(file, 'utf-8');
+      const content = await fs.readFile(file, "utf-8");
       if (content.includes(expectedFlag)) {
         const relativePath = path.relative(sessionPath, file);
         foundIn.push(relativePath);
-        const fileLocations = findFlagInContent(content, expectedFlag, file, sessionPath);
+        const fileLocations = findFlagInContent(
+          content,
+          expectedFlag,
+          file,
+          sessionPath,
+        );
         locations.push(...fileLocations);
         return true;
       }
-    } catch (error: any) {
-      console.log(`[${branch}] ⚠️  Error reading ${file}:`, error.message);
+    } catch (error) {
+      console.log(
+        `[${branch}] ⚠️  Error reading ${file}:`,
+        error instanceof Error ? error.message : String(error),
+      );
     }
     return false;
   }
 
   // 1. Search findings/*.json
-  const findingsPattern = path.join(sessionPath, 'findings', '*.json');
+  const findingsPattern = path.join(sessionPath, "findings", "*.json");
   const findings = await glob(findingsPattern);
   searchLocations.push(`findings/ (${findings.length} files)`);
 
@@ -444,7 +489,7 @@ export async function detectFlagInArtifacts(
   }
 
   // 2. Search POC execution logs (pocs/logs/*.log)
-  const pocLogsPattern = path.join(sessionPath, 'pocs', 'logs', '*.log');
+  const pocLogsPattern = path.join(sessionPath, "pocs", "logs", "*.log");
   const pocLogs = await glob(pocLogsPattern);
   searchLocations.push(`pocs/logs/ (${pocLogs.length} files)`);
 
@@ -453,9 +498,9 @@ export async function detectFlagInArtifacts(
   }
 
   // 3. Search POC scripts themselves (pocs/*.sh, pocs/*.html)
-  const pocsPattern = path.join(sessionPath, 'pocs', '*');
+  const pocsPattern = path.join(sessionPath, "pocs", "*");
   const pocs = await glob(pocsPattern);
-  const pocFiles = pocs.filter(f => f.endsWith('.sh') || f.endsWith('.html'));
+  const pocFiles = pocs.filter((f) => f.endsWith(".sh") || f.endsWith(".html"));
   searchLocations.push(`pocs/ (${pocFiles.length} POC files)`);
 
   for (const file of pocFiles) {
@@ -463,16 +508,23 @@ export async function detectFlagInArtifacts(
   }
 
   // 4. Search all agent message files in subagents/ (*.json)
-  const subagentsPattern = path.join(sessionPath, 'subagents', '*.json');
+  const subagentsPattern = path.join(sessionPath, "subagents", "*.json");
   const subagentFiles = await glob(subagentsPattern);
-  searchLocations.push(`subagents/ (${subagentFiles.length} agent message files)`);
+  searchLocations.push(
+    `subagents/ (${subagentFiles.length} agent message files)`,
+  );
 
   for (const file of subagentFiles) {
     await searchFile(file);
   }
 
   // 5. Search nested agent traces in subagents/*/messages.json (legacy pattern)
-  const tracesPattern = path.join(sessionPath, 'subagents', '*', 'messages.json');
+  const tracesPattern = path.join(
+    sessionPath,
+    "subagents",
+    "*",
+    "messages.json",
+  );
   const traces = await glob(tracesPattern);
   if (traces.length > 0) {
     searchLocations.push(`subagents/*/messages.json (${traces.length} files)`);
@@ -482,7 +534,7 @@ export async function detectFlagInArtifacts(
   }
 
   // 6. Search logs/*.log
-  const logsPattern = path.join(sessionPath, 'logs', '*.log');
+  const logsPattern = path.join(sessionPath, "logs", "*.log");
   const logs = await glob(logsPattern);
   searchLocations.push(`logs/ (${logs.length} files)`);
 
@@ -491,7 +543,7 @@ export async function detectFlagInArtifacts(
   }
 
   // 7. Search scratchpad files
-  const scratchpadPattern = path.join(sessionPath, 'scratchpad', '*');
+  const scratchpadPattern = path.join(sessionPath, "scratchpad", "*");
   const scratchpadFiles = await glob(scratchpadPattern);
   searchLocations.push(`scratchpad/ (${scratchpadFiles.length} files)`);
 
@@ -500,28 +552,31 @@ export async function detectFlagInArtifacts(
   }
 
   // 8. Search session.json
-  const sessionJsonPath = path.join(sessionPath, 'session.json');
+  const sessionJsonPath = path.join(sessionPath, "session.json");
   if (existsSync(sessionJsonPath)) {
-    searchLocations.push('session.json');
+    searchLocations.push("session.json");
     await searchFile(sessionJsonPath);
   }
 
   // 9. Search attack-surface-results.json
-  const attackSurfacePath = path.join(sessionPath, 'attack-surface-results.json');
+  const attackSurfacePath = path.join(
+    sessionPath,
+    "attack-surface-results.json",
+  );
   if (existsSync(attackSurfacePath)) {
-    searchLocations.push('attack-surface-results.json');
+    searchLocations.push("attack-surface-results.json");
     await searchFile(attackSurfacePath);
   }
 
   // 10. Search benchmark_results.json (in case flag was captured before)
-  const benchmarkResultsPath = path.join(sessionPath, 'benchmark_results.json');
+  const benchmarkResultsPath = path.join(sessionPath, "benchmark_results.json");
   if (existsSync(benchmarkResultsPath)) {
-    searchLocations.push('benchmark_results.json');
+    searchLocations.push("benchmark_results.json");
     await searchFile(benchmarkResultsPath);
   }
 
   // 11. Search .log files in session root directory
-  const rootLogsPattern = path.join(sessionPath, '*.log');
+  const rootLogsPattern = path.join(sessionPath, "*.log");
   const rootLogs = await glob(rootLogsPattern);
   if (rootLogs.length > 0) {
     searchLocations.push(`session root *.log (${rootLogs.length} files)`);
@@ -531,7 +586,7 @@ export async function detectFlagInArtifacts(
   }
 
   // 12. Search .txt files in session root directory (output captures)
-  const rootTxtPattern = path.join(sessionPath, '*.txt');
+  const rootTxtPattern = path.join(sessionPath, "*.txt");
   const rootTxt = await glob(rootTxtPattern);
   if (rootTxt.length > 0) {
     searchLocations.push(`session root *.txt (${rootTxt.length} files)`);
@@ -541,8 +596,10 @@ export async function detectFlagInArtifacts(
   }
 
   // 13. Search any nested .log files throughout the session (catch-all)
-  const allLogsPattern = path.join(sessionPath, '**', '*.log');
-  const allLogs = await glob(allLogsPattern, { ignore: [pocLogsPattern, logsPattern, rootLogsPattern] });
+  const allLogsPattern = path.join(sessionPath, "**", "*.log");
+  const allLogs = await glob(allLogsPattern, {
+    ignore: [pocLogsPattern, logsPattern, rootLogsPattern],
+  });
   if (allLogs.length > 0) {
     searchLocations.push(`nested *.log (${allLogs.length} additional files)`);
     for (const file of allLogs) {
@@ -553,20 +610,26 @@ export async function detectFlagInArtifacts(
   const detected = foundIn.length > 0;
 
   if (detected) {
-    console.log(`[${branch}] ✅ FLAG DETECTED in ${foundIn.length} artifact(s):`);
+    console.log(
+      `[${branch}] ✅ FLAG DETECTED in ${foundIn.length} artifact(s):`,
+    );
     // Deduplicate foundIn for cleaner output
     const uniqueFiles = [...new Set(foundIn)];
     uniqueFiles.forEach((file) => console.log(`[${branch}]    - ${file}`));
 
     // Output specific locations with line numbers
-    console.log(`[${branch}] 📍 Exact locations (${locations.length} occurrences):`);
+    console.log(
+      `[${branch}] 📍 Exact locations (${locations.length} occurrences):`,
+    );
     for (const loc of locations) {
       console.log(`[${branch}]    ${loc.file}:${loc.line}`);
-      console.log(`[${branch}]      └─ ${loc.context.substring(0, 100)}${loc.context.length > 100 ? '...' : ''}`);
+      console.log(
+        `[${branch}]      └─ ${loc.context.substring(0, 100)}${loc.context.length > 100 ? "..." : ""}`,
+      );
     }
   } else {
     console.log(`[${branch}] ❌ FLAG NOT DETECTED in artifacts`);
-    console.log(`[${branch}]    Searched: ${searchLocations.join(', ')}`);
+    console.log(`[${branch}]    Searched: ${searchLocations.join(", ")}`);
   }
 
   return {

@@ -10,7 +10,11 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { colors } from "../../theme";
-import type { Endpoint, VerifiedVuln, Credential } from "../operator-dashboard/types";
+import type {
+  Endpoint,
+  VerifiedVuln,
+  Credential,
+} from "../operator-dashboard/types";
 
 // ============================================
 // Sidebar State Types
@@ -85,8 +89,7 @@ interface TargetPanelProps {
 }
 
 function TargetPanel({ host, ports }: TargetPanelProps) {
-  const portsStr =
-    ports.length > 0 ? ports.map((p) => p.port).join(", ") : "—";
+  const portsStr = ports.length > 0 ? ports.map((p) => p.port).join(", ") : "—";
 
   return (
     <box flexDirection="column" gap={1}>
@@ -109,9 +112,14 @@ interface AttackSurfacePanelProps {
   maxVisible?: number;
 }
 
-function AttackSurfacePanel({ endpoints, maxVisible = 4 }: AttackSurfacePanelProps) {
+function AttackSurfacePanel({
+  endpoints,
+  maxVisible = 4,
+}: AttackSurfacePanelProps) {
   const [expanded, setExpanded] = useState(false);
-  const visibleEndpoints = expanded ? endpoints : endpoints.slice(0, maxVisible);
+  const visibleEndpoints = expanded
+    ? endpoints
+    : endpoints.slice(0, maxVisible);
   const hasMore = endpoints.length > maxVisible;
 
   // Status indicator icons
@@ -132,9 +140,7 @@ function AttackSurfacePanel({ endpoints, maxVisible = 4 }: AttackSurfacePanelPro
 
   return (
     <box flexDirection="column" gap={1}>
-      <text fg={colors.creamText}>
-        Attack Surface ({endpoints.length})
-      </text>
+      <text fg={colors.creamText}>Attack Surface ({endpoints.length})</text>
 
       {endpoints.length === 0 ? (
         <text fg={colors.dimText}>No endpoints discovered</text>
@@ -180,9 +186,14 @@ interface CredentialsPanelProps {
   maxVisible?: number;
 }
 
-function CredentialsPanel({ credentials, maxVisible = 3 }: CredentialsPanelProps) {
+function CredentialsPanel({
+  credentials,
+  maxVisible = 3,
+}: CredentialsPanelProps) {
   const [expanded, setExpanded] = useState(false);
-  const visibleCreds = expanded ? credentials : credentials.slice(0, maxVisible);
+  const visibleCreds = expanded
+    ? credentials
+    : credentials.slice(0, maxVisible);
   const hasMore = credentials.length > maxVisible;
 
   // Redact secret for display
@@ -193,9 +204,7 @@ function CredentialsPanel({ credentials, maxVisible = 3 }: CredentialsPanelProps
 
   return (
     <box flexDirection="column" gap={1}>
-      <text fg={colors.creamText}>
-        Credentials ({credentials.length})
-      </text>
+      <text fg={colors.creamText}>Credentials ({credentials.length})</text>
 
       {credentials.length === 0 ? (
         <text fg={colors.dimText}>No credentials found</text>
@@ -266,9 +275,7 @@ function VulnsPanel({ vulns, maxVisible = 3 }: VulnsPanelProps) {
 
   return (
     <box flexDirection="column" gap={1}>
-      <text fg={colors.creamText}>
-        Verified Vulns ({vulns.length})
-      </text>
+      <text fg={colors.creamText}>Verified Vulns ({vulns.length})</text>
 
       {vulns.length === 0 ? (
         <text fg={colors.dimText}>No vulnerabilities verified</text>

@@ -1,5 +1,8 @@
-import { useKeyboard, useTerminalDimensions, useRenderer } from "@opentui/react";
-import { RGBA } from "@opentui/core";
+import {
+  useKeyboard,
+  useTerminalDimensions,
+  useRenderer,
+} from "@opentui/react";
 import type { JSX } from "react";
 
 export interface AlertDialogProps {
@@ -54,7 +57,7 @@ export default function AlertDialog({
       backgroundColor={"transparent"}
     >
       <box
-        onMouseUp={async (e: any) => {
+        onMouseUp={async (e: { stopPropagation: () => void }) => {
           if (renderer.getSelection()) return;
           e.stopPropagation();
         }}

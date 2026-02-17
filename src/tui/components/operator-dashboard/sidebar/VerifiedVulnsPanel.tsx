@@ -18,14 +18,18 @@ interface VerifiedVulnsPanelProps {
   maxVisible?: number;
 }
 
-export function VerifiedVulnsPanel({ vulns, maxVisible = 5 }: VerifiedVulnsPanelProps) {
+export function VerifiedVulnsPanel({
+  vulns,
+  maxVisible = 5,
+}: VerifiedVulnsPanelProps) {
   const visible = vulns.slice(0, maxVisible);
   const remaining = vulns.length - maxVisible;
 
   return (
     <box flexDirection="column" gap={1}>
       <text fg={creamText}>
-        Verified Vulns {vulns.length > 0 && <span fg={greenAccent}>({vulns.length})</span>}
+        Verified Vulns{" "}
+        {vulns.length > 0 && <span fg={greenAccent}>({vulns.length})</span>}
       </text>
 
       {vulns.length === 0 ? (
@@ -35,20 +39,20 @@ export function VerifiedVulnsPanel({ vulns, maxVisible = 5 }: VerifiedVulnsPanel
           {visible.map((v) => (
             <box key={v.id} flexDirection="row" gap={1}>
               <text fg={greenAccent}>+</text>
-              <text fg={getSeverityColor(v.severity)}>{((v as any).type || (v as any).title || 'FINDING').toUpperCase()}</text>
-              <text fg={dimText}>{truncatePath(v.endpoint || '', 14)}</text>
+              <text fg={getSeverityColor(v.severity)}>
+                {(v.type || "FINDING").toUpperCase()}
+              </text>
+              <text fg={dimText}>{truncatePath(v.endpoint || "", 14)}</text>
             </box>
           ))}
-          {remaining > 0 && (
-            <text fg={dimText}>... +{remaining} more</text>
-          )}
+          {remaining > 0 && <text fg={dimText}>... +{remaining} more</text>}
         </>
       )}
     </box>
   );
 }
 
-function getSeverityColor(severity: VerifiedVuln['severity']) {
+function getSeverityColor(severity: VerifiedVuln["severity"]) {
   switch (severity) {
     case "critical":
       return redText;

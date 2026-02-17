@@ -116,7 +116,9 @@ export interface ToolClassificationContext {
 /**
  * Classify a tool call into a permission tier
  */
-export function classifyToolCall(ctx: ToolClassificationContext): PermissionTier {
+export function classifyToolCall(
+  ctx: ToolClassificationContext,
+): PermissionTier {
   const { toolName, args } = ctx;
 
   // Get base tier (default to 3 for unknown tools)
@@ -137,13 +139,14 @@ export function classifyToolCall(ctx: ToolClassificationContext): PermissionTier
       tier = classifyFuzzingTool(args, tier);
       break;
 
-    case "create_poc":
+    case "create_poc": {
       // If POC contains dangerous patterns, escalate
       const pocContent = String(args.script || args.content || "");
       if (containsExploitPatterns(pocContent)) {
         tier = 5;
       }
       break;
+    }
   }
 
   return tier;
@@ -152,7 +155,10 @@ export function classifyToolCall(ctx: ToolClassificationContext): PermissionTier
 /**
  * Classify http_request based on method and body
  */
-function classifyHttpRequest(args: Record<string, unknown>, baseTier: PermissionTier): PermissionTier {
+function classifyHttpRequest(
+  args: Record<string, unknown>,
+  baseTier: PermissionTier,
+): PermissionTier {
   let tier = baseTier;
 
   // Escalate based on HTTP method
@@ -177,7 +183,10 @@ function classifyHttpRequest(args: Record<string, unknown>, baseTier: Permission
 /**
  * Classify execute_command based on command content
  */
-function classifyExecuteCommand(args: Record<string, unknown>, baseTier: PermissionTier): PermissionTier {
+function classifyExecuteCommand(
+  args: Record<string, unknown>,
+  baseTier: PermissionTier,
+): PermissionTier {
   const command = String(args.command || "");
 
   // Check for exploit patterns
@@ -186,13 +195,28 @@ function classifyExecuteCommand(args: Record<string, unknown>, baseTier: Permiss
   }
 
   // Certain commands are inherently more risky
-  const riskyCommands = ["sqlmap", "hydra", "nikto", "dirb", "gobuster", "ffuf", "wfuzz"];
+  const riskyCommands = [
+    "sqlmap",
+    "hydra",
+    "nikto",
+    "dirb",
+    "gobuster",
+    "ffuf",
+    "wfuzz",
+  ];
   if (riskyCommands.some((cmd) => command.includes(cmd))) {
     return Math.max(baseTier, 4) as PermissionTier;
   }
 
   // Safe recon commands stay at tier 2
-  const safeCommands = ["nmap -sV", "dig", "whois", "host", "curl -I", "openssl s_client"];
+  const safeCommands = [
+    "nmap -sV",
+    "dig",
+    "whois",
+    "host",
+    "curl -I",
+    "openssl s_client",
+  ];
   if (safeCommands.some((cmd) => command.startsWith(cmd.split(" ")[0]))) {
     // Still tier 4 because it's a shell command, but could be lowered in config
   }
@@ -203,7 +227,10 @@ function classifyExecuteCommand(args: Record<string, unknown>, baseTier: Permiss
 /**
  * Classify fuzzing tools
  */
-function classifyFuzzingTool(args: Record<string, unknown>, baseTier: PermissionTier): PermissionTier {
+function classifyFuzzingTool(
+  args: Record<string, unknown>,
+  baseTier: PermissionTier,
+): PermissionTier {
   // Check payloads for dangerous content
   const payloads = args.payloads as string[] | undefined;
   const values = args.values as string[] | undefined;
@@ -235,7 +262,10 @@ function containsProbingPatterns(content: string): boolean {
 /**
  * Get a human-readable description of why a tool was classified at a certain tier
  */
-export function getClassificationReason(ctx: ToolClassificationContext, tier: PermissionTier): string {
+export function getClassificationReason(
+  ctx: ToolClassificationContext,
+  tier: PermissionTier,
+): string {
   const { toolName, args } = ctx;
   const baseTier = TOOL_BASE_TIERS[toolName] ?? 3;
 

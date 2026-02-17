@@ -1,4 +1,4 @@
-import React, { type ReactElement, type ReactNode } from 'react';
+import React, { type ReactElement, type ReactNode } from "react";
 
 // Define types for props
 export interface CaseProps<T extends string> {
@@ -16,20 +16,22 @@ export interface SwitchProps<T extends string> {
 }
 
 // Symbols for runtime identification
-const CaseSymbol = Symbol('Switch.Case');
-const DefaultSymbol = Symbol('Switch.Default');
+const CaseSymbol = Symbol("Switch.Case");
+const DefaultSymbol = Symbol("Switch.Default");
 
 // Case component
-function CaseComponent<T extends string>({ children }: CaseProps<T>): ReactElement {
-  return <>{children}</> as ReactElement;
+function CaseComponent<T extends string>({
+  children,
+}: CaseProps<T>): ReactElement {
+  return (<>{children}</>) as ReactElement;
 }
-(CaseComponent as any)[CaseSymbol] = true;
+(CaseComponent as unknown as Record<symbol, boolean>)[CaseSymbol] = true;
 
 // Default component
 function DefaultComponent({ children }: DefaultProps): ReactElement {
-  return <>{children}</> as ReactElement;
+  return (<>{children}</>) as ReactElement;
 }
-(DefaultComponent as any)[DefaultSymbol] = true;
+(DefaultComponent as unknown as Record<symbol, boolean>)[DefaultSymbol] = true;
 
 // Switch component
 function SwitchComponent<T extends string>({
@@ -41,24 +43,26 @@ function SwitchComponent<T extends string>({
 
   React.Children.forEach(children, (child) => {
     if (React.isValidElement(child)) {
-      if ((child.type as any)[CaseSymbol]) {
+      if ((child.type as unknown as Record<symbol, boolean>)[CaseSymbol]) {
         const caseChild = child as React.ReactElement<CaseProps<T>>;
         if (caseChild.props.when === condition) {
           matchedChild = child;
         }
-      } else if ((child.type as any)[DefaultSymbol]) {
+      } else if (
+        (child.type as unknown as Record<symbol, boolean>)[DefaultSymbol]
+      ) {
         defaultChild = child;
       }
     }
   });
 
-  return <>{matchedChild || defaultChild}</> as ReactElement;
+  return (<>{matchedChild || defaultChild}</>) as ReactElement;
 }
 
 // Helper function that creates a typed Switch with bound Case component
 function createSwitch<T extends string>() {
   const TypedCase = (props: CaseProps<T>) => CaseComponent(props);
-  (TypedCase as any)[CaseSymbol] = true;
+  (TypedCase as unknown as Record<symbol, boolean>)[CaseSymbol] = true;
 
   const TypedSwitch = (props: SwitchProps<T>) => SwitchComponent(props);
 

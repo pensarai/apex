@@ -16,16 +16,26 @@ export interface DockerComposePortInfo {
 
 // Infrastructure service patterns to skip (database, cache, message queue, internal services, etc.)
 const INFRASTRUCTURE_PATTERNS = [
-  'postgres', 'postgresql', 'pg', 'db', 'database',
-  'mysql', 'mariadb',
-  'redis', 'memcached',
-  'mongodb', 'mongo',
-  'rabbitmq', 'kafka',
-  'elasticsearch', 'elastic',
-  'minio', 'storage',
-  'internal',  // Skip internal services (they should only be accessible via SSRF, not directly)
-  'backend',   // Skip backend services
-  'worker',    // Skip worker services
+  "postgres",
+  "postgresql",
+  "pg",
+  "db",
+  "database",
+  "mysql",
+  "mariadb",
+  "redis",
+  "memcached",
+  "mongodb",
+  "mongo",
+  "rabbitmq",
+  "kafka",
+  "elasticsearch",
+  "elastic",
+  "minio",
+  "storage",
+  "internal", // Skip internal services (they should only be accessible via SSRF, not directly)
+  "backend", // Skip backend services
+  "worker", // Skip worker services
 ];
 
 /**
@@ -33,14 +43,16 @@ const INFRASTRUCTURE_PATTERNS = [
  */
 function isInfrastructureService(serviceName: string): boolean {
   const lowerName = serviceName.toLowerCase();
-  return INFRASTRUCTURE_PATTERNS.some(pattern => lowerName.includes(pattern));
+  return INFRASTRUCTURE_PATTERNS.some((pattern) => lowerName.includes(pattern));
 }
 
 /**
  * Parse docker-compose file to find the web application service
  * Skips infrastructure services (databases, caches, etc.)
  */
-export function parseDockerComposePort(benchmarkPath: string): DockerComposePortInfo {
+export function parseDockerComposePort(
+  benchmarkPath: string,
+): DockerComposePortInfo {
   // Try docker-compose.yml first, then docker-compose.yaml
   const composePaths = [
     path.join(benchmarkPath, "docker-compose.yml"),
@@ -61,12 +73,14 @@ export function parseDockerComposePort(benchmarkPath: string): DockerComposePort
         for (const [serviceName, service] of Object.entries(parsed.services)) {
           // Skip infrastructure services
           if (isInfrastructureService(serviceName)) {
-            console.log(`  ⏭️  Skipping infrastructure service: ${serviceName}`);
+            console.log(
+              `  ⏭️  Skipping infrastructure service: ${serviceName}`,
+            );
             continue;
           }
 
           if (typeof service === "object" && service !== null) {
-            const serviceObj = service as any;
+            const serviceObj = service as Record<string, unknown>;
             const ports = serviceObj.ports;
 
             if (ports && Array.isArray(ports) && ports.length > 0) {
@@ -76,7 +90,9 @@ export function parseDockerComposePort(benchmarkPath: string): DockerComposePort
               if (typeof firstPort === "string") {
                 const match = firstPort.match(/^(\d+):(\d+)$/);
                 if (match && match[1] && match[2]) {
-                  console.log(`  ✅ Found web service: ${serviceName} on port ${match[1]}`);
+                  console.log(
+                    `  ✅ Found web service: ${serviceName} on port ${match[1]}`,
+                  );
                   return {
                     hostPort: parseInt(match[1], 10),
                     containerPort: parseInt(match[2], 10),
@@ -86,7 +102,9 @@ export function parseDockerComposePort(benchmarkPath: string): DockerComposePort
                   };
                 }
               } else if (typeof firstPort === "number") {
-                console.log(`  ✅ Found web service: ${serviceName} on port ${firstPort}`);
+                console.log(
+                  `  ✅ Found web service: ${serviceName} on port ${firstPort}`,
+                );
                 return {
                   hostPort: firstPort,
                   containerPort: firstPort,
@@ -98,21 +116,32 @@ export function parseDockerComposePort(benchmarkPath: string): DockerComposePort
             }
 
             // Check for expose without ports (needs mapping)
-            if (serviceObj.expose && Array.isArray(serviceObj.expose) && serviceObj.expose.length > 0) {
+            if (
+              serviceObj.expose &&
+              Array.isArray(serviceObj.expose) &&
+              serviceObj.expose.length > 0
+            ) {
               const exposePort = serviceObj.expose[0];
-              const port = typeof exposePort === "string" ? parseInt(exposePort, 10) : exposePort;
+              const port =
+                typeof exposePort === "string"
+                  ? parseInt(exposePort, 10)
+                  : exposePort;
 
-              console.log(`  ⚠️  Service ${serviceName} has expose but no ports - will add port mapping`);
+              console.log(
+                `  ⚠️  Service ${serviceName} has expose but no ports - will add port mapping`,
+              );
 
               // Add port mapping to the service
               if (!serviceObj.ports) {
                 serviceObj.ports = [];
               }
-              serviceObj.ports.push(`${port}:${port}`);
+              (serviceObj.ports as string[]).push(`${port}:${port}`);
 
               // Write back the modified compose file
               writeFileSync(composePath, yaml.stringify(parsed));
-              console.log(`  ✅ Added port mapping ${port}:${port} to ${serviceName}`);
+              console.log(
+                `  ✅ Added port mapping ${port}:${port} to ${serviceName}`,
+              );
 
               return {
                 hostPort: port,
@@ -127,7 +156,9 @@ export function parseDockerComposePort(benchmarkPath: string): DockerComposePort
       }
 
       // If we get here, no ports were found - find first non-infrastructure service
-      console.log(`  ⚠️  No ports found in ${composePath}, adding default port to first web service...`);
+      console.log(
+        `  ⚠️  No ports found in ${composePath}, adding default port to first web service...`,
+      );
 
       if (parsed?.services) {
         // Find first non-infrastructure service
@@ -136,17 +167,19 @@ export function parseDockerComposePort(benchmarkPath: string): DockerComposePort
             continue;
           }
 
-          const serviceObj = service as any;
+          const serviceObj = service as Record<string, unknown>;
 
           // Add common web port mapping
           const defaultPort = 80;
           if (!serviceObj.ports) {
             serviceObj.ports = [];
           }
-          serviceObj.ports.push(`${defaultPort}:${defaultPort}`);
+          (serviceObj.ports as string[]).push(`${defaultPort}:${defaultPort}`);
 
           writeFileSync(composePath, yaml.stringify(parsed));
-          console.log(`  ✅ Added default port mapping ${defaultPort}:${defaultPort} to ${serviceName}`);
+          console.log(
+            `  ✅ Added default port mapping ${defaultPort}:${defaultPort} to ${serviceName}`,
+          );
 
           return {
             hostPort: defaultPort,
@@ -157,13 +190,16 @@ export function parseDockerComposePort(benchmarkPath: string): DockerComposePort
           };
         }
       }
-    } catch (error: any) {
-      console.error(`Warning: Failed to parse ${composePath}: ${error.message}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`Warning: Failed to parse ${composePath}: ${message}`);
     }
   }
 
   // Default to port 80 if not found
-  console.log(`  ⚠️  Could not find docker-compose file, defaulting to port 80`);
+  console.log(
+    `  ⚠️  Could not find docker-compose file, defaulting to port 80`,
+  );
   return {
     hostPort: 80,
     containerPort: 80,
@@ -180,38 +216,44 @@ export function parseDockerComposePort(benchmarkPath: string): DockerComposePort
 export async function getActualDockerPort(
   benchmarkPath: string,
   serviceName: string,
-  containerPort: number = 80
+  containerPort: number = 80,
 ): Promise<number> {
   try {
     // Get the container name from docker-compose
-    const { stdout } = await exec(
-      `docker compose ps -q ${serviceName}`,
-      { cwd: benchmarkPath }
-    );
+    const { stdout } = await exec(`docker compose ps -q ${serviceName}`, {
+      cwd: benchmarkPath,
+    });
 
     const containerId = stdout.trim();
     if (!containerId) {
-      console.log(`  ⚠️  Could not find running container for service: ${serviceName}`);
+      console.log(
+        `  ⚠️  Could not find running container for service: ${serviceName}`,
+      );
       return containerPort;
     }
 
     // Get the port mapping
     const { stdout: portOutput } = await exec(
-      `docker port ${containerId} ${containerPort}`
+      `docker port ${containerId} ${containerPort}`,
     );
 
     // Output format: "0.0.0.0:6340" or "0.0.0.0:6340\n:::6340"
     const match = portOutput.match(/0\.0\.0\.0:(\d+)/);
     if (match && match[1]) {
       const hostPort = parseInt(match[1], 10);
-      console.log(`  ✅ Container ${serviceName}:${containerPort} is mapped to localhost:${hostPort}`);
+      console.log(
+        `  ✅ Container ${serviceName}:${containerPort} is mapped to localhost:${hostPort}`,
+      );
       return hostPort;
     }
 
-    console.log(`  ⚠️  Could not parse port mapping, using container port: ${containerPort}`);
+    console.log(
+      `  ⚠️  Could not parse port mapping, using container port: ${containerPort}`,
+    );
     return containerPort;
-  } catch (error: any) {
-    console.error(`  ⚠️  Error getting Docker port mapping: ${error.message}`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`  ⚠️  Error getting Docker port mapping: ${message}`);
     return containerPort;
   }
 }

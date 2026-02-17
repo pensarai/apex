@@ -14,9 +14,7 @@ interface TargetStatePanelProps {
 }
 
 export function TargetStatePanel({ host, ports }: TargetStatePanelProps) {
-  const portsStr = ports.length > 0
-    ? ports.map(p => p.port).join(", ")
-    : "—";
+  const portsStr = ports.length > 0 ? ports.map((p) => p.port).join(", ") : "—";
 
   return (
     <box flexDirection="column" gap={1}>

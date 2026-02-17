@@ -300,7 +300,7 @@ The following credentials are configured for this domain:
         ) {
           prompt += `- Custom Headers:\n`;
           for (const [key, value] of Object.entries(
-            cred.tokens.customHeaders
+            cred.tokens.customHeaders,
           )) {
             prompt += `  - ${key}: ${value}\n`;
           }
@@ -411,7 +411,7 @@ You have working credentials. Your task is to USE THEM to authenticate.
 `;
     }
     if (input.authFlowHints.loginEndpoints?.length) {
-      prompt += `- Login Endpoints: ${input.authFlowHints.loginEndpoints.join(', ')}
+      prompt += `- Login Endpoints: ${input.authFlowHints.loginEndpoints.join(", ")}
 `;
     }
     if (input.authFlowHints.authScheme) {
@@ -446,7 +446,7 @@ You have working credentials. Your task is to USE THEM to authenticate.
 1. Use \`validate_session\` to test if the provided tokens grant authenticated access
 `;
     if (hasProtectedEndpoints) {
-      prompt += `   - Test against the protected endpoints provided above: ${input.authFlowHints!.protectedEndpoints!.join(', ')}
+      prompt += `   - Test against the protected endpoints provided above: ${input.authFlowHints!.protectedEndpoints!.join(", ")}
    - These are KNOWN to require auth - use them directly, don't guess endpoints
 `;
     } else {
@@ -649,7 +649,7 @@ ${input.target}
 
   if (input.additionalEndpoints?.length) {
     prompt += `## Additional Endpoints to Check
-${input.additionalEndpoints.map((e) => `- ${e}`).join('\n')}
+${input.additionalEndpoints.map((e) => `- ${e}`).join("\n")}
 
 `;
   }

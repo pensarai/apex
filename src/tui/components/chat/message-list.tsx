@@ -18,7 +18,7 @@ import { LoadingIndicator, type LoadingState } from "./loading-indicator";
 function getLoadingState(
   messages: DisplayMessage[],
   hasPendingTool: boolean,
-  isLastAssistant: boolean
+  isLastAssistant: boolean,
 ): LoadingState {
   if (hasPendingTool) {
     return "executing";
@@ -94,7 +94,12 @@ export function MessageList({
   return (
     <scrollbox
       style={{
-        rootOptions: { flexGrow: 1, flexShrink: 1, width: "100%", overflow: "hidden" },
+        rootOptions: {
+          flexGrow: 1,
+          flexShrink: 1,
+          width: "100%",
+          overflow: "hidden",
+        },
         contentOptions: {
           paddingLeft: 2,
           paddingRight: 2,
@@ -111,7 +116,8 @@ export function MessageList({
         <box flexDirection="column" gap={1} marginTop={2}>
           <text fg={colors.greenAccent}>Operator Mode Active</text>
           <text fg={colors.dimText}>
-            {emptyMessage || 'Type a directive to begin (e.g., "Explore the attack surface").'}
+            {emptyMessage ||
+              'Type a directive to begin (e.g., "Explore the attack surface").'}
           </text>
           <box flexDirection="column" gap={0} marginTop={1}>
             <text fg={colors.creamText}>Tips:</text>

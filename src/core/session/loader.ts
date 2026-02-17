@@ -336,7 +336,7 @@ function createDiscoveryFromLogs(
     const lines = logContent.split("\n").filter(Boolean);
 
     const messages: UIMessage[] = [];
-    let stepBuffer = "";
+    const stepBuffer = "";
 
     for (const line of lines) {
       const match = line.match(
@@ -425,7 +425,7 @@ export async function loadSessionState(
         target: string;
         vulnerabilityClass: string;
         objective: string;
-        authInfo?: any;
+        authInfo?: Record<string, unknown>;
         status: "running" | "completed";
         spawnedAt: string;
         completedAt?: string;
@@ -434,20 +434,22 @@ export async function loadSessionState(
       for (const entry of manifest) {
         if (entry.status !== "running") continue;
 
-        const resumeInfo = {
+        const resumeInfo: ResumeInfo = {
           target: entry.target,
           objective: entry.objective,
           vulnerabilityClass: entry.vulnerabilityClass,
-          authenticationInfo: entry.authInfo,
+          authenticationInfo: entry.authInfo as AuthenticationInfo | undefined,
         };
 
         // Match by vulnerability class slug in filename + same target
-        const vulnSlug = entry.vulnerabilityClass.toLowerCase().replace(/\s+/g, "-");
+        const vulnSlug = entry.vulnerabilityClass
+          .toLowerCase()
+          .replace(/\s+/g, "-");
         const existingIndex = subagents.findIndex(
           (s) =>
             s.type === "pentest" &&
             s.id.includes(`-${vulnSlug}-`) &&
-            s.target === entry.target
+            s.target === entry.target,
         );
 
         if (existingIndex >= 0) {
@@ -465,7 +467,7 @@ export async function loadSessionState(
           if (existsSync(subagentsPath)) {
             try {
               const files = readdirSync(subagentsPath).filter((f) =>
-                f.endsWith(".json")
+                f.endsWith(".json"),
               );
               const matchingFile = files.find((f) => {
                 if (vulnSlug && f.includes(vulnSlug)) return true;
@@ -473,11 +475,11 @@ export async function loadSessionState(
               });
               if (matchingFile) {
                 const data = JSON.parse(
-                  readFileSync(join(subagentsPath, matchingFile), "utf-8")
+                  readFileSync(join(subagentsPath, matchingFile), "utf-8"),
                 ) as SavedSubagentData;
                 messages = convertMessagesToUI(
                   data.messages,
-                  new Date(entry.spawnedAt)
+                  new Date(entry.spawnedAt),
                 );
               }
             } catch {
@@ -514,7 +516,7 @@ export async function loadSessionState(
   // cannot cause false positives. If attack-surface-results.json is manually deleted,
   // this will incorrectly mark the session as interrupted rather than allowing restart.
   const hasDiscoverySubagent = subagents.some(
-    (s) => s.type === "attack-surface"
+    (s) => s.type === "attack-surface",
   );
   const interruptedDuringDiscovery =
     !attackSurfaceResults && !hasReportFile && hasDiscoverySubagent;
@@ -522,7 +524,10 @@ export async function loadSessionState(
   // If discovery was interrupted, mark the discovery subagent as paused (not completed)
   if (interruptedDuringDiscovery) {
     for (let i = 0; i < subagents.length; i++) {
-      if (subagents[i].type === "attack-surface" && subagents[i].status === "completed") {
+      if (
+        subagents[i].type === "attack-surface" &&
+        subagents[i].status === "completed"
+      ) {
         subagents[i] = { ...subagents[i], status: "paused" };
       }
     }

@@ -14,18 +14,41 @@
 
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { generateText, Output } from "ai";
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "fs";
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "fs";
 import path from "path";
 import pLimit from "p-limit";
 import { z } from "zod";
 
 // Schema for the AI comparison response
 const ComparisonResponseSchema = z.object({
-  vulnerability_found: z.boolean().describe("Was the expected vulnerability type found?"),
-  vulnerability_match_score: z.number().min(0).max(1).describe("How well do the findings match the expected vulnerability (0.0-1.0)"),
-  matching_finding_index: z.number().nullable().describe("Index (1-based) of the finding that best matches, or null"),
-  analysis: z.string().describe("Detailed explanation of the comparison (2-3 sentences)"),
-  overall_score: z.number().min(0).max(1).describe("Overall success score for this benchmark (0.0-1.0)"),
+  vulnerability_found: z
+    .boolean()
+    .describe("Was the expected vulnerability type found?"),
+  vulnerability_match_score: z
+    .number()
+    .min(0)
+    .max(1)
+    .describe(
+      "How well do the findings match the expected vulnerability (0.0-1.0)",
+    ),
+  matching_finding_index: z
+    .number()
+    .nullable()
+    .describe("Index (1-based) of the finding that best matches, or null"),
+  analysis: z
+    .string()
+    .describe("Detailed explanation of the comparison (2-3 sentences)"),
+  overall_score: z
+    .number()
+    .min(0)
+    .max(1)
+    .describe("Overall success score for this benchmark (0.0-1.0)"),
 });
 
 type ComparisonResponse = z.infer<typeof ComparisonResponseSchema>;
@@ -77,8 +100,8 @@ interface BenchmarkResults {
 interface ComparisonResult {
   benchmark_id: string;
   execution_path: string;
-  expected: ExpectedResult;  // Primary expected result (first one)
-  expected_all: ExpectedResult[];  // All expected results for multi-vuln chains
+  expected: ExpectedResult; // Primary expected result (first one)
+  expected_all: ExpectedResult[]; // All expected results for multi-vuln chains
   findings_count: number;
   flag_detected: boolean;
   flag_value: string;
@@ -152,18 +175,37 @@ function extractBenchmarkId(dirName: string, isPace?: boolean): string | null {
 /**
  * Load expected_results.json for a given benchmark
  */
-function loadExpectedResults(benchmarksDir: string, benchmarkId: string, isPace?: boolean): ExpectedResult[] | null {
+function loadExpectedResults(
+  benchmarksDir: string,
+  benchmarkId: string,
+  isPace?: boolean,
+): ExpectedResult[] | null {
   // For PACEbench: {benchmarksDir}/docker/FullChain/{benchmarkId}/expected_results.json
   // For XBEN: {benchmarksDir}/benchmarks/{benchmarkId}/expected_results.json or {benchmarksDir}/{benchmarkId}/expected_results.json
   let expectedPath: string;
 
   if (isPace) {
-    expectedPath = path.join(benchmarksDir, "docker", "FullChain", benchmarkId, "expected_results.json");
+    expectedPath = path.join(
+      benchmarksDir,
+      "docker",
+      "FullChain",
+      benchmarkId,
+      "expected_results.json",
+    );
   } else {
     // Try both paths for XBEN (with and without 'benchmarks' subdirectory)
-    expectedPath = path.join(benchmarksDir, benchmarkId, "expected_results.json");
+    expectedPath = path.join(
+      benchmarksDir,
+      benchmarkId,
+      "expected_results.json",
+    );
     if (!existsSync(expectedPath)) {
-      expectedPath = path.join(benchmarksDir, "benchmarks", benchmarkId, "expected_results.json");
+      expectedPath = path.join(
+        benchmarksDir,
+        "benchmarks",
+        benchmarkId,
+        "expected_results.json",
+      );
     }
   }
 
@@ -237,7 +279,7 @@ function loadBenchmarkResults(executionPath: string): BenchmarkResults {
 async function compareWithClaude(
   expected: ExpectedResult,
   findings: Finding[],
-  benchmarkResults: BenchmarkResults
+  benchmarkResults: BenchmarkResults,
 ): Promise<ComparisonResponse> {
   const anthropic = createAnthropic({
     apiKey: process.env.ANTHROPIC_API_KEY,
@@ -326,9 +368,13 @@ function findExecutions(
   executionsDir: string,
   benchmarkIds?: string[],
   prefix?: string,
-  isPace?: boolean
+  isPace?: boolean,
 ): Array<{ benchmarkId: string; path: string }> {
-  const executions: Array<{ benchmarkId: string; path: string; mtime: number }> = [];
+  const executions: Array<{
+    benchmarkId: string;
+    path: string;
+    mtime: number;
+  }> = [];
 
   const entries = readdirSync(executionsDir);
 
@@ -367,10 +413,14 @@ async function compareBenchmark(
   benchmarkId: string,
   executionPath: string,
   benchmarksDir: string,
-  isPace?: boolean
+  isPace?: boolean,
 ): Promise<ComparisonResult | null> {
   // Load expected results (now returns array)
-  const expectedResults = loadExpectedResults(benchmarksDir, benchmarkId, isPace);
+  const expectedResults = loadExpectedResults(
+    benchmarksDir,
+    benchmarkId,
+    isPace,
+  );
   if (!expectedResults || expectedResults.length === 0) {
     console.error(`Warning: No expected_results.json found for ${benchmarkId}`);
     return null;
@@ -400,7 +450,11 @@ async function compareBenchmark(
   let bestMatchingFindingSubagent: string | null = null;
 
   for (const expected of expectedResults) {
-    const comparison = await compareWithClaude(expected, findings, benchmarkResults);
+    const comparison = await compareWithClaude(
+      expected,
+      findings,
+      benchmarkResults,
+    );
 
     multiVulnDetails.push({
       vulnerability_id: expected.vulnerability_id,
@@ -410,10 +464,16 @@ async function compareBenchmark(
     });
 
     // Track the best match (highest score or first vulnerability found)
-    if (!bestComparison || comparison.overall_score > bestComparison.overall_score) {
+    if (
+      !bestComparison ||
+      comparison.overall_score > bestComparison.overall_score
+    ) {
       bestComparison = comparison;
 
-      if (comparison.vulnerability_found && comparison.matching_finding_index !== null) {
+      if (
+        comparison.vulnerability_found &&
+        comparison.matching_finding_index !== null
+      ) {
         const matchingFinding = findings[comparison.matching_finding_index - 1];
         if (matchingFinding) {
           bestMatchingFindingPath = matchingFinding._filePath || null;
@@ -446,11 +506,14 @@ async function compareBenchmark(
     matching_finding_path: bestMatchingFindingPath,
     matching_finding_subagent: bestMatchingFindingSubagent,
     // Include multi-vuln details for PACEbench
-    multi_vuln: expectedResults.length > 1 ? {
-      total_expected: expectedResults.length,
-      found: vulnsFound,
-      details: multiVulnDetails,
-    } : undefined,
+    multi_vuln:
+      expectedResults.length > 1
+        ? {
+            total_expected: expectedResults.length,
+            found: vulnsFound,
+            details: multiVulnDetails,
+          }
+        : undefined,
     // Include multi-flag details for PACEbench
     multi_flag: multiFlag,
   };
@@ -472,24 +535,35 @@ function generateTextReport(results: ComparisonResult[]): string {
   const total = results.length;
   const flagsCaptured = results.filter((r) => r.flag_detected).length;
   const vulnsFound = results.filter((r) => r.vulnerability_found).length;
-  const avgScore = total > 0 ? results.reduce((sum, r) => sum + r.overall_score, 0) / total : 0;
+  const avgScore =
+    total > 0
+      ? results.reduce((sum, r) => sum + r.overall_score, 0) / total
+      : 0;
 
   lines.push("SUMMARY");
   lines.push("─".repeat(40));
   lines.push(`Total Benchmarks:        ${total}`);
-  lines.push(`Flags Captured:          ${flagsCaptured}/${total} (${((100 * flagsCaptured) / total).toFixed(1)}%)`);
-  lines.push(`Vulnerabilities Found:   ${vulnsFound}/${total} (${((100 * vulnsFound) / total).toFixed(1)}%)`);
+  lines.push(
+    `Flags Captured:          ${flagsCaptured}/${total} (${((100 * flagsCaptured) / total).toFixed(1)}%)`,
+  );
+  lines.push(
+    `Vulnerabilities Found:   ${vulnsFound}/${total} (${((100 * vulnsFound) / total).toFixed(1)}%)`,
+  );
   lines.push(`Average Score:           ${avgScore.toFixed(2)}`);
   lines.push("");
 
   // Visual bar for flag capture
   const barWidth = 40;
   const flagFilledWidth = Math.round((flagsCaptured / total) * barWidth);
-  lines.push(`Flag Capture:   [${"█".repeat(flagFilledWidth)}${"░".repeat(barWidth - flagFilledWidth)}]`);
+  lines.push(
+    `Flag Capture:   [${"█".repeat(flagFilledWidth)}${"░".repeat(barWidth - flagFilledWidth)}]`,
+  );
 
   // Visual bar for vuln found
   const vulnFilledWidth = Math.round((vulnsFound / total) * barWidth);
-  lines.push(`Vuln Found:     [${"█".repeat(vulnFilledWidth)}${"░".repeat(barWidth - vulnFilledWidth)}]`);
+  lines.push(
+    `Vuln Found:     [${"█".repeat(vulnFilledWidth)}${"░".repeat(barWidth - vulnFilledWidth)}]`,
+  );
   lines.push("");
 
   // Show multi-vuln details for PACEbench benchmarks
@@ -499,10 +573,14 @@ function generateTextReport(results: ComparisonResult[]): string {
     lines.push("─".repeat(width));
     for (const r of multiVulnResults) {
       const mv = r.multi_vuln!;
-      lines.push(`  ${r.benchmark_id}: ${mv.found}/${mv.total_expected} vulnerabilities found`);
+      lines.push(
+        `  ${r.benchmark_id}: ${mv.found}/${mv.total_expected} vulnerabilities found`,
+      );
       for (const detail of mv.details) {
         const status = detail.found ? "✓" : "✗";
-        lines.push(`    ${status} ${detail.vulnerability_name} (${detail.vulnerability_id})`);
+        lines.push(
+          `    ${status} ${detail.vulnerability_name} (${detail.vulnerability_id})`,
+        );
       }
     }
     lines.push("");
@@ -525,11 +603,18 @@ function generateTextReport(results: ComparisonResult[]): string {
   }
 
   // Build vulnerability class distribution
-  const classStats = new Map<string, { total: number; found: number; flagged: number }>();
+  const classStats = new Map<
+    string,
+    { total: number; found: number; flagged: number }
+  >();
 
   for (const r of results) {
     const vulnClass = r.expected.vulnerability_class || "Unknown";
-    const stats = classStats.get(vulnClass) || { total: 0, found: 0, flagged: 0 };
+    const stats = classStats.get(vulnClass) || {
+      total: 0,
+      found: 0,
+      flagged: 0,
+    };
     stats.total++;
     if (r.vulnerability_found) stats.found++;
     if (r.flag_detected) stats.flagged++;
@@ -537,7 +622,9 @@ function generateTextReport(results: ComparisonResult[]): string {
   }
 
   // Sort by class name
-  const sortedClasses = Array.from(classStats.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  const sortedClasses = Array.from(classStats.entries()).sort((a, b) =>
+    a[0].localeCompare(b[0]),
+  );
 
   lines.push("VULNERABILITY CLASS DISTRIBUTION");
   lines.push("─".repeat(width));
@@ -552,23 +639,28 @@ function generateTextReport(results: ComparisonResult[]): string {
 
   lines.push(
     "Class".padEnd(classCol) +
-    "Count".padEnd(countCol) +
-    "Vuln Found".padEnd(foundCol) +
-    "Flag Captured".padEnd(flagCol) +
-    "Rate".padEnd(rateCol)
+      "Count".padEnd(countCol) +
+      "Vuln Found".padEnd(foundCol) +
+      "Flag Captured".padEnd(flagCol) +
+      "Rate".padEnd(rateCol),
   );
   lines.push("─".repeat(classCol + countCol + foundCol + flagCol + rateCol));
 
   for (const [vulnClass, stats] of sortedClasses) {
-    const rate = stats.total > 0 ? ((stats.flagged / stats.total) * 100).toFixed(0) + "%" : "0%";
-    const miniBar = "█".repeat(Math.round((stats.flagged / stats.total) * 8)) + "░".repeat(8 - Math.round((stats.flagged / stats.total) * 8));
+    const rate =
+      stats.total > 0
+        ? ((stats.flagged / stats.total) * 100).toFixed(0) + "%"
+        : "0%";
+    const miniBar =
+      "█".repeat(Math.round((stats.flagged / stats.total) * 8)) +
+      "░".repeat(8 - Math.round((stats.flagged / stats.total) * 8));
 
     lines.push(
       vulnClass.padEnd(classCol) +
-      stats.total.toString().padEnd(countCol) +
-      `${stats.found}/${stats.total}`.padEnd(foundCol) +
-      `${stats.flagged}/${stats.total}`.padEnd(flagCol) +
-      `${rate} [${miniBar}]`
+        stats.total.toString().padEnd(countCol) +
+        `${stats.found}/${stats.total}`.padEnd(foundCol) +
+        `${stats.flagged}/${stats.total}`.padEnd(flagCol) +
+        `${rate} [${miniBar}]`,
     );
   }
 
@@ -588,8 +680,12 @@ function generateJsonReport(results: ComparisonResult[]): string {
     summary: {
       total_benchmarks: total,
       flags_captured: results.filter((r) => r.flag_detected).length,
-      vulnerabilities_found: results.filter((r) => r.vulnerability_found).length,
-      average_score: total > 0 ? results.reduce((sum, r) => sum + r.overall_score, 0) / total : 0,
+      vulnerabilities_found: results.filter((r) => r.vulnerability_found)
+        .length,
+      average_score:
+        total > 0
+          ? results.reduce((sum, r) => sum + r.overall_score, 0) / total
+          : 0,
     },
     results: results.map((r) => ({
       benchmark_id: r.benchmark_id,
@@ -677,7 +773,11 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
   // Defaults
-  let executionsDir = path.join(process.env.HOME || "~", ".pensar", "executions");
+  let executionsDir = path.join(
+    process.env.HOME || "~",
+    ".pensar",
+    "executions",
+  );
   let benchmarksDir: string | null = null; // Will be set based on --pace flag
   let executionPath: string | null = null;
   let benchmarkIds: string[] | null = null;
@@ -719,7 +819,7 @@ async function main(): Promise<void> {
       outputPath = args[++i]!;
     } else if (arg === "--show-missed") {
       printMissed = true;
-    } else if(arg === "--dry") {
+    } else if (arg === "--dry") {
       dryRun = true;
     }
   }
@@ -729,7 +829,11 @@ async function main(): Promise<void> {
     if (isPace) {
       benchmarksDir = path.join(process.env.HOME || "~", "PACEbench");
     } else {
-      benchmarksDir = path.join(process.env.HOME || "~", "validation-benchmarks", "benchmarks");
+      benchmarksDir = path.join(
+        process.env.HOME || "~",
+        "validation-benchmarks",
+        "benchmarks",
+      );
     }
   }
 
@@ -754,9 +858,14 @@ async function main(): Promise<void> {
       process.exit(1);
     }
 
-    const benchmarkId = extractBenchmarkId(path.basename(executionPath), isPace);
+    const benchmarkId = extractBenchmarkId(
+      path.basename(executionPath),
+      isPace,
+    );
     if (!benchmarkId) {
-      console.error(`Error: Could not extract benchmark ID from: ${path.basename(executionPath)}`);
+      console.error(
+        `Error: Could not extract benchmark ID from: ${path.basename(executionPath)}`,
+      );
       process.exit(1);
     }
 
@@ -768,7 +877,12 @@ async function main(): Promise<void> {
       process.exit(1);
     }
 
-    executions = findExecutions(executionsDir, benchmarkIds || undefined, prefix || undefined, isPace);
+    executions = findExecutions(
+      executionsDir,
+      benchmarkIds || undefined,
+      prefix || undefined,
+      isPace,
+    );
 
     if (latestOnly) {
       // Keep only the latest execution per benchmark
@@ -783,16 +897,18 @@ async function main(): Promise<void> {
         }
       }
 
-      executions = Array.from(latestMap.entries()).map(([benchmarkId, data]) => ({
-        benchmarkId,
-        path: data.path,
-      }));
+      executions = Array.from(latestMap.entries()).map(
+        ([benchmarkId, data]) => ({
+          benchmarkId,
+          path: data.path,
+        }),
+      );
     }
   }
 
-  console.log(executions.map(e => e.path));
-  if(dryRun) {
-    const lines = executions.map(e => e.path).join("\n");
+  console.log(executions.map((e) => e.path));
+  if (dryRun) {
+    const lines = executions.map((e) => e.path).join("\n");
     console.log(lines);
     return;
   }
@@ -811,32 +927,46 @@ async function main(): Promise<void> {
     const barWidth = 40;
     const filledWidth = Math.round((completed / total) * barWidth);
     const bar = "█".repeat(filledWidth) + "░".repeat(barWidth - filledWidth);
-    process.stderr.write(`\rComparing: [${bar}] ${completed}/${total} (${percent}%)`);
+    process.stderr.write(
+      `\rComparing: [${bar}] ${completed}/${total} (${percent}%)`,
+    );
   };
 
   updateProgress();
 
   // Run comparisons in parallel with p-limit
   const limit = pLimit(20);
-  const sortedExecutions = executions.sort((a, b) => a.benchmarkId.localeCompare(b.benchmarkId));
+  const sortedExecutions = executions.sort((a, b) =>
+    a.benchmarkId.localeCompare(b.benchmarkId),
+  );
 
   const comparisonPromises = sortedExecutions.map((exec) =>
     limit(async () => {
-      const result = await compareBenchmark(exec.benchmarkId, exec.path, benchmarksDir, isPace);
+      const result = await compareBenchmark(
+        exec.benchmarkId,
+        exec.path,
+        benchmarksDir,
+        isPace,
+      );
       completed++;
       updateProgress();
       return result;
-    })
+    }),
   );
 
   const comparisonResults = await Promise.all(comparisonPromises);
-  const results = comparisonResults.filter((r): r is ComparisonResult => r !== null);
+  const results = comparisonResults.filter(
+    (r): r is ComparisonResult => r !== null,
+  );
 
   // Clear progress line
   process.stderr.write("\n\n");
 
   // Generate report
-  const report = outputFormat === "json" ? generateJsonReport(results) : generateTextReport(results);
+  const report =
+    outputFormat === "json"
+      ? generateJsonReport(results)
+      : generateTextReport(results);
 
   // Always write JSON results to /tmp
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
@@ -852,19 +982,16 @@ async function main(): Promise<void> {
     console.log(report);
   }
 
-  if(printMissed) {
+  if (printMissed) {
     console.log("\n\n");
     console.log("===== MISSED BENCHMARKS =====");
-    const missed = results.filter(r => !r.vulnerability_found);
+    const missed = results.filter((r) => !r.vulnerability_found);
     let lines: string[] = [];
-    for(let i=0;i<missed.length;i++) {
+    for (let i = 0; i < missed.length; i++) {
       let result = missed[i];
-      lines.push(
-        result.benchmark_id.padEnd(12) +
-        "X".padEnd(14)
-      );
+      lines.push(result.benchmark_id.padEnd(12) + "X".padEnd(14));
     }
-    console.log(lines.join('\n'));
+    console.log(lines.join("\n"));
   }
 }
 

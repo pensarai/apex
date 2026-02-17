@@ -60,12 +60,14 @@ export class WaveSimulation {
 
     for (const wave of this.waves) {
       // Calculate wave position
-      const waveY = wave.yOffset +
-        wave.amplitude * Math.sin(
-          normalizedX * wave.frequency * this.width +
-          this.time * wave.speed +
-          wave.phase
-        );
+      const waveY =
+        wave.yOffset +
+        wave.amplitude *
+          Math.sin(
+            normalizedX * wave.frequency * this.width +
+              this.time * wave.speed +
+              wave.phase,
+          );
 
       // Distance from wave center (creates soft gradient)
       const distFromWave = Math.abs(normalizedY - waveY);
@@ -80,7 +82,7 @@ export class WaveSimulation {
     // Add subtle noise/texture
     const noise = Math.sin(x * 0.5 + y * 0.3 + this.time * 0.1) * 0.05;
 
-    return clamp((totalValue / maxPossible) + noise, 0, 1);
+    return clamp(totalValue / maxPossible + noise, 0, 1);
   }
 
   /**
@@ -93,7 +95,9 @@ export class WaveSimulation {
       let row = "";
       for (let x = 0; x < this.width; x++) {
         const value = this.getWaveValue(x, y);
-        const charIdx = Math.floor(clamp(value, 0, 0.99) * GRADIENT_CHARS.length);
+        const charIdx = Math.floor(
+          clamp(value, 0, 0.99) * GRADIENT_CHARS.length,
+        );
         row += GRADIENT_CHARS[charIdx];
       }
       rows.push(row);
