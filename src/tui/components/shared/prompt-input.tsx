@@ -11,7 +11,11 @@ import type { TextareaRenderable } from "@opentui/core";
 import { colors } from "../../theme/colors";
 import { useInput } from "../../context/input";
 import { useFocus } from "../../context/focus";
-import type { AutocompleteOption } from "../autocomplete";
+export interface AutocompleteOption {
+  value: string;
+  label: string;
+  description?: string;
+}
 
 // Key binding type for textarea actions
 type TextareaAction = "submit" | "newline";
