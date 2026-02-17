@@ -11,7 +11,7 @@ import {
   existsSync,
 } from "fs";
 import { join } from "path";
-import { Session } from "../../session";
+import { sessions, type SessionInfo } from "../../session";
 import type { AIModel } from "../../ai";
 import { generateObjectResponse } from "../../ai";
 import { getProviderModel, type AIAuthConfig } from "../../ai/utils";
@@ -2309,7 +2309,7 @@ function deriveVulnTypeFromTitle(title: string): string {
  *
  * This function is created with a session context to save findings to disk
  */
-function createDocumentFindingTool(session: Session.SessionInfo) {
+function createDocumentFindingTool(session: SessionInfo) {
   return tool({
     description: `Document a security finding with severity, impact, and remediation guidance.
 
@@ -2437,7 +2437,7 @@ ${finding.references ? `## References\n\n${finding.references}` : ""}
 /**
  * Scratchpad tool - Take notes during testing
  */
-function createScratchpadTool(session: Session.SessionInfo) {
+function createScratchpadTool(session: SessionInfo) {
   return tool({
     description: `Write notes, observations, or temporary data to the scratchpad during testing.
 
@@ -2583,7 +2583,7 @@ Provides guidance on:
 /**
  * Generate comprehensive report - Create final pentest report
  */
-function createGenerateReportTool(session: Session.SessionInfo) {
+function createGenerateReportTool(session: SessionInfo) {
   return tool({
     description: `Generate a comprehensive penetration testing report for the session.
 
@@ -2985,7 +2985,7 @@ This report should be treated as confidential and distributed only to authorized
  * Core logic for recording test results
  */
 async function recordTestResultCore(
-  session: Session.SessionInfo,
+  session: SessionInfo,
   params: {
     parameter: string;
     endpoint: string;
@@ -3049,7 +3049,7 @@ async function recordTestResultCore(
 /**
  * Record test result - Track all security tests including negative results
  */
-function createRecordTestResultTool(session: Session.SessionInfo) {
+function createRecordTestResultTool(session: SessionInfo) {
   return tool({
     description: `Record the result of a security test, including tests that did NOT find vulnerabilities.
 
@@ -3373,7 +3373,7 @@ Analyze: Is this vulnerable? Return ONLY JSON:
  * Smart Test Parameter Tool
  */
 function createSmartTestTool(
-  session: Session.SessionInfo,
+  session: SessionInfo,
   model: AIModel,
   onTokenUsage?: OnTokenUsage,
   authConfig?: AIAuthConfig,
@@ -3637,7 +3637,7 @@ function getAttackSurfaceAgent() {
   });
 }
 
-function createCheckTestingCoverageTool(session: Session.SessionInfo) {
+function createCheckTestingCoverageTool(session: SessionInfo) {
   return tool({
     description: `Analyze testing coverage to understand what has been tested and identify gaps.
 
@@ -3842,7 +3842,7 @@ Use this when:
  * Validate completeness before final reporting
  * Ensures agent tested everything systematically
  */
-function createValidateCompletenessTool(session: Session.SessionInfo) {
+function createValidateCompletenessTool(session: SessionInfo) {
   return tool({
     description: `Validate that you've completed a thorough, professional assessment before generating final report.
 
@@ -4036,7 +4036,7 @@ This is the difference between amateur and professional pentesting.`,
  * Quick endpoint enumeration helper
  * Wraps execute_command for common enumeration patterns
  */
-function createEnumerateEndpointsTool(session: Session.SessionInfo) {
+function createEnumerateEndpointsTool(session: SessionInfo) {
   return tool({
     description: `Quickly enumerate endpoints using pattern-based discovery.
 
@@ -4259,7 +4259,7 @@ function wrapCommandWithHeaders(
 
 // Export tools creator function that accepts a session
 export function createPentestTools(
-  session: Session.SessionInfo,
+  session: SessionInfo,
   model?: AIModel,
   toolOverride?: {
     execute_command?: (
@@ -4275,7 +4275,7 @@ export function createPentestTools(
   authConfig?: AIAuthConfig,
 ) {
   // Get offensive headers from session config
-  const offensiveHeaders = Session.getOffensiveHeaders(session);
+  const offensiveHeaders = sessions.getOffensiveHeaders(session);
 
   const fuzzEndpoint = tool({
     description:

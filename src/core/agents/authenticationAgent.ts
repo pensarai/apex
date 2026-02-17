@@ -2,7 +2,7 @@ import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
 import { hasToolCall } from "ai";
 import type { AIModel } from "../ai";
 import type { AIAuthConfig } from "../ai/utils";
-import { Session } from "../session";
+import { type SessionInfo } from "../session";
 import { AUTH_SUBAGENT_SYSTEM_PROMPT } from "./legacy/authenticationSubagent/prompts";
 import { detectOSAndEnhancePrompt } from "./legacy/utils";
 import { OffensiveSecurityAgent } from "../offensiveAgent/offensiveSecurityAgent";
@@ -19,7 +19,7 @@ export interface AuthenticationAgentInput {
   model: AIModel;
 
   /** Session that provides paths */
-  session: Session.SessionInfo;
+  session: SessionInfo;
 
   /** Optional credentials to use */
   credentials?: {

@@ -4,7 +4,7 @@ import type {
   ExecuteCommandResult,
 } from "../src/core/agents/legacy/tools";
 import type { AIModel } from "../src/core/ai";
-import { Session } from "../src/core/session";
+import { sessions } from "../src/core/session";
 import { exec as _exec } from "node:child_process";
 import { runStreamlinedPentest } from "../src/core/agents/legacy/thoroughPentestAgent";
 
@@ -18,7 +18,7 @@ interface SwarmAgentOptions {
 
 async function runSwarmTest(options: SwarmAgentOptions) {
   const url = new URL(options.target);
-  const session = await Session.create({
+  const session = await sessions.create({
     targets: [options.target],
     name: "swarm-test",
     prefix: "swarm-test",

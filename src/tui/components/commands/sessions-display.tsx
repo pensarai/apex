@@ -5,7 +5,7 @@ import { existsSync } from "fs";
 import { useRoute } from "../../context/route";
 import { useSession } from "../../context/session";
 import { useFocus } from "../../context/focus";
-import { Session } from "../../../core/session";
+import { sessions, type SessionInfo } from "../../../core/session";
 import { Storage } from "../../../core/storage";
 import { Dialog } from "../../context/dialog";
 import { Renderable, ScrollBoxRenderable } from "@opentui/core";
@@ -16,7 +16,7 @@ interface SessionsDisplayProps {
 
 export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
   const { refocusPrompt } = useFocus();
-  const [sessions, setSessions] = useState<Session.SessionInfo[]>([]);
+  const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [statusMessage, setStatusMessage] = useState<string>("");
@@ -30,8 +30,8 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
   async function loadSessions() {
     setLoading(true);
     try {
-      const _sessions = await Array.fromAsync(Session.list());
-      setSessions(_sessions);
+      const _sessions = await Array.fromAsync(sessions.list());
+      setAllSessions(_sessions);
     } catch (error) {
       console.error("Error loading sessions:", error);
     } finally {
@@ -44,7 +44,7 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
   }, []);
 
   async function openReport(sessionId: string) {
-    const session = await Session.get(sessionId);
+    const session = await sessions.get(sessionId);
     const reportPath = await Storage.locate(
       [session.id, "pentest-report"],
       ".md",
@@ -67,7 +67,7 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
     });
   }
 
-  function scrollToIndex(index: number, list: Session.SessionInfo[]) {
+  function scrollToIndex(index: number, list: SessionInfo[]) {
     if (!scroll.current || list.length === 0) return;
 
     const targetSession = list[index];
@@ -119,7 +119,7 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
   }
 
   // Filter sessions based on search term
-  const filteredSessions = sessions.filter((session) => {
+  const filteredSessions = allSessions.filter((session) => {
     if (!searchTerm) return true;
     const searchLower = searchTerm.toLowerCase();
     return session.name.toLowerCase().includes(searchLower);
@@ -129,7 +129,7 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
   const groupedSessionsRaw: {
     date: string;
     timestamp: number;
-    sessions: Session.SessionInfo[];
+    sessions: SessionInfo[];
   }[] = [];
   filteredSessions.forEach((session) => {
     const startDate = new Date(session.time.created);
@@ -160,7 +160,7 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
   });
 
   // Create flat list in visual order and assign indices
-  const visualOrderSessions: Session.SessionInfo[] = [];
+  const visualOrderSessions: SessionInfo[] = [];
   groupedSessionsRaw.forEach((group) => {
     visualOrderSessions.push(...group.sessions);
   });
@@ -168,13 +168,13 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
   // Now create grouped sessions with correct visual indices
   const groupedSessions: {
     date: string;
-    sessions: (Session.SessionInfo & { index: number })[];
+    sessions: (SessionInfo & { index: number })[];
   }[] = [];
   let visualIndex = 0;
   groupedSessionsRaw.forEach((rawGroup) => {
     const group: {
       date: string;
-      sessions: (Session.SessionInfo & { index: number })[];
+      sessions: (SessionInfo & { index: number })[];
     } = {
       date: rawGroup.date,
       sessions: [],
@@ -200,7 +200,7 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
 
   async function deleteSession(sessionId: string) {
     try {
-      await Session.remove({ sessionId });
+      await sessions.remove({ sessionId });
       setStatusMessage("Session deleted");
       setTimeout(() => setStatusMessage(""), 2000);
 
@@ -234,7 +234,7 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
       key.preventDefault();
       const currentSelection = visualOrderSessions[selectedIndex];
       if (!currentSelection) return;
-      const _session = await session.load(currentSelection.id);
+      const _session = await sessions.get(currentSelection.id);
       if (!_session) {
         console.error("Error loading session");
         return;

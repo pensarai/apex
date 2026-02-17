@@ -3,7 +3,7 @@ import { useKeyboard } from "@opentui/react";
 import { RGBA } from "@opentui/core";
 import Input from "../input";
 import { useRoute } from "../../context/route";
-import { Session } from "../../../core/session";
+import { sessions, type SessionConfig } from "../../../core/session";
 import { SpinnerDots } from "../sprites";
 import { generateRandomName } from "../../../util/name";
 
@@ -84,7 +84,7 @@ export default function InitWizard() {
 
     try {
       // Build session config
-      const sessionConfig: Session.SessionConfig = {};
+      const sessionConfig: SessionConfig = {};
 
       // Auth config
       if (state.auth.instructions || state.auth.username) {
@@ -131,7 +131,7 @@ export default function InitWizard() {
       //   config: sessionConfig,
       // });
 
-      const session = await Session.create({
+      const session = await sessions.create({
         targets: [state.target],
         name: state.name,
         config: sessionConfig,

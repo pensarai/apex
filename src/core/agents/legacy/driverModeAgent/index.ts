@@ -12,7 +12,7 @@
 import { EventEmitter } from "events";
 import type { AIModel } from "../../../ai";
 import { type AIAuthConfig } from "../../../ai/utils";
-import { Session } from "../../../session";
+import { sessions, type SessionInfo } from "../../../session";
 import type { PentestTarget } from "../attackSurfaceAgent/types";
 import type { VulnerabilityClass } from "../orchestrator/types";
 import {
@@ -59,7 +59,7 @@ export interface DriverAgentResult {
  * Configuration for creating a driver mode agent
  */
 export interface DriverModeAgentConfig {
-  session: Session.SessionInfo;
+  session: SessionInfo;
   model: AIModel;
   /** Vulnerability class to focus on, defaults to 'generic' for broad testing */
   vulnerabilityClass?: VulnerabilityClass;
@@ -147,7 +147,7 @@ export class DriverModeAgent extends EventEmitter {
           this.config.session.config?.authenticationInstructions,
         outcomeGuidance:
           this.config.session.config?.outcomeGuidance ||
-          Session.DEFAULT_OUTCOME_GUIDANCE,
+          sessions.DEFAULT_OUTCOME_GUIDANCE,
         session: {
           id: this.config.session.id,
           rootPath: this.config.session.rootPath,

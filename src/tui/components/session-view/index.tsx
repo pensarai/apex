@@ -8,7 +8,7 @@ import SwarmDashboard, {
 } from "../swarm-dashboard";
 import DriverDashboard from "../driver-dashboard";
 import OperatorDashboard from "../operator-dashboard";
-import { Session } from "../../../core/session";
+import { sessions, type SessionInfo } from "../../../core/session";
 import { loadSessionState } from "../../../core/session/loader";
 import {
   runStreamlinedPentest,
@@ -98,7 +98,7 @@ export default function SessionView({
     useAgent();
 
   // Session state
-  const [session, setSession] = useState<Session.SessionInfo | null>(null);
+  const [session, setSession] = useState<SessionInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -152,7 +152,7 @@ export default function SessionView({
   useEffect(() => {
     async function loadSession() {
       try {
-        const loadedSession = await Session.get(sessionId);
+        const loadedSession = await sessions.get(sessionId);
         if (!loadedSession) {
           setError(`Session not found: ${sessionId}`);
           setLoading(false);
@@ -227,7 +227,7 @@ export default function SessionView({
   // Start the pentest
   const startPentest = useCallback(
     async (
-      execSession: Session.SessionInfo,
+      execSession: SessionInfo,
       previousDiscoveryResults?: AttackSurfaceAnalysisResults,
     ) => {
       setIsExecuting(true);

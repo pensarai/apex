@@ -11,7 +11,7 @@
  */
 
 import { discoverAuthentication } from "../src/core/agents/legacy/authenticationSubagent";
-import { Session } from "../src/core/session";
+import { sessions } from "../src/core/session";
 import type { AIModel } from "../src/core/ai";
 
 interface AuthDiscoverOptions {
@@ -49,7 +49,7 @@ async function runAuthDiscover(options: AuthDiscoverOptions): Promise<void> {
 
   try {
     // Create session
-    const session = await Session.create({
+    const session = await sessions.create({
       targets: [target],
       name: "auth-discovery",
       prefix: "auth-discover",

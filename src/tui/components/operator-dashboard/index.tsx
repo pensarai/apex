@@ -6,10 +6,10 @@
  */
 
 import { Session as SessionComponent } from "../../session";
-import type { Session } from "../../../core/session";
+import type { SessionInfo } from "../../../core/session";
 
 interface OperatorDashboardProps {
-  session: Session.SessionInfo;
+  session: SessionInfo;
   /** If true, restore saved state from disk instead of starting fresh */
   isResume?: boolean;
   /** If true, synthesize operator context from swarm session data */

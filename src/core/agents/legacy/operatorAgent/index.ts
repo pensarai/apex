@@ -12,7 +12,7 @@ import { join } from "path";
 import type { AIModel } from "../../../ai";
 import { streamResponse } from "../../../ai/ai";
 import { type AIAuthConfig } from "../../../ai/utils";
-import { Session } from "../../../session";
+import { DEFAULT_OUTCOME_GUIDANCE, type SessionInfo } from "../../../session";
 import {
   ApprovalGate,
   ApprovalBlockedError,
@@ -91,7 +91,7 @@ export interface AttackSurfaceEndpoint {
 }
 
 export interface OperatorAgentConfig {
-  session: Session.SessionInfo;
+  session: SessionInfo;
   model: AIModel;
   initialMode?: OperatorMode;
   autoApproveTier?: PermissionTier;
@@ -669,7 +669,7 @@ ${
 }
 
 ## Testing Guidance
-${session.config?.outcomeGuidance || Session.DEFAULT_OUTCOME_GUIDANCE}
+${session.config?.outcomeGuidance || DEFAULT_OUTCOME_GUIDANCE}
 
 ## Browser Tools (Validation & Evidence)
 You have browser automation for when you need real browser execution:

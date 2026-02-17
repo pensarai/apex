@@ -15,7 +15,6 @@ import {
   type HttpRequestOpts,
   type HttpRequestResult,
 } from "../tools";
-import { Session } from "../../../session";
 import { z } from "zod";
 import { join } from "path";
 import { writeFileSync, mkdirSync, existsSync } from "fs";
@@ -34,13 +33,18 @@ import {
   type DocumentedAssetRecord,
   type AttackSurfaceReport,
 } from "./schemas";
+import {
+  sessions,
+  type SessionInfo,
+  type ExecutionSession,
+} from "../../../session";
 
 /**
  * Merge session-level credentials with explicitly passed credentials.
  * Explicit values take precedence over session defaults.
  */
 function mergeAuthCredentials(
-  sessionCreds: Session.AuthCredentials | undefined,
+  sessionCreds: AuthCredentials | undefined,
   explicit: {
     username?: string;
     password?: string;
@@ -152,7 +156,7 @@ export interface RunAgentProps {
   onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
   onToolTokenUsage?: (inputTokens: number, outputTokens: number) => void;
   abortSignal?: AbortSignal;
-  session?: Session.SessionInfo;
+  session?: SessionInfo;
   authConfig?: AIAuthConfig;
   toolOverride?: {
     execute_command?: (
@@ -167,12 +171,12 @@ export interface RunAgentProps {
 }
 
 export interface RunAgentResult extends StreamTextResult<ToolSet, never> {
-  session: Session.ExecutionSession;
+  session: ExecutionSession;
 }
 
 export async function runAgent(opts: RunAgentProps): Promise<{
   streamResult: RunAgentResult;
-  session: Session.SessionInfo;
+  session: SessionInfo;
 }> {
   const {
     target,
@@ -189,7 +193,7 @@ export async function runAgent(opts: RunAgentProps): Promise<{
   // Create a new session for this attack surface analysis
   const session =
     opts.session ||
-    (await Session.create({
+    (await sessions.create({
       targets: [target],
       name: generateRandomName(),
     }));

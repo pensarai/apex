@@ -24,7 +24,7 @@ import {
   discoverAuthentication,
   runAuthenticationSubagent,
 } from "../src/core/agents/legacy/authenticationSubagent";
-import { Session } from "../src/core/session";
+import { sessions } from "../src/core/session";
 import type { AIModel } from "../src/core/ai";
 import type { AuthCredentials } from "../src/core/agents/legacy/authenticationSubagent/types";
 import { existsSync, mkdirSync, writeFileSync } from "fs";
@@ -82,7 +82,7 @@ async function runAuth(options: AuthOptions): Promise<void> {
 
   try {
     // Create session
-    const session = await Session.create({
+    const session = await sessions.create({
       targets: [target],
       name: "auth-session",
       prefix: "auth",

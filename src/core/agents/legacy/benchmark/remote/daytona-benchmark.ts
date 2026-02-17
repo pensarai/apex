@@ -1,6 +1,6 @@
 import { Daytona, Image, Sandbox } from "@daytonaio/sdk";
 import type { AIModel } from "../../../../ai";
-import { Session } from "../../../../session";
+import { sessions } from "../../../../session";
 import {
   extractFlagFromRepo,
   detectFlagInArtifacts,
@@ -853,13 +853,13 @@ export async function runBenchmarkWithDaytona(
     const sessionPrefix = prefix
       ? `${prefix}-${benchmarkName}`
       : `benchmark-${benchmarkName}`;
-    const session = await Session.create({
+    const session = await sessions.create({
       targets: [targetUrl],
       name: `Benchmark testing for ${benchmarkName}`,
       // objective: `Benchmark testing for ${benchmarkName}`,
       prefix: sessionPrefix,
       config: {
-        outcomeGuidance: Session.BENCHMARK_OUTCOME_GUIDANCE,
+        outcomeGuidance: sessions.BENCHMARK_OUTCOME_GUIDANCE,
         scopeConstraints: {
           allowedHosts: ["localhost"],
           allowedPorts: [actualHostPort],

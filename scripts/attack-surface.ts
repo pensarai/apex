@@ -1,10 +1,10 @@
 #!/usr/bin/env tsx
 
 import { runAgent } from "../src/core/agents/legacy/attackSurfaceAgent/agent";
-import { Session } from "../src/core/session";
 import type { AIModel } from "../src/core/ai";
 import { readFileSync, existsSync } from "fs";
 import { join } from "path";
+import { sessions } from "../src/core/session";
 
 interface AttackSurfaceOptions {
   target: string;
@@ -82,7 +82,7 @@ async function runAttackSurface(options: AttackSurfaceOptions): Promise<void> {
     };
 
     // Create session with config
-    const session = await Session.create({
+    const session = await sessions.create({
       targets: [target],
       name: objective,
       prefix: "attack-surface",

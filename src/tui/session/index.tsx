@@ -18,7 +18,11 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useKeyboard } from "@opentui/react";
-import { Session } from "../../core/session";
+import {
+  sessions,
+  type OperatorSessionState,
+  type SessionInfo,
+} from "../../core/session";
 import {
   createOperatorAgent,
   type OperatorAgent,
@@ -68,7 +72,7 @@ import { Sidebar, useSidebarState } from "../components/chat/sidebar";
 
 export interface SessionProps {
   /** Session info */
-  session: Session.SessionInfo;
+  session: SessionInfo;
   /** Display mode */
   mode: "chat" | "operator";
   /** Model to use (if not using AgentProvider default) */
@@ -228,7 +232,7 @@ export function SessionComponent({
   // ============================================
 
   const gatherOperatorState = useCallback(
-    (): Session.OperatorSessionState => ({
+    (): OperatorSessionState => ({
       mode: operatorMode,
       autoApproveTier,
       currentStage,
@@ -262,7 +266,7 @@ export function SessionComponent({
   useEffect(() => {
     if (!isResume || resumeLoaded) return;
 
-    Session.loadOperatorState(session.id).then(async (savedState) => {
+    sessions.loadOperatorState(session.id).then(async (savedState) => {
       if (savedState) {
         setOperatorMode(savedState.mode as OperatorMode);
         setAutoApproveTier(savedState.autoApproveTier as PermissionTier);
@@ -624,9 +628,11 @@ export function SessionComponent({
           const validModes: OperatorMode[] = ["plan", "manual", "auto"];
           if (arg && validModes.includes(arg as OperatorMode)) {
             handleModeChange(arg as OperatorMode);
-            Session.updateOperatorSettings(session.id, {
-              initialMode: arg as OperatorMode,
-            }).catch(() => {});
+            sessions
+              .updateOperatorSettings(session.id, {
+                initialMode: arg as OperatorMode,
+              })
+              .catch(() => {});
             addMessage({
               role: "system",
               content: `Mode changed to ${OPERATOR_MODES[arg as OperatorMode].name}`,
@@ -649,9 +655,11 @@ export function SessionComponent({
             const newTier = tierNum as PermissionTier;
             setAutoApproveTier(newTier);
             agent?.setAutoApproveTier(newTier);
-            Session.updateOperatorSettings(session.id, {
-              autoApproveTier: newTier,
-            }).catch(() => {});
+            sessions
+              .updateOperatorSettings(session.id, {
+                autoApproveTier: newTier,
+              })
+              .catch(() => {});
             addMessage({
               role: "system",
               content: `Auto-approve tier set to T${newTier} (${PERMISSION_TIERS[newTier].name})`,
@@ -727,9 +735,9 @@ export function SessionComponent({
 
   const handleExit = useCallback(() => {
     // Save state before exiting
-    Session.saveOperatorState(session.id, gatherOperatorState()).catch(
-      () => {},
-    );
+    sessions
+      .saveOperatorState(session.id, gatherOperatorState())
+      .catch(() => {});
     agent?.stop();
     if (onExit) {
       onExit();
@@ -803,9 +811,9 @@ export function SessionComponent({
         setDirectiveInput("");
         return;
       }
-      Session.saveOperatorState(session.id, gatherOperatorState()).catch(
-        () => {},
-      );
+      sessions
+        .saveOperatorState(session.id, gatherOperatorState())
+        .catch(() => {});
       agent?.stop();
       return;
     }

@@ -20,7 +20,11 @@ import {
   type MetaVulnerabilityTestResult,
   type SpawnVulnerabilityTestRequest,
 } from "../metaTestingAgent";
-import { Session } from "../../../session";
+import {
+  DEFAULT_OUTCOME_GUIDANCE,
+  type ScopeConstraints,
+  type SessionInfo,
+} from "../../../session";
 import { Logger } from "../../../logger";
 import { join } from "path";
 import { mkdirSync, existsSync, writeFileSync } from "fs";
@@ -33,6 +37,7 @@ import type {
 } from "../tools";
 import type { AuthenticationInfo, VulnerabilityClass } from "./types";
 import { generateRandomName } from "../../../../util/name";
+import { sessions } from "../../../session";
 
 /**
  * Save orchestrator summary to the subagents directory
@@ -106,7 +111,7 @@ export interface PentestOrchestratorInput {
   model: AIModel;
 
   /** Optional existing session */
-  session?: Session.SessionInfo;
+  session?: SessionInfo;
 
   /** Auth config for AI provider authentication (e.g., Bedrock credentialProvider) */
   authConfig?: AIAuthConfig;
@@ -114,7 +119,7 @@ export interface PentestOrchestratorInput {
   /** Session configuration */
   sessionConfig?: {
     outcomeGuidance?: string;
-    scopeConstraints?: Session.ScopeConstraints;
+    scopeConstraints?: ScopeConstraints;
     authenticationInstructions?: string;
     remoteSandboxUrl?: string;
   };
@@ -187,7 +192,7 @@ export interface TargetTestResult {
  * Overall orchestrator result
  */
 export interface PentestOrchestratorResult {
-  session: Session.SessionInfo;
+  session: SessionInfo;
   targetResults: TargetTestResult[];
   totalTargets: number;
   totalFindings: number;
@@ -239,7 +244,7 @@ export async function runPentestOrchestrator(
   // Create or use session
   const session =
     input.session ||
-    (await Session.create({
+    (await sessions.create({
       targets: targets.map((t) => t.target),
       ...sessionConfig,
       name: generateRandomName(),
@@ -247,7 +252,7 @@ export async function runPentestOrchestrator(
 
   const logger = new Logger(session, "orchestrator.log");
   const outcomeGuidance =
-    session.config?.outcomeGuidance || Session.DEFAULT_OUTCOME_GUIDANCE;
+    session.config?.outcomeGuidance || DEFAULT_OUTCOME_GUIDANCE;
 
   // Ensure directories exist
   const pocsPath = join(session.rootPath, "pocs");

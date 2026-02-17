@@ -17,7 +17,6 @@ import {
   parseDockerComposePort,
   getActualDockerPort,
 } from "../src/core/agents/legacy/benchmark/docker-utils";
-import { Session } from "../src/core/session";
 import { runStreamlinedPentest } from "../src/core/agents/legacy/thoroughPentestAgent/streamlined";
 import {
   extractFlagFromRepo,
@@ -30,7 +29,7 @@ import type {
   ExecuteCommandResult,
 } from "../src/core/agents/legacy/tools";
 import type { BenchmarkSummaryReport } from "../src/core/agents/legacy/benchmark/remote/daytona-benchmark";
-
+import { sessions } from "../src/core/session";
 const exec = promisify(nodeExec);
 
 interface PocRunResult {
@@ -511,12 +510,12 @@ async function runSingleBenchmark(
     const sessionPrefix = prefix
       ? `${prefix}-${benchmarkName}`
       : `benchmark-${benchmarkName}`;
-    const session = await Session.create({
+    const session = await sessions.create({
       targets: [targetUrl],
       name: `Benchmark testing for ${benchmarkName}`,
       prefix: sessionPrefix,
       config: {
-        outcomeGuidance: Session.BENCHMARK_OUTCOME_GUIDANCE,
+        outcomeGuidance: sessions.BENCHMARK_OUTCOME_GUIDANCE,
         scopeConstraints: {
           allowedHosts: ["localhost"],
           allowedPorts: [actualHostPort],

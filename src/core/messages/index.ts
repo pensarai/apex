@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { ToolMessage, Message } from "./types";
 import { Identifier } from "../id/id";
 import { Storage } from "../storage";
-import { Session } from "../session";
+import { type SessionInfo } from "../session";
 
 export namespace Messages {
   const StreamInput = z.object({
@@ -35,7 +35,7 @@ export namespace Messages {
     ]);
   };
 
-  export function save(session: Session.SessionInfo, messages: Message[]) {
+  export function save(session: SessionInfo, messages: Message[]) {
     fs.writeFileSync(
       session.rootPath + "/messages.json",
       JSON.stringify(messages, null, 2),
@@ -43,7 +43,7 @@ export namespace Messages {
   }
 
   export function saveSubagentMessages(
-    orchestratorSession: Session.SessionInfo,
+    orchestratorSession: SessionInfo,
     subagentId: string,
     messages: Message[],
   ) {

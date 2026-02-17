@@ -13,7 +13,7 @@ import { useKeyboard } from "@opentui/react";
 import { RGBA } from "@opentui/core";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
-import { Session } from "../../../core/session";
+import { type SessionInfo } from "../../../core/session";
 import type {
   PentestTarget,
   AttackSurfaceAnalysisResults,
@@ -57,7 +57,7 @@ interface DriverAgent {
 }
 
 interface DriverDashboardProps {
-  session: Session.SessionInfo;
+  session: SessionInfo;
 }
 
 export default function DriverDashboard({ session }: DriverDashboardProps) {

@@ -4,7 +4,7 @@ import { existsSync, readdirSync, readFileSync } from "fs";
 import { join } from "path";
 import type { AIModel } from "../ai";
 import type { AIAuthConfig } from "../ai/utils";
-import { Session } from "../session";
+import { type SessionInfo } from "../session";
 import type { ComparisonResult } from "./legacy/benchmark/types";
 import { OffensiveSecurityAgent } from "../offensiveAgent/offensiveSecurityAgent";
 
@@ -20,7 +20,7 @@ export interface BenchmarkComparisonAgentInput {
   model: AIModel;
 
   /** Session that provides the findings to compare */
-  session: Session.SessionInfo;
+  session: SessionInfo;
 
   /** Optional per-provider API key overrides */
   authConfig?: AIAuthConfig;

@@ -5,7 +5,7 @@ import Input from "../input";
 import { useRoute } from "../../context/route";
 import { useConfig } from "../../context/config";
 import { useAgent } from "../../context/agent";
-import { Session } from "../../../core/session";
+import { sessions, type SessionConfig } from "../../../core/session";
 import { SpinnerDots } from "../sprites";
 import { generateRandomName } from "../../../util/name";
 import { type ModelInfo } from "../../../core/ai";
@@ -228,7 +228,7 @@ export default function WebWizard({
 
     try {
       // Build session config
-      const sessionConfig: Session.SessionConfig = {
+      const sessionConfig: SessionConfig = {
         // Set session type and mode for web app pentesting
         sessionType: "web-app",
         mode: autoMode ? "auto" : "driver",
@@ -271,7 +271,7 @@ export default function WebWizard({
         };
       }
 
-      const session = await Session.create({
+      const session = await sessions.create({
         targets: [state.target],
         name: state.name,
         config: sessionConfig,

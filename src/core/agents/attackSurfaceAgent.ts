@@ -4,7 +4,7 @@ import { join } from "path";
 import { existsSync } from "fs";
 import type { AIModel } from "../ai";
 import type { AIAuthConfig } from "../ai/utils";
-import { Session } from "../session";
+import { type SessionInfo } from "../session";
 import { SYSTEM as ATTACK_SURFACE_SYSTEM_PROMPT } from "./legacy/attackSurfaceAgent/prompts";
 import { detectOSAndEnhancePrompt } from "./legacy/utils";
 import { getScopeDescription } from "./legacy/scope";
@@ -28,7 +28,7 @@ export interface AttackSurfaceAgentInput {
   model: AIModel;
 
   /** Session that provides paths for assets, logs, etc. */
-  session: Session.SessionInfo;
+  session: SessionInfo;
 
   /** Optional per-provider API key overrides */
   authConfig?: AIAuthConfig;
@@ -161,7 +161,7 @@ export class AttackSurfaceAgent extends OffensiveSecurityAgent<AttackSurfaceResu
 // Prompt builder
 // ---------------------------------------------------------------------------
 
-function buildPrompt(target: string, session: Session.SessionInfo): string {
+function buildPrompt(target: string, session: SessionInfo): string {
   const scopeConstraints = session.config?.scopeConstraints;
   const authenticationInstructions = session.config?.authenticationInstructions;
   const scopeDescription = getScopeDescription(scopeConstraints);
