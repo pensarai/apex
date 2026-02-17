@@ -213,10 +213,10 @@ function CommandDisplay({
   inputKey: number;
 }) {
   const route = useRoute();
-  const _config = useConfig();
+  const appConfig = useConfig();
 
   const handleAcceptPolicy = async () => {
-    await config.update({ responsibleUseAccepted: true });
+    await appConfig.update({ responsibleUseAccepted: true });
     route.navigate({
       type: "base",
       path: "home",
