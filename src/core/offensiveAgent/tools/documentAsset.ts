@@ -142,30 +142,6 @@ Each asset creates a JSON file in the assets directory for tracking and analysis
 
       writeFileSync(filepath, JSON.stringify(assetRecord, null, 2));
 
-      // Persistence callbacks
-      if (ctx.persistence?.onAssetDocumented) {
-        try {
-          await ctx.persistence.onAssetDocumented(assetRecord);
-        } catch (err) {
-          console.error("Persistence callback error (onAssetDocumented):", err);
-        }
-      }
-
-      if (ctx.persistence?.onProgressUpdate) {
-        try {
-          await ctx.persistence.onProgressUpdate({
-            type: "asset_discovered",
-            data: {
-              name: asset.assetName,
-              assetType: asset.assetType,
-              riskLevel: asset.riskLevel,
-            },
-          });
-        } catch (err) {
-          console.error("Progress update callback error:", err);
-        }
-      }
-
       return {
         success: true,
         assetName: asset.assetName,

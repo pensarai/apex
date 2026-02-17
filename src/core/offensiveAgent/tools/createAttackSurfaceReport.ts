@@ -3,7 +3,6 @@ import { z } from "zod";
 import { join } from "path";
 import { writeFileSync } from "fs";
 import type { ToolContext } from "./types";
-import type { AttackSurfaceReport } from "../../agents/legacy/attackSurfaceAgent/schemas";
 
 /**
  * Factory for the `create_attack_surface_report` tool.
@@ -64,31 +63,6 @@ Call this at the END of your analysis with:
         "attack-surface-results.json",
       );
       writeFileSync(resultsPath, JSON.stringify(results, null, 2));
-
-      // Persistence callbacks
-      if (ctx.persistence?.onReportCreated) {
-        try {
-          await ctx.persistence.onReportCreated(results as AttackSurfaceReport);
-        } catch (err) {
-          console.error("Persistence callback error (onReportCreated):", err);
-        }
-      }
-
-      if (ctx.persistence?.onProgressUpdate) {
-        try {
-          await ctx.persistence.onProgressUpdate({
-            type: "report_created",
-            data: {
-              totalAssets: results.summary.totalAssets,
-              totalDomains: results.summary.totalDomains,
-              targetsCount: results.targets.length,
-              analysisComplete: results.summary.analysisComplete,
-            },
-          });
-        } catch (err) {
-          console.error("Progress update callback error:", err);
-        }
-      }
 
       return {
         success: true,
