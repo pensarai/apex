@@ -2,6 +2,7 @@ export * from "./attackSurface";
 export * from "./authenticationAgent";
 export * from "./benchmark";
 export * from "./blackboxPentest";
+export * from "./codeAgent";
 export * from "./targetedPentest";
 export * from "./benchmarkComparisonAgent";
 export * from "./cvssScorer";

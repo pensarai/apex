@@ -10,6 +10,11 @@ export { httpRequest } from "./httpRequest";
 export { documentFinding } from "./documentFinding";
 export { createPoc } from "./createPoc";
 
+// Filesystem / search tools
+export { readFile } from "./readFile";
+export { listFiles } from "./listFiles";
+export { grep } from "./grep";
+
 // Attack surface / recon tools
 export { documentAsset } from "./documentAsset";
 export { authenticateSession } from "./authenticateSession";
@@ -43,6 +48,9 @@ import { executeCommand } from "./executeCommand";
 import { httpRequest } from "./httpRequest";
 import { documentFinding } from "./documentFinding";
 import { createPoc } from "./createPoc";
+import { readFile } from "./readFile";
+import { listFiles } from "./listFiles";
+import { grep } from "./grep";
 import { documentAsset } from "./documentAsset";
 import { authenticateSession } from "./authenticateSession";
 import { delegateAuth } from "./delegateAuth";
@@ -76,6 +84,11 @@ export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
     http_request: httpRequest(ctx),
     document_finding: documentFinding(ctx),
     create_poc: createPoc(ctx),
+
+    // Filesystem / search tools
+    read_file: readFile(ctx),
+    list_files: listFiles(ctx),
+    grep: grep(ctx),
 
     // Attack surface / recon tools
     document_asset: documentAsset(ctx),
@@ -121,6 +134,10 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "http_request",
   "document_finding",
   "create_poc",
+  // Filesystem / search
+  "read_file",
+  "list_files",
+  "grep",
   "document_asset",
   "authenticate_session",
   "delegate_to_auth_subagent",
