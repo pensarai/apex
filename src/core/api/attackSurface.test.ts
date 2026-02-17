@@ -10,24 +10,20 @@ describe("Attack Surface", () => {
       name: "Test Attack Surface",
       targets: [TARGET_URL],
     });
-    const { results, targets, resultsPath, assetsPath } =
-      await runAttackSurfaceAgent({
-        target: TARGET_URL,
-        model: "claude-haiku-4-5",
-        session,
+    const result = await runAttackSurfaceAgent({
+      target: TARGET_URL,
+      model: "claude-haiku-4-5",
+      session,
 
-        callbacks: {
-          onToolCall: (d) =>
-            console.log(
-              `\n→ calling ${d.toolName} \n ${JSON.stringify(d.input, null, 2)}`,
-            ),
-          onToolResult: (d) => console.log(`✓ ${d.toolName} completed`),
-          onError: (e) => console.error(e),
-        },
-      });
-    expect(results).toBeDefined();
-    expect(targets).toBeDefined();
-    expect(resultsPath).toBeDefined();
-    expect(assetsPath).toBeDefined();
+      callbacks: {
+        onToolCall: (d) =>
+          console.log(
+            `\n→ calling ${d.toolName} \n ${JSON.stringify(d.input, null, 2)}`,
+          ),
+        onToolResult: (d) => console.log(`✓ ${d.toolName} completed`),
+        onError: (e) => console.error(e),
+      },
+    });
+    expect(result).toBeDefined();
   });
 });

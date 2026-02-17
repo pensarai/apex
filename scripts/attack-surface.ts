@@ -99,21 +99,20 @@ async function runAttackSurface(options: AttackSurfaceOptions): Promise<void> {
       },
     });
 
-    const { results, targets, resultsPath, assetsPath } =
-      await runAttackSurfaceAgent({
-        target: TARGET_URL,
-        model: "claude-haiku-4-5",
-        session,
-        callbacks: {
-          onTextDelta: (d) => process.stdout.write(d.text),
-          onToolCall: (d) =>
-            console.log(
-              `\n→ calling ${d.toolName} \n ${JSON.stringify(d.input, null, 2)}`,
-            ),
-          onToolResult: (d) => console.log(`✓ ${d.toolName} completed`),
-          onError: (e) => console.error(e),
-        },
-      });
+    const result = await runAttackSurfaceAgent({
+      target: TARGET_URL,
+      model: "claude-haiku-4-5",
+      session,
+      callbacks: {
+        onTextDelta: (d) => process.stdout.write(d.text),
+        onToolCall: (d) =>
+          console.log(
+            `\n→ calling ${d.toolName} \n ${JSON.stringify(d.input, null, 2)}`,
+          ),
+        onToolResult: (d) => console.log(`✓ ${d.toolName} completed`),
+        onError: (e) => console.error(e),
+      },
+    });
 
     console.log(`Session ID: ${session.id}`);
     console.log(`Session Path: ${session.rootPath}`);

@@ -4,5 +4,6 @@ export * from "./benchmark";
 export * from "./blackboxPentest";
 export * from "./codeAgent";
 export * from "./targetedPentest";
+export * from "./whiteboxAttackSurface";
 export * from "./benchmarkComparisonAgent";
 export * from "./cvssScorer";

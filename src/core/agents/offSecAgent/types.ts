@@ -69,10 +69,20 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
   /**
    * Which tools the agent is allowed to use.
    *
-   * All tools are created by the harness; this array controls which
-   * ones the model can see and invoke (maps to the AI SDK `activeTools`).
+   * Accepts both built-in tool names and custom tool names (from `extraTools`).
+   * This array controls which tools the model can see and invoke
+   * (maps to the AI SDK `activeTools`).
    */
-  activeTools: ToolName[];
+  activeTools: (ToolName | (string & {}))[];
+
+  /**
+   * Additional tools to merge into the toolset.
+   *
+   * Use this to inject agent-specific tools (e.g. a structured response
+   * tool) without modifying the shared tool registry. These are merged
+   * on top of the built-in tools created by `createAllTools`.
+   */
+  extraTools?: ToolSet;
 
   /** Existing conversation history (for resumption / multi-turn) */
   messages?: Array<ModelMessage>;

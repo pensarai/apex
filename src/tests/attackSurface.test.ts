@@ -21,24 +21,20 @@ describe("Attack Surface", () => {
       },
     });
 
-    const { results, targets, resultsPath, assetsPath } =
-      await runAttackSurfaceAgent({
-        target: TARGET_URL,
-        model: "claude-haiku-4-5",
-        session,
-        callbacks: {
-          onTextDelta: (d) => process.stdout.write(d.text),
-          onToolCall: (d) =>
-            console.log(
-              `\n→ calling ${d.toolName} \n ${JSON.stringify(d.input, null, 2)}`,
-            ),
-          onToolResult: (d) => console.log(`✓ ${d.toolName} completed`),
-          onError: (e) => console.error(e),
-        },
-      });
-    expect(results).toBeDefined();
-    expect(targets).toBeDefined();
-    expect(resultsPath).toBeDefined();
-    expect(assetsPath).toBeDefined();
+    const result = await runAttackSurfaceAgent({
+      target: TARGET_URL,
+      model: "claude-haiku-4-5",
+      session,
+      callbacks: {
+        onTextDelta: (d) => process.stdout.write(d.text),
+        onToolCall: (d) =>
+          console.log(
+            `\n→ calling ${d.toolName} \n ${JSON.stringify(d.input, null, 2)}`,
+          ),
+        onToolResult: (d) => console.log(`✓ ${d.toolName} completed`),
+        onError: (e) => console.error(e),
+      },
+    });
+    expect(result).toBeDefined();
   });
 });

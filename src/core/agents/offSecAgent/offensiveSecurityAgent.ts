@@ -54,7 +54,7 @@ export class OffensiveSecurityAgent<TResult = void> {
     this.subagentId = input.subagentId;
 
     // -- Tools ----------------------------------------------------------------
-    const tools = createAllTools({
+    const builtinTools = createAllTools({
       session: input.session,
       target: input.target,
       abortSignal: input.abortSignal,
@@ -63,6 +63,9 @@ export class OffensiveSecurityAgent<TResult = void> {
       callbacks: input.callbacks,
       subagentCallbacks: input.subagentCallbacks,
     });
+    const tools = input.extraTools
+      ? { ...builtinTools, ...input.extraTools }
+      : builtinTools;
 
     // -- Stream ---------------------------------------------------------------
     // streamResponse returns synchronously; the actual LLM I/O is lazy.
