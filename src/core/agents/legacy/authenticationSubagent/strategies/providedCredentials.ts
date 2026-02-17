@@ -12,7 +12,7 @@ import type {
   AuthCredentials,
   AuthFlowDocumentation,
   AuthMethod,
-} from "../types";
+} from "../../../authenticationAgent/types";
 
 // =============================================================================
 // Types

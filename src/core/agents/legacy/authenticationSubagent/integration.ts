@@ -14,7 +14,7 @@ import type {
   AuthCredentials,
   AuthFlowHints,
   ExportedAuthInfo,
-} from "./types";
+} from "../../authenticationAgent/types";
 
 // =============================================================================
 // Types

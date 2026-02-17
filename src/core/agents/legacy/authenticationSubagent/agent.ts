@@ -47,7 +47,7 @@ import type {
   AuthDiscoveryEvidence,
   AuthState,
   AuthBarrier,
-} from "./types";
+} from "../../authenticationAgent/types";
 
 // =============================================================================
 // Constants

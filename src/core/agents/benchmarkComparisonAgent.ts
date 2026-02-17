@@ -5,7 +5,7 @@ import { join } from "path";
 import type { AIModel } from "../ai";
 import type { AIAuthConfig } from "../ai/utils";
 import { type SessionInfo } from "../session";
-import type { ComparisonResult } from "./legacy/benchmark/types";
+import type { ComparisonResult } from "./benchmark/types";
 import { OffensiveSecurityAgent } from "../offensiveAgent/offensiveSecurityAgent";
 
 // ---------------------------------------------------------------------------

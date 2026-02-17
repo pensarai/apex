@@ -6,13 +6,9 @@ import type { AIModel } from "../../ai";
 import type { AIAuthConfig } from "../../ai/utils";
 import { type SessionInfo } from "../../session";
 import { SYSTEM as ATTACK_SURFACE_SYSTEM_PROMPT } from "./prompts";
-import { detectOSAndEnhancePrompt } from "../legacy/utils";
-import { getScopeDescription } from "../legacy/scope";
-import type {
-  AttackSurfaceAnalysisResults,
-  PentestTarget,
-} from "../legacy/attackSurfaceAgent/types";
-import { loadAttackSurfaceResults } from "../legacy/attackSurfaceAgent/types";
+import { detectOSAndEnhancePrompt } from "../utils";
+import type { AttackSurfaceAnalysisResults, PentestTarget } from "./types";
+import { loadAttackSurfaceResults } from "./types";
 import { OffensiveSecurityAgent } from "../../offensiveAgent/offensiveSecurityAgent";
 import type { ConsumeCallbacks } from "../../offensiveAgent/types";
 
@@ -180,7 +176,6 @@ function buildPrompt(target: string, session: SessionInfo): string {
   const authenticationInstructions = session.config?.authenticationInstructions;
   const authCredentials = session.config?.authCredentials;
   const enumerateSubdomains = session.config?.enumerateSubdomains ?? false;
-  const scopeDescription = getScopeDescription(scopeConstraints);
 
   // --- Authentication block ---
   let authBlock: string;
@@ -258,7 +253,6 @@ Assets directory: ${join(session.rootPath, "assets")}
 ${authBlock}
 
 SCOPE:
-${scopeDescription}
 ${scopeRules}
 
 ${subdomainBlock}

@@ -6,7 +6,7 @@
  */
 
 import { z } from "zod";
-import type { SessionInfo } from "../../../session";
+import type { SessionInfo } from "../../session";
 
 // =============================================================================
 // Constants

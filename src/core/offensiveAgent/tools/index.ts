@@ -30,7 +30,7 @@ export { runAttackSurface } from "./runAttackSurface";
 export { spawnPentestSwarm } from "./spawnPentestSwarm";
 
 // Reporting / benchmark tools
-export { generateReport } from "./generateReport";
+// export { generateReport } from "./generateReport";
 export { provideComparisonResults } from "./provideComparisonResults";
 
 // ---------------------------------------------------------------------------
@@ -56,7 +56,7 @@ import { detectAuthScheme } from "./detectAuthScheme";
 import { probeAuthEndpoints } from "./probeAuthEndpoints";
 import { runAttackSurface } from "./runAttackSurface";
 import { spawnPentestSwarm } from "./spawnPentestSwarm";
-import { generateReport } from "./generateReport";
+// import { generateReport } from "./generateReport";
 import { provideComparisonResults } from "./provideComparisonResults";
 
 /**
@@ -97,7 +97,7 @@ export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
     spawn_pentest_swarm: spawnPentestSwarm(ctx),
 
     // Reporting / benchmark tools
-    generate_report: generateReport(ctx),
+    // generate_report: generateReport(ctx),
     provide_comparison_results: provideComparisonResults(ctx),
   } as const;
 }
@@ -124,16 +124,10 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "document_asset",
   "authenticate_session",
   "delegate_to_auth_subagent",
-  "extract_js_endpoints",
-  "crawl_authenticated_area",
-  "test_endpoint_variations",
-  "validate_discovery_completeness",
   "create_attack_surface_report",
   "complete_authentication",
-  "detect_auth_scheme",
-  "probe_auth_endpoints",
   "run_attack_surface",
   "spawn_pentest_swarm",
-  "generate_report",
+  // "generate_report",
   "provide_comparison_results",
 ] as const;

@@ -41,7 +41,7 @@ import {
   type AuthToken,
   type AuthBarrier,
   type RegistrationBarrier,
-} from "./types";
+} from "../../authenticationAgent/types";
 
 // =============================================================================
 // Types

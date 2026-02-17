@@ -4,7 +4,7 @@ import type { AIModel } from "../../ai";
 import type { AIAuthConfig } from "../../ai/utils";
 import { type SessionInfo } from "../../session";
 import { AUTH_SUBAGENT_SYSTEM_PROMPT } from "./prompts";
-import { detectOSAndEnhancePrompt } from "../legacy/utils";
+import { detectOSAndEnhancePrompt } from "../utils";
 import { OffensiveSecurityAgent } from "../../offensiveAgent/offensiveSecurityAgent";
 import type { ConsumeCallbacks } from "../../offensiveAgent/types";
 import type { AuthBarrier } from "../legacy/authenticationSubagent";

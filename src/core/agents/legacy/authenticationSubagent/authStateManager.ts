@@ -16,7 +16,7 @@ import type {
   AuthStatus,
   RoleLevel,
   AuthEndpoint,
-} from "./types";
+} from "../../authenticationAgent/types";
 
 const AUTH_DIR = "auth";
 const AUTH_STATE_FILENAME = "auth-state.json";

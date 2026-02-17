@@ -3,7 +3,7 @@ import { z } from "zod";
 import { join } from "path";
 import { writeFileSync, mkdirSync, existsSync } from "fs";
 import type { ToolContext } from "./types";
-import type { DocumentedAssetRecord } from "../../agents/legacy/attackSurfaceAgent/schemas";
+import type { DocumentedAssetRecord } from "../../agents/attackSurface/schemas";
 
 /**
  * Factory for the `document_asset` tool.

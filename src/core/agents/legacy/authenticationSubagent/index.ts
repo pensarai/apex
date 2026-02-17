@@ -95,7 +95,7 @@ export type {
   ExportAuthForAgentResult,
   LoadAuthFlowResult,
   DocumentAuthFlowResult,
-} from "./types";
+} from "../../authenticationAgent/types";
 
 // Constants
 export {
@@ -104,7 +104,7 @@ export {
   AUTH_STATUSES,
   ROLE_LEVELS,
   AUTH_BARRIER_TYPES,
-} from "./types";
+} from "../../authenticationAgent/types";
 
 // Zod schemas (for consumers who need validation)
 export {
@@ -118,7 +118,7 @@ export {
   ExportAuthForAgentInputSchema,
   LoadAuthFlowInputSchema,
   DocumentAuthFlowInputSchema,
-} from "./types";
+} from "../../authenticationAgent/types";
 
 // Prompts (for advanced use cases)
 export {
