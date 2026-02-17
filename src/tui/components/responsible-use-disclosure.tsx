@@ -6,16 +6,21 @@ export function ResponsibleUseDisclosure({
 }: {
   onAccept: () => void;
 }) {
-    const processedRef = useRef(false);
+  const processedRef = useRef(false);
 
-    useKeyboard((key) => {
-        if ((key.name === "return" || key.name === "enter") && !processedRef.current) {
-            processedRef.current = true;
-            setTimeout(() => {
-                onAccept();
-            }, 50);
-        }
-    });
+  useKeyboard((key) => {
+    // Enter key accepts the policy - prevent duplicate processing
+    if (
+      (key.name === "return" || key.name === "enter") &&
+      !processedRef.current
+    ) {
+      processedRef.current = true;
+      // Small delay to ensure state updates process correctly
+      setTimeout(() => {
+        onAccept();
+      }, 50);
+    }
+  });
 
   return (
     <box flexDirection="column" gap={1}>
