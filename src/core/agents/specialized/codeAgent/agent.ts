@@ -1,45 +1,18 @@
-import {
-  stepCountIs,
-  type StopCondition,
-  type StreamTextOnStepFinishCallback,
-  type ToolSet,
-} from "ai";
-import type { AIModel } from "../../../ai";
-import type { AIAuthConfig } from "../../../ai/utils";
+import { stepCountIs } from "ai";
 import { OffensiveSecurityAgent } from "../../offSecAgent/offensiveSecurityAgent";
-import type { SessionInfo } from "../../../session";
-import type { ConsumeCallbacks } from "../../offSecAgent/types";
+import type { SpecializedAgentInput } from "../../offSecAgent/types";
 import { CODE_AGENT_SYSTEM_PROMPT } from "./prompts";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-export interface CodeAgentInput {
+export interface CodeAgentInput extends SpecializedAgentInput {
   /** Root path of the codebase to work in (absolute path) */
   codebasePath: string;
 
   /** The specific objective for this agent to accomplish */
   objective: string;
-
-  /** AI model to drive the agent */
-  model: AIModel;
-
-  /** Session that provides paths for logs, scratchpad, etc. */
-  session: SessionInfo;
-
-  /** Optional per-provider API key overrides */
-  authConfig?: AIAuthConfig;
-
-  /** Optional callback after each agent step */
-  onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
-
-  /** AbortSignal to cancel mid-run */
-  abortSignal?: AbortSignal;
-
-  /** Callbacks for stream events and subagent forwarding */
-  callbacks?: ConsumeCallbacks;
-  stopWhen?: StopCondition<ToolSet>;
 }
 
 // ---------------------------------------------------------------------------

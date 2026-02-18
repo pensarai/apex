@@ -133,7 +133,49 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
 
   /** Callbacks for persisting agent discoveries to external storage (e.g., database). */
   callbacks?: ConsumeCallbacks;
+
+  /**
+   * Zod schema for structured output via the `response` tool.
+   *
+   * When provided, the base class automatically:
+   * 1. Creates and injects a `response` tool with this schema
+   * 2. Merges `hasToolCall("response")` into the stop conditions
+   * 3. Defaults `resolveResult` to return the captured structured data
+   *
+   * Specialized agents just set this and include `"response"` in
+   * `activeTools` to get typed structured output from `consume()`.
+   */
+  responseSchema?: z.ZodSchema;
 };
+
+/**
+ * Shared input fields for all specialized agents.
+ *
+ * Specialized agent input interfaces should extend this to inherit
+ * the common harness fields, then add only their agent-specific ones.
+ */
+export interface SpecializedAgentInput {
+  /** AI model to drive the agent */
+  model: AIModel;
+
+  /** Session providing paths for findings, POCs, logs, etc. */
+  session: SessionInfo;
+
+  /** Optional per-provider API key overrides */
+  authConfig?: AIAuthConfig;
+
+  /** Callback fired after each agent step */
+  onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
+
+  /** AbortSignal to cancel the agent mid-run */
+  abortSignal?: AbortSignal;
+
+  /** Callbacks for stream events and subagent forwarding */
+  callbacks?: ConsumeCallbacks;
+
+  /** Override the default stop condition */
+  stopWhen?: StopCondition<ToolSet>;
+}
 
 /**
  * Typed callbacks for consuming the agent's output stream.

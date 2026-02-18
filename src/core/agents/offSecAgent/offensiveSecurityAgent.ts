@@ -1,7 +1,14 @@
 import { streamResponse } from "../../ai";
-import type { StreamTextResult, TextStreamPart, ToolSet } from "ai";
+import type {
+  StreamTextResult,
+  StopCondition,
+  TextStreamPart,
+  ToolSet,
+} from "ai";
+import { hasToolCall } from "ai";
 import type { OffensiveSecurityAgentInput, ConsumeCallbacks } from "./types";
 import { createAllTools } from "./tools";
+import { createResponseTool, RESPONSE_TOOL_NAME } from "./tools/response";
 import { DEFAULT_SYSTEM_PROMPT } from "./prompt";
 
 /**
@@ -50,7 +57,6 @@ export class OffensiveSecurityAgent<TResult = void> {
   private readonly subagentId?: string;
 
   constructor(input: OffensiveSecurityAgentInput<TResult>) {
-    this.resolveResult = input.resolveResult;
     this.subagentId = input.subagentId;
 
     // -- Tools ----------------------------------------------------------------
@@ -63,12 +69,50 @@ export class OffensiveSecurityAgent<TResult = void> {
       callbacks: input.callbacks,
       subagentCallbacks: input.subagentCallbacks,
     });
-    const tools = input.extraTools
+
+    let tools: ToolSet = input.extraTools
       ? { ...builtinTools, ...input.extraTools }
-      : builtinTools;
+      : { ...builtinTools };
+
+    // -- Response schema → auto capture / stop / resolve ----------------------
+    let capturedResponse: TResult | null = null;
+
+    if (input.responseSchema) {
+      tools = {
+        ...tools,
+        [RESPONSE_TOOL_NAME]: createResponseTool(
+          input.responseSchema,
+          (result) => {
+            capturedResponse = result as TResult;
+          },
+        ),
+      };
+    }
+
+    if (input.resolveResult) {
+      this.resolveResult = input.resolveResult;
+    } else if (input.responseSchema) {
+      this.resolveResult = () => {
+        if (capturedResponse !== null) return capturedResponse;
+        return undefined as TResult;
+      };
+    }
+
+    let stopWhen = input.stopWhen;
+    if (input.responseSchema) {
+      const responseStop = hasToolCall(
+        RESPONSE_TOOL_NAME,
+      ) as StopCondition<ToolSet>;
+      if (!stopWhen) {
+        stopWhen = responseStop;
+      } else if (Array.isArray(stopWhen)) {
+        stopWhen = [...stopWhen, responseStop];
+      } else {
+        stopWhen = [stopWhen, responseStop];
+      }
+    }
 
     // -- Stream ---------------------------------------------------------------
-    // streamResponse returns synchronously; the actual LLM I/O is lazy.
     this.streamResult = streamResponse({
       prompt: input.prompt,
       system: input.system ?? DEFAULT_SYSTEM_PROMPT,
@@ -76,7 +120,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       messages: input.messages,
       tools,
       activeTools: input.activeTools as string[],
-      stopWhen: input.stopWhen,
+      stopWhen,
       toolChoice: "auto",
       onStepFinish: input.onStepFinish,
       onFinish: input.onFinish,

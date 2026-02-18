@@ -1,11 +1,7 @@
 import { tool } from "ai";
 import { hasToolCall } from "ai";
-import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
-import type { AIModel } from "../../../ai";
-import type { AIAuthConfig } from "../../../ai/utils";
 import { OffensiveSecurityAgent } from "../../offSecAgent/offensiveSecurityAgent";
-import type { SessionInfo } from "../../../session";
-import type { ConsumeCallbacks } from "../../offSecAgent/types";
+import type { SpecializedAgentInput } from "../../offSecAgent/types";
 import { WHITEBOX_ATTACK_SURFACE_SYSTEM_PROMPT } from "./prompts";
 import {
   WhiteboxAttackSurfaceResultSchema,
@@ -16,27 +12,9 @@ import {
 // Types
 // ---------------------------------------------------------------------------
 
-export interface WhiteboxAttackSurfaceAgentInput {
+export interface WhiteboxAttackSurfaceAgentInput extends SpecializedAgentInput {
   /** Root path of the codebase to analyze */
   codebasePath: string;
-
-  /** AI model to drive the agent */
-  model: AIModel;
-
-  /** Session that provides paths for logs, etc. */
-  session: SessionInfo;
-
-  /** Optional per-provider API key overrides */
-  authConfig?: AIAuthConfig;
-
-  /** Optional callback after each agent step */
-  onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
-
-  /** AbortSignal to cancel mid-run */
-  abortSignal?: AbortSignal;
-
-  /** Callbacks for stream events and subagent forwarding */
-  callbacks?: ConsumeCallbacks;
 }
 
 // ---------------------------------------------------------------------------

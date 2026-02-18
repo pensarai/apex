@@ -1,51 +1,30 @@
-import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
 import { hasToolCall, stepCountIs } from "ai";
 import { join } from "path";
 import { existsSync, mkdirSync, writeFileSync } from "fs";
-import type { AIModel } from "../../../ai";
-import type { AIAuthConfig } from "../../../ai/utils";
-import { type SessionInfo } from "../../../session";
 import { SYSTEM as ATTACK_SURFACE_SYSTEM_PROMPT } from "./prompts";
 import { detectOSAndEnhancePrompt } from "../utils";
 import type { AttackSurfaceAnalysisResults, PentestTarget } from "./types";
 import { loadAttackSurfaceResults } from "./types";
 import { OffensiveSecurityAgent } from "../../offSecAgent/offensiveSecurityAgent";
-import type { ConsumeCallbacks } from "../../offSecAgent/types";
+import type { SpecializedAgentInput } from "../../offSecAgent/types";
+import type { SessionInfo } from "../../../session";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-interface AttackSurfaceAgentInputBase {
-  /** AI model to drive the agent */
-  model: AIModel;
-
-  /** Session that provides paths for assets, logs, etc. */
-  session: SessionInfo;
-
-  /** Optional per-provider API key overrides */
-  authConfig?: AIAuthConfig;
-
-  /** Optional callback after each agent step */
-  onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
-
-  /** AbortSignal to cancel mid-run */
-  abortSignal?: AbortSignal;
-
-  /** Optional persistence callbacks for external storage integration */
-  callbacks?: ConsumeCallbacks;
-}
-
 /** At least one of `target` or `cwd` must be provided. */
-export type AttackSurfaceAgentInput = AttackSurfaceAgentInputBase &
+export type AttackSurfaceAgentInput = SpecializedAgentInput &
   (
     | {
-        /** The target to analyze (domain, IP, URL, network range, or org name) */ target: string;
+        /** The target to analyze (domain, IP, URL, network range, or org name) */
+        target: string;
         cwd?: string;
       }
     | {
         target?: string;
-        /** Working directory for source-code based analysis */ cwd: string;
+        /** Working directory for source-code based analysis */
+        cwd: string;
       }
   );
 

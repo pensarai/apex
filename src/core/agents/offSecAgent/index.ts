@@ -2,7 +2,11 @@
 // Harness
 // ---------------------------------------------------------------------------
 export { OffensiveSecurityAgent } from "./offensiveSecurityAgent";
-export type { OffensiveSecurityAgentInput, ConsumeCallbacks } from "./types";
+export type {
+  OffensiveSecurityAgentInput,
+  SpecializedAgentInput,
+  ConsumeCallbacks,
+} from "./types";
 
 // ---------------------------------------------------------------------------
 // Tools
