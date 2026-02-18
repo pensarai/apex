@@ -178,7 +178,29 @@ async function runSingleBranchBenchmark(
     // Clone benchmark repo (vulnerable apps)
     await cloneRepo(sandbox, repoUrl, branch);
 
-    // Create session and run benchmark
+    // Clone Apex source repo (contains the benchmark runner script)
+    console.log(`[${branch}] 📦 Cloning Apex source for benchmark runner...`);
+    await retryWithBackoff(
+      () =>
+        sbx.git.clone(
+          "https://github.com/pensarai/apex.git",
+          "apex",
+          "general-agent-harness",
+        ),
+      { branch },
+    );
+
+    // Install Apex dependencies
+    console.log(`[${branch}] 📦 Installing Apex dependencies...`);
+    await retryWithBackoff(
+      () =>
+        sbx.process.executeCommand(
+          'export BUN_INSTALL="$HOME/.bun" && export PATH="$BUN_INSTALL/bin:$PATH" && cd ~/apex && bun install',
+        ),
+      { branch },
+    );
+
+    // Create session and run benchmark via scripts/run-benchmarks.ts
     console.log(`[${branch}] 🔬 Creating benchmark session...`);
     await retryWithBackoff(() => sbx.process.createSession("benchmark"), {
       branch,
@@ -191,7 +213,7 @@ async function runSingleBranchBenchmark(
         `export PATH="$BUN_INSTALL/bin:$PATH"`,
         `export ANTHROPIC_API_KEY="${process.env.ANTHROPIC_API_KEY}"`,
         `export OPENROUTER_API_KEY="${process.env.OPENROUTER_API_KEY}"`,
-        `cd ~/repo && pensar benchmark . --model ${model} --branches ${branch}`,
+        `cd ~/apex && bun run scripts/run-benchmarks.ts --repo-dir ~/repo --branches ${branch} --model ${model} --mode local`,
       ].join(" && "),
       runAsync: true,
     });
