@@ -33,6 +33,7 @@
     "pensar": "node bin/pensar.js",
     "daytona-benchmark": "bun run scripts/daytona-benchmark.ts",
     "local-benchmark": "bun run scripts/local-benchmark.ts",
+    "mcp-server": "bun run scripts/mcp-server.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint src/",

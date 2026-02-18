@@ -48,14 +48,18 @@ if (command === "benchmark") {
   // Import and run quicktest
   await import(quicktestPath);
 } else if (command === "pentest") {
-  // Run pentest CLI
-  const pentestPath = join(__dirname, "..", "build", "pentest.js");
+  // Run pentest CLI - dynamically import from scripts
+  // Bun natively supports TypeScript imports
+  const pentestPath = join(__dirname, "..", "scripts", "pentest-cli.ts");
 
-  // Remove "pentest" from args and pass the rest to pentest script
-  process.argv = [process.argv[0], pentestPath, ...args.slice(1)];
-
-  // Import and run pentest
+  // Import and run pentest CLI (TypeScript file, Bun will handle it natively)
   await import(pentestPath);
+} else if (command === "mcp" || command === "mcp-server") {
+  // Run MCP server for Claude/Cursor Code integration
+  const mcpPath = join(__dirname, "..", "scripts", "mcp-server.ts");
+
+  // Import and run MCP server (TypeScript file, Bun will handle it natively)
+  await import(mcpPath);
 } else if (command === "auth") {
   // Run auth CLI
   const authPath = join(__dirname, "..", "build", "auth.js");
@@ -87,6 +91,7 @@ if (command === "benchmark") {
     "  pensar swarm        Run parallel pentests on multiple targets"
   );
   console.log("  pensar auth         Authenticate to a target application");
+  console.log("  pensar mcp          Start MCP server for Claude/Cursor integration");
   console.log();
   console.log("Options:");
   console.log("  -h, --help         Show this help message");

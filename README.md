@@ -128,6 +128,23 @@ export LOCAL_MODEL_URL="http://localhost:8000/v1"
 
 ---
 
+## 🤖 MCP Integration
+
+Apex can be integrated with AI assistants like Claude and Cursor via the **Model Context Protocol (MCP)**. This allows AI tools to invoke pentests programmatically within your development workflow.
+
+### Quick Start
+
+```bash
+# Start the MCP server
+npm run mcp-server
+```
+
+See `scripts/mcp-server.ts` for implementation details.
+
+This integration enables developers to ask AI assistants like Claude to run security tests without leaving their IDE.
+
+---
+
 ### ⚠️ Responsible Use
 
 This repository contains tools for **authorized security testing** only.  
