@@ -293,8 +293,9 @@ export default function SessionView({
                 step.usage.outputTokens ?? 0,
               );
 
-            // Update messages from step data (same pattern as onPentestAgentStream)
-            const { text, toolCalls, toolResults } = step;
+            // Update messages from step data — only tool calls and tool results.
+            // Text content is handled solely by onDiscoveryStream to avoid duplication.
+            const { toolCalls, toolResults } = step;
 
             setSubagents((prev) => {
               const idx = prev.findIndex(
@@ -305,24 +306,6 @@ export default function SessionView({
               const updated = [...prev];
               const subagent = updated[idx]!;
               const newMessages = [...subagent.messages];
-
-              // Add text content
-              if (text && text.trim()) {
-                setThinking(false);
-                const lastMsg = newMessages[newMessages.length - 1];
-                if (lastMsg && lastMsg.role === "assistant") {
-                  newMessages[newMessages.length - 1] = {
-                    ...lastMsg,
-                    content: (lastMsg.content || "") + text,
-                  };
-                } else {
-                  newMessages.push({
-                    role: "assistant",
-                    content: text,
-                    createdAt: new Date(),
-                  });
-                }
-              }
 
               // Add tool calls (check if not already exists to avoid duplicates)
               if (toolCalls && toolCalls.length > 0) {
@@ -525,7 +508,7 @@ export default function SessionView({
                 updated[idx] = { ...subagent, messages: newMessages };
                 return updated;
               });
-            } else if (chunk.type === "step-finish") {
+            } else if (chunk.type === "finish-step") {
               // Reset accumulated text at step boundaries
               currentDiscoveryText = "";
             }
