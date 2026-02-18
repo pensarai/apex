@@ -107,10 +107,18 @@ interface BenchmarkResults {
   actualResults: unknown[];
   comparison: Record<string, unknown>;
   timestamp: string;
+  tokensIn?: number;
+  tokensOut?: number;
+  totalTokens?: number;
+  flagDetected?: boolean;
+  flagValue?: string | null;
+  findingsCount?: number;
 }
 
 /**
- * Run benchmark for a single branch in its own dedicated sandbox
+ * Run benchmark for a single branch in its own dedicated sandbox.
+ * Uses `pensar pentest` CLI directly instead of the benchmark runner script,
+ * avoiding the need to clone Apex source or install its dependencies.
  */
 async function runSingleBranchBenchmark(
   daytona: Daytona,
@@ -166,51 +174,34 @@ async function runSingleBranchBenchmark(
     // Install dependencies
     await installBun(sandbox, branch);
     await installApex(sandbox, branch);
+    await installDocker(sandbox, branch);
 
     // Clone benchmark repo (vulnerable apps)
     await cloneRepo(sandbox, repoUrl, branch);
 
-    // Clone Apex source repo (contains the benchmark runner script)
-    console.log(`[${branch}] 📦 Cloning Apex source for benchmark runner...`);
-    await retryWithBackoff(
-      () =>
-        sbx.git.clone(
-          "https://github.com/pensarai/apex.git",
-          "apex",
-          "general-agent-harness",
-        ),
-      { branch },
-    );
+    // Start the vulnerable application via Docker
+    const { targetUrl } = await startBenchmarkApp(sandbox, branch);
 
-    // Install Apex dependencies
-    console.log(`[${branch}] 📦 Installing Apex dependencies...`);
-    await retryWithBackoff(
-      () =>
-        sbx.process.executeCommand(
-          'export BUN_INSTALL="$HOME/.bun" && export PATH="$BUN_INSTALL/bin:$PATH" && cd ~/apex && bun install',
-        ),
-      { branch },
-    );
-
+    // Create session and run pentest directly
     console.log(`[${branch}] 🔬 Creating benchmark session...`);
     await retryWithBackoff(() => sbx.process.createSession("benchmark"), {
       branch,
     });
 
-    console.log(`[${branch}] 📊 Running benchmark...\n`);
+    console.log(`[${branch}] 📊 Running pentest against ${targetUrl}...\n`);
     const { cmdId } = await sandbox.process.executeSessionCommand("benchmark", {
       command: [
         `export BUN_INSTALL="$HOME/.bun"`,
         `export PATH="$BUN_INSTALL/bin:$PATH"`,
         `export ANTHROPIC_API_KEY="${process.env.ANTHROPIC_API_KEY}"`,
         `export OPENROUTER_API_KEY="${process.env.OPENROUTER_API_KEY}"`,
-        `cd ~/apex && bun run scripts/run-benchmarks.ts --repo-dir ~/repo --branches ${branch} --model ${model} --mode local`,
+        `pensar pentest --target ${targetUrl} --model ${model}`,
       ].join(" && "),
       runAsync: true,
     });
 
     if (!cmdId) {
-      throw new Error("Failed to execute benchmark command");
+      throw new Error("Failed to execute pentest command");
     }
 
     // Stream logs with branch prefix
@@ -235,11 +226,11 @@ async function runSingleBranchBenchmark(
     const exitCode = command?.exitCode;
 
     console.log(
-      `[${branch}] ✅ Benchmark completed with exit code: ${exitCode}`,
+      `[${branch}] ✅ Pentest completed with exit code: ${exitCode}`,
     );
 
     if (exitCode !== 0) {
-      throw new Error(`Benchmark failed with exit code ${exitCode}`);
+      throw new Error(`Pentest failed with exit code ${exitCode}`);
     }
 
     // Download results
@@ -263,6 +254,12 @@ async function runSingleBranchBenchmark(
       actualResults: [],
       comparison: { error: message },
       timestamp: new Date().toISOString(),
+      tokensIn: 0,
+      tokensOut: 0,
+      totalTokens: 0,
+      flagDetected: false,
+      flagValue: null,
+      findingsCount: 0,
     };
   } finally {
     if (sandbox) {
@@ -350,6 +347,15 @@ export async function runBenchmarkInDaytona(
   const totalDuration = ((Date.now() - startTime) / 1000 / 60).toFixed(2);
   const successful = results.filter((r) => !r.comparison.error).length;
   const failed = results.filter((r) => r.comparison.error).length;
+  const flagsCaptured = results.filter((r) => r.flagDetected).length;
+  const totalFindings = results.reduce(
+    (sum, r) => sum + (r.findingsCount ?? 0),
+    0,
+  );
+  const totalTokens = results.reduce(
+    (sum, r) => sum + (r.totalTokens ?? 0),
+    0,
+  );
 
   console.log("\n" + "=".repeat(80));
   console.log("📊 PARALLEL BENCHMARK SUMMARY");
@@ -357,6 +363,11 @@ export async function runBenchmarkInDaytona(
   console.log(`Total Duration: ${totalDuration}m`);
   console.log(`Successful: ${successful}/${branches.length}`);
   console.log(`Failed: ${failed}/${branches.length}`);
+  console.log(
+    `Flags Captured: ${flagsCaptured}/${branches.length} (${((flagsCaptured / branches.length) * 100).toFixed(1)}%)`,
+  );
+  console.log(`Total Findings: ${totalFindings}`);
+  console.log(`Total Tokens: ${totalTokens.toLocaleString()}`);
   console.log();
 
   // Generate summary report
@@ -439,6 +450,86 @@ async function installApex(sandbox: Sandbox, branch?: string): Promise<void> {
 }
 
 /**
+ * Install Docker and Docker Compose in the sandbox
+ */
+async function installDocker(
+  sandbox: Sandbox,
+  branch?: string,
+): Promise<void> {
+  const prefix = branch ? `[${branch}] ` : "";
+  console.log(`${prefix}🐳 Installing Docker...`);
+
+  await retryWithBackoff(
+    () =>
+      sandbox.process.executeCommand(
+        "curl -fsSL https://get.docker.com | sh",
+      ),
+    { branch, maxRetries: 2 },
+  );
+
+  // Start Docker daemon in background
+  await sandbox.process.executeCommand("dockerd &>/dev/null &");
+
+  // Wait for Docker daemon to be ready (up to 30 seconds)
+  const readyCheck = await sandbox.process.executeCommand(
+    "for i in $(seq 1 30); do docker info &>/dev/null && break || sleep 1; done && docker info &>/dev/null",
+  );
+
+  if (readyCheck.exitCode !== 0) {
+    throw new Error("Docker daemon failed to start within 30 seconds");
+  }
+
+  console.log(`${prefix}✅ Docker installed and running`);
+}
+
+/**
+ * Start the benchmark vulnerable application via Docker Compose
+ * and wait for it to be healthy.
+ */
+async function startBenchmarkApp(
+  sandbox: Sandbox,
+  branch: string,
+): Promise<{ targetUrl: string; port: number }> {
+  const prefix = `[${branch}] `;
+
+  // Parse port from docker-compose.yml
+  const composeResult = await sandbox.process.executeCommand(
+    "cat ~/repo/src/docker-compose.yml",
+  );
+  const composeContent = composeResult.result ?? "";
+  const portMatch = composeContent.match(/(\d+):\d+/);
+  const port = portMatch ? parseInt(portMatch[1], 10) : 80;
+
+  // Start the app
+  console.log(`${prefix}🚀 Starting benchmark application...`);
+  const buildResult = await sandbox.process.executeCommand(
+    "cd ~/repo/src && docker compose up -d --build",
+  );
+
+  if (buildResult.exitCode !== 0) {
+    throw new Error(
+      `Docker compose failed: ${buildResult.result ?? "unknown error"}`,
+    );
+  }
+
+  // Health check - poll until the app responds (up to 2 minutes)
+  console.log(`${prefix}⏳ Waiting for app on port ${port}...`);
+  const healthCheck = await sandbox.process.executeCommand(
+    `for i in $(seq 1 60); do curl -sf http://localhost:${port} >/dev/null 2>&1 && break || sleep 2; done && curl -sf http://localhost:${port} >/dev/null 2>&1`,
+  );
+
+  if (healthCheck.exitCode !== 0) {
+    throw new Error(
+      `App health check failed - not responding on port ${port} after 2 minutes`,
+    );
+  }
+
+  const targetUrl = `http://localhost:${port}`;
+  console.log(`${prefix}✅ App ready at ${targetUrl}`);
+  return { targetUrl, port };
+}
+
+/**
  * Clone repository using Daytona's git API
  */
 async function cloneRepo(
@@ -458,14 +549,16 @@ async function cloneRepo(
 }
 
 /**
- * Download benchmark results from sandbox
+ * Download pentest results from sandbox.
+ * The `pensar pentest` CLI writes session data to ~/.pensar/executions/.
+ * We find the most recent session directory and download it.
  */
 async function downloadResults(
   sandbox: Sandbox,
   branch: string,
 ): Promise<BenchmarkResults> {
   const prefix = `[${branch}] `;
-  console.log(`${prefix}⬇️  Downloading benchmark results...`);
+  console.log(`${prefix}⬇️  Downloading results...`);
 
   // Get user home directory
   const userHome = await sandbox.getUserHomeDir();
@@ -485,17 +578,12 @@ async function downloadResults(
   )) as unknown as Array<{ name: string; isDirectory: boolean }>;
   console.log(`${prefix}Found ${files.length} execution directories`);
 
-  // Find the session for this branch (most recent)
-  const branchSessions = files.filter((f) =>
-    f.name.includes(`benchmark-${branch}`),
-  );
-
-  if (branchSessions.length === 0) {
-    throw new Error(`No session found for branch ${branch}`);
+  if (files.length === 0) {
+    throw new Error(`No execution sessions found for branch ${branch}`);
   }
 
   // Get the most recent session (last in array)
-  const sessionDir = branchSessions[branchSessions.length - 1]!.name;
+  const sessionDir = files[files.length - 1]!.name;
 
   console.log(`${prefix}Downloading session: ${sessionDir}`);
 
@@ -516,36 +604,102 @@ async function downloadResults(
     branch,
   );
 
-  // Read benchmark_results.json
-  const resultsPath = path.join(localSessionPath, "benchmark_results.json");
+  // Read session.json if available for structured results
+  const sessionJsonPath = path.join(localSessionPath, "session.json");
+  let sessionData: Record<string, unknown> = {};
+  if (existsSync(sessionJsonPath)) {
+    sessionData = JSON.parse(readFileSync(sessionJsonPath, "utf-8"));
+  }
 
-  if (!existsSync(resultsPath)) {
-    const sessionJsonPath = path.join(localSessionPath, "session.json");
-    const comparisonJsonPath = path.join(
-      localSessionPath,
-      "comparison-results.json",
+  // Extract token usage from session
+  const tokensIn = (sessionData.tokensIn as number) ?? 0;
+  const tokensOut = (sessionData.tokensOut as number) ?? 0;
+  const totalTokens = tokensIn + tokensOut;
+
+  // Count findings
+  const findingsDir = path.join(localSessionPath, "findings");
+  let findingsCount = 0;
+  if (existsSync(findingsDir)) {
+    try {
+      const findingFiles = await import("fs/promises").then((fs) =>
+        fs.readdir(findingsDir),
+      );
+      findingsCount = findingFiles.filter((f) => f.endsWith(".json")).length;
+    } catch {
+      // Findings directory exists but couldn't read it
+      findingsCount = 0;
+    }
+  }
+
+  // Detect flag in artifacts (read expected flag from benchmark.json)
+  let flagDetected = false;
+  let flagValue: string | null = null;
+  let expectedFlag: string | null = null;
+
+  try {
+    // Read benchmark.json from the repo to get expected flag
+    const benchmarkJsonResult = await sandbox.process.executeCommand(
+      "cat ~/repo/src/benchmark.json",
     );
-    const sessionExists = existsSync(sessionJsonPath);
-    const comparisonExists = existsSync(comparisonJsonPath);
+    if (
+      benchmarkJsonResult.exitCode === 0 &&
+      benchmarkJsonResult.result?.trim()
+    ) {
+      const benchmarkData = JSON.parse(benchmarkJsonResult.result);
+      expectedFlag = benchmarkData.win_condition?.flag_pattern ?? null;
 
-    throw new Error(
-      `[${branch}] benchmark_results.json not found at ${resultsPath}.\n` +
-        `Session directory exists: ${sessionExists}\n` +
-        `Comparison results exist: ${comparisonExists}\n` +
-        `This indicates the benchmark orchestrator failed to complete the final step.\n\n` +
-        `Possible causes:\n` +
-        `  1. Comparison step failed (check for comparison-results.json)\n` +
-        `  2. Agent skipped generate_benchmark_report tool\n` +
-        `  3. Findings consolidation failed in thoroughPentestAgent\n` +
-        `  4. Agent reached step limit before completing\n\n` +
-        `Check the session logs at ${localSessionPath}/logs/ for details.`,
+      if (expectedFlag) {
+        console.log(`${prefix}🔎 Searching for flag: ${expectedFlag}`);
+        const { detectFlagInArtifacts } = await import(
+          "../flag-detector.js"
+        );
+        const flagResult = await detectFlagInArtifacts(
+          localSessionPath,
+          expectedFlag,
+          branch,
+        );
+        flagDetected = flagResult.detected;
+        flagValue = flagResult.flagValue;
+
+        if (flagDetected) {
+          console.log(
+            `${prefix}✅ Flag captured! Found in: ${flagResult.foundIn.join(", ")}`,
+          );
+        } else {
+          console.log(`${prefix}❌ Flag not found`);
+        }
+      }
+    }
+  } catch (error) {
+    console.log(
+      `${prefix}⚠️  Could not detect flag: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
 
-  const results = JSON.parse(readFileSync(resultsPath, "utf-8"));
-
   console.log(`${prefix}✅ Results downloaded to ${localSessionPath}`);
-  return results;
+  console.log(
+    `${prefix}📊 Tokens: ${totalTokens.toLocaleString()} (in: ${tokensIn.toLocaleString()}, out: ${tokensOut.toLocaleString()})`,
+  );
+  console.log(`${prefix}📝 Findings: ${findingsCount}`);
+  console.log(`${prefix}🚩 Flag: ${flagDetected ? "✓" : "✗"}`);
+
+  return {
+    repoPath: "",
+    branch,
+    targetUrl: (sessionData.target as string) ?? "",
+    sessionId: sessionDir,
+    sessionPath: localSessionPath,
+    expectedResults: [],
+    actualResults: [],
+    comparison: {},
+    timestamp: new Date().toISOString(),
+    tokensIn,
+    tokensOut,
+    totalTokens,
+    flagDetected,
+    flagValue,
+    findingsCount,
+  };
 }
 
 /**
@@ -638,6 +792,19 @@ async function generateSummaryReport(
 
   mkdirSync(summaryDir, { recursive: true });
 
+  // Compute aggregate metrics
+  const totalTokensIn = results.reduce((sum, r) => sum + (r.tokensIn ?? 0), 0);
+  const totalTokensOut = results.reduce(
+    (sum, r) => sum + (r.tokensOut ?? 0),
+    0,
+  );
+  const totalTokens = totalTokensIn + totalTokensOut;
+  const flagsCaptured = results.filter((r) => r.flagDetected).length;
+  const totalFindings = results.reduce(
+    (sum, r) => sum + (r.findingsCount ?? 0),
+    0,
+  );
+
   // Generate JSON summary
   const jsonSummary = {
     timestamp,
@@ -647,6 +814,19 @@ async function generateSummaryReport(
     successful: results.filter((r) => !r.comparison.error).length,
     failed: results.filter((r) => r.comparison.error).length,
     duration,
+    flagsCaptured,
+    flagCaptureRate:
+      results.length > 0 ? flagsCaptured / results.length : 0,
+    totalFindings,
+    avgFindingsPerBenchmark:
+      results.length > 0 ? totalFindings / results.length : 0,
+    tokenUsage: {
+      totalTokensIn,
+      totalTokensOut,
+      totalTokens,
+      avgTokensPerBenchmark:
+        results.length > 0 ? totalTokens / results.length : 0,
+    },
     circuitBreakerState: daytonaCircuitBreaker.getState(),
     branches: results.map((r) => ({
       branch: r.branch,
@@ -654,6 +834,12 @@ async function generateSummaryReport(
       error: r.comparison.error,
       sessionId: r.sessionId,
       sessionPath: r.sessionPath,
+      flagDetected: r.flagDetected ?? false,
+      flagValue: r.flagValue ?? null,
+      findingsCount: r.findingsCount ?? 0,
+      tokensIn: r.tokensIn ?? 0,
+      tokensOut: r.tokensOut ?? 0,
+      totalTokens: r.totalTokens ?? 0,
     })),
   };
 
@@ -673,9 +859,15 @@ async function generateSummaryReport(
     `**Duration**: ${duration}m`,
     "",
     "## Summary",
-    `- Successful: ${jsonSummary.successful}/${jsonSummary.totalBranches}`,
-    `- Failed: ${jsonSummary.failed}/${jsonSummary.totalBranches}`,
-    `- Circuit Breaker: ${cbIcon} ${cbState.state} (failures: ${cbState.failures}, successes: ${cbState.successes})`,
+    `- **Successful**: ${jsonSummary.successful}/${jsonSummary.totalBranches}`,
+    `- **Failed**: ${jsonSummary.failed}/${jsonSummary.totalBranches}`,
+    `- **Flags Captured**: ${jsonSummary.flagsCaptured}/${jsonSummary.totalBranches} (${(jsonSummary.flagCaptureRate * 100).toFixed(1)}%)`,
+    `- **Total Findings**: ${jsonSummary.totalFindings} (avg: ${jsonSummary.avgFindingsPerBenchmark.toFixed(1)} per benchmark)`,
+    `- **Circuit Breaker**: ${cbIcon} ${cbState.state} (failures: ${cbState.failures}, successes: ${cbState.successes})`,
+    "",
+    "## Token Usage",
+    `- **Total Tokens**: ${jsonSummary.tokenUsage.totalTokens.toLocaleString()} (in: ${jsonSummary.tokenUsage.totalTokensIn.toLocaleString()}, out: ${jsonSummary.tokenUsage.totalTokensOut.toLocaleString()})`,
+    `- **Average per Benchmark**: ${Math.round(jsonSummary.tokenUsage.avgTokensPerBenchmark).toLocaleString()} tokens`,
     "",
     "## Branch Results",
     "",
@@ -683,9 +875,18 @@ async function generateSummaryReport(
 
   for (const branch of jsonSummary.branches) {
     const icon = branch.status === "success" ? "✅" : "❌";
-    markdown.push(`### ${icon} ${branch.branch}`);
+    const flagIcon = branch.flagDetected ? "🚩" : "⬜";
+    markdown.push(`### ${icon} ${branch.branch} ${flagIcon}`);
     markdown.push(`- **Status**: ${branch.status}`);
     if (branch.status === "success") {
+      markdown.push(`- **Flag Captured**: ${branch.flagDetected ? "Yes" : "No"}`);
+      if (branch.flagDetected && branch.flagValue) {
+        markdown.push(`- **Flag Value**: \`${branch.flagValue}\``);
+      }
+      markdown.push(`- **Findings**: ${branch.findingsCount}`);
+      markdown.push(
+        `- **Tokens**: ${branch.totalTokens.toLocaleString()} (in: ${branch.tokensIn.toLocaleString()}, out: ${branch.tokensOut.toLocaleString()})`,
+      );
       markdown.push(`- **Session**: ${branch.sessionId}`);
       markdown.push(
         `- **Results**: [${branch.sessionPath}](${branch.sessionPath})`,
