@@ -306,8 +306,24 @@ export default function SessionView({
               const subagent = updated[idx]!;
               const newMessages = [...subagent.messages];
 
-              // Add text content
-              if (text && text.trim()) {
+              // Add text content (prefer streamed text to avoid duplicates)
+              const hasStreamedText = currentDiscoveryText.trim().length > 0;
+              if (hasStreamedText) {
+                setThinking(false);
+                const lastMsg = newMessages[newMessages.length - 1];
+                if (lastMsg && lastMsg.role === "assistant") {
+                  newMessages[newMessages.length - 1] = {
+                    ...lastMsg,
+                    content: currentDiscoveryText,
+                  };
+                } else {
+                  newMessages.push({
+                    role: "assistant",
+                    content: currentDiscoveryText,
+                    createdAt: new Date(),
+                  });
+                }
+              } else if (text && text.trim()) {
                 setThinking(false);
                 const lastMsg = newMessages[newMessages.length - 1];
                 if (lastMsg && lastMsg.role === "assistant") {
@@ -323,6 +339,9 @@ export default function SessionView({
                   });
                 }
               }
+
+              // Clear streamed text at step boundary to prevent bleed-through
+              currentDiscoveryText = "";
 
               // Add tool calls (check if not already exists to avoid duplicates)
               if (toolCalls && toolCalls.length > 0) {
