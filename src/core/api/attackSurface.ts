@@ -3,11 +3,8 @@ import {
   type AttackSurfaceAgentInput,
   type AttackSurfaceResult,
 } from "../agents/specialized/attackSurface/blackboxAgent";
-import {
-  WhiteboxAttackSurfaceAgent,
-  type WhiteboxAttackSurfaceAgentInput,
-  type WhiteboxAttackSurfaceResult,
-} from "../agents/specialized/whiteboxAttackSurface";
+import type { WhiteboxAttackSurfaceResult } from "../agents/specialized/whiteboxAttackSurface";
+import { runWhiteboxAttackSurfaceWorkflow } from "../workflows/whiteboxAttackSurface";
 
 // ---------------------------------------------------------------------------
 // Unified input — accepts both blackbox and whitebox configurations
@@ -73,23 +70,13 @@ async function runBlackboxAttackSurface(
 async function runWhiteboxAttackSurface(
   input: AttackSurfaceAgentInput & { cwd: string },
 ): Promise<WhiteboxAttackSurfaceResult> {
-  const whiteboxInput: WhiteboxAttackSurfaceAgentInput = {
+  const result = await runWhiteboxAttackSurfaceWorkflow({
     codebasePath: input.cwd,
     model: input.model,
     session: input.session,
     authConfig: input.authConfig,
-    onStepFinish: input.onStepFinish,
     abortSignal: input.abortSignal,
     callbacks: input.callbacks,
-  };
-
-  const agent = new WhiteboxAttackSurfaceAgent(whiteboxInput);
-
-  const result = await agent.consume({
-    onTextDelta: (d) => input.callbacks?.onTextDelta?.(d),
-    onToolCall: (d) => input.callbacks?.onToolCall?.(d),
-    onToolResult: (d) => input.callbacks?.onToolResult?.(d),
-    onError: (e) => input.callbacks?.onError?.(e),
   });
 
   console.log(

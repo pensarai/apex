@@ -1,4 +1,5 @@
 import { stepCountIs } from "ai";
+import type { z } from "zod";
 import { OffensiveSecurityAgent } from "../../offSecAgent/offensiveSecurityAgent";
 import type { SpecializedAgentInput } from "../../offSecAgent/types";
 import { CODE_AGENT_SYSTEM_PROMPT } from "./prompts";
@@ -7,12 +8,22 @@ import { CODE_AGENT_SYSTEM_PROMPT } from "./prompts";
 // Types
 // ---------------------------------------------------------------------------
 
-export interface CodeAgentInput extends SpecializedAgentInput {
+export interface CodeAgentInput<TResult = void> extends SpecializedAgentInput {
   /** Root path of the codebase to work in (absolute path) */
   codebasePath: string;
 
   /** The specific objective for this agent to accomplish */
   objective: string;
+
+  /**
+   * Zod schema for structured output via the `response` tool.
+   *
+   * When provided, the agent gets a `response` tool that captures
+   * validated structured data. `consume()` then returns `TResult`.
+   */
+  responseSchema?: z.ZodSchema;
+
+  system?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -41,8 +52,8 @@ export interface CodeAgentInput extends SpecializedAgentInput {
  * });
  * ```
  */
-export class CodeAgent extends OffensiveSecurityAgent<void> {
-  constructor(opts: CodeAgentInput) {
+export class CodeAgent<TResult = void> extends OffensiveSecurityAgent<TResult> {
+  constructor(opts: CodeAgentInput<TResult>) {
     const {
       model,
       codebasePath,
@@ -53,10 +64,24 @@ export class CodeAgent extends OffensiveSecurityAgent<void> {
       abortSignal,
       callbacks,
       stopWhen,
+      responseSchema,
+      system,
     } = opts;
 
+    const activeTools: string[] = [
+      "read_file",
+      "list_files",
+      "grep",
+      "execute_command",
+      "document_asset",
+    ];
+
+    if (responseSchema) {
+      activeTools.push("response");
+    }
+
     super({
-      system: CODE_AGENT_SYSTEM_PROMPT,
+      system: system ?? CODE_AGENT_SYSTEM_PROMPT,
       prompt: buildPrompt(codebasePath, objective),
       model,
       session,
@@ -66,13 +91,8 @@ export class CodeAgent extends OffensiveSecurityAgent<void> {
       callbacks,
       subagentCallbacks: callbacks?.subagentCallbacks,
       stopWhen: stopWhen ?? stepCountIs(10000),
-      activeTools: [
-        "read_file",
-        "list_files",
-        "grep",
-        "execute_command",
-        "document_asset",
-      ],
+      activeTools,
+      responseSchema,
     });
   }
 }
