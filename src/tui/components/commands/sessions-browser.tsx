@@ -31,6 +31,7 @@ export default function SessionsBrowser() {
   const {
     groupedSessions,
     visualOrderSessions,
+    totalCount,
     loading,
     searchTerm,
     setSearchTerm,
@@ -164,7 +165,7 @@ export default function SessionsBrowser() {
     );
   }
 
-  if (visualOrderSessions.length === 0) {
+  if (totalCount === 0) {
     return (
       <box flexDirection="column" padding={2} gap={1} width="100%">
         <text fg={creamText}>Sessions</text>
@@ -178,11 +179,14 @@ export default function SessionsBrowser() {
   return (
     <box flexDirection="column" padding={2} gap={1} width="100%" flexGrow={1}>
       {/* Header */}
-      <text fg={creamText}>Sessions</text>
-      <text fg={dimText}>Browse and reopen previous pentest sessions</text>
+      <box flexDirection="column" flexShrink={0}>
+        <text fg={creamText}>Sessions</text>
+        <text fg={dimText}>Browse and reopen previous pentest sessions</text>
+      </box>
 
       {/* Search */}
       <box
+        flexShrink={0}
         width="100%"
         border={["left"]}
         borderColor={greenAccent}
@@ -200,68 +204,75 @@ export default function SessionsBrowser() {
 
       {/* Session list */}
       <box flexDirection="column" gap={1} flexGrow={1} overflow="hidden">
-        <scrollbox
-          ref={scroll}
-          scrollbarOptions={{ visible: false }}
-          style={{
-            rootOptions: {
-              width: "100%",
-              flexGrow: 1,
-              flexShrink: 1,
-              overflow: "hidden",
-            },
-            wrapperOptions: { overflow: "hidden" },
-            contentOptions: { gap: 2, flexDirection: "column" },
-          }}
-        >
-          {groupedSessions.map((group) => (
-            <box key={group.date} flexDirection="column" gap={1}>
-              <text fg={greenAccent}>{group.date}</text>
-              {group.sessions.map((session) => {
-                const isSelected = session.index === selectedIndex;
-                const age = formatRelativeTime(session.time.updated);
-                const mode = session.config?.mode || "auto";
-                const modeBadge = mode === "operator" ? "[operator]" : "[auto]";
-                const findingsText =
-                  session.findingsCount > 0
-                    ? `${session.findingsCount} finding${session.findingsCount > 1 ? "s" : ""}`
-                    : "";
+        {visualOrderSessions.length === 0 ? (
+          <box paddingLeft={2}>
+            <text fg={dimText}>No sessions found.</text>
+          </box>
+        ) : (
+          <scrollbox
+            ref={scroll}
+            scrollbarOptions={{ visible: false }}
+            style={{
+              rootOptions: {
+                width: "100%",
+                flexGrow: 1,
+                flexShrink: 1,
+                overflow: "hidden",
+              },
+              wrapperOptions: { overflow: "hidden" },
+              contentOptions: { gap: 2, flexDirection: "column" },
+            }}
+          >
+            {groupedSessions.map((group) => (
+              <box key={group.date} flexDirection="column" gap={1}>
+                <text fg={greenAccent}>{group.date}</text>
+                {group.sessions.map((session) => {
+                  const isSelected = session.index === selectedIndex;
+                  const age = formatRelativeTime(session.time.updated);
+                  const mode = session.config?.mode || "auto";
+                  const modeBadge =
+                    mode === "operator" ? "[operator]" : "[auto]";
+                  const findingsText =
+                    session.findingsCount > 0
+                      ? `${session.findingsCount} finding${session.findingsCount > 1 ? "s" : ""}`
+                      : "";
 
-                return (
-                  <box
-                    id={session.id}
-                    key={session.id}
-                    backgroundColor="transparent"
-                    border={isSelected ? ["left"] : undefined}
-                    borderColor={isSelected ? greenAccent : undefined}
-                    paddingLeft={isSelected ? 1 : 2}
-                    flexDirection="row"
-                    justifyContent="space-between"
-                    width="100%"
-                  >
-                    <box flexDirection="row" gap={1}>
-                      <text fg={isSelected ? greenAccent : creamText}>
-                        {isSelected ? "▸ " : "  "}
-                        {session.name}
-                      </text>
-                      <text fg={mode === "operator" ? greenAccent : dimText}>
-                        {modeBadge}
-                      </text>
-                      {findingsText ? (
-                        <text fg={dimText}>{findingsText}</text>
-                      ) : null}
+                  return (
+                    <box
+                      id={session.id}
+                      key={session.id}
+                      backgroundColor="transparent"
+                      border={isSelected ? ["left"] : undefined}
+                      borderColor={isSelected ? greenAccent : undefined}
+                      paddingLeft={isSelected ? 1 : 2}
+                      flexDirection="row"
+                      justifyContent="space-between"
+                      width="100%"
+                    >
+                      <box flexDirection="row" gap={1}>
+                        <text fg={isSelected ? greenAccent : creamText}>
+                          {isSelected ? "▸ " : "  "}
+                          {session.name}
+                        </text>
+                        <text fg={mode === "operator" ? greenAccent : dimText}>
+                          {modeBadge}
+                        </text>
+                        {findingsText ? (
+                          <text fg={dimText}>{findingsText}</text>
+                        ) : null}
+                      </box>
+                      <text fg={dimText}>{age}</text>
                     </box>
-                    <text fg={dimText}>{age}</text>
-                  </box>
-                );
-              })}
-            </box>
-          ))}
-        </scrollbox>
+                  );
+                })}
+              </box>
+            ))}
+          </scrollbox>
+        )}
       </box>
 
       {/* Footer */}
-      <box flexDirection="row" gap={1}>
+      <box flexDirection="row" gap={1} flexShrink={0}>
         <text fg={dimText}>
           <span fg={greenAccent}>[Enter]</span> Open{"  "}
           <span fg={greenAccent}>[O]</span> Operator{"  "}
