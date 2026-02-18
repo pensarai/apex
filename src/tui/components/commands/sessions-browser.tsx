@@ -7,7 +7,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useKeyboard } from "@opentui/react";
 import { exec } from "child_process";
 import { existsSync } from "fs";
-import { RGBA, ScrollBoxRenderable } from "@opentui/core";
+import { RGBA, Renderable, ScrollBoxRenderable } from "@opentui/core";
 import { useRoute } from "../../context/route";
 import { useSession } from "../../context/session";
 import { useFocus } from "../../context/focus";
@@ -42,6 +42,49 @@ export default function SessionsBrowser() {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [statusMessage, setStatusMessage] = useState("");
   const scroll = useRef<ScrollBoxRenderable>(null);
+
+  function scrollToIndex(index: number, list: EnrichedSession[]) {
+    if (!scroll.current || list.length === 0) return;
+
+    const targetSession = list[index];
+    if (!targetSession) return;
+
+    // Find the target element by searching through date groups
+    let target: Renderable | undefined;
+    for (const group of scroll.current.getChildren()) {
+      const found = group
+        .getChildren()
+        .find((child) => child.id === targetSession.id);
+      if (found) {
+        target = found;
+        break;
+      }
+    }
+
+    if (!target) return;
+
+    const targetVisualY = target.y - scroll.current.y;
+    const viewportHeight = scroll.current.height;
+    const targetHeight = target.height || 1;
+
+    if (index === 0) {
+      scroll.current.scrollTo(0);
+      return;
+    }
+
+    if (index === list.length - 1) {
+      scroll.current.scrollTo(Infinity);
+      return;
+    }
+
+    if (targetVisualY + targetHeight > viewportHeight) {
+      scroll.current.scrollBy(
+        targetVisualY - viewportHeight + targetHeight + 1,
+      );
+    } else if (targetVisualY < 0) {
+      scroll.current.scrollBy(targetVisualY);
+    }
+  }
 
   // Clamp selected index when list changes
   useEffect(() => {
@@ -146,13 +189,19 @@ export default function SessionsBrowser() {
 
     // Up
     if (key.name === "up" && visualOrderSessions.length > 0) {
-      setSelectedIndex((i) => (i > 0 ? i - 1 : visualOrderSessions.length - 1));
+      const newIndex =
+        selectedIndex > 0 ? selectedIndex - 1 : visualOrderSessions.length - 1;
+      setSelectedIndex(newIndex);
+      scrollToIndex(newIndex, visualOrderSessions);
       return;
     }
 
     // Down
     if (key.name === "down" && visualOrderSessions.length > 0) {
-      setSelectedIndex((i) => (i < visualOrderSessions.length - 1 ? i + 1 : 0));
+      const newIndex =
+        selectedIndex < visualOrderSessions.length - 1 ? selectedIndex + 1 : 0;
+      setSelectedIndex(newIndex);
+      scrollToIndex(newIndex, visualOrderSessions);
       return;
     }
   });
