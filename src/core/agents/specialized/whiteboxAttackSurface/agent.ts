@@ -114,6 +114,7 @@ This ends the agent run — make sure all data is included.`,
         "read_file",
         "list_files",
         "grep",
+        "document_asset",
         // Orchestration — for Phase 2 app analysis
         "spawn_coding_agent",
         // Response tool (injected via extraTools)

@@ -21,6 +21,14 @@ Read config files, entry points, route definitions, etc.
 ## grep
 Your primary search tool. Use it to find route definitions, middleware, controllers, etc.
 
+## document_asset
+**Use this to document every significant asset you discover.** Each call persists a JSON record to the session's assets directory. Document:
+- Each application/service you identify (assetType: "web_application" or "api")
+- Notable subdomains or infrastructure you encounter (assetType: "subdomain", "infrastructure_service")
+- Key API endpoint groups or admin panels (assetType: "endpoint", "admin_panel")
+
+Call this throughout your analysis as you discover assets — don't wait until the end. Include relevant details like the technology stack, URL, authentication requirements, and risk level.
+
 ## spawn_coding_agent
 **This is your key tool for scaling out analysis.** Spawn coding sub-agents to analyze individual apps in parallel for higher fidelity. Each sub-agent has full filesystem access (read_file, list_files, grep, execute_command).
 

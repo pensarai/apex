@@ -93,7 +93,13 @@ export class CodeAgent extends OffensiveSecurityAgent<void> {
       callbacks,
       subagentCallbacks: callbacks?.subagentCallbacks,
       stopWhen: stopWhen ?? stepCountIs(10000),
-      activeTools: ["read_file", "list_files", "grep", "execute_command"],
+      activeTools: [
+        "read_file",
+        "list_files",
+        "grep",
+        "execute_command",
+        "document_asset",
+      ],
     });
   }
 }
