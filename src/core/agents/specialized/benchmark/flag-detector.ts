@@ -137,10 +137,10 @@ export async function extractFlagFromRepo(
   // First, check for Argus benchmark.json (APEX-XXX-XX pattern)
   const argusFlag = await extractFlagFromBenchmarkJson(repoPath);
   if (argusFlag) {
-    console.log(`[${branch}] 🎯 Detected Argus benchmark with flag from benchmark.json`);
     console.log(
-      `[${branch}] ✅ FLAG: ${argusFlag.substring(0, 30)}...`,
+      `[${branch}] 🎯 Detected Argus benchmark with flag from benchmark.json`,
     );
+    console.log(`[${branch}] ✅ FLAG: ${argusFlag.substring(0, 30)}...`);
     return argusFlag;
   }
 

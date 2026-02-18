@@ -1,9 +1,8 @@
 import { exec as nodeExec } from "child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
 import { promisify } from "util";
 
-import type { AIModel } from "../ai";
 import {
   parseDockerComposePort,
   getActualDockerPort,
@@ -102,15 +101,17 @@ async function runDaytonaMode(
     branch: r.branch,
     metadata: null,
     status: (r.comparison as Record<string, unknown>).error
-      ? "failed" as const
-      : "success" as const,
+      ? ("failed" as const)
+      : ("success" as const),
     flagDetected: false,
     flagValue: null,
     findingsCount: 0,
     comparisonResult: null,
     sessionPath: r.sessionPath || "",
     duration: 0,
-    error: (r.comparison as Record<string, unknown>).error as string | undefined,
+    error: (r.comparison as Record<string, unknown>).error as
+      | string
+      | undefined,
   }));
 }
 
@@ -226,8 +227,7 @@ export async function runSingleBenchmark(
         callbacks: {
           onTextDelta: (d) => process.stdout.write(d.text),
           onToolCall: (d) => console.log(`[${branch}] -> ${d.toolName}`),
-          onToolResult: (d) =>
-            console.log(`[${branch}] <- ${d.toolName} done`),
+          onToolResult: (d) => console.log(`[${branch}] <- ${d.toolName} done`),
           onError: (e) => console.error(`[${branch}] Error:`, e),
         },
       });
@@ -256,7 +256,8 @@ export async function runSingleBenchmark(
     // Step 7: Run comparison
     // -----------------------------------------------------------------------
     let comparisonResult: BenchmarkComparisonResult["comparison"] = null;
-    const comparisonModel = config.comparisonModel || "claude-haiku-4-5-20251001";
+    const comparisonModel =
+      config.comparisonModel || "claude-haiku-4-5-20251001";
 
     try {
       console.log(`[${branch}] Running benchmark comparison...`);
@@ -307,10 +308,11 @@ export async function runSingleBenchmark(
     return result;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    const isTimeout =
-      message.includes("aborted") || message.includes("abort");
+    const isTimeout = message.includes("aborted") || message.includes("abort");
 
-    console.error(`[${branch}] ${isTimeout ? "TIMEOUT" : "FAILED"}: ${message}`);
+    console.error(
+      `[${branch}] ${isTimeout ? "TIMEOUT" : "FAILED"}: ${message}`,
+    );
 
     // Cleanup docker on failure
     if (composeDir) {

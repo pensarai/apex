@@ -370,10 +370,7 @@ export async function runBenchmarkInDaytona(
     (sum, r) => sum + (r.findingsCount ?? 0),
     0,
   );
-  const totalTokens = results.reduce(
-    (sum, r) => sum + (r.totalTokens ?? 0),
-    0,
-  );
+  const totalTokens = results.reduce((sum, r) => sum + (r.totalTokens ?? 0), 0);
 
   console.log("\n" + "=".repeat(80));
   console.log("📊 PARALLEL BENCHMARK SUMMARY");
@@ -588,9 +585,7 @@ async function downloadResults(
 
       if (expectedFlag) {
         console.log(`${prefix}🔎 Searching for flag: ${expectedFlag}`);
-        const { detectFlagInArtifacts } = await import(
-          "../flag-detector.js"
-        );
+        const { detectFlagInArtifacts } = await import("../flag-detector.js");
         const flagResult = await detectFlagInArtifacts(
           localSessionPath,
           expectedFlag,
@@ -753,8 +748,7 @@ async function generateSummaryReport(
     failed: results.filter((r) => r.comparison.error).length,
     duration,
     flagsCaptured,
-    flagCaptureRate:
-      results.length > 0 ? flagsCaptured / results.length : 0,
+    flagCaptureRate: results.length > 0 ? flagsCaptured / results.length : 0,
     totalFindings,
     avgFindingsPerBenchmark:
       results.length > 0 ? totalFindings / results.length : 0,
@@ -817,7 +811,9 @@ async function generateSummaryReport(
     markdown.push(`### ${icon} ${branch.branch} ${flagIcon}`);
     markdown.push(`- **Status**: ${branch.status}`);
     if (branch.status === "success") {
-      markdown.push(`- **Flag Captured**: ${branch.flagDetected ? "Yes" : "No"}`);
+      markdown.push(
+        `- **Flag Captured**: ${branch.flagDetected ? "Yes" : "No"}`,
+      );
       if (branch.flagDetected && branch.flagValue) {
         markdown.push(`- **Flag Value**: \`${branch.flagValue}\``);
       }

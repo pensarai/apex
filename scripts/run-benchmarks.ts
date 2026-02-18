@@ -18,7 +18,10 @@
 import { existsSync, mkdirSync, writeFileSync } from "fs";
 import path from "path";
 import { runBenchmarkSuite } from "../src/core/benchmark/runner";
-import { generateTextReport, generateJsonReport } from "../src/core/benchmark/report";
+import {
+  generateTextReport,
+  generateJsonReport,
+} from "../src/core/benchmark/report";
 import type { BenchmarkSuiteConfig } from "../src/core/benchmark/types";
 
 // ---------------------------------------------------------------------------
@@ -140,9 +143,7 @@ async function main(): Promise<void> {
   }
 
   if (branches.length === 0) {
-    console.error(
-      "Error: No benchmarks specified. Use --branches or --all.",
-    );
+    console.error("Error: No benchmarks specified. Use --branches or --all.");
     printUsage();
     process.exit(1);
   }
