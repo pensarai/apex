@@ -98,6 +98,8 @@ export namespace Session {
     cvssModel: z.string().optional(),
     /** Toolset state for controlling which tools are available */
     toolsetState: ToolsetStateSchema.optional(),
+    /** Disable headless mode to view browser in action (defaults to true/headless) */
+    headless: z.boolean().optional(),
   });
 
   export type SessionConfig = z.infer<typeof SessionConfigObject>;

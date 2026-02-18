@@ -24,6 +24,7 @@ interface WizardState {
     allowedHosts: string[];
     strictScope: boolean;
   };
+  headless: boolean;
 }
 
 interface HITLWizardProps {
@@ -40,6 +41,7 @@ interface HITLWizardProps {
   initialHeadersMode?: "none" | "default" | "custom";
   initialCustomHeaders?: Record<string, string>;
   initialModel?: string;
+  initialHeadless?: boolean;
 }
 
 const greenBullet = RGBA.fromInts(76, 175, 80, 255);
@@ -84,6 +86,7 @@ export default function HITLWizard(props: HITLWizardProps) {
     initialHosts,
     initialStrict,
     initialModel,
+    initialHeadless,
   } = props;
 
   const route = useRoute();
@@ -116,6 +119,7 @@ export default function HITLWizard(props: HITLWizardProps) {
         allowedHosts: combinedHosts,
         strictScope: initialStrict || false,
       },
+      headless: initialHeadless !== false, // Default to true/headless
     };
   });
 
@@ -209,6 +213,8 @@ export default function HITLWizard(props: HITLWizardProps) {
         };
       }
 
+      sessionConfig.headless = state.headless;
+
       const session = await Session.create({
         targets: [state.target],
         name: state.name,
@@ -241,8 +247,8 @@ export default function HITLWizard(props: HITLWizardProps) {
     setCurrentStep("mode");
   };
 
-  // Calculate max field index (5 normally, 4 if plan mode hides tier selector)
-  const maxField = state.mode === "plan" ? 4 : 5;
+  // Calculate max field index (6 normally, 5 if plan mode hides tier selector)
+  const maxField = state.mode === "plan" ? 5 : 6;
 
   // Adjust field index mapping when in plan mode (skip tier field)
   const getActualField = (field: number): number => {
@@ -356,6 +362,12 @@ export default function HITLWizard(props: HITLWizardProps) {
           if (newModel) setModel(newModel);
           return;
         }
+
+        // Headless mode toggle (field 5)
+        if (actualField === 5) {
+          setState((prev) => ({ ...prev, headless: !prev.headless }));
+          return;
+        }
       }
 
       // Enter to activate/submit
@@ -382,8 +394,14 @@ export default function HITLWizard(props: HITLWizardProps) {
           return;
         }
 
-        // Submit button (field 5)
+        // Toggle headless mode (field 5)
         if (actualField === 5) {
+          setState((prev) => ({ ...prev, headless: !prev.headless }));
+          return;
+        }
+
+        // Submit button (field 6)
+        if (actualField === 6) {
           createSessionAndNavigate();
         }
         return;
@@ -470,8 +488,9 @@ export default function HITLWizard(props: HITLWizardProps) {
   // 2: Add allowed host input
   // 3: Strict scope toggle
   // 4: Model selection
-  // 5: Submit button
-  // In plan mode, fields shift: 0, 2, 3, 4, 5 become indices 0, 1, 2, 3, 4
+  // 5: Headless mode toggle
+  // 6: Submit button
+  // In plan mode, fields shift: 0, 2, 3, 4, 5, 6 become indices 0, 1, 2, 3, 4, 5
 
   const actualField = getActualField(modeFocusedField);
   const modeDef = OPERATOR_MODES[state.mode];
@@ -568,17 +587,29 @@ export default function HITLWizard(props: HITLWizardProps) {
         {actualField === 4 && <text fg={dimText}>(←/→)</text>}
       </box>
 
-      {/* Submit Button - Field 5 */}
-      <box flexDirection="row" gap={1} marginTop={1}>
+      {/* Headless Mode - Field 5 */}
+      <box flexDirection="row" gap={1}>
         <text fg={actualField === 5 ? greenBullet : dimText}>
           {actualField === 5 ? "▸" : " "}
         </text>
-        <text fg={actualField === 5 ? greenBullet : dimText}>
-          {actualField === 5 ? "[" : " "}
+        <text fg={actualField === 5 ? creamText : dimText}>Headless:</text>
+        <text fg={state.headless ? dimText : yellowText}>
+          {state.headless ? "Enabled" : "Disabled (View Browser)"}
         </text>
-        <text fg={actualField === 5 ? creamText : dimText}>Start Session</text>
-        <text fg={actualField === 5 ? greenBullet : dimText}>
-          {actualField === 5 ? "]" : " "}
+        {actualField === 5 && <text fg={dimText}>(Enter/←/→)</text>}
+      </box>
+
+      {/* Submit Button - Field 6 */}
+      <box flexDirection="row" gap={1} marginTop={1}>
+        <text fg={actualField === 6 ? greenBullet : dimText}>
+          {actualField === 6 ? "▸" : " "}
+        </text>
+        <text fg={actualField === 6 ? greenBullet : dimText}>
+          {actualField === 6 ? "[" : " "}
+        </text>
+        <text fg={actualField === 6 ? creamText : dimText}>Start Session</text>
+        <text fg={actualField === 6 ? greenBullet : dimText}>
+          {actualField === 6 ? "]" : " "}
         </text>
       </box>
 
