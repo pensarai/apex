@@ -53,10 +53,12 @@ function isInfrastructureService(serviceName: string): boolean {
 export function parseDockerComposePort(
   benchmarkPath: string,
 ): DockerComposePortInfo {
-  // Try docker-compose.yml first, then docker-compose.yaml
+  // Try docker-compose.yml first, then docker-compose.yaml, then src/ subdirectory (Argus)
   const composePaths = [
     path.join(benchmarkPath, "docker-compose.yml"),
     path.join(benchmarkPath, "docker-compose.yaml"),
+    path.join(benchmarkPath, "src", "docker-compose.yml"),
+    path.join(benchmarkPath, "src", "docker-compose.yaml"),
   ];
 
   for (const composePath of composePaths) {

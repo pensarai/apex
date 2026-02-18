@@ -162,16 +162,32 @@ function loadExpectedResults(repoPath: string): Record<string, unknown>[] {
   const expectedDir = join(repoPath, "expected_results");
   if (!existsSync(expectedDir)) return [];
 
-  return readdirSync(expectedDir)
-    .filter((f) => f.endsWith(".json"))
-    .map((f) => {
-      try {
-        return JSON.parse(readFileSync(join(expectedDir, f), "utf-8"));
-      } catch {
-        return null;
+  const results: Record<string, unknown>[] = [];
+
+  for (const f of readdirSync(expectedDir).filter((f) => f.endsWith(".json"))) {
+    try {
+      const parsed = JSON.parse(readFileSync(join(expectedDir, f), "utf-8"));
+
+      // Argus format: { vulnerabilities: [...] } with each vuln having name, severity, description, etc.
+      if (parsed?.vulnerabilities && Array.isArray(parsed.vulnerabilities)) {
+        for (const vuln of parsed.vulnerabilities) {
+          results.push({
+            title: vuln.name || vuln.title || "Unknown",
+            severity: vuln.severity || "MEDIUM",
+            reason: vuln.description || vuln.reason || "",
+            ...vuln,
+          });
+        }
+      } else if (parsed) {
+        // Standard format: direct object with title, severity, reason
+        results.push(parsed);
       }
-    })
-    .filter(Boolean);
+    } catch {
+      // skip unparseable files
+    }
+  }
+
+  return results;
 }
 
 function loadActualFindings(sessionPath: string): string {
