@@ -18,6 +18,8 @@ type WizardStep = "target" | "configure" | "creating";
 interface WizardState {
   name: string;
   target: string;
+  sourceCodeAccess: boolean;
+  cwd: string;
   auth: {
     loginUrl: string;
     username: string;
@@ -189,6 +191,8 @@ export default function WebWizard({
   const [state, setState] = useState<WizardState>(() => ({
     name: initialName || generateRandomName(),
     target: initialTarget || "",
+    sourceCodeAccess: false,
+    cwd: process.cwd(),
     auth: {
       loginUrl: initialAuthUrl || "",
       username: initialAuthUser || "",
@@ -208,7 +212,7 @@ export default function WebWizard({
   }));
 
   // UI state for target step
-  const [targetFocusedField, setTargetFocusedField] = useState(0); // 0=name, 1=target, 2=model (if multiple available)
+  const [targetFocusedField, setTargetFocusedField] = useState(0); // 0=name, 1=target, 2=source code access
 
   // UI state for configure step
   const [focusedSection, setFocusedSection] = useState(0); // 0=auth, 1=scope, 2=headers
@@ -267,6 +271,11 @@ export default function WebWizard({
         sessionConfig.enumerateSubdomains = true;
       }
 
+      // Source code access (whitebox mode)
+      if (state.sourceCodeAccess && state.cwd.trim()) {
+        sessionConfig.cwd = state.cwd.trim();
+      }
+
       // Headers config
       if (state.headers.mode !== "default") {
         sessionConfig.offensiveHeaders = {
@@ -323,17 +332,29 @@ export default function WebWizard({
 
     // Target step: Enter to start, Tab to navigate/configure
     if (currentStep === "target") {
-      // Tab navigation between name and target fields
+      const maxTargetField = state.sourceCodeAccess ? 3 : 2; // 0=name, 1=target, 2=toggle, 3=cwd (if enabled)
+      // Tab navigation
       if (key.name === "tab") {
         if (key.shift) {
           setTargetFocusedField((prev) => Math.max(0, prev - 1));
         } else {
-          if (targetFocusedField === 1 && state.target.trim()) {
+          if (targetFocusedField === maxTargetField && state.target.trim()) {
             setCurrentStep("configure");
           } else {
-            setTargetFocusedField((prev) => Math.min(1, prev + 1));
+            setTargetFocusedField((prev) => Math.min(maxTargetField, prev + 1));
           }
         }
+        return;
+      }
+      // Up/Down to toggle source code access when focused
+      if (
+        targetFocusedField === 2 &&
+        (key.name === "up" || key.name === "down")
+      ) {
+        setState((prev) => ({
+          ...prev,
+          sourceCodeAccess: !prev.sourceCodeAccess,
+        }));
         return;
       }
       // Enter to start if target is filled
@@ -610,6 +631,30 @@ export default function WebWizard({
           onInput={(v) => setState((prev) => ({ ...prev, target: v }))}
           focused={targetFocusedField === 1}
         />
+
+        <box flexDirection="column" gap={1}>
+          <box flexDirection="row" gap={1}>
+            <text fg={targetFocusedField === 2 ? creamText : dimText}>
+              Source Code Access:
+            </text>
+            <text fg={state.sourceCodeAccess ? greenBullet : dimText}>
+              {state.sourceCodeAccess ? "● Enabled" : "○ Disabled"}
+            </text>
+            {targetFocusedField === 2 && (
+              <text fg={dimText}>(↑/↓ to toggle)</text>
+            )}
+          </box>
+          {state.sourceCodeAccess && (
+            <Input
+              label="Codebase Path"
+              description="Path to the source code directory"
+              placeholder={process.cwd()}
+              value={state.cwd}
+              onInput={(v) => setState((prev) => ({ ...prev, cwd: v }))}
+              focused={targetFocusedField === 3}
+            />
+          )}
+        </box>
 
         <box flexDirection="column" gap={0} marginTop={1}>
           <text>

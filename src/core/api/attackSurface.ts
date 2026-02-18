@@ -22,15 +22,17 @@ export type AttackSurfaceInput = AttackSurfaceAgentInput;
 /**
  * Run the appropriate attack surface agent based on the input.
  *
- * - If `cwd` is provided (and no `target`), runs the **whitebox** agent
- *   which analyzes source code directly to map endpoints and pages.
+ * - If `cwd` is provided, runs the **whitebox** agent which analyzes
+ *   source code directly to map endpoints and pages.
  * - Otherwise, runs the **blackbox** agent which probes a live target
  *   from the outside.
+ *
+ * `target` is always required (the live URL to test against).
  */
 export async function runAttackSurfaceAgent(
   input: AttackSurfaceAgentInput,
 ): Promise<AttackSurfaceResult | WhiteboxAttackSurfaceResult> {
-  const isWhitebox = "cwd" in input && input.cwd && !input.target;
+  const isWhitebox = "cwd" in input && !!input.cwd;
 
   if (isWhitebox) {
     return runWhiteboxAttackSurface(

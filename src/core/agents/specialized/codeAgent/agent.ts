@@ -1,4 +1,9 @@
-import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
+import {
+  stepCountIs,
+  type StopCondition,
+  type StreamTextOnStepFinishCallback,
+  type ToolSet,
+} from "ai";
 import type { AIModel } from "../../../ai";
 import type { AIAuthConfig } from "../../../ai/utils";
 import { OffensiveSecurityAgent } from "../../offSecAgent/offensiveSecurityAgent";
@@ -34,6 +39,7 @@ export interface CodeAgentInput {
 
   /** Callbacks for stream events and subagent forwarding */
   callbacks?: ConsumeCallbacks;
+  stopWhen?: StopCondition<ToolSet>;
 }
 
 // ---------------------------------------------------------------------------
@@ -73,6 +79,7 @@ export class CodeAgent extends OffensiveSecurityAgent<void> {
       onStepFinish,
       abortSignal,
       callbacks,
+      stopWhen,
     } = opts;
 
     super({
@@ -85,7 +92,7 @@ export class CodeAgent extends OffensiveSecurityAgent<void> {
       abortSignal,
       callbacks,
       subagentCallbacks: callbacks?.subagentCallbacks,
-
+      stopWhen: stopWhen ?? stepCountIs(10000),
       activeTools: ["read_file", "list_files", "grep", "execute_command"],
     });
   }
