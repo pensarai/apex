@@ -467,12 +467,14 @@ async function installDocker(
     { branch, maxRetries: 2 },
   );
 
-  // Start Docker daemon in background
-  await sandbox.process.executeCommand("dockerd &>/dev/null &");
+  // Start Docker daemon in background (with sudo and explicit PATH)
+  await sandbox.process.executeCommand(
+    'export PATH="/usr/local/bin:/usr/bin:$PATH" && sudo dockerd &>/dev/null &',
+  );
 
-  // Wait for Docker daemon to be ready (up to 30 seconds)
+  // Wait for Docker daemon to be ready (up to 30 seconds) - with explicit PATH
   const readyCheck = await sandbox.process.executeCommand(
-    "for i in $(seq 1 30); do docker info &>/dev/null && break || sleep 1; done && docker info &>/dev/null",
+    'export PATH="/usr/local/bin:/usr/bin:$PATH" && for i in $(seq 1 30); do docker info &>/dev/null && break || sleep 1; done && docker info &>/dev/null',
   );
 
   if (readyCheck.exitCode !== 0) {
@@ -500,10 +502,10 @@ async function startBenchmarkApp(
   const portMatch = composeContent.match(/(\d+):\d+/);
   const port = portMatch ? parseInt(portMatch[1], 10) : 80;
 
-  // Start the app
+  // Start the app (with explicit PATH so docker command is found)
   console.log(`${prefix}🚀 Starting benchmark application...`);
   const buildResult = await sandbox.process.executeCommand(
-    "cd ~/repo/src && docker compose up -d --build",
+    'export PATH="/usr/local/bin:/usr/bin:$PATH" && cd ~/repo/src && docker compose up -d --build',
   );
 
   if (buildResult.exitCode !== 0) {
