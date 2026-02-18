@@ -174,34 +174,30 @@ async function runSingleBranchBenchmark(
     // Install dependencies
     await installBun(sandbox, branch);
     await installApex(sandbox, branch);
-    await installDocker(sandbox, branch);
 
     // Clone benchmark repo (vulnerable apps)
     await cloneRepo(sandbox, repoUrl, branch);
 
-    // Start the vulnerable application via Docker
-    const { targetUrl } = await startBenchmarkApp(sandbox, branch);
-
-    // Create session and run pentest directly
+    // Create session and run benchmark
     console.log(`[${branch}] 🔬 Creating benchmark session...`);
     await retryWithBackoff(() => sbx.process.createSession("benchmark"), {
       branch,
     });
 
-    console.log(`[${branch}] 📊 Running pentest against ${targetUrl}...\n`);
+    console.log(`[${branch}] 📊 Running benchmark...\n`);
     const { cmdId } = await sandbox.process.executeSessionCommand("benchmark", {
       command: [
         `export BUN_INSTALL="$HOME/.bun"`,
         `export PATH="$BUN_INSTALL/bin:$PATH"`,
         `export ANTHROPIC_API_KEY="${process.env.ANTHROPIC_API_KEY}"`,
         `export OPENROUTER_API_KEY="${process.env.OPENROUTER_API_KEY}"`,
-        `pensar pentest --target ${targetUrl} --model ${model}`,
+        `cd ~/repo && pensar benchmark . --model ${model} --branches ${branch}`,
       ].join(" && "),
       runAsync: true,
     });
 
     if (!cmdId) {
-      throw new Error("Failed to execute pentest command");
+      throw new Error("Failed to execute benchmark command");
     }
 
     // Stream logs with branch prefix
@@ -226,11 +222,11 @@ async function runSingleBranchBenchmark(
     const exitCode = command?.exitCode;
 
     console.log(
-      `[${branch}] ✅ Pentest completed with exit code: ${exitCode}`,
+      `[${branch}] ✅ Benchmark completed with exit code: ${exitCode}`,
     );
 
     if (exitCode !== 0) {
-      throw new Error(`Pentest failed with exit code ${exitCode}`);
+      throw new Error(`Benchmark failed with exit code ${exitCode}`);
     }
 
     // Download results
@@ -447,88 +443,6 @@ async function installApex(sandbox: Sandbox, branch?: string): Promise<void> {
       { cause: error },
     );
   }
-}
-
-/**
- * Install Docker and Docker Compose in the sandbox
- */
-async function installDocker(
-  sandbox: Sandbox,
-  branch?: string,
-): Promise<void> {
-  const prefix = branch ? `[${branch}] ` : "";
-  console.log(`${prefix}🐳 Installing Docker...`);
-
-  await retryWithBackoff(
-    () =>
-      sandbox.process.executeCommand(
-        "curl -fsSL https://get.docker.com | sh",
-      ),
-    { branch, maxRetries: 2 },
-  );
-
-  // Start Docker daemon in background (with sudo and explicit PATH)
-  await sandbox.process.executeCommand(
-    'export PATH="/usr/local/bin:/usr/bin:$PATH" && sudo dockerd &>/dev/null &',
-  );
-
-  // Wait for Docker daemon to be ready (up to 30 seconds) - with explicit PATH
-  const readyCheck = await sandbox.process.executeCommand(
-    'export PATH="/usr/local/bin:/usr/bin:$PATH" && for i in $(seq 1 30); do docker info &>/dev/null && break || sleep 1; done && docker info &>/dev/null',
-  );
-
-  if (readyCheck.exitCode !== 0) {
-    throw new Error("Docker daemon failed to start within 30 seconds");
-  }
-
-  console.log(`${prefix}✅ Docker installed and running`);
-}
-
-/**
- * Start the benchmark vulnerable application via Docker Compose
- * and wait for it to be healthy.
- */
-async function startBenchmarkApp(
-  sandbox: Sandbox,
-  branch: string,
-): Promise<{ targetUrl: string; port: number }> {
-  const prefix = `[${branch}] `;
-
-  // Parse port from docker-compose.yml
-  const composeResult = await sandbox.process.executeCommand(
-    "cat ~/repo/src/docker-compose.yml",
-  );
-  const composeContent = composeResult.result ?? "";
-  const portMatch = composeContent.match(/(\d+):\d+/);
-  const port = portMatch ? parseInt(portMatch[1], 10) : 80;
-
-  // Start the app (with explicit PATH so docker command is found)
-  console.log(`${prefix}🚀 Starting benchmark application...`);
-  const buildResult = await sandbox.process.executeCommand(
-    'export PATH="/usr/local/bin:/usr/bin:$PATH" && cd ~/repo/src && docker compose up -d --build',
-  );
-
-  if (buildResult.exitCode !== 0) {
-    throw new Error(
-      `Docker compose failed: ${buildResult.result ?? "unknown error"}`,
-    );
-  }
-
-  // Health check - poll until the app responds (up to 2 minutes)
-  console.log(`${prefix}⏳ Waiting for app on port ${port}...`);
-  const healthCheck = await sandbox.process.executeCommand(
-    `for i in $(seq 1 60); do curl -sf http://localhost:${port} >/dev/null 2>&1 && break || sleep 2; done && curl -sf http://localhost:${port} >/dev/null 2>&1`,
-  );
-
-  if (healthCheck.exitCode !== 0) {
-    throw new Error(
-      `App health check failed - not responding on port ${port} after 2 minutes`,
-    );
-  }
-
-  const targetUrl = `http://localhost:${port}`;
-  console.log(`${prefix}✅ App ready at ${targetUrl}`);
-  return { targetUrl, port };
 }
 
 /**
