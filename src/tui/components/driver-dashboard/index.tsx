@@ -10,7 +10,6 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useKeyboard } from "@opentui/react";
-import { RGBA } from "@opentui/core";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { Session } from "../../../core/session";
@@ -749,9 +748,9 @@ function AgentCard({
 
   const statusColor = {
     running: colors.primary,
-    paused: RGBA.fromInts(255, 193, 7, 255),
+    paused: colors.warning,
     completed: colors.primary,
-    failed: RGBA.fromInts(244, 67, 54, 255),
+    failed: colors.error,
   }[agent.status];
 
   return (

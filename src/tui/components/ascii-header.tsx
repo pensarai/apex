@@ -1,7 +1,11 @@
+import { useTheme } from "../theme";
+
 export function AsciiHeader() {
+  const { colors } = useTheme();
+
   return (
     <box padding={1}>
-      <text fg={"white"}>
+      <text fg={colors.text}>
         {/* {` █████╗ ██████╗ ███████╗██╗  ██╗
 ██╔══██╗██╔══██╗██╔════╝╚██╗██╔╝
 ███████║██████╔╝█████╗   ╚███╔╝ 

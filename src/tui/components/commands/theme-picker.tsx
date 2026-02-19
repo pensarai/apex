@@ -102,7 +102,7 @@ export default function ThemePicker() {
       position="absolute"
       left={0}
       top={0}
-      backgroundColor={colors.backgroundOverlay}
+      backgroundColor={colors.background}
     >
       <box
         width={panelWidth}

@@ -7,7 +7,6 @@
 
 import { useState, useCallback } from "react";
 import { useKeyboard } from "@opentui/react";
-import { RGBA } from "@opentui/core";
 import type { PentestTarget } from "../../../core/agent/attackSurfaceAgent/types";
 import type { DiscoveredEndpoint } from "../../../core/agent/driverModeAgent/targetExtractor";
 import type { DisplayMessage } from "../agent-display";
@@ -56,9 +55,9 @@ export default function AgentChatView({
 
   const statusColor = {
     running: colors.primary,
-    paused: RGBA.fromInts(255, 193, 7, 255),
+    paused: colors.warning,
     completed: colors.primary,
-    failed: RGBA.fromInts(244, 67, 54, 255),
+    failed: colors.error,
   }[agent.status];
 
   // Handle input changes

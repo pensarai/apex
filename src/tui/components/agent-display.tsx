@@ -1,4 +1,3 @@
-import { RGBA } from "@opentui/core";
 import { SpinnerDots } from "./sprites";
 import { useState, memo } from "react";
 import type { Message } from "../../core/messages/types";
@@ -104,7 +103,7 @@ export default function AgentDisplay({
         scrollbarOptions: {
           trackOptions: {
             foregroundColor: colors.primary,
-            backgroundColor: RGBA.fromInts(40, 40, 40, 255),
+            backgroundColor: colors.backgroundElement,
           },
         },
       }}
@@ -165,7 +164,7 @@ const SubAgentDisplay = memo(function SubAgentDisplay({
       width="100%"
       border={true}
       borderColor={colors.primary}
-      backgroundColor={RGBA.fromInts(10, 10, 10, 255)}
+      backgroundColor={colors.background}
     >
       <box flexDirection="row" alignItems="center" gap={1}>
         {subagent.status === "pending" && (
@@ -263,14 +262,14 @@ const AgentMessage = memo(function AgentMessage({
             width={0}
             borderStyle="heavy"
             border={["right"]}
-            borderColor={RGBA.fromInts(30, 30, 30, 255)}
+            borderColor={colors.borderSubtle}
           />
         )}
         <box
           maxWidth={dimensions.width - 20}
           padding={message.role !== "tool" ? 1 : 0}
           backgroundColor={
-            message.role !== "tool" ? RGBA.fromInts(40, 40, 40, 255) : undefined
+            message.role !== "tool" ? colors.backgroundElement : undefined
           }
           flexDirection="column"
         >
@@ -285,7 +284,7 @@ const AgentMessage = memo(function AgentMessage({
               {/* Args preview for pending tools */}
               {argsPreview && (
                 <text
-                  fg={RGBA.fromInts(120, 120, 120, 255)}
+                  fg={colors.textMuted}
                   content={`  ${argsPreview}`}
                 />
               )}
@@ -295,7 +294,7 @@ const AgentMessage = memo(function AgentMessage({
                   {streamingLogs.slice(-3).map((log, idx) => (
                     <text
                       key={idx}
-                      fg={RGBA.fromInts(100, 100, 100, 255)}
+                      fg={colors.textMuted}
                       content={log.length > 100 ? log.slice(0, 100) + "…" : log}
                     />
                   ))}
@@ -319,7 +318,7 @@ const AgentMessage = memo(function AgentMessage({
               {/* Args preview for completed tools */}
               {message.role === "tool" && argsPreview && (
                 <text
-                  fg={RGBA.fromInts(120, 120, 120, 255)}
+                  fg={colors.textMuted}
                   content={`  ${argsPreview}`}
                 />
               )}
@@ -331,7 +330,7 @@ const AgentMessage = memo(function AgentMessage({
             width={0}
             borderStyle="heavy"
             border={["left"]}
-            borderColor={RGBA.fromInts(30, 30, 30, 255)}
+            borderColor={colors.borderSubtle}
           />
         )}
       </box>
@@ -341,6 +340,7 @@ const AgentMessage = memo(function AgentMessage({
 });
 
 function ToolDetails({ message }: { message: DisplayMessage }) {
+  const { colors } = useTheme();
   const [showArgs, setShowArgs] = useState(false);
   const [showResult, setShowResult] = useState(false);
 
@@ -379,12 +379,12 @@ function ToolDetails({ message }: { message: DisplayMessage }) {
           }}
         >
           <box flexDirection="row" alignItems="center" gap={1}>
-            <text fg={RGBA.fromInts(150, 150, 150, 255)}>
+            <text fg={colors.textMuted}>
               {showArgs ? "▼ Hide args" : "▶ Show args"}
             </text>
           </box>
           {showArgs && (
-            <text fg={RGBA.fromInts(180, 180, 180, 255)}>
+            <text fg={colors.text}>
               {JSON.stringify(message.args, null, 2)}
             </text>
           )}
@@ -398,12 +398,12 @@ function ToolDetails({ message }: { message: DisplayMessage }) {
           }}
         >
           <box flexDirection="row" alignItems="center" gap={1}>
-            <text fg={RGBA.fromInts(100, 200, 100, 255)}>
+            <text fg={colors.success}>
               {showResult ? "▼ Hide output" : "▶ Show output"}
             </text>
           </box>
           {showResult && (
-            <text fg={RGBA.fromInts(150, 220, 150, 255)}>
+            <text fg={colors.success}>
               {formatResult(message.result)}
             </text>
           )}

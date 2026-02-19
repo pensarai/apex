@@ -63,6 +63,7 @@ export function SpinnerDots({
 
 /** Horizontal line spinner */
 export function SpinnerLine() {
+  const { colors } = useTheme();
   const frames = ["-", "\\", "|", "/"];
   const [frame, setFrame] = useState(0);
 
@@ -73,7 +74,7 @@ export function SpinnerLine() {
     return () => clearInterval(interval);
   }, []);
 
-  return <text fg="magenta" content={`[${frames[frame]}] Processing`} />;
+  return <text fg={colors.accent} content={`[${frames[frame]}] Processing`} />;
 }
 
 /** Circle spinner animation */

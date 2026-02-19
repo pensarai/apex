@@ -132,7 +132,7 @@ export function markdownToStyledText(content: string, colors?: ThemeColors): Sty
         chunks.push({
           __isChunk: true,
           text: "│ ",
-          fg: RGBA.fromInts(150, 150, 150, 255),
+          fg: colors?.textMuted ?? RGBA.fromInts(150, 150, 150, 255),
           attributes: 0,
         });
         if (token.tokens)
