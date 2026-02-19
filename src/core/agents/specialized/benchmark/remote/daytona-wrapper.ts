@@ -142,6 +142,11 @@ async function runSingleBranchBenchmark(
           daytona.create(
             {
               language: "typescript",
+              resources: {
+                cpu: 4,
+                memory: 8,
+                disk: 10,
+              },
               envVars: {
                 ...(anthropicKey && { ANTHROPIC_API_KEY: anthropicKey }),
                 ...(openrouterKey && { OPENROUTER_API_KEY: openrouterKey }),
