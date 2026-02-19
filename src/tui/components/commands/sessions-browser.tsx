@@ -150,7 +150,7 @@ export default function SessionsBrowser() {
       const newIndex =
         selectedIndex > 0 ? selectedIndex - 1 : visualOrderSessions.length - 1;
       setSelectedIndex(newIndex);
-      scrollToIndex(scroll.current, newIndex, visualOrderSessions);
+      scrollToIndex(scroll.current, newIndex, visualOrderSessions, (s) => s.id);
       return;
     }
 
@@ -159,7 +159,7 @@ export default function SessionsBrowser() {
       const newIndex =
         selectedIndex < visualOrderSessions.length - 1 ? selectedIndex + 1 : 0;
       setSelectedIndex(newIndex);
-      scrollToIndex(scroll.current, newIndex, visualOrderSessions);
+      scrollToIndex(scroll.current, newIndex, visualOrderSessions, (s) => s.id);
       return;
     }
   });

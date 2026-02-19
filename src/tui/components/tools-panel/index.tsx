@@ -9,6 +9,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { RGBA, ScrollBoxRenderable } from "@opentui/core";
+import { scrollToIndex } from "../../utils/scroll";
 import {
   ALL_TOOLS,
   getCategoryDisplayName,
@@ -69,33 +70,9 @@ export default function ToolsPanel({
     }
   }, [filteredTools.length, selectedIndex]);
 
-  // Scroll to keep selected item in view (only when out of view)
+  // Scroll to keep selected item in view
   useEffect(() => {
-    if (!scrollboxRef.current || filteredTools.length === 0) return;
-
-    const scroll = scrollboxRef.current;
-    const viewportHeight = scroll.height;
-    const children = scroll.getChildren();
-
-    // Find the selected item element
-    const selectedTool = filteredTools[selectedIndex];
-    if (!selectedTool) return;
-
-    const target = children.find((child) => child.id === selectedTool.id);
-    if (!target) return;
-
-    // Calculate target's visual position relative to the scroll container
-    const targetVisualY = target.y - scroll.y;
-    const targetHeight = target.height || 1;
-
-    // Check if target is below visible area
-    if (targetVisualY + targetHeight > viewportHeight) {
-      scroll.scrollBy(targetVisualY - viewportHeight + targetHeight + 1);
-    }
-    // Check if target is above visible area
-    else if (targetVisualY < 0) {
-      scroll.scrollBy(targetVisualY);
-    }
+    scrollToIndex(scrollboxRef.current, selectedIndex, filteredTools, (t) => t.id);
   }, [selectedIndex, filteredTools]);
 
   // Check if a tool is enabled
