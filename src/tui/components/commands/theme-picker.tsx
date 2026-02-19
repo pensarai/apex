@@ -53,7 +53,7 @@ export default function ThemePicker() {
 
     if (evt.name === "up" || (evt.name === "k" && !evt.ctrl)) {
       setSelectedIndex((prev) => {
-        const next = Math.max(0, prev - 1);
+        const next = prev <= 0 ? availableThemes.length - 1 : prev - 1;
         if (availableThemes[next]) setTheme(availableThemes[next]);
         return next;
       });
@@ -62,7 +62,7 @@ export default function ThemePicker() {
 
     if (evt.name === "down" || (evt.name === "j" && !evt.ctrl)) {
       setSelectedIndex((prev) => {
-        const next = Math.min(availableThemes.length - 1, prev + 1);
+        const next = prev >= availableThemes.length - 1 ? 0 : prev + 1;
         if (availableThemes[next]) setTheme(availableThemes[next]);
         return next;
       });
