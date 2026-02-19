@@ -177,10 +177,72 @@ export async function runSingleBenchmark(
     // Step 3: Start Docker environment
     // -----------------------------------------------------------------------
     console.log(`[${branch}] Starting Docker environment...`);
-    await exec("docker compose up -d --build", {
-      cwd: composeDir,
-      timeout: 300000,
-    });
+    try {
+      // In resource-constrained environments (e.g., Daytona), building all services
+      // in parallel can cause OOM. Try standard build first, fall back to sequential.
+      try {
+        await exec("docker compose up -d --build", {
+          cwd: composeDir,
+          timeout: 300000,
+        });
+      } catch (buildError: unknown) {
+        const err = buildError as { message?: string };
+        // Check if this looks like an OOM error (exit code 137 = SIGKILL)
+        if (err.message?.includes("137") || err.message?.toLowerCase().includes("killed")) {
+          console.log(`[${branch}] Build failed (likely OOM), retrying with sequential build...`);
+
+          // Get list of services
+          const servicesResult = await exec("docker compose config --services", {
+            cwd: composeDir,
+            timeout: 10000,
+          });
+          const services = servicesResult.stdout?.trim().split("\n") || [];
+
+          // Build each service sequentially
+          for (const service of services) {
+            if (service.trim()) {
+              console.log(`[${branch}] Building service: ${service}`);
+              await exec(`docker compose build ${service}`, {
+                cwd: composeDir,
+                timeout: 600000, // 10 minutes per service
+              });
+            }
+          }
+
+          // Start all services
+          console.log(`[${branch}] Starting services...`);
+          await exec("docker compose up -d", {
+            cwd: composeDir,
+            timeout: 120000,
+          });
+        } else {
+          // Different error, re-throw
+          throw buildError;
+        }
+      }
+    } catch (dockerError: unknown) {
+      // Extract detailed error information from docker compose
+      const error = dockerError as { message?: string; stderr?: string; stdout?: string };
+      console.error(`[${branch}] Docker compose failed!`);
+
+      // Try to get docker logs for more context
+      try {
+        const logs = await exec("docker compose logs --tail=50 2>&1", { cwd: composeDir, timeout: 10000 });
+        if (logs.stdout) {
+          console.error(`[${branch}] Container logs: ${logs.stdout.substring(0, 1000)}`);
+        }
+      } catch {
+        // Ignore if logs unavailable
+      }
+
+      if (error.stdout) {
+        console.error(`[${branch}] stdout: ${error.stdout.substring(0, 2000)}`);
+      }
+      if (error.stderr) {
+        console.error(`[${branch}] stderr: ${error.stderr.substring(0, 2000)}`);
+      }
+      throw new Error(`Docker compose failed: ${error.stderr || error.message || "Unknown error"}`);
+    }
 
     // Get actual mapped port (may differ from compose file)
     const actualPort = await getActualDockerPort(
