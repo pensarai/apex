@@ -8,7 +8,8 @@ import { useFocus } from "../../context/focus";
 import { Session } from "../../../core/session";
 import { Storage } from "../../../core/storage";
 import { Dialog } from "../../context/dialog";
-import { Renderable, ScrollBoxRenderable } from "@opentui/core";
+import { ScrollBoxRenderable } from "@opentui/core";
+import { scrollToIndex } from "../../utils/scroll";
 
 interface SessionsDisplayProps {
   onClose: () => void;
@@ -65,57 +66,6 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
         setTimeout(() => setStatusMessage(""), 2000);
       }
     });
-  }
-
-  function scrollToIndex(index: number, list: Session.SessionInfo[]) {
-    if (!scroll.current || list.length === 0) return;
-
-    const targetSession = list[index];
-    if (!targetSession) return;
-
-    // Find the target element by searching through date groups
-    let target: Renderable | undefined;
-    for (const group of scroll.current.getChildren()) {
-      const found = group
-        .getChildren()
-        .find((child) => child.id === targetSession.id);
-      if (found) {
-        target = found;
-        break;
-      }
-    }
-
-    if (!target) return;
-
-    // Calculate target's visual position relative to the scroll container
-    const targetVisualY = target.y - scroll.current.y;
-    const viewportHeight = scroll.current.height;
-    const targetHeight = target.height || 1;
-
-    // If first item, always scroll to top
-    if (index === 0) {
-      scroll.current.scrollTo(0);
-      return;
-    }
-
-    // If last item, scroll to bottom
-    if (index === list.length - 1) {
-      scroll.current.scrollTo(Infinity);
-      return;
-    }
-
-    // Check if target is below visible area (accounting for its height)
-    if (targetVisualY + targetHeight > viewportHeight) {
-      // Scroll down by the amount needed to bring target into view
-      scroll.current.scrollBy(
-        targetVisualY - viewportHeight + targetHeight + 1,
-      );
-    }
-    // Check if target is above visible area
-    else if (targetVisualY < 0) {
-      // Scroll up by the amount needed (targetVisualY is negative)
-      scroll.current.scrollBy(targetVisualY);
-    }
   }
 
   // Filter sessions based on search term
@@ -254,7 +204,7 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
       const newIndex =
         selectedIndex > 0 ? selectedIndex - 1 : visualOrderSessions.length - 1;
       setSelectedIndex(newIndex);
-      scrollToIndex(newIndex, visualOrderSessions);
+      scrollToIndex(scroll.current, newIndex, visualOrderSessions, (s) => s.id);
       return;
     }
 
@@ -263,7 +213,7 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
       const newIndex =
         selectedIndex < visualOrderSessions.length - 1 ? selectedIndex + 1 : 0;
       setSelectedIndex(newIndex);
-      scrollToIndex(newIndex, visualOrderSessions);
+      scrollToIndex(scroll.current, newIndex, visualOrderSessions, (s) => s.id);
       return;
     }
 

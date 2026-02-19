@@ -8,6 +8,7 @@ import { useKeyboard } from "@opentui/react";
 import { exec } from "child_process";
 import { existsSync } from "fs";
 import { RGBA, ScrollBoxRenderable } from "@opentui/core";
+import { scrollToIndex } from "../../utils/scroll";
 import { useRoute } from "../../context/route";
 import { useSession } from "../../context/session";
 import { useFocus } from "../../context/focus";
@@ -146,13 +147,19 @@ export default function SessionsBrowser() {
 
     // Up
     if (key.name === "up" && visualOrderSessions.length > 0) {
-      setSelectedIndex((i) => (i > 0 ? i - 1 : visualOrderSessions.length - 1));
+      const newIndex =
+        selectedIndex > 0 ? selectedIndex - 1 : visualOrderSessions.length - 1;
+      setSelectedIndex(newIndex);
+      scrollToIndex(scroll.current, newIndex, visualOrderSessions, (s) => s.id);
       return;
     }
 
     // Down
     if (key.name === "down" && visualOrderSessions.length > 0) {
-      setSelectedIndex((i) => (i < visualOrderSessions.length - 1 ? i + 1 : 0));
+      const newIndex =
+        selectedIndex < visualOrderSessions.length - 1 ? selectedIndex + 1 : 0;
+      setSelectedIndex(newIndex);
+      scrollToIndex(scroll.current, newIndex, visualOrderSessions, (s) => s.id);
       return;
     }
   });
