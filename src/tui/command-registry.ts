@@ -311,17 +311,15 @@ export const commands: CommandConfig[] = [
     },
   },
 
-  // Add more commands here...
-  // Example:
-  // {
-  //   name: "clear",
-  //   aliases: ["cls"],
-  //   description: "Clear the screen",
-  //   category: "General",
-  //   handler: async (args, ctx) => {
-  //     ctx.clearScreen?.();
-  //   },
-  // },
+  {
+    name: "exit",
+    aliases: ["quit", "q"],
+    description: "Exit the application",
+    category: "General",
+    handler: async () => {
+      process.kill(process.pid, "SIGINT");
+    },
+  },
 ];
 
 /**
