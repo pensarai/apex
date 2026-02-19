@@ -9,7 +9,7 @@ import { RGBA } from "@opentui/core";
 import type { ThemeDefinition } from "../types";
 
 export const oneDark: ThemeDefinition = {
-  name: "one-dark",
+  name: "onedark",
   displayName: "One Dark",
   modes: ["dark", "light"],
   colors: {

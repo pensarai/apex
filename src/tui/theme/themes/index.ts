@@ -20,7 +20,7 @@ import { material } from "./material";
 import { monokai } from "./monokai";
 import { nightfox } from "./nightfox";
 import { nord } from "./nord";
-import { oneDark } from "./one-dark";
+import { oneDark } from "./onedark";
 import { rosePine } from "./rose-pine";
 import { solarized } from "./solarized";
 import { tokyonight } from "./tokyonight";

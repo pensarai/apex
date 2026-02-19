@@ -297,8 +297,9 @@ export const commands: CommandConfig[] = [
     },
   },
   {
-    name: "theme",
-    description: "Manage application theme",
+    name: "themes",
+    aliases: ["theme"],
+    description: "Manage application themes",
     category: "General",
     options: [
       {

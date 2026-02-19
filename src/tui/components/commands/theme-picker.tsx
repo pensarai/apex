@@ -1,5 +1,5 @@
 /**
- * Theme Picker — /theme command
+ * Theme Picker — /themes command
  *
  * Scrollable list of all registered themes with live preview.
  * Navigating applies the theme temporarily; Enter confirms and persists.
@@ -114,7 +114,7 @@ export default function ThemePicker() {
       >
         {/* Header */}
         <box width="100%" paddingLeft={1} paddingRight={1} flexDirection="row" justifyContent="space-between">
-          <text fg={colors.primary}>Theme</text>
+          <text fg={colors.primary}>Themes</text>
           <text fg={colors.textMuted}>
             mode: {mode}
           </text>
