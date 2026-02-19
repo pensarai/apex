@@ -19,7 +19,8 @@ export type RoutePath =
   | "models"
   | "providers"
   | "disclosure"
-  | "sessions";
+  | "sessions"
+  | "theme";
 
 export interface WebCommandOptions {
   auto?: boolean;

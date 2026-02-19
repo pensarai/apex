@@ -27,13 +27,20 @@ import ShortcutsDialog from "./components/commands/shortcuts-dialog";
 import HelpDialog from "./components/commands/help-dialog";
 import ModelsDisplay from "./components/commands/models-display";
 import { KeybindingProvider } from "./context/keybinding";
+import ThemePicker from "./components/commands/theme-picker";
+import { ThemeProvider, registerTheme, type ColorMode } from "./theme";
+import { apex } from "./theme/themes/apex";
+import { detectTerminalMode } from "./theme/detect-mode";
+import { loadCustomThemes } from "./theme/loader";
 
 interface AppProps {
   appConfig: Config;
+  initialTheme: string;
+  initialMode: ColorMode;
 }
 
 function App(props: AppProps) {
-  const { appConfig } = props;
+  const { appConfig, initialTheme, initialMode } = props;
   const [focusIndex, setFocusIndex] = useState(0);
   const [cwd, setCwd] = useState(process.cwd());
   const [ctrlCPressTime, setCtrlCPressTime] = useState<number | null>(null);
@@ -45,6 +52,7 @@ function App(props: AppProps) {
   const navigableItems = ["command-input"]; // List of items that can be focused
 
   return (
+    <ThemeProvider initialTheme={initialTheme} initialMode={initialMode}>
     <ConfigProvider config={appConfig}>
       <SessionProvider>
         <RouteProvider>
@@ -87,6 +95,7 @@ function App(props: AppProps) {
         </RouteProvider>
       </SessionProvider>
     </ConfigProvider>
+    </ThemeProvider>
   );
 }
 
@@ -289,6 +298,9 @@ function CommandDisplay({
           <RouteSwitch.Case when="sessions">
             <SessionsBrowser />
           </RouteSwitch.Case>
+          <RouteSwitch.Case when="theme">
+            <ThemePicker />
+          </RouteSwitch.Case>
           <RouteSwitch.Case when="help">
             <HelpDialog />
           </RouteSwitch.Case>
@@ -316,6 +328,22 @@ function CommandDisplay({
 
 async function main() {
   const appConfig = await config.get();
+
+  // Register built-in themes
+  registerTheme(apex);
+
+  // Load custom themes from ~/.pensar/themes/
+  await loadCustomThemes();
+
+  // Resolve theme and mode from config
+  const themeName = appConfig.theme ?? "apex";
+  let mode: ColorMode;
+  if (appConfig.themeMode === "dark" || appConfig.themeMode === "light") {
+    mode = appConfig.themeMode;
+  } else {
+    mode = await detectTerminalMode();
+  }
+
   const renderer = await createCliRenderer({ exitOnCtrlC: false });
 
   // Graceful shutdown handler
@@ -341,7 +369,9 @@ async function main() {
     process.exit(1);
   });
 
-  createRoot(renderer).render(<App appConfig={appConfig} />);
+  createRoot(renderer).render(
+    <App appConfig={appConfig} initialTheme={themeName} initialMode={mode} />,
+  );
 }
 
 main();
