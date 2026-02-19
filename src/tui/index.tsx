@@ -28,8 +28,8 @@ import HelpDialog from "./components/commands/help-dialog";
 import ModelsDisplay from "./components/commands/models-display";
 import { KeybindingProvider } from "./context/keybinding";
 import ThemePicker from "./components/commands/theme-picker";
-import { ThemeProvider, registerTheme, type ColorMode } from "./theme";
-import { apex } from "./theme/themes/apex";
+import { ThemeProvider, useTheme, type ColorMode } from "./theme";
+import { registerBuiltinThemes } from "./theme/themes";
 import { detectTerminalMode } from "./theme/detect-mode";
 import { loadCustomThemes } from "./theme/loader";
 
@@ -126,6 +126,7 @@ function AppContent({
 }) {
   const route = useRoute();
   const config = useConfig();
+  const { colors } = useTheme();
 
   const { refocusPrompt } = useFocus();
   const { setExternalDialogOpen } = useDialog();
@@ -191,7 +192,7 @@ function AppContent({
       width="100%"
       maxHeight="100%"
       overflow="hidden"
-      backgroundColor={"transparent"}
+      backgroundColor={colors.background}
     >
       <CommandDisplay focusIndex={focusIndex} inputKey={inputKey} />
 
@@ -223,6 +224,7 @@ function CommandDisplay({
 }) {
   const route = useRoute();
   const config = useConfig();
+  const { colors } = useTheme();
 
   const handleAcceptPolicy = async () => {
     await config.update({ responsibleUseAccepted: true });
@@ -245,7 +247,7 @@ function CommandDisplay({
         flexShrink={1}
         overflow="hidden"
         gap={2}
-        backgroundColor={"transparent"}
+        backgroundColor={colors.background}
       >
         {/* routes to have: home (chat), responsible use, session, global config route */}
         {/* when user either runs command or simply enters message: extract args etc, create session with related config, route to session */}
@@ -330,7 +332,7 @@ async function main() {
   const appConfig = await config.get();
 
   // Register built-in themes
-  registerTheme(apex);
+  registerBuiltinThemes();
 
   // Load custom themes from ~/.pensar/themes/
   await loadCustomThemes();
