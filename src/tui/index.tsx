@@ -31,7 +31,6 @@ import ThemePicker from "./components/commands/theme-picker";
 import { ThemeProvider, useTheme, type ColorMode } from "./theme";
 import { registerBuiltinThemes } from "./theme/themes";
 import { detectTerminalMode } from "./theme/detect-mode";
-import { loadCustomThemes } from "./theme/loader";
 
 interface AppProps {
   appConfig: Config;
@@ -333,9 +332,6 @@ async function main() {
 
   // Register built-in themes
   registerBuiltinThemes();
-
-  // Load custom themes from ~/.pensar/themes/
-  await loadCustomThemes();
 
   // Resolve theme and mode from config
   const themeName = appConfig.theme ?? "apex";
