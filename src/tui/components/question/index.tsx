@@ -336,7 +336,7 @@ function TextInput({
         onInput={(v) => onChange(v)}
         placeholder={placeholder || "Enter text..."}
         focused={focused}
-        textColor="white"
+        textColor={colors.text}
         backgroundColor="transparent"
       />
     </box>
@@ -364,7 +364,7 @@ function PasswordInput({
         onInput={(v) => onChange(v)}
         placeholder={placeholder || "Enter password..."}
         focused={focused}
-        textColor="white"
+        textColor={colors.text}
         backgroundColor="transparent"
       />
     </box>

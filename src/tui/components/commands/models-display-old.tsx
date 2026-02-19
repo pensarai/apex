@@ -1,5 +1,4 @@
 import { useKeyboard } from "@opentui/react";
-import { RGBA } from "@opentui/core";
 import { type ModelInfo } from "../../../core/ai";
 import { useAgent } from "../../context/agent";
 import { useEffect, useState } from "react";
@@ -100,7 +99,7 @@ export default function ModelsDisplay() {
       alignItems="center"
       justifyContent="center"
       flexDirection="column"
-      backgroundColor={RGBA.fromInts(0, 0, 0, 100)}
+      backgroundColor={colors.backgroundOverlay}
       width="100%"
       maxHeight="100%"
       flexGrow={1}
@@ -166,7 +165,7 @@ export default function ModelsDisplay() {
             scrollbarOptions: {
               trackOptions: {
                 foregroundColor: colors.primary,
-                backgroundColor: RGBA.fromInts(40, 40, 40, 255),
+                backgroundColor: colors.backgroundElement,
               },
             },
           }}

@@ -152,7 +152,7 @@ export function ApprovalInputArea({
           }}
           focused={focusedElement === 2}
           placeholder="Tell the agent something else..."
-          textColor="white"
+          textColor={colors.text}
           backgroundColor="transparent"
         />
       </box>

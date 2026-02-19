@@ -6,7 +6,6 @@
  */
 
 import { useState, useCallback, useEffect } from "react";
-import { RGBA } from "@opentui/core";
 import { useKeyboard } from "@opentui/react";
 import { ModelPicker } from "../model-picker/ModelPicker";
 import type { ModelInfo } from "../../../core/ai";
@@ -155,7 +154,7 @@ export function ConfigView({ config, onBack, onStart }: ConfigViewProps) {
             onInput={setTargetUrl}
             focused={focusedField === "url"}
             placeholder="https://example.com"
-            textColor="white"
+            textColor={colors.text}
             backgroundColor="transparent"
           />
         </box>
@@ -233,7 +232,7 @@ export function ConfigView({ config, onBack, onStart }: ConfigViewProps) {
       {/* Validation hint */}
       {!isValid && targetUrl.length > 8 && (
         <box marginTop={1}>
-          <text fg={RGBA.fromInts(244, 67, 54, 255)}>
+          <text fg={colors.error}>
             Please enter a valid URL (https://...)
           </text>
         </box>

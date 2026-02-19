@@ -114,7 +114,7 @@ function NormalInputAreaInner({
           width="100%"
           minHeight={1}
           maxHeight={3}
-          textColor="white"
+          textColor={colors.text}
           focused={focused && !isDisabled}
           placeholder={isDisabled ? "Processing..." : placeholder}
           onSubmit={handleSubmit}
@@ -314,7 +314,7 @@ function ApprovalInputArea({
           }}
           focused={focusedElement === 2}
           placeholder="Or type to redirect agent..."
-          textColor="white"
+          textColor={colors.text}
           backgroundColor="transparent"
         />
       </box>

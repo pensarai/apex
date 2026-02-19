@@ -67,7 +67,7 @@ export default function AlertDialog({
         maxWidth={dimensions.width - 2}
         border={true}
         borderColor={colors.primary}
-        backgroundColor="black"
+        backgroundColor={colors.backgroundPanel}
         flexDirection="column"
         padding={1}
         paddingTop={1}

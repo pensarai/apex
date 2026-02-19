@@ -1,5 +1,4 @@
 import { useKeyboard } from "@opentui/react";
-import { RGBA } from "@opentui/core";
 import { useState } from "react";
 import Input from "../input";
 import { type ProviderType } from "../../../core/providers";
@@ -54,13 +53,13 @@ export default function APIKeyInput({
       height="100%"
       justifyContent="center"
       alignItems="center"
-      backgroundColor={RGBA.fromInts(0, 0, 0, 200)}
+      backgroundColor={colors.backgroundOverlay}
     >
       <box
         width={70}
         border={true}
         borderColor={colors.primary}
-        backgroundColor="black"
+        backgroundColor={colors.backgroundPanel}
         flexDirection="column"
         padding={2}
       >

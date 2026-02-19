@@ -7,7 +7,7 @@ import {
   useMemo,
 } from "react";
 import { useKeyboard } from "@opentui/react";
-import type { TextareaRenderable } from "@opentui/core";
+import type { TextareaRenderable, RGBA } from "@opentui/core";
 import { useTheme } from "../../theme";
 import { useInput } from "../../context/input";
 import { useFocus } from "../../context/focus";
@@ -45,8 +45,8 @@ interface PromptInputProps {
   maxHeight?: number;
   focused?: boolean;
   placeholder?: string;
-  textColor?: string;
-  focusedTextColor?: string;
+  textColor?: string | RGBA;
+  focusedTextColor?: string | RGBA;
   backgroundColor?: string;
   focusedBackgroundColor?: string;
   cursorColor?: string;

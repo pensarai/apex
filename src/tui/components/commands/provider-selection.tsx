@@ -1,5 +1,4 @@
 import { useKeyboard } from "@opentui/react";
-import { RGBA } from "@opentui/core";
 import { useState } from "react";
 import { useRoute } from "../../context/route";
 import { useConfig } from "../../context/config";
@@ -76,7 +75,7 @@ export default function ProviderSelection({
         maxHeight="80%"
         border={true}
         borderColor={colors.primary}
-        backgroundColor="black"
+        backgroundColor={colors.backgroundPanel}
         flexDirection="column"
         padding={2}
       >
@@ -109,7 +108,7 @@ export default function ProviderSelection({
             scrollbarOptions: {
               trackOptions: {
                 foregroundColor: colors.primary,
-                backgroundColor: RGBA.fromInts(40, 40, 40, 255),
+                backgroundColor: colors.backgroundElement,
               },
             },
           }}
@@ -133,7 +132,7 @@ export default function ProviderSelection({
                 paddingLeft={1}
                 paddingRight={1}
                 backgroundColor={
-                  isHighlighted ? RGBA.fromInts(0, 80, 0, 100) : undefined
+                  isHighlighted ? colors.backgroundSelected : undefined
                 }
                 onMouseDown={() => onProviderSelected(provider.id)}
               >

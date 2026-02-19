@@ -99,8 +99,8 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
           maxHeight={4}
           onSubmit={handleSubmit}
           placeholder="Type a command or message..."
-          textColor="white"
-          focusedTextColor="white"
+          textColor={colors.text}
+          focusedTextColor={colors.text}
           backgroundColor="transparent"
           focusedBackgroundColor="transparent"
           enableAutocomplete={true}
