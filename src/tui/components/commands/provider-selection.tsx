@@ -136,7 +136,10 @@ export default function ProviderSelection({
                 }
                 onMouseDown={() => onProviderSelected(provider.id)}
               >
-                <text fg={isHighlighted ? colors.primary : colors.text} flexGrow={1}>
+                <text
+                  fg={isHighlighted ? colors.primary : colors.text}
+                  flexGrow={1}
+                >
                   {provider.name}{" "}
                   {provider.description ? (
                     <span fg={colors.textMuted}>({provider.description})</span>

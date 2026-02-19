@@ -397,8 +397,9 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
         {visualOrderSessions.length > 0 && (
           <box flexDirection="row" gap={2}>
             <text fg={colors.textMuted}>
-              <span fg={colors.primary}>[Enter]</span> Open · <span fg={colors.primary}>[R]</span>{" "}
-              Report · <span fg={colors.primary}>[Ctrl+D]</span> Delete
+              <span fg={colors.primary}>[Enter]</span> Open ·{" "}
+              <span fg={colors.primary}>[R]</span> Report ·{" "}
+              <span fg={colors.primary}>[Ctrl+D]</span> Delete
             </text>
           </box>
         )}

@@ -61,7 +61,9 @@ export default function EndpointSidebar({
         ))}
       </scrollbox>
 
-      {endpoints.length > 0 && <text fg={colors.textMuted}>[Enter] to spawn agent</text>}
+      {endpoints.length > 0 && (
+        <text fg={colors.textMuted}>[Enter] to spawn agent</text>
+      )}
     </box>
   );
 }

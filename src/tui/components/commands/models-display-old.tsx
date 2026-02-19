@@ -189,7 +189,13 @@ export default function ModelsDisplay() {
                 }}
               >
                 <text
-                  fg={isHighlighted ? colors.primary : isSelected ? colors.text : colors.textMuted}
+                  fg={
+                    isHighlighted
+                      ? colors.primary
+                      : isSelected
+                        ? colors.text
+                        : colors.textMuted
+                  }
                 >
                   {isHighlighted ? "▶ " : "  "}
                   {model.name}

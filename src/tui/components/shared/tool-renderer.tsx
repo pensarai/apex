@@ -93,11 +93,7 @@ export const ToolRenderer = memo(function ToolRenderer({
               >
                 {resultDisplay.isError ? "✗" : "→"}
               </text>
-              <text
-                fg={
-                  resultDisplay.isError ? colors.error : colors.text
-                }
-              >
+              <text fg={resultDisplay.isError ? colors.error : colors.text}>
                 {resultDisplay.text}
               </text>
             </box>

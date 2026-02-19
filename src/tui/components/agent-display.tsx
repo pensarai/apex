@@ -226,7 +226,9 @@ const AgentMessage = memo(function AgentMessage({
 
   // Render markdown for assistant messages
   const displayContent =
-    message.role === "assistant" ? markdownToStyledText(content, colors) : content;
+    message.role === "assistant"
+      ? markdownToStyledText(content, colors)
+      : content;
 
   // Check if this is a pending tool message
   const isPendingTool = message.role === "tool" && message.status === "pending";
@@ -283,10 +285,7 @@ const AgentMessage = memo(function AgentMessage({
               />
               {/* Args preview for pending tools */}
               {argsPreview && (
-                <text
-                  fg={colors.textMuted}
-                  content={`  ${argsPreview}`}
-                />
+                <text fg={colors.textMuted} content={`  ${argsPreview}`} />
               )}
               {/* Streaming logs for pending tools */}
               {streamingLogs.length > 0 && (
@@ -317,10 +316,7 @@ const AgentMessage = memo(function AgentMessage({
               )}
               {/* Args preview for completed tools */}
               {message.role === "tool" && argsPreview && (
-                <text
-                  fg={colors.textMuted}
-                  content={`  ${argsPreview}`}
-                />
+                <text fg={colors.textMuted} content={`  ${argsPreview}`} />
               )}
             </>
           )}
@@ -403,9 +399,7 @@ function ToolDetails({ message }: { message: DisplayMessage }) {
             </text>
           </box>
           {showResult && (
-            <text fg={colors.success}>
-              {formatResult(message.result)}
-            </text>
+            <text fg={colors.success}>{formatResult(message.result)}</text>
           )}
         </box>
       )}

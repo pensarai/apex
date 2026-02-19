@@ -28,7 +28,10 @@ import type { ThemeColors } from "../../theme";
  * - Blockquotes (>)
  * - Paragraphs
  */
-export function markdownToStyledText(content: string, colors?: ThemeColors): StyledText {
+export function markdownToStyledText(
+  content: string,
+  colors?: ThemeColors,
+): StyledText {
   // Resolve colors with fallbacks for backwards compatibility
   const codeColor = colors?.markdownCode ?? RGBA.fromInts(100, 255, 100, 255);
   const linkColor = colors?.markdownLink ?? RGBA.fromInts(100, 200, 255, 255);

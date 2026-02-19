@@ -24,7 +24,9 @@ export function AttackSurfacePanel({
     <box flexDirection="column" gap={1}>
       <text fg={colors.text}>
         Attack Surface{" "}
-        {endpoints.length > 0 && <span fg={colors.textMuted}>({endpoints.length})</span>}
+        {endpoints.length > 0 && (
+          <span fg={colors.textMuted}>({endpoints.length})</span>
+        )}
       </text>
 
       {endpoints.length === 0 ? (
@@ -38,7 +40,9 @@ export function AttackSurfacePanel({
                 {getStatusMarker(ep.status)}
               </text>
               {/* Method */}
-              <text fg={getMethodColor(colors, ep.method)}>{ep.method.padEnd(4)}</text>
+              <text fg={getMethodColor(colors, ep.method)}>
+                {ep.method.padEnd(4)}
+              </text>
               {/* Path */}
               <text fg={colors.textMuted}>{truncatePath(ep.path, 14)}</text>
               {/* Vuln type if confirmed */}
@@ -46,10 +50,14 @@ export function AttackSurfacePanel({
                 <text fg={colors.primary}>{ep.vulnType}</text>
               )}
               {/* Show "clean" text if clean */}
-              {ep.status === "clean" && <text fg={colors.textMuted}>clean</text>}
+              {ep.status === "clean" && (
+                <text fg={colors.textMuted}>clean</text>
+              )}
             </box>
           ))}
-          {remaining > 0 && <text fg={colors.textMuted}>... +{remaining} more</text>}
+          {remaining > 0 && (
+            <text fg={colors.textMuted}>... +{remaining} more</text>
+          )}
         </>
       )}
     </box>

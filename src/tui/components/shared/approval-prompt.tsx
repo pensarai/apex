@@ -161,13 +161,19 @@ export function ApprovalInputArea({
       {/* Last decline note */}
       {lastDeclineNote && (
         <box marginTop={1} marginLeft={2}>
-          <text fg={colors.textMuted} content={`Declined: ${lastDeclineNote}`} />
+          <text
+            fg={colors.textMuted}
+            content={`Declined: ${lastDeclineNote}`}
+          />
         </box>
       )}
 
       {/* Shortcuts hint */}
       <box flexDirection="row" gap={2} marginTop={1}>
-        <text fg={colors.textMuted} content="Y approve | A auto | Enter select" />
+        <text
+          fg={colors.textMuted}
+          content="Y approve | A auto | Enter select"
+        />
       </box>
     </box>
   );

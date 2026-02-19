@@ -12,9 +12,7 @@ import type { ColorMode } from "./types";
  * Returns "dark" or "light" based on luminance calculation.
  * Falls back to "dark" if detection fails or times out.
  */
-export async function detectTerminalMode(
-  timeoutMs = 1000,
-): Promise<ColorMode> {
+export async function detectTerminalMode(timeoutMs = 1000): Promise<ColorMode> {
   if (!process.stdin.isTTY) return "dark";
 
   return new Promise<ColorMode>((resolve) => {

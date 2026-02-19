@@ -91,7 +91,9 @@ export function AgentStatus() {
       {hasExecuted && (
         <>
           <box border={["right"]} borderColor={colors.primary} />
-          <text fg={colors.text}>{`↓${formatTokenCount(tokenUsage.inputTokens)} ↑${formatTokenCount(tokenUsage.outputTokens)} Σ${formatTokenCount(tokenUsage.totalTokens)}`}</text>
+          <text
+            fg={colors.text}
+          >{`↓${formatTokenCount(tokenUsage.inputTokens)} ↑${formatTokenCount(tokenUsage.outputTokens)} Σ${formatTokenCount(tokenUsage.totalTokens)}`}</text>
         </>
       )}
       {thinking && (

@@ -128,7 +128,10 @@ export function MessageList({
             </box>
             <box flexDirection="row">
               <text fg={colors.primary}>Shift+Tab</text>
-              <text fg={colors.textMuted}> - Cycle modes (plan/manual/auto)</text>
+              <text fg={colors.textMuted}>
+                {" "}
+                - Cycle modes (plan/manual/auto)
+              </text>
             </box>
             <box flexDirection="row">
               <text fg={colors.primary}>Ctrl+S</text>
@@ -149,7 +152,10 @@ export function MessageList({
             <text fg={colors.text}>Tips:</text>
             <box flexDirection="row">
               <text fg={colors.primary}>/config</text>
-              <text fg={colors.textMuted}> - Configure target and settings</text>
+              <text fg={colors.textMuted}>
+                {" "}
+                - Configure target and settings
+              </text>
             </box>
             <box flexDirection="row">
               <text fg={colors.primary}>Ctrl+B</text>

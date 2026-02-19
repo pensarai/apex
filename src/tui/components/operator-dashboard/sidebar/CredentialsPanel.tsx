@@ -48,11 +48,16 @@ export function CredentialsPanel({
               </box>
               {/* Source on next line if active */}
               {cred.isActive && cred.source && (
-                <text fg={colors.textMuted}> from: {truncate(cred.source, 18)}</text>
+                <text fg={colors.textMuted}>
+                  {" "}
+                  from: {truncate(cred.source, 18)}
+                </text>
               )}
             </box>
           ))}
-          {remaining > 0 && <text fg={colors.textMuted}>... +{remaining} more</text>}
+          {remaining > 0 && (
+            <text fg={colors.textMuted}>... +{remaining} more</text>
+          )}
         </>
       )}
     </box>

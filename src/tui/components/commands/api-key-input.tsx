@@ -104,8 +104,8 @@ export default function APIKeyInput({
         {/* Footer help text */}
         <box marginTop={1}>
           <text fg={colors.textMuted}>
-            <span fg={colors.primary}>[ENTER]</span> Save · <span fg={colors.primary}>[ESC]</span>{" "}
-            Cancel
+            <span fg={colors.primary}>[ENTER]</span> Save ·{" "}
+            <span fg={colors.primary}>[ESC]</span> Cancel
           </text>
         </box>
       </box>

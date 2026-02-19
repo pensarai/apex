@@ -484,7 +484,9 @@ export default function HITLWizard(props: HITLWizardProps) {
         <text fg={actualField === 0 ? colors.primary : colors.textMuted}>
           {actualField === 0 ? "▸" : " "}
         </text>
-        <text fg={actualField === 0 ? colors.text : colors.textMuted}>Mode:</text>
+        <text fg={actualField === 0 ? colors.text : colors.textMuted}>
+          Mode:
+        </text>
         <text fg={modeColor}>{modeDef.name}</text>
         <text fg={colors.textMuted}>- {modeDef.description}</text>
         {actualField === 0 && <text fg={colors.textMuted}>(←/→)</text>}
@@ -502,7 +504,9 @@ export default function HITLWizard(props: HITLWizardProps) {
           <text fg={colors.primary}>
             T{state.autoApproveTier} - {tierDef.name}
           </text>
-          <text fg={colors.textMuted}>({tierDef.examples.slice(0, 2).join(", ")})</text>
+          <text fg={colors.textMuted}>
+            ({tierDef.examples.slice(0, 2).join(", ")})
+          </text>
           {actualField === 1 && <text fg={colors.textMuted}>(←/→)</text>}
         </box>
       )}
@@ -512,7 +516,9 @@ export default function HITLWizard(props: HITLWizardProps) {
         <text fg={actualField === 2 ? colors.primary : colors.textMuted}>
           {actualField === 2 ? "▸" : " "}
         </text>
-        <text fg={actualField === 2 ? colors.text : colors.textMuted}>Add host:</text>
+        <text fg={actualField === 2 ? colors.text : colors.textMuted}>
+          Add host:
+        </text>
         {actualField === 2 ? (
           <input
             width={30}
@@ -547,7 +553,9 @@ export default function HITLWizard(props: HITLWizardProps) {
         <text fg={actualField === 3 ? colors.primary : colors.textMuted}>
           {actualField === 3 ? "▸" : " "}
         </text>
-        <text fg={actualField === 3 ? colors.text : colors.textMuted}>Strict scope:</text>
+        <text fg={actualField === 3 ? colors.text : colors.textMuted}>
+          Strict scope:
+        </text>
         <text fg={state.scope.strictScope ? colors.primary : colors.textMuted}>
           {state.scope.strictScope ? "Enabled" : "Disabled"}
         </text>
@@ -559,7 +567,9 @@ export default function HITLWizard(props: HITLWizardProps) {
         <text fg={actualField === 4 ? colors.primary : colors.textMuted}>
           {actualField === 4 ? "▸" : " "}
         </text>
-        <text fg={actualField === 4 ? colors.text : colors.textMuted}>Model:</text>
+        <text fg={actualField === 4 ? colors.text : colors.textMuted}>
+          Model:
+        </text>
         <text fg={colors.primary}>{model.name}</text>
         {actualField === 4 && <text fg={colors.textMuted}>(←/→)</text>}
       </box>
@@ -572,7 +582,9 @@ export default function HITLWizard(props: HITLWizardProps) {
         <text fg={actualField === 5 ? colors.primary : colors.textMuted}>
           {actualField === 5 ? "[" : " "}
         </text>
-        <text fg={actualField === 5 ? colors.text : colors.textMuted}>Start Session</text>
+        <text fg={actualField === 5 ? colors.text : colors.textMuted}>
+          Start Session
+        </text>
         <text fg={actualField === 5 ? colors.primary : colors.textMuted}>
           {actualField === 5 ? "]" : " "}
         </text>

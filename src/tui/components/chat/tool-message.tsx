@@ -121,14 +121,10 @@ export const ToolMessage = memo(function ToolMessage({
         <box flexDirection="column" marginLeft={2}>
           {/* Summary line - always visible */}
           <box flexDirection="row" gap={1}>
-            <text
-              fg={resultDisplay.isError ? colors.error : colors.textMuted}
-            >
+            <text fg={resultDisplay.isError ? colors.error : colors.textMuted}>
               {resultDisplay.isError ? "✗" : "→"}
             </text>
-            <text
-              fg={resultDisplay.isError ? colors.error : colors.text}
-            >
+            <text fg={resultDisplay.isError ? colors.error : colors.text}>
               {resultDisplay.text}
             </text>
           </box>

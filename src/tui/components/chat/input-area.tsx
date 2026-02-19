@@ -129,12 +129,8 @@ function NormalInputAreaInner({
           marginTop={1}
           backgroundColor="transparent"
         >
-          {operatorMode === "plan" && (
-            <text fg={colors.warning}>{"PLAN"}</text>
-          )}
-          {operatorMode === "auto" && (
-            <text fg={colors.primary}>{"AUTO"}</text>
-          )}
+          {operatorMode === "plan" && <text fg={colors.warning}>{"PLAN"}</text>}
+          {operatorMode === "auto" && <text fg={colors.primary}>{"AUTO"}</text>}
           {operatorMode === "manual" && (
             <text fg={colors.textMuted}>{"MANUAL"}</text>
           )}
@@ -144,7 +140,9 @@ function NormalInputAreaInner({
           <text fg={expandedLogs ? colors.primary : colors.textMuted}>
             {expandedLogs ? "logs:full" : "logs"}
           </text>
-          <text fg={colors.textMuted}>^C {value.trim() ? "clear" : "stop"}</text>
+          <text fg={colors.textMuted}>
+            ^C {value.trim() ? "clear" : "stop"}
+          </text>
           <text fg={colors.textMuted}>ESC quit</text>
         </box>
       )}
@@ -157,7 +155,9 @@ function NormalInputAreaInner({
           marginTop={1}
           backgroundColor="transparent"
         >
-          <text fg={colors.textMuted}>^C {value.trim() ? "clear" : "stop"}</text>
+          <text fg={colors.textMuted}>
+            ^C {value.trim() ? "clear" : "stop"}
+          </text>
           <text fg={colors.textMuted}>^B sidebar</text>
           <text fg={colors.textMuted}>ESC quit</text>
         </box>
@@ -323,13 +323,19 @@ function ApprovalInputArea({
       {/* Last decline note */}
       {lastDeclineNote && (
         <box marginTop={1} marginLeft={2}>
-          <text fg={colors.textMuted} content={`Declined: ${lastDeclineNote}`} />
+          <text
+            fg={colors.textMuted}
+            content={`Declined: ${lastDeclineNote}`}
+          />
         </box>
       )}
 
       {/* Shortcuts hint */}
       <box flexDirection="row" gap={2} marginTop={1}>
-        <text fg={colors.textMuted} content="Y approve | A auto | Enter select" />
+        <text
+          fg={colors.textMuted}
+          content="Y approve | A auto | Enter select"
+        />
       </box>
     </box>
   );

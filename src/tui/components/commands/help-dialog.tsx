@@ -8,7 +8,7 @@
 
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
-import { RGBA, ScrollBoxRenderable } from "@opentui/core";
+import { ScrollBoxRenderable } from "@opentui/core";
 import { useCommand } from "../../context/command";
 import { useRoute } from "../../context/route";
 import type { CommandConfig } from "../../command-registry";
@@ -290,13 +290,19 @@ export default function HelpDialog() {
                 key={cmd.name}
                 id={cmd.name}
                 width="100%"
-                backgroundColor={isSelected ? colors.backgroundSelected : undefined}
+                backgroundColor={
+                  isSelected ? colors.backgroundSelected : undefined
+                }
                 flexDirection="row"
                 paddingLeft={1}
               >
-                <text fg={isSelected ? colors.primary : colors.text}>{name}</text>
+                <text fg={isSelected ? colors.primary : colors.text}>
+                  {name}
+                </text>
                 <text fg={colors.textMuted}>{category}</text>
-                <text fg={isSelected ? colors.text : colors.textMuted}>{desc}</text>
+                <text fg={isSelected ? colors.text : colors.textMuted}>
+                  {desc}
+                </text>
                 {hasOptions && <text fg={colors.primary}>{optionHint}</text>}
               </box>
             );
@@ -310,7 +316,9 @@ export default function HelpDialog() {
 
         {/* Footer */}
         <box width="100%" padding={1} flexDirection="row">
-          <text fg={colors.textMuted}>[j/k] navigate [enter/v] details [esc] close</text>
+          <text fg={colors.textMuted}>
+            [j/k] navigate [enter/v] details [esc] close
+          </text>
         </box>
       </box>
     </box>

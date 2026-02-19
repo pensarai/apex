@@ -44,7 +44,9 @@ export const MessageRenderer = memo(function MessageRenderer({
   // Memoize markdown conversion for assistant messages
   const displayContent = useMemo(
     () =>
-      message.role === "assistant" ? markdownToStyledText(content, colors) : content,
+      message.role === "assistant"
+        ? markdownToStyledText(content, colors)
+        : content,
     [content, message.role, colors],
   );
 

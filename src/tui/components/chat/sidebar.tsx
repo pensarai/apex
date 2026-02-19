@@ -156,9 +156,7 @@ function AttackSurfacePanel({
                 <text fg={color}>{icon}</text>
                 <text fg={colors.textMuted}>{ep.method}</text>
                 <text fg={colors.text}>{ep.path}</text>
-                {ep.vulnType && (
-                  <text fg={colors.error}>({ep.vulnType})</text>
-                )}
+                {ep.vulnType && <text fg={colors.error}>({ep.vulnType})</text>}
               </box>
             );
           })}

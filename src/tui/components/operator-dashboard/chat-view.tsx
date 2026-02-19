@@ -71,7 +71,10 @@ export function ChatView({
             </box>
             <box flexDirection="row">
               <text fg={colors.primary}>Shift+Tab</text>
-              <text fg={colors.textMuted}> - Cycle modes (plan/manual/auto)</text>
+              <text fg={colors.textMuted}>
+                {" "}
+                - Cycle modes (plan/manual/auto)
+              </text>
             </box>
             <box flexDirection="row">
               <text fg={colors.primary}>Ctrl+S</text>

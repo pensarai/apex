@@ -293,7 +293,10 @@ export function ModelPicker({
                   const isDefault =
                     m.id === "claude-haiku-4-5" || m.id === "gpt-4o-mini";
                   return (
-                    <text key={m.id} fg={isFocused ? colors.primary : colors.textMuted}>
+                    <text
+                      key={m.id}
+                      fg={isFocused ? colors.primary : colors.textMuted}
+                    >
                       {isSelected ? "●" : "○"} {m.name}
                       {isDefault && !isModelUserSelected && isSelected
                         ? " [default]"

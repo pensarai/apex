@@ -36,17 +36,24 @@ export function VerifiedVulnsPanel({
               <text fg={getSeverityColor(colors, v.severity)}>
                 {(v.type || "FINDING").toUpperCase()}
               </text>
-              <text fg={colors.textMuted}>{truncatePath(v.endpoint || "", 14)}</text>
+              <text fg={colors.textMuted}>
+                {truncatePath(v.endpoint || "", 14)}
+              </text>
             </box>
           ))}
-          {remaining > 0 && <text fg={colors.textMuted}>... +{remaining} more</text>}
+          {remaining > 0 && (
+            <text fg={colors.textMuted}>... +{remaining} more</text>
+          )}
         </>
       )}
     </box>
   );
 }
 
-function getSeverityColor(colors: ThemeColors, severity: VerifiedVuln["severity"]): RGBA {
+function getSeverityColor(
+  colors: ThemeColors,
+  severity: VerifiedVuln["severity"],
+): RGBA {
   switch (severity) {
     case "critical":
       return colors.error;

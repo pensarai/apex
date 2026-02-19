@@ -22,10 +22,7 @@ interface AsciiSpinnerProps {
 /**
  * Animated ASCII spinner for pending operations.
  */
-export function AsciiSpinner({
-  label,
-  fg,
-}: AsciiSpinnerProps) {
+export function AsciiSpinner({ label, fg }: AsciiSpinnerProps) {
   const { colors } = useTheme();
   const spinnerColor = fg ?? colors.info;
   const [frame, setFrame] = useState(0);
@@ -37,7 +34,9 @@ export function AsciiSpinner({
     return () => clearInterval(interval);
   }, []);
 
-  return <text fg={spinnerColor} content={`${SPINNER_FRAMES[frame]} ${label}`} />;
+  return (
+    <text fg={spinnerColor} content={`${SPINNER_FRAMES[frame]} ${label}`} />
+  );
 }
 
 export default AsciiSpinner;

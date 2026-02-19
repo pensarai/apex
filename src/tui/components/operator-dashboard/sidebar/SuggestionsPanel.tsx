@@ -27,7 +27,9 @@ export function SuggestionsPanel({ suggestions }: SuggestionsPanelProps) {
               <text fg={colors.textMuted}>{truncateLabel(s.label, 22)}</text>
             </box>
           ))}
-          <text fg={colors.textMuted}>Press 1-{suggestions.length} to select</text>
+          <text fg={colors.textMuted}>
+            Press 1-{suggestions.length} to select
+          </text>
         </>
       )}
     </box>

@@ -106,7 +106,12 @@ export function SpinnerBraille({ label }: { label?: string }) {
     return () => clearInterval(interval);
   }, []);
 
-  return <text fg={colors.primary} content={`${frames[frame]} ${label || "Active"}`} />;
+  return (
+    <text
+      fg={colors.primary}
+      content={`${frames[frame]} ${label || "Active"}`}
+    />
+  );
 }
 
 /** Animated progress bar */

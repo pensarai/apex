@@ -42,7 +42,10 @@ export default function ModelsDisplay() {
         <span fg={colors.primary}>█ </span>
         <span fg={colors.text}>Select AI Model</span>
         <span fg={colors.textMuted}> ({model.name})</span>
-        <span fg={colors.textMuted}> [{isModelUserSelected ? "user" : "default"}]</span>
+        <span fg={colors.textMuted}>
+          {" "}
+          [{isModelUserSelected ? "user" : "default"}]
+        </span>
       </text>
 
       {/* Model Picker */}

@@ -6,7 +6,7 @@ import {
   createOperatorSessionFromFlags,
   createSwarmSessionFromFlags,
 } from "./utils/command-flags";
-import { getTheme, getAllThemeNames } from "./theme";
+import { getAllThemeNames } from "./theme";
 import { config } from "../core/config";
 
 /**

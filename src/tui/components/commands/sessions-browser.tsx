@@ -7,7 +7,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useKeyboard } from "@opentui/react";
 import { exec } from "child_process";
 import { existsSync } from "fs";
-import { RGBA, ScrollBoxRenderable } from "@opentui/core";
+import { ScrollBoxRenderable } from "@opentui/core";
 import { useRoute } from "../../context/route";
 import { useSession } from "../../context/session";
 import { useFocus } from "../../context/focus";
@@ -167,7 +167,9 @@ export default function SessionsBrowser() {
       <box flexDirection="column" padding={2} gap={1} width="100%">
         <text fg={colors.text}>Sessions</text>
         <text fg={colors.textMuted}>No sessions found.</text>
-        <text fg={colors.textMuted}>Start a new session with /pentest or /operator</text>
+        <text fg={colors.textMuted}>
+          Start a new session with /pentest or /operator
+        </text>
         <text fg={colors.textMuted}>Press Esc to go back</text>
       </box>
     );
@@ -178,7 +180,9 @@ export default function SessionsBrowser() {
       {/* Header */}
       <box flexDirection="column" flexShrink={0}>
         <text fg={colors.text}>Sessions</text>
-        <text fg={colors.textMuted}>Browse and reopen previous pentest sessions</text>
+        <text fg={colors.textMuted}>
+          Browse and reopen previous pentest sessions
+        </text>
       </box>
 
       {/* Search */}
@@ -252,7 +256,13 @@ export default function SessionsBrowser() {
                           {isSelected ? "▸ " : "  "}
                           {session.name}
                         </text>
-                        <text fg={mode === "operator" ? colors.primary : colors.textMuted}>
+                        <text
+                          fg={
+                            mode === "operator"
+                              ? colors.primary
+                              : colors.textMuted
+                          }
+                        >
                           {modeBadge}
                         </text>
                         {findingsText ? (

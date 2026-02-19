@@ -81,7 +81,12 @@ export default function MentionAutocomplete({
 
   if (filteredEndpoints.length === 0) {
     return (
-      <box border borderColor={colors.textMuted} backgroundColor={colors.background} padding={1}>
+      <box
+        border
+        borderColor={colors.textMuted}
+        backgroundColor={colors.background}
+        padding={1}
+      >
         <text fg={colors.textMuted}>No matching endpoints</text>
       </box>
     );
@@ -134,7 +139,9 @@ function MentionItem({
       gap={1}
       backgroundColor={selected ? colors.primary : "transparent"}
     >
-      <text fg={selected ? colors.background : colors.primary}>@{endpoint.id}</text>
+      <text fg={selected ? colors.background : colors.primary}>
+        @{endpoint.id}
+      </text>
       <text fg={selected ? colors.background : colors.text}>{displayUrl}</text>
     </box>
   );

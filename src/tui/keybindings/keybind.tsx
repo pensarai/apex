@@ -317,9 +317,7 @@ function LeaderModeIndicator({ sequence }: LeaderModeIndicatorProps) {
       paddingRight={1}
       backgroundColor={colors.backgroundElement}
     >
-      <text fg={colors.warning}>
-        LEADER{sequence ? `: ${sequence}` : ""}
-      </text>
+      <text fg={colors.warning}>LEADER{sequence ? `: ${sequence}` : ""}</text>
     </box>
   );
 }

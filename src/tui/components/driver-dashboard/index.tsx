@@ -545,7 +545,11 @@ export default function DriverDashboard({ session }: DriverDashboardProps) {
         >
           <box flexDirection="column">
             <text fg={colors.text}>
-              <span fg={reconStatus === "running" ? colors.primary : colors.textMuted}>
+              <span
+                fg={
+                  reconStatus === "running" ? colors.primary : colors.textMuted
+                }
+              >
                 {reconStatus === "running" ? "◐ " : "✓ "}
               </span>
               Attack Surface Discovery
@@ -582,7 +586,9 @@ export default function DriverDashboard({ session }: DriverDashboardProps) {
           <text fg={colors.textMuted}>
             Messages: {reconMessages.length} | Status: {reconStatus}
           </text>
-          <text fg={colors.textMuted}>[ESC] or [Shift+/] Back to dashboard</text>
+          <text fg={colors.textMuted}>
+            [ESC] or [Shift+/] Back to dashboard
+          </text>
         </box>
       </box>
     );
@@ -605,7 +611,9 @@ export default function DriverDashboard({ session }: DriverDashboardProps) {
           <text fg={colors.textMuted}>Target: {session.targets[0]}</text>
         </box>
         <box flexDirection="row" gap={2}>
-          <text fg={reconStatus === "running" ? colors.primary : colors.textMuted}>
+          <text
+            fg={reconStatus === "running" ? colors.primary : colors.textMuted}
+          >
             Recon:{" "}
             {reconStatus === "running"
               ? "Running..."

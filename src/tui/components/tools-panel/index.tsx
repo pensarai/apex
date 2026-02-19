@@ -8,7 +8,7 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
-import { RGBA, ScrollBoxRenderable } from "@opentui/core";
+import { ScrollBoxRenderable } from "@opentui/core";
 import {
   ALL_TOOLS,
   getCategoryDisplayName,
@@ -271,7 +271,13 @@ export default function ToolsPanel({
             </box>
             <box flexDirection="row">
               <text fg={colors.textMuted}>Status: </text>
-              <text fg={isToolEnabled(selectedTool.id) ? colors.primary : colors.textMuted}>
+              <text
+                fg={
+                  isToolEnabled(selectedTool.id)
+                    ? colors.primary
+                    : colors.textMuted
+                }
+              >
                 {isToolEnabled(selectedTool.id) ? "Enabled" : "Disabled"}
               </text>
             </box>
@@ -317,7 +323,9 @@ export default function ToolsPanel({
       >
         {/* Header */}
         <box width="100%" padding={1} flexDirection="row">
-          <text fg={colors.primary}>{"Tools Panel".padEnd(panelWidth - 22)}</text>
+          <text fg={colors.primary}>
+            {"Tools Panel".padEnd(panelWidth - 22)}
+          </text>
           <text fg={colors.textMuted}>{`${enabled}/${total} enabled`}</text>
         </box>
 
@@ -382,14 +390,22 @@ export default function ToolsPanel({
                 key={tool.id}
                 id={tool.id}
                 width="100%"
-                backgroundColor={isSelected ? colors.backgroundSelected : undefined}
+                backgroundColor={
+                  isSelected ? colors.backgroundSelected : undefined
+                }
                 flexDirection="row"
                 paddingLeft={1}
               >
-                <text fg={isSelected ? colors.text : colors.textMuted}>{checkbox}</text>
-                <text fg={isEnabled ? colors.primary : colors.textMuted}>{` ${name}`}</text>
+                <text fg={isSelected ? colors.text : colors.textMuted}>
+                  {checkbox}
+                </text>
+                <text
+                  fg={isEnabled ? colors.primary : colors.textMuted}
+                >{` ${name}`}</text>
                 <text fg={colors.textMuted}>{cat}</text>
-                <text fg={isSelected ? colors.text : colors.textMuted}>{desc}</text>
+                <text fg={isSelected ? colors.text : colors.textMuted}>
+                  {desc}
+                </text>
               </box>
             );
           })}

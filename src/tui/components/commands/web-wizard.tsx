@@ -735,10 +735,14 @@ export default function WebWizard({
               <text fg={focusedField === 2 ? colors.text : colors.textMuted}>
                 Strict Scope:
               </text>
-              <text fg={state.scope.strictScope ? colors.primary : colors.textMuted}>
+              <text
+                fg={state.scope.strictScope ? colors.primary : colors.textMuted}
+              >
                 {state.scope.strictScope ? "● Enabled" : "○ Disabled"}
               </text>
-              {focusedField === 2 && <text fg={colors.textMuted}>(↑/↓ to toggle)</text>}
+              {focusedField === 2 && (
+                <text fg={colors.textMuted}>(↑/↓ to toggle)</text>
+              )}
             </box>
           </box>
         )}
@@ -755,22 +759,38 @@ export default function WebWizard({
         {focusedSection === 2 && (
           <box flexDirection="column" gap={1} paddingLeft={2}>
             <box flexDirection="column">
-              <text fg={state.headers.mode === "none" ? colors.primary : colors.textMuted}>
+              <text
+                fg={
+                  state.headers.mode === "none"
+                    ? colors.primary
+                    : colors.textMuted
+                }
+              >
                 {state.headers.mode === "none" ? "●" : "○"} None
               </text>
               <text
-                fg={state.headers.mode === "default" ? colors.primary : colors.textMuted}
+                fg={
+                  state.headers.mode === "default"
+                    ? colors.primary
+                    : colors.textMuted
+                }
               >
                 {state.headers.mode === "default" ? "●" : "○"} Default
                 (User-Agent: pensar-apex)
               </text>
               <text
-                fg={state.headers.mode === "custom" ? colors.primary : colors.textMuted}
+                fg={
+                  state.headers.mode === "custom"
+                    ? colors.primary
+                    : colors.textMuted
+                }
               >
                 {state.headers.mode === "custom" ? "●" : "○"} Custom
               </text>
             </box>
-            {focusedField === 0 && <text fg={colors.textMuted}>Use ↑/↓ to select</text>}
+            {focusedField === 0 && (
+              <text fg={colors.textMuted}>Use ↑/↓ to select</text>
+            )}
 
             {state.headers.mode === "custom" && (
               <box flexDirection="column" gap={1}>
@@ -809,7 +829,9 @@ export default function WebWizard({
       <box flexDirection="column" gap={1}>
         <text>
           <span fg={colors.primary}>█ </span>
-          <span fg={focusedSection === 3 ? colors.text : colors.textMuted}>AI Model</span>
+          <span fg={focusedSection === 3 ? colors.text : colors.textMuted}>
+            AI Model
+          </span>
           <span fg={colors.textMuted}> ({model.name})</span>
           <span fg={colors.textMuted}>
             {" "}

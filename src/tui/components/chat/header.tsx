@@ -122,7 +122,9 @@ export function Header({
         {autoApproveTier && mode === "operator" && (
           <>
             <text fg={colors.textMuted}>│</text>
-            <text fg={getTierColor(colors, autoApproveTier)}>T{autoApproveTier}</text>
+            <text fg={getTierColor(colors, autoApproveTier)}>
+              T{autoApproveTier}
+            </text>
           </>
         )}
       </box>

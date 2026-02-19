@@ -149,7 +149,11 @@ export function PetriAnimation({
   return (
     <box flexDirection="column" width={actualWidth} height={actualHeight}>
       {frame.map((row, idx) => (
-        <text key={idx} fg={getRowColor(idx, actualHeight, gradientColors)} content={row} />
+        <text
+          key={idx}
+          fg={getRowColor(idx, actualHeight, gradientColors)}
+          content={row}
+        />
       ))}
     </box>
   );
@@ -158,7 +162,11 @@ export function PetriAnimation({
 /**
  * Get color for a row (gradient from top to bottom)
  */
-function getRowColor(rowIdx: number, totalRows: number, gradient: RGBA[]): RGBA {
+function getRowColor(
+  rowIdx: number,
+  totalRows: number,
+  gradient: RGBA[],
+): RGBA {
   // Create a gradient from top to bottom
   const progress = rowIdx / Math.max(1, totalRows - 1);
 

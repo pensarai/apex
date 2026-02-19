@@ -92,15 +92,17 @@ export function ThemeProvider({
   }, []);
 
   return (
-    <ThemeContext value={{
-      theme,
-      colors,
-      mode,
-      availableThemes: getAllThemeNames(),
-      setTheme,
-      toggleMode,
-      setMode,
-    }}>
+    <ThemeContext
+      value={{
+        theme,
+        colors,
+        mode,
+        availableThemes: getAllThemeNames(),
+        setTheme,
+        toggleMode,
+        setMode,
+      }}
+    >
       {children}
     </ThemeContext>
   );

@@ -172,7 +172,9 @@ export function ConfigView({ config, onBack, onStart }: ConfigViewProps) {
           gap={1}
           onMouseDown={() => setStrictScope(!strictScope)}
         >
-          <text fg={focusedField === "scope" ? colors.primary : colors.textMuted}>
+          <text
+            fg={focusedField === "scope" ? colors.primary : colors.textMuted}
+          >
             {focusedField === "scope" ? ">" : " "}
           </text>
           <text fg={strictScope ? colors.primary : colors.textMuted}>
@@ -190,7 +192,9 @@ export function ConfigView({ config, onBack, onStart }: ConfigViewProps) {
         <text fg={colors.text}>Model</text>
         <box
           border={true}
-          borderColor={focusedField === "model" ? colors.primary : colors.border}
+          borderColor={
+            focusedField === "model" ? colors.primary : colors.border
+          }
           paddingLeft={1}
           paddingRight={1}
           maxHeight={8}
@@ -226,16 +230,16 @@ export function ConfigView({ config, onBack, onStart }: ConfigViewProps) {
             }
           }}
         >
-          <text fg={isValid ? colors.text : colors.textMuted}>[ Start Session ]</text>
+          <text fg={isValid ? colors.text : colors.textMuted}>
+            [ Start Session ]
+          </text>
         </box>
       </box>
 
       {/* Validation hint */}
       {!isValid && targetUrl.length > 8 && (
         <box marginTop={1}>
-          <text fg={colors.error}>
-            Please enter a valid URL (https://...)
-          </text>
+          <text fg={colors.error}>Please enter a valid URL (https://...)</text>
         </box>
       )}
     </box>

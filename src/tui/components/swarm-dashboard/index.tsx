@@ -268,9 +268,7 @@ export default function SwarmDashboard({
             >
               {discoveryAgent?.status === "paused" ? (
                 <box flexDirection="column" alignItems="center" gap={1}>
-                  <text fg={colors.tierRisky}>
-                    ⏸ Discovery was interrupted
-                  </text>
+                  <text fg={colors.tierRisky}>⏸ Discovery was interrupted</text>
                   <text fg={colors.textMuted}>
                     Press <span fg={colors.tierRisky}>[R]</span> to resume
                   </text>
@@ -281,7 +279,9 @@ export default function SwarmDashboard({
                     label="Discovering attack surface..."
                     fg={colors.primary}
                   />
-                  <text fg={colors.textMuted}>Press [D] to view discovery logs</text>
+                  <text fg={colors.textMuted}>
+                    Press [D] to view discovery logs
+                  </text>
                 </box>
               ) : (
                 <text fg={colors.textMuted}>No pentest agents spawned yet</text>
@@ -383,7 +383,10 @@ function DiscoveryPanel({
         >
           <box flexDirection="row" gap={1}>
             {agent.status === "pending" && (
-              <SpinnerDots label="Attack Surface Discovery" fg={colors.primary} />
+              <SpinnerDots
+                label="Attack Surface Discovery"
+                fg={colors.primary}
+              />
             )}
             {agent.status === "completed" && (
               <text fg={colors.primary}>✓ Attack Surface Discovery</text>
@@ -433,7 +436,9 @@ function DiscoveryPanel({
     <box
       width={32}
       border
-      borderColor={agent?.status === "pending" ? colors.primary : colors.textMuted}
+      borderColor={
+        agent?.status === "pending" ? colors.primary : colors.textMuted
+      }
       backgroundColor={colors.background}
       flexDirection="column"
       onMouseDown={onToggleLogs}
@@ -455,7 +460,9 @@ function DiscoveryPanel({
           {agent?.status === "completed" && (
             <text fg={colors.primary}>✓ Discovery</text>
           )}
-          {agent?.status === "failed" && <text fg={colors.error}>✗ Discovery</text>}
+          {agent?.status === "failed" && (
+            <text fg={colors.error}>✗ Discovery</text>
+          )}
           {agent?.status === "paused" && (
             <text fg={colors.tierRisky}>⏸ Discovery</text>
           )}
@@ -612,7 +619,11 @@ function AgentCard({ agent, focused, onSelect }: AgentCardProps) {
             ⏸ Paused — press Enter then R to resume
           </text>
         ) : (
-          <text fg={agent.status === "completed" ? colors.primary : colors.textMuted}>
+          <text
+            fg={
+              agent.status === "completed" ? colors.primary : colors.textMuted
+            }
+          >
             {agent.status === "completed" ? "✓ Complete" : lastActivity}
           </text>
         )}
@@ -717,7 +728,9 @@ function MetricsBar({
         </text>
         <text fg={colors.textMuted}>|</text>
         <text>
-          <span fg={isExecuting ? colors.primary : colors.textMuted}>{activeAgents}</span>
+          <span fg={isExecuting ? colors.primary : colors.textMuted}>
+            {activeAgents}
+          </span>
           <span fg={colors.textMuted}>/{totalAgents} active</span>
         </text>
         {canceledAgents > 0 && (

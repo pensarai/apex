@@ -76,7 +76,8 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
       {/* Title - centered */}
       <box flexDirection="column" alignItems="center" marginTop={1}>
         <text fg={colors.text}>
-          Apex <span fg={colors.textMuted}>({config.data.version || "local"})</span>
+          Apex{" "}
+          <span fg={colors.textMuted}>({config.data.version || "local"})</span>
         </text>
         <text fg={colors.textMuted}>Automated offensive security</text>
       </box>

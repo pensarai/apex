@@ -46,7 +46,9 @@ export function ResponsibleUseDisclosure({
         </text>
         <text fg={colors.text}>• Use this tool ethically and responsibly</text>
         <text fg={colors.text}>• Not cause harm or disruption to services</text>
-        <text fg={colors.text}>• Document and report findings appropriately</text>
+        <text fg={colors.text}>
+          • Document and report findings appropriately
+        </text>
       </box>
       <box flexDirection="column">
         <text fg={colors.error}>
