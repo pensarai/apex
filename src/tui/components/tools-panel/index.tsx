@@ -72,7 +72,12 @@ export default function ToolsPanel({
 
   // Scroll to keep selected item in view
   useEffect(() => {
-    scrollToIndex(scrollboxRef.current, selectedIndex, filteredTools, (t) => t.id);
+    scrollToIndex(
+      scrollboxRef.current,
+      selectedIndex,
+      filteredTools,
+      (t) => t.id,
+    );
   }, [selectedIndex, filteredTools]);
 
   // Check if a tool is enabled
