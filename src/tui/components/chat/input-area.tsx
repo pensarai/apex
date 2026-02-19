@@ -316,6 +316,7 @@ function ApprovalInputArea({
           placeholder="Or type to redirect agent..."
           textColor={colors.text}
           backgroundColor="transparent"
+          cursorColor={colors.textMuted}
         />
       </box>
 

@@ -314,6 +314,7 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
             value={searchTerm}
             onInput={setSearchTerm}
             focused
+            cursorColor={colors.textMuted}
           />
         </box>
 

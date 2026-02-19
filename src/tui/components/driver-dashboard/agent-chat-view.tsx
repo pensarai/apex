@@ -200,6 +200,7 @@ export default function AgentChatView({
               onInput={handleInput}
               focused={!showMentions}
               placeholder="Type to direct agent... (@endpoint for mentions)"
+              cursorColor={colors.textMuted}
             />
           </box>
         </box>

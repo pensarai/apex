@@ -258,7 +258,7 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
             focusedTextColor={focusedTextColor}
             backgroundColor={backgroundColor}
             focusedBackgroundColor={focusedBackgroundColor}
-            cursorColor={cursorColor}
+            cursorColor={cursorColor ?? colors.textMuted}
             // keyBindings={keyBindings}
             keyBindings={[
               {

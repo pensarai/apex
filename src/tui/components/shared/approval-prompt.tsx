@@ -154,6 +154,7 @@ export function ApprovalInputArea({
           placeholder="Tell the agent something else..."
           textColor={colors.text}
           backgroundColor="transparent"
+          cursorColor={colors.textMuted}
         />
       </box>
 

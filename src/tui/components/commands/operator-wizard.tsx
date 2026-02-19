@@ -522,6 +522,7 @@ export default function HITLWizard(props: HITLWizardProps) {
             placeholder="example.com"
             textColor={colors.text}
             backgroundColor="transparent"
+            cursorColor={colors.textMuted}
           />
         ) : (
           <text fg={colors.textMuted}>{hostInput || "example.com"}</text>

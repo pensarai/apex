@@ -196,6 +196,7 @@ export default function SessionsBrowser() {
           value={searchTerm}
           onInput={setSearchTerm}
           focused
+          cursorColor={colors.textMuted}
         />
       </box>
 

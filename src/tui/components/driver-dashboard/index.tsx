@@ -697,6 +697,7 @@ export default function DriverDashboard({ session }: DriverDashboardProps) {
               focused={!loading}
               textColor={loading ? colors.textMuted : colors.text}
               placeholder="@http://localhost:3000/api/user test for SQL injection..."
+              cursorColor={colors.textMuted}
             />
             {loading && <SpinnerDots fg={colors.textMuted} />}
           </box>

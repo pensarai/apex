@@ -156,6 +156,7 @@ export function ConfigView({ config, onBack, onStart }: ConfigViewProps) {
             placeholder="https://example.com"
             textColor={colors.text}
             backgroundColor="transparent"
+            cursorColor={colors.textMuted}
           />
         </box>
       </box>

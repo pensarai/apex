@@ -338,6 +338,7 @@ function TextInput({
         focused={focused}
         textColor={colors.text}
         backgroundColor="transparent"
+        cursorColor={colors.textMuted}
       />
     </box>
   );
@@ -366,6 +367,7 @@ function PasswordInput({
         focused={focused}
         textColor={colors.text}
         backgroundColor="transparent"
+        cursorColor={colors.textMuted}
       />
     </box>
   );
