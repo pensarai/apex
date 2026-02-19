@@ -7,7 +7,7 @@
 
 import { useState } from "react";
 import { useKeyboard } from "@opentui/react";
-import { colors, getTierColor } from "../../theme";
+import { useTheme, getTierColor } from "../../theme";
 import { getToolSummary } from "./tool-registry";
 import type { PendingApproval } from "../../../core/operator";
 
@@ -20,7 +20,8 @@ interface InlineApprovalPromptProps {
  * Displayed in the chat flow.
  */
 export function InlineApprovalPrompt({ approval }: InlineApprovalPromptProps) {
-  const tierColor = getTierColor(approval.tier);
+  const { colors } = useTheme();
+  const tierColor = getTierColor(colors, approval.tier);
 
   // Get the description if provided
   const description = approval.args?.toolCallDescription as string | undefined;
@@ -33,16 +34,16 @@ export function InlineApprovalPrompt({ approval }: InlineApprovalPromptProps) {
       {/* Description from agent if available */}
       {description && (
         <box flexDirection="row" marginBottom={1}>
-          <text fg={colors.greenAccent} content="| " />
-          <text fg={colors.creamText} content={description} />
+          <text fg={colors.primary} content="| " />
+          <text fg={colors.text} content={description} />
         </box>
       )}
 
       {/* Approval line */}
       <box flexDirection="row" gap={1} marginLeft={2}>
-        <text fg={colors.yellowText} content="?" />
+        <text fg={colors.warning} content="?" />
         <text fg={tierColor} content={`[T${approval.tier}]`} />
-        <text fg={colors.toolColor} content={summary} />
+        <text fg={colors.info} content={summary} />
       </box>
     </box>
   );
@@ -71,6 +72,7 @@ export function ApprovalInputArea({
   setRedirectInput,
   lastDeclineNote,
 }: ApprovalInputAreaProps) {
+  const { colors } = useTheme();
   const [focusedElement, setFocusedElement] = useState(0); // 0=Yes, 1=Auto, 2=Input
 
   useKeyboard((key) => {
@@ -112,11 +114,11 @@ export function ApprovalInputArea({
       {/* Yes option */}
       <box flexDirection="row" gap={1}>
         <text
-          fg={focusedElement === 0 ? colors.greenAccent : colors.dimText}
+          fg={focusedElement === 0 ? colors.primary : colors.textMuted}
           content={focusedElement === 0 ? ">" : " "}
         />
         <text
-          fg={focusedElement === 0 ? colors.creamText : colors.dimText}
+          fg={focusedElement === 0 ? colors.text : colors.textMuted}
           content="Yes - approve this action"
         />
       </box>
@@ -124,11 +126,11 @@ export function ApprovalInputArea({
       {/* Auto option */}
       <box flexDirection="row" gap={1}>
         <text
-          fg={focusedElement === 1 ? colors.yellowText : colors.dimText}
+          fg={focusedElement === 1 ? colors.warning : colors.textMuted}
           content={focusedElement === 1 ? ">" : " "}
         />
         <text
-          fg={focusedElement === 1 ? colors.creamText : colors.dimText}
+          fg={focusedElement === 1 ? colors.text : colors.textMuted}
           content={`Auto - auto-approve T1-T${approval.tier} from now`}
         />
       </box>
@@ -136,10 +138,10 @@ export function ApprovalInputArea({
       {/* Redirect input */}
       <box flexDirection="row" gap={1} marginTop={1}>
         <text
-          fg={focusedElement === 2 ? colors.greenAccent : colors.dimText}
+          fg={focusedElement === 2 ? colors.primary : colors.textMuted}
           content={focusedElement === 2 ? ">" : " "}
         />
-        <text fg={colors.greenAccent} content=">" />
+        <text fg={colors.primary} content=">" />
         <input
           width="100%"
           value={redirectInput}
@@ -158,13 +160,13 @@ export function ApprovalInputArea({
       {/* Last decline note */}
       {lastDeclineNote && (
         <box marginTop={1} marginLeft={2}>
-          <text fg={colors.dimText} content={`Declined: ${lastDeclineNote}`} />
+          <text fg={colors.textMuted} content={`Declined: ${lastDeclineNote}`} />
         </box>
       )}
 
       {/* Shortcuts hint */}
       <box flexDirection="row" gap={2} marginTop={1}>
-        <text fg={colors.dimText} content="Y approve | A auto | Enter select" />
+        <text fg={colors.textMuted} content="Y approve | A auto | Enter select" />
       </box>
     </box>
   );

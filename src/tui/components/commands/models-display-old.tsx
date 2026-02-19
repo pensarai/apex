@@ -7,8 +7,10 @@ import Input from "../input";
 import { AVAILABLE_MODELS } from "../../../core/ai/models";
 import { useRoute } from "../../context/route";
 import { useConfig } from "../../context/config";
+import { useTheme } from "../../theme";
 
 export default function ModelsDisplay() {
+  const { colors } = useTheme();
   const route = useRoute();
   const _config = useConfig();
 
@@ -107,9 +109,9 @@ export default function ModelsDisplay() {
       gap={1}
     >
       <box flexDirection="column" width="80%" gap={1}>
-        <text fg="green">Available Models</text>
-        <text fg="white">
-          Current: <span fg="green">{selectedModel.name}</span>
+        <text fg={colors.primary}>Available Models</text>
+        <text fg={colors.text}>
+          Current: <span fg={colors.primary}>{selectedModel.name}</span>
         </text>
 
         <box flexDirection="column" gap={1}>
@@ -147,8 +149,8 @@ export default function ModelsDisplay() {
               flexGrow: 1,
               flexShrink: 1,
               overflow: "hidden",
-              borderColor: "green",
-              focusedBorderColor: "green",
+              borderColor: colors.primary,
+              focusedBorderColor: colors.primary,
               border: true,
               paddingLeft: 1,
               paddingRight: 1,
@@ -163,7 +165,7 @@ export default function ModelsDisplay() {
             },
             scrollbarOptions: {
               trackOptions: {
-                foregroundColor: "green",
+                foregroundColor: colors.primary,
                 backgroundColor: RGBA.fromInts(40, 40, 40, 255),
               },
             },
@@ -188,25 +190,25 @@ export default function ModelsDisplay() {
                 }}
               >
                 <text
-                  fg={isHighlighted ? "green" : isSelected ? "white" : "gray"}
+                  fg={isHighlighted ? colors.primary : isSelected ? colors.text : colors.textMuted}
                 >
                   {isHighlighted ? "▶ " : "  "}
                   {model.name}
                   {isSelected ? " ✓" : ""}
                 </text>
-                <text fg="gray"> {model.id}</text>
-                <text fg="gray"> {model.provider}</text>
+                <text fg={colors.textMuted}> {model.id}</text>
+                <text fg={colors.textMuted}> {model.provider}</text>
               </box>
             );
           })}
         </scrollbox>
 
         <box flexDirection="row" width="100%" gap={1}>
-          <text fg="gray">
-            <span fg="green">[TAB]</span> Focus input/list ·{" "}
-            <span fg="green">[↑↓]</span> Navigate list ·{" "}
-            <span fg="green">[ENTER]</span> Select ·{" "}
-            <span fg="green">[ESC]</span> Close
+          <text fg={colors.textMuted}>
+            <span fg={colors.primary}>[TAB]</span> Focus input/list ·{" "}
+            <span fg={colors.primary}>[↑↓]</span> Navigate list ·{" "}
+            <span fg={colors.primary}>[ENTER]</span> Select ·{" "}
+            <span fg={colors.primary}>[ESC]</span> Close
           </text>
         </box>
       </box>

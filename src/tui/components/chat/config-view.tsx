@@ -12,12 +12,7 @@ import { ModelPicker } from "../model-picker/ModelPicker";
 import type { ModelInfo } from "../../../core/ai";
 import { getAvailableModels } from "../../../core/providers/utils";
 import type { Config } from "../../../core/config/config";
-
-// Colors
-const greenAccent = RGBA.fromInts(76, 175, 80, 255);
-const creamText = RGBA.fromInts(255, 248, 220, 255);
-const dimText = RGBA.fromInts(120, 120, 120, 255);
-const borderColor = RGBA.fromInts(60, 60, 60, 255);
+import { useTheme } from "../../theme";
 
 type FocusedField = "url" | "scope" | "model" | "start";
 
@@ -34,6 +29,7 @@ export interface SessionConfig {
 }
 
 export function ConfigView({ config, onBack, onStart }: ConfigViewProps) {
+  const { colors } = useTheme();
   // Form state
   const [targetUrl, setTargetUrl] = useState("https://");
   const [strictScope, setStrictScope] = useState(true);
@@ -137,8 +133,8 @@ export function ConfigView({ config, onBack, onStart }: ConfigViewProps) {
     >
       {/* Header */}
       <box flexDirection="row" justifyContent="space-between">
-        <text fg={creamText}>Configure Session</text>
-        <text fg={dimText}>Esc {"<-"}</text>
+        <text fg={colors.text}>Configure Session</text>
+        <text fg={colors.textMuted}>Esc {"<-"}</text>
       </box>
 
       {/* Spacer */}
@@ -146,10 +142,10 @@ export function ConfigView({ config, onBack, onStart }: ConfigViewProps) {
 
       {/* Target URL Field */}
       <box flexDirection="column" gap={0}>
-        <text fg={creamText}>Target URL</text>
+        <text fg={colors.text}>Target URL</text>
         <box
           border={true}
-          borderColor={focusedField === "url" ? greenAccent : borderColor}
+          borderColor={focusedField === "url" ? colors.primary : colors.border}
           paddingLeft={1}
           paddingRight={1}
         >
@@ -170,19 +166,19 @@ export function ConfigView({ config, onBack, onStart }: ConfigViewProps) {
 
       {/* Scope Toggle */}
       <box flexDirection="column" gap={0}>
-        <text fg={creamText}>Scope</text>
+        <text fg={colors.text}>Scope</text>
         <box
           flexDirection="row"
           gap={1}
           onMouseDown={() => setStrictScope(!strictScope)}
         >
-          <text fg={focusedField === "scope" ? greenAccent : dimText}>
+          <text fg={focusedField === "scope" ? colors.primary : colors.textMuted}>
             {focusedField === "scope" ? ">" : " "}
           </text>
-          <text fg={strictScope ? greenAccent : dimText}>
+          <text fg={strictScope ? colors.primary : colors.textMuted}>
             [{strictScope ? "●" : " "}]
           </text>
-          <text fg={creamText}>Strict - only target host allowed</text>
+          <text fg={colors.text}>Strict - only target host allowed</text>
         </box>
       </box>
 
@@ -191,10 +187,10 @@ export function ConfigView({ config, onBack, onStart }: ConfigViewProps) {
 
       {/* Model Picker */}
       <box flexDirection="column" gap={0}>
-        <text fg={creamText}>Model</text>
+        <text fg={colors.text}>Model</text>
         <box
           border={true}
-          borderColor={focusedField === "model" ? greenAccent : borderColor}
+          borderColor={focusedField === "model" ? colors.primary : colors.border}
           paddingLeft={1}
           paddingRight={1}
           maxHeight={8}
@@ -214,13 +210,13 @@ export function ConfigView({ config, onBack, onStart }: ConfigViewProps) {
 
       {/* Start Button */}
       <box flexDirection="row" gap={1}>
-        <text fg={focusedField === "start" ? greenAccent : dimText}>
+        <text fg={focusedField === "start" ? colors.primary : colors.textMuted}>
           {focusedField === "start" ? ">" : " "}
         </text>
         <box
           border={true}
           borderColor={
-            focusedField === "start" && isValid ? greenAccent : borderColor
+            focusedField === "start" && isValid ? colors.primary : colors.border
           }
           paddingLeft={2}
           paddingRight={2}
@@ -230,7 +226,7 @@ export function ConfigView({ config, onBack, onStart }: ConfigViewProps) {
             }
           }}
         >
-          <text fg={isValid ? creamText : dimText}>[ Start Session ]</text>
+          <text fg={isValid ? colors.text : colors.textMuted}>[ Start Session ]</text>
         </box>
       </box>
 

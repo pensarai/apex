@@ -1,5 +1,6 @@
 import React from "react";
 import { RGBA } from "@opentui/core";
+import { useTheme } from "../theme";
 
 /**
  * Large ASCII art text for "APEX" with green gradient
@@ -60,7 +61,7 @@ export function AsciiTitle({ color }: AsciiTitleProps) {
  * Subtitle component for "Apex CLI"
  */
 export function AsciiSubtitle() {
-  const color = RGBA.fromInts(255, 248, 220, 255);
+  const { colors } = useTheme();
 
   // Smaller blocky text for "Apex CLI"
   const lines = ["█▀█ █▀█ █▀▀ ▀▄▀   █▀▀ █   █", "█▀█ █▀▀ ██▄ █ █   █▄▄ █▄▄ █"];
@@ -68,7 +69,7 @@ export function AsciiSubtitle() {
   return (
     <box flexDirection="column">
       {lines.map((line, idx) => (
-        <text key={idx} fg={color}>
+        <text key={idx} fg={colors.text}>
           {line}
         </text>
       ))}

@@ -3,6 +3,7 @@ import { RGBA } from "@opentui/core";
 import { useState } from "react";
 import Input from "../input";
 import { type ProviderType } from "../../../core/providers";
+import { useTheme } from "../../theme";
 
 interface APIKeyInputProps {
   provider: ProviderType;
@@ -17,6 +18,7 @@ export default function APIKeyInput({
   onSubmit,
   onCancel,
 }: APIKeyInputProps) {
+  const { colors } = useTheme();
   const [apiKey, setApiKey] = useState("");
 
   useKeyboard((key) => {
@@ -57,7 +59,7 @@ export default function APIKeyInput({
       <box
         width={70}
         border={true}
-        borderColor="green"
+        borderColor={colors.primary}
         backgroundColor="black"
         flexDirection="column"
         padding={2}
@@ -68,13 +70,13 @@ export default function APIKeyInput({
           justifyContent="space-between"
           marginBottom={2}
         >
-          <text fg="green">Connect {providerName}</text>
-          <text fg="gray">esc</text>
+          <text fg={colors.primary}>Connect {providerName}</text>
+          <text fg={colors.textMuted}>esc</text>
         </box>
 
         {/* Instructions */}
         <box marginBottom={2}>
-          <text fg="gray">{getProviderInstructions(provider)}</text>
+          <text fg={colors.textMuted}>{getProviderInstructions(provider)}</text>
         </box>
 
         {/* Input */}
@@ -102,8 +104,8 @@ export default function APIKeyInput({
 
         {/* Footer help text */}
         <box marginTop={1}>
-          <text fg="gray">
-            <span fg="green">[ENTER]</span> Save · <span fg="green">[ESC]</span>{" "}
+          <text fg={colors.textMuted}>
+            <span fg={colors.primary}>[ENTER]</span> Save · <span fg={colors.primary}>[ESC]</span>{" "}
             Cancel
           </text>
         </box>

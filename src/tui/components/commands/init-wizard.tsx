@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { useKeyboard } from "@opentui/react";
-import { RGBA } from "@opentui/core";
 import Input from "../input";
 import { useRoute } from "../../context/route";
 import { Session } from "../../../core/session";
 import { SpinnerDots } from "../sprites";
 import { generateRandomName } from "../../../util/name";
+import { useTheme } from "../../theme";
 
 // Simplified wizard step types
 type WizardStep = "target" | "configure" | "creating";
@@ -32,11 +32,8 @@ interface WizardState {
 }
 
 // Home view color palette
-const greenBullet = RGBA.fromInts(76, 175, 80, 255);
-const creamText = RGBA.fromInts(255, 248, 220, 255);
-const dimText = RGBA.fromInts(120, 120, 120, 255);
-
 export default function InitWizard() {
+  const { colors } = useTheme();
   const route = useRoute();
 
   // Wizard state
@@ -320,8 +317,8 @@ export default function InitWizard() {
         flexGrow={1}
         gap={2}
       >
-        <SpinnerDots label="Creating session..." fg="green" />
-        <text fg={dimText}>Target: {state.target}</text>
+        <SpinnerDots label="Creating session..." fg={colors.primary} />
+        <text fg={colors.textMuted}>Target: {state.target}</text>
       </box>
     );
   }
@@ -330,9 +327,9 @@ export default function InitWizard() {
   if (currentStep === "target") {
     return (
       <box width="100%" flexDirection="column" gap={2} paddingLeft={4}>
-        <text fg={creamText}>Configure Penetration Test</text>
+        <text fg={colors.text}>Configure Penetration Test</text>
 
-        {error && <text fg="red">Error: {error}</text>}
+        {error && <text fg={colors.error}>Error: {error}</text>}
 
         <Input
           label="Session Name"
@@ -354,22 +351,22 @@ export default function InitWizard() {
 
         <box flexDirection="column" gap={0} marginTop={1}>
           <text>
-            <span fg={greenBullet}>█ </span>
-            <span fg={dimText}>Press </span>
-            <span fg={creamText}>[Enter]</span>
-            <span fg={dimText}> to start immediately</span>
+            <span fg={colors.primary}>█ </span>
+            <span fg={colors.textMuted}>Press </span>
+            <span fg={colors.text}>[Enter]</span>
+            <span fg={colors.textMuted}> to start immediately</span>
           </text>
           <text>
-            <span fg={greenBullet}>█ </span>
-            <span fg={dimText}>Press </span>
-            <span fg={creamText}>[Tab]</span>
-            <span fg={dimText}> to configure options</span>
+            <span fg={colors.primary}>█ </span>
+            <span fg={colors.textMuted}>Press </span>
+            <span fg={colors.text}>[Tab]</span>
+            <span fg={colors.textMuted}> to configure options</span>
           </text>
           <text>
-            <span fg={greenBullet}>█ </span>
-            <span fg={dimText}>Press </span>
-            <span fg={creamText}>[ESC]</span>
-            <span fg={dimText}> to cancel</span>
+            <span fg={colors.primary}>█ </span>
+            <span fg={colors.textMuted}>Press </span>
+            <span fg={colors.text}>[ESC]</span>
+            <span fg={colors.textMuted}> to cancel</span>
           </text>
         </box>
       </box>
@@ -380,8 +377,8 @@ export default function InitWizard() {
   return (
     <box width="100%" flexDirection="column" gap={2} paddingLeft={4}>
       <box flexDirection="column">
-        <text fg={creamText}>Optional Configuration</text>
-        <text fg={dimText}>
+        <text fg={colors.text}>Optional Configuration</text>
+        <text fg={colors.textMuted}>
           All fields are optional - configure only what you need
         </text>
       </box>
@@ -389,8 +386,8 @@ export default function InitWizard() {
       {/* Auth Section */}
       <box flexDirection="column" gap={1}>
         <text>
-          <span fg={greenBullet}>█ </span>
-          <span fg={focusedSection === 0 ? creamText : dimText}>
+          <span fg={colors.primary}>█ </span>
+          <span fg={focusedSection === 0 ? colors.text : colors.textMuted}>
             Authentication
           </span>
         </text>
@@ -451,8 +448,8 @@ export default function InitWizard() {
       {/* Scope Section */}
       <box flexDirection="column" gap={1}>
         <text>
-          <span fg={greenBullet}>█ </span>
-          <span fg={focusedSection === 1 ? creamText : dimText}>
+          <span fg={colors.primary}>█ </span>
+          <span fg={focusedSection === 1 ? colors.text : colors.textMuted}>
             Scope Constraints
           </span>
         </text>
@@ -469,7 +466,7 @@ export default function InitWizard() {
             {state.scope.allowedHosts.length > 0 && (
               <box flexDirection="column" paddingLeft={2}>
                 {state.scope.allowedHosts.map((h, i) => (
-                  <text key={i} fg={dimText}>
+                  <text key={i} fg={colors.textMuted}>
                     • {h}
                   </text>
                 ))}
@@ -486,20 +483,20 @@ export default function InitWizard() {
             {state.scope.allowedPorts.length > 0 && (
               <box flexDirection="column" paddingLeft={2}>
                 {state.scope.allowedPorts.map((p, i) => (
-                  <text key={i} fg={dimText}>
+                  <text key={i} fg={colors.textMuted}>
                     • {p}
                   </text>
                 ))}
               </box>
             )}
             <box flexDirection="row" gap={1}>
-              <text fg={focusedField === 2 ? creamText : dimText}>
+              <text fg={focusedField === 2 ? colors.text : colors.textMuted}>
                 Strict Scope:
               </text>
-              <text fg={state.scope.strictScope ? greenBullet : dimText}>
+              <text fg={state.scope.strictScope ? colors.primary : colors.textMuted}>
                 {state.scope.strictScope ? "● Enabled" : "○ Disabled"}
               </text>
-              {focusedField === 2 && <text fg={dimText}>(↑/↓ to toggle)</text>}
+              {focusedField === 2 && <text fg={colors.textMuted}>(↑/↓ to toggle)</text>}
             </box>
           </box>
         )}
@@ -508,30 +505,30 @@ export default function InitWizard() {
       {/* Headers Section */}
       <box flexDirection="column" gap={1}>
         <text>
-          <span fg={greenBullet}>█ </span>
-          <span fg={focusedSection === 2 ? creamText : dimText}>
+          <span fg={colors.primary}>█ </span>
+          <span fg={focusedSection === 2 ? colors.text : colors.textMuted}>
             Request Headers
           </span>
         </text>
         {focusedSection === 2 && (
           <box flexDirection="column" gap={1} paddingLeft={2}>
             <box flexDirection="column">
-              <text fg={state.headers.mode === "none" ? greenBullet : dimText}>
+              <text fg={state.headers.mode === "none" ? colors.primary : colors.textMuted}>
                 {state.headers.mode === "none" ? "●" : "○"} None
               </text>
               <text
-                fg={state.headers.mode === "default" ? greenBullet : dimText}
+                fg={state.headers.mode === "default" ? colors.primary : colors.textMuted}
               >
                 {state.headers.mode === "default" ? "●" : "○"} Default
                 (User-Agent: pensar-apex)
               </text>
               <text
-                fg={state.headers.mode === "custom" ? greenBullet : dimText}
+                fg={state.headers.mode === "custom" ? colors.primary : colors.textMuted}
               >
                 {state.headers.mode === "custom" ? "●" : "○"} Custom
               </text>
             </box>
-            {focusedField === 0 && <text fg={dimText}>Use ↑/↓ to select</text>}
+            {focusedField === 0 && <text fg={colors.textMuted}>Use ↑/↓ to select</text>}
 
             {state.headers.mode === "custom" && (
               <box flexDirection="column" gap={1}>
@@ -553,7 +550,7 @@ export default function InitWizard() {
                   <box flexDirection="column">
                     {Object.entries(state.headers.customHeaders).map(
                       ([k, v]) => (
-                        <text key={k} fg={dimText}>
+                        <text key={k} fg={colors.textMuted}>
                           • {k}: {v}
                         </text>
                       ),
@@ -568,22 +565,22 @@ export default function InitWizard() {
 
       <box flexDirection="column" gap={0} marginTop={1}>
         <text>
-          <span fg={greenBullet}>█ </span>
-          <span fg={dimText}>Press </span>
-          <span fg={creamText}>[Enter]</span>
-          <span fg={dimText}> to start pentest</span>
+          <span fg={colors.primary}>█ </span>
+          <span fg={colors.textMuted}>Press </span>
+          <span fg={colors.text}>[Enter]</span>
+          <span fg={colors.textMuted}> to start pentest</span>
         </text>
         <text>
-          <span fg={greenBullet}>█ </span>
-          <span fg={dimText}>Press </span>
-          <span fg={creamText}>[Tab]</span>
-          <span fg={dimText}> to navigate fields</span>
+          <span fg={colors.primary}>█ </span>
+          <span fg={colors.textMuted}>Press </span>
+          <span fg={colors.text}>[Tab]</span>
+          <span fg={colors.textMuted}> to navigate fields</span>
         </text>
         <text>
-          <span fg={greenBullet}>█ </span>
-          <span fg={dimText}>Press </span>
-          <span fg={creamText}>[ESC]</span>
-          <span fg={dimText}> to go back</span>
+          <span fg={colors.primary}>█ </span>
+          <span fg={colors.textMuted}>Press </span>
+          <span fg={colors.text}>[ESC]</span>
+          <span fg={colors.textMuted}> to go back</span>
         </text>
       </box>
     </box>

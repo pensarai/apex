@@ -6,7 +6,7 @@
  */
 
 import { memo, useState } from "react";
-import { colors } from "../../theme";
+import { useTheme } from "../../theme";
 import { AsciiSpinner } from "./ascii-spinner";
 import { getToolSummary } from "./tool-registry";
 import { getResultSummary, type ResultSummary } from "./result-registry";
@@ -27,6 +27,7 @@ export const ToolRenderer = memo(function ToolRenderer({
   verbose = false,
   expandedLogs = false,
 }: ToolRendererProps) {
+  const { colors } = useTheme();
   const [showOutput, setShowOutput] = useState(false);
 
   // Type guard ensures we have a tool message
@@ -48,10 +49,10 @@ export const ToolRenderer = memo(function ToolRenderer({
 
   // Determine border color based on status
   const borderColor = isError
-    ? colors.errorColor
+    ? colors.error
     : isPending
-      ? colors.yellowText
-      : colors.toolColor;
+      ? colors.warning
+      : colors.info;
 
   return (
     <box flexDirection="row" marginTop={0}>
@@ -62,13 +63,13 @@ export const ToolRenderer = memo(function ToolRenderer({
         {/* Tool header line */}
         <box flexDirection="row" gap={1}>
           {isPending ? (
-            <AsciiSpinner label={summary} fg={colors.yellowText} />
+            <AsciiSpinner label={summary} fg={colors.warning} />
           ) : (
             <>
-              <text fg={isError ? colors.errorColor : colors.successColor}>
+              <text fg={isError ? colors.error : colors.success}>
                 {isError ? "✗" : "✓"}
               </text>
-              <text fg={colors.toolColor}>{summary}</text>
+              <text fg={colors.info}>{summary}</text>
             </>
           )}
         </box>
@@ -76,7 +77,7 @@ export const ToolRenderer = memo(function ToolRenderer({
         {/* Streaming logs while pending */}
         {isPending && logs && logs.length > 0 && (
           <box marginLeft={2}>
-            <text fg={colors.dimText}>
+            <text fg={colors.textMuted}>
               {expandedLogs ? logs.join("\n") : logs.slice(-2).join("\n")}
             </text>
           </box>
@@ -88,13 +89,13 @@ export const ToolRenderer = memo(function ToolRenderer({
             {/* Summary line - always visible */}
             <box flexDirection="row" gap={1}>
               <text
-                fg={resultDisplay.isError ? colors.errorColor : colors.dimText}
+                fg={resultDisplay.isError ? colors.error : colors.textMuted}
               >
                 {resultDisplay.isError ? "✗" : "→"}
               </text>
               <text
                 fg={
-                  resultDisplay.isError ? colors.errorColor : colors.creamText
+                  resultDisplay.isError ? colors.error : colors.text
                 }
               >
                 {resultDisplay.text}
@@ -110,12 +111,12 @@ export const ToolRenderer = memo(function ToolRenderer({
                   setShowOutput(!showOutput);
                 }}
               >
-                <text fg={colors.dimText}>
+                <text fg={colors.textMuted}>
                   {showOutput ? "▼ output" : "▶ output"}
                 </text>
                 {showOutput && (
                   <box marginLeft={2} marginTop={0}>
-                    <text fg={colors.dimText}>{resultDisplay.fullText}</text>
+                    <text fg={colors.textMuted}>{resultDisplay.fullText}</text>
                   </box>
                 )}
               </box>

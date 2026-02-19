@@ -6,14 +6,8 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { useKeyboard } from "@opentui/react";
-import { RGBA } from "@opentui/core";
 import type { DiscoveredEndpoint } from "../../../core/agent/driverModeAgent/targetExtractor";
-
-// Color palette
-const greenBullet = RGBA.fromInts(76, 175, 80, 255);
-const creamText = RGBA.fromInts(255, 248, 220, 255);
-const dimText = RGBA.fromInts(120, 120, 120, 255);
-const darkBg = RGBA.fromInts(20, 20, 20, 255);
+import { useTheme } from "../../theme";
 
 interface MentionAutocompleteProps {
   endpoints: DiscoveredEndpoint[];
@@ -28,6 +22,7 @@ export default function MentionAutocomplete({
   onSelect,
   onClose,
 }: MentionAutocompleteProps) {
+  const { colors } = useTheme();
   const [selectedIndex, setSelectedIndex] = useState(0);
 
   // Filter endpoints based on query
@@ -86,8 +81,8 @@ export default function MentionAutocomplete({
 
   if (filteredEndpoints.length === 0) {
     return (
-      <box border borderColor={dimText} backgroundColor={darkBg} padding={1}>
-        <text fg={dimText}>No matching endpoints</text>
+      <box border borderColor={colors.textMuted} backgroundColor={colors.background} padding={1}>
+        <text fg={colors.textMuted}>No matching endpoints</text>
       </box>
     );
   }
@@ -96,12 +91,12 @@ export default function MentionAutocomplete({
     <box
       flexDirection="column"
       border
-      borderColor={greenBullet}
-      backgroundColor={darkBg}
+      borderColor={colors.primary}
+      backgroundColor={colors.background}
       padding={1}
       gap={0}
     >
-      <text fg={dimText}>
+      <text fg={colors.textMuted}>
         Select endpoint (↑↓ to navigate, Enter to select)
       </text>
 
@@ -126,6 +121,7 @@ function MentionItem({
   endpoint: DiscoveredEndpoint;
   selected: boolean;
 }) {
+  const { colors } = useTheme();
   // Truncate URL for display
   const displayUrl =
     endpoint.url.length > 50
@@ -136,10 +132,10 @@ function MentionItem({
     <box
       flexDirection="row"
       gap={1}
-      backgroundColor={selected ? greenBullet : "transparent"}
+      backgroundColor={selected ? colors.primary : "transparent"}
     >
-      <text fg={selected ? darkBg : greenBullet}>@{endpoint.id}</text>
-      <text fg={selected ? darkBg : creamText}>{displayUrl}</text>
+      <text fg={selected ? colors.background : colors.primary}>@{endpoint.id}</text>
+      <text fg={selected ? colors.background : colors.text}>{displayUrl}</text>
     </box>
   );
 }

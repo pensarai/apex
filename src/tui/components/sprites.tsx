@@ -1,5 +1,6 @@
 import { RGBA } from "@opentui/core";
 import { useState, useEffect } from "react";
+import { useTheme } from "../theme";
 
 // Global animation tick - shared by all spinners to avoid excessive re-renders
 let globalTick = 0;
@@ -47,13 +48,14 @@ export function SpinnerDots({
   label?: string;
   fg?: string | RGBA;
 }) {
+  const { colors } = useTheme();
   const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
   const tick = useGlobalTick();
   const frame = tick % frames.length;
 
   return (
     <text
-      fg={fg || "blue"}
+      fg={fg || colors.info}
       content={`${frames[frame]} ${label || "Loading"}`}
     />
   );
@@ -76,6 +78,7 @@ export function SpinnerLine() {
 
 /** Circle spinner animation */
 export function SpinnerCircle() {
+  const { colors } = useTheme();
   const frames = ["◐", "◓", "◑", "◒"];
   const [frame, setFrame] = useState(0);
 
@@ -86,11 +89,12 @@ export function SpinnerCircle() {
     return () => clearInterval(interval);
   }, []);
 
-  return <text fg="cyan" content={`${frames[frame]} Working`} />;
+  return <text fg={colors.secondary} content={`${frames[frame]} Working`} />;
 }
 
 /** Braille pattern spinner */
 export function SpinnerBraille({ label }: { label?: string }) {
+  const { colors } = useTheme();
   const frames = ["⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"];
   const [frame, setFrame] = useState(0);
 
@@ -101,7 +105,7 @@ export function SpinnerBraille({ label }: { label?: string }) {
     return () => clearInterval(interval);
   }, []);
 
-  return <text fg="green" content={`${frames[frame]} ${label || "Active"}`} />;
+  return <text fg={colors.primary} content={`${frames[frame]} ${label || "Active"}`} />;
 }
 
 /** Animated progress bar */
@@ -114,16 +118,18 @@ export function ProgressBar({
 }) {
   const barWidth = width || 15;
   // Clamp value between 0 and 100, handle NaN
+  const { colors } = useTheme();
   const safeValue = Math.max(0, Math.min(100, isNaN(value) ? 0 : value));
   const filled = Math.floor((safeValue / 100) * barWidth);
   const empty = barWidth - filled;
   const bar = "█".repeat(filled) + "░".repeat(empty);
 
-  return <text fg="green" content={`[${bar}] ${safeValue}%`} />;
+  return <text fg={colors.primary} content={`[${bar}] ${safeValue}%`} />;
 }
 
 /** Pulsing dot indicator */
 export function PulsingDot() {
+  const { colors } = useTheme();
   const frames = ["⚫", "⚪", "⚫", "⚪"];
   const [frame, setFrame] = useState(0);
 
@@ -134,11 +140,12 @@ export function PulsingDot() {
     return () => clearInterval(interval);
   }, []);
 
-  return <text fg="blue" content={`${frames[frame]} Syncing`} />;
+  return <text fg={colors.info} content={`${frames[frame]} Syncing`} />;
 }
 
 /** Wave loading animation */
 export function LoadingWave() {
+  const { colors } = useTheme();
   const [offset, setOffset] = useState(0);
 
   useEffect(() => {
@@ -153,7 +160,7 @@ export function LoadingWave() {
     return height > 2 ? "●" : "○";
   }).join(" ");
 
-  return <text fg="cyan" content={dots} />;
+  return <text fg={colors.secondary} content={dots} />;
 }
 
 /** Beating heart animation */
@@ -198,7 +205,9 @@ export function TypingIndicator() {
     return () => clearInterval(interval);
   }, []);
 
-  return <text fg="gray" content={`typing${frames[frame]}`} />;
+  const { colors } = useTheme();
+
+  return <text fg={colors.textMuted} content={`typing${frames[frame]}`} />;
 }
 
 /** Rocket launch animation */
@@ -231,14 +240,15 @@ export function StatusPulse({
     return () => clearInterval(interval);
   }, []);
 
+  const { colors } = useTheme();
   const opacity = Math.sin(intensity) * 0.5 + 0.5; // Oscillates between 0 and 1
   const bright = opacity > 0.5;
 
   const configs = {
-    success: { icon: "●", color: "green", label: "Success" },
-    warning: { icon: "▲", color: "yellow", label: "Warning" },
-    error: { icon: "✖", color: "red", label: "Error" },
-    info: { icon: "ℹ", color: "blue", label: "Info" },
+    success: { icon: "●", color: colors.primary, label: "Success" },
+    warning: { icon: "▲", color: colors.warning, label: "Warning" },
+    error: { icon: "✖", color: colors.error, label: "Error" },
+    info: { icon: "ℹ", color: colors.info, label: "Info" },
   };
 
   const config = configs[status];

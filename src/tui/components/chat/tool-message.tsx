@@ -9,7 +9,7 @@
  */
 
 import { memo, useState } from "react";
-import { colors } from "../../theme";
+import { useTheme } from "../../theme";
 import { AsciiSpinner } from "../shared/ascii-spinner";
 import { getToolSummary } from "../shared/tool-registry";
 import {
@@ -46,6 +46,7 @@ export const ToolMessage = memo(function ToolMessage({
   verbose = false,
   expandedLogs = false,
 }: ToolMessageProps) {
+  const { colors } = useTheme();
   const [showArgs, setShowArgs] = useState(false);
   const [showOutput, setShowOutput] = useState(false);
 
@@ -77,10 +78,10 @@ export const ToolMessage = memo(function ToolMessage({
           <AsciiSpinner label={summary} />
         ) : (
           <>
-            <text fg={isError ? colors.errorColor : colors.successColor}>
+            <text fg={isError ? colors.error : colors.success}>
               {isError ? "✗" : "✓"}
             </text>
-            <text fg={colors.toolColor}>{summary}</text>
+            <text fg={colors.info}>{summary}</text>
           </>
         )}
       </box>
@@ -88,7 +89,7 @@ export const ToolMessage = memo(function ToolMessage({
       {/* Streaming logs while pending */}
       {isPending && logs && logs.length > 0 && (
         <box marginLeft={2}>
-          <text fg={colors.dimText}>
+          <text fg={colors.textMuted}>
             {expandedLogs ? logs.join("\n") : logs.slice(-2).join("\n")}
           </text>
         </box>
@@ -105,11 +106,11 @@ export const ToolMessage = memo(function ToolMessage({
               setShowArgs(!showArgs);
             }}
           >
-            <text fg={colors.dimText}>{showArgs ? "▼ args" : "▶ args"}</text>
+            <text fg={colors.textMuted}>{showArgs ? "▼ args" : "▶ args"}</text>
           </box>
           {showArgs && (
             <box marginLeft={2}>
-              <text fg={colors.dimText}>{formatArgs(args)}</text>
+              <text fg={colors.textMuted}>{formatArgs(args)}</text>
             </box>
           )}
         </box>
@@ -121,12 +122,12 @@ export const ToolMessage = memo(function ToolMessage({
           {/* Summary line - always visible */}
           <box flexDirection="row" gap={1}>
             <text
-              fg={resultDisplay.isError ? colors.errorColor : colors.dimText}
+              fg={resultDisplay.isError ? colors.error : colors.textMuted}
             >
               {resultDisplay.isError ? "✗" : "→"}
             </text>
             <text
-              fg={resultDisplay.isError ? colors.errorColor : colors.creamText}
+              fg={resultDisplay.isError ? colors.error : colors.text}
             >
               {resultDisplay.text}
             </text>
@@ -141,12 +142,12 @@ export const ToolMessage = memo(function ToolMessage({
                 setShowOutput(!showOutput);
               }}
             >
-              <text fg={colors.dimText}>
+              <text fg={colors.textMuted}>
                 {showOutput ? "▼ output" : "▶ output"}
               </text>
               {(verbose || showOutput) && (
                 <box marginLeft={2} marginTop={0}>
-                  <text fg={colors.dimText}>{resultDisplay.fullText}</text>
+                  <text fg={colors.textMuted}>{resultDisplay.fullText}</text>
                 </box>
               )}
             </box>

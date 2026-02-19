@@ -12,7 +12,7 @@
 
 import { useState, useCallback, useMemo } from "react";
 import { useKeyboard } from "@opentui/react";
-import { colors } from "../../theme";
+import { useTheme } from "../../theme";
 import {
   type Question,
   type QuestionComponentProps,
@@ -42,6 +42,7 @@ export function QuestionComponent({
   initialAnswers = {},
   showReview = true,
 }: QuestionComponentProps) {
+  const { colors } = useTheme();
   // Initialize answers with defaults
   const initialAnswerMap = useMemo(() => {
     const map: AnswerMap = {};
@@ -185,20 +186,20 @@ export function QuestionComponent({
   return (
     <box flexDirection="column" width="100%" padding={2}>
       {/* Header */}
-      {title && <text fg={colors.creamText}>{title}</text>}
-      {description && <text fg={colors.dimText}>{description}</text>}
+      {title && <text fg={colors.text}>{title}</text>}
+      {description && <text fg={colors.textMuted}>{description}</text>}
 
       {/* Progress indicator */}
       <box flexDirection="row" gap={1} marginTop={1} marginBottom={2}>
         {questions.map((_, idx) => (
           <text
             key={idx}
-            fg={idx === currentIndex ? colors.greenAccent : colors.dimText}
+            fg={idx === currentIndex ? colors.primary : colors.textMuted}
           >
             {idx === currentIndex ? "●" : "○"}
           </text>
         ))}
-        <text fg={colors.dimText}>
+        <text fg={colors.textMuted}>
           ({currentIndex + 1}/{questions.length})
         </text>
       </box>
@@ -216,15 +217,15 @@ export function QuestionComponent({
 
       {/* Navigation hints */}
       <box flexDirection="row" gap={2} marginTop={2}>
-        {!isFirstQuestion && <text fg={colors.dimText}>← Back</text>}
-        <text fg={colors.dimText}>
+        {!isFirstQuestion && <text fg={colors.textMuted}>← Back</text>}
+        <text fg={colors.textMuted}>
           {isLastQuestion
             ? showReview
               ? "Tab → Review"
               : "Tab → Submit"
             : "Tab → Next"}
         </text>
-        {onCancel && <text fg={colors.dimText}>ESC Cancel</text>}
+        {onCancel && <text fg={colors.textMuted}>ESC Cancel</text>}
       </box>
     </box>
   );
@@ -249,19 +250,20 @@ function QuestionInput({
   error,
   focused = false,
 }: QuestionInputProps) {
+  const { colors } = useTheme();
   return (
     <box flexDirection="column" gap={1}>
       {/* Label */}
       <box flexDirection="row" gap={1}>
-        <text fg={colors.creamText}>
+        <text fg={colors.text}>
           {question.label}
-          {question.required && <text fg={colors.redText}>*</text>}
+          {question.required && <text fg={colors.error}>*</text>}
         </text>
       </box>
 
       {/* Description */}
       {question.description && (
-        <text fg={colors.dimText}>{question.description}</text>
+        <text fg={colors.textMuted}>{question.description}</text>
       )}
 
       {/* Input based on type */}
@@ -304,7 +306,7 @@ function QuestionInput({
       )}
 
       {/* Error */}
-      {error && <text fg={colors.errorColor}>⚠ {error}</text>}
+      {error && <text fg={colors.error}>⚠ {error}</text>}
     </box>
   );
 }
@@ -324,9 +326,10 @@ function TextInput({
   placeholder?: string;
   focused?: boolean;
 }) {
+  const { colors } = useTheme();
   return (
     <box flexDirection="row" gap={1}>
-      <text fg={colors.greenAccent}>{">"}</text>
+      <text fg={colors.primary}>{">"}</text>
       <input
         width="100%"
         value={value}
@@ -351,9 +354,10 @@ function PasswordInput({
   placeholder?: string;
   focused?: boolean;
 }) {
+  const { colors } = useTheme();
   return (
     <box flexDirection="row" gap={1}>
-      <text fg={colors.greenAccent}>{">"}</text>
+      <text fg={colors.primary}>{">"}</text>
       <input
         width="100%"
         value={"*".repeat(value.length)}
@@ -374,6 +378,7 @@ function YesNoInput({
   value: boolean;
   onChange: (value: boolean) => void;
 }) {
+  const { colors } = useTheme();
   useKeyboard((key) => {
     if (key.name === "y" || key.name === "Y") {
       onChange(true);
@@ -386,16 +391,16 @@ function YesNoInput({
   return (
     <box flexDirection="row" gap={2}>
       <box flexDirection="row" gap={1} onMouseDown={() => onChange(true)}>
-        <text fg={value ? colors.greenAccent : colors.dimText}>
+        <text fg={value ? colors.primary : colors.textMuted}>
           {value ? "●" : "○"}
         </text>
-        <text fg={value ? colors.creamText : colors.dimText}>Yes</text>
+        <text fg={value ? colors.text : colors.textMuted}>Yes</text>
       </box>
       <box flexDirection="row" gap={1} onMouseDown={() => onChange(false)}>
-        <text fg={!value ? colors.greenAccent : colors.dimText}>
+        <text fg={!value ? colors.primary : colors.textMuted}>
           {!value ? "●" : "○"}
         </text>
-        <text fg={!value ? colors.creamText : colors.dimText}>No</text>
+        <text fg={!value ? colors.text : colors.textMuted}>No</text>
       </box>
     </box>
   );
@@ -415,6 +420,7 @@ function ChoiceInput({
   value: string;
   onChange: (value: string) => void;
 }) {
+  const { colors } = useTheme();
   const [focusIndex, setFocusIndex] = useState(
     Math.max(
       0,
@@ -451,25 +457,25 @@ function ChoiceInput({
             gap={1}
             onMouseDown={() => !isDisabled && onChange(option.value)}
           >
-            <text fg={isFocused ? colors.greenAccent : colors.dimText}>
+            <text fg={isFocused ? colors.primary : colors.textMuted}>
               {isFocused ? ">" : " "}
             </text>
-            <text fg={isSelected ? colors.greenAccent : colors.dimText}>
+            <text fg={isSelected ? colors.primary : colors.textMuted}>
               {isSelected ? "●" : "○"}
             </text>
             <text
               fg={
                 isDisabled
-                  ? colors.dimText
+                  ? colors.textMuted
                   : isSelected
-                    ? colors.creamText
-                    : colors.dimText
+                    ? colors.text
+                    : colors.textMuted
               }
             >
               {option.label}
             </text>
             {option.description && (
-              <text fg={colors.dimText}>- {option.description}</text>
+              <text fg={colors.textMuted}>- {option.description}</text>
             )}
           </box>
         );
@@ -492,6 +498,7 @@ function MultiChoiceInput({
   value: string[];
   onChange: (value: string[]) => void;
 }) {
+  const { colors } = useTheme();
   const [focusIndex, setFocusIndex] = useState(0);
 
   const toggleOption = (optionValue: string) => {
@@ -531,25 +538,25 @@ function MultiChoiceInput({
             gap={1}
             onMouseDown={() => !isDisabled && toggleOption(option.value)}
           >
-            <text fg={isFocused ? colors.greenAccent : colors.dimText}>
+            <text fg={isFocused ? colors.primary : colors.textMuted}>
               {isFocused ? ">" : " "}
             </text>
-            <text fg={isSelected ? colors.greenAccent : colors.dimText}>
+            <text fg={isSelected ? colors.primary : colors.textMuted}>
               {isSelected ? "☑" : "☐"}
             </text>
             <text
               fg={
                 isDisabled
-                  ? colors.dimText
+                  ? colors.textMuted
                   : isSelected
-                    ? colors.creamText
-                    : colors.dimText
+                    ? colors.text
+                    : colors.textMuted
               }
             >
               {option.label}
             </text>
             {option.description && (
-              <text fg={colors.dimText}>- {option.description}</text>
+              <text fg={colors.textMuted}>- {option.description}</text>
             )}
           </box>
         );
@@ -583,13 +590,14 @@ function ReviewScreen({
   onBack,
   errors,
 }: ReviewScreenProps) {
+  const { colors } = useTheme();
   const hasErrors = Object.keys(errors).length > 0;
 
   return (
     <box flexDirection="column" width="100%" padding={2}>
       {/* Header */}
-      <text fg={colors.creamText}>{title || "Review Your Answers"}</text>
-      <text fg={colors.dimText}>Review your answers before submitting.</text>
+      <text fg={colors.text}>{title || "Review Your Answers"}</text>
+      <text fg={colors.textMuted}>Review your answers before submitting.</text>
 
       {/* Answers */}
       <box flexDirection="column" gap={1} marginTop={2}>
@@ -601,12 +609,12 @@ function ReviewScreen({
           return (
             <box key={question.id} flexDirection="column">
               <box flexDirection="row" gap={2}>
-                <text fg={colors.dimText}>{question.label}:</text>
-                <text fg={error ? colors.errorColor : colors.creamText}>
+                <text fg={colors.textMuted}>{question.label}:</text>
+                <text fg={error ? colors.error : colors.text}>
                   {displayValue}
                 </text>
               </box>
-              {error && <text fg={colors.errorColor}>⚠ {error}</text>}
+              {error && <text fg={colors.error}>⚠ {error}</text>}
             </box>
           );
         })}
@@ -615,18 +623,18 @@ function ReviewScreen({
       {/* Actions */}
       <box flexDirection="row" gap={4} marginTop={2}>
         <box onMouseDown={onBack} flexDirection="row" gap={1}>
-          <text fg={colors.dimText}>←</text>
-          <text fg={colors.dimText}>Back</text>
+          <text fg={colors.textMuted}>←</text>
+          <text fg={colors.textMuted}>Back</text>
         </box>
         <box
           onMouseDown={hasErrors ? undefined : onSubmit}
           flexDirection="row"
           gap={1}
         >
-          <text fg={hasErrors ? colors.dimText : colors.greenAccent}>
+          <text fg={hasErrors ? colors.textMuted : colors.primary}>
             {submitLabel}
           </text>
-          <text fg={colors.dimText}>(Enter)</text>
+          <text fg={colors.textMuted}>(Enter)</text>
         </box>
       </box>
     </box>

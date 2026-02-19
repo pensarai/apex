@@ -6,7 +6,7 @@ import { Session } from "../core/session";
 import Autocomplete from "./components/autocomplete";
 import os from "os";
 import type { InputRenderable } from "@opentui/core";
-import { RGBA } from "@opentui/core";
+import { useTheme } from "./theme";
 
 interface CommandInputProps {
   focused?: boolean;
@@ -71,11 +71,9 @@ export default function CommandInput({
     setInputValue(value);
   };
 
-  const cwd = "~" + process.cwd().split(os.homedir()).pop() || "";
+  const { colors } = useTheme();
 
-  const greenAccent = RGBA.fromInts(76, 175, 80, 255);
-  const dimText = RGBA.fromInts(100, 100, 100, 255);
-  const creamText = RGBA.fromInts(255, 248, 220, 255);
+  const cwd = "~" + process.cwd().split(os.homedir()).pop() || "";
 
   return (
     <box width={"100%"} flexDirection="column" marginTop={1} rowGap={1}>
@@ -88,7 +86,7 @@ export default function CommandInput({
         paddingRight={1}
       >
         {/* Prompt indicator */}
-        <text fg={greenAccent}>
+        <text fg={colors.primary}>
           <span>{"❯ "}</span>
         </text>
 
@@ -108,18 +106,18 @@ export default function CommandInput({
 
       {/* Subtle hint line */}
       <box paddingLeft={3}>
-        <text fg={dimText}>
+        <text fg={colors.textMuted}>
           <span>Press </span>
-          <span fg={creamText}>/</span>
+          <span fg={colors.text}>/</span>
           <span> for commands</span>
           <span> • </span>
-          <span fg={creamText}>{`[↓][↑]`}</span>
+          <span fg={colors.text}>{`[↓][↑]`}</span>
           <span> navigate</span>
           <span> • </span>
-          <span fg={creamText}>[tab]</span>
+          <span fg={colors.text}>[tab]</span>
           <span> complete</span>
           <span> • </span>
-          <span fg={creamText}>[enter]</span>
+          <span fg={colors.text}>[enter]</span>
           <span> run</span>
         </text>
       </box>

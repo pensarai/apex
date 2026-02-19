@@ -2,16 +2,9 @@
  * Verified Vulns Panel - Shows confirmed findings with POCs
  */
 
-import { RGBA } from "@opentui/core";
+import type { RGBA } from "@opentui/core";
 import type { VerifiedVuln } from "../types";
-
-const creamText = RGBA.fromInts(255, 248, 220, 255);
-const dimText = RGBA.fromInts(120, 120, 120, 255);
-const greenAccent = RGBA.fromInts(76, 175, 80, 255);
-const redText = RGBA.fromInts(244, 67, 54, 255);
-const orangeText = RGBA.fromInts(255, 152, 0, 255);
-const yellowText = RGBA.fromInts(255, 235, 59, 255);
-const blueText = RGBA.fromInts(100, 181, 246, 255);
+import { useTheme, type ThemeColors } from "../../../theme";
 
 interface VerifiedVulnsPanelProps {
   vulns: VerifiedVuln[];
@@ -22,48 +15,49 @@ export function VerifiedVulnsPanel({
   vulns,
   maxVisible = 5,
 }: VerifiedVulnsPanelProps) {
+  const { colors } = useTheme();
   const visible = vulns.slice(0, maxVisible);
   const remaining = vulns.length - maxVisible;
 
   return (
     <box flexDirection="column" gap={1}>
-      <text fg={creamText}>
+      <text fg={colors.text}>
         Verified Vulns{" "}
-        {vulns.length > 0 && <span fg={greenAccent}>({vulns.length})</span>}
+        {vulns.length > 0 && <span fg={colors.primary}>({vulns.length})</span>}
       </text>
 
       {vulns.length === 0 ? (
-        <text fg={dimText}>No findings yet</text>
+        <text fg={colors.textMuted}>No findings yet</text>
       ) : (
         <>
           {visible.map((v) => (
             <box key={v.id} flexDirection="row" gap={1}>
-              <text fg={greenAccent}>+</text>
-              <text fg={getSeverityColor(v.severity)}>
+              <text fg={colors.primary}>+</text>
+              <text fg={getSeverityColor(colors, v.severity)}>
                 {(v.type || "FINDING").toUpperCase()}
               </text>
-              <text fg={dimText}>{truncatePath(v.endpoint || "", 14)}</text>
+              <text fg={colors.textMuted}>{truncatePath(v.endpoint || "", 14)}</text>
             </box>
           ))}
-          {remaining > 0 && <text fg={dimText}>... +{remaining} more</text>}
+          {remaining > 0 && <text fg={colors.textMuted}>... +{remaining} more</text>}
         </>
       )}
     </box>
   );
 }
 
-function getSeverityColor(severity: VerifiedVuln["severity"]) {
+function getSeverityColor(colors: ThemeColors, severity: VerifiedVuln["severity"]): RGBA {
   switch (severity) {
     case "critical":
-      return redText;
+      return colors.error;
     case "high":
-      return orangeText;
+      return colors.tierRisky;
     case "medium":
-      return yellowText;
+      return colors.warning;
     case "low":
-      return blueText;
+      return colors.accent;
     default:
-      return dimText;
+      return colors.textMuted;
   }
 }
 

@@ -8,7 +8,6 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { RGBA } from "@opentui/core";
 import { useTerminalDimensions } from "@opentui/react";
 import { PetriAnimation } from "./petri-animation";
 import { useCommand } from "../../context/command";
@@ -16,11 +15,7 @@ import { useInput } from "../../context/input";
 import { useFocus } from "../../context/focus";
 import { useConfig } from "../../context/config";
 import { PromptInput } from "../shared/prompt-input";
-
-// Colors
-const greenAccent = RGBA.fromInts(76, 175, 80, 255);
-const creamText = RGBA.fromInts(255, 248, 220, 255);
-const dimText = RGBA.fromInts(120, 120, 120, 255);
+import { useTheme } from "../../theme";
 
 type ViewType = "home" | "config" | "chat";
 
@@ -33,6 +28,7 @@ interface HomeViewProps {
 }
 
 export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
+  const { colors } = useTheme();
   const dimensions = useTerminalDimensions();
   const config = useConfig();
 
@@ -79,10 +75,10 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
 
       {/* Title - centered */}
       <box flexDirection="column" alignItems="center" marginTop={1}>
-        <text fg={creamText}>
-          Apex <span fg={dimText}>({config.data.version || "local"})</span>
+        <text fg={colors.text}>
+          Apex <span fg={colors.textMuted}>({config.data.version || "local"})</span>
         </text>
-        <text fg={dimText}>Automated offensive security</text>
+        <text fg={colors.textMuted}>Automated offensive security</text>
       </box>
 
       {/* Centered Input Area */}
@@ -92,7 +88,7 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
         marginTop={8}
         padding={1}
         border={["left", "right"]}
-        borderColor={greenAccent}
+        borderColor={colors.primary}
       >
         {/* Input with built-in autocomplete */}
         <PromptInput
@@ -117,24 +113,24 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
         {/* Hint message */}
         {hintMessage && (
           <box marginTop={1}>
-            <text fg={creamText}>{hintMessage}</text>
+            <text fg={colors.text}>{hintMessage}</text>
           </box>
         )}
 
         {/* Help text */}
         <box marginTop={1}>
-          <text fg={dimText}>
+          <text fg={colors.textMuted}>
             <span>Type </span>
-            <span fg={creamText}>/</span>
+            <span fg={colors.text}>/</span>
             <span> for commands</span>
             <span> • </span>
-            <span fg={creamText}>[↓][↑]</span>
+            <span fg={colors.text}>[↓][↑]</span>
             <span> navigate</span>
             <span> • </span>
-            <span fg={creamText}>[tab]</span>
+            <span fg={colors.text}>[tab]</span>
             <span> complete</span>
             <span> • </span>
-            <span fg={creamText}>[enter]</span>
+            <span fg={colors.text}>[enter]</span>
             <span> run</span>
           </text>
         </box>

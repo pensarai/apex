@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
 import { useKeyboard } from "@opentui/react";
-import { RGBA } from "@opentui/core";
 import Input from "../input";
 import { useRoute } from "../../context/route";
 import { useConfig } from "../../context/config";
@@ -12,6 +11,7 @@ import type { OperatorMode, PermissionTier } from "../../../core/operator";
 import { OPERATOR_MODES, PERMISSION_TIERS } from "../../../core/operator";
 import type { ModelInfo } from "../../../core/ai";
 import { getAvailableModels } from "../../../core/providers/utils";
+import { useTheme } from "../../theme";
 
 type WizardStep = "target" | "mode" | "creating";
 
@@ -42,12 +42,6 @@ interface HITLWizardProps {
   initialModel?: string;
 }
 
-const greenBullet = RGBA.fromInts(76, 175, 80, 255);
-const creamText = RGBA.fromInts(255, 248, 220, 255);
-const dimText = RGBA.fromInts(120, 120, 120, 255);
-const yellowText = RGBA.fromInts(255, 235, 59, 255);
-const blueText = RGBA.fromInts(100, 181, 246, 255);
-
 const providerNames: Record<string, string> = {
   anthropic: "Claude",
   openai: "OpenAI",
@@ -76,6 +70,7 @@ function parseHostFromUrl(url: string): string | null {
 }
 
 export default function HITLWizard(props: HITLWizardProps) {
+  const { colors } = useTheme();
   const {
     initialTarget,
     initialMode,
@@ -393,10 +388,10 @@ export default function HITLWizard(props: HITLWizardProps) {
 
   const modeColor =
     state.mode === "plan"
-      ? yellowText
+      ? colors.warning
       : state.mode === "auto"
-        ? greenBullet
-        : blueText;
+        ? colors.primary
+        : colors.accent;
 
   if (currentStep === "creating") {
     return (
@@ -409,8 +404,8 @@ export default function HITLWizard(props: HITLWizardProps) {
         flexGrow={1}
         gap={2}
       >
-        <SpinnerDots label="Creating HITL session..." fg="green" />
-        <text fg={dimText}>Target: {state.target}</text>
+        <SpinnerDots label="Creating HITL session..." fg={colors.primary} />
+        <text fg={colors.textMuted}>Target: {state.target}</text>
         <text fg={modeColor}>Mode: {OPERATOR_MODES[state.mode].name}</text>
       </box>
     );
@@ -419,12 +414,12 @@ export default function HITLWizard(props: HITLWizardProps) {
   if (currentStep === "target") {
     return (
       <box width="100%" flexDirection="column" gap={2} paddingLeft={4}>
-        <text fg={creamText}>Interactive Pentesting (Operator Mode)</text>
-        <text fg={dimText}>
+        <text fg={colors.text}>Interactive Pentesting (Operator Mode)</text>
+        <text fg={colors.textMuted}>
           Human-in-the-Loop - Approval gates for risky actions
         </text>
 
-        {error && <text fg="red">Error: {error}</text>}
+        {error && <text fg={colors.error}>Error: {error}</text>}
 
         <Input
           label="Session Name"
@@ -446,18 +441,18 @@ export default function HITLWizard(props: HITLWizardProps) {
 
         <box flexDirection="column" gap={0} marginTop={1}>
           <text>
-            <span fg={greenBullet}>█ </span>
-            <span fg={dimText}>Press </span>
-            <span fg={creamText}>[Enter]</span>
-            <span fg={dimText}> or </span>
-            <span fg={creamText}>[Tab]</span>
-            <span fg={dimText}> to configure mode</span>
+            <span fg={colors.primary}>█ </span>
+            <span fg={colors.textMuted}>Press </span>
+            <span fg={colors.text}>[Enter]</span>
+            <span fg={colors.textMuted}> or </span>
+            <span fg={colors.text}>[Tab]</span>
+            <span fg={colors.textMuted}> to configure mode</span>
           </text>
           <text>
-            <span fg={greenBullet}>█ </span>
-            <span fg={dimText}>Press </span>
-            <span fg={creamText}>[ESC]</span>
-            <span fg={dimText}> to cancel</span>
+            <span fg={colors.primary}>█ </span>
+            <span fg={colors.textMuted}>Press </span>
+            <span fg={colors.text}>[ESC]</span>
+            <span fg={colors.textMuted}> to cancel</span>
           </text>
         </box>
       </box>
@@ -480,44 +475,44 @@ export default function HITLWizard(props: HITLWizardProps) {
   return (
     <box width="100%" flexDirection="column" gap={1} paddingLeft={4}>
       <box flexDirection="column" marginBottom={1}>
-        <text fg={creamText}>Configure Operator Mode</text>
-        <text fg={dimText}>Target: {state.target}</text>
+        <text fg={colors.text}>Configure Operator Mode</text>
+        <text fg={colors.textMuted}>Target: {state.target}</text>
       </box>
 
       {/* Mode Selection - Field 0 */}
       <box flexDirection="row" gap={1}>
-        <text fg={actualField === 0 ? greenBullet : dimText}>
+        <text fg={actualField === 0 ? colors.primary : colors.textMuted}>
           {actualField === 0 ? "▸" : " "}
         </text>
-        <text fg={actualField === 0 ? creamText : dimText}>Mode:</text>
+        <text fg={actualField === 0 ? colors.text : colors.textMuted}>Mode:</text>
         <text fg={modeColor}>{modeDef.name}</text>
-        <text fg={dimText}>- {modeDef.description}</text>
-        {actualField === 0 && <text fg={dimText}>(←/→)</text>}
+        <text fg={colors.textMuted}>- {modeDef.description}</text>
+        {actualField === 0 && <text fg={colors.textMuted}>(←/→)</text>}
       </box>
 
       {/* Auto-approve Tier - Field 1 (hidden in plan mode) */}
       {state.mode !== "plan" && (
         <box flexDirection="row" gap={1}>
-          <text fg={actualField === 1 ? greenBullet : dimText}>
+          <text fg={actualField === 1 ? colors.primary : colors.textMuted}>
             {actualField === 1 ? "▸" : " "}
           </text>
-          <text fg={actualField === 1 ? creamText : dimText}>
+          <text fg={actualField === 1 ? colors.text : colors.textMuted}>
             Auto-approve:
           </text>
-          <text fg={greenBullet}>
+          <text fg={colors.primary}>
             T{state.autoApproveTier} - {tierDef.name}
           </text>
-          <text fg={dimText}>({tierDef.examples.slice(0, 2).join(", ")})</text>
-          {actualField === 1 && <text fg={dimText}>(←/→)</text>}
+          <text fg={colors.textMuted}>({tierDef.examples.slice(0, 2).join(", ")})</text>
+          {actualField === 1 && <text fg={colors.textMuted}>(←/→)</text>}
         </box>
       )}
 
       {/* Add Allowed Host - Field 2 */}
       <box flexDirection="row" gap={1}>
-        <text fg={actualField === 2 ? greenBullet : dimText}>
+        <text fg={actualField === 2 ? colors.primary : colors.textMuted}>
           {actualField === 2 ? "▸" : " "}
         </text>
-        <text fg={actualField === 2 ? creamText : dimText}>Add host:</text>
+        <text fg={actualField === 2 ? colors.text : colors.textMuted}>Add host:</text>
         {actualField === 2 ? (
           <input
             width={30}
@@ -525,20 +520,20 @@ export default function HITLWizard(props: HITLWizardProps) {
             onInput={setHostInput}
             focused={true}
             placeholder="example.com"
-            textColor="white"
+            textColor={colors.text}
             backgroundColor="transparent"
           />
         ) : (
-          <text fg={dimText}>{hostInput || "example.com"}</text>
+          <text fg={colors.textMuted}>{hostInput || "example.com"}</text>
         )}
-        {actualField === 2 && <text fg={dimText}>(Enter to add)</text>}
+        {actualField === 2 && <text fg={colors.textMuted}>(Enter to add)</text>}
       </box>
 
       {/* Show added hosts */}
       {state.scope.allowedHosts.length > 0 && (
         <box flexDirection="column" paddingLeft={3}>
           {state.scope.allowedHosts.map((h, i) => (
-            <text key={i} fg={dimText}>
+            <text key={i} fg={colors.textMuted}>
               {" "}
               • {h}
             </text>
@@ -548,43 +543,43 @@ export default function HITLWizard(props: HITLWizardProps) {
 
       {/* Strict Scope - Field 3 */}
       <box flexDirection="row" gap={1}>
-        <text fg={actualField === 3 ? greenBullet : dimText}>
+        <text fg={actualField === 3 ? colors.primary : colors.textMuted}>
           {actualField === 3 ? "▸" : " "}
         </text>
-        <text fg={actualField === 3 ? creamText : dimText}>Strict scope:</text>
-        <text fg={state.scope.strictScope ? greenBullet : dimText}>
+        <text fg={actualField === 3 ? colors.text : colors.textMuted}>Strict scope:</text>
+        <text fg={state.scope.strictScope ? colors.primary : colors.textMuted}>
           {state.scope.strictScope ? "Enabled" : "Disabled"}
         </text>
-        {actualField === 3 && <text fg={dimText}>(Enter/←/→)</text>}
+        {actualField === 3 && <text fg={colors.textMuted}>(Enter/←/→)</text>}
       </box>
 
       {/* Model Selection - Field 4 */}
       <box flexDirection="row" gap={1}>
-        <text fg={actualField === 4 ? greenBullet : dimText}>
+        <text fg={actualField === 4 ? colors.primary : colors.textMuted}>
           {actualField === 4 ? "▸" : " "}
         </text>
-        <text fg={actualField === 4 ? creamText : dimText}>Model:</text>
-        <text fg={greenBullet}>{model.name}</text>
-        {actualField === 4 && <text fg={dimText}>(←/→)</text>}
+        <text fg={actualField === 4 ? colors.text : colors.textMuted}>Model:</text>
+        <text fg={colors.primary}>{model.name}</text>
+        {actualField === 4 && <text fg={colors.textMuted}>(←/→)</text>}
       </box>
 
       {/* Submit Button - Field 5 */}
       <box flexDirection="row" gap={1} marginTop={1}>
-        <text fg={actualField === 5 ? greenBullet : dimText}>
+        <text fg={actualField === 5 ? colors.primary : colors.textMuted}>
           {actualField === 5 ? "▸" : " "}
         </text>
-        <text fg={actualField === 5 ? greenBullet : dimText}>
+        <text fg={actualField === 5 ? colors.primary : colors.textMuted}>
           {actualField === 5 ? "[" : " "}
         </text>
-        <text fg={actualField === 5 ? creamText : dimText}>Start Session</text>
-        <text fg={actualField === 5 ? greenBullet : dimText}>
+        <text fg={actualField === 5 ? colors.text : colors.textMuted}>Start Session</text>
+        <text fg={actualField === 5 ? colors.primary : colors.textMuted}>
           {actualField === 5 ? "]" : " "}
         </text>
       </box>
 
       {/* Help text */}
       <box flexDirection="column" gap={0} marginTop={2}>
-        <text fg={dimText}>
+        <text fg={colors.textMuted}>
           ↑/↓ navigate | ←/→ change value | Enter select | ESC back
         </text>
       </box>

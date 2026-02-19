@@ -8,7 +8,7 @@ import {
   getStableMessageKey,
   getArgsPreview,
 } from "./shared";
-import { colors } from "../theme";
+import { useTheme } from "../theme";
 
 export type Subagent = {
   id: string;
@@ -79,6 +79,7 @@ export default function AgentDisplay({
   contextId = "root",
   focused = true,
 }: AgentDisplayProps) {
+  const { colors } = useTheme();
   // Sort messages and subagents by creation time
   // Don't use useMemo to ensure we always have fresh data during rapid updates
   const messagesAndSubagents = [...messages, ...(subagents ?? [])].sort(
@@ -102,7 +103,7 @@ export default function AgentDisplay({
         },
         scrollbarOptions: {
           trackOptions: {
-            foregroundColor: "green",
+            foregroundColor: colors.primary,
             backgroundColor: RGBA.fromInts(40, 40, 40, 255),
           },
         },
@@ -140,7 +141,7 @@ export default function AgentDisplay({
 
       {isStreaming && (
         <box flexDirection="row" alignItems="center">
-          <SpinnerDots label="Thinking..." fg="green" />
+          <SpinnerDots label="Thinking..." fg={colors.primary} />
         </box>
       )}
 
@@ -154,6 +155,7 @@ const SubAgentDisplay = memo(function SubAgentDisplay({
 }: {
   subagent: Subagent;
 }) {
+  const { colors } = useTheme();
   const [open, setOpen] = useState(false);
 
   return (
@@ -162,23 +164,23 @@ const SubAgentDisplay = memo(function SubAgentDisplay({
       onMouseDown={() => setOpen(!open)}
       width="100%"
       border={true}
-      borderColor="green"
+      borderColor={colors.primary}
       backgroundColor={RGBA.fromInts(10, 10, 10, 255)}
     >
       <box flexDirection="row" alignItems="center" gap={1}>
         {subagent.status === "pending" && (
-          <SpinnerDots label={subagent.name} fg="green" />
+          <SpinnerDots label={subagent.name} fg={colors.primary} />
         )}
         {subagent.status === "completed" && (
-          <text fg="green"> ✓ {subagent.name}</text>
+          <text fg={colors.primary}> ✓ {subagent.name}</text>
         )}
         {subagent.status === "failed" && (
-          <text fg="red">✗ {subagent.name}</text>
+          <text fg={colors.error}>✗ {subagent.name}</text>
         )}
         {subagent.status === "paused" && (
-          <text fg={colors.orangeText}>⏸ {subagent.name}</text>
+          <text fg={colors.tierRisky}>⏸ {subagent.name}</text>
         )}
-        <text fg="gray">{open ? "▼" : "▶"}</text>
+        <text fg={colors.textMuted}>{open ? "▼" : "▶"}</text>
       </box>
       {open && (
         <AgentDisplay
@@ -198,6 +200,7 @@ const AgentMessage = memo(function AgentMessage({
 }: {
   message: DisplayMessage;
 }) {
+  const { colors } = useTheme();
   const dimensions = useTerminalDimensions();
   let content = "";
 
@@ -224,7 +227,7 @@ const AgentMessage = memo(function AgentMessage({
 
   // Render markdown for assistant messages
   const displayContent =
-    message.role === "assistant" ? markdownToStyledText(content) : content;
+    message.role === "assistant" ? markdownToStyledText(content, colors) : content;
 
   // Check if this is a pending tool message
   const isPendingTool = message.role === "tool" && message.status === "pending";
@@ -250,7 +253,7 @@ const AgentMessage = memo(function AgentMessage({
     >
       {message.role !== "tool" && (
         <text
-          fg="green"
+          fg={colors.primary}
           content={message.role === "user" ? "→ User" : "← Assistant"}
         />
       )}
@@ -277,7 +280,7 @@ const AgentMessage = memo(function AgentMessage({
                 label={
                   typeof displayContent === "string" ? displayContent : content
                 }
-                fg="green"
+                fg={colors.primary}
               />
               {/* Args preview for pending tools */}
               {argsPreview && (
@@ -304,14 +307,14 @@ const AgentMessage = memo(function AgentMessage({
               {/* Completed/error tool indicator */}
               {message.role === "tool" && (
                 <box flexDirection="row" gap={1}>
-                  <text fg={isErrorTool ? "red" : "green"}>
+                  <text fg={isErrorTool ? colors.error : colors.primary}>
                     {isErrorTool ? "✗" : "✓"}
                   </text>
-                  <text fg="white" content={displayContent} />
+                  <text fg={colors.text} content={displayContent} />
                 </box>
               )}
               {message.role !== "tool" && (
-                <text fg="white" content={displayContent} />
+                <text fg={colors.text} content={displayContent} />
               )}
               {/* Args preview for completed tools */}
               {message.role === "tool" && argsPreview && (

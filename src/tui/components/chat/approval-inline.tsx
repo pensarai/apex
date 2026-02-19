@@ -5,7 +5,7 @@
  * Provides visual context for pending approvals.
  */
 
-import { colors, getTierColor } from "../../theme";
+import { useTheme, getTierColor } from "../../theme";
 import { getToolSummary } from "../shared/tool-registry";
 import type { PendingApproval } from "../../../core/operator";
 
@@ -18,7 +18,8 @@ interface InlineApprovalPromptProps {
  * Displayed in the chat flow.
  */
 export function InlineApprovalPrompt({ approval }: InlineApprovalPromptProps) {
-  const tierColor = getTierColor(approval.tier);
+  const { colors } = useTheme();
+  const tierColor = getTierColor(colors, approval.tier);
 
   // Get the description if provided
   const description = approval.args?.toolCallDescription as string | undefined;
@@ -29,30 +30,30 @@ export function InlineApprovalPrompt({ approval }: InlineApprovalPromptProps) {
   return (
     <box flexDirection="row" marginTop={1}>
       {/* Yellow left border for pending approval */}
-      <text fg={colors.yellowText}>{"  │ "}</text>
+      <text fg={colors.warning}>{"  │ "}</text>
 
       <box flexDirection="column">
         {/* Description from agent if available */}
         {description && (
           <box flexDirection="row" marginBottom={1}>
-            <text fg={colors.creamText} content={description} />
+            <text fg={colors.text} content={description} />
           </box>
         )}
 
         {/* Approval line with tier indicator */}
         <box flexDirection="row" gap={1}>
-          <text fg={colors.yellowText} content="?" />
+          <text fg={colors.warning} content="?" />
           <text fg={tierColor} content={`[T${approval.tier}]`} />
-          <text fg={colors.toolColor} content={summary} />
+          <text fg={colors.info} content={summary} />
         </box>
 
         {/* Shortcut hints */}
         <box flexDirection="row" gap={2} marginLeft={2} marginTop={1}>
-          <text fg={colors.greenAccent}>Y</text>
-          <text fg={colors.dimText}>approve</text>
-          <text fg={colors.cyanAccent}>A</text>
-          <text fg={colors.dimText}>auto-approve</text>
-          <text fg={colors.dimText}>or type to redirect</text>
+          <text fg={colors.primary}>Y</text>
+          <text fg={colors.textMuted}>approve</text>
+          <text fg={colors.secondary}>A</text>
+          <text fg={colors.textMuted}>auto-approve</text>
+          <text fg={colors.textMuted}>or type to redirect</text>
         </box>
       </box>
     </box>

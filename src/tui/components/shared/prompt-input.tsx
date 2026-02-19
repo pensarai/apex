@@ -8,7 +8,7 @@ import {
 } from "react";
 import { useKeyboard } from "@opentui/react";
 import type { TextareaRenderable } from "@opentui/core";
-import { colors } from "../../theme/colors";
+import { useTheme } from "../../theme";
 import { useInput } from "../../context/input";
 import { useFocus } from "../../context/focus";
 import type { AutocompleteOption } from "../autocomplete";
@@ -90,6 +90,7 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
     },
     ref,
   ) {
+    const { colors } = useTheme();
     const { inputValue, setInputValue } = useInput();
     const { registerPromptRef } = useFocus();
     const textareaRef = useRef<TextareaRenderable | null>(null);
@@ -242,7 +243,7 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
         {/* Input row with optional prompt indicator */}
         <box flexDirection="row">
           {showPromptIndicator && (
-            <text marginRight={2} fg={colors.greenAccent}>
+            <text marginRight={2} fg={colors.primary}>
               {"❯ "}
             </text>
           )}
@@ -282,14 +283,14 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
               const isSelected = index === selectedSuggestionIndex;
               return (
                 <box key={suggestion.value} flexDirection="row" gap={1}>
-                  <text fg={isSelected ? colors.greenAccent : colors.dimText}>
+                  <text fg={isSelected ? colors.primary : colors.textMuted}>
                     {isSelected ? " ▸" : "  "}
                   </text>
-                  <text fg={isSelected ? colors.creamText : colors.dimText}>
+                  <text fg={isSelected ? colors.text : colors.textMuted}>
                     {suggestion.label}
                   </text>
                   {suggestion.description && (
-                    <text fg={colors.dimText}> {suggestion.description}</text>
+                    <text fg={colors.textMuted}> {suggestion.description}</text>
                   )}
                 </box>
               );

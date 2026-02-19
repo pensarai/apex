@@ -40,7 +40,7 @@ import { useRoute } from "../context/route";
 import { useInput } from "../context/input";
 import { useFocus } from "../context/focus";
 import { useAgent } from "../context/agent";
-import { colors } from "../theme";
+import { useTheme } from "../theme";
 import type { DisplayMessage } from "../components/agent-display";
 import { isToolMessage, useMessageState } from "../components/shared";
 import type { ModelInfo } from "../../core/ai";
@@ -131,6 +131,7 @@ export function SessionComponent({
   const route = useRoute();
   const { model: agentModel, addTokenUsage, tokenUsage } = useAgent();
   const { setInputValue } = useInput();
+  const { colors } = useTheme();
 
   // Use ref to ensure agent always has access to latest callback
   const addTokenUsageRef = useRef(addTokenUsage);
@@ -862,18 +863,18 @@ export function SessionComponent({
     const stages = getStagesInOrder();
     return (
       <box flexDirection="column" width="100%" height="100%" padding={2}>
-        <text fg={colors.creamText}>Select Stage:</text>
-        <text fg={colors.dimText}> </text>
+        <text fg={colors.text}>Select Stage:</text>
+        <text fg={colors.textMuted}> </text>
         {stages.map((s, idx) => (
           <text
             key={s.stage}
-            fg={currentStage === s.stage ? colors.greenAccent : colors.dimText}
+            fg={currentStage === s.stage ? colors.primary : colors.textMuted}
           >
             {"  "}[{idx + 1}] {s.name} - {s.description}
           </text>
         ))}
-        <text fg={colors.dimText}> </text>
-        <text fg={colors.dimText}> [ESC] Cancel</text>
+        <text fg={colors.textMuted}> </text>
+        <text fg={colors.textMuted}> [ESC] Cancel</text>
       </box>
     );
   }
