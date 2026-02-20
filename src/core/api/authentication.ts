@@ -16,6 +16,7 @@ export async function runAuthenticationAgent(input: AuthenticationAgentInput) {
     exportedHeaders,
     strategy,
     authBarrier,
+    authDataPath,
   } = await agent.consume({
     onTextDelta: (d) => input.callbacks?.onTextDelta?.(d),
     onToolCall: (d) => input.callbacks?.onToolCall?.(d),
@@ -34,5 +35,6 @@ export async function runAuthenticationAgent(input: AuthenticationAgentInput) {
     exportedHeaders,
     strategy,
     authBarrier,
+    authDataPath,
   };
 }

@@ -98,7 +98,15 @@ If both API and browser approaches fail, use \`delegate_to_auth_subagent\` for c
 Call \`complete_authentication\` with:
 - \`success\`: whether auth succeeded
 - \`summary\`: what happened and what credentials/cookies were obtained
+- \`exportedCookies\`: the cookie string for downstream HTTP requests (from browser_get_cookies cookieHeader or authenticate_session response)
+- \`exportedHeaders\`: auth headers map, e.g. {"Authorization": "Bearer <token>"} (from browser_evaluate localStorage tokens or API response)
+- \`strategy\`: method used ("browser", "form_post", "json_post", "basic_auth", "bearer")
 - \`authBarrier\`: if a barrier was encountered (captcha, mfa, etc.)
+
+CRITICAL: You MUST include exportedCookies and exportedHeaders when authentication succeeds.
+These are the ONLY way downstream agents receive the session credentials.
+- After browser auth: get cookies from \`browser_get_cookies\` (use the cookieHeader field) and tokens from \`browser_evaluate\`
+- After API auth: use the session cookie and any auth headers from the response
 
 # Error Recovery
 
@@ -597,6 +605,7 @@ CRITICAL: Always call browser_snapshot BEFORE browser_fill or browser_click to g
 9. **Verify Result**: \`browser_screenshot\` to capture final state
 10. **Extract Session Cookies**: \`browser_get_cookies\` to get httpOnly session cookies
     - This returns cookies including httpOnly ones that document.cookie can't access
+    - **Save the \`cookieHeader\` field** — you will need it for \`complete_authentication\`
 11. **Extract Bearer Tokens**: \`browser_evaluate\` with script to get tokens from storage:
    \`\`\`javascript
    (() => {
@@ -609,10 +618,11 @@ CRITICAL: Always call browser_snapshot BEFORE browser_fill or browser_click to g
      return JSON.stringify(tokens);
    })()
    \`\`\`
-12. **Store All Credentials**: \`store_browser_cookies\` with:
-    - \`cookies\`: array from browser_get_cookies
-    - \`bearerToken\`: the JWT/access token from localStorage (if found)
-    - This makes both Cookie header AND Authorization header available for HTTP requests
+12. **Complete with credentials**: Call \`complete_authentication\` and include:
+    - \`exportedCookies\`: the \`cookieHeader\` string from step 10
+    - \`exportedHeaders\`: e.g. \`{"Authorization": "Bearer <token>"}\` if a JWT/access token was found in step 11
+    - \`strategy\`: "browser"
+    - This is how the session credentials are passed to downstream agents
 
 ### Key Rules:
 - The \`ref\` parameter is REQUIRED for browser_fill and browser_click to work reliably

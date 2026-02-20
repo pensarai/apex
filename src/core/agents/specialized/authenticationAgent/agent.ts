@@ -66,6 +66,8 @@ export interface AuthenticationResult {
   strategy: string;
   /** Auth barrier encountered during authentication */
   authBarrier: AuthBarrier | undefined;
+  /** Path to the persisted auth data file (inside session auth/ dir) */
+  authDataPath: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -151,6 +153,7 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
         let exportedHeaders = {};
         let strategy = "unknown";
         let authBarrier = undefined;
+        let authDataPath = "";
 
         for (const step of steps) {
           for (const tr of step.toolResults) {
@@ -166,6 +169,7 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
                 (r?.exportedHeaders as Record<string, string>) ?? {};
               strategy = (r?.strategy as string) ?? "unknown";
               authBarrier = (r?.authBarrier as AuthBarrier) ?? undefined;
+              authDataPath = (r?.authDataPath as string) ?? "";
             }
           }
         }
@@ -177,6 +181,7 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
           exportedHeaders,
           strategy,
           authBarrier,
+          authDataPath,
         };
       },
     });

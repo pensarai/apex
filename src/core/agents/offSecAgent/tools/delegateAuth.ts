@@ -295,9 +295,14 @@ When to use delegate_to_auth_subagent vs authenticate_session:
           sessionCookie: result.exportedCookies || "",
           headers: result.exportedHeaders || {},
           authBarrier: result.authBarrier,
+          authDataPath: result.authDataPath || "",
           summary: result.summary,
           message: result.success
-            ? `Authentication subagent succeeded. Strategy: ${result.strategy}. ${result.summary}${usageInstructions}`
+            ? `Authentication subagent succeeded. Strategy: ${result.strategy}. ${result.summary}${usageInstructions}${
+                result.authDataPath
+                  ? `\nAuth data saved to: ${result.authDataPath}`
+                  : ""
+              }`
             : `Authentication subagent failed. ${result.summary}${
                 result.authBarrier
                   ? ` Barrier: ${result.authBarrier.type} - ${result.authBarrier.details}`
