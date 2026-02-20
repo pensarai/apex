@@ -141,6 +141,7 @@ async function runSingleBranchBenchmark(
         () =>
           daytona.create(
             {
+              image: "daytona/node:20-slim",
               language: "typescript",
               resources: {
                 cpu: 4,
@@ -267,13 +268,20 @@ async function runSingleBranchBenchmark(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     // Truncate very long error messages (e.g., HTML error pages)
-    const truncatedMessage = message.length > 500 ? message.substring(0, 500) + "... (truncated)" : message;
+    const truncatedMessage =
+      message.length > 500
+        ? message.substring(0, 500) + "... (truncated)"
+        : message;
     const duration = ((Date.now() - startTime) / 1000 / 60).toFixed(2);
-    console.error(`[${branch}] ❌ Failed after ${duration}m: ${truncatedMessage}`);
+    console.error(
+      `[${branch}] ❌ Failed after ${duration}m: ${truncatedMessage}`,
+    );
 
     // Log full error for debugging
     if (error instanceof Error && error.stack) {
-      console.error(`[${branch}] Error stack: ${error.stack.substring(0, 1000)}`);
+      console.error(
+        `[${branch}] Error stack: ${error.stack.substring(0, 1000)}`,
+      );
     }
     return {
       repoPath: repoUrl,
@@ -481,10 +489,7 @@ async function installApex(sandbox: Sandbox, branch?: string): Promise<void> {
  * Install Docker in the Daytona sandbox.
  * Required for benchmark runner's --mode local which uses docker compose.
  */
-async function installDocker(
-  sandbox: Sandbox,
-  branch?: string,
-): Promise<void> {
+async function installDocker(sandbox: Sandbox, branch?: string): Promise<void> {
   const prefix = branch ? `[${branch}] ` : "";
   console.log(`${prefix}🐳 Installing Docker...`);
 
@@ -498,23 +503,26 @@ async function installDocker(
   // Install Docker using official script
   const installResult = await retryWithBackoff(
     () =>
-      sandbox.process.executeCommand(
-        "curl -fsSL https://get.docker.com | sh",
-      ),
+      sandbox.process.executeCommand("curl -fsSL https://get.docker.com | sh"),
     { branch, maxRetries: 2 },
   );
 
   // Log installation output for debugging (don't hide errors)
   if (installResult.result) {
     const output = installResult.result.trim();
-    const preview = output.length > 500 ? output.substring(0, 500) + "..." : output;
+    const preview =
+      output.length > 500 ? output.substring(0, 500) + "..." : output;
     console.log(`${prefix}Docker install output: ${preview}`);
   }
 
   // Check installation exit code
   if (installResult.exitCode !== 0) {
-    console.error(`${prefix}Docker installation failed with exit code ${installResult.exitCode}`);
-    throw new Error(`Docker installation script failed with exit code ${installResult.exitCode}`);
+    console.error(
+      `${prefix}Docker installation failed with exit code ${installResult.exitCode}`,
+    );
+    throw new Error(
+      `Docker installation script failed with exit code ${installResult.exitCode}`,
+    );
   }
 
   // Verify Docker binary was installed
@@ -530,7 +538,7 @@ async function installDocker(
     console.error(`${prefix}Docker binary check: ${checkLocations.result}`);
 
     // Check if it's in PATH without explicit export
-    const pathCheck = await sandbox.process.executeCommand('echo $PATH');
+    const pathCheck = await sandbox.process.executeCommand("echo $PATH");
     console.error(`${prefix}Current PATH: ${pathCheck.result}`);
 
     throw new Error("Docker binary not found after installation");
@@ -549,7 +557,9 @@ async function installDocker(
 
   // Check if the command itself failed (not the daemon startup)
   if (daemonStart.exitCode !== 0 && daemonStart.result) {
-    console.error(`${prefix}Failed to start daemon command: ${daemonStart.result.substring(0, 200)}`);
+    console.error(
+      `${prefix}Failed to start daemon command: ${daemonStart.result.substring(0, 200)}`,
+    );
     throw new Error("Failed to execute dockerd command");
   }
 
@@ -560,12 +570,12 @@ async function installDocker(
   // Add current user to docker group for socket access
   console.log(`${prefix}Configuring Docker permissions...`);
   await sandbox.process.executeCommand(
-    'sudo usermod -aG docker $(whoami) || true',
+    "sudo usermod -aG docker $(whoami) || true",
   );
 
   // Set socket permissions to allow group access
   await sandbox.process.executeCommand(
-    'sudo chmod 666 /var/run/docker.sock || sleep 2 && sudo chmod 666 /var/run/docker.sock',
+    "sudo chmod 666 /var/run/docker.sock || sleep 2 && sudo chmod 666 /var/run/docker.sock",
   );
 
   // Wait for Docker daemon to be ready (up to 60 seconds with retries)
@@ -598,10 +608,14 @@ async function installDocker(
 
   if (attempts >= maxAttempts) {
     // Log daemon output for debugging
-    const logResult = await sandbox.process.executeCommand("cat /tmp/dockerd.log 2>&1 || echo 'No log file'");
+    const logResult = await sandbox.process.executeCommand(
+      "cat /tmp/dockerd.log 2>&1 || echo 'No log file'",
+    );
     console.error(`${prefix}Docker daemon logs:\n${logResult.result}`);
     console.error(`${prefix}Last docker info error:\n${lastError}`);
-    throw new Error(`Docker daemon failed to start within ${maxAttempts} seconds`);
+    throw new Error(
+      `Docker daemon failed to start within ${maxAttempts} seconds`,
+    );
   }
 
   // Verify docker compose is available
@@ -610,7 +624,9 @@ async function installDocker(
   );
 
   if (composeCheck.exitCode !== 0) {
-    throw new Error(`docker compose not available: ${composeCheck.result ?? "unknown error"}`);
+    throw new Error(
+      `docker compose not available: ${composeCheck.result ?? "unknown error"}`,
+    );
   }
 
   console.log(`${prefix}✅ Docker daemon running, compose ready`);
