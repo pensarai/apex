@@ -311,6 +311,22 @@ export async function runSingleBenchmark(
           onToolCall: (d) => console.log(`[${branch}] -> ${d.toolName}`),
           onToolResult: (d) => console.log(`[${branch}] <- ${d.toolName} done`),
           onError: (e) => console.error(`[${branch}] Error:`, e),
+          subagentCallbacks: {
+            onSubagentSpawn: ({ subagentId }) =>
+              console.log(`[${branch}] [${subagentId}] spawned`),
+            onSubagentComplete: ({ subagentId, status }) =>
+              console.log(`[${branch}] [${subagentId}] ${status}`),
+            onToolCall: (d) =>
+              console.log(
+                `[${branch}] [${d.subagentId}] -> ${d.toolName}`,
+              ),
+            onToolResult: (d) =>
+              console.log(
+                `[${branch}] [${d.subagentId}] <- ${d.toolName} done`,
+              ),
+            onError: (e) =>
+              console.error(`[${branch}] [subagent] Error:`, e),
+          },
         },
       });
     } finally {
@@ -339,7 +355,7 @@ export async function runSingleBenchmark(
     // -----------------------------------------------------------------------
     let comparisonResult: BenchmarkComparisonResult["comparison"] = null;
     const comparisonModel =
-      config.comparisonModel || "claude-haiku-4-5-20251001";
+      config.comparisonModel || "claude-haiku-4-5";
 
     try {
       console.log(`[${branch}] Running benchmark comparison...`);
@@ -484,8 +500,8 @@ async function waitForTarget(
     await new Promise((resolve) => setTimeout(resolve, pollInterval));
   }
 
-  throw new Error(
-    `Target ${url} not ready after ${(maxWaitMs / 1000).toFixed(0)}s`,
+  console.warn(
+    `[${branch}] ⚠️  Target ${url} not ready after ${(maxWaitMs / 1000).toFixed(0)}s — continuing anyway`,
   );
 }
 

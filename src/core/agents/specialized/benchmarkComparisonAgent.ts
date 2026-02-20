@@ -172,9 +172,9 @@ function loadExpectedResults(repoPath: string): Record<string, unknown>[] {
       if (parsed?.vulnerabilities && Array.isArray(parsed.vulnerabilities)) {
         for (const vuln of parsed.vulnerabilities) {
           results.push({
-            title: vuln.name || vuln.title || "Unknown",
-            severity: vuln.severity || "MEDIUM",
-            reason: vuln.description || vuln.reason || "",
+            title: vuln.vuln_name || vuln.name || vuln.title || "Unknown",
+            severity: vuln.severity || "HIGH",
+            reason: vuln.description_of_vuln || vuln.description || vuln.reason || "",
             ...vuln,
           });
         }

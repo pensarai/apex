@@ -497,7 +497,7 @@ async function installDocker(sandbox: Sandbox, branch?: string): Promise<void> {
   // The Docker install script runs apt-get update which fails on the yarn repo
   console.log(`${prefix}Fixing apt repositories...`);
   await sandbox.process.executeCommand(
-    "sudo rm -f /etc/apt/sources.list.d/yarn.list || true",
+    "(sudo rm -f /etc/apt/sources.list.d/yarn.list || rm -f /etc/apt/sources.list.d/yarn.list) 2>/dev/null || true",
   );
 
   // Install Docker using official script
@@ -547,12 +547,12 @@ async function installDocker(sandbox: Sandbox, branch?: string): Promise<void> {
   const dockerPath = whichResult.result.trim();
   console.log(`${prefix}✅ Docker installed at: ${dockerPath}`);
 
-  // Start Docker daemon in background (with sudo and explicit PATH)
+  // Start Docker daemon in background
   console.log(`${prefix}Starting Docker daemon...`);
 
-  // Use nohup to properly detach the daemon and avoid connection issues
+  // Use nohup to properly detach the daemon - try with sudo first, fall back to direct
   const daemonStart = await sandbox.process.executeCommand(
-    'export PATH="/usr/local/bin:/usr/bin:$PATH" && nohup sudo dockerd >/tmp/dockerd.log 2>&1 </dev/null &',
+    'export PATH="/usr/local/bin:/usr/bin:$PATH" && nohup dockerd >/tmp/dockerd.log 2>&1 </dev/null &',
   );
 
   // Check if the command itself failed (not the daemon startup)
@@ -570,12 +570,12 @@ async function installDocker(sandbox: Sandbox, branch?: string): Promise<void> {
   // Add current user to docker group for socket access
   console.log(`${prefix}Configuring Docker permissions...`);
   await sandbox.process.executeCommand(
-    "sudo usermod -aG docker $(whoami) || true",
+    '(sudo usermod -aG docker $(whoami) || usermod -aG docker $(whoami)) 2>/dev/null || true',
   );
 
   // Set socket permissions to allow group access
   await sandbox.process.executeCommand(
-    "sudo chmod 666 /var/run/docker.sock || sleep 2 && sudo chmod 666 /var/run/docker.sock",
+    'chmod 666 /var/run/docker.sock 2>/dev/null || sleep 2 && chmod 666 /var/run/docker.sock 2>/dev/null || true',
   );
 
   // Wait for Docker daemon to be ready (up to 60 seconds with retries)
