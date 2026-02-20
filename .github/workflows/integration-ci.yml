@@ -1,0 +1,71 @@
+# Integration CI – Console Typecheck
+# ==================================
+# Clones pensarai/console (which submodules apex), updates the apex
+# submodule to the current PR / push branch, then runs the console
+# typecheck to ensure apex changes don't break downstream consumers.
+
+name: Integration CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, canary]
+
+jobs:
+  console-typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout apex (this repo)
+        uses: actions/checkout@v4
+        with:
+          path: apex
+
+      - name: Checkout pensarai/console
+        uses: actions/checkout@v4
+        with:
+          repository: pensarai/console
+          token: ${{ secrets.CONSOLE_REPO_TOKEN }}
+          submodules: recursive
+          path: console
+
+      - name: Update apex submodule to current ref
+        working-directory: console
+        run: |
+          # Find the apex submodule path inside console
+          SUBMODULE_PATH=$(git config --file .gitmodules --get-regexp 'submodule\..*\.url' \
+            | grep 'apex' | head -n1 \
+            | sed 's/submodule\.\(.*\)\.url.*/\1/')
+
+          if [ -z "$SUBMODULE_PATH" ]; then
+            echo "::error::Could not find an apex submodule in console/.gitmodules"
+            exit 1
+          fi
+
+          echo "Found apex submodule at: $SUBMODULE_PATH"
+
+          # Point the submodule at the local apex checkout and update
+          cd "$SUBMODULE_PATH"
+          git fetch "$GITHUB_WORKSPACE/apex" "$GITHUB_SHA"
+          git checkout "$GITHUB_SHA"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install console dependencies
+        working-directory: console
+        run: npm install
+
+      - name: Install SST providers
+        working-directory: console
+        run: |
+          npx sst version
+          npx sst install
+
+      - name: Typecheck console
+        working-directory: console
+        run: npm run tsc

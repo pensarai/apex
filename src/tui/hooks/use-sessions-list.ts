@@ -149,6 +149,7 @@ export function useSessionsList() {
 
   return {
     sessions: filtered,
+    totalCount: sessions.length,
     groupedSessions,
     visualOrderSessions,
     loading,

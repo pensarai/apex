@@ -12,10 +12,7 @@ import {
   type TextChunk,
 } from "@opentui/core";
 import { marked } from "marked";
-
-// Shared color constants
-export const codeColor = RGBA.fromInts(100, 255, 100, 255); // green for code
-export const linkColor = RGBA.fromInts(100, 200, 255, 255); // cyan for links
+import type { ThemeColors } from "../../theme";
 
 /**
  * Convert markdown content to StyledText for terminal rendering.
@@ -31,7 +28,14 @@ export const linkColor = RGBA.fromInts(100, 200, 255, 255); // cyan for links
  * - Blockquotes (>)
  * - Paragraphs
  */
-export function markdownToStyledText(content: string): StyledText {
+export function markdownToStyledText(
+  content: string,
+  colors?: ThemeColors,
+): StyledText {
+  // Resolve colors with fallbacks for backwards compatibility
+  const codeColor = colors?.markdownCode ?? RGBA.fromInts(100, 255, 100, 255);
+  const linkColor = colors?.markdownLink ?? RGBA.fromInts(100, 200, 255, 255);
+
   // Handle empty or whitespace-only content
   if (!content || !content.trim()) {
     return new StyledText([
@@ -131,7 +135,7 @@ export function markdownToStyledText(content: string): StyledText {
         chunks.push({
           __isChunk: true,
           text: "│ ",
-          fg: RGBA.fromInts(150, 150, 150, 255),
+          fg: colors?.textMuted ?? RGBA.fromInts(150, 150, 150, 255),
           attributes: 0,
         });
         if (token.tokens)

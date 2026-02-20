@@ -1,13 +1,9 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useKeyboard } from "@opentui/react";
-import { RGBA } from "@opentui/core";
 import type { ModelInfo } from "../../../core/ai";
 import { getAvailableModels } from "../../../core/providers/utils";
 import type { Config } from "../../../core/config/config";
-
-const greenAccent = RGBA.fromInts(76, 175, 80, 255);
-const creamText = RGBA.fromInts(255, 248, 220, 255);
-const dimText = RGBA.fromInts(120, 120, 120, 255);
+import { useTheme } from "../../theme";
 
 const providerNames: Record<string, string> = {
   anthropic: "Claude",
@@ -39,6 +35,7 @@ export function ModelPicker({
   focused = true,
   isModelUserSelected = false,
 }: ModelPickerProps) {
+  const { colors } = useTheme();
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedProviders, setExpandedProviders] = useState<Set<string>>(
@@ -243,9 +240,9 @@ export function ModelPicker({
     <box flexDirection="column" gap={0}>
       {/* Search indicator */}
       {searchQuery ? (
-        <text fg={creamText}>Search: {searchQuery}_</text>
+        <text fg={colors.text}>Search: {searchQuery}_</text>
       ) : (
-        <text fg={dimText}>Type to search models...</text>
+        <text fg={colors.textMuted}>Type to search models...</text>
       )}
 
       {/* Provider groups */}
@@ -270,10 +267,10 @@ export function ModelPicker({
             <text
               fg={
                 isProviderFocused
-                  ? greenAccent
+                  ? colors.primary
                   : isExpanded
-                    ? creamText
-                    : dimText
+                    ? colors.text
+                    : colors.textMuted
               }
             >
               {isProviderFocused ? "❯" : isExpanded ? "▾" : "▸"} {providerName}{" "}
@@ -296,7 +293,10 @@ export function ModelPicker({
                   const isDefault =
                     m.id === "claude-haiku-4-5" || m.id === "gpt-4o-mini";
                   return (
-                    <text key={m.id} fg={isFocused ? greenAccent : dimText}>
+                    <text
+                      key={m.id}
+                      fg={isFocused ? colors.primary : colors.textMuted}
+                    >
                       {isSelected ? "●" : "○"} {m.name}
                       {isDefault && !isModelUserSelected && isSelected
                         ? " [default]"
@@ -311,7 +311,7 @@ export function ModelPicker({
       })}
 
       {/* Help text */}
-      <text fg={dimText}>
+      <text fg={colors.textMuted}>
         ↑/↓ navigate | ←/→ collapse/expand | Type to search
       </text>
     </box>

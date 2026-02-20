@@ -17,7 +17,7 @@ import { useRoute } from "../../context/route";
 import { useConfig } from "../../context/config";
 import { MessageList } from "../chat/message-list";
 import { InputArea } from "../chat/input-area";
-import { colors } from "../../theme";
+import { useTheme } from "../../theme";
 import type { DisplayMessage } from "../agent-display";
 import { isToolMessage } from "../shared/type-guards";
 import type { OperatorMode, PendingApproval } from "../../../core/operator";
@@ -45,6 +45,7 @@ export default function OperatorDashboard({
   const route = useRoute();
   const config = useConfig();
   const { model, setThinking, setIsExecuting } = useAgent();
+  const { colors } = useTheme();
 
   // Session state
   const [session, setSession] = useState<SessionInfo | null>(null);
@@ -348,7 +349,7 @@ export default function OperatorDashboard({
         alignItems="center"
         justifyContent="center"
       >
-        <text fg={colors.dimText}>Loading session...</text>
+        <text fg={colors.textMuted}>Loading session...</text>
       </box>
     );
   }
@@ -364,9 +365,9 @@ export default function OperatorDashboard({
         justifyContent="center"
         gap={1}
       >
-        <text fg="red">Failed to load session</text>
-        {error && <text fg={colors.dimText}>{error}</text>}
-        <text fg={colors.dimText}>Press ESC to go back</text>
+        <text fg={colors.error}>Failed to load session</text>
+        {error && <text fg={colors.textMuted}>{error}</text>}
+        <text fg={colors.textMuted}>Press ESC to go back</text>
       </box>
     );
   }
@@ -384,13 +385,13 @@ export default function OperatorDashboard({
         flexShrink={0}
       >
         <box flexDirection="row" gap={2}>
-          <text fg={colors.greenAccent}>Operator</text>
-          <text fg={colors.dimText}>•</text>
-          <text fg={colors.creamText}>{session.name}</text>
+          <text fg={colors.primary}>Operator</text>
+          <text fg={colors.textMuted}>•</text>
+          <text fg={colors.text}>{session.name}</text>
           {session.targets[0] && (
             <>
-              <text fg={colors.dimText}>•</text>
-              <text fg={colors.dimText}>{session.targets[0]}</text>
+              <text fg={colors.textMuted}>•</text>
+              <text fg={colors.textMuted}>{session.targets[0]}</text>
             </>
           )}
         </box>
@@ -398,22 +399,22 @@ export default function OperatorDashboard({
           <text
             fg={
               operatorState.mode === "auto"
-                ? colors.greenAccent
+                ? colors.primary
                 : operatorState.mode === "plan"
-                  ? colors.yellowText
-                  : colors.toolColor
+                  ? colors.warning
+                  : colors.info
             }
           >
             {operatorState.mode.toUpperCase()}
           </text>
-          <text fg={colors.dimText}>{model.name}</text>
+          <text fg={colors.textMuted}>{model.name}</text>
         </box>
       </box>
 
       {/* Error banner */}
       {error && (
         <box paddingLeft={2} paddingRight={2} flexShrink={0}>
-          <text fg="red">{error}</text>
+          <text fg={colors.error}>{error}</text>
         </box>
       )}
 

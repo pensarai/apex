@@ -9,7 +9,7 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
-import { colors } from "../../theme";
+import { useTheme } from "../../theme";
 import type {
   Endpoint,
   VerifiedVuln,
@@ -50,6 +50,7 @@ interface SidebarProps {
  * Collapsible sidebar for session context
  */
 export function Sidebar({ collapsed, state, width = "30%" }: SidebarProps) {
+  const { colors } = useTheme();
   if (collapsed) {
     return null;
   }
@@ -62,7 +63,7 @@ export function Sidebar({ collapsed, state, width = "30%" }: SidebarProps) {
       paddingRight={2}
       gap={2}
       border={["left"]}
-      borderColor={colors.dimText}
+      borderColor={colors.textMuted}
     >
       {/* Target state - host and ports */}
       <TargetPanel host={state.targetHost} ports={state.ports} />
@@ -89,15 +90,16 @@ interface TargetPanelProps {
 }
 
 function TargetPanel({ host, ports }: TargetPanelProps) {
+  const { colors } = useTheme();
   const portsStr = ports.length > 0 ? ports.map((p) => p.port).join(", ") : "—";
 
   return (
     <box flexDirection="column" gap={1}>
-      <text fg={colors.creamText}>Target</text>
-      <text fg={colors.greenAccent}>{host || "Not configured"}</text>
+      <text fg={colors.text}>Target</text>
+      <text fg={colors.primary}>{host || "Not configured"}</text>
       <box flexDirection="row" gap={1}>
-        <text fg={colors.dimText}>Ports:</text>
-        <text fg={colors.dimText}>{portsStr}</text>
+        <text fg={colors.textMuted}>Ports:</text>
+        <text fg={colors.textMuted}>{portsStr}</text>
       </box>
     </box>
   );
@@ -116,6 +118,7 @@ function AttackSurfacePanel({
   endpoints,
   maxVisible = 4,
 }: AttackSurfacePanelProps) {
+  const { colors } = useTheme();
   const [expanded, setExpanded] = useState(false);
   const visibleEndpoints = expanded
     ? endpoints
@@ -126,24 +129,24 @@ function AttackSurfacePanel({
   const getStatusIcon = (status?: string) => {
     switch (status) {
       case "confirmed":
-        return { icon: "!", color: colors.redText };
+        return { icon: "!", color: colors.error };
       case "suspicious":
-        return { icon: "?", color: colors.yellowText };
+        return { icon: "?", color: colors.warning };
       case "clean":
-        return { icon: "✓", color: colors.greenAccent };
+        return { icon: "✓", color: colors.primary };
       case "blocked":
-        return { icon: "✗", color: colors.dimText };
+        return { icon: "✗", color: colors.textMuted };
       default:
-        return { icon: "·", color: colors.dimText };
+        return { icon: "·", color: colors.textMuted };
     }
   };
 
   return (
     <box flexDirection="column" gap={1}>
-      <text fg={colors.creamText}>Attack Surface ({endpoints.length})</text>
+      <text fg={colors.text}>Attack Surface ({endpoints.length})</text>
 
       {endpoints.length === 0 ? (
-        <text fg={colors.dimText}>No endpoints discovered</text>
+        <text fg={colors.textMuted}>No endpoints discovered</text>
       ) : (
         <>
           {visibleEndpoints.map((ep, idx) => {
@@ -151,24 +154,22 @@ function AttackSurfacePanel({
             return (
               <box key={ep.id || idx} flexDirection="row" gap={1}>
                 <text fg={color}>{icon}</text>
-                <text fg={colors.dimText}>{ep.method}</text>
-                <text fg={colors.creamText}>{ep.path}</text>
-                {ep.vulnType && (
-                  <text fg={colors.redText}>({ep.vulnType})</text>
-                )}
+                <text fg={colors.textMuted}>{ep.method}</text>
+                <text fg={colors.text}>{ep.path}</text>
+                {ep.vulnType && <text fg={colors.error}>({ep.vulnType})</text>}
               </box>
             );
           })}
           {hasMore && !expanded && (
             <box onMouseDown={() => setExpanded(true)}>
-              <text fg={colors.dimText}>
+              <text fg={colors.textMuted}>
                 +{endpoints.length - maxVisible} more...
               </text>
             </box>
           )}
           {expanded && hasMore && (
             <box onMouseDown={() => setExpanded(false)}>
-              <text fg={colors.dimText}>Show less</text>
+              <text fg={colors.textMuted}>Show less</text>
             </box>
           )}
         </>
@@ -190,6 +191,7 @@ function CredentialsPanel({
   credentials,
   maxVisible = 3,
 }: CredentialsPanelProps) {
+  const { colors } = useTheme();
   const [expanded, setExpanded] = useState(false);
   const visibleCreds = expanded
     ? credentials
@@ -204,37 +206,37 @@ function CredentialsPanel({
 
   return (
     <box flexDirection="column" gap={1}>
-      <text fg={colors.creamText}>Credentials ({credentials.length})</text>
+      <text fg={colors.text}>Credentials ({credentials.length})</text>
 
       {credentials.length === 0 ? (
-        <text fg={colors.dimText}>No credentials found</text>
+        <text fg={colors.textMuted}>No credentials found</text>
       ) : (
         <>
           {visibleCreds.map((cred, idx) => (
             <box key={cred.id || idx} flexDirection="column">
               <box flexDirection="row" gap={1}>
-                {cred.isActive && <text fg={colors.yellowText}>★</text>}
-                <text fg={colors.creamText}>{cred.username}</text>
-                <text fg={colors.dimText}>:</text>
-                <text fg={colors.dimText}>{redactSecret(cred.secret)}</text>
+                {cred.isActive && <text fg={colors.warning}>★</text>}
+                <text fg={colors.text}>{cred.username}</text>
+                <text fg={colors.textMuted}>:</text>
+                <text fg={colors.textMuted}>{redactSecret(cred.secret)}</text>
               </box>
               <box flexDirection="row" gap={1} marginLeft={2}>
-                <text fg={colors.dimText}>{cred.type}</text>
-                <text fg={colors.dimText}>|</text>
-                <text fg={colors.dimText}>{cred.scope}</text>
+                <text fg={colors.textMuted}>{cred.type}</text>
+                <text fg={colors.textMuted}>|</text>
+                <text fg={colors.textMuted}>{cred.scope}</text>
               </box>
             </box>
           ))}
           {hasMore && !expanded && (
             <box onMouseDown={() => setExpanded(true)}>
-              <text fg={colors.dimText}>
+              <text fg={colors.textMuted}>
                 +{credentials.length - maxVisible} more...
               </text>
             </box>
           )}
           {expanded && hasMore && (
             <box onMouseDown={() => setExpanded(false)}>
-              <text fg={colors.dimText}>Show less</text>
+              <text fg={colors.textMuted}>Show less</text>
             </box>
           )}
         </>
@@ -253,6 +255,7 @@ interface VulnsPanelProps {
 }
 
 function VulnsPanel({ vulns, maxVisible = 3 }: VulnsPanelProps) {
+  const { colors } = useTheme();
   const [expanded, setExpanded] = useState(false);
   const visibleVulns = expanded ? vulns : vulns.slice(0, maxVisible);
   const hasMore = vulns.length > maxVisible;
@@ -261,24 +264,24 @@ function VulnsPanel({ vulns, maxVisible = 3 }: VulnsPanelProps) {
   const getSeverityColor = (severity: string) => {
     switch (severity) {
       case "critical":
-        return colors.redText;
+        return colors.error;
       case "high":
-        return colors.orangeText;
+        return colors.tierRisky;
       case "medium":
-        return colors.yellowText;
+        return colors.warning;
       case "low":
-        return colors.greenAccent;
+        return colors.primary;
       default:
-        return colors.dimText;
+        return colors.textMuted;
     }
   };
 
   return (
     <box flexDirection="column" gap={1}>
-      <text fg={colors.creamText}>Verified Vulns ({vulns.length})</text>
+      <text fg={colors.text}>Verified Vulns ({vulns.length})</text>
 
       {vulns.length === 0 ? (
-        <text fg={colors.dimText}>No vulnerabilities verified</text>
+        <text fg={colors.textMuted}>No vulnerabilities verified</text>
       ) : (
         <>
           {visibleVulns.map((vuln, idx) => (
@@ -287,23 +290,23 @@ function VulnsPanel({ vulns, maxVisible = 3 }: VulnsPanelProps) {
                 <text fg={getSeverityColor(vuln.severity)}>
                   [{vuln.severity.toUpperCase().slice(0, 4)}]
                 </text>
-                <text fg={colors.creamText}>{vuln.type}</text>
+                <text fg={colors.text}>{vuln.type}</text>
               </box>
               <box marginLeft={2}>
-                <text fg={colors.dimText}>{vuln.endpoint}</text>
+                <text fg={colors.textMuted}>{vuln.endpoint}</text>
               </box>
             </box>
           ))}
           {hasMore && !expanded && (
             <box onMouseDown={() => setExpanded(true)}>
-              <text fg={colors.dimText}>
+              <text fg={colors.textMuted}>
                 +{vulns.length - maxVisible} more...
               </text>
             </box>
           )}
           {expanded && hasMore && (
             <box onMouseDown={() => setExpanded(false)}>
-              <text fg={colors.dimText}>Show less</text>
+              <text fg={colors.textMuted}>Show less</text>
             </box>
           )}
         </>
