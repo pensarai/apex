@@ -7,17 +7,12 @@
 
 import { useState, useCallback } from "react";
 import { useKeyboard } from "@opentui/react";
-import { RGBA } from "@opentui/core";
 import type { PentestTarget } from "../../../core/agent/attackSurfaceAgent/types";
 import type { DiscoveredEndpoint } from "../../../core/agent/driverModeAgent/targetExtractor";
 import type { DisplayMessage } from "../agent-display";
 import AgentDisplay from "../agent-display";
 import MentionAutocomplete from "./mention-autocomplete";
-
-// Color palette
-const greenBullet = RGBA.fromInts(76, 175, 80, 255);
-const creamText = RGBA.fromInts(255, 248, 220, 255);
-const dimText = RGBA.fromInts(120, 120, 120, 255);
+import { useTheme } from "../../theme";
 
 /**
  * Agent type expected by the chat view
@@ -45,6 +40,7 @@ export default function AgentChatView({
   onBack,
   onStop,
 }: AgentChatViewProps) {
+  const { colors } = useTheme();
   const [inputValue, setInputValue] = useState("");
   const [showMentions, setShowMentions] = useState(false);
   const [mentionQuery, setMentionQuery] = useState("");
@@ -58,10 +54,10 @@ export default function AgentChatView({
   }[agent.status];
 
   const statusColor = {
-    running: greenBullet,
-    paused: RGBA.fromInts(255, 193, 7, 255),
-    completed: greenBullet,
-    failed: RGBA.fromInts(244, 67, 54, 255),
+    running: colors.primary,
+    paused: colors.warning,
+    completed: colors.primary,
+    failed: colors.error,
   }[agent.status];
 
   // Handle input changes
@@ -151,16 +147,16 @@ export default function AgentChatView({
         paddingTop={1}
         paddingBottom={1}
         border={["bottom"]}
-        borderColor={dimText}
+        borderColor={colors.textMuted}
       >
         <box flexDirection="column">
-          <text fg={creamText}>
+          <text fg={colors.text}>
             <span fg={statusColor}>{statusIcon} </span>
             {agent.name}
           </text>
-          <text fg={dimText}>Target: {agent.target.target}</text>
+          <text fg={colors.textMuted}>Target: {agent.target.target}</text>
         </box>
-        <text fg={dimText}>
+        <text fg={colors.textMuted}>
           {agent.status === "running" ? "Running..." : agent.status}
         </text>
       </box>
@@ -182,7 +178,7 @@ export default function AgentChatView({
         paddingTop={1}
         paddingBottom={1}
         border={["top"]}
-        borderColor={dimText}
+        borderColor={colors.textMuted}
         gap={1}
       >
         {/* Mention autocomplete (positioned above input) */}
@@ -197,19 +193,20 @@ export default function AgentChatView({
 
         {/* Input row */}
         <box flexDirection="row" alignItems="center" width="100%">
-          <text fg={greenBullet}>{"> "}</text>
+          <text fg={colors.primary}>{"> "}</text>
           <box flexGrow={1}>
             <input
               value={inputValue}
               onInput={handleInput}
               focused={!showMentions}
               placeholder="Type to direct agent... (@endpoint for mentions)"
+              cursorColor={colors.textMuted}
             />
           </box>
         </box>
 
         {/* Help text */}
-        <text fg={dimText}>
+        <text fg={colors.textMuted}>
           [Enter] Send | [@] Mention endpoint | [Shift+/] Back to dashboard |
           [Ctrl+C] Stop
         </text>

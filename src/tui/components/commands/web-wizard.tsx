@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
 import { useKeyboard } from "@opentui/react";
-import { RGBA } from "@opentui/core";
 import Input from "../input";
 import { useRoute } from "../../context/route";
 import { useConfig } from "../../context/config";
@@ -10,6 +9,7 @@ import { SpinnerDots } from "../sprites";
 import { generateRandomName } from "../../../util/name";
 import { type ModelInfo } from "../../../core/ai";
 import { getAvailableModels } from "../../../core/providers/utils";
+import { useTheme } from "../../theme";
 
 // Wizard step types
 type WizardStep = "target" | "configure" | "creating";
@@ -65,11 +65,6 @@ interface WebWizardProps {
   initialModel?: string;
 }
 
-// Color palette
-const greenBullet = RGBA.fromInts(76, 175, 80, 255);
-const creamText = RGBA.fromInts(255, 248, 220, 255);
-const dimText = RGBA.fromInts(120, 120, 120, 255);
-
 export default function WebWizard({
   initialTarget,
   autoMode = false,
@@ -85,6 +80,7 @@ export default function WebWizard({
   initialCustomHeaders,
   initialModel,
 }: WebWizardProps) {
+  const { colors } = useTheme();
   const route = useRoute();
   const config = useConfig();
   const { model, setModel, isModelUserSelected } = useAgent();
@@ -557,9 +553,9 @@ export default function WebWizard({
         flexGrow={1}
         gap={2}
       >
-        <SpinnerDots label="Creating session..." fg="green" />
-        <text fg={dimText}>Target: {state.target}</text>
-        <text fg={dimText}>Mode: {modeLabel}</text>
+        <SpinnerDots label="Creating session..." fg={colors.primary} />
+        <text fg={colors.textMuted}>Target: {state.target}</text>
+        <text fg={colors.textMuted}>Mode: {modeLabel}</text>
       </box>
     );
   }
@@ -568,13 +564,13 @@ export default function WebWizard({
   if (currentStep === "target") {
     return (
       <box width="100%" flexDirection="column" gap={2} paddingLeft={4}>
-        <text fg={creamText}>Configure Web App Pentest</text>
-        <text fg={dimText}>{modeDescription}</text>
-        <text fg={dimText}>
+        <text fg={colors.text}>Configure Web App Pentest</text>
+        <text fg={colors.textMuted}>{modeDescription}</text>
+        <text fg={colors.textMuted}>
           Model: {model.name} [{isModelUserSelected ? "user" : "default"}]
         </text>
 
-        {error && <text fg="red">Error: {error}</text>}
+        {error && <text fg={colors.error}>Error: {error}</text>}
 
         <Input
           label="Session Name"
@@ -596,22 +592,22 @@ export default function WebWizard({
 
         <box flexDirection="column" gap={0} marginTop={1}>
           <text>
-            <span fg={greenBullet}>█ </span>
-            <span fg={dimText}>Press </span>
-            <span fg={creamText}>[Enter]</span>
-            <span fg={dimText}> to start immediately</span>
+            <span fg={colors.primary}>█ </span>
+            <span fg={colors.textMuted}>Press </span>
+            <span fg={colors.text}>[Enter]</span>
+            <span fg={colors.textMuted}> to start immediately</span>
           </text>
           <text>
-            <span fg={greenBullet}>█ </span>
-            <span fg={dimText}>Press </span>
-            <span fg={creamText}>[Tab]</span>
-            <span fg={dimText}> to configure options</span>
+            <span fg={colors.primary}>█ </span>
+            <span fg={colors.textMuted}>Press </span>
+            <span fg={colors.text}>[Tab]</span>
+            <span fg={colors.textMuted}> to configure options</span>
           </text>
           <text>
-            <span fg={greenBullet}>█ </span>
-            <span fg={dimText}>Press </span>
-            <span fg={creamText}>[ESC]</span>
-            <span fg={dimText}> to cancel</span>
+            <span fg={colors.primary}>█ </span>
+            <span fg={colors.textMuted}>Press </span>
+            <span fg={colors.text}>[ESC]</span>
+            <span fg={colors.textMuted}> to cancel</span>
           </text>
         </box>
       </box>
@@ -622,9 +618,9 @@ export default function WebWizard({
   return (
     <box width="100%" flexDirection="column" gap={2} paddingLeft={4}>
       <box flexDirection="column">
-        <text fg={creamText}>Configure Web App Pentest - {modeLabel}</text>
-        <text fg={dimText}>Target: {state.target}</text>
-        <text fg={dimText}>
+        <text fg={colors.text}>Configure Web App Pentest - {modeLabel}</text>
+        <text fg={colors.textMuted}>Target: {state.target}</text>
+        <text fg={colors.textMuted}>
           All fields are optional - configure only what you need
         </text>
       </box>
@@ -632,8 +628,8 @@ export default function WebWizard({
       {/* Auth Section */}
       <box flexDirection="column" gap={1}>
         <text>
-          <span fg={greenBullet}>█ </span>
-          <span fg={focusedSection === 0 ? creamText : dimText}>
+          <span fg={colors.primary}>█ </span>
+          <span fg={focusedSection === 0 ? colors.text : colors.textMuted}>
             Authentication
           </span>
         </text>
@@ -694,8 +690,8 @@ export default function WebWizard({
       {/* Scope Section */}
       <box flexDirection="column" gap={1}>
         <text>
-          <span fg={greenBullet}>█ </span>
-          <span fg={focusedSection === 1 ? creamText : dimText}>
+          <span fg={colors.primary}>█ </span>
+          <span fg={focusedSection === 1 ? colors.text : colors.textMuted}>
             Scope Constraints
           </span>
         </text>
@@ -712,7 +708,7 @@ export default function WebWizard({
             {state.scope.allowedHosts.length > 0 && (
               <box flexDirection="column" paddingLeft={2}>
                 {state.scope.allowedHosts.map((h, i) => (
-                  <text key={i} fg={dimText}>
+                  <text key={i} fg={colors.textMuted}>
                     • {h}
                   </text>
                 ))}
@@ -729,20 +725,24 @@ export default function WebWizard({
             {state.scope.allowedPorts.length > 0 && (
               <box flexDirection="column" paddingLeft={2}>
                 {state.scope.allowedPorts.map((p, i) => (
-                  <text key={i} fg={dimText}>
+                  <text key={i} fg={colors.textMuted}>
                     • {p}
                   </text>
                 ))}
               </box>
             )}
             <box flexDirection="row" gap={1}>
-              <text fg={focusedField === 2 ? creamText : dimText}>
+              <text fg={focusedField === 2 ? colors.text : colors.textMuted}>
                 Strict Scope:
               </text>
-              <text fg={state.scope.strictScope ? greenBullet : dimText}>
+              <text
+                fg={state.scope.strictScope ? colors.primary : colors.textMuted}
+              >
                 {state.scope.strictScope ? "● Enabled" : "○ Disabled"}
               </text>
-              {focusedField === 2 && <text fg={dimText}>(↑/↓ to toggle)</text>}
+              {focusedField === 2 && (
+                <text fg={colors.textMuted}>(↑/↓ to toggle)</text>
+              )}
             </box>
           </box>
         )}
@@ -751,30 +751,46 @@ export default function WebWizard({
       {/* Headers Section */}
       <box flexDirection="column" gap={1}>
         <text>
-          <span fg={greenBullet}>█ </span>
-          <span fg={focusedSection === 2 ? creamText : dimText}>
+          <span fg={colors.primary}>█ </span>
+          <span fg={focusedSection === 2 ? colors.text : colors.textMuted}>
             Request Headers
           </span>
         </text>
         {focusedSection === 2 && (
           <box flexDirection="column" gap={1} paddingLeft={2}>
             <box flexDirection="column">
-              <text fg={state.headers.mode === "none" ? greenBullet : dimText}>
+              <text
+                fg={
+                  state.headers.mode === "none"
+                    ? colors.primary
+                    : colors.textMuted
+                }
+              >
                 {state.headers.mode === "none" ? "●" : "○"} None
               </text>
               <text
-                fg={state.headers.mode === "default" ? greenBullet : dimText}
+                fg={
+                  state.headers.mode === "default"
+                    ? colors.primary
+                    : colors.textMuted
+                }
               >
                 {state.headers.mode === "default" ? "●" : "○"} Default
                 (User-Agent: pensar-apex)
               </text>
               <text
-                fg={state.headers.mode === "custom" ? greenBullet : dimText}
+                fg={
+                  state.headers.mode === "custom"
+                    ? colors.primary
+                    : colors.textMuted
+                }
               >
                 {state.headers.mode === "custom" ? "●" : "○"} Custom
               </text>
             </box>
-            {focusedField === 0 && <text fg={dimText}>Use ↑/↓ to select</text>}
+            {focusedField === 0 && (
+              <text fg={colors.textMuted}>Use ↑/↓ to select</text>
+            )}
 
             {state.headers.mode === "custom" && (
               <box flexDirection="column" gap={1}>
@@ -796,7 +812,7 @@ export default function WebWizard({
                   <box flexDirection="column">
                     {Object.entries(state.headers.customHeaders).map(
                       ([k, v]) => (
-                        <text key={k} fg={dimText}>
+                        <text key={k} fg={colors.textMuted}>
                           • {k}: {v}
                         </text>
                       ),
@@ -812,10 +828,12 @@ export default function WebWizard({
       {/* Model Section */}
       <box flexDirection="column" gap={1}>
         <text>
-          <span fg={greenBullet}>█ </span>
-          <span fg={focusedSection === 3 ? creamText : dimText}>AI Model</span>
-          <span fg={dimText}> ({model.name})</span>
-          <span fg={dimText}>
+          <span fg={colors.primary}>█ </span>
+          <span fg={focusedSection === 3 ? colors.text : colors.textMuted}>
+            AI Model
+          </span>
+          <span fg={colors.textMuted}> ({model.name})</span>
+          <span fg={colors.textMuted}>
             {" "}
             [{isModelUserSelected ? "user" : "default"}]
           </span>
@@ -824,10 +842,10 @@ export default function WebWizard({
           <box flexDirection="column" gap={0} paddingLeft={2}>
             {/* Search input */}
             {modelSearchQuery && (
-              <text fg={creamText}>Search: {modelSearchQuery}_</text>
+              <text fg={colors.text}>Search: {modelSearchQuery}_</text>
             )}
             {!modelSearchQuery && (
-              <text fg={dimText}>Type to search models...</text>
+              <text fg={colors.textMuted}>Type to search models...</text>
             )}
 
             {/* Provider groups */}
@@ -841,7 +859,7 @@ export default function WebWizard({
               return (
                 <box key={provider} flexDirection="column" gap={0}>
                   {/* Provider header */}
-                  <text fg={isExpanded ? creamText : dimText}>
+                  <text fg={isExpanded ? colors.text : colors.textMuted}>
                     {isExpanded ? "▾" : "▸"} {providerName} ({models.length})
                   </text>
 
@@ -855,7 +873,7 @@ export default function WebWizard({
                         return (
                           <text
                             key={m.id}
-                            fg={isSelected ? greenBullet : dimText}
+                            fg={isSelected ? colors.primary : colors.textMuted}
                           >
                             {isSelected ? "●" : "○"} {m.name}
                             {isDefault && !isModelUserSelected && isSelected
@@ -871,7 +889,7 @@ export default function WebWizard({
             })}
 
             {/* Help text */}
-            <text fg={dimText}>
+            <text fg={colors.textMuted}>
               ↑/↓ select • Type to search • ←/→ collapse/expand
             </text>
           </box>
@@ -880,22 +898,22 @@ export default function WebWizard({
 
       <box flexDirection="column" gap={0} marginTop={1}>
         <text>
-          <span fg={greenBullet}>█ </span>
-          <span fg={dimText}>Press </span>
-          <span fg={creamText}>[Enter]</span>
-          <span fg={dimText}> to start pentest ({modeLabel})</span>
+          <span fg={colors.primary}>█ </span>
+          <span fg={colors.textMuted}>Press </span>
+          <span fg={colors.text}>[Enter]</span>
+          <span fg={colors.textMuted}> to start pentest ({modeLabel})</span>
         </text>
         <text>
-          <span fg={greenBullet}>█ </span>
-          <span fg={dimText}>Press </span>
-          <span fg={creamText}>[Tab]</span>
-          <span fg={dimText}> to navigate fields</span>
+          <span fg={colors.primary}>█ </span>
+          <span fg={colors.textMuted}>Press </span>
+          <span fg={colors.text}>[Tab]</span>
+          <span fg={colors.textMuted}> to navigate fields</span>
         </text>
         <text>
-          <span fg={greenBullet}>█ </span>
-          <span fg={dimText}>Press </span>
-          <span fg={creamText}>[ESC]</span>
-          <span fg={dimText}> to go back</span>
+          <span fg={colors.primary}>█ </span>
+          <span fg={colors.textMuted}>Press </span>
+          <span fg={colors.text}>[ESC]</span>
+          <span fg={colors.textMuted}> to go back</span>
         </text>
       </box>
     </box>

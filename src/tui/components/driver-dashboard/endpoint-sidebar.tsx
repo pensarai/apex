@@ -4,14 +4,9 @@
  * Shows discovered endpoints from recon with ability to spawn agents.
  */
 
-import { RGBA } from "@opentui/core";
 import type { DiscoveredEndpoint } from "../../../core/agent/driverModeAgent/targetExtractor";
 import { SpinnerDots } from "../sprites";
-
-// Color palette
-const greenBullet = RGBA.fromInts(76, 175, 80, 255);
-const creamText = RGBA.fromInts(255, 248, 220, 255);
-const dimText = RGBA.fromInts(120, 120, 120, 255);
+import { useTheme } from "../../theme";
 
 interface EndpointSidebarProps {
   endpoints: DiscoveredEndpoint[];
@@ -26,31 +21,32 @@ export default function EndpointSidebar({
   reconStatus,
   onSelectEndpoint,
 }: EndpointSidebarProps) {
+  const { colors } = useTheme();
   return (
     <box
       flexDirection="column"
       width="35%"
       border
-      borderColor={focusedIndex >= 0 ? greenBullet : dimText}
+      borderColor={focusedIndex >= 0 ? colors.primary : colors.textMuted}
       padding={1}
       gap={1}
     >
-      <text fg={focusedIndex >= 0 ? creamText : dimText}>
+      <text fg={focusedIndex >= 0 ? colors.text : colors.textMuted}>
         Discovered Endpoints ({endpoints.length})
       </text>
 
       {reconStatus === "running" && (
         <box paddingTop={1} paddingBottom={1}>
-          <SpinnerDots label="Discovering..." fg="green" />
+          <SpinnerDots label="Discovering..." fg={colors.primary} />
         </box>
       )}
 
       {reconStatus === "idle" && endpoints.length === 0 && (
-        <text fg={dimText}>Recon will start automatically...</text>
+        <text fg={colors.textMuted}>Recon will start automatically...</text>
       )}
 
       {reconStatus === "completed" && endpoints.length === 0 && (
-        <text fg={dimText}>No endpoints discovered.</text>
+        <text fg={colors.textMuted}>No endpoints discovered.</text>
       )}
 
       <scrollbox flexGrow={1}>
@@ -65,7 +61,9 @@ export default function EndpointSidebar({
         ))}
       </scrollbox>
 
-      {endpoints.length > 0 && <text fg={dimText}>[Enter] to spawn agent</text>}
+      {endpoints.length > 0 && (
+        <text fg={colors.textMuted}>[Enter] to spawn agent</text>
+      )}
     </box>
   );
 }
@@ -84,6 +82,7 @@ function EndpointItem({
   focused: boolean;
   onSelect: () => void;
 }) {
+  const { colors } = useTheme();
   // Truncate URL for display
   const displayUrl =
     endpoint.url.length > 40
@@ -101,14 +100,14 @@ function EndpointItem({
       flexDirection="column"
       marginBottom={1}
       border={["left"]}
-      borderColor={focused ? greenBullet : dimText}
+      borderColor={focused ? colors.primary : colors.textMuted}
       paddingLeft={1}
     >
-      <text fg={focused ? creamText : dimText}>
-        <span fg={greenBullet}>@{index} </span>
+      <text fg={focused ? colors.text : colors.textMuted}>
+        <span fg={colors.primary}>@{index} </span>
         {endpoint.method} {displayUrl}
       </text>
-      <text fg={dimText}>└─ {displayObjective}</text>
+      <text fg={colors.textMuted}>└─ {displayObjective}</text>
     </box>
   );
 }

@@ -9,7 +9,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useKeyboard } from "@opentui/react";
-import { colors, getTierColor } from "../../theme";
+import { useTheme, getTierColor } from "../../theme";
 import { PromptInput, type PromptInputRef } from "../shared/prompt-input";
 import { InputProvider, useInput } from "../../context/input";
 import type { PendingApproval, OperatorMode } from "../../../core/operator";
@@ -64,6 +64,7 @@ function NormalInputAreaInner({
   InputAreaProps,
   "pendingApproval" | "onApprove" | "onAutoApprove" | "lastDeclineNote"
 >) {
+  const { colors } = useTheme();
   const { inputValue, setInputValue } = useInput();
   const promptRef = useRef<PromptInputRef>(null);
   const isExternalUpdate = useRef(false);
@@ -107,13 +108,13 @@ function NormalInputAreaInner({
       backgroundColor="transparent"
     >
       <box flexDirection="row" gap={1} backgroundColor="transparent">
-        <text fg={isDisabled ? colors.dimText : colors.greenAccent}>{">"}</text>
+        <text fg={isDisabled ? colors.textMuted : colors.primary}>{">"}</text>
         <PromptInput
           ref={promptRef}
           width="100%"
           minHeight={1}
           maxHeight={3}
-          textColor="white"
+          textColor={colors.text}
           focused={focused && !isDisabled}
           placeholder={isDisabled ? "Processing..." : placeholder}
           onSubmit={handleSubmit}
@@ -128,23 +129,21 @@ function NormalInputAreaInner({
           marginTop={1}
           backgroundColor="transparent"
         >
-          {operatorMode === "plan" && (
-            <text fg={colors.yellowText}>{"PLAN"}</text>
-          )}
-          {operatorMode === "auto" && (
-            <text fg={colors.greenAccent}>{"AUTO"}</text>
-          )}
+          {operatorMode === "plan" && <text fg={colors.warning}>{"PLAN"}</text>}
+          {operatorMode === "auto" && <text fg={colors.primary}>{"AUTO"}</text>}
           {operatorMode === "manual" && (
-            <text fg={colors.dimText}>{"MANUAL"}</text>
+            <text fg={colors.textMuted}>{"MANUAL"}</text>
           )}
-          <text fg={verboseMode ? colors.greenAccent : colors.dimText}>
+          <text fg={verboseMode ? colors.primary : colors.textMuted}>
             {verboseMode ? "verbose:on" : "verbose"}
           </text>
-          <text fg={expandedLogs ? colors.greenAccent : colors.dimText}>
+          <text fg={expandedLogs ? colors.primary : colors.textMuted}>
             {expandedLogs ? "logs:full" : "logs"}
           </text>
-          <text fg={colors.dimText}>^C {value.trim() ? "clear" : "stop"}</text>
-          <text fg={colors.dimText}>ESC quit</text>
+          <text fg={colors.textMuted}>
+            ^C {value.trim() ? "clear" : "stop"}
+          </text>
+          <text fg={colors.textMuted}>ESC quit</text>
         </box>
       )}
 
@@ -156,9 +155,11 @@ function NormalInputAreaInner({
           marginTop={1}
           backgroundColor="transparent"
         >
-          <text fg={colors.dimText}>^C {value.trim() ? "clear" : "stop"}</text>
-          <text fg={colors.dimText}>^B sidebar</text>
-          <text fg={colors.dimText}>ESC quit</text>
+          <text fg={colors.textMuted}>
+            ^C {value.trim() ? "clear" : "stop"}
+          </text>
+          <text fg={colors.textMuted}>^B sidebar</text>
+          <text fg={colors.textMuted}>ESC quit</text>
         </box>
       )}
     </box>
@@ -231,8 +232,9 @@ function ApprovalInputArea({
   setRedirectInput,
   lastDeclineNote,
 }: ApprovalInputAreaProps) {
+  const { colors } = useTheme();
   const [focusedElement, setFocusedElement] = useState(0); // 0=Yes, 1=Auto, 2=Input
-  const tierColor = getTierColor(approval.tier);
+  const tierColor = getTierColor(colors, approval.tier);
 
   useKeyboard((key) => {
     // Navigation
@@ -274,11 +276,11 @@ function ApprovalInputArea({
       {/* Yes option */}
       <box flexDirection="row" gap={1}>
         <text
-          fg={focusedElement === 0 ? colors.greenAccent : colors.dimText}
+          fg={focusedElement === 0 ? colors.primary : colors.textMuted}
           content={focusedElement === 0 ? ">" : " "}
         />
         <text
-          fg={focusedElement === 0 ? colors.creamText : colors.dimText}
+          fg={focusedElement === 0 ? colors.text : colors.textMuted}
           content="[Y] Approve this action"
         />
       </box>
@@ -286,11 +288,11 @@ function ApprovalInputArea({
       {/* Auto option */}
       <box flexDirection="row" gap={1}>
         <text
-          fg={focusedElement === 1 ? colors.yellowText : colors.dimText}
+          fg={focusedElement === 1 ? colors.warning : colors.textMuted}
           content={focusedElement === 1 ? ">" : " "}
         />
         <text
-          fg={focusedElement === 1 ? colors.creamText : colors.dimText}
+          fg={focusedElement === 1 ? colors.text : colors.textMuted}
           content={`[A] Auto-approve T1-T${approval.tier} from now`}
         />
       </box>
@@ -298,10 +300,10 @@ function ApprovalInputArea({
       {/* Redirect input */}
       <box flexDirection="row" gap={1} marginTop={1}>
         <text
-          fg={focusedElement === 2 ? colors.greenAccent : colors.dimText}
+          fg={focusedElement === 2 ? colors.primary : colors.textMuted}
           content={focusedElement === 2 ? ">" : " "}
         />
-        <text fg={colors.greenAccent} content=">" />
+        <text fg={colors.primary} content=">" />
         <input
           width="100%"
           value={redirectInput}
@@ -312,21 +314,28 @@ function ApprovalInputArea({
           }}
           focused={focusedElement === 2}
           placeholder="Or type to redirect agent..."
-          textColor="white"
+          textColor={colors.text}
           backgroundColor="transparent"
+          cursorColor={colors.textMuted}
         />
       </box>
 
       {/* Last decline note */}
       {lastDeclineNote && (
         <box marginTop={1} marginLeft={2}>
-          <text fg={colors.dimText} content={`Declined: ${lastDeclineNote}`} />
+          <text
+            fg={colors.textMuted}
+            content={`Declined: ${lastDeclineNote}`}
+          />
         </box>
       )}
 
       {/* Shortcuts hint */}
       <box flexDirection="row" gap={2} marginTop={1}>
-        <text fg={colors.dimText} content="Y approve | A auto | Enter select" />
+        <text
+          fg={colors.textMuted}
+          content="Y approve | A auto | Enter select"
+        />
       </box>
     </box>
   );

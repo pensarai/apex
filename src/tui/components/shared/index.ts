@@ -5,7 +5,7 @@
  */
 
 // Markdown utilities
-export { markdownToStyledText, codeColor, linkColor } from "./markdown";
+export { markdownToStyledText } from "./markdown";
 
 // Message utilities
 export {

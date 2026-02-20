@@ -10,7 +10,6 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useKeyboard } from "@opentui/react";
-import { RGBA } from "@opentui/core";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { Session } from "../../../core/session";
@@ -36,12 +35,7 @@ import { useDialog } from "../../context/dialog";
 import EndpointSidebar from "./endpoint-sidebar";
 import AgentChatView from "./agent-chat-view";
 import MentionAutocomplete from "./mention-autocomplete";
-
-// Color palette
-const greenBullet = RGBA.fromInts(76, 175, 80, 255);
-const creamText = RGBA.fromInts(255, 248, 220, 255);
-const dimText = RGBA.fromInts(120, 120, 120, 255);
-const darkBg = RGBA.fromInts(10, 10, 10, 255);
+import { useTheme } from "../../theme";
 
 /**
  * Agent state in the driver dashboard
@@ -61,6 +55,7 @@ interface DriverDashboardProps {
 }
 
 export default function DriverDashboard({ session }: DriverDashboardProps) {
+  const { colors } = useTheme();
   const route = useRoute();
   const { model } = useAgent();
   const { stack, externalDialogOpen } = useDialog();
@@ -546,18 +541,22 @@ export default function DriverDashboard({ session }: DriverDashboardProps) {
           paddingTop={1}
           paddingBottom={1}
           border={["bottom"]}
-          borderColor={dimText}
+          borderColor={colors.textMuted}
         >
           <box flexDirection="column">
-            <text fg={creamText}>
-              <span fg={reconStatus === "running" ? greenBullet : dimText}>
+            <text fg={colors.text}>
+              <span
+                fg={
+                  reconStatus === "running" ? colors.primary : colors.textMuted
+                }
+              >
                 {reconStatus === "running" ? "◐ " : "✓ "}
               </span>
               Attack Surface Discovery
             </text>
-            <text fg={dimText}>Target: {session.targets[0]}</text>
+            <text fg={colors.textMuted}>Target: {session.targets[0]}</text>
           </box>
-          <text fg={dimText}>
+          <text fg={colors.textMuted}>
             {reconStatus === "running"
               ? "Running..."
               : `${endpoints.length} targets found`}
@@ -582,12 +581,14 @@ export default function DriverDashboard({ session }: DriverDashboardProps) {
           paddingTop={1}
           paddingBottom={1}
           border={["top"]}
-          borderColor={dimText}
+          borderColor={colors.textMuted}
         >
-          <text fg={dimText}>
+          <text fg={colors.textMuted}>
             Messages: {reconMessages.length} | Status: {reconStatus}
           </text>
-          <text fg={dimText}>[ESC] or [Shift+/] Back to dashboard</text>
+          <text fg={colors.textMuted}>
+            [ESC] or [Shift+/] Back to dashboard
+          </text>
         </box>
       </box>
     );
@@ -606,11 +607,13 @@ export default function DriverDashboard({ session }: DriverDashboardProps) {
         paddingBottom={1}
       >
         <box flexDirection="column">
-          <text fg={creamText}>Driver Mode - {session.name}</text>
-          <text fg={dimText}>Target: {session.targets[0]}</text>
+          <text fg={colors.text}>Driver Mode - {session.name}</text>
+          <text fg={colors.textMuted}>Target: {session.targets[0]}</text>
         </box>
         <box flexDirection="row" gap={2}>
-          <text fg={reconStatus === "running" ? greenBullet : dimText}>
+          <text
+            fg={reconStatus === "running" ? colors.primary : colors.textMuted}
+          >
             Recon:{" "}
             {reconStatus === "running"
               ? "Running..."
@@ -631,7 +634,7 @@ export default function DriverDashboard({ session }: DriverDashboardProps) {
       >
         {/* Agent grid */}
         <box flexDirection="column" flexGrow={2} gap={1}>
-          <text fg={focusedArea === "agents" ? creamText : dimText}>
+          <text fg={focusedArea === "agents" ? colors.text : colors.textMuted}>
             Agents ({agents.length})
           </text>
 
@@ -641,9 +644,9 @@ export default function DriverDashboard({ session }: DriverDashboardProps) {
               alignItems="center"
               justifyContent="center"
               border
-              borderColor={dimText}
+              borderColor={colors.textMuted}
             >
-              <text fg={dimText}>
+              <text fg={colors.textMuted}>
                 No agents yet. Press [N] to create one or select an endpoint.
               </text>
             </box>
@@ -679,8 +682,8 @@ export default function DriverDashboard({ session }: DriverDashboardProps) {
           left={2}
           right={2}
           border
-          borderColor={greenBullet}
-          backgroundColor={darkBg}
+          borderColor={colors.primary}
+          backgroundColor={colors.background}
           padding={1}
         >
           {showMentions && (
@@ -691,7 +694,7 @@ export default function DriverDashboard({ session }: DriverDashboardProps) {
               onClose={() => setShowMentions(false)}
             />
           )}
-          <text fg={creamText}>
+          <text fg={colors.text}>
             New Agent Target (use @endpoint or describe target):{" "}
           </text>
           <box flexDirection="row" width={"100%"} height={2}>
@@ -700,10 +703,11 @@ export default function DriverDashboard({ session }: DriverDashboardProps) {
               value={newAgentInput}
               onInput={handleInput}
               focused={!loading}
-              textColor={loading ? "gray" : "white"}
+              textColor={loading ? colors.textMuted : colors.text}
               placeholder="@http://localhost:3000/api/user test for SQL injection..."
+              cursorColor={colors.textMuted}
             />
-            {loading && <SpinnerDots fg="gray" />}
+            {loading && <SpinnerDots fg={colors.textMuted} />}
           </box>
         </box>
       )}
@@ -717,14 +721,14 @@ export default function DriverDashboard({ session }: DriverDashboardProps) {
         paddingTop={1}
         paddingBottom={1}
         border={["top"]}
-        borderColor={dimText}
+        borderColor={colors.textMuted}
       >
-        <text fg={dimText}>
+        <text fg={colors.textMuted}>
           Agents: {metrics.activeAgents}/{metrics.totalAgents} active |
           Endpoints: {metrics.discoveredEndpoints} | Duration:{" "}
           {formatDuration(metrics.duration)}
         </text>
-        <text fg={dimText}>
+        <text fg={colors.textMuted}>
           [N] New Agent | [R] View Recon | [Tab] Switch | [Enter] Select |
           [Shift+/] Exit
         </text>
@@ -743,6 +747,7 @@ function AgentCard({
   agent: DriverAgent;
   focused: boolean;
 }) {
+  const { colors } = useTheme();
   const statusIcon = {
     running: "◐",
     paused: "◑",
@@ -751,31 +756,31 @@ function AgentCard({
   }[agent.status];
 
   const statusColor = {
-    running: greenBullet,
-    paused: RGBA.fromInts(255, 193, 7, 255),
-    completed: greenBullet,
-    failed: RGBA.fromInts(244, 67, 54, 255),
+    running: colors.primary,
+    paused: colors.warning,
+    completed: colors.primary,
+    failed: colors.error,
   }[agent.status];
 
   return (
     <box
       width="48%"
       border
-      borderColor={focused ? greenBullet : dimText}
+      borderColor={focused ? colors.primary : colors.textMuted}
       padding={1}
       flexDirection="column"
       gap={0}
     >
-      <text fg={focused ? creamText : dimText}>
+      <text fg={focused ? colors.text : colors.textMuted}>
         <span fg={statusColor}>{statusIcon} </span>
         {agent.name}
       </text>
-      <text fg={dimText}>
+      <text fg={colors.textMuted}>
         {agent.target.target.length > 40
           ? agent.target.target.substring(0, 37) + "..."
           : agent.target.target}
       </text>
-      <text fg={dimText}>{agent.messages.length} messages</text>
+      <text fg={colors.textMuted}>{agent.messages.length} messages</text>
     </box>
   );
 }

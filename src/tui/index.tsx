@@ -27,13 +27,19 @@ import ShortcutsDialog from "./components/commands/shortcuts-dialog";
 import HelpDialog from "./components/commands/help-dialog";
 import ModelsDisplay from "./components/commands/models-display";
 import { KeybindingProvider } from "./context/keybinding";
+import ThemePicker from "./components/commands/theme-picker";
+import { ThemeProvider, useTheme, type ColorMode } from "./theme";
+import { registerBuiltinThemes } from "./theme/themes";
+import { detectTerminalMode } from "./theme/detect-mode";
 
 interface AppProps {
   appConfig: Config;
+  initialTheme: string;
+  initialMode: ColorMode;
 }
 
 function App(props: AppProps) {
-  const { appConfig } = props;
+  const { appConfig, initialTheme, initialMode } = props;
   const [focusIndex, setFocusIndex] = useState(0);
   const [cwd, setCwd] = useState(process.cwd());
   const [ctrlCPressTime, setCtrlCPressTime] = useState<number | null>(null);
@@ -45,48 +51,50 @@ function App(props: AppProps) {
   const navigableItems = ["command-input"]; // List of items that can be focused
 
   return (
-    <ConfigProvider config={appConfig}>
-      <SessionProvider>
-        <RouteProvider>
-          <FocusProvider>
-            <InputProvider>
-              <DialogProvider>
-                <AgentProvider>
-                  <CommandProvider>
-                    <KeybindingProvider
-                      deps={{
-                        ctrlCPressTime,
-                        setCtrlCPressTime,
-                        setShowExitWarning,
-                        setInputKey,
-                        setShowSessionsDialog,
-                        setShowShortcutsDialog,
-                        setFocusIndex,
-                        navigableItems,
-                      }}
-                    >
-                      <AppContent
-                        focusIndex={focusIndex}
-                        showSessionsDialog={showSessionsDialog}
-                        setShowSessionsDialog={setShowSessionsDialog}
-                        showShortcutsDialog={showShortcutsDialog}
-                        setShowShortcutsDialog={setShowShortcutsDialog}
-                        cwd={cwd}
-                        setCtrlCPressTime={setCtrlCPressTime}
-                        showExitWarning={showExitWarning}
-                        setShowExitWarning={setShowExitWarning}
-                        inputKey={inputKey}
-                        setInputKey={setInputKey}
-                      />
-                    </KeybindingProvider>
-                  </CommandProvider>
-                </AgentProvider>
-              </DialogProvider>
-            </InputProvider>
-          </FocusProvider>
-        </RouteProvider>
-      </SessionProvider>
-    </ConfigProvider>
+    <ThemeProvider initialTheme={initialTheme} initialMode={initialMode}>
+      <ConfigProvider config={appConfig}>
+        <SessionProvider>
+          <RouteProvider>
+            <FocusProvider>
+              <InputProvider>
+                <DialogProvider>
+                  <AgentProvider>
+                    <CommandProvider>
+                      <KeybindingProvider
+                        deps={{
+                          ctrlCPressTime,
+                          setCtrlCPressTime,
+                          setShowExitWarning,
+                          setInputKey,
+                          setShowSessionsDialog,
+                          setShowShortcutsDialog,
+                          setFocusIndex,
+                          navigableItems,
+                        }}
+                      >
+                        <AppContent
+                          focusIndex={focusIndex}
+                          showSessionsDialog={showSessionsDialog}
+                          setShowSessionsDialog={setShowSessionsDialog}
+                          showShortcutsDialog={showShortcutsDialog}
+                          setShowShortcutsDialog={setShowShortcutsDialog}
+                          cwd={cwd}
+                          setCtrlCPressTime={setCtrlCPressTime}
+                          showExitWarning={showExitWarning}
+                          setShowExitWarning={setShowExitWarning}
+                          inputKey={inputKey}
+                          setInputKey={setInputKey}
+                        />
+                      </KeybindingProvider>
+                    </CommandProvider>
+                  </AgentProvider>
+                </DialogProvider>
+              </InputProvider>
+            </FocusProvider>
+          </RouteProvider>
+        </SessionProvider>
+      </ConfigProvider>
+    </ThemeProvider>
   );
 }
 
@@ -117,6 +125,7 @@ function AppContent({
 }) {
   const route = useRoute();
   const config = useConfig();
+  const { colors } = useTheme();
 
   const { refocusPrompt } = useFocus();
   const { setExternalDialogOpen } = useDialog();
@@ -182,7 +191,7 @@ function AppContent({
       width="100%"
       maxHeight="100%"
       overflow="hidden"
-      backgroundColor={"transparent"}
+      backgroundColor={colors.background}
     >
       <CommandDisplay focusIndex={focusIndex} inputKey={inputKey} />
 
@@ -214,6 +223,7 @@ function CommandDisplay({
 }) {
   const route = useRoute();
   const config = useConfig();
+  const { colors } = useTheme();
 
   const handleAcceptPolicy = async () => {
     await config.update({ responsibleUseAccepted: true });
@@ -236,7 +246,7 @@ function CommandDisplay({
         flexShrink={1}
         overflow="hidden"
         gap={2}
-        backgroundColor={"transparent"}
+        backgroundColor={colors.background}
       >
         {/* routes to have: home (chat), responsible use, session, global config route */}
         {/* when user either runs command or simply enters message: extract args etc, create session with related config, route to session */}
@@ -289,6 +299,9 @@ function CommandDisplay({
           <RouteSwitch.Case when="sessions">
             <SessionsBrowser />
           </RouteSwitch.Case>
+          <RouteSwitch.Case when="theme">
+            <ThemePicker />
+          </RouteSwitch.Case>
           <RouteSwitch.Case when="help">
             <HelpDialog />
           </RouteSwitch.Case>
@@ -316,6 +329,19 @@ function CommandDisplay({
 
 async function main() {
   const appConfig = await config.get();
+
+  // Register built-in themes
+  registerBuiltinThemes();
+
+  // Resolve theme and mode from config
+  const themeName = appConfig.theme ?? "apex";
+  let mode: ColorMode;
+  if (appConfig.themeMode === "dark" || appConfig.themeMode === "light") {
+    mode = appConfig.themeMode;
+  } else {
+    mode = await detectTerminalMode();
+  }
+
   const renderer = await createCliRenderer({ exitOnCtrlC: false });
 
   // Graceful shutdown handler
@@ -341,7 +367,9 @@ async function main() {
     process.exit(1);
   });
 
-  createRoot(renderer).render(<App appConfig={appConfig} />);
+  createRoot(renderer).render(
+    <App appConfig={appConfig} initialTheme={themeName} initialMode={mode} />,
+  );
 }
 
 main();

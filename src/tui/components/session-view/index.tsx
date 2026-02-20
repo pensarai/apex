@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { RGBA } from "@opentui/core";
 import { useRoute } from "../../context/route";
 import { useAgent } from "../../context/agent";
 import SwarmDashboard, {
@@ -29,13 +28,8 @@ import { exec } from "child_process";
 import { join } from "path";
 import { SpinnerDots } from "../sprites";
 import type { AttackSurfaceAnalysisResults } from "../../../core/agent/attackSurfaceAgent/types";
+import { useTheme } from "../../theme";
 
-// Color palette
-const greenBullet = RGBA.fromInts(76, 175, 80, 255);
-const creamText = RGBA.fromInts(255, 248, 220, 255);
-const dimText = RGBA.fromInts(120, 120, 120, 255);
-
-// UIMessage helper for tool messages
 type ToolUIMessage = UIMessage & {
   role: "tool";
   toolCallId: string;
@@ -91,6 +85,7 @@ export default function SessionView({
   isResume = false,
   openAsOperator = false,
 }: SessionViewProps) {
+  const { colors } = useTheme();
   const route = useRoute();
   const { model, setThinking, isExecuting, addTokenUsage, setIsExecuting } =
     useAgent();
@@ -1042,7 +1037,7 @@ export default function SessionView({
         flexGrow={1}
         gap={2}
       >
-        <SpinnerDots label="Loading session..." fg="green" />
+        <SpinnerDots label="Loading session..." fg={colors.primary} />
       </box>
     );
   }
@@ -1059,8 +1054,8 @@ export default function SessionView({
         flexGrow={1}
         gap={2}
       >
-        <text fg="red">Error: {error || "Session not found"}</text>
-        <text fg={dimText}>Press ESC to return home</text>
+        <text fg={colors.error}>Error: {error || "Session not found"}</text>
+        <text fg={colors.textMuted}>Press ESC to return home</text>
       </box>
     );
   }
