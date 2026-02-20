@@ -6,7 +6,7 @@ import {
   commands,
   type AppCommandContext,
 } from "../command-registry";
-import type { AutocompleteOption } from "../components/autocomplete";
+import type { AutocompleteOption } from "../components/shared/prompt-input";
 import { useRoute } from "./route";
 
 interface CommandContextValue {

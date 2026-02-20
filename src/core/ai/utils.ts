@@ -18,8 +18,10 @@ export type AIAuthConfig = {
   anthropicAPIKey?: string;
   openRouterAPIKey?: string;
   bedrock?: {
+    apiKey?: string;
     accessKeyId?: string;
     secretAccessKey?: string;
+    sessionToken?: string;
     region?: string;
     credentialProvider?: unknown;
   };
@@ -39,10 +41,14 @@ export function getProviderModel(
     authConfig?.anthropicAPIKey || process.env.ANTHROPIC_API_KEY;
   const openRouterAPIKey =
     authConfig?.openRouterAPIKey || process.env.OPENROUTER_API_KEY;
+  const bedrockApiKey =
+    authConfig?.bedrock?.apiKey || process.env.BEDROCK_API_KEY;
   const bedrockAccessKeyId =
     authConfig?.bedrock?.accessKeyId || process.env.AWS_ACCESS_KEY_ID;
   const bedrockSecretAccessKey =
     authConfig?.bedrock?.secretAccessKey || process.env.AWS_SECRET_ACCESS_KEY;
+  const bedrockSessionToken =
+    authConfig?.bedrock?.sessionToken || process.env.AWS_SESSION_TOKEN;
   const bedrockRegion = authConfig?.bedrock?.region || process.env.AWS_REGION;
   const localBaseURL =
     authConfig?.local?.baseURL ||
@@ -70,9 +76,11 @@ export function getProviderModel(
 
     case "bedrock": {
       const bedrock = createAmazonBedrock({
+        apiKey: bedrockApiKey,
         region: bedrockRegion,
         accessKeyId: bedrockAccessKeyId,
         secretAccessKey: bedrockSecretAccessKey,
+        sessionToken: bedrockSessionToken,
         credentialProvider: authConfig?.bedrock
           ?.credentialProvider as NonNullable<
           Parameters<typeof createAmazonBedrock>[0]

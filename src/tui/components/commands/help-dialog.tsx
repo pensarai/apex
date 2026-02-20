@@ -9,6 +9,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { ScrollBoxRenderable } from "@opentui/core";
+import { scrollToIndex } from "../../utils/scroll";
 import { useCommand } from "../../context/command";
 import { useRoute } from "../../context/route";
 import type { CommandConfig } from "../../command-registry";
@@ -51,26 +52,12 @@ export default function HelpDialog() {
 
   // Scroll to keep selected item in view
   useEffect(() => {
-    if (!scrollboxRef.current || flatCommands.length === 0) return;
-
-    const scroll = scrollboxRef.current;
-    const viewportHeight = scroll.height;
-    const children = scroll.getChildren();
-
-    const selectedCmd = flatCommands[selectedIndex];
-    if (!selectedCmd) return;
-
-    const target = children.find((child) => child.id === selectedCmd.name);
-    if (!target) return;
-
-    const targetVisualY = target.y - scroll.y;
-    const targetHeight = target.height || 1;
-
-    if (targetVisualY + targetHeight > viewportHeight) {
-      scroll.scrollBy(targetVisualY - viewportHeight + targetHeight + 1);
-    } else if (targetVisualY < 0) {
-      scroll.scrollBy(targetVisualY);
-    }
+    scrollToIndex(
+      scrollboxRef.current,
+      selectedIndex,
+      flatCommands,
+      (cmd) => cmd.name,
+    );
   }, [selectedIndex, flatCommands]);
 
   const handleClose = () => {
