@@ -188,14 +188,22 @@ export async function runSingleBenchmark(
       } catch (buildError: unknown) {
         const err = buildError as { message?: string };
         // Check if this looks like an OOM error (exit code 137 = SIGKILL)
-        if (err.message?.includes("137") || err.message?.toLowerCase().includes("killed")) {
-          console.log(`[${branch}] Build failed (likely OOM), retrying with sequential build...`);
+        if (
+          err.message?.includes("137") ||
+          err.message?.toLowerCase().includes("killed")
+        ) {
+          console.log(
+            `[${branch}] Build failed (likely OOM), retrying with sequential build...`,
+          );
 
           // Get list of services
-          const servicesResult = await exec("docker compose config --services", {
-            cwd: composeDir,
-            timeout: 10000,
-          });
+          const servicesResult = await exec(
+            "docker compose config --services",
+            {
+              cwd: composeDir,
+              timeout: 10000,
+            },
+          );
           const services = servicesResult.stdout?.trim().split("\n") || [];
 
           // Build each service sequentially
@@ -222,14 +230,23 @@ export async function runSingleBenchmark(
       }
     } catch (dockerError: unknown) {
       // Extract detailed error information from docker compose
-      const error = dockerError as { message?: string; stderr?: string; stdout?: string };
+      const error = dockerError as {
+        message?: string;
+        stderr?: string;
+        stdout?: string;
+      };
       console.error(`[${branch}] Docker compose failed!`);
 
       // Try to get docker logs for more context
       try {
-        const logs = await exec("docker compose logs --tail=50 2>&1", { cwd: composeDir, timeout: 10000 });
+        const logs = await exec("docker compose logs --tail=50 2>&1", {
+          cwd: composeDir,
+          timeout: 10000,
+        });
         if (logs.stdout) {
-          console.error(`[${branch}] Container logs: ${logs.stdout.substring(0, 1000)}`);
+          console.error(
+            `[${branch}] Container logs: ${logs.stdout.substring(0, 1000)}`,
+          );
         }
       } catch {
         // Ignore if logs unavailable
@@ -241,7 +258,10 @@ export async function runSingleBenchmark(
       if (error.stderr) {
         console.error(`[${branch}] stderr: ${error.stderr.substring(0, 2000)}`);
       }
-      throw new Error(`Docker compose failed: ${error.stderr || error.message || "Unknown error"}`);
+      throw new Error(
+        `Docker compose failed: ${error.stderr || error.message || "Unknown error"}`,
+        { cause: dockerError },
+      );
     }
 
     // Get actual mapped port (may differ from compose file)
