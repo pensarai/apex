@@ -1,19 +1,20 @@
 <h1 align="center">Pensar Apex</h1>
 
+<p align="center">AI-powered penetration testing TUI tool that enables you to use an AI agent to perform comprehensive blackbox and whitebox pentesting.
+</p>
+
 <p align="center">
   <a href="https://www.npmjs.com/package/@pensar/apex"><img src="https://img.shields.io/npm/v/@pensar/apex?label=latest" alt="npm version"></a>
   <a href="https://www.npmjs.com/package/@pensar/apex"><img src="https://img.shields.io/npm/v/@pensar/apex/canary?label=prerelease&color=yellow" alt="npm prerelease version"></a>
   <!-- <a href="https://www.npmjs.com/package/@pensar/apex"><img src="https://img.shields.io/npm/dm/@pensar/apex" alt="npm downloads"></a> -->
-  <a href="https://github.com/pensarai/homebrew-tap"><img src="https://img.shields.io/github/v/release/pensarai/apex?label=homebrew&logo=homebrew&color=orange" alt="Homebrew"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache 2.0 License"></a>
   <a href="https://docs.pensar.dev/apex"><img src="https://img.shields.io/badge/docs-docs.pensar.dev/apex-purple?logo=readthedocs&logoColor=white" alt="Documentation"></a>
+  <a href="https://discord.gg/UdaftduzRR"><img src="https://img.shields.io/badge/Discord-Join%20Us-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
 </p>
 
 <p align="center">
   <img src="screenshot.png" alt="Pensar Apex Screenshot" width="800">
 </p>
-
-**Pensar Apex** is an AI-powered penetration testing CLI tool that enables you to use an AI agent to perform comprehensive black box testing.
 
 ## Installation
 
