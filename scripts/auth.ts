@@ -20,15 +20,15 @@
  *   tsx scripts/auth.ts --target https://example.com
  */
 
-import {
-  discoverAuthentication,
-  runAuthenticationSubagent,
-} from "../src/core/agent/authenticationSubagent";
-import { Session } from "../src/core/session";
+import { sessions } from "../src/core/session";
 import type { AIModel } from "../src/core/ai";
-import type { AuthCredentials } from "../src/core/agent/authenticationSubagent/types";
+import type { AuthCredentials } from "../src/core/agents/specialized/authenticationAgent/types";
 import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
+import { runAuthenticationAgent } from "../src/core/api";
+import { config } from "dotenv";
+
+config();
 
 interface AuthOptions {
   target: string;
@@ -45,11 +45,13 @@ interface AuthOptions {
 }
 
 async function runAuth(options: AuthOptions): Promise<void> {
+  let username: string | undefined = undefined;
+  let password: string | undefined = undefined;
   const {
     target,
     model = "claude-sonnet-4-5" as AIModel,
-    username,
-    password,
+    username: usernameInput,
+    password: passwordInput,
     apiKey,
     bearer,
     cookies,
@@ -58,6 +60,9 @@ async function runAuth(options: AuthOptions): Promise<void> {
     noBrowser = false,
     discoverOnly = false,
   } = options;
+
+  username = usernameInput || process.env.TEST_AUTH_USERNAME;
+  password = passwordInput || process.env.TEST_AUTH_PASSWORD;
 
   console.log("=".repeat(80));
   console.log("AUTHENTICATION");
@@ -82,7 +87,7 @@ async function runAuth(options: AuthOptions): Promise<void> {
 
   try {
     // Create session
-    const session = await Session.create({
+    const session = await sessions.create({
       targets: [target],
       name: "auth-session",
       prefix: "auth",
@@ -107,39 +112,19 @@ async function runAuth(options: AuthOptions): Promise<void> {
       console.log("=".repeat(80));
       console.log();
 
-      const result = await discoverAuthentication({
-        input: {
-          target,
-          session,
-        },
+      const result = await runAuthenticationAgent({
+        session,
         model: model as AIModel,
-        enableBrowserTools: !noBrowser,
-        onStepFinish: (step) => {
-          if (step.text) {
-            process.stdout.write(step.text);
-          }
-          if (step.toolCalls?.length) {
-            for (const toolCall of step.toolCalls) {
-              const tc = toolCall as {
-                toolName: string;
-                args?: Record<string, unknown>;
-              };
-              const desc = tc.args?.toolCallDescription;
-              console.log(
-                `\n[Tool Call] ${tc.toolName}${desc ? `: ${desc}` : ""}`,
-              );
-            }
-          }
-          if (step.toolResults?.length) {
-            for (const toolResult of step.toolResults) {
-              try {
-                const resultStr = JSON.stringify(toolResult, null, 2);
-                console.log(`[Tool Result]`, resultStr.slice(0, 800));
-              } catch {
-                console.log(`[Tool Result]`, String(toolResult));
-              }
-            }
-          }
+        target,
+        credentials: {
+          username,
+          password,
+        },
+        callbacks: {
+          onTextDelta: (d) => process.stdout.write(d.text),
+          onToolCall: (d) => console.log(`→ calling ${d.toolName}`),
+          onToolResult: (d) => console.log(`✓ ${d.toolName} completed`),
+          onError: (e) => console.error("Agent error:", e),
         },
       });
 
@@ -148,53 +133,6 @@ async function runAuth(options: AuthOptions): Promise<void> {
       console.log("DISCOVERY RESULTS");
       console.log("=".repeat(80));
       console.log();
-
-      console.log(
-        `Authentication Required: ${result.requiresAuth ? "YES" : "NO"}`,
-      );
-      console.log(`Auth Type: ${result.authType}`);
-      console.log(`Confidence: ${result.confidence}%`);
-      if (result.loginUrl) {
-        console.log(`Login URL: ${result.loginUrl}`);
-      }
-      console.log();
-
-      if (result.reasoning.length > 0) {
-        console.log("Reasoning Chain:");
-        result.reasoning.forEach((step, i) => {
-          console.log(`  ${i + 1}. ${step}`);
-        });
-        console.log();
-      }
-
-      if (result.recommendedApproach) {
-        console.log(`Recommended Approach: ${result.recommendedApproach}`);
-        console.log();
-      }
-
-      if (result.evidence.length > 0) {
-        console.log("Evidence Collected:");
-        result.evidence.forEach((ev, i) => {
-          console.log(`  ${i + 1}. ${ev.endpoint}`);
-          if (ev.statusCode) console.log(`     Status: ${ev.statusCode}`);
-          if (ev.hasLoginForm) console.log(`     Has Login Form: Yes`);
-          if (ev.hasAuthHeader) console.log(`     Has Auth Header: Yes`);
-          if (ev.redirectsToLogin) console.log(`     Redirects to Login: Yes`);
-          if (ev.loginUrl) console.log(`     Login URL: ${ev.loginUrl}`);
-          console.log(`     Notes: ${ev.notes}`);
-        });
-        console.log();
-      }
-
-      if (result.barriers?.length) {
-        console.log("Auth Barriers Detected:");
-        result.barriers.forEach((barrier, i) => {
-          console.log(
-            `  ${i + 1}. [${barrier.type.toUpperCase()}] ${barrier.details}`,
-          );
-        });
-        console.log();
-      }
 
       console.log("Summary:");
       console.log(`  ${result.summary}`);
@@ -241,44 +179,11 @@ async function runAuth(options: AuthOptions): Promise<void> {
       console.log();
     }
 
-    const result = await runAuthenticationSubagent({
-      input: {
-        target,
-        session,
-        credentials: hasCredentials ? credentials : undefined,
-        authFlowHints: protectedEndpoints?.length
-          ? { protectedEndpoints }
-          : undefined,
-      },
+    const result = await runAuthenticationAgent({
+      target,
+      session,
+      credentials: hasCredentials ? credentials : undefined,
       model: model as AIModel,
-      enableBrowserTools: !noBrowser,
-      onStepFinish: (step) => {
-        if (step.text) {
-          process.stdout.write(step.text);
-        }
-        if (step.toolCalls?.length) {
-          for (const toolCall of step.toolCalls) {
-            const tc = toolCall as {
-              toolName: string;
-              args?: Record<string, unknown>;
-            };
-            const desc = tc.args?.toolCallDescription;
-            console.log(
-              `\n[Tool Call] ${tc.toolName}${desc ? `: ${desc}` : ""}`,
-            );
-          }
-        }
-        if (step.toolResults?.length) {
-          for (const toolResult of step.toolResults) {
-            try {
-              const resultStr = JSON.stringify(toolResult, null, 2);
-              console.log(`[Tool Result]`, resultStr.slice(0, 800));
-            } catch {
-              console.log(`[Tool Result]`, String(toolResult));
-            }
-          }
-        }
-      },
     });
 
     console.log();
@@ -289,8 +194,6 @@ async function runAuth(options: AuthOptions): Promise<void> {
 
     console.log(`Success: ${result.success ? "YES" : "NO"}`);
     console.log(`Strategy: ${result.strategy}`);
-    console.log(`Auth State: ${result.authState.status}`);
-    console.log(`Tokens Obtained: ${result.authState.tokens.length}`);
     console.log();
 
     if (
@@ -335,9 +238,6 @@ async function runAuth(options: AuthOptions): Promise<void> {
             success: true,
             headers: result.exportedHeaders,
             cookies: result.exportedCookies,
-            tokens: result.authState.tokens,
-            authenticatedAt: result.authState.authenticatedAt,
-            expiresAt: result.authState.expiresAt,
           },
           null,
           2,
@@ -355,7 +255,6 @@ async function runAuth(options: AuthOptions): Promise<void> {
           target,
           success: result.success,
           strategy: result.strategy,
-          authState: result.authState,
           authBarrier: result.authBarrier,
           summary: result.summary,
           documentedAt: new Date().toISOString(),
@@ -373,15 +272,17 @@ async function runAuth(options: AuthOptions): Promise<void> {
     console.log(`Session Path: ${session.rootPath}`);
     console.log(`Logs: ${session.rootPath}/logs/auth-subagent.log`);
     console.log();
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("=".repeat(80));
     console.error("AUTHENTICATION FAILED");
     console.error("=".repeat(80));
-    console.error(`Error: ${error.message}`);
-    if (error.stack) {
+    console.error(
+      `Error: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    if (error instanceof Error && error.stack) {
       console.error(`Stack: ${error.stack}`);
     }
-    if (error.cause) {
+    if (error instanceof Error && error.cause) {
       console.error(`Cause: ${JSON.stringify(error.cause)}`);
     }
     console.error();
@@ -588,8 +489,11 @@ async function main() {
       noBrowser,
       discoverOnly,
     });
-  } catch (error: any) {
-    console.error("Fatal error:", error.message);
+  } catch (error: unknown) {
+    console.error(
+      "Fatal error:",
+      error instanceof Error ? error.message : String(error),
+    );
     process.exit(1);
   }
 }

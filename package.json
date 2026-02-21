@@ -1,6 +1,6 @@
 {
   "name": "@pensar/apex",
-  "version": "0.0.58",
+  "version": "0.0.59",
   "description": "AI-powered penetration testing CLI tool with terminal UI",
   "module": "src/tui/index.tsx",
   "main": "build/index.js",
@@ -31,6 +31,7 @@
     "dev:debug": "SHOW_CONSOLE=true bun run scripts/watch.ts",
     "start": "bun run src/tui/index.tsx",
     "pensar": "node bin/pensar.js",
+    "tsc": "tsc --noEmit",
     "daytona-benchmark": "bun run scripts/daytona-benchmark.ts",
     "local-benchmark": "bun run scripts/local-benchmark.ts",
     "test": "vitest run",

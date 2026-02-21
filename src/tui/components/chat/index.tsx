@@ -9,12 +9,11 @@
  */
 
 import { useState, useCallback, useEffect } from "react";
-import { Session } from "../../../core/session";
+import { sessions, type SessionInfo } from "../../../core/session";
 import { useConfig } from "../../context/config";
 import { useAgent } from "../../context/agent";
 import { HomeView } from "./home-view";
 import { ConfigView, type SessionConfig } from "./config-view";
-import { Session as SessionComponent } from "../../session";
 import type { ModelInfo } from "../../../core/ai";
 
 type ChatAppView = "home" | "config" | "chat";
@@ -38,8 +37,7 @@ export function ChatApp({
 
   // View state
   const [currentView, setCurrentView] = useState<ChatAppView>(initialView);
-  const [activeSession, setActiveSession] =
-    useState<Session.SessionInfo | null>(null);
+  const [activeSession, setActiveSession] = useState<SessionInfo | null>(null);
   const [isResume, setIsResume] = useState(initialIsResume);
   const [sessionModel, setSessionModel] = useState<ModelInfo>(model);
   const [initialDirective, setInitialDirective] = useState<string | undefined>(
@@ -49,7 +47,7 @@ export function ChatApp({
   // Load initial session if provided
   useEffect(() => {
     if (initialSessionId) {
-      Session.get(initialSessionId).then((session) => {
+      sessions.get(initialSessionId).then((session) => {
         if (session) {
           setActiveSession(session);
           setCurrentView("chat");
@@ -67,7 +65,7 @@ export function ChatApp({
     ) => {
       if (view === "chat" && options?.sessionId) {
         // Resume session
-        Session.get(options.sessionId).then((session) => {
+        sessions.get(options.sessionId).then((session) => {
           if (session) {
             setActiveSession(session);
             setIsResume(options.isResume ?? false);
@@ -84,7 +82,7 @@ export function ChatApp({
   // Handle starting a new session from home (exploration mode)
   const handleStartSession = useCallback(async (directive: string) => {
     // Create exploration session (no target)
-    const session = await Session.create({
+    const session = await sessions.create({
       name: `exploration-${Date.now()}`,
       targets: [],
     });
@@ -102,7 +100,7 @@ export function ChatApp({
     const sessionName = `${hostname}-${timestamp}`;
 
     // Create session
-    const session = await Session.create({
+    const session = await sessions.create({
       name: sessionName,
       targets: [configData.targetUrl],
       config: {
@@ -151,17 +149,6 @@ export function ChatApp({
           config={config.data}
           onBack={handleBackFromConfig}
           onStart={handleConfigSubmit}
-        />
-      )}
-
-      {currentView === "chat" && activeSession && (
-        <SessionComponent
-          session={activeSession}
-          mode="chat"
-          model={sessionModel}
-          isResume={isResume}
-          initialDirective={initialDirective}
-          onExit={handleExitChat}
         />
       )}
     </box>

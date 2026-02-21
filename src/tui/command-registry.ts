@@ -151,7 +151,7 @@ export const commands: CommandConfig[] = [
       if (flags.target && hasEnoughFlagsToSkipWizard(flags)) {
         try {
           const session = await createSwarmSessionFromFlags(flags);
-          ctx.navigate({ type: "session", sessionId: session.id });
+          ctx.navigate({ type: "pentest", sessionId: session.id });
           return;
         } catch (e) {
           // Fall through to wizard on error
@@ -234,7 +234,7 @@ export const commands: CommandConfig[] = [
       if (flags.target && hasEnoughFlagsToSkipWizard(flags)) {
         try {
           const session = await createOperatorSessionFromFlags(flags);
-          ctx.navigate({ type: "session", sessionId: session.id });
+          ctx.navigate({ type: "pentest", sessionId: session.id });
           return;
         } catch (e) {
           // Fall through to wizard on error
@@ -352,7 +352,7 @@ export const commands: CommandConfig[] = [
     handler: async (args, ctx) => {
       // This command is handled by the session view when in a session
       // From home, it does nothing - tools panel only works in session context
-      if (ctx.route.type !== "session") {
+      if (ctx.route.type !== "pentest") {
         // Not in a session - command is a no-op
         return;
       }

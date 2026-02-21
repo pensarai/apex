@@ -18,13 +18,13 @@ import {
   type ToolsetState,
   type ToolDefinition,
 } from "../../../core/toolset";
-import { Session } from "../../../core/session";
 import { useTheme } from "../../theme";
+import { sessions, type SessionInfo } from "../../../core/session";
 
 interface ToolsPanelProps {
   open: boolean;
   onClose: () => void;
-  session: Session.SessionInfo;
+  session: SessionInfo;
   onToolsetChange?: (toolsetState: ToolsetState) => void;
 }
 
@@ -106,7 +106,7 @@ export default function ToolsPanel({
       setToolsetState(newState);
 
       try {
-        await Session.toggleTool(session.id, toolId, newEnabled);
+        await sessions.toggleTool(session.id, toolId, newEnabled);
         onToolsetChange?.(newState);
       } catch (e) {
         console.error("Failed to toggle tool:", e);

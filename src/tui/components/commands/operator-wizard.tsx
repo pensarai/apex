@@ -4,7 +4,7 @@ import Input from "../input";
 import { useRoute } from "../../context/route";
 import { useConfig } from "../../context/config";
 import { useAgent } from "../../context/agent";
-import { Session } from "../../../core/session";
+import { sessions, type SessionConfig } from "../../../core/session";
 import { SpinnerDots } from "../sprites";
 import { generateRandomName } from "../../../util/name";
 import type { OperatorMode, PermissionTier } from "../../../core/operator";
@@ -187,7 +187,7 @@ export default function HITLWizard(props: HITLWizardProps) {
     setError(null);
 
     try {
-      const sessionConfig: Session.SessionConfig = {
+      const sessionConfig: SessionConfig = {
         sessionType: "web-app",
         mode: "operator",
         operatorSettings: {
@@ -204,14 +204,14 @@ export default function HITLWizard(props: HITLWizardProps) {
         };
       }
 
-      const session = await Session.create({
+      const session = await sessions.create({
         targets: [state.target],
         name: state.name,
         config: sessionConfig,
       });
 
       route.navigate({
-        type: "session",
+        type: "operator",
         sessionId: session.id,
       });
     } catch (e) {

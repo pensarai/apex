@@ -10,5 +10,6 @@ export default defineConfig({
     environment: "node",
     testTimeout: 120000, // 2 minutes for API calls
     hookTimeout: 120000,
+    pool: "forks",
   },
 });
