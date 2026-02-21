@@ -10,7 +10,10 @@ const VARIANT_ICONS: Record<ToastVariant, string> = {
   warn: "⚠",
 };
 
-function variantColor(variant: ToastVariant, colors: { error: RGBA; warning: RGBA; info: RGBA }): RGBA {
+function variantColor(
+  variant: ToastVariant,
+  colors: { error: RGBA; warning: RGBA; info: RGBA },
+): RGBA {
   switch (variant) {
     case "error":
       return colors.error;
