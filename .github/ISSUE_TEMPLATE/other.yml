@@ -1,0 +1,12 @@
+name: Other
+description: Open an issue that doesn't fit other categories
+labels: ["other"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Describe your issue in detail
+      placeholder: What would you like to discuss?
+    validations:
+      required: true

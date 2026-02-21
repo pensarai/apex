@@ -1,11 +1,4 @@
-import {
-  createContext,
-  useContext,
-  useState,
-  useMemo,
-  useCallback,
-  useEffect,
-} from "react";
+import { createContext, useContext, useMemo, useCallback } from "react";
 import type { ReactNode } from "react";
 import { CommandRouter } from "../command-router";
 import {
@@ -13,7 +6,7 @@ import {
   commands,
   type AppCommandContext,
 } from "../command-registry";
-import type { AutocompleteOption } from "../components/autocomplete";
+import type { AutocompleteOption } from "../components/shared/prompt-input";
 import { useRoute } from "./route";
 
 interface CommandContextValue {
@@ -43,9 +36,9 @@ export function CommandProvider({ children }: CommandProviderProps) {
   const ctx = useMemo(() => {
     const ctx: AppCommandContext = {
       route: route.data,
-      navigate: route.navigate
-    }
-    return ctx
+      navigate: route.navigate,
+    };
+    return ctx;
   }, [route]);
 
   // Create router with context - initialized once
@@ -58,7 +51,6 @@ export function CommandProvider({ children }: CommandProviderProps) {
     }
 
     return router;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Generate autocomplete options from router commands
@@ -70,8 +62,11 @@ export function CommandProvider({ children }: CommandProviderProps) {
       // Find the original command config to get options
       const cmdConfig = commands.find((c) => c.name === cmd.name);
 
+      // Skip hidden commands (they still work, just don't show in menu)
+      if (cmdConfig?.hidden) continue;
+
       // Build description with options hint
-      let description = cmd.description || "";
+      const description = cmd.description || "";
 
       // Add main command (aliases hidden but still work via router)
       options.push({
@@ -88,7 +83,7 @@ export function CommandProvider({ children }: CommandProviderProps) {
     async (input: string): Promise<boolean> => {
       return await router.execute(input, ctx);
     },
-    [router, ctx]
+    [router, ctx],
   );
 
   const value: CommandContextValue = useMemo(
@@ -98,11 +93,7 @@ export function CommandProvider({ children }: CommandProviderProps) {
       executeCommand,
       commands,
     }),
-    [
-      router,
-      autocompleteOptions,
-      executeCommand,
-    ]
+    [router, autocompleteOptions, executeCommand],
   );
 
   return (

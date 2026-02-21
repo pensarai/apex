@@ -5,8 +5,12 @@
  * Layout: MODE | target URL | endpoints found | findings documented | tokens | tool calls
  */
 
-import { colors, formatTokenCount, getTierColor } from "../../theme";
-import type { OperatorMode, OperatorStage, PermissionTier } from "../../../core/operator";
+import { useTheme, getTierColor } from "../../theme";
+import type {
+  OperatorMode,
+  OperatorStage,
+  PermissionTier,
+} from "../../../core/operator";
 
 export interface HeaderProps {
   /** Session mode */
@@ -53,19 +57,20 @@ export function Header({
   findingsCount = 0,
   toolCallsCount = 0,
 }: HeaderProps) {
+  const { colors } = useTheme();
   // Get mode display
   const getModeDisplay = () => {
     if (mode === "chat") {
-      return { text: "CHAT", color: colors.cyanAccent };
+      return { text: "CHAT", color: colors.secondary };
     }
     switch (operatorMode) {
       case "plan":
-        return { text: "PLAN", color: colors.yellowText };
+        return { text: "PLAN", color: colors.warning };
       case "auto":
-        return { text: "AUTO", color: colors.greenAccent };
+        return { text: "AUTO", color: colors.primary };
       case "manual":
       default:
-        return { text: "MANUAL", color: colors.creamText };
+        return { text: "MANUAL", color: colors.text };
     }
   };
 
@@ -85,41 +90,41 @@ export function Header({
       {/* Left side: MODE | target | endpoints | findings */}
       <box flexDirection="row" gap={1}>
         {/* Mode indicator */}
-        <text fg={modeDisplay.color}>
-          {modeDisplay.text}
-        </text>
+        <text fg={modeDisplay.color}>{modeDisplay.text}</text>
 
         {/* Target URL */}
         {target && (
           <>
-            <text fg={colors.dimText}>│</text>
-            <text fg={colors.creamText}>{target}</text>
+            <text fg={colors.textMuted}>│</text>
+            <text fg={colors.text}>{target}</text>
           </>
         )}
 
         {/* Endpoints count */}
         {endpointsCount > 0 && (
           <>
-            <text fg={colors.dimText}>│</text>
-            <text fg={colors.toolColor}>{endpointsCount}</text>
-            <text fg={colors.dimText}>endpoints</text>
+            <text fg={colors.textMuted}>│</text>
+            <text fg={colors.info}>{endpointsCount}</text>
+            <text fg={colors.textMuted}>endpoints</text>
           </>
         )}
 
         {/* Findings count */}
         {findingsCount > 0 && (
           <>
-            <text fg={colors.dimText}>│</text>
-            <text fg={colors.greenAccent}>{findingsCount}</text>
-            <text fg={colors.dimText}>findings</text>
+            <text fg={colors.textMuted}>│</text>
+            <text fg={colors.primary}>{findingsCount}</text>
+            <text fg={colors.textMuted}>findings</text>
           </>
         )}
 
         {/* Auto-approve tier indicator */}
         {autoApproveTier && mode === "operator" && (
           <>
-            <text fg={colors.dimText}>│</text>
-            <text fg={getTierColor(autoApproveTier)}>T{autoApproveTier}</text>
+            <text fg={colors.textMuted}>│</text>
+            <text fg={getTierColor(colors, autoApproveTier)}>
+              T{autoApproveTier}
+            </text>
           </>
         )}
       </box>
@@ -129,9 +134,9 @@ export function Header({
         {/* Tool calls count */}
         {toolCallsCount > 0 && (
           <>
-            <text fg={colors.dimText}>│</text>
-            <text fg={colors.toolColor}>{toolCallsCount}</text>
-            <text fg={colors.dimText}>tool calls</text>
+            <text fg={colors.textMuted}>│</text>
+            <text fg={colors.info}>{toolCallsCount}</text>
+            <text fg={colors.textMuted}>tool calls</text>
           </>
         )}
       </box>

@@ -5,7 +5,7 @@
  */
 
 import { useState, useEffect } from "react";
-import { colors } from "../../theme";
+import { useTheme } from "../../theme";
 
 // Braille spinner frames for smooth animation
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -34,6 +34,7 @@ export function LoadingIndicator({
   action,
   toolName,
 }: LoadingIndicatorProps) {
+  const { colors } = useTheme();
   const [spinnerFrame, setSpinnerFrame] = useState(0);
   const [dotsFrame, setDotsFrame] = useState(0);
 
@@ -79,20 +80,20 @@ export function LoadingIndicator({
   const getColor = () => {
     switch (state) {
       case "thinking":
-        return colors.yellowText;
+        return colors.warning;
       case "streaming":
-        return colors.greenAccent;
+        return colors.primary;
       case "executing":
-        return colors.toolColor;
+        return colors.info;
       default:
-        return colors.dimText;
+        return colors.textMuted;
     }
   };
 
   return (
     <box flexDirection="row" marginTop={1} marginLeft={2} gap={1}>
       <text fg={getColor()}>{spinner}</text>
-      <text fg={colors.dimText}>{getMessage()}</text>
+      <text fg={colors.textMuted}>{getMessage()}</text>
     </box>
   );
 }

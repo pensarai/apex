@@ -1,0 +1,29 @@
+# Reusable TypeScript typecheck workflow
+# Runs tsc --noEmit to verify type correctness.
+
+name: TypeCheck
+
+on:
+  workflow_call:
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Generate ASCII art
+        run: bun run generate:ascii
+
+      - name: TypeScript typecheck
+        run: bunx tsc --noEmit

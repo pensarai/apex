@@ -1,11 +1,9 @@
 import fs from "fs";
 import { z } from "zod";
-import { nanoid } from "nanoid";
-import { ModelMessageObject } from "./types";
 import type { ToolMessage, Message } from "./types";
 import { Identifier } from "../id/id";
 import { Storage } from "../storage";
-import { Session } from "../session";
+import { type SessionInfo } from "../session";
 
 export namespace Messages {
   const StreamInput = z.object({
@@ -14,7 +12,7 @@ export namespace Messages {
 
   export async function* stream(input: z.output<typeof StreamInput>) {
     const list = await Array.fromAsync(
-      await Storage.list(["message", input.sessionId])
+      await Storage.list(["message", input.sessionId]),
     );
     for (let i = list.length - 1; i >= 0; i--) {
       yield await get({
@@ -37,17 +35,17 @@ export namespace Messages {
     ]);
   };
 
-  export function save(session: Session.SessionInfo, messages: Message[]) {
+  export function save(session: SessionInfo, messages: Message[]) {
     fs.writeFileSync(
       session.rootPath + "/messages.json",
-      JSON.stringify(messages, null, 2)
+      JSON.stringify(messages, null, 2),
     );
   }
 
   export function saveSubagentMessages(
-    orchestratorSession: Session.SessionInfo,
+    orchestratorSession: SessionInfo,
     subagentId: string,
-    messages: Message[]
+    messages: Message[],
   ) {
     const subagentDir = `${orchestratorSession.rootPath}/subagents/${subagentId}`;
 
@@ -66,7 +64,7 @@ export namespace Messages {
     // Save messages
     fs.writeFileSync(
       `${subagentDir}/messages.json`,
-      JSON.stringify(messages, null, 2)
+      JSON.stringify(messages, null, 2),
     );
   }
 }
@@ -75,7 +73,7 @@ export function mapMessages(messages: Message[]): Message[] {
   const result: Message[] = [];
 
   // First pass: collect tool results to know which tool calls have completed
-  const toolResults = new Map<string, any>();
+  const toolResults = new Map<string, unknown>();
   for (const message of messages) {
     if (message.role === "tool") {
       const content = message.content;
@@ -157,7 +155,7 @@ export function mapMessages(messages: Message[]): Message[] {
       const toolCalls: Array<{
         toolCallId: string;
         toolName: string;
-        input: any;
+        input: unknown;
       }> = [];
 
       for (const part of content) {
@@ -188,9 +186,10 @@ export function mapMessages(messages: Message[]): Message[] {
 
       // Add tool messages for each tool call
       for (const toolCall of toolCalls) {
-        const input = toolCall.input as Record<string, any>;
-        const toolCallDescription =
-          input?.toolCallDescription || `Executing ${toolCall.toolName}`;
+        const input = toolCall.input as Record<string, unknown>;
+        const toolCallDescription = String(
+          input?.toolCallDescription || `Executing ${toolCall.toolName}`,
+        );
 
         // Check if we have a result for this tool call
         const hasResult = toolResults.has(toolCall.toolCallId);

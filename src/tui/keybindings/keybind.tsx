@@ -21,8 +21,13 @@ import {
 } from "react";
 import { useKeyboard } from "@opentui/react";
 import { InputBuffer } from "./input-buffer";
-import { allActions, getAction, type Action, type ActionCategory } from "./actions";
-import { colors } from "../theme";
+import {
+  allActions,
+  getAction,
+  type Action,
+  type ActionCategory,
+} from "./actions";
+import { useTheme } from "../theme";
 
 // ============================================
 // Context Types
@@ -175,7 +180,7 @@ export function LeaderKeyProvider({
       }
       return false;
     },
-    [buffer, onTextChange]
+    [buffer, onTextChange],
   );
 
   // Buffer accessors
@@ -187,12 +192,12 @@ export function LeaderKeyProvider({
         onTextChange(text);
       }
     },
-    [buffer, onTextChange]
+    [buffer, onTextChange],
   );
   const getCursor = useCallback(() => buffer.getCursor(), [buffer]);
   const hasSelection = useCallback(
     () => buffer.getSelection() !== null,
-    [buffer]
+    [buffer],
   );
 
   // Handle keyboard input
@@ -281,7 +286,7 @@ export function LeaderKeyProvider({
       setText,
       getCursor,
       hasSelection,
-    ]
+    ],
   );
 
   return (
@@ -302,6 +307,7 @@ interface LeaderModeIndicatorProps {
 }
 
 function LeaderModeIndicator({ sequence }: LeaderModeIndicatorProps) {
+  const { colors } = useTheme();
   return (
     <box
       position="absolute"
@@ -309,11 +315,9 @@ function LeaderModeIndicator({ sequence }: LeaderModeIndicatorProps) {
       right={0}
       paddingLeft={1}
       paddingRight={1}
-      backgroundColor={colors.backgroundDark}
+      backgroundColor={colors.backgroundElement}
     >
-      <text fg={colors.yellowText}>
-        LEADER{sequence ? `: ${sequence}` : ""}
-      </text>
+      <text fg={colors.warning}>LEADER{sequence ? `: ${sequence}` : ""}</text>
     </box>
   );
 }
@@ -327,6 +331,7 @@ interface KeybindHelpOverlayProps {
 }
 
 function KeybindHelpOverlay({ onClose }: KeybindHelpOverlayProps) {
+  const { colors } = useTheme();
   const categories: ActionCategory[] = [
     "movement",
     "selection",
@@ -352,15 +357,15 @@ function KeybindHelpOverlay({ onClose }: KeybindHelpOverlayProps) {
       right={4}
       bottom={4}
       border={true}
-      borderColor={colors.dimText}
-      backgroundColor={colors.backgroundDarker}
+      borderColor={colors.textMuted}
+      backgroundColor={colors.background}
       flexDirection="column"
       padding={2}
     >
       {/* Header */}
       <box flexDirection="row" justifyContent="space-between" marginBottom={1}>
-        <text fg={colors.creamText}>Leader Key Shortcuts (Ctrl+Space)</text>
-        <text fg={colors.dimText}>[?] to close</text>
+        <text fg={colors.text}>Leader Key Shortcuts (Ctrl+Space)</text>
+        <text fg={colors.textMuted}>[?] to close</text>
       </box>
 
       {/* Categories */}
@@ -371,13 +376,13 @@ function KeybindHelpOverlay({ onClose }: KeybindHelpOverlayProps) {
 
           return (
             <box key={category} flexDirection="column" minWidth={20}>
-              <text fg={colors.greenAccent}>{categoryLabels[category]}</text>
+              <text fg={colors.primary}>{categoryLabels[category]}</text>
               {actions.slice(0, 8).map((action) => (
                 <box key={action.id} flexDirection="row" gap={1}>
-                  <text fg={colors.yellowText} minWidth={6}>
+                  <text fg={colors.warning} minWidth={6}>
                     {action.key}
                   </text>
-                  <text fg={colors.dimText}>{action.description}</text>
+                  <text fg={colors.textMuted}>{action.description}</text>
                 </box>
               ))}
             </box>
@@ -387,7 +392,7 @@ function KeybindHelpOverlay({ onClose }: KeybindHelpOverlayProps) {
 
       {/* Footer */}
       <box marginTop={2}>
-        <text fg={colors.dimText}>
+        <text fg={colors.textMuted}>
           Press Ctrl+Space to activate leader mode, then press a key sequence.
         </text>
       </box>
@@ -400,4 +405,9 @@ function KeybindHelpOverlay({ onClose }: KeybindHelpOverlayProps) {
 // ============================================
 
 export { InputBuffer } from "./input-buffer";
-export { allActions, getAction, type Action, type ActionCategory } from "./actions";
+export {
+  allActions,
+  getAction,
+  type Action,
+  type ActionCategory,
+} from "./actions";

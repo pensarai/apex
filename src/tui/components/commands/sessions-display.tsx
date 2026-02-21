@@ -5,18 +5,21 @@ import { existsSync } from "fs";
 import { useRoute } from "../../context/route";
 import { useSession } from "../../context/session";
 import { useFocus } from "../../context/focus";
-import { Session } from "../../../core/session";
+import { sessions, type SessionInfo } from "../../../core/session";
 import { Storage } from "../../../core/storage";
 import { Dialog } from "../../context/dialog";
-import { Renderable, ScrollBoxRenderable } from "@opentui/core";
+import { ScrollBoxRenderable } from "@opentui/core";
+import { scrollToIndex } from "../../utils/scroll";
+import { useTheme } from "../../theme";
 
 interface SessionsDisplayProps {
   onClose: () => void;
 }
 
 export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
+  const { colors } = useTheme();
   const { refocusPrompt } = useFocus();
-  const [sessions, setSessions] = useState<(Session.SessionInfo)[]>([]);
+  const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [statusMessage, setStatusMessage] = useState<string>("");
@@ -30,8 +33,8 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
   async function loadSessions() {
     setLoading(true);
     try {
-      const _sessions = await Array.fromAsync(Session.list());
-      setSessions(_sessions);
+      const _sessions = await Array.fromAsync(sessions.list());
+      setAllSessions(_sessions);
     } catch (error) {
       console.error("Error loading sessions:", error);
     } finally {
@@ -44,8 +47,11 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
   }, []);
 
   async function openReport(sessionId: string) {
-    const session = await Session.get(sessionId);
-    const reportPath = await Storage.locate([session.id, "pentest-report"], ".md");
+    const session = await sessions.get(sessionId);
+    const reportPath = await Storage.locate(
+      [session.id, "pentest-report"],
+      ".md",
+    );
 
     if (!existsSync(reportPath)) {
       setStatusMessage("Report not found");
@@ -64,75 +70,29 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
     });
   }
 
-
-  function scrollToIndex(index: number, list: Session.SessionInfo[]) {
-    if (!scroll.current || list.length === 0) return;
-
-    const targetSession = list[index];
-    if (!targetSession) return;
-
-    // Find the target element by searching through date groups
-    let target: Renderable | undefined;
-    for (const group of scroll.current.getChildren()) {
-      const found = group.getChildren().find(child => child.id === targetSession.id);
-      if (found) {
-        target = found;
-        break;
-      }
-    }
-
-    if (!target) return;
-
-    // Calculate target's visual position relative to the scroll container
-    const targetVisualY = target.y - scroll.current.y;
-    const viewportHeight = scroll.current.height;
-    const targetHeight = target.height || 1;
-
-    // If first item, always scroll to top
-    if (index === 0) {
-      scroll.current.scrollTo(0);
-      return;
-    }
-
-    // If last item, scroll to bottom
-    if (index === list.length - 1) {
-      scroll.current.scrollTo(Infinity);
-      return;
-    }
-
-    // Check if target is below visible area (accounting for its height)
-    if (targetVisualY + targetHeight > viewportHeight) {
-      // Scroll down by the amount needed to bring target into view
-      scroll.current.scrollBy(targetVisualY - viewportHeight + targetHeight + 1);
-    }
-    // Check if target is above visible area
-    else if (targetVisualY < 0) {
-      // Scroll up by the amount needed (targetVisualY is negative)
-      scroll.current.scrollBy(targetVisualY);
-    }
-  }
-
   // Filter sessions based on search term
-  const filteredSessions = sessions.filter(session => {
+  const filteredSessions = allSessions.filter((session) => {
     if (!searchTerm) return true;
     const searchLower = searchTerm.toLowerCase();
-    return (
-      session.name.toLowerCase().includes(searchLower)
-    );
+    return session.name.toLowerCase().includes(searchLower);
   });
 
   // Group sessions by date (without indices first)
-  const groupedSessionsRaw: { date: string; timestamp: number; sessions: Session.SessionInfo[] }[] = [];
+  const groupedSessionsRaw: {
+    date: string;
+    timestamp: number;
+    sessions: SessionInfo[];
+  }[] = [];
   filteredSessions.forEach((session) => {
     const startDate = new Date(session.time.created);
-    const dateStr = startDate.toLocaleDateString('en-US', {
-      weekday: 'short',
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric'
+    const dateStr = startDate.toLocaleDateString("en-US", {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      year: "numeric",
     });
 
-    let group = groupedSessionsRaw.find(g => g.date === dateStr);
+    let group = groupedSessionsRaw.find((g) => g.date === dateStr);
     if (!group) {
       group = { date: dateStr, timestamp: startDate.getTime(), sessions: [] };
       groupedSessionsRaw.push(group);
@@ -144,27 +104,34 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
   groupedSessionsRaw.sort((a, b) => b.timestamp - a.timestamp);
 
   // Sort sessions within each group by time (newest first)
-  groupedSessionsRaw.forEach(group => {
-    group.sessions.sort((a, b) =>
-      new Date(b.time.created).getTime() - new Date(a.time.created).getTime()
+  groupedSessionsRaw.forEach((group) => {
+    group.sessions.sort(
+      (a, b) =>
+        new Date(b.time.created).getTime() - new Date(a.time.created).getTime(),
     );
   });
 
   // Create flat list in visual order and assign indices
-  const visualOrderSessions: Session.SessionInfo[] = [];
-  groupedSessionsRaw.forEach(group => {
+  const visualOrderSessions: SessionInfo[] = [];
+  groupedSessionsRaw.forEach((group) => {
     visualOrderSessions.push(...group.sessions);
   });
 
   // Now create grouped sessions with correct visual indices
-  const groupedSessions: { date: string; sessions: (Session.SessionInfo & { index: number })[] }[] = [];
+  const groupedSessions: {
+    date: string;
+    sessions: (SessionInfo & { index: number })[];
+  }[] = [];
   let visualIndex = 0;
-  groupedSessionsRaw.forEach(rawGroup => {
-    const group: { date: string; sessions: (Session.SessionInfo & { index: number })[] } = {
+  groupedSessionsRaw.forEach((rawGroup) => {
+    const group: {
+      date: string;
+      sessions: (SessionInfo & { index: number })[];
+    } = {
       date: rawGroup.date,
-      sessions: []
+      sessions: [],
     };
-    rawGroup.sessions.forEach(session => {
+    rawGroup.sessions.forEach((session) => {
       group.sessions.push({ ...session, index: visualIndex });
       visualIndex++;
     });
@@ -173,7 +140,10 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
 
   // Clamp selectedIndex when list changes
   useEffect(() => {
-    if (visualOrderSessions.length > 0 && selectedIndex >= visualOrderSessions.length) {
+    if (
+      visualOrderSessions.length > 0 &&
+      selectedIndex >= visualOrderSessions.length
+    ) {
       setSelectedIndex(visualOrderSessions.length - 1);
     } else if (visualOrderSessions.length === 0) {
       setSelectedIndex(0);
@@ -182,7 +152,7 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
 
   async function deleteSession(sessionId: string) {
     try {
-      await Session.remove({ sessionId });
+      await sessions.remove({ sessionId });
       setStatusMessage("Session deleted");
       setTimeout(() => setStatusMessage(""), 2000);
 
@@ -216,34 +186,36 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
       key.preventDefault();
       const currentSelection = visualOrderSessions[selectedIndex];
       if (!currentSelection) return;
-      const _session = await session.load(currentSelection.id);
-      if(!_session) {
+      const _session = await sessions.get(currentSelection.id);
+      if (!_session) {
         console.error("Error loading session");
         return;
       }
       refocusPrompt();
       onClose();
       route.navigate({
-        type: "session",
+        type: "pentest",
         sessionId: _session.id,
-        isResume: true // Load existing state, don't start new pentest
+        isResume: true, // Load existing state, don't start new pentest
       });
       return;
     }
 
     // Arrow Up - Previous session
     if (key.name === "up" && visualOrderSessions.length > 0) {
-      const newIndex = selectedIndex > 0 ? selectedIndex - 1 : visualOrderSessions.length - 1;
+      const newIndex =
+        selectedIndex > 0 ? selectedIndex - 1 : visualOrderSessions.length - 1;
       setSelectedIndex(newIndex);
-      scrollToIndex(newIndex, visualOrderSessions);
+      scrollToIndex(scroll.current, newIndex, visualOrderSessions, (s) => s.id);
       return;
     }
 
     // Arrow Down - Next session
     if (key.name === "down" && visualOrderSessions.length > 0) {
-      const newIndex = selectedIndex < visualOrderSessions.length - 1 ? selectedIndex + 1 : 0;
+      const newIndex =
+        selectedIndex < visualOrderSessions.length - 1 ? selectedIndex + 1 : 0;
       setSelectedIndex(newIndex);
-      scrollToIndex(newIndex, visualOrderSessions);
+      scrollToIndex(scroll.current, newIndex, visualOrderSessions, (s) => s.id);
       return;
     }
 
@@ -264,7 +236,6 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
     }
   });
 
-
   const handleClose = () => {
     refocusPrompt();
     onClose();
@@ -272,23 +243,18 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
 
   return (
     <Dialog size="large" onClose={handleClose}>
-      <box
-        flexDirection="column"
-        padding={2}
-        gap={2}
-        width="100%"
-      >
+      <box flexDirection="column" padding={2} gap={2} width="100%">
         {/* Header */}
         <box flexDirection="row" justifyContent="space-between" width="100%">
-          <text fg="white">Sessions</text>
-          <text fg="gray">esc to close</text>
+          <text fg={colors.text}>Sessions</text>
+          <text fg={colors.textMuted}>esc to close</text>
         </box>
 
         {/* Search Input */}
         <box
           width="100%"
           border={["left"]}
-          borderColor="green"
+          borderColor={colors.primary}
           backgroundColor="transparent"
         >
           <input
@@ -298,16 +264,23 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
             value={searchTerm}
             onInput={setSearchTerm}
             focused
+            cursorColor={colors.textMuted}
           />
         </box>
 
         {/* Sessions List */}
         {loading ? (
-          <text fg="gray">Loading sessions...</text>
+          <text fg={colors.textMuted}>Loading sessions...</text>
         ) : visualOrderSessions.length === 0 ? (
-          <text fg="gray">No sessions found</text>
+          <text fg={colors.textMuted}>No sessions found</text>
         ) : (
-          <box flexDirection="column" gap={2} flexGrow={1} maxHeight={10} overflow="hidden">
+          <box
+            flexDirection="column"
+            gap={2}
+            flexGrow={1}
+            maxHeight={10}
+            overflow="hidden"
+          >
             <scrollbox
               ref={scroll}
               scrollbarOptions={{ visible: false }}
@@ -331,16 +304,16 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
               {groupedSessions.map((group) => (
                 <box key={group.date} flexDirection="column" gap={1}>
                   {/* Date Header */}
-                  <text fg="green">{group.date}</text>
+                  <text fg={colors.primary}>{group.date}</text>
 
                   {/* Sessions in this date group */}
                   {group.sessions.map((session) => {
                     const isSelected = session.index === selectedIndex;
                     const startTime = new Date(session.time.created);
-                    const timeStr = startTime.toLocaleTimeString('en-US', {
-                      hour: 'numeric',
-                      minute: '2-digit',
-                      hour12: true
+                    const timeStr = startTime.toLocaleTimeString("en-US", {
+                      hour: "numeric",
+                      minute: "2-digit",
+                      hour12: true,
                     });
 
                     return (
@@ -350,16 +323,17 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
                         onMouseDown={() => setSelectedIndex(session.index)}
                         backgroundColor="transparent"
                         border={isSelected ? ["left"] : undefined}
-                        borderColor={isSelected ? "green" : undefined}
+                        borderColor={isSelected ? colors.primary : undefined}
                         paddingLeft={2}
                         flexDirection="row"
                         justifyContent="space-between"
                         width="100%"
                       >
-                        <text fg={isSelected ? "white" : "gray"}>
-                          {isSelected ? "● " : "  "}{session.name}
+                        <text fg={isSelected ? colors.text : colors.textMuted}>
+                          {isSelected ? "● " : "  "}
+                          {session.name}
                         </text>
-                        <text fg="gray">{timeStr}</text>
+                        <text fg={colors.textMuted}>{timeStr}</text>
                       </box>
                     );
                   })}
@@ -372,15 +346,15 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
         {/* Actions Footer */}
         {visualOrderSessions.length > 0 && (
           <box flexDirection="row" gap={2}>
-            <text fg="gray">
-              <span fg="green">[Enter]</span> Open · <span fg="green">[R]</span> Report · <span fg="green">[Ctrl+D]</span> Delete
+            <text fg={colors.textMuted}>
+              <span fg={colors.primary}>[Enter]</span> Open ·{" "}
+              <span fg={colors.primary}>[R]</span> Report ·{" "}
+              <span fg={colors.primary}>[Ctrl+D]</span> Delete
             </text>
           </box>
         )}
 
-        {statusMessage && (
-          <text fg="green">{statusMessage}</text>
-        )}
+        {statusMessage && <text fg={colors.primary}>{statusMessage}</text>}
       </box>
     </Dialog>
   );

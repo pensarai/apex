@@ -1,0 +1,304 @@
+/**
+ * Sessions Browser - Full-page component for browsing and opening previous sessions.
+ * Accessed via /sessions (alias: /s).
+ */
+
+import { useState, useEffect, useRef, useCallback } from "react";
+import { useKeyboard } from "@opentui/react";
+import { exec } from "child_process";
+import { existsSync } from "fs";
+import { ScrollBoxRenderable } from "@opentui/core";
+import { scrollToIndex } from "../../utils/scroll";
+import { useRoute } from "../../context/route";
+import { useSession } from "../../context/session";
+import { useFocus } from "../../context/focus";
+import { Storage } from "../../../core/storage";
+import {
+  useSessionsList,
+  formatRelativeTime,
+  type EnrichedSession,
+} from "../../hooks/use-sessions-list";
+import { useTheme } from "../../theme";
+
+export default function SessionsBrowser() {
+  const { colors } = useTheme();
+  const route = useRoute();
+  const { load: loadSession } = useSession();
+  const { refocusPrompt } = useFocus();
+
+  const {
+    groupedSessions,
+    visualOrderSessions,
+    totalCount,
+    loading,
+    searchTerm,
+    setSearchTerm,
+    deleteSession,
+    reload,
+  } = useSessionsList();
+
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [statusMessage, setStatusMessage] = useState("");
+  const scroll = useRef<ScrollBoxRenderable>(null);
+
+  // Clamp selected index when list changes
+  useEffect(() => {
+    if (
+      visualOrderSessions.length > 0 &&
+      selectedIndex >= visualOrderSessions.length
+    ) {
+      setSelectedIndex(visualOrderSessions.length - 1);
+    } else if (visualOrderSessions.length === 0) {
+      setSelectedIndex(0);
+    }
+  }, [visualOrderSessions.length, selectedIndex]);
+
+  const showStatus = useCallback((msg: string) => {
+    setStatusMessage(msg);
+    setTimeout(() => setStatusMessage(""), 2000);
+  }, []);
+
+  const openSession = useCallback(
+    async (session: EnrichedSession, asOperator: boolean) => {
+      const loaded = await loadSession(session.id);
+      if (!loaded) {
+        showStatus("Error loading session");
+        return;
+      }
+      route.navigate({
+        type: "pentest",
+        sessionId: session.id,
+        isResume: true,
+        openAsOperator: asOperator || undefined,
+      });
+    },
+    [loadSession, route, showStatus],
+  );
+
+  const openReport = useCallback(
+    async (session: EnrichedSession) => {
+      const reportPath = await Storage.locate(
+        [session.id, "pentest-report"],
+        ".md",
+      );
+      if (!existsSync(reportPath)) {
+        showStatus("Report not found");
+        return;
+      }
+      exec(`open "${reportPath}"`, (error) => {
+        if (error) showStatus("Error opening report");
+      });
+    },
+    [showStatus],
+  );
+
+  useKeyboard(async (key) => {
+    // Escape - go home
+    if (key.name === "escape") {
+      refocusPrompt();
+      route.navigate({ type: "base", path: "home" });
+      return;
+    }
+
+    // Enter - open session in original mode
+    if (key.name === "return" && visualOrderSessions.length > 0) {
+      key.preventDefault();
+      const selected = visualOrderSessions[selectedIndex];
+      if (selected) await openSession(selected, false);
+      return;
+    }
+
+    // O - open as operator
+    if (
+      (key.name === "o" || key.name === "O") &&
+      !key.ctrl &&
+      !key.meta &&
+      visualOrderSessions.length > 0
+    ) {
+      const selected = visualOrderSessions[selectedIndex];
+      if (selected) await openSession(selected, true);
+      return;
+    }
+
+    // R - open report
+    if (
+      (key.name === "r" || key.name === "R") &&
+      !key.ctrl &&
+      !key.meta &&
+      visualOrderSessions.length > 0
+    ) {
+      const selected = visualOrderSessions[selectedIndex];
+      if (selected) await openReport(selected);
+      return;
+    }
+
+    // Ctrl+D - delete session
+    if (key.ctrl && key.name === "d" && visualOrderSessions.length > 0) {
+      const selected = visualOrderSessions[selectedIndex];
+      if (selected) {
+        await deleteSession(selected.id);
+        showStatus("Session deleted");
+      }
+      return;
+    }
+
+    // Up
+    if (key.name === "up" && visualOrderSessions.length > 0) {
+      const newIndex =
+        selectedIndex > 0 ? selectedIndex - 1 : visualOrderSessions.length - 1;
+      setSelectedIndex(newIndex);
+      scrollToIndex(scroll.current, newIndex, visualOrderSessions, (s) => s.id);
+      return;
+    }
+
+    // Down
+    if (key.name === "down" && visualOrderSessions.length > 0) {
+      const newIndex =
+        selectedIndex < visualOrderSessions.length - 1 ? selectedIndex + 1 : 0;
+      setSelectedIndex(newIndex);
+      scrollToIndex(scroll.current, newIndex, visualOrderSessions, (s) => s.id);
+      return;
+    }
+  });
+
+  if (loading) {
+    return (
+      <box flexDirection="column" padding={2} width="100%">
+        <text fg={colors.text}>Loading sessions...</text>
+      </box>
+    );
+  }
+
+  if (totalCount === 0) {
+    return (
+      <box flexDirection="column" padding={2} gap={1} width="100%">
+        <text fg={colors.text}>Sessions</text>
+        <text fg={colors.textMuted}>No sessions found.</text>
+        <text fg={colors.textMuted}>
+          Start a new session with /pentest or /operator
+        </text>
+        <text fg={colors.textMuted}>Press Esc to go back</text>
+      </box>
+    );
+  }
+
+  return (
+    <box flexDirection="column" padding={2} gap={1} width="100%" flexGrow={1}>
+      {/* Header */}
+      <box flexDirection="column" flexShrink={0}>
+        <text fg={colors.text}>Sessions</text>
+        <text fg={colors.textMuted}>
+          Browse and reopen previous pentest sessions
+        </text>
+      </box>
+
+      {/* Search */}
+      <box
+        flexShrink={0}
+        width="100%"
+        border={["left"]}
+        borderColor={colors.primary}
+        backgroundColor="transparent"
+      >
+        <input
+          paddingLeft={1}
+          backgroundColor="transparent"
+          placeholder="Search sessions..."
+          value={searchTerm}
+          onInput={setSearchTerm}
+          focused
+          cursorColor={colors.textMuted}
+        />
+      </box>
+
+      {/* Session list */}
+      <box flexDirection="column" gap={1} flexGrow={1} overflow="hidden">
+        {visualOrderSessions.length === 0 ? (
+          <box paddingLeft={2}>
+            <text fg={colors.textMuted}>No sessions found.</text>
+          </box>
+        ) : (
+          <scrollbox
+            ref={scroll}
+            scrollbarOptions={{ visible: false }}
+            style={{
+              rootOptions: {
+                width: "100%",
+                flexGrow: 1,
+                flexShrink: 1,
+                overflow: "hidden",
+              },
+              wrapperOptions: { overflow: "hidden" },
+              contentOptions: { gap: 2, flexDirection: "column" },
+            }}
+          >
+            {groupedSessions.map((group) => (
+              <box key={group.date} flexDirection="column" gap={1}>
+                <text fg={colors.primary}>{group.date}</text>
+                {group.sessions.map((session) => {
+                  const isSelected = session.index === selectedIndex;
+                  const age = formatRelativeTime(session.time.updated);
+                  const mode = session.config?.mode || "auto";
+                  const modeBadge =
+                    mode === "operator" ? "[operator]" : "[auto]";
+                  const findingsText =
+                    session.findingsCount > 0
+                      ? `${session.findingsCount} finding${session.findingsCount > 1 ? "s" : ""}`
+                      : "";
+
+                  return (
+                    <box
+                      id={session.id}
+                      key={session.id}
+                      backgroundColor="transparent"
+                      border={isSelected ? ["left"] : undefined}
+                      borderColor={isSelected ? colors.primary : undefined}
+                      paddingLeft={isSelected ? 1 : 2}
+                      flexDirection="row"
+                      justifyContent="space-between"
+                      width="100%"
+                    >
+                      <box flexDirection="row" gap={1}>
+                        <text fg={isSelected ? colors.primary : colors.text}>
+                          {isSelected ? "▸ " : "  "}
+                          {session.name}
+                        </text>
+                        <text
+                          fg={
+                            mode === "operator"
+                              ? colors.primary
+                              : colors.textMuted
+                          }
+                        >
+                          {modeBadge}
+                        </text>
+                        {findingsText ? (
+                          <text fg={colors.textMuted}>{findingsText}</text>
+                        ) : null}
+                      </box>
+                      <text fg={colors.textMuted}>{age}</text>
+                    </box>
+                  );
+                })}
+              </box>
+            ))}
+          </scrollbox>
+        )}
+      </box>
+
+      {/* Footer */}
+      <box flexDirection="row" gap={1} flexShrink={0}>
+        <text fg={colors.textMuted}>
+          <span fg={colors.primary}>[Enter]</span> Open{"  "}
+          <span fg={colors.primary}>[O]</span> Operator{"  "}
+          <span fg={colors.primary}>[R]</span> Report{"  "}
+          <span fg={colors.primary}>[Ctrl+D]</span> Delete{"  "}
+          <span fg={colors.primary}>[Esc]</span> Back
+        </text>
+      </box>
+
+      {/* Status */}
+      {statusMessage && <text fg={colors.primary}>{statusMessage}</text>}
+    </box>
+  );
+}

@@ -6,6 +6,8 @@ import {
   createOperatorSessionFromFlags,
   createSwarmSessionFromFlags,
 } from "./utils/command-flags";
+import { getAllThemeNames } from "./theme";
+import { config } from "../core/config";
 
 /**
  * Define your application's CommandContext type with specific methods
@@ -33,6 +35,8 @@ export interface CommandConfig {
   description?: string;
   category?: string;
   options?: CommandOption[];
+  /** If true, command works but doesn't appear in the autocomplete menu */
+  hidden?: boolean;
   handler: (args: string[], ctx: AppCommandContext) => void | Promise<void>;
 }
 
@@ -40,50 +44,6 @@ export interface CommandConfig {
  * All available commands in a simple, mappable array
  */
 export const commands: CommandConfig[] = [
-  {
-    name: "help",
-    description: "Show help dialog",
-    category: "General",
-    handler: async (args, ctx) => {
-      ctx.navigate({
-        type: "base",
-        path: "help",
-      });
-    },
-  },
-  {
-    name: "config",
-    description: "Show config dialog",
-    category: "General",
-    handler: async (args, ctx) => {
-      ctx.navigate({
-        type: "base",
-        path: "config",
-      });
-    },
-  },
-  // {
-  //   name: "quicktest",
-  //   description: "Show quick pentest agent",
-  //   category: "General",
-  //   handler: async (args, ctx) => {
-  //     ctx.navigate({
-  //       type: "base",
-  //       path: "pentest"
-  //     });
-  //   },
-  // },
-  // {
-  //   name: "pentest",
-  //   description: "Show pentest agent",
-  //   category: "General",
-  //   handler: async (args, ctx) => {
-  //     ctx.navigate({
-  //       type: "base",
-  //       path: "thorough"
-  //     });
-  //   },
-  // },
   {
     name: "pentest",
     aliases: ["p", "web", "w"],
@@ -147,7 +107,7 @@ export const commands: CommandConfig[] = [
       if (flags.target && hasEnoughFlagsToSkipWizard(flags)) {
         try {
           const session = await createSwarmSessionFromFlags(flags);
-          ctx.navigate({ type: "session", sessionId: session.id });
+          ctx.navigate({ type: "pentest", sessionId: session.id });
           return;
         } catch (e) {
           // Fall through to wizard on error
@@ -230,7 +190,7 @@ export const commands: CommandConfig[] = [
       if (flags.target && hasEnoughFlagsToSkipWizard(flags)) {
         try {
           const session = await createOperatorSessionFromFlags(flags);
-          ctx.navigate({ type: "session", sessionId: session.id });
+          ctx.navigate({ type: "pentest", sessionId: session.id });
           return;
         } catch (e) {
           // Fall through to wizard on error
@@ -241,7 +201,29 @@ export const commands: CommandConfig[] = [
       ctx.navigate({
         type: "base",
         path: "operator",
-        options: flags as any,
+        options: flags as Record<string, unknown>,
+      });
+    },
+  },
+  {
+    name: "help",
+    description: "Show help dialog",
+    category: "General",
+    handler: async (args, ctx) => {
+      ctx.navigate({
+        type: "base",
+        path: "help",
+      });
+    },
+  },
+  {
+    name: "config",
+    description: "Show config dialog",
+    category: "General",
+    handler: async (args, ctx) => {
+      ctx.navigate({
+        type: "base",
+        path: "config",
       });
     },
   },
@@ -268,14 +250,14 @@ export const commands: CommandConfig[] = [
     },
   },
   {
-    name: "resume",
-    aliases: ["r"],
-    description: "Resume a previous pentest session",
+    name: "sessions",
+    aliases: ["s"],
+    description: "Browse previous sessions",
     category: "Pentesting",
     handler: async (args, ctx) => {
       ctx.navigate({
         type: "base",
-        path: "resume",
+        path: "sessions",
       });
     },
   },
@@ -284,6 +266,7 @@ export const commands: CommandConfig[] = [
     aliases: ["c"],
     description: "Open the Chat TUI interface",
     category: "General",
+    hidden: true,
     handler: async (args, ctx) => {
       ctx.navigate({
         type: "base",
@@ -292,14 +275,62 @@ export const commands: CommandConfig[] = [
     },
   },
   {
+    name: "themes",
+    aliases: ["theme"],
+    description: "Manage application themes",
+    category: "General",
+    options: [
+      {
+        name: "<name>",
+        description: "Switch directly to a named theme",
+      },
+      {
+        name: "mode",
+        description: "Toggle or set dark/light mode (dark|light|auto)",
+      },
+    ],
+    handler: async (args, ctx) => {
+      // /theme mode [dark|light|auto] — mode subcommand
+      if (args[0] === "mode") {
+        const modeArg = args[1];
+        if (modeArg === "dark" || modeArg === "light") {
+          await config.update({ themeMode: modeArg });
+        } else if (modeArg === "auto") {
+          await config.update({ themeMode: "auto" });
+        } else {
+          // Toggle — actual toggling happens in the ThemeProvider (caller reads config)
+          const current = await config.get();
+          const newMode = current.themeMode === "light" ? "dark" : "light";
+          await config.update({ themeMode: newMode });
+        }
+        return;
+      }
+
+      // /theme <name> — direct theme switch
+      if (args[0]) {
+        const name = args[0].toLowerCase();
+        const allThemes = getAllThemeNames();
+        const match = allThemes.find((t) => t === name);
+        if (match) {
+          await config.update({ theme: match });
+        }
+        return;
+      }
+
+      // /theme — open picker
+      ctx.navigate({ type: "base", path: "theme" });
+    },
+  },
+  {
     name: "tools",
     aliases: ["t"],
     description: "View and manage active tools (session only)",
     category: "Session",
+    hidden: true,
     handler: async (args, ctx) => {
       // This command is handled by the session view when in a session
       // From home, it does nothing - tools panel only works in session context
-      if (ctx.route.type !== "session") {
+      if (ctx.route.type !== "pentest") {
         // Not in a session - command is a no-op
         return;
       }
@@ -307,17 +338,15 @@ export const commands: CommandConfig[] = [
     },
   },
 
-  // Add more commands here...
-  // Example:
-  // {
-  //   name: "clear",
-  //   aliases: ["cls"],
-  //   description: "Clear the screen",
-  //   category: "General",
-  //   handler: async (args, ctx) => {
-  //     ctx.clearScreen?.();
-  //   },
-  // },
+  {
+    name: "exit",
+    aliases: ["quit", "q"],
+    description: "Exit the application",
+    category: "General",
+    handler: async () => {
+      process.kill(process.pid, "SIGINT");
+    },
+  },
 ];
 
 /**

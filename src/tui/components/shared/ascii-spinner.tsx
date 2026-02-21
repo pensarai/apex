@@ -6,7 +6,8 @@
  */
 
 import { useState, useEffect } from "react";
-import { colors } from "../../theme";
+import { useTheme } from "../../theme";
+import type { RGBA } from "@opentui/core";
 
 const SPINNER_FRAMES = ["/", "-", "\\", "|"];
 const SPINNER_INTERVAL = 100;
@@ -14,14 +15,16 @@ const SPINNER_INTERVAL = 100;
 interface AsciiSpinnerProps {
   /** Label text to show after spinner */
   label: string;
-  /** Optional custom color (defaults to toolColor) */
-  fg?: typeof colors.toolColor;
+  /** Optional custom color (defaults to info/toolColor) */
+  fg?: RGBA;
 }
 
 /**
  * Animated ASCII spinner for pending operations.
  */
-export function AsciiSpinner({ label, fg = colors.toolColor }: AsciiSpinnerProps) {
+export function AsciiSpinner({ label, fg }: AsciiSpinnerProps) {
+  const { colors } = useTheme();
+  const spinnerColor = fg ?? colors.info;
   const [frame, setFrame] = useState(0);
 
   useEffect(() => {
@@ -31,7 +34,9 @@ export function AsciiSpinner({ label, fg = colors.toolColor }: AsciiSpinnerProps
     return () => clearInterval(interval);
   }, []);
 
-  return <text fg={fg} content={`${SPINNER_FRAMES[frame]} ${label}`} />;
+  return (
+    <text fg={spinnerColor} content={`${SPINNER_FRAMES[frame]} ${label}`} />
+  );
 }
 
 export default AsciiSpinner;

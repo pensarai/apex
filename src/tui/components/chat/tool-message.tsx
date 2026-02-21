@@ -9,11 +9,14 @@
  */
 
 import { memo, useState } from "react";
-import { colors } from "../../theme";
+import { useTheme } from "../../theme";
 import { AsciiSpinner } from "../shared/ascii-spinner";
 import { getToolSummary } from "../shared/tool-registry";
-import { getResultSummary, type ResultSummary } from "../shared/result-registry";
-import { isToolMessage, type ToolDisplayMessage } from "../shared/type-guards";
+import {
+  getResultSummary,
+  type ResultSummary,
+} from "../shared/result-registry";
+import { isToolMessage } from "../shared/type-guards";
 import type { DisplayMessage } from "../agent-display";
 
 // Tool category icons
@@ -43,6 +46,7 @@ export const ToolMessage = memo(function ToolMessage({
   verbose = false,
   expandedLogs = false,
 }: ToolMessageProps) {
+  const { colors } = useTheme();
   const [showArgs, setShowArgs] = useState(false);
   const [showOutput, setShowOutput] = useState(false);
 
@@ -74,10 +78,10 @@ export const ToolMessage = memo(function ToolMessage({
           <AsciiSpinner label={summary} />
         ) : (
           <>
-            <text fg={isError ? colors.errorColor : colors.successColor}>
+            <text fg={isError ? colors.error : colors.success}>
               {isError ? "✗" : "✓"}
             </text>
-            <text fg={colors.toolColor}>{summary}</text>
+            <text fg={colors.info}>{summary}</text>
           </>
         )}
       </box>
@@ -85,7 +89,7 @@ export const ToolMessage = memo(function ToolMessage({
       {/* Streaming logs while pending */}
       {isPending && logs && logs.length > 0 && (
         <box marginLeft={2}>
-          <text fg={colors.dimText}>
+          <text fg={colors.textMuted}>
             {expandedLogs ? logs.join("\n") : logs.slice(-2).join("\n")}
           </text>
         </box>
@@ -102,15 +106,11 @@ export const ToolMessage = memo(function ToolMessage({
               setShowArgs(!showArgs);
             }}
           >
-            <text fg={colors.dimText}>
-              {showArgs ? "▼ args" : "▶ args"}
-            </text>
+            <text fg={colors.textMuted}>{showArgs ? "▼ args" : "▶ args"}</text>
           </box>
           {showArgs && (
             <box marginLeft={2}>
-              <text fg={colors.dimText}>
-                {formatArgs(args)}
-              </text>
+              <text fg={colors.textMuted}>{formatArgs(args)}</text>
             </box>
           )}
         </box>
@@ -121,12 +121,10 @@ export const ToolMessage = memo(function ToolMessage({
         <box flexDirection="column" marginLeft={2}>
           {/* Summary line - always visible */}
           <box flexDirection="row" gap={1}>
-            <text fg={resultDisplay.isError ? colors.errorColor : colors.dimText}>
+            <text fg={resultDisplay.isError ? colors.error : colors.textMuted}>
               {resultDisplay.isError ? "✗" : "→"}
             </text>
-            <text
-              fg={resultDisplay.isError ? colors.errorColor : colors.creamText}
-            >
+            <text fg={resultDisplay.isError ? colors.error : colors.text}>
               {resultDisplay.text}
             </text>
           </box>
@@ -140,12 +138,12 @@ export const ToolMessage = memo(function ToolMessage({
                 setShowOutput(!showOutput);
               }}
             >
-              <text fg={colors.dimText}>
+              <text fg={colors.textMuted}>
                 {showOutput ? "▼ output" : "▶ output"}
               </text>
               {(verbose || showOutput) && (
                 <box marginLeft={2} marginTop={0}>
-                  <text fg={colors.dimText}>{resultDisplay.fullText}</text>
+                  <text fg={colors.textMuted}>{resultDisplay.fullText}</text>
                 </box>
               )}
             </box>
@@ -162,7 +160,7 @@ export const ToolMessage = memo(function ToolMessage({
 function formatArgs(args: Record<string, unknown>): string {
   // Filter out internal args like toolCallDescription
   const displayArgs = Object.entries(args).filter(
-    ([key]) => !key.startsWith("toolCall")
+    ([key]) => !key.startsWith("toolCall"),
   );
 
   if (displayArgs.length === 0) return "";

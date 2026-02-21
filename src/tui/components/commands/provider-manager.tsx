@@ -2,7 +2,10 @@ import { useState } from "react";
 import { useRoute } from "../../context/route";
 import { useConfig } from "../../context/config";
 import { config } from "../../../core/config";
-import { type ProviderType, AVAILABLE_PROVIDERS } from "../../../core/providers";
+import {
+  type ProviderType,
+  AVAILABLE_PROVIDERS,
+} from "../../../core/providers";
 import ProviderSelection from "./provider-selection";
 import APIKeyInput from "./api-key-input";
 
@@ -13,7 +16,7 @@ export default function ProviderManager() {
   const _config = useConfig();
   const [flowState, setFlowState] = useState<FlowState>("selecting");
   const [selectedProvider, setSelectedProvider] = useState<ProviderType | null>(
-    null
+    null,
   );
 
   const handleProviderSelected = (providerId: ProviderType) => {
@@ -67,7 +70,7 @@ export default function ProviderManager() {
   };
 
   const selectedProviderInfo = AVAILABLE_PROVIDERS.find(
-    (p) => p.id === selectedProvider
+    (p) => p.id === selectedProvider,
   );
 
   return (
@@ -78,14 +81,16 @@ export default function ProviderManager() {
           onClose={handleClose}
         />
       )}
-      {flowState === "inputting" && selectedProvider && selectedProviderInfo && (
-        <APIKeyInput
-          provider={selectedProvider}
-          providerName={selectedProviderInfo.name}
-          onSubmit={handleAPIKeySubmit}
-          onCancel={handleAPIKeyCancel}
-        />
-      )}
+      {flowState === "inputting" &&
+        selectedProvider &&
+        selectedProviderInfo && (
+          <APIKeyInput
+            provider={selectedProvider}
+            providerName={selectedProviderInfo.name}
+            onSubmit={handleAPIKeySubmit}
+            onCancel={handleAPIKeyCancel}
+          />
+        )}
     </>
   );
 }

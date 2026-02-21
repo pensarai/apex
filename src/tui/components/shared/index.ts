@@ -5,7 +5,7 @@
  */
 
 // Markdown utilities
-export { markdownToStyledText, codeColor, linkColor } from "./markdown";
+export { markdownToStyledText } from "./markdown";
 
 // Message utilities
 export {
@@ -24,8 +24,17 @@ export {
 } from "./type-guards";
 
 // Registries
-export { getToolSummary, registerToolSummary, hasToolSummary, getArgsPreview } from "./tool-registry";
-export { getResultSummary, formatResultDetail, type ResultSummary } from "./result-registry";
+export {
+  getToolSummary,
+  registerToolSummary,
+  hasToolSummary,
+  getArgsPreview,
+} from "./tool-registry";
+export {
+  getResultSummary,
+  formatResultDetail,
+  type ResultSummary,
+} from "./result-registry";
 
 // Components
 export { AsciiSpinner } from "./ascii-spinner";
@@ -38,4 +47,4 @@ export { useMessageState } from "./message-reducer";
 
 // Input components
 export { PromptInput, type PromptInputRef } from "./prompt-input";
-export { type AutocompleteOption } from "../autocomplete";
+export { type AutocompleteOption } from "./prompt-input";

@@ -105,13 +105,13 @@ function generateReport(jsonPath: string): string {
 
   // Sort by class name
   const sortedClasses = Array.from(classStats.entries()).sort((a, b) =>
-    a[0].localeCompare(b[0])
+    a[0].localeCompare(b[0]),
   );
 
   // Header
   lines.push("═".repeat(width));
   lines.push(
-    " ".repeat(Math.floor((width - 30) / 2)) + "BENCHMARK COMPARISON REPORT"
+    " ".repeat(Math.floor((width - 30) / 2)) + "BENCHMARK COMPARISON REPORT",
   );
   lines.push("═".repeat(width));
   lines.push("");
@@ -120,13 +120,15 @@ function generateReport(jsonPath: string): string {
   const total = results.length;
   const vulnsFound = results.filter((r) => r.vulnerability_found).length;
   const avgScore =
-    total > 0 ? results.reduce((sum, r) => sum + r.overall_score, 0) / total : 0;
+    total > 0
+      ? results.reduce((sum, r) => sum + r.overall_score, 0) / total
+      : 0;
 
   lines.push("SUMMARY");
   lines.push("─".repeat(50));
   lines.push(`Total Benchmarks:        ${total}`);
   lines.push(
-    `Vulnerabilities Found:   ${vulnsFound}/${total} (${((100 * vulnsFound) / total).toFixed(1)}%)`
+    `Vulnerabilities Found:   ${vulnsFound}/${total} (${((100 * vulnsFound) / total).toFixed(1)}%)`,
   );
   lines.push(`Average Score:           ${avgScore.toFixed(2)}`);
   lines.push("");
@@ -135,7 +137,7 @@ function generateReport(jsonPath: string): string {
   const barWidth = 50;
   const vulnFilledWidth = Math.round((vulnsFound / total) * barWidth);
   lines.push(
-    `Vuln Detection: [${"█".repeat(vulnFilledWidth)}${"░".repeat(barWidth - vulnFilledWidth)}]`
+    `Vuln Detection: [${"█".repeat(vulnFilledWidth)}${"░".repeat(barWidth - vulnFilledWidth)}]`,
   );
   lines.push("");
 
@@ -164,7 +166,7 @@ function generateReport(jsonPath: string): string {
         "░".repeat(10 - Math.round((stats.found / stats.total) * 10));
       lines.push(
         `  ${diff.padEnd(10)} ${stats.found}/${stats.total}`.padEnd(25) +
-          `${rate}% [${miniBar}]`
+          `${rate}% [${miniBar}]`,
       );
     }
   }
@@ -189,13 +191,15 @@ function generateReport(jsonPath: string): string {
       "Found".padEnd(foundCol) +
       "Rate".padEnd(rateCol) +
       "Avg Score".padEnd(scoreCol) +
-      "Detection"
+      "Detection",
   );
   lines.push("─".repeat(width));
 
   for (const [vulnClass, stats] of sortedClasses) {
     const rate =
-      stats.total > 0 ? ((stats.found / stats.total) * 100).toFixed(0) + "%" : "0%";
+      stats.total > 0
+        ? ((stats.found / stats.total) * 100).toFixed(0) + "%"
+        : "0%";
     const miniBar =
       "█".repeat(Math.round((stats.found / stats.total) * 8)) +
       "░".repeat(8 - Math.round((stats.found / stats.total) * 8));
@@ -206,7 +210,7 @@ function generateReport(jsonPath: string): string {
         `${stats.found}/${stats.total}`.padEnd(foundCol) +
         rate.padEnd(rateCol) +
         stats.avgScore.toFixed(2).padEnd(scoreCol) +
-        `[${miniBar}]`
+        `[${miniBar}]`,
     );
   }
 
@@ -224,7 +228,7 @@ function generateReport(jsonPath: string): string {
       "Benchmark".padEnd(14) +
         "Class".padEnd(12) +
         "Difficulty".padEnd(12) +
-        "Vulnerability"
+        "Vulnerability",
     );
     lines.push("─".repeat(width));
 
@@ -237,7 +241,7 @@ function generateReport(jsonPath: string): string {
         r.benchmark_id.padEnd(14) +
           r.expected_class.padEnd(12) +
           r.difficulty.padEnd(12) +
-          vulnName
+          vulnName,
       );
     }
     lines.push("");
@@ -245,7 +249,7 @@ function generateReport(jsonPath: string): string {
 
   // Top performers (100% detection rate with multiple benchmarks)
   const perfectClasses = sortedClasses.filter(
-    ([_, stats]) => stats.found === stats.total && stats.total > 1
+    ([_, stats]) => stats.found === stats.total && stats.total > 1,
   );
   if (perfectClasses.length > 0) {
     lines.push("═".repeat(width));
@@ -269,7 +273,7 @@ function generateReport(jsonPath: string): string {
     for (const [vulnClass, stats] of lowPerformers) {
       const rate = ((stats.found / stats.total) * 100).toFixed(0);
       lines.push(
-        `  ${vulnClass}: ${stats.found}/${stats.total} (${rate}%) detected`
+        `  ${vulnClass}: ${stats.found}/${stats.total} (${rate}%) detected`,
       );
     }
     lines.push("");
@@ -309,7 +313,8 @@ const jsonPath = args[0]!;
 try {
   const report = generateReport(jsonPath);
   console.log(report);
-} catch (error: any) {
-  console.error(`Error: ${error.message}`);
+} catch (error: unknown) {
+  const errorMessage = error instanceof Error ? error.message : String(error);
+  console.error(`Error: ${errorMessage}`);
   process.exit(1);
 }

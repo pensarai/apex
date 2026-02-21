@@ -1,9 +1,5 @@
-import { createAnthropic } from "@ai-sdk/anthropic";
 import type { AnthropicMessagesModelId } from "@ai-sdk/anthropic/internal";
-import { createOpenAI } from "@ai-sdk/openai";
 import type { OpenAIChatModelId } from "@ai-sdk/openai/internal";
-import { createOpenRouter } from "@openrouter/ai-sdk-provider";
-import { createAmazonBedrock } from "@ai-sdk/amazon-bedrock";
 import {
   generateText,
   Output,
@@ -15,7 +11,6 @@ import {
   type StreamTextOnStepFinishCallback,
   type StreamTextResult,
   type TextStreamPart,
-  type ToolCallRepairFunction,
   type ToolChoice,
   type ToolSet,
 } from "ai";
@@ -24,7 +19,6 @@ import {
   checkIfContextLengthError,
   createSummarizationStream,
   getProviderModel,
-  summarizeConversation,
   type AIAuthConfig,
 } from "./utils";
 
@@ -43,13 +37,13 @@ function wrapStreamWithErrorHandler(
   messagesContainer: { current: ModelMessage[] },
   opts: StreamResponseOpts,
   model: LanguageModel,
-  silent?: boolean
+  silent?: boolean,
 ): StreamTextResult<ToolSet, never> {
   // Create a lazy getter for fullStream that wraps it with error handling
-  let wrappedStream: any = null;
+  let wrappedStream: AsyncIterable<TextStreamPart<ToolSet>> | null = null;
 
   const handler = {
-    get(target: any, prop: string) {
+    get(target: StreamTextResult<ToolSet, never>, prop: string | symbol) {
       // Intercept access to fullStream
       if (prop === "fullStream") {
         if (!wrappedStream) {
@@ -57,15 +51,20 @@ function wrapStreamWithErrorHandler(
             try {
               for await (const chunk of originalStream.fullStream) {
                 // Check if this chunk contains an error
-                if (chunk.type === "error" || (chunk as any).error) {
-                  const error = (chunk as any).error || chunk;
+                if (chunk.type === "error" || "error" in chunk) {
+                  const error =
+                    "error" in chunk
+                      ? (chunk as unknown as { error: unknown }).error
+                      : chunk;
                   throw error;
                 }
 
                 yield chunk;
               }
-            } catch (error: any) {
+            } catch (error) {
               // Check if it's a context length error
+              const errorMessage =
+                error instanceof Error ? error.message : String(error);
 
               const isContextLengthError = checkIfContextLengthError(error);
 
@@ -84,14 +83,14 @@ function wrapStreamWithErrorHandler(
                 if (!silent) {
                   console.warn(
                     `Context length error in wrapper, summarizing ${messagesContainer.current.length} messages: `,
-                    error.message
+                    errorMessage,
                   );
                 }
 
                 const summarizationStream = createSummarizationStream(
                   currentMessages,
                   opts,
-                  model
+                  model,
                 );
                 for await (const chunk of summarizationStream.fullStream) {
                   yield chunk;
@@ -100,7 +99,7 @@ function wrapStreamWithErrorHandler(
                 if (!silent) {
                   console.error(
                     "Non-context length error, re-throwing",
-                    error.message
+                    errorMessage,
                   );
                 }
                 // Re-throw if it's not a context length error
@@ -113,7 +112,9 @@ function wrapStreamWithErrorHandler(
       }
 
       // For all other properties, return the original
-      return (originalStream as any)[prop];
+      return (originalStream as unknown as Record<string | symbol, unknown>)[
+        prop
+      ];
     },
   };
 
@@ -147,7 +148,7 @@ export interface StreamResponseOpts {
 }
 
 export function streamResponse(
-  opts: StreamResponseOpts
+  opts: StreamResponseOpts,
 ): StreamTextResult<ToolSet, never> {
   const {
     prompt,
@@ -184,14 +185,16 @@ export function streamResponse(
         messagesContainer.current = opts.messages;
         return undefined;
       },
-      onError: async ({ error }: { error: any }) => {
+      onError: async ({ error }: { error: unknown }) => {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
         if (
-          error.message.toLowerCase().includes("too many tokens") ||
-          error.message.toLowerCase().includes("overloaded")
+          errorMessage.toLowerCase().includes("too many tokens") ||
+          errorMessage.toLowerCase().includes("overloaded")
         ) {
           rateLimitRetryCount++;
           await new Promise((resolve) =>
-            setTimeout(resolve, 1000 * rateLimitRetryCount)
+            setTimeout(resolve, 1000 * rateLimitRetryCount),
           );
           if (rateLimitRetryCount < 20) {
             return;
@@ -220,7 +223,7 @@ export function streamResponse(
                 error.message.includes("riskLevel"))
             ) {
               console.log(
-                `   Note: This appears to be an enum validation error. Tool call repair will normalize the value.`
+                `   Note: This appears to be an enum validation error. Tool call repair will normalize the value.`,
               );
             }
           }
@@ -229,7 +232,7 @@ export function streamResponse(
           const tool = tools[toolCall.toolName];
           if (!tool || !tool.inputSchema) {
             throw new Error(
-              `Tool ${toolCall.toolName} not found or has no schema`
+              `Tool ${toolCall.toolName} not found or has no schema`,
             );
           }
 
@@ -278,18 +281,31 @@ export function streamResponse(
                 id: "tool-repair",
                 timestamp: new Date(),
                 modelId: "",
+                messages: [],
               },
               providerMetadata: undefined,
               stepType: "initial",
               isContinued: false,
-            } as any);
+            } as unknown as Parameters<
+              StreamTextOnStepFinishCallback<ToolSet>
+            >[0]);
           }
 
           // Return the tool call with stringified repaired arguments
+          if (repairedArgs === undefined || repairedArgs === null) {
+            throw new Error(
+              `Tool call repair for "${toolCall.toolName}" produced no valid output`,
+            );
+          }
           return { ...toolCall, input: JSON.stringify(repairedArgs) };
-        } catch (repairError: any) {
+        } catch (repairError) {
           if (!silent) {
-            console.error("Error repairing tool call:", repairError.message);
+            console.error(
+              "Error repairing tool call:",
+              repairError instanceof Error
+                ? repairError.message
+                : String(repairError),
+            );
           }
           throw repairError;
         }
@@ -303,28 +319,30 @@ export function streamResponse(
       messagesContainer,
       opts,
       providerModel,
-      silent
+      silent,
     );
-  } catch (error: any) {
+  } catch (error) {
     // Check if the error is related to context length
     const isContextLengthError = checkIfContextLengthError(error);
+    const outerErrorMessage =
+      error instanceof Error ? error.message : String(error);
 
     if (isContextLengthError) {
       if (!silent) {
         console.warn(
           `Context length error, summarizing ${messagesContainer.current.length} messages: `,
-          error.message
+          outerErrorMessage,
         );
       }
       // Return a wrapped stream that shows summarization and then continues
       return createSummarizationStream(
         messagesContainer.current,
         opts,
-        providerModel
+        providerModel,
       );
     }
     if (!silent) {
-      console.error("Non-context length error, re-throwing", error.message);
+      console.error("Non-context length error, re-throwing", outerErrorMessage);
     }
 
     // Re-throw if it's not a context length error
@@ -344,7 +362,7 @@ export interface GenerateObjectOpts<T extends z.ZodType> {
 }
 
 export async function generateObjectResponse<T extends z.ZodType>(
-  opts: GenerateObjectOpts<T>
+  opts: GenerateObjectOpts<T>,
 ) {
   const {
     model,

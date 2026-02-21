@@ -7,7 +7,12 @@
 // ============================================
 
 /** Endpoint status markers for attack surface panel */
-export type EndpointStatus = 'untested' | 'suspicious' | 'confirmed' | 'clean' | 'blocked';
+export type EndpointStatus =
+  | "untested"
+  | "suspicious"
+  | "confirmed"
+  | "clean"
+  | "blocked";
 
 export interface Endpoint {
   id: string;
@@ -16,8 +21,8 @@ export interface Endpoint {
   category?: string; // auth, api, admin, etc.
   params?: string[];
   discovered?: Date;
-  status?: EndpointStatus;  // ✔/⚠/✖/blocked markers
-  vulnType?: string;        // e.g., "SQLi" when confirmed
+  status?: EndpointStatus; // ✔/⚠/✖/blocked markers
+  vulnType?: string; // e.g., "SQLi" when confirmed
 }
 
 // ============================================
@@ -25,21 +30,21 @@ export interface Endpoint {
 // ============================================
 
 /** Privilege level phases (distinct from workflow stages) */
-export type PentestPhase = 'recon' | 'foothold' | 'user' | 'root';
+export type PentestPhase = "recon" | "foothold" | "user" | "root";
 
 /** Auth state progression */
-export type AuthState = 'none' | 'cookie' | 'creds' | 'shell';
+export type AuthState = "none" | "cookie" | "creds" | "shell";
 
 export interface TargetState {
   host: string;
   ports: { port: number; service: string }[];
   authState: AuthState;
-  authDetails?: string;           // e.g., "admin cookie"
+  authDetails?: string; // e.g., "admin cookie"
   phase: PentestPhase;
-  pendingPhase?: PentestPhase;    // Agent-suggested, awaiting user confirm
+  pendingPhase?: PentestPhase; // Agent-suggested, awaiting user confirm
   objective: string;
-  objectiveOverride?: string;     // User override, agent must respect
-  focus?: string;                 // Active context pointer: "GET /api/users?id="
+  objectiveOverride?: string; // User override, agent must respect
+  focus?: string; // Active context pointer: "GET /api/users?id="
 }
 
 /** Create initial empty target state */
@@ -47,9 +52,9 @@ export function createInitialTargetState(host: string): TargetState {
   return {
     host,
     ports: [],
-    authState: 'none',
-    phase: 'recon',
-    objective: 'Discover attack surface',
+    authState: "none",
+    phase: "recon",
+    objective: "Discover attack surface",
   };
 }
 
@@ -57,29 +62,44 @@ export function createInitialTargetState(host: string): TargetState {
 // Credentials
 // ============================================
 
-export type CredentialType = 'password' | 'cookie' | 'jwt' | 'ssh_key' | 'api_key';
+export type CredentialType =
+  | "password"
+  | "cookie"
+  | "jwt"
+  | "ssh_key"
+  | "api_key";
 
 export interface Credential {
   id: string;
   username: string;
-  secret: string;       // Redacted in display with ****
+  secret: string; // Redacted in display with ****
   type: CredentialType;
-  source: string;       // "wp-config.php", "login form", etc.
-  scope: string;        // "HTTP" | "MySQL" | "SSH"
-  isActive: boolean;    // ★ indicator
+  source: string; // "wp-config.php", "login form", etc.
+  scope: string; // "HTTP" | "MySQL" | "SSH"
+  isActive: boolean; // ★ indicator
 }
 
 // ============================================
 // Hypothesis Tracking (for stuck detection)
 // ============================================
 
-export type VulnClass = 'sqli' | 'idor' | 'xss' | 'ssti' | 'ssrf' | 'xxe' | 'lfi' | 'rce' | 'auth_bypass' | 'other';
+export type VulnClass =
+  | "sqli"
+  | "idor"
+  | "xss"
+  | "ssti"
+  | "ssrf"
+  | "xxe"
+  | "lfi"
+  | "rce"
+  | "auth_bypass"
+  | "other";
 
 export interface Hypothesis {
   id: string;
   type: VulnClass;
-  target: string;       // endpoint or param
-  outcome: 'failed' | 'partial' | 'blocked';
+  target: string; // endpoint or param
+  outcome: "failed" | "partial" | "blocked";
   timestamp: number;
 }
 
@@ -87,10 +107,10 @@ export interface Hypothesis {
 // Evidence (with stable IDs for replay)
 // ============================================
 
-export type EvidenceType = 'scan' | 'poc' | 'dump' | 'screenshot' | 'request';
+export type EvidenceType = "scan" | "poc" | "dump" | "screenshot" | "request";
 
 export interface Evidence {
-  id: string;           // e.g., "evidence:nmap_scan_001"
+  id: string; // e.g., "evidence:nmap_scan_001"
   type: EvidenceType;
   path: string;
   summary: string;
@@ -106,7 +126,7 @@ export interface Suggestion {
 }
 
 export interface SuggestionAction {
-  type: 'spawn_attack_surface' | 'spawn_pentest' | 'direct_test' | 'custom';
+  type: "spawn_attack_surface" | "spawn_pentest" | "direct_test" | "custom";
   target?: string;
   vulnClass?: string;
   directive?: string;
@@ -116,7 +136,7 @@ export interface VerifiedVuln {
   id: string;
   type: string; // sqli, idor, xss, etc.
   endpoint: string;
-  severity: 'critical' | 'high' | 'medium' | 'low' | 'info';
+  severity: "critical" | "high" | "medium" | "low" | "info";
   summary: string;
   pocPath?: string;
   verified: Date;

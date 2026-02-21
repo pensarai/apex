@@ -11,7 +11,13 @@ import type { InputBuffer } from "./input-buffer";
 // Action Types
 // ============================================
 
-export type ActionCategory = "movement" | "selection" | "editing" | "clipboard" | "history" | "misc";
+export type ActionCategory =
+  | "movement"
+  | "selection"
+  | "editing"
+  | "clipboard"
+  | "history"
+  | "misc";
 
 export interface Action {
   id: string;
@@ -302,11 +308,11 @@ export const allActions: Action[] = [
 // ============================================
 
 export const actionsByKey = new Map<string, Action>(
-  allActions.map((action) => [action.key, action])
+  allActions.map((action) => [action.key, action]),
 );
 
 export const actionsById = new Map<string, Action>(
-  allActions.map((action) => [action.id, action])
+  allActions.map((action) => [action.id, action]),
 );
 
 export function getAction(keyOrId: string): Action | undefined {

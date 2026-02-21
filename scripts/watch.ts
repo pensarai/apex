@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { watch } from "fs";
 import { spawn, type Subprocess } from "bun";
-import { resolve, join } from "path";
+import { resolve } from "path";
 
 const TARGET_FILE = "src/tui/index.tsx";
 const WATCH_DIRS = ["src"];
@@ -81,7 +81,7 @@ for (const dir of WATCH_DIRS) {
         console.log(`\x1b[36m[watch]\x1b[0m File changed: ${filename}`);
         startApp();
       }, 100);
-    }
+    },
   );
 }
 

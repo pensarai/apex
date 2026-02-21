@@ -12,10 +12,7 @@ import {
   type TextChunk,
 } from "@opentui/core";
 import { marked } from "marked";
-
-// Shared color constants
-export const codeColor = RGBA.fromInts(100, 255, 100, 255); // green for code
-export const linkColor = RGBA.fromInts(100, 200, 255, 255); // cyan for links
+import type { ThemeColors } from "../../theme";
 
 /**
  * Convert markdown content to StyledText for terminal rendering.
@@ -31,7 +28,14 @@ export const linkColor = RGBA.fromInts(100, 200, 255, 255); // cyan for links
  * - Blockquotes (>)
  * - Paragraphs
  */
-export function markdownToStyledText(content: string): StyledText {
+export function markdownToStyledText(
+  content: string,
+  colors?: ThemeColors,
+): StyledText {
+  // Resolve colors with fallbacks for backwards compatibility
+  const codeColor = colors?.markdownCode ?? RGBA.fromInts(100, 255, 100, 255);
+  const linkColor = colors?.markdownLink ?? RGBA.fromInts(100, 200, 255, 255);
+
   // Handle empty or whitespace-only content
   if (!content || !content.trim()) {
     return new StyledText([
@@ -43,35 +47,45 @@ export function markdownToStyledText(content: string): StyledText {
     const tokens = marked.lexer(content);
     const chunks: TextChunk[] = [];
 
+    type InlineToken = {
+      type?: string;
+      text?: string;
+      tokens?: InlineToken[];
+      [key: string]: unknown;
+    };
+
     function processInlineTokens(
-      inlineTokens: any[],
-      defaultAttrs: number = 0
+      inlineTokens: InlineToken[],
+      defaultAttrs: number = 0,
     ): void {
       for (const token of inlineTokens) {
         if (token.type === "text") {
           chunks.push({
             __isChunk: true,
-            text: token.text,
+            text: token.text || "",
             attributes: defaultAttrs,
           });
         } else if (token.type === "strong") {
-          processInlineTokens(token.tokens, defaultAttrs | TextAttributes.BOLD);
+          processInlineTokens(
+            token.tokens || [],
+            defaultAttrs | TextAttributes.BOLD,
+          );
         } else if (token.type === "em") {
           processInlineTokens(
-            token.tokens,
-            defaultAttrs | TextAttributes.ITALIC
+            token.tokens || [],
+            defaultAttrs | TextAttributes.ITALIC,
           );
         } else if (token.type === "codespan") {
           chunks.push({
             __isChunk: true,
-            text: token.text,
+            text: token.text || "",
             fg: codeColor,
             attributes: defaultAttrs,
           });
         } else if (token.type === "link") {
           chunks.push({
             __isChunk: true,
-            text: token.text,
+            text: token.text || "",
             fg: linkColor,
             attributes: defaultAttrs | TextAttributes.UNDERLINE,
           });
@@ -89,11 +103,15 @@ export function markdownToStyledText(content: string): StyledText {
 
     for (const token of tokens) {
       if (token.type === "paragraph") {
-        if (token.tokens) processInlineTokens(token.tokens);
+        if (token.tokens)
+          processInlineTokens(token.tokens as unknown as InlineToken[]);
         chunks.push({ __isChunk: true, text: "\n", attributes: 0 });
       } else if (token.type === "heading") {
         if (token.tokens)
-          processInlineTokens(token.tokens, TextAttributes.BOLD);
+          processInlineTokens(
+            token.tokens as unknown as InlineToken[],
+            TextAttributes.BOLD,
+          );
         chunks.push({ __isChunk: true, text: "\n", attributes: 0 });
       } else if (token.type === "list") {
         for (const item of token.items) {
@@ -117,10 +135,11 @@ export function markdownToStyledText(content: string): StyledText {
         chunks.push({
           __isChunk: true,
           text: "│ ",
-          fg: RGBA.fromInts(150, 150, 150, 255),
+          fg: colors?.textMuted ?? RGBA.fromInts(150, 150, 150, 255),
           attributes: 0,
         });
-        if (token.tokens) processInlineTokens(token.tokens);
+        if (token.tokens)
+          processInlineTokens(token.tokens as unknown as InlineToken[]);
         chunks.push({ __isChunk: true, text: "\n", attributes: 0 });
       } else if (token.type === "space") {
         chunks.push({ __isChunk: true, text: "\n", attributes: 0 });

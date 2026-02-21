@@ -2,8 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useCommand } from "./context/command";
 import { useConfig } from "./context/config";
 import { useInput } from "./context/input";
-import { Session } from "../core/session";
-import Autocomplete from "./components/autocomplete";
+import { sessions, type SessionInfo } from "../core/session";
 import os from "os";
 import type { InputRenderable } from "@opentui/core";
 import { RGBA } from "@opentui/core";
@@ -18,7 +17,7 @@ export default function CommandInput({
   inputKey = 0,
 }: CommandInputProps) {
   const [command, setCommand] = useState("");
-  const [recentSessions, setRecentSessions] = useState<Session.SessionInfo[]>([]);
+  const [recentSessions, setRecentSessions] = useState<SessionInfo[]>([]);
   const { executeCommand, autocompleteOptions } = useCommand();
   const config = useConfig();
   const { setInputValue } = useInput();
@@ -32,14 +31,14 @@ export default function CommandInput({
   // Load recent sessions
   useEffect(() => {
     const loadRecentSessions = async () => {
-      const sessions: Session.SessionInfo[] = [];
-      for await (const session of Session.list()) {
-        sessions.push(session);
-        if (sessions.length >= 3) break; // Only show 3 most recent
+      const _sessions: SessionInfo[] = [];
+      for await (const session of sessions.list()) {
+        _sessions.push(session);
+        if (_sessions.length >= 3) break; // Only show 3 most recent
       }
       // Sort by updated time (most recent first)
-      sessions.sort((a, b) => b.time.updated - a.time.updated);
-      setRecentSessions(sessions);
+      _sessions.sort((a, b) => b.time.updated - a.time.updated);
+      setRecentSessions(_sessions);
     };
     loadRecentSessions();
   }, []);
@@ -89,19 +88,6 @@ export default function CommandInput({
         <text fg={greenAccent}>
           <span>{"❯ "}</span>
         </text>
-
-        {/* Input field */}
-        <Autocomplete
-          ref={inputRefCallback}
-          label=""
-          options={autocompleteOptions}
-          value={command}
-          onInput={handleInput}
-          onSubmit={handleSubmit}
-          focused={focused}
-          placeholder="Type a command..."
-          maxSuggestions={6}
-        />
       </box>
 
       {/* Subtle hint line */}
@@ -110,13 +96,13 @@ export default function CommandInput({
           <span>Press </span>
           <span fg={creamText}>/</span>
           <span> for commands</span>
-          <span>  •  </span>
+          <span> • </span>
           <span fg={creamText}>{`[↓][↑]`}</span>
           <span> navigate</span>
-          <span>  •  </span>
+          <span> • </span>
           <span fg={creamText}>[tab]</span>
           <span> complete</span>
-          <span>  •  </span>
+          <span> • </span>
           <span fg={creamText}>[enter]</span>
           <span> run</span>
         </text>

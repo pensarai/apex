@@ -55,14 +55,31 @@ export const PERMISSION_TIERS: Record<PermissionTier, TierDefinition> = {
 /** Operator operating modes */
 export type OperatorMode = "plan" | "manual" | "auto";
 
-export const OPERATOR_MODES: Record<OperatorMode, { name: string; description: string; color: string }> = {
-  plan: { name: "Plan", description: "Read-only - agent proposes but cannot execute", color: "yellow" },
+export const OPERATOR_MODES: Record<
+  OperatorMode,
+  { name: string; description: string; color: string }
+> = {
+  plan: {
+    name: "Plan",
+    description: "Read-only - agent proposes but cannot execute",
+    color: "yellow",
+  },
   manual: { name: "Manual", description: "Approve each action", color: "blue" },
-  auto: { name: "Auto", description: "Auto-approve within tier", color: "green" },
+  auto: {
+    name: "Auto",
+    description: "Auto-approve within tier",
+    color: "green",
+  },
 };
 
 /** Operator workflow stages */
-export type OperatorStage = "setup" | "recon" | "enumerate" | "test" | "validate" | "report";
+export type OperatorStage =
+  | "setup"
+  | "recon"
+  | "enumerate"
+  | "test"
+  | "validate"
+  | "report";
 
 export interface StageDefinition {
   stage: OperatorStage;
@@ -73,12 +90,72 @@ export interface StageDefinition {
 }
 
 export const OPERATOR_STAGES: Record<OperatorStage, StageDefinition> = {
-  setup: { stage: "setup", name: "Setup", description: "Configure target and testing parameters", order: 1, suggestedActions: ["Verify target is accessible", "Check scope constraints"] },
-  recon: { stage: "recon", name: "Recon", description: "Discover attack surface", order: 2, suggestedActions: ["Crawl application", "Enumerate endpoints", "Identify technologies"] },
-  enumerate: { stage: "enumerate", name: "Enumerate", description: "Identify targets and parameters", order: 3, suggestedActions: ["Map parameters", "Catalog API endpoints", "Find hidden params"] },
-  test: { stage: "test", name: "Test", description: "Execute vulnerability tests", order: 4, suggestedActions: ["Test SQLi", "Test XSS", "Test IDOR", "Test auth bypass"] },
-  validate: { stage: "validate", name: "Validate", description: "Verify findings and create POCs", order: 5, suggestedActions: ["Verify vulnerabilities", "Create POC scripts", "Capture evidence"] },
-  report: { stage: "report", name: "Report", description: "Generate final report", order: 6, suggestedActions: ["Review findings", "Generate report", "Export artifacts"] },
+  setup: {
+    stage: "setup",
+    name: "Setup",
+    description: "Configure target and testing parameters",
+    order: 1,
+    suggestedActions: [
+      "Verify target is accessible",
+      "Check scope constraints",
+    ],
+  },
+  recon: {
+    stage: "recon",
+    name: "Recon",
+    description: "Discover attack surface",
+    order: 2,
+    suggestedActions: [
+      "Crawl application",
+      "Enumerate endpoints",
+      "Identify technologies",
+    ],
+  },
+  enumerate: {
+    stage: "enumerate",
+    name: "Enumerate",
+    description: "Identify targets and parameters",
+    order: 3,
+    suggestedActions: [
+      "Map parameters",
+      "Catalog API endpoints",
+      "Find hidden params",
+    ],
+  },
+  test: {
+    stage: "test",
+    name: "Test",
+    description: "Execute vulnerability tests",
+    order: 4,
+    suggestedActions: [
+      "Test SQLi",
+      "Test XSS",
+      "Test IDOR",
+      "Test auth bypass",
+    ],
+  },
+  validate: {
+    stage: "validate",
+    name: "Validate",
+    description: "Verify findings and create POCs",
+    order: 5,
+    suggestedActions: [
+      "Verify vulnerabilities",
+      "Create POC scripts",
+      "Capture evidence",
+    ],
+  },
+  report: {
+    stage: "report",
+    name: "Report",
+    description: "Generate final report",
+    order: 6,
+    suggestedActions: [
+      "Review findings",
+      "Generate report",
+      "Export artifacts",
+    ],
+  },
 };
 
 export function getStagesInOrder(): StageDefinition[] {
@@ -134,12 +211,22 @@ export interface OperatorSessionState {
   stageProgress: Record<OperatorStage, StageProgress>;
 }
 
-export function createInitialOperatorState(initialMode: OperatorMode = "manual", autoApproveTier: PermissionTier = 2): OperatorSessionState {
+export function createInitialOperatorState(
+  initialMode: OperatorMode = "manual",
+  autoApproveTier: PermissionTier = 2,
+): OperatorSessionState {
   const stageProgress = {} as Record<OperatorStage, StageProgress>;
   for (const stage of Object.keys(OPERATOR_STAGES) as OperatorStage[]) {
     stageProgress[stage] = { started: false, completed: false };
   }
-  return { mode: initialMode, currentStage: "setup", autoApproveTier, pendingApprovals: [], actionHistory: [], stageProgress };
+  return {
+    mode: initialMode,
+    currentStage: "setup",
+    autoApproveTier,
+    pendingApprovals: [],
+    actionHistory: [],
+    stageProgress,
+  };
 }
 
 /** Operator settings for session config */
@@ -217,7 +304,12 @@ export type OperatorEvent =
   | { type: "action-completed"; entry: ActionHistoryEntry }
   // Sidebar population events
   | { type: "attack-surface-updated"; endpoints: DiscoveredEndpoint[] }
-  | { type: "endpoint-status-changed"; endpointId: string; status: string; vulnType?: string }
+  | {
+      type: "endpoint-status-changed";
+      endpointId: string;
+      status: string;
+      vulnType?: string;
+    }
   | { type: "finding-verified"; finding: VerifiedFinding }
   | { type: "credential-found"; credential: DiscoveredCredential }
   | { type: "target-state-updated"; state: Partial<SidebarTargetState> }
@@ -227,4 +319,9 @@ export type OperatorEvent =
   | { type: "objective-proposed"; objective: string }
   // Auth subagent events
   | { type: "auth-subagent-started"; target: string }
-  | { type: "auth-subagent-completed"; success: boolean; cookies?: string; headers?: Record<string, string> };
+  | {
+      type: "auth-subagent-completed";
+      success: boolean;
+      cookies?: string;
+      headers?: Record<string, string>;
+    };

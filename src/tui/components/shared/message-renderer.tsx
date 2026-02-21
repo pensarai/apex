@@ -6,7 +6,7 @@
  */
 
 import { memo, useMemo } from "react";
-import { colors } from "../../theme";
+import { useTheme } from "../../theme";
 import { markdownToStyledText } from "./markdown";
 import { ToolRenderer } from "./tool-renderer";
 import { isToolMessage } from "./type-guards";
@@ -34,6 +34,7 @@ export const MessageRenderer = memo(function MessageRenderer({
   variant = "operator",
   username = "user",
 }: MessageRendererProps) {
+  const { colors } = useTheme();
   // Get string content
   const content =
     typeof message.content === "string"
@@ -42,8 +43,11 @@ export const MessageRenderer = memo(function MessageRenderer({
 
   // Memoize markdown conversion for assistant messages
   const displayContent = useMemo(
-    () => (message.role === "assistant" ? markdownToStyledText(content) : content),
-    [content, message.role]
+    () =>
+      message.role === "assistant"
+        ? markdownToStyledText(content, colors)
+        : content,
+    [content, message.role, colors],
   );
 
   // Tool messages
@@ -64,11 +68,11 @@ export const MessageRenderer = memo(function MessageRenderer({
       return (
         <box flexDirection="column" marginTop={1}>
           <box flexDirection="row">
-            <text fg={colors.cyanAccent}>{"│ "}</text>
-            <text fg={colors.creamText}>{content}</text>
+            <text fg={colors.secondary}>{"│ "}</text>
+            <text fg={colors.text}>{content}</text>
           </box>
           <box marginLeft={2}>
-            <text fg={colors.dimText}>{username}</text>
+            <text fg={colors.textMuted}>{username}</text>
           </box>
         </box>
       );
@@ -76,8 +80,8 @@ export const MessageRenderer = memo(function MessageRenderer({
     // Operator variant - simple prompt style
     return (
       <box flexDirection="row" gap={1} marginTop={1}>
-        <text fg={colors.greenAccent}>{">"}</text>
-        <text fg={colors.creamText}>{content}</text>
+        <text fg={colors.primary}>{">"}</text>
+        <text fg={colors.text}>{content}</text>
       </box>
     );
   }
@@ -86,7 +90,7 @@ export const MessageRenderer = memo(function MessageRenderer({
   if (message.role === "system") {
     return (
       <box marginTop={1} marginLeft={2}>
-        <text fg={colors.dimText}>{content}</text>
+        <text fg={colors.textMuted}>{content}</text>
       </box>
     );
   }
@@ -97,9 +101,9 @@ export const MessageRenderer = memo(function MessageRenderer({
     return (
       <box flexDirection="column" marginTop={1}>
         <box flexDirection="column" marginLeft={0}>
-          <text fg={colors.creamText} content={displayContent} />
+          <text fg={colors.text} content={displayContent} />
           {isStreaming && !content.trim() && (
-            <text fg={colors.dimText}>...</text>
+            <text fg={colors.textMuted}>...</text>
           )}
         </box>
       </box>
@@ -110,11 +114,11 @@ export const MessageRenderer = memo(function MessageRenderer({
   return (
     <box flexDirection="column" marginTop={1}>
       <box flexDirection="row">
-        <text fg={colors.greenAccent}>{"| "}</text>
+        <text fg={colors.primary}>{"| "}</text>
         <box flexDirection="column" flexShrink={1}>
-          <text fg={colors.creamText} content={displayContent} />
+          <text fg={colors.text} content={displayContent} />
           {isStreaming && !content.trim() && (
-            <text fg={colors.dimText}>...</text>
+            <text fg={colors.textMuted}>...</text>
           )}
         </box>
       </box>

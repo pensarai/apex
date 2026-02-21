@@ -1,91 +1,105 @@
-import { useState, createContext, useContext, type ReactNode, useMemo } from "react";
-
+import {
+  useState,
+  createContext,
+  useContext,
+  type ReactNode,
+  useMemo,
+} from "react";
 
 export type RoutePath =
-    "home"
-    | "help"
-    | "pentest"
-    | "thorough"
-    | "web"
-    | "operator"
-    | "chat"
-    | "dns"
-    | "config"
-    | "models"
-    | "providers"
-    | "disclosure"
-    | "resume";
+  | "home"
+  | "help"
+  | "pentest"
+  | "thorough"
+  | "web"
+  | "operator"
+  | "chat"
+  | "dns"
+  | "config"
+  | "models"
+  | "providers"
+  | "disclosure"
+  | "sessions"
+  | "theme";
 
 export interface WebCommandOptions {
-    auto?: boolean;
-    target?: string;
-    name?: string;
-    swarm?: boolean;
-    mode?: 'plan' | 'manual' | 'auto';
-    tier?: number;
-    authUrl?: string;
-    authUser?: string;
-    authPass?: string;
-    authInstructions?: string;
-    hosts?: string[];
-    ports?: number[];
-    strict?: boolean;
-    headersMode?: 'none' | 'default' | 'custom';
-    customHeaders?: Record<string, string>;
-    model?: string;
+  auto?: boolean;
+  target?: string;
+  name?: string;
+  swarm?: boolean;
+  mode?: "plan" | "manual" | "auto";
+  tier?: number;
+  authUrl?: string;
+  authUser?: string;
+  authPass?: string;
+  authInstructions?: string;
+  hosts?: string[];
+  ports?: number[];
+  strict?: boolean;
+  headersMode?: "none" | "default" | "custom";
+  customHeaders?: Record<string, string>;
+  model?: string;
 }
 
 export type Route =
-    {
-        type: "base",
-        path: RoutePath,
-        options?: WebCommandOptions
+  | {
+      type: "base";
+      path: RoutePath;
+      options?: WebCommandOptions;
     }
   | {
-        type: "session",
-        sessionId: string,
-        /** If true, load existing session state without starting a new pentest */
-        isResume?: boolean
+      type: "pentest";
+      sessionId: string;
+      /** If true, load existing session state without starting a new pentest */
+      isResume?: boolean;
+      /** If true, open an auto-mode session in operator mode */
+      openAsOperator?: boolean;
+    }
+  | {
+      type: "operator";
+      sessionId: string;
     };
 
-
 type RouteContext = {
-    data: Route;
-    navigate: (route: Route) => void;
+  data: Route;
+  navigate: (route: Route) => void;
 };
 
 const ctx = createContext<RouteContext | null>(null);
 
 type RouteProviderProps = {
-    children: ReactNode;
-}
+  children: ReactNode;
+};
 
 export function RouteProvider({ children }: RouteProviderProps) {
-    const [route, setRoute] = useState<Route>({
-        type: "base",
-        path: "home"
-    });
+  const [route, setRoute] = useState<Route>({
+    type: "base",
+    path: "home",
+  });
 
-    const value = useMemo(() => ({
-        data: route,
-        navigate: (newRoute: Route) => {
-            console.log("navigating to:", newRoute);
-            setRoute(newRoute);
-        }
-    }), [route]);
+  const value = useMemo(
+    () => ({
+      data: route,
+      navigate: (newRoute: Route) => {
+        console.log("navigating to:", newRoute);
+        setRoute(newRoute);
+      },
+    }),
+    [route],
+  );
 
-   return <ctx.Provider value={value}>{ children }</ctx.Provider>
+  return <ctx.Provider value={value}>{children}</ctx.Provider>;
 }
 
 export const useRoute = () => {
-    const route = useContext(ctx);
-    if(!route) {
-        throw new Error("useRoute must be called within a RouteProvider");
-    }
-    return route;
+  const route = useContext(ctx);
+  if (!route) {
+    throw new Error("useRoute must be called within a RouteProvider");
+  }
+  return route;
 };
 
-export const useRouteData = <T extends Route['type']>(type: T) => {
-    const route = useRoute();
-    return route.data as Extract<Route, {type: typeof type}>
+export const useRouteData = <T extends Route["type"]>(type: T) => {
+  const route = useRoute();
+  return route.data as Extract<Route, { type: typeof type }>;
 };

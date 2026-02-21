@@ -22,7 +22,7 @@ export interface PermissionCheckResult {
  */
 export function checkPermission(
   tier: PermissionTier,
-  config: PermissionPolicyConfig
+  config: PermissionPolicyConfig,
 ): PermissionCheckResult {
   const { mode, autoApproveTier } = config;
 
@@ -87,7 +87,7 @@ export function checkPermission(
  */
 export function shouldBlockAction(
   tier: PermissionTier,
-  mode: OperatorMode
+  mode: OperatorMode,
 ): boolean {
   // Only plan mode blocks actions (tier > 1)
   return mode === "plan" && tier > 1;
@@ -99,7 +99,7 @@ export function shouldBlockAction(
 export function shouldAutoApprove(
   tier: PermissionTier,
   mode: OperatorMode,
-  autoApproveTier: PermissionTier
+  autoApproveTier: PermissionTier,
 ): boolean {
   const result = checkPermission(tier, { mode, autoApproveTier });
   return result.allowed && result.autoApproved;
@@ -110,7 +110,7 @@ export function shouldAutoApprove(
  */
 export function getApprovalRequirement(
   tier: PermissionTier,
-  config: PermissionPolicyConfig
+  config: PermissionPolicyConfig,
 ): "auto" | "manual" | "blocked" {
   const result = checkPermission(tier, config);
 

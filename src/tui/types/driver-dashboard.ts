@@ -3,9 +3,9 @@
  * Used in driver mode for manual agent orchestration
  */
 
-import type { PentestTarget } from "../../core/agent/attackSurfaceAgent/types";
+import type { PentestTarget } from "../../core/agents/specialized/attackSurface/types";
 import type { DisplayMessage } from "../components/agent-display";
-import type { Session } from "../../core/session";
+import type { SessionInfo } from "../../core/session";
 
 /**
  * Endpoint discovered during recon
@@ -15,13 +15,18 @@ export interface DiscoveredEndpoint {
   url: string;
   method: string;
   suggestedObjective: string;
-  source: 'recon' | 'manual';
+  source: "recon" | "manual";
 }
 
 /**
  * Status of a driver mode agent
  */
-export type DriverAgentStatus = 'idle' | 'running' | 'paused' | 'completed' | 'failed';
+export type DriverAgentStatus =
+  | "idle"
+  | "running"
+  | "paused"
+  | "completed"
+  | "failed";
 
 /**
  * Interface for the DriverModeAgent wrapper
@@ -64,12 +69,12 @@ export interface DriverAgent {
  * State for the driver dashboard
  */
 export interface DriverDashboardState {
-  session: Session.SessionInfo;
+  session: SessionInfo;
   endpoints: DiscoveredEndpoint[];
   agents: DriverAgent[];
-  reconStatus: 'idle' | 'running' | 'completed';
+  reconStatus: "idle" | "running" | "completed";
   activeAgentId: string | null;
-  focusedView: 'overview' | 'agent-chat';
+  focusedView: "overview" | "agent-chat";
 }
 
 /**
@@ -77,7 +82,7 @@ export interface DriverDashboardState {
  */
 export interface DriverAgentStreamEvent {
   agentId: string;
-  type: 'message' | 'tool-call' | 'tool-result' | 'status-change';
+  type: "message" | "tool-call" | "tool-result" | "status-change";
   data: DisplayMessage | { status: DriverAgentStatus };
 }
 
