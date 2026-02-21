@@ -131,31 +131,23 @@ function AppContent({
   const { refocusPrompt } = useFocus();
   const { setExternalDialogOpen } = useDialog();
 
-  // First check: responsible use disclosure
-  if (
-    !config.data.responsibleUseAccepted &&
-    route.data.type === "base" &&
-    route.data.path !== "disclosure"
-  ) {
-    route.navigate({
-      type: "base",
-      path: "disclosure",
-    });
-  }
+  useEffect(() => {
+    if (route.data.type !== "base") return;
 
-  // Second check: provider configuration (only if not already on providers page)
-  if (
-    config.data.responsibleUseAccepted &&
-    !hasAnyProviderConfigured(config.data) &&
-    route.data.type === "base" &&
-    route.data.path !== "providers" &&
-    route.data.path !== "disclosure"
-  ) {
-    route.navigate({
-      type: "base",
-      path: "providers",
-    });
-  }
+    if (
+      !config.data.responsibleUseAccepted &&
+      route.data.path !== "disclosure"
+    ) {
+      route.navigate({ type: "base", path: "disclosure" });
+    } else if (
+      config.data.responsibleUseAccepted &&
+      !hasAnyProviderConfigured(config.data) &&
+      route.data.path !== "providers" &&
+      route.data.path !== "disclosure"
+    ) {
+      route.navigate({ type: "base", path: "providers" });
+    }
+  }, [config.data.responsibleUseAccepted, route.data]);
 
   // Auto-clear the exit warning after 1 second
   useEffect(() => {
