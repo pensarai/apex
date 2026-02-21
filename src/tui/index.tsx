@@ -22,6 +22,9 @@ import { SessionProvider } from "./context/session";
 import { InputProvider } from "./context/input";
 import { FocusProvider, useFocus } from "./context/focus";
 import { DialogProvider, useDialog } from "./context/dialog";
+import { ToastProvider } from "./context/toast";
+import { ToastContainer } from "./components/toast";
+import { ErrorBoundary } from "./components/error-boundary";
 import ShortcutsDialog from "./components/commands/shortcuts-dialog";
 import HelpDialog from "./components/commands/help-dialog";
 import ModelsDisplay from "./components/commands/models-display";
@@ -35,67 +38,62 @@ import { detectTerminalMode } from "./theme/detect-mode";
 
 interface AppProps {
   appConfig: Config;
-  initialTheme: string;
-  initialMode: ColorMode;
 }
 
-function App(props: AppProps) {
-  const { appConfig, initialTheme, initialMode } = props;
+function App({ appConfig }: AppProps) {
   const [focusIndex, setFocusIndex] = useState(0);
   const [cwd, setCwd] = useState(process.cwd());
   const [ctrlCPressTime, setCtrlCPressTime] = useState<number | null>(null);
   const [showExitWarning, setShowExitWarning] = useState(false);
-  const [inputKey, setInputKey] = useState(0); // Force input remount on clear
+  const [inputKey, setInputKey] = useState(0);
   const [showSessionsDialog, setShowSessionsDialog] = useState(false);
   const [showShortcutsDialog, setShowShortcutsDialog] = useState(false);
 
-  const navigableItems = ["command-input"]; // List of items that can be focused
+  const navigableItems = ["command-input"];
 
   return (
-    <ThemeProvider initialTheme={initialTheme} initialMode={initialMode}>
-      <ConfigProvider config={appConfig}>
-        <SessionProvider>
-          <RouteProvider>
-            <FocusProvider>
-              <InputProvider>
-                <DialogProvider>
-                  <AgentProvider>
-                    <CommandProvider>
-                      <KeybindingProvider
-                        deps={{
-                          ctrlCPressTime,
-                          setCtrlCPressTime,
-                          setShowExitWarning,
-                          setInputKey,
-                          setShowSessionsDialog,
-                          setShowShortcutsDialog,
-                          setFocusIndex,
-                          navigableItems,
-                        }}
-                      >
-                        <AppContent
-                          focusIndex={focusIndex}
-                          showSessionsDialog={showSessionsDialog}
-                          setShowSessionsDialog={setShowSessionsDialog}
-                          showShortcutsDialog={showShortcutsDialog}
-                          setShowShortcutsDialog={setShowShortcutsDialog}
-                          cwd={cwd}
-                          setCtrlCPressTime={setCtrlCPressTime}
-                          showExitWarning={showExitWarning}
-                          setShowExitWarning={setShowExitWarning}
-                          inputKey={inputKey}
-                          setInputKey={setInputKey}
-                        />
-                      </KeybindingProvider>
-                    </CommandProvider>
-                  </AgentProvider>
-                </DialogProvider>
-              </InputProvider>
-            </FocusProvider>
-          </RouteProvider>
-        </SessionProvider>
-      </ConfigProvider>
-    </ThemeProvider>
+    <ConfigProvider config={appConfig}>
+      <SessionProvider>
+        <RouteProvider>
+          <FocusProvider>
+            <InputProvider>
+              <DialogProvider>
+                <AgentProvider>
+                  <CommandProvider>
+                    <KeybindingProvider
+                      deps={{
+                        ctrlCPressTime,
+                        setCtrlCPressTime,
+                        setShowExitWarning,
+                        setInputKey,
+                        setShowSessionsDialog,
+                        setShowShortcutsDialog,
+                        setFocusIndex,
+                        navigableItems,
+                      }}
+                    >
+                      <AppContent
+                        focusIndex={focusIndex}
+                        showSessionsDialog={showSessionsDialog}
+                        setShowSessionsDialog={setShowSessionsDialog}
+                        showShortcutsDialog={showShortcutsDialog}
+                        setShowShortcutsDialog={setShowShortcutsDialog}
+                        cwd={cwd}
+                        setCtrlCPressTime={setCtrlCPressTime}
+                        showExitWarning={showExitWarning}
+                        setShowExitWarning={setShowExitWarning}
+                        inputKey={inputKey}
+                        setInputKey={setInputKey}
+                      />
+                    </KeybindingProvider>
+                  </CommandProvider>
+                </AgentProvider>
+              </DialogProvider>
+            </InputProvider>
+          </FocusProvider>
+        </RouteProvider>
+      </SessionProvider>
+    </ConfigProvider>
   );
 }
 
@@ -188,7 +186,6 @@ function AppContent({
     >
       <CommandDisplay focusIndex={focusIndex} inputKey={inputKey} />
 
-      {/* Only show footer on non-home routes */}
       <Footer cwd={cwd} showExitWarning={showExitWarning} />
 
       {showSessionsDialog && (
@@ -359,7 +356,14 @@ async function main() {
   });
 
   createRoot(renderer).render(
-    <App appConfig={appConfig} initialTheme={themeName} initialMode={mode} />,
+    <ThemeProvider initialTheme={themeName} initialMode={mode}>
+      <ToastProvider>
+        <ErrorBoundary>
+          <App appConfig={appConfig} />
+        </ErrorBoundary>
+        <ToastContainer />
+      </ToastProvider>
+    </ThemeProvider>,
   );
 }
 

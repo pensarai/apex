@@ -1,5 +1,12 @@
 import { sessions, type SessionInfo } from "../session";
-import { appendFileSync, existsSync, mkdirSync } from "fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from "fs";
+import os from "os";
 import path from "path";
 
 export enum LogLevel {
@@ -8,6 +15,72 @@ export enum LogLevel {
   DEBUG = "DEBUG",
   WARN = "WARN",
   LOG = "LOG",
+}
+
+const ERROR_LOG_PATH = path.join(os.homedir(), ".pensar", "error.log");
+const RETENTION_DAYS = 7;
+const TIMESTAMP_RE = /^(\d{4}-\d{2}-\d{2}T[\d:.]+Z) - /;
+
+let hasPruned = false;
+
+/**
+ * Drop log entries older than RETENTION_DAYS. Runs at most once per process.
+ */
+function pruneErrorLog(): void {
+  if (hasPruned) return;
+  hasPruned = true;
+
+  try {
+    if (!existsSync(ERROR_LOG_PATH)) return;
+
+    const cutoff = Date.now() - RETENTION_DAYS * 86_400_000;
+    const raw = readFileSync(ERROR_LOG_PATH, "utf8");
+    const lines = raw.split("\n");
+
+    const kept: string[] = [];
+    for (const line of lines) {
+      const match = TIMESTAMP_RE.exec(line);
+      if (match) {
+        const ts = new Date(match[1]!).getTime();
+        if (ts < cutoff) continue;
+      }
+      kept.push(line);
+    }
+
+    writeFileSync(ERROR_LOG_PATH, kept.join("\n"), "utf8");
+  } catch {
+    // Don't let pruning failures break anything
+  }
+}
+
+/**
+ * Append an error entry to ~/.pensar/error.log.
+ * Safe to call from anywhere — no session required.
+ *
+ * @param error  The error value (Error instance or anything stringifiable)
+ * @param source Optional tag identifying the subsystem, e.g. "TUI", "CORE"
+ */
+export function writeErrorLog(error: unknown, source?: string): void {
+  try {
+    pruneErrorLog();
+
+    const dir = path.dirname(ERROR_LOG_PATH);
+    if (!existsSync(dir)) {
+      mkdirSync(dir, { recursive: true });
+    }
+
+    const timestamp = new Date().toISOString();
+    const tag = source ? `[${source}] ` : "";
+    const message =
+      error instanceof Error
+        ? `${error.message}\n${error.stack ?? ""}`
+        : String(error);
+    const entry = `${timestamp} - [ERROR] ${tag}${message}\n`;
+
+    appendFileSync(ERROR_LOG_PATH, entry, "utf8");
+  } catch {
+    // Last resort — don't throw from the error logger
+  }
 }
 
 export class Logger {
