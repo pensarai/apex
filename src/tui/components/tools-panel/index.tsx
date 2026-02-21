@@ -8,7 +8,8 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
-import { RGBA, ScrollBoxRenderable } from "@opentui/core";
+import { ScrollBoxRenderable } from "@opentui/core";
+import { scrollToIndex } from "../../utils/scroll";
 import {
   ALL_TOOLS,
   getCategoryDisplayName,
@@ -17,16 +18,8 @@ import {
   type ToolsetState,
   type ToolDefinition,
 } from "../../../core/toolset";
+import { useTheme } from "../../theme";
 import { sessions, type SessionInfo } from "../../../core/session";
-
-// Colors
-const bgOverlay = RGBA.fromInts(0, 0, 0, 200);
-const bgPanel = RGBA.fromInts(20, 20, 20, 255);
-const borderColor = RGBA.fromInts(60, 60, 60, 255);
-const greenAccent = RGBA.fromInts(76, 175, 80, 255);
-const dimText = RGBA.fromInts(120, 120, 120, 255);
-const selectedBg = RGBA.fromInts(40, 40, 60, 255);
-const white = RGBA.fromInts(255, 255, 255, 255);
 
 interface ToolsPanelProps {
   open: boolean;
@@ -41,6 +34,7 @@ export default function ToolsPanel({
   session,
   onToolsetChange,
 }: ToolsPanelProps) {
+  const { colors } = useTheme();
   const dimensions = useTerminalDimensions();
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [categoryFilter, setCategoryFilter] = useState<ToolCategory | null>(
@@ -69,33 +63,14 @@ export default function ToolsPanel({
     }
   }, [filteredTools.length, selectedIndex]);
 
-  // Scroll to keep selected item in view (only when out of view)
+  // Scroll to keep selected item in view
   useEffect(() => {
-    if (!scrollboxRef.current || filteredTools.length === 0) return;
-
-    const scroll = scrollboxRef.current;
-    const viewportHeight = scroll.height;
-    const children = scroll.getChildren();
-
-    // Find the selected item element
-    const selectedTool = filteredTools[selectedIndex];
-    if (!selectedTool) return;
-
-    const target = children.find((child) => child.id === selectedTool.id);
-    if (!target) return;
-
-    // Calculate target's visual position relative to the scroll container
-    const targetVisualY = target.y - scroll.y;
-    const targetHeight = target.height || 1;
-
-    // Check if target is below visible area
-    if (targetVisualY + targetHeight > viewportHeight) {
-      scroll.scrollBy(targetVisualY - viewportHeight + targetHeight + 1);
-    }
-    // Check if target is above visible area
-    else if (targetVisualY < 0) {
-      scroll.scrollBy(targetVisualY);
-    }
+    scrollToIndex(
+      scrollboxRef.current,
+      selectedIndex,
+      filteredTools,
+      (t) => t.id,
+    );
   }, [selectedIndex, filteredTools]);
 
   // Check if a tool is enabled
@@ -247,55 +222,61 @@ export default function ToolsPanel({
         position="absolute"
         left={0}
         top={0}
-        backgroundColor={bgOverlay}
+        backgroundColor={colors.backgroundOverlay}
       >
         <box
           width={panelWidth}
           height={20}
-          backgroundColor={bgPanel}
-          borderColor={greenAccent}
+          backgroundColor={colors.backgroundPanel}
+          borderColor={colors.primary}
           borderStyle="single"
           flexDirection="column"
         >
           {/* Detail Header */}
           <box width="100%" padding={1} flexDirection="row">
-            <text fg={greenAccent}>{selectedTool.name}</text>
+            <text fg={colors.primary}>{selectedTool.name}</text>
             <text
-              fg={dimText}
+              fg={colors.textMuted}
             >{`  (${getCategoryDisplayName(selectedTool.category)})`}</text>
           </box>
 
           {/* Separator */}
           <box width="100%" height={1}>
-            <text fg={borderColor}>{"─".repeat(panelWidth - 2)}</text>
+            <text fg={colors.border}>{"─".repeat(panelWidth - 2)}</text>
           </box>
 
           {/* Detail Content */}
           <box width="100%" padding={2} flexDirection="column" flexGrow={1}>
             <box flexDirection="row">
-              <text fg={dimText}>Tool ID: </text>
-              <text fg={white}>{selectedTool.id}</text>
+              <text fg={colors.textMuted}>Tool ID: </text>
+              <text fg={colors.text}>{selectedTool.id}</text>
             </box>
             <box flexDirection="row">
-              <text fg={dimText}>Status: </text>
-              <text fg={isToolEnabled(selectedTool.id) ? greenAccent : dimText}>
+              <text fg={colors.textMuted}>Status: </text>
+              <text
+                fg={
+                  isToolEnabled(selectedTool.id)
+                    ? colors.primary
+                    : colors.textMuted
+                }
+              >
                 {isToolEnabled(selectedTool.id) ? "Enabled" : "Disabled"}
               </text>
             </box>
             <box height={1} />
-            <text fg={white}>
+            <text fg={colors.text}>
               {selectedTool.detail || selectedTool.description}
             </text>
           </box>
 
           {/* Separator */}
           <box width="100%" height={1}>
-            <text fg={borderColor}>{"─".repeat(panelWidth - 2)}</text>
+            <text fg={colors.border}>{"─".repeat(panelWidth - 2)}</text>
           </box>
 
           {/* Detail Footer */}
           <box width="100%" padding={1} flexDirection="row">
-            <text fg={dimText}>[space] toggle [enter/esc] back</text>
+            <text fg={colors.textMuted}>[space] toggle [enter/esc] back</text>
           </box>
         </box>
       </box>
@@ -312,34 +293,36 @@ export default function ToolsPanel({
       position="absolute"
       left={0}
       top={0}
-      backgroundColor={bgOverlay}
+      backgroundColor={colors.backgroundOverlay}
     >
       <box
         width={panelWidth}
         height={panelHeight}
-        backgroundColor={bgPanel}
-        borderColor={borderColor}
+        backgroundColor={colors.backgroundPanel}
+        borderColor={colors.border}
         borderStyle="single"
         flexDirection="column"
       >
         {/* Header */}
         <box width="100%" padding={1} flexDirection="row">
-          <text fg={greenAccent}>{"Tools Panel".padEnd(panelWidth - 22)}</text>
-          <text fg={dimText}>{`${enabled}/${total} enabled`}</text>
+          <text fg={colors.primary}>
+            {"Tools Panel".padEnd(panelWidth - 22)}
+          </text>
+          <text fg={colors.textMuted}>{`${enabled}/${total} enabled`}</text>
         </box>
 
         {/* Separator */}
         <box width="100%" height={1}>
-          <text fg={borderColor}>{"─".repeat(panelWidth - 2)}</text>
+          <text fg={colors.border}>{"─".repeat(panelWidth - 2)}</text>
         </box>
 
         {/* Category Filter */}
         <box width="100%" padding={1} flexDirection="row">
-          <text fg={dimText}>Filter: </text>
+          <text fg={colors.textMuted}>Filter: </text>
           {categories.map((cat, idx) => {
             const isActive = categoryFilter === cat.key;
             return (
-              <text key={idx} fg={isActive ? greenAccent : dimText}>
+              <text key={idx} fg={isActive ? colors.primary : colors.textMuted}>
                 {`[${idx}]${cat.label} `}
               </text>
             );
@@ -348,12 +331,12 @@ export default function ToolsPanel({
 
         {/* Separator */}
         <box width="100%" height={1}>
-          <text fg={borderColor}>{"─".repeat(panelWidth - 2)}</text>
+          <text fg={colors.border}>{"─".repeat(panelWidth - 2)}</text>
         </box>
 
         {/* Column Headers */}
         <box width="100%" paddingLeft={2} paddingRight={2} flexDirection="row">
-          <text fg={dimText}>
+          <text fg={colors.textMuted}>
             {"     Name".padEnd(22)}
             {"Category".padEnd(12)}
             {"Description"}
@@ -389,14 +372,22 @@ export default function ToolsPanel({
                 key={tool.id}
                 id={tool.id}
                 width="100%"
-                backgroundColor={isSelected ? selectedBg : undefined}
+                backgroundColor={
+                  isSelected ? colors.backgroundSelected : undefined
+                }
                 flexDirection="row"
                 paddingLeft={1}
               >
-                <text fg={isSelected ? white : dimText}>{checkbox}</text>
-                <text fg={isEnabled ? greenAccent : dimText}>{` ${name}`}</text>
-                <text fg={dimText}>{cat}</text>
-                <text fg={isSelected ? white : dimText}>{desc}</text>
+                <text fg={isSelected ? colors.text : colors.textMuted}>
+                  {checkbox}
+                </text>
+                <text
+                  fg={isEnabled ? colors.primary : colors.textMuted}
+                >{` ${name}`}</text>
+                <text fg={colors.textMuted}>{cat}</text>
+                <text fg={isSelected ? colors.text : colors.textMuted}>
+                  {desc}
+                </text>
               </box>
             );
           })}
@@ -404,12 +395,12 @@ export default function ToolsPanel({
 
         {/* Separator */}
         <box width="100%" height={1}>
-          <text fg={borderColor}>{"─".repeat(panelWidth - 2)}</text>
+          <text fg={colors.border}>{"─".repeat(panelWidth - 2)}</text>
         </box>
 
         {/* Footer */}
         <box width="100%" padding={1} flexDirection="row">
-          <text fg={dimText}>
+          <text fg={colors.textMuted}>
             [j/k] navigate [space] toggle [enter/v] details [0-5] filter [esc]
             close
           </text>

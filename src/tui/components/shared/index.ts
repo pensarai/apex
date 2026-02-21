@@ -5,7 +5,7 @@
  */
 
 // Markdown utilities
-export { markdownToStyledText, codeColor, linkColor } from "./markdown";
+export { markdownToStyledText } from "./markdown";
 
 // Message utilities
 export {
@@ -47,4 +47,4 @@ export { useMessageState } from "./message-reducer";
 
 // Input components
 export { PromptInput, type PromptInputRef } from "./prompt-input";
-export { type AutocompleteOption } from "../autocomplete";
+export { type AutocompleteOption } from "./prompt-input";

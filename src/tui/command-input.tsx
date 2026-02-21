@@ -3,7 +3,6 @@ import { useCommand } from "./context/command";
 import { useConfig } from "./context/config";
 import { useInput } from "./context/input";
 import { sessions, type SessionInfo } from "../core/session";
-import Autocomplete from "./components/autocomplete";
 import os from "os";
 import type { InputRenderable } from "@opentui/core";
 import { RGBA } from "@opentui/core";
@@ -89,19 +88,6 @@ export default function CommandInput({
         <text fg={greenAccent}>
           <span>{"❯ "}</span>
         </text>
-
-        {/* Input field */}
-        <Autocomplete
-          ref={inputRefCallback}
-          label=""
-          options={autocompleteOptions}
-          value={command}
-          onInput={handleInput}
-          onSubmit={handleSubmit}
-          focused={focused}
-          placeholder="Type a command..."
-          maxSuggestions={10}
-        />
       </box>
 
       {/* Subtle hint line */}

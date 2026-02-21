@@ -4,6 +4,7 @@ import {
   useRenderer,
 } from "@opentui/react";
 import type { JSX } from "react";
+import { useTheme } from "../theme";
 
 export interface AlertDialogProps {
   title?: string;
@@ -24,6 +25,7 @@ export default function AlertDialog({
   disableEscape = false,
   size = "medium",
 }: AlertDialogProps) {
+  const { colors } = useTheme();
   const dimensions = useTerminalDimensions();
   const renderer = useRenderer();
 
@@ -64,23 +66,23 @@ export default function AlertDialog({
         width={size === "large" ? 80 : 60}
         maxWidth={dimensions.width - 2}
         border={true}
-        borderColor="green"
-        backgroundColor="black"
+        borderColor={colors.primary}
+        backgroundColor={colors.backgroundPanel}
         flexDirection="column"
         padding={1}
         paddingTop={1}
       >
         {title ? (
           <box marginBottom={1}>
-            <text fg="green">{title}</text>
+            <text fg={colors.primary}>{title}</text>
           </box>
         ) : null}
         <box flexDirection="column">
-          {message ? <text fg="white">{message}</text> : children}
+          {message ? <text fg={colors.text}>{message}</text> : children}
         </box>
         {!disableEscape ? (
           <box marginTop={1}>
-            <text fg="gray">Press Esc to close</text>
+            <text fg={colors.textMuted}>Press Esc to close</text>
           </box>
         ) : null}
       </box>

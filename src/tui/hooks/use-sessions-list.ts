@@ -6,7 +6,10 @@
 import { useState, useEffect, useCallback } from "react";
 import { existsSync, readdirSync } from "fs";
 import { join } from "path";
-import { sessions, type SessionInfo } from "../../core/session";
+import {
+  sessions as sessionModule,
+  type SessionInfo,
+} from "../../core/session";
 
 export interface EnrichedSession extends SessionInfo {
   findingsCount: number;
@@ -57,7 +60,7 @@ export function useSessionsList() {
     setLoading(true);
     try {
       const enriched: EnrichedSession[] = [];
-      for await (const session of sessions.list()) {
+      for await (const session of sessionModule.list()) {
         const hasOperatorState = existsSync(
           join(session.rootPath, "operator-state.json"),
         );
@@ -86,7 +89,7 @@ export function useSessionsList() {
 
   const deleteSession = useCallback(
     async (id: string) => {
-      await sessions.remove({ sessionId: id });
+      await sessionModule.remove({ sessionId: id });
       await loadSessions();
     },
     [loadSessions],
@@ -149,6 +152,7 @@ export function useSessionsList() {
 
   return {
     sessions: filtered,
+    totalCount: filtered.length,
     groupedSessions,
     visualOrderSessions,
     loading,

@@ -6,6 +6,8 @@ import {
   createOperatorSessionFromFlags,
   createSwarmSessionFromFlags,
 } from "./utils/command-flags";
+import { getAllThemeNames } from "./theme";
+import { config } from "../core/config";
 
 /**
  * Define your application's CommandContext type with specific methods
@@ -295,6 +297,53 @@ export const commands: CommandConfig[] = [
     },
   },
   {
+    name: "themes",
+    aliases: ["theme"],
+    description: "Manage application themes",
+    category: "General",
+    options: [
+      {
+        name: "<name>",
+        description: "Switch directly to a named theme",
+      },
+      {
+        name: "mode",
+        description: "Toggle or set dark/light mode (dark|light|auto)",
+      },
+    ],
+    handler: async (args, ctx) => {
+      // /theme mode [dark|light|auto] — mode subcommand
+      if (args[0] === "mode") {
+        const modeArg = args[1];
+        if (modeArg === "dark" || modeArg === "light") {
+          await config.update({ themeMode: modeArg });
+        } else if (modeArg === "auto") {
+          await config.update({ themeMode: "auto" });
+        } else {
+          // Toggle — actual toggling happens in the ThemeProvider (caller reads config)
+          const current = await config.get();
+          const newMode = current.themeMode === "light" ? "dark" : "light";
+          await config.update({ themeMode: newMode });
+        }
+        return;
+      }
+
+      // /theme <name> — direct theme switch
+      if (args[0]) {
+        const name = args[0].toLowerCase();
+        const allThemes = getAllThemeNames();
+        const match = allThemes.find((t) => t === name);
+        if (match) {
+          await config.update({ theme: match });
+        }
+        return;
+      }
+
+      // /theme — open picker
+      ctx.navigate({ type: "base", path: "theme" });
+    },
+  },
+  {
     name: "tools",
     aliases: ["t"],
     description: "View and manage active tools (session only)",
@@ -311,17 +360,15 @@ export const commands: CommandConfig[] = [
     },
   },
 
-  // Add more commands here...
-  // Example:
-  // {
-  //   name: "clear",
-  //   aliases: ["cls"],
-  //   description: "Clear the screen",
-  //   category: "General",
-  //   handler: async (args, ctx) => {
-  //     ctx.clearScreen?.();
-  //   },
-  // },
+  {
+    name: "exit",
+    aliases: ["quit", "q"],
+    description: "Exit the application",
+    category: "General",
+    handler: async () => {
+      process.kill(process.pid, "SIGINT");
+    },
+  },
 ];
 
 /**

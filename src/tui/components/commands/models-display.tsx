@@ -1,15 +1,12 @@
 import { useKeyboard } from "@opentui/react";
-import { RGBA } from "@opentui/core";
 import { useAgent } from "../../context/agent";
 import { useRoute } from "../../context/route";
 import { useConfig } from "../../context/config";
 import { ModelPicker } from "../model-picker";
-
-const greenAccent = RGBA.fromInts(76, 175, 80, 255);
-const creamText = RGBA.fromInts(255, 248, 220, 255);
-const dimText = RGBA.fromInts(120, 120, 120, 255);
+import { useTheme } from "../../theme";
 
 export default function ModelsDisplay() {
+  const { colors } = useTheme();
   const route = useRoute();
   const config = useConfig();
   const { model, setModel, isModelUserSelected } = useAgent();
@@ -42,10 +39,13 @@ export default function ModelsDisplay() {
     <box flexDirection="column" width="100%" paddingLeft={4} paddingTop={2}>
       {/* Header */}
       <text>
-        <span fg={greenAccent}>█ </span>
-        <span fg={creamText}>Select AI Model</span>
-        <span fg={dimText}> ({model.name})</span>
-        <span fg={dimText}> [{isModelUserSelected ? "user" : "default"}]</span>
+        <span fg={colors.primary}>█ </span>
+        <span fg={colors.text}>Select AI Model</span>
+        <span fg={colors.textMuted}> ({model.name})</span>
+        <span fg={colors.textMuted}>
+          {" "}
+          [{isModelUserSelected ? "user" : "default"}]
+        </span>
       </text>
 
       {/* Model Picker */}
@@ -63,22 +63,22 @@ export default function ModelsDisplay() {
       {/* Footer */}
       <box flexDirection="column" marginTop={2}>
         <text>
-          <span fg={greenAccent}>█ </span>
-          <span fg={dimText}>Press </span>
-          <span fg={creamText}>[Enter]</span>
-          <span fg={dimText}> to confirm</span>
+          <span fg={colors.primary}>█ </span>
+          <span fg={colors.textMuted}>Press </span>
+          <span fg={colors.text}>[Enter]</span>
+          <span fg={colors.textMuted}> to confirm</span>
         </text>
         <text>
-          <span fg={greenAccent}>█ </span>
-          <span fg={dimText}>Press </span>
-          <span fg={creamText}>[ESC]</span>
-          <span fg={dimText}> to go back</span>
+          <span fg={colors.primary}>█ </span>
+          <span fg={colors.textMuted}>Press </span>
+          <span fg={colors.text}>[ESC]</span>
+          <span fg={colors.textMuted}> to go back</span>
         </text>
         <text>
-          <span fg={greenAccent}>█ </span>
-          <span fg={dimText}>Press </span>
-          <span fg={creamText}>[Ctrl+P]</span>
-          <span fg={dimText}> to connect provider</span>
+          <span fg={colors.primary}>█ </span>
+          <span fg={colors.textMuted}>Press </span>
+          <span fg={colors.text}>[Ctrl+P]</span>
+          <span fg={colors.textMuted}> to connect provider</span>
         </text>
       </box>
     </box>
