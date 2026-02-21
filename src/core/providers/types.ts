@@ -1,4 +1,9 @@
-export type ProviderType = "anthropic" | "openai" | "bedrock" | "openrouter";
+export type ProviderType =
+  | "anthropic"
+  | "openai"
+  | "bedrock"
+  | "openrouter"
+  | "local";
 
 export interface Provider {
   id: ProviderType;
@@ -37,5 +42,11 @@ export const AVAILABLE_PROVIDERS: Provider[] = [
     name: "AWS Bedrock",
     description: "Amazon Bedrock AI models",
     requiresAPIKey: true,
+  },
+  {
+    id: "local",
+    name: "Local LLM",
+    description: "OpenAI-compatible local model (vLLM, LM Studio, Ollama)",
+    requiresAPIKey: false,
   },
 ];

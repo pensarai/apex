@@ -212,6 +212,9 @@ export default function OperatorDashboard({
             anthropicAPIKey: config.data.anthropicAPIKey ?? undefined,
             openAiAPIKey: config.data.openAiAPIKey ?? undefined,
             openRouterAPIKey: config.data.openRouterAPIKey ?? undefined,
+            local: config.data.localModelUrl
+              ? { baseURL: config.data.localModelUrl }
+              : undefined,
           },
           callbacks: {
             onTextDelta: (d) => {

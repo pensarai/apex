@@ -45,50 +45,6 @@ export interface CommandConfig {
  */
 export const commands: CommandConfig[] = [
   {
-    name: "help",
-    description: "Show help dialog",
-    category: "General",
-    handler: async (args, ctx) => {
-      ctx.navigate({
-        type: "base",
-        path: "help",
-      });
-    },
-  },
-  {
-    name: "config",
-    description: "Show config dialog",
-    category: "General",
-    handler: async (args, ctx) => {
-      ctx.navigate({
-        type: "base",
-        path: "config",
-      });
-    },
-  },
-  // {
-  //   name: "quicktest",
-  //   description: "Show quick pentest agent",
-  //   category: "General",
-  //   handler: async (args, ctx) => {
-  //     ctx.navigate({
-  //       type: "base",
-  //       path: "pentest"
-  //     });
-  //   },
-  // },
-  // {
-  //   name: "pentest",
-  //   description: "Show pentest agent",
-  //   category: "General",
-  //   handler: async (args, ctx) => {
-  //     ctx.navigate({
-  //       type: "base",
-  //       path: "thorough"
-  //     });
-  //   },
-  // },
-  {
     name: "pentest",
     aliases: ["p", "web", "w"],
     description: "Start autonomous pentest swarm",
@@ -246,6 +202,28 @@ export const commands: CommandConfig[] = [
         type: "base",
         path: "operator",
         options: flags as Record<string, unknown>,
+      });
+    },
+  },
+  {
+    name: "help",
+    description: "Show help dialog",
+    category: "General",
+    handler: async (args, ctx) => {
+      ctx.navigate({
+        type: "base",
+        path: "help",
+      });
+    },
+  },
+  {
+    name: "config",
+    description: "Show config dialog",
+    category: "General",
+    handler: async (args, ctx) => {
+      ctx.navigate({
+        type: "base",
+        path: "config",
       });
     },
   },

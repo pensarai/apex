@@ -55,6 +55,7 @@ export default function ModelsDisplay() {
           selectedModel={model}
           onSelectModel={setModel}
           onConfirm={goHome}
+          onConfigUpdate={config.update}
           focused={true}
           isModelUserSelected={isModelUserSelected}
         />
