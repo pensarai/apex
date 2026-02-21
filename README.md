@@ -1,6 +1,6 @@
 <h1 align="center">Pensar Apex</h1>
 
-<p align="center">AI-powered penetration testing TUI tool that enables you to use an AI agent to perform comprehensive blackbox and whitebox pentesting.
+<p align="center">AI-powered penetration testing tool that enables you to use an AI agent to perform comprehensive blackbox and whitebox pentesting - directly in your terminal.
 </p>
 
 <p align="center">
