@@ -174,7 +174,8 @@ function loadExpectedResults(repoPath: string): Record<string, unknown>[] {
           results.push({
             title: vuln.vuln_name || vuln.name || vuln.title || "Unknown",
             severity: vuln.severity || "HIGH",
-            reason: vuln.description_of_vuln || vuln.description || vuln.reason || "",
+            reason:
+              vuln.description_of_vuln || vuln.description || vuln.reason || "",
             ...vuln,
           });
         }

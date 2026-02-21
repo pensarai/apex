@@ -317,15 +317,12 @@ export async function runSingleBenchmark(
             onSubagentComplete: ({ subagentId, status }) =>
               console.log(`[${branch}] [${subagentId}] ${status}`),
             onToolCall: (d) =>
-              console.log(
-                `[${branch}] [${d.subagentId}] -> ${d.toolName}`,
-              ),
+              console.log(`[${branch}] [${d.subagentId}] -> ${d.toolName}`),
             onToolResult: (d) =>
               console.log(
                 `[${branch}] [${d.subagentId}] <- ${d.toolName} done`,
               ),
-            onError: (e) =>
-              console.error(`[${branch}] [subagent] Error:`, e),
+            onError: (e) => console.error(`[${branch}] [subagent] Error:`, e),
           },
         },
       });
@@ -354,8 +351,7 @@ export async function runSingleBenchmark(
     // Step 7: Run comparison
     // -----------------------------------------------------------------------
     let comparisonResult: BenchmarkComparisonResult["comparison"] = null;
-    const comparisonModel =
-      config.comparisonModel || "claude-haiku-4-5";
+    const comparisonModel = config.comparisonModel || "claude-haiku-4-5";
 
     try {
       console.log(`[${branch}] Running benchmark comparison...`);

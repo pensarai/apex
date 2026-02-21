@@ -570,12 +570,12 @@ async function installDocker(sandbox: Sandbox, branch?: string): Promise<void> {
   // Add current user to docker group for socket access
   console.log(`${prefix}Configuring Docker permissions...`);
   await sandbox.process.executeCommand(
-    '(sudo usermod -aG docker $(whoami) || usermod -aG docker $(whoami)) 2>/dev/null || true',
+    "(sudo usermod -aG docker $(whoami) || usermod -aG docker $(whoami)) 2>/dev/null || true",
   );
 
   // Set socket permissions to allow group access
   await sandbox.process.executeCommand(
-    'chmod 666 /var/run/docker.sock 2>/dev/null || sleep 2 && chmod 666 /var/run/docker.sock 2>/dev/null || true',
+    "chmod 666 /var/run/docker.sock 2>/dev/null || sleep 2 && chmod 666 /var/run/docker.sock 2>/dev/null || true",
   );
 
   // Wait for Docker daemon to be ready (up to 60 seconds with retries)
