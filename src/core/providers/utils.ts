@@ -31,6 +31,12 @@ export function isProviderConfigured(
       return !!config.openRouterAPIKey;
     case "bedrock":
       return !!config.bedrockAPIKey;
+    case "local":
+      return !!(
+        config.localModelUrl ||
+        config.localModelName ||
+        process.env.LOCAL_MODEL_URL
+      );
     default:
       return false;
   }
@@ -41,7 +47,10 @@ export function hasAnyProviderConfigured(config: Config): boolean {
     !!config.anthropicAPIKey ||
     !!config.openAiAPIKey ||
     !!config.openRouterAPIKey ||
-    !!config.bedrockAPIKey
+    !!config.bedrockAPIKey ||
+    !!config.localModelUrl ||
+    !!config.localModelName ||
+    !!process.env.LOCAL_MODEL_URL
   );
 }
 
@@ -50,7 +59,17 @@ export function getModelsByProvider(providerId: ProviderType): ModelInfo[] {
 }
 
 export function getAvailableModels(config: Config): ModelInfo[] {
-  return AVAILABLE_MODELS.filter((model) => {
+  const models = AVAILABLE_MODELS.filter((model) => {
     return isProviderConfigured(model.provider as ProviderType, config);
   });
+
+  if (isProviderConfigured("local", config) && config.localModelName) {
+    models.push({
+      id: config.localModelName,
+      name: config.localModelName,
+      provider: "local",
+    });
+  }
+
+  return models;
 }

@@ -82,11 +82,31 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
         <text fg={colors.textMuted}>Automated offensive security</text>
       </box>
 
+      {/* Command Quick Reference */}
+      <box flexDirection="column" marginTop={2}>
+        {[
+          { cmd: "/pentest", desc: "autonomous pentest" },
+          { cmd: "/operator", desc: "interactive operator" },
+          { cmd: "/models", desc: "select AI model" },
+          { cmd: "/providers", desc: "manage API keys" },
+        ].map(({ cmd, desc }) => (
+          <box key={cmd} flexDirection="row">
+            <box width={14} justifyContent="flex-end">
+              <text fg={colors.primary}>{cmd}</text>
+            </box>
+            <box width={4} />
+            <box>
+              <text fg={colors.textMuted}>{desc}</text>
+            </box>
+          </box>
+        ))}
+      </box>
+
       {/* Centered Input Area */}
       <box
         flexDirection="column"
         width={inputWidth}
-        marginTop={8}
+        marginTop={2}
         padding={1}
         border={["left", "right"]}
         borderColor={colors.primary}

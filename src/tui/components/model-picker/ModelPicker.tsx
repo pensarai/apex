@@ -10,19 +10,30 @@ const providerNames: Record<string, string> = {
   openai: "OpenAI",
   openrouter: "OpenRouter",
   bedrock: "Bedrock",
+  local: "Local LLM",
 };
 
-const providerOrder = ["anthropic", "openai", "openrouter", "bedrock"];
+const providerOrder = [
+  "anthropic",
+  "openai",
+  "openrouter",
+  "bedrock",
+  "local",
+];
 
 type NavigationItem =
   | { type: "provider"; provider: string }
-  | { type: "model"; model: ModelInfo };
+  | { type: "model"; model: ModelInfo }
+  | { type: "local-input"; field: LocalInputField };
+
+type LocalInputField = "url" | "model";
 
 export interface ModelPickerProps {
   config: Config | null;
   selectedModel: ModelInfo;
   onSelectModel: (model: ModelInfo) => void;
   onConfirm?: () => void;
+  onConfigUpdate?: (update: Partial<Config>) => Promise<void>;
   focused?: boolean;
   isModelUserSelected?: boolean;
 }
@@ -32,6 +43,7 @@ export function ModelPicker({
   selectedModel,
   onSelectModel,
   onConfirm,
+  onConfigUpdate,
   focused = true,
   isModelUserSelected = false,
 }: ModelPickerProps) {
@@ -42,6 +54,18 @@ export function ModelPicker({
     new Set(["anthropic"]),
   );
   const [focusedIndex, setFocusedIndex] = useState(0);
+
+  const [localUrl, setLocalUrl] = useState(config?.localModelUrl ?? "");
+  const [localModelName, setLocalModelName] = useState(
+    config?.localModelName ?? "",
+  );
+  const [editingLocalField, setEditingLocalField] =
+    useState<LocalInputField | null>(null);
+
+  useEffect(() => {
+    setLocalUrl(config?.localModelUrl ?? "");
+    setLocalModelName(config?.localModelName ?? "");
+  }, [config?.localModelUrl, config?.localModelName]);
 
   // Load models when config changes
   useEffect(() => {
@@ -85,6 +109,20 @@ export function ModelPicker({
   const navigationItems = useMemo(() => {
     const items: NavigationItem[] = [];
     for (const provider of providerOrder) {
+      if (provider === "local") {
+        items.push({ type: "provider", provider: "local" });
+        if (expandedProviders.has("local")) {
+          items.push({ type: "local-input", field: "url" });
+          items.push({ type: "local-input", field: "model" });
+          const localModels = groupedModels["local"];
+          if (localModels) {
+            for (const m of localModels) {
+              items.push({ type: "model", model: m });
+            }
+          }
+        }
+        continue;
+      }
       const models = groupedModels[provider];
       if (!models || models.length === 0) continue;
       items.push({ type: "provider", provider });
@@ -114,7 +152,24 @@ export function ModelPicker({
     );
   }, [navigationItems.length]);
 
-  // Handle keyboard navigation
+  const commitLocalConfig = useCallback(
+    (url: string, modelName: string) => {
+      if (!onConfigUpdate) return;
+      const update: Partial<Config> = {
+        localModelUrl: url || null,
+        localModelName: modelName || null,
+      };
+      onConfigUpdate(update);
+    },
+    [onConfigUpdate],
+  );
+
+  const finishEditing = useCallback(() => {
+    setEditingLocalField(null);
+    commitLocalConfig(localUrl, localModelName);
+  }, [localUrl, localModelName, commitLocalConfig]);
+
+  // Handle keyboard navigation (most keys disabled while editing local input)
   const handleKeyboard = useCallback(
     (key: {
       name?: string;
@@ -124,6 +179,15 @@ export function ModelPicker({
       meta?: boolean;
     }) => {
       if (!focused) return false;
+
+      if (editingLocalField) {
+        if (key.name === "escape") {
+          finishEditing();
+          return true;
+        }
+        return false;
+      }
+
       if (navigationItems.length === 0) return false;
 
       // Up/Down - navigate through items
@@ -152,13 +216,17 @@ export function ModelPicker({
         return true;
       }
 
-      // Enter - confirm model selection or toggle provider header
+      // Enter - confirm model selection, toggle provider, or start editing local input
       if (key.name === "return") {
         const currentItem = navigationItems[focusedIndex];
         if (!currentItem) return false;
 
+        if (currentItem.type === "local-input") {
+          setEditingLocalField(currentItem.field);
+          return true;
+        }
+
         if (currentItem.type === "provider") {
-          // Toggle expansion when focused on a provider header
           const targetProvider = currentItem.provider;
           setExpandedProviders((prev) => {
             const next = new Set(prev);
@@ -170,7 +238,6 @@ export function ModelPicker({
             return next;
           });
         } else {
-          // Confirm selection when focused on a model
           onConfirm?.();
         }
         return true;
@@ -184,7 +251,9 @@ export function ModelPicker({
         const targetProvider =
           currentItem.type === "provider"
             ? currentItem.provider
-            : currentItem.model.provider;
+            : currentItem.type === "model"
+              ? currentItem.model.provider
+              : "local";
 
         if (key.name === "left") {
           setExpandedProviders((prev) => {
@@ -192,7 +261,6 @@ export function ModelPicker({
             next.delete(targetProvider);
             return next;
           });
-          // Move focus to the provider header when collapsing
           const headerIdx = navigationItems.findIndex(
             (item) =>
               item.type === "provider" && item.provider === targetProvider,
@@ -213,7 +281,6 @@ export function ModelPicker({
         /[a-zA-Z0-9\-_.]/.test(key.sequence)
       ) {
         setSearchQuery((prev) => prev + key.sequence);
-        // Auto-expand all providers when searching
         if (!searchQuery) {
           setExpandedProviders(new Set(providerOrder));
         }
@@ -224,6 +291,8 @@ export function ModelPicker({
     },
     [
       focused,
+      editingLocalField,
+      finishEditing,
       navigationItems,
       focusedIndex,
       onSelectModel,
@@ -247,9 +316,6 @@ export function ModelPicker({
 
       {/* Provider groups */}
       {providerOrder.map((provider) => {
-        const models = groupedModels[provider];
-        if (!models || models.length === 0) return null;
-
         const isExpanded = expandedProviders.has(provider);
         const providerName = providerNames[provider] || provider;
         const isProviderFocused =
@@ -261,9 +327,122 @@ export function ModelPicker({
             }
           ).provider === provider;
 
+        if (provider === "local") {
+          const localModels = groupedModels["local"];
+          const modelCount = localModels?.length ?? 0;
+          return (
+            <box key="local" flexDirection="column" gap={0}>
+              <text
+                fg={
+                  isProviderFocused
+                    ? colors.primary
+                    : isExpanded
+                      ? colors.text
+                      : colors.textMuted
+                }
+              >
+                {isProviderFocused ? "❯" : isExpanded ? "▾" : "▸"}{" "}
+                {providerName}
+                {modelCount > 0 ? ` (${modelCount})` : ""}
+              </text>
+
+              {isExpanded && (
+                <box flexDirection="column" gap={0} paddingLeft={2}>
+                  {/* URL input */}
+                  {(() => {
+                    const isUrlFocused =
+                      navigationItems[focusedIndex]?.type === "local-input" &&
+                      (navigationItems[focusedIndex] as { type: "local-input"; field: LocalInputField }).field === "url";
+                    const isUrlEditing = editingLocalField === "url";
+                    if (isUrlEditing) {
+                      return (
+                        <box flexDirection="row">
+                          <text fg={colors.primary}>  URL: </text>
+                          <input
+                            focused={true}
+                            value={localUrl}
+                            backgroundColor="transparent"
+                            cursorColor={colors.textMuted}
+                            onInput={(v) => setLocalUrl(typeof v === "string" ? v : "")}
+                            onPaste={(event) => {
+                              const cleaned = String(event.text).replace(/\r?\n/g, "");
+                              setLocalUrl((prev) => `${prev}${cleaned}`);
+                            }}
+                            onSubmit={finishEditing}
+                          />
+                        </box>
+                      );
+                    }
+                    return (
+                      <text fg={isUrlFocused ? colors.primary : colors.textMuted}>
+                        {`  URL: ${localUrl || "(press Enter to set)"}`}
+                      </text>
+                    );
+                  })()}
+
+                  {/* Model name input */}
+                  {(() => {
+                    const isModelFocused =
+                      navigationItems[focusedIndex]?.type === "local-input" &&
+                      (navigationItems[focusedIndex] as { type: "local-input"; field: LocalInputField }).field === "model";
+                    const isModelEditing = editingLocalField === "model";
+                    if (isModelEditing) {
+                      return (
+                        <box flexDirection="row">
+                          <text fg={colors.primary}>  Model: </text>
+                          <input
+                            focused={true}
+                            value={localModelName}
+                            backgroundColor="transparent"
+                            cursorColor={colors.textMuted}
+                            onInput={(v) => setLocalModelName(typeof v === "string" ? v : "")}
+                            onPaste={(event) => {
+                              const cleaned = String(event.text).replace(/\r?\n/g, "");
+                              setLocalModelName((prev) => `${prev}${cleaned}`);
+                            }}
+                            onSubmit={finishEditing}
+                          />
+                        </box>
+                      );
+                    }
+                    return (
+                      <text fg={isModelFocused ? colors.primary : colors.textMuted}>
+                        {`  Model: ${localModelName || "(press Enter to set)"}`}
+                      </text>
+                    );
+                  })()}
+
+                  {/* Local models (after config is set) */}
+                  {localModels?.map((m) => {
+                    const isSelected = m.id === selectedModel.id;
+                    const isFocused =
+                      navigationItems[focusedIndex]?.type === "model" &&
+                      (
+                        navigationItems[focusedIndex] as {
+                          type: "model";
+                          model: ModelInfo;
+                        }
+                      ).model.id === m.id;
+                    return (
+                      <text
+                        key={m.id}
+                        fg={isFocused ? colors.primary : colors.textMuted}
+                      >
+                        {isSelected ? "●" : "○"} {m.name}
+                      </text>
+                    );
+                  })}
+                </box>
+              )}
+            </box>
+          );
+        }
+
+        const models = groupedModels[provider];
+        if (!models || models.length === 0) return null;
+
         return (
           <box key={provider} flexDirection="column" gap={0}>
-            {/* Provider header */}
             <text
               fg={
                 isProviderFocused
@@ -277,7 +456,6 @@ export function ModelPicker({
               ({models.length})
             </text>
 
-            {/* Models list (when expanded) */}
             {isExpanded && (
               <box flexDirection="column" gap={0} paddingLeft={2}>
                 {models.map((m) => {
@@ -312,7 +490,9 @@ export function ModelPicker({
 
       {/* Help text */}
       <text fg={colors.textMuted}>
-        ↑/↓ navigate | ←/→ collapse/expand | Type to search
+        {editingLocalField
+          ? "Type or paste | Enter/Esc to confirm"
+          : "↑/↓ navigate | ←/→ collapse/expand | Type to search"}
       </text>
     </box>
   );
