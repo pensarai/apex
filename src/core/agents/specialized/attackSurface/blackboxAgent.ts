@@ -89,6 +89,7 @@ export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSur
       activeTools: [
         // Core recon tools
         "execute_command",
+        "read_file",
         "document_asset",
         "create_attack_surface_report",
         // Browser automation for SPAs, JS-heavy apps, and auth flows

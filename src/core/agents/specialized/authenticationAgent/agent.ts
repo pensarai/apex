@@ -132,6 +132,7 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
       activeTools: [
         // Auth flow tools
         "execute_command",
+        "read_file",
         "authenticate_session",
         "complete_authentication",
         // Browser automation for login forms, OAuth, SPA auth

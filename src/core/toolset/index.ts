@@ -67,6 +67,15 @@ export const ALL_TOOLS: ToolDefinition[] = [
     defaultEnabled: true,
   },
   {
+    id: "read_file",
+    name: "Read File",
+    description: "Read file contents",
+    detail:
+      "Read the contents of files from the filesystem. Used to analyze large command outputs saved to files, read configuration files, or examine downloaded content.",
+    category: "utility",
+    defaultEnabled: true,
+  },
+  {
     id: "smart_enumerate",
     name: "Smart Enumerate",
     description: "Auto-discover surface",
@@ -392,6 +401,7 @@ export const TOOLSETS: ToolsetDefinition[] = [
       // Reconnaissance
       "http_request",
       "execute_command",
+      "read_file",
       "smart_enumerate",
       "cve_lookup",
       "analyze_scan",
@@ -422,6 +432,7 @@ export const TOOLSETS: ToolsetDefinition[] = [
     enabledTools: [
       "http_request",
       "execute_command",
+      "read_file",
       "scratchpad",
       "document_finding",
     ],
