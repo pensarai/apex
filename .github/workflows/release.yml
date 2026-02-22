@@ -234,7 +234,38 @@ jobs:
     needs: [release, npm, homebrew]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Get version from package.json
+        id: get_version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
       - name: Send release notification to Discord
-        uses: SethCohen/github-releases-to-discord@v1
-        with:
-          webhook_url: ${{ secrets.DISCORD_WEBHOOK }}
+        env:
+          WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK }}
+          VERSION: ${{ steps.get_version.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/v${VERSION}"
+
+          RELEASE_BODY=$(gh release view "v${VERSION}" --json body -q .body 2>/dev/null || echo "")
+          if [ ${#RELEASE_BODY} -gt 4000 ]; then
+            RELEASE_BODY="${RELEASE_BODY:0:4000}..."
+          fi
+
+          PAYLOAD=$(jq -n \
+            --arg title "v${VERSION}" \
+            --arg url "$RELEASE_URL" \
+            --arg desc "$RELEASE_BODY" \
+            '{
+              embeds: [{
+                title: $title,
+                url: $url,
+                description: $desc,
+                color: 2105893
+              }]
+            }')
+
+          curl -sf -H "Content-Type: application/json" -d "$PAYLOAD" "$WEBHOOK_URL"
