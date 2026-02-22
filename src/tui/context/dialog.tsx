@@ -11,7 +11,8 @@ import {
   useRef,
   type ReactNode,
 } from "react";
-import { RGBA, type Renderable } from "@opentui/core";
+import { type Renderable } from "@opentui/core";
+import { colors } from "../theme";
 
 interface DialogProps {
   size?: "medium" | "large";
@@ -36,7 +37,7 @@ export function Dialog({ size = "medium", onClose, children }: DialogProps) {
       paddingTop={dimensions.height / 4}
       left={0}
       top={0}
-      backgroundColor={RGBA.fromInts(0, 0, 0, 150)}
+      backgroundColor={colors.modalOverlay}
     >
       <box
         onMouseUp={async (e: { stopPropagation: () => void }) => {
@@ -45,7 +46,7 @@ export function Dialog({ size = "medium", onClose, children }: DialogProps) {
         }}
         width={size === "large" ? 80 : 60}
         maxWidth={dimensions.width - 2}
-        backgroundColor="black"
+        backgroundColor={colors.backgroundElement}
         paddingTop={1}
       >
         {children}
