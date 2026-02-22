@@ -229,3 +229,12 @@ jobs:
           git add Formula/apex.rb
           git commit -m "apex ${{ steps.get_version.outputs.version }}"
           git push
+
+  notify:
+    needs: [release, npm, homebrew]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send release notification to Discord
+        uses: SethCohen/github-releases-to-discord@v1
+        with:
+          webhook_url: ${{ secrets.DISCORD_WEBHOOK }}
