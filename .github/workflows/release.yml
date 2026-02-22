@@ -9,37 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  version:
-    runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.get_version.outputs.version }}
-      tag_exists: ${{ steps.check_tag.outputs.exists }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Get version from package.json
-        id: get_version
-        run: |
-          VERSION=$(node -p "require('./package.json').version")
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-          echo "Version: ${VERSION}"
-
-      - name: Check if tag already exists
-        id: check_tag
-        run: |
-          if git rev-parse "v${{ steps.get_version.outputs.version }}" >/dev/null 2>&1; then
-            echo "exists=true" >> $GITHUB_OUTPUT
-            echo "Tag v${{ steps.get_version.outputs.version }} already exists, skipping release"
-          else
-            echo "exists=false" >> $GITHUB_OUTPUT
-            echo "Tag v${{ steps.get_version.outputs.version }} does not exist, proceeding with release"
-          fi
-
   build:
-    needs: version
-    if: needs.version.outputs.tag_exists == 'false'
     strategy:
       matrix:
         include:
@@ -102,11 +72,18 @@ jobs:
           path: ${{ matrix.name }}.zip
 
   release:
-    needs: [version, build]
-    if: needs.version.outputs.tag_exists == 'false'
+    needs: build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get version from package.json
+        id: get_version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -117,14 +94,14 @@ jobs:
         run: |
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
-          git tag -a "v${{ needs.version.outputs.version }}" -m "Release v${{ needs.version.outputs.version }}"
-          git push origin "v${{ needs.version.outputs.version }}"
+          git tag -a "v${{ steps.get_version.outputs.version }}" -m "Release v${{ steps.get_version.outputs.version }}"
+          git push origin "v${{ steps.get_version.outputs.version }}"
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ needs.version.outputs.version }}
-          name: v${{ needs.version.outputs.version }}
+          tag_name: v${{ steps.get_version.outputs.version }}
+          name: v${{ steps.get_version.outputs.version }}
           files: |
             artifacts/pensar-darwin-arm64/pensar-darwin-arm64.tar.gz
             artifacts/pensar-darwin-x64/pensar-darwin-x64.tar.gz
@@ -133,8 +110,7 @@ jobs:
           generate_release_notes: true
 
   npm:
-    needs: [version, release]
-    if: needs.version.outputs.tag_exists == 'false'
+    needs: release
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -164,14 +140,21 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   homebrew:
-    needs: [version, release]
-    if: needs.version.outputs.tag_exists == 'false'
+    needs: release
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Get version from package.json
+        id: get_version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
       - name: Download release assets and calculate SHA256
         id: sha256
         env:
-          VERSION: ${{ needs.version.outputs.version }}
+          VERSION: ${{ steps.get_version.outputs.version }}
         run: |
           BASE_URL="https://github.com/pensarai/apex/releases/download/v${VERSION}"
 
@@ -196,7 +179,7 @@ jobs:
 
       - name: Update formula
         env:
-          VERSION: ${{ needs.version.outputs.version }}
+          VERSION: ${{ steps.get_version.outputs.version }}
           SHA_DARWIN_ARM64: ${{ steps.sha256.outputs.darwin_arm64 }}
           SHA_DARWIN_X64: ${{ steps.sha256.outputs.darwin_x64 }}
           SHA_LINUX_X64: ${{ steps.sha256.outputs.linux_x64 }}
@@ -244,5 +227,5 @@ jobs:
           # Remove old formula if it exists
           git rm -f Formula/pensar.rb 2>/dev/null || true
           git add Formula/apex.rb
-          git commit -m "apex ${{ needs.version.outputs.version }}"
+          git commit -m "apex ${{ steps.get_version.outputs.version }}"
           git push
