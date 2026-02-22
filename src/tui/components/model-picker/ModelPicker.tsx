@@ -13,13 +13,7 @@ const providerNames: Record<string, string> = {
   local: "Local LLM",
 };
 
-const providerOrder = [
-  "anthropic",
-  "openai",
-  "openrouter",
-  "bedrock",
-  "local",
-];
+const providerOrder = ["anthropic", "openai", "openrouter", "bedrock", "local"];
 
 type NavigationItem =
   | { type: "provider"; provider: string }
@@ -352,20 +346,30 @@ export function ModelPicker({
                   {(() => {
                     const isUrlFocused =
                       navigationItems[focusedIndex]?.type === "local-input" &&
-                      (navigationItems[focusedIndex] as { type: "local-input"; field: LocalInputField }).field === "url";
+                      (
+                        navigationItems[focusedIndex] as {
+                          type: "local-input";
+                          field: LocalInputField;
+                        }
+                      ).field === "url";
                     const isUrlEditing = editingLocalField === "url";
                     if (isUrlEditing) {
                       return (
                         <box flexDirection="row">
-                          <text fg={colors.primary}>  URL: </text>
+                          <text fg={colors.primary}> URL: </text>
                           <input
                             focused={true}
                             value={localUrl}
                             backgroundColor="transparent"
                             cursorColor={colors.textMuted}
-                            onInput={(v) => setLocalUrl(typeof v === "string" ? v : "")}
+                            onInput={(v) =>
+                              setLocalUrl(typeof v === "string" ? v : "")
+                            }
                             onPaste={(event) => {
-                              const cleaned = String(event.text).replace(/\r?\n/g, "");
+                              const cleaned = String(event.text).replace(
+                                /\r?\n/g,
+                                "",
+                              );
                               setLocalUrl((prev) => `${prev}${cleaned}`);
                             }}
                             onSubmit={finishEditing}
@@ -374,7 +378,9 @@ export function ModelPicker({
                       );
                     }
                     return (
-                      <text fg={isUrlFocused ? colors.primary : colors.textMuted}>
+                      <text
+                        fg={isUrlFocused ? colors.primary : colors.textMuted}
+                      >
                         {`  URL: ${localUrl || "(press Enter to set)"}`}
                       </text>
                     );
@@ -384,20 +390,30 @@ export function ModelPicker({
                   {(() => {
                     const isModelFocused =
                       navigationItems[focusedIndex]?.type === "local-input" &&
-                      (navigationItems[focusedIndex] as { type: "local-input"; field: LocalInputField }).field === "model";
+                      (
+                        navigationItems[focusedIndex] as {
+                          type: "local-input";
+                          field: LocalInputField;
+                        }
+                      ).field === "model";
                     const isModelEditing = editingLocalField === "model";
                     if (isModelEditing) {
                       return (
                         <box flexDirection="row">
-                          <text fg={colors.primary}>  Model: </text>
+                          <text fg={colors.primary}> Model: </text>
                           <input
                             focused={true}
                             value={localModelName}
                             backgroundColor="transparent"
                             cursorColor={colors.textMuted}
-                            onInput={(v) => setLocalModelName(typeof v === "string" ? v : "")}
+                            onInput={(v) =>
+                              setLocalModelName(typeof v === "string" ? v : "")
+                            }
                             onPaste={(event) => {
-                              const cleaned = String(event.text).replace(/\r?\n/g, "");
+                              const cleaned = String(event.text).replace(
+                                /\r?\n/g,
+                                "",
+                              );
                               setLocalModelName((prev) => `${prev}${cleaned}`);
                             }}
                             onSubmit={finishEditing}
@@ -406,7 +422,9 @@ export function ModelPicker({
                       );
                     }
                     return (
-                      <text fg={isModelFocused ? colors.primary : colors.textMuted}>
+                      <text
+                        fg={isModelFocused ? colors.primary : colors.textMuted}
+                      >
                         {`  Model: ${localModelName || "(press Enter to set)"}`}
                       </text>
                     );
