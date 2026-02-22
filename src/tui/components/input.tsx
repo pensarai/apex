@@ -31,6 +31,8 @@ const Input = forwardRef<InputRenderable, InputComponentProps>(
           backgroundColor="transparent"
           focused={focused}
           cursorColor={colors.textMuted}
+          textColor={colors.text}
+          focusedTextColor={colors.text}
           {...inputProps}
         />
       </box>

@@ -34,6 +34,10 @@ export const colors = {
   borderDark: RGBA.fromInts(30, 30, 30, 255),
   backgroundDark: RGBA.fromInts(40, 40, 40, 255),
   backgroundDarker: RGBA.fromInts(10, 10, 10, 255),
+  backgroundElement: RGBA.fromInts(40, 40, 40, 255), // same as backgroundDark
+
+  // Modal overlay
+  modalOverlay: RGBA.fromInts(0, 0, 0, 150),
 } as const;
 
 export type ColorName = keyof typeof colors;
