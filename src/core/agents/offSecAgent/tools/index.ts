@@ -6,6 +6,14 @@ export {
   type SandboxExecutionResult,
 } from "./sandbox";
 
+// Output writer utilities
+export {
+  writeToolOutput,
+  createOutputReference,
+  OUTPUT_THRESHOLDS,
+} from "./outputWriter";
+export type { OutputFileResult } from "./outputWriter";
+
 // Browser automation tools
 export { createBrowserToolset, BROWSER_TOOL_NAMES } from "./browserTools";
 export type { BrowserToolName } from "./browserTools";

@@ -251,6 +251,7 @@ export async function createSessionDirs(
   await Storage.createDir(["sessions", session.id, "scratchpad"]);
   await Storage.createDir(["sessions", session.id, "logs"]);
   await Storage.createDir(["sessions", session.id, "pocs"]);
+  await Storage.createDir(["sessions", session.id, "outputs"]);
 
   const startTime = new Date().toISOString();
 
@@ -278,6 +279,7 @@ function generateSessionReadme(session: SessionInfo): string {
 - \`scratchpad/\` - Notes and temporary data during testing
 - \`logs/\` - Execution logs and command outputs
 - \`pocs/\` - Proof-of-concept exploit scripts
+- \`outputs/\` - Tool command outputs (verbose results from execute_command, http_request, etc.)
 - \`session.json\` - Session metadata
 
 ## Findings
@@ -354,6 +356,7 @@ export const SessionInfoObject = z.object({
   findingsPath: z.string(),
   scratchpadPath: z.string(),
   pocsPath: z.string(),
+  outputsPath: z.string(),
 });
 
 export type SessionInfo = z.output<typeof SessionInfoObject> & {
@@ -393,6 +396,7 @@ export async function create(input: CreateInputProps) {
   const scratchpadPath = path.join(rootPath, "scratchpad");
   const logsPath = path.join(rootPath, "logs");
   const pocsPath = path.join(rootPath, "pocs");
+  const outputsPath = path.join(rootPath, "outputs");
 
   const rateLimiter = new RateLimiter({
     requestsPerSecond: input.config?.requestsPerSecond,
@@ -442,6 +446,7 @@ export async function create(input: CreateInputProps) {
     pocsPath,
     scratchpadPath,
     findingsPath,
+    outputsPath,
   };
 
   console.info("created session", result);

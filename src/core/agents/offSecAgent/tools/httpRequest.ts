@@ -1,6 +1,11 @@
 import { tool } from "ai";
 import { z } from "zod";
 import type { ToolContext } from "./types";
+import {
+  writeToolOutput,
+  createOutputReference,
+  OUTPUT_THRESHOLDS,
+} from "./outputWriter";
 
 export const httpRequestInputSchema = z.object({
   url: z.string().describe("The URL to request"),
@@ -40,6 +45,7 @@ export type HttpRequestResult = {
   redirected: boolean;
   error?: string;
   method?: string;
+  outputFilePath?: string;
 };
 
 function parseHeaders(raw: string | undefined): Record<string, string> {
@@ -67,6 +73,7 @@ USAGE GUIDANCE:
 - Test for common web vulnerabilities (SQL injection, XSS, IDOR)
 - Monitor response times for blind injection attacks
 - Test different HTTP methods (GET, POST, PUT, DELETE, PATCH, OPTIONS)
+- Large responses are automatically saved to files for detailed analysis
 
 COMMON TESTING PATTERNS:
 - Test with/without authentication
@@ -145,15 +152,52 @@ COMMON TESTING PATTERNS:
           responseBody = "(unable to read response body)";
         }
 
+        const threshold = OUTPUT_THRESHOLDS.HTTP_REQUEST;
+        if (responseBody.length > threshold) {
+          const fullOutput = `HTTP ${method} ${url}\n\n--- RESPONSE STATUS ---\n${response.status} ${response.statusText}\n\n--- RESPONSE HEADERS ---\n${JSON.stringify(responseHeaders, null, 2)}\n\n--- RESPONSE BODY ---\n${responseBody}`;
+
+          try {
+            const { outputFilePath } = await writeToolOutput(
+              ctx.session,
+              "http_request",
+              fullOutput,
+            );
+
+            return {
+              success: true,
+              status: response.status,
+              statusText: response.statusText,
+              headers: responseHeaders,
+              body: createOutputReference(
+                outputFilePath,
+                responseBody.substring(0, 1000),
+                responseBody.length,
+              ),
+              url: response.url,
+              redirected: response.redirected,
+              outputFilePath,
+            };
+          } catch {
+            return {
+              success: true,
+              status: response.status,
+              statusText: response.statusText,
+              headers: responseHeaders,
+              body:
+                responseBody.substring(0, threshold) +
+                `...\n\n(truncated, ${responseBody.length} bytes total) use execute_command with curl to save the response`,
+              url: response.url,
+              redirected: response.redirected,
+            };
+          }
+        }
+
         return {
           success: true,
           status: response.status,
           statusText: response.statusText,
           headers: responseHeaders,
-          body:
-            responseBody.length > 5000
-              ? `${responseBody.substring(0, 5000)}...\n\n(truncated) use execute_command with grep / tail to paginate the response`
-              : responseBody,
+          body: responseBody,
           url: response.url,
           redirected: response.redirected,
         };

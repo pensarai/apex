@@ -1,19 +1,19 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { join } from "path";
-import { writeFileSync, mkdirSync, existsSync } from "fs";
+import { spawn } from "child_process";
 import type { ToolContext } from "./types";
-
-const MAX_INLINE = 50_000;
+import {
+  writeToolOutput,
+  createOutputReference,
+  OUTPUT_THRESHOLDS,
+} from "./outputWriter";
 
 export const executeCommandInputSchema = z.object({
   command: z.string().describe("The shell command to execute"),
   timeout: z
     .number()
     .optional()
-    .describe(
-      "Timeout in seconds. If omitted, the command runs until completion or abort.",
-    ),
+    .describe("Timeout in milliseconds (default: 30000)"),
   toolCallDescription: z
     .string()
     .describe(
@@ -29,53 +29,12 @@ export type ExecuteCommandResult = {
   stdout: string;
   stderr: string;
   command: string;
-  outputFile?: string;
+  outputFilePath?: string;
 };
-
-/**
- * If `raw` exceeds the inline limit, save the full text to a file under
- * `{session.logsPath}/cmd-output/` and return truncated text + file path.
- * Otherwise return the text as-is with no file.
- */
-function maybeSaveFullOutput(
-  raw: string,
-  ctx: ToolContext,
-): { text: string; file?: string } {
-  if (raw.length <= MAX_INLINE) {
-    return { text: raw || "(no output)" };
-  }
-
-  const outputDir = join(ctx.session.logsPath, "cmd-output");
-  if (!existsSync(outputDir)) {
-    mkdirSync(outputDir, { recursive: true });
-  }
-
-  const ts = new Date().toISOString().replace(/[:.]/g, "-");
-  const filename = `output-${ts}.txt`;
-  const filePath = join(outputDir, filename);
-
-  try {
-    writeFileSync(filePath, raw);
-  } catch {
-    return {
-      text: `${raw.substring(0, MAX_INLINE)}...\n\n(truncated — failed to save full output to file)`,
-    };
-  }
-
-  const truncated = raw.substring(0, MAX_INLINE);
-  return {
-    text: `${truncated}...\n\n(truncated — full output saved to ${filePath}). Use read_file or grep to analyze.`,
-    file: filePath,
-  };
-}
 
 export function executeCommand(ctx: ToolContext) {
   return tool({
     description: `Execute a shell command for penetration testing activities.
-
-The shell is persistent — environment variables, working directory (cd), and
-background processes survive across calls. You do NOT need nohup/& tricks to
-keep processes alive between calls; just background them normally with &.
 
 COMMON COMMANDS FOR BLACK BOX TESTING:
 
@@ -99,10 +58,14 @@ SSL/TLS TESTING:
 OUTPUT HANDLING:
 - Use 2>&1 to capture stderr
 - Use timeout command for long-running scans
+- Large outputs are automatically saved to files for detailed analysis
 
 IMPORTANT: Always analyze results and adjust your approach based on findings.`,
     inputSchema: executeCommandInputSchema,
-    execute: async ({ command, timeout }): Promise<ExecuteCommandResult> => {
+    execute: async ({
+      command,
+      timeout = 30000,
+    }): Promise<ExecuteCommandResult> => {
       if (ctx.abortSignal?.aborted) {
         return {
           success: false,
@@ -113,81 +76,117 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
         };
       }
 
-      // Sandbox mode: route execution through the sandbox
-      if (ctx.sandbox) {
-        try {
-          const ssmOpts: { timeout?: number } = {};
-          if (timeout != null) {
-            ssmOpts.timeout = timeout;
-          }
-          const result = await ctx.sandbox.execute(command, ssmOpts);
-          const { text: stdout, file: outputFile } = maybeSaveFullOutput(
-            result.stdout,
-            ctx,
-          );
-          return {
-            success: result.success,
-            error: !result.success ? result.stderr || "Command failed" : "",
-            stdout,
-            stderr: result.stderr || "",
-            command,
-            outputFile,
-          };
-        } catch (error: unknown) {
-          const msg = error instanceof Error ? error.message : String(error);
-          return {
-            success: false,
-            error: msg,
-            stdout: "",
-            stderr: msg,
-            command,
-          };
-        }
-      }
+      const rawResult = await new Promise<{
+        success: boolean;
+        stdout: string;
+        stderr: string;
+        error: string;
+      }>((resolve) => {
+        const shellCmd = process.platform === "win32" ? "cmd" : "bash";
+        const shellArgs =
+          process.platform === "win32" ? ["/c", command] : ["-lc", command];
 
-      // Local mode: use the persistent shell
-      if (ctx.persistentShell) {
-        try {
-          const result = await ctx.persistentShell.execute(
-            command,
-            timeout,
-            ctx.onCommandOutput,
-          );
-          const { text: stdout, file: outputFile } = maybeSaveFullOutput(
-            result.stdout,
-            ctx,
-          );
-          return {
-            success: result.exitCode === 0,
-            error:
-              result.exitCode === 124
-                ? "Command timed out"
-                : result.exitCode !== 0
-                  ? `Exit code: ${result.exitCode}`
-                  : "",
-            stdout,
-            stderr: result.stderr,
-            command,
-            outputFile,
-          };
-        } catch (error: unknown) {
-          const msg = error instanceof Error ? error.message : String(error);
-          return {
+        const child = spawn(shellCmd, shellArgs, {
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+
+        let stdout = "";
+        let stderr = "";
+        let killed = false;
+
+        const timeoutTimer = setTimeout(() => {
+          killed = true;
+          child.kill("SIGTERM");
+        }, timeout);
+
+        child.stdout.on("data", (data) => {
+          stdout += data.toString();
+        });
+
+        child.stderr.on("data", (data) => {
+          stderr += data.toString();
+        });
+
+        child.on("close", (code) => {
+          clearTimeout(timeoutTimer);
+          resolve({
+            success: code === 0 && !killed,
+            stdout: stdout || "(no output)",
+            stderr: stderr || "",
+            error: killed
+              ? "Command timed out"
+              : code !== 0
+                ? `Exit code: ${code}`
+                : "",
+          });
+        });
+
+        child.on("error", (err) => {
+          clearTimeout(timeoutTimer);
+          resolve({
             success: false,
-            error: msg,
-            stdout: "",
-            stderr: msg,
+            error: err.message,
+            stdout,
+            stderr,
+          });
+        });
+
+        if (ctx.abortSignal) {
+          const abortHandler = () => {
+            killed = true;
+            child.kill("SIGTERM");
+          };
+          ctx.abortSignal.addEventListener("abort", abortHandler, {
+            once: true,
+          });
+          child.on("close", () => {
+            ctx.abortSignal!.removeEventListener("abort", abortHandler);
+          });
+        }
+      });
+
+      const threshold = OUTPUT_THRESHOLDS.EXECUTE_COMMAND;
+      if (rawResult.stdout.length > threshold) {
+        const fullOutput = `Command: ${command}\n\n--- STDOUT ---\n${rawResult.stdout}\n\n--- STDERR ---\n${rawResult.stderr}`;
+
+        try {
+          const { outputFilePath } = await writeToolOutput(
+            ctx.session,
+            "execute_command",
+            fullOutput,
+          );
+
+          return {
+            success: rawResult.success,
+            stdout: createOutputReference(
+              outputFilePath,
+              rawResult.stdout.substring(0, 2000),
+              rawResult.stdout.length,
+            ),
+            stderr: rawResult.stderr,
             command,
+            error: rawResult.error,
+            outputFilePath,
+          };
+        } catch {
+          return {
+            success: rawResult.success,
+            stdout:
+              rawResult.stdout.substring(0, threshold) +
+              `...\n\n(truncated, ${rawResult.stdout.length} bytes total) call the command again with grep / tail to paginate`,
+            stderr: rawResult.stderr,
+            command,
+            error: rawResult.error,
           };
         }
       }
 
       return {
-        success: false,
-        error: "No shell or sandbox available",
-        stdout: "",
-        stderr: "",
+        success: rawResult.success,
+        stdout: rawResult.stdout,
+        stderr: rawResult.stderr,
         command,
+        error: rawResult.error,
       };
     },
   });
