@@ -55,8 +55,8 @@ export default function Footer({
         </text>
         <AgentStatus />
         {route.data.type === "pentest" && session.active && (
-          <text fg="white">
-            Session: <span fg="gray">{session.active.name}</span>
+          <text fg={colors.text}>
+            Session: <span fg={colors.textMuted}>{session.active.name}</span>
           </text>
         )}
       </box>
