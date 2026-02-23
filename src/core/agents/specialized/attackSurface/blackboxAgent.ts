@@ -60,10 +60,7 @@ export interface AttackSurfaceResult {
  *   session,
  * });
  *
- * const { targets, results } = await agent.consume({
- *   onTextDelta: (d) => process.stdout.write(d.text),
- *   onToolCall:  (d) => console.log(`→ ${d.toolName}`),
- * });
+ * const { targets, results } = await agent.consume();
  *
  * console.log(`Identified ${targets.length} targets for deep testing`);
  * ```
@@ -93,6 +90,7 @@ export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSur
       session,
       target,
       authConfig,
+      eventBus: opts.eventBus,
       onStepFinish: (e) => {
         onStepFinish?.(e);
         const messages = e.response.messages;

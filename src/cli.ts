@@ -90,6 +90,7 @@ async function runPentest() {
   config();
 
   const { runPentestAgent } = await import("./core/api/blackboxPentest");
+  const { AgentEventBus } = await import("./core/agents/offSecAgent");
   const { sessions } = await import("./core/session");
   type AIModel = import("./core/ai").AIModel;
 
@@ -111,18 +112,15 @@ async function runPentest() {
     ...(cwd ? { config: { cwd } } : {}),
   });
 
+  const eventBus = new AgentEventBus();
+
   const { findings, findingsPath, pocsPath, reportPath } =
     await runPentestAgent({
       target,
       ...(cwd ? { cwd } : {}),
       session,
       model,
-      callbacks: {
-        onTextDelta: (d) => process.stdout.write(d.text),
-        onToolCall: (d) => console.log(`\n→ ${d.toolName}`),
-        onToolResult: (d) => console.log(`✓ ${d.toolName} completed`),
-        onError: (e) => console.error("Error:", e),
-      },
+      eventBus,
     });
 
   console.log();

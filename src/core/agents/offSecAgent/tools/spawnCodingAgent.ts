@@ -148,8 +148,10 @@ async function runSingleCodingAgent(
   const { CodeAgent } = await import("../../specialized/codeAgent/agent");
 
   const subagentId = `coding-agent-${agentIndex}`;
+  const childBus = ctx.eventBus?.child(subagentId);
 
-  ctx.subagentCallbacks?.onSubagentSpawn?.({
+  childBus?.emit({
+    type: "subagent-spawn",
     subagentId,
     input: { codebasePath, objective },
     status: "pending",
@@ -162,30 +164,20 @@ async function runSingleCodingAgent(
     session: ctx.session,
     authConfig: ctx.authConfig,
     abortSignal: ctx.abortSignal,
+    eventBus: childBus,
   });
 
   try {
     // Collect the agent's text output
     let textOutput = "";
-
-    await agent.consume({
-      onTextDelta: (d) => {
-        textOutput += d.text;
-      },
-      subagentCallbacks: ctx.subagentCallbacks
-        ? {
-            onTextDelta: (d) =>
-              ctx.subagentCallbacks!.onTextDelta?.({ ...d, subagentId }),
-            onToolCall: (d) =>
-              ctx.subagentCallbacks!.onToolCall?.({ ...d, subagentId }),
-            onToolResult: (d) =>
-              ctx.subagentCallbacks!.onToolResult?.({ ...d, subagentId }),
-            onError: (e) => ctx.subagentCallbacks!.onError?.(e),
-          }
-        : undefined,
+    childBus?.on("text-delta", (e) => {
+      textOutput += e.data.text;
     });
 
-    ctx.subagentCallbacks?.onSubagentComplete?.({
+    await agent.consume();
+
+    childBus?.emit({
+      type: "subagent-complete",
       subagentId,
       input: { codebasePath, objective },
       status: "completed",
@@ -193,7 +185,8 @@ async function runSingleCodingAgent(
 
     return textOutput;
   } catch (error) {
-    ctx.subagentCallbacks?.onSubagentComplete?.({
+    childBus?.emit({
+      type: "subagent-complete",
       subagentId,
       input: { codebasePath, objective },
       status: "failed",

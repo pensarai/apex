@@ -2,6 +2,7 @@ import {
   BenchmarkComparisonAgent,
   type BenchmarkComparisonAgentInput,
 } from "../agents/specialized/benchmarkComparisonAgent";
+import { AgentEventBus } from "../agents/offSecAgent/eventBus";
 // ---------------------------------------------------------------------------
 // Convenience runner
 // ---------------------------------------------------------------------------
@@ -9,14 +10,10 @@ import {
 export async function runBenchmarkComparisonAgent(
   input: BenchmarkComparisonAgentInput,
 ) {
-  const agent = new BenchmarkComparisonAgent(input);
+  const eventBus = input.eventBus ?? new AgentEventBus();
+  const agent = new BenchmarkComparisonAgent({ ...input, eventBus });
 
-  const { comparison, resultsPath } = await agent.consume({
-    onTextDelta: (d) => process.stdout.write(d.text),
-    onToolCall: (d) => console.log(`→ calling ${d.toolName}`),
-    onToolResult: (d) => console.log(`✓ ${d.toolName} completed`),
-    onError: (e) => console.error("Agent error:", e),
-  });
+  const { comparison, resultsPath } = await agent.consume();
 
   if (comparison) {
     console.log(

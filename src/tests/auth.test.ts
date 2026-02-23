@@ -1,5 +1,6 @@
 import { runAuthenticationAgent } from "../core/api/authentication";
 import { sessions } from "../core/session";
+import { AgentEventBus } from "../core/agents/offSecAgent/eventBus";
 import { describe, it, expect } from "vitest";
 import { config } from "dotenv";
 
@@ -40,15 +41,7 @@ describe("Authentication Agent", () => {
         password,
         loginUrl: `https://${TARGET_URL}/login`,
       },
-      callbacks: {
-        onTextDelta: (d) => process.stdout.write(d.text),
-        onToolCall: (d) =>
-          console.log(
-            `\n→ calling ${d.toolName}\n  ${JSON.stringify(d.input, null, 2)}`,
-          ),
-        onToolResult: (d) => console.log(`✓ ${d.toolName} completed`),
-        onError: (e) => console.error("Agent error:", e),
-      },
+      eventBus: new AgentEventBus(),
     });
 
     console.log(
@@ -69,15 +62,7 @@ describe("Authentication Agent", () => {
       target: TARGET_URL,
       model: "claude-haiku-4-5",
       session,
-      callbacks: {
-        onTextDelta: (d) => process.stdout.write(d.text),
-        onToolCall: (d) =>
-          console.log(
-            `\n→ calling ${d.toolName}\n  ${JSON.stringify(d.input, null, 2)}`,
-          ),
-        onToolResult: (d) => console.log(`✓ ${d.toolName} completed`),
-        onError: (e) => console.error("Agent error:", e),
-      },
+      eventBus: new AgentEventBus(),
     });
 
     console.log(
@@ -128,15 +113,7 @@ describe("Authentication Agent", () => {
           `https://${TARGET_URL}/dashboard`,
         ],
       },
-      callbacks: {
-        onTextDelta: (d) => process.stdout.write(d.text),
-        onToolCall: (d) =>
-          console.log(
-            `\n→ calling ${d.toolName}\n  ${JSON.stringify(d.input, null, 2)}`,
-          ),
-        onToolResult: (d) => console.log(`✓ ${d.toolName} completed`),
-        onError: (e) => console.error("Agent error:", e),
-      },
+      eventBus: new AgentEventBus(),
     });
 
     console.log(

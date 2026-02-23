@@ -49,12 +49,7 @@ async function runBlackboxAttackSurface(
 ): Promise<AttackSurfaceResult> {
   const agent = new BlackboxAttackSurfaceAgent(input);
 
-  const { results, targets, resultsPath, assetsPath } = await agent.consume({
-    onTextDelta: (d) => input.callbacks?.onTextDelta?.(d),
-    onToolCall: (d) => input.callbacks?.onToolCall?.(d),
-    onToolResult: (d) => input.callbacks?.onToolResult?.(d),
-    onError: (e) => input.callbacks?.onError?.(e),
-  });
+  const { results, targets, resultsPath, assetsPath } = await agent.consume();
 
   console.log(`\nIdentified ${targets.length} targets for deep testing`);
   console.log(`Results: ${resultsPath}`);
@@ -76,7 +71,7 @@ async function runWhiteboxAttackSurface(
     session: input.session,
     authConfig: input.authConfig,
     abortSignal: input.abortSignal,
-    callbacks: input.callbacks,
+    eventBus: input.eventBus,
   });
 
   console.log(

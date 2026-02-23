@@ -51,19 +51,7 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
         };
       }
 
-      const subagentId = "attack-surface-agent";
-      const cbs = ctx.subagentCallbacks;
-      const subagentCallbacks = cbs
-        ? {
-            onTextDelta: (d: { type: "text-delta"; [k: string]: unknown }) =>
-              cbs.onTextDelta?.({ ...d, subagentId } as never),
-            onToolCall: (d: { type: "tool-call"; [k: string]: unknown }) =>
-              cbs.onToolCall?.({ ...d, subagentId } as never),
-            onToolResult: (d: { type: "tool-result"; [k: string]: unknown }) =>
-              cbs.onToolResult?.({ ...d, subagentId } as never),
-            onError: (e: unknown) => cbs.onError?.(e),
-          }
-        : undefined;
+      const childBus = ctx.eventBus?.child("attack-surface-agent");
 
       // -----------------------------------------------------------------------
       // Whitebox mode — analyze source code (cwd is the indicator)
@@ -79,16 +67,10 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
             session: ctx.session,
             authConfig: ctx.authConfig,
             abortSignal: ctx.abortSignal,
-            callbacks: ctx.callbacks,
+            eventBus: childBus,
           });
 
-          const result: WhiteboxAttackSurfaceResult = await agent.consume({
-            onToolCall: (d) =>
-              console.log(`  [recon:whitebox] → ${d.toolName}`),
-            onToolResult: (d) =>
-              console.log(`  [recon:whitebox] ✓ ${d.toolName}`),
-            subagentCallbacks,
-          });
+          const result: WhiteboxAttackSurfaceResult = await agent.consume();
 
           // Flatten whitebox results into the same targets shape the swarm expects
           const targets = result.apps.flatMap((app) =>
@@ -137,15 +119,10 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
           session: ctx.session,
           authConfig: ctx.authConfig,
           abortSignal: ctx.abortSignal,
-          callbacks: ctx.callbacks,
+          eventBus: childBus,
         });
 
-        const result: AttackSurfaceResult = await agent.consume({
-          onToolCall: (d) => console.log(`  [recon:blackbox] → ${d.toolName}`),
-          onToolResult: (d) =>
-            console.log(`  [recon:blackbox] ✓ ${d.toolName}`),
-          subagentCallbacks,
-        });
+        const result: AttackSurfaceResult = await agent.consume();
 
         const targetCount = result.targets.length;
         console.log(

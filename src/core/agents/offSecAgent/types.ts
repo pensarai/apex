@@ -4,7 +4,6 @@ import type {
   StreamTextOnFinishCallback,
   StreamTextOnStepFinishCallback,
   StreamTextResult,
-  TextStreamPart,
   ToolChoice,
   ToolSet,
 } from "ai";
@@ -13,6 +12,7 @@ import type { AIAuthConfig } from "../../ai/utils";
 import type { SessionInfo } from "../../session";
 import type { ToolName } from "./tools";
 import type { UnifiedSandbox } from "./tools/sandbox";
+import type { AgentEventBus } from "./eventBus";
 import { z } from "zod";
 
 // Backward-compatible Finding schema (toolCallDescription is optional for parsing old findings)
@@ -126,20 +126,8 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
     streamResult: StreamTextResult<ToolSet, never>,
   ) => TResult | Promise<TResult>;
 
-  /** The subagent ID if this agent is a subagent */
-  subagentId?: string;
-
-  /**
-   * Callbacks for forwarding subagent stream events to the parent consumer.
-   *
-   * Passed through to the tool context so orchestration tools
-   * (run_attack_surface, spawn_pentest_swarm) can forward their
-   * sub-agent events back to the top-level consumer.
-   */
-  subagentCallbacks?: SubagentConsumeCallbacks;
-
-  /** Callbacks for persisting agent discoveries to external storage (e.g., database). */
-  callbacks?: ConsumeCallbacks;
+  /** Event bus for emitting stream events (text-delta, tool-call, etc.). */
+  eventBus?: AgentEventBus;
 
   /**
    * Zod schema for structured output via the `response` tool.
@@ -177,68 +165,9 @@ export interface SpecializedAgentInput {
   /** AbortSignal to cancel the agent mid-run */
   abortSignal?: AbortSignal;
 
-  /** Callbacks for stream events and subagent forwarding */
-  callbacks?: ConsumeCallbacks;
+  /** Event bus for emitting stream events */
+  eventBus?: AgentEventBus;
 
   /** Override the default stop condition */
   stopWhen?: StopCondition<ToolSet>;
 }
-
-/**
- * Typed callbacks for consuming the agent's output stream.
- * Pass to `agent.consume()` for ergonomic stream processing.
- */
-export type ConsumeCallbacks = {
-  onTextDelta?: (
-    delta: Extract<TextStreamPart<ToolSet>, { type: "text-delta" }>,
-  ) => void;
-  onToolCall?: (
-    delta: Extract<TextStreamPart<ToolSet>, { type: "tool-call" }>,
-  ) => void;
-  onToolResult?: (
-    delta: Extract<TextStreamPart<ToolSet>, { type: "tool-result" }>,
-  ) => void;
-  onError?: (error: unknown) => void;
-  subagentCallbacks?: SubagentConsumeCallbacks;
-};
-
-/**
- * Typed callbacks for consuming the subagent's output stream.
- * Pass to `subagent.consume()` for ergonomic stream processing.
- */
-export type SubagentConsumeCallbacks = {
-  onSubagentSpawn?: ({
-    subagentId,
-    input,
-    status,
-  }: {
-    subagentId: string;
-    input: unknown;
-    status: "pending" | "completed" | "failed";
-  }) => void;
-  onSubagentComplete?: ({
-    subagentId,
-    input,
-    status,
-  }: {
-    subagentId: string;
-    input: unknown;
-    status: "completed" | "failed";
-  }) => void;
-  onTextDelta?: (
-    delta: Extract<TextStreamPart<ToolSet>, { type: "text-delta" }> & {
-      subagentId?: string;
-    },
-  ) => void;
-  onToolCall?: (
-    delta: Extract<TextStreamPart<ToolSet>, { type: "tool-call" }> & {
-      subagentId?: string;
-    },
-  ) => void;
-  onToolResult?: (
-    delta: Extract<TextStreamPart<ToolSet>, { type: "tool-result" }> & {
-      subagentId?: string;
-    },
-  ) => void;
-  onError?: (error: unknown) => void;
-};

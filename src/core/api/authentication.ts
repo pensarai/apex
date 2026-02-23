@@ -17,13 +17,7 @@ export async function runAuthenticationAgent(input: AuthenticationAgentInput) {
     strategy,
     authBarrier,
     authDataPath,
-  } = await agent.consume({
-    onTextDelta: (d) => input.callbacks?.onTextDelta?.(d),
-    onToolCall: (d) => input.callbacks?.onToolCall?.(d),
-    onToolResult: (d) => input.callbacks?.onToolResult?.(d),
-    onError: (e) => input.callbacks?.onError?.(e),
-    subagentCallbacks: input.callbacks?.subagentCallbacks,
-  });
+  } = await agent.consume();
 
   console.log(
     `\nAuthentication ${success ? "succeeded" : "failed"}: ${summary}`,

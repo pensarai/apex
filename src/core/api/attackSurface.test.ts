@@ -1,5 +1,6 @@
 import { runAttackSurfaceAgent } from "./attackSurface";
 import { sessions } from "../session";
+import { AgentEventBus } from "../agents/offSecAgent/eventBus";
 import { describe, it, expect } from "vitest";
 
 const TARGET_URL = "staging-console.pensar.dev";
@@ -15,14 +16,7 @@ describe("Attack Surface", () => {
       model: "claude-haiku-4-5",
       session,
 
-      callbacks: {
-        onToolCall: (d) =>
-          console.log(
-            `\n→ calling ${d.toolName} \n ${JSON.stringify(d.input, null, 2)}`,
-          ),
-        onToolResult: (d) => console.log(`✓ ${d.toolName} completed`),
-        onError: (e) => console.error(e),
-      },
+      eventBus: new AgentEventBus(),
     });
     expect(result).toBeDefined();
   });

@@ -6,7 +6,8 @@ import type {
   ToolSet,
 } from "ai";
 import { hasToolCall } from "ai";
-import type { OffensiveSecurityAgentInput, ConsumeCallbacks } from "./types";
+import type { OffensiveSecurityAgentInput } from "./types";
+import type { AgentEventBus } from "./eventBus";
 import { createAllTools } from "./tools";
 import { createResponseTool, RESPONSE_TOOL_NAME } from "./tools/response";
 import { DEFAULT_SYSTEM_PROMPT } from "./prompt";
@@ -27,12 +28,12 @@ import { DEFAULT_SYSTEM_PROMPT } from "./prompt";
  *
  * ## Consumption (pick one — stream is single-read)
  *
- * **1. Typed callbacks via `.consume()` → `TResult`**
+ * **1. Event bus via `.consume()` → `TResult`**
  * ```ts
- * const result = await agent.consume({
- *   onTextDelta: (d) => process.stdout.write(d.text),
- *   onToolCall:  (d) => console.log(`→ ${d.toolName}`),
- * });
+ * const bus = new AgentEventBus();
+ * bus.on("text-delta", (e) => process.stdout.write(e.data.text));
+ * const agent = new OffensiveSecurityAgent({ ..., eventBus: bus });
+ * const result = await agent.consume();
  * ```
  *
  * **2. `for await` directly on the agent**
@@ -53,11 +54,10 @@ export class OffensiveSecurityAgent<TResult = void> {
     streamResult: StreamTextResult<ToolSet, never>,
   ) => TResult | Promise<TResult>;
 
-  /** Identifier for this agent when it is running as a subagent. */
-  private readonly subagentId?: string;
+  private readonly eventBus?: AgentEventBus;
 
   constructor(input: OffensiveSecurityAgentInput<TResult>) {
-    this.subagentId = input.subagentId;
+    this.eventBus = input.eventBus;
 
     // -- Tools ----------------------------------------------------------------
     const builtinTools = createAllTools({
@@ -66,8 +66,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       abortSignal: input.abortSignal,
       model: input.model,
       authConfig: input.authConfig,
-      callbacks: input.callbacks,
-      subagentCallbacks: input.subagentCallbacks,
+      eventBus: input.eventBus,
       sandbox: input.sandbox,
     });
 
@@ -161,45 +160,23 @@ export class OffensiveSecurityAgent<TResult = void> {
   // Convenience helpers
   // ---------------------------------------------------------------------------
 
-  /**
-   * Consume the stream with typed callbacks, then resolve the final result.
-   *
-   * Dispatches each chunk to the appropriate callback, and after the stream
-   * is fully consumed, calls `resolveResult` (if provided at construction)
-   * to produce a typed return value.
-   *
-   * @returns The value produced by `resolveResult`, or `void` if none was provided.
-   */
-  async consume(callbacks: ConsumeCallbacks = {}): Promise<TResult> {
-    const {
-      onTextDelta,
-      onToolCall,
-      onToolResult,
-      onError,
-      subagentCallbacks,
-    } = callbacks;
-
-    const sid = this.subagentId;
-
+  async consume(): Promise<TResult> {
     for await (const chunk of this.streamResult.fullStream) {
       switch (chunk.type) {
         case "text-delta":
-          onTextDelta?.(chunk);
-          subagentCallbacks?.onTextDelta?.({ ...chunk, subagentId: sid });
+          this.eventBus?.emit({ type: "text-delta", data: chunk });
           break;
         case "tool-call":
-          onToolCall?.(chunk);
-          subagentCallbacks?.onToolCall?.({ ...chunk, subagentId: sid });
+          this.eventBus?.emit({ type: "tool-call", data: chunk });
           break;
         case "tool-result":
-          onToolResult?.(chunk);
-          subagentCallbacks?.onToolResult?.({ ...chunk, subagentId: sid });
+          this.eventBus?.emit({ type: "tool-result", data: chunk });
           break;
         case "error":
-          if (onError) {
-            onError((chunk as { type: "error"; error: unknown }).error);
-          }
-          subagentCallbacks?.onError?.(chunk.error);
+          this.eventBus?.emit({
+            type: "error",
+            error: (chunk as { type: "error"; error: unknown }).error,
+          });
           break;
       }
     }
