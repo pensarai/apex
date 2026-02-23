@@ -88,7 +88,13 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
           };
         } catch (error: unknown) {
           const msg = error instanceof Error ? error.message : String(error);
-          return { success: false, error: msg, stdout: "", stderr: msg, command };
+          return {
+            success: false,
+            error: msg,
+            stdout: "",
+            stderr: msg,
+            command,
+          };
         }
       }
 

@@ -250,11 +250,7 @@ function preparePoc(
   currentAttempts: number,
 ): { filename: string; pocContent: string } {
   const extension =
-    poc.pocType === "bash"
-      ? ".sh"
-      : poc.pocType === "python"
-        ? ".py"
-        : ".js";
+    poc.pocType === "bash" ? ".sh" : poc.pocType === "python" ? ".py" : ".js";
   const sanitizedName = sanitizeFilename(poc.pocName);
   const filename = `poc_${sanitizedName}${extension}`;
 
