@@ -101,6 +101,16 @@ async function runAttackSurface(options: AttackSurfaceOptions): Promise<void> {
     });
 
     const eventBus = new AgentEventBus();
+    eventBus.on("text-delta", (e) => process.stdout.write(e.data.text));
+    eventBus.on("tool-call", (e) =>
+      console.log(
+        `\n→ calling ${e.data.toolName} \n ${JSON.stringify(e.data.input, null, 2)}`,
+      ),
+    );
+    eventBus.on("tool-result", (e) =>
+      console.log(`✓ ${e.data.toolName} completed`),
+    );
+    eventBus.on("error", (e) => console.error(e.error));
 
     const result = await runAttackSurfaceAgent({
       target: TARGET_URL,

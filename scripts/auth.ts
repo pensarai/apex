@@ -114,6 +114,14 @@ async function runAuth(options: AuthOptions): Promise<void> {
       console.log();
 
       const eventBus = new AgentEventBus();
+      eventBus.on("text-delta", (e) => process.stdout.write(e.data.text));
+      eventBus.on("tool-call", (e) =>
+        console.log(`→ calling ${e.data.toolName}`),
+      );
+      eventBus.on("tool-result", (e) =>
+        console.log(`✓ ${e.data.toolName} completed`),
+      );
+      eventBus.on("error", (e) => console.error("Agent error:", e.error));
 
       const result = await runAuthenticationAgent({
         session,
