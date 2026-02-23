@@ -69,6 +69,30 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
         };
       }
 
+      // Sandbox mode: route execution through the sandbox
+      if (ctx.sandbox) {
+        try {
+          const ssmTimeout = Math.max(Math.ceil(timeout / 1000), 30);
+          const result = await ctx.sandbox.execute(command, {
+            timeout: ssmTimeout,
+          });
+          return {
+            success: result.success,
+            error: !result.success ? result.stderr || "Command failed" : "",
+            stdout:
+              result.stdout.length > 50000
+                ? `${result.stdout.substring(0, 50000)}...\n\n(truncated) call the command again with grep / tail to paginate`
+                : result.stdout || "(no output)",
+            stderr: result.stderr || "",
+            command,
+          };
+        } catch (error: unknown) {
+          const msg = error instanceof Error ? error.message : String(error);
+          return { success: false, error: msg, stdout: "", stderr: msg, command };
+        }
+      }
+
+      // Local mode: spawn a child process
       return new Promise((resolve) => {
         const shellCmd = process.platform === "win32" ? "cmd" : "bash";
         const shellArgs =
