@@ -116,6 +116,12 @@ async function runPentest() {
   });
 
   const eventBus = new AgentEventBus();
+  eventBus.on("text-delta", (e) => process.stdout.write(e.data.text));
+  eventBus.on("tool-call", (e) => console.log(`\n→ ${e.data.toolName}`));
+  eventBus.on("tool-result", (e) =>
+    console.log(`✓ ${e.data.toolName} completed`),
+  );
+  eventBus.on("error", (e) => console.error("Error:", e.error));
 
   const { findings, findingsPath, pocsPath, reportPath } =
     await runPentestAgent({

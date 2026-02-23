@@ -6,7 +6,7 @@ import { type SessionInfo } from "../../../session";
 import { AUTH_SUBAGENT_SYSTEM_PROMPT } from "./prompts";
 import { detectOSAndEnhancePrompt } from "../utils";
 import { OffensiveSecurityAgent } from "../../offSecAgent/offensiveSecurityAgent";
-import type { AgentEventBus } from "../../offSecAgent/eventBus";
+import { AgentEventBus } from "../../offSecAgent/eventBus";
 import type { AuthBarrier } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -249,7 +249,17 @@ You have credentials — authenticate immediately.
 // ---------------------------------------------------------------------------
 
 export async function runAuthenticationAgent(input: AuthenticationAgentInput) {
-  const agent = new AuthenticationAgent(input);
+  const eventBus = input.eventBus ?? (() => {
+    const bus = new AgentEventBus();
+    bus.on("text-delta", (e) => process.stdout.write(e.data.text));
+    bus.on("tool-call", (e) => console.log(`→ calling ${e.data.toolName}`));
+    bus.on("tool-result", (e) =>
+      console.log(`✓ ${e.data.toolName} completed`),
+    );
+    bus.on("error", (e) => console.error("Agent error:", e.error));
+    return bus;
+  })();
+  const agent = new AuthenticationAgent({ ...input, eventBus });
 
   const { success, summary } = await agent.consume();
 
