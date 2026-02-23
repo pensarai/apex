@@ -4,7 +4,7 @@ import Input from "../input";
 import { config } from "../../../core/config";
 import { useRoute } from "../../context/route";
 import { useConfig } from "../../context/config";
-import { getPensarApiUrl } from "../../../core/api/constants";
+import { getPensarApiUrl, getPensarConsoleUrl } from "../../../core/api/constants";
 
 type AuthStep = "prompt" | "input" | "validating" | "success" | "error";
 
@@ -28,8 +28,10 @@ export default function AuthFlow() {
     route.navigate({ type: "base", path: "home" });
   };
 
+  const connectUrl = `${getPensarConsoleUrl()}/connect`;
+
   const openBrowser = () => {
-    const url = "https://console.pensar.dev/connect";
+    const url = connectUrl;
     try {
       const platform = process.platform;
       if (platform === "darwin") {
@@ -154,7 +156,7 @@ export default function AuthFlow() {
           </box>
           <box marginTop={1}>
             <text fg="gray">
-              Or visit: https://console.pensar.dev/connect
+              Or visit: {connectUrl}
             </text>
           </box>
           <box marginTop={1}>
