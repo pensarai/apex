@@ -27,6 +27,7 @@ import HelpDialog from "./components/commands/help-dialog";
 import ModelsDisplay from "./components/commands/models-display";
 import { KeybindingProvider } from "./context/keybinding";
 import Pentest from "./components/pentest/pentest";
+import ThreatModel from "./components/threat-model/threat-model";
 import OperatorDashboard from "./components/operator-dashboard";
 import ThemePicker from "./components/commands/theme-picker";
 import { ThemeProvider, useTheme, type ColorMode } from "./theme";
@@ -313,6 +314,10 @@ function CommandDisplay({
 
   if (route.data.type === "pentest") {
     return <Pentest sessionId={route.data.sessionId} />;
+  }
+
+  if (route.data.type === "threat-model") {
+    return <ThreatModel sessionId={route.data.sessionId} />;
   }
 
   return null;

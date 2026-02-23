@@ -58,6 +58,10 @@ export type Route =
   | {
       type: "operator";
       sessionId: string;
+    }
+  | {
+      type: "threat-model";
+      sessionId: string;
     };
 
 type RouteContext = {

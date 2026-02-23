@@ -113,6 +113,55 @@ export function parseFlags(args: string[], schema: FlagSchema): ParsedFlags {
 }
 
 // ============================================================================
+// Threat Model Command Types and Parsing
+// ============================================================================
+
+export interface ThreatModelCommandFlags {
+  cwd?: string;
+  model?: string;
+}
+
+const threatModelFlagSchema: FlagSchema = {
+  cwd: { type: "string" },
+  model: { type: "string" },
+};
+
+/**
+ * Parse threat-model command arguments
+ */
+export function parseThreatModelFlags(args: string[]): ThreatModelCommandFlags {
+  const raw = parseFlags(args, threatModelFlagSchema);
+  const flags: ThreatModelCommandFlags = {};
+
+  if (raw.cwd) flags.cwd = String(raw.cwd);
+  if (raw.model) flags.model = String(raw.model);
+
+  return flags;
+}
+
+/**
+ * Create a session for threat model generation
+ */
+export async function createThreatModelSessionFromFlags(
+  flags: ThreatModelCommandFlags,
+): Promise<SessionInfo> {
+  const sessionConfig: SessionConfig = {
+    sessionType: "web-app",
+    mode: "auto",
+    cwd: flags.cwd,
+    toolsetState: createToolsetState("web-pentest"),
+  };
+
+  const session = await sessions.create({
+    targets: [],
+    name: generateRandomName(),
+    config: sessionConfig,
+  });
+
+  return session;
+}
+
+// ============================================================================
 // Web Command Specific Types and Parsing
 // ============================================================================
 

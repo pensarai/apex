@@ -56,6 +56,9 @@ function showHelp() {
   console.log(
     "  pensar targeted-pentest [options]   Run a targeted pentest on a single target",
   );
+  console.log(
+    "  pensar threat-model [options]       Generate a STRIDE threat model from source code",
+  );
   console.log("  pensar help                         Show this help message");
   console.log("  pensar version                      Show version number");
   console.log();
@@ -74,6 +77,12 @@ function showHelp() {
   console.log(
     "  --model <model>         AI model (default: claude-sonnet-4-5)",
   );
+  console.log();
+  console.log("threat-model options:");
+  console.log(
+    "  --cwd <path>       (required) Source code path to analyze",
+  );
+  console.log("  --model <model>    AI model (default: claude-sonnet-4-5)");
   console.log();
   console.log("Global options:");
   console.log("  -h, --help         Show this help message");
@@ -183,6 +192,51 @@ async function runTargetedPentest() {
   console.log(`POCs:      ${pocsPath}`);
 }
 
+async function runThreatModel() {
+  const { config } = await import("dotenv");
+  config();
+
+  const { runStrideThreatModel } = await import("./core/api/threatModel");
+  const { sessions } = await import("./core/session");
+  type AIModel = import("./core/ai").AIModel;
+
+  const cwd = getArgRequired("--cwd");
+  const model = (getArg("--model") ?? "claude-sonnet-4-5") as AIModel;
+
+  console.log("=".repeat(60));
+  console.log("STRIDE THREAT MODEL");
+  console.log("=".repeat(60));
+  console.log(`Codebase: ${cwd}`);
+  console.log(`Model:    ${model}`);
+  console.log();
+
+  const session = await sessions.create({
+    name: "STRIDE Threat Model",
+    targets: [],
+    config: { cwd },
+  });
+
+  const { threatModel, markdownPath, jsonPath } = await runStrideThreatModel({
+    cwd,
+    session,
+    model,
+    callbacks: {
+      onTextDelta: (d) => process.stdout.write(d.text),
+      onToolCall: (d) => console.log(`\n→ ${d.toolName}`),
+      onToolResult: (d) => console.log(`✓ ${d.toolName} completed`),
+      onError: (e) => console.error("Error:", e),
+    },
+  });
+
+  console.log();
+  console.log("=".repeat(60));
+  console.log("RESULTS");
+  console.log("=".repeat(60));
+  console.log(`Threats:   ${threatModel.threats.length}`);
+  console.log(`Markdown:  ${markdownPath}`);
+  console.log(`JSON:      ${jsonPath}`);
+}
+
 // ---------------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------------
@@ -195,6 +249,8 @@ if (command === "version" || command === "--version" || command === "-v") {
   await runPentest();
 } else if (command === "targeted-pentest") {
   await runTargetedPentest();
+} else if (command === "threat-model") {
+  await runThreatModel();
 } else if (args.length === 0) {
   await import("./tui/index.tsx");
 } else {

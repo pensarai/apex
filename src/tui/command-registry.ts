@@ -2,9 +2,11 @@ import type { CommandDefinition } from "./command-router";
 import type { Route } from "./context/route";
 import {
   parseWebFlags,
+  parseThreatModelFlags,
   hasEnoughFlagsToSkipWizard,
   createOperatorSessionFromFlags,
   createSwarmSessionFromFlags,
+  createThreatModelSessionFromFlags,
 } from "./utils/command-flags";
 import { getAllThemeNames } from "./theme";
 import { config } from "../core/config";
@@ -259,6 +261,41 @@ export const commands: CommandConfig[] = [
         type: "base",
         path: "sessions",
       });
+    },
+  },
+  {
+    name: "threat-model",
+    aliases: ["tm", "stride"],
+    description: "Generate STRIDE threat model from source code",
+    category: "Pentesting",
+    options: [
+      {
+        name: "--cwd",
+        valueHint: "<path>",
+        description: "Path to the codebase to analyze (required)",
+      },
+      {
+        name: "--model",
+        valueHint: "<model>",
+        description: "AI model to use",
+      },
+    ],
+    handler: async (args, ctx) => {
+      const flags = parseThreatModelFlags(args);
+
+      if (!flags.cwd) {
+        // No cwd provided — can't proceed without a codebase path
+        // TODO: could navigate to a wizard, for now just log
+        console.error("Error: --cwd <path> is required for threat model generation");
+        return;
+      }
+
+      try {
+        const session = await createThreatModelSessionFromFlags(flags);
+        ctx.navigate({ type: "threat-model", sessionId: session.id });
+      } catch (e) {
+        console.error("Failed to create session:", e);
+      }
     },
   },
   {
