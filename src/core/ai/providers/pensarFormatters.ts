@@ -52,23 +52,37 @@ function convertToAnthropicFormat(
         const assistantContent = part.content as Array<
           LanguageModelV2TextPart | LanguageModelV2ToolCallPart
         >;
-        const content = assistantContent
-          .map(
-            (c: LanguageModelV2TextPart | LanguageModelV2ToolCallPart) => {
-              if (c.type === "text") return c.text;
-              if (c.type === "tool-call") {
-                return JSON.stringify({
-                  type: "tool_use",
-                  id: c.toolCallId,
-                  name: c.toolName,
-                  input: c.input,
-                });
-              }
-              return "";
+        const hasToolCalls = assistantContent.some(
+          (c) => c.type === "tool-call"
+        );
+
+        if (hasToolCalls) {
+          // Must use structured content array so Bedrock sees tool_use blocks
+          const content: Array<Record<string, unknown>> = [];
+          for (const c of assistantContent) {
+            if (c.type === "text" && c.text) {
+              content.push({ type: "text", text: c.text });
+            } else if (c.type === "tool-call") {
+              const parsedInput =
+                typeof c.input === "string"
+                  ? JSON.parse(c.input)
+                  : c.input;
+              content.push({
+                type: "tool_use",
+                id: c.toolCallId,
+                name: c.toolName,
+                input: parsedInput,
+              });
             }
-          )
-          .join("");
-        messages.push({ role: "assistant", content });
+          }
+          messages.push({ role: "assistant", content });
+        } else {
+          // Text-only assistant messages can use a plain string
+          const text = assistantContent
+            .map((c) => (c.type === "text" ? c.text : ""))
+            .join("");
+          messages.push({ role: "assistant", content: text });
+        }
       } else if (part.role === "tool") {
         // Tool results get appended as user messages in Anthropic format
         const toolResults = (
