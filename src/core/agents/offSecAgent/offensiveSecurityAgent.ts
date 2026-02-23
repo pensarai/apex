@@ -62,6 +62,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       authConfig: input.authConfig,
       callbacks: input.callbacks,
       subagentCallbacks: input.subagentCallbacks,
+      sandbox: input.sandbox,
     });
     const tools = input.extraTools
       ? { ...builtinTools, ...input.extraTools }

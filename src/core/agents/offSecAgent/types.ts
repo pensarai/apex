@@ -12,6 +12,7 @@ import type { AIModel } from "../../ai";
 import type { AIAuthConfig } from "../../ai/utils";
 import type { SessionInfo } from "../../session";
 import type { ToolName } from "./tools";
+import type { UnifiedSandbox } from "./tools/sandbox";
 import { z } from "zod";
 
 // Backward-compatible Finding schema (toolCallDescription is optional for parsing old findings)
@@ -106,6 +107,12 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
 
   /** Per-provider API key overrides */
   authConfig?: AIAuthConfig;
+
+  /**
+   * When set, tools like execute_command / http_request / create_poc
+   * route execution through this sandbox instead of running locally.
+   */
+  sandbox?: UnifiedSandbox;
 
   /**
    * Called after the stream is fully consumed to produce a typed result.

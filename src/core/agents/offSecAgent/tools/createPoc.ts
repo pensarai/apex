@@ -83,97 +83,202 @@ Max ${MAX_POC_ATTEMPTS} attempts per approach before pivoting.`,
         };
       }
 
-      try {
-        const pocsPath = ctx.session.pocsPath;
-        if (!existsSync(pocsPath)) {
-          mkdirSync(pocsPath, { recursive: true });
-        }
-
-        const extension =
-          poc.pocType === "bash"
-            ? ".sh"
-            : poc.pocType === "python"
-              ? ".py"
-              : ".js";
-        const sanitizedName = sanitizeFilename(poc.pocName);
-        const filename = `poc_${sanitizedName}${extension}`;
-        const pocPath = join(pocsPath, filename);
-
-        let pocContent = poc.pocContent.trim();
-
-        // Add shebang if missing
-        if (!pocContent.startsWith("#!")) {
-          const shebangs: Record<string, string> = {
-            bash: "#!/bin/bash\nset -e\n\n",
-            python: "#!/usr/bin/env python3\n\n",
-            javascript: "#!/usr/bin/env node\n\n",
-          };
-          pocContent = shebangs[poc.pocType] + pocContent;
-        }
-
-        // Add header comment
-        const commentChar = poc.pocType === "javascript" ? "//" : "#";
-        const header = `${commentChar} POC: ${poc.description}\n${commentChar} Created: ${new Date().toISOString()}\n${commentChar} Attempt: ${currentAttempts}/${MAX_POC_ATTEMPTS}\n\n`;
-        const afterShebang = pocContent.replace(
-          /^#!.*\n/,
-          (match) => match + header,
-        );
-        pocContent = afterShebang;
-
-        writeFileSync(pocPath, pocContent);
-        chmodSync(pocPath, 0o755);
-
-        // Execute the POC
-        const runner =
-          poc.pocType === "bash"
-            ? "bash"
-            : poc.pocType === "python"
-              ? "python3"
-              : "node";
-
-        const { stdout, stderr, exitCode } = await runScript(
-          runner,
-          pocPath,
-          60000,
-          ctx.abortSignal,
-        );
-
-        // Delete on failure
-        if (exitCode !== 0) {
-          try {
-            unlinkSync(pocPath);
-          } catch {
-            // ignore cleanup errors
-          }
-        }
-
-        return {
-          success: exitCode === 0,
-          pocPath: exitCode === 0 ? `pocs/${filename}` : undefined,
-          stdout,
-          stderr,
-          exitCode,
-          attemptsRemaining: MAX_POC_ATTEMPTS - currentAttempts,
-          error:
-            exitCode !== 0
-              ? `POC exited with code ${exitCode}. ${MAX_POC_ATTEMPTS - currentAttempts} attempts remaining.`
-              : undefined,
-        };
-      } catch (error: unknown) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        return {
-          success: false,
-          error: errorMsg,
-          attemptsRemaining: MAX_POC_ATTEMPTS - currentAttempts,
-        };
+      if (ctx.sandbox) {
+        return executeSandboxPoc(ctx, poc, currentAttempts);
       }
+
+      return executeLocalPoc(ctx, poc, currentAttempts);
     },
   });
 }
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Local execution
 // ---------------------------------------------------------------------------
+
+async function executeLocalPoc(
+  ctx: ToolContext,
+  poc: CreatePocInput,
+  currentAttempts: number,
+): Promise<CreatePocResult> {
+  try {
+    const pocsPath = ctx.session.pocsPath;
+    if (!existsSync(pocsPath)) {
+      mkdirSync(pocsPath, { recursive: true });
+    }
+
+    const { filename, pocContent } = preparePoc(poc, currentAttempts);
+    const pocPath = join(pocsPath, filename);
+
+    writeFileSync(pocPath, pocContent);
+    chmodSync(pocPath, 0o755);
+
+    const runner =
+      poc.pocType === "bash"
+        ? "bash"
+        : poc.pocType === "python"
+          ? "python3"
+          : "node";
+
+    const { stdout, stderr, exitCode } = await runScript(
+      runner,
+      pocPath,
+      60000,
+      ctx.abortSignal,
+    );
+
+    if (exitCode !== 0) {
+      try {
+        unlinkSync(pocPath);
+      } catch {
+        // ignore cleanup errors
+      }
+    }
+
+    return {
+      success: exitCode === 0,
+      pocPath: exitCode === 0 ? `pocs/${filename}` : undefined,
+      stdout,
+      stderr,
+      exitCode,
+      attemptsRemaining: MAX_POC_ATTEMPTS - currentAttempts,
+      error:
+        exitCode !== 0
+          ? `POC exited with code ${exitCode}. ${MAX_POC_ATTEMPTS - currentAttempts} attempts remaining.`
+          : undefined,
+    };
+  } catch (error: unknown) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    return {
+      success: false,
+      error: errorMsg,
+      attemptsRemaining: MAX_POC_ATTEMPTS - currentAttempts,
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Sandbox execution
+// ---------------------------------------------------------------------------
+
+async function executeSandboxPoc(
+  ctx: ToolContext,
+  poc: CreatePocInput,
+  currentAttempts: number,
+): Promise<CreatePocResult> {
+  try {
+    const { filename, pocContent } = preparePoc(poc, currentAttempts);
+
+    const localPocsPath = ctx.session.pocsPath;
+    if (!existsSync(localPocsPath)) {
+      mkdirSync(localPocsPath, { recursive: true });
+    }
+    const localPocPath = join(localPocsPath, filename);
+
+    if (existsSync(localPocPath)) {
+      return {
+        success: false,
+        error: `POC already exists at: pocs/${filename}`,
+        attemptsRemaining: MAX_POC_ATTEMPTS - currentAttempts,
+      };
+    }
+
+    // Write locally for the session record
+    writeFileSync(localPocPath, pocContent);
+
+    // Write to sandbox via base64 to avoid shell escaping issues
+    const sandboxPocPath = `/tmp/pocs/${filename}`;
+    await ctx.sandbox!.execute("mkdir -p /tmp/pocs");
+
+    const base64Content = Buffer.from(pocContent).toString("base64");
+    await ctx.sandbox!.execute(
+      `echo "${base64Content}" | base64 -d > ${sandboxPocPath}`,
+    );
+    await ctx.sandbox!.execute(`chmod +x ${sandboxPocPath}`);
+
+    // Execute inside sandbox
+    const runner =
+      poc.pocType === "bash"
+        ? "bash"
+        : poc.pocType === "python"
+          ? "python3"
+          : "node";
+
+    const result = await ctx.sandbox!.execute(
+      `cd /tmp && ${runner} ${sandboxPocPath}`,
+      { timeout: 60 },
+    );
+
+    const executionSuccess = result.success || result.exitCode === 0;
+
+    // Clean up on failure
+    if (!executionSuccess) {
+      await ctx.sandbox!.execute(`rm -f ${sandboxPocPath}`);
+      try {
+        unlinkSync(localPocPath);
+      } catch {
+        // ignore
+      }
+    }
+
+    return {
+      success: executionSuccess,
+      pocPath: executionSuccess ? `pocs/${filename}` : undefined,
+      stdout: result.stdout || "(no output)",
+      stderr: executionSuccess
+        ? result.stderr || "(no errors)"
+        : (result.stderr || "POC execution failed") +
+          "\n\nPOC file has been deleted.",
+      exitCode: result.exitCode,
+      attemptsRemaining: MAX_POC_ATTEMPTS - currentAttempts,
+      error: !executionSuccess
+        ? `POC exited with code ${result.exitCode}. ${MAX_POC_ATTEMPTS - currentAttempts} attempts remaining.`
+        : undefined,
+    };
+  } catch (error: unknown) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    return {
+      success: false,
+      error: errorMsg,
+      attemptsRemaining: MAX_POC_ATTEMPTS - currentAttempts,
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Shared helpers
+// ---------------------------------------------------------------------------
+
+function preparePoc(
+  poc: CreatePocInput,
+  currentAttempts: number,
+): { filename: string; pocContent: string } {
+  const extension =
+    poc.pocType === "bash"
+      ? ".sh"
+      : poc.pocType === "python"
+        ? ".py"
+        : ".js";
+  const sanitizedName = sanitizeFilename(poc.pocName);
+  const filename = `poc_${sanitizedName}${extension}`;
+
+  let pocContent = poc.pocContent.trim();
+
+  if (!pocContent.startsWith("#!")) {
+    const shebangs: Record<string, string> = {
+      bash: "#!/bin/bash\nset -e\n\n",
+      python: "#!/usr/bin/env python3\n\n",
+      javascript: "#!/usr/bin/env node\n\n",
+    };
+    pocContent = shebangs[poc.pocType] + pocContent;
+  }
+
+  const commentChar = poc.pocType === "javascript" ? "//" : "#";
+  const header = `${commentChar} POC: ${poc.description}\n${commentChar} Created: ${new Date().toISOString()}\n${commentChar} Attempt: ${currentAttempts}/${MAX_POC_ATTEMPTS}\n\n`;
+  pocContent = pocContent.replace(/^#!.*\n/, (match) => match + header);
+
+  return { filename, pocContent };
+}
 
 function runScript(
   runner: string,
