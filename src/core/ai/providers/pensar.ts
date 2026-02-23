@@ -9,6 +9,16 @@ import type {
 } from "@ai-sdk/provider";
 import { convertToBedrockFormat, parseBedrockResponse } from "./pensarFormatters";
 
+const DEBUG = process.env.PENSAR_DEBUG === "1" || process.env.PENSAR_DEBUG === "true";
+
+function log(...args: unknown[]) {
+  if (DEBUG) console.log("[pensar]", ...args);
+}
+
+function logError(...args: unknown[]) {
+  console.error("[pensar]", ...args);
+}
+
 interface PensarModelConfig {
   apiKey: string;
   baseUrl: string;
@@ -47,8 +57,15 @@ export function createPensarModel(
       warnings: Array<LanguageModelV2CallWarning>;
     }> {
       const body = convertToBedrockFormat(bedrockModelId, options);
+      const url = `${config.baseUrl}/bedrock/invoke`;
 
-      const response = await fetch(`${config.baseUrl}/bedrock/invoke`, {
+      log(`doGenerate → ${bedrockModelId}`);
+      log(`  URL: ${url}`);
+      log(`  messages: ${(body.messages as unknown[])?.length ?? 0}, tools: ${(body.tools as unknown[])?.length ?? 0}`);
+
+      const startTime = Date.now();
+
+      const response = await fetch(url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -61,6 +78,8 @@ export function createPensarModel(
         }),
       });
 
+      log(`  response: ${response.status} (${Date.now() - startTime}ms)`);
+
       if (!response.ok) {
         const errorBody = await response.text();
         let errorMessage: string;
@@ -70,6 +89,8 @@ export function createPensarModel(
         } catch {
           errorMessage = errorBody;
         }
+
+        logError(`  FAILED ${response.status}: ${errorMessage}`);
 
         if (response.status === 402) {
           throw new Error(
@@ -102,6 +123,12 @@ export function createPensarModel(
         outputTokens: usageFromProxy.outputTokens,
       });
 
+      log(`  finish: ${parsed.finishReason}, content: ${parsed.content.length} parts`);
+      log(`  usage: ${parsed.usage.inputTokens}in / ${parsed.usage.outputTokens}out`);
+      if (result.usage?.totalCost != null) {
+        log(`  cost: $${result.usage.totalCost.toFixed(6)}`);
+      }
+
       return {
         content: parsed.content,
         finishReason: parsed.finishReason,
@@ -126,6 +153,7 @@ export function createPensarModel(
       // MVP: Non-streaming fallback — call doGenerate and wrap in a stream.
       // The TUI sees text appear all at once rather than token-by-token.
       // True streaming via Lambda Function URL is a follow-up.
+      log(`doStream → wrapping doGenerate for ${bedrockModelId}`);
       const generateResult = await model.doGenerate(options);
 
       const parts: LanguageModelV2StreamPart[] = [];

@@ -112,6 +112,14 @@ export function getProviderModel(
       const bedrockModelId = model.startsWith("pensar:")
         ? model.slice(7)
         : model;
+      if (
+        process.env.PENSAR_DEBUG === "1" ||
+        process.env.PENSAR_DEBUG === "true"
+      ) {
+        console.log(
+          `[pensar] getProviderModel: ${model} → bedrock:${bedrockModelId} via ${pensarApiUrl}`,
+        );
+      }
       providerModel = createPensarModel(bedrockModelId, {
         apiKey: pensarApiKey,
         baseUrl: pensarApiUrl,
