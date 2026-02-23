@@ -37,6 +37,8 @@ export function isProviderConfigured(
         config.localModelName ||
         process.env.LOCAL_MODEL_URL
       );
+    case "pensar":
+      return !!config.pensarAPIKey;
     default:
       return false;
   }
@@ -50,7 +52,8 @@ export function hasAnyProviderConfigured(config: Config): boolean {
     !!config.bedrockAPIKey ||
     !!config.localModelUrl ||
     !!config.localModelName ||
-    !!process.env.LOCAL_MODEL_URL
+    !!process.env.LOCAL_MODEL_URL ||
+    !!config.pensarAPIKey
   );
 }
 

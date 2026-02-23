@@ -31,6 +31,7 @@ import { checkForUpdate } from "../core/installation";
 import ShortcutsDialog from "./components/commands/shortcuts-dialog";
 import HelpDialog from "./components/commands/help-dialog";
 import ModelsDisplay from "./components/commands/models-display";
+import AuthFlow from "./components/commands/auth-flow";
 import { KeybindingProvider } from "./context/keybinding";
 import Pentest from "./components/pentest/pentest";
 import OperatorDashboard from "./components/operator-dashboard";
@@ -314,6 +315,9 @@ function CommandDisplay({
           </RouteSwitch.Case>
           <RouteSwitch.Case when="models">
             <ModelsDisplay />
+          </RouteSwitch.Case>
+          <RouteSwitch.Case when="auth">
+            <AuthFlow />
           </RouteSwitch.Case>
         </RouteSwitch>
       </box>

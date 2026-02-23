@@ -4,6 +4,8 @@ import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { createAmazonBedrock } from "@ai-sdk/amazon-bedrock";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { getModelInfo } from "./models";
+import { createPensarModel } from "./providers/pensar";
+import { getPensarApiUrl } from "../api/constants";
 import {
   generateText,
   type LanguageModel,
@@ -17,6 +19,8 @@ export type AIAuthConfig = {
   openAiAPIKey?: string;
   anthropicAPIKey?: string;
   openRouterAPIKey?: string;
+  pensarAPIKey?: string;
+  pensarApiUrl?: string;
   bedrock?: {
     apiKey?: string;
     accessKeyId?: string;
@@ -95,6 +99,25 @@ export function getProviderModel(
         apiKey: anthropicAPIKey,
       }).chat(model);
       break;
+
+    case "pensar": {
+      const pensarApiKey =
+        authConfig?.pensarAPIKey || process.env.PENSAR_API_KEY;
+      if (!pensarApiKey) {
+        throw new Error(
+          "Pensar API key not configured. Run /auth to connect to Pensar Console.",
+        );
+      }
+      const pensarApiUrl = authConfig?.pensarApiUrl || getPensarApiUrl();
+      const bedrockModelId = model.startsWith("pensar:")
+        ? model.slice(7)
+        : model;
+      providerModel = createPensarModel(bedrockModelId, {
+        apiKey: pensarApiKey,
+        baseUrl: pensarApiUrl,
+      });
+      break;
+    }
 
     case "local":
       providerModel = createOpenAI({

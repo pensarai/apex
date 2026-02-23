@@ -3,6 +3,7 @@ export type ProviderType =
   | "openai"
   | "bedrock"
   | "openrouter"
+  | "pensar"
   | "local";
 
 export interface Provider {
@@ -48,5 +49,11 @@ export const AVAILABLE_PROVIDERS: Provider[] = [
     name: "Local LLM",
     description: "OpenAI-compatible local model (vLLM, LM Studio, Ollama)",
     requiresAPIKey: false,
+  },
+  {
+    id: "pensar",
+    name: "Pensar",
+    description: "Managed inference via Pensar Console (usage-based billing)",
+    requiresAPIKey: true,
   },
 ];
