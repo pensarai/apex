@@ -6,7 +6,7 @@ import { type SessionInfo } from "../../../session";
 import { AUTH_SUBAGENT_SYSTEM_PROMPT } from "./prompts";
 import { detectOSAndEnhancePrompt } from "../utils";
 import { OffensiveSecurityAgent } from "../../offSecAgent/offensiveSecurityAgent";
-import type { ConsumeCallbacks } from "../../offSecAgent/types";
+import type { AgentEventBus } from "../../offSecAgent/eventBus";
 import type { AuthBarrier } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -48,8 +48,8 @@ export interface AuthenticationAgentInput {
   /** AbortSignal to cancel mid-run */
   abortSignal?: AbortSignal;
 
-  /** Optional persistence callbacks for external storage integration */
-  callbacks?: ConsumeCallbacks;
+  /** Event bus for emitting stream events */
+  eventBus?: AgentEventBus;
 }
 
 /** The typed result returned by `AuthenticationAgent.consume()`. */
@@ -92,9 +92,7 @@ export interface AuthenticationResult {
  *   credentials: { username: "admin", password: "admin" },
  * });
  *
- * const { success, summary } = await agent.consume({
- *   onTextDelta: (d) => process.stdout.write(d.text),
- * });
+ * const { success, summary } = await agent.consume();
  *
  * console.log(success ? "Authenticated!" : "Failed");
  * ```
@@ -119,6 +117,7 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
       session,
       target,
       authConfig,
+      eventBus: opts.eventBus,
       onStepFinish,
       abortSignal,
       toolChoice: "auto",
@@ -252,12 +251,7 @@ You have credentials — authenticate immediately.
 export async function runAuthenticationAgent(input: AuthenticationAgentInput) {
   const agent = new AuthenticationAgent(input);
 
-  const { success, summary } = await agent.consume({
-    onTextDelta: (d) => process.stdout.write(d.text),
-    onToolCall: (d) => console.log(`→ calling ${d.toolName}`),
-    onToolResult: (d) => console.log(`✓ ${d.toolName} completed`),
-    onError: (e) => console.error("Agent error:", e),
-  });
+  const { success, summary } = await agent.consume();
 
   console.log(
     `\nAuthentication ${success ? "succeeded" : "failed"}: ${summary}`,

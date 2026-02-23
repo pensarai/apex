@@ -247,7 +247,7 @@ When to use delegate_to_auth_subagent vs authenticate_session:
           model: ctx.model,
           authConfig: ctx.authConfig,
           abortSignal: ctx.abortSignal,
-          callbacks: ctx.callbacks,
+          eventBus: ctx.eventBus,
         });
 
         if (result.success) {

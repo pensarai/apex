@@ -11,7 +11,10 @@ import { useKeyboard } from "@opentui/react";
 
 import { sessions, type SessionInfo } from "../../../core/session";
 import { runOffensiveSecurityAgent } from "../../../core/api/offesecAgent";
-import { ALL_TOOL_NAMES } from "../../../core/agents/offSecAgent";
+import {
+  ALL_TOOL_NAMES,
+  AgentEventBus,
+} from "../../../core/agents/offSecAgent";
 import { useAgent } from "../../context/agent";
 import { useRoute } from "../../context/route";
 import { useConfig } from "../../context/config";
@@ -199,6 +202,43 @@ export default function OperatorDashboard({
         { role: "user", content: prompt, createdAt: new Date() },
       ]);
 
+      const eventBus = new AgentEventBus();
+      const unsubs: Array<() => void> = [];
+
+      unsubs.push(
+        eventBus.on("text-delta", (e) => {
+          setThinking(false);
+          appendText(e.data.text);
+        }),
+      );
+
+      unsubs.push(
+        eventBus.on("tool-call", (e) => {
+          setThinking(false);
+          addToolCall(
+            e.data.toolCallId,
+            e.data.toolName,
+            e.data.input as Record<string, unknown> | undefined,
+          );
+        }),
+      );
+
+      unsubs.push(
+        eventBus.on("tool-result", (e) => {
+          setThinking(true);
+          updateToolResult(e.data.toolCallId, e.data.toolName, e.data.output);
+        }),
+      );
+
+      unsubs.push(
+        eventBus.on("error", (e) => {
+          console.error("Agent error:", e.error);
+          setError(
+            e.error instanceof Error ? e.error.message : "Unknown error",
+          );
+        }),
+      );
+
       try {
         await runOffensiveSecurityAgent({
           system: buildOperatorSystemPrompt(session, operatorState),
@@ -217,28 +257,7 @@ export default function OperatorDashboard({
               ? { baseURL: config.data.localModelUrl }
               : undefined,
           },
-          callbacks: {
-            onTextDelta: (d) => {
-              setThinking(false);
-              appendText(d.text);
-            },
-            onToolCall: (d) => {
-              setThinking(false);
-              addToolCall(
-                d.toolCallId,
-                d.toolName,
-                d.input as Record<string, unknown> | undefined,
-              );
-            },
-            onToolResult: (d) => {
-              setThinking(true);
-              updateToolResult(d.toolCallId, d.toolName, d.output);
-            },
-            onError: (e) => {
-              console.error("Agent error:", e);
-              setError(e instanceof Error ? e.message : "Unknown error");
-            },
-          },
+          eventBus,
         });
       } catch (e) {
         if ((e as Error).name !== "AbortError") {
@@ -254,6 +273,9 @@ export default function OperatorDashboard({
           ]);
         }
       } finally {
+        for (const unsub of unsubs) {
+          unsub();
+        }
         setStatus("idle");
         setThinking(false);
         setIsExecuting(false);

@@ -46,10 +46,7 @@ export interface CodeAgentInput<TResult = void> extends SpecializedAgentInput {
  *   session,
  * });
  *
- * await agent.consume({
- *   onTextDelta: (d) => process.stdout.write(d.text),
- *   onToolCall:  (d) => console.log(`→ ${d.toolName}`),
- * });
+ * await agent.consume();
  * ```
  */
 export class CodeAgent<TResult = void> extends OffensiveSecurityAgent<TResult> {
@@ -62,7 +59,7 @@ export class CodeAgent<TResult = void> extends OffensiveSecurityAgent<TResult> {
       authConfig,
       onStepFinish,
       abortSignal,
-      callbacks,
+      eventBus,
       stopWhen,
       responseSchema,
       system,
@@ -88,8 +85,7 @@ export class CodeAgent<TResult = void> extends OffensiveSecurityAgent<TResult> {
       authConfig,
       onStepFinish,
       abortSignal,
-      callbacks,
-      subagentCallbacks: callbacks?.subagentCallbacks,
+      eventBus,
       stopWhen: stopWhen ?? stepCountIs(10000),
       activeTools,
       responseSchema,

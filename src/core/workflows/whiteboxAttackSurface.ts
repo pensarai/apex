@@ -9,7 +9,7 @@ import {
 import type { AIModel } from "../ai";
 import type { AIAuthConfig } from "../ai/utils";
 import type { SessionInfo } from "../session";
-import type { ConsumeCallbacks } from "../agents/offSecAgent/types";
+import type { AgentEventBus } from "../agents/offSecAgent/eventBus";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -124,7 +124,7 @@ export interface WhiteboxAttackSurfaceWorkflowInput {
   session: SessionInfo;
   authConfig?: AIAuthConfig;
   abortSignal?: AbortSignal;
-  callbacks?: ConsumeCallbacks;
+  eventBus?: AgentEventBus;
 }
 
 // ---------------------------------------------------------------------------
@@ -142,7 +142,7 @@ export interface WhiteboxAttackSurfaceWorkflowInput {
 export async function runWhiteboxAttackSurfaceWorkflow(
   input: WhiteboxAttackSurfaceWorkflowInput,
 ): Promise<WhiteboxAttackSurfaceResult> {
-  const { codebasePath, model, session, authConfig, abortSignal, callbacks } =
+  const { codebasePath, model, session, authConfig, abortSignal, eventBus } =
     input;
 
   // =========================================================================
@@ -157,17 +157,11 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     session,
     authConfig,
     abortSignal,
-    callbacks,
+    eventBus,
     responseSchema: AppsDiscoveryResultSchema,
   });
 
-  const appsResult = await appsAgent.consume({
-    onTextDelta: (d) => callbacks?.onTextDelta?.(d),
-    onToolCall: (d) => callbacks?.onToolCall?.(d),
-    onToolResult: (d) => callbacks?.onToolResult?.(d),
-    onError: (e) => callbacks?.onError?.(e),
-    subagentCallbacks: callbacks?.subagentCallbacks,
-  });
+  const appsResult = await appsAgent.consume();
 
   if (!appsResult || appsResult.apps.length === 0) {
     return {
@@ -202,8 +196,10 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     DEFAULT_CONCURRENCY,
     async (task) => {
       const subagentId = `${task.type}-${task.appInfo.name}`;
+      const childBus = eventBus?.child(subagentId);
 
-      callbacks?.subagentCallbacks?.onSubagentSpawn?.({
+      eventBus?.emit({
+        type: "subagent-spawn",
         subagentId,
         input: { app: task.appInfo.name, type: task.type },
         status: "pending",
@@ -222,36 +218,15 @@ export async function runWhiteboxAttackSurfaceWorkflow(
         session,
         authConfig,
         abortSignal,
-        callbacks,
+        eventBus: childBus,
         responseSchema: EndpointsDiscoveryResultSchema,
       });
 
       try {
-        const result = await agent.consume({
-          onError: (e) => callbacks?.onError?.(e),
-          subagentCallbacks: callbacks?.subagentCallbacks
-            ? {
-                onTextDelta: (d) =>
-                  callbacks.subagentCallbacks!.onTextDelta?.({
-                    ...d,
-                    subagentId,
-                  }),
-                onToolCall: (d) =>
-                  callbacks.subagentCallbacks!.onToolCall?.({
-                    ...d,
-                    subagentId,
-                  }),
-                onToolResult: (d) =>
-                  callbacks.subagentCallbacks!.onToolResult?.({
-                    ...d,
-                    subagentId,
-                  }),
-                onError: (e) => callbacks.subagentCallbacks!.onError?.(e),
-              }
-            : undefined,
-        });
+        const result = await agent.consume();
 
-        callbacks?.subagentCallbacks?.onSubagentComplete?.({
+        eventBus?.emit({
+          type: "subagent-complete",
           subagentId,
           input: { app: task.appInfo.name, type: task.type },
           status: "completed",
@@ -263,7 +238,8 @@ export async function runWhiteboxAttackSurfaceWorkflow(
           endpoints: result?.endpoints ?? [],
         };
       } catch (error) {
-        callbacks?.subagentCallbacks?.onSubagentComplete?.({
+        eventBus?.emit({
+          type: "subagent-complete",
           subagentId,
           input: { app: task.appInfo.name, type: task.type },
           status: "failed",

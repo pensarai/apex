@@ -7,6 +7,7 @@ import type { AIAuthConfig } from "../../ai/utils";
 import { type SessionInfo } from "../../session";
 import type { ComparisonResult } from "./benchmark/types";
 import { OffensiveSecurityAgent } from "../offSecAgent/offensiveSecurityAgent";
+import type { AgentEventBus } from "../offSecAgent/eventBus";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -30,6 +31,9 @@ export interface BenchmarkComparisonAgentInput {
 
   /** AbortSignal to cancel mid-run */
   abortSignal?: AbortSignal;
+
+  /** Event bus for emitting stream events */
+  eventBus?: AgentEventBus;
 }
 
 /** The typed result returned by `BenchmarkComparisonAgent.consume()`. */
@@ -68,6 +72,7 @@ export class BenchmarkComparisonAgent extends OffensiveSecurityAgent<BenchmarkCo
       model,
       session,
       authConfig,
+      eventBus: opts.eventBus,
       onStepFinish,
       abortSignal,
 

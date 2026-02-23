@@ -1,8 +1,7 @@
 import type { AIModel } from "../../../ai";
 import type { AIAuthConfig } from "../../../ai/utils";
 import type { SessionInfo } from "../../../session";
-
-import type { ConsumeCallbacks, SubagentConsumeCallbacks } from "../types";
+import type { AgentEventBus } from "../eventBus";
 import type { UnifiedSandbox } from "./sandbox";
 
 /**
@@ -28,9 +27,8 @@ export type ToolContext = {
   /** Per-provider API key overrides — needed by tools that spawn sub-agents */
   authConfig?: AIAuthConfig;
 
-  /** Callbacks for forwarding subagent stream events to the parent consumer */
-  subagentCallbacks?: SubagentConsumeCallbacks;
-  callbacks?: ConsumeCallbacks;
+  /** Event bus for emitting agent events */
+  eventBus?: AgentEventBus;
 
   /**
    * When set, tools like execute_command / http_request / create_poc

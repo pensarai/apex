@@ -40,10 +40,7 @@ export interface WhiteboxAttackSurfaceAgentInput extends SpecializedAgentInput {
  *   session,
  * });
  *
- * const result = await agent.consume({
- *   onTextDelta: (d) => process.stdout.write(d.text),
- *   onToolCall:  (d) => console.log(`→ ${d.toolName}`),
- * });
+ * const result = await agent.consume();
  *
  * console.log(`Found ${result.summary.totalApiEndpoints} API endpoints`);
  * ```
@@ -57,7 +54,7 @@ export class WhiteboxAttackSurfaceAgent extends OffensiveSecurityAgent<WhiteboxA
       authConfig,
       onStepFinish,
       abortSignal,
-      callbacks,
+      eventBus,
     } = opts;
 
     // Closure variable that the response tool writes to
@@ -84,8 +81,7 @@ This ends the agent run — make sure all data is included.`,
       authConfig,
       onStepFinish,
       abortSignal,
-      callbacks,
-      subagentCallbacks: callbacks?.subagentCallbacks,
+      eventBus,
 
       activeTools: [
         // Filesystem tools — for Phase 1 repo identification

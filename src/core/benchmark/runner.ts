@@ -13,6 +13,7 @@ import {
   type BenchmarkComparisonResult,
 } from "../agents/specialized/benchmarkComparisonAgent";
 import { runBenchmarkInDaytona } from "../agents/specialized/benchmark/remote/daytona-wrapper";
+import { AgentEventBus } from "../agents/offSecAgent/eventBus";
 import * as sessions from "../session";
 import { runPentestWorkflow } from "../workflows/pentest";
 import type {
@@ -299,6 +300,33 @@ export async function runSingleBenchmark(
       config.timeoutMinutes * 60 * 1000,
     );
 
+    const benchmarkBus = new AgentEventBus();
+    benchmarkBus.on("text-delta", (e) => process.stdout.write(e.data.text));
+    benchmarkBus.on("tool-call", (e) => {
+      const prefix = e.subagentId
+        ? `[${branch}] [${e.subagentId}]`
+        : `[${branch}]`;
+      console.log(`${prefix} -> ${e.data.toolName}`);
+    });
+    benchmarkBus.on("tool-result", (e) => {
+      const prefix = e.subagentId
+        ? `[${branch}] [${e.subagentId}]`
+        : `[${branch}]`;
+      console.log(`${prefix} <- ${e.data.toolName} done`);
+    });
+    benchmarkBus.on("error", (e) => {
+      const prefix = e.subagentId
+        ? `[${branch}] [${e.subagentId}]`
+        : `[${branch}]`;
+      console.error(`${prefix} Error:`, e.error);
+    });
+    benchmarkBus.on("subagent-spawn", (e) => {
+      console.log(`[${branch}] [${e.subagentId}] spawned`);
+    });
+    benchmarkBus.on("subagent-complete", (e) => {
+      console.log(`[${branch}] [${e.subagentId}] ${e.status}`);
+    });
+
     let pentestResult;
     try {
       pentestResult = await runPentestWorkflow({
@@ -306,25 +334,7 @@ export async function runSingleBenchmark(
         model: config.model,
         session,
         abortSignal: controller.signal,
-        callbacks: {
-          onTextDelta: (d) => process.stdout.write(d.text),
-          onToolCall: (d) => console.log(`[${branch}] -> ${d.toolName}`),
-          onToolResult: (d) => console.log(`[${branch}] <- ${d.toolName} done`),
-          onError: (e) => console.error(`[${branch}] Error:`, e),
-          subagentCallbacks: {
-            onSubagentSpawn: ({ subagentId }) =>
-              console.log(`[${branch}] [${subagentId}] spawned`),
-            onSubagentComplete: ({ subagentId, status }) =>
-              console.log(`[${branch}] [${subagentId}] ${status}`),
-            onToolCall: (d) =>
-              console.log(`[${branch}] [${d.subagentId}] -> ${d.toolName}`),
-            onToolResult: (d) =>
-              console.log(
-                `[${branch}] [${d.subagentId}] <- ${d.toolName} done`,
-              ),
-            onError: (e) => console.error(`[${branch}] [subagent] Error:`, e),
-          },
-        },
+        eventBus: benchmarkBus,
       });
     } finally {
       clearTimeout(timeout);
@@ -355,14 +365,17 @@ export async function runSingleBenchmark(
 
     try {
       console.log(`[${branch}] Running benchmark comparison...`);
+      const compBus = new AgentEventBus();
+      compBus.on("error", (e) =>
+        console.error(`[${branch}] Comparison error:`, e.error),
+      );
       const compAgent = new BenchmarkComparisonAgent({
         repoPath: benchmarkPath,
         model: comparisonModel,
         session,
+        eventBus: compBus,
       });
-      const compResult = await compAgent.consume({
-        onError: (e) => console.error(`[${branch}] Comparison error:`, e),
-      });
+      const compResult = await compAgent.consume();
       comparisonResult = compResult.comparison;
     } catch (e) {
       console.error(

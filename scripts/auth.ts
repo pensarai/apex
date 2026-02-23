@@ -26,6 +26,7 @@ import type { AuthCredentials } from "../src/core/agents/specialized/authenticat
 import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { runAuthenticationAgent } from "../src/core/api";
+import { AgentEventBus } from "../src/core/agents/offSecAgent";
 import { config } from "dotenv";
 
 config();
@@ -112,6 +113,8 @@ async function runAuth(options: AuthOptions): Promise<void> {
       console.log("=".repeat(80));
       console.log();
 
+      const eventBus = new AgentEventBus();
+
       const result = await runAuthenticationAgent({
         session,
         model: model as AIModel,
@@ -120,12 +123,7 @@ async function runAuth(options: AuthOptions): Promise<void> {
           username,
           password,
         },
-        callbacks: {
-          onTextDelta: (d) => process.stdout.write(d.text),
-          onToolCall: (d) => console.log(`→ calling ${d.toolName}`),
-          onToolResult: (d) => console.log(`✓ ${d.toolName} completed`),
-          onError: (e) => console.error("Agent error:", e),
-        },
+        eventBus,
       });
 
       console.log();
