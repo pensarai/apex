@@ -5,12 +5,13 @@ import {
 } from "../agents/specialized/attackSurface/blackboxAgent";
 import type { WhiteboxAttackSurfaceResult } from "../agents/specialized/whiteboxAttackSurface";
 import { runWhiteboxAttackSurfaceWorkflow } from "../workflows/whiteboxAttackSurface";
+import { AgentRun } from "./agentRun";
 
 // ---------------------------------------------------------------------------
 // Unified input — accepts both blackbox and whitebox configurations
 // ---------------------------------------------------------------------------
 
-export type AttackSurfaceInput = AttackSurfaceAgentInput;
+export type AttackSurfaceInput = Omit<AttackSurfaceAgentInput, "eventBus">;
 
 // ---------------------------------------------------------------------------
 // Convenience runners
@@ -26,18 +27,21 @@ export type AttackSurfaceInput = AttackSurfaceAgentInput;
  *
  * `target` is always required (the live URL to test against).
  */
-export async function runAttackSurfaceAgent(
-  input: AttackSurfaceAgentInput,
-): Promise<AttackSurfaceResult | WhiteboxAttackSurfaceResult> {
+export function runAttackSurfaceAgent(
+  input: Omit<AttackSurfaceAgentInput, "eventBus">,
+): AgentRun<AttackSurfaceResult | WhiteboxAttackSurfaceResult> {
   const isWhitebox = "cwd" in input && !!input.cwd;
 
   if (isWhitebox) {
-    return runWhiteboxAttackSurface(
-      input as AttackSurfaceAgentInput & { cwd: string },
-    );
+    const whiteboxInput = input as Omit<AttackSurfaceAgentInput, "eventBus"> & { cwd: string };
+    return new AgentRun(async (eventBus) => {
+      return runWhiteboxAttackSurface(whiteboxInput, eventBus);
+    });
   }
 
-  return runBlackboxAttackSurface(input);
+  return new AgentRun(async (eventBus) => {
+    return runBlackboxAttackSurface(input, eventBus);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -45,17 +49,14 @@ export async function runAttackSurfaceAgent(
 // ---------------------------------------------------------------------------
 
 async function runBlackboxAttackSurface(
-  input: AttackSurfaceAgentInput,
+  input: Omit<AttackSurfaceAgentInput, "eventBus">,
+  eventBus: import("../agents/offSecAgent/eventBus").AgentEventBus,
 ): Promise<AttackSurfaceResult> {
-  const agent = new BlackboxAttackSurfaceAgent(input);
-
-  const { results, targets, resultsPath, assetsPath } = await agent.consume();
-
-  console.log(`\nIdentified ${targets.length} targets for deep testing`);
-  console.log(`Results: ${resultsPath}`);
-  console.log(`Assets: ${assetsPath}`);
-
-  return { results, targets, resultsPath, assetsPath };
+  const agent = new BlackboxAttackSurfaceAgent({
+    ...input,
+    eventBus,
+  } as AttackSurfaceAgentInput);
+  return agent.consume();
 }
 
 // ---------------------------------------------------------------------------
@@ -63,22 +64,15 @@ async function runBlackboxAttackSurface(
 // ---------------------------------------------------------------------------
 
 async function runWhiteboxAttackSurface(
-  input: AttackSurfaceAgentInput & { cwd: string },
+  input: Omit<AttackSurfaceAgentInput, "eventBus"> & { cwd: string },
+  eventBus: import("../agents/offSecAgent/eventBus").AgentEventBus,
 ): Promise<WhiteboxAttackSurfaceResult> {
-  const result = await runWhiteboxAttackSurfaceWorkflow({
+  return runWhiteboxAttackSurfaceWorkflow({
     codebasePath: input.cwd,
     model: input.model,
     session: input.session,
     authConfig: input.authConfig,
     abortSignal: input.abortSignal,
-    eventBus: input.eventBus,
+    eventBus,
   });
-
-  console.log(
-    `\nWhitebox analysis complete: ${result.summary.totalApps} apps, ` +
-      `${result.summary.totalApiEndpoints} API endpoints, ` +
-      `${result.summary.totalPages} pages`,
-  );
-
-  return result;
 }

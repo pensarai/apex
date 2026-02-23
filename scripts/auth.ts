@@ -26,7 +26,6 @@ import type { AuthCredentials } from "../src/core/agents/specialized/authenticat
 import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { runAuthenticationAgent } from "../src/core/api";
-import { AgentEventBus } from "../src/core/agents/offSecAgent";
 import { config } from "dotenv";
 
 config();
@@ -113,17 +112,7 @@ async function runAuth(options: AuthOptions): Promise<void> {
       console.log("=".repeat(80));
       console.log();
 
-      const eventBus = new AgentEventBus();
-      eventBus.on("text-delta", (e) => process.stdout.write(e.data.text));
-      eventBus.on("tool-call", (e) =>
-        console.log(`→ calling ${e.data.toolName}`),
-      );
-      eventBus.on("tool-result", (e) =>
-        console.log(`✓ ${e.data.toolName} completed`),
-      );
-      eventBus.on("error", (e) => console.error("Agent error:", e.error));
-
-      const result = await runAuthenticationAgent({
+      const run = runAuthenticationAgent({
         session,
         model: model as AIModel,
         target,
@@ -131,8 +120,26 @@ async function runAuth(options: AuthOptions): Promise<void> {
           username,
           password,
         },
-        eventBus,
       });
+
+      for await (const event of run) {
+        switch (event.type) {
+          case "text-delta":
+            process.stdout.write(event.data.text);
+            break;
+          case "tool-call":
+            console.log(`→ calling ${event.data.toolName}`);
+            break;
+          case "tool-result":
+            console.log(`✓ ${event.data.toolName} completed`);
+            break;
+          case "error":
+            console.error("Agent error:", event.error);
+            break;
+        }
+      }
+
+      const result = await run.result;
 
       console.log();
       console.log("=".repeat(80));
@@ -190,7 +197,7 @@ async function runAuth(options: AuthOptions): Promise<void> {
       session,
       credentials: hasCredentials ? credentials : undefined,
       model: model as AIModel,
-    });
+    }).result;
 
     console.log();
     console.log("=".repeat(80));

@@ -1,6 +1,5 @@
 import { runAttackSurfaceAgent } from "../core/api/attackSurface";
 import { sessions } from "../core/session";
-import { AgentEventBus } from "../core/agents/offSecAgent/eventBus";
 import { describe, it, expect } from "vitest";
 import { config } from "dotenv";
 
@@ -26,8 +25,7 @@ describe("Attack Surface", () => {
       target: TARGET_URL,
       model: "claude-haiku-4-5",
       session,
-      eventBus: new AgentEventBus(),
-    });
+    }).result;
     expect(result).toBeDefined();
   });
 });

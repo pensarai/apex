@@ -90,7 +90,6 @@ async function runPentest() {
   config();
 
   const { runPentestAgent } = await import("./core/api/blackboxPentest");
-  const { AgentEventBus } = await import("./core/agents/offSecAgent");
   const { sessions } = await import("./core/session");
   type AIModel = import("./core/ai").AIModel;
 
@@ -112,22 +111,31 @@ async function runPentest() {
     ...(cwd ? { config: { cwd } } : {}),
   });
 
-  const eventBus = new AgentEventBus();
-  eventBus.on("text-delta", (e) => process.stdout.write(e.data.text));
-  eventBus.on("tool-call", (e) => console.log(`\n→ ${e.data.toolName}`));
-  eventBus.on("tool-result", (e) =>
-    console.log(`✓ ${e.data.toolName} completed`),
-  );
-  eventBus.on("error", (e) => console.error("Error:", e.error));
+  const run = runPentestAgent({
+    target,
+    ...(cwd ? { cwd } : {}),
+    session,
+    model,
+  });
 
-  const { findings, findingsPath, pocsPath, reportPath } =
-    await runPentestAgent({
-      target,
-      ...(cwd ? { cwd } : {}),
-      session,
-      model,
-      eventBus,
-    });
+  for await (const event of run) {
+    switch (event.type) {
+      case "text-delta":
+        process.stdout.write(event.data.text);
+        break;
+      case "tool-call":
+        console.log(`\n→ ${event.data.toolName}`);
+        break;
+      case "tool-result":
+        console.log(`✓ ${event.data.toolName} completed`);
+        break;
+      case "error":
+        console.error("Error:", event.error);
+        break;
+    }
+  }
+
+  const { findings, findingsPath, pocsPath, reportPath } = await run.result;
 
   console.log();
   console.log("=".repeat(60));
@@ -171,12 +179,31 @@ async function runTargetedPentest() {
     targets: [target],
   });
 
-  const { findings, findingsPath, pocsPath } = await runTargetedPentestAgent({
+  const run = runTargetedPentestAgent({
     target,
     objectives,
     session,
     model,
   });
+
+  for await (const event of run) {
+    switch (event.type) {
+      case "text-delta":
+        process.stdout.write(event.data.text);
+        break;
+      case "tool-call":
+        console.log(`\n→ ${event.data.toolName}`);
+        break;
+      case "tool-result":
+        console.log(`✓ ${event.data.toolName} completed`);
+        break;
+      case "error":
+        console.error("Error:", event.error);
+        break;
+    }
+  }
+
+  const { findings, findingsPath, pocsPath } = await run.result;
 
   console.log();
   console.log("=".repeat(60));

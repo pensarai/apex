@@ -5,7 +5,6 @@ import { readFileSync, existsSync } from "fs";
 import { join } from "path";
 import { sessions } from "../src/core/session";
 import { runAttackSurfaceAgent } from "../src/core/api";
-import { AgentEventBus } from "../src/core/agents/offSecAgent";
 import { config } from "dotenv";
 
 config();
@@ -100,24 +99,32 @@ async function runAttackSurface(options: AttackSurfaceOptions): Promise<void> {
       },
     });
 
-    const eventBus = new AgentEventBus();
-    eventBus.on("text-delta", (e) => process.stdout.write(e.data.text));
-    eventBus.on("tool-call", (e) =>
-      console.log(
-        `\n→ calling ${e.data.toolName} \n ${JSON.stringify(e.data.input, null, 2)}`,
-      ),
-    );
-    eventBus.on("tool-result", (e) =>
-      console.log(`✓ ${e.data.toolName} completed`),
-    );
-    eventBus.on("error", (e) => console.error(e.error));
-
-    const result = await runAttackSurfaceAgent({
+    const run = runAttackSurfaceAgent({
       target: TARGET_URL,
       model: "claude-haiku-4-5",
       session,
-      eventBus,
     });
+
+    for await (const event of run) {
+      switch (event.type) {
+        case "text-delta":
+          process.stdout.write(event.data.text);
+          break;
+        case "tool-call":
+          console.log(
+            `\n→ calling ${event.data.toolName} \n ${JSON.stringify(event.data.input, null, 2)}`,
+          );
+          break;
+        case "tool-result":
+          console.log(`✓ ${event.data.toolName} completed`);
+          break;
+        case "error":
+          console.error(event.error);
+          break;
+      }
+    }
+
+    const result = await run.result;
 
     console.log(`Session ID: ${session.id}`);
     console.log(`Session Path: ${session.rootPath}`);
