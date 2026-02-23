@@ -3,6 +3,7 @@ import type { AIAuthConfig } from "../../../ai/utils";
 import type { SessionInfo } from "../../../session";
 
 import type { ConsumeCallbacks, SubagentConsumeCallbacks } from "../types";
+import type { UnifiedSandbox } from "./sandbox";
 
 /**
  * Shared context passed to every tool factory.
@@ -30,4 +31,10 @@ export type ToolContext = {
   /** Callbacks for forwarding subagent stream events to the parent consumer */
   subagentCallbacks?: SubagentConsumeCallbacks;
   callbacks?: ConsumeCallbacks;
+
+  /**
+   * When set, tools like execute_command / http_request / create_poc
+   * route execution through this sandbox instead of running locally.
+   */
+  sandbox?: UnifiedSandbox;
 };
