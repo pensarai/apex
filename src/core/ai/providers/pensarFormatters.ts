@@ -106,6 +106,15 @@ function convertToAnthropicFormat(
     }
   }
 
+  // Handle responseFormat — Anthropic/Bedrock has no native JSON mode,
+  // so we inject instructions into the system prompt.
+  if (options.responseFormat?.type === "json") {
+    const jsonInstruction = options.responseFormat.schema
+      ? `\n\nYou MUST respond with ONLY valid JSON matching this schema (no markdown, no explanation, no code fences):\n${JSON.stringify(options.responseFormat.schema)}`
+      : `\n\nYou MUST respond with ONLY valid JSON (no markdown, no explanation, no code fences).`;
+    systemPrompt = (systemPrompt || "") + jsonInstruction;
+  }
+
   // Build request body
   const body: Record<string, unknown> = {
     anthropic_version: "bedrock-2023-05-31",
