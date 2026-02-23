@@ -77,6 +77,19 @@ COMMON TESTING PATTERNS:
       followRedirects,
       timeout,
     }): Promise<HttpRequestResult> => {
+      // Sandbox mode: build a curl command and run it inside the sandbox
+      if (ctx.sandbox) {
+        return executeSandboxHttpRequest(ctx, {
+          url,
+          method,
+          headers,
+          body,
+          followRedirects,
+          timeout,
+        });
+      }
+
+      // Local mode: use native fetch
       let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
       try {
@@ -161,4 +174,104 @@ COMMON TESTING PATTERNS:
       }
     },
   });
+}
+
+// ---------------------------------------------------------------------------
+// Sandbox HTTP helper (curl-based)
+// ---------------------------------------------------------------------------
+
+async function executeSandboxHttpRequest(
+  ctx: ToolContext,
+  opts: {
+    url: string;
+    method: string;
+    headers?: Record<string, string>;
+    body?: string;
+    followRedirects: boolean;
+    timeout: number;
+  },
+): Promise<HttpRequestResult> {
+  const { url, method, headers, body, followRedirects, timeout } = opts;
+
+  try {
+    let curlCommand = `curl -i -X ${method}`;
+
+    if (headers) {
+      for (const [key, value] of Object.entries(headers)) {
+        curlCommand += ` -H "${key}: ${value}"`;
+      }
+    }
+
+    if (body && ["POST", "PUT", "PATCH"].includes(method)) {
+      const escapedBody = body.replace(/"/g, '\\"').replace(/\$/g, "\\$");
+      curlCommand += ` -d "${escapedBody}"`;
+    }
+
+    if (followRedirects) {
+      curlCommand += " -L";
+    }
+
+    const timeoutSeconds = Math.ceil(timeout / 1000);
+    curlCommand += ` --max-time ${timeoutSeconds}`;
+    curlCommand += ` "${url}" 2>&1`;
+
+    const ssmTimeout = Math.max(timeoutSeconds, 30);
+    const result = await ctx.sandbox!.execute(curlCommand, {
+      timeout: ssmTimeout,
+    });
+
+    const output = result.stdout || "";
+    const lines = output.split("\n");
+    let statusLine = "";
+    const responseHeaders: Record<string, string> = {};
+    let bodyStartIndex = 0;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (line.startsWith("HTTP/")) {
+        statusLine = line;
+        for (let j = i + 1; j < lines.length; j++) {
+          if (lines[j].trim() === "") {
+            bodyStartIndex = j + 1;
+            break;
+          }
+          const headerMatch = lines[j].match(/^([^:]+):\s*(.+)$/);
+          if (headerMatch) {
+            responseHeaders[headerMatch[1].toLowerCase()] = headerMatch[2];
+          }
+        }
+        break;
+      }
+    }
+
+    const statusMatch = statusLine.match(/HTTP\/[\d.]+\s+(\d+)\s+(.+)/);
+    const status = statusMatch ? parseInt(statusMatch[1]) : 0;
+    const statusText = statusMatch ? statusMatch[2] : "Unknown";
+    const responseBody = lines.slice(bodyStartIndex).join("\n");
+
+    return {
+      success: status >= 200 && status < 400,
+      status,
+      statusText,
+      headers: responseHeaders,
+      body:
+        responseBody.length > 5000
+          ? `${responseBody.substring(0, 5000)}...\n\n(truncated) use execute_command with grep / tail to paginate the response`
+          : responseBody,
+      url,
+      redirected: false,
+    };
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
+    return {
+      success: false,
+      error: msg,
+      status: 0,
+      statusText: "Error",
+      headers: {},
+      body: "",
+      url,
+      redirected: false,
+    };
+  }
 }

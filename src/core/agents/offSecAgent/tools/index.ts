@@ -1,4 +1,10 @@
 export { type ToolContext } from "./types";
+export {
+  type UnifiedSandbox,
+  type SandboxType,
+  type SandboxExecuteOptions,
+  type SandboxExecutionResult,
+} from "./sandbox";
 
 // Browser automation tools
 export { createBrowserToolset, BROWSER_TOOL_NAMES } from "./browserTools";
