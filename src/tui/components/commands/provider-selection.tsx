@@ -1,5 +1,4 @@
 import { useKeyboard } from "@opentui/react";
-import { RGBA } from "@opentui/core";
 import { useState } from "react";
 import { useRoute } from "../../context/route";
 import { useConfig } from "../../context/config";
@@ -8,6 +7,7 @@ import {
   getConfiguredProviders,
   type ProviderType,
 } from "../../../core/providers";
+import { useTheme } from "../../theme";
 
 interface ProviderSelectionProps {
   onProviderSelected: (providerId: ProviderType) => void;
@@ -18,6 +18,7 @@ export default function ProviderSelection({
   onProviderSelected,
   onClose,
 }: ProviderSelectionProps) {
+  const { colors } = useTheme();
   const route = useRoute();
   const _config = useConfig();
   const [highlightedIndex, setHighlightedIndex] = useState(0);
@@ -73,8 +74,8 @@ export default function ProviderSelection({
         width={70}
         maxHeight="80%"
         border={true}
-        borderColor="green"
-        backgroundColor="black"
+        borderColor={colors.primary}
+        backgroundColor={colors.backgroundPanel}
         flexDirection="column"
         padding={2}
       >
@@ -84,8 +85,8 @@ export default function ProviderSelection({
           justifyContent="space-between"
           marginBottom={2}
         >
-          <text fg="green">Select provider</text>
-          <text fg="gray">esc</text>
+          <text fg={colors.primary}>Select provider</text>
+          <text fg={colors.textMuted}>esc</text>
         </box>
 
         {/* Provider List */}
@@ -106,14 +107,14 @@ export default function ProviderSelection({
             },
             scrollbarOptions: {
               trackOptions: {
-                foregroundColor: "green",
-                backgroundColor: RGBA.fromInts(40, 40, 40, 255),
+                foregroundColor: colors.primary,
+                backgroundColor: colors.backgroundElement,
               },
             },
           }}
         >
           {/* Popular providers section */}
-          <text fg="gray" marginTop={1} marginBottom={1}>
+          <text fg={colors.textMuted} marginTop={1} marginBottom={1}>
             Popular providers
           </text>
 
@@ -131,17 +132,20 @@ export default function ProviderSelection({
                 paddingLeft={1}
                 paddingRight={1}
                 backgroundColor={
-                  isHighlighted ? RGBA.fromInts(0, 80, 0, 100) : undefined
+                  isHighlighted ? colors.backgroundSelected : undefined
                 }
                 onMouseDown={() => onProviderSelected(provider.id)}
               >
-                <text fg={isHighlighted ? "green" : "white"} flexGrow={1}>
+                <text
+                  fg={isHighlighted ? colors.primary : colors.text}
+                  flexGrow={1}
+                >
                   {provider.name}{" "}
                   {provider.description ? (
-                    <span fg="gray">({provider.description})</span>
+                    <span fg={colors.textMuted}>({provider.description})</span>
                   ) : null}
                 </text>
-                {configured ? <text fg="green">✓</text> : null}
+                {configured ? <text fg={colors.primary}>✓</text> : null}
               </box>
             );
           })}
@@ -149,10 +153,10 @@ export default function ProviderSelection({
 
         {/* Footer help text */}
         <box marginTop={2}>
-          <text fg="gray">
-            <span fg="green">[↑↓]</span> Navigate ·{" "}
-            <span fg="green">[ENTER]</span> Select ·{" "}
-            <span fg="green">[ESC]</span> Close
+          <text fg={colors.textMuted}>
+            <span fg={colors.primary}>[↑↓]</span> Navigate ·{" "}
+            <span fg={colors.primary}>[ENTER]</span> Select ·{" "}
+            <span fg={colors.primary}>[ESC]</span> Close
           </text>
         </box>
       </box>

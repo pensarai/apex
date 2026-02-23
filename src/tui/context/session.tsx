@@ -5,32 +5,32 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { Session } from "../../core/session";
+import { sessions, type SessionInfo } from "../../core/session";
 
 type SessionContext = {
-  active?: Session.SessionInfo;
-  load: (id: string) => Promise<Session.SessionInfo | null>;
-  create: (name: string, target: string) => Promise<Session.SessionInfo>;
+  active?: SessionInfo;
+  load: (id: string) => Promise<SessionInfo | null>;
+  create: (name: string, target: string) => Promise<SessionInfo>;
 };
 
 const ctx = createContext<SessionContext | null>(null);
 
 type SessionProviderProps = {
   children: ReactNode;
-  session?: Session.SessionInfo;
+  session?: SessionInfo;
 };
 
 export function SessionProvider({ children, session }: SessionProviderProps) {
-  const [activeSession, setActiveSession] = useState<
-    Session.SessionInfo | undefined
-  >(session);
+  const [activeSession, setActiveSession] = useState<SessionInfo | undefined>(
+    session,
+  );
 
   const value = useMemo<SessionContext>(
     () => ({
       active: activeSession,
       load: async (id: string) => {
         try {
-          const _session = await Session.get(id);
+          const _session = await sessions.get(id);
           setActiveSession(_session);
           return _session;
         } catch (e) {
@@ -40,7 +40,7 @@ export function SessionProvider({ children, session }: SessionProviderProps) {
         }
       },
       create: async (name: string, target: string) => {
-        const _session = await Session.create({
+        const _session = await sessions.create({
           name: name,
           targets: [target],
         });

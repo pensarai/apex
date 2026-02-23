@@ -5,7 +5,11 @@
  * Supports: --flag value, --flag=value, --boolean-flag
  */
 
-import { Session } from "../../core/session";
+import {
+  sessions,
+  type SessionConfig,
+  type SessionInfo,
+} from "../../core/session";
 import { generateRandomName } from "../../util/name";
 import type { OperatorMode, PermissionTier } from "../../core/operator";
 import { createToolsetState } from "../../core/toolset";
@@ -274,8 +278,8 @@ export function hasEnoughFlagsToSkipWizard(flags: WebCommandFlags): boolean {
  */
 export async function createOperatorSessionFromFlags(
   flags: WebCommandFlags,
-): Promise<Session.SessionInfo> {
-  const sessionConfig: Session.SessionConfig = {
+): Promise<SessionInfo> {
+  const sessionConfig: SessionConfig = {
     sessionType: "web-app",
     mode: "operator",
     operatorSettings: {
@@ -316,7 +320,7 @@ export async function createOperatorSessionFromFlags(
     };
   }
 
-  const session = await Session.create({
+  const session = await sessions.create({
     targets: [flags.target!],
     name: flags.name || generateRandomName(),
     config: sessionConfig,
@@ -330,8 +334,8 @@ export async function createOperatorSessionFromFlags(
  */
 export async function createSwarmSessionFromFlags(
   flags: WebCommandFlags,
-): Promise<Session.SessionInfo> {
-  const sessionConfig: Session.SessionConfig = {
+): Promise<SessionInfo> {
+  const sessionConfig: SessionConfig = {
     sessionType: "web-app",
     mode: "auto",
     // Initialize toolset with full web-pentest tools
@@ -367,7 +371,7 @@ export async function createSwarmSessionFromFlags(
     };
   }
 
-  const session = await Session.create({
+  const session = await sessions.create({
     targets: [flags.target!],
     name: flags.name || generateRandomName(),
     config: sessionConfig,

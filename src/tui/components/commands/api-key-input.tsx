@@ -1,8 +1,8 @@
 import { useKeyboard } from "@opentui/react";
-import { RGBA } from "@opentui/core";
 import { useState } from "react";
 import Input from "../input";
 import { type ProviderType } from "../../../core/providers";
+import { useTheme } from "../../theme";
 
 interface APIKeyInputProps {
   provider: ProviderType;
@@ -17,6 +17,7 @@ export default function APIKeyInput({
   onSubmit,
   onCancel,
 }: APIKeyInputProps) {
+  const { colors } = useTheme();
   const [apiKey, setApiKey] = useState("");
 
   useKeyboard((key) => {
@@ -52,13 +53,13 @@ export default function APIKeyInput({
       height="100%"
       justifyContent="center"
       alignItems="center"
-      backgroundColor={RGBA.fromInts(0, 0, 0, 200)}
+      backgroundColor={colors.backgroundOverlay}
     >
       <box
         width={70}
         border={true}
-        borderColor="green"
-        backgroundColor="black"
+        borderColor={colors.primary}
+        backgroundColor={colors.backgroundPanel}
         flexDirection="column"
         padding={2}
       >
@@ -68,13 +69,13 @@ export default function APIKeyInput({
           justifyContent="space-between"
           marginBottom={2}
         >
-          <text fg="green">Connect {providerName}</text>
-          <text fg="gray">esc</text>
+          <text fg={colors.primary}>Connect {providerName}</text>
+          <text fg={colors.textMuted}>esc</text>
         </box>
 
         {/* Instructions */}
         <box marginBottom={2}>
-          <text fg="gray">{getProviderInstructions(provider)}</text>
+          <text fg={colors.textMuted}>{getProviderInstructions(provider)}</text>
         </box>
 
         {/* Input */}
@@ -102,9 +103,9 @@ export default function APIKeyInput({
 
         {/* Footer help text */}
         <box marginTop={1}>
-          <text fg="gray">
-            <span fg="green">[ENTER]</span> Save · <span fg="green">[ESC]</span>{" "}
-            Cancel
+          <text fg={colors.textMuted}>
+            <span fg={colors.primary}>[ENTER]</span> Save ·{" "}
+            <span fg={colors.primary}>[ESC]</span> Cancel
           </text>
         </box>
       </box>

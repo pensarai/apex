@@ -5,6 +5,7 @@ import { useSession } from "../context/session";
 import { useRoute } from "../context/route";
 import { useInput } from "../context/input";
 import { useEffect } from "react";
+import { useTheme } from "../theme";
 
 interface FooterProps {
   cwd?: string;
@@ -25,6 +26,7 @@ export default function Footer({
   showExitWarning = false,
 }: FooterProps) {
   cwd = "~" + cwd.split(os.homedir()).pop() || "";
+  const { colors } = useTheme();
   const { model, tokenUsage, hasExecuted, thinking, isExecuting } = useAgent();
   const session = useSession();
   const route = useRoute();
@@ -46,28 +48,28 @@ export default function Footer({
       flexShrink={0}
     >
       <box flexDirection="row" gap={1}>
-        <text fg="gray">{cwd}</text>
-        <box border={["right"]} borderColor="green" />
-        <text fg="gray">
-          <span fg="white">{model.name}</span>
+        <text fg={colors.textMuted}>{cwd}</text>
+        <box border={["right"]} borderColor={colors.primary} />
+        <text fg={colors.textMuted}>
+          <span fg={colors.text}>{model.name}</span>
         </text>
         <AgentStatus />
-        {route.data.type === "session" && session.active && (
-          <text fg="white">
-            Session: <span fg="gray">{session.active.name}</span>
+        {route.data.type === "pentest" && session.active && (
+          <text fg={colors.text}>
+            Session: <span fg={colors.textMuted}>{session.active.name}</span>
           </text>
         )}
       </box>
       {showExitWarning ? (
         <box flexDirection="row" gap={1}>
-          <text fg="yellow">⚠ Press Ctrl+C again to exit</text>
+          <text fg={colors.warning}>⚠ Press Ctrl+C again to exit</text>
         </box>
       ) : (
         <box flexDirection="row" gap={2}>
           {hotkeys.map((hotkey, index) => (
             <box key={index} flexDirection="row" gap={1}>
-              <text fg="green">[{hotkey.key}]</text>
-              <text fg="gray">{hotkey.label}</text>
+              <text fg={colors.primary}>[{hotkey.key}]</text>
+              <text fg={colors.textMuted}>{hotkey.label}</text>
             </box>
           ))}
         </box>
@@ -77,6 +79,7 @@ export default function Footer({
 }
 
 export function AgentStatus() {
+  const { colors } = useTheme();
   const { tokenUsage, hasExecuted, thinking, isExecuting } = useAgent();
 
   useEffect(() => {
@@ -87,14 +90,16 @@ export function AgentStatus() {
     <box flexDirection="row" gap={1}>
       {hasExecuted && (
         <>
-          <box border={["right"]} borderColor="green" />
-          <text fg="white">{`↓${formatTokenCount(tokenUsage.inputTokens)} ↑${formatTokenCount(tokenUsage.outputTokens)} Σ${formatTokenCount(tokenUsage.totalTokens)}`}</text>
+          <box border={["right"]} borderColor={colors.primary} />
+          <text
+            fg={colors.text}
+          >{`↓${formatTokenCount(tokenUsage.inputTokens)} ↑${formatTokenCount(tokenUsage.outputTokens)} Σ${formatTokenCount(tokenUsage.totalTokens)}`}</text>
         </>
       )}
       {thinking && (
         <>
-          <box border={["right"]} borderColor="green" />
-          <SpinnerDots label="Thinking" fg="green" />
+          <box border={["right"]} borderColor={colors.primary} />
+          <SpinnerDots label="Thinking" fg={colors.primary} />
         </>
       )}
     </box>

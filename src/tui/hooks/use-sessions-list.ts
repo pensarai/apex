@@ -6,9 +6,12 @@
 import { useState, useEffect, useCallback } from "react";
 import { existsSync, readdirSync } from "fs";
 import { join } from "path";
-import { Session } from "../../core/session";
+import {
+  sessions as sessionModule,
+  type SessionInfo,
+} from "../../core/session";
 
-export interface EnrichedSession extends Session.SessionInfo {
+export interface EnrichedSession extends SessionInfo {
   findingsCount: number;
   hasOperatorState: boolean;
   hasReport: boolean;
@@ -49,7 +52,7 @@ export function formatRelativeTime(timestamp: number): string {
 }
 
 export function useSessionsList() {
-  const [sessions, setSessions] = useState<EnrichedSession[]>([]);
+  const [allSessions, setAllSessions] = useState<EnrichedSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -57,7 +60,7 @@ export function useSessionsList() {
     setLoading(true);
     try {
       const enriched: EnrichedSession[] = [];
-      for await (const session of Session.list()) {
+      for await (const session of sessionModule.list()) {
         const hasOperatorState = existsSync(
           join(session.rootPath, "operator-state.json"),
         );
@@ -72,7 +75,7 @@ export function useSessionsList() {
       }
       // Sort by updated time (newest first)
       enriched.sort((a, b) => b.time.updated - a.time.updated);
-      setSessions(enriched);
+      setAllSessions(enriched);
     } catch (error) {
       console.error("Error loading sessions:", error);
     } finally {
@@ -86,7 +89,7 @@ export function useSessionsList() {
 
   const deleteSession = useCallback(
     async (id: string) => {
-      await Session.remove({ sessionId: id });
+      await sessionModule.remove({ sessionId: id });
       await loadSessions();
     },
     [loadSessions],
@@ -94,10 +97,10 @@ export function useSessionsList() {
 
   // Filter by search term
   const filtered = searchTerm
-    ? sessions.filter((s) =>
+    ? allSessions.filter((s) =>
         s.name.toLowerCase().includes(searchTerm.toLowerCase()),
       )
-    : sessions;
+    : allSessions;
 
   // Group by date
   const groupsMap = new Map<
@@ -149,6 +152,7 @@ export function useSessionsList() {
 
   return {
     sessions: filtered,
+    totalCount: filtered.length,
     groupedSessions,
     visualOrderSessions,
     loading,

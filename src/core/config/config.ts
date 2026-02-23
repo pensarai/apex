@@ -18,6 +18,12 @@ export interface Config {
   daytonaAPIKey?: string | null;
   daytonaOrgId?: string | null;
   runloopAPIKey?: string | null;
+  // Local LLM
+  localModelUrl?: string | null;
+  localModelName?: string | null;
+  // Theme preferences
+  theme?: string;
+  themeMode?: "dark" | "light" | "auto";
 }
 
 export async function init() {

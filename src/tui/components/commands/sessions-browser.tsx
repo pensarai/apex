@@ -7,7 +7,8 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useKeyboard } from "@opentui/react";
 import { exec } from "child_process";
 import { existsSync } from "fs";
-import { RGBA, ScrollBoxRenderable } from "@opentui/core";
+import { ScrollBoxRenderable } from "@opentui/core";
+import { scrollToIndex } from "../../utils/scroll";
 import { useRoute } from "../../context/route";
 import { useSession } from "../../context/session";
 import { useFocus } from "../../context/focus";
@@ -17,13 +18,10 @@ import {
   formatRelativeTime,
   type EnrichedSession,
 } from "../../hooks/use-sessions-list";
-
-// Design system colors
-const greenAccent = RGBA.fromInts(76, 175, 80, 255);
-const creamText = RGBA.fromInts(255, 248, 220, 255);
-const dimText = RGBA.fromInts(120, 120, 120, 255);
+import { useTheme } from "../../theme";
 
 export default function SessionsBrowser() {
+  const { colors } = useTheme();
   const route = useRoute();
   const { load: loadSession } = useSession();
   const { refocusPrompt } = useFocus();
@@ -31,6 +29,7 @@ export default function SessionsBrowser() {
   const {
     groupedSessions,
     visualOrderSessions,
+    totalCount,
     loading,
     searchTerm,
     setSearchTerm,
@@ -67,7 +66,7 @@ export default function SessionsBrowser() {
         return;
       }
       route.navigate({
-        type: "session",
+        type: "pentest",
         sessionId: session.id,
         isResume: true,
         openAsOperator: asOperator || undefined,
@@ -145,13 +144,19 @@ export default function SessionsBrowser() {
 
     // Up
     if (key.name === "up" && visualOrderSessions.length > 0) {
-      setSelectedIndex((i) => (i > 0 ? i - 1 : visualOrderSessions.length - 1));
+      const newIndex =
+        selectedIndex > 0 ? selectedIndex - 1 : visualOrderSessions.length - 1;
+      setSelectedIndex(newIndex);
+      scrollToIndex(scroll.current, newIndex, visualOrderSessions, (s) => s.id);
       return;
     }
 
     // Down
     if (key.name === "down" && visualOrderSessions.length > 0) {
-      setSelectedIndex((i) => (i < visualOrderSessions.length - 1 ? i + 1 : 0));
+      const newIndex =
+        selectedIndex < visualOrderSessions.length - 1 ? selectedIndex + 1 : 0;
+      setSelectedIndex(newIndex);
+      scrollToIndex(scroll.current, newIndex, visualOrderSessions, (s) => s.id);
       return;
     }
   });
@@ -159,18 +164,20 @@ export default function SessionsBrowser() {
   if (loading) {
     return (
       <box flexDirection="column" padding={2} width="100%">
-        <text fg={creamText}>Loading sessions...</text>
+        <text fg={colors.text}>Loading sessions...</text>
       </box>
     );
   }
 
-  if (visualOrderSessions.length === 0) {
+  if (totalCount === 0) {
     return (
       <box flexDirection="column" padding={2} gap={1} width="100%">
-        <text fg={creamText}>Sessions</text>
-        <text fg={dimText}>No sessions found.</text>
-        <text fg={dimText}>Start a new session with /pentest or /operator</text>
-        <text fg={dimText}>Press Esc to go back</text>
+        <text fg={colors.text}>Sessions</text>
+        <text fg={colors.textMuted}>No sessions found.</text>
+        <text fg={colors.textMuted}>
+          Start a new session with /pentest or /operator
+        </text>
+        <text fg={colors.textMuted}>Press Esc to go back</text>
       </box>
     );
   }
@@ -178,14 +185,19 @@ export default function SessionsBrowser() {
   return (
     <box flexDirection="column" padding={2} gap={1} width="100%" flexGrow={1}>
       {/* Header */}
-      <text fg={creamText}>Sessions</text>
-      <text fg={dimText}>Browse and reopen previous pentest sessions</text>
+      <box flexDirection="column" flexShrink={0}>
+        <text fg={colors.text}>Sessions</text>
+        <text fg={colors.textMuted}>
+          Browse and reopen previous pentest sessions
+        </text>
+      </box>
 
       {/* Search */}
       <box
+        flexShrink={0}
         width="100%"
         border={["left"]}
-        borderColor={greenAccent}
+        borderColor={colors.primary}
         backgroundColor="transparent"
       >
         <input
@@ -195,84 +207,98 @@ export default function SessionsBrowser() {
           value={searchTerm}
           onInput={setSearchTerm}
           focused
+          cursorColor={colors.textMuted}
         />
       </box>
 
       {/* Session list */}
       <box flexDirection="column" gap={1} flexGrow={1} overflow="hidden">
-        <scrollbox
-          ref={scroll}
-          scrollbarOptions={{ visible: false }}
-          style={{
-            rootOptions: {
-              width: "100%",
-              flexGrow: 1,
-              flexShrink: 1,
-              overflow: "hidden",
-            },
-            wrapperOptions: { overflow: "hidden" },
-            contentOptions: { gap: 2, flexDirection: "column" },
-          }}
-        >
-          {groupedSessions.map((group) => (
-            <box key={group.date} flexDirection="column" gap={1}>
-              <text fg={greenAccent}>{group.date}</text>
-              {group.sessions.map((session) => {
-                const isSelected = session.index === selectedIndex;
-                const age = formatRelativeTime(session.time.updated);
-                const mode = session.config?.mode || "auto";
-                const modeBadge = mode === "operator" ? "[operator]" : "[auto]";
-                const findingsText =
-                  session.findingsCount > 0
-                    ? `${session.findingsCount} finding${session.findingsCount > 1 ? "s" : ""}`
-                    : "";
+        {visualOrderSessions.length === 0 ? (
+          <box paddingLeft={2}>
+            <text fg={colors.textMuted}>No sessions found.</text>
+          </box>
+        ) : (
+          <scrollbox
+            ref={scroll}
+            scrollbarOptions={{ visible: false }}
+            style={{
+              rootOptions: {
+                width: "100%",
+                flexGrow: 1,
+                flexShrink: 1,
+                overflow: "hidden",
+              },
+              wrapperOptions: { overflow: "hidden" },
+              contentOptions: { gap: 2, flexDirection: "column" },
+            }}
+          >
+            {groupedSessions.map((group) => (
+              <box key={group.date} flexDirection="column" gap={1}>
+                <text fg={colors.primary}>{group.date}</text>
+                {group.sessions.map((session) => {
+                  const isSelected = session.index === selectedIndex;
+                  const age = formatRelativeTime(session.time.updated);
+                  const mode = session.config?.mode || "auto";
+                  const modeBadge =
+                    mode === "operator" ? "[operator]" : "[auto]";
+                  const findingsText =
+                    session.findingsCount > 0
+                      ? `${session.findingsCount} finding${session.findingsCount > 1 ? "s" : ""}`
+                      : "";
 
-                return (
-                  <box
-                    id={session.id}
-                    key={session.id}
-                    backgroundColor="transparent"
-                    border={isSelected ? ["left"] : undefined}
-                    borderColor={isSelected ? greenAccent : undefined}
-                    paddingLeft={isSelected ? 1 : 2}
-                    flexDirection="row"
-                    justifyContent="space-between"
-                    width="100%"
-                  >
-                    <box flexDirection="row" gap={1}>
-                      <text fg={isSelected ? greenAccent : creamText}>
-                        {isSelected ? "▸ " : "  "}
-                        {session.name}
-                      </text>
-                      <text fg={mode === "operator" ? greenAccent : dimText}>
-                        {modeBadge}
-                      </text>
-                      {findingsText ? (
-                        <text fg={dimText}>{findingsText}</text>
-                      ) : null}
+                  return (
+                    <box
+                      id={session.id}
+                      key={session.id}
+                      backgroundColor="transparent"
+                      border={isSelected ? ["left"] : undefined}
+                      borderColor={isSelected ? colors.primary : undefined}
+                      paddingLeft={isSelected ? 1 : 2}
+                      flexDirection="row"
+                      justifyContent="space-between"
+                      width="100%"
+                    >
+                      <box flexDirection="row" gap={1}>
+                        <text fg={isSelected ? colors.primary : colors.text}>
+                          {isSelected ? "▸ " : "  "}
+                          {session.name}
+                        </text>
+                        <text
+                          fg={
+                            mode === "operator"
+                              ? colors.primary
+                              : colors.textMuted
+                          }
+                        >
+                          {modeBadge}
+                        </text>
+                        {findingsText ? (
+                          <text fg={colors.textMuted}>{findingsText}</text>
+                        ) : null}
+                      </box>
+                      <text fg={colors.textMuted}>{age}</text>
                     </box>
-                    <text fg={dimText}>{age}</text>
-                  </box>
-                );
-              })}
-            </box>
-          ))}
-        </scrollbox>
+                  );
+                })}
+              </box>
+            ))}
+          </scrollbox>
+        )}
       </box>
 
       {/* Footer */}
-      <box flexDirection="row" gap={1}>
-        <text fg={dimText}>
-          <span fg={greenAccent}>[Enter]</span> Open{"  "}
-          <span fg={greenAccent}>[O]</span> Operator{"  "}
-          <span fg={greenAccent}>[R]</span> Report{"  "}
-          <span fg={greenAccent}>[Ctrl+D]</span> Delete{"  "}
-          <span fg={greenAccent}>[Esc]</span> Back
+      <box flexDirection="row" gap={1} flexShrink={0}>
+        <text fg={colors.textMuted}>
+          <span fg={colors.primary}>[Enter]</span> Open{"  "}
+          <span fg={colors.primary}>[O]</span> Operator{"  "}
+          <span fg={colors.primary}>[R]</span> Report{"  "}
+          <span fg={colors.primary}>[Ctrl+D]</span> Delete{"  "}
+          <span fg={colors.primary}>[Esc]</span> Back
         </text>
       </box>
 
       {/* Status */}
-      {statusMessage && <text fg={greenAccent}>{statusMessage}</text>}
+      {statusMessage && <text fg={colors.primary}>{statusMessage}</text>}
     </box>
   );
 }

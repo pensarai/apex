@@ -1,0 +1,150 @@
+import { runAuthenticationAgent } from "../core/api/authentication";
+import { sessions } from "../core/session";
+import { describe, it, expect } from "vitest";
+import { config } from "dotenv";
+
+config();
+
+const TARGET_URL = "staging-console.pensar.dev";
+
+describe("Authentication Agent", () => {
+  it("should authenticate with credentials", async () => {
+    const username = process.env.TEST_AUTH_USERNAME;
+    const password = process.env.TEST_AUTH_PASSWORD;
+
+    if (!username || !password) {
+      console.warn(
+        "Skipping: TEST_AUTH_USERNAME and TEST_AUTH_PASSWORD must be set",
+      );
+      return;
+    }
+
+    const session = await sessions.create({
+      name: "Test Auth",
+      targets: [TARGET_URL],
+      config: {
+        authCredentials: {
+          loginUrl: `https://${TARGET_URL}/login`,
+          username,
+          password,
+        },
+      },
+    });
+
+    const result = await runAuthenticationAgent({
+      target: TARGET_URL,
+      model: "claude-haiku-4-5",
+      session,
+      credentials: {
+        username,
+        password,
+        loginUrl: `https://${TARGET_URL}/login`,
+      },
+      callbacks: {
+        onTextDelta: (d) => process.stdout.write(d.text),
+        onToolCall: (d) =>
+          console.log(
+            `\n→ calling ${d.toolName}\n  ${JSON.stringify(d.input, null, 2)}`,
+          ),
+        onToolResult: (d) => console.log(`✓ ${d.toolName} completed`),
+        onError: (e) => console.error("Agent error:", e),
+      },
+    });
+
+    console.log(
+      `\nResult: ${result.success ? "SUCCESS" : "FAILED"} — ${result.summary}`,
+    );
+
+    expect(result).toBeDefined();
+    expect(result.summary).toBeDefined();
+  });
+
+  it("should probe target without credentials", async () => {
+    const session = await sessions.create({
+      name: "Test Auth No Creds",
+      targets: [TARGET_URL],
+    });
+
+    const result = await runAuthenticationAgent({
+      target: TARGET_URL,
+      model: "claude-haiku-4-5",
+      session,
+      callbacks: {
+        onTextDelta: (d) => process.stdout.write(d.text),
+        onToolCall: (d) =>
+          console.log(
+            `\n→ calling ${d.toolName}\n  ${JSON.stringify(d.input, null, 2)}`,
+          ),
+        onToolResult: (d) => console.log(`✓ ${d.toolName} completed`),
+        onError: (e) => console.error("Agent error:", e),
+      },
+    });
+
+    console.log(
+      `\nResult: ${result.success ? "SUCCESS" : "FAILED"} — ${result.summary}`,
+    );
+
+    expect(result).toBeDefined();
+    expect(result.summary).toBeDefined();
+  });
+
+  it("should authenticate with auth hints", async () => {
+    const username = process.env.TEST_AUTH_USERNAME;
+    const password = process.env.TEST_AUTH_PASSWORD;
+
+    if (!username || !password) {
+      console.warn(
+        "Skipping: TEST_AUTH_USERNAME and TEST_AUTH_PASSWORD must be set",
+      );
+      return;
+    }
+
+    const session = await sessions.create({
+      name: "Test Auth With Hints",
+      targets: [TARGET_URL],
+      config: {
+        authCredentials: {
+          loginUrl: `https://${TARGET_URL}/login`,
+          username,
+          password,
+        },
+      },
+    });
+
+    const result = await runAuthenticationAgent({
+      target: TARGET_URL,
+      model: "claude-haiku-4-5",
+      session,
+      credentials: {
+        username,
+        password,
+        loginUrl: `https://${TARGET_URL}/login`,
+      },
+      authHints: {
+        authScheme: "form",
+        browserRequired: true,
+        protectedEndpoints: [
+          `https://${TARGET_URL}/api/me`,
+          `https://${TARGET_URL}/dashboard`,
+        ],
+      },
+      callbacks: {
+        onTextDelta: (d) => process.stdout.write(d.text),
+        onToolCall: (d) =>
+          console.log(
+            `\n→ calling ${d.toolName}\n  ${JSON.stringify(d.input, null, 2)}`,
+          ),
+        onToolResult: (d) => console.log(`✓ ${d.toolName} completed`),
+        onError: (e) => console.error("Agent error:", e),
+      },
+    });
+
+    console.log(
+      `\nResult: ${result.success ? "SUCCESS" : "FAILED"} — ${result.summary}`,
+    );
+
+    expect(result).toBeDefined();
+    expect(result.success).toBe(true);
+    expect(result.summary).toBeDefined();
+  });
+});

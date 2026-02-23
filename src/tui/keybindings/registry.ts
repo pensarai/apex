@@ -79,7 +79,7 @@ export function createKeybindings(
         const isWeb = route.data.type === "base" && route.data.path === "web";
         const isOperator =
           route.data.type === "base" && route.data.path === "operator";
-        const isSession = route.data.type === "session";
+        const isSession = route.data.type === "pentest";
 
         if (!isHome && !isWeb && !isOperator && !isSession) {
           route.navigate({
@@ -130,7 +130,7 @@ export function createKeybindings(
       description: "Toggle tools panel",
       fn: async () => {
         // Only works in session context
-        if (route.data.type === "session" && setShowToolsPanel) {
+        if (route.data.type === "pentest" && setShowToolsPanel) {
           setShowToolsPanel(true);
         }
       },

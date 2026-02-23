@@ -5,7 +5,7 @@
  * Unified for both chat and operator modes.
  */
 
-import { colors } from "../../theme";
+import { useTheme } from "../../theme";
 import { MessageRenderer, getStableMessageKey, isToolMessage } from "../shared";
 import type { DisplayMessage } from "../agent-display";
 import type { PendingApproval } from "../../../core/operator";
@@ -86,6 +86,7 @@ export function MessageList({
   hasPendingTool = false,
   lastApprovedAction = null,
 }: MessageListProps) {
+  const { colors } = useTheme();
   const hasMessages = messages.length > 0;
   const lastMessage = messages[messages.length - 1];
   const isLastAssistant = lastMessage?.role === "assistant";
@@ -114,24 +115,27 @@ export function MessageList({
       {/* Empty state - Operator mode */}
       {!hasMessages && variant === "operator" && (
         <box flexDirection="column" gap={1} marginTop={2}>
-          <text fg={colors.greenAccent}>Operator Mode Active</text>
-          <text fg={colors.dimText}>
+          <text fg={colors.primary}>Operator Mode Active</text>
+          <text fg={colors.textMuted}>
             {emptyMessage ||
               'Type a directive to begin (e.g., "Explore the attack surface").'}
           </text>
           <box flexDirection="column" gap={0} marginTop={1}>
-            <text fg={colors.creamText}>Tips:</text>
+            <text fg={colors.text}>Tips:</text>
             <box flexDirection="row">
-              <text fg={colors.greenAccent}>/auth</text>
-              <text fg={colors.dimText}> - Configure authentication</text>
+              <text fg={colors.primary}>/auth</text>
+              <text fg={colors.textMuted}> - Configure authentication</text>
             </box>
             <box flexDirection="row">
-              <text fg={colors.greenAccent}>Shift+Tab</text>
-              <text fg={colors.dimText}> - Cycle modes (plan/manual/auto)</text>
+              <text fg={colors.primary}>Shift+Tab</text>
+              <text fg={colors.textMuted}>
+                {" "}
+                - Cycle modes (plan/manual/auto)
+              </text>
             </box>
             <box flexDirection="row">
-              <text fg={colors.greenAccent}>Ctrl+S</text>
-              <text fg={colors.dimText}> - Change stage</text>
+              <text fg={colors.primary}>Ctrl+S</text>
+              <text fg={colors.textMuted}> - Change stage</text>
             </box>
           </box>
         </box>
@@ -140,23 +144,26 @@ export function MessageList({
       {/* Empty state - Chat mode */}
       {!hasMessages && variant === "chat" && (
         <box flexDirection="column" gap={1} marginTop={2}>
-          <text fg={colors.greenAccent}>Ready</text>
-          <text fg={colors.dimText}>
+          <text fg={colors.primary}>Ready</text>
+          <text fg={colors.textMuted}>
             {emptyMessage || "Type a directive to begin exploring."}
           </text>
           <box flexDirection="column" gap={0} marginTop={1}>
-            <text fg={colors.creamText}>Tips:</text>
+            <text fg={colors.text}>Tips:</text>
             <box flexDirection="row">
-              <text fg={colors.greenAccent}>/config</text>
-              <text fg={colors.dimText}> - Configure target and settings</text>
+              <text fg={colors.primary}>/config</text>
+              <text fg={colors.textMuted}>
+                {" "}
+                - Configure target and settings
+              </text>
             </box>
             <box flexDirection="row">
-              <text fg={colors.greenAccent}>Ctrl+B</text>
-              <text fg={colors.dimText}> - Toggle sidebar</text>
+              <text fg={colors.primary}>Ctrl+B</text>
+              <text fg={colors.textMuted}> - Toggle sidebar</text>
             </box>
             <box flexDirection="row">
-              <text fg={colors.greenAccent}>Ctrl+C</text>
-              <text fg={colors.dimText}> - Stop current action</text>
+              <text fg={colors.primary}>Ctrl+C</text>
+              <text fg={colors.textMuted}> - Stop current action</text>
             </box>
           </box>
         </box>

@@ -19,7 +19,8 @@ export type RoutePath =
   | "models"
   | "providers"
   | "disclosure"
-  | "sessions";
+  | "sessions"
+  | "theme";
 
 export interface WebCommandOptions {
   auto?: boolean;
@@ -47,12 +48,16 @@ export type Route =
       options?: WebCommandOptions;
     }
   | {
-      type: "session";
+      type: "pentest";
       sessionId: string;
       /** If true, load existing session state without starting a new pentest */
       isResume?: boolean;
       /** If true, open an auto-mode session in operator mode */
       openAsOperator?: boolean;
+    }
+  | {
+      type: "operator";
+      sessionId: string;
     };
 
 type RouteContext = {

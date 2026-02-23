@@ -1,17 +1,10 @@
 import { useState, useMemo } from "react";
 import { useKeyboard } from "@opentui/react";
-import { RGBA } from "@opentui/core";
 import AgentDisplay, { type DisplayMessage } from "../agent-display";
 import { SpinnerDots } from "../sprites";
 import { useDialog } from "../../context/dialog";
 import type { ResumeInfo } from "../../../core/session/loader";
-import { colors } from "../../theme";
-
-// Color palette (matching home view)
-export const greenBullet = RGBA.fromInts(76, 175, 80, 255);
-export const creamText = RGBA.fromInts(255, 248, 220, 255);
-export const dimText = RGBA.fromInts(120, 120, 120, 255);
-export const darkBg = RGBA.fromInts(10, 10, 10, 255);
+import { useTheme } from "../../theme";
 
 // Re-export DisplayMessage as UIMessage for backwards compatibility
 export type UIMessage = DisplayMessage;
@@ -52,6 +45,7 @@ export default function SwarmDashboard({
   onKillAgent,
   onResumeAgent,
 }: SwarmDashboardProps) {
+  const { colors } = useTheme();
   const [currentView, setCurrentView] = useState<"overview" | "detail">(
     "overview",
   );
@@ -268,29 +262,29 @@ export default function SwarmDashboard({
               alignItems="center"
               justifyContent="center"
               border
-              borderColor={dimText}
-              backgroundColor={darkBg}
+              borderColor={colors.textMuted}
+              backgroundColor={colors.background}
               padding={2}
             >
               {discoveryAgent?.status === "paused" ? (
                 <box flexDirection="column" alignItems="center" gap={1}>
-                  <text fg={colors.orangeText}>
-                    ⏸ Discovery was interrupted
-                  </text>
-                  <text fg={dimText}>
-                    Press <span fg={colors.orangeText}>[R]</span> to resume
+                  <text fg={colors.tierRisky}>⏸ Discovery was interrupted</text>
+                  <text fg={colors.textMuted}>
+                    Press <span fg={colors.tierRisky}>[R]</span> to resume
                   </text>
                 </box>
               ) : discoveryAgent?.status === "pending" ? (
                 <box flexDirection="column" alignItems="center" gap={1}>
                   <SpinnerDots
                     label="Discovering attack surface..."
-                    fg="green"
+                    fg={colors.primary}
                   />
-                  <text fg={dimText}>Press [D] to view discovery logs</text>
+                  <text fg={colors.textMuted}>
+                    Press [D] to view discovery logs
+                  </text>
                 </box>
               ) : (
-                <text fg={dimText}>No pentest agents spawned yet</text>
+                <text fg={colors.textMuted}>No pentest agents spawned yet</text>
               )}
             </box>
           ) : (
@@ -311,25 +305,25 @@ export default function SwarmDashboard({
         <box
           width="100%"
           padding={1}
-          backgroundColor={darkBg}
+          backgroundColor={colors.background}
           border
-          borderColor={greenBullet}
+          borderColor={colors.primary}
           flexDirection="column"
           alignItems="center"
           gap={1}
         >
-          <text fg={greenBullet}>Pentest Completed</text>
-          <text fg={dimText}>
+          <text fg={colors.primary}>Pentest Completed</text>
+          <text fg={colors.textMuted}>
             {sessionPath}/comprehensive-pentest-report.md
           </text>
           <box flexDirection="row" gap={2}>
             <text>
-              <span fg={greenBullet}>[Enter]</span>
-              <span fg={dimText}> View Report</span>
+              <span fg={colors.primary}>[Enter]</span>
+              <span fg={colors.textMuted}> View Report</span>
             </text>
             <text>
-              <span fg={greenBullet}>[ESC]</span>
-              <span fg={dimText}> Close</span>
+              <span fg={colors.primary}>[ESC]</span>
+              <span fg={colors.textMuted}> Close</span>
             </text>
           </box>
         </box>
@@ -367,14 +361,15 @@ function DiscoveryPanel({
   showLogs,
   onToggleLogs,
 }: DiscoveryPanelProps) {
+  const { colors } = useTheme();
   // Expanded logs view
   if (showLogs && agent) {
     return (
       <box
         flexGrow={1}
         border
-        borderColor={greenBullet}
-        backgroundColor={darkBg}
+        borderColor={colors.primary}
+        backgroundColor={colors.background}
         flexDirection="column"
       >
         {/* Header */}
@@ -383,28 +378,31 @@ function DiscoveryPanel({
           alignItems="center"
           justifyContent="space-between"
           padding={1}
-          borderColor={dimText}
+          borderColor={colors.textMuted}
           border={["bottom"]}
         >
           <box flexDirection="row" gap={1}>
             {agent.status === "pending" && (
-              <SpinnerDots label="Attack Surface Discovery" fg="green" />
+              <SpinnerDots
+                label="Attack Surface Discovery"
+                fg={colors.primary}
+              />
             )}
             {agent.status === "completed" && (
-              <text fg={greenBullet}>✓ Attack Surface Discovery</text>
+              <text fg={colors.primary}>✓ Attack Surface Discovery</text>
             )}
             {agent.status === "failed" && (
-              <text fg="red">✗ Attack Surface Discovery</text>
+              <text fg={colors.error}>✗ Attack Surface Discovery</text>
             )}
             {agent.status === "paused" && (
-              <text fg={colors.orangeText}>
+              <text fg={colors.tierRisky}>
                 ⏸ Attack Surface Discovery (Paused)
               </text>
             )}
           </box>
-          <text fg={dimText}>
-            <span fg={greenBullet}>[D]</span> to collapse |{" "}
-            <span fg={greenBullet}>[ESC]</span> to close
+          <text fg={colors.textMuted}>
+            <span fg={colors.primary}>[D]</span> to collapse |{" "}
+            <span fg={colors.primary}>[ESC]</span> to close
           </text>
         </box>
 
@@ -423,11 +421,11 @@ function DiscoveryPanel({
           flexDirection="row"
           justifyContent="space-between"
           padding={1}
-          borderColor={dimText}
+          borderColor={colors.textMuted}
           border={["top"]}
         >
-          <text fg={dimText}>{agent.messages.length} messages</text>
-          <text fg={dimText}>{endpoints.length} endpoints found</text>
+          <text fg={colors.textMuted}>{agent.messages.length} messages</text>
+          <text fg={colors.textMuted}>{endpoints.length} endpoints found</text>
         </box>
       </box>
     );
@@ -438,8 +436,10 @@ function DiscoveryPanel({
     <box
       width={32}
       border
-      borderColor={agent?.status === "pending" ? greenBullet : dimText}
-      backgroundColor={darkBg}
+      borderColor={
+        agent?.status === "pending" ? colors.primary : colors.textMuted
+      }
+      backgroundColor={colors.background}
       flexDirection="column"
       onMouseDown={onToggleLogs}
     >
@@ -449,54 +449,56 @@ function DiscoveryPanel({
         alignItems="center"
         justifyContent="space-between"
         padding={1}
-        borderColor={dimText}
+        borderColor={colors.textMuted}
         border={["bottom"]}
       >
         <box flexDirection="row" gap={1}>
-          {!agent && <text fg={dimText}>Waiting...</text>}
+          {!agent && <text fg={colors.textMuted}>Waiting...</text>}
           {agent?.status === "pending" && (
-            <SpinnerDots label="Discovery" fg="green" />
+            <SpinnerDots label="Discovery" fg={colors.primary} />
           )}
           {agent?.status === "completed" && (
-            <text fg={greenBullet}>✓ Discovery</text>
+            <text fg={colors.primary}>✓ Discovery</text>
           )}
-          {agent?.status === "failed" && <text fg="red">✗ Discovery</text>}
+          {agent?.status === "failed" && (
+            <text fg={colors.error}>✗ Discovery</text>
+          )}
           {agent?.status === "paused" && (
-            <text fg={colors.orangeText}>⏸ Discovery</text>
+            <text fg={colors.tierRisky}>⏸ Discovery</text>
           )}
         </box>
-        <text fg={dimText}>[D]</text>
+        <text fg={colors.textMuted}>[D]</text>
       </box>
 
       {/* Stats */}
       {agent && (
         <box flexDirection="column" padding={1} gap={1}>
           <text>
-            <span fg={dimText}>Status: </span>
+            <span fg={colors.textMuted}>Status: </span>
             <span
               fg={
                 agent.status === "pending"
-                  ? greenBullet
+                  ? colors.primary
                   : agent.status === "paused"
-                    ? colors.orangeText
-                    : creamText
+                    ? colors.tierRisky
+                    : colors.text
               }
             >
               {agent.status}
             </span>
           </text>
           <text>
-            <span fg={dimText}>Messages: </span>
-            <span fg={creamText}>{agent.messages.length}</span>
+            <span fg={colors.textMuted}>Messages: </span>
+            <span fg={colors.text}>{agent.messages.length}</span>
           </text>
           <text>
-            <span fg={dimText}>Endpoints: </span>
-            <span fg={creamText}>{endpoints.length}</span>
+            <span fg={colors.textMuted}>Endpoints: </span>
+            <span fg={colors.text}>{endpoints.length}</span>
           </text>
           {agent.status === "paused" && (
             <text>
-              <span fg={colors.orangeText}>[R]</span>
-              <span fg={dimText}> Resume</span>
+              <span fg={colors.tierRisky}>[R]</span>
+              <span fg={colors.textMuted}> Resume</span>
             </text>
           )}
         </box>
@@ -512,10 +514,10 @@ function DiscoveryPanel({
           stickyScroll={false}
           focused={false}
         >
-          <text fg={dimText}>Endpoints:</text>
+          <text fg={colors.textMuted}>Endpoints:</text>
           {endpoints.map((endpoint, i) => (
-            <text key={i} fg={dimText}>
-              <span fg={greenBullet}>• </span>
+            <text key={i} fg={colors.textMuted}>
+              <span fg={colors.primary}>• </span>
               {endpoint.length > 26 ? endpoint.slice(0, 26) + "…" : endpoint}
             </text>
           ))}
@@ -532,6 +534,7 @@ interface AgentCardProps {
 }
 
 function AgentCard({ agent, focused, onSelect }: AgentCardProps) {
+  const { colors } = useTheme();
   const statusIcon = {
     pending: "◐",
     completed: "✓",
@@ -541,11 +544,11 @@ function AgentCard({ agent, focused, onSelect }: AgentCardProps) {
   }[agent.status];
 
   const statusColor = {
-    pending: greenBullet,
-    completed: greenBullet,
-    failed: RGBA.fromInts(244, 67, 54, 255),
-    paused: colors.orangeText,
-    canceled: dimText,
+    pending: colors.primary,
+    completed: colors.primary,
+    failed: colors.error,
+    paused: colors.tierRisky,
+    canceled: colors.textMuted,
   }[agent.status];
 
   // Get brief activity from last message (truncated to single line)
@@ -579,8 +582,8 @@ function AgentCard({ agent, focused, onSelect }: AgentCardProps) {
       flexBasis={0}
       minWidth={40}
       border
-      borderColor={focused ? greenBullet : dimText}
-      backgroundColor={darkBg}
+      borderColor={focused ? colors.primary : colors.textMuted}
+      backgroundColor={colors.background}
       flexDirection="column"
       padding={1}
       rowGap={1}
@@ -589,34 +592,38 @@ function AgentCard({ agent, focused, onSelect }: AgentCardProps) {
       {/* Header row */}
       <box flexDirection="row" alignItems="center" gap={1} flexWrap="wrap">
         <text fg={statusColor}>{statusIcon}</text>
-        <text fg={focused ? creamText : dimText}>{agent.name}</text>
+        <text fg={focused ? colors.text : colors.textMuted}>{agent.name}</text>
       </box>
 
       {/* Target - allow wrapping */}
-      <text fg={dimText}>{agent.target}</text>
+      <text fg={colors.textMuted}>{agent.target}</text>
 
       {/* Stats row */}
       <box flexDirection="row" gap={2} marginTop={1}>
-        <text fg={dimText}>
-          <span fg={greenBullet}>{stats.toolCalls}</span> calls
+        <text fg={colors.textMuted}>
+          <span fg={colors.primary}>{stats.toolCalls}</span> calls
         </text>
-        <text fg={dimText}>
-          <span fg={greenBullet}>{agent.messages.length}</span> msgs
+        <text fg={colors.textMuted}>
+          <span fg={colors.primary}>{agent.messages.length}</span> msgs
         </text>
       </box>
 
       {/* Activity / Status - single line */}
       <box height={1} overflow="hidden">
         {agent.status === "canceled" ? (
-          <text fg={dimText}>⊘ Canceled</text>
+          <text fg={colors.textMuted}>⊘ Canceled</text>
         ) : agent.status === "pending" ? (
-          <SpinnerDots label={lastActivity} fg="green" />
+          <SpinnerDots label={lastActivity} fg={colors.primary} />
         ) : agent.status === "paused" ? (
-          <text fg={colors.orangeText}>
+          <text fg={colors.tierRisky}>
             ⏸ Paused — press Enter then R to resume
           </text>
         ) : (
-          <text fg={agent.status === "completed" ? greenBullet : dimText}>
+          <text
+            fg={
+              agent.status === "completed" ? colors.primary : colors.textMuted
+            }
+          >
             {agent.status === "completed" ? "✓ Complete" : lastActivity}
           </text>
         )}
@@ -696,6 +703,7 @@ function MetricsBar({
   showKillHint,
   discoveryPaused,
 }: MetricsBarProps) {
+  const { colors } = useTheme();
   // Format duration as mm:ss
   const formattedDuration = useMemo(() => {
     const mins = Math.floor(duration / 60);
@@ -708,63 +716,65 @@ function MetricsBar({
       width="100%"
       flexDirection="row"
       justifyContent="space-between"
-      borderColor={greenBullet}
+      borderColor={colors.primary}
       border={["top"]}
       padding={1}
     >
       {/* Left: Metrics */}
       <box flexDirection="row" gap={2}>
         <text>
-          <span fg={greenBullet}>{totalFindings}</span>
-          <span fg={dimText}> findings</span>
+          <span fg={colors.primary}>{totalFindings}</span>
+          <span fg={colors.textMuted}> findings</span>
         </text>
-        <text fg={dimText}>|</text>
+        <text fg={colors.textMuted}>|</text>
         <text>
-          <span fg={isExecuting ? greenBullet : dimText}>{activeAgents}</span>
-          <span fg={dimText}>/{totalAgents} active</span>
+          <span fg={isExecuting ? colors.primary : colors.textMuted}>
+            {activeAgents}
+          </span>
+          <span fg={colors.textMuted}>/{totalAgents} active</span>
         </text>
         {canceledAgents > 0 && (
           <>
-            <text fg={dimText}>|</text>
+            <text fg={colors.textMuted}>|</text>
             <text>
-              <span fg={dimText}>{canceledAgents}</span>
-              <span fg={dimText}> canceled</span>
+              <span fg={colors.textMuted}>{canceledAgents}</span>
+              <span fg={colors.textMuted}> canceled</span>
             </text>
           </>
         )}
-        <text fg={dimText}>|</text>
-        <text fg={dimText}>{formattedDuration}</text>
+        <text fg={colors.textMuted}>|</text>
+        <text fg={colors.textMuted}>{formattedDuration}</text>
       </box>
 
       {/* Right: Keyboard hints */}
       <box flexDirection="row" gap={2}>
         {discoveryPaused && (
           <text>
-            <span fg={colors.orangeText}>[R]</span>
-            <span fg={dimText}> Resume</span>
+            <span fg={colors.tierRisky}>[R]</span>
+            <span fg={colors.textMuted}> Resume</span>
           </text>
         )}
         {showKillHint && (
           <text>
-            <span fg={greenBullet}>[X]</span>
-            <span fg={dimText}> Kill</span>
+            <span fg={colors.primary}>[X]</span>
+            <span fg={colors.textMuted}> Kill</span>
           </text>
         )}
         <text>
-          <span fg={greenBullet}>[D]</span>
-          <span fg={dimText}> Discovery</span>
+          <span fg={colors.primary}>[D]</span>
+          <span fg={colors.textMuted}> Discovery</span>
         </text>
         <text>
-          <span fg={greenBullet}>[Tab]</span>
-          <span fg={dimText}> Navigate</span>
+          <span fg={colors.primary}>[Tab]</span>
+          <span fg={colors.textMuted}> Navigate</span>
         </text>
         <text>
-          <span fg={greenBullet}>[Enter]</span>
-          <span fg={dimText}> View</span>
+          <span fg={colors.primary}>[Enter]</span>
+          <span fg={colors.textMuted}> View</span>
         </text>
         <text>
-          <span fg={greenBullet}>[ESC]</span>
-          <span fg={dimText}> Back</span>
+          <span fg={colors.primary}>[ESC]</span>
+          <span fg={colors.textMuted}> Back</span>
         </text>
       </box>
     </box>
@@ -778,12 +788,13 @@ interface AgentDetailViewProps {
 }
 
 function AgentDetailView({ agent, onBack, onResume }: AgentDetailViewProps) {
+  const { colors } = useTheme();
   const statusColor = {
-    pending: greenBullet,
-    completed: greenBullet,
-    failed: RGBA.fromInts(244, 67, 54, 255),
-    paused: colors.orangeText,
-    canceled: dimText,
+    pending: colors.primary,
+    completed: colors.primary,
+    failed: colors.error,
+    paused: colors.tierRisky,
+    canceled: colors.textMuted,
   }[agent.status];
 
   return (
@@ -792,19 +803,19 @@ function AgentDetailView({ agent, onBack, onResume }: AgentDetailViewProps) {
       <box
         width="100%"
         border={["bottom"]}
-        borderColor={greenBullet}
+        borderColor={colors.primary}
         flexDirection="row"
         justifyContent="space-between"
         padding={1}
       >
         <box flexDirection="row" gap={1}>
-          <text fg={dimText}></text>
-          <text fg={creamText}>{agent.name}</text>
+          <text fg={colors.textMuted}></text>
+          <text fg={colors.text}>{agent.name}</text>
         </box>
         <box flexDirection="row" gap={2}>
           <text>
-            <span fg={dimText}>Target: </span>
-            <span fg={creamText}>{agent.target}</span>
+            <span fg={colors.textMuted}>Target: </span>
+            <span fg={colors.text}>{agent.target}</span>
           </text>
           <text fg={statusColor}>{agent.status}</text>
         </box>
@@ -826,26 +837,26 @@ function AgentDetailView({ agent, onBack, onResume }: AgentDetailViewProps) {
         flexDirection="row"
         justifyContent="space-between"
         border={["top"]}
-        borderColor={greenBullet}
+        borderColor={colors.primary}
         padding={1}
       >
         <text>
-          <span fg={dimText}>{agent.messages.length} messages</span>
+          <span fg={colors.textMuted}>{agent.messages.length} messages</span>
         </text>
         <box flexDirection="row" gap={2}>
           {agent.status === "paused" && onResume && (
             <text>
-              <span fg={colors.orangeText}>[R]</span>
-              <span fg={dimText}> Resume</span>
+              <span fg={colors.tierRisky}>[R]</span>
+              <span fg={colors.textMuted}> Resume</span>
             </text>
           )}
           <text>
-            <span fg={greenBullet}>[ESC]</span>
-            <span fg={dimText}> Back to swarm</span>
+            <span fg={colors.primary}>[ESC]</span>
+            <span fg={colors.textMuted}> Back to swarm</span>
           </text>
           <text>
-            <span fg={greenBullet}>[/]</span>
-            <span fg={dimText}> Scroll</span>
+            <span fg={colors.primary}>[/]</span>
+            <span fg={colors.textMuted}> Scroll</span>
           </text>
         </box>
       </box>
