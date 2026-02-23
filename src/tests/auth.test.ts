@@ -1,6 +1,5 @@
 import { runAuthenticationAgent } from "../core/api/authentication";
 import { sessions } from "../core/session";
-import { AgentEventBus } from "../core/agents/offSecAgent/eventBus";
 import { describe, it, expect } from "vitest";
 import { config } from "dotenv";
 
@@ -41,8 +40,7 @@ describe("Authentication Agent", () => {
         password,
         loginUrl: `https://${TARGET_URL}/login`,
       },
-      eventBus: new AgentEventBus(),
-    });
+    }).result;
 
     console.log(
       `\nResult: ${result.success ? "SUCCESS" : "FAILED"} — ${result.summary}`,
@@ -62,8 +60,7 @@ describe("Authentication Agent", () => {
       target: TARGET_URL,
       model: "claude-haiku-4-5",
       session,
-      eventBus: new AgentEventBus(),
-    });
+    }).result;
 
     console.log(
       `\nResult: ${result.success ? "SUCCESS" : "FAILED"} — ${result.summary}`,
@@ -113,8 +110,7 @@ describe("Authentication Agent", () => {
           `https://${TARGET_URL}/dashboard`,
         ],
       },
-      eventBus: new AgentEventBus(),
-    });
+    }).result;
 
     console.log(
       `\nResult: ${result.success ? "SUCCESS" : "FAILED"} — ${result.summary}`,

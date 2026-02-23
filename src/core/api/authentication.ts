@@ -1,34 +1,19 @@
 import {
   AuthenticationAgent,
   type AuthenticationAgentInput,
+  type AuthenticationResult,
 } from "../agents/specialized/authenticationAgent/agent";
+import { AgentRun } from "./agentRun";
+
 // ---------------------------------------------------------------------------
 // Convenience runner
 // ---------------------------------------------------------------------------
 
-export async function runAuthenticationAgent(input: AuthenticationAgentInput) {
-  const agent = new AuthenticationAgent(input);
-
-  const {
-    success,
-    summary,
-    exportedCookies,
-    exportedHeaders,
-    strategy,
-    authBarrier,
-    authDataPath,
-  } = await agent.consume();
-
-  console.log(
-    `\nAuthentication ${success ? "succeeded" : "failed"}: ${summary}`,
-  );
-  return {
-    success,
-    summary,
-    exportedCookies,
-    exportedHeaders,
-    strategy,
-    authBarrier,
-    authDataPath,
-  };
+export function runAuthenticationAgent(
+  input: Omit<AuthenticationAgentInput, "eventBus">,
+): AgentRun<AuthenticationResult> {
+  return new AgentRun(async (eventBus) => {
+    const agent = new AuthenticationAgent({ ...input, eventBus });
+    return agent.consume();
+  });
 }

@@ -1,6 +1,5 @@
 import { runAttackSurfaceAgent } from "./attackSurface";
 import { sessions } from "../session";
-import { AgentEventBus } from "../agents/offSecAgent/eventBus";
 import { describe, it, expect } from "vitest";
 
 const TARGET_URL = "staging-console.pensar.dev";
@@ -15,9 +14,7 @@ describe("Attack Surface", () => {
       target: TARGET_URL,
       model: "claude-haiku-4-5",
       session,
-
-      eventBus: new AgentEventBus(),
-    });
+    }).result;
     expect(result).toBeDefined();
   });
 });
