@@ -25,6 +25,7 @@ import { DialogProvider, useDialog } from "./context/dialog";
 import { ToastProvider } from "./context/toast";
 import { ToastContainer } from "./components/toast";
 import { ErrorBoundary } from "./components/error-boundary";
+import { writeErrorLog } from "../core/logger";
 import ShortcutsDialog from "./components/commands/shortcuts-dialog";
 import HelpDialog from "./components/commands/help-dialog";
 import ModelsDisplay from "./components/commands/models-display";
@@ -346,12 +347,14 @@ async function main() {
   process.on("uncaughtException", (err) => {
     renderer.destroy();
     console.error("Uncaught exception:", err);
+    writeErrorLog(err, "UNCAUGHT");
     process.exit(1);
   });
 
   process.on("unhandledRejection", (reason) => {
     renderer.destroy();
     console.error("Unhandled rejection:", reason);
+    writeErrorLog(reason, "UNHANDLED_REJECTION");
     process.exit(1);
   });
 

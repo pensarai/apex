@@ -41,7 +41,10 @@ class ErrorBoundaryInner extends React.Component<
     );
 
     if (recent.length >= MAX_ERRORS) {
-      this.setState({ halted: true, errorTimestamps: recent });
+      this.props.onError(
+        "Too many errors in quick succession — UI recovery halted.",
+      );
+      this.setState({ halted: true, hasError: false, errorTimestamps: recent });
       return;
     }
 
@@ -50,9 +53,6 @@ class ErrorBoundaryInner extends React.Component<
 
   override render() {
     if (this.state.halted) {
-      return null;
-    }
-    if (this.state.hasError) {
       return null;
     }
     return this.props.children;

@@ -38,13 +38,15 @@ function pruneErrorLog(): void {
     const lines = raw.split("\n");
 
     const kept: string[] = [];
+    let keeping = true;
     for (const line of lines) {
       const match = TIMESTAMP_RE.exec(line);
       if (match) {
-        const ts = new Date(match[1]!).getTime();
-        if (ts < cutoff) continue;
+        keeping = new Date(match[1]!).getTime() >= cutoff;
       }
-      kept.push(line);
+      if (keeping) {
+        kept.push(line);
+      }
     }
 
     writeFileSync(ERROR_LOG_PATH, kept.join("\n"), "utf8");

@@ -1,5 +1,4 @@
 import { useTerminalDimensions } from "@opentui/react";
-import { useEffect, useState } from "react";
 import type { RGBA } from "@opentui/core";
 import { useTheme } from "../theme";
 import { type ToastVariant, useToast } from "../context/toast";
@@ -27,24 +26,14 @@ function variantColor(
 function ToastItem({
   message,
   variant,
-  duration,
   onDismiss,
 }: {
   message: string;
   variant: ToastVariant;
-  duration: number;
   onDismiss: () => void;
 }) {
   const { colors } = useTheme();
-  const [visible, setVisible] = useState(true);
   const accent = variantColor(variant, colors);
-
-  useEffect(() => {
-    const fadeTimer = setTimeout(() => setVisible(false), duration - 300);
-    return () => clearTimeout(fadeTimer);
-  }, [duration]);
-
-  if (!visible) return null;
 
   return (
     <box
@@ -55,7 +44,7 @@ function ToastItem({
       border={["left"]}
       borderColor={accent}
       backgroundColor={colors.backgroundPanel}
-      onMouseUp={async () => onDismiss()}
+      onMouseUp={() => onDismiss()}
     >
       <text fg={accent}>{VARIANT_ICONS[variant]}</text>
       <text fg={colors.text}>{message}</text>
@@ -85,7 +74,6 @@ export function ToastContainer() {
           key={t.id}
           message={t.message}
           variant={t.variant}
-          duration={t.duration}
           onDismiss={() => dismiss(t.id)}
         />
       ))}
