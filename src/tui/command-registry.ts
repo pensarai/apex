@@ -338,7 +338,6 @@ export const commands: CommandConfig[] = [
   },
 
   {
-<<<<<<< HEAD
     name: "exit",
     aliases: ["quit", "q"],
     description: "Exit the application",
@@ -347,7 +346,7 @@ export const commands: CommandConfig[] = [
       process.kill(process.pid, "SIGINT");
     },
   },
-=======
+  {
     name: "auth",
     description: "Connect to Pensar Console for managed inference",
     category: "General",
@@ -370,7 +369,6 @@ export const commands: CommandConfig[] = [
   //     ctx.clearScreen?.();
   //   },
   // },
->>>>>>> b6e1dd19 (Add Pensar managed inference provider and /auth command)
 ];
 
 /**

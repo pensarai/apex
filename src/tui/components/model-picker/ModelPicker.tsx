@@ -10,10 +10,18 @@ const providerNames: Record<string, string> = {
   openai: "OpenAI",
   openrouter: "OpenRouter",
   bedrock: "Bedrock",
+  pensar: "Pensar",
   local: "Local LLM",
 };
 
-const providerOrder = ["anthropic", "openai", "openrouter", "bedrock", "local"];
+const providerOrder = [
+  "pensar",
+  "anthropic",
+  "openai",
+  "openrouter",
+  "bedrock",
+  "local",
+];
 
 type NavigationItem =
   | { type: "provider"; provider: string }
