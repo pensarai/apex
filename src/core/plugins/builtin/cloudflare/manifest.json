@@ -1,0 +1,22 @@
+{
+  "name": "cloudflare",
+  "displayName": "Cloudflare Security",
+  "description": "Cloudflare WAF bypass techniques, origin IP discovery, and edge security auditing",
+  "version": "1.0.0",
+  "requires": [
+    {
+      "binary": "wrangler",
+      "installHint": "npm i -g wrangler"
+    }
+  ],
+  "provides": {
+    "context": [
+      {
+        "file": "context.md",
+        "description": "Cloudflare-specific techniques — origin IP discovery, WAF bypass, Workers security, cache poisoning, DNS misconfigs",
+        "phases": ["recon", "test"],
+        "priority": 10
+      }
+    ]
+  }
+}

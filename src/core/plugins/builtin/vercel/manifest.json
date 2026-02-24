@@ -1,0 +1,22 @@
+{
+  "name": "vercel",
+  "displayName": "Vercel Platform",
+  "description": "Vercel deployment reconnaissance, serverless function attack vectors, and edge config auditing",
+  "version": "1.0.0",
+  "requires": [
+    {
+      "binary": "vercel",
+      "installHint": "npm i -g vercel"
+    }
+  ],
+  "provides": {
+    "context": [
+      {
+        "file": "context.md",
+        "description": "Vercel-specific patterns — preview deployment exposure, env var leakage, middleware bypass, source map extraction",
+        "phases": ["recon", "test"],
+        "priority": 10
+      }
+    ]
+  }
+}

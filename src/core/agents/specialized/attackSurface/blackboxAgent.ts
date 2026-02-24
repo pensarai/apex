@@ -8,6 +8,7 @@ import { loadAttackSurfaceResults } from "./types";
 import { OffensiveSecurityAgent } from "../../offSecAgent/offensiveSecurityAgent";
 import type { SpecializedAgentInput } from "../../offSecAgent/types";
 import type { SessionInfo } from "../../../session";
+import { getPluginRegistry } from "../../../plugins";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -86,8 +87,10 @@ export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSur
       mkdirSync(subagentFolder, { recursive: true });
     }
 
+    const pluginContext = getPluginRegistry().getContextForPhase("recon");
+
     super({
-      system: detectOSAndEnhancePrompt(ATTACK_SURFACE_SYSTEM_PROMPT),
+      system: detectOSAndEnhancePrompt(ATTACK_SURFACE_SYSTEM_PROMPT) + pluginContext,
       prompt: buildPrompt(target, session),
       model,
       session,

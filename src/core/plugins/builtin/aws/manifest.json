@@ -1,0 +1,22 @@
+{
+  "name": "aws",
+  "displayName": "AWS Cloud Security",
+  "description": "AWS-specific pentesting techniques and infrastructure reconnaissance patterns",
+  "version": "1.0.0",
+  "requires": [
+    {
+      "binary": "aws",
+      "installHint": "brew install awscli OR pip install awscli"
+    }
+  ],
+  "provides": {
+    "context": [
+      {
+        "file": "context.md",
+        "description": "AWS pentesting techniques — SSRF to IMDS, S3 misconfigs, IAM enumeration, Lambda/CloudFront/API Gateway patterns",
+        "phases": ["recon", "test"],
+        "priority": 10
+      }
+    ]
+  }
+}

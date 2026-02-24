@@ -125,6 +125,18 @@ pensar
 
 **Note:** On Linux hosts, consider using `network_mode: host` in `docker-compose.yml` for comprehensive network scanning.
 
+## Plugins
+
+Apex includes platform plugins that give agents specialized knowledge for testing targets deployed on specific infrastructure. Plugins are automatically loaded when their required CLI is detected on your `$PATH`.
+
+| Plugin | CLI Required | Install |
+|--------|-------------|---------|
+| **AWS Cloud Security** — S3 misconfigs, IAM enumeration, SSRF to IMDS, Lambda/API Gateway patterns | `aws` | `brew install awscli` or `pip install awscli` |
+| **Vercel Platform** — Preview deployment exposure, env var leakage, serverless function testing, middleware bypass | `vercel` | `npm i -g vercel` |
+| **Cloudflare Security** — Origin IP discovery, WAF bypass, Workers inspection, cache poisoning | `wrangler` | `npm i -g wrangler` |
+
+Plugins are context-only — they inject platform-specific pentesting knowledge into agent prompts so agents know how to use the CLIs effectively. No plugin requires configuration beyond having the CLI installed and authenticated.
+
 ## vLLM Local Model Support
 
 To use a local vLLM server:
