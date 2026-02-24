@@ -21,7 +21,8 @@ export type RoutePath =
   | "disclosure"
   | "sessions"
   | "theme"
-  | "auth";
+  | "auth"
+  | "credits";
 
 export interface WebCommandOptions {
   auto?: boolean;

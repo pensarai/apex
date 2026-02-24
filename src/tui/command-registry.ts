@@ -358,6 +358,19 @@ export const commands: CommandConfig[] = [
     },
   },
 
+  {
+    name: "credits",
+    aliases: ["buy"],
+    description: "Buy credits / check balance",
+    category: "General",
+    handler: async (args, ctx) => {
+      ctx.navigate({
+        type: "base",
+        path: "credits",
+      });
+    },
+  },
+
   // Add more commands here...
   // Example:
   // {

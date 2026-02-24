@@ -95,6 +95,27 @@ export default function AuthFlow() {
     setStep("prompt");
   };
 
+  const hasLowBalance =
+    validationResult !== null && validationResult.credits.balance < 1;
+
+  const creditsUrl = `${getPensarConsoleUrl()}/credits`;
+
+  const openCreditsPage = () => {
+    try {
+      const platform = process.platform;
+      if (platform === "darwin") {
+        Bun.spawn(["open", creditsUrl]);
+      } else if (platform === "win32") {
+        Bun.spawn(["cmd", "/c", "start", creditsUrl]);
+      } else {
+        Bun.spawn(["xdg-open", creditsUrl]);
+      }
+    } catch {
+      // Browser open failed
+    }
+    goHome();
+  };
+
   useKeyboard((key) => {
     if (key.name === "escape") {
       goHome();
@@ -115,7 +136,11 @@ export default function AuthFlow() {
 
     if (step === "success") {
       if (key.name === "return") {
-        goHome();
+        if (hasLowBalance) {
+          openCreditsPage();
+        } else {
+          goHome();
+        }
       }
       if (key.raw === "d" || key.raw === "D") {
         handleDisconnect();
@@ -227,7 +252,18 @@ export default function AuthFlow() {
                 Workspace: {validationResult.workspace.name}
               </text>
               <text fg="white">
-                Credits: ${validationResult.credits.balance.toFixed(2)}
+                Credits:{" "}
+                <span fg={hasLowBalance ? "yellow" : "white"}>
+                  ${validationResult.credits.balance.toFixed(2)}
+                </span>
+              </text>
+            </box>
+          )}
+          {hasLowBalance && (
+            <box marginTop={1}>
+              <text fg="yellow">
+                Your credit balance is very low. We recommend at least $30 to run{"\n"}
+                pentests without interruptions. Press ENTER to buy credits.
               </text>
             </box>
           )}
@@ -243,7 +279,8 @@ export default function AuthFlow() {
           </box>
           <box marginTop={1}>
             <text fg="gray">
-              <span fg="green">[ENTER]</span> Done ·{" "}
+              <span fg="green">[ENTER]</span>{" "}
+              {hasLowBalance ? "Buy credits" : "Done"} ·{" "}
               <span fg="red">[D]</span> Disconnect ·{" "}
               <span fg="green">[ESC]</span> Back
             </text>
