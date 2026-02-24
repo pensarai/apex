@@ -1,37 +1,58 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useKeyboard } from "@opentui/react";
-import Input from "../input";
 import { config } from "../../../core/config";
 import { useRoute } from "../../context/route";
 import { useConfig } from "../../context/config";
 import { getPensarApiUrl, getPensarConsoleUrl } from "../../../core/api/constants";
 
-type AuthStep = "prompt" | "input" | "validating" | "success" | "error";
+type AuthStep = "start" | "requesting" | "polling" | "success" | "error";
 
-interface ValidationResult {
-  workspace: { id: string; name: string; slug: string };
-  credits: { balance: number };
+interface DeviceCodeResponse {
+  deviceCode: string;
+  userCode: string;
+  verificationUri: string;
+  verificationUriComplete: string;
+  expiresIn: number;
+  interval: number;
+}
+
+interface TokenResponse {
+  status: "pending" | "complete" | "expired" | "not_found";
+  apiKey?: string;
+  workspace?: { id: string; name: string; slug: string };
+  credits?: { balance: number };
 }
 
 export default function AuthFlow() {
   const route = useRoute();
   const appConfig = useConfig();
   const [step, setStep] = useState<AuthStep>(
-    appConfig.data.pensarAPIKey ? "success" : "prompt"
+    appConfig.data.pensarAPIKey ? "success" : "start"
   );
-  const [apiKey, setApiKey] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [validationResult, setValidationResult] =
-    useState<ValidationResult | null>(null);
+  const [deviceInfo, setDeviceInfo] = useState<DeviceCodeResponse | null>(null);
+  const [tokenResult, setTokenResult] = useState<TokenResponse | null>(null);
+  const pollingRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelledRef = useRef(false);
 
   const goHome = () => {
     route.navigate({ type: "base", path: "home" });
   };
 
-  const connectUrl = `${getPensarConsoleUrl()}/connect`;
+  const cleanup = () => {
+    cancelledRef.current = true;
+    if (pollingRef.current) {
+      clearTimeout(pollingRef.current);
+      pollingRef.current = null;
+    }
+  };
 
-  const openBrowser = () => {
-    const url = connectUrl;
+  // Cleanup on unmount
+  useEffect(() => {
+    return cleanup;
+  }, []);
+
+  const openUrl = (url: string) => {
     try {
       const platform = process.platform;
       if (platform === "darwin") {
@@ -44,93 +65,143 @@ export default function AuthFlow() {
     } catch {
       // Browser open failed — user will see the fallback URL
     }
-    setStep("input");
   };
 
-  const validateAndSave = async (key: string) => {
-    setStep("validating");
+  const startDeviceFlow = async () => {
+    setStep("requesting");
     setError(null);
+    cancelledRef.current = false;
 
     try {
       const apiUrl = getPensarApiUrl(appConfig.data);
-      const response = await fetch(`${apiUrl}/bedrock/validate`, {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${key}`,
-        },
+      const response = await fetch(`${apiUrl}/auth/device/code`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
       });
 
       if (!response.ok) {
-        const body = await response.text();
-        let message: string;
-        try {
-          const parsed = JSON.parse(body);
-          message = parsed.error || parsed.message || body;
-        } catch {
-          message = body;
-        }
-        throw new Error(message);
+        throw new Error("Failed to start device authorization");
       }
 
-      const result = (await response.json()) as ValidationResult;
-      setValidationResult(result);
+      const data = (await response.json()) as DeviceCodeResponse;
+      setDeviceInfo(data);
 
-      // Save API key to config
-      await config.update({ pensarAPIKey: key });
-      appConfig.reload();
+      // Open browser with the complete verification URI
+      openUrl(data.verificationUriComplete);
 
-      setStep("success");
+      // Start polling
+      setStep("polling");
+      pollForToken(apiUrl, data.deviceCode, data.interval, data.expiresIn);
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "Failed to validate API key"
+        err instanceof Error ? err.message : "Failed to start authorization"
       );
       setStep("error");
     }
   };
 
+  const pollForToken = (
+    apiUrl: string,
+    deviceCode: string,
+    interval: number,
+    expiresIn: number
+  ) => {
+    const deadline = Date.now() + expiresIn * 1000;
+
+    const poll = async () => {
+      if (cancelledRef.current) return;
+
+      if (Date.now() > deadline) {
+        setError("Authorization timed out. Please try again.");
+        setStep("error");
+        return;
+      }
+
+      try {
+        const response = await fetch(`${apiUrl}/auth/device/token`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ deviceCode }),
+        });
+
+        if (!response.ok) {
+          throw new Error("Failed to check authorization status");
+        }
+
+        const data = (await response.json()) as TokenResponse;
+
+        if (cancelledRef.current) return;
+
+        if (data.status === "complete" && data.apiKey) {
+          setTokenResult(data);
+
+          // Save API key to config
+          await config.update({ pensarAPIKey: data.apiKey });
+          appConfig.reload();
+
+          setStep("success");
+          return;
+        }
+
+        if (data.status === "expired") {
+          setError("Authorization expired. Please try again.");
+          setStep("error");
+          return;
+        }
+
+        if (data.status === "not_found") {
+          setError("Invalid authorization session. Please try again.");
+          setStep("error");
+          return;
+        }
+
+        // Still pending — poll again
+        pollingRef.current = setTimeout(poll, interval * 1000);
+      } catch (err) {
+        if (cancelledRef.current) return;
+        // Network error — retry
+        pollingRef.current = setTimeout(poll, interval * 1000);
+      }
+    };
+
+    pollingRef.current = setTimeout(poll, interval * 1000);
+  };
+
   const handleDisconnect = async () => {
     await config.update({ pensarAPIKey: null });
     appConfig.reload();
-    setValidationResult(null);
-    setStep("prompt");
+    setTokenResult(null);
+    setStep("start");
   };
 
   const hasLowBalance =
-    validationResult !== null && validationResult.credits.balance < 1;
+    tokenResult !== null &&
+    tokenResult.credits !== undefined &&
+    tokenResult.credits.balance < 1;
 
   const creditsUrl = `${getPensarConsoleUrl()}/credits`;
 
   const openCreditsPage = () => {
-    try {
-      const platform = process.platform;
-      if (platform === "darwin") {
-        Bun.spawn(["open", creditsUrl]);
-      } else if (platform === "win32") {
-        Bun.spawn(["cmd", "/c", "start", creditsUrl]);
-      } else {
-        Bun.spawn(["xdg-open", creditsUrl]);
-      }
-    } catch {
-      // Browser open failed
-    }
+    openUrl(creditsUrl);
     goHome();
   };
 
   useKeyboard((key) => {
     if (key.name === "escape") {
+      cleanup();
       goHome();
       return;
     }
 
-    if (step === "prompt") {
+    if (step === "start") {
       if (key.name === "return") {
-        openBrowser();
+        startDeviceFlow();
       }
     }
 
     if (step === "error") {
       if (key.name === "return") {
-        setStep("input");
+        startDeviceFlow();
       }
     }
 
@@ -170,73 +241,53 @@ export default function AuthFlow() {
         </text>
       </box>
 
-      {/* Step: Prompt */}
-      {step === "prompt" && (
+      {/* Step: Start */}
+      {step === "start" && (
         <box flexDirection="column" gap={1}>
           <box>
             <text fg="white">
-              Press <span fg="green">[ENTER]</span> to open Pensar Console in
-              your browser and generate an API key.
+              Press <span fg="green">[ENTER]</span> to authorize via your
+              browser.
             </text>
           </box>
           <box marginTop={1}>
             <text fg="gray">
-              Or visit: {connectUrl}
-            </text>
-          </box>
-          <box marginTop={1}>
-            <text fg="gray">
-              <span fg="green">[ENTER]</span> Open browser ·{" "}
+              <span fg="green">[ENTER]</span> Connect ·{" "}
               <span fg="green">[ESC]</span> Cancel
             </text>
           </box>
         </box>
       )}
 
-      {/* Step: Input */}
-      {step === "input" && (
+      {/* Step: Requesting */}
+      {step === "requesting" && (
+        <box>
+          <text fg="yellow">Starting authorization...</text>
+        </box>
+      )}
+
+      {/* Step: Polling */}
+      {step === "polling" && deviceInfo && (
         <box flexDirection="column" gap={1}>
           <box>
-            <text fg="gray">
-              Browser opened. Generate a key and paste it below.
-            </text>
+            <text fg="yellow">Waiting for browser authorization...</text>
           </box>
-          <box>
-            <Input
-              label="API Key"
-              description="Your key will be stored locally in ~/.pensar/config.json"
-              value={apiKey}
-              focused={true}
-              onChange={(value) =>
-                setApiKey(typeof value === "string" ? value : "")
-              }
-              onPaste={(event: string | { text: string }) => {
-                const cleaned = String(
-                  typeof event === "string" ? event : event.text
-                );
-                setApiKey((prev) => `${prev}${cleaned}`);
-              }}
-              onSubmit={() => {
-                const key = apiKey.trim();
-                if (key) {
-                  validateAndSave(key);
-                }
-              }}
-            />
+          <box marginTop={1}>
+            <text fg="white">
+              Your code: <span fg="green">{deviceInfo.userCode}</span>
+            </text>
           </box>
           <box marginTop={1}>
             <text fg="gray">
-              <span fg="green">[ENTER]</span> Validate ·{" "}
+              If the browser didn't open, visit:{"\n"}
+              {deviceInfo.verificationUriComplete}
+            </text>
+          </box>
+          <box marginTop={1}>
+            <text fg="gray">
               <span fg="green">[ESC]</span> Cancel
             </text>
           </box>
-        </box>
-      )}
-
-      {/* Step: Validating */}
-      {step === "validating" && (
-        <box>
-          <text fg="yellow">Validating API key...</text>
         </box>
       )}
 
@@ -246,15 +297,15 @@ export default function AuthFlow() {
           <box>
             <text fg="green">Connected to Pensar Console</text>
           </box>
-          {validationResult && (
+          {tokenResult?.workspace && (
             <box flexDirection="column">
               <text fg="white">
-                Workspace: {validationResult.workspace.name}
+                Workspace: {tokenResult.workspace.name}
               </text>
               <text fg="white">
                 Credits:{" "}
                 <span fg={hasLowBalance ? "yellow" : "white"}>
-                  ${validationResult.credits.balance.toFixed(2)}
+                  ${(tokenResult.credits?.balance ?? 0).toFixed(2)}
                 </span>
               </text>
             </box>
@@ -267,7 +318,7 @@ export default function AuthFlow() {
               </text>
             </box>
           )}
-          {!validationResult && appConfig.data.pensarAPIKey && (
+          {!tokenResult && appConfig.data.pensarAPIKey && (
             <box>
               <text fg="gray">Already connected (key saved in config)</text>
             </box>
@@ -292,7 +343,7 @@ export default function AuthFlow() {
       {step === "error" && (
         <box flexDirection="column" gap={1}>
           <box>
-            <text fg="red">Validation failed: {error}</text>
+            <text fg="red">{error}</text>
           </box>
           <box marginTop={1}>
             <text fg="gray">
