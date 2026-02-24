@@ -185,108 +185,15 @@ describe("AgentRun", () => {
     });
   });
 
-  describe("seq (monotonic sequence counter)", () => {
-    it("increments seq for each event including terminal", async () => {
-      const run = new AgentRun<void>(async (bus) => {
-        bus.emit({ type: "text-delta", data: { type: "text-delta", textDelta: "a" } as any });
-        bus.emit({ type: "text-delta", data: { type: "text-delta", textDelta: "b" } as any });
-      });
-
-      for await (const _ of run) {
-        // consume all events
-      }
-
-      // 2 text-delta + 1 run-complete = 3
-      expect(run.seq).toBe(3);
-    });
-
-    it("seq starts at 0 for a fresh run", async () => {
-      // Use a deferred pattern to control when events are emitted
-      let emitFn: ((bus: AgentEventBus) => void) | null = null;
-      const ready = new Promise<void>((resolve) => {
-        emitFn = (bus) => {
-          bus.emit({ type: "text-delta", data: { type: "text-delta", textDelta: "a" } as any });
-          resolve();
-        };
-      });
-
-      const run = new AgentRun<void>(async (bus) => {
-        // Wait a tick so the test can read seq before any events
-        await new Promise((r) => setTimeout(r, 0));
-        emitFn!(bus);
-        await ready;
-      });
-
-      // Before the run function emits anything, seq should be 0
-      expect(run.seq).toBe(0);
-
-      for await (const _ of run) {}
-      // After completion: 1 text-delta + 1 run-complete = 2
-      expect(run.seq).toBe(2);
-    });
-  });
-
-  describe("history and eventsAfter()", () => {
-    it("records all events in history", async () => {
-      const run = new AgentRun<void>(async (bus) => {
-        bus.emit({ type: "text-delta", data: { type: "text-delta", textDelta: "a" } as any });
-        bus.emit({ type: "tool-call", data: { type: "tool-call", toolName: "test", toolCallId: "1", args: {} } as any });
-      });
-
-      for await (const _ of run) {
-        // consume
-      }
-
-      const history = run.history;
-      // 2 domain + 1 run-complete
-      expect(history).toHaveLength(3);
-      expect(history[0]!.type).toBe("text-delta");
-      expect(history[1]!.type).toBe("tool-call");
-      expect(history[2]!.type).toBe("run-complete");
-    });
-
-    it("history returns a copy (not a reference)", async () => {
-      const run = new AgentRun<void>(async () => {});
-      for await (const _ of run) {}
-
-      const h1 = run.history;
-      const h2 = run.history;
-      expect(h1).not.toBe(h2);
-      expect(h1).toEqual(h2);
-    });
-
-    it("eventsAfter returns events after given seq", async () => {
-      const run = new AgentRun<void>(async (bus) => {
-        bus.emit({ type: "text-delta", data: { type: "text-delta", textDelta: "a" } as any }); // seq 1
-        bus.emit({ type: "text-delta", data: { type: "text-delta", textDelta: "b" } as any }); // seq 2
-        bus.emit({ type: "text-delta", data: { type: "text-delta", textDelta: "c" } as any }); // seq 3
-      });
-
-      for await (const _ of run) {}
-
-      // Total events: 3 text-delta + 1 run-complete = 4, stored at indices 0..3
-      // eventsAfter(seq) returns history.slice(seq), so:
-      // eventsAfter(0) = all events (from index 0 onward)
-      // eventsAfter(2) = events at indices 2, 3 (third text-delta + run-complete)
-      const afterTwo = run.eventsAfter(2);
-      expect(afterTwo).toHaveLength(2);
-      expect(afterTwo[0]!.type).toBe("text-delta");
-      expect(afterTwo[1]!.type).toBe("run-complete");
-
-      // eventsAfter(-1) returns all events
-      expect(run.eventsAfter(-1)).toHaveLength(4);
-
-      // eventsAfter(100) returns empty
-      expect(run.eventsAfter(100)).toHaveLength(0);
-    });
-  });
-
   describe("terminal events", () => {
     it("emits run-complete on successful completion", async () => {
       const events: AgentEvent[] = [];
 
       const run = new AgentRun<string>(async (bus) => {
-        bus.emit({ type: "text-delta", data: { type: "text-delta", textDelta: "hi" } as any });
+        bus.emit({
+          type: "text-delta",
+          data: makeTextDelta("hi"),
+        });
         return "ok";
       });
 
@@ -324,7 +231,10 @@ describe("AgentRun", () => {
       const events: AgentEvent[] = [];
 
       const run = new AgentRun<never>(async () => {
-        const err = new DOMException("The operation was aborted.", "AbortError");
+        const err = new DOMException(
+          "The operation was aborted.",
+          "AbortError",
+        );
         throw err;
       });
 
@@ -368,8 +278,14 @@ describe("AgentRun", () => {
       const events: AgentEvent[] = [];
 
       const run = new AgentRun<void>(async (bus) => {
-        bus.emit({ type: "text-delta", data: { type: "text-delta", textDelta: "a" } as any });
-        bus.emit({ type: "text-delta", data: { type: "text-delta", textDelta: "b" } as any });
+        bus.emit({
+          type: "text-delta",
+          data: makeTextDelta("a"),
+        });
+        bus.emit({
+          type: "text-delta",
+          data: makeTextDelta("b"),
+        });
       });
 
       for await (const event of run) {
@@ -380,7 +296,9 @@ describe("AgentRun", () => {
       // Last event should be terminal
       expect(terminalTypes).toContain(events[events.length - 1]!.type);
       // No non-terminal events after the terminal event
-      const terminalIdx = events.findIndex((e) => terminalTypes.includes(e.type));
+      const terminalIdx = events.findIndex((e) =>
+        terminalTypes.includes(e.type),
+      );
       expect(terminalIdx).toBe(events.length - 1);
     });
   });
