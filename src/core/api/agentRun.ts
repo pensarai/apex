@@ -39,12 +39,6 @@ export class AgentRun<TResult> implements AsyncIterable<AgentEvent> {
   private done = false;
   private error: unknown = undefined;
 
-  /** Monotonic sequence counter, incremented for each event. */
-  private _nextSeq = 0;
-
-  /** Ordered history of all events emitted during this run. */
-  private _history: AgentEvent[] = [];
-
   constructor(run: (eventBus: AgentEventBus) => Promise<TResult>) {
     const bus = new AgentEventBus();
 
@@ -79,31 +73,6 @@ export class AgentRun<TResult> implements AsyncIterable<AgentEvent> {
           resolve({ value: undefined as never, done: true });
         }
       });
-  }
-
-  /**
-   * Returns all events with a sequence number strictly greater than `seq`.
-   * Useful for replaying missed events (e.g., after a reconnect).
-   */
-  eventsAfter(seq: number): AgentEvent[] {
-    if (seq < 0) return [...this._history];
-    if (seq >= this._history.length) return [];
-    return this._history.slice(seq);
-  }
-
-  /**
-   * Returns the current sequence counter (number of events emitted so far).
-   * The next event will have sequence number equal to this value.
-   */
-  get seq(): number {
-    return this._nextSeq;
-  }
-
-  /**
-   * Returns a shallow copy of the full event history.
-   */
-  get history(): AgentEvent[] {
-    return [...this._history];
   }
 
   /**
@@ -152,11 +121,8 @@ export class AgentRun<TResult> implements AsyncIterable<AgentEvent> {
     }
   }
 
-  /** Internal: record event in history and deliver to iterator consumer. */
+  /** Internal: deliver event to iterator consumer. */
   private pushEvent(event: AgentEvent): void {
-    this._nextSeq++;
-    this._history.push(event);
-
     if (this.waiting) {
       const resolve = this.waiting;
       this.waiting = null;
