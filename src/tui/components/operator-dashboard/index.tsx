@@ -10,11 +10,8 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useKeyboard } from "@opentui/react";
 
 import { sessions, type SessionInfo } from "../../../core/session";
-import { runOffensiveSecurityAgent } from "../../../core/api/offesecAgent";
-import {
-  ALL_TOOL_NAMES,
-  AgentEventBus,
-} from "../../../core/agents/offSecAgent";
+import { runOperatorAgent } from "../../../core/api";
+import { ALL_TOOL_NAMES } from "../../../core/agents/offSecAgent";
 import { useAgent } from "../../context/agent";
 import { useRoute } from "../../context/route";
 import { useConfig } from "../../context/config";
@@ -202,63 +199,60 @@ export default function OperatorDashboard({
         { role: "user", content: prompt, createdAt: new Date() },
       ]);
 
-      const eventBus = new AgentEventBus();
-      const unsubs: Array<() => void> = [];
-
-      unsubs.push(
-        eventBus.on("text-delta", (e) => {
-          setThinking(false);
-          appendText(e.data.text);
-        }),
-      );
-
-      unsubs.push(
-        eventBus.on("tool-call", (e) => {
-          setThinking(false);
-          addToolCall(
-            e.data.toolCallId,
-            e.data.toolName,
-            e.data.input as Record<string, unknown> | undefined,
-          );
-        }),
-      );
-
-      unsubs.push(
-        eventBus.on("tool-result", (e) => {
-          setThinking(true);
-          updateToolResult(e.data.toolCallId, e.data.toolName, e.data.output);
-        }),
-      );
-
-      unsubs.push(
-        eventBus.on("error", (e) => {
-          console.error("Agent error:", e.error);
-          setError(
-            e.error instanceof Error ? e.error.message : "Unknown error",
-          );
-        }),
-      );
+      const run = runOperatorAgent({
+        system: buildOperatorSystemPrompt(session, operatorState),
+        prompt,
+        model: model.id,
+        session,
+        stopWhen: [stepCountIs(10000)],
+        target: session.targets[0],
+        activeTools: [...ALL_TOOL_NAMES],
+        abortSignal: controller.signal,
+        authConfig: {
+          anthropicAPIKey: config.data.anthropicAPIKey ?? undefined,
+          openAiAPIKey: config.data.openAiAPIKey ?? undefined,
+          openRouterAPIKey: config.data.openRouterAPIKey ?? undefined,
+          local: config.data.localModelUrl
+            ? { baseURL: config.data.localModelUrl }
+            : undefined,
+        },
+      });
 
       try {
-        await runOffensiveSecurityAgent({
-          system: buildOperatorSystemPrompt(session, operatorState),
-          prompt,
-          model: model.id,
-          session,
-          stopWhen: [stepCountIs(10000)],
-          target: session.targets[0],
-          activeTools: [...ALL_TOOL_NAMES],
-          abortSignal: controller.signal,
-          authConfig: {
-            anthropicAPIKey: config.data.anthropicAPIKey ?? undefined,
-            openAiAPIKey: config.data.openAiAPIKey ?? undefined,
-            openRouterAPIKey: config.data.openRouterAPIKey ?? undefined,
-            local: config.data.localModelUrl
-              ? { baseURL: config.data.localModelUrl }
-              : undefined,
-          },
-          eventBus,
-        });
+        for await (const event of run) {
+          switch (event.type) {
+            case "text-delta":
+              setThinking(false);
+              appendText(event.data.text);
+              break;
+            case "tool-call":
+              setThinking(false);
+              addToolCall(
+                event.data.toolCallId,
+                event.data.toolName,
+                event.data.input as Record<string, unknown> | undefined,
+              );
+              break;
+            case "tool-result":
+              setThinking(true);
+              updateToolResult(
+                event.data.toolCallId,
+                event.data.toolName,
+                event.data.output,
+              );
+              break;
+            case "error":
+              console.error("Agent error:", event.error);
+              setError(String(event.error));
+              break;
+            case "run-complete":
+            case "run-error":
+            case "run-cancelled":
+              break;
+          }
+        }
+
+        await run.result;
       } catch (e) {
         if ((e as Error).name !== "AbortError") {
           const errorMsg = e instanceof Error ? e.message : "Agent failed";
@@ -273,9 +267,6 @@ export default function OperatorDashboard({
           ]);
         }
       } finally {
-        for (const unsub of unsubs) {
-          unsub();
-        }
         setStatus("idle");
         setThinking(false);
         setIsExecuting(false);
