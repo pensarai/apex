@@ -14,12 +14,14 @@ import { getAvailableModels } from "../../core/providers/utils";
 
 // Preferred defaults by provider (fast + cheap models)
 const PREFERRED_DEFAULTS: Record<string, string> = {
+  pensar: "pensar:anthropic.claude-haiku-4-5-20251001-v1:0",
   anthropic: "claude-haiku-4-5",
   openai: "gpt-4o-mini",
 };
 
 // Provider preference order when multiple are available
-const PROVIDER_PREFERENCE = ["anthropic", "openai", "openrouter", "bedrock"];
+// Pensar first: if connected to Pensar Console, prefer managed inference
+const PROVIDER_PREFERENCE = ["pensar", "anthropic", "openai", "openrouter", "bedrock"];
 
 interface TokenUsage {
   inputTokens: number;
@@ -75,9 +77,10 @@ export function AgentProvider({ children }: AgentProviderProps) {
   }, []);
 
   // Smart default model selection:
-  // 1. Prefer Claude Haiku 4.5 if Anthropic is configured
-  // 2. Fall back to GPT-4o Mini if OpenAI is configured
-  // 3. Otherwise use first available model
+  // 1. Prefer Pensar Haiku 4.5 if connected to Pensar Console
+  // 2. Fall back to Claude Haiku 4.5 if Anthropic is configured
+  // 3. Fall back to GPT-4o Mini if OpenAI is configured
+  // 4. Otherwise use first available model
   useEffect(() => {
     getConfig()
       .then((config) => {
