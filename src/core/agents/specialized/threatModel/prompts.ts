@@ -1,5 +1,5 @@
-import type { DeploymentContext, SecurityControlsResult } from "./types";
-import type { WhiteboxAttackSurfaceResult } from "../whiteboxAttackSurface/types";
+import { join } from "path";
+import type { DeploymentContext } from "./types";
 
 // ---------------------------------------------------------------------------
 // Phase 1: Deployment Context Discovery
@@ -67,21 +67,23 @@ Call the \`response\` tool with the structured deployment context when done.`;
 export function buildSecurityControlsObjective(
   codebasePath: string,
   deploymentContext: DeploymentContext,
-  attackSurface: WhiteboxAttackSurfaceResult,
+  sessionRootPath: string,
 ): string {
   const dbTypes =
     deploymentContext.databases?.map((d) => d.type).join(", ") ?? "unknown";
-  const frameworks = attackSurface.apps.map((a) => a.framework).join(", ");
+  const attackSurfacePath = join(sessionRootPath, "attack-surface-results.json");
 
   return `# Extract Security Controls and Middleware
 
 ## Codebase
 - **Path:** ${codebasePath}
-- **Frameworks:** ${frameworks}
 - **Databases:** ${dbTypes}
 
-## Known Apps
-${attackSurface.apps.map((a) => `- **${a.name}** (${a.framework}) at ${a.location}`).join("\n")}
+## Attack Surface Data
+The attack surface analysis (apps, endpoints, frameworks) is available at:
+- **File:** ${attackSurfacePath}
+
+Read this file to understand the application structure, frameworks in use, and known apps/endpoints. Use this context to guide your security controls discovery.
 
 ## Task
 Analyze the codebase to find ALL security controls, authentication mechanisms, and authorization models. For each control, assess its effectiveness and identify gaps.
@@ -149,7 +151,6 @@ Analyze the codebase to find ALL security controls, authentication mechanisms, a
 - **name**: A descriptive name
 - **implementation**: How it's implemented (library, custom code)
 - **scope**: What it applies to (all routes, specific routes, etc.)
-- **file** and **line**: Where it's defined
 - **effectiveness**: strong (well-implemented, comprehensive), moderate (covers most cases but has gaps), weak (easily bypassed or incomplete), unknown
 - **gaps**: Any weaknesses or missing coverage
 
@@ -158,62 +159,81 @@ Call the \`response\` tool with the structured security controls when done.`;
 }
 
 // ---------------------------------------------------------------------------
-// Phase 3a: System Architecture Synthesis
+// Phase 3a/3b: Data Synthesis Agent (reads JSON files, not source code)
 // ---------------------------------------------------------------------------
 
-export const ARCHITECTURE_SYNTHESIS_SYSTEM_PROMPT = `You are an expert system architect analyzing a codebase for threat modeling. You will receive deployment context and attack surface data. Your job is to model the system architecture: components, trust boundaries, and data flows.
+export const DATA_SYNTHESIS_AGENT_SYSTEM_PROMPT = `You are an expert security analyst synthesizing structured analysis data into threat model artifacts. You are NOT exploring source code — you are reading structured JSON analysis files that were produced by earlier phases.
 
-# Modeling Rules
+# Tool Usage Guide
 
-## Components
-- Model each distinct system component (web app, API, database, cache, CDN, proxy, etc.)
-- Assign a unique ID (comp-1, comp-2, ...) and a trust boundary
-- Include the technology stack for each component
+## read_file
+Read JSON data files from the session directory. These files contain structured analysis results — read them in full to understand the data.
 
-## Trust Boundaries
-- Define boundaries: external (internet), dmz (edge/proxy), internal (app tier), data (databases/caches)
-- Each component belongs to exactly one boundary
-- Assign unique IDs (tb-external, tb-dmz, etc.)
+## grep
+Use grep to cross-reference data across files when needed — e.g. searching for a specific endpoint or component name across multiple JSON files.
 
-## Data Flows
-- Model significant data flows between components
-- Include protocol, data classification, and whether the flow is authenticated/encrypted
-- Assign unique IDs (df-1, df-2, ...)`;
+## response
+When your objective is complete, call \`response\` with your final structured results. This ends your run — make sure all data is included.
 
-export function buildArchitectureSynthesisPrompt(
-  deploymentContext: DeploymentContext,
-  attackSurface: WhiteboxAttackSurfaceResult,
+# Working Approach
+1. **Read the data files** specified in your objective — these contain all the information you need.
+2. **Cross-reference** data across files to build a complete picture.
+3. **Focus on deployed endpoints** (paths, methods, parameters) — not source file paths.
+4. **Be thorough** — ensure your output covers all relevant data from the input files.
+`;
+
+export function buildArchitectureSynthesisObjective(
+  sessionRootPath: string,
 ): string {
+  const attackSurfacePath = join(sessionRootPath, "attack-surface-results.json");
+  const deploymentContextPath = join(sessionRootPath, "deployment-context.json");
+
   return `# Model System Architecture
 
-Analyze the following data and define the system architecture.
-
-## Deployment Context
-\`\`\`json
-${JSON.stringify(deploymentContext, null, 2)}
-\`\`\`
-
-## Attack Surface
-\`\`\`json
-${JSON.stringify(attackSurface, null, 2)}
-\`\`\`
+## Data Files
+Read these files to understand the system:
+- **Attack Surface:** ${attackSurfacePath}
+- **Deployment Context:** ${deploymentContextPath}
 
 ## Instructions
 
-1. **Define system components** — based on the deployment context and attack surface, model all components (apps, databases, caches, proxies, CDNs, etc.)
+1. **Read both data files** in full to understand the application structure and deployment context.
 
-2. **Define trust boundaries** — group components into trust boundaries (external, dmz, internal, data)
+2. **Define system components** — based on the deployment context and attack surface, model all components (apps, databases, caches, proxies, CDNs, etc.):
+   - Assign a unique ID (comp-1, comp-2, ...) and a trust boundary
+   - Include the technology stack for each component
 
-3. **Define data flows** — model how data moves between components, noting protocol, classification, and security properties`;
+3. **Define trust boundaries** — group components into trust boundaries:
+   - external (internet), dmz (edge/proxy), internal (app tier), data (databases/caches)
+   - Each component belongs to exactly one boundary
+   - Assign unique IDs (tb-external, tb-dmz, etc.)
+
+4. **Define data flows** — model how data moves between components:
+   - Include protocol, data classification, and whether the flow is authenticated/encrypted
+   - Assign unique IDs (df-1, df-2, ...)
+
+## Output
+Call the \`response\` tool with the structured system architecture when done.`;
 }
 
-// ---------------------------------------------------------------------------
-// Phase 3b: STRIDE Threats Synthesis
-// ---------------------------------------------------------------------------
+export function buildThreatsSynthesisObjective(
+  sessionRootPath: string,
+): string {
+  const attackSurfacePath = join(sessionRootPath, "attack-surface-results.json");
+  const deploymentContextPath = join(sessionRootPath, "deployment-context.json");
+  const securityControlsPath = join(sessionRootPath, "security-controls.json");
+  const systemArchitecturePath = join(sessionRootPath, "system-architecture.json");
 
-export const THREATS_SYNTHESIS_SYSTEM_PROMPT = `You are an expert threat modeler using the STRIDE methodology. You will receive structured data about a codebase's deployment context, security controls, attack surface, and system architecture. Your job is to identify concrete STRIDE threats.
+  return `# Identify STRIDE Threats
 
-# STRIDE Categories
+## Data Files
+Read ALL of these files before generating threats:
+- **Attack Surface:** ${attackSurfacePath}
+- **Deployment Context:** ${deploymentContextPath}
+- **Security Controls:** ${securityControlsPath}
+- **System Architecture:** ${systemArchitecturePath}
+
+## STRIDE Categories
 
 - **Spoofing**: Can an attacker pretend to be another user or system? (fake credentials, token theft, session hijacking)
 - **Tampering**: Can an attacker modify data they shouldn't? (SQL injection, parameter manipulation, request forgery)
@@ -222,54 +242,28 @@ export const THREATS_SYNTHESIS_SYSTEM_PROMPT = `You are an expert threat modeler
 - **Denial of Service**: Can an attacker degrade or halt the service? (resource exhaustion, algorithmic complexity, missing rate limits)
 - **Elevation of Privilege**: Can an attacker gain unauthorized access levels? (IDOR to admin, role bypass, privilege escalation)
 
-# Quality Standards
+## Instructions
+
+1. **Read all four data files** in full.
+2. For each STRIDE category, analyze the attack surface and security controls to find threats:
+   - Cross-reference endpoints from the attack surface with security controls to find gaps
+   - Consider deployment-specific attack vectors (e.g. PostgreSQL-specific SQL injection, Node.js prototype pollution)
+   - Assess which controls mitigate which threats, and note the residual risk
+   - Generate actionable pentest guidance with deployment-specific considerations
+   - Reference component IDs and data flow IDs from the system architecture
+   - Assign unique threat IDs (T-001, T-002, ...)
+
+## Quality Standards
 
 - **Every threat must reference a real endpoint** from the attack surface data — do not fabricate endpoints
 - **Preconditions must be specific** — not generic statements like "if the app is vulnerable" but specific conditions like "the search parameter is concatenated into raw SQL without parameterization"
-- **Mitigations must reference actual controls** — cite the specific security controls from the input data, with notes on whether they apply to this threat
+- **Mitigations must reference actual controls** — cite the specific security controls from the data, with notes on whether they apply to this threat
 - **Attack vectors must include real endpoints** with method, parameter, and specific technique
 - **Pentest guidance must be actionable** — specific objectives a pentester can execute, with deployment-specific considerations (e.g. "PostgreSQL — use pg_sleep for time-based blind SQLi")
 - **Residual risk** should account for existing mitigations — if strong mitigations exist, risk is lower
 
-Focus on threats that are plausible given the deployment context and security controls. Don't generate generic threats — every threat should be grounded in specific endpoints, parameters, and deployment details from the input data.`;
+Focus on threats that are plausible given the deployment context and security controls. Don't generate generic threats — every threat should be grounded in specific endpoints, parameters, and deployment details from the data files.
 
-export function buildThreatsSynthesisPrompt(
-  deploymentContext: DeploymentContext,
-  securityControls: SecurityControlsResult,
-  attackSurface: WhiteboxAttackSurfaceResult,
-  architecture: { components: unknown[]; trustBoundaries: unknown[]; dataFlows: unknown[] },
-): string {
-  return `# Identify STRIDE Threats
-
-Analyze the following data and identify concrete STRIDE threats with actionable pentest guidance.
-
-## Deployment Context
-\`\`\`json
-${JSON.stringify(deploymentContext, null, 2)}
-\`\`\`
-
-## Security Controls
-\`\`\`json
-${JSON.stringify(securityControls, null, 2)}
-\`\`\`
-
-## Attack Surface
-\`\`\`json
-${JSON.stringify(attackSurface, null, 2)}
-\`\`\`
-
-## System Architecture
-\`\`\`json
-${JSON.stringify(architecture, null, 2)}
-\`\`\`
-
-## Instructions
-
-For each STRIDE category, analyze the attack surface and security controls to find threats:
-- Cross-reference endpoints from the attack surface with security controls to find gaps
-- Consider deployment-specific attack vectors (e.g. PostgreSQL-specific SQL injection, Node.js prototype pollution)
-- Assess which controls mitigate which threats, and note the residual risk
-- Generate actionable pentest guidance with deployment-specific considerations
-- Reference component IDs and data flow IDs from the system architecture above
-- Assign unique threat IDs (T-001, T-002, ...)`;
+## Output
+Call the \`response\` tool with the structured STRIDE threats when done.`;
 }

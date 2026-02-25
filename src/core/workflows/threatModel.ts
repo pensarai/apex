@@ -1,6 +1,6 @@
-import { writeFileSync } from "fs";
 import { join } from "path";
 import { CodeAgent } from "../agents/specialized/codeAgent/agent";
+import { Storage } from "../storage";
 import {
   DeploymentContextSchema,
   SecurityControlsResultSchema,
@@ -12,23 +12,18 @@ import {
   type ThreatsResult,
   type STRIDEThreatModel,
 } from "../agents/specialized/threatModel/types";
-import {
-  serializeThreatModelToMarkdown,
-  serializeThreatModelToJson,
-} from "../agents/specialized/threatModel/serialize";
+import { serializeThreatModelToMarkdown } from "../agents/specialized/threatModel/serialize";
 import type { WhiteboxAttackSurfaceResult } from "../agents/specialized/whiteboxAttackSurface/types";
 import type { AIModel } from "../ai";
-import { generateObjectResponse } from "../ai/ai";
 import type { AIAuthConfig } from "../ai/utils";
 import type { SessionInfo } from "../session";
 import type { ConsumeCallbacks } from "../agents/offSecAgent/types";
 import {
   buildDeploymentContextObjective,
   buildSecurityControlsObjective,
-  ARCHITECTURE_SYNTHESIS_SYSTEM_PROMPT,
-  buildArchitectureSynthesisPrompt,
-  THREATS_SYNTHESIS_SYSTEM_PROMPT,
-  buildThreatsSynthesisPrompt,
+  DATA_SYNTHESIS_AGENT_SYSTEM_PROMPT,
+  buildArchitectureSynthesisObjective,
+  buildThreatsSynthesisObjective,
 } from "../agents/specialized/threatModel/prompts";
 
 // ---------------------------------------------------------------------------
@@ -85,7 +80,7 @@ When your objective includes structured output, call \`response\` with your fina
 
 export interface ThreatModelWorkflowInput {
   codebasePath: string;
-  attackSurface: WhiteboxAttackSurfaceResult;
+  // attackSurface removed — reads from session.rootPath/attack-surface-results.json
   model: AIModel;
   session: SessionInfo;
   authConfig?: AIAuthConfig;
@@ -106,17 +101,19 @@ export interface ThreatModelWorkflowResult {
 /**
  * Deterministic STRIDE threat model generation workflow.
  *
+ * Expects `attack-surface-results.json` to already exist in `session.rootPath`.
+ *
  * Phase 1: Extract deployment/infrastructure context via CodeAgent.
- * Phase 2: Extract security controls via CodeAgent (receives Phase 1 output).
- * Phase 3: Synthesize full STRIDE threat model via generateObjectResponse.
- * Phase 4: Serialize to markdown + JSON and write to session root.
+ * Phase 2: Extract security controls via CodeAgent (reads attack surface from disk).
+ * Phase 3a: Synthesize system architecture via CodeAgent (reads data files).
+ * Phase 3b: Synthesize STRIDE threats via CodeAgent (reads data files).
+ * Phase 4: Assemble, serialize to markdown + JSON, and write to session root.
  */
 export async function runThreatModelWorkflow(
   input: ThreatModelWorkflowInput,
 ): Promise<ThreatModelWorkflowResult> {
   const {
     codebasePath,
-    attackSurface,
     model,
     session,
     authConfig,
@@ -148,8 +145,14 @@ export async function runThreatModelWorkflow(
     subagentCallbacks: callbacks?.subagentCallbacks,
   });
 
+  // Write deployment context for downstream phases
+  await Storage.write(
+    ["executions", session.id, "deployment-context"],
+    deploymentContext,
+  );
+
   // =========================================================================
-  // Phase 2: Extract security controls (receives deployment context)
+  // Phase 2: Extract security controls (reads attack surface from disk)
   // =========================================================================
 
   const controlsAgent = new CodeAgent<SecurityControlsResult>({
@@ -157,7 +160,7 @@ export async function runThreatModelWorkflow(
     objective: buildSecurityControlsObjective(
       codebasePath,
       deploymentContext,
-      attackSurface,
+      session.rootPath,
     ),
     system: WHITEBOX_CODE_AGENT_SYSTEM_PROMPT,
     model,
@@ -176,34 +179,65 @@ export async function runThreatModelWorkflow(
     subagentCallbacks: callbacks?.subagentCallbacks,
   });
 
+  // Write security controls for downstream phases
+  await Storage.write(
+    ["executions", session.id, "security-controls"],
+    securityControls,
+  );
+
   // =========================================================================
-  // Phase 3a: Synthesize system architecture (components, boundaries, flows)
+  // Phase 3a: Synthesize system architecture (reads data files)
   // =========================================================================
 
-  const architecture = (await generateObjectResponse({
+  const architectureAgent = new CodeAgent<SystemArchitecture>({
+    codebasePath: session.rootPath,
+    objective: buildArchitectureSynthesisObjective(session.rootPath),
+    system: DATA_SYNTHESIS_AGENT_SYSTEM_PROMPT,
     model,
-    schema: SystemArchitectureSchema,
-    system: ARCHITECTURE_SYNTHESIS_SYSTEM_PROMPT,
-    prompt: buildArchitectureSynthesisPrompt(deploymentContext, attackSurface),
+    session,
     authConfig,
-  })) as SystemArchitecture;
+    abortSignal,
+    callbacks,
+    responseSchema: SystemArchitectureSchema,
+  });
+
+  const architecture = await architectureAgent.consume({
+    onTextDelta: (d) => callbacks?.onTextDelta?.(d),
+    onToolCall: (d) => callbacks?.onToolCall?.(d),
+    onToolResult: (d) => callbacks?.onToolResult?.(d),
+    onError: (e) => callbacks?.onError?.(e),
+    subagentCallbacks: callbacks?.subagentCallbacks,
+  });
+
+  // Write system architecture for downstream phases
+  await Storage.write(
+    ["executions", session.id, "system-architecture"],
+    architecture,
+  );
 
   // =========================================================================
-  // Phase 3b: Synthesize STRIDE threats (needs architecture output)
+  // Phase 3b: Synthesize STRIDE threats (reads all data files)
   // =========================================================================
 
-  const threatsResult = (await generateObjectResponse({
+  const threatsAgent = new CodeAgent<ThreatsResult>({
+    codebasePath: session.rootPath,
+    objective: buildThreatsSynthesisObjective(session.rootPath),
+    system: DATA_SYNTHESIS_AGENT_SYSTEM_PROMPT,
     model,
-    schema: ThreatsResultSchema,
-    system: THREATS_SYNTHESIS_SYSTEM_PROMPT,
-    prompt: buildThreatsSynthesisPrompt(
-      deploymentContext,
-      securityControls,
-      attackSurface,
-      architecture,
-    ),
+    session,
     authConfig,
-  })) as ThreatsResult;
+    abortSignal,
+    callbacks,
+    responseSchema: ThreatsResultSchema,
+  });
+
+  const threatsResult = await threatsAgent.consume({
+    onTextDelta: (d) => callbacks?.onTextDelta?.(d),
+    onToolCall: (d) => callbacks?.onToolCall?.(d),
+    onToolResult: (d) => callbacks?.onToolResult?.(d),
+    onError: (e) => callbacks?.onError?.(e),
+    subagentCallbacks: callbacks?.subagentCallbacks,
+  });
 
   // =========================================================================
   // Phase 4: Assemble full model, serialize, and write to disk
@@ -232,7 +266,10 @@ export async function runThreatModelWorkflow(
     threatsByRisk[t.residualRisk]++;
   }
 
-  // Use repo type and package manager from attack surface result
+  // Read attack surface from disk for repoType/packageManager metadata
+  const attackSurface = await Storage.read<WhiteboxAttackSurfaceResult>(
+    ["executions", session.id, "attack-surface-results"],
+  );
   const repoType = attackSurface.repoType;
   const packageManager = attackSurface.packageManager;
 
@@ -258,14 +295,19 @@ export async function runThreatModelWorkflow(
     },
   };
 
+  const markdown = serializeThreatModelToMarkdown(threatModel);
+
+  await Storage.writeRaw(
+    ["executions", session.id, "stride-threat-model.md"],
+    markdown,
+  );
+  await Storage.write(
+    ["executions", session.id, "stride-threat-model"],
+    threatModel,
+  );
+
   const markdownPath = join(session.rootPath, "stride-threat-model.md");
   const jsonPath = join(session.rootPath, "stride-threat-model.json");
-
-  const markdown = serializeThreatModelToMarkdown(threatModel);
-  const json = serializeThreatModelToJson(threatModel);
-
-  writeFileSync(markdownPath, markdown, "utf-8");
-  writeFileSync(jsonPath, json, "utf-8");
 
   return {
     threatModel,

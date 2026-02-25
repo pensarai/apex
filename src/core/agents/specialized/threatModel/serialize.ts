@@ -257,10 +257,6 @@ function renderSecurityControlsSection(model: STRIDEThreatModel): string {
     lines.push(`- **Type:** ${ctrl.type}`);
     lines.push(`- **Effectiveness:** ${capitalize(ctrl.effectiveness)}`);
     lines.push(`- **Scope:** ${ctrl.scope}`);
-    if (ctrl.file) {
-      const loc = ctrl.line ? `${ctrl.file}:${ctrl.line}` : ctrl.file;
-      lines.push(`- **File:** ${loc}`);
-    }
     lines.push(`- **Implementation:** ${ctrl.implementation}`);
     if (ctrl.gaps) {
       lines.push(`- **Gaps:** ${ctrl.gaps}`);

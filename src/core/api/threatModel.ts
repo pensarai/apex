@@ -2,6 +2,7 @@ import {
   runWhiteboxAttackSurfaceWorkflow,
   type WhiteboxAttackSurfaceWorkflowInput,
 } from "../workflows/whiteboxAttackSurface";
+import { Storage } from "../storage";
 import {
   runThreatModelWorkflow,
   type ThreatModelWorkflowResult,
@@ -87,13 +88,18 @@ export async function runStrideThreatModel(
   const attackSurface =
     await runWhiteboxAttackSurfaceWorkflow(attackSurfaceInput);
 
+  // Write attack surface to disk for the threat model workflow to read
+  await Storage.write(
+    ["executions", session.id, "attack-surface-results"],
+    attackSurface,
+  );
+
   // Phase 2: STRIDE threat model generation
   // The threat model workflow passes direct callbacks to consume(), so we
   // pass the original callbacks as-is (no subagentCallbacks duplication risk
   // since the threat model workflow's CodeAgents don't spawn subagents).
   const result = await runThreatModelWorkflow({
     codebasePath: cwd,
-    attackSurface,
     model,
     session,
     authConfig,

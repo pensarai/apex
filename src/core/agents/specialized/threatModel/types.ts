@@ -108,8 +108,6 @@ export const SecurityControlSchema = z.object({
   scope: z
     .string()
     .describe("What the control applies to (e.g. all routes, /api/* only)"),
-  file: z.string().optional().describe("Source file where the control is defined"),
-  line: z.number().optional().describe("Line number in the source file"),
   effectiveness: z
     .enum(["strong", "moderate", "weak", "unknown"])
     .describe("Assessed effectiveness of the control"),
