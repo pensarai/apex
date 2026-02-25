@@ -91,6 +91,7 @@ async function runPentest() {
 
   const { runPentestAgent } = await import("./core/api/blackboxPentest");
   const { sessions } = await import("./core/session");
+  const { config: appConfig } = await import("./core/config");
   type AIModel = import("./core/ai").AIModel;
 
   const target = getArgRequired("--target");
@@ -105,6 +106,8 @@ async function runPentest() {
   console.log(`Model:   ${model}`);
   console.log();
 
+  const pensarConfig = await appConfig.get();
+
   const session = await sessions.create({
     name: cwd ? "Whitebox Pentest" : "Blackbox Pentest",
     targets: [target],
@@ -117,6 +120,14 @@ async function runPentest() {
       ...(cwd ? { cwd } : {}),
       session,
       model,
+      authConfig: {
+        anthropicAPIKey: pensarConfig.anthropicAPIKey ?? undefined,
+        openAiAPIKey: pensarConfig.openAiAPIKey ?? undefined,
+        openRouterAPIKey: pensarConfig.openRouterAPIKey ?? undefined,
+        local: pensarConfig.localModelUrl
+          ? { baseURL: pensarConfig.localModelUrl }
+          : undefined,
+      },
       callbacks: {
         onTextDelta: (d) => process.stdout.write(d.text),
         onToolCall: (d) => console.log(`\n→ ${d.toolName}`),
@@ -142,6 +153,7 @@ async function runTargetedPentest() {
   const { runTargetedPentestAgent } =
     await import("./core/api/targetedPentest");
   const { sessions } = await import("./core/session");
+  const { config: appConfig } = await import("./core/config");
   type AIModel = import("./core/ai").AIModel;
 
   const target = getArgRequired("--target");
@@ -162,6 +174,8 @@ async function runTargetedPentest() {
   objectives.forEach((o, i) => console.log(`  ${i + 1}. ${o}`));
   console.log();
 
+  const pensarConfig = await appConfig.get();
+
   const session = await sessions.create({
     name: "Targeted Pentest",
     targets: [target],
@@ -172,6 +186,14 @@ async function runTargetedPentest() {
     objectives,
     session,
     model,
+    authConfig: {
+      anthropicAPIKey: pensarConfig.anthropicAPIKey ?? undefined,
+      openAiAPIKey: pensarConfig.openAiAPIKey ?? undefined,
+      openRouterAPIKey: pensarConfig.openRouterAPIKey ?? undefined,
+      local: pensarConfig.localModelUrl
+        ? { baseURL: pensarConfig.localModelUrl }
+        : undefined,
+    },
   });
 
   console.log();
