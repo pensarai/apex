@@ -20,10 +20,6 @@ function makeToolCall(toolName: string): ToolCallData {
 }
 
 describe("AgentRun", () => {
-  // ---------------------------------------------------------------------------
-  // Existing tests (updated to account for terminal events)
-  // ---------------------------------------------------------------------------
-
   it("iterates events then resolves result", async () => {
     const events: AgentEvent[] = [];
 
@@ -37,11 +33,9 @@ describe("AgentRun", () => {
       events.push(event);
     }
 
-    // 2 text-delta + 1 run-complete
-    expect(events).toHaveLength(3);
+    expect(events).toHaveLength(2);
     expect(events[0]!.type).toBe("text-delta");
     expect(events[1]!.type).toBe("text-delta");
-    expect(events[2]!.type).toBe("run-complete");
     expect(await run.result).toBe("done");
   });
 
@@ -69,12 +63,10 @@ describe("AgentRun", () => {
       events.push(event);
     }
 
-    // 3 domain events + 1 run-complete
-    expect(events).toHaveLength(4);
+    expect(events).toHaveLength(3);
     expect(events[0]!.type).toBe("text-delta");
     expect(events[1]!.type).toBe("tool-call");
     expect(events[2]!.type).toBe("text-delta");
-    expect(events[3]!.type).toBe("run-complete");
   });
 
   it("propagates errors from the agent run", async () => {
@@ -97,9 +89,8 @@ describe("AgentRun", () => {
       events.push(event);
     }
 
-    // At least 1 text-delta + 1 run-error terminal event
-    expect(events.length).toBeGreaterThanOrEqual(2);
-    expect(events[events.length - 1]!.type).toBe("run-error");
+    expect(events.length).toBeGreaterThanOrEqual(1);
+    expect(events[0]!.type).toBe("text-delta");
     await expect(run.result).rejects.toThrow("boom");
   });
 
@@ -114,9 +105,7 @@ describe("AgentRun", () => {
       events.push(event);
     }
 
-    // Only the run-complete terminal event
-    expect(events).toHaveLength(1);
-    expect(events[0]!.type).toBe("run-complete");
+    expect(events).toHaveLength(0);
     expect(await run.result).toBe("empty");
   });
 
@@ -136,9 +125,7 @@ describe("AgentRun", () => {
       events.push(event);
     }
 
-    // 3 text-delta + 1 run-complete
-    expect(events).toHaveLength(4);
-    expect(events[3]!.type).toBe("run-complete");
+    expect(events).toHaveLength(3);
     expect(await run.result).toBe("complete");
   });
 
@@ -155,199 +142,8 @@ describe("AgentRun", () => {
       events.push(event);
     }
 
-    // 2 domain events + 1 run-complete
-    expect(events).toHaveLength(3);
+    expect(events).toHaveLength(2);
     expect(events[0]!.subagentId).toBe("agent-1");
     expect(events[1]!.subagentId).toBeUndefined();
-    expect(events[2]!.type).toBe("run-complete");
-  });
-
-  // ---------------------------------------------------------------------------
-  // New tests: AgentRun hardening
-  // ---------------------------------------------------------------------------
-
-  describe("id", () => {
-    it("assigns a unique UUID to each run", async () => {
-      const run1 = new AgentRun<void>(async () => {});
-      const run2 = new AgentRun<void>(async () => {});
-
-      expect(run1.id).toBeTruthy();
-      expect(run2.id).toBeTruthy();
-      expect(run1.id).not.toBe(run2.id);
-
-      // UUID v4 format
-      expect(run1.id).toMatch(
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
-      );
-
-      await run1.result;
-      await run2.result;
-    });
-  });
-
-  describe("terminal events", () => {
-    it("emits run-complete on successful completion", async () => {
-      const events: AgentEvent[] = [];
-
-      const run = new AgentRun<string>(async (bus) => {
-        bus.emit({
-          type: "text-delta",
-          data: makeTextDelta("hi"),
-        });
-        return "ok";
-      });
-
-      for await (const event of run) {
-        events.push(event);
-      }
-
-      const last = events[events.length - 1]!;
-      expect(last.type).toBe("run-complete");
-      expect(await run.result).toBe("ok");
-    });
-
-    it("emits run-error with normalized error on thrown Error", async () => {
-      const events: AgentEvent[] = [];
-
-      const run = new AgentRun<never>(async () => {
-        throw new Error("something broke");
-      });
-
-      for await (const event of run) {
-        events.push(event);
-      }
-
-      const last = events[events.length - 1]!;
-      expect(last.type).toBe("run-error");
-      if (last.type === "run-error") {
-        expect(last.error.message).toBe("something broke");
-        expect(last.error.name).toBe("Error");
-      }
-
-      await expect(run.result).rejects.toThrow("something broke");
-    });
-
-    it("emits run-cancelled when abort error is thrown", async () => {
-      const events: AgentEvent[] = [];
-
-      const run = new AgentRun<never>(async () => {
-        const err = new DOMException(
-          "The operation was aborted.",
-          "AbortError",
-        );
-        throw err;
-      });
-
-      for await (const event of run) {
-        events.push(event);
-      }
-
-      const last = events[events.length - 1]!;
-      expect(last.type).toBe("run-cancelled");
-      if (last.type === "run-cancelled") {
-        expect(last.error.message).toBe("The operation was aborted.");
-        expect(last.error.name).toBe("AbortError");
-      }
-
-      await expect(run.result).rejects.toThrow();
-    });
-
-    it("emits run-cancelled for Error with name AbortError", async () => {
-      const events: AgentEvent[] = [];
-
-      const run = new AgentRun<never>(async () => {
-        const err = new Error("aborted");
-        err.name = "AbortError";
-        throw err;
-      });
-
-      for await (const event of run) {
-        events.push(event);
-      }
-
-      const last = events[events.length - 1]!;
-      expect(last.type).toBe("run-cancelled");
-      if (last.type === "run-cancelled") {
-        expect(last.error.name).toBe("AbortError");
-      }
-
-      await expect(run.result).rejects.toThrow();
-    });
-
-    it("terminal event is the last event before iterator closes", async () => {
-      const events: AgentEvent[] = [];
-
-      const run = new AgentRun<void>(async (bus) => {
-        bus.emit({
-          type: "text-delta",
-          data: makeTextDelta("a"),
-        });
-        bus.emit({
-          type: "text-delta",
-          data: makeTextDelta("b"),
-        });
-      });
-
-      for await (const event of run) {
-        events.push(event);
-      }
-
-      const terminalTypes = ["run-complete", "run-error", "run-cancelled"];
-      // Last event should be terminal
-      expect(terminalTypes).toContain(events[events.length - 1]!.type);
-      // No non-terminal events after the terminal event
-      const terminalIdx = events.findIndex((e) =>
-        terminalTypes.includes(e.type),
-      );
-      expect(terminalIdx).toBe(events.length - 1);
-    });
-  });
-
-  describe("normalizeError", () => {
-    it("normalizes Error instances to { message, name }", () => {
-      const run = new AgentRun<void>(async () => {});
-
-      const normalized = run.normalizeError(new TypeError("bad type"));
-      expect(normalized).toEqual({
-        message: "bad type",
-        name: "TypeError",
-      });
-
-      return run.result;
-    });
-
-    it("normalizes Error with code property", () => {
-      const run = new AgentRun<void>(async () => {});
-
-      const err = new Error("ENOENT") as Error & { code: string };
-      err.code = "ENOENT";
-      const normalized = run.normalizeError(err);
-      expect(normalized).toEqual({
-        message: "ENOENT",
-        name: "Error",
-        code: "ENOENT",
-      });
-
-      return run.result;
-    });
-
-    it("normalizes string errors to { message }", () => {
-      const run = new AgentRun<void>(async () => {});
-
-      const normalized = run.normalizeError("raw string error");
-      expect(normalized).toEqual({ message: "raw string error" });
-
-      return run.result;
-    });
-
-    it("normalizes non-string, non-Error values via String()", () => {
-      const run = new AgentRun<void>(async () => {});
-
-      expect(run.normalizeError(42)).toEqual({ message: "42" });
-      expect(run.normalizeError(null)).toEqual({ message: "null" });
-      expect(run.normalizeError(undefined)).toEqual({ message: "undefined" });
-
-      return run.result;
-    });
   });
 });

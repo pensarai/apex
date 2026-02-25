@@ -13,13 +13,6 @@ export type ToolResultData = Extract<
   { type: "tool-result" }
 >;
 
-/** Normalized error shape for public-facing event payloads. */
-export interface NormalizedError {
-  message: string;
-  name?: string;
-  code?: string;
-}
-
 export type AgentEvent =
   | { type: "text-delta"; subagentId?: string; data: TextDeltaData }
   | { type: "tool-call"; subagentId?: string; data: ToolCallData }
@@ -36,10 +29,7 @@ export type AgentEvent =
       subagentId: string;
       input: unknown;
       status: "completed" | "failed";
-    }
-  | { type: "run-complete"; subagentId?: string }
-  | { type: "run-error"; subagentId?: string; error: NormalizedError }
-  | { type: "run-cancelled"; subagentId?: string; error: NormalizedError };
+    };
 
 export type AgentEventOfType<T extends AgentEvent["type"]> = Extract<
   AgentEvent,

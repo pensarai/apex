@@ -245,10 +245,6 @@ export default function OperatorDashboard({
               console.error("Agent error:", event.error);
               setError(String(event.error));
               break;
-            case "run-complete":
-            case "run-error":
-            case "run-cancelled":
-              break;
           }
         }
 
