@@ -22,9 +22,7 @@ export type OperatorAgentInput = Omit<OffensiveSecurityAgentInput, "eventBus">;
  * The caller never needs to create or manage an {@link AgentEventBus} —
  * `AgentRun` handles it internally.
  */
-export function runOperatorAgent(
-  input: OperatorAgentInput,
-): AgentRun<void> {
+export function runOperatorAgent(input: OperatorAgentInput): AgentRun<void> {
   return new AgentRun(async (eventBus) => {
     const agent = new OffensiveSecurityAgent({ ...input, eventBus });
     return agent.consume();
