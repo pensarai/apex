@@ -1,15 +1,31 @@
 import { describe, it, expect } from "vitest";
 import { AgentRun } from "./agentRun";
-import type { AgentEventBus } from "../agents/offSecAgent/eventBus";
-import type { AgentEvent } from "../agents/offSecAgent/eventBus";
+import type {
+  AgentEvent,
+  TextDeltaData,
+  ToolCallData,
+} from "../agents/offSecAgent/eventBus";
+
+function makeTextDelta(text: string): TextDeltaData {
+  return { type: "text-delta", id: "td-1", text } as TextDeltaData;
+}
+
+function makeToolCall(toolName: string): ToolCallData {
+  return {
+    type: "tool-call",
+    toolCallId: "tc-1",
+    toolName,
+    args: {},
+  } as unknown as ToolCallData;
+}
 
 describe("AgentRun", () => {
   it("iterates events then resolves result", async () => {
     const events: AgentEvent[] = [];
 
     const run = new AgentRun<string>(async (bus) => {
-      bus.emit({ type: "text-delta", data: { type: "text-delta", textDelta: "hello " } as any });
-      bus.emit({ type: "text-delta", data: { type: "text-delta", textDelta: "world" } as any });
+      bus.emit({ type: "text-delta", data: makeTextDelta("hello ") });
+      bus.emit({ type: "text-delta", data: makeTextDelta("world") });
       return "done";
     });
 
@@ -25,7 +41,7 @@ describe("AgentRun", () => {
 
   it("resolves result without iterating", async () => {
     const run = new AgentRun<number>(async (bus) => {
-      bus.emit({ type: "text-delta", data: { type: "text-delta", textDelta: "ignored" } as any });
+      bus.emit({ type: "text-delta", data: makeTextDelta("ignored") });
       return 42;
     });
 
@@ -38,9 +54,9 @@ describe("AgentRun", () => {
 
     const run = new AgentRun<void>(async (bus) => {
       // Emit several events synchronously
-      bus.emit({ type: "text-delta", data: { type: "text-delta", textDelta: "a" } as any });
-      bus.emit({ type: "tool-call", data: { type: "tool-call", toolName: "test", toolCallId: "1", args: {} } as any });
-      bus.emit({ type: "text-delta", data: { type: "text-delta", textDelta: "b" } as any });
+      bus.emit({ type: "text-delta", data: makeTextDelta("a") });
+      bus.emit({ type: "tool-call", data: makeToolCall("test") });
+      bus.emit({ type: "text-delta", data: makeTextDelta("b") });
     });
 
     for await (const event of run) {
@@ -65,7 +81,7 @@ describe("AgentRun", () => {
     const events: AgentEvent[] = [];
 
     const run = new AgentRun<never>(async (bus) => {
-      bus.emit({ type: "text-delta", data: { type: "text-delta", textDelta: "before error" } as any });
+      bus.emit({ type: "text-delta", data: makeTextDelta("before error") });
       throw new Error("boom");
     });
 
@@ -96,11 +112,11 @@ describe("AgentRun", () => {
     const events: AgentEvent[] = [];
 
     const run = new AgentRun<string>(async (bus) => {
-      bus.emit({ type: "text-delta", data: { type: "text-delta", textDelta: "first" } as any });
+      bus.emit({ type: "text-delta", data: makeTextDelta("first") });
       await new Promise((r) => setTimeout(r, 10));
-      bus.emit({ type: "text-delta", data: { type: "text-delta", textDelta: "second" } as any });
+      bus.emit({ type: "text-delta", data: makeTextDelta("second") });
       await new Promise((r) => setTimeout(r, 10));
-      bus.emit({ type: "text-delta", data: { type: "text-delta", textDelta: "third" } as any });
+      bus.emit({ type: "text-delta", data: makeTextDelta("third") });
       return "complete";
     });
 
@@ -117,8 +133,8 @@ describe("AgentRun", () => {
 
     const run = new AgentRun<void>(async (bus) => {
       const child = bus.child("agent-1");
-      child.emit({ type: "text-delta", data: { type: "text-delta", textDelta: "from child" } as any });
-      bus.emit({ type: "text-delta", data: { type: "text-delta", textDelta: "from parent" } as any });
+      child.emit({ type: "text-delta", data: makeTextDelta("from child") });
+      bus.emit({ type: "text-delta", data: makeTextDelta("from parent") });
     });
 
     for await (const event of run) {

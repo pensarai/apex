@@ -33,7 +33,9 @@ export function runAttackSurfaceAgent(
   const isWhitebox = "cwd" in input && !!input.cwd;
 
   if (isWhitebox) {
-    const whiteboxInput = input as Omit<AttackSurfaceAgentInput, "eventBus"> & { cwd: string };
+    const whiteboxInput = input as Omit<AttackSurfaceAgentInput, "eventBus"> & {
+      cwd: string;
+    };
     return new AgentRun(async (eventBus) => {
       return runWhiteboxAttackSurface(whiteboxInput, eventBus);
     });
