@@ -158,10 +158,60 @@ Call the \`response\` tool with the structured security controls when done.`;
 }
 
 // ---------------------------------------------------------------------------
-// Phase 3: Threat Model Synthesis
+// Phase 3a: System Architecture Synthesis
 // ---------------------------------------------------------------------------
 
-export const THREAT_MODEL_SYNTHESIS_SYSTEM_PROMPT = `You are an expert threat modeler using the STRIDE methodology. You will receive structured data about a codebase's deployment context, security controls, and attack surface. Your job is to synthesize a comprehensive STRIDE threat model.
+export const ARCHITECTURE_SYNTHESIS_SYSTEM_PROMPT = `You are an expert system architect analyzing a codebase for threat modeling. You will receive deployment context and attack surface data. Your job is to model the system architecture: components, trust boundaries, and data flows.
+
+# Modeling Rules
+
+## Components
+- Model each distinct system component (web app, API, database, cache, CDN, proxy, etc.)
+- Assign a unique ID (comp-1, comp-2, ...) and a trust boundary
+- Include the technology stack for each component
+
+## Trust Boundaries
+- Define boundaries: external (internet), dmz (edge/proxy), internal (app tier), data (databases/caches)
+- Each component belongs to exactly one boundary
+- Assign unique IDs (tb-external, tb-dmz, etc.)
+
+## Data Flows
+- Model significant data flows between components
+- Include protocol, data classification, and whether the flow is authenticated/encrypted
+- Assign unique IDs (df-1, df-2, ...)`;
+
+export function buildArchitectureSynthesisPrompt(
+  deploymentContext: DeploymentContext,
+  attackSurface: WhiteboxAttackSurfaceResult,
+): string {
+  return `# Model System Architecture
+
+Analyze the following data and define the system architecture.
+
+## Deployment Context
+\`\`\`json
+${JSON.stringify(deploymentContext, null, 2)}
+\`\`\`
+
+## Attack Surface
+\`\`\`json
+${JSON.stringify(attackSurface, null, 2)}
+\`\`\`
+
+## Instructions
+
+1. **Define system components** — based on the deployment context and attack surface, model all components (apps, databases, caches, proxies, CDNs, etc.)
+
+2. **Define trust boundaries** — group components into trust boundaries (external, dmz, internal, data)
+
+3. **Define data flows** — model how data moves between components, noting protocol, classification, and security properties`;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3b: STRIDE Threats Synthesis
+// ---------------------------------------------------------------------------
+
+export const THREATS_SYNTHESIS_SYSTEM_PROMPT = `You are an expert threat modeler using the STRIDE methodology. You will receive structured data about a codebase's deployment context, security controls, attack surface, and system architecture. Your job is to identify concrete STRIDE threats.
 
 # STRIDE Categories
 
@@ -172,22 +222,8 @@ export const THREAT_MODEL_SYNTHESIS_SYSTEM_PROMPT = `You are an expert threat mo
 - **Denial of Service**: Can an attacker degrade or halt the service? (resource exhaustion, algorithmic complexity, missing rate limits)
 - **Elevation of Privilege**: Can an attacker gain unauthorized access levels? (IDOR to admin, role bypass, privilege escalation)
 
-# Modeling Rules
+# Quality Standards
 
-## Components
-- Model each distinct system component (web app, API, database, cache, CDN, proxy, etc.)
-- Assign a unique ID (comp-1, comp-2, ...) and a trust boundary
-
-## Trust Boundaries
-- Define boundaries: external (internet), dmz (edge/proxy), internal (app tier), data (databases/caches)
-- Each component belongs to exactly one boundary
-
-## Data Flows
-- Model significant data flows between components
-- Include protocol, data classification, and whether the flow is authenticated/encrypted
-
-## Threats
-Quality standards for each threat:
 - **Every threat must reference a real endpoint** from the attack surface data — do not fabricate endpoints
 - **Preconditions must be specific** — not generic statements like "if the app is vulnerable" but specific conditions like "the search parameter is concatenated into raw SQL without parameterization"
 - **Mitigations must reference actual controls** — cite the specific security controls from the input data, with notes on whether they apply to this threat
@@ -195,18 +231,17 @@ Quality standards for each threat:
 - **Pentest guidance must be actionable** — specific objectives a pentester can execute, with deployment-specific considerations (e.g. "PostgreSQL — use pg_sleep for time-based blind SQLi")
 - **Residual risk** should account for existing mitigations — if strong mitigations exist, risk is lower
 
-## Summary
-- Count totals accurately
-- Categorize threats by STRIDE category and residual risk level`;
+Focus on threats that are plausible given the deployment context and security controls. Don't generate generic threats — every threat should be grounded in specific endpoints, parameters, and deployment details from the input data.`;
 
-export function buildThreatModelSynthesisPrompt(
+export function buildThreatsSynthesisPrompt(
   deploymentContext: DeploymentContext,
   securityControls: SecurityControlsResult,
   attackSurface: WhiteboxAttackSurfaceResult,
+  architecture: { components: unknown[]; trustBoundaries: unknown[]; dataFlows: unknown[] },
 ): string {
-  return `# Synthesize STRIDE Threat Model
+  return `# Identify STRIDE Threats
 
-You have the following structured data about the target application. Analyze it and produce a complete STRIDE threat model.
+Analyze the following data and identify concrete STRIDE threats with actionable pentest guidance.
 
 ## Deployment Context
 \`\`\`json
@@ -223,21 +258,18 @@ ${JSON.stringify(securityControls, null, 2)}
 ${JSON.stringify(attackSurface, null, 2)}
 \`\`\`
 
+## System Architecture
+\`\`\`json
+${JSON.stringify(architecture, null, 2)}
+\`\`\`
+
 ## Instructions
 
-1. **Define system components** — based on the deployment context and attack surface, model all components (apps, databases, caches, proxies, CDNs, etc.)
-
-2. **Define trust boundaries** — group components into trust boundaries (external, dmz, internal, data)
-
-3. **Define data flows** — model how data moves between components, noting protocol, classification, and security properties
-
-4. **Identify threats** — for each STRIDE category, analyze the attack surface and security controls to find threats:
-   - Cross-reference endpoints from the attack surface with security controls to find gaps
-   - Consider deployment-specific attack vectors (e.g. PostgreSQL-specific SQL injection, Node.js prototype pollution)
-   - Assess which controls mitigate which threats, and note the residual risk
-   - Generate actionable pentest guidance with deployment-specific considerations
-
-5. **Calculate summary** — accurate counts of components, data flows, and threats by category and risk
-
-Focus on threats that are plausible given the deployment context and security controls. Don't generate generic threats — every threat should be grounded in specific endpoints, parameters, and deployment details from the input data.`;
+For each STRIDE category, analyze the attack surface and security controls to find threats:
+- Cross-reference endpoints from the attack surface with security controls to find gaps
+- Consider deployment-specific attack vectors (e.g. PostgreSQL-specific SQL injection, Node.js prototype pollution)
+- Assess which controls mitigate which threats, and note the residual risk
+- Generate actionable pentest guidance with deployment-specific considerations
+- Reference component IDs and data flow IDs from the system architecture above
+- Assign unique threat IDs (T-001, T-002, ...)`;
 }

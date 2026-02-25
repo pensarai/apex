@@ -45,6 +45,35 @@ export async function runStrideThreatModel(
 ): Promise<ThreatModelWorkflowResult> {
   const { cwd, model, session, authConfig, abortSignal, callbacks } = input;
 
+  // The whitebox attack surface workflow has two phases:
+  //   Phase 1 (app discovery): passes direct callbacks to consume()
+  //   Phase 2 (endpoint discovery): passes only subagentCallbacks to consume()
+  //
+  // consume() fires BOTH direct and subagentCallbacks for each event, so we
+  // must not provide both pointing at the same handler or output is duplicated.
+  //
+  // Strategy: route all event handlers through subagentCallbacks only. The
+  // workflow's Phase 1 consume() calls both pathways — but since we leave
+  // the direct callbacks (onTextDelta etc.) undefined, only subagentCallbacks
+  // fires. Phase 2 also uses subagentCallbacks, so both phases produce output.
+  const attackSurfaceCallbacks: ConsumeCallbacks | undefined = callbacks
+    ? {
+        onError: callbacks.onError,
+        subagentCallbacks: callbacks.subagentCallbacks ?? {
+          onTextDelta: callbacks.onTextDelta
+            ? (d) => callbacks.onTextDelta!(d)
+            : undefined,
+          onToolCall: callbacks.onToolCall
+            ? (d) => callbacks.onToolCall!(d)
+            : undefined,
+          onToolResult: callbacks.onToolResult
+            ? (d) => callbacks.onToolResult!(d)
+            : undefined,
+          onError: callbacks.onError,
+        },
+      }
+    : undefined;
+
   // Phase 1: Attack surface discovery
   const attackSurfaceInput: WhiteboxAttackSurfaceWorkflowInput = {
     codebasePath: cwd,
@@ -52,13 +81,16 @@ export async function runStrideThreatModel(
     session,
     authConfig,
     abortSignal,
-    callbacks,
+    callbacks: attackSurfaceCallbacks,
   };
 
   const attackSurface =
     await runWhiteboxAttackSurfaceWorkflow(attackSurfaceInput);
 
   // Phase 2: STRIDE threat model generation
+  // The threat model workflow passes direct callbacks to consume(), so we
+  // pass the original callbacks as-is (no subagentCallbacks duplication risk
+  // since the threat model workflow's CodeAgents don't spawn subagents).
   const result = await runThreatModelWorkflow({
     codebasePath: cwd,
     attackSurface,

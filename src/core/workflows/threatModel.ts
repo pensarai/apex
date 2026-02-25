@@ -4,9 +4,12 @@ import { CodeAgent } from "../agents/specialized/codeAgent/agent";
 import {
   DeploymentContextSchema,
   SecurityControlsResultSchema,
-  STRIDEThreatModelSchema,
+  SystemArchitectureSchema,
+  ThreatsResultSchema,
   type DeploymentContext,
   type SecurityControlsResult,
+  type SystemArchitecture,
+  type ThreatsResult,
   type STRIDEThreatModel,
 } from "../agents/specialized/threatModel/types";
 import {
@@ -22,8 +25,10 @@ import type { ConsumeCallbacks } from "../agents/offSecAgent/types";
 import {
   buildDeploymentContextObjective,
   buildSecurityControlsObjective,
-  THREAT_MODEL_SYNTHESIS_SYSTEM_PROMPT,
-  buildThreatModelSynthesisPrompt,
+  ARCHITECTURE_SYNTHESIS_SYSTEM_PROMPT,
+  buildArchitectureSynthesisPrompt,
+  THREATS_SYNTHESIS_SYSTEM_PROMPT,
+  buildThreatsSynthesisPrompt,
 } from "../agents/specialized/threatModel/prompts";
 
 // ---------------------------------------------------------------------------
@@ -172,24 +177,86 @@ export async function runThreatModelWorkflow(
   });
 
   // =========================================================================
-  // Phase 3: Synthesize STRIDE threat model
+  // Phase 3a: Synthesize system architecture (components, boundaries, flows)
   // =========================================================================
 
-  const threatModel = (await generateObjectResponse({
+  const architecture = (await generateObjectResponse({
     model,
-    schema: STRIDEThreatModelSchema,
-    system: THREAT_MODEL_SYNTHESIS_SYSTEM_PROMPT,
-    prompt: buildThreatModelSynthesisPrompt(
+    schema: SystemArchitectureSchema,
+    system: ARCHITECTURE_SYNTHESIS_SYSTEM_PROMPT,
+    prompt: buildArchitectureSynthesisPrompt(deploymentContext, attackSurface),
+    authConfig,
+  })) as SystemArchitecture;
+
+  // =========================================================================
+  // Phase 3b: Synthesize STRIDE threats (needs architecture output)
+  // =========================================================================
+
+  const threatsResult = (await generateObjectResponse({
+    model,
+    schema: ThreatsResultSchema,
+    system: THREATS_SYNTHESIS_SYSTEM_PROMPT,
+    prompt: buildThreatsSynthesisPrompt(
       deploymentContext,
       securityControls,
       attackSurface,
+      architecture,
     ),
     authConfig,
-  })) as STRIDEThreatModel;
+  })) as ThreatsResult;
 
   // =========================================================================
-  // Phase 4: Serialize and write to disk
+  // Phase 4: Assemble full model, serialize, and write to disk
   // =========================================================================
+
+  const threats = threatsResult.threats;
+
+  // Compute summary deterministically
+  const threatsByCategory = {
+    spoofing: 0,
+    tampering: 0,
+    repudiation: 0,
+    information_disclosure: 0,
+    denial_of_service: 0,
+    elevation_of_privilege: 0,
+  };
+  const threatsByRisk = {
+    critical: 0,
+    high: 0,
+    medium: 0,
+    low: 0,
+    negligible: 0,
+  };
+  for (const t of threats) {
+    threatsByCategory[t.category]++;
+    threatsByRisk[t.residualRisk]++;
+  }
+
+  // Use repo type and package manager from attack surface result
+  const repoType = attackSurface.repoType;
+  const packageManager = attackSurface.packageManager;
+
+  const threatModel: STRIDEThreatModel = {
+    metadata: {
+      generatedAt: new Date().toISOString(),
+      codebasePath: codebasePath,
+      repoType,
+      packageManager,
+    },
+    deployment: deploymentContext,
+    components: architecture.components,
+    trustBoundaries: architecture.trustBoundaries,
+    dataFlows: architecture.dataFlows,
+    securityControls,
+    threats,
+    summary: {
+      totalComponents: architecture.components.length,
+      totalDataFlows: architecture.dataFlows.length,
+      totalThreats: threats.length,
+      threatsByCategory,
+      threatsByRisk,
+    },
+  };
 
   const markdownPath = join(session.rootPath, "stride-threat-model.md");
   const jsonPath = join(session.rootPath, "stride-threat-model.json");

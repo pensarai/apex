@@ -42,12 +42,12 @@ export const DeploymentContextSchema = z.object({
         configPath: z.string().describe("Path to the IaC configuration"),
       }),
     )
-    .optional()
-    .describe("Infrastructure as Code tools detected"),
+    .describe("Infrastructure as Code tools detected (empty array if none)"),
   cicd: z
     .array(z.string())
-    .optional()
-    .describe("CI/CD platforms detected (e.g. GitHub Actions, GitLab CI, Jenkins)"),
+    .describe(
+      "CI/CD platforms detected (e.g. GitHub Actions, GitLab CI, Jenkins). Empty array if none",
+    ),
   databases: z
     .array(
       z.object({
@@ -57,19 +57,22 @@ export const DeploymentContextSchema = z.object({
         version: z.string().optional().describe("Version if determinable"),
       }),
     )
-    .optional(),
+    .describe("Databases discovered (empty array if none)"),
   messageQueues: z
     .array(z.string())
-    .optional()
-    .describe("Message queues/brokers (e.g. RabbitMQ, SQS, Kafka)"),
+    .describe(
+      "Message queues/brokers (e.g. RabbitMQ, SQS, Kafka). Empty array if none",
+    ),
   reverseProxy: z
     .string()
-    .optional()
-    .describe("Reverse proxy (e.g. nginx, Caddy, Traefik)"),
+    .describe(
+      "Reverse proxy (e.g. nginx, Caddy, Traefik). Empty string if none",
+    ),
   environmentFiles: z
     .array(z.string())
-    .optional()
-    .describe("Environment file paths discovered (e.g. .env, .env.example)"),
+    .describe(
+      "Environment file paths discovered (e.g. .env, .env.example). Empty array if none",
+    ),
 });
 
 export type DeploymentContext = z.infer<typeof DeploymentContextSchema>;
@@ -112,8 +115,9 @@ export const SecurityControlSchema = z.object({
     .describe("Assessed effectiveness of the control"),
   gaps: z
     .string()
-    .optional()
-    .describe("Known gaps or weaknesses in the control"),
+    .describe(
+      "Known gaps or weaknesses in the control. Empty string if none identified",
+    ),
 });
 
 export type SecurityControl = z.infer<typeof SecurityControlSchema>;
@@ -226,13 +230,13 @@ export const AttackVectorSchema = z.object({
     .describe("HTTP method or access method (e.g. GET, POST, PAGE)"),
   parameter: z
     .string()
-    .optional()
-    .describe("Target parameter (query param, body field, header, etc.)"),
+    .describe(
+      "Target parameter (query param, body field, header, etc.). Empty string if not parameter-specific",
+    ),
   technique: z.string().describe("Attack technique description"),
   toolSuggestions: z
     .array(z.string())
-    .optional()
-    .describe("Suggested tools (e.g. sqlmap, burpsuite, curl)"),
+    .describe("Suggested tools (e.g. sqlmap, burpsuite, curl). Empty array if none"),
 });
 
 export type AttackVector = z.infer<typeof AttackVectorSchema>;
@@ -254,8 +258,9 @@ export const ThreatSchema = z.object({
   targetComponent: z.string().describe("Primary target component ID"),
   affectedDataFlow: z
     .string()
-    .optional()
-    .describe("Affected data flow ID, if applicable"),
+    .describe(
+      "Affected data flow ID, if applicable. Empty string if not flow-specific",
+    ),
   residualRisk: z
     .enum(["critical", "high", "medium", "low", "negligible"])
     .describe("Residual risk after existing mitigations"),
@@ -276,62 +281,80 @@ export const ThreatSchema = z.object({
       .describe("Specific pentest objectives for this threat"),
     suggestedTools: z
       .array(z.string())
-      .optional()
-      .describe("Tools to use for testing"),
+      .describe("Tools to use for testing. Empty array if none"),
     deploymentConsiderations: z
       .array(z.string())
-      .optional()
       .describe(
-        "Deployment-specific details that affect testing (DB type, framework, etc.)",
+        "Deployment-specific details that affect testing (DB type, framework, etc.). Empty array if none",
       ),
     prerequisites: z
       .array(z.string())
-      .optional()
-      .describe("Prerequisites before testing (e.g. authenticated session)"),
+      .describe(
+        "Prerequisites before testing (e.g. authenticated session). Empty array if none",
+      ),
   }),
 });
 
 export type Threat = z.infer<typeof ThreatSchema>;
 
 // ---------------------------------------------------------------------------
-// Top-level STRIDE Threat Model
+// Synthesis schemas (split into two smaller schemas to stay within API grammar
+// compilation limits — the full model is assembled in code)
 // ---------------------------------------------------------------------------
 
-export const STRIDEThreatModelSchema = z.object({
-  metadata: z.object({
-    generatedAt: z.string().describe("ISO 8601 timestamp"),
-    codebasePath: z.string().describe("Path to the analyzed codebase"),
-    repoType: z.string().describe("Repository type (monorepo, single-app, etc.)"),
-    packageManager: z.string().describe("Package manager in use"),
-  }),
-  deployment: DeploymentContextSchema,
+/** Phase 3a: System architecture (components, trust boundaries, data flows) */
+export const SystemArchitectureSchema = z.object({
   components: z.array(ComponentSchema).describe("System components"),
   trustBoundaries: z
     .array(TrustBoundarySchema)
     .describe("Trust boundaries"),
   dataFlows: z.array(DataFlowSchema).describe("Data flows between components"),
-  securityControls: SecurityControlsResultSchema,
-  threats: z.array(ThreatSchema).describe("STRIDE threats identified"),
-  summary: z.object({
-    totalComponents: z.number(),
-    totalDataFlows: z.number(),
-    totalThreats: z.number(),
-    threatsByCategory: z.object({
-      spoofing: z.number(),
-      tampering: z.number(),
-      repudiation: z.number(),
-      information_disclosure: z.number(),
-      denial_of_service: z.number(),
-      elevation_of_privilege: z.number(),
-    }),
-    threatsByRisk: z.object({
-      critical: z.number(),
-      high: z.number(),
-      medium: z.number(),
-      low: z.number(),
-      negligible: z.number(),
-    }),
-  }),
 });
 
-export type STRIDEThreatModel = z.infer<typeof STRIDEThreatModelSchema>;
+export type SystemArchitecture = z.infer<typeof SystemArchitectureSchema>;
+
+/** Phase 3b: STRIDE threats */
+export const ThreatsResultSchema = z.object({
+  threats: z.array(ThreatSchema).describe("STRIDE threats identified"),
+});
+
+export type ThreatsResult = z.infer<typeof ThreatsResultSchema>;
+
+// ---------------------------------------------------------------------------
+// Top-level STRIDE Threat Model (assembled in code, not used as API schema)
+// ---------------------------------------------------------------------------
+
+export interface STRIDEThreatModel {
+  metadata: {
+    generatedAt: string;
+    codebasePath: string;
+    repoType: string;
+    packageManager: string;
+  };
+  deployment: DeploymentContext;
+  components: Component[];
+  trustBoundaries: TrustBoundary[];
+  dataFlows: DataFlow[];
+  securityControls: SecurityControlsResult;
+  threats: Threat[];
+  summary: {
+    totalComponents: number;
+    totalDataFlows: number;
+    totalThreats: number;
+    threatsByCategory: {
+      spoofing: number;
+      tampering: number;
+      repudiation: number;
+      information_disclosure: number;
+      denial_of_service: number;
+      elevation_of_privilege: number;
+    };
+    threatsByRisk: {
+      critical: number;
+      high: number;
+      medium: number;
+      low: number;
+      negligible: number;
+    };
+  };
+}

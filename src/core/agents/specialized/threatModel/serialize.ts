@@ -335,13 +335,13 @@ function renderThreatsSection(
     lines.push("|----------|--------|-----------|-----------|");
     for (const av of t.attackVectors) {
       lines.push(
-        `| ${av.endpoint} | ${av.method} | ${av.parameter ?? "—"} | ${av.technique} |`,
+        `| ${av.endpoint} | ${av.method} | ${av.parameter || "—"} | ${av.technique} |`,
       );
     }
 
     // Tool suggestions (collect from all attack vectors)
     const allTools = t.attackVectors
-      .flatMap((av) => av.toolSuggestions ?? [])
+      .flatMap((av) => av.toolSuggestions)
       .filter((v, i, a) => a.indexOf(v) === i);
     if (allTools.length > 0) {
       lines.push("");
@@ -368,10 +368,7 @@ function renderThreatsSection(
       lines.push(`${i + 1}. ${t.pentestGuidance.objectives[i]}`);
     }
 
-    if (
-      t.pentestGuidance.deploymentConsiderations &&
-      t.pentestGuidance.deploymentConsiderations.length > 0
-    ) {
+    if (t.pentestGuidance.deploymentConsiderations.length > 0) {
       lines.push("");
       lines.push("**Deployment Considerations:**");
       for (const dc of t.pentestGuidance.deploymentConsiderations) {
@@ -379,10 +376,7 @@ function renderThreatsSection(
       }
     }
 
-    if (
-      t.pentestGuidance.prerequisites &&
-      t.pentestGuidance.prerequisites.length > 0
-    ) {
+    if (t.pentestGuidance.prerequisites.length > 0) {
       lines.push("");
       lines.push("**Prerequisites:**");
       for (const pr of t.pentestGuidance.prerequisites) {
