@@ -19,8 +19,10 @@ import {
   checkIfContextLengthError,
   createSummarizationStream,
   getProviderModel,
+  isAnthropicProvider,
   type AIAuthConfig,
 } from "./utils";
+import { withCachedSystemPrompt, withCachedLastMessage } from "./caching";
 
 export type AIModel = AnthropicMessagesModelId | OpenAIChatModelId | string; // For OpenRouter and Bedrock models
 
@@ -300,13 +302,26 @@ export function streamResponse(
   // Use a container object so the reference stays stable but the value can be updated
   const messagesContainer = { current: messages || [] };
   const providerModel = getProviderModel(model, authConfig);
+  const useAnthropicCaching = isAnthropicProvider(model);
+
+  // For Anthropic models, move the system prompt into messages with cache_control.
+  // This caches tools + system prompt across multi-turn conversations (~90% cost reduction on cache hits).
+  let effectiveSystem: string | undefined = system;
+  let effectiveMessages: ModelMessage[] | undefined = messages;
+
+  if (useAnthropicCaching && system) {
+    const baseMessages: ModelMessage[] =
+      messages ?? [{ role: "user" as const, content: prompt }];
+    effectiveMessages = withCachedSystemPrompt(system, baseMessages);
+    effectiveSystem = undefined;
+  }
 
   try {
     // Create the appropriate provider instance
     const response = streamText({
       model: providerModel,
-      system,
-      ...(messages ? { messages } : { prompt }),
+      system: effectiveSystem,
+      ...(effectiveMessages ? { messages: effectiveMessages } : { prompt }),
       stopWhen,
       toolChoice,
       tools,
@@ -314,6 +329,10 @@ export function streamResponse(
       prepareStep: (opts) => {
         // Update the container with the latest messages
         messagesContainer.current = opts.messages;
+        // For Anthropic, add cache_control to the last message for incremental caching
+        if (useAnthropicCaching) {
+          return { messages: withCachedLastMessage(opts.messages) };
+        }
         return undefined;
       },
       onStepFinish,
