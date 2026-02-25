@@ -214,6 +214,7 @@ export default function ThreatModel({ sessionId }: { sessionId: string }) {
           cwd,
           session: s,
           model: model.id,
+          applicationIdentity: s.config?.applicationIdentity,
           abortSignal: controller.signal,
           callbacks: {
             onTextDelta: (d) => {
@@ -367,14 +368,14 @@ export default function ThreatModel({ sessionId }: { sessionId: string }) {
         <box flexDirection="row" gap={1}>
           {isRunning ? (
             <SpinnerDots
-              label={`STRIDE Threat Model — ${phaseLabels[phase]}`}
+              label={`Threat Model — ${phaseLabels[phase]}`}
               fg={colors.primary}
             />
           ) : (
             <text
               fg={phase === "completed" ? colors.primary : colors.textMuted}
             >
-              {phase === "completed" ? "✓" : "●"} STRIDE Threat Model —{" "}
+              {phase === "completed" ? "✓" : "●"} Threat Model —{" "}
               {phaseLabels[phase]}
             </text>
           )}
@@ -404,7 +405,7 @@ export default function ThreatModel({ sessionId }: { sessionId: string }) {
           alignItems="center"
           gap={1}
         >
-          <text fg={colors.primary}>STRIDE Threat Model Generated</text>
+          <text fg={colors.primary}>Threat Model Generated</text>
           <text fg={colors.textMuted}>{result.markdownPath}</text>
           <text fg={colors.textMuted}>{result.jsonPath}</text>
           <box flexDirection="row" gap={2}>

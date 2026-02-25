@@ -101,6 +101,8 @@ const SessionConfigObject = z.object({
   enumerateSubdomains: z.boolean().optional(),
   /** Local codebase path for whitebox analysis (source code access) */
   cwd: z.string().optional(),
+  /** Optional user-provided hint about what the application is for threat modeling */
+  applicationIdentity: z.string().optional(),
 });
 
 export type SessionConfig = z.infer<typeof SessionConfigObject>;

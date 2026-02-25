@@ -57,7 +57,7 @@ function showHelp() {
     "  pensar targeted-pentest [options]   Run a targeted pentest on a single target",
   );
   console.log(
-    "  pensar threat-model [options]       Generate a STRIDE threat model from source code",
+    "  pensar threat-model [options]       Generate a threat model from source code",
   );
   console.log("  pensar help                         Show this help message");
   console.log("  pensar version                      Show version number");
@@ -203,23 +203,27 @@ async function runThreatModel() {
   const cwd = getArgRequired("--cwd");
   const model = (getArg("--model") ?? "claude-sonnet-4-5") as AIModel;
 
+  const appContext = getArg("--app-context");
+
   console.log("=".repeat(60));
-  console.log("STRIDE THREAT MODEL");
+  console.log("THREAT MODEL");
   console.log("=".repeat(60));
   console.log(`Codebase: ${cwd}`);
   console.log(`Model:    ${model}`);
+  if (appContext) console.log(`App Context: ${appContext}`);
   console.log();
 
   const session = await sessions.create({
-    name: "STRIDE Threat Model",
+    name: "Threat Model",
     targets: [],
-    config: { cwd },
+    config: { cwd, applicationIdentity: appContext },
   });
 
   const { threatModel, markdownPath, jsonPath } = await runStrideThreatModel({
     cwd,
     session,
     model,
+    applicationIdentity: appContext,
     callbacks: {
       onTextDelta: (d) => process.stdout.write(d.text),
       onToolCall: (d) => console.log(`\n→ ${d.toolName}`),
@@ -232,9 +236,9 @@ async function runThreatModel() {
   console.log("=".repeat(60));
   console.log("RESULTS");
   console.log("=".repeat(60));
-  console.log(`Threats:   ${threatModel.threats.length}`);
-  console.log(`Markdown:  ${markdownPath}`);
-  console.log(`JSON:      ${jsonPath}`);
+  console.log(`Attack Paths: ${threatModel.attackPaths.length}`);
+  console.log(`Markdown:     ${markdownPath}`);
+  console.log(`JSON:         ${jsonPath}`);
 }
 
 // ---------------------------------------------------------------------------

@@ -218,7 +218,179 @@ export const DataFlowSchema = z.object({
 export type DataFlow = z.infer<typeof DataFlowSchema>;
 
 // ---------------------------------------------------------------------------
-// STRIDE Threats
+// Application Context (Phase 0)
+// ---------------------------------------------------------------------------
+
+export const ApplicationIdentitySchema = z.object({
+  type: z
+    .enum(["library", "framework", "service", "platform", "cli", "other"])
+    .describe("What kind of software this is"),
+  description: z
+    .string()
+    .describe("One-paragraph summary of what the application does"),
+  domain: z
+    .string()
+    .describe(
+      "Application domain (e.g. browser automation, e-commerce, fintech, CI/CD)",
+    ),
+  users: z
+    .array(z.string())
+    .describe(
+      "Who uses this application (e.g. developers, end users, operators)",
+    ),
+  coreCapabilities: z
+    .array(z.string())
+    .describe(
+      "Key capabilities with security implications (e.g. executes browser actions, processes payments)",
+    ),
+});
+
+export type ApplicationIdentity = z.infer<typeof ApplicationIdentitySchema>;
+
+export const ApplicationFeatureSchema = z.object({
+  name: z.string().describe("Feature name (e.g. page navigation, form fill)"),
+  description: z.string().describe("What the feature does"),
+  securityRelevance: z
+    .string()
+    .describe("Why this feature matters for security"),
+  privilegedOperations: z
+    .array(z.string())
+    .describe(
+      "Privileged operations this feature can perform (e.g. file system access, network requests)",
+    ),
+  dataHandled: z
+    .array(z.string())
+    .describe(
+      "Sensitive data this feature handles (e.g. user credentials, page content, cookies)",
+    ),
+});
+
+export type ApplicationFeature = z.infer<typeof ApplicationFeatureSchema>;
+
+export const ApplicationTrustBoundarySchema = z.object({
+  name: z
+    .string()
+    .describe(
+      "Boundary name (e.g. web page → agent, user prompt → browser action)",
+    ),
+  description: z
+    .string()
+    .describe("What crosses this boundary and why it matters"),
+  inputSources: z
+    .array(z.string())
+    .describe("Where untrusted input comes from"),
+  crossesTo: z
+    .string()
+    .describe("What sensitive context the input reaches"),
+});
+
+export type ApplicationTrustBoundary = z.infer<
+  typeof ApplicationTrustBoundarySchema
+>;
+
+export const AttackerProfileSchema = z.object({
+  name: z
+    .string()
+    .describe(
+      "Profile name (e.g. malicious website operator, compromised dependency author)",
+    ),
+  description: z.string().describe("Who this attacker is and their motivation"),
+  controls: z
+    .array(z.string())
+    .describe("What the attacker controls (e.g. web page content, npm package)"),
+  goals: z
+    .array(z.string())
+    .describe(
+      "What the attacker wants to achieve (e.g. exfiltrate data, execute arbitrary code)",
+    ),
+  skillLevel: z
+    .enum(["low", "medium", "high", "expert"])
+    .describe("Expected attacker skill level"),
+});
+
+export type AttackerProfile = z.infer<typeof AttackerProfileSchema>;
+
+export const ApplicationContextSchema = z.object({
+  identity: ApplicationIdentitySchema.describe("What the application is"),
+  features: z
+    .array(ApplicationFeatureSchema)
+    .describe("Security-relevant features and capabilities"),
+  trustBoundaries: z
+    .array(ApplicationTrustBoundarySchema)
+    .describe("Application-specific trust boundaries where untrusted data enters sensitive context"),
+  attackerProfiles: z
+    .array(AttackerProfileSchema)
+    .describe("Realistic attacker profiles based on the application's nature"),
+});
+
+export type ApplicationContext = z.infer<typeof ApplicationContextSchema>;
+
+// ---------------------------------------------------------------------------
+// Attack Paths (replaces STRIDE Threats)
+// ---------------------------------------------------------------------------
+
+export const AttackPathSchema = z.object({
+  id: z.string().describe("Unique attack path ID (e.g. AP-001)"),
+  title: z.string().describe("Short descriptive title"),
+  severity: z
+    .enum(["critical", "high", "medium", "low"])
+    .describe("Severity of the attack path"),
+  attackerProfile: z
+    .string()
+    .describe("Name of the attacker profile that would execute this attack"),
+  entryPoint: z
+    .string()
+    .describe(
+      "Specific feature, input, or endpoint where the attack begins",
+    ),
+  mechanism: z
+    .array(z.string())
+    .describe(
+      "Step-by-step array showing how the attack flows through the system",
+    ),
+  impact: z.string().describe("What happens if the attack succeeds"),
+  affectedFeatures: z
+    .array(z.string())
+    .describe("Features affected by this attack path"),
+  preconditions: z
+    .array(z.string())
+    .describe("Conditions that must be true for this attack to work"),
+  existingControls: z
+    .array(z.string())
+    .describe("Existing controls that partially or fully mitigate this attack"),
+  controlGaps: z
+    .array(z.string())
+    .describe("Missing or insufficient controls that make this attack viable"),
+  pentestGuidance: z.object({
+    objectives: z
+      .array(z.string())
+      .describe("Specific pentest objectives for this attack path"),
+    techniques: z
+      .array(z.string())
+      .describe("Recommended testing techniques and tools"),
+    deploymentConsiderations: z
+      .array(z.string())
+      .describe(
+        "Deployment-specific details that affect testing. Empty array if none",
+      ),
+    prerequisites: z
+      .array(z.string())
+      .describe(
+        "Prerequisites before testing (e.g. authenticated session). Empty array if none",
+      ),
+  }),
+});
+
+export type AttackPath = z.infer<typeof AttackPathSchema>;
+
+export const AttackPathsResultSchema = z.object({
+  attackPaths: z.array(AttackPathSchema).describe("Attack paths identified"),
+});
+
+export type AttackPathsResult = z.infer<typeof AttackPathsResultSchema>;
+
+// ---------------------------------------------------------------------------
+// STRIDE Threats (deprecated — kept for backward compatibility)
 // ---------------------------------------------------------------------------
 
 export const AttackVectorSchema = z.object({
@@ -311,7 +483,7 @@ export const SystemArchitectureSchema = z.object({
 
 export type SystemArchitecture = z.infer<typeof SystemArchitectureSchema>;
 
-/** Phase 3b: STRIDE threats */
+/** Phase 3b: STRIDE threats (deprecated — use AttackPathsResultSchema) */
 export const ThreatsResultSchema = z.object({
   threats: z.array(ThreatSchema).describe("STRIDE threats identified"),
 });
@@ -319,9 +491,41 @@ export const ThreatsResultSchema = z.object({
 export type ThreatsResult = z.infer<typeof ThreatsResultSchema>;
 
 // ---------------------------------------------------------------------------
-// Top-level STRIDE Threat Model (assembled in code, not used as API schema)
+// Top-level Threat Model (application-centric)
 // ---------------------------------------------------------------------------
 
+export interface ThreatModel {
+  metadata: {
+    generatedAt: string;
+    codebasePath: string;
+    repoType: string;
+    packageManager: string;
+  };
+  applicationContext: ApplicationContext;
+  deployment: DeploymentContext;
+  components: Component[];
+  trustBoundaries: TrustBoundary[];
+  dataFlows: DataFlow[];
+  securityControls: SecurityControlsResult;
+  attackPaths: AttackPath[];
+  summary: {
+    totalComponents: number;
+    totalDataFlows: number;
+    totalAttackPaths: number;
+    attackPathsBySeverity: {
+      critical: number;
+      high: number;
+      medium: number;
+      low: number;
+    };
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Legacy STRIDE Threat Model (deprecated — kept for backward compatibility)
+// ---------------------------------------------------------------------------
+
+/** @deprecated Use {@link ThreatModel} instead */
 export interface STRIDEThreatModel {
   metadata: {
     generatedAt: string;

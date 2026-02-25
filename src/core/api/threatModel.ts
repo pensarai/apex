@@ -22,6 +22,10 @@ export interface ThreatModelInput {
 
   model: AIModel;
   session: SessionInfo;
+
+  /** Optional user-provided hint about what the application is (e.g. "AI browser automation framework") */
+  applicationIdentity?: string;
+
   authConfig?: AIAuthConfig;
   abortSignal?: AbortSignal;
   callbacks?: ConsumeCallbacks;
@@ -32,19 +36,18 @@ export interface ThreatModelInput {
 // ---------------------------------------------------------------------------
 
 /**
- * Run standalone STRIDE threat model generation.
+ * Run application-centric threat model generation.
  *
  * Phase 1: Run whitebox attack surface discovery to map endpoints.
- * Phase 2: Run STRIDE threat model workflow (deployment context, security
- *           controls, synthesis).
+ * Phase 2: Run threat model workflow (application context, deployment context,
+ *           security controls, attack path synthesis).
  *
- * Outputs: stride-threat-model.md and stride-threat-model.json in the
- * session root directory.
+ * Outputs: threat-model.md and threat-model.json in the session root directory.
  */
 export async function runStrideThreatModel(
   input: ThreatModelInput,
 ): Promise<ThreatModelWorkflowResult> {
-  const { cwd, model, session, authConfig, abortSignal, callbacks } = input;
+  const { cwd, model, session, applicationIdentity, authConfig, abortSignal, callbacks } = input;
 
   // The whitebox attack surface workflow has two phases:
   //   Phase 1 (app discovery): passes direct callbacks to consume()
@@ -102,6 +105,7 @@ export async function runStrideThreatModel(
     codebasePath: cwd,
     model,
     session,
+    applicationIdentity,
     authConfig,
     abortSignal,
     callbacks,

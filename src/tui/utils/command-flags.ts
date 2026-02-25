@@ -119,11 +119,13 @@ export function parseFlags(args: string[], schema: FlagSchema): ParsedFlags {
 export interface ThreatModelCommandFlags {
   cwd?: string;
   model?: string;
+  appContext?: string;
 }
 
 const threatModelFlagSchema: FlagSchema = {
   cwd: { type: "string" },
   model: { type: "string" },
+  "app-context": { type: "string" },
 };
 
 /**
@@ -135,6 +137,7 @@ export function parseThreatModelFlags(args: string[]): ThreatModelCommandFlags {
 
   if (raw.cwd) flags.cwd = String(raw.cwd);
   if (raw.model) flags.model = String(raw.model);
+  if (raw.appContext) flags.appContext = String(raw.appContext);
 
   return flags;
 }
@@ -149,6 +152,7 @@ export async function createThreatModelSessionFromFlags(
     sessionType: "web-app",
     mode: "auto",
     cwd: flags.cwd,
+    applicationIdentity: flags.appContext,
     toolsetState: createToolsetState("web-pentest"),
   };
 

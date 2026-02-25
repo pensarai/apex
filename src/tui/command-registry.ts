@@ -266,7 +266,7 @@ export const commands: CommandConfig[] = [
   {
     name: "threat-model",
     aliases: ["tm", "stride"],
-    description: "Generate STRIDE threat model from source code",
+    description: "Generate application-centric threat model from source code",
     category: "Pentesting",
     options: [
       {
@@ -278,6 +278,11 @@ export const commands: CommandConfig[] = [
         name: "--model",
         valueHint: "<model>",
         description: "AI model to use",
+      },
+      {
+        name: "--app-context",
+        valueHint: "<description>",
+        description: "Application identity hint (e.g. \"AI browser automation framework\")",
       },
     ],
     handler: async (args, ctx) => {

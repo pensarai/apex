@@ -1,38 +1,30 @@
 import type {
+  ThreatModel,
   STRIDEThreatModel,
   Component,
   DataFlow,
-  SecurityControl,
-  Threat,
+  AttackPath,
+  ApplicationContext,
+  SecurityControlsResult,
 } from "./types";
 
 // ---------------------------------------------------------------------------
 // Markdown serializer
 // ---------------------------------------------------------------------------
 
-const STRIDE_CATEGORY_LABELS: Record<string, string> = {
-  spoofing: "SPOOFING",
-  tampering: "TAMPERING",
-  repudiation: "REPUDIATION",
-  information_disclosure: "INFORMATION_DISCLOSURE",
-  denial_of_service: "DENIAL_OF_SERVICE",
-  elevation_of_privilege: "ELEVATION_OF_PRIVILEGE",
-};
-
-const RISK_LABELS: Record<string, string> = {
+const SEVERITY_LABELS: Record<string, string> = {
   critical: "CRITICAL",
   high: "HIGH",
   medium: "MEDIUM",
   low: "LOW",
-  negligible: "NEGLIGIBLE",
 };
 
 /**
- * Serialize a STRIDE threat model to a structured markdown document
+ * Serialize a threat model to a structured markdown document
  * optimized for LLM agent consumption via `read_file` and `grep`.
  */
 export function serializeThreatModelToMarkdown(
-  model: STRIDEThreatModel,
+  model: ThreatModel,
 ): string {
   const sections: string[] = [];
 
@@ -40,7 +32,7 @@ export function serializeThreatModelToMarkdown(
   // Header
   // =========================================================================
 
-  sections.push(`# STRIDE Threat Model
+  sections.push(`# Threat Model
 
 **Generated:** ${model.metadata.generatedAt}
 **Codebase:** ${model.metadata.codebasePath}
@@ -48,6 +40,12 @@ export function serializeThreatModelToMarkdown(
 **Package Manager:** ${model.metadata.packageManager}
 
 ---`);
+
+  // =========================================================================
+  // Application Context
+  // =========================================================================
+
+  sections.push(renderApplicationContextSection(model.applicationContext));
 
   // =========================================================================
   // Deployment Model
@@ -62,7 +60,7 @@ export function serializeThreatModelToMarkdown(
   sections.push(renderComponentsSection(model.components));
 
   // =========================================================================
-  // Trust Boundaries
+  // Trust Boundaries (system-level)
   // =========================================================================
 
   sections.push(renderTrustBoundariesSection(model));
@@ -77,13 +75,13 @@ export function serializeThreatModelToMarkdown(
   // Security Controls
   // =========================================================================
 
-  sections.push(renderSecurityControlsSection(model));
+  sections.push(renderSecurityControlsSection(model.securityControls));
 
   // =========================================================================
-  // STRIDE Threats
+  // Attack Paths
   // =========================================================================
 
-  sections.push(renderThreatsSection(model.threats, model.components));
+  sections.push(renderAttackPathsSection(model.attackPaths));
 
   // =========================================================================
   // Summary
@@ -98,7 +96,63 @@ export function serializeThreatModelToMarkdown(
 // Section renderers
 // ---------------------------------------------------------------------------
 
-function renderDeploymentSection(model: STRIDEThreatModel): string {
+function renderApplicationContextSection(ctx: ApplicationContext): string {
+  const lines: string[] = ["## Application Context"];
+
+  // Identity
+  lines.push("");
+  lines.push("### Identity");
+  lines.push(`- **Type:** ${capitalize(ctx.identity.type)}`);
+  lines.push(`- **Domain:** ${ctx.identity.domain}`);
+  lines.push(`- **Description:** ${ctx.identity.description}`);
+  lines.push(`- **Users:** ${ctx.identity.users.join(", ")}`);
+  lines.push(
+    `- **Core Capabilities:** ${ctx.identity.coreCapabilities.join(", ")}`,
+  );
+
+  // Features & Capabilities
+  lines.push("");
+  lines.push("### Features & Capabilities");
+  lines.push("");
+  lines.push(
+    "| Feature | Security Relevance | Privileged Operations | Data Handled |",
+  );
+  lines.push(
+    "|---------|-------------------|----------------------|--------------|",
+  );
+  for (const f of ctx.features) {
+    lines.push(
+      `| **${f.name}** — ${f.description} | ${f.securityRelevance} | ${f.privilegedOperations.join("; ") || "—"} | ${f.dataHandled.join("; ") || "—"} |`,
+    );
+  }
+
+  // Application-Specific Trust Boundaries
+  lines.push("");
+  lines.push("### Trust Boundaries (Application-Specific)");
+  for (const tb of ctx.trustBoundaries) {
+    lines.push("");
+    lines.push(`#### ${tb.name}`);
+    lines.push(`${tb.description}`);
+    lines.push(`- **Input Sources:** ${tb.inputSources.join(", ")}`);
+    lines.push(`- **Crosses To:** ${tb.crossesTo}`);
+  }
+
+  // Attacker Profiles
+  lines.push("");
+  lines.push("### Attacker Profiles");
+  for (const ap of ctx.attackerProfiles) {
+    lines.push("");
+    lines.push(`#### ${ap.name}`);
+    lines.push(`${ap.description}`);
+    lines.push(`- **Skill Level:** ${capitalize(ap.skillLevel)}`);
+    lines.push(`- **Controls:** ${ap.controls.join(", ")}`);
+    lines.push(`- **Goals:** ${ap.goals.join(", ")}`);
+  }
+
+  return lines.join("\n");
+}
+
+function renderDeploymentSection(model: ThreatModel): string {
   const d = model.deployment;
   const lines: string[] = ["## Deployment Model"];
 
@@ -208,7 +262,7 @@ function renderComponentsSection(components: Component[]): string {
   return lines.join("\n");
 }
 
-function renderTrustBoundariesSection(model: STRIDEThreatModel): string {
+function renderTrustBoundariesSection(model: ThreatModel): string {
   const lines: string[] = ["## Trust Boundaries"];
 
   const componentMap = new Map(model.components.map((c) => [c.id, c]));
@@ -246,9 +300,8 @@ function renderDataFlowsSection(dataFlows: DataFlow[]): string {
   return lines.join("\n");
 }
 
-function renderSecurityControlsSection(model: STRIDEThreatModel): string {
+function renderSecurityControlsSection(sc: SecurityControlsResult): string {
   const lines: string[] = ["## Security Controls"];
-  const sc = model.securityControls;
 
   for (let i = 0; i < sc.controls.length; i++) {
     const ctrl = sc.controls[i]!;
@@ -291,67 +344,61 @@ function renderSecurityControlsSection(model: STRIDEThreatModel): string {
   return lines.join("\n");
 }
 
-function renderThreatsSection(
-  threats: Threat[],
-  components: Component[],
-): string {
-  const lines: string[] = ["## STRIDE Threats"];
-  const componentMap = new Map(components.map((c) => [c.id, c]));
+function renderAttackPathsSection(attackPaths: AttackPath[]): string {
+  const lines: string[] = ["## Attack Paths"];
 
-  for (const t of threats) {
-    const catLabel = STRIDE_CATEGORY_LABELS[t.category] ?? t.category;
-    const riskLabel = RISK_LABELS[t.residualRisk] ?? t.residualRisk;
-    const comp = componentMap.get(t.targetComponent);
-    const compLabel = comp
-      ? `${comp.id} (${comp.name})`
-      : t.targetComponent;
+  for (const ap of attackPaths) {
+    const sevLabel = SEVERITY_LABELS[ap.severity] ?? ap.severity;
 
     lines.push("");
-    lines.push(`### ${t.id}: ${t.title} [${catLabel}] [${riskLabel}]`);
+    lines.push(`### ${ap.id}: ${ap.title} [${sevLabel}]`);
     lines.push("");
-    lines.push(`**Target Component:** ${compLabel}`);
-    if (t.affectedDataFlow) {
-      lines.push(`**Affected Data Flow:** ${t.affectedDataFlow}`);
+    lines.push(`**Attacker Profile:** ${ap.attackerProfile}`);
+    lines.push(`**Entry Point:** ${ap.entryPoint}`);
+    lines.push(`**Severity:** ${capitalize(ap.severity)}`);
+    lines.push(`**Affected Features:** ${ap.affectedFeatures.join(", ")}`);
+
+    // Mechanism
+    lines.push("");
+    lines.push("**Mechanism:**");
+    for (let i = 0; i < ap.mechanism.length; i++) {
+      lines.push(`${i + 1}. ${ap.mechanism[i]}`);
     }
-    lines.push(`**Residual Risk:** ${capitalize(t.residualRisk)}`);
+
+    // Impact
     lines.push("");
-    lines.push(`${t.description}`);
+    lines.push(`**Impact:** ${ap.impact}`);
 
     // Preconditions
     lines.push("");
     lines.push("#### Preconditions");
-    for (const pre of t.preconditions) {
-      lines.push(`- ${pre}`);
+    if (ap.preconditions.length === 0) {
+      lines.push("- None");
+    } else {
+      for (const pre of ap.preconditions) {
+        lines.push(`- ${pre}`);
+      }
     }
 
-    // Attack Vectors
+    // Existing Controls
     lines.push("");
-    lines.push("#### Attack Vectors");
-    lines.push("| Endpoint | Method | Parameter | Technique |");
-    lines.push("|----------|--------|-----------|-----------|");
-    for (const av of t.attackVectors) {
-      lines.push(
-        `| ${av.endpoint} | ${av.method} | ${av.parameter || "—"} | ${av.technique} |`,
-      );
-    }
-
-    // Tool suggestions (collect from all attack vectors)
-    const allTools = t.attackVectors
-      .flatMap((av) => av.toolSuggestions)
-      .filter((v, i, a) => a.indexOf(v) === i);
-    if (allTools.length > 0) {
-      lines.push("");
-      lines.push(`**Suggested Tools:** ${allTools.join(", ")}`);
-    }
-
-    // Existing Mitigations
-    lines.push("");
-    lines.push("#### Existing Mitigations");
-    if (t.existingMitigations.length === 0) {
+    lines.push("#### Existing Controls");
+    if (ap.existingControls.length === 0) {
       lines.push("- None identified");
     } else {
-      for (const m of t.existingMitigations) {
-        lines.push(`- ${m}`);
+      for (const ctrl of ap.existingControls) {
+        lines.push(`- ${ctrl}`);
+      }
+    }
+
+    // Control Gaps
+    lines.push("");
+    lines.push("#### Control Gaps");
+    if (ap.controlGaps.length === 0) {
+      lines.push("- None identified");
+    } else {
+      for (const gap of ap.controlGaps) {
+        lines.push(`- ${gap}`);
       }
     }
 
@@ -360,22 +407,30 @@ function renderThreatsSection(
     lines.push("#### Pentest Guidance");
 
     lines.push("**Objectives:**");
-    for (let i = 0; i < t.pentestGuidance.objectives.length; i++) {
-      lines.push(`${i + 1}. ${t.pentestGuidance.objectives[i]}`);
+    for (let i = 0; i < ap.pentestGuidance.objectives.length; i++) {
+      lines.push(`${i + 1}. ${ap.pentestGuidance.objectives[i]}`);
     }
 
-    if (t.pentestGuidance.deploymentConsiderations.length > 0) {
+    if (ap.pentestGuidance.techniques.length > 0) {
+      lines.push("");
+      lines.push("**Techniques:**");
+      for (const tech of ap.pentestGuidance.techniques) {
+        lines.push(`- ${tech}`);
+      }
+    }
+
+    if (ap.pentestGuidance.deploymentConsiderations.length > 0) {
       lines.push("");
       lines.push("**Deployment Considerations:**");
-      for (const dc of t.pentestGuidance.deploymentConsiderations) {
+      for (const dc of ap.pentestGuidance.deploymentConsiderations) {
         lines.push(`- ${dc}`);
       }
     }
 
-    if (t.pentestGuidance.prerequisites.length > 0) {
+    if (ap.pentestGuidance.prerequisites.length > 0) {
       lines.push("");
       lines.push("**Prerequisites:**");
-      for (const pr of t.pentestGuidance.prerequisites) {
+      for (const pr of ap.pentestGuidance.prerequisites) {
         lines.push(`- ${pr}`);
       }
     }
@@ -384,7 +439,7 @@ function renderThreatsSection(
   return lines.join("\n");
 }
 
-function renderSummarySection(model: STRIDEThreatModel): string {
+function renderSummarySection(model: ThreatModel): string {
   const s = model.summary;
   const lines: string[] = [
     "---",
@@ -395,26 +450,15 @@ function renderSummarySection(model: STRIDEThreatModel): string {
     "|--------|-------|",
     `| Total Components | ${s.totalComponents} |`,
     `| Total Data Flows | ${s.totalDataFlows} |`,
-    `| Total Threats | ${s.totalThreats} |`,
+    `| Total Attack Paths | ${s.totalAttackPaths} |`,
     "",
-    "### Threats by STRIDE Category",
-    "| Category | Count |",
+    "### Attack Paths by Severity",
+    "| Severity | Count |",
     "|----------|-------|",
-    `| Spoofing | ${s.threatsByCategory.spoofing} |`,
-    `| Tampering | ${s.threatsByCategory.tampering} |`,
-    `| Repudiation | ${s.threatsByCategory.repudiation} |`,
-    `| Information Disclosure | ${s.threatsByCategory.information_disclosure} |`,
-    `| Denial of Service | ${s.threatsByCategory.denial_of_service} |`,
-    `| Elevation of Privilege | ${s.threatsByCategory.elevation_of_privilege} |`,
-    "",
-    "### Threats by Residual Risk",
-    "| Risk Level | Count |",
-    "|------------|-------|",
-    `| Critical | ${s.threatsByRisk.critical} |`,
-    `| High | ${s.threatsByRisk.high} |`,
-    `| Medium | ${s.threatsByRisk.medium} |`,
-    `| Low | ${s.threatsByRisk.low} |`,
-    `| Negligible | ${s.threatsByRisk.negligible} |`,
+    `| Critical | ${s.attackPathsBySeverity.critical} |`,
+    `| High | ${s.attackPathsBySeverity.high} |`,
+    `| Medium | ${s.attackPathsBySeverity.medium} |`,
+    `| Low | ${s.attackPathsBySeverity.low} |`,
   ];
 
   return lines.join("\n");
@@ -425,10 +469,10 @@ function renderSummarySection(model: STRIDEThreatModel): string {
 // ---------------------------------------------------------------------------
 
 /**
- * Serialize a STRIDE threat model to pretty-printed JSON for programmatic use.
+ * Serialize a threat model to pretty-printed JSON for programmatic use.
  */
 export function serializeThreatModelToJson(
-  model: STRIDEThreatModel,
+  model: ThreatModel,
 ): string {
   return JSON.stringify(model, null, 2);
 }

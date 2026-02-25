@@ -2,15 +2,17 @@ import { join } from "path";
 import { CodeAgent } from "../agents/specialized/codeAgent/agent";
 import { Storage } from "../storage";
 import {
+  ApplicationContextSchema,
   DeploymentContextSchema,
   SecurityControlsResultSchema,
   SystemArchitectureSchema,
-  ThreatsResultSchema,
+  AttackPathsResultSchema,
+  type ApplicationContext,
   type DeploymentContext,
   type SecurityControlsResult,
   type SystemArchitecture,
-  type ThreatsResult,
-  type STRIDEThreatModel,
+  type AttackPathsResult,
+  type ThreatModel,
 } from "../agents/specialized/threatModel/types";
 import { serializeThreatModelToMarkdown } from "../agents/specialized/threatModel/serialize";
 import type { WhiteboxAttackSurfaceResult } from "../agents/specialized/whiteboxAttackSurface/types";
@@ -19,11 +21,12 @@ import type { AIAuthConfig } from "../ai/utils";
 import type { SessionInfo } from "../session";
 import type { ConsumeCallbacks } from "../agents/offSecAgent/types";
 import {
+  buildApplicationContextObjective,
   buildDeploymentContextObjective,
   buildSecurityControlsObjective,
   DATA_SYNTHESIS_AGENT_SYSTEM_PROMPT,
   buildArchitectureSynthesisObjective,
-  buildThreatsSynthesisObjective,
+  buildAttackPathSynthesisObjective,
 } from "../agents/specialized/threatModel/prompts";
 
 // ---------------------------------------------------------------------------
@@ -80,16 +83,16 @@ When your objective includes structured output, call \`response\` with your fina
 
 export interface ThreatModelWorkflowInput {
   codebasePath: string;
-  // attackSurface removed — reads from session.rootPath/attack-surface-results.json
   model: AIModel;
   session: SessionInfo;
+  applicationIdentity?: string;
   authConfig?: AIAuthConfig;
   abortSignal?: AbortSignal;
   callbacks?: ConsumeCallbacks;
 }
 
 export interface ThreatModelWorkflowResult {
-  threatModel: STRIDEThreatModel;
+  threatModel: ThreatModel;
   markdownPath: string;
   jsonPath: string;
 }
@@ -99,14 +102,15 @@ export interface ThreatModelWorkflowResult {
 // ---------------------------------------------------------------------------
 
 /**
- * Deterministic STRIDE threat model generation workflow.
+ * Application-centric threat model generation workflow.
  *
  * Expects `attack-surface-results.json` to already exist in `session.rootPath`.
  *
+ * Phase 0: Discover application context via CodeAgent.
  * Phase 1: Extract deployment/infrastructure context via CodeAgent.
  * Phase 2: Extract security controls via CodeAgent (reads attack surface from disk).
  * Phase 3a: Synthesize system architecture via CodeAgent (reads data files).
- * Phase 3b: Synthesize STRIDE threats via CodeAgent (reads data files).
+ * Phase 3b: Synthesize attack paths via CodeAgent (reads data files + application context).
  * Phase 4: Assemble, serialize to markdown + JSON, and write to session root.
  */
 export async function runThreatModelWorkflow(
@@ -116,10 +120,41 @@ export async function runThreatModelWorkflow(
     codebasePath,
     model,
     session,
+    applicationIdentity,
     authConfig,
     abortSignal,
     callbacks,
   } = input;
+
+  // =========================================================================
+  // Phase 0: Discover application context
+  // =========================================================================
+
+  const appContextAgent = new CodeAgent<ApplicationContext>({
+    codebasePath,
+    objective: buildApplicationContextObjective(codebasePath, applicationIdentity),
+    system: WHITEBOX_CODE_AGENT_SYSTEM_PROMPT,
+    model,
+    session,
+    authConfig,
+    abortSignal,
+    callbacks,
+    responseSchema: ApplicationContextSchema,
+  });
+
+  const applicationContext = await appContextAgent.consume({
+    onTextDelta: (d) => callbacks?.onTextDelta?.(d),
+    onToolCall: (d) => callbacks?.onToolCall?.(d),
+    onToolResult: (d) => callbacks?.onToolResult?.(d),
+    onError: (e) => callbacks?.onError?.(e),
+    subagentCallbacks: callbacks?.subagentCallbacks,
+  });
+
+  // Write application context for downstream phases
+  await Storage.write(
+    ["executions", session.id, "application-context"],
+    applicationContext,
+  );
 
   // =========================================================================
   // Phase 1: Extract deployment context
@@ -216,22 +251,22 @@ export async function runThreatModelWorkflow(
   );
 
   // =========================================================================
-  // Phase 3b: Synthesize STRIDE threats (reads all data files)
+  // Phase 3b: Synthesize attack paths (reads all data files + app context)
   // =========================================================================
 
-  const threatsAgent = new CodeAgent<ThreatsResult>({
+  const attackPathsAgent = new CodeAgent<AttackPathsResult>({
     codebasePath: session.rootPath,
-    objective: buildThreatsSynthesisObjective(session.rootPath),
+    objective: buildAttackPathSynthesisObjective(session.rootPath),
     system: DATA_SYNTHESIS_AGENT_SYSTEM_PROMPT,
     model,
     session,
     authConfig,
     abortSignal,
     callbacks,
-    responseSchema: ThreatsResultSchema,
+    responseSchema: AttackPathsResultSchema,
   });
 
-  const threatsResult = await threatsAgent.consume({
+  const attackPathsResult = await attackPathsAgent.consume({
     onTextDelta: (d) => callbacks?.onTextDelta?.(d),
     onToolCall: (d) => callbacks?.onToolCall?.(d),
     onToolResult: (d) => callbacks?.onToolResult?.(d),
@@ -243,27 +278,17 @@ export async function runThreatModelWorkflow(
   // Phase 4: Assemble full model, serialize, and write to disk
   // =========================================================================
 
-  const threats = threatsResult.threats;
+  const attackPaths = attackPathsResult.attackPaths;
 
   // Compute summary deterministically
-  const threatsByCategory = {
-    spoofing: 0,
-    tampering: 0,
-    repudiation: 0,
-    information_disclosure: 0,
-    denial_of_service: 0,
-    elevation_of_privilege: 0,
-  };
-  const threatsByRisk = {
+  const attackPathsBySeverity = {
     critical: 0,
     high: 0,
     medium: 0,
     low: 0,
-    negligible: 0,
   };
-  for (const t of threats) {
-    threatsByCategory[t.category]++;
-    threatsByRisk[t.residualRisk]++;
+  for (const ap of attackPaths) {
+    attackPathsBySeverity[ap.severity]++;
   }
 
   // Read attack surface from disk for repoType/packageManager metadata
@@ -273,41 +298,41 @@ export async function runThreatModelWorkflow(
   const repoType = attackSurface.repoType;
   const packageManager = attackSurface.packageManager;
 
-  const threatModel: STRIDEThreatModel = {
+  const threatModel: ThreatModel = {
     metadata: {
       generatedAt: new Date().toISOString(),
       codebasePath: codebasePath,
       repoType,
       packageManager,
     },
+    applicationContext,
     deployment: deploymentContext,
     components: architecture.components,
     trustBoundaries: architecture.trustBoundaries,
     dataFlows: architecture.dataFlows,
     securityControls,
-    threats,
+    attackPaths,
     summary: {
       totalComponents: architecture.components.length,
       totalDataFlows: architecture.dataFlows.length,
-      totalThreats: threats.length,
-      threatsByCategory,
-      threatsByRisk,
+      totalAttackPaths: attackPaths.length,
+      attackPathsBySeverity,
     },
   };
 
   const markdown = serializeThreatModelToMarkdown(threatModel);
 
   await Storage.writeRaw(
-    ["executions", session.id, "stride-threat-model.md"],
+    ["executions", session.id, "threat-model.md"],
     markdown,
   );
   await Storage.write(
-    ["executions", session.id, "stride-threat-model"],
+    ["executions", session.id, "threat-model"],
     threatModel,
   );
 
-  const markdownPath = join(session.rootPath, "stride-threat-model.md");
-  const jsonPath = join(session.rootPath, "stride-threat-model.json");
+  const markdownPath = join(session.rootPath, "threat-model.md");
+  const jsonPath = join(session.rootPath, "threat-model.json");
 
   return {
     threatModel,

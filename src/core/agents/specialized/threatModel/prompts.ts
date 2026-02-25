@@ -2,6 +2,65 @@ import { join } from "path";
 import type { DeploymentContext } from "./types";
 
 // ---------------------------------------------------------------------------
+// Phase 0: Application Context Discovery
+// ---------------------------------------------------------------------------
+
+export function buildApplicationContextObjective(
+  codebasePath: string,
+  applicationIdentity?: string,
+): string {
+  const identityHint = applicationIdentity
+    ? `\n## Application Identity Hint\nThe user describes this application as: "${applicationIdentity}"\nUse this as a starting point but verify and expand upon it through code analysis.\n`
+    : "";
+
+  return `# Discover Application Context
+
+## Codebase
+- **Path:** ${codebasePath}
+${identityHint}
+## Task
+Analyze the codebase to understand what this application IS — its nature, domain, capabilities, and security-relevant characteristics. This context will drive threat identification, so focus on what makes this application unique from a security perspective.
+
+### What to Determine
+
+1. **Application Identity** — Determine:
+   - **Type:** Is this a library, framework, service, platform, CLI tool, or something else?
+   - **Domain:** What domain does it operate in? (e.g. browser automation, e-commerce, fintech, CI/CD, AI/ML)
+   - **Description:** One clear paragraph explaining what it does
+   - **Users:** Who uses this? (developers integrating it, end users, operators, other services)
+   - **Core Capabilities:** What are the key things it can DO that have security implications? (e.g. "executes arbitrary browser actions", "processes credit card payments", "manages infrastructure")
+
+2. **Features & Capabilities** — For each security-relevant feature, determine:
+   - What the feature does
+   - Why it matters for security (what could go wrong)
+   - What privileged operations it can perform (file access, network requests, code execution, data access)
+   - What sensitive data it handles (credentials, PII, tokens, secrets)
+
+3. **Application-Specific Trust Boundaries** — Identify where untrusted data enters and what sensitive context it reaches:
+   - These should be specific to this application, NOT generic zones like "DMZ" or "internal network"
+   - Example for a browser automation framework: "web page content → agent instruction parser" is a trust boundary because malicious page content could influence agent behavior
+   - Example for an API gateway: "upstream request headers → routing logic" is a trust boundary
+   - For each boundary: what are the input sources, and what sensitive context does the input cross into?
+
+4. **Attacker Profiles** — Define realistic attacker profiles specific to this application:
+   - Who would attack this application and why?
+   - What do they control? (e.g. a website's HTML content, an npm package, API inputs)
+   - What are their goals? (data exfiltration, code execution, denial of service, privilege escalation)
+   - What skill level is required?
+   - Do NOT include generic attacker profiles — each should be grounded in how this specific application could be abused
+
+### Approach
+1. Read the project README, package.json, and main entry points to understand what the application does
+2. Explore the source code to identify core features and capabilities
+3. Look for where external/untrusted data enters the system
+4. Trace how that data flows through to privileged operations
+5. Think about who would want to attack this and what they'd gain
+
+### Output
+Call the \`response\` tool with the structured application context when done.`;
+}
+
+// ---------------------------------------------------------------------------
 // Phase 1: Deployment Context Discovery
 // ---------------------------------------------------------------------------
 
@@ -266,4 +325,80 @@ Focus on threats that are plausible given the deployment context and security co
 
 ## Output
 Call the \`response\` tool with the structured STRIDE threats when done.`;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3b (new): Attack Path Synthesis (application-centric)
+// ---------------------------------------------------------------------------
+
+export function buildAttackPathSynthesisObjective(
+  sessionRootPath: string,
+): string {
+  const applicationContextPath = join(
+    sessionRootPath,
+    "application-context.json",
+  );
+  const attackSurfacePath = join(sessionRootPath, "attack-surface-results.json");
+  const deploymentContextPath = join(sessionRootPath, "deployment-context.json");
+  const securityControlsPath = join(sessionRootPath, "security-controls.json");
+  const systemArchitecturePath = join(
+    sessionRootPath,
+    "system-architecture.json",
+  );
+
+  return `# Identify Application-Specific Attack Paths
+
+## Data Files
+Read ALL of these files before generating attack paths:
+- **Application Context:** ${applicationContextPath} — Start here. This describes what the application IS, its features, trust boundaries, and attacker profiles.
+- **Attack Surface:** ${attackSurfacePath}
+- **Deployment Context:** ${deploymentContextPath}
+- **Security Controls:** ${securityControlsPath}
+- **System Architecture:** ${systemArchitecturePath}
+
+## Approach
+
+You are generating attack paths that are SPECIFIC to this application. Do NOT use STRIDE categories as your generative framework. Instead:
+
+1. **Start from the application context** — read it first to understand what the application does, who would attack it, and what the application-specific trust boundaries are.
+2. **For each attacker profile**, consider what attacks they could mount given what they control and what their goals are.
+3. **For each application-specific trust boundary**, consider how untrusted input could cross into sensitive context.
+4. **Cross-reference with the attack surface** to ground each attack path in real endpoints, features, and parameters.
+5. **Check security controls** to determine what defenses exist and where gaps remain.
+6. **Include deployment context** to make attack paths technology-specific.
+
+## Signal vs. Noise
+
+SKIP generic threats that are not specific to what this application does. For example:
+- If this is NOT a web application with cookie-based sessions, skip CSRF threats
+- If this is a library/framework (not a deployed service), skip server configuration threats
+- If this application doesn't serve HTML pages, skip XSS/clickjacking
+- Focus on threats that arise FROM the application's unique capabilities and trust boundaries
+
+PRIORITIZE threats that are unique to this application's domain. For example:
+- For a browser automation framework: prompt injection via web page content, data exfiltration through agent actions
+- For a payment processor: transaction manipulation, race conditions in balance updates
+- For an AI service: model manipulation, training data poisoning, inference-time attacks
+
+## Attack Path Structure
+
+Each attack path must trace a concrete path through the system:
+- **Entry Point:** Where the attack starts (a specific feature, input, endpoint)
+- **Mechanism:** Step-by-step how the attack flows through the system (array of steps)
+- **Impact:** What happens if the attack succeeds
+- **Attacker Profile:** Which attacker profile would execute this (must reference a profile from the application context)
+- **Affected Features:** Which features are impacted
+
+## Quality Standards
+
+- **Every attack path must be grounded in the application context** — reference specific features, trust boundaries, and attacker profiles
+- **Mechanisms must be concrete** — not "attacker exploits vulnerability" but "attacker embeds malicious instruction in page title → agent reads page title as context → agent executes attacker-controlled action"
+- **Preconditions must be specific** — conditions tied to this application's behavior, not generic statements
+- **Control gaps must identify what's missing** — not just "no mitigation" but what specific control would prevent this
+- **Pentest guidance must be actionable** — specific techniques a pentester could use to test this attack path
+
+Assign unique IDs: AP-001, AP-002, etc. Use severity levels: critical, high, medium, low.
+
+## Output
+Call the \`response\` tool with the structured attack paths when done.`;
 }
