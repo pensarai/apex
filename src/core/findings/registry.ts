@@ -430,9 +430,44 @@ export class FindingsRegistry {
     return { duplicate: false };
   }
 
+  /**
+   * Remove a previously-registered finding from all indexes.
+   *
+   * This is the rollback counterpart to {@link register}: call it when a
+   * finding was accepted by the registry but the caller failed to persist
+   * it (e.g. disk-write error).  Without rollback the finding would remain
+   * phantom-indexed — blocking future attempts to document the same issue.
+   *
+   * The operation is mutex-guarded so it is safe to call concurrently.
+   */
+  async unregister(finding: Finding): Promise<void> {
+    return new Promise<void>((resolve) => {
+      this.mutex = this.mutex.then(() => {
+        this.removeFinding(finding);
+        resolve();
+      });
+    });
+  }
+
   // -----------------------------------------------------------------------
   // Internal
   // -----------------------------------------------------------------------
+
+  private removeFinding(finding: Finding): void {
+    const { exactKey, appWideKey } = generateFingerprint(finding);
+
+    if (this.exactKeys.get(exactKey) === finding) {
+      this.exactKeys.delete(exactKey);
+    }
+    if (this.appWideKeys.get(appWideKey) === finding) {
+      this.appWideKeys.delete(appWideKey);
+    }
+
+    const idx = this.findings.indexOf(finding);
+    if (idx !== -1) {
+      this.findings.splice(idx, 1);
+    }
+  }
 
   private indexFinding(finding: Finding): void {
     const { exactKey, appWideKey } = generateFingerprint(finding);

@@ -84,11 +84,12 @@ FINDING STRUCTURE:
         const mdFilename = `${findingId}.md`;
         const mdPath = join(session.findingsPath, mdFilename);
 
-        // Write structured JSON (consumed by resolveResult)
-        writeFileSync(jsonPath, JSON.stringify(findingWithMeta, null, 2));
+        try {
+          // Write structured JSON (consumed by resolveResult)
+          writeFileSync(jsonPath, JSON.stringify(findingWithMeta, null, 2));
 
-        // Write human-readable markdown
-        const markdown = `# ${finding.title}
+          // Write human-readable markdown
+          const markdown = `# ${finding.title}
 
 **Severity:** ${finding.severity}  
 **Target:** ${session.targets[0]}  
@@ -125,17 +126,23 @@ ${finding.references ? `## References\n\n${finding.references}` : ""}
 *This finding was automatically documented by the Pensar penetration testing agent.*
 `;
 
-        writeFileSync(mdPath, markdown);
+          writeFileSync(mdPath, markdown);
 
-        // Append to summary
-        const summaryPath = join(session.rootPath, "findings-summary.md");
-        const summaryEntry = `- [${finding.severity}] ${finding.title} - \`findings/${mdFilename}\`\n`;
+          // Append to summary
+          const summaryPath = join(session.rootPath, "findings-summary.md");
+          const summaryEntry = `- [${finding.severity}] ${finding.title} - \`findings/${mdFilename}\`\n`;
 
-        try {
-          appendFileSync(summaryPath, summaryEntry);
-        } catch {
-          const header = `# Findings Summary\n\n**Target:** ${session.targets[0]}  \n**Session:** ${session.id}\n\n## All Findings\n\n`;
-          writeFileSync(summaryPath, header + summaryEntry);
+          try {
+            appendFileSync(summaryPath, summaryEntry);
+          } catch {
+            const header = `# Findings Summary\n\n**Target:** ${session.targets[0]}  \n**Session:** ${session.id}\n\n## All Findings\n\n`;
+            writeFileSync(summaryPath, header + summaryEntry);
+          }
+        } catch (writeError: unknown) {
+          if (ctx.findingsRegistry) {
+            await ctx.findingsRegistry.unregister(finding);
+          }
+          throw writeError;
         }
 
         return {

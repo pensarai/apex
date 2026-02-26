@@ -1002,6 +1002,26 @@ describe("FindingsRegistry Tier 3 (semantic dedup)", () => {
     expect(callArgs.prompt).toContain(sqlInjectionProducts.title);
   });
 
+  it("does not index finding rejected as semantic duplicate", async () => {
+    mockedGenerate.mockResolvedValue({
+      isDuplicate: true,
+      matchedIndex: 1,
+      reasoning: "Same vuln, different words",
+    });
+
+    const registry = new FindingsRegistry({ model: "test-model" });
+    await registry.register(missingCspRoot);
+
+    const rephrased = makeFinding({
+      title: "No CSP Header Configured",
+      endpoint: "https://target.com/admin",
+    });
+
+    const result = await registry.register(rephrased);
+    expect(result.duplicate).toBe(true);
+    expect(registry.size).toBe(1);
+  });
+
   it("handles LLM returning an out-of-bounds matchedIndex", async () => {
     mockedGenerate.mockResolvedValue({
       isDuplicate: true,
@@ -1021,5 +1041,99 @@ describe("FindingsRegistry Tier 3 (semantic dedup)", () => {
     const result = await registry.register(newFinding);
     expect(result.duplicate).toBe(false);
     expect(registry.size).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// unregister (rollback)
+// ---------------------------------------------------------------------------
+
+describe("FindingsRegistry.unregister", () => {
+  it("removes a finding from all indexes so it can be re-registered", async () => {
+    const registry = new FindingsRegistry();
+    const finding = makeFinding({
+      title: "SQL Injection in /api/products Search Parameter",
+      endpoint: "https://target.com/api/products",
+    });
+
+    await registry.register(finding);
+    expect(registry.size).toBe(1);
+
+    await registry.unregister(finding);
+    expect(registry.size).toBe(0);
+    expect(registry.getFindings()).toEqual([]);
+
+    // The same finding (or one with matching fingerprints) can now be registered again
+    const result = await registry.register(finding);
+    expect(result.duplicate).toBe(false);
+    expect(registry.size).toBe(1);
+  });
+
+  it("clears both exact and app-wide keys", async () => {
+    const registry = new FindingsRegistry();
+    await registry.register(missingCspRoot);
+    await registry.unregister(missingCspRoot);
+
+    // Exact duplicate should no longer match
+    expect(registry.isDuplicate(missingCspRoot).duplicate).toBe(false);
+
+    // App-wide duplicate (same stem, different endpoint) should no longer match
+    expect(registry.isDuplicate(missingCspApi).duplicate).toBe(false);
+  });
+
+  it("is safe to call on a finding that was never registered", async () => {
+    const registry = new FindingsRegistry();
+    await registry.unregister(sqlInjectionProducts);
+    expect(registry.size).toBe(0);
+  });
+
+  it("does not remove other findings that share no keys", async () => {
+    const registry = new FindingsRegistry();
+    await registry.register(sqlInjectionProducts);
+    await registry.register(reflectedXss);
+    expect(registry.size).toBe(2);
+
+    await registry.unregister(sqlInjectionProducts);
+    expect(registry.size).toBe(1);
+    expect(registry.getFindings()[0]!.title).toBe(reflectedXss.title);
+  });
+
+  it("only removes the exact reference — not another finding with the same fingerprint", async () => {
+    const registry = new FindingsRegistry();
+    const finding1 = makeFinding({
+      title: "Unique Finding A",
+      endpoint: "https://target.com/a",
+    });
+    const finding2 = makeFinding({
+      title: "Unique Finding B",
+      endpoint: "https://target.com/b",
+    });
+
+    await registry.register(finding1);
+    await registry.register(finding2);
+
+    // Unregister finding1 — finding2 should still be there
+    await registry.unregister(finding1);
+    expect(registry.size).toBe(1);
+    expect(registry.getFindings()[0]).toBe(finding2);
+  });
+
+  it("serialises correctly with concurrent register/unregister calls", async () => {
+    const registry = new FindingsRegistry();
+    const finding = makeFinding({
+      title: "Concurrent Test Finding",
+      endpoint: "https://target.com/concurrent",
+    });
+
+    // Register then immediately unregister — should end at size 0
+    await registry.register(finding);
+    const [, secondRegResult] = await Promise.all([
+      registry.unregister(finding),
+      registry.register(finding),
+    ]);
+
+    // After unregister + re-register, exactly one copy should exist
+    expect(secondRegResult.duplicate).toBe(false);
+    expect(registry.size).toBe(1);
   });
 });
