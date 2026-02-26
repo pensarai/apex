@@ -8,6 +8,7 @@ import {
 } from "../command-registry";
 import type { AutocompleteOption } from "../components/shared/prompt-input";
 import { useRoute } from "./route";
+import { useToast } from "./toast";
 
 interface CommandContextValue {
   router: CommandRouter<AppCommandContext>;
@@ -32,14 +33,16 @@ interface CommandProviderProps {
 
 export function CommandProvider({ children }: CommandProviderProps) {
   const route = useRoute();
+  const { toast } = useToast();
 
   const ctx = useMemo(() => {
     const ctx: AppCommandContext = {
       route: route.data,
       navigate: route.navigate,
+      toast,
     };
     return ctx;
-  }, [route]);
+  }, [route, toast]);
 
   // Create router with context - initialized once
   const router = useMemo(() => {

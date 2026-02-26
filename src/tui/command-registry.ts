@@ -10,12 +10,15 @@ import { getAllThemeNames } from "./theme";
 import { config } from "../core/config";
 import { getCurrentVersion, upgrade } from "../core/installation";
 
+import type { ToastVariant } from "./context/toast";
+
 /**
  * Define your application's CommandContext type with specific methods
  */
 export interface AppCommandContext {
   route: Route;
   navigate: (route: Route) => void;
+  toast: (message: string, variant?: ToastVariant, duration?: number) => void;
 }
 
 /**
@@ -344,16 +347,23 @@ export const commands: CommandConfig[] = [
     aliases: ["update"],
     description: "Update pensar to the latest version",
     category: "General",
-    handler: async () => {
+    handler: async (_args, ctx) => {
       const currentVersion = getCurrentVersion();
-      console.log(`\nCurrent version: v${currentVersion}`);
-      console.log("Checking for updates...\n");
+      ctx.toast(`Current version: v${currentVersion} — checking for updates…`);
 
       const result = await upgrade();
-      console.log(result.message);
 
       if (result.success && result.fromVersion !== result.toVersion) {
-        setTimeout(() => process.kill(process.pid, "SIGINT"), 1500);
+        ctx.toast(
+          `Upgraded to v${result.toVersion}. Restarting…`,
+          "default",
+          3000,
+        );
+        setTimeout(() => process.kill(process.pid, "SIGINT"), 2000);
+      } else if (result.success) {
+        ctx.toast(result.message);
+      } else {
+        ctx.toast(result.message, "error", 6000);
       }
     },
   },
