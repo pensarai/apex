@@ -26,6 +26,11 @@ export interface Config {
   // Theme preferences
   theme?: string;
   themeMode?: "dark" | "light" | "auto";
+  // WorkOS CLI auth (replaces pensarAPIKey for new auth flow)
+  accessToken?: string | null;
+  refreshToken?: string | null;
+  workspaceId?: string | null;
+  workspaceSlug?: string | null;
 }
 
 export async function init() {

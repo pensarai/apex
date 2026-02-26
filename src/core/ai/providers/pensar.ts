@@ -19,15 +19,26 @@ function logError(...args: unknown[]) {
   console.error("[pensar]", ...args);
 }
 
-interface PensarModelConfig {
+export interface PensarModelConfig {
   apiKey: string;
   baseUrl: string;
+  /** Workspace ID for WorkOS-authenticated requests. */
+  workspaceId?: string;
+  /**
+   * Optional callback to get a fresh token before each request.
+   * If provided, this is called instead of using `apiKey` directly,
+   * allowing transparent token refresh for WorkOS auth.
+   */
+  getToken?: () => Promise<{ token: string; type: "workos" | "legacy" } | null>;
 }
 
 /**
  * Creates a LanguageModelV2-compatible model that proxies requests through
  * the Pensar Console Bedrock proxy. This allows Apex CLI users to use
  * Pensar-managed inference with usage-based billing.
+ *
+ * Supports both legacy API key auth and WorkOS JWT auth.
+ * When workspaceId is provided, sends X-Workspace-Id header for WorkOS auth.
  *
  * MVP: Non-streaming. doStream() wraps doGenerate() in a ReadableStream
  * that emits a single chunk. True streaming requires Lambda Function URLs
@@ -38,6 +49,40 @@ export function createPensarModel(
   config: PensarModelConfig
 ): LanguageModelV2 {
   const modelId = `pensar:${bedrockModelId}`;
+
+  /**
+   * Build request headers, resolving the token via getToken() if available.
+   */
+  async function buildHeaders(): Promise<Record<string, string>> {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+
+    if (config.getToken) {
+      const result = await config.getToken();
+      if (!result) {
+        throw new Error(
+          "Pensar authentication failed. Run /auth to reconnect."
+        );
+      }
+      headers.Authorization = `Bearer ${result.token}`;
+
+      // WorkOS tokens need workspace ID header
+      if (result.type === "workos" && config.workspaceId) {
+        headers["X-Workspace-Id"] = config.workspaceId;
+      }
+    } else {
+      headers.Authorization = `Bearer ${config.apiKey}`;
+
+      // If workspaceId is set and key doesn't look like a legacy key,
+      // include the workspace header
+      if (config.workspaceId && !config.apiKey.startsWith("sk-")) {
+        headers["X-Workspace-Id"] = config.workspaceId;
+      }
+    }
+
+    return headers;
+  }
 
   const model: LanguageModelV2 = {
     specificationVersion: "v2",
@@ -64,13 +109,11 @@ export function createPensarModel(
       log(`  messages: ${(body.messages as unknown[])?.length ?? 0}, tools: ${(body.tools as unknown[])?.length ?? 0}`);
 
       const startTime = Date.now();
+      const headers = await buildHeaders();
 
       const response = await fetch(url, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${config.apiKey}`,
-        },
+        headers,
         body: JSON.stringify({
           modelId: bedrockModelId,
           body,

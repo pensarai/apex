@@ -6,6 +6,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { getModelInfo } from "./models";
 import { createPensarModel } from "./providers/pensar";
 import { getPensarApiUrl } from "../api/constants";
+import { ensureValidToken } from "../api/tokenRefresh";
 import {
   generateText,
   type LanguageModel,
@@ -21,6 +22,10 @@ export type AIAuthConfig = {
   openRouterAPIKey?: string;
   pensarAPIKey?: string;
   pensarApiUrl?: string;
+  // WorkOS CLI auth
+  accessToken?: string;
+  refreshToken?: string;
+  workspaceId?: string;
   bedrock?: {
     apiKey?: string;
     accessKeyId?: string;
@@ -103,11 +108,14 @@ export function getProviderModel(
     case "pensar": {
       const pensarApiKey =
         authConfig?.pensarAPIKey || process.env.PENSAR_API_KEY;
-      if (!pensarApiKey) {
+      const hasWorkOSAuth = !!authConfig?.accessToken;
+
+      if (!pensarApiKey && !hasWorkOSAuth) {
         throw new Error(
-          "Pensar API key not configured. Run /auth to connect to Pensar Console.",
+          "Pensar not configured. Run /auth to connect to Pensar Console.",
         );
       }
+
       const pensarApiUrl = authConfig?.pensarApiUrl || getPensarApiUrl();
       const bedrockModelId = model.startsWith("pensar:")
         ? model.slice(7)
@@ -120,10 +128,26 @@ export function getProviderModel(
           `[pensar] getProviderModel: ${model} → bedrock:${bedrockModelId} via ${pensarApiUrl}`,
         );
       }
-      providerModel = createPensarModel(bedrockModelId, {
-        apiKey: pensarApiKey,
+
+      // Build config with token refresh support for WorkOS auth
+      const modelConfig: Parameters<typeof createPensarModel>[1] = {
+        apiKey: pensarApiKey || authConfig?.accessToken || "",
         baseUrl: pensarApiUrl,
-      });
+        workspaceId: authConfig?.workspaceId,
+      };
+
+      // If WorkOS tokens are available, use token refresh callback
+      if (hasWorkOSAuth) {
+        const authSnapshot = {
+          accessToken: authConfig?.accessToken,
+          refreshToken: authConfig?.refreshToken,
+          pensarAPIKey: authConfig?.pensarAPIKey,
+          pensarApiUrl: authConfig?.pensarApiUrl,
+        };
+        modelConfig.getToken = () => ensureValidToken(authSnapshot);
+      }
+
+      providerModel = createPensarModel(bedrockModelId, modelConfig);
       break;
     }
 

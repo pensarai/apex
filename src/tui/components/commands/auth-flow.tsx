@@ -5,35 +5,61 @@ import { useRoute } from "../../context/route";
 import { useConfig } from "../../context/config";
 import { getPensarApiUrl, getPensarConsoleUrl } from "../../../core/api/constants";
 
-type AuthStep = "start" | "requesting" | "polling" | "success" | "error";
+type AuthStep =
+  | "start"
+  | "requesting"
+  | "polling"
+  | "select-workspace"
+  | "checking-billing"
+  | "success"
+  | "error";
 
-interface DeviceCodeResponse {
-  deviceCode: string;
-  userCode: string;
-  verificationUri: string;
-  verificationUriComplete: string;
-  expiresIn: number;
+interface WorkOSDeviceResponse {
+  device_code: string;
+  user_code: string;
+  verification_uri: string;
+  verification_uri_complete: string;
+  expires_in: number;
   interval: number;
 }
 
-interface TokenResponse {
-  status: "pending" | "complete" | "expired" | "not_found";
-  apiKey?: string;
-  workspace?: { id: string; name: string; slug: string };
-  credits?: { balance: number };
+interface WorkspaceInfo {
+  id: string;
+  name: string;
+  slug: string;
+  balance: number;
+  hasPaymentMethod: boolean;
+}
+
+interface SelectWorkspaceResponse {
+  confirmed: boolean;
+  workspace: { id: string; name: string; slug: string };
+  billing: { balance: number; hasPaymentMethod: boolean; ready: boolean };
+  billingUrl?: string;
 }
 
 export default function AuthFlow() {
   const route = useRoute();
   const appConfig = useConfig();
-  const [step, setStep] = useState<AuthStep>(
-    appConfig.data.pensarAPIKey ? "success" : "start"
-  );
+
+  // Determine if already connected (WorkOS token or legacy API key)
+  const isConnected = !!(appConfig.data.accessToken || appConfig.data.pensarAPIKey);
+
+  const [step, setStep] = useState<AuthStep>(isConnected ? "success" : "start");
   const [error, setError] = useState<string | null>(null);
-  const [deviceInfo, setDeviceInfo] = useState<DeviceCodeResponse | null>(null);
-  const [tokenResult, setTokenResult] = useState<TokenResponse | null>(null);
+  const [deviceInfo, setDeviceInfo] = useState<WorkOSDeviceResponse | null>(null);
+  const [workspaces, setWorkspaces] = useState<WorkspaceInfo[]>([]);
+  const [selectedWorkspace, setSelectedWorkspace] = useState<WorkspaceInfo | null>(null);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [billingUrl, setBillingUrl] = useState<string | null>(null);
+  const [balance, setBalance] = useState<number | null>(null);
   const pollingRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cancelledRef = useRef(false);
+
+  // For existing connections, populate workspace info from config
+  const connectedWorkspace = appConfig.data.workspaceSlug
+    ? { name: appConfig.data.workspaceSlug, slug: appConfig.data.workspaceSlug }
+    : null;
 
   const goHome = () => {
     route.navigate({ type: "base", path: "home" });
@@ -47,7 +73,6 @@ export default function AuthFlow() {
     }
   };
 
-  // Cleanup on unmount
   useEffect(() => {
     return cleanup;
   }, []);
@@ -67,6 +92,8 @@ export default function AuthFlow() {
     }
   };
 
+  // ── Step 1: Fetch WorkOS client config and start device flow ──────
+
   const startDeviceFlow = async () => {
     setStep("requesting");
     setError(null);
@@ -74,24 +101,45 @@ export default function AuthFlow() {
 
     try {
       const apiUrl = getPensarApiUrl(appConfig.data);
-      const response = await fetch(`${apiUrl}/auth/device/code`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
+
+      // Fetch WorkOS client ID from CLI config endpoint
+      const configResponse = await fetch(`${apiUrl}/api/cli/config`);
+      if (!configResponse.ok) {
+        throw new Error("Failed to fetch CLI configuration");
+      }
+      const cliConfig = (await configResponse.json()) as {
+        workosClientId: string;
+      };
+
+      // Start WorkOS device authorization
+      const response = await fetch(
+        "https://api.workos.com/user_management/authorize/device",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ client_id: cliConfig.workosClientId }),
+        }
+      );
 
       if (!response.ok) {
         throw new Error("Failed to start device authorization");
       }
 
-      const data = (await response.json()) as DeviceCodeResponse;
+      const data = (await response.json()) as WorkOSDeviceResponse;
       setDeviceInfo(data);
 
-      // Open browser with the complete verification URI
-      openUrl(data.verificationUriComplete);
+      // Open browser for authentication
+      openUrl(data.verification_uri_complete);
 
-      // Start polling
+      // Start polling for token
       setStep("polling");
-      pollForToken(apiUrl, data.deviceCode, data.interval, data.expiresIn);
+      pollForToken(
+        apiUrl,
+        cliConfig.workosClientId,
+        data.device_code,
+        data.interval,
+        data.expires_in
+      );
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to start authorization"
@@ -100,8 +148,11 @@ export default function AuthFlow() {
     }
   };
 
+  // ── Step 2: Poll WorkOS for token ─────────────────────────────────
+
   const pollForToken = (
     apiUrl: string,
+    clientId: string,
     deviceCode: string,
     interval: number,
     expiresIn: number
@@ -118,45 +169,44 @@ export default function AuthFlow() {
       }
 
       try {
-        const response = await fetch(`${apiUrl}/auth/device/token`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ deviceCode }),
-        });
-
-        if (!response.ok) {
-          throw new Error("Failed to check authorization status");
-        }
-
-        const data = (await response.json()) as TokenResponse;
+        const response = await fetch(
+          "https://api.workos.com/user_management/authenticate",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              client_id: clientId,
+              grant_type: "urn:ietf:params:oauth:grant-type:device_code",
+              device_code: deviceCode,
+            }),
+          }
+        );
 
         if (cancelledRef.current) return;
 
-        if (data.status === "complete" && data.apiKey) {
-          setTokenResult(data);
-
-          // Save API key to config
-          await config.update({ pensarAPIKey: data.apiKey });
-          appConfig.reload();
-
-          setStep("success");
+        if (response.status === 400) {
+          // Authorization pending — poll again
+          pollingRef.current = setTimeout(poll, interval * 1000);
           return;
         }
 
-        if (data.status === "expired") {
-          setError("Authorization expired. Please try again.");
-          setStep("error");
-          return;
+        if (!response.ok) {
+          throw new Error("Authentication failed");
         }
 
-        if (data.status === "not_found") {
-          setError("Invalid authorization session. Please try again.");
-          setStep("error");
-          return;
-        }
+        const data = (await response.json()) as {
+          access_token: string;
+          refresh_token: string;
+        };
 
-        // Still pending — poll again
-        pollingRef.current = setTimeout(poll, interval * 1000);
+        // Save tokens
+        await config.update({
+          accessToken: data.access_token,
+          refreshToken: data.refresh_token,
+        });
+
+        // Fetch user's workspaces
+        await fetchWorkspaces(apiUrl, data.access_token);
       } catch (err) {
         if (cancelledRef.current) return;
         // Network error — retry
@@ -167,24 +217,125 @@ export default function AuthFlow() {
     pollingRef.current = setTimeout(poll, interval * 1000);
   };
 
+  // ── Step 3: Fetch workspaces ──────────────────────────────────────
+
+  const fetchWorkspaces = async (apiUrl: string, accessToken: string) => {
+    try {
+      const response = await fetch(`${apiUrl}/api/cli/workspaces`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch workspaces");
+      }
+
+      const data = (await response.json()) as { workspaces: WorkspaceInfo[] };
+
+      if (data.workspaces.length === 0) {
+        setError("No workspaces found. Create one at console.pensar.dev");
+        setStep("error");
+        return;
+      }
+
+      if (data.workspaces.length === 1) {
+        // Auto-select single workspace
+        await selectWorkspace(apiUrl, accessToken, data.workspaces[0]);
+        return;
+      }
+
+      setWorkspaces(data.workspaces);
+      setSelectedIndex(0);
+      setStep("select-workspace");
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to fetch workspaces"
+      );
+      setStep("error");
+    }
+  };
+
+  // ── Step 4: Select workspace and check billing ────────────────────
+
+  const selectWorkspace = async (
+    apiUrl: string,
+    accessToken: string,
+    workspace: WorkspaceInfo
+  ) => {
+    setSelectedWorkspace(workspace);
+    setStep("checking-billing");
+
+    try {
+      const response = await fetch(`${apiUrl}/api/cli/select-workspace`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ workspaceId: workspace.id }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to select workspace");
+      }
+
+      const data = (await response.json()) as SelectWorkspaceResponse;
+
+      // Save workspace to config
+      await config.update({
+        workspaceId: workspace.id,
+        workspaceSlug: workspace.slug,
+      });
+      appConfig.reload();
+
+      setBalance(data.billing.balance);
+
+      if (!data.confirmed && data.billingUrl) {
+        // Billing not ready — show URL and let user fix it
+        setBillingUrl(data.billingUrl);
+      }
+
+      setStep("success");
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to select workspace"
+      );
+      setStep("error");
+    }
+  };
+
+  // ── Disconnect ────────────────────────────────────────────────────
+
   const handleDisconnect = async () => {
-    await config.update({ pensarAPIKey: null });
+    await config.update({
+      pensarAPIKey: null,
+      accessToken: null,
+      refreshToken: null,
+      workspaceId: null,
+      workspaceSlug: null,
+    });
     appConfig.reload();
-    setTokenResult(null);
+    setSelectedWorkspace(null);
+    setBalance(null);
+    setBillingUrl(null);
     setStep("start");
   };
 
-  const hasLowBalance =
-    tokenResult !== null &&
-    tokenResult.credits !== undefined &&
-    tokenResult.credits.balance < 1;
+  const hasLowBalance = balance !== null && balance < 1;
 
-  const creditsUrl = `${getPensarConsoleUrl()}/credits`;
+  const effectiveBillingUrl =
+    billingUrl ||
+    (selectedWorkspace?.slug
+      ? `${getPensarConsoleUrl()}/${selectedWorkspace.slug}/settings/billing`
+      : connectedWorkspace?.slug
+        ? `${getPensarConsoleUrl()}/${connectedWorkspace.slug}/settings/billing`
+        : `${getPensarConsoleUrl()}/credits`);
 
-  const openCreditsPage = () => {
-    openUrl(creditsUrl);
+  const openBillingPage = () => {
+    openUrl(effectiveBillingUrl);
     goHome();
   };
+
+  // ── Keyboard handler ──────────────────────────────────────────────
 
   useKeyboard((key) => {
     if (key.name === "escape") {
@@ -199,6 +350,21 @@ export default function AuthFlow() {
       }
     }
 
+    if (step === "select-workspace") {
+      if (key.name === "up" && selectedIndex > 0) {
+        setSelectedIndex((i) => i - 1);
+      }
+      if (key.name === "down" && selectedIndex < workspaces.length - 1) {
+        setSelectedIndex((i) => i + 1);
+      }
+      if (key.name === "return" && workspaces[selectedIndex]) {
+        const currentConfig = appConfig.data;
+        const apiUrl = getPensarApiUrl(currentConfig);
+        const accessToken = currentConfig.accessToken!;
+        selectWorkspace(apiUrl, accessToken, workspaces[selectedIndex]);
+      }
+    }
+
     if (step === "error") {
       if (key.name === "return") {
         startDeviceFlow();
@@ -207,8 +373,8 @@ export default function AuthFlow() {
 
     if (step === "success") {
       if (key.name === "return") {
-        if (hasLowBalance) {
-          openCreditsPage();
+        if (hasLowBalance || billingUrl) {
+          openBillingPage();
         } else {
           goHome();
         }
@@ -218,6 +384,8 @@ export default function AuthFlow() {
       }
     }
   });
+
+  // ── Render ────────────────────────────────────────────────────────
 
   return (
     <box
@@ -274,13 +442,13 @@ export default function AuthFlow() {
           </box>
           <box marginTop={1}>
             <text fg="white">
-              Your code: <span fg="green">{deviceInfo.userCode}</span>
+              Your code: <span fg="green">{deviceInfo.user_code}</span>
             </text>
           </box>
           <box marginTop={1}>
             <text fg="gray">
               If the browser didn't open, visit:{"\n"}
-              {deviceInfo.verificationUriComplete}
+              {deviceInfo.verification_uri_complete}
             </text>
           </box>
           <box marginTop={1}>
@@ -291,36 +459,80 @@ export default function AuthFlow() {
         </box>
       )}
 
+      {/* Step: Select Workspace */}
+      {step === "select-workspace" && (
+        <box flexDirection="column" gap={1}>
+          <box>
+            <text fg="white">Select a workspace:</text>
+          </box>
+          <box flexDirection="column" marginTop={1}>
+            {workspaces.map((ws, i) => (
+              <box key={ws.id}>
+                <text fg={i === selectedIndex ? "green" : "gray"}>
+                  {i === selectedIndex ? "▸ " : "  "}
+                  {ws.name}{" "}
+                  <span fg="gray">
+                    ({ws.slug}) — ${ws.balance.toFixed(2)}
+                  </span>
+                </text>
+              </box>
+            ))}
+          </box>
+          <box marginTop={1}>
+            <text fg="gray">
+              <span fg="green">[↑/↓]</span> Navigate ·{" "}
+              <span fg="green">[ENTER]</span> Select ·{" "}
+              <span fg="green">[ESC]</span> Cancel
+            </text>
+          </box>
+        </box>
+      )}
+
+      {/* Step: Checking Billing */}
+      {step === "checking-billing" && (
+        <box>
+          <text fg="yellow">
+            Checking billing for {selectedWorkspace?.name}...
+          </text>
+        </box>
+      )}
+
       {/* Step: Success */}
       {step === "success" && (
         <box flexDirection="column" gap={1}>
           <box>
             <text fg="green">Connected to Pensar Console</text>
           </box>
-          {tokenResult?.workspace && (
+          {(selectedWorkspace || connectedWorkspace) && (
             <box flexDirection="column">
               <text fg="white">
-                Workspace: {tokenResult.workspace.name}
+                Workspace: {selectedWorkspace?.name || connectedWorkspace?.name}
               </text>
-              <text fg="white">
-                Credits:{" "}
-                <span fg={hasLowBalance ? "yellow" : "white"}>
-                  ${(tokenResult.credits?.balance ?? 0).toFixed(2)}
-                </span>
-              </text>
+              {balance !== null && (
+                <text fg="white">
+                  Credits:{" "}
+                  <span fg={hasLowBalance ? "yellow" : "white"}>
+                    ${balance.toFixed(2)}
+                  </span>
+                </text>
+              )}
             </box>
           )}
-          {hasLowBalance && (
+          {(hasLowBalance || billingUrl) && (
             <box marginTop={1}>
               <text fg="yellow">
-                Your credit balance is very low. We recommend at least $30 to run{"\n"}
-                pentests without interruptions. Press ENTER to buy credits.
+                {billingUrl
+                  ? "Your workspace needs credits to use Apex CLI."
+                  : "Your credit balance is very low. We recommend at least $30 to run"}{"\n"}
+                {billingUrl
+                  ? "Press ENTER to open billing and add credits."
+                  : "pentests without interruptions. Press ENTER to open billing."}
               </text>
             </box>
           )}
-          {!tokenResult && appConfig.data.pensarAPIKey && (
+          {!selectedWorkspace && !connectedWorkspace && appConfig.data.pensarAPIKey && (
             <box>
-              <text fg="gray">Already connected (key saved in config)</text>
+              <text fg="gray">Already connected (legacy key saved in config)</text>
             </box>
           )}
           <box marginTop={1}>
@@ -331,7 +543,7 @@ export default function AuthFlow() {
           <box marginTop={1}>
             <text fg="gray">
               <span fg="green">[ENTER]</span>{" "}
-              {hasLowBalance ? "Buy credits" : "Done"} ·{" "}
+              {hasLowBalance || billingUrl ? "Open billing" : "Done"} ·{" "}
               <span fg="red">[D]</span> Disconnect ·{" "}
               <span fg="green">[ESC]</span> Back
             </text>
