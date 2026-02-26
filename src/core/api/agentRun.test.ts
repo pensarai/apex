@@ -129,6 +129,83 @@ describe("AgentRun", () => {
     expect(await run.result).toBe("complete");
   });
 
+  it("frees buffered events for result-only consumers", async () => {
+    const run = new AgentRun<string>(async (bus) => {
+      bus.emit({ type: "text-delta", data: makeTextDelta("a") });
+      bus.emit({ type: "text-delta", data: makeTextDelta("b") });
+      bus.emit({ type: "text-delta", data: makeTextDelta("c") });
+      return "done";
+    });
+
+    const result = await run.result;
+    expect(result).toBe("done");
+    // Queue should be freed since no iterator was created
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((run as any).queue).toHaveLength(0);
+  });
+
+  it("preserves buffered events when iterator is active", async () => {
+    const events: AgentEvent[] = [];
+
+    const run = new AgentRun<string>(async (bus) => {
+      bus.emit({ type: "text-delta", data: makeTextDelta("a") });
+      bus.emit({ type: "text-delta", data: makeTextDelta("b") });
+      return "ok";
+    });
+
+    for await (const event of run) {
+      events.push(event);
+    }
+
+    expect(events).toHaveLength(2);
+    expect(events[0]!.type).toBe("text-delta");
+    expect(events[1]!.type).toBe("text-delta");
+    expect(await run.result).toBe("ok");
+  });
+
+  it("emits error event before rejection when agent throws mid-stream", async () => {
+    const events: AgentEvent[] = [];
+
+    const run = new AgentRun<never>(async (bus) => {
+      bus.emit({ type: "text-delta", data: makeTextDelta("streaming") });
+      bus.emit({
+        type: "error",
+        error: new Error("mid-stream failure"),
+      } as AgentEvent);
+      throw new Error("mid-stream failure");
+    });
+
+    for await (const event of run) {
+      events.push(event);
+    }
+
+    const types = events.map((e) => e.type);
+    expect(types).toContain("text-delta");
+    expect(types).toContain("error");
+    await expect(run.result).rejects.toThrow("mid-stream failure");
+  });
+
+  it("result rejects even if error event was emitted", async () => {
+    const events: AgentEvent[] = [];
+
+    const run = new AgentRun<never>(async (bus) => {
+      bus.emit({
+        type: "error",
+        error: new Error("reported error"),
+      } as AgentEvent);
+      throw new Error("fatal error");
+    });
+
+    for await (const event of run) {
+      events.push(event);
+    }
+
+    // Error event should be yielded
+    expect(events.some((e) => e.type === "error")).toBe(true);
+    // Result should still reject with the thrown error
+    await expect(run.result).rejects.toThrow("fatal error");
+  });
+
   it("preserves subagentId on events from child buses", async () => {
     const events: AgentEvent[] = [];
 

@@ -150,7 +150,7 @@ async function runSingleCodingAgent(
   const subagentId = `coding-agent-${agentIndex}`;
   const childBus = ctx.eventBus?.child(subagentId);
 
-  childBus?.emit({
+  ctx.eventBus?.emit({
     type: "subagent-spawn",
     subagentId,
     input: { codebasePath, objective },
@@ -176,7 +176,7 @@ async function runSingleCodingAgent(
 
     await agent.consume();
 
-    childBus?.emit({
+    ctx.eventBus?.emit({
       type: "subagent-complete",
       subagentId,
       input: { codebasePath, objective },
@@ -185,7 +185,7 @@ async function runSingleCodingAgent(
 
     return textOutput;
   } catch (error) {
-    childBus?.emit({
+    ctx.eventBus?.emit({
       type: "subagent-complete",
       subagentId,
       input: { codebasePath, objective },

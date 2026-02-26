@@ -161,24 +161,26 @@ export class OffensiveSecurityAgent<TResult = void> {
   // ---------------------------------------------------------------------------
 
   async consume(): Promise<TResult> {
-    for await (const chunk of this.streamResult.fullStream) {
-      switch (chunk.type) {
-        case "text-delta":
-          this.eventBus?.emit({ type: "text-delta", data: chunk });
-          break;
-        case "tool-call":
-          this.eventBus?.emit({ type: "tool-call", data: chunk });
-          break;
-        case "tool-result":
-          this.eventBus?.emit({ type: "tool-result", data: chunk });
-          break;
-        case "error":
-          this.eventBus?.emit({
-            type: "error",
-            error: (chunk as { type: "error"; error: unknown }).error,
-          });
-          break;
+    try {
+      for await (const chunk of this.streamResult.fullStream) {
+        switch (chunk.type) {
+          case "text-delta":
+            this.eventBus?.emit({ type: "text-delta", data: chunk });
+            break;
+          case "tool-call":
+            this.eventBus?.emit({ type: "tool-call", data: chunk });
+            break;
+          case "tool-result":
+            this.eventBus?.emit({ type: "tool-result", data: chunk });
+            break;
+          case "error":
+            this.eventBus?.emit({ type: "error", error: chunk.error });
+            break;
+        }
       }
+    } catch (error) {
+      this.eventBus?.emit({ type: "error", error });
+      throw error;
     }
 
     if (this.resolveResult) {
