@@ -238,7 +238,7 @@ describe("getUpgradeCommandString", () => {
 
   it("returns brew upgrade command for homebrew method", () => {
     expect(getUpgradeCommandString("homebrew")).toBe(
-      "brew upgrade pensarai/apex/apex",
+      "brew upgrade pensarai/tap/apex",
     );
   });
 

@@ -35,7 +35,7 @@ curl -fsSL https://pensarai.com/install.sh | bash
 #### Homebrew
 
 ```bash
-brew tap pensarai/apex
+brew tap pensarai/tap
 brew install apex
 ```
 

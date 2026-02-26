@@ -89,7 +89,7 @@ function getUpgradeCommand(method: InstallMethod): {
     case "npm":
       return { cmd: "npm", args: ["install", "-g", "@pensar/apex@latest"] };
     case "homebrew":
-      return { cmd: "brew", args: ["upgrade", "pensarai/apex/apex"] };
+      return { cmd: "brew", args: ["upgrade", "pensarai/tap/apex"] };
     case "binary":
       return {
         cmd: "bash",
