@@ -111,8 +111,8 @@ export function AgentStatus() {
 
   const tokenLabel =
     route.data.type === "operator"
-      ? `${formatTokenCount(tokenUsage.outputTokens)}↑ ${formatTokenCount(tokenUsage.inputTokens)}↓`
-      : `↓${formatTokenCount(tokenUsage.inputTokens)} ↑${formatTokenCount(tokenUsage.outputTokens)} Σ${formatTokenCount(tokenUsage.totalTokens)}`;
+      ? `${formatTokenCount(tokenUsage.outputTokens)}↑ ${formatTokenCount(tokenUsage.inputTokens)}↓${tokenUsage.cachedTokens > 0 ? ` ⚡${formatTokenCount(tokenUsage.cachedTokens)}` : ""}`
+      : `↓${formatTokenCount(tokenUsage.inputTokens)} ↑${formatTokenCount(tokenUsage.outputTokens)}${tokenUsage.cachedTokens > 0 ? ` ⚡${formatTokenCount(tokenUsage.cachedTokens)}` : ""} Σ${formatTokenCount(tokenUsage.totalTokens)}`;
 
   return (
     <box flexDirection="row" gap={1}>

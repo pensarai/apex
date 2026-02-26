@@ -75,6 +75,7 @@ export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSur
       session,
       authConfig,
       onStepFinish,
+      onCacheMetrics,
       abortSignal,
       attackSurfaceRegistry,
     } = opts;
@@ -90,7 +91,17 @@ export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSur
       session,
       target,
       authConfig,
-      onStepFinish,
+      onStepFinish: (e) => {
+        onStepFinish?.(e);
+        const messages = e.response.messages;
+        if (messages !== undefined) {
+          writeFileSync(
+            join(subagentFolder, "attack-surface-agent.log"),
+            JSON.stringify(messages, null, 2),
+          );
+        }
+      },
+      onCacheMetrics,
       abortSignal,
       attackSurfaceRegistry,
       messages: opts.messages,

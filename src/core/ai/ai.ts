@@ -243,6 +243,12 @@ export interface ModelInfo {
   contextLength?: number;
 }
 
+/** Cache token metrics extracted from Anthropic providerMetadata */
+export interface CacheMetrics {
+  cacheReadInputTokens: number;
+  cacheCreationInputTokens: number;
+}
+
 export interface StreamResponseOpts {
   prompt: string;
   system?: string;
@@ -266,6 +272,8 @@ export interface StreamResponseOpts {
    * new messages (not the full pre-summarization history).
    */
   onSummarized?: (summary: string) => void;
+  /** Called when Anthropic cache metrics are present in a step's providerMetadata */
+  onCacheMetrics?: (metrics: CacheMetrics) => void;
 }
 
 export function streamResponse(
@@ -285,6 +293,7 @@ export function streamResponse(
     silent,
     authConfig,
     onFinish,
+    onCacheMetrics,
   } = opts;
 
   // Wrap onStepFinish to fire usage callback for every step.
@@ -335,7 +344,39 @@ export function streamResponse(
         }
         return undefined;
       },
-      onStepFinish,
+      onError: async ({ error }: { error: unknown }) => {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        if (
+          errorMessage.toLowerCase().includes("too many tokens") ||
+          errorMessage.toLowerCase().includes("overloaded")
+        ) {
+          rateLimitRetryCount++;
+          await new Promise((resolve) =>
+            setTimeout(resolve, 1000 * rateLimitRetryCount),
+          );
+          if (rateLimitRetryCount < 20) {
+            return;
+          }
+        }
+        throw error;
+      },
+      onStepFinish: onCacheMetrics
+        ? (stepResult) => {
+            // Extract Anthropic cache metrics from providerMetadata
+            const meta = stepResult.providerMetadata?.anthropic as
+              | Record<string, unknown>
+              | undefined;
+            const cacheRead =
+              (meta?.cacheReadInputTokens as number) ?? 0;
+            const cacheCreation =
+              (meta?.cacheCreationInputTokens as number) ?? 0;
+            if (cacheRead > 0 || cacheCreation > 0) {
+              onCacheMetrics({ cacheReadInputTokens: cacheRead, cacheCreationInputTokens: cacheCreation });
+            }
+            onStepFinish?.(stepResult);
+          }
+        : onStepFinish,
       abortSignal,
       activeTools,
       experimental_repairToolCall: async ({

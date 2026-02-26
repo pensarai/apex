@@ -21,6 +21,8 @@ interface TokenUsage {
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
+  cachedTokens: number;
+  cacheWriteTokens: number;
 }
 
 interface AgentContextValue {
@@ -34,6 +36,7 @@ interface AgentContextValue {
   isModelUserSelected: boolean;
   tokenUsage: TokenUsage;
   addTokenUsage: (input: number, output: number) => void;
+  addCacheUsage: (cacheRead: number, cacheWrite: number) => void;
   resetTokenUsage: () => void;
   hasExecuted: boolean;
   thinking: boolean;
@@ -71,6 +74,8 @@ export function AgentProvider({ children }: AgentProviderProps) {
     inputTokens: 0,
     outputTokens: 0,
     totalTokens: 0,
+    cachedTokens: 0,
+    cacheWriteTokens: 0,
   });
   const [hasExecuted, setHasExecuted] = useState<boolean>(false);
   const [thinking, setThinking] = useState<boolean>(false);
@@ -119,15 +124,24 @@ export function AgentProvider({ children }: AgentProviderProps) {
   const addTokenUsage = useCallback((input: number, output: number) => {
     setHasExecuted(true);
     setTokenUsage((prev) => ({
+      ...prev,
       inputTokens: prev.inputTokens + input,
       outputTokens: prev.outputTokens + output,
       totalTokens: prev.totalTokens + input + output,
     }));
   }, []);
 
+  const addCacheUsage = useCallback((cacheRead: number, cacheWrite: number) => {
+    setTokenUsage((prev) => ({
+      ...prev,
+      cachedTokens: prev.cachedTokens + cacheRead,
+      cacheWriteTokens: prev.cacheWriteTokens + cacheWrite,
+    }));
+  }, []);
+
   const resetTokenUsage = useCallback(() => {
     setHasExecuted(false);
-    setTokenUsage({ inputTokens: 0, outputTokens: 0, totalTokens: 0 });
+    setTokenUsage({ inputTokens: 0, outputTokens: 0, totalTokens: 0, cachedTokens: 0, cacheWriteTokens: 0 });
   }, []);
 
   const contextValue = useMemo(
@@ -137,6 +151,7 @@ export function AgentProvider({ children }: AgentProviderProps) {
       isModelUserSelected,
       tokenUsage,
       addTokenUsage,
+      addCacheUsage,
       resetTokenUsage,
       hasExecuted,
       thinking,
@@ -156,6 +171,7 @@ export function AgentProvider({ children }: AgentProviderProps) {
       isExecuting,
       sessionCwd,
       addTokenUsage,
+      addCacheUsage,
       resetTokenUsage,
     ],
   );

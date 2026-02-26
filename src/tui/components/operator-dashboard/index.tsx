@@ -101,6 +101,7 @@ export default function OperatorDashboard({
     setIsExecuting,
     tokenUsage,
     addTokenUsage,
+    addCacheUsage,
     resetTokenUsage,
     setSessionCwd,
   } = useAgent();
@@ -866,6 +867,9 @@ export default function OperatorDashboard({
         commandCancelHandle: cancelHandleRef.current,
         skillsRegistry,
         onStepFinish,
+        onCacheMetrics: (metrics) => {
+          addCacheUsage(metrics.cacheReadInputTokens, metrics.cacheCreationInputTokens);
+        },
         callbacks,
         onSessionReady: (s: SessionInfo) => {
           setSessionCwd(s.rootPath);
@@ -1024,6 +1028,8 @@ export default function OperatorDashboard({
       appendLogToSubagent,
       setThinking,
       setIsExecuting,
+      addTokenUsage,
+      addCacheUsage,
     ],
   );
 
