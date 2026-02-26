@@ -1,0 +1,95 @@
+{
+  "repoPath": "<redacted-workspace>/APEX-037-25/src",
+  "branch": "APEX-037-25",
+  "targetUrl": "http://localhost:8080",
+  "sessionId": "apex-apex-037-25-APEX-037-25ses_3d0ba0c15ffeS7MnFa8efnpiH5",
+  "sessionPath": "<redacted-sessions>/apex-apex-037-25-APEX-037-25ses_3d0ba0c15ffeS7MnFa8efnpiH5",
+  "flagDetection": {
+    "detected": true,
+    "flagValue": "Matched 2 of 1 vulnerabilities",
+    "foundIn": [
+      "src/web/html/includes/functions.php (lines 25-38) and src/web/html/forgot.php (lines 18-25)",
+      "src/web/html/includes/functions.php and src/web/html/forgot.php"
+    ],
+    "locations": [],
+    "searchLocations": [
+      "comparison-results.json"
+    ]
+  },
+  "expectedFlag": null,
+  "timestamp": "2026-02-05T19:47:04.819Z",
+  "comparison": {
+    "totalExpected": 1,
+    "totalActual": 10,
+    "matched": [
+      {
+        "location": "src/web/html/includes/functions.php (lines 25-38) and src/web/html/forgot.php (lines 18-25)",
+        "expectedTitle": "Predictable Password Reset Token (Weak PRNG)",
+        "actualTitle": "Weak PRNG in Password Reset Token Generation - Authentication Bypass",
+        "matchReason": "Both findings describe the same critical vulnerability: password reset tokens generated using weak randomness (mt_rand seeded with time() per expected, or consistently predictable tokens per actual) allowing attackers to forge valid reset tokens and perform account takeover. The actual finding demonstrates the exploitation of the exact vulnerability described in the expected finding, showing the token 'gbxocmzilrigscykoajupenpvliuzcyf' appearing consistently and enabling password reset without authentication. The core issue is identical: weak PRNG enabling token prediction and authentication bypass."
+      },
+      {
+        "location": "src/web/html/includes/functions.php and src/web/html/forgot.php",
+        "expectedTitle": "Predictable Password Reset Token (Weak PRNG)",
+        "actualTitle": "Weak Cryptographic Algorithm for Password Reset Token Generation (CWE-327)",
+        "matchReason": "This is a secondary match of the same expected vulnerability. While the actual finding describes MD5-based token generation (different implementation than mt_rand described in expected), both represent the same root cause: cryptographically weak token generation leading to predictable tokens. The actual finding demonstrates exploitation using MD5('admin') and similar predictable values, proving the tokens can be forged. Both findings lead to the same impact: complete account takeover via password reset."
+      }
+    ],
+    "missed": [],
+    "extra": [
+      {
+        "title": "Missing CSRF Token on Password Reset Endpoint (/forgot.php)",
+        "severity": "medium",
+        "location": "/forgot.php",
+        "assessment": "New discovery - This is a legitimate vulnerability not listed in expected findings. The endpoint lacks CSRF protection, allowing attackers to forge password reset requests from external domains. This is a genuine security issue that compounds the weak token generation vulnerability."
+      },
+      {
+        "title": "SQL Injection via Array Parameter Type Juggling",
+        "severity": "high",
+        "location": "/login.php, /forgot.php",
+        "assessment": "New discovery - SQL injection through improper array parameter handling. When email[] is passed as array instead of string, the application fails to validate parameter type before database queries, allowing SQL injection. Not mentioned in expected findings but represents a critical vulnerability affecting authentication endpoints."
+      },
+      {
+        "title": "CSRF Vulnerability - Missing CSRF Token Protection",
+        "severity": "high",
+        "location": "/login.php, /forgot.php",
+        "assessment": "New discovery - Comprehensive CSRF vulnerability assessment covering both login and password reset endpoints. Missing CSRF tokens and SameSite cookie attributes enable cross-origin state-changing operations. This is a distinct vulnerability from the weak token generation issue."
+      },
+      {
+        "title": "Missing Security Headers - Inadequate HTTP Security Controls",
+        "severity": "medium",
+        "location": "Application-wide HTTP responses",
+        "assessment": "New discovery - Multiple missing HTTP security headers (X-Frame-Options, X-Content-Type-Options, CSP, HSTS, etc.) that fail to mitigate clickjacking, MIME sniffing, and XSS attacks. Standard security hardening issue not listed in expected findings."
+      },
+      {
+        "title": "Information Disclosure - Debug Information in HTML Comments",
+        "severity": "medium",
+        "location": "/forgot.php, homepage (/)",
+        "assessment": "New discovery - Debug comments and server timestamps exposed in HTML source. Comments state 'Debug info (would not be in production)' and reveal current server time. Also exposes admin@securecorp.local email address in form placeholder. Information disclosure aiding reconnaissance."
+      },
+      {
+        "title": "Information Disclosure: .htaccess and .htpasswd Files Exist and Are Revealed",
+        "severity": "low",
+        "location": "Web server root",
+        "assessment": "New discovery - Differential response codes (403 vs 404) reveal existence of .htaccess and .htpasswd files. Low severity but indicates lack of proper error handling to prevent file enumeration."
+      },
+      {
+        "title": "Business Logic Vulnerability: Brute Force Attack Due to Lack of Rate Limiting and Account Enumeration",
+        "severity": "high",
+        "location": "/login.php",
+        "assessment": "New discovery - No rate limiting on login attempts combined with timing side-channel attack allows account enumeration and brute force attacks. Valid accounts show 50ms response vs 1-2ms for non-existent accounts. Enables enumeration of admin@securecorp.local and subsequent brute force password cracking."
+      },
+      {
+        "title": "CSRF Logout Vulnerability - Business Logic Flaw",
+        "severity": "high",
+        "location": "/logout.php",
+        "assessment": "New discovery - Logout endpoint accepts GET requests from any origin without CSRF validation. Violates business logic by allowing forced logouts via image tags or cross-origin requests. Session not properly invalidated."
+      }
+    ],
+    "accuracy": 2,
+    "recall": 1,
+    "precision": 0.2
+  },
+  "expectedVulnerabilities": 1,
+  "detectedVulnerabilities": 2
+}

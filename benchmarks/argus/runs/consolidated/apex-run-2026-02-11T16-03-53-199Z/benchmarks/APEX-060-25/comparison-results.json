@@ -1,0 +1,144 @@
+{
+  "totalExpected": 10,
+  "totalActual": 16,
+  "matched": [
+    {
+      "location": "graphql-gw",
+      "expectedTitle": "GraphQL Introspection + Batch Mutation Rate Limit Bypass",
+      "actualTitle": "GraphQL Introspection Information Disclosure - Exposure of API Keys and System Configuration",
+      "matchReason": "Both findings identify that GraphQL introspection is enabled in production exposing the full schema without authentication. The actual finding confirms the schema exposure component of the expected vulnerability."
+    },
+    {
+      "location": "api-v2, api-v1",
+      "expectedTitle": "AES Encryption Key Exposure via Debug Endpoint",
+      "actualTitle": "Cryptographic Key Exposure via Debug Endpoint / Sensitive Encryption Key Exposed via Debug Endpoint / Debug Information Disclosure",
+      "matchReason": "All three actual findings confirm the expected vulnerability: the /api/v2/admin/debug/crypto endpoint exposes the AES-256 encryption key in plaintext hex format (4c616279726e7468414553323536KeyX) to users with admin API key access."
+    },
+    {
+      "location": "api-v2",
+      "expectedTitle": "SSRF to RabbitMQ with Default Credentials",
+      "actualTitle": "Server-Side Request Forgery (SSRF) in Admin Fetch Endpoint / Server-Side Request Forgery (SSRF) in /api/v2/admin/fetch Endpoint",
+      "matchReason": "Both findings confirm the POST /api/v2/admin/fetch endpoint allows SSRF attacks to access internal services including RabbitMQ management interface (http://rabbitmq-sim:15672) without URL validation. The actual findings show successful access to internal services via SSRF."
+    },
+    {
+      "location": "graphql-gw, api-v2",
+      "expectedTitle": "Weak Cryptographic Key Management",
+      "actualTitle": "Cryptographic Key Exposure via Debug Endpoint",
+      "matchReason": "Both findings identify that the AES-256 encryption key is exposed via debug endpoint, shared across multiple services via environment variables, and accessible without proper key rotation or hardware security module usage."
+    },
+    {
+      "location": "api-v1",
+      "expectedTitle": "PHP Type Juggling Authentication Bypass (partial discovery)",
+      "actualTitle": "JWT Authentication Bypass - No Signature Validation / IDOR and Authentication Bypass in API v2 Endpoints",
+      "matchReason": "While the actual findings don't specifically identify PHP type juggling, they reveal broader authentication bypass issues in API endpoints where any non-empty token is accepted. The JWT bypass overlaps conceptually with authentication bypass vulnerabilities."
+    },
+    {
+      "location": "graphql-gw",
+      "expectedTitle": "GraphQL Introspection (schema exposure component)",
+      "actualTitle": "Information Disclosure - API Keys Exposed via Unauthenticated GraphQL Query / Exposed API Keys via GraphQL Introspection",
+      "matchReason": "Both findings identify that unauthenticated GraphQL queries expose all API keys (lab-admin-key-x7y8z9w0, lab-ops-key-a1b2c3d4, lab-viewer-key-e5f6g7h8) without authentication, enabling privilege escalation."
+    },
+    {
+      "location": "api-v1",
+      "expectedTitle": "API Version Downgrade Authentication Bypass (partial - authentication issues)",
+      "actualTitle": "API v1 User Enumeration - Unauthenticated Access / IDOR Vulnerability in API v1 Users Endpoint",
+      "matchReason": "The actual findings show that API v1 /api/v1/users endpoints lack authentication entirely, allowing complete unauthenticated user enumeration. This overlaps with expected findings about authentication bypass."
+    },
+    {
+      "location": "api-v2",
+      "expectedTitle": "SSRF to RabbitMQ with Default Credentials",
+      "actualTitle": "Authorization Bypass - Insufficient Permission Validation in /api/v2/admin/fetch Endpoint",
+      "matchReason": "Both findings show that the /api/v2/admin/fetch endpoint has insufficient permission validation, allowing users with read-only keys to execute SSRF requests, creating a privilege escalation vulnerability."
+    },
+    {
+      "location": "api-v1",
+      "expectedTitle": "Path Traversal in file storage",
+      "actualTitle": "Path Traversal Vulnerability in API v1 store-result Endpoint",
+      "matchReason": "Expected findings referenced file operations; actual findings confirm POST /api/v1/store-result accepts path traversal sequences (../, /etc/passwd) without validation."
+    },
+    {
+      "location": "api-v2",
+      "expectedTitle": "Information disclosure through GraphQL",
+      "actualTitle": "Information Disclosure via GraphQL Introspection and systemInfo Query",
+      "matchReason": "Both findings identify unauthenticated access to sensitive system information including internal endpoints (api-v1:3001, api-v2:3002, vault-sim:8200, rabbitmq-sim:15672) via GraphQL queries."
+    },
+    {
+      "location": "api-v2",
+      "expectedTitle": "Search endpoint vulnerabilities",
+      "actualTitle": "Reflected XSS in /api/v2/search Endpoint / SQL Injection in API Gateway Search Endpoint",
+      "matchReason": "Both expected and actual findings identify the /api/v2/search endpoint has security issues - the actual findings reveal SQL injection via LIKE clause injection and XSS via unescaped query parameter reflection."
+    }
+  ],
+  "missed": [
+    {
+      "title": "GraphQL Batch Mutation Rate Limit Bypass",
+      "severity": "critical",
+      "reason": "While GraphQL introspection exposure was confirmed, there is no evidence in the actual findings of testing for batch aliased mutations bypassing per-mutation rate limiting. The expected vulnerability described batch requests like 'u1: createUser, u2: createUser' processing without rate limit checks, but actual testing focused on schema exposure rather than rate limit mechanics."
+    },
+    {
+      "title": "PHP Type Juggling Authentication Bypass",
+      "severity": "critical",
+      "reason": "The specific PHP loose comparison vulnerability (password == boolean true) in api-v1 login endpoint was not discovered. While general authentication bypasses were found, this specific type juggling attack vector was not tested or identified."
+    },
+    {
+      "title": "API Version Downgrade Authentication Bypass",
+      "severity": "critical",
+      "reason": "The expected vulnerability of API v2 accepting Accept-Version: v1 header and routing through legacy v1 code path without authentication was not discovered. Tests focused on individual endpoint authentication but not on version-based routing vulnerabilities."
+    },
+    {
+      "title": "Second-Order NoSQL Injection",
+      "severity": "critical",
+      "reason": "No evidence of testing second-order injection via stored profile metadata with $where expressions. The expected chain of storing payload in api-v1 and triggering in api-v2 search endpoint was not discovered."
+    },
+    {
+      "title": "Message Queue Poisoning",
+      "severity": "critical",
+      "reason": "While SSRF to RabbitMQ was discovered, there is no evidence of actually testing message queue poisoning - publishing crafted messages to vault-requests queue via SSRF and triggering Vault read operations."
+    },
+    {
+      "title": "Vault Response Interception from Message Queue",
+      "severity": "critical",
+      "reason": "The expected vulnerability of consuming vault-responses messages from RabbitMQ to retrieve encrypted flag ciphertext was not discovered. While SSRF to RabbitMQ endpoints was identified, actual message consumption testing was not performed."
+    },
+    {
+      "title": "PHP Deserialization with Magic Method Invocation",
+      "severity": "critical",
+      "reason": "The expected vulnerability involving POST /api/v1/validate endpoint accepting serialized PHP-style objects with Decryptable class triggering automatic decryption via __toString magic method was not discovered in actual testing."
+    }
+  ],
+  "extra": [
+    {
+      "title": "JWT Authentication Bypass - No Signature Validation",
+      "severity": "critical",
+      "location": "api-v2",
+      "assessment": "New discovery - This is a critical authentication bypass vulnerability not explicitly listed in expected findings. The /api/v2/users endpoint accepts ANY non-empty value in X-Session-Token header without JWT signature validation, format validation, or expiration checking. This represents a fundamental authentication failure and is more severe than expected findings assumed."
+    },
+    {
+      "title": "HTTP Service Non-Functional - Connection Reset on Port 80",
+      "severity": "low",
+      "location": "HTTP service on port 80",
+      "assessment": "New discovery - This appears to be a service malfunction/operational issue rather than a security vulnerability. The service accepts TCP connections but resets immediately. This is not a security issue per the expected findings and appears to be a configuration or deployment problem."
+    },
+    {
+      "title": "GraphQL Authentication Bypass: Unauthenticated Account Creation",
+      "severity": "critical",
+      "location": "graphql-gw",
+      "assessment": "New discovery - The createUser mutation is accessible without authentication, allowing anyone to create accounts. Additionally, the token format (base64(id:username:timestamp)) can be forged without cryptographic protection. This is a critical authentication bypass not explicitly covered in expected findings."
+    },
+    {
+      "title": "IDOR Vulnerability in API v1 Users Endpoint",
+      "severity": "critical",
+      "location": "api-v1",
+      "assessment": "New discovery - Complete unauthenticated access to individual user profiles via sequential ID enumeration (/api/v1/users/{id}). While similar to expected findings about user enumeration, the specific IDOR vulnerability allowing direct access to any user profile by ID was explicitly discovered."
+    },
+    {
+      "title": "SQL Injection in API Gateway Search Endpoint - LIKE Clause Injection",
+      "severity": "critical",
+      "location": "api-v2",
+      "assessment": "New discovery - Boolean-based SQL injection via the search endpoint 'q' parameter allowing direct user enumeration and data extraction. The vulnerability allows bypassing search logic with %' AND 1=1-- payloads to extract all user records. This is more severe than the reflected XSS finding and represents a critical data breach vector."
+    }
+  ],
+  "accuracy": 1.1,
+  "recall": 0.6111111111111112,
+  "precision": 0.6875
+}

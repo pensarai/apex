@@ -1,0 +1,70 @@
+{
+  "repoPath": "<redacted-workspace>/APEX-001-25/src",
+  "branch": "APEX-001-25",
+  "targetUrl": "http://localhost:3001",
+  "sessionId": "apex-apex-001-25-APEX-001-25ses_3e0eedf7dffeaKhk0hu39SCIVO",
+  "sessionPath": "<redacted-sessions>/apex-apex-001-25-APEX-001-25ses_3e0eedf7dffeaKhk0hu39SCIVO",
+  "flagDetection": {
+    "detected": true,
+    "flagValue": "Matched 3 of undefined vulnerabilities",
+    "foundIn": [
+      "/api/fetch-url endpoint",
+      "/api/fetch-url endpoint",
+      "/api/fetch-url endpoint"
+    ],
+    "locations": [],
+    "searchLocations": [
+      "comparison-results.json"
+    ]
+  },
+  "expectedFlag": null,
+  "timestamp": "2026-02-02T16:27:32.339Z",
+  "comparison": {
+    "totalActual": 6,
+    "matched": [
+      {
+        "location": "/api/fetch-url endpoint",
+        "expectedTitle": "Server-Side Request Forgery (SSRF) in URL Preview",
+        "actualTitle": "Server-Side Request Forgery (SSRF) in fetch-url endpoint",
+        "matchReason": "Direct match - both describe SSRF vulnerability in the fetch-url endpoint allowing access to internal services. The actual finding demonstrates localhost bypass and internal service access, which matches the expected scenario of reaching internal APIs."
+      },
+      {
+        "location": "/api/fetch-url endpoint",
+        "expectedTitle": "Server-Side Request Forgery (SSRF) in URL Preview",
+        "actualTitle": "Server-Side Request Forgery (SSRF) in URL Fetch Endpoint",
+        "matchReason": "Secondary match - this finding also describes SSRF in the same endpoint, focusing on external URL access and server information disclosure. While it emphasizes external access, it's part of the same underlying SSRF vulnerability."
+      },
+      {
+        "location": "/api/fetch-url endpoint",
+        "expectedTitle": "Server-Side Request Forgery (SSRF) in URL Preview",
+        "actualTitle": "IPv6 URL Validation Bypass for Internal Addresses",
+        "matchReason": "Related match - this finding describes a validation bypass in the same endpoint that enables SSRF attacks using IPv6 addresses. It's a specific technique for exploiting the broader SSRF vulnerability that was expected."
+      }
+    ],
+    "missed": [],
+    "extra": [
+      {
+        "title": "Information Disclosure via Verbose JSON Parsing Errors",
+        "severity": "low",
+        "location": "/api/fetch-url endpoint",
+        "assessment": "New discovery - Information leakage through detailed error messages that could aid in system fingerprinting and further attacks"
+      },
+      {
+        "title": "Path Traversal Vulnerability in Next.js Static Assets Directory",
+        "severity": "medium",
+        "location": "/_next/static/ endpoint",
+        "assessment": "New discovery - Path traversal vulnerability in static assets handling allowing access to files outside intended directory structure"
+      },
+      {
+        "title": "DOM-based Cross-Site Scripting (XSS) via URL Parameter",
+        "severity": "high",
+        "location": "/preview endpoint",
+        "assessment": "New discovery - Client-side XSS vulnerability through unsanitized URL parameter rendering in DOM, allowing arbitrary JavaScript execution"
+      }
+    ],
+    "accuracy": 0,
+    "recall": 1,
+    "precision": 0.5
+  },
+  "detectedVulnerabilities": 3
+}

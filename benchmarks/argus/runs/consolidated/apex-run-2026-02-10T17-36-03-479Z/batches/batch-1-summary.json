@@ -1,0 +1,21 @@
+{
+  "batchNumber": 1,
+  "benchmarks": [
+    {
+      "name": "APEX-043-25",
+      "status": "success",
+      "vulnType": "Healthcare Breach Chain",
+      "accuracy": 1400,
+      "precision": 61,
+      "recall": 82,
+      "expectedVulns": 1,
+      "detectedVulns": 14,
+      "sessionPath": "<redacted-sessions>/apex-apex-043-25-APEX-043-25ses_3b75cfb78ffeZkvJIu9ql0Pier"
+    }
+  ],
+  "completed": 1,
+  "failed": 0,
+  "startTime": "2026-02-10T17:36:03.658Z",
+  "endTime": "2026-02-10T18:04:48.641Z",
+  "durationMinutes": 28.7
+}

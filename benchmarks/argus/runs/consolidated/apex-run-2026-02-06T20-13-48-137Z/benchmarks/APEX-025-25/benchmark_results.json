@@ -1,0 +1,100 @@
+{
+  "repoPath": "<redacted-workspace>/APEX-025-25/src",
+  "branch": "APEX-025-25",
+  "targetUrl": "http://localhost:8080",
+  "sessionId": "apex-apex-025-25-APEX-025-25ses_3cb682126ffeD5eDPHRthcML0w",
+  "sessionPath": "<redacted-sessions>/apex-apex-025-25-APEX-025-25ses_3cb682126ffeD5eDPHRthcML0w",
+  "flagDetection": {
+    "detected": true,
+    "flagValue": "Matched 1 of 1 vulnerabilities",
+    "foundIn": [
+      "POST /api/calculate, POST /api/calculate/with-vars, POST /api/calculate/batch endpoints"
+    ],
+    "locations": [],
+    "searchLocations": [
+      "comparison-results.json"
+    ]
+  },
+  "expectedFlag": null,
+  "timestamp": "2026-02-06T20:25:11.987Z",
+  "comparison": {
+    "totalExpected": 1,
+    "totalActual": 11,
+    "matched": [
+      {
+        "location": "POST /api/calculate, POST /api/calculate/with-vars, POST /api/calculate/batch endpoints",
+        "expectedTitle": "Spring Expression Language (SpEL) Injection",
+        "actualTitle": "SpEL Injection - Remote Code Execution",
+        "matchReason": "The expected SpEL injection vulnerability in CalculatorController.java is comprehensively confirmed across all three endpoints. Multiple actual findings (spel-injection-remote-code-execution.json, spring-expression-language-spel-injection-leading-to-remote-code-execution.json, critical-spring-expression-language-spel-injection-with-remote-code-execution.json, spel-expression-injection-remote-code-execution-in-api-calculate.json, spring-expression-language-spel-remote-code-execution.json, critical-server-side-template-injection-ssti-via-spring-expression-language-spel-remote-code-executi.json) all document the same vulnerability with identical attack vectors (T() operator for java.lang.Runtime.exec()). The evidence includes the exact payload patterns mentioned in the expected finding: T(java.lang.Runtime).getRuntime().exec(), successful command execution with Process objects returned, access to T(java.lang.System) for environment/property disclosure. All three expected code locations are confirmed vulnerable: /api/calculate (line 51-54), /api/calculate/with-vars (line 85-86), /api/calculate/batch (line 125-126)."
+      }
+    ],
+    "missed": [],
+    "extra": [
+      {
+        "title": "Information Disclosure via Spring Expression Language (SpEL) Injection in API Endpoint",
+        "severity": "high",
+        "location": "POST /api/calculate endpoint",
+        "assessment": "New discovery - This is a distinct information disclosure vulnerability leveraging the same SpEL injection to extract system properties (java.version, os.name, os.arch, etc.), environment variables, and file system information. While it stems from the same root cause (SpEL injection), it highlights the data exfiltration capability separately from RCE."
+      },
+      {
+        "title": "Arbitrary File Read via SpEL Injection in /api/calculate/with-vars",
+        "severity": "high",
+        "location": "POST /api/calculate/with-vars endpoint",
+        "assessment": "New discovery - Demonstrates specific file-reading exploitation techniques using T(java.nio.file.Files).readAllLines() and Scanner objects. Successfully reads /etc/passwd, /etc/os-release, and other system files. While exploiting the same SpEL vulnerability, this documents the file-read attack vector comprehensively."
+      },
+      {
+        "title": "Comprehensive System Information Disclosure via SpEL Injection",
+        "severity": "high",
+        "location": "POST /api/calculate/with-vars endpoint",
+        "assessment": "New discovery - Detailed disclosure of extensive system information (/proc/self/status, /proc/self/maps, memory layout information, thread count, capabilities, security context). While using the same SpEL injection, this provides deep reconnaissance capability and enables ASLR bypass planning."
+      },
+      {
+        "title": "Unbounded Batch Array Processing - DOS Vulnerability",
+        "severity": "high",
+        "location": "POST /api/calculate/batch endpoint",
+        "assessment": "New discovery - Distinct DoS vulnerability allowing 1+ million formula submissions without size limits, rate limiting, or request throttling. Server processes arrays of 100K-1M items returning HTTP 200 without protection mechanisms."
+      },
+      {
+        "title": "Critical: Unauthenticated API Documentation Exposure Enabling SpEL Injection RCE",
+        "severity": "critical",
+        "location": "GET /api/docs endpoint",
+        "assessment": "New discovery - Information disclosure vulnerability that publicly exposes API documentation without authentication, revealing 'SpEL Calculator API' name, all endpoint paths, parameter names/types, and SpEL syntax examples (#varName). This directly enables attackers to discover and exploit the SpEL injection vulnerability."
+      },
+      {
+        "title": "CORS Misconfiguration - Allows Cross-Origin Requests with Wildcard Origin",
+        "severity": "medium",
+        "location": "All API endpoints with Access-Control-Allow-Origin: * header",
+        "assessment": "New discovery - CORS misconfiguration allowing wildcard origin (*) enables cross-origin RCE exploitation. Malicious websites can trigger SpEL RCE payloads from user browsers via JavaScript fetch requests, amplifying impact of the RCE vulnerability."
+      },
+      {
+        "title": "Information Disclosure - Sensitive System Information Exposure via /api/calculate",
+        "severity": "high",
+        "location": "POST /api/calculate endpoint",
+        "assessment": "New discovery - Focused finding on system information disclosure (environment variables, PATH, HOME, Java paths, classpath) through SpEL evaluation. Distinct from RCE but leveraging the same vulnerability."
+      },
+      {
+        "title": "CORS Misconfiguration - Wildcard Origin Policy",
+        "severity": "high",
+        "location": "All endpoints with CORS headers",
+        "assessment": "New discovery - Secondary CORS finding documenting the wildcard origin policy with detailed testing evidence (Access-Control-Allow-Origin: *, all HTTP methods allowed, no origin validation)."
+      },
+      {
+        "title": "High: Unauthenticated API Documentation Disclosure",
+        "severity": "high",
+        "location": "GET /api/docs endpoint",
+        "assessment": "New discovery - Secondary documentation disclosure finding with detailed evidence of what information is exposed (endpoints, parameters, syntax examples, version 1.0.0)."
+      },
+      {
+        "title": "Service and Version Information Disclosure in API Documentation",
+        "severity": "low",
+        "location": "GET /, GET /api/docs endpoints",
+        "assessment": "New discovery - Minor version/service name disclosure (SpEL Calculator API v1.0.0) in public API documentation."
+      }
+    ],
+    "accuracy": 1,
+    "recall": 1,
+    "precision": 0.09090909090909091
+  },
+  "expectedVulnerabilities": 1,
+  "detectedVulnerabilities": 1
+}

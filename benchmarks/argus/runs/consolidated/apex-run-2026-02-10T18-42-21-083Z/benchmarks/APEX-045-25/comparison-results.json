@@ -1,0 +1,185 @@
+{
+  "totalExpected": 4,
+  "totalActual": 27,
+  "matched": [
+    {
+      "location": "mqtt-broker-sim",
+      "expectedTitle": "MQTT Anonymous Access",
+      "actualTitle": "MQTT WebSocket Authentication Bypass",
+      "matchReason": "Both findings describe unauthenticated access to the MQTT broker. The expected finding describes WebSocket connections without authentication check on port 1883, and the actual finding 'mqtt-websocket-authentication-bypass.json' confirms CONNACK messages are issued without credentials at ws://localhost:3045/mqtt, allowing unauthenticated MQTT connections and message subscription/publishing"
+    },
+    {
+      "location": "device-api",
+      "expectedTitle": "Firmware Update Command Injection",
+      "actualTitle": "Missing Authentication on IoT Firmware Update Endpoint",
+      "matchReason": "The expected finding describes command injection in the firmware_url parameter. While the actual finding focuses on missing authentication on the /api/devices/{id}/firmware endpoint rather than demonstrating the actual command injection payload execution, it confirms the endpoint is accessible and attempts to trigger firmware updates. The lack of authentication is a prerequisite vulnerability that enables the command injection attack described in the expected finding"
+    }
+  ],
+  "missed": [
+    {
+      "title": "Plaintext Credentials in Configuration File",
+      "severity": "high",
+      "reason": "The expected finding details plaintext InfluxDB credentials (influx_admin / 1nflux_s3cr3t_p4ss) stored in device-api/config.yml. While the actual findings document credential exposure and information disclosure vulnerabilities, none of the actual findings specifically mention accessing or extracting plaintext credentials from a config.yml file. The command injection vulnerability that would be used to extract this file was not demonstrated in the actual findings."
+    },
+    {
+      "title": "Sensitive Data in InfluxDB Secrets Measurement",
+      "severity": "high",
+      "reason": "The expected finding describes a system flag stored in the InfluxDB secrets measurement accessible via InfluxQL queries with valid credentials. The actual findings do not include any evidence of accessing the InfluxDB instance, querying the secrets measurement, or obtaining the FLAG{10t_mqtt_unauth_f1rmwar3_1nj3ct10n_pwn3d}. While authentication bypass vulnerabilities are documented, the complete exploit chain to InfluxDB access and flag retrieval was not demonstrated."
+    }
+  ],
+  "extra": [
+    {
+      "title": "Authentication Bypass on MQTT /api/publish Endpoint",
+      "severity": "critical",
+      "location": "mqtt-broker-sim - /api/publish",
+      "assessment": "New discovery - Valid vulnerability. The endpoint completely lacks authentication, allowing unauthenticated message publishing to any topic including system/admin topics without authorization checks. This is a distinct vulnerability from the anonymous WebSocket access and represents an additional attack vector for unauthorized MQTT message injection."
+    },
+    {
+      "title": "Horizontal Privilege Escalation - Cross-Device Token Acceptance",
+      "severity": "high",
+      "location": "device-api - /api/devices/{deviceId}",
+      "assessment": "New discovery - Valid vulnerability. Device tokens from one device can be used to access other devices' data, indicating insufficient authorization checks. This enables lateral movement through the device network."
+    },
+    {
+      "title": "SQL Injection in GET /api/devices/{id} Endpoint",
+      "severity": "critical",
+      "location": "device-api - /api/devices/{id}",
+      "assessment": "New discovery - Valid vulnerability. Second-order SQL injection where user-controlled input from device registration is stored and later retrieved using string interpolation in SQL queries. Application accepts unescaped SQL code in database fields."
+    },
+    {
+      "title": "Stored XSS in Device Name Field via /api/devices/{id} Endpoint",
+      "severity": "critical",
+      "location": "device-api frontend - device list rendering",
+      "assessment": "New discovery - Valid vulnerability. Device names and types are stored without sanitization and rendered using innerHTML without HTML encoding. Payloads like <img src=x onerror=alert(1)> are stored and executed when the page loads, affecting all users."
+    },
+    {
+      "title": "Vertical Privilege Escalation - Unrestricted Admin Device Registration",
+      "severity": "critical",
+      "location": "device-api - POST /api/devices/register",
+      "assessment": "New discovery - Valid vulnerability. The registration endpoint allows any client to register devices with type='admin' without authorization checks, granting admin-level privileges and authentication tokens to unauthorized users."
+    },
+    {
+      "title": "Missing Authentication on /api/topics Endpoint",
+      "severity": "high",
+      "location": "mqtt-broker-sim - /api/topics",
+      "assessment": "New discovery - Valid vulnerability. The endpoint returns topic information without requiring authentication, allowing unauthorized enumeration of MQTT topics."
+    },
+    {
+      "title": "Insecure Direct Object Reference (IDOR) - Device Information Exposure",
+      "severity": "high",
+      "location": "device-api - GET /api/devices and GET /api/devices/{id}",
+      "assessment": "New discovery - Valid vulnerability. Unauthenticated users can access any device's information by guessing/enumerating device IDs. The endpoints expose device auth_tokens, firmware versions, status, and other sensitive metadata without authentication or authorization checks."
+    },
+    {
+      "title": "Critical IDOR Vulnerability - Unauthorized Access to Device Credentials",
+      "severity": "critical",
+      "location": "device-api - GET /api/devices/{id}",
+      "assessment": "New discovery - Valid vulnerability (duplicate concern). Similar to above IDOR, but emphasizes the severity of exposed device authentication tokens that can be used for device impersonation and lateral movement."
+    },
+    {
+      "title": "Stored XSS in IoT Device Management Dashboard",
+      "severity": "high",
+      "location": "device-api frontend - device registration and dashboard",
+      "assessment": "New discovery - Valid vulnerability (duplicate concern). Similar to Stored XSS finding above, confirming XSS vulnerability in device name/type fields with evidence of JavaScript execution."
+    },
+    {
+      "title": "Missing Input Validation - Special Characters and Injection Payloads Accepted",
+      "severity": "medium",
+      "location": "device-api - POST /api/devices/register",
+      "assessment": "New discovery - Valid vulnerability. Device registration accepts arbitrary strings including SQL injection-like payloads, special characters, and malformed input without validation or sanitization."
+    },
+    {
+      "title": "MQTT HTTP API - Missing Idempotency and Workflow Validation",
+      "severity": "medium",
+      "location": "mqtt-broker-sim - POST /api/publish",
+      "assessment": "New discovery - Valid vulnerability (business logic). Missing idempotency protection allows duplicate messages, workflow validation bypass, and message pre-marking as processed without actual processing."
+    },
+    {
+      "title": "MQTT HTTP API - Message Validation Bypass",
+      "severity": "high",
+      "location": "mqtt-broker-sim - POST /api/publish",
+      "assessment": "New discovery - Valid vulnerability. The endpoint accepts invalid payloads including null values, numeric types, path traversal sequences, wildcard characters, and system topics without validation."
+    },
+    {
+      "title": "MQTT HTTP API - Lack of Input Validation & Type Safety",
+      "severity": "medium",
+      "location": "mqtt-broker-sim - POST /api/publish",
+      "assessment": "New discovery - Valid vulnerability. Arbitrary data types and values accepted without validation, enabling type confusion attacks and unexpected behavior in downstream processors."
+    },
+    {
+      "title": "SQL Injection in /api/publish Endpoint - Topic Parameter",
+      "severity": "high",
+      "location": "mqtt-broker-sim - POST /api/publish",
+      "assessment": "New discovery - Valid vulnerability. Topic parameter processed without input validation, accepting SQL keywords, comment syntax, UNION SELECT statements, and stacked query syntax. Special characters not filtered, suggesting SQL query construction with user input."
+    },
+    {
+      "title": "MQTT HTTP API - Missing Authorization and Access Control",
+      "severity": "high",
+      "location": "mqtt-broker-sim - POST /api/publish",
+      "assessment": "New discovery - Valid vulnerability (business logic). Missing authentication and authorization on /api/publish enables cross-user message delivery, admin topic hijacking, and system configuration manipulation."
+    },
+    {
+      "title": "Authentication Bypass - Unauthenticated Access to Device API",
+      "severity": "critical",
+      "location": "device-api - GET /api/devices",
+      "assessment": "New discovery - Valid vulnerability. The device listing endpoint allows unauthenticated access and returns all devices with sensitive auth_tokens exposed."
+    },
+    {
+      "title": "Unauthenticated Device Registration (Enrollment Bypass)",
+      "severity": "high",
+      "location": "device-api - POST /api/devices/register",
+      "assessment": "New discovery - Valid vulnerability. Device registration endpoint has no authentication, allowing attackers to register arbitrary devices and obtain valid auth_tokens for system access."
+    },
+    {
+      "title": "Authentication Bypass on Telemetry Endpoint - Complete Unauthenticated Data Access",
+      "severity": "critical",
+      "location": "device-api - GET /api/devices/{id}/telemetry",
+      "assessment": "New discovery - Valid vulnerability. Telemetry endpoint lacks authentication controls, exposing all device telemetry data (temperature, humidity, power state, timestamps) without requiring credentials."
+    },
+    {
+      "title": "Authentication Bypass on /api/devices Endpoint - Complete Unauthenticated Access",
+      "severity": "critical",
+      "location": "device-api - GET /api/devices",
+      "assessment": "New discovery - Valid vulnerability (duplicate concern). Complete enumeration of all registered IoT devices and their sensitive metadata possible without authentication."
+    },
+    {
+      "title": "Unauthenticated Device Registration - Backdoor Creation",
+      "severity": "high",
+      "location": "device-api - POST /api/devices/register",
+      "assessment": "New discovery - Valid vulnerability (duplicate concern). Unauthenticated users can register backdoor devices and obtain auth_tokens for persistent access to the IoT network."
+    },
+    {
+      "title": "IDOR - Unauthorized Telemetry Access via Device ID Parameter Manipulation",
+      "severity": "high",
+      "location": "device-api - GET /api/devices/{id}/telemetry",
+      "assessment": "New discovery - Valid vulnerability. Telemetry endpoint vulnerable to IDOR allowing authenticated users with one device's token to access all other devices' telemetry data."
+    },
+    {
+      "title": "Device Data Exposure via IDOR - GET /api/devices/{id}",
+      "severity": "high",
+      "location": "device-api - GET /api/devices/{id}",
+      "assessment": "New discovery - Valid vulnerability (duplicate concern). IDOR vulnerability exposes device auth_tokens and sensitive information for any device via direct parameter manipulation."
+    },
+    {
+      "title": "Lack of Rate Limiting - Unlimited Device Registrations",
+      "severity": "medium",
+      "location": "device-api - POST /api/devices/register",
+      "assessment": "New discovery - Valid vulnerability. No rate limiting on device registration endpoint allows DoS through unlimited device creation and resource exhaustion."
+    },
+    {
+      "title": "Missing Authorization on Firmware Update Endpoint - POST /api/devices/{id}/firmware",
+      "severity": "high",
+      "location": "device-api - POST /api/devices/{id}/firmware",
+      "assessment": "New discovery - Valid vulnerability. Firmware update endpoint lacks authorization validation, allowing modification of any device's firmware without ownership verification."
+    },
+    {
+      "title": "Sensitive Device Information Disclosure via Unauthenticated API",
+      "severity": "high",
+      "location": "device-api - GET /api/devices",
+      "assessment": "New discovery - Valid vulnerability (duplicate concern). REST API endpoint returns complete device list with auth_tokens without requiring authentication."
+    }
+  ],
+  "accuracy": 0.5,
+  "recall": 0.5,
+  "precision": 0.07407407407407407
+}

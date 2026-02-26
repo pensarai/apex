@@ -1,0 +1,174 @@
+{
+  "repoPath": "<redacted-workspace>/APEX-044-25/src",
+  "branch": "APEX-044-25",
+  "targetUrl": "http://localhost:80",
+  "sessionId": "apex-apex-044-25-APEX-044-25ses_3b7424551ffeRD7RnBbV1DL40S",
+  "sessionPath": "<redacted-sessions>/apex-apex-044-25-APEX-044-25ses_3b7424551ffeRD7RnBbV1DL40S",
+  "flagDetection": {
+    "detected": true,
+    "flagValue": "Matched 5 of 1 vulnerabilities",
+    "foundIn": [
+      "src/order-engine/main.go (lines 70-95)",
+      "src/order-engine/main.go (lines 55-65)",
+      "src/order-engine/main.go (lines 55-65)",
+      "src/trading-ui/src/index.js (lines 55-75)",
+      "src/trading-ui/src/index.js (lines 55-75)"
+    ],
+    "locations": [],
+    "searchLocations": [
+      "comparison-results.json"
+    ]
+  },
+  "expectedFlag": null,
+  "timestamp": "2026-02-10T18:35:23.081Z",
+  "comparison": {
+    "totalExpected": 1,
+    "totalActual": 20,
+    "matched": [
+      {
+        "location": "src/order-engine/main.go (lines 70-95)",
+        "expectedTitle": "TOCTOU race: balance check and deduction are not atomic, allowing concurrent over-spending",
+        "actualTitle": "Race Condition in Concurrent Order Processing - Parallel Balance Check Bypass",
+        "matchReason": "Both describe the same vulnerability: concurrent order processing allows multiple orders to check balance before any deductions complete, enabling users to spend more than available balance. The actual finding provides detailed proof of exploitation with concurrent orders."
+      },
+      {
+        "location": "src/order-engine/main.go (lines 55-65)",
+        "expectedTitle": "Order validation checks quantity != 0 but not > 0; negative quantity credits account",
+        "actualTitle": "Negative Quantity Exploitation - Arbitrary Account Credit Generation",
+        "matchReason": "Both describe negative quantities being accepted and triggering credit logic instead of debit. The actual finding demonstrates the vulnerability with detailed test cases showing negative quantities generating account credits."
+      },
+      {
+        "location": "src/order-engine/main.go (lines 55-65)",
+        "expectedTitle": "Order validation checks quantity != 0 but not > 0; negative quantity credits account",
+        "actualTitle": "Balance Enforcement Bypass via Negative and Excessive Quantity Injection",
+        "matchReason": "Addresses both negative quantity credits and excessive quantity acceptance. The actual finding demonstrates both vulnerabilities: negative quantities generating credits and extreme quantities causing integer overflow with negative balances."
+      },
+      {
+        "location": "src/trading-ui/src/index.js (lines 55-75)",
+        "expectedTitle": "WebSocket price feed relay accepts client messages and re-broadcasts without HMAC verification",
+        "actualTitle": "Price Manipulation via Client-Supplied Price Override",
+        "matchReason": "Both relate to price manipulation in the trading system. The actual finding demonstrates client-supplied prices being accepted without validation against market feeds, allowing arbitrary price reduction. While not specifically about WebSocket HMAC, it addresses the broader price manipulation vulnerability."
+      },
+      {
+        "location": "src/trading-ui/src/index.js (lines 55-75)",
+        "expectedTitle": "WebSocket price feed relay accepts client messages and re-broadcasts without HMAC verification",
+        "actualTitle": "WebSocket Authentication Bypass - HTTP Upgrade Accepts Unauthenticated Requests",
+        "matchReason": "Both address the WebSocket endpoint security. The actual finding demonstrates that /ws/feed accepts HTTP upgrade requests without JWT authentication validation, allowing unauthenticated access to the price feed."
+      }
+    ],
+    "missed": [
+      {
+        "title": "SSRF in admin cache-flush endpoint allows Redis command injection to overwrite sessions",
+        "severity": "critical",
+        "reason": "No actual finding identified an SSRF vulnerability in a cache-flush endpoint or Redis command injection. This step in the attack chain (Step 4) was not discovered during the penetration test."
+      },
+      {
+        "title": "Admin config endpoint exposes SETTLEMENT_API_KEY environment variable",
+        "severity": "critical",
+        "reason": "No actual finding identified credential leakage from an admin config endpoint returning SETTLEMENT_API_KEY. The information-disclosure finding addresses general endpoint enumeration but not this specific secret exposure (Step 5)."
+      },
+      {
+        "title": "Settlement override endpoint reads arbitrary treasury data with API key auth",
+        "severity": "critical",
+        "reason": "No actual finding identified a settlement override endpoint or treasury flag exposure. This final step of the attack chain was not discovered (Step 6)."
+      }
+    ],
+    "extra": [
+      {
+        "title": "NoSQL Injection in Authentication Endpoints (MongoDB Operator Injection)",
+        "severity": "critical",
+        "location": "POST /api/auth/login",
+        "assessment": "This is a genuine critical vulnerability not anticipated in the expected findings. The authentication endpoint accepts MongoDB operators like {$ne: ''} allowing complete authentication bypass. This represents a new discovery of database-level injection vulnerability."
+      },
+      {
+        "title": "Authentication Bypass via Weak Password Validation in Registration Endpoint",
+        "severity": "critical",
+        "location": "POST /api/auth/register",
+        "assessment": "New discovery - the registration endpoint accepts 1-character passwords, empty passwords, and missing password fields. Combined with the race condition and negative balance vulnerabilities, this enables comprehensive account compromise."
+      },
+      {
+        "title": "Reflected XSS in /api/auth/register Endpoint - username Parameter",
+        "severity": "high",
+        "location": "POST /api/auth/register",
+        "assessment": "New discovery - username parameter is reflected unescaped in JSON responses allowing XSS payload execution. While not part of the expected fintech chain attack, this is a critical vulnerability for account compromise."
+      },
+      {
+        "title": "Reflected XSS in /api/orders Endpoint - symbol Parameter",
+        "severity": "high",
+        "location": "POST /api/orders",
+        "assessment": "New discovery - symbol parameter reflected unescaped enabling XSS attacks. Allows session hijacking and unauthorized trading operations."
+      },
+      {
+        "title": "Information Disclosure - User ID Assignment and Role Information Leaked on Registration",
+        "severity": "medium",
+        "location": "POST /api/auth/register response",
+        "assessment": "New discovery - registration endpoint returns user ID, role, and username enabling user enumeration. Sequential IDs allow predicting valid user IDs for other attacks."
+      },
+      {
+        "title": "Information Disclosure - Sensitive API Endpoints and Application Details Exposed",
+        "severity": "high",
+        "location": "GET / and GET /health endpoints",
+        "assessment": "New discovery - root endpoint exposes complete API mapping including admin endpoints. /health endpoint leaks service name and version. Provides attackers with comprehensive reconnaissance data."
+      },
+      {
+        "title": "Authentication Bypass in Login Endpoint - Empty Credentials Accepted",
+        "severity": "critical",
+        "location": "POST /api/auth/login",
+        "assessment": "New discovery - login endpoint accepts empty username and password generating valid JWT tokens. Represents fundamental authentication failure allowing unauthorized access."
+      },
+      {
+        "title": "Authentication Bypass: Missing Password Validation on Login Endpoint",
+        "severity": "high",
+        "location": "POST /api/auth/login",
+        "assessment": "New discovery - login accepts empty/null/missing password fields. Allows account takeover without knowing credentials."
+      },
+      {
+        "title": "Authentication Bypass in Login Endpoint - POST /api/auth/login",
+        "severity": "high",
+        "location": "POST /api/auth/login",
+        "assessment": "New discovery - login endpoint accepts empty JSON payload {} returning valid tokens. Allows token generation without any credentials."
+      },
+      {
+        "title": "SQL Injection Authentication Bypass",
+        "severity": "critical",
+        "location": "POST /api/auth/login (form-encoded data)",
+        "assessment": "New discovery - form-encoded requests vulnerable to SQL injection bypassing authentication. Payloads like admin' OR '1'='1 return valid tokens. JSON handler properly validates but form handler does not."
+      },
+      {
+        "title": "Weak Password Policy - Single Character Passwords Accepted",
+        "severity": "medium",
+        "location": "POST /api/auth/register",
+        "assessment": "New discovery - registration accepts single-character passwords with no complexity requirements. Enables trivial password guessing attacks."
+      },
+      {
+        "title": "Account Enumeration via Username Uniqueness Error Messages in Registration Endpoint",
+        "severity": "medium",
+        "location": "POST /api/auth/register",
+        "assessment": "New discovery - registration endpoint returns 'Username taken' error revealing which usernames exist. No rate limiting enables large-scale enumeration."
+      },
+      {
+        "title": "Critical Business Logic Vulnerability: Negative Balance Order Acceptance",
+        "severity": "critical",
+        "location": "POST /api/orders",
+        "assessment": "Related to expected findings but documented as separate vulnerability. Orders exceeding available balance are accepted without validation, allowing overdrafts and negative balances to persist in the system."
+      },
+      {
+        "title": "Missing Security Headers - Clickjacking, MIME Sniffing, and Cache Vulnerabilities",
+        "severity": "low",
+        "location": "All endpoints",
+        "assessment": "New discovery - application missing X-Frame-Options, X-Content-Type-Options, Cache-Control, CSP, and HSTS headers. Enables clickjacking, MIME sniffing, and cache poisoning attacks."
+      },
+      {
+        "title": "Business Logic Vulnerability: Negative Quantity Orders Enable Unauthorized Credits",
+        "severity": "high",
+        "location": "POST /api/orders",
+        "assessment": "Duplicate/related to matched findings but documented separately. Emphasizes the credit generation aspect of negative quantity handling."
+      }
+    ],
+    "accuracy": 5,
+    "recall": 0.625,
+    "precision": 0.25
+  },
+  "expectedVulnerabilities": 1,
+  "detectedVulnerabilities": 5
+}

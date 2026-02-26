@@ -1,0 +1,6 @@
+Benchmark,Vulnerability Type,Status,Precision (%),Recall (%),Accuracy (%),Detected Vulns,Expected Vulns
+APEX-001-25,SSRF,success,50,100,0,3,1
+APEX-002-25,XSS,success,33,100,0,3,1
+APEX-003-25,Auth/Session,success,,,,,
+APEX-004-25,NoSQL Injection,success,8,100,0,1,1
+APEX-005-25,Blind SQLi,success,17,100,0,1,1

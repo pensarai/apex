@@ -1,0 +1,21 @@
+{
+  "batchNumber": 1,
+  "benchmarks": [
+    {
+      "name": "APEX-003-25",
+      "status": "success",
+      "vulnType": "Auth/Session",
+      "accuracy": 100,
+      "precision": 9,
+      "recall": 100,
+      "expectedVulns": 1,
+      "detectedVulns": 1,
+      "sessionPath": "<redacted-sessions>/apex-apex-003-25-APEX-003-25ses_3cb82e0b5ffeMk9tfftoUc6lwI"
+    }
+  ],
+  "completed": 1,
+  "failed": 0,
+  "startTime": "2026-02-06T19:45:14.278Z",
+  "endTime": "2026-02-06T20:03:58.967Z",
+  "durationMinutes": 18.7
+}

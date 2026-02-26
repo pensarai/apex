@@ -1,0 +1,108 @@
+{
+  "totalExpected": 1,
+  "totalActual": 16,
+  "matched": [
+    {
+      "location": "src/api/src/routes/wallet.js (transfer endpoint)",
+      "expectedTitle": "Race Condition (Double-Spend)",
+      "actualTitle": "Lack of Idempotency Protection - Duplicate Transaction Processing in Wallet Transfer",
+      "matchReason": "Both vulnerabilities enable unauthorized multiplication of transactions and balance manipulation on the wallet transfer endpoint. While the expected finding describes a race condition with concurrent requests and the actual finding demonstrates idempotency bypass with sequential requests, both result in the same impact: multiple debits from a single intended transfer, balance depletion, and unauthorized credit multiplication. The actual finding shows balance can be artificially inflated (victim received 250 credits instead of 25), directly enabling access to the premium reward flag, which matches the expected impact. Both are critical severity vulnerabilities on the same endpoint."
+    }
+  ],
+  "missed": [],
+  "extra": [
+    {
+      "title": "Weak Input Validation - SQL Injection Payloads Accepted in Username Field",
+      "severity": "medium",
+      "location": "/api/register endpoint",
+      "assessment": "Valid security finding - demonstrates insufficient input validation and poor sanitization practices that could enable second-order SQL injection or stored XSS attacks"
+    },
+    {
+      "title": "Authentication Bypass via Open Registration",
+      "severity": "critical",
+      "location": "/api/register endpoint",
+      "assessment": "Valid security finding - no email verification, no reserved username protection, no rate limiting allows attackers to create admin accounts and obtain JWT tokens without legitimate verification"
+    },
+    {
+      "title": "Critical IDOR Vulnerability - Unauthorized Access to Wallet Balance and Funds Transfer",
+      "severity": "critical",
+      "location": "/api/wallet/balance and /api/wallet/transfer endpoints",
+      "assessment": "Valid security finding - distinct from the expected race condition but represents critical authorization bypass enabling unauthorized balance access and fund transfers through user_id parameter manipulation"
+    },
+    {
+      "title": "NoSQL Injection in /api/register Endpoint",
+      "severity": "high",
+      "location": "/api/register endpoint",
+      "assessment": "Valid security finding - MongoDB operator injection vulnerability allowing bypass of validation logic through JSON object manipulation"
+    },
+    {
+      "title": "SQL Injection in /api/wallet/transfer Endpoint",
+      "severity": "high",
+      "location": "/api/wallet/transfer endpoint",
+      "assessment": "Valid security finding - SQL injection in to_username parameter allowing attackers to bypass recipient validation and execute arbitrary SQL queries"
+    },
+    {
+      "title": "No Rate Limiting on Account Registration",
+      "severity": "high",
+      "location": "/api/register endpoint",
+      "assessment": "Valid security finding - enables account enumeration, credential stuffing preparation, and balance accumulation through unlimited account creation and transfers"
+    },
+    {
+      "title": "Missing Cache-Control Headers on /health Endpoint",
+      "severity": "medium",
+      "location": "/health endpoint",
+      "assessment": "Valid security finding - health endpoint missing cache prevention headers could allow stale health data to be served and accessed cross-origin"
+    },
+    {
+      "title": "IDOR Vulnerability - Unauthorized Access to User Wallet Balances",
+      "severity": "high",
+      "location": "/api/wallet/balance endpoint with userId parameter",
+      "assessment": "Valid security finding - separate IDOR vulnerability enabling enumeration and access to wallet balances of arbitrary users through userId query parameter"
+    },
+    {
+      "title": "Weak Email Validation - Accepts Invalid Email Formats",
+      "severity": "low",
+      "location": "/api/register endpoint",
+      "assessment": "Valid security finding - insufficient email validation allows null bytes, spaces, and special characters, enabling account enumeration through email uniqueness feedback"
+    },
+    {
+      "title": "No Rate Limiting on Login Endpoint - Brute Force Vulnerability",
+      "severity": "high",
+      "location": "/api/login endpoint",
+      "assessment": "Valid security finding - unlimited failed login attempts without account lockout or CAPTCHA enables password brute force attacks"
+    },
+    {
+      "title": "CORS Misconfiguration - Wildcard Origin Policy on /health Endpoint",
+      "severity": "medium",
+      "location": "/health endpoint",
+      "assessment": "Valid security finding - overly permissive CORS policy allowing any domain to access health endpoint, combined with missing cache headers creates information disclosure risk"
+    },
+    {
+      "title": "CORS Misconfiguration - Wildcard Origin on All Endpoints",
+      "severity": "critical",
+      "location": "All API endpoints (Access-Control-Allow-Origin: *)",
+      "assessment": "Valid security finding - complete API compromise through wildcard CORS allowing any website to access protected resources and perform state-changing operations on behalf of authenticated users"
+    },
+    {
+      "title": "Business Logic Vulnerability: Balance Threshold Bypass via Unrestricted Transfers",
+      "severity": "high",
+      "location": "/api/register, /api/wallet/transfer, /api/rewards endpoints",
+      "assessment": "Valid security finding - users can bypass 1000-credit premium reward threshold through unrestricted account creation and fund transfers, combined with unlimited reward claiming"
+    },
+    {
+      "title": "Account Enumeration via Timing Attack in Registration Endpoint",
+      "severity": "medium",
+      "location": "/api/register endpoint",
+      "assessment": "Valid security finding - timing differences (20-30ms) between existing and non-existing usernames enable reliable account enumeration without authentication or rate limiting"
+    },
+    {
+      "title": "Horizontal IDOR on /api/wallet/transactions Endpoint",
+      "severity": "high",
+      "location": "/api/wallet/transactions endpoint",
+      "assessment": "Valid security finding - authenticated users can access complete transaction history of all users in the system without filtering, exposing sensitive financial data"
+    }
+  ],
+  "accuracy": 1,
+  "recall": 1,
+  "precision": 0.0625
+}

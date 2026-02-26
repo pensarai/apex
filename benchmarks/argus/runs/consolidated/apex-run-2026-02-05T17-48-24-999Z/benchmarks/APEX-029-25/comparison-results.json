@@ -1,0 +1,138 @@
+{
+  "totalExpected": 1,
+  "totalActual": 21,
+  "matched": [
+    {
+      "location": "POST /submit endpoint and admin panel",
+      "expectedTitle": "Blind Stored Cross-Site Scripting (XSS)",
+      "actualTitle": "Stored XSS in Support Ticket Form (/submit) and Stored Cross-Site Scripting (XSS) in Ticket Submission Form",
+      "matchReason": "Both findings describe the same vulnerability: unsanitized user input in the support ticket form that is stored in the database and executed when rendered in the admin panel. The actual findings provide comprehensive evidence of script tag acceptance, event handler injection, and the vulnerable rendering mechanism. The 'blind' aspect is confirmed by evidence of the bot process (Chromium/Chrome) that automatically processes tickets, matching the expected scenario where admins/bots view tickets without expecting malicious content."
+    }
+  ],
+  "missed": [],
+  "extra": [
+    {
+      "title": "Parameter Tampering - Unexpected Fields Accepted Without Validation",
+      "severity": "medium",
+      "location": "POST /submit endpoint",
+      "assessment": "New discovery - The endpoint accepts arbitrary parameters (is_admin, role, balance, user_id) without validation. While related to the main XSS vulnerability, this is a separate parameter injection issue that could enable privilege escalation or business logic bypass."
+    },
+    {
+      "title": "Email Validation Bypass - Invalid Email Formats Accepted",
+      "severity": "medium",
+      "location": "POST /submit endpoint",
+      "assessment": "New discovery - Email field accepts invalid formats (notanemail, @, test@@example.com) without validation, enabling email header injection and potential email manipulation attacks."
+    },
+    {
+      "title": "Missing Idempotency Protection - Duplicate Submissions Accepted",
+      "severity": "medium",
+      "location": "POST /submit endpoint",
+      "assessment": "New discovery - No idempotency keys or deduplication logic. Identical submissions are processed multiple times, enabling spam/DoS attacks on the support system."
+    },
+    {
+      "title": "NoSQL Injection in Authentication Endpoint",
+      "severity": "high",
+      "location": "POST /auth/login endpoint",
+      "assessment": "New discovery - Boolean-based blind NoSQL injection via form-encoded parameters with MongoDB operators ($ne, $gt, $regex). Different error messages reveal operator processing, enabling authentication bypass and user enumeration."
+    },
+    {
+      "title": "IDOR Vulnerability - Unauthenticated Access to All Support Tickets via ObjectID Enumeration",
+      "severity": "high",
+      "location": "GET /api/tickets/{id} endpoint",
+      "assessment": "New discovery - Complete unauthenticated access to all tickets through sequential ObjectID enumeration. MongoDB's predictable ID structure enables mass data exposure without authentication."
+    },
+    {
+      "title": "Information Disclosure via X-Powered-By Header",
+      "severity": "low",
+      "location": "All HTTP responses",
+      "assessment": "New discovery - X-Powered-By: Express header reveals technology stack, enabling framework-specific vulnerability research by attackers."
+    },
+    {
+      "title": "Missing X-Content-Type-Options Header on Root Endpoint",
+      "severity": "medium",
+      "location": "Root endpoint (/) and main pages",
+      "assessment": "New discovery - Header missing on successful responses but present on error pages, indicating inconsistent configuration. Enables MIME type sniffing attacks."
+    },
+    {
+      "title": "Missing X-Frame-Options Security Header",
+      "severity": "medium",
+      "location": "All endpoints",
+      "assessment": "New discovery - Absence of X-Frame-Options header allows the application to be embedded in iframes, enabling clickjacking attacks."
+    },
+    {
+      "title": "Missing Content-Security-Policy Header on Root Endpoint",
+      "severity": "medium",
+      "location": "Root endpoint (/) and main pages",
+      "assessment": "New discovery - CSP header missing on successful responses but present on error pages. Lack of CSP enables XSS attacks (complements the discovered stored XSS)."
+    },
+    {
+      "title": "Email Header Injection - Newline Characters Accepted in Email Field",
+      "severity": "high",
+      "location": "POST /submit endpoint - email field",
+      "assessment": "New discovery - Newline characters (LF/CRLF) accepted in email field enable injection of email headers (Bcc, Cc, From, Reply-To), allowing mail header attacks, email spoofing, and spam injection."
+    },
+    {
+      "title": "MongoDB NoSQL Injection - Boolean-Based Blind Injection",
+      "severity": "high",
+      "location": "POST /auth/login endpoint",
+      "assessment": "New discovery - Detailed NoSQL injection via MongoDB operators in JSON payloads. Response differentiation between matching/non-matching regex patterns enables user enumeration and potential authentication bypass."
+    },
+    {
+      "title": "Business Logic Vulnerability: Username Enumeration via Timing Attack + No Brute Force Protection",
+      "severity": "high",
+      "location": "POST /auth/login endpoint",
+      "assessment": "New discovery - Username enumeration through 35x timing difference (valid username ~70ms vs invalid ~2ms). Combined with complete absence of rate limiting, account lockout, or brute force protection, enabling unlimited password guessing attacks."
+    },
+    {
+      "title": "CSRF Vulnerability in /submit Endpoint - Email Submission Without Token",
+      "severity": "high",
+      "location": "POST /submit endpoint",
+      "assessment": "New discovery - No CSRF token validation. Cross-origin requests accepted without token verification, enabling forged ticket submissions from attacker-controlled sites."
+    },
+    {
+      "title": "IDOR: Mass Enumeration of All Tickets via ID Variation",
+      "severity": "high",
+      "location": "GET /api/tickets/{id} endpoint",
+      "assessment": "New discovery - IDOR vulnerability exploitable at scale. 37.5% hit rate in sequential ID enumeration with no rate limiting. Enables automated discovery of all tickets through simple hex character variation."
+    },
+    {
+      "title": "Mass Assignment Vulnerability on Ticket Creation Endpoint",
+      "severity": "high",
+      "location": "POST /api/tickets endpoint",
+      "assessment": "New discovery - Application accepts arbitrary parameters (status, priority, admin_notes, assigned_to, created_by, _id) without validation or field whitelisting. Enables workflow bypass, privilege escalation, and authorization bypass."
+    },
+    {
+      "title": "Inconsistent Security Header Application Across Endpoints",
+      "severity": "medium",
+      "location": "Multiple endpoints (/ vs /nonexistent)",
+      "assessment": "New discovery - Security headers applied inconsistently across endpoints. CSP and X-Content-Type-Options present on 404 pages but missing from main content pages, indicating incomplete security configuration."
+    },
+    {
+      "title": "Input Validation Bypass: Unicode-Encoded NoSQL Operator Injection",
+      "severity": "high",
+      "location": "POST /api/tickets and /submit endpoints",
+      "assessment": "New discovery - Blacklist-based validation bypassed using Unicode escape sequences (\\u0024 = $). Allows MongoDB operators to be injected while evading validation, storing encoded payloads that could enable second-order injection attacks."
+    },
+    {
+      "title": "Business Logic Vulnerability: Case-Sensitive Username Matching Reveals Account Enumeration Information",
+      "severity": "medium",
+      "location": "POST /auth/login endpoint",
+      "assessment": "New discovery - Case-sensitive username matching reveals exact case of valid accounts (admin vs Admin vs ADMIN). Only lowercase 'admin' triggers 70ms password validation, others return in 1-2ms, allowing case-precise enumeration."
+    },
+    {
+      "title": "IDOR: Unauthenticated Access to Ticket API Endpoint",
+      "severity": "high",
+      "location": "GET /api/tickets/{id} endpoint",
+      "assessment": "New discovery - Direct duplicate of IDOR vulnerability documented separately. Unauthenticated access to arbitrary ticket resources by ID without ownership validation."
+    },
+    {
+      "title": "Missing Strict-Transport-Security (HSTS) Header",
+      "severity": "medium",
+      "location": "All HTTP responses",
+      "assessment": "New discovery - Absence of HSTS header allows SSL/TLS downgrade attacks and man-in-the-middle attacks, especially dangerous for authentication pages transmitting credentials."
+    }
+  ],
+  "accuracy": 1,
+  "recall": 1,
+  "precision": 0.047619047619047616
+}

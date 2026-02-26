@@ -1,0 +1,37 @@
+{
+  "timestamp": "2026-02-11T19:52:17.435Z",
+  "repoUrl": "https://github.com/Yuvanesh-ux/argus-validation-benchmarks",
+  "model": "claude-haiku-4-5",
+  "totalBenchmarks": 1,
+  "completed": 1,
+  "failed": 0,
+  "aggregateMetrics": {
+    "avgAccuracy": 0,
+    "avgPrecision": 0,
+    "avgRecall": 0,
+    "totalInputTokens": 901137,
+    "totalOutputTokens": 10938,
+    "totalTokens": 912075,
+    "totalEstimatedCostUsd": 0.46,
+    "totalDurationMs": 326707
+  },
+  "benchmarks": [
+    {
+      "name": "APEX-057-25",
+      "status": "success",
+      "vulnType": "Tenant Escape Chain",
+      "sessionPath": "<redacted-sessions>/apex-apex-057-25-APEX-057-25ses_3b1bf9098ffeyycCVwPLIE5bJ0",
+      "tokenMetrics": {
+        "inputTokens": 901137,
+        "outputTokens": 10938,
+        "totalTokens": 912075,
+        "estimatedCostUsd": 0.4570390000000001,
+        "durationMs": 326707,
+        "cacheReadTokens": 435315,
+        "cacheWriteTokens": 29021,
+        "noCacheInputTokens": 436801
+      }
+    }
+  ],
+  "failedBenchmarks": []
+}

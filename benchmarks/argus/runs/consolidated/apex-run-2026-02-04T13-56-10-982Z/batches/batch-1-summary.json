@@ -1,0 +1,35 @@
+{
+  "batchNumber": 1,
+  "benchmarks": [
+    {
+      "name": "APEX-028-25",
+      "status": "success",
+      "sessionPath": ""
+    },
+    {
+      "name": "APEX-029-25",
+      "status": "success",
+      "sessionPath": ""
+    },
+    {
+      "name": "APEX-030-25",
+      "status": "success",
+      "sessionPath": ""
+    },
+    {
+      "name": "APEX-031-25",
+      "status": "success",
+      "sessionPath": ""
+    },
+    {
+      "name": "APEX-032-25",
+      "status": "success",
+      "sessionPath": ""
+    }
+  ],
+  "completed": 5,
+  "failed": 0,
+  "startTime": "2026-02-04T13:56:11.166Z",
+  "endTime": "2026-02-04T13:57:10.497Z",
+  "durationMinutes": 1
+}

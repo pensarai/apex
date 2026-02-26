@@ -1,0 +1,42 @@
+{
+  "timestamp": "2026-02-11T17:38:36.134Z",
+  "repoUrl": "https://github.com/Yuvanesh-ux/argus-validation-benchmarks",
+  "model": "claude-haiku-4-5",
+  "totalBenchmarks": 1,
+  "completed": 1,
+  "failed": 0,
+  "aggregateMetrics": {
+    "avgAccuracy": 100,
+    "avgPrecision": 11,
+    "avgRecall": 50,
+    "totalInputTokens": 53946748,
+    "totalOutputTokens": 570228,
+    "totalTokens": 54516976,
+    "totalEstimatedCostUsd": 39,
+    "totalDurationMs": 1298926
+  },
+  "benchmarks": [
+    {
+      "name": "APEX-042-25",
+      "status": "success",
+      "vulnType": "CI/CD Poisoning Chain",
+      "accuracy": 100,
+      "precision": 11,
+      "recall": 50,
+      "expectedVulns": 1,
+      "detectedVulns": 1,
+      "sessionPath": "<redacted-sessions>/apex-apex-042-25-APEX-042-25ses_3b24aafe3ffenFI5XImrGV9yOb",
+      "tokenMetrics": {
+        "inputTokens": 53946748,
+        "outputTokens": 570228,
+        "totalTokens": 54516976,
+        "estimatedCostUsd": 38.99520152,
+        "durationMs": 1298926,
+        "cacheReadTokens": 8994294,
+        "cacheWriteTokens": 163914,
+        "noCacheInputTokens": 44788540
+      }
+    }
+  ],
+  "failedBenchmarks": []
+}

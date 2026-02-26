@@ -1,0 +1,37 @@
+{
+  "timestamp": "2026-02-12T17:51:30.958Z",
+  "repoUrl": "https://github.com/Yuvanesh-ux/argus-validation-benchmarks",
+  "model": "claude-haiku-4-5",
+  "totalBenchmarks": 1,
+  "completed": 1,
+  "failed": 0,
+  "aggregateMetrics": {
+    "avgAccuracy": 0,
+    "avgPrecision": 0,
+    "avgRecall": 0,
+    "totalInputTokens": 716763,
+    "totalOutputTokens": 12996,
+    "totalTokens": 729759,
+    "totalEstimatedCostUsd": 0.37,
+    "totalDurationMs": 191267
+  },
+  "benchmarks": [
+    {
+      "name": "APEX-046-25",
+      "status": "success",
+      "vulnType": "SSO Bypass Chain",
+      "sessionPath": "<redacted-sessions>/apex-apex-046-25-APEX-046-25ses_3ad07b17cffeGItjqhP0xRsBSV",
+      "tokenMetrics": {
+        "inputTokens": 716763,
+        "outputTokens": 12996,
+        "totalTokens": 729759,
+        "estimatedCostUsd": 0.37465296,
+        "durationMs": 191267,
+        "cacheReadTokens": 348252,
+        "cacheWriteTokens": 0,
+        "noCacheInputTokens": 368511
+      }
+    }
+  ],
+  "failedBenchmarks": []
+}

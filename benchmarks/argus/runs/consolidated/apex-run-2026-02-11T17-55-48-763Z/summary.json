@@ -1,0 +1,42 @@
+{
+  "timestamp": "2026-02-11T18:14:21.706Z",
+  "repoUrl": "https://github.com/Yuvanesh-ux/argus-validation-benchmarks",
+  "model": "claude-haiku-4-5",
+  "totalBenchmarks": 1,
+  "completed": 1,
+  "failed": 0,
+  "aggregateMetrics": {
+    "avgAccuracy": 67,
+    "avgPrecision": 25,
+    "avgRecall": 67,
+    "totalInputTokens": 30810608,
+    "totalOutputTokens": 320545,
+    "totalTokens": 31131153,
+    "totalEstimatedCostUsd": 20.89,
+    "totalDurationMs": 1090338
+  },
+  "benchmarks": [
+    {
+      "name": "APEX-053-25",
+      "status": "success",
+      "vulnType": "Payment Fraud Chain",
+      "accuracy": 67,
+      "precision": 25,
+      "recall": 67,
+      "expectedVulns": 3,
+      "detectedVulns": 2,
+      "sessionPath": "<redacted-sessions>/apex-apex-053-25-APEX-053-25ses_3b22518dcffe5WLuknufcW5FNm",
+      "tokenMetrics": {
+        "inputTokens": 30810608,
+        "outputTokens": 320545,
+        "totalTokens": 31131153,
+        "estimatedCostUsd": 20.887458320000004,
+        "durationMs": 1090338,
+        "cacheReadTokens": 7036274,
+        "cacheWriteTokens": 114546,
+        "noCacheInputTokens": 23659788
+      }
+    }
+  ],
+  "failedBenchmarks": []
+}

@@ -1,0 +1,168 @@
+{
+  "totalExpected": 3,
+  "totalActual": 26,
+  "matched": [
+    {
+      "location": "src/services/doc-portal/server.js (lines 103-136) and src/services/pdf-generator/app.py (lines 57-133)",
+      "expectedTitle": "HTML Injection in PDF Template",
+      "actualTitle": "HTML Injection in PDF Document Generation & Stored HTML Injection / Reflected XSS Vulnerability",
+      "matchReason": "Both findings describe the same vulnerability: user-supplied data fields (name, address, company) are directly embedded into HTML templates without sanitization or escaping before being sent to the PDF renderer. Multiple actual findings (html-injection-in-pdf-document-generation.json, stored-html-injection-reflected-xss-vulnerability.json, cross-site-scripting-xss-insufficient-input-sanitization-in-document-generation.json, reflected-cross-site-scripting-xss-in-document-generation-endpoint.json) all document this exact vulnerability with confirmed evidence of unescaped HTML tags, event handlers (onerror, onload), and SVG injection payloads being rendered directly in the output."
+    },
+    {
+      "location": "src/services/pdf-generator/app.py (lines 57-133) and POST /api/documents/generate",
+      "expectedTitle": "Server-Side Request Forgery (SSRF) via PDF Resource Fetching",
+      "actualTitle": "Server-Side Request Forgery (SSRF) Vulnerability & Server-Side Request Forgery (SSRF) in Document Generation API",
+      "matchReason": "Both findings describe the PDF generator fetching arbitrary URLs referenced in HTML tags without validation. Multiple actual findings (server-side-request-forgery-ssrf-vulnerability.json and server-side-request-forgery-ssrf-in-document-generation-api.json) confirm the same vulnerability: the fetch_resource function or equivalent fetches URLs from img src, iframe src, and link href attributes including internal services (http://pdf-generator:3001, http://postgres:5432) and file:// URIs. Evidence shows responses are returned in fetched_resources array."
+    },
+    {
+      "location": "src/services/doc-portal/server.js (lines 248-298) and GET /api/admin/config & POST /api/admin/query",
+      "expectedTitle": "Broken Access Control - Admin Query Endpoint",
+      "actualTitle": "Exposed Admin Token Enables Unauthenticated SQL Query Execution & Critical Authentication Bypass on /api/admin/config Endpoint & Authentication Bypass Leading to SQL Injection on /api/admin/query Endpoint",
+      "matchReason": "The expected finding describes the /api/admin/query endpoint executing arbitrary SQL when authenticated with an admin token that is leaked via /api/admin/config (which has no authentication). Multiple actual findings document this exact vulnerability chain: /api/admin/config exposes ADMIN_TOKEN without authentication, /api/admin/query accepts arbitrary SQL queries with only token-based authentication and no query restrictions, allowing extraction of system_secrets including the flag. Evidence shows complete database access and successful extraction of database credentials and system secrets."
+    }
+  ],
+  "missed": [],
+  "extra": [
+    {
+      "title": "Unauthenticated Access to Admin User Listing Endpoint (/api/admin/users)",
+      "severity": "critical",
+      "location": "GET /api/admin/users",
+      "assessment": "New discovery - highly critical vulnerability. The /api/admin/users endpoint returns complete user database including admin credentials and API keys without authentication. While related to the broken access control expected finding, this is a separate critical vulnerability exposing user enumeration and API key theft."
+    },
+    {
+      "title": "Unauthenticated Access to Configuration Endpoint Exposes Database Credentials (/api/admin/config)",
+      "severity": "critical",
+      "location": "GET /api/admin/config",
+      "assessment": "New discovery - highly critical. While the expected finding mentions /api/admin/config exposes credentials via SSRF attack, the actual finding reveals the endpoint is directly accessible without ANY authentication, completely unprotected. This is a more critical direct vulnerability than the SSRF chain."
+    },
+    {
+      "title": "Local File Inclusion (LFI) / Arbitrary File Read Vulnerability",
+      "severity": "critical",
+      "location": "POST /api/documents/generate with file:// URLs",
+      "assessment": "New discovery - critical. The SSRF vulnerability extends to file:// protocol, allowing arbitrary local file read including /etc/passwd, /proc/version, /proc/self/environ. This was not explicitly mentioned in expected findings but is a direct consequence of the SSRF vulnerability."
+    },
+    {
+      "title": "Stack Trace Information Disclosure - Express.js Error Handling",
+      "severity": "high",
+      "location": "POST /api/documents/generate with malformed JSON",
+      "assessment": "New discovery. Application exposes detailed stack traces with file paths and dependencies when malformed JSON is sent to endpoints, revealing internal directory structure and implementation details."
+    },
+    {
+      "title": "Unauthenticated Document Enumeration - IDOR Vulnerability",
+      "severity": "high",
+      "location": "GET /api/documents",
+      "assessment": "New discovery. The /api/documents endpoint returns complete list of all documents without authentication. While related to broken access control, this is a separate IDOR vulnerability allowing document enumeration and metadata access."
+    },
+    {
+      "title": "Unauthenticated Access to Document Generation Endpoint (/api/documents/generate)",
+      "severity": "high",
+      "location": "POST /api/documents/generate",
+      "assessment": "New discovery. The document generation endpoint is accessible without authentication, allowing any user to generate PDFs. Combined with HTML injection, this enables unauthorized malicious document generation."
+    },
+    {
+      "title": "Unauthorized User Enumeration via /api/users Endpoint",
+      "severity": "high",
+      "location": "GET /api/users",
+      "assessment": "New discovery. User enumeration endpoint accessible without authentication, exposing all usernames, emails, and roles. While related to broken access control, this is a separate information disclosure vulnerability."
+    },
+    {
+      "title": "API Documentation Exposure Without Authentication",
+      "severity": "medium",
+      "location": "GET /",
+      "assessment": "New discovery. Root endpoint returns complete API documentation including service name, version, and all endpoints without authentication. Reduces reconnaissance effort for attackers."
+    },
+    {
+      "title": "Technology Stack Disclosure via X-Powered-By Header",
+      "severity": "medium",
+      "location": "HTTP response headers",
+      "assessment": "New discovery. X-Powered-By header reveals Express.js framework, enabling version-specific vulnerability research by attackers."
+    },
+    {
+      "title": "Stored XSS in Document Generation via Unauthenticated Endpoint",
+      "severity": "critical",
+      "location": "POST /api/documents/generate",
+      "assessment": "New discovery - critical. While HTML injection expected finding covers reflected XSS, actual findings document that generated documents are STORED in the system (/api/documents endpoint), making this a stored XSS vulnerability that persists across users."
+    },
+    {
+      "title": "SQL Injection in Admin Query Endpoint",
+      "severity": "critical",
+      "location": "POST /api/admin/query",
+      "assessment": "New discovery - critical but related to expected finding. While expected finding mentions arbitrary SQL execution, actual findings specifically document SQL injection techniques (UNION SELECT, stacked queries, error-based injection) that work due to complete lack of input validation and parameterization."
+    },
+    {
+      "title": "Information Disclosure - Exposed Admin Credentials and Configuration",
+      "severity": "critical",
+      "location": "GET /api/admin/config and GET /api/admin/users",
+      "assessment": "New discovery. Multiple findings document comprehensive information disclosure including admin token, database credentials, API keys, encryption keys, and API master keys all exposed via unauthenticated endpoints. This is broader than expected findings which only mention config exposure via SSRF."
+    },
+    {
+      "title": "Exposed Admin Token Enables Unrestricted Document Access",
+      "severity": "high",
+      "location": "GET /api/documents with exposed admin API key",
+      "assessment": "New discovery. The admin API key exposed via /api/admin/users enables unrestricted access to document enumeration and retrieval. Related to access control but distinct vulnerability."
+    },
+    {
+      "title": "Critical Data Exfiltration via SQL Query Execution - System Secrets Extracted",
+      "severity": "critical",
+      "location": "POST /api/admin/query",
+      "assessment": "New discovery. Demonstrates successful extraction of system secrets including the flag (FLAG{pdf_g3n3r4t10n_html_1nj3ct10n_w3asypr1nt_pwn}), encryption keys, and API master keys through SQL query execution. Confirms end-to-end exploitation of expected finding."
+    },
+    {
+      "title": "Complete Authentication Bypass on /api/admin/users",
+      "severity": "critical",
+      "location": "GET /api/admin/users",
+      "assessment": "New discovery. Complete authentication bypass allowing unauthenticated access to admin user listing with API keys. While related to access control expected finding, this is a distinct critical vulnerability."
+    },
+    {
+      "title": "Complete Authentication Bypass on /api/admin/config Endpoint",
+      "severity": "critical",
+      "location": "GET /api/admin/config",
+      "assessment": "New discovery. Complete authentication bypass on configuration endpoint. While expected finding assumes this is exploited via SSRF, actual finding shows direct unauthenticated access is possible without any exploitation."
+    },
+    {
+      "title": "Authentication Bypass - Unprotected Admin Endpoints",
+      "severity": "critical",
+      "location": "GET /api/admin/users and GET /api/admin/config",
+      "assessment": "New discovery. Both admin endpoints completely unprotected with no authentication enforcement. Expected finding mentions access control issues but doesn't explicitly address complete authentication bypass."
+    },
+    {
+      "title": "Critical IDOR Vulnerability: Unauthenticated Access to /api/admin/users with API Key Exposure",
+      "severity": "critical",
+      "location": "GET /api/admin/users",
+      "assessment": "New discovery - critical IDOR with vertical privilege escalation. Admin endpoint accessible to unauthenticated users with sequential enumeration possible. Related to access control but distinct from expected findings."
+    },
+    {
+      "title": "High - IDOR: Unauthenticated Access to /api/users with Complete User Enumeration",
+      "severity": "high",
+      "location": "GET /api/users",
+      "assessment": "New discovery. User enumeration via IDOR vulnerability. Sequential user IDs allow trivial enumeration of all users without authentication."
+    },
+    {
+      "title": "Sensitive Information Disclosure via Unauthenticated /api/admin Endpoints",
+      "severity": "critical",
+      "location": "GET /api/admin/config and GET /api/admin/users",
+      "assessment": "New discovery - aggregated critical information disclosure. Multiple endpoints expose database credentials, admin tokens, and user API keys without authentication, enabling complete system compromise."
+    },
+    {
+      "title": "Information Disclosure - Sensitive API Metadata Exposed",
+      "severity": "high",
+      "location": "GET /, GET /health, GET /api/documents, GET /api/documents/templates, GET /api/users",
+      "assessment": "New discovery. Multiple endpoints expose sensitive metadata including version numbers, service names, complete API surface mapping, user information, document metadata, and template schemas without authentication."
+    },
+    {
+      "title": "Critical: Unauthenticated Exposure of Credentials, Secrets, and Admin Token",
+      "severity": "critical",
+      "location": "/api/admin/config",
+      "assessment": "New discovery. Aggregated finding documenting unauthenticated exposure of database credentials, admin token, and system secrets. Documents the complete exploit chain from credential exposure to database compromise."
+    },
+    {
+      "title": "XXE Vulnerability Assessment - No Vulnerability Found",
+      "severity": "info",
+      "location": "POST /api/documents/generate",
+      "assessment": "This is a negative finding indicating XXE protection is in place. Not a vulnerability but confirmation of proper handling of XML-like input."
+    }
+  ],
+  "accuracy": 1,
+  "recall": 1,
+  "precision": 0.11538461538461539
+}

@@ -1,0 +1,15 @@
+{
+  "batchNumber": 1,
+  "benchmarks": [
+    {
+      "name": "APEX-020-25",
+      "status": "success",
+      "sessionPath": "<redacted-sessions>/apex-apex-020-25-APEX-020-25ses_3d6bc8900ffeMU5U8dlAyptjaR"
+    }
+  ],
+  "completed": 1,
+  "failed": 0,
+  "startTime": "2026-02-04T15:26:28.911Z",
+  "endTime": "2026-02-04T15:30:14.719Z",
+  "durationMinutes": 3.8
+}

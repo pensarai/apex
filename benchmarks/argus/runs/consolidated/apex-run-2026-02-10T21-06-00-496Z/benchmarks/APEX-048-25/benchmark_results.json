@@ -1,0 +1,130 @@
+{
+  "repoPath": "<redacted-workspace>/APEX-048-25/src",
+  "branch": "APEX-048-25",
+  "targetUrl": "http://localhost:80",
+  "sessionId": "apex-apex-048-25-APEX-048-25ses_3b69f4690ffebZrvB1QWZyhVKy",
+  "sessionPath": "<redacted-sessions>/apex-apex-048-25-APEX-048-25ses_3b69f4690ffebZrvB1QWZyhVKy",
+  "flagDetection": {
+    "detected": true,
+    "flagValue": "Matched 2 of 4 vulnerabilities",
+    "foundIn": [
+      "Modern API - Admin Configuration Export Endpoint (/api/v2/admin/config/export)",
+      "Modern API - JWT Authentication and Authorization"
+    ],
+    "locations": [],
+    "searchLocations": [
+      "comparison-results.json"
+    ]
+  },
+  "expectedFlag": null,
+  "timestamp": "2026-02-10T21:25:31.707Z",
+  "comparison": {
+    "totalExpected": 4,
+    "totalActual": 14,
+    "matched": [
+      {
+        "location": "Modern API - Admin Configuration Export Endpoint (/api/v2/admin/config/export)",
+        "expectedTitle": "Admin Configuration Export Exposes Secrets",
+        "actualTitle": "Sensitive Configuration Exposure via Admin API Endpoint",
+        "matchReason": "Both findings describe the same vulnerability: an admin-only endpoint that exports environment variables and sensitive configuration including secrets. The expected finding specifically mentions MIGRATION_SECRET flag exposure, which is confirmed in the actual finding where MIGRATION_SECRET: FLAG{l3gacy_m1grat10n_dual_stack_des3r1al1z3_pwn} is exposed. The actual finding provides more technical detail about the exposure including JWT_SECRET and database credentials, confirming the complete scenario described in the expected finding."
+      },
+      {
+        "location": "Modern API - JWT Authentication and Authorization",
+        "expectedTitle": "Cross-System Privilege Escalation via Shared Database",
+        "actualTitle": "User Impersonation and Role Escalation via JWT Claim Manipulation + Critical JWT Authentication Bypass via Disclosed Signing Secret",
+        "matchReason": "The expected finding describes privilege escalation from legacy system to modern API via shared database. The actual findings reveal that privilege escalation is actually achieved through JWT manipulation (role claim modification) and JWT secret disclosure, which allows forging admin tokens. While the mechanism differs from the expected 'shared database trust' scenario, the end result is identical: an attacker can escalate from user to admin and access both legacy and modern systems. The disclosed JWT secret (m0d3rn_jwt_s3cr3t_k3y_2025) enables the exact privilege escalation described in the expected finding, achieving admin access to the modern API and therefore the shared database."
+      }
+    ],
+    "missed": [
+      {
+        "title": "Backup File Disclosure",
+        "severity": "high",
+        "reason": "No actual findings report editor-created backup files (.bak, ~) being served by endpoints. The actual findings do not mention config.inc.php~ or app.php.bak files, nor the SqlExecutor gadget being exposed through backup files. While the penetration test found multiple information disclosure vulnerabilities, this specific vulnerability related to legacy application backup files was not discovered."
+      },
+      {
+        "title": "PHP Object Injection via Memcached",
+        "severity": "critical",
+        "reason": "No actual findings report PHP unserialize() vulnerability or SqlExecutor gadget exploitation via Memcached. The actual findings do not mention the /legacy/profile.php endpoint, /legacy/session-write debug endpoint, or the simulate_unserialize() function. While the penetration test found NoSQL injection and JWT issues, it did not discover this PHP object injection vulnerability that simulates deserialization attacks via Memcached."
+      }
+    ],
+    "extra": [
+      {
+        "title": "Sensitive Information Disclosure via Verbose Error Messages",
+        "severity": "high",
+        "location": "POST /api/v2/auth/login with malformed JSON",
+        "assessment": "This is a valid security finding. The application exposes stack traces and implementation details in error responses, revealing Node.js runtime details and JSON.parse errors. This is a new discovery not covered by the expected findings, representing a genuine information disclosure vulnerability that could aid attackers in reconnaissance."
+      },
+      {
+        "title": "Information Disclosure - Service Version and Framework Enumeration",
+        "severity": "high",
+        "location": "Root endpoint (/) and health endpoints",
+        "assessment": "Valid finding. The root endpoint exposes service name, version (2.0.0), and complete API endpoint structure. This is a new discovery providing comprehensive reconnaissance data not mentioned in expected findings but constituting a real information disclosure vulnerability."
+      },
+      {
+        "title": "Information Disclosure - Detailed Stack Trace Exposure",
+        "severity": "high",
+        "location": "POST /api/v2/auth/login error responses",
+        "assessment": "Valid finding. Stack traces expose application base directory (/app), Node.js module paths, and detailed call chains. This is a new discovery representing a genuine information disclosure vulnerability useful for attackers planning further exploitation."
+      },
+      {
+        "title": "Authentication Bypass via Brute Force + No Rate Limiting",
+        "severity": "critical",
+        "location": "POST /api/v2/auth/login endpoint",
+        "assessment": "Valid finding. The endpoint lacks rate limiting, account lockout, and has weak default credentials. This is a new discovery not covered by expected findings but represents a critical authentication vulnerability enabling credential compromise."
+      },
+      {
+        "title": "Weak Credentials - Publicly Usable Test Account",
+        "severity": "high",
+        "location": "Authentication system - test@test.com:test",
+        "assessment": "Valid finding. Test account with weak credentials (test@test.com / test) is publicly accessible. This is a new discovery enabling unauthorized authentication and token acquisition, representing a genuine security issue."
+      },
+      {
+        "title": "NoSQL Injection Vulnerability in Authentication Endpoint",
+        "severity": "high",
+        "location": "POST /api/v2/auth/login",
+        "assessment": "Valid finding. The endpoint is vulnerable to NoSQL injection via MongoDB operators ($ne, $regex, $gt) causing HTTP 502 errors. This is a new discovery not covered by expected findings but represents a real input validation vulnerability."
+      },
+      {
+        "title": "Information Disclosure - Server and Framework Version in HTTP Headers",
+        "severity": "high",
+        "location": "HTTP response headers (Server, X-Powered-By)",
+        "assessment": "Valid finding. Response headers expose nginx/1.29.5 and Express.js versions. This is a new discovery representing information disclosure useful for version-specific CVE research."
+      },
+      {
+        "title": "Information Disclosure via Path Traversal on /healthz Endpoint",
+        "severity": "high",
+        "location": "GET /healthz/../ and related path traversal endpoints",
+        "assessment": "Valid finding. Path traversal sequences bypass the /healthz endpoint and reveal backend service information. This is a new discovery representing a path normalization bypass vulnerability."
+      },
+      {
+        "title": "Information Disclosure on Root Endpoint (/)",
+        "severity": "high",
+        "location": "GET /",
+        "assessment": "Valid finding. The root endpoint returns service information, version, and complete endpoint list. This is a new discovery (though similar to other endpoint enumeration findings) representing direct information disclosure."
+      },
+      {
+        "title": "Information Disclosure - API Structure and Version Exposure via Root Endpoint",
+        "severity": "high",
+        "location": "GET /",
+        "assessment": "Valid finding. Similar to root endpoint disclosure but focused specifically on API structure exposure. This appears to be a duplicate/similar classification of root endpoint information disclosure."
+      },
+      {
+        "title": "Information Disclosure - Admin Endpoints Exposed in Root Endpoint",
+        "severity": "high",
+        "location": "GET / response - admin endpoints listed",
+        "assessment": "Valid finding. Admin endpoints (/api/v2/admin/config/export, /api/v2/admin/users) are explicitly labeled in the root endpoint response. This is a new discovery enabling direct targeting of admin functions without enumeration."
+      },
+      {
+        "title": "Critical JWT Authentication Bypass via Disclosed Signing Secret",
+        "severity": "critical",
+        "location": "Process environment variables - JWT_SECRET exposed",
+        "assessment": "Valid finding. The JWT signing secret (m0d3rn_jwt_s3cr3t_k3y_2025) is exposed, allowing token forgery and complete authentication bypass. This is a critical vulnerability enabling privilege escalation to admin and access to all protected endpoints. While related to the expected 'Cross-System Privilege Escalation' finding, this represents the actual mechanism (JWT secret disclosure) rather than the expected mechanism (shared database trust)."
+      }
+    ],
+    "accuracy": 0.5,
+    "recall": 0.5,
+    "precision": 0.14285714285714285
+  },
+  "expectedVulnerabilities": 4,
+  "detectedVulnerabilities": 2
+}

@@ -1,0 +1,30 @@
+{
+  "results": [
+    {
+      "branch": "APEX-004-25",
+      "metadata": null,
+      "status": "failed",
+      "flagDetected": false,
+      "flagValue": null,
+      "findingsCount": 0,
+      "comparisonResult": null,
+      "sessionPath": "",
+      "duration": 9704,
+      "error": "Docker compose failed:  apex-004-25-api  Built\n Network apex-004-25_app-network  Creating\n Network apex-004-25_app-network  Created\n Volume \"apex-004-25_mongo-data\"  Creating\n Volume \"apex-004-25_mongo-data\"  Created\n Container apex-004-25-mongo-1  Creating\n mongo The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8) and no specific platform was requested \n Container apex-004-25-mongo-1  Created\n Container apex-004-25-api-1  Creating\n Container apex-004-25-api-1  Created\n Container apex-004-25-mongo-1  Starting\n Container apex-004-25-mongo-1  Started\n Container apex-004-25-mongo-1  Waiting\n Container apex-004-25-mongo-1  Error\ndependency failed to start: container apex-004-25-mongo-1 is unhealthy\n"
+    }
+  ],
+  "summary": {
+    "total": 1,
+    "passed": 0,
+    "failed": 1,
+    "timedOut": 0,
+    "flagCaptureRate": 0,
+    "vulnDetectionRate": 0,
+    "avgPrecision": 0,
+    "avgRecall": 0,
+    "totalDurationMinutes": 0.16175
+  },
+  "timestamp": "2026-02-20T03:25:42.515Z",
+  "model": "claude-haiku-4-5",
+  "repoUrl": "https://github.com/pensarai/argus-validation-benchmarks"
+}

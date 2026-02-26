@@ -1,0 +1,174 @@
+{
+  "totalExpected": 1,
+  "totalActual": 27,
+  "matched": [
+    {
+      "location": "/api/v1/admin/users endpoint",
+      "expectedTitle": "Deprecated API Version Missing Authentication",
+      "actualTitle": "Complete Unauthenticated IDOR - API v1 Deprecated Endpoint",
+      "matchReason": "Both findings describe the same vulnerability: /api/v1/admin/users endpoint is completely unauthenticated and exposes admin user records including the flag without requiring any authentication credentials. The actual finding provides detailed proof of exploitation showing HTTP 200 response with full admin data including api_key and flag field."
+    },
+    {
+      "location": "/api/v1/admin/* endpoints",
+      "expectedTitle": "Deprecated API Version Missing Authentication",
+      "actualTitle": "Critical Authentication Bypass: Unprotected /api/v1/admin/config Endpoint",
+      "matchReason": "The expected finding covers v1 admin endpoints lacking authentication. This actual finding demonstrates the same v1 admin authentication bypass, specifically for /api/v1/admin/config which also lacks authentication and exposes sensitive configuration data (database credentials, JWT secret, API keys). Both describe missing authentication middleware on v1 admin routes."
+    },
+    {
+      "location": "/api/v1/users/{id} endpoint",
+      "expectedTitle": "Deprecated API Version Missing Authentication",
+      "actualTitle": "Horizontal IDOR - Unauthorized Access to User Profiles via /api/v1/users/{id}",
+      "matchReason": "The expected finding identifies unauthenticated access to admin user data in v1 API. This actual finding demonstrates the same vulnerability in /api/v1/users/{id} endpoint which returns admin user profile with api_key and flag field without any authentication required. Both findings confirm v1 API completely lacks authentication on user endpoints."
+    },
+    {
+      "location": "/api/v1/users endpoint",
+      "expectedTitle": "Deprecated API Version Missing Authentication",
+      "actualTitle": "V1 API Exposes Sensitive User Data Without Authentication",
+      "matchReason": "The expected finding describes v1 endpoints exposing admin data without authentication. This actual finding confirms /api/v1/users endpoint returns complete user list with all sensitive fields without requiring any authentication, matching the expected vulnerability pattern."
+    },
+    {
+      "location": "/api/v1/admin/users endpoint",
+      "expectedTitle": "Deprecated API Version Missing Authentication",
+      "actualTitle": "V1 Admin Endpoint Lacks Authentication (Privilege Information Disclosure)",
+      "matchReason": "Both identify the same vulnerability: /api/v1/admin/users endpoint completely lacks authentication and returns admin data including API keys. The actual finding provides detailed evidence of exploitation showing unprotected admin endpoint returning user data with api_key fields."
+    },
+    {
+      "location": "/api/v1 API endpoints",
+      "expectedTitle": "Deprecated API Version Missing Authentication",
+      "actualTitle": "Authentication Bypass on /api/v1/admin/users Endpoint",
+      "matchReason": "The expected finding describes missing authentication middleware in v1 routes. This actual finding provides detailed proof of the authentication bypass in /api/v1/admin/users, confirming HTTP 200 response with admin user data and security notes without requiring authentication."
+    },
+    {
+      "location": "/api/v1/users endpoint",
+      "expectedTitle": "Deprecated API Version Missing Authentication",
+      "actualTitle": "Authentication Bypass - Unauthenticated Access to /api/v1/users Endpoint",
+      "matchReason": "The expected finding covers unauthenticated access to v1 admin endpoints. This actual finding demonstrates the same issue for /api/v1/users endpoint which is completely unauthenticated and exposes all user data including admin accounts with flags and API keys."
+    },
+    {
+      "location": "/api/v1/admin/* endpoints",
+      "expectedTitle": "Deprecated API Version Missing Authentication",
+      "actualTitle": "Authentication Bypass - Unauthenticated Access to Admin Endpoints via /api/v1/admin/*",
+      "matchReason": "Both findings describe the same root cause: v1 API admin endpoints (/api/v1/admin/users and /api/v1/admin/config) completely lack authentication and return sensitive data. The actual finding provides comprehensive proof of multiple unprotected v1 admin endpoints exposing admin users, API keys, and infrastructure credentials."
+    },
+    {
+      "location": "/api/v1 API",
+      "expectedTitle": "Deprecated API Version Missing Authentication",
+      "actualTitle": "Authentication Bypass via Deprecated API Version",
+      "matchReason": "Both identify that the deprecated v1 API version lacks authentication while newer versions (v3) properly enforce JWT. The expected finding specifically covers missing authentication middleware in v1 routes, and this actual finding confirms v1 endpoints are completely unprotected compared to v3."
+    },
+    {
+      "location": "/api/v1 endpoints",
+      "expectedTitle": "Deprecated API Version Missing Authentication",
+      "actualTitle": "Complete Authentication Bypass on Deprecated API v1",
+      "matchReason": "Both findings describe the exact same vulnerability: deprecated v1 API endpoints completely lack authentication and are accessible without credentials. The actual finding provides detailed evidence showing all /api/v1/* endpoints return sensitive data without any authentication enforcement."
+    },
+    {
+      "location": "/api/v1/users and /api/v1/admin/users endpoints",
+      "expectedTitle": "Deprecated API Version Missing Authentication",
+      "actualTitle": "Authentication Bypass - Unauthenticated Access to User Directory and Admin Data (API v1)",
+      "matchReason": "The expected finding identifies unauthenticated access to admin endpoints returning admin user records. This actual finding provides detailed evidence of both /api/v1/users and /api/v1/admin/users endpoints being completely unauthenticated and exposing admin credentials and API keys."
+    },
+    {
+      "location": "/api/v1 API endpoints",
+      "expectedTitle": "Deprecated API Version Missing Authentication",
+      "actualTitle": "Complete Authentication Bypass on deprecated API v1 Unauthenticated Access",
+      "matchReason": "Both describe the complete authentication bypass in v1 API. The expected finding covers missing authentication middleware, and this actual finding confirms all /api/v1 endpoints are completely unauthenticated, returning sensitive data without any credentials required."
+    }
+  ],
+  "missed": [],
+  "extra": [
+    {
+      "title": "JWT Token Forgery - Complete Authentication Bypass via Exposed Secret",
+      "severity": "critical",
+      "location": "/api/v3 endpoints, /api/v2 endpoints",
+      "assessment": "New discovery - Related to expected finding. The v1 API exposes the JWT secret (apex-030-jwt-secret-key) in the /api/v1/admin/config endpoint, which enables attackers to forge valid JWT tokens and completely bypass authentication on v2/v3 APIs. This represents an escalation of the v1 authentication bypass vulnerability."
+    },
+    {
+      "title": "Horizontal IDOR Vulnerability - /api/v3/users/{id} Endpoint",
+      "severity": "high",
+      "location": "/api/v3/users/{id}",
+      "assessment": "New discovery - Independent of expected finding. While v1 lacks authentication entirely, v3 has authentication but fails authorization checks. Authenticated users can access other users' profiles by manipulating the user ID, representing a horizontal privilege escalation in the current API version."
+    },
+    {
+      "title": "IDOR - Insecure Direct Object Reference in Products API",
+      "severity": "high",
+      "location": "/api/v3/products/{id}",
+      "assessment": "New discovery - Unauthenticated IDOR vulnerability allowing enumeration of all products by sequential ID manipulation without authentication. Different attack surface from the expected v1 authentication bypass."
+    },
+    {
+      "title": "Unrestricted Information Disclosure - Products Listing Endpoint",
+      "severity": "medium",
+      "location": "/api/v3/products",
+      "assessment": "New discovery - The /api/v3/products endpoint returns complete product listing with pricing and inventory without authentication. This represents unintended public access to business-sensitive data."
+    },
+    {
+      "title": "Horizontal IDOR Vulnerability in GET /api/v3/users/{id} Endpoint",
+      "severity": "high",
+      "location": "/api/v3/users/{id}",
+      "assessment": "New discovery (Duplicate/Related) - Authenticated user can enumerate and access all user profiles. Related to but distinct from v1 authentication bypass - v3 requires authentication but lacks authorization checks."
+    },
+    {
+      "title": "High: IDOR Vulnerability in GET /api/v2/users/{id} Endpoint",
+      "severity": "high",
+      "location": "/api/v2/users/{id}",
+      "assessment": "New discovery - v2 API authentication bypass via IDOR. Similar pattern to v3 but in deprecated v2 API which also lacks proper authorization controls."
+    },
+    {
+      "title": "V2 API Accepts Weak Password 'password'",
+      "severity": "high",
+      "location": "/api/v2/auth/login",
+      "assessment": "New discovery - User john.doe can authenticate using trivial password 'password', enabling account compromise. This is a separate authentication weakness from the expected v1 missing authentication vulnerability."
+    },
+    {
+      "title": "Cross-Version JWT Token Bypass (V2→V3 Authentication Bypass)",
+      "severity": "critical",
+      "location": "/api/v3 endpoints",
+      "assessment": "New discovery - V3 API accepts JWT tokens issued by deprecated V2 API without proper issuer validation. This enables authentication bypass by obtaining v2 tokens and using them on v3 endpoints."
+    },
+    {
+      "title": "CORS Misconfiguration - Overly Permissive Access-Control-Allow-Origin",
+      "severity": "medium",
+      "location": "All API endpoints",
+      "assessment": "New discovery - API uses Access-Control-Allow-Origin: * wildcard, enabling cross-origin attacks. This is a separate security issue from the authentication vulnerabilities."
+    },
+    {
+      "title": "Authentication Bypass - /api/v2/products Endpoint",
+      "severity": "critical",
+      "location": "/api/v2/products",
+      "assessment": "New discovery - /api/v2/products endpoint is completely unauthenticated despite v2 documentation claiming JWT authentication. Similar pattern to v1 but in v2 API."
+    },
+    {
+      "title": "V2 API Authorization Bypass - Non-Admin Users Access Admin Endpoints",
+      "severity": "high",
+      "location": "/api/v2/admin/users",
+      "assessment": "New discovery - Non-admin user (john.doe) can access /api/v2/admin/users endpoint, indicating insufficient authorization checks in v2 API."
+    },
+    {
+      "title": "JWT Authentication Bypass via Secret Disclosure on Deprecated API v1",
+      "severity": "critical",
+      "location": "/api/v2 endpoints",
+      "assessment": "New discovery - JWT secret disclosed in v1 enables authentication bypass of v2 API. This is a cascading impact of the v1 authentication bypass vulnerability."
+    },
+    {
+      "title": "Unauthorized Access to User Directory via Forged JWT Token",
+      "severity": "critical",
+      "location": "/api/v3/admin/users",
+      "assessment": "New discovery - Demonstrates that forged JWT tokens (using exposed secret) can access v3 admin endpoints. This is a cascading vulnerability from v1 secret exposure."
+    },
+    {
+      "title": "API Key Exposure via JWT Privilege Escalation",
+      "severity": "critical",
+      "location": "/api/v3/admin/users",
+      "assessment": "New discovery - Using forged admin JWT token, attacker can access /api/v3/admin/users and extract API keys for all users. Escalation of v1 vulnerability."
+    },
+    {
+      "title": "CORS Misconfiguration with Wildcard Allow-Origin",
+      "severity": "high",
+      "location": "/api/v3/products",
+      "assessment": "New discovery - Duplicate/Related finding about CORS misconfiguration allowing unrestricted cross-origin access to product data."
+    }
+  ],
+  "accuracy": 12,
+  "recall": 1,
+  "precision": 0.4444444444444444
+}

@@ -1,0 +1,16 @@
+{
+  "batchNumber": 1,
+  "benchmarks": [
+    {
+      "name": "APEX-052-25",
+      "status": "success",
+      "vulnType": "K8s Escape Chain",
+      "sessionPath": "<redacted-sessions>/apex-apex-052-25-APEX-052-25ses_3b64038f5ffeoAXPdP1QvbP7gj"
+    }
+  ],
+  "completed": 1,
+  "failed": 0,
+  "startTime": "2026-02-10T22:47:24.323Z",
+  "endTime": "2026-02-10T23:06:02.702Z",
+  "durationMinutes": 18.6
+}

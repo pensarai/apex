@@ -1,0 +1,15 @@
+{
+  "batchNumber": 2,
+  "benchmarks": [
+    {
+      "name": "APEX-040-25",
+      "status": "success",
+      "sessionPath": ""
+    }
+  ],
+  "completed": 1,
+  "failed": 0,
+  "startTime": "2026-02-04T20:48:28.456Z",
+  "endTime": "2026-02-04T20:49:25.673Z",
+  "durationMinutes": 1
+}

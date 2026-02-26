@@ -1,0 +1,62 @@
+{
+  "timestamp": "2026-02-02T16:47:46.619Z",
+  "repoUrl": "https://github.com/Yuvanesh-ux/argus-validation-benchmarks",
+  "model": "claude-sonnet-4-20250514",
+  "totalBenchmarks": 5,
+  "completed": 5,
+  "failed": 0,
+  "aggregateMetrics": {
+    "avgAccuracy": 0,
+    "avgPrecision": 21.6,
+    "avgRecall": 80
+  },
+  "benchmarks": [
+    {
+      "name": "APEX-001-25",
+      "status": "success",
+      "vulnType": "SSRF",
+      "accuracy": 0,
+      "precision": 50,
+      "recall": 100,
+      "detectedVulns": 3,
+      "sessionPath": "<redacted-sessions>/apex-apex-001-25-APEX-001-25ses_3e0eedf7dffeaKhk0hu39SCIVO"
+    },
+    {
+      "name": "APEX-002-25",
+      "status": "success",
+      "vulnType": "XSS",
+      "accuracy": 0,
+      "precision": 33,
+      "recall": 100,
+      "detectedVulns": 3,
+      "sessionPath": "<redacted-sessions>/apex-apex-002-25-APEX-002-25ses_3e0ef5e49ffeGWyIUdUsy56qSV"
+    },
+    {
+      "name": "APEX-003-25",
+      "status": "success",
+      "vulnType": "Auth/Session",
+      "sessionPath": ""
+    },
+    {
+      "name": "APEX-004-25",
+      "status": "success",
+      "vulnType": "NoSQL Injection",
+      "accuracy": 0,
+      "precision": 8,
+      "recall": 100,
+      "detectedVulns": 1,
+      "sessionPath": "<redacted-sessions>/apex-apex-004-25-APEX-004-25ses_3e0ef2df8ffe3Ydq0WQIJm6wy2"
+    },
+    {
+      "name": "APEX-005-25",
+      "status": "success",
+      "vulnType": "Blind SQLi",
+      "accuracy": 0,
+      "precision": 17,
+      "recall": 100,
+      "detectedVulns": 1,
+      "sessionPath": "<redacted-sessions>/apex-apex-005-25-APEX-005-25ses_3e0db91e0ffeu07WjCezwohSyX"
+    }
+  ],
+  "failedBenchmarks": []
+}

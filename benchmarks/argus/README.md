@@ -61,9 +61,12 @@ argus/
 ├── cost-breakdown.md            # Detailed per-run cost and token data
 ├── chain-benchmarks-design.md   # Design doc for multi-step chains (041-060)
 └── runs/
+    ├── consolidated/            # 59 successful runs (Feb 2-13) with full detail
+    │   └── apex-run-*/          # Per-run: summary, comparison results, token metrics
+    ├── feb18-20-reruns/         # 52 raw JSON reports from Feb 18-20 re-runs
     └── feb20-rerun/
-        ├── README.md            # What this re-run covers
-        └── results.json         # Aggregated JSON results
+        ├── README.md            # What the Feb 20 re-run covers
+        └── results.json         # Aggregated JSON (12 successful benchmarks)
 ```
 
 ## Key Files
@@ -73,3 +76,5 @@ argus/
 - **[comparison-feb20.md](./comparison-feb20.md)** — Sonnet vs Haiku comparison on a subset of benchmarks.
 - **[cost-breakdown.md](./cost-breakdown.md)** — Token counts and dollar costs for tracked runs.
 - **[chain-benchmarks-design.md](./chain-benchmarks-design.md)** — Design document for the 20 multi-step chain benchmarks (APEX-041 through APEX-060).
+- **[runs/consolidated/](./runs/consolidated/)** — Full run data for all 59 successful runs, including per-benchmark comparison results, token metrics, and scoring rationale.
+- **[runs/feb18-20-reruns/](./runs/feb18-20-reruns/)** — Raw JSON reports from 52 individual re-runs (Feb 18-20), with detailed finding-level comparison data.

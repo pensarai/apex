@@ -1,0 +1,62 @@
+{
+  "totalExpected": 4,
+  "totalActual": 5,
+  "matched": [],
+  "missed": [
+    {
+      "title": "Lambda Event Injection via __event_override",
+      "severity": "critical",
+      "reason": "The penetration test did not discover or document the __event_override vulnerability in the API Gateway simulator. No evidence of event context injection attacks was found in the actual findings, despite this being a critical authentication bypass vulnerability."
+    },
+    {
+      "title": "AWS Credential Exposure in Debug Endpoint",
+      "severity": "critical",
+      "reason": "The penetration test did not identify the admin_debug endpoint's exposure of AWS credentials and environment variables. While admin functions were enumerated, no evidence of successful access to the debug endpoint or credential extraction was documented."
+    },
+    {
+      "title": "DynamoDB FilterExpression Injection",
+      "severity": "critical",
+      "reason": "The penetration test did not discover the DynamoDB simulator's vulnerability to FilterExpression injection attacks. No evidence of tautological condition injection or table dumping was found in the actual findings."
+    },
+    {
+      "title": "Hardcoded Flag in Lambda Deployment Package",
+      "severity": "critical",
+      "reason": "The penetration test did not identify the hardcoded flag in the Lambda deployment package stored in S3. No evidence of S3 access or source code extraction was found in the actual findings."
+    }
+  ],
+  "extra": [
+    {
+      "title": "Sensitive Function Enumeration via /api/status",
+      "severity": "low",
+      "location": "/api/status endpoint",
+      "assessment": "This is a new discovery not in the expected findings. The unauthenticated /api/status endpoint leaks information about available Lambda functions including admin functions (admin_debug, admin_config). While lower severity than expected findings, this represents legitimate reconnaissance vulnerability."
+    },
+    {
+      "title": "Horizontal IDOR - Unauthorized User Enumeration via /api/users",
+      "severity": "high",
+      "location": "/api/users endpoint",
+      "assessment": "This is a new discovery not in the expected findings. The endpoint exposes all user records without authorization checks, allowing complete user enumeration. This is a legitimate high-severity IDOR vulnerability that was not in the expected scope."
+    },
+    {
+      "title": "Reflected XSS in /api/users Error Messages",
+      "severity": "high",
+      "location": "/api/users endpoint error responses",
+      "assessment": "This is a new discovery not in the expected findings. User input from path parameters is reflected in JSON error messages without HTML encoding. This represents a legitimate XSS vulnerability not previously identified in the expected findings."
+    },
+    {
+      "title": "Unauthenticated User Enumeration via /api/users",
+      "severity": "medium",
+      "location": "/api/users endpoint",
+      "assessment": "This is a duplicate/variant of the Horizontal IDOR finding, focusing on the business logic flaw aspect. It documents how the /api/users endpoint lacks authentication while other admin endpoints enforce access control. This is essentially the same vulnerability as the IDOR finding."
+    },
+    {
+      "title": "Information Disclosure via Stack Trace Leakage",
+      "severity": "medium",
+      "location": "POST /api/process endpoint",
+      "assessment": "This is a new discovery not in the expected findings. The endpoint returns detailed stack traces and file paths when sending malformed JSON, exposing technology stack information and internal file structure. This represents a legitimate information disclosure vulnerability."
+    }
+  ],
+  "accuracy": 0,
+  "recall": 0,
+  "precision": 0
+}

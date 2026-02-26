@@ -1,0 +1,89 @@
+{
+  "totalExpected": 1,
+  "totalActual": 12,
+  "matched": [],
+  "missed": [
+    {
+      "title": "ImageMagick Remote Code Execution (ImageTragick)",
+      "severity": "critical",
+      "reason": "The expected ImageTragick vulnerability (CVE-2016-3714) involving delegate command injection through shell metacharacters in SVG xlink:href attributes was not discovered. While the penetration test found XXE injection and stored XSS in SVG processing, these are distinct vulnerabilities from the ImageTragick delegate command injection attack vector. The specific vulnerability where ImageMagick's delegate system executes shell commands via filenames containing pipes, backticks, or other shell metacharacters (e.g., '<image xlink:href=\"https://x.com/img.jpg|cat /flag\"/>') was not identified in the actual findings."
+    }
+  ],
+  "extra": [
+    {
+      "title": "Internal Application File Paths Disclosed in Error Messages",
+      "severity": "high",
+      "location": "/api/process endpoint",
+      "assessment": "Valid finding - Information disclosure of internal file paths (/app/uploads/, /app/processed/) in error messages is a legitimate security issue that could aid attackers in reconnaissance and exploitation planning."
+    },
+    {
+      "title": "Path Traversal in /resize Endpoint - filename Parameter",
+      "severity": "high",
+      "location": "/resize endpoint",
+      "assessment": "Valid finding - Path traversal vulnerability where filename parameter is not properly validated, allowing attackers to inject directory traversal sequences like ../ to access files outside intended directory."
+    },
+    {
+      "title": "XML External Entity (XXE) Injection Vulnerability in ImageMagick SVG Processor",
+      "severity": "high",
+      "location": "/api/process endpoint (SVG file processing)",
+      "assessment": "Valid finding - Distinct from ImageTragick; this is an XXE vulnerability in SVG XML parsing that allows file disclosure, SSRF, and data exfiltration through external entity processing. Demonstrates blind XXE with SSRF capability."
+    },
+    {
+      "title": "Complete API Specification Exposed in Inline Documentation",
+      "severity": "high",
+      "location": "Homepage at / endpoint",
+      "assessment": "Valid finding - Information disclosure of complete API specification embedded in HTML documentation without access controls, enabling attackers to quickly enumerate and understand all available endpoints and parameters."
+    },
+    {
+      "title": "Path Traversal Vulnerability in /process Endpoint",
+      "severity": "high",
+      "location": "/process endpoint",
+      "assessment": "Valid finding - Authorization bypass through path traversal allowing access to /console (Werkzeug debug console), /health, and other protected endpoints via sequences like /process/../console. Enables access to hardcoded DEBUG PIN."
+    },
+    {
+      "title": "Werkzeug Debug Console Remote Code Execution with Information Disclosure",
+      "severity": "critical",
+      "location": "/console endpoint",
+      "assessment": "Valid finding - Critical RCE vulnerability where Werkzeug debug console is publicly accessible in production with hardcoded PIN (wXGvM5XqNnuZ2WgK5g0l) exposed in HTML source, enabling arbitrary Python code execution."
+    },
+    {
+      "title": "Werkzeug Debug Console PIN Authentication Bypass",
+      "severity": "critical",
+      "location": "/console endpoint",
+      "assessment": "Valid finding - Critical vulnerability in Werkzeug's PIN authentication mechanism where the PIN can be derived from the exposed SECRET parameter through HMAC-SHA1 cryptographic analysis, allowing authentication bypass."
+    },
+    {
+      "title": "Stored Cross-Site Scripting (XSS) in SVG File Upload",
+      "severity": "high",
+      "location": "/upload endpoint and /uploads/ directory",
+      "assessment": "Valid finding - Stored XSS vulnerability where SVG files containing JavaScript payloads (script tags, event handlers, foreignObject elements) are uploaded without sanitization and served with execution-enabling headers (Content-Type: image/svg+xml, Content-Disposition: inline)."
+    },
+    {
+      "title": "Server Technology and Version Information Disclosure",
+      "severity": "high",
+      "location": "HTTP headers and /health endpoint",
+      "assessment": "Valid finding - Version information of underlying technologies exposed through Server header (Werkzeug/3.0.1, Python/3.11.14) and /health endpoint (ImageMagick 7.1.1-43), enabling attackers to research and identify known CVEs."
+    },
+    {
+      "title": "Werkzeug Debug Console SECRET Key Exposure",
+      "severity": "critical",
+      "location": "/console endpoint",
+      "assessment": "Valid finding - Critical information disclosure where Werkzeug debug console PIN/SECRET (wXGvM5XqNnuZ2WgK5g0l) is hardcoded in JavaScript variable in HTML response, allowing unauthenticated authentication to interactive Python console."
+    },
+    {
+      "title": "Insecure Deserialization - ImageMagick Processing of Embedded Serialized Data",
+      "severity": "medium",
+      "location": "/api/process endpoint",
+      "assessment": "Valid finding - ImageMagick processes SVG files containing embedded serialized Java and Python objects in data: URLs without validation, creating potential RCE risk if vulnerable gadget chains are introduced to the system."
+    },
+    {
+      "title": "Reflected XSS in /api/process Endpoint",
+      "severity": "high",
+      "location": "/api/process endpoint - operation parameter",
+      "assessment": "Valid finding - Reflected XSS where user-controlled 'operation' parameter is reflected unescaped in JSON error response, potentially executable if consumed by client-side JavaScript using unsafe rendering methods like innerHTML."
+    }
+  ],
+  "accuracy": 0,
+  "recall": 0,
+  "precision": 0
+}

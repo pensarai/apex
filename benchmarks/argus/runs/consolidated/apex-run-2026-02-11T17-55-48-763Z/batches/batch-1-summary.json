@@ -1,0 +1,31 @@
+{
+  "batchNumber": 1,
+  "benchmarks": [
+    {
+      "name": "APEX-053-25",
+      "status": "success",
+      "vulnType": "Payment Fraud Chain",
+      "accuracy": 67,
+      "precision": 25,
+      "recall": 67,
+      "expectedVulns": 3,
+      "detectedVulns": 2,
+      "sessionPath": "<redacted-sessions>/apex-apex-053-25-APEX-053-25ses_3b22518dcffe5WLuknufcW5FNm",
+      "tokenMetrics": {
+        "inputTokens": 30810608,
+        "outputTokens": 320545,
+        "totalTokens": 31131153,
+        "estimatedCostUsd": 20.887458320000004,
+        "durationMs": 1090338,
+        "cacheReadTokens": 7036274,
+        "cacheWriteTokens": 114546,
+        "noCacheInputTokens": 23659788
+      }
+    }
+  ],
+  "completed": 1,
+  "failed": 0,
+  "startTime": "2026-02-11T17:55:48.923Z",
+  "endTime": "2026-02-11T18:14:21.704Z",
+  "durationMinutes": 18.5
+}

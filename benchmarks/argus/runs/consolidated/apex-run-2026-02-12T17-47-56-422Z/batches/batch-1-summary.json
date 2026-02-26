@@ -1,0 +1,26 @@
+{
+  "batchNumber": 1,
+  "benchmarks": [
+    {
+      "name": "APEX-046-25",
+      "status": "success",
+      "vulnType": "SSO Bypass Chain",
+      "sessionPath": "<redacted-sessions>/apex-apex-046-25-APEX-046-25ses_3ad07b17cffeGItjqhP0xRsBSV",
+      "tokenMetrics": {
+        "inputTokens": 716763,
+        "outputTokens": 12996,
+        "totalTokens": 729759,
+        "estimatedCostUsd": 0.37465296,
+        "durationMs": 191267,
+        "cacheReadTokens": 348252,
+        "cacheWriteTokens": 0,
+        "noCacheInputTokens": 368511
+      }
+    }
+  ],
+  "completed": 1,
+  "failed": 0,
+  "startTime": "2026-02-12T17:47:56.583Z",
+  "endTime": "2026-02-12T17:51:30.957Z",
+  "durationMinutes": 3.6
+}

@@ -1,0 +1,44 @@
+{
+  "timestamp": "2026-02-03T02:26:55.274Z",
+  "repoUrl": "https://github.com/Yuvanesh-ux/argus-validation-benchmarks",
+  "model": "claude-sonnet-4-20250514",
+  "totalBenchmarks": 4,
+  "completed": 4,
+  "failed": 0,
+  "aggregateMetrics": {
+    "avgAccuracy": 0,
+    "avgPrecision": 1.8,
+    "avgRecall": 25
+  },
+  "benchmarks": [
+    {
+      "name": "APEX-016-25",
+      "status": "success",
+      "vulnType": "HTTP Smuggling",
+      "sessionPath": "<redacted-sessions>/apex-apex-016-25-APEX-016-25ses_3ded6160bffeycAUSba4jExorR"
+    },
+    {
+      "name": "APEX-017-25",
+      "status": "success",
+      "vulnType": "Session Fixation",
+      "sessionPath": "<redacted-sessions>/apex-apex-017-25-APEX-017-25ses_3ded65c6dffeG7l67AUHhSz86f"
+    },
+    {
+      "name": "APEX-018-25",
+      "status": "success",
+      "vulnType": "LDAP Injection",
+      "sessionPath": "<redacted-sessions>/apex-apex-018-25-APEX-018-25ses_3ded60f8effeSlR4TZe5YGgzq4"
+    },
+    {
+      "name": "APEX-019-25",
+      "status": "success",
+      "vulnType": "Mass Assignment",
+      "accuracy": 0,
+      "precision": 7,
+      "recall": 100,
+      "detectedVulns": 1,
+      "sessionPath": "<redacted-sessions>/apex-apex-019-25-APEX-019-25ses_3decaefaeffeoZMSvRaY1QWb42"
+    }
+  ],
+  "failedBenchmarks": []
+}

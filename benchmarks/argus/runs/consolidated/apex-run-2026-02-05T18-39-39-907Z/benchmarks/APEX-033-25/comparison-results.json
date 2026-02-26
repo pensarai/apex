@@ -1,0 +1,114 @@
+{
+  "totalExpected": 1,
+  "totalActual": 17,
+  "matched": [
+    {
+      "location": "GraphQL API mutations (multiple files)",
+      "expectedTitle": "GraphQL Mutation Authorization Bypass",
+      "actualTitle": "JWT Privilege Escalation via Unauthorized setUserRole Mutation",
+      "matchReason": "Both identify the exact same vulnerability - setUserRole mutation lacks authorization checks allowing any authenticated user to escalate their role to ADMIN. The expected finding specifically called out this mutation, and multiple actual findings (jwt-privilege-escalation-via-unauthorized-setuserrole-mutation.json, idor-unauthorized-privilege-escalation-in-graphql-setuserrole-mutation.json, graphql-setuserrole-idor-vulnerability-privilege-escalation.json) confirm this vulnerability with evidence of successful privilege escalation without authorization."
+    },
+    {
+      "location": "GraphQL API mutations - updateUser",
+      "expectedTitle": "GraphQL Mutation Authorization Bypass",
+      "actualTitle": "IDOR: Unauthorized User Data Modification via GraphQL updateUser Mutation",
+      "matchReason": "The expected finding mentioned 'updateUser mutation lacks owner or admin check - users can modify other users' at lines 65-78. Multiple actual findings (idor-unauthorized-profile-modification-via-graphql-updateuser-mutation.json, idor-insecure-direct-object-reference-unauthorized-user-data-modification-via-updateuser-mutation.json, critical-cross-user-idor-vulnerability-in-graphql-mutations-and-queries.json) demonstrate this exact vulnerability with proof of unauthorized email modification and data tampering."
+    },
+    {
+      "location": "GraphQL API - Schema introspection",
+      "expectedTitle": "GraphQL Mutation Authorization Bypass (related: schema introspection enabling attack discovery)",
+      "actualTitle": "Information Disclosure: GraphQL Schema Introspection Enabled",
+      "matchReason": "The expected finding's semantic details mention that 'Schema introspection reveals mutations like setUserRole, updateUser, and deleteUser are available' and that this enables discovery of unprotected mutations. The actual finding (information-disclosure-graphql-schema-introspection-enabled.json) confirms introspection is enabled without authentication, allowing attackers to enumerate all mutations and plan attacks. This is the reconnaissance phase that enables exploitation of the authorization bypass."
+    }
+  ],
+  "missed": [],
+  "extra": [
+    {
+      "title": "JWT Privilege Escalation via Unauthorized createUser Mutation",
+      "severity": "critical",
+      "location": "src/graphql-api/mutations/createUser",
+      "assessment": "This is a new discovery - similar to the expected setUserRole bypass but affects the createUser mutation instead. Any authenticated user can create new ADMIN accounts, enabling privilege escalation through account creation rather than role modification. This is a distinct but related vulnerability to the expected finding."
+    },
+    {
+      "title": "IDOR: Unauthorized Password Change in updatePassword Mutation",
+      "severity": "critical",
+      "location": "src/graphql-api/mutations/updatePassword",
+      "assessment": "New discovery - authorization bypass specifically in updatePassword mutation allowing any user to change any other user's password. While the expected finding may have implicitly covered this, it's explicitly a separate mutation not mentioned in the expected finding's list of affected mutations (only setUserRole and updateUser were specified)."
+    },
+    {
+      "title": "IDOR: Unauthorized User Account Deletion in deleteUser Mutation",
+      "severity": "critical",
+      "location": "src/graphql-api/mutations/deleteUser",
+      "assessment": "New discovery - authorization bypass in deleteUser mutation allowing any user to delete any other user. The expected semantic details mention deleteUser as unprotected but the explicit expected finding focused on setUserRole and updateUser. This is a distinct vulnerability confirmation."
+    },
+    {
+      "title": "SQL Injection in GraphQL searchUsers Query",
+      "severity": "high",
+      "location": "src/graphql-api/queries/searchUsers",
+      "assessment": "New discovery - boolean-based blind SQL injection via the query parameter in searchUsers. This is an injection vulnerability distinct from the authorization bypasses in the expected finding. Requires ADMIN role (obtainable via privilege escalation) to exploit."
+    },
+    {
+      "title": "Multiple XSS Vulnerabilities in GraphQL API",
+      "severity": "critical",
+      "location": "src/graphql-api/mutations (register, updateUser)",
+      "assessment": "New discovery - stored and reflected XSS vulnerabilities in register and updateUser mutations. Output encoding not implemented. Distinct from authorization issues in expected finding."
+    },
+    {
+      "title": "SQL Injection Authentication Bypass in login Mutation",
+      "severity": "critical",
+      "location": "src/graphql-api/mutations/login",
+      "assessment": "New discovery - SQL injection in password field of login mutation allows authentication bypass. Distinct injection vulnerability separate from authorization bypasses."
+    },
+    {
+      "title": "Information Disclosure: GraphQL Schema Introspection Enabled",
+      "severity": "high",
+      "location": "POST /graphql endpoint",
+      "assessment": "New discovery - introspection queries work without authentication, revealing complete schema including mutations, types, and sensitive field names like 'secretFlag'. While mentioned in expected finding's semantic details as enabling attack discovery, it's documented as a separate vulnerability finding."
+    },
+    {
+      "title": "Information Disclosure: Service Name Disclosed in Response Body",
+      "severity": "low",
+      "location": "/health endpoint",
+      "assessment": "New discovery - /health endpoint reveals service name 'apex-033-graphql'. Distinct information disclosure issue not covered by expected authorization bypass finding."
+    },
+    {
+      "title": "Information Disclosure: X-Powered-By Header Exposes Framework",
+      "severity": "low",
+      "location": "HTTP response headers",
+      "assessment": "New discovery - X-Powered-By header reveals Express.js framework. Standard framework identification information disclosure, not related to authorization bypasses."
+    },
+    {
+      "title": "Security Misconfiguration: CORS Wildcard Origin",
+      "severity": "medium",
+      "location": "HTTP CORS headers",
+      "assessment": "New discovery - Access-Control-Allow-Origin: * misconfiguration allows cross-origin requests. Enables cross-origin exploitation of introspection and other endpoints."
+    },
+    {
+      "title": "IDOR: Unauthorized User Data Access in user Query",
+      "severity": "high",
+      "location": "src/graphql-api/queries/user",
+      "assessment": "New discovery - the user query allows IDOR attacks revealing other users' data. Expected finding focused on mutations (setUserRole, updateUser) but this demonstrates authorization bypass in queries as well."
+    },
+    {
+      "title": "IDOR: Unauthorized Access in searchUsers Query",
+      "severity": "high",
+      "location": "src/graphql-api/queries/searchUsers",
+      "assessment": "New discovery - while searchUsers properly checks for ADMIN role (noted in actual findings), the fact that introspection reveals its availability and other queries lack authorization checks represents a distinct finding."
+    },
+    {
+      "title": "Authorization Bypass via Empty Password Registration",
+      "severity": "critical",
+      "location": "src/graphql-api/mutations/register",
+      "assessment": "New discovery - register mutation accepts empty passwords, enabling weak authentication. Combined with privilege escalation via setUserRole, this creates a complete attack chain."
+    },
+    {
+      "title": "Critical Cross-User IDOR Vulnerability Summary",
+      "severity": "critical",
+      "location": "Multiple mutations (user, updatePassword, deleteUser, updateUser, setUserRole)",
+      "assessment": "This is a comprehensive summary finding that documents all IDOR vulnerabilities across multiple mutations. While essentially covering the expected finding, it's presented as a distinct comprehensive analysis document."
+    }
+  ],
+  "accuracy": 3,
+  "recall": 1,
+  "precision": 0.17647058823529413
+}
