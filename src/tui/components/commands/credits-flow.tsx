@@ -60,9 +60,16 @@ export default function CreditsFlow() {
 
     try {
       const apiUrl = getPensarApiUrl(appConfig.data);
+      const headers: Record<string, string> = {
+        Authorization: `Bearer ${tokenResult.token}`,
+      };
+      // WorkOS auth requires X-Workspace-Id header
+      if (tokenResult.type === "workos" && appConfig.data.workspaceId) {
+        headers["X-Workspace-Id"] = appConfig.data.workspaceId;
+      }
       const response = await fetch(`${apiUrl}/bedrock/validate`, {
         method: "GET",
-        headers: { Authorization: `Bearer ${tokenResult.token}` },
+        headers,
       });
 
       if (!response.ok) {
