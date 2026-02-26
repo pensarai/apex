@@ -99,8 +99,3 @@ export function HeadersSection({
     </box>
   );
 }
-
-/** Calculate the number of focusable fields in the headers section */
-export function getHeadersFieldCount(mode: HeadersMode): number {
-  return mode === "custom" ? 3 : 1;
-}

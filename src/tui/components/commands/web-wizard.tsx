@@ -481,7 +481,7 @@ export default function WebWizard({
 
       <ModelPickerSection
         expanded={nav.focusedSection === 3}
-        initialModel={initialModel}
+        picker={modelPicker}
       />
 
       <HintBar

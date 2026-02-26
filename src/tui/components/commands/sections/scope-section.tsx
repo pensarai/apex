@@ -142,15 +142,3 @@ export function ScopeSection({
     </box>
   );
 }
-
-/** Calculate the number of focusable fields in the scope section */
-export function getScopeFieldCount(options: {
-  hasPorts: boolean;
-  showSubdomainToggle: boolean;
-}): number {
-  let count = 1; // host input
-  if (options.hasPorts) count += 1; // port input
-  count += 1; // strict scope toggle
-  if (options.showSubdomainToggle) count += 1; // subdomain toggle
-  return count;
-}

@@ -18,89 +18,31 @@ export const PROVIDER_ORDER = ["anthropic", "openai", "openrouter", "bedrock"];
 
 interface ModelPickerSectionProps {
   expanded: boolean;
-  /** Optional initial model ID to pre-select */
-  initialModel?: string;
+  /** Model picker hook instance — provides shared state and handlers */
+  picker: ReturnType<typeof useModelPicker>;
 }
 
 /**
  * Full model picker with provider groups, search, and keyboard navigation.
  * Used by web-wizard in the configure step.
  *
- * This component manages its own state for search query, expanded providers,
- * and model list. It reads model/setModel from AgentContext.
+ * This component renders from the state owned by the useModelPicker hook,
+ * which is passed in via the `picker` prop. The parent wizard creates the hook
+ * and passes it here so keyboard handling and UI share the same state.
  */
 export function ModelPickerSection({
   expanded,
-  initialModel,
+  picker,
 }: ModelPickerSectionProps) {
   const { colors } = useTheme();
-  const config = useConfig();
-  const { model, setModel, isModelUserSelected } = useAgent();
-
-  const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
-  const [modelSearchQuery, setModelSearchQuery] = useState("");
-  const [expandedProviders, setExpandedProviders] = useState<Set<string>>(
-    new Set(["anthropic"]),
-  );
-
-  useEffect(() => {
-    if (config.data) {
-      const models = getAvailableModels(config.data);
-      setAvailableModels(models);
-
-      if (initialModel) {
-        const targetModel = models.find((m) => m.id === initialModel);
-        if (targetModel) {
-          setModel(targetModel);
-          setExpandedProviders(new Set([targetModel.provider]));
-          return;
-        }
-      }
-
-      if (models.length > 0) {
-        const currentModel = models.find((m) => m.id === model.id) || models[0];
-        if (currentModel) {
-          setExpandedProviders(new Set([currentModel.provider]));
-        }
-      }
-    }
-  }, [config.data, model.id, initialModel]);
-
-  const groupedModels = useMemo(() => {
-    const groups: Record<string, ModelInfo[]> = {};
-    const query = modelSearchQuery.toLowerCase().trim();
-    for (const m of availableModels) {
-      if (
-        query &&
-        !m.name.toLowerCase().includes(query) &&
-        !m.id.toLowerCase().includes(query)
-      ) {
-        continue;
-      }
-      if (!groups[m.provider]) groups[m.provider] = [];
-      groups[m.provider].push(m);
-    }
-    return groups;
-  }, [availableModels, modelSearchQuery]);
-
-  const visibleModels = useMemo(() => {
-    const result: ModelInfo[] = [];
-    for (const provider of PROVIDER_ORDER) {
-      const models = groupedModels[provider];
-      if (!models || models.length === 0) continue;
-      if (expandedProviders.has(provider)) {
-        result.push(...models);
-      }
-    }
-    return result;
-  }, [groupedModels, expandedProviders]);
+  const { isModelUserSelected } = useAgent();
 
   return (
     <box flexDirection="column" gap={1}>
       <text>
         <span fg={colors.primary}>█ </span>
         <span fg={expanded ? colors.text : colors.textMuted}>AI Model</span>
-        <span fg={colors.textMuted}> ({model.name})</span>
+        <span fg={colors.textMuted}> ({picker.model.name})</span>
         <span fg={colors.textMuted}>
           {" "}
           [{isModelUserSelected ? "user" : "default"}]
@@ -108,17 +50,17 @@ export function ModelPickerSection({
       </text>
       {expanded && (
         <box flexDirection="column" gap={0} paddingLeft={2}>
-          {modelSearchQuery ? (
-            <text fg={colors.text}>Search: {modelSearchQuery}_</text>
+          {picker.modelSearchQuery ? (
+            <text fg={colors.text}>Search: {picker.modelSearchQuery}_</text>
           ) : (
             <text fg={colors.textMuted}>Type to search models...</text>
           )}
 
           {PROVIDER_ORDER.map((provider) => {
-            const models = groupedModels[provider];
+            const models = picker.groupedModels[provider];
             if (!models || models.length === 0) return null;
 
-            const isExpanded = expandedProviders.has(provider);
+            const isExpanded = picker.expandedProviders.has(provider);
             const providerName = PROVIDER_NAMES[provider] || provider;
 
             return (
@@ -129,7 +71,7 @@ export function ModelPickerSection({
                 {isExpanded && (
                   <box flexDirection="column" gap={0} paddingLeft={2}>
                     {models.map((m) => {
-                      const isSelected = m.id === model.id;
+                      const isSelected = m.id === picker.model.id;
                       const isDefault =
                         m.id === "claude-haiku-4-5" || m.id === "gpt-4o-mini";
                       return (
@@ -309,6 +251,3 @@ export function useModelPicker(initialModel?: string) {
     expandNextProvider,
   };
 }
-
-/** Number of focusable fields in the model section (always 1 — the search/selector) */
-export const MODEL_FIELD_COUNT = 1;

@@ -88,6 +88,3 @@ export function AuthSection({
     </box>
   );
 }
-
-/** Number of focusable fields in the auth section */
-export const AUTH_FIELD_COUNT = 4;
