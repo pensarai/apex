@@ -3,7 +3,9 @@ import { useKeyboard } from "@opentui/react";
 import { createContext, useContext, type ReactNode } from "react";
 import {
   createKeybindings,
-  Keybind,
+  fromParsedKey,
+  parseKeybind,
+  matchesKeybind,
   type KeybindingDependencies,
   type KeybindingEntry,
 } from "../keybindings";
@@ -44,13 +46,13 @@ export function KeybindingProvider({
   });
 
   useKeyboard((key: KeyEvent) => {
-    const pressedKey = Keybind.fromParsedKey(key);
+    const pressedKey = fromParsedKey(key);
 
     for (const binding of registry) {
-      const parsedCombos = Keybind.parse(binding.combo);
+      const parsedCombos = parseKeybind(binding.combo);
 
       for (const combo of parsedCombos) {
-        if (Keybind.matches(pressedKey, combo)) {
+        if (matchesKeybind(pressedKey, combo)) {
           // If combo starts with "shift", require input to be focused and empty
           if (
             binding.combo.toLowerCase().startsWith("shift") ||
