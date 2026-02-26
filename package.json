@@ -2,9 +2,21 @@
   "name": "@pensar/apex",
   "version": "0.0.67",
   "description": "AI-powered penetration testing CLI tool with terminal UI",
-  "module": "src/tui/index.tsx",
   "main": "build/index.js",
   "type": "module",
+  "exports": {
+    ".": {
+      "bun": "./src/core/api/index.ts",
+      "import": "./src/core/api/index.ts",
+      "default": "./src/core/api/index.ts"
+    },
+    "./session": {
+      "bun": "./src/core/session/index.ts",
+      "import": "./src/core/session/index.ts",
+      "default": "./src/core/session/index.ts"
+    },
+    "./package.json": "./package.json"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/pensarai/apex.git"
@@ -15,6 +27,7 @@
   "files": [
     "build",
     "bin",
+    "src",
     "pensar.svg",
     "LICENSE"
   ],
