@@ -2,11 +2,11 @@ import z from "zod";
 import path from "path";
 import os from "os";
 import { existsSync, readFileSync, writeFileSync } from "fs";
-import { Identifier } from "../id/id";
-import { Installation } from "../installation";
-import { Storage } from "../storage";
+import * as Identifier from "../id/id";
+import { getCurrentVersion } from "../installation";
+import * as Storage from "../storage";
 import type { Message } from "../messages/types";
-import { Messages } from "../messages";
+import * as Messages from "../messages";
 import { RateLimiter } from "../services/rateLimiter";
 import {
   ToolsetStateSchema,
@@ -337,7 +337,7 @@ export async function create(input: CreateInputProps) {
 
   const result: SessionInfo = {
     id: id,
-    version: (await Installation.getVersion()) ?? "unknown",
+    version: getCurrentVersion(),
     targets: input.targets,
     name: input.name,
     time: {

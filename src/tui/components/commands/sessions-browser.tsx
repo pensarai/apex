@@ -12,7 +12,7 @@ import { scrollToIndex } from "../../utils/scroll";
 import { useRoute } from "../../context/route";
 import { useSession } from "../../context/session";
 import { useFocus } from "../../context/focus";
-import { Storage } from "../../../core/storage";
+import * as Storage from "../../../core/storage";
 import {
   useSessionsList,
   formatRelativeTime,

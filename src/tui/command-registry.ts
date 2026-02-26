@@ -8,7 +8,6 @@ import {
 } from "./utils/command-flags";
 import { getAllThemeNames } from "./theme";
 import { config } from "../core/config";
-
 /**
  * Define your application's CommandContext type with specific methods
  */

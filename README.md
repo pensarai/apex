@@ -9,7 +9,7 @@
   <!-- <a href="https://www.npmjs.com/package/@pensar/apex"><img src="https://img.shields.io/npm/dm/@pensar/apex" alt="npm downloads"></a> -->
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache 2.0 License"></a>
   <a href="https://docs.pensar.dev/apex"><img src="https://img.shields.io/badge/docs-docs.pensar.dev/apex-purple?logo=readthedocs&logoColor=white" alt="Documentation"></a>
-  <a href="https://discord.gg/YBefpbV5M2"><img src="https://img.shields.io/badge/Discord-Join%20Us-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
+  <a href="https://discord.gg/pensar"><img src="https://img.shields.io/badge/Discord-Join%20Us-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
 </p>
 
 <p align="center">
@@ -20,31 +20,9 @@
 
 ### Prerequisites
 
-- **nmap** (required for network scanning)
 - **API Key** for your chosen AI provider
 
-#### Install nmap
-
-macOS:
-
-```bash
-brew install nmap
-```
-
-Debian/Ubuntu:
-
-```bash
-sudo apt-get update && sudo apt-get install -y nmap
-```
-
-Fedora/RHEL:
-
-```bash
-sudo dnf install -y nmap
-```
-
-Windows:
-Download installer from `https://nmap.org/download.html` and ensure `nmap` is on your PATH.
+After installing, run `pensar doctor` to check for optional dependencies (like nmap) and install them.
 
 ### Install Apex
 

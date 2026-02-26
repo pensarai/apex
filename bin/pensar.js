@@ -14,6 +14,7 @@ import { dirname, join } from "path";
 
 // Import package.json directly so Bun can embed it at compile time
 import packageJson from "../package.json";
+import { getCurrentVersion, upgrade } from "../src/core/installation/index.ts";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -65,6 +66,16 @@ if (command === "benchmark") {
 
   // Import and run auth
   await import(authPath);
+} else if (command === "upgrade" || command === "update") {
+  const currentVersion = getCurrentVersion();
+  console.log(`Current version: v${currentVersion}`);
+  console.log("Checking for updates...");
+
+  const result = await upgrade({ interactive: true });
+  console.log();
+  console.log(result.message);
+
+  process.exit(result.success ? 0 : 1);
 } else if (
   command === "version" ||
   command === "--version" ||
@@ -78,6 +89,7 @@ if (command === "benchmark") {
   console.log();
   console.log("Usage:");
   console.log("  pensar              Launch the TUI (Terminal User Interface)");
+  console.log("  pensar upgrade      Update pensar to the latest version");
   console.log("  pensar help         Show this help message");
   console.log("  pensar version      Show version number");
   console.log("  pensar benchmark    Run the benchmark CLI");

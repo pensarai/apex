@@ -25,7 +25,9 @@ import { DialogProvider, useDialog } from "./context/dialog";
 import { ToastProvider } from "./context/toast";
 import { ToastContainer } from "./components/toast";
 import { ErrorBoundary } from "./components/error-boundary";
+import { useToast } from "./context/toast";
 import { writeErrorLog } from "../core/logger";
+import { checkForUpdate } from "../core/installation";
 import ShortcutsDialog from "./components/commands/shortcuts-dialog";
 import HelpDialog from "./components/commands/help-dialog";
 import ModelsDisplay from "./components/commands/models-display";
@@ -126,9 +128,23 @@ function AppContent({
   const route = useRoute();
   const config = useConfig();
   const { colors } = useTheme();
+  const { toast } = useToast();
 
   const { refocusPrompt } = useFocus();
   const { setExternalDialogOpen } = useDialog();
+
+  useEffect(() => {
+    checkForUpdate().then(
+      ({ updateAvailable, currentVersion, latestVersion }) => {
+        if (!updateAvailable) return;
+        toast(
+          `Update available: v${currentVersion} → v${latestVersion}. Run: pensar upgrade`,
+          "warn",
+          8000,
+        );
+      },
+    );
+  }, []);
 
   useEffect(() => {
     if (route.data.type !== "base") return;
