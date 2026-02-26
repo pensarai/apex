@@ -53,9 +53,11 @@ describe("getVersion", () => {
 
   it("fetches version from npm registry when env var is not set", async () => {
     delete process.env["APEX_VERSION"];
-    const mockFetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ version: "9.9.9" }), { status: 200 }),
-    );
+    const mockFetch = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(JSON.stringify({ version: "9.9.9" }), { status: 200 }),
+      );
     const version = await getVersion();
     expect(version).toBe("9.9.9");
     expect(mockFetch).toHaveBeenCalledWith(
@@ -96,7 +98,10 @@ describe("detectInstallMethod", () => {
   const origArgv = [...process.argv];
 
   afterEach(() => {
-    Object.defineProperty(process, "execPath", { value: origExecPath, writable: true });
+    Object.defineProperty(process, "execPath", {
+      value: origExecPath,
+      writable: true,
+    });
     process.argv = [...origArgv];
     vi.restoreAllMocks();
   });
@@ -181,9 +186,7 @@ describe("upgrade", () => {
   });
 
   it("returns failure when version check fails", async () => {
-    vi.spyOn(globalThis, "fetch").mockRejectedValue(
-      new Error("network error"),
-    );
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("network error"));
 
     const result = await upgrade();
     expect(result.success).toBe(false);
