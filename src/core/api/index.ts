@@ -18,6 +18,10 @@ export { runAuthenticationAgent } from "./authentication";
 export { runBenchmarkComparisonAgent } from "./benchmark";
 export { runPentestAgent } from "./blackboxPentest";
 export { runTargetedPentestAgent } from "./targetedPentest";
+export {
+  runThreatModelAgent,
+  type ThreatModelInput,
+} from "./threatModel";
 export * from "./operator";
 
 // ---------------------------------------------------------------------------
@@ -29,6 +33,7 @@ export type { AuthenticationResult } from "../agents/specialized/authenticationA
 export type { PentestResult } from "../agents/specialized/pentest/agent";
 export type { PentestWorkflowResult } from "../workflows/pentest";
 export type { BenchmarkComparisonResult } from "../agents/specialized/benchmarkComparisonAgent";
+export type { ThreatModelResult } from "../agents/specialized/threatModel/types";
 
 // ---------------------------------------------------------------------------
 // Input types — accepted by agent runners
@@ -63,6 +68,24 @@ export type {
   AuthFlowHints,
   AuthMethod,
 } from "../agents/specialized/authenticationAgent/types";
+
+// Threat model
+export type {
+  ApplicationContext,
+  ApplicationIdentity,
+  ApplicationFeature,
+  ApplicationTrustBoundary,
+  AttackerProfile,
+  AttackPath,
+  AttackPathsResult,
+  SystemArchitecture,
+  Component,
+  TrustBoundary,
+  DataFlow,
+  DeploymentContext,
+  SecurityControl,
+  SecurityControlsResult,
+} from "../agents/specialized/threatModel/types";
 
 // AI model
 export type { AIModel } from "../ai";
