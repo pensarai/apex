@@ -99,6 +99,8 @@ const SessionConfigObject = z.object({
   toolsetState: ToolsetStateSchema.optional(),
   /** Whether to enumerate subdomains during attack surface discovery (default: false) */
   enumerateSubdomains: z.boolean().optional(),
+  /** When true, agents are guided to extract and exfiltrate data (flags, secrets, etc.) */
+  exfilMode: z.boolean().optional(),
   /** Local codebase path for whitebox analysis (source code access) */
   cwd: z.string().optional(),
 });

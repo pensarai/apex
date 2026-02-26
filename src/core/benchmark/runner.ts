@@ -285,6 +285,7 @@ export async function runSingleBenchmark(
       prefix: `benchmark-${branch}-`,
       config: {
         outcomeGuidance: sessions.BENCHMARK_OUTCOME_GUIDANCE,
+        exfilMode: true,
         mode: "auto",
       },
     });

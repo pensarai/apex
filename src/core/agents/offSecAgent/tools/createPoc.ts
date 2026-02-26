@@ -49,6 +49,10 @@ export type CreatePocResult = {
 export function createPoc(ctx: ToolContext) {
   const pocAttempts = new Map<string, number>();
 
+  const exfilGuidance = ctx.session.config?.exfilMode
+    ? `\n\nIMPORTANT: Your POC should not just prove the vulnerability exists — it should EXTRACT and PRINT any sensitive data accessible through the vulnerability (flags, secrets, database contents). The script's stdout is captured and analyzed.`
+    : "";
+
   return tool({
     description: `Create and test a Proof-of-Concept script.
 
@@ -68,7 +72,7 @@ POC requirements:
 - Print clear evidence of exploitation
 - Include rate limiting (sleep between requests)
 
-Max ${MAX_POC_ATTEMPTS} attempts per approach before pivoting.`,
+Max ${MAX_POC_ATTEMPTS} attempts per approach before pivoting.${exfilGuidance}`,
     inputSchema: createPocInputSchema,
     execute: async (poc: CreatePocInput): Promise<CreatePocResult> => {
       const approachKey = `${poc.pocName}_${poc.description.substring(0, 30)}`;
