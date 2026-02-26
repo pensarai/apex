@@ -124,7 +124,11 @@ export async function checkForUpdate(): Promise<CheckUpdateResult> {
   try {
     latestVersion = await getLatestVersion();
   } catch {
-    return { updateAvailable: false, currentVersion, latestVersion: currentVersion };
+    return {
+      updateAvailable: false,
+      currentVersion,
+      latestVersion: currentVersion,
+    };
   }
 
   return {

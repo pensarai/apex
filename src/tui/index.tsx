@@ -134,14 +134,16 @@ function AppContent({
   const { setExternalDialogOpen } = useDialog();
 
   useEffect(() => {
-    checkForUpdate().then(({ updateAvailable, currentVersion, latestVersion }) => {
-      if (!updateAvailable) return;
-      toast(
-        `Update available: v${currentVersion} → v${latestVersion}. Run: pensar upgrade`,
-        "warn",
-        8000,
-      );
-    });
+    checkForUpdate().then(
+      ({ updateAvailable, currentVersion, latestVersion }) => {
+        if (!updateAvailable) return;
+        toast(
+          `Update available: v${currentVersion} → v${latestVersion}. Run: pensar upgrade`,
+          "warn",
+          8000,
+        );
+      },
+    );
   }, []);
 
   useEffect(() => {
