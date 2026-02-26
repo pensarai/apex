@@ -1,7 +1,7 @@
 import os from "os";
 import path from "path";
 import fs from "fs/promises";
-import { Installation } from "../installation";
+import { getCurrentVersion } from "../installation";
 
 const DEFAULT_CONFIG: Config = {
   responsibleUseAccepted: false,
@@ -44,7 +44,7 @@ export async function init() {
     await fs.writeFile(file, JSON.stringify(DEFAULT_CONFIG));
   }
 
-  const version = await Installation.getVersion();
+  const version = getCurrentVersion();
   return { ...DEFAULT_CONFIG, version };
 }
 
@@ -62,7 +62,7 @@ export async function get(): Promise<Config> {
 
   const parsedConfig = JSON.parse(config);
 
-  const version = await Installation.getVersion();
+  const version = getCurrentVersion();
 
   return {
     ...parsedConfig,

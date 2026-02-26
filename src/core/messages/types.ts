@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Identifier } from "../id/id";
+import * as Identifier from "../id/id";
 
 const Base = z.object({
   sessionId: Identifier.schema("session"),
