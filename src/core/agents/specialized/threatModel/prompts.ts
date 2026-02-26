@@ -132,9 +132,7 @@ Call the \`response\` tool with the structured application context when done.`;
 // Phase 1b: Deployment Context Discovery
 // ---------------------------------------------------------------------------
 
-export function buildDeploymentContextObjective(
-  codebasePath: string,
-): string {
+export function buildDeploymentContextObjective(codebasePath: string): string {
   return `# Extract Deployment and Infrastructure Context
 
 ## Codebase
@@ -351,10 +349,7 @@ export function buildAttackPathSynthesisObjective(
     sessionRootPath,
     "deployment-context.json",
   );
-  const securityControlsPath = join(
-    sessionRootPath,
-    "security-controls.json",
-  );
+  const securityControlsPath = join(sessionRootPath, "security-controls.json");
   const systemArchitecturePath = join(
     sessionRootPath,
     "system-architecture.json",

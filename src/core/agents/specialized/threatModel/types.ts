@@ -40,9 +40,7 @@ export const DeploymentContextSchema = z.object({
       z.object({
         tool: z
           .string()
-          .describe(
-            "IaC tool (e.g. Terraform, CDK, Pulumi, CloudFormation)",
-          ),
+          .describe("IaC tool (e.g. Terraform, CDK, Pulumi, CloudFormation)"),
         configPath: z.string().describe("Path to the IaC configuration"),
       }),
     )
@@ -57,9 +55,7 @@ export const DeploymentContextSchema = z.object({
       z.object({
         type: z
           .string()
-          .describe(
-            "Database type (e.g. PostgreSQL, MySQL, MongoDB, Redis)",
-          ),
+          .describe("Database type (e.g. PostgreSQL, MySQL, MongoDB, Redis)"),
         version: z.string().optional().describe("Version if determinable"),
       }),
     )
@@ -110,14 +106,10 @@ export const SecurityControlSchema = z.object({
   name: z.string().describe("Descriptive name for this control"),
   implementation: z
     .string()
-    .describe(
-      "How the control is implemented (library, custom code, etc.)",
-    ),
+    .describe("How the control is implemented (library, custom code, etc.)"),
   scope: z
     .string()
-    .describe(
-      "What the control applies to (e.g. all routes, /api/* only)",
-    ),
+    .describe("What the control applies to (e.g. all routes, /api/* only)"),
   effectiveness: z
     .enum(["strong", "moderate", "weak", "unknown"])
     .describe("Assessed effectiveness of the control"),
@@ -144,9 +136,7 @@ export const SecurityControlsResultSchema = z.object({
       implementation: z.string().describe("Library or approach used"),
       sessionStorage: z
         .string()
-        .describe(
-          "How sessions are stored (stateless, Redis, DB, etc.)",
-        ),
+        .describe("How sessions are stored (stateless, Redis, DB, etc.)"),
       mfa: z.string().optional().describe("MFA support status"),
     })
     .optional()
@@ -155,16 +145,9 @@ export const SecurityControlsResultSchema = z.object({
     .object({
       type: z
         .string()
-        .describe(
-          "Authorization model (e.g. RBAC, ABAC, ACL, custom)",
-        ),
-      implementation: z
-        .string()
-        .describe("How authorization is enforced"),
-      roles: z
-        .array(z.string())
-        .optional()
-        .describe("Defined roles if RBAC"),
+        .describe("Authorization model (e.g. RBAC, ABAC, ACL, custom)"),
+      implementation: z.string().describe("How authorization is enforced"),
+      roles: z.array(z.string()).optional().describe("Defined roles if RBAC"),
     })
     .optional()
     .describe("Authorization model"),
@@ -198,14 +181,10 @@ export const ComponentSchema = z.object({
     .describe("Component type"),
   technology: z
     .string()
-    .describe(
-      "Technology stack (e.g. Express.js on Node 20, PostgreSQL 15)",
-    ),
+    .describe("Technology stack (e.g. Express.js on Node 20, PostgreSQL 15)"),
   trustBoundary: z
     .string()
-    .describe(
-      "Name of the trust boundary this component belongs to",
-    ),
+    .describe("Name of the trust boundary this component belongs to"),
 });
 
 export type Component = z.infer<typeof ComponentSchema>;
@@ -229,18 +208,14 @@ export const DataFlowSchema = z.object({
   to: z.string().describe("Destination component name"),
   protocol: z
     .string()
-    .describe(
-      "Protocol used (e.g. HTTPS, SQL/TLS, Redis, gRPC)",
-    ),
+    .describe("Protocol used (e.g. HTTPS, SQL/TLS, Redis, gRPC)"),
   dataClassification: z
     .enum(["public", "internal", "confidential", "restricted"])
     .describe("Data sensitivity classification"),
   authenticated: z
     .boolean()
     .describe("Whether the flow requires authentication"),
-  encrypted: z
-    .boolean()
-    .describe("Whether the flow is encrypted in transit"),
+  encrypted: z.boolean().describe("Whether the flow is encrypted in transit"),
 });
 
 export type DataFlow = z.infer<typeof DataFlowSchema>;
@@ -248,12 +223,8 @@ export type DataFlow = z.infer<typeof DataFlowSchema>;
 /** System architecture: components, trust boundaries, and data flows */
 export const SystemArchitectureSchema = z.object({
   components: z.array(ComponentSchema).describe("System components"),
-  trustBoundaries: z
-    .array(TrustBoundarySchema)
-    .describe("Trust boundaries"),
-  dataFlows: z
-    .array(DataFlowSchema)
-    .describe("Data flows between components"),
+  trustBoundaries: z.array(TrustBoundarySchema).describe("Trust boundaries"),
+  dataFlows: z.array(DataFlowSchema).describe("Data flows between components"),
 });
 
 export type SystemArchitecture = z.infer<typeof SystemArchitectureSchema>;
@@ -264,14 +235,7 @@ export type SystemArchitecture = z.infer<typeof SystemArchitectureSchema>;
 
 export const ApplicationIdentitySchema = z.object({
   type: z
-    .enum([
-      "library",
-      "framework",
-      "service",
-      "platform",
-      "cli",
-      "other",
-    ])
+    .enum(["library", "framework", "service", "platform", "cli", "other"])
     .describe("What kind of software this is"),
   description: z
     .string()
@@ -296,9 +260,7 @@ export const ApplicationIdentitySchema = z.object({
 export type ApplicationIdentity = z.infer<typeof ApplicationIdentitySchema>;
 
 export const ApplicationFeatureSchema = z.object({
-  name: z
-    .string()
-    .describe("Feature name (e.g. page navigation, form fill)"),
+  name: z.string().describe("Feature name (e.g. page navigation, form fill)"),
   description: z.string().describe("What the feature does"),
   securityRelevance: z
     .string()
@@ -329,9 +291,7 @@ export const ApplicationTrustBoundarySchema = z.object({
   inputSources: z
     .array(z.string())
     .describe("Where untrusted input comes from"),
-  crossesTo: z
-    .string()
-    .describe("What sensitive context the input reaches"),
+  crossesTo: z.string().describe("What sensitive context the input reaches"),
 });
 
 export type ApplicationTrustBoundary = z.infer<
@@ -344,9 +304,7 @@ export const AttackerProfileSchema = z.object({
     .describe(
       "Profile name (e.g. malicious website operator, compromised dependency author)",
     ),
-  description: z
-    .string()
-    .describe("Who this attacker is and their motivation"),
+  description: z.string().describe("Who this attacker is and their motivation"),
   controls: z
     .array(z.string())
     .describe(
@@ -376,9 +334,7 @@ export const ApplicationContextSchema = z.object({
     ),
   attackerProfiles: z
     .array(AttackerProfileSchema)
-    .describe(
-      "Realistic attacker profiles based on the application's nature",
-    ),
+    .describe("Realistic attacker profiles based on the application's nature"),
 });
 
 export type ApplicationContext = z.infer<typeof ApplicationContextSchema>;
@@ -395,40 +351,28 @@ export const AttackPathSchema = z.object({
     .describe("Severity of the attack path"),
   attackerProfile: z
     .string()
-    .describe(
-      "Name of the attacker profile that would execute this attack",
-    ),
+    .describe("Name of the attacker profile that would execute this attack"),
   entryPoint: z
     .string()
-    .describe(
-      "Specific feature, input, or endpoint where the attack begins",
-    ),
+    .describe("Specific feature, input, or endpoint where the attack begins"),
   mechanism: z
     .array(z.string())
     .describe(
       "Step-by-step array showing how the attack flows through the system",
     ),
-  impact: z
-    .string()
-    .describe("What happens if the attack succeeds"),
+  impact: z.string().describe("What happens if the attack succeeds"),
   affectedFeatures: z
     .array(z.string())
     .describe("Features affected by this attack path"),
   preconditions: z
     .array(z.string())
-    .describe(
-      "Conditions that must be true for this attack to work",
-    ),
+    .describe("Conditions that must be true for this attack to work"),
   existingControls: z
     .array(z.string())
-    .describe(
-      "Existing controls that partially or fully mitigate this attack",
-    ),
+    .describe("Existing controls that partially or fully mitigate this attack"),
   controlGaps: z
     .array(z.string())
-    .describe(
-      "Missing or insufficient controls that make this attack viable",
-    ),
+    .describe("Missing or insufficient controls that make this attack viable"),
   pentestGuidance: z.object({
     objectives: z
       .array(z.string())
@@ -452,9 +396,7 @@ export const AttackPathSchema = z.object({
 export type AttackPath = z.infer<typeof AttackPathSchema>;
 
 export const AttackPathsResultSchema = z.object({
-  attackPaths: z
-    .array(AttackPathSchema)
-    .describe("Attack paths identified"),
+  attackPaths: z.array(AttackPathSchema).describe("Attack paths identified"),
 });
 
 export type AttackPathsResult = z.infer<typeof AttackPathsResultSchema>;

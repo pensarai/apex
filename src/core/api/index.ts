@@ -18,10 +18,7 @@ export { runAuthenticationAgent } from "./authentication";
 export { runBenchmarkComparisonAgent } from "./benchmark";
 export { runPentestAgent } from "./blackboxPentest";
 export { runTargetedPentestAgent } from "./targetedPentest";
-export {
-  runThreatModelAgent,
-  type ThreatModelInput,
-} from "./threatModel";
+export { runThreatModelAgent, type ThreatModelInput } from "./threatModel";
 export * from "./operator";
 
 // ---------------------------------------------------------------------------
