@@ -1,17 +1,19 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState } from "react";
 import { useKeyboard } from "@opentui/react";
-import Input from "../input";
 import { useRoute } from "../../context/route";
-import { useConfig } from "../../context/config";
 import { useAgent } from "../../context/agent";
 import { sessions, type SessionConfig } from "../../../core/session";
-import { SpinnerDots } from "../sprites";
 import { generateRandomName } from "../../../util/name";
 import type { OperatorMode, PermissionTier } from "../../../core/operator";
 import { OPERATOR_MODES, PERMISSION_TIERS } from "../../../core/operator";
-import type { ModelInfo } from "../../../core/ai";
-import { getAvailableModels } from "../../../core/providers/utils";
 import { useTheme } from "../../theme";
+import { useWizardNavigation } from "../../hooks/use-wizard-navigation";
+import {
+  CreatingOverlay,
+  TargetStep,
+  useModelPicker,
+  parseHostFromUrl,
+} from "./sections";
 
 type WizardStep = "target" | "mode" | "creating";
 
@@ -31,42 +33,9 @@ interface HITLWizardProps {
   initialMode?: string;
   initialName?: string;
   initialTier?: number;
-  initialAuthUrl?: string;
-  initialAuthUser?: string;
-  initialAuthPass?: string;
-  initialAuthInstructions?: string;
   initialHosts?: string[];
   initialStrict?: boolean;
-  initialHeadersMode?: "none" | "default" | "custom";
-  initialCustomHeaders?: Record<string, string>;
   initialModel?: string;
-}
-
-const providerNames: Record<string, string> = {
-  anthropic: "Claude",
-  openai: "OpenAI",
-  openrouter: "OpenRouter",
-  bedrock: "Bedrock",
-};
-const providerOrder = ["anthropic", "openai", "openrouter", "bedrock"];
-
-/**
- * Parse host from a URL string (includes port if present)
- * e.g., http://localhost:3001 -> localhost:3001
- */
-function parseHostFromUrl(url: string): string | null {
-  try {
-    const parsed = new URL(url);
-    return parsed.host; // host includes port, hostname does not
-  } catch {
-    // Try adding protocol if missing
-    try {
-      const parsed = new URL(`https://${url}`);
-      return parsed.host;
-    } catch {
-      return null;
-    }
-  }
 }
 
 export default function HITLWizard(props: HITLWizardProps) {
@@ -82,22 +51,17 @@ export default function HITLWizard(props: HITLWizardProps) {
   } = props;
 
   const route = useRoute();
-  const config = useConfig();
-  const { model, setModel, isModelUserSelected } = useAgent();
+  const { model } = useAgent();
+  const modelPicker = useModelPicker(initialModel);
 
   const initialStep: WizardStep = initialTarget ? "mode" : "target";
 
-  const [currentStep, setCurrentStep] = useState<WizardStep>(initialStep);
   const [state, setState] = useState<WizardState>(() => {
-    // Auto-parse host from target URL if provided
     const hostsFromTarget: string[] = [];
     if (initialTarget) {
       const parsedHost = parseHostFromUrl(initialTarget);
-      if (parsedHost) {
-        hostsFromTarget.push(parsedHost);
-      }
+      if (parsedHost) hostsFromTarget.push(parsedHost);
     }
-    // Combine with any explicitly provided hosts (avoiding duplicates)
     const combinedHosts = [
       ...new Set([...hostsFromTarget, ...(initialHosts || [])]),
     ];
@@ -114,76 +78,44 @@ export default function HITLWizard(props: HITLWizardProps) {
     };
   });
 
-  const [targetFocusedField, setTargetFocusedField] = useState(0);
-  const [modeFocusedField, setModeFocusedField] = useState(0);
+  // Mode step fields depend on whether plan mode hides the tier selector
+  // Fields: mode(0), tier(1, hidden in plan), host(2), strictScope(3), model(4), submit(5)
+  // In plan mode, visible fields: mode(0), host(1), strictScope(2), model(3), submit(4)
+  const modeFields =
+    state.mode === "plan"
+      ? ["mode", "host", "strictScope", "model", "submit"]
+      : ["mode", "tier", "host", "strictScope", "model", "submit"];
+
+  const nav = useWizardNavigation<WizardStep>({
+    steps: ["target", "mode", "creating"],
+    initialStep,
+    layouts: {
+      target: { fields: ["name", "url"] },
+      mode: { fields: modeFields },
+      creating: { fields: [] },
+    },
+  });
+
   const [hostInput, setHostInput] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  // Model picker state
-  const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
-  const [modelSearchQuery, setModelSearchQuery] = useState("");
-  const [expandedProviders, setExpandedProviders] = useState<Set<string>>(
-    new Set(["anthropic"]),
-  );
-
-  // Load available models
-  useEffect(() => {
-    if (config.data) {
-      const models = getAvailableModels(config.data);
-      setAvailableModels(models);
-      if (models.length > 0) {
-        // If initialModel was provided, try to set it
-        if (initialModel) {
-          const targetModel = models.find((m) => m.id === initialModel);
-          if (targetModel) {
-            setModel(targetModel);
-            setExpandedProviders(new Set([targetModel.provider]));
-            return;
-          }
-        }
-        const currentModel = models.find((m) => m.id === model.id) || models[0];
-        if (currentModel) {
-          setExpandedProviders(new Set([currentModel.provider]));
-        }
-      }
+  const goToModeStep = () => {
+    const targetHost = parseHostFromUrl(state.target);
+    if (targetHost && !state.scope.allowedHosts.includes(targetHost)) {
+      setState((prev) => ({
+        ...prev,
+        scope: {
+          ...prev.scope,
+          allowedHosts: [targetHost, ...prev.scope.allowedHosts],
+        },
+      }));
     }
-  }, [config.data, model.id, initialModel]);
-
-  // Group and filter models
-  const groupedModels = useMemo(() => {
-    const groups: Record<string, ModelInfo[]> = {};
-    const query = modelSearchQuery.toLowerCase().trim();
-    for (const m of availableModels) {
-      if (
-        query &&
-        !m.name.toLowerCase().includes(query) &&
-        !m.id.toLowerCase().includes(query)
-      ) {
-        continue;
-      }
-      if (!groups[m.provider]) groups[m.provider] = [];
-      groups[m.provider].push(m);
-    }
-    return groups;
-  }, [availableModels, modelSearchQuery]);
-
-  // Visible models for navigation
-  const visibleModels = useMemo(() => {
-    const result: ModelInfo[] = [];
-    for (const provider of providerOrder) {
-      const models = groupedModels[provider];
-      if (!models || models.length === 0) continue;
-      if (expandedProviders.has(provider)) {
-        result.push(...models);
-      }
-    }
-    return result;
-  }, [groupedModels, expandedProviders]);
+    nav.setStep("mode");
+  };
 
   async function createSessionAndNavigate() {
     if (!state.target.trim()) return;
-
-    setCurrentStep("creating");
+    nav.setStep("creating");
     setError(null);
 
     try {
@@ -210,51 +142,21 @@ export default function HITLWizard(props: HITLWizardProps) {
         config: sessionConfig,
       });
 
-      route.navigate({
-        type: "operator",
-        sessionId: session.id,
-      });
+      route.navigate({ type: "operator", sessionId: session.id });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to create session");
-      setCurrentStep(initialTarget ? "mode" : "target");
+      nav.setStep(initialTarget ? "mode" : "target");
     }
   }
 
-  // Helper to transition to mode step and auto-parse host from target
-  const goToModeStep = () => {
-    // Auto-parse host from target URL if not already in scope
-    const targetHost = parseHostFromUrl(state.target);
-    if (targetHost && !state.scope.allowedHosts.includes(targetHost)) {
-      setState((prev) => ({
-        ...prev,
-        scope: {
-          ...prev.scope,
-          allowedHosts: [targetHost, ...prev.scope.allowedHosts],
-        },
-      }));
-    }
-    setCurrentStep("mode");
-  };
-
-  // Calculate max field index (5 normally, 4 if plan mode hides tier selector)
-  const maxField = state.mode === "plan" ? 4 : 5;
-
-  // Adjust field index mapping when in plan mode (skip tier field)
-  const getActualField = (field: number): number => {
-    if (state.mode === "plan" && field >= 1) {
-      return field + 1; // Skip tier field (1) in plan mode
-    }
-    return field;
-  };
-
   useKeyboard((key) => {
     if (key.name === "escape") {
-      if (currentStep === "creating") return;
-      if (currentStep === "mode") {
+      if (nav.currentStep === "creating") return;
+      if (nav.currentStep === "mode") {
         if (initialTarget) {
           route.navigate({ type: "base", path: "home" });
         } else {
-          setCurrentStep("target");
+          nav.setStep("target");
         }
         return;
       }
@@ -262,23 +164,24 @@ export default function HITLWizard(props: HITLWizardProps) {
       return;
     }
 
-    if (currentStep === "creating") return;
+    if (nav.currentStep === "creating") return;
 
-    if (currentStep === "target") {
+    // --- Target step ---
+    if (nav.currentStep === "target") {
       if (key.name === "tab" || key.name === "down") {
         if (key.shift) {
-          setTargetFocusedField((prev) => Math.max(0, prev - 1));
+          nav.prev();
         } else {
-          if (targetFocusedField === 1 && state.target.trim()) {
+          if (nav.focusedField === 1 && state.target.trim()) {
             goToModeStep();
           } else {
-            setTargetFocusedField((prev) => Math.min(1, prev + 1));
+            nav.next();
           }
         }
         return;
       }
       if (key.name === "up") {
-        setTargetFocusedField((prev) => Math.max(0, prev - 1));
+        nav.prev();
         return;
       }
       if (key.name === "return" && state.target.trim()) {
@@ -288,33 +191,32 @@ export default function HITLWizard(props: HITLWizardProps) {
       return;
     }
 
-    if (currentStep === "mode") {
-      const actualField = getActualField(modeFocusedField);
+    // --- Mode step ---
+    if (nav.currentStep === "mode") {
+      const fieldName = nav.currentFieldName;
 
-      // Up/down navigation between fields
       if (key.name === "up") {
-        setModeFocusedField((prev) => Math.max(0, prev - 1));
+        nav.prev();
         return;
       }
       if (key.name === "down") {
-        setModeFocusedField((prev) => Math.min(maxField, prev + 1));
+        nav.next();
         return;
       }
       if (key.name === "tab") {
         if (key.shift) {
-          setModeFocusedField((prev) => Math.max(0, prev - 1));
+          nav.prev();
         } else {
-          setModeFocusedField((prev) => Math.min(maxField, prev + 1));
+          nav.next();
         }
         return;
       }
 
-      // Left/right to change values within a field
+      // Left/right to change values
       if (key.name === "left" || key.name === "right") {
         const delta = key.name === "left" ? -1 : 1;
 
-        // Mode selection (field 0)
-        if (actualField === 0) {
+        if (fieldName === "mode") {
           const modes: OperatorMode[] = ["plan", "manual", "auto"];
           const idx = modes.indexOf(state.mode);
           const newIdx = (idx + delta + modes.length) % modes.length;
@@ -322,8 +224,7 @@ export default function HITLWizard(props: HITLWizardProps) {
           return;
         }
 
-        // Tier selection (field 1, only in non-plan mode)
-        if (actualField === 1) {
+        if (fieldName === "tier") {
           const tiers: PermissionTier[] = [1, 2, 3, 4, 5];
           const idx = tiers.indexOf(state.autoApproveTier);
           const newIdx = Math.max(0, Math.min(4, idx + delta));
@@ -331,8 +232,7 @@ export default function HITLWizard(props: HITLWizardProps) {
           return;
         }
 
-        // Strict scope toggle (field 3)
-        if (actualField === 3) {
+        if (fieldName === "strictScope") {
           setState((prev) => ({
             ...prev,
             scope: { ...prev.scope, strictScope: !prev.scope.strictScope },
@@ -340,23 +240,15 @@ export default function HITLWizard(props: HITLWizardProps) {
           return;
         }
 
-        // Model selection (field 4)
-        if (actualField === 4 && visibleModels.length > 0) {
-          const currentIdx = visibleModels.findIndex((m) => m.id === model.id);
-          const newIdx = Math.max(
-            0,
-            Math.min(visibleModels.length - 1, currentIdx + delta),
-          );
-          const newModel = visibleModels[newIdx];
-          if (newModel) setModel(newModel);
+        if (fieldName === "model") {
+          modelPicker.cycleModel(delta);
           return;
         }
       }
 
-      // Enter to activate/submit
+      // Enter to activate
       if (key.name === "return") {
-        // Add host if typing (field 2)
-        if (actualField === 2 && hostInput.trim()) {
+        if (fieldName === "host" && hostInput.trim()) {
           setState((prev) => ({
             ...prev,
             scope: {
@@ -367,18 +259,14 @@ export default function HITLWizard(props: HITLWizardProps) {
           setHostInput("");
           return;
         }
-
-        // Toggle strict scope (field 3)
-        if (actualField === 3) {
+        if (fieldName === "strictScope") {
           setState((prev) => ({
             ...prev,
             scope: { ...prev.scope, strictScope: !prev.scope.strictScope },
           }));
           return;
         }
-
-        // Submit button (field 5)
-        if (actualField === 5) {
+        if (fieldName === "submit") {
           createSessionAndNavigate();
         }
         return;
@@ -393,82 +281,38 @@ export default function HITLWizard(props: HITLWizardProps) {
         ? colors.primary
         : colors.accent;
 
-  if (currentStep === "creating") {
+  if (nav.currentStep === "creating") {
     return (
-      <box
-        flexDirection="column"
-        width="100%"
-        height="100%"
-        alignItems="center"
-        justifyContent="center"
-        flexGrow={1}
-        gap={2}
-      >
-        <SpinnerDots label="Creating HITL session..." fg={colors.primary} />
-        <text fg={colors.textMuted}>Target: {state.target}</text>
-        <text fg={modeColor}>Mode: {OPERATOR_MODES[state.mode].name}</text>
-      </box>
+      <CreatingOverlay
+        target={state.target}
+        spinnerLabel="Creating HITL session..."
+        modeLabel={OPERATOR_MODES[state.mode].name}
+        modeLabelColor={modeColor}
+      />
     );
   }
 
-  if (currentStep === "target") {
+  if (nav.currentStep === "target") {
     return (
-      <box width="100%" flexDirection="column" gap={2} paddingLeft={4}>
-        <text fg={colors.text}>Interactive Pentesting (Operator Mode)</text>
-        <text fg={colors.textMuted}>
-          Human-in-the-Loop - Approval gates for risky actions
-        </text>
-
-        {error && <text fg={colors.error}>Error: {error}</text>}
-
-        <Input
-          label="Session Name"
-          description="Auto-generated, edit if desired"
-          placeholder="swift-falcon"
-          value={state.name}
-          onInput={(v) => setState((prev) => ({ ...prev, name: v }))}
-          focused={targetFocusedField === 0}
-        />
-
-        <Input
-          label="Target URL"
-          description="e.g., https://example.com"
-          placeholder="https://example.com"
-          value={state.target}
-          onInput={(v) => setState((prev) => ({ ...prev, target: v }))}
-          focused={targetFocusedField === 1}
-        />
-
-        <box flexDirection="column" gap={0} marginTop={1}>
-          <text>
-            <span fg={colors.primary}>█ </span>
-            <span fg={colors.textMuted}>Press </span>
-            <span fg={colors.text}>[Enter]</span>
-            <span fg={colors.textMuted}> or </span>
-            <span fg={colors.text}>[Tab]</span>
-            <span fg={colors.textMuted}> to configure mode</span>
-          </text>
-          <text>
-            <span fg={colors.primary}>█ </span>
-            <span fg={colors.textMuted}>Press </span>
-            <span fg={colors.text}>[ESC]</span>
-            <span fg={colors.textMuted}> to cancel</span>
-          </text>
-        </box>
-      </box>
+      <TargetStep
+        title="Interactive Pentesting (Operator Mode)"
+        subtitle="Human-in-the-Loop - Approval gates for risky actions"
+        name={state.name}
+        target={state.target}
+        error={error}
+        focusedField={nav.focusedField}
+        onNameChange={(v) => setState((prev) => ({ ...prev, name: v }))}
+        onTargetChange={(v) => setState((prev) => ({ ...prev, target: v }))}
+        hints={[
+          { key: "Enter] or [Tab", label: "to configure mode" },
+          { key: "ESC", label: "to cancel" },
+        ]}
+      />
     );
   }
 
-  // Mode step - field indices:
-  // 0: Mode selection
-  // 1: Auto-approve tier (hidden in plan mode)
-  // 2: Add allowed host input
-  // 3: Strict scope toggle
-  // 4: Model selection
-  // 5: Submit button
-  // In plan mode, fields shift: 0, 2, 3, 4, 5 become indices 0, 1, 2, 3, 4
-
-  const actualField = getActualField(modeFocusedField);
+  // Mode step
+  const fieldName = nav.currentFieldName;
   const modeDef = OPERATOR_MODES[state.mode];
   const tierDef = PERMISSION_TIERS[state.autoApproveTier];
 
@@ -479,26 +323,26 @@ export default function HITLWizard(props: HITLWizardProps) {
         <text fg={colors.textMuted}>Target: {state.target}</text>
       </box>
 
-      {/* Mode Selection - Field 0 */}
+      {/* Mode Selection */}
       <box flexDirection="row" gap={1}>
-        <text fg={actualField === 0 ? colors.primary : colors.textMuted}>
-          {actualField === 0 ? "▸" : " "}
+        <text fg={fieldName === "mode" ? colors.primary : colors.textMuted}>
+          {fieldName === "mode" ? "▸" : " "}
         </text>
-        <text fg={actualField === 0 ? colors.text : colors.textMuted}>
+        <text fg={fieldName === "mode" ? colors.text : colors.textMuted}>
           Mode:
         </text>
         <text fg={modeColor}>{modeDef.name}</text>
         <text fg={colors.textMuted}>- {modeDef.description}</text>
-        {actualField === 0 && <text fg={colors.textMuted}>(←/→)</text>}
+        {fieldName === "mode" && <text fg={colors.textMuted}>(←/→)</text>}
       </box>
 
-      {/* Auto-approve Tier - Field 1 (hidden in plan mode) */}
+      {/* Auto-approve Tier (hidden in plan mode) */}
       {state.mode !== "plan" && (
         <box flexDirection="row" gap={1}>
-          <text fg={actualField === 1 ? colors.primary : colors.textMuted}>
-            {actualField === 1 ? "▸" : " "}
+          <text fg={fieldName === "tier" ? colors.primary : colors.textMuted}>
+            {fieldName === "tier" ? "▸" : " "}
           </text>
-          <text fg={actualField === 1 ? colors.text : colors.textMuted}>
+          <text fg={fieldName === "tier" ? colors.text : colors.textMuted}>
             Auto-approve:
           </text>
           <text fg={colors.primary}>
@@ -507,19 +351,19 @@ export default function HITLWizard(props: HITLWizardProps) {
           <text fg={colors.textMuted}>
             ({tierDef.examples.slice(0, 2).join(", ")})
           </text>
-          {actualField === 1 && <text fg={colors.textMuted}>(←/→)</text>}
+          {fieldName === "tier" && <text fg={colors.textMuted}>(←/→)</text>}
         </box>
       )}
 
-      {/* Add Allowed Host - Field 2 */}
+      {/* Add Allowed Host */}
       <box flexDirection="row" gap={1}>
-        <text fg={actualField === 2 ? colors.primary : colors.textMuted}>
-          {actualField === 2 ? "▸" : " "}
+        <text fg={fieldName === "host" ? colors.primary : colors.textMuted}>
+          {fieldName === "host" ? "▸" : " "}
         </text>
-        <text fg={actualField === 2 ? colors.text : colors.textMuted}>
+        <text fg={fieldName === "host" ? colors.text : colors.textMuted}>
           Add host:
         </text>
-        {actualField === 2 ? (
+        {fieldName === "host" ? (
           <input
             width={30}
             value={hostInput}
@@ -533,7 +377,9 @@ export default function HITLWizard(props: HITLWizardProps) {
         ) : (
           <text fg={colors.textMuted}>{hostInput || "example.com"}</text>
         )}
-        {actualField === 2 && <text fg={colors.textMuted}>(Enter to add)</text>}
+        {fieldName === "host" && (
+          <text fg={colors.textMuted}>(Enter to add)</text>
+        )}
       </box>
 
       {/* Show added hosts */}
@@ -548,45 +394,49 @@ export default function HITLWizard(props: HITLWizardProps) {
         </box>
       )}
 
-      {/* Strict Scope - Field 3 */}
+      {/* Strict Scope */}
       <box flexDirection="row" gap={1}>
-        <text fg={actualField === 3 ? colors.primary : colors.textMuted}>
-          {actualField === 3 ? "▸" : " "}
+        <text
+          fg={fieldName === "strictScope" ? colors.primary : colors.textMuted}
+        >
+          {fieldName === "strictScope" ? "▸" : " "}
         </text>
-        <text fg={actualField === 3 ? colors.text : colors.textMuted}>
+        <text fg={fieldName === "strictScope" ? colors.text : colors.textMuted}>
           Strict scope:
         </text>
         <text fg={state.scope.strictScope ? colors.primary : colors.textMuted}>
           {state.scope.strictScope ? "Enabled" : "Disabled"}
         </text>
-        {actualField === 3 && <text fg={colors.textMuted}>(Enter/←/→)</text>}
+        {fieldName === "strictScope" && (
+          <text fg={colors.textMuted}>(Enter/←/→)</text>
+        )}
       </box>
 
-      {/* Model Selection - Field 4 */}
+      {/* Model Selection */}
       <box flexDirection="row" gap={1}>
-        <text fg={actualField === 4 ? colors.primary : colors.textMuted}>
-          {actualField === 4 ? "▸" : " "}
+        <text fg={fieldName === "model" ? colors.primary : colors.textMuted}>
+          {fieldName === "model" ? "▸" : " "}
         </text>
-        <text fg={actualField === 4 ? colors.text : colors.textMuted}>
+        <text fg={fieldName === "model" ? colors.text : colors.textMuted}>
           Model:
         </text>
         <text fg={colors.primary}>{model.name}</text>
-        {actualField === 4 && <text fg={colors.textMuted}>(←/→)</text>}
+        {fieldName === "model" && <text fg={colors.textMuted}>(←/→)</text>}
       </box>
 
-      {/* Submit Button - Field 5 */}
+      {/* Submit Button */}
       <box flexDirection="row" gap={1} marginTop={1}>
-        <text fg={actualField === 5 ? colors.primary : colors.textMuted}>
-          {actualField === 5 ? "▸" : " "}
+        <text fg={fieldName === "submit" ? colors.primary : colors.textMuted}>
+          {fieldName === "submit" ? "▸" : " "}
         </text>
-        <text fg={actualField === 5 ? colors.primary : colors.textMuted}>
-          {actualField === 5 ? "[" : " "}
+        <text fg={fieldName === "submit" ? colors.primary : colors.textMuted}>
+          {fieldName === "submit" ? "[" : " "}
         </text>
-        <text fg={actualField === 5 ? colors.text : colors.textMuted}>
+        <text fg={fieldName === "submit" ? colors.text : colors.textMuted}>
           Start Session
         </text>
-        <text fg={actualField === 5 ? colors.primary : colors.textMuted}>
-          {actualField === 5 ? "]" : " "}
+        <text fg={fieldName === "submit" ? colors.primary : colors.textMuted}>
+          {fieldName === "submit" ? "]" : " "}
         </text>
       </box>
 

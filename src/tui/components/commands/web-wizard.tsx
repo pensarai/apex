@@ -1,20 +1,26 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState } from "react";
 import { useKeyboard } from "@opentui/react";
 import Input from "../input";
 import { useRoute } from "../../context/route";
-import { useConfig } from "../../context/config";
 import { useAgent } from "../../context/agent";
-import { sessions, type SessionConfig } from "../../../core/session";
-import { SpinnerDots } from "../sprites";
+import { sessions } from "../../../core/session";
 import { generateRandomName } from "../../../util/name";
-import { type ModelInfo } from "../../../core/ai";
-import { getAvailableModels } from "../../../core/providers/utils";
 import { useTheme } from "../../theme";
+import { useWizardNavigation } from "../../hooks/use-wizard-navigation";
+import {
+  CreatingOverlay,
+  TargetStep,
+  AuthSection,
+  ScopeSection,
+  HeadersSection,
+  ModelPickerSection,
+  useModelPicker,
+  HintBar,
+  buildSessionConfig,
+} from "./sections";
 
-// Wizard step types
 type WizardStep = "target" | "configure" | "creating";
 
-// Wizard state interface
 interface WizardState {
   name: string;
   target: string;
@@ -38,33 +44,19 @@ interface WizardState {
   };
 }
 
-// Props for the WebWizard
 interface WebWizardProps {
-  /** Pre-filled target URL from --target flag */
   initialTarget?: string;
-  /** Enable auto mode from --auto flag */
   autoMode?: boolean;
-  /** Pre-filled session name */
   initialName?: string;
-  /** Pre-filled auth URL */
   initialAuthUrl?: string;
-  /** Pre-filled auth username */
   initialAuthUser?: string;
-  /** Pre-filled auth password */
   initialAuthPass?: string;
-  /** Pre-filled auth instructions */
   initialAuthInstructions?: string;
-  /** Pre-filled allowed hosts */
   initialHosts?: string[];
-  /** Pre-filled allowed ports */
   initialPorts?: number[];
-  /** Enable strict scope */
   initialStrict?: boolean;
-  /** Pre-filled headers mode */
   initialHeadersMode?: "none" | "default" | "custom";
-  /** Pre-filled custom headers */
   initialCustomHeaders?: Record<string, string>;
-  /** Pre-filled model ID */
   initialModel?: string;
 }
 
@@ -85,105 +77,9 @@ export default function WebWizard({
 }: WebWizardProps) {
   const { colors } = useTheme();
   const route = useRoute();
-  const config = useConfig();
-  const { model, setModel, isModelUserSelected } = useAgent();
+  const { model, isModelUserSelected } = useAgent();
+  const modelPicker = useModelPicker(initialModel);
 
-  // Available models based on configured API keys
-  const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
-  const [selectedModelIndex, setSelectedModelIndex] = useState(0);
-
-  // Model picker state
-  const [modelSearchQuery, setModelSearchQuery] = useState("");
-  const [expandedProviders, setExpandedProviders] = useState<Set<string>>(
-    new Set(["anthropic"]),
-  );
-
-  // Provider display names
-  const providerNames: Record<string, string> = {
-    anthropic: "Claude",
-    openai: "OpenAI",
-    openrouter: "OpenRouter",
-    bedrock: "Bedrock",
-  };
-
-  // Provider order
-  const providerOrder = ["anthropic", "openai", "openrouter", "bedrock"];
-
-  // Group models by provider and filter by search
-  const groupedModels = useMemo(() => {
-    const groups: Record<string, ModelInfo[]> = {};
-    const query = modelSearchQuery.toLowerCase().trim();
-
-    for (const m of availableModels) {
-      // Fuzzy match: check if query matches model name or id
-      if (
-        query &&
-        !m.name.toLowerCase().includes(query) &&
-        !m.id.toLowerCase().includes(query)
-      ) {
-        continue;
-      }
-      if (!groups[m.provider]) {
-        groups[m.provider] = [];
-      }
-      groups[m.provider].push(m);
-    }
-    return groups;
-  }, [availableModels, modelSearchQuery]);
-
-  // Flat list of visible models for keyboard navigation
-  const visibleModels = useMemo(() => {
-    const result: ModelInfo[] = [];
-    for (const provider of providerOrder) {
-      const models = groupedModels[provider];
-      if (!models || models.length === 0) continue;
-      if (expandedProviders.has(provider)) {
-        result.push(...models);
-      }
-    }
-    return result;
-  }, [groupedModels, expandedProviders]);
-
-  // Load available models when config changes
-  useEffect(() => {
-    if (config.data) {
-      const models = getAvailableModels(config.data);
-      setAvailableModels(models);
-
-      // If initialModel was provided, try to set it
-      if (initialModel) {
-        const targetModel = models.find((m) => m.id === initialModel);
-        if (targetModel) {
-          setModel(targetModel);
-          const newIndex = models.findIndex((m) => m.id === targetModel.id);
-          if (newIndex >= 0) {
-            setSelectedModelIndex(newIndex);
-          }
-          setExpandedProviders(new Set([targetModel.provider]));
-          return;
-        }
-      }
-
-      // Find current model in the list
-      const currentIndex = models.findIndex((m) => m.id === model.id);
-      if (currentIndex >= 0) {
-        setSelectedModelIndex(currentIndex);
-      }
-      // Auto-expand provider of current model
-      if (models.length > 0) {
-        const currentModel = models.find((m) => m.id === model.id) || models[0];
-        if (currentModel) {
-          setExpandedProviders(new Set([currentModel.provider]));
-        }
-      }
-    }
-  }, [config.data, model.id, initialModel]);
-
-  // Determine initial step based on whether target was provided
-  const initialStep: WizardStep = initialTarget ? "configure" : "target";
-
-  // Wizard state
-  const [currentStep, setCurrentStep] = useState<WizardStep>(initialStep);
   const [state, setState] = useState<WizardState>(() => ({
     name: initialName || generateRandomName(),
     target: initialTarget || "",
@@ -207,81 +103,66 @@ export default function WebWizard({
     },
   }));
 
-  // UI state for target step
-  const [targetFocusedField, setTargetFocusedField] = useState(0); // 0=name, 1=target, 2=source code access
+  const initialStep: WizardStep = initialTarget ? "configure" : "target";
 
-  // UI state for configure step
-  const [focusedSection, setFocusedSection] = useState(0); // 0=auth, 1=scope, 2=headers
-  const [focusedField, setFocusedField] = useState(0);
+  const nav = useWizardNavigation<WizardStep>({
+    steps: ["target", "configure", "creating"],
+    initialStep,
+    layouts: {
+      target: {
+        fields: state.sourceCodeAccess
+          ? ["name", "url", "sourceCode", "cwd"]
+          : ["name", "url", "sourceCode"],
+      },
+      configure: {
+        sections: {
+          auth: {
+            fields: ["loginUrl", "username", "password", "instructions"],
+          },
+          scope: {
+            fields: ["host", "port", "strictScope", "enumerateSubdomains"],
+          },
+          headers: {
+            fields:
+              state.headers.mode === "custom"
+                ? ["mode", "name", "value"]
+                : ["mode"],
+          },
+          model: { fields: ["search"] },
+        },
+        sectionOrder: ["auth", "scope", "headers", "model"],
+      },
+      creating: { fields: [] },
+    },
+  });
+
+  // Input state for list-add fields
   const [hostInput, setHostInput] = useState("");
   const [portInput, setPortInput] = useState("");
   const [headerNameInput, setHeaderNameInput] = useState("");
   const [headerValueInput, setHeaderValueInput] = useState("");
-
-  // Error state
   const [error, setError] = useState<string | null>(null);
 
-  // Create session and navigate to session route
+  const modeLabel = autoMode ? "Auto Mode" : "Driver Mode";
+  const modeDescription = autoMode
+    ? "Automated pentesting - agents run autonomously"
+    : "Manual orchestration - you direct the agents";
+
   async function createSessionAndNavigate() {
     if (!state.target.trim()) return;
-
-    setCurrentStep("creating");
+    nav.setStep("creating");
     setError(null);
 
     try {
-      // Build session config
-      const sessionConfig: SessionConfig = {
-        // Set session type and mode for web app pentesting
+      const sessionConfig = buildSessionConfig({
         sessionType: "web-app",
         mode: autoMode ? "auto" : "driver",
-      };
-
-      // Auth config
-      if (state.auth.instructions || state.auth.username) {
-        sessionConfig.authenticationInstructions = state.auth.instructions;
-        if (state.auth.username) {
-          sessionConfig.authCredentials = {
-            username: state.auth.username,
-            password: state.auth.password,
-            loginUrl: state.auth.loginUrl || undefined,
-          };
-        }
-      }
-
-      // Scope constraints
-      if (
-        state.scope.allowedHosts.length > 0 ||
-        state.scope.allowedPorts.length > 0
-      ) {
-        sessionConfig.scopeConstraints = {
-          allowedHosts: state.scope.allowedHosts,
-          allowedPorts: state.scope.allowedPorts
-            .map((p) => parseInt(p, 10))
-            .filter((p) => !isNaN(p)),
-          strictScope: state.scope.strictScope,
-        };
-      }
-
-      // Subdomain enumeration
-      if (state.scope.enumerateSubdomains) {
-        sessionConfig.enumerateSubdomains = true;
-      }
-
-      // Source code access (whitebox mode)
-      if (state.sourceCodeAccess && state.cwd.trim()) {
-        sessionConfig.cwd = state.cwd.trim();
-      }
-
-      // Headers config
-      if (state.headers.mode !== "default") {
-        sessionConfig.offensiveHeaders = {
-          mode: state.headers.mode,
-          headers:
-            state.headers.mode === "custom"
-              ? state.headers.customHeaders
-              : undefined,
-        };
-      }
+        auth: state.auth,
+        scope: state.scope,
+        headers: state.headers,
+        sourceCodeAccess: state.sourceCodeAccess,
+        cwd: state.cwd,
+      });
 
       const session = await sessions.create({
         targets: [state.target],
@@ -289,33 +170,21 @@ export default function WebWizard({
         config: sessionConfig,
       });
 
-      // Navigate to session route - SessionView will handle execution based on mode
-      route.navigate({
-        type: "pentest",
-        sessionId: session.id,
-      });
+      route.navigate({ type: "pentest", sessionId: session.id });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to create session");
-      setCurrentStep(initialTarget ? "configure" : "target");
+      nav.setStep(initialTarget ? "configure" : "target");
     }
   }
 
-  // Keyboard handling
   useKeyboard((key) => {
-    // ESC - Go back or close
     if (key.name === "escape") {
-      if (currentStep === "creating") {
-        // Can't cancel while creating
-        return;
-      }
-      if (currentStep === "configure") {
-        // If we have an initial target, go home instead of back to target step
+      if (nav.currentStep === "creating") return;
+      if (nav.currentStep === "configure") {
         if (initialTarget) {
           route.navigate({ type: "base", path: "home" });
         } else {
-          setCurrentStep("target");
-          setFocusedSection(0);
-          setFocusedField(0);
+          nav.setStep("target");
         }
         return;
       }
@@ -323,28 +192,26 @@ export default function WebWizard({
       return;
     }
 
-    // Don't allow navigation while creating
-    if (currentStep === "creating") return;
+    if (nav.currentStep === "creating") return;
 
-    // Target step: Enter to start, Tab to navigate/configure
-    if (currentStep === "target") {
-      const maxTargetField = state.sourceCodeAccess ? 3 : 2; // 0=name, 1=target, 2=toggle, 3=cwd (if enabled)
-      // Tab navigation
+    // --- Target step ---
+    if (nav.currentStep === "target") {
+      const maxField = state.sourceCodeAccess ? 3 : 2;
       if (key.name === "tab") {
         if (key.shift) {
-          setTargetFocusedField((prev) => Math.max(0, prev - 1));
+          nav.prev();
         } else {
-          if (targetFocusedField === maxTargetField && state.target.trim()) {
-            setCurrentStep("configure");
+          if (nav.focusedField === maxField && state.target.trim()) {
+            nav.setStep("configure");
           } else {
-            setTargetFocusedField((prev) => Math.min(maxTargetField, prev + 1));
+            nav.next();
           }
         }
         return;
       }
-      // Up/Down to toggle source code access when focused
+      // Toggle source code access
       if (
-        targetFocusedField === 2 &&
+        nav.focusedField === 2 &&
         (key.name === "up" || key.name === "down")
       ) {
         setState((prev) => ({
@@ -353,7 +220,6 @@ export default function WebWizard({
         }));
         return;
       }
-      // Enter to start if target is filled
       if (key.name === "return" && state.target.trim()) {
         createSessionAndNavigate();
         return;
@@ -361,12 +227,15 @@ export default function WebWizard({
       return;
     }
 
-    // Configure step keyboard handling
-    if (currentStep === "configure") {
-      // Enter to create session
+    // --- Configure step ---
+    if (nav.currentStep === "configure") {
       if (key.name === "return") {
-        // Check if we should add an item instead of starting
-        if (focusedSection === 1 && focusedField === 0 && hostInput.trim()) {
+        // Add host
+        if (
+          nav.currentSectionName === "scope" &&
+          nav.focusedField === 0 &&
+          hostInput.trim()
+        ) {
           setState((prev) => ({
             ...prev,
             scope: {
@@ -377,7 +246,12 @@ export default function WebWizard({
           setHostInput("");
           return;
         }
-        if (focusedSection === 1 && focusedField === 1 && portInput.trim()) {
+        // Add port
+        if (
+          nav.currentSectionName === "scope" &&
+          nav.focusedField === 1 &&
+          portInput.trim()
+        ) {
           setState((prev) => ({
             ...prev,
             scope: {
@@ -388,10 +262,11 @@ export default function WebWizard({
           setPortInput("");
           return;
         }
+        // Add custom header
         if (
-          focusedSection === 2 &&
+          nav.currentSectionName === "headers" &&
           state.headers.mode === "custom" &&
-          focusedField === 2 &&
+          nav.focusedField === 2 &&
           headerNameInput.trim()
         ) {
           setState((prev) => ({
@@ -408,42 +283,42 @@ export default function WebWizard({
           setHeaderValueInput("");
           return;
         }
-        // Otherwise create session
         createSessionAndNavigate();
         return;
       }
 
-      // Tab navigation between sections and fields
+      // Tab navigation
       if (key.name === "tab") {
+        // Special case: Tab in model section cycles providers
+        if (nav.currentSectionName === "model" && !key.shift) {
+          const expanded = modelPicker.expandNextProvider();
+          if (!expanded) {
+            // All expanded — wrap to first section
+            nav.setFocusedSection(0);
+            nav.setFocusedField(0);
+          }
+          return;
+        }
         if (key.shift) {
-          if (focusedField > 0) {
-            setFocusedField(focusedField - 1);
-          } else if (focusedSection > 0) {
-            setFocusedSection(focusedSection - 1);
-            setFocusedField(getMaxFieldsForSection(focusedSection - 1) - 1);
-          }
+          nav.prev();
         } else {
-          const maxFields = getMaxFieldsForSection(focusedSection);
-          if (focusedField < maxFields - 1) {
-            setFocusedField(focusedField + 1);
-          } else if (focusedSection < 3) {
-            setFocusedSection(focusedSection + 1);
-            setFocusedField(0);
-          }
+          nav.next();
         }
         return;
       }
 
-      // Arrow keys for toggles
+      // Arrow keys for toggles and selections
       if (key.name === "up" || key.name === "down") {
-        if (focusedSection === 1 && focusedField === 2) {
+        // Strict scope toggle
+        if (nav.currentSectionName === "scope" && nav.focusedField === 2) {
           setState((prev) => ({
             ...prev,
             scope: { ...prev.scope, strictScope: !prev.scope.strictScope },
           }));
           return;
         }
-        if (focusedSection === 1 && focusedField === 3) {
+        // Enumerate subdomains toggle
+        if (nav.currentSectionName === "scope" && nav.focusedField === 3) {
           setState((prev) => ({
             ...prev,
             scope: {
@@ -453,7 +328,8 @@ export default function WebWizard({
           }));
           return;
         }
-        if (focusedSection === 2 && focusedField === 0) {
+        // Headers mode
+        if (nav.currentSectionName === "headers" && nav.focusedField === 0) {
           const modes: Array<"none" | "default" | "custom"> = [
             "none",
             "default",
@@ -470,168 +346,66 @@ export default function WebWizard({
           }));
           return;
         }
-        // Model selection - navigate through visible models
-        if (focusedSection === 3 && visibleModels.length > 0) {
-          const currentVisibleIndex = visibleModels.findIndex(
-            (m) => m.id === model.id,
-          );
-          const newVisibleIndex =
-            key.name === "up"
-              ? Math.max(0, currentVisibleIndex - 1)
-              : Math.min(visibleModels.length - 1, currentVisibleIndex + 1);
-          const newModel = visibleModels[newVisibleIndex];
-          if (newModel) {
-            setModel(newModel);
-            const newGlobalIndex = availableModels.findIndex(
-              (m) => m.id === newModel.id,
-            );
-            if (newGlobalIndex >= 0) {
-              setSelectedModelIndex(newGlobalIndex);
-            }
-          }
+        // Model navigation
+        if (nav.currentSectionName === "model") {
+          modelPicker.navigateModel(key.name as "up" | "down");
           return;
         }
       }
 
-      // Model section: handle typing for search, backspace, escape
-      if (focusedSection === 3) {
-        // Backspace - remove last char from search
+      // Model section: typing, backspace, provider toggle
+      if (nav.currentSectionName === "model") {
         if (key.name === "backspace") {
-          setModelSearchQuery((prev) => prev.slice(0, -1));
+          modelPicker.handleSearchBackspace();
           return;
         }
-        // Escape - clear search
-        if (key.name === "escape" && modelSearchQuery) {
-          setModelSearchQuery("");
+        if (key.name === "escape" && modelPicker.modelSearchQuery) {
+          modelPicker.clearSearch();
           return;
         }
-        // Left/Right - toggle provider expansion
         if (key.name === "left" || key.name === "right") {
-          // Find which provider the current model belongs to
-          const currentProvider = model.provider;
-          if (key.name === "left") {
-            setExpandedProviders((prev) => {
-              const next = new Set(prev);
-              next.delete(currentProvider);
-              return next;
-            });
-          } else {
-            setExpandedProviders((prev) => new Set([...prev, currentProvider]));
-          }
+          modelPicker.toggleProvider(key.name as "left" | "right");
           return;
         }
-        // Tab in model section - toggle next provider expansion
-        if (key.name === "tab" && !key.shift) {
-          const availableProviders = providerOrder.filter(
-            (p) => groupedModels[p]?.length > 0,
-          );
-          if (availableProviders.length > 0) {
-            // Find next provider to toggle
-            const currentExpanded = [...expandedProviders];
-            const nextToExpand = availableProviders.find(
-              (p) => !expandedProviders.has(p),
-            );
-            if (nextToExpand) {
-              setExpandedProviders((prev) => new Set([...prev, nextToExpand]));
-            } else {
-              // All expanded, go to next section
-              setFocusedSection(0);
-              setFocusedField(0);
-            }
-            return;
-          }
-        }
-        // Printable character - add to search
         if (
           key.sequence &&
           key.sequence.length === 1 &&
           /[a-zA-Z0-9\-_.]/.test(key.sequence)
         ) {
-          setModelSearchQuery((prev) => prev + key.sequence);
-          // Auto-expand all providers when searching
-          if (!modelSearchQuery) {
-            setExpandedProviders(new Set(providerOrder));
-          }
+          modelPicker.handleSearchChar(key.sequence);
           return;
         }
       }
     }
   });
 
-  function getMaxFieldsForSection(section: number): number {
-    switch (section) {
-      case 0:
-        return 4; // Auth
-      case 1:
-        return 4; // Scope (host, port, strictScope, enumerateSubdomains)
-      case 2:
-        return state.headers.mode === "custom" ? 3 : 1; // Headers
-      case 3:
-        return 1; // Model
-      default:
-        return 1;
-    }
+  if (nav.currentStep === "creating") {
+    return <CreatingOverlay target={state.target} modeLabel={modeLabel} />;
   }
 
-  // Get mode label for display
-  const modeLabel = autoMode ? "Auto Mode" : "Driver Mode";
-  const modeDescription = autoMode
-    ? "Automated pentesting - agents run autonomously"
-    : "Manual orchestration - you direct the agents";
-
-  // Render creating state
-  if (currentStep === "creating") {
+  if (nav.currentStep === "target") {
     return (
-      <box
-        flexDirection="column"
-        width="100%"
-        height="100%"
-        alignItems="center"
-        justifyContent="center"
-        flexGrow={1}
-        gap={2}
+      <TargetStep
+        title="Configure Web App Pentest"
+        subtitle={modeDescription}
+        modelInfo={`Model: ${model.name} [${isModelUserSelected ? "user" : "default"}]`}
+        name={state.name}
+        target={state.target}
+        error={error}
+        focusedField={nav.focusedField}
+        onNameChange={(v) => setState((prev) => ({ ...prev, name: v }))}
+        onTargetChange={(v) => setState((prev) => ({ ...prev, target: v }))}
+        hints={[
+          { key: "Enter", label: "to start immediately" },
+          { key: "Tab", label: "to configure options" },
+          { key: "ESC", label: "to cancel" },
+        ]}
       >
-        <SpinnerDots label="Creating session..." fg={colors.primary} />
-        <text fg={colors.textMuted}>Target: {state.target}</text>
-        <text fg={colors.textMuted}>Mode: {modeLabel}</text>
-      </box>
-    );
-  }
-
-  // Render target step
-  if (currentStep === "target") {
-    return (
-      <box width="100%" flexDirection="column" gap={2} paddingLeft={4}>
-        <text fg={colors.text}>Configure Web App Pentest</text>
-        <text fg={colors.textMuted}>{modeDescription}</text>
-        <text fg={colors.textMuted}>
-          Model: {model.name} [{isModelUserSelected ? "user" : "default"}]
-        </text>
-
-        {error && <text fg={colors.error}>Error: {error}</text>}
-
-        <Input
-          label="Session Name"
-          description="Auto-generated, edit if desired"
-          placeholder="swift-falcon"
-          value={state.name}
-          onInput={(v) => setState((prev) => ({ ...prev, name: v }))}
-          focused={targetFocusedField === 0}
-        />
-
-        <Input
-          label="Target URL"
-          description="e.g., https://example.com"
-          placeholder="https://example.com"
-          value={state.target}
-          onInput={(v) => setState((prev) => ({ ...prev, target: v }))}
-          focused={targetFocusedField === 1}
-        />
-
+        {/* Source code access toggle — unique to web wizard */}
         <box flexDirection="column" gap={1}>
           <box flexDirection="row" gap={1}>
             <text
-              fg={targetFocusedField === 2 ? colors.primary : colors.textMuted}
+              fg={nav.focusedField === 2 ? colors.primary : colors.textMuted}
             >
               Source Code Access:
             </text>
@@ -640,7 +414,7 @@ export default function WebWizard({
             >
               {state.sourceCodeAccess ? "● Enabled" : "○ Disabled"}
             </text>
-            {targetFocusedField === 2 && (
+            {nav.focusedField === 2 && (
               <text fg={colors.textMuted}>(↑/↓ to toggle)</text>
             )}
           </box>
@@ -651,36 +425,15 @@ export default function WebWizard({
               placeholder={process.cwd()}
               value={state.cwd}
               onInput={(v) => setState((prev) => ({ ...prev, cwd: v }))}
-              focused={targetFocusedField === 3}
+              focused={nav.focusedField === 3}
             />
           )}
         </box>
-
-        <box flexDirection="column" gap={0} marginTop={1}>
-          <text>
-            <span fg={colors.primary}>█ </span>
-            <span fg={colors.textMuted}>Press </span>
-            <span fg={colors.text}>[Enter]</span>
-            <span fg={colors.textMuted}> to start immediately</span>
-          </text>
-          <text>
-            <span fg={colors.primary}>█ </span>
-            <span fg={colors.textMuted}>Press </span>
-            <span fg={colors.text}>[Tab]</span>
-            <span fg={colors.textMuted}> to configure options</span>
-          </text>
-          <text>
-            <span fg={colors.primary}>█ </span>
-            <span fg={colors.textMuted}>Press </span>
-            <span fg={colors.text}>[ESC]</span>
-            <span fg={colors.textMuted}> to cancel</span>
-          </text>
-        </box>
-      </box>
+      </TargetStep>
     );
   }
 
-  // Render configure step
+  // Configure step
   return (
     <box width="100%" flexDirection="column" gap={2} paddingLeft={4}>
       <box flexDirection="column">
@@ -691,354 +444,53 @@ export default function WebWizard({
         </text>
       </box>
 
-      {/* Auth Section */}
-      <box flexDirection="column" gap={1}>
-        <text>
-          <span fg={colors.primary}>█ </span>
-          <span fg={focusedSection === 0 ? colors.text : colors.textMuted}>
-            Authentication
-          </span>
-        </text>
-        {focusedSection === 0 && (
-          <box flexDirection="column" gap={1} paddingLeft={2}>
-            <Input
-              label="Login URL"
-              placeholder="https://example.com/login"
-              value={state.auth.loginUrl}
-              onInput={(v) =>
-                setState((prev) => ({
-                  ...prev,
-                  auth: { ...prev.auth, loginUrl: v },
-                }))
-              }
-              onPaste={(event) => {
-                const cleaned = String(event.text).replace(/\r?\n/g, " ");
-                setState((prev) => ({
-                  ...prev,
-                  auth: {
-                    ...prev.auth,
-                    loginUrl: prev.auth.loginUrl + cleaned,
-                  },
-                }));
-              }}
-              focused={focusedField === 0}
-            />
-            <Input
-              label="Username"
-              placeholder="admin"
-              value={state.auth.username}
-              onInput={(v) =>
-                setState((prev) => ({
-                  ...prev,
-                  auth: { ...prev.auth, username: v },
-                }))
-              }
-              onPaste={(event) => {
-                const cleaned = String(event.text).replace(/\r?\n/g, " ");
-                setState((prev) => ({
-                  ...prev,
-                  auth: {
-                    ...prev.auth,
-                    username: prev.auth.username + cleaned,
-                  },
-                }));
-              }}
-              focused={focusedField === 1}
-            />
-            <Input
-              label="Password"
-              placeholder="••••••••"
-              value={state.auth.password}
-              onInput={(v) =>
-                setState((prev) => ({
-                  ...prev,
-                  auth: { ...prev.auth, password: v },
-                }))
-              }
-              onPaste={(event) => {
-                const cleaned = String(event.text).replace(/\r?\n/g, " ");
-                setState((prev) => ({
-                  ...prev,
-                  auth: {
-                    ...prev.auth,
-                    password: prev.auth.password + cleaned,
-                  },
-                }));
-              }}
-              focused={focusedField === 2}
-            />
-            <Input
-              label="Auth Instructions"
-              placeholder="Use OAuth flow, extract bearer token..."
-              value={state.auth.instructions}
-              onInput={(v) =>
-                setState((prev) => ({
-                  ...prev,
-                  auth: { ...prev.auth, instructions: v },
-                }))
-              }
-              onPaste={(event) => {
-                const cleaned = String(event.text).replace(/\r?\n/g, " ");
-                setState((prev) => ({
-                  ...prev,
-                  auth: {
-                    ...prev.auth,
-                    instructions: prev.auth.instructions + cleaned,
-                  },
-                }));
-              }}
-              focused={focusedField === 3}
-            />
-          </box>
-        )}
-      </box>
+      <AuthSection
+        expanded={nav.focusedSection === 0}
+        focusedField={nav.focusedField}
+        auth={state.auth}
+        onUpdate={(auth) => setState((prev) => ({ ...prev, auth }))}
+      />
 
-      {/* Scope Section */}
-      <box flexDirection="column" gap={1}>
-        <text>
-          <span fg={colors.primary}>█ </span>
-          <span fg={focusedSection === 1 ? colors.text : colors.textMuted}>
-            Scope Constraints
-          </span>
-        </text>
-        {focusedSection === 1 && (
-          <box flexDirection="column" gap={1} paddingLeft={2}>
-            <Input
-              label="Add Allowed Host"
-              description="Press Enter to add"
-              placeholder="example.com"
-              value={hostInput}
-              onInput={setHostInput}
-              focused={focusedField === 0}
-            />
-            {state.scope.allowedHosts.length > 0 && (
-              <box flexDirection="column" paddingLeft={2}>
-                {state.scope.allowedHosts.map((h, i) => (
-                  <text key={i} fg={colors.textMuted}>
-                    • {h}
-                  </text>
-                ))}
-              </box>
-            )}
-            <Input
-              label="Add Allowed Port"
-              description="Press Enter to add"
-              placeholder="443"
-              value={portInput}
-              onInput={setPortInput}
-              focused={focusedField === 1}
-            />
-            {state.scope.allowedPorts.length > 0 && (
-              <box flexDirection="column" paddingLeft={2}>
-                {state.scope.allowedPorts.map((p, i) => (
-                  <text key={i} fg={colors.textMuted}>
-                    • {p}
-                  </text>
-                ))}
-              </box>
-            )}
-            <box flexDirection="row" gap={1}>
-              <text fg={focusedField === 2 ? colors.text : colors.textMuted}>
-                Strict Scope:
-              </text>
-              <text
-                fg={state.scope.strictScope ? colors.primary : colors.textMuted}
-              >
-                {state.scope.strictScope ? "● Enabled" : "○ Disabled"}
-              </text>
-              {focusedField === 2 && (
-                <text fg={colors.textMuted}>(↑/↓ to toggle)</text>
-              )}
-            </box>
-            <box flexDirection="row" gap={1}>
-              <text fg={focusedField === 3 ? colors.primary : colors.textMuted}>
-                Enumerate Subdomains:
-              </text>
-              <text
-                fg={
-                  state.scope.enumerateSubdomains
-                    ? colors.primary
-                    : colors.textMuted
-                }
-              >
-                {state.scope.enumerateSubdomains ? "● Enabled" : "○ Disabled"}
-              </text>
-              {focusedField === 3 && (
-                <text fg={colors.textMuted}>(↑/↓ to toggle)</text>
-              )}
-            </box>
-          </box>
-        )}
-      </box>
+      <ScopeSection
+        expanded={nav.focusedSection === 1}
+        focusedField={nav.focusedField}
+        scope={state.scope}
+        onUpdate={(scope) =>
+          setState((prev) => ({
+            ...prev,
+            scope: { ...prev.scope, ...scope },
+          }))
+        }
+        hostInput={hostInput}
+        onHostInputChange={setHostInput}
+        portInput={portInput}
+        onPortInputChange={setPortInput}
+        showSubdomainToggle={true}
+      />
 
-      {/* Headers Section */}
-      <box flexDirection="column" gap={1}>
-        <text>
-          <span fg={colors.primary}>█ </span>
-          <span fg={focusedSection === 2 ? colors.text : colors.textMuted}>
-            Request Headers
-          </span>
-        </text>
-        {focusedSection === 2 && (
-          <box flexDirection="column" gap={1} paddingLeft={2}>
-            <box flexDirection="column">
-              <text
-                fg={
-                  state.headers.mode === "none"
-                    ? colors.primary
-                    : colors.textMuted
-                }
-              >
-                {state.headers.mode === "none" ? "●" : "○"} None
-              </text>
-              <text
-                fg={
-                  state.headers.mode === "default"
-                    ? colors.primary
-                    : colors.textMuted
-                }
-              >
-                {state.headers.mode === "default" ? "●" : "○"} Default
-                (User-Agent: pensar-apex)
-              </text>
-              <text
-                fg={
-                  state.headers.mode === "custom"
-                    ? colors.primary
-                    : colors.textMuted
-                }
-              >
-                {state.headers.mode === "custom" ? "●" : "○"} Custom
-              </text>
-            </box>
-            {focusedField === 0 && (
-              <text fg={colors.textMuted}>Use ↑/↓ to select</text>
-            )}
+      <HeadersSection
+        expanded={nav.focusedSection === 2}
+        focusedField={nav.focusedField}
+        headers={state.headers}
+        onUpdate={(headers) => setState((prev) => ({ ...prev, headers }))}
+        headerNameInput={headerNameInput}
+        onHeaderNameInputChange={setHeaderNameInput}
+        headerValueInput={headerValueInput}
+        onHeaderValueInputChange={setHeaderValueInput}
+      />
 
-            {state.headers.mode === "custom" && (
-              <box flexDirection="column" gap={1}>
-                <Input
-                  label="Header Name"
-                  placeholder="X-Custom-Header"
-                  value={headerNameInput}
-                  onInput={setHeaderNameInput}
-                  focused={focusedField === 1}
-                />
-                <Input
-                  label="Header Value"
-                  placeholder="value"
-                  value={headerValueInput}
-                  onInput={setHeaderValueInput}
-                  focused={focusedField === 2}
-                />
-                {Object.keys(state.headers.customHeaders).length > 0 && (
-                  <box flexDirection="column">
-                    {Object.entries(state.headers.customHeaders).map(
-                      ([k, v]) => (
-                        <text key={k} fg={colors.textMuted}>
-                          • {k}: {v}
-                        </text>
-                      ),
-                    )}
-                  </box>
-                )}
-              </box>
-            )}
-          </box>
-        )}
-      </box>
+      <ModelPickerSection
+        expanded={nav.focusedSection === 3}
+        initialModel={initialModel}
+      />
 
-      {/* Model Section */}
-      <box flexDirection="column" gap={1}>
-        <text>
-          <span fg={colors.primary}>█ </span>
-          <span fg={focusedSection === 3 ? colors.text : colors.textMuted}>
-            AI Model
-          </span>
-          <span fg={colors.textMuted}> ({model.name})</span>
-          <span fg={colors.textMuted}>
-            {" "}
-            [{isModelUserSelected ? "user" : "default"}]
-          </span>
-        </text>
-        {focusedSection === 3 && (
-          <box flexDirection="column" gap={0} paddingLeft={2}>
-            {/* Search input */}
-            {modelSearchQuery && (
-              <text fg={colors.text}>Search: {modelSearchQuery}_</text>
-            )}
-            {!modelSearchQuery && (
-              <text fg={colors.textMuted}>Type to search models...</text>
-            )}
-
-            {/* Provider groups */}
-            {providerOrder.map((provider) => {
-              const models = groupedModels[provider];
-              if (!models || models.length === 0) return null;
-
-              const isExpanded = expandedProviders.has(provider);
-              const providerName = providerNames[provider] || provider;
-
-              return (
-                <box key={provider} flexDirection="column" gap={0}>
-                  {/* Provider header */}
-                  <text fg={isExpanded ? colors.text : colors.textMuted}>
-                    {isExpanded ? "▾" : "▸"} {providerName} ({models.length})
-                  </text>
-
-                  {/* Models list (when expanded) */}
-                  {isExpanded && (
-                    <box flexDirection="column" gap={0} paddingLeft={2}>
-                      {models.map((m) => {
-                        const isSelected = m.id === model.id;
-                        const isDefault =
-                          m.id === "claude-haiku-4-5" || m.id === "gpt-4o-mini";
-                        return (
-                          <text
-                            key={m.id}
-                            fg={isSelected ? colors.primary : colors.textMuted}
-                          >
-                            {isSelected ? "●" : "○"} {m.name}
-                            {isDefault && !isModelUserSelected && isSelected
-                              ? " [default]"
-                              : ""}
-                          </text>
-                        );
-                      })}
-                    </box>
-                  )}
-                </box>
-              );
-            })}
-
-            {/* Help text */}
-            <text fg={colors.textMuted}>
-              ↑/↓ select • Type to search • ←/→ collapse/expand
-            </text>
-          </box>
-        )}
-      </box>
-
-      <box flexDirection="column" gap={0} marginTop={1}>
-        <text>
-          <span fg={colors.primary}>█ </span>
-          <span fg={colors.textMuted}>Press </span>
-          <span fg={colors.text}>[Enter]</span>
-          <span fg={colors.textMuted}> to start pentest ({modeLabel})</span>
-        </text>
-        <text>
-          <span fg={colors.primary}>█ </span>
-          <span fg={colors.textMuted}>Press </span>
-          <span fg={colors.text}>[Tab]</span>
-          <span fg={colors.textMuted}> to navigate fields</span>
-        </text>
-        <text>
-          <span fg={colors.primary}>█ </span>
-          <span fg={colors.textMuted}>Press </span>
-          <span fg={colors.text}>[ESC]</span>
-          <span fg={colors.textMuted}> to go back</span>
-        </text>
-      </box>
+      <HintBar
+        hints={[
+          { key: "Enter", label: `to start pentest (${modeLabel})` },
+          { key: "Tab", label: "to navigate fields" },
+          { key: "ESC", label: "to go back" },
+        ]}
+      />
     </box>
   );
 }
