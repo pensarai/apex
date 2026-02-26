@@ -8,6 +8,7 @@
  */
 
 import packageJson from "../package.json";
+import { getCurrentVersion, upgrade } from "./core/installation";
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -209,8 +210,6 @@ async function runTargetedPentest() {
 }
 
 async function runUpgrade() {
-  const { getCurrentVersion, upgrade } = await import("./core/installation");
-
   const currentVersion = getCurrentVersion();
   console.log(`Current version: v${currentVersion}`);
   console.log("Checking for updates...");

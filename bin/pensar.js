@@ -14,6 +14,7 @@ import { dirname, join } from "path";
 
 // Import package.json directly so Bun can embed it at compile time
 import packageJson from "../package.json";
+import { getCurrentVersion, upgrade } from "../src/core/installation/index.ts";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -66,9 +67,6 @@ if (command === "benchmark") {
   // Import and run auth
   await import(authPath);
 } else if (command === "upgrade" || command === "update") {
-  // Run upgrade
-  const { getCurrentVersion, upgrade } = await import("../src/core/installation/index.ts");
-
   const currentVersion = getCurrentVersion();
   console.log(`Current version: v${currentVersion}`);
   console.log("Checking for updates...");
