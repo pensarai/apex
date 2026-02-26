@@ -8,6 +8,7 @@
  */
 
 import packageJson from "../package.json";
+import { getCurrentVersion, upgrade } from "./core/installation";
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -55,6 +56,9 @@ function showHelp() {
   );
   console.log(
     "  pensar targeted-pentest [options]   Run a targeted pentest on a single target",
+  );
+  console.log(
+    "  pensar upgrade                      Update pensar to the latest version",
   );
   console.log("  pensar help                         Show this help message");
   console.log("  pensar version                      Show version number");
@@ -205,6 +209,18 @@ async function runTargetedPentest() {
   console.log(`POCs:      ${pocsPath}`);
 }
 
+async function runUpgrade() {
+  const currentVersion = getCurrentVersion();
+  console.log(`Current version: v${currentVersion}`);
+  console.log("Checking for updates...");
+
+  const result = await upgrade({ interactive: true });
+  console.log();
+  console.log(result.message);
+
+  process.exit(result.success ? 0 : 1);
+}
+
 // ---------------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------------
@@ -213,6 +229,8 @@ if (command === "version" || command === "--version" || command === "-v") {
   console.log(`v${version}`);
 } else if (command === "help" || command === "--help" || command === "-h") {
   showHelp();
+} else if (command === "upgrade" || command === "update") {
+  await runUpgrade();
 } else if (command === "pentest") {
   await runPentest();
 } else if (command === "targeted-pentest") {

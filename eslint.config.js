@@ -13,7 +13,7 @@ export default tseslint.config(
     rules: {
       "@typescript-eslint/no-explicit-any": "error",
       "@typescript-eslint/no-unused-vars": "off",
-      "@typescript-eslint/no-namespace": "off",
+      "@typescript-eslint/no-namespace": "error",
       "@typescript-eslint/no-require-imports": "off",
       "no-unused-vars": "off",
       "unused-imports/no-unused-imports": "error",
