@@ -114,6 +114,7 @@ export function createPensarModel(
       const response = await fetch(url, {
         method: "POST",
         headers,
+        signal: options.abortSignal,
         body: JSON.stringify({
           modelId: bedrockModelId,
           body,

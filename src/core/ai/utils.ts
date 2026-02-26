@@ -7,6 +7,7 @@ import { getModelInfo } from "./models";
 import { createPensarModel } from "./providers/pensar";
 import { getPensarApiUrl } from "../api/constants";
 import { ensureValidToken } from "../api/tokenRefresh";
+import { config } from "../config";
 import {
   generateText,
   type LanguageModel,
@@ -136,15 +137,19 @@ export function getProviderModel(
         workspaceId: authConfig?.workspaceId,
       };
 
-      // If WorkOS tokens are available, use token refresh callback
+      // If WorkOS tokens are available, use token refresh callback.
+      // Read fresh config each time so rotated tokens are picked up
+      // (WorkOS refresh tokens are single-use).
       if (hasWorkOSAuth) {
-        const authSnapshot = {
-          accessToken: authConfig?.accessToken,
-          refreshToken: authConfig?.refreshToken,
-          pensarAPIKey: authConfig?.pensarAPIKey,
-          pensarApiUrl: authConfig?.pensarApiUrl,
+        modelConfig.getToken = async () => {
+          const freshConfig = await config.get();
+          return ensureValidToken({
+            accessToken: freshConfig.accessToken,
+            refreshToken: freshConfig.refreshToken,
+            pensarAPIKey: freshConfig.pensarAPIKey,
+            pensarApiUrl: freshConfig.pensarApiUrl,
+          });
         };
-        modelConfig.getToken = () => ensureValidToken(authSnapshot);
       }
 
       providerModel = createPensarModel(bedrockModelId, modelConfig);

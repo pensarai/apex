@@ -234,11 +234,12 @@ export default function AuthFlow() {
           refresh_token: string;
         };
 
-        // Save tokens
+        // Save tokens and sync React state
         await config.update({
           accessToken: data.access_token,
           refreshToken: data.refresh_token,
         });
+        await appConfig.reload();
 
         // Fetch user's workspaces
         await fetchWorkspaces(apiUrl, data.access_token);

@@ -159,7 +159,8 @@ function convertToAnthropicFormat(
     } else if (options.toolChoice.type === "required") {
       body.tool_choice = { type: "any" };
     } else if (options.toolChoice.type === "none") {
-      // Omit tool_choice to let the model decide (no forced tool use)
+      // Strip tools entirely so the model cannot call any
+      delete body.tools;
     } else if (options.toolChoice.type === "tool") {
       body.tool_choice = {
         type: "tool",

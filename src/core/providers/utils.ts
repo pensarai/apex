@@ -38,7 +38,7 @@ export function isProviderConfigured(
         process.env.LOCAL_MODEL_URL
       );
     case "pensar":
-      return !!config.pensarAPIKey;
+      return !!(config.pensarAPIKey || config.accessToken);
     default:
       return false;
   }
@@ -53,7 +53,8 @@ export function hasAnyProviderConfigured(config: Config): boolean {
     !!config.localModelUrl ||
     !!config.localModelName ||
     !!process.env.LOCAL_MODEL_URL ||
-    !!config.pensarAPIKey
+    !!config.pensarAPIKey ||
+    !!config.accessToken
   );
 }
 
