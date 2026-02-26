@@ -1,10 +1,6 @@
 import { join } from "path";
 import type { DeploymentContext } from "./types";
 
-// ---------------------------------------------------------------------------
-// Phase 0: Application Context Discovery
-// ---------------------------------------------------------------------------
-
 export function buildApplicationContextObjective(
   codebasePath: string,
   applicationIdentity?: string,
@@ -60,10 +56,6 @@ Analyze the codebase to understand what this application IS — its nature, doma
 Call the \`response\` tool with the structured application context when done.`;
 }
 
-// ---------------------------------------------------------------------------
-// Phase 1: Deployment Context Discovery
-// ---------------------------------------------------------------------------
-
 export function buildDeploymentContextObjective(
   codebasePath: string,
 ): string {
@@ -118,10 +110,6 @@ Analyze the repository to extract deployment and infrastructure context. This in
 ### Output
 Call the \`response\` tool with the structured deployment context when done.`;
 }
-
-// ---------------------------------------------------------------------------
-// Phase 2: Security Controls Discovery
-// ---------------------------------------------------------------------------
 
 export function buildSecurityControlsObjective(
   codebasePath: string,
@@ -217,10 +205,6 @@ Analyze the codebase to find ALL security controls, authentication mechanisms, a
 Call the \`response\` tool with the structured security controls when done.`;
 }
 
-// ---------------------------------------------------------------------------
-// Phase 3a/3b: Data Synthesis Agent (reads JSON files, not source code)
-// ---------------------------------------------------------------------------
-
 export const DATA_SYNTHESIS_AGENT_SYSTEM_PROMPT = `You are an expert security analyst synthesizing structured analysis data into threat model artifacts. You are NOT exploring source code — you are reading structured JSON analysis files that were produced by earlier phases.
 
 # Tool Usage Guide
@@ -275,61 +259,6 @@ Read these files to understand the system:
 Call the \`response\` tool with the structured system architecture when done.`;
 }
 
-export function buildThreatsSynthesisObjective(
-  sessionRootPath: string,
-): string {
-  const attackSurfacePath = join(sessionRootPath, "attack-surface-results.json");
-  const deploymentContextPath = join(sessionRootPath, "deployment-context.json");
-  const securityControlsPath = join(sessionRootPath, "security-controls.json");
-  const systemArchitecturePath = join(sessionRootPath, "system-architecture.json");
-
-  return `# Identify STRIDE Threats
-
-## Data Files
-Read ALL of these files before generating threats:
-- **Attack Surface:** ${attackSurfacePath}
-- **Deployment Context:** ${deploymentContextPath}
-- **Security Controls:** ${securityControlsPath}
-- **System Architecture:** ${systemArchitecturePath}
-
-## STRIDE Categories
-
-- **Spoofing**: Can an attacker pretend to be another user or system? (fake credentials, token theft, session hijacking)
-- **Tampering**: Can an attacker modify data they shouldn't? (SQL injection, parameter manipulation, request forgery)
-- **Repudiation**: Can an attacker deny performing an action? (missing audit logs, unsigned transactions)
-- **Information Disclosure**: Can an attacker access data they shouldn't? (IDOR, directory traversal, verbose errors, data leaks)
-- **Denial of Service**: Can an attacker degrade or halt the service? (resource exhaustion, algorithmic complexity, missing rate limits)
-- **Elevation of Privilege**: Can an attacker gain unauthorized access levels? (IDOR to admin, role bypass, privilege escalation)
-
-## Instructions
-
-1. **Read all four data files** in full.
-2. For each STRIDE category, analyze the attack surface and security controls to find threats:
-   - Cross-reference endpoints from the attack surface with security controls to find gaps
-   - Consider deployment-specific attack vectors (e.g. PostgreSQL-specific SQL injection, Node.js prototype pollution)
-   - Assess which controls mitigate which threats, and note the residual risk
-   - Generate actionable pentest guidance with deployment-specific considerations
-   - Reference component IDs and data flow IDs from the system architecture
-   - Assign unique threat IDs (T-001, T-002, ...)
-
-## Quality Standards
-
-- **Every threat must reference a real endpoint** from the attack surface data — do not fabricate endpoints
-- **Preconditions must be specific** — not generic statements like "if the app is vulnerable" but specific conditions like "the search parameter is concatenated into raw SQL without parameterization"
-- **Mitigations must reference actual controls** — cite the specific security controls from the data, with notes on whether they apply to this threat
-- **Attack vectors must include real endpoints** with method, parameter, and specific technique
-- **Pentest guidance must be actionable** — specific objectives a pentester can execute, with deployment-specific considerations (e.g. "PostgreSQL — use pg_sleep for time-based blind SQLi")
-- **Residual risk** should account for existing mitigations — if strong mitigations exist, risk is lower
-
-Focus on threats that are plausible given the deployment context and security controls. Don't generate generic threats — every threat should be grounded in specific endpoints, parameters, and deployment details from the data files.
-
-## Output
-Call the \`response\` tool with the structured STRIDE threats when done.`;
-}
-
-// ---------------------------------------------------------------------------
-// Phase 3b (new): Attack Path Synthesis (application-centric)
-// ---------------------------------------------------------------------------
 
 export function buildAttackPathSynthesisObjective(
   sessionRootPath: string,
