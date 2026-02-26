@@ -1,8 +1,10 @@
 import { useState, useEffect } from "react";
+import { execSync } from "child_process";
 import { useKeyboard } from "@opentui/react";
 import { useRoute } from "../../context/route";
 import { useConfig } from "../../context/config";
 import { getPensarApiUrl, getPensarConsoleUrl } from "../../../core/api/constants";
+import { ensureValidToken } from "../../../core/api/tokenRefresh";
 
 type CreditsStep = "loading" | "no-auth" | "display" | "browser-opened";
 
@@ -29,11 +31,11 @@ export default function CreditsFlow() {
     try {
       const platform = process.platform;
       if (platform === "darwin") {
-        Bun.spawn(["open", url]);
+        execSync(`open ${JSON.stringify(url)}`);
       } else if (platform === "win32") {
-        Bun.spawn(["cmd", "/c", "start", url]);
+        execSync(`start ${JSON.stringify(url)}`);
       } else {
-        Bun.spawn(["xdg-open", url]);
+        execSync(`xdg-open ${JSON.stringify(url)}`);
       }
     } catch {
       // Browser open failed — user will see the fallback URL
@@ -42,8 +44,12 @@ export default function CreditsFlow() {
   };
 
   const fetchBalance = async () => {
-    const apiKey = appConfig.data.pensarAPIKey;
-    if (!apiKey) {
+    const tokenResult = await ensureValidToken({
+      accessToken: appConfig.data.accessToken,
+      refreshToken: appConfig.data.refreshToken,
+      pensarAPIKey: appConfig.data.pensarAPIKey,
+    });
+    if (!tokenResult) {
       setStep("no-auth");
       return;
     }
@@ -55,7 +61,7 @@ export default function CreditsFlow() {
       const apiUrl = getPensarApiUrl(appConfig.data);
       const response = await fetch(`${apiUrl}/bedrock/validate`, {
         method: "GET",
-        headers: { Authorization: `Bearer ${apiKey}` },
+        headers: { Authorization: `Bearer ${tokenResult.token}` },
       });
 
       if (!response.ok) {
