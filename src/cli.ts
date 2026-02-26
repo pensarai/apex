@@ -56,6 +56,9 @@ function showHelp() {
   console.log(
     "  pensar targeted-pentest [options]   Run a targeted pentest on a single target",
   );
+  console.log(
+    "  pensar threat-model [options]       Run an application-centric threat model",
+  );
   console.log("  pensar help                         Show this help message");
   console.log("  pensar version                      Show version number");
   console.log();
@@ -70,6 +73,14 @@ function showHelp() {
   console.log("  --target <url>          (required) Target URL / domain / IP");
   console.log(
     "  --objective <text>      (required, repeatable) Testing objective",
+  );
+  console.log(
+    "  --model <model>         AI model (default: claude-sonnet-4-5)",
+  );
+  console.log();
+  console.log("threat-model options:");
+  console.log(
+    "  --cwd <path>            (required) Local codebase path for whitebox analysis",
   );
   console.log(
     "  --model <model>         AI model (default: claude-sonnet-4-5)",
@@ -236,6 +247,85 @@ async function runTargetedPentest() {
   console.log(`POCs:      ${pocsPath}`);
 }
 
+async function runThreatModel() {
+  const { config } = await import("dotenv");
+  config();
+
+  const { runThreatModelAgent } = await import("./core/api/threatModel");
+  const { sessions } = await import("./core/session");
+  const { config: appConfig } = await import("./core/config");
+  type AIModel = import("./core/ai").AIModel;
+
+  const cwd = getArgRequired("--cwd");
+  const model = (getArg("--model") ?? "claude-sonnet-4-5") as AIModel;
+
+  console.log("=".repeat(60));
+  console.log("THREAT MODEL");
+  console.log("=".repeat(60));
+  console.log(`Codebase: ${cwd}`);
+  console.log(`Model:    ${model}`);
+  console.log();
+
+  const pensarConfig = await appConfig.get();
+
+  const session = await sessions.create({
+    name: "Threat Model",
+    targets: [cwd],
+  });
+
+  const run = runThreatModelAgent({
+    cwd,
+    session,
+    model,
+    authConfig: {
+      anthropicAPIKey: pensarConfig.anthropicAPIKey ?? undefined,
+      openAiAPIKey: pensarConfig.openAiAPIKey ?? undefined,
+      openRouterAPIKey: pensarConfig.openRouterAPIKey ?? undefined,
+      local: pensarConfig.localModelUrl
+        ? { baseURL: pensarConfig.localModelUrl }
+        : undefined,
+    },
+  });
+
+  for await (const event of run) {
+    switch (event.type) {
+      case "text-delta":
+        process.stdout.write(event.data.text);
+        break;
+      case "tool-call":
+        console.log(`\n→ ${event.data.toolName}`);
+        break;
+      case "tool-result":
+        console.log(`✓ ${event.data.toolName} completed`);
+        break;
+      case "subagent-spawn":
+        console.log(`\n▸ Phase: ${event.subagentId}`);
+        break;
+      case "subagent-complete":
+        console.log(`✓ Phase: ${event.subagentId} ${event.status}`);
+        break;
+      case "error":
+        console.error("Error:", event.error);
+        break;
+    }
+  }
+
+  const result = await run.result;
+
+  console.log();
+  console.log("=".repeat(60));
+  console.log("RESULTS");
+  console.log("=".repeat(60));
+  console.log(`Attack Paths: ${result.summary.totalAttackPaths}`);
+  console.log(`  Critical: ${result.summary.bySeverity.critical}`);
+  console.log(`  High:     ${result.summary.bySeverity.high}`);
+  console.log(`  Medium:   ${result.summary.bySeverity.medium}`);
+  console.log(`  Low:      ${result.summary.bySeverity.low}`);
+  console.log();
+  console.log(`Markdown: ${result.files.markdownPath}`);
+  console.log(`JSON:     ${result.files.jsonPath}`);
+}
+
 // ---------------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------------
@@ -248,6 +338,8 @@ if (command === "version" || command === "--version" || command === "-v") {
   await runPentest();
 } else if (command === "targeted-pentest") {
   await runTargetedPentest();
+} else if (command === "threat-model") {
+  await runThreatModel();
 } else if (args.length === 0) {
   await import("./tui/index.tsx");
 } else {
