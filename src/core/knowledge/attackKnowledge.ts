@@ -83,15 +83,36 @@ function loadTechnique(filePath: string): AttackTechnique | null {
 }
 
 /**
- * Loads all techniques from a directory.
+ * Loads all techniques from a directory, returning file paths alongside.
  */
-function loadTechniquesFromDir(dir: string): AttackTechnique[] {
+function loadTechniquesFromDir(
+  dir: string,
+): { technique: AttackTechnique; filePath: string }[] {
   if (!existsSync(dir)) return [];
 
   return readdirSync(dir)
     .filter((f) => f.endsWith(".json"))
-    .map((f) => loadTechnique(join(dir, f)))
-    .filter((t): t is AttackTechnique => t !== null);
+    .map((f) => {
+      const filePath = join(dir, f);
+      const technique = loadTechnique(filePath);
+      return technique ? { technique, filePath } : null;
+    })
+    .filter(
+      (t): t is { technique: AttackTechnique; filePath: string } => t !== null,
+    );
+}
+
+/**
+ * AttackKnowledgeStore loads techniques from:
+ * 1. Bundled seed data (ships with the tool)
+ * 2. User-level directory (~/.apex/knowledge/techniques/)
+ *
+ * User techniques override seed techniques with the same ID.
+ */
+/** A technique entry with its source file path. */
+export interface StoredTechnique {
+  technique: AttackTechnique;
+  filePath: string;
 }
 
 /**
@@ -102,7 +123,7 @@ function loadTechniquesFromDir(dir: string): AttackTechnique[] {
  * User techniques override seed techniques with the same ID.
  */
 export class AttackKnowledgeStore {
-  private techniques: Map<string, AttackTechnique> = new Map();
+  private techniques: Map<string, StoredTechnique> = new Map();
   private loaded = false;
 
   /**
@@ -115,13 +136,15 @@ export class AttackKnowledgeStore {
     this.techniques.clear();
 
     // Load seed first
-    for (const t of loadTechniquesFromDir(SEED_DIR)) {
-      this.techniques.set(t.id, t);
+    for (const { technique, filePath } of loadTechniquesFromDir(SEED_DIR)) {
+      this.techniques.set(technique.id, { technique, filePath });
     }
 
     // User techniques override seed by ID
-    for (const t of loadTechniquesFromDir(USER_KNOWLEDGE_DIR)) {
-      this.techniques.set(t.id, t);
+    for (const { technique, filePath } of loadTechniquesFromDir(
+      USER_KNOWLEDGE_DIR,
+    )) {
+      this.techniques.set(technique.id, { technique, filePath });
     }
 
     this.loaded = true;
@@ -132,6 +155,14 @@ export class AttackKnowledgeStore {
    */
   getAll(): AttackTechnique[] {
     this.load();
+    return Array.from(this.techniques.values()).map((s) => s.technique);
+  }
+
+  /**
+   * Returns all stored entries (technique + file path).
+   */
+  getAllStored(): StoredTechnique[] {
+    this.load();
     return Array.from(this.techniques.values());
   }
 
@@ -140,7 +171,15 @@ export class AttackKnowledgeStore {
    */
   getById(id: string): AttackTechnique | null {
     this.load();
-    return this.techniques.get(id) ?? null;
+    return this.techniques.get(id)?.technique ?? null;
+  }
+
+  /**
+   * Returns the file path for a technique by ID, or null.
+   */
+  getFilePath(id: string): string | null {
+    this.load();
+    return this.techniques.get(id)?.filePath ?? null;
   }
 
   /**
@@ -154,7 +193,7 @@ export class AttackKnowledgeStore {
     const filePath = join(USER_KNOWLEDGE_DIR, `${technique.id}.json`);
     writeFileSync(filePath, JSON.stringify(technique, null, 2));
 
-    this.techniques.set(technique.id, technique);
+    this.techniques.set(technique.id, { technique, filePath });
   }
 
   /**

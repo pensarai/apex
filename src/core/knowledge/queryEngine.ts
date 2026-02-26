@@ -8,6 +8,7 @@
 import {
   type AttackCategory,
   type AttackTechnique,
+  type StoredTechnique,
   getAttackKnowledgeStore,
 } from "./attackKnowledge";
 
@@ -30,6 +31,7 @@ export interface KnowledgeQuery {
 
 export interface ScoredTechnique {
   technique: AttackTechnique;
+  filePath: string;
   score: number;
 }
 
@@ -41,19 +43,24 @@ export class AttackKnowledgeQueryEngine {
   /**
    * Query the knowledge base. Results are ranked by relevance score
    * (number of matching query dimensions + free-text hit count).
+   *
+   * Returns scored results with file paths so callers can choose
+   * to read the full technique files on demand via read_file/grep.
    */
-  query(q: KnowledgeQuery): AttackTechnique[] {
+  query(q: KnowledgeQuery): ScoredTechnique[] {
     const store = getAttackKnowledgeStore();
-    const all = store.getAll();
+    const all = store.getAllStored();
     const limit = q.limit ?? 10;
 
     if (!q.category && !q.technology?.length && !q.context && !q.freeText) {
-      return all.slice(0, limit);
+      return all
+        .slice(0, limit)
+        .map((s) => ({ technique: s.technique, filePath: s.filePath, score: 0 }));
     }
 
     const scored: ScoredTechnique[] = [];
 
-    for (const technique of all) {
+    for (const { technique, filePath } of all) {
       let score = 0;
 
       // Category match (exact)
@@ -120,7 +127,7 @@ export class AttackKnowledgeQueryEngine {
       }
 
       if (score > 0) {
-        scored.push({ technique, score });
+        scored.push({ technique, filePath, score });
       }
     }
 
@@ -130,7 +137,7 @@ export class AttackKnowledgeQueryEngine {
         b.score - a.score || a.technique.title.localeCompare(b.technique.title),
     );
 
-    return scored.slice(0, limit).map((s) => s.technique);
+    return scored.slice(0, limit);
   }
 
   /**
@@ -138,7 +145,10 @@ export class AttackKnowledgeQueryEngine {
    */
   listByCategory(category: AttackCategory): AttackTechnique[] {
     const store = getAttackKnowledgeStore();
-    return store.getAll().filter((t) => t.category === category);
+    return store
+      .getAllStored()
+      .filter((s) => s.technique.category === category)
+      .map((s) => s.technique);
   }
 
   /**
