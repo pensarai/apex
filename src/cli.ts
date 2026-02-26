@@ -58,7 +58,12 @@ function showHelp() {
     "  pensar targeted-pentest [options]   Run a targeted pentest on a single target",
   );
   console.log(
+    "  pensar knowledge [subcommand]      Manage the attack knowledge base",
+  );
+  console.log(
     "  pensar upgrade                      Update pensar to the latest version",
+  );
+  console.log(
     "  pensar doctor                      Check dependencies and install missing tools",
   );
   console.log("  pensar help                         Show this help message");
@@ -78,6 +83,13 @@ function showHelp() {
   );
   console.log(
     "  --model <model>         AI model (default: claude-sonnet-4-5)",
+  );
+  console.log();
+  console.log("knowledge subcommands:");
+  console.log("  pensar knowledge list [--category X]   List techniques");
+  console.log("  pensar knowledge add <file.json>       Add a technique");
+  console.log(
+    "  pensar knowledge search <query>        Search the knowledge base",
   );
   console.log();
   console.log("Global options:");
@@ -210,6 +222,96 @@ async function runTargetedPentest() {
   console.log(`POCs:      ${pocsPath}`);
 }
 
+async function runKnowledge() {
+  const subcommand = args[1];
+  const subArgs = args.slice(2);
+
+  const {
+    getAttackKnowledgeStore,
+  } = await import("./core/knowledge/attackKnowledge");
+  const { getQueryEngine } = await import("./core/knowledge/queryEngine");
+
+  const store = getAttackKnowledgeStore();
+  const engine = getQueryEngine();
+
+  if (subcommand === "list") {
+    const category = getArg("--category", subArgs);
+    const techniques = category
+      ? engine.listByCategory(category as any)
+      : store.getAll();
+
+    if (techniques.length === 0) {
+      console.log("No techniques found.");
+      return;
+    }
+
+    console.log(`Attack Knowledge Base (${techniques.length} techniques)\n`);
+    for (const t of techniques) {
+      console.log(
+        `  [${t.category}] ${t.id}`,
+      );
+      console.log(`    ${t.title}`);
+      console.log(`    Tags: ${t.tags.join(", ")}`);
+      console.log();
+    }
+  } else if (subcommand === "add") {
+    const filePath = subArgs[0];
+    if (!filePath) {
+      console.error("Error: file path is required");
+      console.error("Usage: pensar knowledge add <file.json>");
+      process.exit(1);
+    }
+
+    const { readFileSync } = await import("fs");
+    try {
+      const raw = readFileSync(filePath, "utf-8");
+      const technique = JSON.parse(raw);
+
+      if (!technique.id || !technique.title || !technique.category) {
+        console.error(
+          "Error: technique must have at least id, title, and category fields",
+        );
+        process.exit(1);
+      }
+
+      store.addTechnique(technique);
+      console.log(`Added technique: ${technique.id} — ${technique.title}`);
+    } catch (err: any) {
+      console.error(`Error reading/parsing file: ${err.message}`);
+      process.exit(1);
+    }
+  } else if (subcommand === "search") {
+    const query = subArgs.join(" ");
+    if (!query) {
+      console.error("Error: search query is required");
+      console.error("Usage: pensar knowledge search <query>");
+      process.exit(1);
+    }
+
+    const results = engine.query({ freeText: query, limit: 10 });
+
+    if (results.length === 0) {
+      console.log("No matching techniques found.");
+      return;
+    }
+
+    console.log(`Search results for "${query}" (${results.length} matches)\n`);
+    for (const t of results) {
+      console.log(`  [${t.category}] ${t.title}`);
+      console.log(`    ${t.technique.summary.substring(0, 120)}...`);
+      console.log(`    Tags: ${t.tags.join(", ")}`);
+      console.log();
+    }
+  } else {
+    console.log("Usage:");
+    console.log("  pensar knowledge list [--category X]   List techniques");
+    console.log("  pensar knowledge add <file.json>       Add a technique");
+    console.log(
+      "  pensar knowledge search <query>        Search the knowledge base",
+    );
+  }
+}
+
 async function runUpgrade() {
   const currentVersion = getCurrentVersion();
   console.log(`Current version: v${currentVersion}`);
@@ -236,6 +338,8 @@ if (command === "version" || command === "--version" || command === "-v") {
   await runPentest();
 } else if (command === "targeted-pentest") {
   await runTargetedPentest();
+} else if (command === "knowledge") {
+  await runKnowledge();
 } else if (command === "doctor") {
   const { runDoctor } = await import("./core/doctor");
   await runDoctor();

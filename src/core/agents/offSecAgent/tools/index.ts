@@ -45,6 +45,20 @@ export { spawnCodingAgent } from "./spawnCodingAgent";
 // export { generateReport } from "./generateReport";
 export { provideComparisonResults } from "./provideComparisonResults";
 
+// Knowledge & chain reasoning tools
+export { queryAttackKnowledge } from "./queryAttackKnowledge";
+export { querySharedFindings } from "./querySharedFindings";
+
+// Attacker infrastructure tools
+export {
+  startCallbackServer,
+  checkCallbackServer,
+  stopCallbackServer,
+} from "./callbackServer";
+export { serveMaliciousPage } from "./maliciousPageServer";
+export { hostPayload } from "./hostPayload";
+export { InfrastructureManager } from "./infrastructure";
+
 // ---------------------------------------------------------------------------
 // Tool registry
 // ---------------------------------------------------------------------------
@@ -74,6 +88,15 @@ import { spawnPentestSwarm } from "./spawnPentestSwarm";
 import { spawnCodingAgent } from "./spawnCodingAgent";
 // import { generateReport } from "./generateReport";
 import { provideComparisonResults } from "./provideComparisonResults";
+import { queryAttackKnowledge } from "./queryAttackKnowledge";
+import { querySharedFindings } from "./querySharedFindings";
+import {
+  startCallbackServer,
+  checkCallbackServer,
+  stopCallbackServer,
+} from "./callbackServer";
+import { serveMaliciousPage } from "./maliciousPageServer";
+import { hostPayload } from "./hostPayload";
 
 /**
  * Create the full toolset for the OffensiveSecurityAgent.
@@ -121,6 +144,17 @@ export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
     // Reporting / benchmark tools
     // generate_report: generateReport(ctx),
     provide_comparison_results: provideComparisonResults(ctx),
+
+    // Knowledge & chain reasoning tools
+    query_attack_knowledge: queryAttackKnowledge(ctx),
+    query_shared_findings: querySharedFindings(ctx),
+
+    // Attacker infrastructure tools
+    start_callback_server: startCallbackServer(ctx),
+    check_callback_server: checkCallbackServer(ctx),
+    stop_callback_server: stopCallbackServer(ctx),
+    serve_malicious_page: serveMaliciousPage(ctx),
+    host_payload: hostPayload(ctx),
   } as const;
 }
 
@@ -157,4 +191,13 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "spawn_coding_agent",
   // "generate_report",
   "provide_comparison_results",
+  // Knowledge & chain reasoning
+  "query_attack_knowledge",
+  "query_shared_findings",
+  // Attacker infrastructure
+  "start_callback_server",
+  "check_callback_server",
+  "stop_callback_server",
+  "serve_malicious_page",
+  "host_payload",
 ] as const;

