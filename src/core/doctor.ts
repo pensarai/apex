@@ -85,9 +85,10 @@ export async function runDoctor(): Promise<void> {
   if (nmapInstalled) {
     let version = "";
     try {
-      version = execSync("nmap --version", { encoding: "utf-8" })
-        .split("\n")[0]
-        ?.trim() ?? "";
+      version =
+        execSync("nmap --version", { encoding: "utf-8" })
+          .split("\n")[0]
+          ?.trim() ?? "";
     } catch {
       // ignore
     }
@@ -144,7 +145,9 @@ export async function runDoctor(): Promise<void> {
         console.log("  Skipped nmap installation.");
       }
     } else {
-      console.log("  No supported package manager found. Install nmap manually:");
+      console.log(
+        "  No supported package manager found. Install nmap manually:",
+      );
       console.log("    https://nmap.org/download.html");
     }
     console.log();
