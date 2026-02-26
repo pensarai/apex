@@ -10,17 +10,9 @@ export interface UpgradeResult {
   toVersion: string;
 }
 
-export async function getVersion() {
+export async function resolveVersion(): Promise<string> {
   if (process.env["APEX_VERSION"]) return process.env["APEX_VERSION"];
-
-  const version = await fetch(
-    "https://registry.npmjs.org/@pensar/apex/latest",
-  ).then(async (res) => {
-    if (!res.ok) throw new Error(res.statusText);
-    const data = (await res.json()) as Record<string, unknown>;
-    return String(data.version);
-  });
-  return version;
+  return getLatestVersion();
 }
 
 export function getCurrentVersion(): string {

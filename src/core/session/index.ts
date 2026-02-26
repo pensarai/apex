@@ -3,7 +3,7 @@ import path from "path";
 import os from "os";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import * as Identifier from "../id/id";
-import { getVersion } from "../installation";
+import { getCurrentVersion } from "../installation";
 import * as Storage from "../storage";
 import type { Message } from "../messages/types";
 import * as Messages from "../messages";
@@ -337,7 +337,7 @@ export async function create(input: CreateInputProps) {
 
   const result: SessionInfo = {
     id: id,
-    version: (await getVersion()) ?? "unknown",
+    version: getCurrentVersion(),
     targets: input.targets,
     name: input.name,
     time: {

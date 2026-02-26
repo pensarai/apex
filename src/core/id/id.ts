@@ -30,11 +30,11 @@ export function descending(prefix: IdentifierPrefix, given?: string) {
 
 function generateID(
   prefix: IdentifierPrefix,
-  desc: boolean,
+  descending: boolean,
   given?: string,
 ): string {
   if (!given) {
-    return create(prefix, desc);
+    return create(prefix, descending);
   }
 
   if (!given.startsWith(prefixes[prefix])) {
@@ -56,7 +56,7 @@ function randomBase62(length: number): string {
 
 export function create(
   prefix: IdentifierPrefix,
-  desc: boolean,
+  descending: boolean,
   timestamp?: number,
 ): string {
   const currentTimestamp = timestamp ?? Date.now();
@@ -69,7 +69,7 @@ export function create(
 
   let now = BigInt(currentTimestamp) * BigInt(0x1000) + BigInt(counter);
 
-  now = desc ? ~now : now;
+  now = descending ? ~now : now;
 
   const timeBytes = Buffer.alloc(6);
   for (let i = 0; i < 6; i++) {

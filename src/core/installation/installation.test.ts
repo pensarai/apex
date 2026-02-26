@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   getCurrentVersion,
   getLatestVersion,
-  getVersion,
+  resolveVersion,
   isNewerVersion,
   detectInstallMethod,
   getUpgradeCommandString,
@@ -32,10 +32,10 @@ describe("getCurrentVersion", () => {
 });
 
 // ---------------------------------------------------------------------------
-// getVersion
+// resolveVersion
 // ---------------------------------------------------------------------------
 
-describe("getVersion", () => {
+describe("resolveVersion", () => {
   const originalEnv = process.env["APEX_VERSION"];
 
   afterEach(() => {
@@ -49,18 +49,18 @@ describe("getVersion", () => {
 
   it("returns APEX_VERSION env var when set", async () => {
     process.env["APEX_VERSION"] = "1.2.3-custom";
-    const version = await getVersion();
+    const version = await resolveVersion();
     expect(version).toBe("1.2.3-custom");
   });
 
-  it("fetches version from npm registry when env var is not set", async () => {
+  it("delegates to getLatestVersion when env var is not set", async () => {
     delete process.env["APEX_VERSION"];
     const mockFetch = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(
         new Response(JSON.stringify({ version: "9.9.9" }), { status: 200 }),
       );
-    const version = await getVersion();
+    const version = await resolveVersion();
     expect(version).toBe("9.9.9");
     expect(mockFetch).toHaveBeenCalledWith(
       "https://registry.npmjs.org/@pensar/apex/latest",
@@ -175,6 +175,53 @@ describe("detectInstallMethod", () => {
     });
     process.argv[1] = "/home/user/.npm/_npx/abc/node_modules/.bin/pensar";
     expect(detectInstallMethod()).toBe("npm");
+  });
+
+  it("detects npm via spawnSync fallback when path heuristics miss", async () => {
+    Object.defineProperty(process, "execPath", {
+      value: "/usr/local/bin/node",
+      writable: true,
+    });
+    process.argv[1] = "/usr/local/bin/pensar";
+
+    const { spawnSync } = await import("child_process");
+    const mockedSpawnSync = vi.mocked(spawnSync);
+    mockedSpawnSync.mockReturnValue({
+      status: 0,
+      stdout: "└── @pensar/apex@0.1.0",
+      stderr: "",
+      pid: 0,
+      output: [],
+      signal: null,
+    });
+
+    expect(detectInstallMethod()).toBe("npm");
+    expect(mockedSpawnSync).toHaveBeenCalledWith(
+      "npm",
+      ["list", "-g", "@pensar/apex", "--depth=0"],
+      expect.objectContaining({ encoding: "utf-8" }),
+    );
+  });
+
+  it("returns binary when all heuristics fail", async () => {
+    Object.defineProperty(process, "execPath", {
+      value: "/usr/local/bin/node",
+      writable: true,
+    });
+    process.argv[1] = "/usr/local/bin/pensar";
+
+    const { spawnSync } = await import("child_process");
+    const mockedSpawnSync = vi.mocked(spawnSync);
+    mockedSpawnSync.mockReturnValue({
+      status: 1,
+      stdout: "",
+      stderr: "",
+      pid: 0,
+      output: [],
+      signal: null,
+    });
+
+    expect(detectInstallMethod()).toBe("binary");
   });
 });
 
