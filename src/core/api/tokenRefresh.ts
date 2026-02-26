@@ -89,6 +89,7 @@ export async function ensureValidToken(cfg: {
   accessToken?: string | null;
   refreshToken?: string | null;
   pensarAPIKey?: string | null;
+  pensarApiUrl?: string | null;
 }): Promise<{ token: string; type: "workos" | "legacy" } | null> {
   // If we have a WorkOS access token, prefer it
   if (cfg.accessToken) {

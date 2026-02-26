@@ -48,6 +48,7 @@ export default function CreditsFlow() {
       accessToken: appConfig.data.accessToken,
       refreshToken: appConfig.data.refreshToken,
       pensarAPIKey: appConfig.data.pensarAPIKey,
+      pensarApiUrl: appConfig.data.pensarApiUrl,
     });
     if (!tokenResult) {
       setStep("no-auth");
