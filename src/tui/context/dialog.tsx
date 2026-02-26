@@ -8,6 +8,7 @@ import {
   useContext,
   useState,
   useCallback,
+  useMemo,
   useRef,
   type ReactNode,
 } from "react";
@@ -100,47 +101,57 @@ export function DialogProvider({ children }: { children: ReactNode }) {
   }, [renderer]);
 
   const clear = useCallback(() => {
-    for (const item of stack) {
-      if (item.onClose) item.onClose();
-    }
+    setStack((prev) => {
+      for (const item of prev) {
+        if (item.onClose) item.onClose();
+      }
+      return [];
+    });
     setSize("medium");
-    setStack([]);
     refocus();
-  }, [stack, refocus]);
+  }, [refocus]);
 
   const replace = useCallback(
     (element: ReactNode, onClose?: () => void) => {
-      if (stack.length === 0) {
-        focusRef.current = renderer.currentFocusedRenderable;
-      }
-      for (const item of stack) {
-        if (item.onClose) item.onClose();
-      }
+      setStack((prev) => {
+        if (prev.length === 0) {
+          focusRef.current = renderer.currentFocusedRenderable;
+        }
+        for (const item of prev) {
+          if (item.onClose) item.onClose();
+        }
+        return [{ element, onClose }];
+      });
       setSize("medium");
-      setStack([{ element, onClose }]);
     },
-    [stack, renderer],
+    [renderer],
   );
 
   useKeyboard((evt) => {
-    if (evt.name === "escape" && stack.length > 0) {
-      const current = stack[stack.length - 1];
-      current?.onClose?.();
-      setStack(stack.slice(0, -1));
-      evt.preventDefault();
-      refocus();
+    if (evt.name === "escape") {
+      setStack((prev) => {
+        if (prev.length === 0) return prev;
+        const current = prev[prev.length - 1];
+        current?.onClose?.();
+        evt.preventDefault();
+        refocus();
+        return prev.slice(0, -1);
+      });
     }
   });
 
-  const value: DialogContextValue = {
-    clear,
-    replace,
-    stack,
-    size,
-    setSize,
-    externalDialogOpen,
-    setExternalDialogOpen,
-  };
+  const value: DialogContextValue = useMemo(
+    () => ({
+      clear,
+      replace,
+      stack,
+      size,
+      setSize,
+      externalDialogOpen,
+      setExternalDialogOpen,
+    }),
+    [clear, replace, stack, size, externalDialogOpen],
+  );
 
   return (
     <DialogContext.Provider value={value}>

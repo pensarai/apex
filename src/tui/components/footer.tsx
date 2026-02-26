@@ -4,12 +4,12 @@ import { ProgressBar, SpinnerDots } from "./sprites";
 import { useSession } from "../context/session";
 import { useRoute } from "../context/route";
 import { useInput } from "../context/input";
+import { useUIState } from "../context/ui-state";
 import { useEffect } from "react";
 import { useTheme } from "../theme";
 
 interface FooterProps {
   cwd?: string;
-  showExitWarning?: boolean;
 }
 
 function formatTokenCount(count: number): string {
@@ -21,11 +21,9 @@ function formatTokenCount(count: number): string {
   return count.toString();
 }
 
-export default function Footer({
-  cwd = process.cwd(),
-  showExitWarning = false,
-}: FooterProps) {
+export default function Footer({ cwd = process.cwd() }: FooterProps) {
   cwd = "~" + cwd.split(os.homedir()).pop() || "";
+  const { showExitWarning } = useUIState();
   const { colors } = useTheme();
   const { model, tokenUsage, hasExecuted, thinking, isExecuting } = useAgent();
   const session = useSession();

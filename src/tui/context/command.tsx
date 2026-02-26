@@ -41,7 +41,7 @@ export function CommandProvider({ children }: CommandProviderProps) {
     return ctx;
   }, [route]);
 
-  // Create router with context - initialized once
+  // Create router with context - rebuilt when ctx changes
   const router = useMemo(() => {
     const router = new CommandRouter<AppCommandContext>();
 
@@ -51,7 +51,7 @@ export function CommandProvider({ children }: CommandProviderProps) {
     }
 
     return router;
-  }, []);
+  }, [ctx]);
 
   // Generate autocomplete options from router commands
   const autocompleteOptions = useMemo((): AutocompleteOption[] => {

@@ -2,14 +2,13 @@ import type { KeyEvent } from "@opentui/core";
 import { useKeyboard } from "@opentui/react";
 import { createContext, useContext, type ReactNode } from "react";
 import {
-  createKeybindings,
+  useKeybindings,
   Keybind,
-  type KeybindingDependencies,
   type KeybindingEntry,
+  type UseKeybindingsOptions,
 } from "../keybindings";
 import { useInput } from "./input";
 import { useFocus } from "./focus";
-import { useDialog } from "./dialog";
 
 export type { KeybindingEntry };
 
@@ -17,31 +16,21 @@ interface KeybindingContextType {
   registry: KeybindingEntry[];
 }
 
-type ContextDeps = Omit<
-  KeybindingDependencies,
-  "refocusPrompt" | "setExternalDialogOpen"
->;
-
 const KeybindingContext = createContext<KeybindingContextType | undefined>(
   undefined,
 );
 
 export function KeybindingProvider({
   children,
-  deps,
+  options,
 }: {
   children: ReactNode;
-  deps: ContextDeps;
+  options?: UseKeybindingsOptions;
 }) {
-  const { promptRef, refocusPrompt } = useFocus();
+  const { promptRef } = useFocus();
   const { isInputEmpty } = useInput();
-  const { setExternalDialogOpen } = useDialog();
 
-  const registry = createKeybindings({
-    ...deps,
-    refocusPrompt,
-    setExternalDialogOpen,
-  });
+  const registry = useKeybindings(options);
 
   useKeyboard((key: KeyEvent) => {
     const pressedKey = Keybind.fromParsedKey(key);

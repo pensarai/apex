@@ -1,7 +1,10 @@
 import { useRenderer } from "@opentui/react";
+import { useMemo } from "react";
 import { useRoute } from "../context/route";
 import { useFocus } from "../context/focus";
 import { useInput } from "../context/input";
+import { useUIState } from "../context/ui-state";
+import { useDialog } from "../context/dialog";
 
 export interface KeybindingEntry {
   combo: string;
@@ -9,6 +12,12 @@ export interface KeybindingEntry {
   fn: () => Promise<void>;
 }
 
+export interface UseKeybindingsOptions {
+  /** Optional: Toggle tools panel visibility (session context only) */
+  setShowToolsPanel?: (show: boolean) => void;
+}
+
+// Keep the old interface exported for backwards compatibility with the barrel export
 export interface KeybindingDependencies {
   refocusPrompt: () => void;
   ctrlCPressTime: number | null;
@@ -24,116 +33,141 @@ export interface KeybindingDependencies {
   setShowToolsPanel?: (show: boolean) => void;
 }
 
-export function createKeybindings(
-  deps: KeybindingDependencies,
+export function useKeybindings(
+  options?: UseKeybindingsOptions,
 ): KeybindingEntry[] {
   const {
-    refocusPrompt,
     ctrlCPressTime,
     setCtrlCPressTime,
     setShowExitWarning,
     setInputKey,
     setShowSessionsDialog,
     setShowShortcutsDialog,
-    setExternalDialogOpen,
     setFocusIndex,
     navigableItems,
-    setShowToolsPanel,
-  } = deps;
+  } = useUIState();
 
+  const { refocusPrompt } = useFocus();
+  const { setExternalDialogOpen } = useDialog();
   const route = useRoute();
   const renderer = useRenderer();
   const { promptRef } = useFocus();
-  const { inputValue, setInputValue, clearInput } = useInput();
+  const { clearInput } = useInput();
 
-  return [
-    {
-      combo: "ctrl+c",
-      description: "Exit (press twice)",
-      fn: async () => {
-        const now = Date.now();
-        const lastPress = ctrlCPressTime;
+  const setShowToolsPanel = options?.setShowToolsPanel;
 
-        if (lastPress && now - lastPress < 1000) {
-          renderer.destroy();
-          process.exit(0);
-        } else {
-          setInputKey((prev) => prev + 1);
-          setCtrlCPressTime(now);
-          setShowExitWarning(true);
-        }
-      },
-    },
-    {
-      combo: "ctrl+k",
-      description: "Toggle console",
-      fn: async () => {
-        renderer.console.toggle();
-      },
-    },
-    {
-      combo: "escape",
-      description: "Return to home",
-      fn: async () => {
-        const isHome = route.data.type === "base" && route.data.path === "home";
-        const isWeb = route.data.type === "base" && route.data.path === "web";
-        const isOperator =
-          route.data.type === "base" && route.data.path === "operator";
-        const isSession = route.data.type === "pentest";
+  return useMemo(
+    () => [
+      {
+        combo: "ctrl+c",
+        description: "Exit (press twice)",
+        fn: async () => {
+          const now = Date.now();
+          const lastPress = ctrlCPressTime;
 
-        if (!isHome && !isWeb && !isOperator && !isSession) {
-          route.navigate({
-            type: "base",
-            path: "home",
-          });
-          refocusPrompt();
-        }
+          if (lastPress && now - lastPress < 1000) {
+            renderer.destroy();
+            process.exit(0);
+          } else {
+            setInputKey((prev) => prev + 1);
+            setCtrlCPressTime(now);
+            setShowExitWarning(true);
+          }
+        },
       },
-    },
-    {
-      combo: "ctrl+s",
-      description: "Show sessions",
-      fn: async () => {
-        if (route.data.type === "base" && route.data.path === "home") {
-          setShowSessionsDialog(true);
-        }
+      {
+        combo: "ctrl+k",
+        description: "Toggle console",
+        fn: async () => {
+          renderer.console.toggle();
+        },
       },
-    },
-    {
-      combo: "?",
-      description: "Show keyboard shortcuts",
-      fn: async () => {
-        clearInput();
-        promptRef.current?.blur();
-        setExternalDialogOpen(true);
-        setShowShortcutsDialog(true);
+      {
+        combo: "escape",
+        description: "Return to home",
+        fn: async () => {
+          const isHome =
+            route.data.type === "base" && route.data.path === "home";
+          const isWeb = route.data.type === "base" && route.data.path === "web";
+          const isOperator =
+            route.data.type === "base" && route.data.path === "operator";
+          const isSession = route.data.type === "pentest";
+
+          if (!isHome && !isWeb && !isOperator && !isSession) {
+            route.navigate({
+              type: "base",
+              path: "home",
+            });
+            refocusPrompt();
+          }
+        },
       },
-    },
-    {
-      combo: "tab",
-      description: "Next focusable item",
-      fn: async () => {
-        setFocusIndex((prev) => (prev + 1) % navigableItems.length);
+      {
+        combo: "ctrl+s",
+        description: "Show sessions",
+        fn: async () => {
+          if (route.data.type === "base" && route.data.path === "home") {
+            setShowSessionsDialog(true);
+          }
+        },
       },
-    },
-    {
-      combo: "shift+tab",
-      description: "Previous focusable item",
-      fn: async () => {
-        setFocusIndex(
-          (prev) => (prev - 1 + navigableItems.length) % navigableItems.length,
-        );
+      {
+        combo: "?",
+        description: "Show keyboard shortcuts",
+        fn: async () => {
+          clearInput();
+          promptRef.current?.blur();
+          setExternalDialogOpen(true);
+          setShowShortcutsDialog(true);
+        },
       },
-    },
-    {
-      combo: "ctrl+t",
-      description: "Toggle tools panel",
-      fn: async () => {
-        // Only works in session context
-        if (route.data.type === "pentest" && setShowToolsPanel) {
-          setShowToolsPanel(true);
-        }
+      {
+        combo: "tab",
+        description: "Next focusable item",
+        fn: async () => {
+          setFocusIndex((prev) => (prev + 1) % navigableItems.length);
+        },
       },
-    },
-  ];
+      {
+        combo: "shift+tab",
+        description: "Previous focusable item",
+        fn: async () => {
+          setFocusIndex(
+            (prev) =>
+              (prev - 1 + navigableItems.length) % navigableItems.length,
+          );
+        },
+      },
+      {
+        combo: "ctrl+t",
+        description: "Toggle tools panel",
+        fn: async () => {
+          // Only works in session context
+          if (route.data.type === "pentest" && setShowToolsPanel) {
+            setShowToolsPanel(true);
+          }
+        },
+      },
+    ],
+    [
+      ctrlCPressTime,
+      setCtrlCPressTime,
+      setShowExitWarning,
+      setInputKey,
+      setShowSessionsDialog,
+      setShowShortcutsDialog,
+      setFocusIndex,
+      navigableItems,
+      refocusPrompt,
+      setExternalDialogOpen,
+      route,
+      renderer,
+      promptRef,
+      clearInput,
+      setShowToolsPanel,
+    ],
+  );
 }
+
+// Keep the old createKeybindings export name for the barrel re-export
+export const createKeybindings = useKeybindings;

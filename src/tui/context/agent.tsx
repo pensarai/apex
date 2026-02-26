@@ -27,10 +27,27 @@ interface TokenUsage {
   totalTokens: number;
 }
 
-interface AgentContextValue {
+// --- Model Context (slow-changing) ---
+
+interface ModelContextValue {
   model: ModelInfo;
   setModel: (model: ModelInfo) => void;
   isModelUserSelected: boolean;
+}
+
+const ModelContext = createContext<ModelContextValue | null>(null);
+
+export function useModel(): ModelContextValue {
+  const context = useContext(ModelContext);
+  if (!context) {
+    throw new Error("useModel must be used within AgentProvider");
+  }
+  return context;
+}
+
+// --- Execution Context (fast-changing) ---
+
+interface ExecutionContextValue {
   tokenUsage: TokenUsage;
   addTokenUsage: (input: number, output: number) => void;
   resetTokenUsage: () => void;
@@ -41,15 +58,30 @@ interface AgentContextValue {
   setIsExecuting: (isExecuting: boolean) => void;
 }
 
-const AgentContext = createContext<AgentContextValue | null>(null);
+const ExecutionContext = createContext<ExecutionContextValue | null>(null);
 
-export function useAgent() {
-  const context = useContext(AgentContext);
+export function useExecution(): ExecutionContextValue {
+  const context = useContext(ExecutionContext);
   if (!context) {
-    throw new Error("useAgent must be used within AgentProvider");
+    throw new Error("useExecution must be used within AgentProvider");
   }
   return context;
 }
+
+// --- Combined hook for backwards compatibility ---
+
+type AgentContextValue = ModelContextValue & ExecutionContextValue;
+
+export function useAgent(): AgentContextValue {
+  const modelCtx = useModel();
+  const executionCtx = useExecution();
+  return useMemo(
+    () => ({ ...modelCtx, ...executionCtx }),
+    [modelCtx, executionCtx],
+  );
+}
+
+// --- Provider ---
 
 interface AgentProviderProps {
   children: ReactNode;
@@ -134,11 +166,17 @@ export function AgentProvider({ children }: AgentProviderProps) {
     setTokenUsage({ inputTokens: 0, outputTokens: 0, totalTokens: 0 });
   }, []);
 
-  const contextValue = useMemo(
+  const modelValue = useMemo(
     () => ({
       model,
       setModel,
       isModelUserSelected,
+    }),
+    [model, setModel, isModelUserSelected],
+  );
+
+  const executionValue = useMemo(
+    () => ({
       tokenUsage,
       addTokenUsage,
       resetTokenUsage,
@@ -149,21 +187,20 @@ export function AgentProvider({ children }: AgentProviderProps) {
       setIsExecuting,
     }),
     [
-      model,
-      setModel,
-      isModelUserSelected,
       tokenUsage,
+      addTokenUsage,
+      resetTokenUsage,
       hasExecuted,
       thinking,
       isExecuting,
-      addTokenUsage,
-      resetTokenUsage,
     ],
   );
 
   return (
-    <AgentContext.Provider value={contextValue}>
-      {children}
-    </AgentContext.Provider>
+    <ModelContext.Provider value={modelValue}>
+      <ExecutionContext.Provider value={executionValue}>
+        {children}
+      </ExecutionContext.Provider>
+    </ModelContext.Provider>
   );
 }

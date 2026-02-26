@@ -40,8 +40,10 @@ export {
 
 export {
   createKeybindings,
+  useKeybindings,
   type KeybindingEntry,
   type KeybindingDependencies,
+  type UseKeybindingsOptions,
 } from "./registry";
 
 export namespace Keybind {

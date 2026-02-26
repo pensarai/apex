@@ -1,5 +1,5 @@
 import { createRoot } from "@opentui/react";
-import { useState, useEffect } from "react";
+import { useEffect } from "react";
 import Footer from "./components/footer";
 import { CommandProvider } from "./context/command";
 import { AgentProvider } from "./context/agent";
@@ -30,6 +30,7 @@ import ShortcutsDialog from "./components/commands/shortcuts-dialog";
 import HelpDialog from "./components/commands/help-dialog";
 import ModelsDisplay from "./components/commands/models-display";
 import { KeybindingProvider } from "./context/keybinding";
+import { UIStateProvider, useUIState } from "./context/ui-state";
 import Pentest from "./components/pentest/pentest";
 import OperatorDashboard from "./components/operator-dashboard";
 import ThemePicker from "./components/commands/theme-picker";
@@ -42,16 +43,6 @@ interface AppProps {
 }
 
 function App({ appConfig }: AppProps) {
-  const [focusIndex, setFocusIndex] = useState(0);
-  const [cwd, setCwd] = useState(process.cwd());
-  const [ctrlCPressTime, setCtrlCPressTime] = useState<number | null>(null);
-  const [showExitWarning, setShowExitWarning] = useState(false);
-  const [inputKey, setInputKey] = useState(0);
-  const [showSessionsDialog, setShowSessionsDialog] = useState(false);
-  const [showShortcutsDialog, setShowShortcutsDialog] = useState(false);
-
-  const navigableItems = ["command-input"];
-
   return (
     <ConfigProvider config={appConfig}>
       <SessionProvider>
@@ -61,32 +52,11 @@ function App({ appConfig }: AppProps) {
               <DialogProvider>
                 <AgentProvider>
                   <CommandProvider>
-                    <KeybindingProvider
-                      deps={{
-                        ctrlCPressTime,
-                        setCtrlCPressTime,
-                        setShowExitWarning,
-                        setInputKey,
-                        setShowSessionsDialog,
-                        setShowShortcutsDialog,
-                        setFocusIndex,
-                        navigableItems,
-                      }}
-                    >
-                      <AppContent
-                        focusIndex={focusIndex}
-                        showSessionsDialog={showSessionsDialog}
-                        setShowSessionsDialog={setShowSessionsDialog}
-                        showShortcutsDialog={showShortcutsDialog}
-                        setShowShortcutsDialog={setShowShortcutsDialog}
-                        cwd={cwd}
-                        setCtrlCPressTime={setCtrlCPressTime}
-                        showExitWarning={showExitWarning}
-                        setShowExitWarning={setShowExitWarning}
-                        inputKey={inputKey}
-                        setInputKey={setInputKey}
-                      />
-                    </KeybindingProvider>
+                    <UIStateProvider>
+                      <KeybindingProvider>
+                        <AppContent />
+                      </KeybindingProvider>
+                    </UIStateProvider>
                   </CommandProvider>
                 </AgentProvider>
               </DialogProvider>
@@ -98,37 +68,25 @@ function App({ appConfig }: AppProps) {
   );
 }
 
-function AppContent({
-  focusIndex,
-  showSessionsDialog,
-  setShowSessionsDialog,
-  showShortcutsDialog,
-  setShowShortcutsDialog,
-  cwd,
-  setCtrlCPressTime,
-  showExitWarning,
-  setShowExitWarning,
-  inputKey,
-  setInputKey,
-}: {
-  focusIndex: number;
-  showSessionsDialog: boolean;
-  setShowSessionsDialog: (show: boolean) => void;
-  showShortcutsDialog: boolean;
-  setShowShortcutsDialog: (show: boolean) => void;
-  cwd: string;
-  setCtrlCPressTime: (time: number | null) => void;
-  showExitWarning: boolean;
-  setShowExitWarning: (show: boolean) => void;
-  inputKey: number;
-  setInputKey: (fn: (prev: number) => number) => void;
-}) {
+function AppContent() {
   const route = useRoute();
   const config = useConfig();
   const { colors } = useTheme();
-
   const { refocusPrompt } = useFocus();
   const { setExternalDialogOpen } = useDialog();
+  const {
+    focusIndex,
+    showSessionsDialog,
+    setShowSessionsDialog,
+    showShortcutsDialog,
+    setShowShortcutsDialog,
+    showExitWarning,
+    setShowExitWarning,
+    ctrlCPressTime: _ctrlCPressTime,
+    setCtrlCPressTime,
+    inputKey,
+    setInputKey,
+  } = useUIState();
 
   useEffect(() => {
     if (route.data.type !== "base") return;
@@ -172,9 +130,6 @@ function AppContent({
     refocusPrompt();
   };
 
-  // Check if we're on the home route
-  const isHomeRoute = route.data.type === "base" && route.data.path === "home";
-
   return (
     <box
       flexDirection="column"
@@ -187,7 +142,7 @@ function AppContent({
     >
       <CommandDisplay focusIndex={focusIndex} inputKey={inputKey} />
 
-      <Footer cwd={cwd} showExitWarning={showExitWarning} />
+      <Footer />
 
       {showSessionsDialog && (
         <SessionsDisplay onClose={handleCloseSessionsDialog} />
