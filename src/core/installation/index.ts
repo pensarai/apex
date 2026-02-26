@@ -94,18 +94,47 @@ export function getUpgradeCommandString(method: InstallMethod): string {
   return `${cmd} ${args.join(" ")}`;
 }
 
-export function runUpgrade(method: InstallMethod): UpgradeResult {
+export interface CheckUpdateResult {
+  updateAvailable: boolean;
+  currentVersion: string;
+  latestVersion: string;
+}
+
+export async function checkForUpdate(): Promise<CheckUpdateResult> {
+  const currentVersion = getCurrentVersion();
+  let latestVersion: string;
+
+  try {
+    latestVersion = await getLatestVersion();
+  } catch {
+    return { updateAvailable: false, currentVersion, latestVersion: currentVersion };
+  }
+
+  return {
+    updateAvailable: currentVersion !== latestVersion,
+    currentVersion,
+    latestVersion,
+  };
+}
+
+export function runUpgrade(
+  method: InstallMethod,
+  options?: { interactive?: boolean },
+): UpgradeResult {
   const currentVersion = getCurrentVersion();
   const { cmd, args } = getUpgradeCommand(method);
+  const interactive = options?.interactive ?? false;
 
   const result = spawnSync(cmd, args, {
     encoding: "utf-8",
     timeout: 120000,
-    stdio: "pipe",
+    stdio: interactive ? "inherit" : "pipe",
   });
 
   if (result.status !== 0) {
-    const stderr = result.stderr?.trim() || "Unknown error";
+    const stderr =
+      (typeof result.stderr === "string" ? result.stderr.trim() : "") ||
+      "Unknown error";
     return {
       success: false,
       message: `Upgrade failed: ${stderr}`,
@@ -123,7 +152,9 @@ export function runUpgrade(method: InstallMethod): UpgradeResult {
   };
 }
 
-export async function upgrade(): Promise<UpgradeResult> {
+export async function upgrade(options?: {
+  interactive?: boolean;
+}): Promise<UpgradeResult> {
   const currentVersion = getCurrentVersion();
   let latestVersion: string;
 
@@ -149,7 +180,7 @@ export async function upgrade(): Promise<UpgradeResult> {
   }
 
   const method = detectInstallMethod();
-  const result = runUpgrade(method);
+  const result = runUpgrade(method, options);
 
   if (result.success) {
     return {

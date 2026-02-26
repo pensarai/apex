@@ -5,6 +5,7 @@ import {
   getVersion,
   detectInstallMethod,
   getUpgradeCommandString,
+  checkForUpdate,
   upgrade,
 } from "./index";
 import packageJson from "../../../package.json";
@@ -166,6 +167,44 @@ describe("getUpgradeCommandString", () => {
 });
 
 // ---------------------------------------------------------------------------
+// checkForUpdate
+// ---------------------------------------------------------------------------
+
+describe("checkForUpdate", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("reports no update when versions match", async () => {
+    const current = getCurrentVersion();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ version: current }), { status: 200 }),
+    );
+
+    const result = await checkForUpdate();
+    expect(result.updateAvailable).toBe(false);
+    expect(result.currentVersion).toBe(current);
+    expect(result.latestVersion).toBe(current);
+  });
+
+  it("reports update available when versions differ", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ version: "99.99.99" }), { status: 200 }),
+    );
+
+    const result = await checkForUpdate();
+    expect(result.updateAvailable).toBe(true);
+    expect(result.currentVersion).toBe(getCurrentVersion());
+    expect(result.latestVersion).toBe("99.99.99");
+  });
+
+  it("returns no update on network failure", async () => {
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("offline"));
+
+    const result = await checkForUpdate();
+    expect(result.updateAvailable).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // upgrade (integration of version check + upgrade logic)
 // ---------------------------------------------------------------------------
 
@@ -214,6 +253,56 @@ describe("upgrade", () => {
     expect(result.fromVersion).toBe(getCurrentVersion());
     expect(result.toVersion).toBe("99.99.99");
     expect(result.message).toContain("Upgraded from");
+  });
+
+  it("uses stdio inherit when interactive is true", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ version: "99.99.99" }), { status: 200 }),
+    );
+
+    const { spawnSync } = await import("child_process");
+    const mockedSpawnSync = vi.mocked(spawnSync);
+    mockedSpawnSync.mockReturnValue({
+      status: 0,
+      stdout: "",
+      stderr: "",
+      pid: 0,
+      output: [],
+      signal: null,
+    });
+
+    await upgrade({ interactive: true });
+
+    expect(mockedSpawnSync).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(Array),
+      expect.objectContaining({ stdio: "inherit" }),
+    );
+  });
+
+  it("uses stdio pipe when interactive is false", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ version: "99.99.99" }), { status: 200 }),
+    );
+
+    const { spawnSync } = await import("child_process");
+    const mockedSpawnSync = vi.mocked(spawnSync);
+    mockedSpawnSync.mockReturnValue({
+      status: 0,
+      stdout: "",
+      stderr: "",
+      pid: 0,
+      output: [],
+      signal: null,
+    });
+
+    await upgrade({ interactive: false });
+
+    expect(mockedSpawnSync).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(Array),
+      expect.objectContaining({ stdio: "pipe" }),
+    );
   });
 
   it("includes manual command on upgrade failure", async () => {

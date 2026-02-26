@@ -71,7 +71,7 @@ if (command === "benchmark") {
   console.log(`Current version: v${currentVersion}`);
   console.log("Checking for updates...");
 
-  const result = await upgrade();
+  const result = await upgrade({ interactive: true });
   console.log();
   console.log(result.message);
 

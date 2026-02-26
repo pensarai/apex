@@ -8,7 +8,11 @@ import {
 } from "./utils/command-flags";
 import { getAllThemeNames } from "./theme";
 import { config } from "../core/config";
-import { getCurrentVersion, upgrade } from "../core/installation";
+import {
+  checkForUpdate,
+  getUpgradeCommandString,
+  detectInstallMethod,
+} from "../core/installation";
 
 import type { ToastVariant } from "./context/toast";
 
@@ -348,23 +352,23 @@ export const commands: CommandConfig[] = [
     description: "Update pensar to the latest version",
     category: "General",
     handler: async (_args, ctx) => {
-      const currentVersion = getCurrentVersion();
-      ctx.toast(`Current version: v${currentVersion} — checking for updates…`);
+      ctx.toast("Checking for updates…");
 
-      const result = await upgrade();
+      const { updateAvailable, currentVersion, latestVersion } =
+        await checkForUpdate();
 
-      if (result.success && result.fromVersion !== result.toVersion) {
-        ctx.toast(
-          `Upgraded to v${result.toVersion}. Restarting…`,
-          "default",
-          3000,
-        );
-        setTimeout(() => process.kill(process.pid, "SIGINT"), 2000);
-      } else if (result.success) {
-        ctx.toast(result.message);
-      } else {
-        ctx.toast(result.message, "error", 6000);
+      if (!updateAvailable) {
+        ctx.toast(`Already on the latest version (v${currentVersion}).`);
+        return;
       }
+
+      const method = detectInstallMethod();
+      const cmd = getUpgradeCommandString(method);
+      ctx.toast(
+        `Update available: v${currentVersion} → v${latestVersion}. Run: ${cmd}`,
+        "warn",
+        8000,
+      );
     },
   },
   {
