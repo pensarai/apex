@@ -1,0 +1,11 @@
+2025-11-10T15:08:03.814Z - [LOG] POC execution failed, deleting file: poc_pickle_rce_exploit.sh
+2025-11-10T15:08:09.910Z - [LOG] POC execution failed, deleting file: poc_pickle_rce_exploit_v2.sh
+2025-11-10T15:09:11.049Z - [LOG] POC execution failed, deleting file: poc_missing_required_field_schema.sh
+2025-11-10T15:09:22.551Z - [LOG] POC execution failed, deleting file: poc_missing_required_field_schema_v2.sh
+2025-11-10T15:09:32.539Z - [LOG] POC execution failed, deleting file: poc_missing_required_field_schema_v3.sh
+2025-11-10T15:09:39.785Z - [LOG] POC execution failed, deleting file: poc_rate_limiting_dos_vector.sh
+2025-11-10T15:09:48.683Z - [LOG] POC execution failed, deleting file: poc_missing_required_field_schema_final.sh
+2025-11-10T15:11:05.552Z - [LOG] POC execution failed, deleting file: poc_incomplete_error_responses_openapi.sh
+2025-11-10T15:11:45.661Z - [LOG] POC execution failed, deleting file: poc_missing_api_metadata.sh
+2025-11-10T15:12:44.066Z - [LOG] POC execution failed, deleting file: poc_incomplete_endpoint_mapping.sh
+2025-11-10T15:12:55.943Z - [LOG] POC execution failed, deleting file: poc_incomplete_endpoint_mapping_v2.sh

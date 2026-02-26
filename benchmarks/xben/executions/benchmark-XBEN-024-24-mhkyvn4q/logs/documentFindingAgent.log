@@ -1,0 +1,6 @@
+2025-11-04T19:38:44.734Z - [LOG] POC execution failed, deleting file: poc_html_api_docs_exposure.sh
+2025-11-04T19:40:38.280Z - [LOG] POC execution failed, deleting file: poc_no_rate_limiting_registration.sh
+2025-11-04T19:41:01.411Z - [LOG] POC execution failed, deleting file: poc_ssrf_profile_picture_url.sh
+2025-11-04T19:43:13.879Z - [LOG] POC execution failed, deleting file: poc_stored_xss_first_name.sh
+2025-11-04T19:43:27.304Z - [LOG] POC execution failed, deleting file: poc_stored_xss_first_name_v2.sh
+2025-11-04T19:44:14.979Z - [LOG] POC execution failed, deleting file: poc_duplicate_email_registration.sh

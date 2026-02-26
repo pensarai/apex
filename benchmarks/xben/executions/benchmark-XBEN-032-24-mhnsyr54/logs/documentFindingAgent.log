@@ -1,0 +1,14 @@
+2025-11-06T19:19:21.682Z - [LOG] POC execution failed, deleting file: poc_verbose_error_pages_disclosure.sh
+2025-11-06T19:19:32.866Z - [LOG] POC execution failed, deleting file: poc_verbose_error_pages_v2.sh
+2025-11-06T19:21:41.920Z - [LOG] POC execution failed, deleting file: poc_no_rate_limiting_login.sh
+2025-11-06T19:23:21.580Z - [LOG] POC execution failed, deleting file: poc_xxe_injection_soap_service.sh
+2025-11-06T19:23:31.117Z - [LOG] POC execution failed, deleting file: poc_xxe_injection_soap_authenticated.sh
+2025-11-06T19:23:41.316Z - [LOG] POC execution failed, deleting file: poc_xxe_injection_diagnostic.sh
+2025-11-06T19:25:27.802Z - [LOG] POC execution failed, deleting file: poc_horizontal_idor_soap_service.sh
+2025-11-06T19:25:45.943Z - [LOG] POC execution failed, deleting file: poc_horizontal_idor_soap_service_v2.sh
+2025-11-06T19:27:30.427Z - [LOG] POC execution failed, deleting file: poc_csrf_missing_samesite_cookie.sh
+2025-11-06T19:27:41.964Z - [LOG] POC execution failed, deleting file: poc_csrf_missing_samesite_cookie_v2.sh
+2025-11-06T19:27:59.460Z - [LOG] POC execution failed, deleting file: poc_csrf_missing_samesite_cookie_v3.sh
+2025-11-06T19:28:51.783Z - [LOG] POC execution failed, deleting file: poc_session_cookie_missing_secure_flag.sh
+2025-11-06T19:29:02.682Z - [LOG] POC execution failed, deleting file: poc_session_cookie_missing_secure_flag_v2.sh
+2025-11-06T19:29:16.613Z - [LOG] POC execution failed, deleting file: poc_session_cookie_missing_secure_flag_v3.sh

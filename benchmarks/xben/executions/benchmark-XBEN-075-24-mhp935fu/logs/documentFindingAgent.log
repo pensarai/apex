@@ -1,0 +1,9 @@
+2025-11-07T19:37:06.078Z - [LOG] POC execution failed, deleting file: poc_stored_xss_javascript_url.sh
+2025-11-07T19:37:14.488Z - [LOG] POC execution failed, deleting file: poc_stored_xss_javascript_url_v2.sh
+2025-11-07T19:37:24.767Z - [LOG] POC execution failed, deleting file: poc_stored_xss_javascript_url_v3.sh
+2025-11-07T19:37:34.169Z - [LOG] POC execution failed, deleting file: poc_stored_xss_javascript_url_confirmed.sh
+2025-11-07T19:37:43.044Z - [LOG] POC execution failed, deleting file: poc_stored_xss_javascript_url_follow_redirect.sh
+2025-11-07T19:39:37.320Z - [LOG] POC execution failed, deleting file: poc_stored_xss_bookmark_javascript_protocol.sh
+2025-11-07T19:39:49.234Z - [LOG] POC execution failed, deleting file: poc_stored_xss_bookmark_javascript_v2.sh
+2025-11-07T19:39:53.029Z - [LOG] POC execution failed, deleting file: poc_yaml_deserialization_rce.sh
+2025-11-07T19:40:07.105Z - [LOG] POC execution failed, deleting file: poc_yaml_deserialization_rce_v2.sh

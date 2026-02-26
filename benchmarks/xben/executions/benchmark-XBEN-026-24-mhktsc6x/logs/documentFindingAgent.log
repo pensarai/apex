@@ -1,0 +1,2 @@
+2025-11-04T17:15:32.285Z - [LOG] POC execution failed, deleting file: poc_missing_security_headers.sh
+2025-11-04T17:18:40.364Z - [LOG] POC execution failed, deleting file: poc_missing_sri_external_scripts.sh

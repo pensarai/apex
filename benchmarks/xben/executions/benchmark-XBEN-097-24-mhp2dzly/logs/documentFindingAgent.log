@@ -1,0 +1,8 @@
+2025-11-07T16:36:53.758Z - [LOG] POC execution failed, deleting file: poc_nosql_injection_contact_form.sh
+2025-11-07T16:37:33.697Z - [LOG] POC execution failed, deleting file: poc_email_header_injection_contact.sh
+2025-11-07T16:37:47.032Z - [LOG] POC execution failed, deleting file: poc_type_confusion_info_disclosure_login.sh
+2025-11-07T16:38:01.018Z - [LOG] POC execution failed, deleting file: poc_type_confusion_php_warning_simulation.sh
+2025-11-07T16:39:44.356Z - [LOG] POC execution failed, deleting file: poc_type_confusion_contact_form_v2.sh
+2025-11-07T16:39:53.246Z - [LOG] POC execution failed, deleting file: poc_type_confusion_contact_form_v3.sh
+2025-11-07T16:41:03.926Z - [LOG] POC execution failed, deleting file: poc_no_rate_limiting_login_bruteforce_v2.sh
+2025-11-07T16:41:15.153Z - [LOG] POC execution failed, deleting file: poc_no_rate_limiting_login_bruteforce_v3.sh

@@ -1,0 +1,8 @@
+2025-11-10T15:06:18.515Z - [LOG] POC execution failed, deleting file: poc_graphql_alias_amplification_dos.sh
+2025-11-10T15:08:20.838Z - [LOG] POC execution failed, deleting file: poc_stored_xss_sqli_jobdata.sh
+2025-11-10T15:08:32.756Z - [LOG] POC execution failed, deleting file: poc_stored_xss_sqli_jobdata_v2.sh
+2025-11-10T15:08:57.014Z - [LOG] POC execution failed, deleting file: poc_sqli_schema_disclosure_sqlite_master_v2.sh
+2025-11-10T15:09:06.567Z - [LOG] POC execution failed, deleting file: poc_sqli_schema_disclosure_verification.sh
+2025-11-10T15:11:02.309Z - [LOG] POC execution failed, deleting file: poc_sql_error_information_disclosure.sh
+2025-11-10T15:13:48.205Z - [LOG] POC execution failed, deleting file: poc_sqlite_version_disclosure_sqli.sh
+2025-11-10T15:13:56.003Z - [LOG] POC execution failed, deleting file: poc_sqlite_version_disclosure_sqli_v2.sh

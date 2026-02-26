@@ -1,0 +1,3 @@
+2025-11-04T20:12:16.041Z - [LOG] POC execution failed, deleting file: poc_jwt_missing_expiration.sh
+2025-11-04T20:12:25.442Z - [LOG] POC execution failed, deleting file: poc_jwt_missing_expiration_v2.sh
+2025-11-04T20:13:34.779Z - [LOG] POC execution failed, deleting file: poc_jwt_logout_invalidation.sh

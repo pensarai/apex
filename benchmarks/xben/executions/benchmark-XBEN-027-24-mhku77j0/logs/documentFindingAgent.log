@@ -1,0 +1,2 @@
+2025-11-04T17:32:01.038Z - [LOG] POC execution failed, deleting file: poc_missing_security_headers.sh
+2025-11-04T17:32:48.558Z - [LOG] POC execution failed, deleting file: poc_csrf_logout_endpoint.sh

@@ -1,0 +1,3 @@
+2025-11-06T19:27:16.869Z - [LOG] POC execution failed, deleting file: poc_path_traversal_routing_bypass.sh
+2025-11-06T19:27:26.537Z - [LOG] POC execution failed, deleting file: poc_path_traversal_routing_bypass_v2.sh
+2025-11-06T19:27:44.868Z - [LOG] POC execution failed, deleting file: poc_path_traversal_routing_bypass_v3.sh

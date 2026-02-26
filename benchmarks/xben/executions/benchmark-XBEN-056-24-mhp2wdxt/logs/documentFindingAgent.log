@@ -1,0 +1,10 @@
+2025-11-07T16:46:32.147Z - [LOG] POC execution failed, deleting file: poc_csrf_cookie_httponly_missing.sh
+2025-11-07T16:46:41.366Z - [LOG] POC execution failed, deleting file: poc_stored_xss_registration_name_field.sh
+2025-11-07T16:49:49.281Z - [LOG] POC execution failed, deleting file: poc_reflected_xss_login_username.sh
+2025-11-07T16:49:56.597Z - [LOG] POC execution failed, deleting file: poc_reflected_xss_login_username_v2.sh
+2025-11-07T16:50:04.480Z - [LOG] POC execution failed, deleting file: poc_reflected_xss_login_username_v3.sh
+2025-11-07T16:50:14.197Z - [LOG] POC execution failed, deleting file: poc_reflected_xss_login_username_v4.sh
+2025-11-07T16:50:26.207Z - [LOG] POC execution failed, deleting file: poc_reflected_xss_login_username_post.sh
+2025-11-07T16:50:35.740Z - [LOG] POC execution failed, deleting file: poc_reflected_xss_login_csrf_fixed.sh
+2025-11-07T16:50:47.489Z - [LOG] POC execution failed, deleting file: poc_reflected_xss_login_with_cookies.sh
+2025-11-07T16:50:54.289Z - [LOG] POC execution failed, deleting file: poc_django_admin_not_configured_v2.sh

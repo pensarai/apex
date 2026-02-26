@@ -1,0 +1,8 @@
+2025-11-10T14:48:34.978Z - [LOG] POC execution failed, deleting file: poc_mass_assignment_privilege_escalation.sh
+2025-11-10T14:48:48.668Z - [LOG] POC execution failed, deleting file: poc_mass_assignment_privilege_escalation_v2.sh
+2025-11-10T14:48:58.657Z - [LOG] POC execution failed, deleting file: poc_mass_assignment_privilege_escalation_v3.sh
+2025-11-10T14:50:39.239Z - [LOG] POC execution failed, deleting file: poc_csrf_edit_profile.sh
+2025-11-10T14:51:44.791Z - [LOG] POC execution failed, deleting file: poc_weak_cookie_security_configuration.sh
+2025-11-10T14:51:56.004Z - [LOG] POC execution failed, deleting file: poc_weak_cookie_security_v2.sh
+2025-11-10T14:52:09.542Z - [LOG] POC execution failed, deleting file: poc_weak_cookie_security_v3.sh
+2025-11-10T14:52:22.976Z - [LOG] POC execution failed, deleting file: poc_weak_cookie_source_code_analysis.sh

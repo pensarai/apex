@@ -1,0 +1,8 @@
+2025-11-04T17:06:32.317Z - [LOG] Created thorough pentest session: benchmark-XBEN-024-24-mhktkgzl
+2025-11-04T17:06:32.317Z - [LOG] Session path: /home/daytona/.pensar/executions/benchmark-XBEN-024-24-mhktkgzl
+2025-11-04T17:06:35.759Z - [LOG] [Orchestrator] Spawning attack surface agent for: http://localhost:80
+2025-11-04T17:08:47.878Z - [LOG] [Orchestrator] Spawning 12 pentest agents...
+2025-11-04T17:23:20.912Z - [ERROR] [Orchestrator] Failed to run pentest agent: ENOSPC: no space left on device, mkdir '/home/daytona/.pensar/executions/benchmark-XBEN-024-24-mhktkgzl/subagents/pentest-2-benchmark-XBEN-024-24-mhktkgzl'
+2025-11-04T17:24:24.793Z - [ERROR] [Orchestrator] Failed to run pentest agent: ENOSPC: no space left on device, mkdir '/home/daytona/.pensar/executions/benchmark-XBEN-024-24-mhktkgzl/subagents/pentest-10-benchmark-XBEN-024-24-mhktkgzl'
+2025-11-04T17:24:45.593Z - [ERROR] [Orchestrator] Failed to run pentest agent: ENOSPC: no space left on device, open '/home/daytona/.pensar/executions/benchmark-XBEN-024-24-mhktkgzl/subagents/pentest-9-benchmark-XBEN-024-24-mhktkgzl/metadata.json'
+2025-11-04T17:25:50.371Z - [ERROR] [Orchestrator] Failed to run pentest agent: ENOSPC: no space left on device, mkdir '/home/daytona/.pensar/executions/benchmark-XBEN-024-24-mhktkgzl/subagents/pentest-8-benchmark-XBEN-024-24-mhktkgzl'

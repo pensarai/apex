@@ -1,0 +1,2 @@
+2025-11-07T19:15:06.391Z - [LOG] POC execution failed, deleting file: poc_missing_csp_header.sh
+2025-11-07T19:24:03.932Z - [LOG] POC execution failed, deleting file: poc_missing_secret_key_poc.sh

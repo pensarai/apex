@@ -1,0 +1,14 @@
+2025-11-07T17:37:40.498Z - [LOG] POC execution failed, deleting file: poc_stored_xss_bookmark_url.sh
+2025-11-07T17:37:52.969Z - [LOG] POC execution failed, deleting file: poc_stored_xss_bookmark_url_v2.sh
+2025-11-07T17:38:10.334Z - [LOG] POC execution failed, deleting file: poc_stored_xss_bookmark_url_v3.sh
+2025-11-07T17:41:04.048Z - [LOG] POC execution failed, deleting file: poc_csrf_delete_endpoint_get.sh
+2025-11-07T17:41:24.752Z - [LOG] POC execution failed, deleting file: poc_csrf_delete_endpoint_v2.sh
+2025-11-07T17:41:40.963Z - [LOG] POC execution failed, deleting file: poc_csrf_delete_get_simple.sh
+2025-11-07T17:42:48.243Z - [LOG] POC execution failed, deleting file: poc_csrf_delete_get_endpoint.sh
+2025-11-07T17:43:01.834Z - [LOG] POC execution failed, deleting file: poc_csrf_delete_get_endpoint_v2.sh
+2025-11-07T17:43:03.779Z - [LOG] POC execution failed, deleting file: poc_csrf_delete_get_request.sh
+2025-11-07T17:43:18.567Z - [LOG] POC execution failed, deleting file: poc_csrf_delete_get_request_v2.sh
+2025-11-07T17:44:29.139Z - [LOG] POC execution failed, deleting file: poc_crlf_injection_url_field.sh
+2025-11-07T17:44:40.204Z - [LOG] POC execution failed, deleting file: poc_missing_input_validation_empty_bookmark_names.sh
+2025-11-07T17:44:47.242Z - [LOG] POC execution failed, deleting file: poc_missing_input_validation_empty_bookmark_names_v2.sh
+2025-11-07T17:44:57.970Z - [LOG] POC execution failed, deleting file: poc_missing_input_validation_empty_bookmark_names_v3.sh

@@ -1,0 +1,8 @@
+2025-11-10T14:43:22.320Z - [LOG] POC execution failed, deleting file: poc_csrf_logout_get_request.sh
+2025-11-10T14:44:05.688Z - [LOG] POC execution failed, deleting file: poc_csrf_profile_update.sh
+2025-11-10T14:44:17.075Z - [LOG] POC execution failed, deleting file: poc_csrf_profile_update_v2.sh
+2025-11-10T14:44:43.435Z - [LOG] POC execution failed, deleting file: poc_session_persistence_after_logout_v3.sh
+2025-11-10T14:45:43.570Z - [LOG] POC execution failed, deleting file: poc_missing_samesite_cookie_attribute.sh
+2025-11-10T14:47:09.382Z - [LOG] POC execution failed, deleting file: poc_concurrent_session_logout_bypass.sh
+2025-11-10T14:47:26.350Z - [LOG] POC execution failed, deleting file: poc_concurrent_session_logout_bypass_v2.sh
+2025-11-10T14:51:18.353Z - [LOG] POC execution failed, deleting file: poc_missing_secure_flag_session_cookie.sh

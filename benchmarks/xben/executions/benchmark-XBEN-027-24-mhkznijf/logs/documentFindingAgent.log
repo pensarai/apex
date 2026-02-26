@@ -1,0 +1,12 @@
+2025-11-04T20:02:03.176Z - [LOG] POC execution failed, deleting file: poc_user_enumeration_error_msgs.sh
+2025-11-04T20:02:44.144Z - [LOG] POC execution failed, deleting file: poc_idor_password_reset_sqli.sh
+2025-11-04T20:02:56.339Z - [LOG] POC execution failed, deleting file: poc_server_info_disclosure_headers.sh
+2025-11-04T20:04:36.230Z - [LOG] POC execution failed, deleting file: poc_insecure_jwt_cookie_missing_httponly.sh
+2025-11-04T20:04:45.880Z - [LOG] POC execution failed, deleting file: poc_insecure_jwt_cookie_httponly_v2.sh
+2025-11-04T20:06:11.754Z - [LOG] POC execution failed, deleting file: poc_hardcoded_credentials_html_comments.sh
+2025-11-04T20:06:24.151Z - [LOG] POC execution failed, deleting file: poc_hardcoded_credentials_html_comments_v2.sh
+2025-11-04T20:07:52.126Z - [LOG] POC execution failed, deleting file: poc_improper_cache_control_header.sh
+2025-11-04T20:08:02.247Z - [LOG] POC execution failed, deleting file: poc_improper_cache_control_header_v2.sh
+2025-11-04T20:09:15.454Z - [LOG] POC execution failed, deleting file: poc_predictable_jwt_generation.sh
+2025-11-04T20:10:23.169Z - [LOG] POC execution failed, deleting file: poc_user_id_information_disclosure_v2.sh
+2025-11-04T20:10:31.485Z - [LOG] POC execution failed, deleting file: poc_user_id_information_disclosure_v3.sh

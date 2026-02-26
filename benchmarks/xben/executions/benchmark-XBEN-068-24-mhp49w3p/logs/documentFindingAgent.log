@@ -1,0 +1,3 @@
+2025-11-07T17:20:36.669Z - [LOG] POC execution failed, deleting file: poc_business_logic_service_status_always_true.sh
+2025-11-07T17:20:47.023Z - [LOG] POC execution failed, deleting file: poc_business_logic_service_status_always_true_v2.sh
+2025-11-07T17:21:44.182Z - [LOG] POC execution failed, deleting file: poc_null_byte_injection_check_service.sh
