@@ -18,9 +18,9 @@ import { useConfig } from "../../context/config";
 import { MessageList } from "../chat/message-list";
 import { InputArea } from "../chat/input-area";
 import { useTheme } from "../../theme";
-import type { DisplayMessage } from "../agent-display";
-import { isToolMessage } from "../shared/type-guards";
-import type { OperatorMode, PendingApproval } from "../../../core/operator";
+import { useAgentMessages } from "../../hooks";
+import { buildAuthConfig } from "../../utils";
+import type { OperatorMode } from "../../../core/operator";
 import {
   createInitialOperatorState,
   type OperatorSessionState,
@@ -56,9 +56,15 @@ export default function OperatorDashboard({
   const [status, setStatus] = useState<DashboardStatus>("idle");
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Messages — same pattern as pentest component
-  const [messages, setMessages] = useState<DisplayMessage[]>([]);
-  const textRef = useRef("");
+  // Messages — managed by shared hook
+  const {
+    messages,
+    appendText,
+    addToolCall,
+    updateToolResult,
+    addSystemMessage,
+    addMessage,
+  } = useAgentMessages();
 
   // Input state
   const [inputValue, setInputValue] = useState("");
@@ -67,8 +73,6 @@ export default function OperatorDashboard({
   const [operatorState, setOperatorState] = useState<OperatorSessionState>(() =>
     createInitialOperatorState("manual", 2),
   );
-  const [pendingApprovals] = useState<PendingApproval[]>([]);
-  const [lastApprovedAction] = useState<string | null>(null);
 
   // Display options
   const [verboseMode, setVerboseMode] = useState(false);
@@ -120,61 +124,12 @@ export default function OperatorDashboard({
     loadSession();
   }, [sessionId, isResume]);
 
-  // ---------------------------------------------------------------------------
-  // Message helpers — same pattern as pentest component
-  // ---------------------------------------------------------------------------
-
-  const appendText = useCallback((text: string) => {
-    textRef.current += text;
-    const accumulated = textRef.current;
-    setMessages((prev) => {
-      const last = prev[prev.length - 1];
-      if (last && last.role === "assistant") {
-        const updated = [...prev];
-        updated[updated.length - 1] = { ...last, content: accumulated };
-        return updated;
-      }
-      return [
-        ...prev,
-        { role: "assistant", content: accumulated, createdAt: new Date() },
-      ];
-    });
+  // Abort any running agent on unmount
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
   }, []);
-
-  const addToolCall = useCallback(
-    (toolCallId: string, toolName: string, args?: Record<string, unknown>) => {
-      textRef.current = "";
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "tool" as const,
-          content: "",
-          createdAt: new Date(),
-          toolCallId,
-          toolName,
-          args,
-          status: "pending" as const,
-        },
-      ]);
-    },
-    [],
-  );
-
-  const updateToolResult = useCallback(
-    (toolCallId: string, _toolName: string, result?: unknown) => {
-      textRef.current = "";
-      setMessages((prev) => {
-        const idx = prev.findIndex(
-          (m) => isToolMessage(m) && m.toolCallId === toolCallId,
-        );
-        if (idx === -1) return prev;
-        const updated = [...prev];
-        updated[idx] = { ...updated[idx], status: "completed", result };
-        return updated;
-      });
-    },
-    [],
-  );
 
   // ---------------------------------------------------------------------------
   // Run agent
@@ -188,16 +143,12 @@ export default function OperatorDashboard({
       setThinking(true);
       setIsExecuting(true);
       setError(null);
-      textRef.current = "";
 
       const controller = new AbortController();
       abortControllerRef.current = controller;
 
-      // Add user message
-      setMessages((prev) => [
-        ...prev,
-        { role: "user", content: prompt, createdAt: new Date() },
-      ]);
+      // Add user message (also resets text buffer via hook)
+      addMessage({ role: "user", content: prompt, createdAt: new Date() });
 
       const run = runOperatorAgent({
         system: buildOperatorSystemPrompt(session, operatorState),
@@ -208,14 +159,7 @@ export default function OperatorDashboard({
         target: session.targets[0],
         activeTools: [...ALL_TOOL_NAMES],
         abortSignal: controller.signal,
-        authConfig: {
-          anthropicAPIKey: config.data.anthropicAPIKey ?? undefined,
-          openAiAPIKey: config.data.openAiAPIKey ?? undefined,
-          openRouterAPIKey: config.data.openRouterAPIKey ?? undefined,
-          local: config.data.localModelUrl
-            ? { baseURL: config.data.localModelUrl }
-            : undefined,
-        },
+        authConfig: buildAuthConfig(config.data),
       });
 
       try {
@@ -250,17 +194,10 @@ export default function OperatorDashboard({
 
         await run.result;
       } catch (e) {
-        if ((e as Error).name !== "AbortError") {
+        if (!(e instanceof Error && e.name === "AbortError")) {
           const errorMsg = e instanceof Error ? e.message : "Agent failed";
           setError(errorMsg);
-          setMessages((prev) => [
-            ...prev,
-            {
-              role: "system",
-              content: `Error: ${errorMsg}`,
-              createdAt: new Date(),
-            },
-          ]);
+          addSystemMessage(`Error: ${errorMsg}`);
         }
       } finally {
         setStatus("idle");
@@ -274,9 +211,11 @@ export default function OperatorDashboard({
       model.id,
       config.data,
       operatorState,
+      addMessage,
       appendText,
       addToolCall,
       updateToolResult,
+      addSystemMessage,
       setThinking,
       setIsExecuting,
     ],
@@ -298,16 +237,9 @@ export default function OperatorDashboard({
       setStatus("idle");
       setThinking(false);
       setIsExecuting(false);
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "system",
-          content: "Agent stopped by user.",
-          createdAt: new Date(),
-        },
-      ]);
+      addSystemMessage("Agent stopped by user.");
     }
-  }, [setThinking, setIsExecuting]);
+  }, [addSystemMessage, setThinking, setIsExecuting]);
 
   // Keyboard shortcuts
   useKeyboard((key) => {
@@ -438,8 +370,6 @@ export default function OperatorDashboard({
         focused={true}
         verbose={verboseMode}
         expandedLogs={expandedLogs}
-        pendingApprovals={pendingApprovals}
-        lastApprovedAction={lastApprovedAction}
       />
 
       {/* Input area */}
