@@ -27,11 +27,7 @@ import { ToastContainer } from "./components/toast";
 import { ErrorBoundary } from "./components/error-boundary";
 import { useToast } from "./context/toast";
 import { writeErrorLog } from "../core/logger";
-import {
-  checkForUpdate,
-  detectInstallMethod,
-  getUpgradeCommandString,
-} from "../core/installation";
+import { checkForUpdate } from "../core/installation";
 import ShortcutsDialog from "./components/commands/shortcuts-dialog";
 import HelpDialog from "./components/commands/help-dialog";
 import ModelsDisplay from "./components/commands/models-display";
@@ -140,10 +136,8 @@ function AppContent({
   useEffect(() => {
     checkForUpdate().then(({ updateAvailable, currentVersion, latestVersion }) => {
       if (!updateAvailable) return;
-      const method = detectInstallMethod();
-      const cmd = getUpgradeCommandString(method);
       toast(
-        `Update available: v${currentVersion} → v${latestVersion}. Run: ${cmd}`,
+        `Update available: v${currentVersion} → v${latestVersion}. Run: pensar upgrade`,
         "warn",
         8000,
       );

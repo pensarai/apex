@@ -27,6 +27,23 @@ export function getCurrentVersion(): string {
   return packageJson.version;
 }
 
+/**
+ * Returns true if `latest` is strictly greater than `current` by semver.
+ * Only compares major.minor.patch; pre-release suffixes are ignored.
+ */
+export function isNewerVersion(current: string, latest: string): boolean {
+  const parse = (v: string) => v.split(".").map((n) => parseInt(n, 10) || 0);
+  const c = parse(current);
+  const l = parse(latest);
+  for (let i = 0; i < Math.max(c.length, l.length); i++) {
+    const cv = c[i] ?? 0;
+    const lv = l[i] ?? 0;
+    if (lv > cv) return true;
+    if (lv < cv) return false;
+  }
+  return false;
+}
+
 export async function getLatestVersion(): Promise<string> {
   const res = await fetch("https://registry.npmjs.org/@pensar/apex/latest");
   if (!res.ok)
@@ -111,7 +128,7 @@ export async function checkForUpdate(): Promise<CheckUpdateResult> {
   }
 
   return {
-    updateAvailable: currentVersion !== latestVersion,
+    updateAvailable: isNewerVersion(currentVersion, latestVersion),
     currentVersion,
     latestVersion,
   };
@@ -170,7 +187,7 @@ export async function upgrade(options?: {
     };
   }
 
-  if (currentVersion === latestVersion) {
+  if (!isNewerVersion(currentVersion, latestVersion)) {
     return {
       success: true,
       message: `Already on the latest version (v${currentVersion}).`,

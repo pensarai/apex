@@ -3,6 +3,7 @@ import {
   getCurrentVersion,
   getLatestVersion,
   getVersion,
+  isNewerVersion,
   detectInstallMethod,
   getUpgradeCommandString,
   checkForUpdate,
@@ -87,6 +88,41 @@ describe("getLatestVersion", () => {
       new Response("not found", { status: 404, statusText: "Not Found" }),
     );
     await expect(getLatestVersion()).rejects.toThrow("Not Found");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isNewerVersion
+// ---------------------------------------------------------------------------
+
+describe("isNewerVersion", () => {
+  it("returns true when latest has higher patch", () => {
+    expect(isNewerVersion("0.0.66", "0.0.67")).toBe(true);
+  });
+
+  it("returns true when latest has higher minor", () => {
+    expect(isNewerVersion("0.1.0", "0.2.0")).toBe(true);
+  });
+
+  it("returns true when latest has higher major", () => {
+    expect(isNewerVersion("1.0.0", "2.0.0")).toBe(true);
+  });
+
+  it("returns false when versions are equal", () => {
+    expect(isNewerVersion("0.0.67", "0.0.67")).toBe(false);
+  });
+
+  it("returns false when current is newer than latest", () => {
+    expect(isNewerVersion("0.0.67", "0.0.66")).toBe(false);
+  });
+
+  it("returns false when current major is higher", () => {
+    expect(isNewerVersion("2.0.0", "1.9.9")).toBe(false);
+  });
+
+  it("handles versions with different segment counts", () => {
+    expect(isNewerVersion("1.0", "1.0.1")).toBe(true);
+    expect(isNewerVersion("1.0.1", "1.0")).toBe(false);
   });
 });
 
@@ -185,7 +221,7 @@ describe("checkForUpdate", () => {
     expect(result.latestVersion).toBe(current);
   });
 
-  it("reports update available when versions differ", async () => {
+  it("reports update available when latest is greater", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ version: "99.99.99" }), { status: 200 }),
     );
@@ -194,6 +230,16 @@ describe("checkForUpdate", () => {
     expect(result.updateAvailable).toBe(true);
     expect(result.currentVersion).toBe(getCurrentVersion());
     expect(result.latestVersion).toBe("99.99.99");
+  });
+
+  it("reports no update when current is newer than latest", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ version: "0.0.1" }), { status: 200 }),
+    );
+
+    const result = await checkForUpdate();
+    expect(result.updateAvailable).toBe(false);
+    expect(result.latestVersion).toBe("0.0.1");
   });
 
   it("returns no update on network failure", async () => {
