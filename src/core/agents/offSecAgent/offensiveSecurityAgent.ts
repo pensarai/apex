@@ -69,6 +69,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       callbacks: input.callbacks,
       subagentCallbacks: input.subagentCallbacks,
       sandbox: input.sandbox,
+      findingsRegistry: input.findingsRegistry,
     });
 
     let tools: ToolSet = input.extraTools

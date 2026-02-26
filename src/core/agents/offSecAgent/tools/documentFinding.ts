@@ -48,6 +48,21 @@ FINDING STRUCTURE:
     inputSchema: documentFindingInputSchema,
     execute: async (finding) => {
       try {
+        // -- Dedup check (when a shared registry is available) ----------------
+        if (ctx.findingsRegistry) {
+          const check = await ctx.findingsRegistry.register(finding);
+          if (check.duplicate) {
+            const matchTitle = check.matchedFinding?.title ?? "unknown";
+            return {
+              success: false,
+              duplicate: true,
+              matchType: check.matchType,
+              matchedFinding: matchTitle,
+              message: `Duplicate finding (${check.matchType}): already documented as "${matchTitle}". Skipping.`,
+            };
+          }
+        }
+
         const timestamp = new Date().toISOString();
         const findingWithMeta = {
           ...finding,
