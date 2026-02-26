@@ -20,31 +20,9 @@
 
 ### Prerequisites
 
-- **nmap** (required for network scanning)
 - **API Key** for your chosen AI provider
 
-#### Install nmap
-
-macOS:
-
-```bash
-brew install nmap
-```
-
-Debian/Ubuntu:
-
-```bash
-sudo apt-get update && sudo apt-get install -y nmap
-```
-
-Fedora/RHEL:
-
-```bash
-sudo dnf install -y nmap
-```
-
-Windows:
-Download installer from `https://nmap.org/download.html` and ensure `nmap` is on your PATH.
+After installing, run `pensar doctor` to check for optional dependencies (like nmap) and install them.
 
 ### Install Apex
 

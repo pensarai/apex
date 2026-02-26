@@ -59,6 +59,7 @@ function showHelp() {
   );
   console.log(
     "  pensar upgrade                      Update pensar to the latest version",
+    "  pensar doctor                      Check dependencies and install missing tools",
   );
   console.log("  pensar help                         Show this help message");
   console.log("  pensar version                      Show version number");
@@ -235,6 +236,9 @@ if (command === "version" || command === "--version" || command === "-v") {
   await runPentest();
 } else if (command === "targeted-pentest") {
   await runTargetedPentest();
+} else if (command === "doctor") {
+  const { runDoctor } = await import("./core/doctor");
+  await runDoctor();
 } else if (args.length === 0) {
   await import("./tui/index.tsx");
 } else {
