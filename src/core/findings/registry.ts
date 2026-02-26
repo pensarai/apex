@@ -15,14 +15,20 @@ const VULN_CLASS_PATTERNS: [RegExp, string][] = [
   [/remote\s*code\s*execution|(\b)rce(\b)/i, "rce"],
   [/server[\s-]*side\s*request\s*forgery|(\b)ssrf(\b)/i, "ssrf"],
   [/cross[\s-]*site\s*request\s*forgery|(\b)csrf(\b)/i, "csrf"],
-  [/path\s*traversal|directory\s*traversal|local\s*file\s*inclusion|\blfi\b/i, "path-traversal"],
+  [
+    /path\s*traversal|directory\s*traversal|local\s*file\s*inclusion|\blfi\b/i,
+    "path-traversal",
+  ],
   [/\bidor\b|insecure\s*direct\s*object/i, "idor"],
   [/\bxss\b|cross[\s-]*site\s*scripting/i, "xss"],
   [/missing\s*content\s*security\s*policy|missing\s*csp\b/i, "missing-csp"],
   [/\bcors\b|cross[\s-]*origin/i, "cors"],
   [/authentication\s*bypass|auth\s*bypass/i, "auth-bypass"],
   [/privilege\s*escalation/i, "privilege-escalation"],
-  [/information\s*disclosure|sensitive\s*data\s*exposure/i, "information-disclosure"],
+  [
+    /information\s*disclosure|sensitive\s*data\s*exposure/i,
+    "information-disclosure",
+  ],
   [/open\s*redirect/i, "open-redirect"],
   [/missing.*header|security\s*header/i, "missing-security-header"],
 ];
@@ -260,7 +266,11 @@ export class FindingsRegistry {
       try {
         const raw = readFileSync(join(findingsPath, file), "utf-8");
         const finding = JSON.parse(raw) as Finding;
-        if (finding && typeof finding.title === "string" && typeof finding.endpoint === "string") {
+        if (
+          finding &&
+          typeof finding.title === "string" &&
+          typeof finding.endpoint === "string"
+        ) {
           registry.indexFinding(finding);
         }
       } catch {
@@ -301,7 +311,11 @@ export class FindingsRegistry {
 
     const exactMatch = this.exactKeys.get(exactKey);
     if (exactMatch) {
-      return { duplicate: true, matchedFinding: exactMatch, matchType: "exact" };
+      return {
+        duplicate: true,
+        matchedFinding: exactMatch,
+        matchType: "exact",
+      };
     }
 
     const appWideMatch = this.appWideKeys.get(appWideKey);

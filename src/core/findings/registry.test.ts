@@ -66,7 +66,8 @@ const sqlInjectionOrders = makeFinding({
   title: "SQL Injection in /api/orders Search Parameter",
   severity: "CRITICAL",
   endpoint: "https://target.com/api/orders",
-  description: "The /api/orders endpoint search param is vulnerable to SQL injection.",
+  description:
+    "The /api/orders endpoint search param is vulnerable to SQL injection.",
   remediation: "Use parameterized queries.",
 });
 
@@ -119,7 +120,8 @@ const storedXss = makeFinding({
 });
 
 const sentryExposure = makeFinding({
-  title: "Information Disclosure: Sentry Public Key Exposed in Documentation Meta Tags",
+  title:
+    "Information Disclosure: Sentry Public Key Exposed in Documentation Meta Tags",
   severity: "LOW",
   endpoint: "https://docs.target.com/overview",
   description: "Sentry error tracking public key is exposed in meta tags.",
@@ -133,8 +135,12 @@ const sentryExposure = makeFinding({
 
 describe("extractVulnClass", () => {
   it("classifies SQL injection titles", () => {
-    expect(extractVulnClass("SQL Injection in /api/products")).toBe("sql-injection");
-    expect(extractVulnClass("Blind SQL Injection via search")).toBe("sql-injection");
+    expect(extractVulnClass("SQL Injection in /api/products")).toBe(
+      "sql-injection",
+    );
+    expect(extractVulnClass("Blind SQL Injection via search")).toBe(
+      "sql-injection",
+    );
   });
 
   it("classifies XSS titles (reflected and stored share the class)", () => {
@@ -144,22 +150,26 @@ describe("extractVulnClass", () => {
   });
 
   it("classifies missing CSP", () => {
-    expect(extractVulnClass("Missing Content Security Policy (CSP) Header")).toBe(
+    expect(
+      extractVulnClass("Missing Content Security Policy (CSP) Header"),
+    ).toBe("missing-csp");
+    expect(extractVulnClass("Missing CSP on all endpoints")).toBe(
       "missing-csp",
     );
-    expect(extractVulnClass("Missing CSP on all endpoints")).toBe("missing-csp");
   });
 
   it("classifies CORS issues", () => {
     expect(extractVulnClass("Misconfigured CORS Policy")).toBe("cors");
-    expect(extractVulnClass("Cross-Origin Resource Sharing Misconfiguration")).toBe(
-      "cors",
-    );
+    expect(
+      extractVulnClass("Cross-Origin Resource Sharing Misconfiguration"),
+    ).toBe("cors");
   });
 
   it("classifies IDOR", () => {
     expect(extractVulnClass("IDOR on User Profile Endpoint")).toBe("idor");
-    expect(extractVulnClass("Insecure Direct Object Reference in orders")).toBe("idor");
+    expect(extractVulnClass("Insecure Direct Object Reference in orders")).toBe(
+      "idor",
+    );
   });
 
   it("classifies SSRF", () => {
@@ -168,43 +178,55 @@ describe("extractVulnClass", () => {
   });
 
   it("classifies RCE / command injection", () => {
-    expect(extractVulnClass("Remote Code Execution via file upload")).toBe("rce");
+    expect(extractVulnClass("Remote Code Execution via file upload")).toBe(
+      "rce",
+    );
     expect(extractVulnClass("Command Injection in ping utility")).toBe(
       "command-injection",
     );
   });
 
   it("classifies path traversal / LFI", () => {
-    expect(extractVulnClass("Path Traversal in /api/files")).toBe("path-traversal");
-    expect(extractVulnClass("Local File Inclusion via template")).toBe("path-traversal");
+    expect(extractVulnClass("Path Traversal in /api/files")).toBe(
+      "path-traversal",
+    );
+    expect(extractVulnClass("Local File Inclusion via template")).toBe(
+      "path-traversal",
+    );
     expect(extractVulnClass("Directory Traversal on static assets")).toBe(
       "path-traversal",
     );
   });
 
   it("classifies information disclosure", () => {
-    expect(
-      extractVulnClass("Information Disclosure: Sentry Public Key"),
-    ).toBe("information-disclosure");
+    expect(extractVulnClass("Information Disclosure: Sentry Public Key")).toBe(
+      "information-disclosure",
+    );
     expect(extractVulnClass("Sensitive Data Exposure in error page")).toBe(
       "information-disclosure",
     );
   });
 
   it("classifies CSRF", () => {
-    expect(extractVulnClass("Cross-Site Request Forgery on /api/settings")).toBe("csrf");
+    expect(
+      extractVulnClass("Cross-Site Request Forgery on /api/settings"),
+    ).toBe("csrf");
     expect(extractVulnClass("CSRF on form submission")).toBe("csrf");
   });
 
   it("classifies auth bypass and privilege escalation", () => {
-    expect(extractVulnClass("Authentication Bypass via token reuse")).toBe("auth-bypass");
+    expect(extractVulnClass("Authentication Bypass via token reuse")).toBe(
+      "auth-bypass",
+    );
     expect(extractVulnClass("Privilege Escalation to admin role")).toBe(
       "privilege-escalation",
     );
   });
 
   it("classifies open redirect", () => {
-    expect(extractVulnClass("Open Redirect on login callback")).toBe("open-redirect");
+    expect(extractVulnClass("Open Redirect on login callback")).toBe(
+      "open-redirect",
+    );
   });
 
   it("classifies missing security headers", () => {
@@ -230,21 +252,25 @@ describe("extractVulnClass", () => {
 
 describe("extractTitleStem", () => {
   it("strips endpoint paths from titles", () => {
-    expect(extractTitleStem("SQL Injection in /api/products Search Parameter")).toBe(
-      "sql injection in search parameter",
-    );
+    expect(
+      extractTitleStem("SQL Injection in /api/products Search Parameter"),
+    ).toBe("sql injection in search parameter");
   });
 
   it("produces the same stem for the same vuln on different endpoints", () => {
-    const stem1 = extractTitleStem("SQL Injection in /api/products Search Parameter");
-    const stem2 = extractTitleStem("SQL Injection in /api/orders Search Parameter");
+    const stem1 = extractTitleStem(
+      "SQL Injection in /api/products Search Parameter",
+    );
+    const stem2 = extractTitleStem(
+      "SQL Injection in /api/orders Search Parameter",
+    );
     expect(stem1).toBe(stem2);
   });
 
   it("preserves titles without endpoint references", () => {
-    expect(extractTitleStem("Missing Content Security Policy (CSP) Header")).toBe(
-      "missing content security policy csp header",
-    );
+    expect(
+      extractTitleStem("Missing Content Security Policy (CSP) Header"),
+    ).toBe("missing content security policy csp header");
   });
 
   it("produces different stems for different XSS variants", () => {
@@ -254,9 +280,9 @@ describe("extractTitleStem", () => {
   });
 
   it("strips full URLs from titles", () => {
-    expect(
-      extractTitleStem("SSRF at https://target.com/api/fetch Found"),
-    ).toBe("ssrf at found");
+    expect(extractTitleStem("SSRF at https://target.com/api/fetch Found")).toBe(
+      "ssrf at found",
+    );
   });
 
   it("normalises whitespace and casing", () => {
@@ -282,9 +308,9 @@ describe("normalizeEndpoint", () => {
   });
 
   it("strips query parameters", () => {
-    expect(normalizeEndpoint("https://target.com/api/products?search=test")).toBe(
-      "https://target.com/api/products",
-    );
+    expect(
+      normalizeEndpoint("https://target.com/api/products?search=test"),
+    ).toBe("https://target.com/api/products");
   });
 
   it("lowercases the URL", () => {
@@ -691,10 +717,8 @@ describe("FindingsRegistry", () => {
         const p = String(filePath);
         if (p.includes("finding-1.json"))
           return JSON.stringify(sqlInjectionProducts);
-        if (p.includes("finding-2.json"))
-          return JSON.stringify(missingCspRoot);
-        if (p.includes("finding-3.json"))
-          return JSON.stringify(corsWildcard);
+        if (p.includes("finding-2.json")) return JSON.stringify(missingCspRoot);
+        if (p.includes("finding-3.json")) return JSON.stringify(corsWildcard);
         return "";
       });
 
