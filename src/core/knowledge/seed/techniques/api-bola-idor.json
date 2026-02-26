@@ -1,0 +1,56 @@
+{
+  "id": "api-bola-idor",
+  "title": "BOLA / IDOR with ID Enumeration",
+  "category": "api",
+  "tags": ["bola", "idor", "authorization", "api", "uuid-prediction"],
+  "applicability": {
+    "technologies": ["node", "python", "java", "ruby", "php", "go"],
+    "contexts": ["api-endpoint", "url-parameter", "json-body", "resource-access"],
+    "preconditions": ["authenticated-api", "resource-id-in-request"]
+  },
+  "technique": {
+    "summary": "Access other users' resources by manipulating object IDs in API requests. Even UUID-based IDs can be predictable (v1 UUIDs are time-based) or leaked through other endpoints. BOLA is the #1 OWASP API risk.",
+    "steps": [
+      "Identify API endpoints that reference objects by ID (users, orders, documents)",
+      "Create two test accounts and obtain valid object IDs for each",
+      "Using Account A's session, try accessing Account B's resources by changing the ID",
+      "Test both direct URL path IDs and request body IDs",
+      "If sequential IDs: enumerate by incrementing/decrementing",
+      "If UUID v1: extract timestamp component and generate likely UUIDs",
+      "Check if the API returns different errors for 'not found' vs 'forbidden' (info leak)"
+    ],
+    "payloads": [
+      {
+        "payload": "GET /api/users/2 (when authenticated as user 1)",
+        "encoding": "raw",
+        "context": "url-parameter",
+        "notes": "Simple sequential ID IDOR"
+      },
+      {
+        "payload": "GET /api/documents/{other-user-uuid}",
+        "encoding": "raw",
+        "context": "url-parameter",
+        "notes": "UUID-based IDOR — find UUIDs from other endpoints or email notifications"
+      },
+      {
+        "payload": "POST /api/transfer {\"from_account\":\"attacker\",\"to_account\":\"attacker\",\"amount\":100} → change from_account to victim",
+        "encoding": "raw",
+        "context": "json-body",
+        "notes": "IDOR in request body — different from URL-based"
+      }
+    ],
+    "bypassTechniques": [
+      "UUID v1 prediction: extract timestamp, generate adjacent UUIDs",
+      "Find ID leaks in: API list endpoints, email links, Referer headers, JS files",
+      "Try accessing via different HTTP methods (GET vs POST vs PUT)",
+      "Try both numeric and string versions: /users/1 vs /users/00001",
+      "Check if GraphQL queries have different authorization than REST endpoints",
+      "Test nested resource access: /users/1/orders (may bypass authorization on /orders/X)"
+    ]
+  },
+  "references": [
+    "https://owasp.org/API-Security/editions/2023/en/0xa1-broken-object-level-authorization/",
+    "https://portswigger.net/web-security/access-control/idor"
+  ],
+  "source": "owasp"
+}

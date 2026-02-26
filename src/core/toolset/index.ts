@@ -326,6 +326,72 @@ export const ALL_TOOLS: ToolDefinition[] = [
     category: "utility",
     defaultEnabled: true,
   },
+
+  // Knowledge & chain reasoning tools
+  {
+    id: "query_attack_knowledge",
+    name: "Attack Knowledge",
+    description: "Query attack techniques",
+    detail:
+      "Search the curated attack knowledge base for offensive techniques, payloads, and WAF bypass methods. Supports filtering by category, technology, context, and free text.",
+    category: "exploitation",
+    defaultEnabled: true,
+  },
+  {
+    id: "query_shared_findings",
+    name: "Shared Findings",
+    description: "View cross-agent findings",
+    detail:
+      "Query findings discovered by other agents in the current engagement. Enables cross-agent credential sharing, vulnerability chaining, and coordinated exploitation.",
+    category: "utility",
+    defaultEnabled: true,
+  },
+
+  // Attacker infrastructure tools
+  {
+    id: "start_callback_server",
+    name: "Callback Server",
+    description: "Start OOB listener",
+    detail:
+      "Start a lightweight HTTP or DNS callback listener for out-of-band (OOB) interaction detection. Essential for blind SSRF, blind XXE, and blind SQL injection confirmation. Supports public URL exposure via cloudflared tunnel.",
+    category: "exploitation",
+    defaultEnabled: true,
+  },
+  {
+    id: "check_callback_server",
+    name: "Check Callbacks",
+    description: "Check OOB interactions",
+    detail:
+      "Check for interactions received by a running callback server. Returns all recorded HTTP requests or DNS queries with timestamps, source IPs, and request details.",
+    category: "exploitation",
+    defaultEnabled: true,
+  },
+  {
+    id: "stop_callback_server",
+    name: "Stop Server",
+    description: "Stop callback server",
+    detail: "Stop a running callback server and free its port.",
+    category: "exploitation",
+    defaultEnabled: true,
+  },
+  {
+    id: "serve_malicious_page",
+    name: "Malicious Page",
+    description: "Serve attacker page",
+    detail:
+      "Serve an attacker-controlled web page for testing AI agent security, XSS, CSRF, clickjacking, and OAuth redirect exploitation. Supports custom HTML content and headers.",
+    category: "exploitation",
+    defaultEnabled: true,
+  },
+  {
+    id: "host_payload",
+    name: "Host Payload",
+    description: "Host attack payloads",
+    detail:
+      "Host arbitrary files and payloads (DTDs for XXE, polyglot files, serialized objects, JavaScript payloads) on a local or public URL. Supports any content type.",
+    category: "exploitation",
+    defaultEnabled: true,
+  },
 ];
 
 // ============================================================================

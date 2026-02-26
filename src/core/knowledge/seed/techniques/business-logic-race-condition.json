@@ -1,0 +1,47 @@
+{
+  "id": "business-logic-race-condition",
+  "title": "Race Condition Exploitation (TOCTOU)",
+  "category": "race_condition",
+  "tags": ["race-condition", "toctou", "concurrency", "double-spend"],
+  "applicability": {
+    "technologies": ["node", "python", "java", "ruby", "go", "php"],
+    "contexts": ["api-endpoint", "payment-processing", "coupon-redemption", "vote-system"],
+    "preconditions": ["non-atomic-operations", "concurrent-request-handling"]
+  },
+  "technique": {
+    "summary": "Exploit time-of-check to time-of-use (TOCTOU) gaps by sending multiple concurrent requests. This can lead to double-spending, multi-use of single-use tokens, bypassing rate limits, or corrupting application state.",
+    "steps": [
+      "Identify operations that should be atomic: balance transfers, coupon redemption, vote submission",
+      "Prepare the request that performs the sensitive operation",
+      "Use HTTP/2 single-packet attack or connection warming to synchronize concurrent requests",
+      "Send 10-20 concurrent identical requests in a single TCP packet (last-byte sync)",
+      "Check if the operation was executed multiple times (balance deducted once but credited multiple times)",
+      "Vary the number of concurrent requests and timing to find the race window"
+    ],
+    "payloads": [
+      {
+        "payload": "turbo-intruder: engine.queue(request, gate='race1') x20 → engine.openGate('race1')",
+        "encoding": "raw",
+        "context": "http-request",
+        "notes": "Burp Turbo Intruder single-packet attack script"
+      },
+      {
+        "payload": "for i in $(seq 1 20); do curl -s http://target/api/redeem-coupon -d '{\"code\":\"SAVE50\"}' -H 'Cookie: session=...' & done; wait",
+        "encoding": "raw",
+        "context": "shell-command",
+        "notes": "Bash concurrent request race condition test"
+      }
+    ],
+    "bypassTechniques": [
+      "HTTP/2 single-packet attack: send all requests in one TCP packet for maximum synchronization",
+      "Connection warming: pre-establish connections, then send requests simultaneously",
+      "Vary request count and timing — some race windows are wider than others",
+      "Try from multiple source IPs if server uses per-IP queuing"
+    ]
+  },
+  "references": [
+    "https://portswigger.net/research/smashing-the-state-machine",
+    "https://portswigger.net/web-security/race-conditions"
+  ],
+  "source": "portswigger-research"
+}

