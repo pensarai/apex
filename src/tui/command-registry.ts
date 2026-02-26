@@ -8,21 +8,12 @@ import {
 } from "./utils/command-flags";
 import { getAllThemeNames } from "./theme";
 import { config } from "../core/config";
-import {
-  checkForUpdate,
-  getUpgradeCommandString,
-  detectInstallMethod,
-} from "../core/installation";
-
-import type { ToastVariant } from "./context/toast";
-
 /**
  * Define your application's CommandContext type with specific methods
  */
 export interface AppCommandContext {
   route: Route;
   navigate: (route: Route) => void;
-  toast: (message: string, variant?: ToastVariant, duration?: number) => void;
 }
 
 /**
@@ -346,31 +337,6 @@ export const commands: CommandConfig[] = [
     },
   },
 
-  {
-    name: "upgrade",
-    aliases: ["update"],
-    description: "Update pensar to the latest version",
-    category: "General",
-    handler: async (_args, ctx) => {
-      ctx.toast("Checking for updates…");
-
-      const { updateAvailable, currentVersion, latestVersion } =
-        await checkForUpdate();
-
-      if (!updateAvailable) {
-        ctx.toast(`Already on the latest version (v${currentVersion}).`);
-        return;
-      }
-
-      const method = detectInstallMethod();
-      const cmd = getUpgradeCommandString(method);
-      ctx.toast(
-        `Update available: v${currentVersion} → v${latestVersion}. Run: ${cmd}`,
-        "warn",
-        8000,
-      );
-    },
-  },
   {
     name: "exit",
     aliases: ["quit", "q"],
