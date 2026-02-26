@@ -46,7 +46,7 @@ function detectDocker(): boolean {
   return false;
 }
 
-function toolExists(commandName: string): boolean {
+export function toolExists(commandName: string): boolean {
   try {
     // Prefer a POSIX-compliant lookup via the shell builtin
     execSync(`command -v ${commandName} >/dev/null 2>&1`, {
