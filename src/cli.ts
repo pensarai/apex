@@ -82,6 +82,9 @@ function showHelp() {
   console.log(
     "  --model <model>         AI model (default: claude-sonnet-4-5)",
   );
+  console.log(
+    "  --mode <mode>           Pentest mode: safe (default) or exfil (extract data)",
+  );
   console.log();
   console.log("Global options:");
   console.log("  -h, --help         Show this help message");
@@ -179,6 +182,14 @@ async function runTargetedPentest() {
   const target = getArgRequired("--target");
   const objectives = getAllArgs("--objective");
   const model = (getArg("--model") ?? "claude-sonnet-4-5") as AIModel;
+  const mode = getArg("--mode") ?? "safe";
+
+  if (mode !== "safe" && mode !== "exfil") {
+    console.error(`Error: --mode must be 'safe' or 'exfil' (got '${mode}')`);
+    process.exit(1);
+  }
+
+  const exfilMode = mode === "exfil";
 
   if (objectives.length === 0) {
     console.error("Error: at least one --objective is required");
@@ -190,6 +201,7 @@ async function runTargetedPentest() {
   console.log("=".repeat(60));
   console.log(`Target:  ${target}`);
   console.log(`Model:   ${model}`);
+  console.log(`Mode:    ${mode}`);
   console.log("Objectives:");
   objectives.forEach((o, i) => console.log(`  ${i + 1}. ${o}`));
   console.log();
@@ -199,6 +211,7 @@ async function runTargetedPentest() {
   const session = await sessions.create({
     name: "Targeted Pentest",
     targets: [target],
+    ...(exfilMode ? { config: { exfilMode: true } } : {}),
   });
 
   const { findings, findingsPath, pocsPath } = await runTargetedPentestAgent({
