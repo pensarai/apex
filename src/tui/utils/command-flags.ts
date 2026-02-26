@@ -245,6 +245,28 @@ export function parseWebFlags(args: string[]): WebCommandFlags {
   return flags;
 }
 
+// ============================================================================
+// Threat Model Command Specific Types and Parsing
+// ============================================================================
+
+export interface ThreatModelCommandFlags {
+  cwd?: string;
+  model?: string;
+}
+
+const threatModelFlagSchema: FlagSchema = {
+  cwd: { type: "string" },
+  model: { type: "string" },
+};
+
+export function parseThreatModelFlags(args: string[]): ThreatModelCommandFlags {
+  const raw = parseFlags(args, threatModelFlagSchema);
+  const flags: ThreatModelCommandFlags = {};
+  if (raw.cwd) flags.cwd = String(raw.cwd);
+  if (raw.model) flags.model = String(raw.model);
+  return flags;
+}
+
 /**
  * Check if flags have enough information to skip the wizard
  * Requires at least a target to skip wizard

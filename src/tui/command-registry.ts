@@ -2,10 +2,12 @@ import type { CommandDefinition } from "./command-router";
 import type { Route } from "./context/route";
 import {
   parseWebFlags,
+  parseThreatModelFlags,
   hasEnoughFlagsToSkipWizard,
   createOperatorSessionFromFlags,
   createSwarmSessionFromFlags,
 } from "./utils/command-flags";
+import { sessions } from "../core/session";
 import { getAllThemeNames } from "./theme";
 import { config } from "../core/config";
 
@@ -203,6 +205,36 @@ export const commands: CommandConfig[] = [
         path: "operator",
         options: flags as Record<string, unknown>,
       });
+    },
+  },
+  {
+    name: "threat-model",
+    aliases: ["threatmodel", "tm"],
+    description: "Generate application-centric threat model",
+    category: "Analysis",
+    options: [
+      {
+        name: "--cwd",
+        valueHint: "<path>",
+        description: "Codebase path to analyze",
+      },
+      {
+        name: "--model",
+        valueHint: "<model>",
+        description: "AI model to use",
+      },
+    ],
+    handler: async (args, ctx) => {
+      const flags = parseThreatModelFlags(args);
+      const cwd = flags.cwd || process.cwd();
+
+      const session = await sessions.create({
+        name: "Threat Model",
+        targets: [cwd],
+        config: { cwd },
+      });
+
+      ctx.navigate({ type: "threat-model", sessionId: session.id });
     },
   },
   {
