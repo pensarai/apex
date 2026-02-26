@@ -1,25 +1,6 @@
 import { execSync, spawnSync } from "child_process";
 import readline from "readline";
-
-function toolExists(commandName: string): boolean {
-  try {
-    execSync(`command -v ${commandName} >/dev/null 2>&1`, {
-      stdio: "ignore",
-      shell: "/bin/bash",
-    });
-    return true;
-  } catch {
-    try {
-      execSync(`which ${commandName} >/dev/null 2>&1`, {
-        stdio: "ignore",
-        shell: "/bin/bash",
-      });
-      return true;
-    } catch {
-      return false;
-    }
-  }
-}
+import { toolExists } from "./agents/specialized/utils.js";
 
 function detectPackageManager(): { name: string; installCmd: string } | null {
   const platform = process.platform;
@@ -45,7 +26,7 @@ function detectPackageManager(): { name: string; installCmd: string } | null {
 function prompt(question: string): Promise<string> {
   const rl = readline.createInterface({
     input: process.stdin,
-    output: process.stderr,
+    output: process.stdout,
   });
   return new Promise((resolve) => {
     rl.question(question, (answer) => {
