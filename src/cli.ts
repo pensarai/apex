@@ -296,10 +296,11 @@ async function runKnowledge() {
     }
 
     console.log(`Search results for "${query}" (${results.length} matches)\n`);
-    for (const t of results) {
-      console.log(`  [${t.category}] ${t.title}`);
-      console.log(`    ${t.technique.summary.substring(0, 120)}...`);
-      console.log(`    Tags: ${t.tags.join(", ")}`);
+    for (const r of results) {
+      console.log(`  [${r.technique.category}] ${r.technique.title}`);
+      console.log(`    ${r.technique.technique.summary.substring(0, 120)}...`);
+      console.log(`    Tags: ${r.technique.tags.join(", ")}`);
+      console.log(`    File: ${r.filePath}`);
       console.log();
     }
   } else {

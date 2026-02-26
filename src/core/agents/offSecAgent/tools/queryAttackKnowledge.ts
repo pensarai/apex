@@ -6,15 +6,15 @@ import type { AttackCategory } from "../../../knowledge/attackKnowledge";
 
 export function queryAttackKnowledge(_ctx: ToolContext) {
   return tool({
-    description: `Query the attack knowledge base for offensive techniques, payloads, and bypass methods.
+    description: `Search the attack knowledge base and get a map of matching techniques with file paths.
 
-Use this tool to find relevant attack techniques based on:
-- Category (ssrf, injection, auth_bypass, api, business_logic, ai_llm, client_side, etc.)
-- Technology stack (node, python-flask, java-spring, etc.)
-- Context (url-parameter, json-body, api-endpoint, file-upload, etc.)
-- Free text search (any keywords like "dns rebinding", "jwt", "race condition")
+Returns a lightweight index of matching techniques — title, category, tags, a one-line summary, and the file path to the full technique JSON. Use \`read_file\` on the returned paths to pull in full details (payloads, steps, bypass methods) for techniques that look relevant to your objective. Use \`grep\` to search across technique files for specific keywords.
 
-The knowledge base contains curated techniques with concrete payloads, step-by-step exploitation guides, and WAF bypass methods. Query it before crafting payloads to leverage known-good techniques.`,
+Search by:
+- Category: ssrf, injection, auth_bypass, api, business_logic, ai_llm, client_side, race_condition, etc.
+- Technology: node, python-flask, java-spring, postgresql, mongodb, etc.
+- Context: url-parameter, json-body, api-endpoint, file-upload, etc.
+- Free text: any keywords like "dns rebinding", "jwt", "race condition"`,
     inputSchema: z.object({
       category: z
         .string()
@@ -43,8 +43,8 @@ The knowledge base contains curated techniques with concrete payloads, step-by-s
       limit: z
         .number()
         .optional()
-        .default(5)
-        .describe("Maximum number of results to return (default: 5)"),
+        .default(10)
+        .describe("Maximum number of results to return (default: 10)"),
       toolCallDescription: z
         .string()
         .describe(
@@ -72,25 +72,23 @@ The knowledge base contains curated techniques with concrete payloads, step-by-s
         };
       }
 
-      // Return structured results with full technique details
-      const techniques = results.map((t) => ({
-        id: t.id,
-        title: t.title,
-        category: t.category,
-        tags: t.tags,
-        summary: t.technique.summary,
-        steps: t.technique.steps,
-        payloads: t.technique.payloads,
-        bypassTechniques: t.technique.bypassTechniques,
-        applicability: t.applicability,
-        references: t.references,
+      // Return a lightweight index — title, category, tags, summary, and file path.
+      // The agent uses read_file on the paths to get full payloads/steps as needed.
+      const techniques = results.map((r) => ({
+        id: r.technique.id,
+        title: r.technique.title,
+        category: r.technique.category,
+        tags: r.technique.tags,
+        summary: r.technique.technique.summary,
+        technologies: r.technique.applicability.technologies,
+        filePath: r.filePath,
       }));
 
       return {
         success: true,
         count: techniques.length,
         techniques,
-        message: `Found ${techniques.length} matching technique(s).`,
+        message: `Found ${techniques.length} matching technique(s). Use read_file on the filePath values to get full payloads, steps, and bypass methods.`,
       };
     },
   });
