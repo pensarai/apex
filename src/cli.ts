@@ -70,6 +70,9 @@ function showHelp() {
     "  --cwd <path>       Source code path — enables whitebox attack surface",
   );
   console.log("  --model <model>    AI model (default: claude-sonnet-4-5)");
+  console.log(
+    "  --mode <mode>      Pentest mode: safe (default) or exfil (extract data)",
+  );
   console.log();
   console.log("targeted-pentest options:");
   console.log("  --target <url>          (required) Target URL / domain / IP");
@@ -102,6 +105,14 @@ async function runPentest() {
   const target = getArgRequired("--target");
   const cwd = getArg("--cwd");
   const model = (getArg("--model") ?? "claude-sonnet-4-5") as AIModel;
+  const mode = getArg("--mode") ?? "safe";
+
+  if (mode !== "safe" && mode !== "exfil") {
+    console.error(`Error: --mode must be 'safe' or 'exfil' (got '${mode}')`);
+    process.exit(1);
+  }
+
+  const exfilMode = mode === "exfil";
 
   console.log("=".repeat(60));
   console.log("PENTEST ORCHESTRATION");
@@ -109,6 +120,7 @@ async function runPentest() {
   console.log(`Target:  ${target}`);
   if (cwd) console.log(`Cwd:     ${cwd} (whitebox)`);
   console.log(`Model:   ${model}`);
+  console.log(`Mode:    ${mode}`);
   console.log();
 
   const pensarConfig = await appConfig.get();
@@ -116,7 +128,10 @@ async function runPentest() {
   const session = await sessions.create({
     name: cwd ? "Whitebox Pentest" : "Blackbox Pentest",
     targets: [target],
-    ...(cwd ? { config: { cwd } } : {}),
+    config: {
+      ...(cwd ? { cwd } : {}),
+      ...(exfilMode ? { exfilMode: true } : {}),
+    },
   });
 
   const { findings, findingsPath, pocsPath, reportPath } =
