@@ -27,3 +27,9 @@ jobs:
 
       - name: Build
         run: bun run build
+
+      - name: Smoke test published package
+        run: |
+          npm pack
+          npm install -g ./pensar-apex-*.tgz
+          pensar --version
