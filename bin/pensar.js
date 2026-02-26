@@ -67,13 +67,13 @@ if (command === "benchmark") {
   await import(authPath);
 } else if (command === "upgrade" || command === "update") {
   // Run upgrade
-  const { Installation } = await import("../src/core/installation/index.ts");
+  const { getCurrentVersion, upgrade } = await import("../src/core/installation/index.ts");
 
-  const currentVersion = Installation.getCurrentVersion();
+  const currentVersion = getCurrentVersion();
   console.log(`Current version: v${currentVersion}`);
   console.log("Checking for updates...");
 
-  const result = await Installation.upgrade();
+  const result = await upgrade();
   console.log();
   console.log(result.message);
 

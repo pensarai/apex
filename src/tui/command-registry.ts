@@ -8,7 +8,7 @@ import {
 } from "./utils/command-flags";
 import { getAllThemeNames } from "./theme";
 import { config } from "../core/config";
-import { Installation } from "../core/installation";
+import { getCurrentVersion, upgrade } from "../core/installation";
 
 /**
  * Define your application's CommandContext type with specific methods
@@ -345,11 +345,11 @@ export const commands: CommandConfig[] = [
     description: "Update pensar to the latest version",
     category: "General",
     handler: async () => {
-      const currentVersion = Installation.getCurrentVersion();
+      const currentVersion = getCurrentVersion();
       console.log(`\nCurrent version: v${currentVersion}`);
       console.log("Checking for updates...\n");
 
-      const result = await Installation.upgrade();
+      const result = await upgrade();
       console.log(result.message);
 
       if (result.success && result.fromVersion !== result.toVersion) {

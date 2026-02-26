@@ -209,13 +209,13 @@ async function runTargetedPentest() {
 }
 
 async function runUpgrade() {
-  const { Installation } = await import("./core/installation");
+  const { getCurrentVersion, upgrade } = await import("./core/installation");
 
-  const currentVersion = Installation.getCurrentVersion();
+  const currentVersion = getCurrentVersion();
   console.log(`Current version: v${currentVersion}`);
   console.log("Checking for updates...");
 
-  const result = await Installation.upgrade();
+  const result = await upgrade();
   console.log();
   console.log(result.message);
 
