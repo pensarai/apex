@@ -23,6 +23,23 @@ interface WorkOSDeviceResponse {
   interval: number;
 }
 
+// Legacy device auth types (fallback when new backend isn't deployed yet)
+interface LegacyDeviceCodeResponse {
+  deviceCode: string;
+  userCode: string;
+  verificationUri: string;
+  verificationUriComplete: string;
+  expiresIn: number;
+  interval: number;
+}
+
+interface LegacyTokenResponse {
+  status: "pending" | "complete" | "expired" | "not_found";
+  apiKey?: string;
+  workspace?: { id: string; name: string; slug: string };
+  credits?: { balance: number };
+}
+
 interface WorkspaceInfo {
   id: string;
   name: string;
@@ -47,7 +64,9 @@ export default function AuthFlow() {
 
   const [step, setStep] = useState<AuthStep>(isConnected ? "success" : "start");
   const [error, setError] = useState<string | null>(null);
+  const [authMode, setAuthMode] = useState<"workos" | "legacy" | null>(null);
   const [deviceInfo, setDeviceInfo] = useState<WorkOSDeviceResponse | null>(null);
+  const [legacyDeviceInfo, setLegacyDeviceInfo] = useState<LegacyDeviceCodeResponse | null>(null);
   const [workspaces, setWorkspaces] = useState<WorkspaceInfo[]>([]);
   const [selectedWorkspace, setSelectedWorkspace] = useState<WorkspaceInfo | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -99,47 +118,63 @@ export default function AuthFlow() {
     setError(null);
     cancelledRef.current = false;
 
+    const apiUrl = getPensarApiUrl(appConfig.data);
+
+    // Try new WorkOS flow first, fall back to legacy device auth
     try {
-      const apiUrl = getPensarApiUrl(appConfig.data);
-
-      // Fetch WorkOS client ID from CLI config endpoint
       const configResponse = await fetch(`${apiUrl}/api/cli/config`);
-      if (!configResponse.ok) {
-        throw new Error("Failed to fetch CLI configuration");
-      }
-      const cliConfig = (await configResponse.json()) as {
-        workosClientId: string;
-      };
+      if (configResponse.ok) {
+        const cliConfig = (await configResponse.json()) as {
+          workosClientId: string;
+        };
 
-      // Start WorkOS device authorization
-      const response = await fetch(
-        "https://api.workos.com/user_management/authorize/device",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ client_id: cliConfig.workosClientId }),
+        // New WorkOS device authorization flow
+        const response = await fetch(
+          "https://api.workos.com/user_management/authorize/device",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ client_id: cliConfig.workosClientId }),
+          }
+        );
+
+        if (response.ok) {
+          const data = (await response.json()) as WorkOSDeviceResponse;
+          setAuthMode("workos");
+          setDeviceInfo(data);
+          openUrl(data.verification_uri_complete);
+          setStep("polling");
+          pollForToken(
+            apiUrl,
+            cliConfig.workosClientId,
+            data.device_code,
+            data.interval,
+            data.expires_in
+          );
+          return;
         }
-      );
+      }
+    } catch {
+      // New endpoint not available — fall through to legacy
+    }
+
+    // Legacy device auth flow (backward compat)
+    try {
+      const response = await fetch(`${apiUrl}/auth/device/code`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
 
       if (!response.ok) {
         throw new Error("Failed to start device authorization");
       }
 
-      const data = (await response.json()) as WorkOSDeviceResponse;
-      setDeviceInfo(data);
-
-      // Open browser for authentication
-      openUrl(data.verification_uri_complete);
-
-      // Start polling for token
+      const data = (await response.json()) as LegacyDeviceCodeResponse;
+      setAuthMode("legacy");
+      setLegacyDeviceInfo(data);
+      openUrl(data.verificationUriComplete);
       setStep("polling");
-      pollForToken(
-        apiUrl,
-        cliConfig.workosClientId,
-        data.device_code,
-        data.interval,
-        data.expires_in
-      );
+      pollForLegacyToken(apiUrl, data.deviceCode, data.interval, data.expiresIn);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to start authorization"
@@ -210,6 +245,83 @@ export default function AuthFlow() {
       } catch (err) {
         if (cancelledRef.current) return;
         // Network error — retry
+        pollingRef.current = setTimeout(poll, interval * 1000);
+      }
+    };
+
+    pollingRef.current = setTimeout(poll, interval * 1000);
+  };
+
+  // ── Legacy token polling (fallback for old backend) ────────────────
+
+  const pollForLegacyToken = (
+    apiUrl: string,
+    deviceCode: string,
+    interval: number,
+    expiresIn: number
+  ) => {
+    const deadline = Date.now() + expiresIn * 1000;
+
+    const poll = async () => {
+      if (cancelledRef.current) return;
+
+      if (Date.now() > deadline) {
+        setError("Authorization timed out. Please try again.");
+        setStep("error");
+        return;
+      }
+
+      try {
+        const response = await fetch(`${apiUrl}/auth/device/token`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ deviceCode }),
+        });
+
+        if (!response.ok) {
+          throw new Error("Failed to check authorization status");
+        }
+
+        const data = (await response.json()) as LegacyTokenResponse;
+
+        if (cancelledRef.current) return;
+
+        if (data.status === "complete" && data.apiKey) {
+          // Save legacy API key
+          await config.update({ pensarAPIKey: data.apiKey });
+          if (data.workspace) {
+            await config.update({
+              workspaceId: data.workspace.id,
+              workspaceSlug: data.workspace.slug,
+            });
+          }
+          appConfig.reload();
+
+          setSelectedWorkspace(
+            data.workspace
+              ? { ...data.workspace, balance: data.credits?.balance ?? 0, hasPaymentMethod: true }
+              : null
+          );
+          setBalance(data.credits?.balance ?? null);
+          setStep("success");
+          return;
+        }
+
+        if (data.status === "expired") {
+          setError("Authorization expired. Please try again.");
+          setStep("error");
+          return;
+        }
+
+        if (data.status === "not_found") {
+          setError("Invalid authorization session. Please try again.");
+          setStep("error");
+          return;
+        }
+
+        pollingRef.current = setTimeout(poll, interval * 1000);
+      } catch (err) {
+        if (cancelledRef.current) return;
         pollingRef.current = setTimeout(poll, interval * 1000);
       }
     };
@@ -314,9 +426,12 @@ export default function AuthFlow() {
       workspaceSlug: null,
     });
     appConfig.reload();
+    setAuthMode(null);
     setSelectedWorkspace(null);
     setBalance(null);
     setBillingUrl(null);
+    setDeviceInfo(null);
+    setLegacyDeviceInfo(null);
     setStep("start");
   };
 
@@ -435,20 +550,24 @@ export default function AuthFlow() {
       )}
 
       {/* Step: Polling */}
-      {step === "polling" && deviceInfo && (
+      {step === "polling" && (deviceInfo || legacyDeviceInfo) && (
         <box flexDirection="column" gap={1}>
           <box>
             <text fg="yellow">Waiting for browser authorization...</text>
           </box>
           <box marginTop={1}>
             <text fg="white">
-              Your code: <span fg="green">{deviceInfo.user_code}</span>
+              Your code:{" "}
+              <span fg="green">
+                {deviceInfo?.user_code || legacyDeviceInfo?.userCode}
+              </span>
             </text>
           </box>
           <box marginTop={1}>
             <text fg="gray">
               If the browser didn't open, visit:{"\n"}
-              {deviceInfo.verification_uri_complete}
+              {deviceInfo?.verification_uri_complete ||
+                legacyDeviceInfo?.verificationUriComplete}
             </text>
           </box>
           <box marginTop={1}>
