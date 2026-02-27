@@ -90,11 +90,13 @@ function checkIfRateLimitError(error: unknown): boolean {
 }
 
 const MAX_RATE_LIMIT_RETRIES = 20;
-const MAX_IDLE_RETRIES = 3;
+const MAX_IDLE_RETRIES = 5;
 
 // Between-step idle timeout: if no chunk arrives for this long after a tool
 // result, the model API call is presumed hung and the stream is recreated.
-const STREAM_IDLE_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes
+// 60s is aggressive but intentional — Bedrock can silently hang after tool
+// results, and the agent's per-endpoint timeout is typically 10-15 minutes.
+const STREAM_IDLE_TIMEOUT_MS = 60_000; // 60 seconds
 
 class StreamIdleTimeoutError extends Error {
   constructor(idleMs: number) {
