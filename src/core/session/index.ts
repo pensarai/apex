@@ -101,6 +101,8 @@ const SessionConfigObject = z.object({
   enumerateSubdomains: z.boolean().optional(),
   /** Local codebase path for whitebox analysis (source code access) */
   cwd: z.string().optional(),
+  /** Enable exfiltration mode — allows internal pivoting and flag extraction through confirmed vulnerabilities */
+  exfilMode: z.boolean().optional(),
 });
 
 export type SessionConfig = z.infer<typeof SessionConfigObject>;
