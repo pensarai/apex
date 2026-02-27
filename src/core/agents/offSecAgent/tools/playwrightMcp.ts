@@ -176,6 +176,9 @@ export function setHeadlessMode(headless: boolean): void {
   defaultHeadless = headless;
 }
 
+const MCP_CONNECT_TIMEOUT_MS = 30_000;
+const MCP_TOOL_CALL_TIMEOUT_MS = 60_000;
+
 /**
  * Isolated MCP browser session.
  *
