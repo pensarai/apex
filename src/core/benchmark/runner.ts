@@ -286,6 +286,7 @@ export async function runSingleBenchmark(
       config: {
         outcomeGuidance: sessions.BENCHMARK_OUTCOME_GUIDANCE,
         mode: "auto",
+        exfilMode: true,
       },
     });
 
