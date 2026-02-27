@@ -179,4 +179,3 @@ export function ApprovalInputArea({
   );
 }
 
-export default ApprovalInputArea;

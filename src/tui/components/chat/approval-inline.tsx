@@ -60,4 +60,3 @@ export function InlineApprovalPrompt({ approval }: InlineApprovalPromptProps) {
   );
 }
 
-export default InlineApprovalPrompt;

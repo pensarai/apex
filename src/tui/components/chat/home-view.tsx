@@ -160,4 +160,3 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
   );
 }
 
-export default HomeView;

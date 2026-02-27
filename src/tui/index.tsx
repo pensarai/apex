@@ -5,7 +5,7 @@ import { CommandProvider } from "./context/command";
 import { AgentProvider } from "./context/agent";
 import SessionsDisplay from "./components/commands/sessions-display";
 import ConfigDialog from "./components/commands/config-dialog";
-import ChatApp from "./components/chat";
+import { ChatApp } from "./components/chat";
 import HITLWizard from "./components/commands/operator-wizard";
 import WebWizard from "./components/commands/web-wizard";
 import SessionsBrowser from "./components/commands/sessions-browser";

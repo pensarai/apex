@@ -126,4 +126,3 @@ export const MessageRenderer = memo(function MessageRenderer({
   );
 });
 
-export default MessageRenderer;

@@ -39,4 +39,3 @@ export function AsciiSpinner({ label, fg }: AsciiSpinnerProps) {
   );
 }
 
-export default AsciiSpinner;

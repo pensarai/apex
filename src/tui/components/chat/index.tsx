@@ -167,4 +167,3 @@ function parseHostFromTarget(target: string): string {
   }
 }
 
-export default ChatApp;

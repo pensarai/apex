@@ -306,4 +306,3 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
   },
 );
 
-export default PromptInput;

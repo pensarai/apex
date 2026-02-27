@@ -258,4 +258,3 @@ function isValidUrl(url: string): boolean {
   }
 }
 
-export default ConfigView;

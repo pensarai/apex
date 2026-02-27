@@ -341,4 +341,3 @@ function ApprovalInputArea({
   );
 }
 
-export default InputArea;

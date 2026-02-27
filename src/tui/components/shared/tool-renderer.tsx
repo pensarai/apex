@@ -124,4 +124,3 @@ export const ToolRenderer = memo(function ToolRenderer({
   );
 });
 
-export default ToolRenderer;

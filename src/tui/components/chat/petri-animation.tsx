@@ -176,4 +176,3 @@ function getRowColor(
   return gradient[Math.min(colorIdx, gradient.length - 1)];
 }
 
-export default PetriAnimation;

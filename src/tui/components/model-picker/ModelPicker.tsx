@@ -516,4 +516,3 @@ export function ModelPicker({
   );
 }
 
-export default ModelPicker;

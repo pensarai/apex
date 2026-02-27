@@ -374,4 +374,3 @@ export class InputBuffer {
   }
 }
 
-export default InputBuffer;
