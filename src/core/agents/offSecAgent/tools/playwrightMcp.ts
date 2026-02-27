@@ -226,8 +226,11 @@ export async function initializeMcpClient(): Promise<Client> {
       // Resolve the locally-installed @playwright/mcp CLI instead of
       // running `npx @playwright/mcp@latest`, which downloads from npm
       // on every invocation and is too slow for ECS/Docker containers.
+      // Resolve via package.json (always works in both Node and Bun)
+      // then derive the CLI path from the package root.
       const require_ = createRequire(import.meta.url);
-      const cliPath = require_.resolve("@playwright/mcp/cli");
+      const mcpPkgJsonPath = require_.resolve("@playwright/mcp/package.json");
+      const cliPath = join(dirname(mcpPkgJsonPath), "cli.js");
 
       const args = [cliPath, "--isolated"];
       if (configuredHeadless) {
