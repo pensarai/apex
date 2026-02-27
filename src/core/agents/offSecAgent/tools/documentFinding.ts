@@ -4,7 +4,7 @@ import { join } from "path";
 import { writeFileSync, appendFileSync } from "fs";
 import type { ToolContext } from "./types";
 
-export const documentFindingInputSchema = z.object({
+export const documentVulnerabilityInputSchema = z.object({
   title: z.string().describe("Finding title"),
   severity: z.enum(["CRITICAL", "HIGH", "MEDIUM", "LOW"]),
   description: z.string().describe("Detailed description of the finding"),
@@ -23,13 +23,19 @@ export const documentFindingInputSchema = z.object({
     ),
 });
 
-export type DocumentFindingInput = z.infer<typeof documentFindingInputSchema>;
+export type DocumentVulnerabilityInput = z.infer<typeof documentVulnerabilityInputSchema>;
 
-export function documentFinding(ctx: ToolContext) {
+export function documentVulnerability(ctx: ToolContext) {
   const { session } = ctx;
 
   return tool({
-    description: `Document a confirmed security finding with severity, impact, and remediation guidance.
+    description: `Document a CONFIRMED security vulnerability that you have successfully exploited with a working proof-of-concept.
+
+CRITICAL RULES — READ BEFORE CALLING:
+- ONLY call this tool for actual security vulnerabilities you have verified and exploited
+- You MUST have a working PoC script (created via create_poc) that reliably demonstrates the vulnerability BEFORE calling this tool
+- Do NOT use this tool for: positive/negative observations, informational notes, testing limitations, authentication issues, rate-limiting, infrastructure notes, or anything that is not a exploitable security vulnerability
+- If you could not exploit a vulnerability, do NOT document it — mention it in your final response summary instead
 
 SEVERITY LEVELS:
 - CRITICAL: Immediate risk of system compromise (RCE, auth bypass, SQL injection with data access)
@@ -38,14 +44,14 @@ SEVERITY LEVELS:
 - LOW: Minor security concern (missing headers, verbose errors)
 
 FINDING STRUCTURE:
-- Title: Clear, concise description
+- Title: Clear, concise description of the vulnerability
 - Severity: Use CVSS if applicable
-- Description: Detailed technical explanation
-- Impact: Business and technical consequences
-- Evidence: Commands run, responses received, proof of vulnerability
+- Description: Detailed technical explanation of the vulnerability
+- Impact: Business and technical consequences if exploited
+- Evidence: Commands run, responses received, proof of exploitation
 - Remediation: Specific, actionable steps to fix
 - References: CVE, CWE, OWASP, or security advisories`,
-    inputSchema: documentFindingInputSchema,
+    inputSchema: documentVulnerabilityInputSchema,
     execute: async (finding) => {
       try {
         // -- Dedup check (when a shared registry is available) ----------------

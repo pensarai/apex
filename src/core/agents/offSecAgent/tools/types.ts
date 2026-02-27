@@ -41,7 +41,7 @@ export type ToolContext = {
 
   /**
    * Shared findings registry for cross-agent dedup.
-   * When present, `document_finding` checks for duplicates before writing.
+   * When present, `document_vulnerability` checks for duplicates before writing.
    */
   findingsRegistry?: FindingsRegistry;
 };
