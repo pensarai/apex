@@ -157,6 +157,9 @@ export function setHeadlessMode(headless: boolean): void {
   configuredHeadless = headless;
 }
 
+const MCP_CONNECT_TIMEOUT_MS = 30_000;
+const MCP_TOOL_CALL_TIMEOUT_MS = 60_000;
+
 /**
  * Initialize or return existing MCP client connection
  * Handles race conditions when multiple tools try to connect simultaneously
@@ -198,7 +201,11 @@ export async function initializeMcpClient(): Promise<Client> {
         version: "1.0.0",
       });
 
-      await client.connect(transport);
+      await withTimeout(
+        client.connect(transport),
+        MCP_CONNECT_TIMEOUT_MS,
+        "MCP client connection timed out",
+      );
 
       mcpClient = client;
       mcpTransport = transport;
@@ -246,17 +253,63 @@ export function isClientConnected(): boolean {
 }
 
 /**
- * Call a tool on the MCP server and extract the result
+ * Race a promise against a timeout. Rejects with a descriptive error
+ * if the timeout fires first.
+ */
+function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  message: string,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+/**
+ * Call a tool on the MCP server and extract the result.
+ *
+ * Each call is guarded by a timeout so a hung Playwright server or
+ * broken stdio pipe cannot stall the agent indefinitely.
  */
 async function callMcpTool(
   toolName: string,
   args: Record<string, unknown>,
+  abortSignal?: AbortSignal,
 ): Promise<unknown> {
+  if (abortSignal?.aborted) {
+    throw new Error("Browser tool call aborted");
+  }
+
   const client = await initializeMcpClient();
-  const result = await client.callTool({
+
+  // Race the MCP call against the tool timeout and the abort signal
+  const callPromise = client.callTool({
     name: toolName,
     arguments: args,
   });
+
+  let abortReject: ((reason: Error) => void) | undefined;
+  const abortPromise = abortSignal
+    ? new Promise<never>((_, reject) => {
+        abortReject = reject;
+        const handler = () =>
+          reject(new Error(`Browser tool "${toolName}" aborted`));
+        if (abortSignal.aborted) {
+          handler();
+        } else {
+          abortSignal.addEventListener("abort", handler, { once: true });
+        }
+      })
+    : null;
+
+  const result = await withTimeout(
+    abortPromise ? Promise.race([callPromise, abortPromise]) : callPromise,
+    MCP_TOOL_CALL_TIMEOUT_MS,
+    `Browser tool "${toolName}" timed out after ${MCP_TOOL_CALL_TIMEOUT_MS / 1000}s`,
+  );
 
   // Extract content from the result
   if (result && "content" in result && Array.isArray(result.content)) {
@@ -503,7 +556,11 @@ export function createBrowserTools(
       toolCallDescription,
     }): Promise<BrowserNavigateResult> => {
       try {
-        const result = await callMcpTool("browser_navigate", { url });
+        const result = await callMcpTool(
+          "browser_navigate",
+          { url },
+          abortSignal,
+        );
         return {
           success: true,
           url,
@@ -525,7 +582,11 @@ export function createBrowserTools(
       toolCallDescription,
     }): Promise<BrowserScreenshotResult> => {
       try {
-        const result = await callMcpTool("browser_screenshot", {});
+        const result = await callMcpTool(
+          "browser_screenshot",
+          {},
+          abortSignal,
+        );
 
         // Handle image data from MCP response
         if (result && typeof result === "object" && "data" in result) {
@@ -572,7 +633,11 @@ Example workflow:
       toolCallDescription,
     }): Promise<{ success: boolean; snapshot?: string; error?: string }> => {
       try {
-        const result = await callMcpTool("browser_snapshot", {});
+        const result = await callMcpTool(
+          "browser_snapshot",
+          {},
+          abortSignal,
+        );
         return {
           success: true,
           snapshot:
@@ -603,7 +668,7 @@ Example workflow:
         if (ref) {
           args.ref = ref;
         }
-        const result = await callMcpTool("browser_click", args);
+        const result = await callMcpTool("browser_click", args, abortSignal);
         return { success: true, element, result };
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
@@ -630,7 +695,7 @@ Example workflow:
         if (ref) {
           args.ref = ref;
         }
-        const result = await callMcpTool("browser_type", args);
+        const result = await callMcpTool("browser_type", args, abortSignal);
         return { success: true, element, result };
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
@@ -648,9 +713,11 @@ Example workflow:
       toolCallDescription,
     }): Promise<BrowserEvaluateResult> => {
       try {
-        const result = await callMcpTool("browser_evaluate", {
-          expression: script,
-        });
+        const result = await callMcpTool(
+          "browser_evaluate",
+          { expression: script },
+          abortSignal,
+        );
         return { success: true, script, result };
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
@@ -665,7 +732,11 @@ Example workflow:
     inputSchema: BrowserConsoleInput,
     execute: async ({ toolCallDescription }): Promise<BrowserConsoleResult> => {
       try {
-        const result = await callMcpTool("browser_console_messages", {});
+        const result = await callMcpTool(
+          "browser_console_messages",
+          {},
+          abortSignal,
+        );
 
         // Parse console messages if they're in JSON format
         let messages: Array<{ type: string; text: string }> | undefined;
@@ -721,7 +792,11 @@ The returned cookies can be formatted as a Cookie header for use with http_reque
         if (urls && urls.length > 0) {
           args.urls = urls;
         }
-        const result = await callMcpTool("browser_get_cookies", args);
+        const result = await callMcpTool(
+          "browser_get_cookies",
+          args,
+          abortSignal,
+        );
 
         // Parse cookies from result
         let cookies: Array<{
