@@ -8,7 +8,7 @@ import { sessions, type SessionConfig } from "../../../core/session";
 import { SpinnerDots } from "../sprites";
 import { generateRandomName } from "../../../util/name";
 import { type ModelInfo } from "../../../core/ai";
-import { getAvailableModels } from "../../../core/providers/utils";
+import { getAvailableModels } from "../../../core/providers";
 import { useTheme } from "../../theme";
 
 // Wizard step types

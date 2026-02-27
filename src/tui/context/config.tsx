@@ -5,8 +5,11 @@ import {
   type ReactNode,
   useMemo,
 } from "react";
-import type { Config } from "../../core/config/config";
-import { config as _config } from "../../core/config";
+import {
+  get as getConfig,
+  update as updateConfig,
+  type Config,
+} from "../../core/config";
 
 type ConfigContext = {
   data: Config;
@@ -28,14 +31,14 @@ export function ConfigProvider({ children, config }: ConfigProviderProps) {
     () => ({
       data: appConfig,
       update: async (newConfig: Partial<Config>) => {
-        await _config.update(newConfig);
+        await updateConfig(newConfig);
         setAppConfig({
           ...appConfig,
           ...newConfig,
         });
       },
       reload: async () => {
-        const freshConfig = await _config.get();
+        const freshConfig = await getConfig();
         setAppConfig(freshConfig);
       },
     }),

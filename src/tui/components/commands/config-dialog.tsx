@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import AlertDialog from "../alert-dialog";
-import { config } from "../../../core/config";
-import type { Config } from "../../../core/config/config";
+import { get as getConfig, type Config } from "../../../core/config";
 import { useRoute } from "../../context/route";
 
 export default function ConfigDialog() {
@@ -28,11 +27,11 @@ export default function ConfigDialog() {
   const [appConfig, setAppConfig] = useState<Config | null>(null);
 
   useEffect(() => {
-    async function getConfig() {
-      const _appConfig = await config.get();
+    async function loadConfig() {
+      const _appConfig = await getConfig();
       setAppConfig(_appConfig);
     }
-    getConfig();
+    loadConfig();
   }, []);
 
   return (

@@ -3,7 +3,7 @@ import { hasToolCall } from "ai";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import type { AIModel } from "../../../ai";
-import type { AIAuthConfig } from "../../../ai/utils";
+import type { AIAuthConfig } from "../../../ai";
 import { type SessionInfo } from "../../../session";
 import { AUTH_SUBAGENT_SYSTEM_PROMPT } from "./prompts";
 import { detectOSAndEnhancePrompt } from "../utils";

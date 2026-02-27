@@ -10,8 +10,7 @@ import HITLWizard from "./components/commands/operator-wizard";
 import WebWizard from "./components/commands/web-wizard";
 import SessionsBrowser from "./components/commands/sessions-browser";
 import ProviderManager from "./components/commands/provider-manager";
-import type { Config } from "../core/config/config";
-import { config } from "../core/config";
+import { get as getConfig, type Config } from "../core/config";
 import { createCliRenderer } from "@opentui/core";
 import { ConfigProvider, useConfig } from "./context/config";
 import { createSwitch } from "./components/switch";
@@ -333,7 +332,7 @@ function CommandDisplay({
 }
 
 async function main() {
-  const appConfig = await config.get();
+  const appConfig = await getConfig();
 
   // Register built-in themes
   registerBuiltinThemes();

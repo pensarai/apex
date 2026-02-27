@@ -3,7 +3,7 @@ import { hasToolCall, stepCountIs } from "ai";
 import { existsSync, readdirSync, readFileSync } from "fs";
 import { join } from "path";
 import type { AIModel } from "../../ai";
-import type { AIAuthConfig } from "../../ai/utils";
+import type { AIAuthConfig } from "../../ai";
 import { type SessionInfo } from "../../session";
 import type { ComparisonResult } from "./benchmark/types";
 import { OffensiveSecurityAgent } from "../offSecAgent/offensiveSecurityAgent";

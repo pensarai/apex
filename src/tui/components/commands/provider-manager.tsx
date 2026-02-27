@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useRoute } from "../../context/route";
 import { useConfig } from "../../context/config";
-import { config } from "../../../core/config";
+import { update as updateConfig } from "../../../core/config";
 import {
   type ProviderType,
   AVAILABLE_PROVIDERS,
@@ -45,7 +45,7 @@ export default function ProviderManager() {
     }
 
     // Save to config
-    await config.update(configUpdate);
+    await updateConfig(configUpdate);
 
     // Reload config in context
     await _config.reload();

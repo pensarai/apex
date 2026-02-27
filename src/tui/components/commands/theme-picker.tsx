@@ -10,7 +10,7 @@ import { useState, useCallback, useRef } from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { useTheme } from "../../theme";
 import { useRoute } from "../../context/route";
-import { config } from "../../../core/config";
+import { update as updateConfig } from "../../../core/config";
 
 export default function ThemePicker() {
   const dimensions = useTerminalDimensions();
@@ -42,7 +42,7 @@ export default function ThemePicker() {
     // Persist the current theme and mode
     const currentThemeName = availableThemes[selectedIndex];
     if (currentThemeName) {
-      await config.update({ theme: currentThemeName });
+      await updateConfig({ theme: currentThemeName });
     }
     route.navigate({ type: "base", path: "home" });
   }, [availableThemes, selectedIndex, route]);
@@ -81,7 +81,7 @@ export default function ThemePicker() {
       toggleMode();
       // Persist mode change
       const newMode = mode === "dark" ? "light" : "dark";
-      config.update({ themeMode: newMode });
+      updateConfig({ themeMode: newMode });
       return;
     }
   });

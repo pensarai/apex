@@ -10,7 +10,7 @@ import { generateRandomName } from "../../../util/name";
 import type { OperatorMode, PermissionTier } from "../../../core/operator";
 import { OPERATOR_MODES, PERMISSION_TIERS } from "../../../core/operator";
 import type { ModelInfo } from "../../../core/ai";
-import { getAvailableModels } from "../../../core/providers/utils";
+import { getAvailableModels } from "../../../core/providers";
 import { useTheme } from "../../theme";
 
 type WizardStep = "target" | "mode" | "creating";

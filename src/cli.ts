@@ -4,11 +4,16 @@
  * Pensar - AI-Powered Penetration Testing CLI
  *
  * Unified entry point for standalone binary compilation.
- * All modules are statically imported so Bun can bundle them.
  */
 
 import packageJson from "../package.json";
 import { getCurrentVersion, upgrade } from "./core/installation";
+import { config as loadDotenv } from "dotenv";
+import { runPentestAgent } from "./core/api/blackboxPentest";
+import { runTargetedPentestAgent } from "./core/api/targetedPentest";
+import { sessions } from "./core/session";
+import { get as getConfig } from "./core/config";
+import type { AIModel } from "./core/ai";
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -91,13 +96,7 @@ function showHelp() {
 // ---------------------------------------------------------------------------
 
 async function runPentest() {
-  const { config } = await import("dotenv");
-  config();
-
-  const { runPentestAgent } = await import("./core/api/blackboxPentest");
-  const { sessions } = await import("./core/session");
-  const { config: appConfig } = await import("./core/config");
-  type AIModel = import("./core/ai").AIModel;
+  loadDotenv();
 
   const target = getArgRequired("--target");
   const cwd = getArg("--cwd");
@@ -111,7 +110,7 @@ async function runPentest() {
   console.log(`Model:   ${model}`);
   console.log();
 
-  const pensarConfig = await appConfig.get();
+  const pensarConfig = await getConfig();
 
   const session = await sessions.create({
     name: cwd ? "Whitebox Pentest" : "Blackbox Pentest",
@@ -152,14 +151,7 @@ async function runPentest() {
 }
 
 async function runTargetedPentest() {
-  const { config } = await import("dotenv");
-  config();
-
-  const { runTargetedPentestAgent } =
-    await import("./core/api/targetedPentest");
-  const { sessions } = await import("./core/session");
-  const { config: appConfig } = await import("./core/config");
-  type AIModel = import("./core/ai").AIModel;
+  loadDotenv();
 
   const target = getArgRequired("--target");
   const objectives = getAllArgs("--objective");
@@ -179,7 +171,7 @@ async function runTargetedPentest() {
   objectives.forEach((o, i) => console.log(`  ${i + 1}. ${o}`));
   console.log();
 
-  const pensarConfig = await appConfig.get();
+  const pensarConfig = await getConfig();
 
   const session = await sessions.create({
     name: "Targeted Pentest",

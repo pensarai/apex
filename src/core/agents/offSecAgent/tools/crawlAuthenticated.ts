@@ -1,5 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
+// eslint-disable-next-line @typescript-eslint/no-restricted-imports -- direct import to avoid circular dep through barrel
 import {
   extractJavascriptEndpoints,
   type EndpointInfo,

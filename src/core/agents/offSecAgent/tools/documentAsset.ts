@@ -3,6 +3,7 @@ import { z } from "zod";
 import { join } from "path";
 import { writeFileSync, mkdirSync, existsSync } from "fs";
 import type { ToolContext } from "./types";
+// eslint-disable-next-line @typescript-eslint/no-restricted-imports -- direct import to avoid circular dep through barrel
 import type { DocumentedAssetRecord } from "../../specialized/attackSurface/schemas";
 
 /**

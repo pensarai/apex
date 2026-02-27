@@ -7,10 +7,9 @@ import {
   useEffect,
   type ReactNode,
 } from "react";
-import { type ModelInfo } from "../../core/ai";
-import { AVAILABLE_MODELS } from "../../core/ai/models";
-import { get as getConfig } from "../../core/config/config";
-import { getAvailableModels } from "../../core/providers/utils";
+import { AVAILABLE_MODELS, type ModelInfo } from "../../core/ai";
+import { get as getConfig } from "../../core/config";
+import { getAvailableModels } from "../../core/providers";
 
 // Preferred defaults by provider (fast + cheap models)
 const PREFERRED_DEFAULTS: Record<string, string> = {

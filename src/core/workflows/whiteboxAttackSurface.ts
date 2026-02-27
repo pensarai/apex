@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { CodeAgent } from "../agents/specialized/codeAgent/agent";
+import { CodeAgent } from "../agents/specialized/codeAgent";
 import {
   EndpointSchema,
   type WhiteboxAttackSurfaceResult,
@@ -7,7 +7,7 @@ import {
   type App,
 } from "../agents/specialized/whiteboxAttackSurface/types";
 import type { AIModel } from "../ai";
-import type { AIAuthConfig } from "../ai/utils";
+import type { AIAuthConfig } from "../ai";
 import type { SessionInfo } from "../session";
 import type { ConsumeCallbacks } from "../agents/offSecAgent/types";
 

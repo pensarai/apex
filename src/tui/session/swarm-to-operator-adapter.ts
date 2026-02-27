@@ -6,7 +6,7 @@
  * in operator mode with full awareness of prior discoveries.
  */
 
-import type { LoadedSessionState } from "../../core/session/loader";
+import type { LoadedSessionState } from "../../core/session";
 import type { DisplayMessage } from "../components/agent-display";
 import type {
   Endpoint,

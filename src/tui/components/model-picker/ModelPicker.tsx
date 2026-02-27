@@ -1,8 +1,8 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useKeyboard } from "@opentui/react";
 import type { ModelInfo } from "../../../core/ai";
-import { getAvailableModels } from "../../../core/providers/utils";
-import type { Config } from "../../../core/config/config";
+import { getAvailableModels } from "../../../core/providers";
+import type { Config } from "../../../core/config";
 import { useTheme } from "../../theme";
 
 const providerNames: Record<string, string> = {

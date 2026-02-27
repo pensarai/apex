@@ -1,6 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import type { ToolContext } from "./types";
+// eslint-disable-next-line @typescript-eslint/no-restricted-imports -- direct import to avoid circular dep through barrel
 import type { AttackSurfaceResult } from "../../specialized/attackSurface/blackboxAgent";
 import type { WhiteboxAttackSurfaceResult } from "../../specialized/whiteboxAttackSurface/types";
 

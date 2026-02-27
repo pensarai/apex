@@ -7,7 +7,7 @@ import {
   createSwarmSessionFromFlags,
 } from "./utils/command-flags";
 import { getAllThemeNames } from "./theme";
-import { config } from "../core/config";
+import { get as getConfig, update as updateConfig } from "../core/config";
 /**
  * Define your application's CommandContext type with specific methods
  */
@@ -293,14 +293,14 @@ export const commands: CommandConfig[] = [
       if (args[0] === "mode") {
         const modeArg = args[1];
         if (modeArg === "dark" || modeArg === "light") {
-          await config.update({ themeMode: modeArg });
+          await updateConfig({ themeMode: modeArg });
         } else if (modeArg === "auto") {
-          await config.update({ themeMode: "auto" });
+          await updateConfig({ themeMode: "auto" });
         } else {
           // Toggle — actual toggling happens in the ThemeProvider (caller reads config)
-          const current = await config.get();
+          const current = await getConfig();
           const newMode = current.themeMode === "light" ? "dark" : "light";
-          await config.update({ themeMode: newMode });
+          await updateConfig({ themeMode: newMode });
         }
         return;
       }
@@ -311,7 +311,7 @@ export const commands: CommandConfig[] = [
         const allThemes = getAllThemeNames();
         const match = allThemes.find((t) => t === name);
         if (match) {
-          await config.update({ theme: match });
+          await updateConfig({ theme: match });
         }
         return;
       }
