@@ -12,6 +12,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { tool } from "ai";
 import { z } from "zod";
+import { createRequire } from "module";
 import { writeFileSync, mkdirSync, existsSync } from "fs";
 import { join, dirname } from "path";
 import type { Logger } from "../../../logger";
@@ -222,7 +223,13 @@ export async function initializeMcpClient(): Promise<Client> {
   // Start new connection
   connectionPromise = (async () => {
     try {
-      const args = ["@playwright/mcp@latest", "--isolated"];
+      // Resolve the locally-installed @playwright/mcp CLI instead of
+      // running `npx @playwright/mcp@latest`, which downloads from npm
+      // on every invocation and is too slow for ECS/Docker containers.
+      const require_ = createRequire(import.meta.url);
+      const cliPath = require_.resolve("@playwright/mcp/cli");
+
+      const args = [cliPath, "--isolated"];
       if (configuredHeadless) {
         args.push("--headless");
       }
@@ -234,7 +241,7 @@ export async function initializeMcpClient(): Promise<Client> {
       }
 
       const transport = new StdioClientTransport({
-        command: "npx",
+        command: "node",
         args,
         stderr: "pipe",
       });
