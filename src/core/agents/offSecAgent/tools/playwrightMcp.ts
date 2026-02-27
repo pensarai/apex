@@ -141,148 +141,158 @@ const BrowserGetCookiesInput = z.object({
     .describe("Why you need to extract cookies from the browser"),
 });
 
-// MCP Client singleton management
-let mcpClient: Client | null = null;
-let mcpTransport: StdioClientTransport | null = null;
-let isConnecting = false;
-let connectionPromise: Promise<Client> | null = null;
-let configuredHeadless = true;
+/**
+ * Isolated MCP browser session.
+ *
+ * Each instance owns its own Playwright MCP child-process and browser.
+ * Create one per agent so concurrent agents never collide on the same
+ * browser context.
+ */
+export class PlaywrightMcpSession {
+  private mcpClient: Client | null = null;
+  private mcpTransport: StdioClientTransport | null = null;
+  private isConnecting = false;
+  private connectionPromise: Promise<Client> | null = null;
+  private readonly headless: boolean;
+
+  constructor(headless = true) {
+    this.headless = headless;
+  }
+
+  /**
+   * Initialize or return existing MCP client connection for this session.
+   * Handles race conditions when multiple tools within the same agent
+   * try to connect simultaneously.
+   */
+  async initialize(): Promise<Client> {
+    if (this.mcpClient) {
+      return this.mcpClient;
+    }
+
+    if (this.isConnecting && this.connectionPromise) {
+      return this.connectionPromise;
+    }
+
+    this.isConnecting = true;
+    this.connectionPromise = (async () => {
+      try {
+        const args = ["@playwright/mcp@latest", "--isolated"];
+        if (this.headless) {
+          args.push("--headless");
+        }
+
+        // Disable Chromium sandbox when running as root (e.g., in Docker/ECS containers).
+        // Chrome refuses to run as root with sandboxing enabled.
+        if (process.getuid?.() === 0) {
+          args.push("--no-sandbox");
+        }
+
+        const transport = new StdioClientTransport({
+          command: "npx",
+          args,
+          stderr: "pipe",
+        });
+
+        const client = new Client({
+          name: "apex-browser-agent",
+          version: "1.0.0",
+        });
+
+        await client.connect(transport);
+
+        this.mcpClient = client;
+        this.mcpTransport = transport;
+
+        return client;
+      } catch (error) {
+        this.isConnecting = false;
+        this.connectionPromise = null;
+        throw error;
+      }
+    })();
+
+    return this.connectionPromise;
+  }
+
+  /** Disconnect and cleanup this session's MCP client and browser. */
+  async disconnect(): Promise<void> {
+    if (this.mcpClient) {
+      try {
+        await this.mcpClient.callTool({
+          name: "browser_close",
+          arguments: {},
+        });
+      } catch {
+        // Ignore cleanup errors
+      }
+    }
+    if (this.mcpTransport) {
+      try {
+        await this.mcpTransport.close();
+      } catch {
+        // Ignore close errors
+      }
+    }
+    this.mcpClient = null;
+    this.mcpTransport = null;
+    this.isConnecting = false;
+    this.connectionPromise = null;
+  }
+
+  /** Check if this session's client is currently connected. */
+  isConnected(): boolean {
+    return this.mcpClient !== null;
+  }
+
+  /** Call a tool on this session's MCP server and extract the result. */
+  async callTool(
+    toolName: string,
+    args: Record<string, unknown>,
+  ): Promise<unknown> {
+    const client = await this.initialize();
+    const result = await client.callTool({
+      name: toolName,
+      arguments: args,
+    });
+
+    if (result && "content" in result && Array.isArray(result.content)) {
+      const imageContent = result.content.find(
+        (c: { type: string }) => c.type === "image",
+      );
+      if (imageContent && "data" in imageContent) {
+        return { type: "image", data: imageContent.data };
+      }
+
+      const textContent = result.content.find(
+        (c: { type: string }) => c.type === "text",
+      );
+      if (textContent && "text" in textContent) {
+        try {
+          return JSON.parse(textContent.text as string);
+        } catch {
+          return textContent.text;
+        }
+      }
+      return result.content;
+    }
+
+    return result;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Module-level default headless setting (used when not explicitly provided)
+// ---------------------------------------------------------------------------
+
+let defaultHeadless = true;
 
 /**
- * Configure headless mode for the next browser session.
- * Call this BEFORE any browser tools are used.
+ * Configure the default headless mode for new browser sessions.
+ * Call this BEFORE any browser tools are created.
  * Default is headless=true for normal operation.
  */
 export function setHeadlessMode(headless: boolean): void {
-  configuredHeadless = headless;
-}
-
-/**
- * Initialize or return existing MCP client connection
- * Handles race conditions when multiple tools try to connect simultaneously
- */
-export async function initializeMcpClient(): Promise<Client> {
-  // If already connected, return existing client
-  if (mcpClient) {
-    return mcpClient;
-  }
-
-  // If connection is in progress, wait for it
-  if (isConnecting && connectionPromise) {
-    return connectionPromise;
-  }
-
-  // Start new connection
-  isConnecting = true;
-  connectionPromise = (async () => {
-    try {
-      const args = ["@playwright/mcp@latest", "--isolated"];
-      if (configuredHeadless) {
-        args.push("--headless");
-      }
-
-      // Disable Chromium sandbox when running as root (e.g., in Docker/ECS containers).
-      // Chrome refuses to run as root with sandboxing enabled.
-      if (process.getuid?.() === 0) {
-        args.push("--no-sandbox");
-      }
-
-      const transport = new StdioClientTransport({
-        command: "npx",
-        args,
-        stderr: "pipe",
-      });
-
-      const client = new Client({
-        name: "apex-browser-agent",
-        version: "1.0.0",
-      });
-
-      await client.connect(transport);
-
-      mcpClient = client;
-      mcpTransport = transport;
-
-      return client;
-    } catch (error) {
-      isConnecting = false;
-      connectionPromise = null;
-      throw error;
-    }
-  })();
-
-  return connectionPromise;
-}
-
-/**
- * Disconnect and cleanup MCP client
- */
-export async function disconnectMcpClient(): Promise<void> {
-  if (mcpClient) {
-    try {
-      await mcpClient.callTool({ name: "browser_close", arguments: {} });
-    } catch {
-      // Ignore cleanup errors
-    }
-  }
-  if (mcpTransport) {
-    try {
-      await mcpTransport.close();
-    } catch {
-      // Ignore close errors
-    }
-  }
-  mcpClient = null;
-  mcpTransport = null;
-  isConnecting = false;
-  connectionPromise = null;
-}
-
-/**
- * Check if client is currently connected
- */
-export function isClientConnected(): boolean {
-  return mcpClient !== null;
-}
-
-/**
- * Call a tool on the MCP server and extract the result
- */
-async function callMcpTool(
-  toolName: string,
-  args: Record<string, unknown>,
-): Promise<unknown> {
-  const client = await initializeMcpClient();
-  const result = await client.callTool({
-    name: toolName,
-    arguments: args,
-  });
-
-  // Extract content from the result
-  if (result && "content" in result && Array.isArray(result.content)) {
-    // Check for image content first (screenshots)
-    const imageContent = result.content.find(
-      (c: { type: string }) => c.type === "image",
-    );
-    if (imageContent && "data" in imageContent) {
-      return { type: "image", data: imageContent.data };
-    }
-
-    // Then check for text content
-    const textContent = result.content.find(
-      (c: { type: string }) => c.type === "text",
-    );
-    if (textContent && "text" in textContent) {
-      try {
-        return JSON.parse(textContent.text as string);
-      } catch {
-        return textContent.text;
-      }
-    }
-    return result.content;
-  }
-
-  return result;
+  defaultHeadless = headless;
 }
 
 // Mode-specific descriptions
@@ -463,13 +473,17 @@ Use this to check for:
 };
 
 /**
- * Create browser automation tools
+ * Create browser automation tools backed by a **dedicated** Playwright MCP
+ * session. Every invocation spins up its own MCP child-process / browser so
+ * that concurrent agents never share a browser context.
  *
  * @param targetUrl - Base target URL for context in descriptions
  * @param evidenceDir - Directory to save screenshots
  * @param mode - "pentest" for automated pentesting, "operator" for user-driven reconnaissance, "auth" for authentication flows
  * @param logger - Optional logger for error reporting
  * @param abortSignal - Optional abort signal for cleanup
+ * @param headless - Override headless mode for this session (defaults to the
+ *   value set by {@link setHeadlessMode}, which itself defaults to `true`)
  */
 export function createBrowserTools(
   targetUrl: string,
@@ -477,10 +491,12 @@ export function createBrowserTools(
   mode: BrowserToolMode = "pentest",
   logger?: Logger,
   abortSignal?: AbortSignal,
+  headless?: boolean,
 ) {
-  // Setup abort handler for cleanup
+  const session = new PlaywrightMcpSession(headless ?? defaultHeadless);
+
   abortSignal?.addEventListener("abort", () => {
-    disconnectMcpClient().catch(() => {});
+    session.disconnect().catch(() => {});
   });
 
   // Ensure evidence directory exists
@@ -503,7 +519,7 @@ export function createBrowserTools(
       toolCallDescription,
     }): Promise<BrowserNavigateResult> => {
       try {
-        const result = await callMcpTool("browser_navigate", { url });
+        const result = await session.callTool("browser_navigate", { url });
         return {
           success: true,
           url,
@@ -525,7 +541,7 @@ export function createBrowserTools(
       toolCallDescription,
     }): Promise<BrowserScreenshotResult> => {
       try {
-        const result = await callMcpTool("browser_screenshot", {});
+        const result = await session.callTool("browser_screenshot", {});
 
         // Handle image data from MCP response
         if (result && typeof result === "object" && "data" in result) {
@@ -572,7 +588,7 @@ Example workflow:
       toolCallDescription,
     }): Promise<{ success: boolean; snapshot?: string; error?: string }> => {
       try {
-        const result = await callMcpTool("browser_snapshot", {});
+        const result = await session.callTool("browser_snapshot", {});
         return {
           success: true,
           snapshot:
@@ -603,7 +619,7 @@ Example workflow:
         if (ref) {
           args.ref = ref;
         }
-        const result = await callMcpTool("browser_click", args);
+        const result = await session.callTool("browser_click", args);
         return { success: true, element, result };
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
@@ -630,7 +646,7 @@ Example workflow:
         if (ref) {
           args.ref = ref;
         }
-        const result = await callMcpTool("browser_type", args);
+        const result = await session.callTool("browser_type", args);
         return { success: true, element, result };
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
@@ -648,7 +664,7 @@ Example workflow:
       toolCallDescription,
     }): Promise<BrowserEvaluateResult> => {
       try {
-        const result = await callMcpTool("browser_evaluate", {
+        const result = await session.callTool("browser_evaluate", {
           expression: script,
         });
         return { success: true, script, result };
@@ -665,7 +681,7 @@ Example workflow:
     inputSchema: BrowserConsoleInput,
     execute: async ({ toolCallDescription }): Promise<BrowserConsoleResult> => {
       try {
-        const result = await callMcpTool("browser_console_messages", {});
+        const result = await session.callTool("browser_console_messages", {});
 
         // Parse console messages if they're in JSON format
         let messages: Array<{ type: string; text: string }> | undefined;
@@ -721,7 +737,7 @@ The returned cookies can be formatted as a Cookie header for use with http_reque
         if (urls && urls.length > 0) {
           args.urls = urls;
         }
-        const result = await callMcpTool("browser_get_cookies", args);
+        const result = await session.callTool("browser_get_cookies", args);
 
         // Parse cookies from result
         let cookies: Array<{
