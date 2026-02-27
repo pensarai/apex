@@ -80,6 +80,7 @@ export default function OperatorDashboard({
   const textRef = useRef("");
   // AI SDK conversation history for multi-turn continuity
   const conversationRef = useRef<ModelMessage[]>([]);
+  const messagesRef = useRef<DisplayMessage[]>([]);
 
   // Input state
   const [inputValue, setInputValue] = useState("");
@@ -131,6 +132,11 @@ export default function OperatorDashboard({
       gate.off("approval-resolved", onApprovalResolved);
     };
   }, []);
+
+  // Keep messages ref in sync for persistence
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
 
   // Load session on mount
   useEffect(() => {
@@ -363,6 +369,27 @@ export default function OperatorDashboard({
           setThinking(false);
           setIsExecuting(false);
           abortControllerRef.current = null;
+
+          // Persist operator state for session resume
+          if (session) {
+            sessions
+              .saveOperatorState(session.id, {
+                mode: operatorState.mode,
+                autoApproveTier: operatorState.autoApproveTier,
+                currentStage: operatorState.currentStage,
+                messages: messagesRef.current,
+                attackSurface: [],
+                credentials: [],
+                verifiedVulns: [],
+                targetState: null,
+                hypotheses: [],
+                evidence: [],
+                actionHistory: [],
+                pausedAt: new Date().toISOString(),
+                lastRunId: session.id,
+              })
+              .catch(console.error);
+          }
         }
       }
     },
