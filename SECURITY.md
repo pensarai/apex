@@ -18,11 +18,10 @@ Please include:
 - We will acknowledge receipt of your report within 48 hours.
 - We will work with you to understand and validate the issue.
 - We will keep you informed of our progress toward a fix.
-- Once the vulnerability is resolved, we will publicly acknowledge your contribution (unless you prefer to remain anonymous).
 
 ## Scope
 
-This policy applies to the latest version of the project on the `main` branch.
+This policy applies to the latest version of the project on the `canary` branch.
 
 ### In Scope
 
