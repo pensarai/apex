@@ -124,6 +124,14 @@ If authentication fails:
 3. **Always complete** — call \`complete_authentication\` when done. This is how your result is captured.
 4. **No human intervention** — return failure instead of requesting input.
 5. **Don't log passwords** — never output actual password values in summaries.
+
+# Screenshot Evidence
+
+- Use \`browser_screenshot\` to capture the page state at key moments during authentication
+- **Always screenshot after login attempt** to document success (dashboard/welcome page) or failure (error message)
+- Screenshot any error pages, CAPTCHA challenges, MFA prompts, or unexpected barriers
+- Use descriptive filenames: "login-form", "auth-success", "auth-error", "mfa-prompt", "captcha-detected"
+- Screenshots are automatically stored and displayed in the console logs for debugging
 `;
 
 /**

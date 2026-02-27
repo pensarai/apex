@@ -717,13 +717,34 @@ export function createBrowserTools(
     }): Promise<BrowserScreenshotResult> => {
       try {
         const result = await session.callTool(
-          "browser_screenshot",
+          "browser_take_screenshot",
           {},
           abortSignal,
         );
 
-        // Handle image data from MCP response
-        if (result && typeof result === "object" && "data" in result) {
+        // Extract base64 image data from various response formats
+        let base64Data: string | undefined;
+
+        if (result && typeof result === "object") {
+          const r = result as Record<string, unknown>;
+
+          // Format 1: { type: "image", data: "<base64>" } — from callTool's image extraction
+          if ("data" in r && typeof r.data === "string") {
+            base64Data = r.data;
+          }
+
+          // Format 2: Raw MCP content array — [{type:"image", data:"...", mimeType:"..."}]
+          if (!base64Data && Array.isArray(result)) {
+            const imgItem = (result as Array<Record<string, unknown>>).find(
+              (c) => c.type === "image" && typeof c.data === "string",
+            );
+            if (imgItem) {
+              base64Data = imgItem.data as string;
+            }
+          }
+        }
+
+        if (base64Data) {
           const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
           const screenshotFilename = `${filename}_${timestamp}.png`;
           const screenshotPath = join(evidenceDir, screenshotFilename);
@@ -733,7 +754,7 @@ export function createBrowserTools(
           }
           writeFileSync(
             screenshotPath,
-            Buffer.from((result as { data: string }).data, "base64"),
+            Buffer.from(base64Data, "base64"),
           );
           return {
             success: true,
@@ -742,7 +763,19 @@ export function createBrowserTools(
           };
         }
 
-        return { success: false, error: "No screenshot data returned" };
+        // Log the actual response shape to aid debugging
+        const resultShape =
+          result === null
+            ? "null"
+            : Array.isArray(result)
+              ? `array(${(result as unknown[]).length})`
+              : typeof result === "object"
+                ? `object(${Object.keys(result as Record<string, unknown>).join(",")})`
+                : typeof result;
+        return {
+          success: false,
+          error: `No screenshot data returned (response type: ${resultShape})`,
+        };
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         logger?.error(`browser_screenshot failed: ${message}`);
