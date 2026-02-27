@@ -74,6 +74,9 @@ function showHelp() {
   console.log(
     "  --cwd <path>       Source code path — enables whitebox attack surface",
   );
+  console.log(
+    "  --mode <mode>      Pentest mode: exfil (pivoting & flag extraction)",
+  );
   console.log("  --model <model>    AI model (default: claude-sonnet-4-5)");
   console.log();
   console.log("targeted-pentest options:");
@@ -113,13 +116,16 @@ async function runPentest() {
 
   const target = getArgRequired("--target");
   const cwd = getArg("--cwd");
+  const mode = getArg("--mode");
   const model = (getArg("--model") ?? "claude-sonnet-4-5") as AIModel;
+  const exfilMode = mode === "exfil";
 
   console.log("=".repeat(60));
   console.log("PENTEST ORCHESTRATION");
   console.log("=".repeat(60));
   console.log(`Target:  ${target}`);
   if (cwd) console.log(`Cwd:     ${cwd} (whitebox)`);
+  if (exfilMode) console.log(`Mode:    exfil`);
   console.log(`Model:   ${model}`);
   console.log();
 
@@ -128,7 +134,10 @@ async function runPentest() {
   const session = await sessions.create({
     name: cwd ? "Whitebox Pentest" : "Blackbox Pentest",
     targets: [target],
-    ...(cwd ? { config: { cwd } } : {}),
+    config: {
+      ...(cwd ? { cwd } : {}),
+      ...(exfilMode ? { exfilMode: true } : {}),
+    },
   });
 
   const { findings, findingsPath, pocsPath, reportPath } =
