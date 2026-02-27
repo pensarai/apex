@@ -67,6 +67,21 @@ Apex assumes the following trust boundaries:
 
 Issues that require a user to execute internal development scripts against malicious inputs outside their intended workflow, or that require modification of local configurations or files outside documented usage, may be classified as out of scope.
 
+### Operational Risk Assumptions
+
+APEX is an autonomous penetration testing tool designed to intentionally interact with potentially adversarial infrastructure.
+
+Operators accept inherent risk when directing the tool at any target during authorized engagements. This includes:
+
+- Interaction with malicious or exploitative network services
+- Exposure to intentionally malformed or hostile protocol responses
+- Deceptive application-layer behavior from test targets
+- Attempts by targets to fingerprint, throttle, or retaliate against scanning infrastructure
+
+Compromise scenarios arising from expected interaction with hostile targets — during authorized and intended usage — are considered inherent operational risk of offensive security tooling, not product vulnerabilities.
+
+Reports must demonstrate a defect in Apex’s implementation that violates its documented threat model, rather than outcomes that stem from intentionally engaging adversarial systems.
+
 ## Severity & Impact
 
 Severity is determined based on:
@@ -77,6 +92,7 @@ Severity is determined based on:
 - **Alignment with intended usage** — Does exploitation require deviating from documented workflows?
 
 Local-only code execution within internal developer tooling does not automatically equate to production remote code execution. Severity classifications reflect the actual deployment context and user exposure of affected components.
+
 
 ## Acknowledgment
 
