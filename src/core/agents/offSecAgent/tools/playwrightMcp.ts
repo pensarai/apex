@@ -142,203 +142,8 @@ const BrowserGetCookiesInput = z.object({
     .describe("Why you need to extract cookies from the browser"),
 });
 
-// MCP Client singleton management
-let mcpClient: Client | null = null;
-let mcpTransport: StdioClientTransport | null = null;
-let mcpProcess: import("child_process").ChildProcess | null = null;
-let connectionPromise: Promise<Client> | null = null;
-let configuredHeadless = true;
-let disconnecting = false;
-
-/**
- * Configure headless mode for the next browser session.
- * Call this BEFORE any browser tools are used.
- * Default is headless=true for normal operation.
- */
-export function setHeadlessMode(headless: boolean): void {
-  configuredHeadless = headless;
-}
-
 const MCP_CONNECT_TIMEOUT_MS = 30_000;
 const MCP_TOOL_CALL_TIMEOUT_MS = 60_000;
-
-/**
- * Immediately reset all singleton state. Synchronous — no I/O.
- */
-function resetSingletonState(): void {
-  mcpClient = null;
-  mcpTransport = null;
-  mcpProcess = null;
-  connectionPromise = null;
-  disconnecting = false;
-}
-
-/**
- * Force-kill the MCP child process. Sends SIGKILL directly — no graceful
- * shutdown, no waiting. Used during disconnect and error recovery so the
- * agent is never blocked on a hung Playwright process.
- */
-function forceKillMcpProcess(): void {
-  const proc = mcpProcess;
-  if (!proc || proc.exitCode !== null) return;
-
-  try {
-    // Kill the whole process group if detached, otherwise just the process
-    if (proc.pid) {
-      try {
-        process.kill(-proc.pid, "SIGKILL");
-      } catch {
-        proc.kill("SIGKILL");
-      }
-    } else {
-      proc.kill("SIGKILL");
-    }
-  } catch {
-    // Already dead — fine
-  }
-}
-
-/**
- * Initialize or return existing MCP client connection.
- * Handles race conditions when multiple tools try to connect simultaneously.
- * Detects dead transports and auto-reconnects.
- */
-export async function initializeMcpClient(): Promise<Client> {
-  // If already connected and the transport is alive, return existing client
-  if (mcpClient) {
-    // Detect dead transport — the SDK nulls transport on close
-    if ((mcpClient as unknown as { transport?: unknown }).transport) {
-      return mcpClient;
-    }
-    // Transport is dead — reset and reconnect
-    forceKillMcpProcess();
-    resetSingletonState();
-  }
-
-  // If connection is in progress, wait for it
-  if (connectionPromise) {
-    return connectionPromise;
-  }
-
-  // Start new connection
-  connectionPromise = (async () => {
-    try {
-      // Resolve the locally-installed @playwright/mcp CLI instead of
-      // running `npx @playwright/mcp@latest`, which downloads from npm
-      // on every invocation and is too slow for ECS/Docker containers.
-      // Resolve via package.json (always works in both Node and Bun)
-      // then derive the CLI path from the package root.
-      const require_ = createRequire(import.meta.url);
-      const mcpPkgJsonPath = require_.resolve("@playwright/mcp/package.json");
-      const cliPath = join(dirname(mcpPkgJsonPath), "cli.js");
-
-      const args = [cliPath, "--isolated"];
-      if (configuredHeadless) {
-        args.push("--headless");
-      }
-
-      // Disable Chromium sandbox when running as root (e.g., in Docker/ECS containers).
-      // Chrome refuses to run as root with sandboxing enabled.
-      if (process.getuid?.() === 0) {
-        args.push("--no-sandbox");
-      }
-
-      const transport = new StdioClientTransport({
-        command: "node",
-        args,
-        stderr: "pipe",
-      });
-
-      const client = new Client({
-        name: "apex-browser-agent",
-        version: "1.0.0",
-      });
-
-      // Hook into transport to capture the child process reference
-      const origStart = transport.start.bind(transport);
-      transport.start = async function () {
-        await origStart();
-        // StdioClientTransport stores the child process as _process
-        mcpProcess =
-          (this as unknown as { _process?: import("child_process").ChildProcess })
-            ._process ?? null;
-      };
-
-      await withTimeout(
-        client.connect(transport),
-        MCP_CONNECT_TIMEOUT_MS,
-        "MCP client connection timed out",
-      );
-
-      mcpClient = client;
-      mcpTransport = transport;
-
-      // Auto-reset singleton when the transport dies unexpectedly
-      client.onclose = () => {
-        if (mcpClient === client) {
-          resetSingletonState();
-        }
-      };
-
-      return client;
-    } catch (error) {
-      forceKillMcpProcess();
-      resetSingletonState();
-      throw error;
-    }
-  })();
-
-  return connectionPromise;
-}
-
-/**
- * Disconnect and cleanup MCP client.
- *
- * Designed to NEVER hang: resets singleton state synchronously, then
- * kills the transport and process. Does NOT call browser_close (which
- * could block for 60s if the server is hung).
- */
-export async function disconnectMcpClient(): Promise<void> {
-  if (disconnecting) return;
-  disconnecting = true;
-
-  // Grab refs before resetting so concurrent callers get the guard
-  const transport = mcpTransport;
-  const client = mcpClient;
-
-  // Reset state synchronously so nothing else tries to use the dying client
-  resetSingletonState();
-  disconnecting = true; // re-set because resetSingletonState clears it
-
-  // Close the client (rejects any pending request handlers with ConnectionClosed)
-  if (client) {
-    try {
-      await client.close();
-    } catch {
-      // Ignore — may already be closed
-    }
-  }
-
-  // Close the transport (sends SIGTERM to the child process)
-  if (transport) {
-    try {
-      await transport.close();
-    } catch {
-      // Ignore — may already be closed
-    }
-  }
-
-  // Force-kill in case SIGTERM was ignored
-  forceKillMcpProcess();
-  disconnecting = false;
-}
-
-/**
- * Check if client is currently connected
- */
-export function isClientConnected(): boolean {
-  return mcpClient !== null;
-}
 
 /**
  * Race a promise against a timeout. Rejects with a descriptive error
@@ -356,106 +161,308 @@ function withTimeout<T>(
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
+// ---------------------------------------------------------------------------
+// Module-level default headless setting (used when not explicitly provided)
+// ---------------------------------------------------------------------------
+
+let defaultHeadless = true;
+
 /**
- * Call a tool on the MCP server and extract the result.
- *
- * Each call is guarded by:
- * 1. The SDK's native abort signal (properly cancels the request)
- * 2. An outer timeout (in case the SDK's cancellation gets stuck)
- * 3. Auto-reconnection on transport errors
+ * Configure the default headless mode for new browser sessions.
+ * Call this BEFORE any browser tools are created.
+ * Default is headless=true for normal operation.
  */
-async function callMcpTool(
-  toolName: string,
-  args: Record<string, unknown>,
-  abortSignal?: AbortSignal,
-): Promise<unknown> {
-  if (abortSignal?.aborted) {
-    throw new Error("Browser tool call aborted");
+export function setHeadlessMode(headless: boolean): void {
+  defaultHeadless = headless;
+}
+
+/**
+ * Isolated MCP browser session.
+ *
+ * Each instance owns its own Playwright MCP child-process and browser.
+ * Create one per agent so concurrent agents never collide on the same
+ * browser context.
+ *
+ * Incorporates all robustness features: connection timeouts, force-kill
+ * of stuck processes, dead-transport detection, and per-call abort
+ * signal + timeout support.
+ */
+export class PlaywrightMcpSession {
+  private mcpClient: Client | null = null;
+  private mcpTransport: StdioClientTransport | null = null;
+  private mcpProcess: import("child_process").ChildProcess | null = null;
+  private connectionPromise: Promise<Client> | null = null;
+  private disconnecting = false;
+  private readonly headless: boolean;
+
+  constructor(headless = true) {
+    this.headless = headless;
   }
 
-  let client: Client;
-  try {
-    client = await withTimeout(
-      initializeMcpClient(),
-      MCP_CONNECT_TIMEOUT_MS,
-      "MCP client initialization timed out",
-    );
-  } catch (error) {
-    // Connection failed — force-reset so next call can retry fresh
-    forceKillMcpProcess();
-    resetSingletonState();
-    throw error;
+  /** Immediately reset all instance state. Synchronous — no I/O. */
+  private resetState(): void {
+    this.mcpClient = null;
+    this.mcpTransport = null;
+    this.mcpProcess = null;
+    this.connectionPromise = null;
+    this.disconnecting = false;
   }
 
-  // Create an AbortController that combines the agent's abort signal
-  // with our own timeout. The SDK's Protocol.request() natively supports
-  // signal — it cancels the request and sends a notifications/cancelled.
-  const callController = new AbortController();
-  let abortCleanup: (() => void) | undefined;
+  /**
+   * Force-kill the MCP child process. Sends SIGKILL directly — no graceful
+   * shutdown, no waiting. Used during disconnect and error recovery so the
+   * agent is never blocked on a hung Playwright process.
+   */
+  private forceKillProcess(): void {
+    const proc = this.mcpProcess;
+    if (!proc || proc.exitCode !== null) return;
 
-  if (abortSignal) {
-    const handler = () => callController.abort(abortSignal.reason);
-    if (abortSignal.aborted) {
-      callController.abort(abortSignal.reason);
-    } else {
-      abortSignal.addEventListener("abort", handler, { once: true });
-      abortCleanup = () => abortSignal.removeEventListener("abort", handler);
-    }
-  }
-
-  const timeoutTimer = setTimeout(
-    () => callController.abort(new Error(`Browser tool "${toolName}" timed out after ${MCP_TOOL_CALL_TIMEOUT_MS / 1000}s`)),
-    MCP_TOOL_CALL_TIMEOUT_MS,
-  );
-
-  try {
-    const result = await client.callTool(
-      { name: toolName, arguments: args },
-      undefined, // use default result schema
-      { signal: callController.signal },
-    );
-
-    // Extract content from the result
-    if (result && "content" in result && Array.isArray(result.content)) {
-      const imageContent = result.content.find(
-        (c: { type: string }) => c.type === "image",
-      );
-      if (imageContent && "data" in imageContent) {
-        return { type: "image", data: imageContent.data };
-      }
-
-      const textContent = result.content.find(
-        (c: { type: string }) => c.type === "text",
-      );
-      if (textContent && "text" in textContent) {
+    try {
+      if (proc.pid) {
         try {
-          return JSON.parse(textContent.text as string);
+          process.kill(-proc.pid, "SIGKILL");
         } catch {
-          return textContent.text;
+          proc.kill("SIGKILL");
         }
+      } else {
+        proc.kill("SIGKILL");
       }
-      return result.content;
+    } catch {
+      // Already dead — fine
+    }
+  }
+
+  /**
+   * Initialize or return existing MCP client connection for this session.
+   * Handles race conditions when multiple tools within the same agent
+   * try to connect simultaneously. Detects dead transports and
+   * auto-reconnects.
+   */
+  async initialize(): Promise<Client> {
+    if (this.mcpClient) {
+      if (
+        (this.mcpClient as unknown as { transport?: unknown }).transport
+      ) {
+        return this.mcpClient;
+      }
+      this.forceKillProcess();
+      this.resetState();
     }
 
-    return result;
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error);
-    const isConnectionDead =
-      msg.includes("Not connected") ||
-      msg.includes("Connection closed") ||
-      msg.includes("EPIPE") ||
-      msg.includes("write after end");
-
-    if (isConnectionDead && mcpClient === client) {
-      // Transport died — reset so next call creates a fresh connection
-      forceKillMcpProcess();
-      resetSingletonState();
+    if (this.connectionPromise) {
+      return this.connectionPromise;
     }
 
-    throw error;
-  } finally {
-    clearTimeout(timeoutTimer);
-    abortCleanup?.();
+    this.connectionPromise = (async () => {
+      try {
+        const require_ = createRequire(import.meta.url);
+        const mcpPkgJsonPath = require_.resolve(
+          "@playwright/mcp/package.json",
+        );
+        const cliPath = join(dirname(mcpPkgJsonPath), "cli.js");
+
+        const args = [cliPath, "--isolated"];
+        if (this.headless) {
+          args.push("--headless");
+        }
+
+        // Disable Chromium sandbox when running as root (e.g., in Docker/ECS containers).
+        if (process.getuid?.() === 0) {
+          args.push("--no-sandbox");
+        }
+
+        const transport = new StdioClientTransport({
+          command: "node",
+          args,
+          stderr: "pipe",
+        });
+
+        const client = new Client({
+          name: "apex-browser-agent",
+          version: "1.0.0",
+        });
+
+        // Hook into transport to capture the child process reference
+        const origStart = transport.start.bind(transport);
+        transport.start = async () => {
+          await origStart();
+          this.mcpProcess =
+            (
+              transport as unknown as {
+                _process?: import("child_process").ChildProcess;
+              }
+            )._process ?? null;
+        };
+
+        await withTimeout(
+          client.connect(transport),
+          MCP_CONNECT_TIMEOUT_MS,
+          "MCP client connection timed out",
+        );
+
+        this.mcpClient = client;
+        this.mcpTransport = transport;
+
+        client.onclose = () => {
+          if (this.mcpClient === client) {
+            this.resetState();
+          }
+        };
+
+        return client;
+      } catch (error) {
+        this.forceKillProcess();
+        this.resetState();
+        throw error;
+      }
+    })();
+
+    return this.connectionPromise;
+  }
+
+  /**
+   * Disconnect and cleanup this session's MCP client and browser.
+   *
+   * Designed to NEVER hang: resets state synchronously, then kills
+   * the transport and process. Does NOT call browser_close (which
+   * could block for 60 s if the server is hung).
+   */
+  async disconnect(): Promise<void> {
+    if (this.disconnecting) return;
+    this.disconnecting = true;
+
+    const transport = this.mcpTransport;
+    const client = this.mcpClient;
+
+    this.resetState();
+    this.disconnecting = true; // re-set because resetState clears it
+
+    if (client) {
+      try {
+        await client.close();
+      } catch {
+        // Ignore — may already be closed
+      }
+    }
+
+    if (transport) {
+      try {
+        await transport.close();
+      } catch {
+        // Ignore — may already be closed
+      }
+    }
+
+    this.forceKillProcess();
+    this.disconnecting = false;
+  }
+
+  /** Check if this session's client is currently connected. */
+  isConnected(): boolean {
+    return this.mcpClient !== null;
+  }
+
+  /**
+   * Call a tool on this session's MCP server and extract the result.
+   *
+   * Each call is guarded by:
+   * 1. The SDK's native abort signal (properly cancels the request)
+   * 2. An outer timeout (in case the SDK's cancellation gets stuck)
+   * 3. Auto-reconnection on transport errors
+   */
+  async callTool(
+    toolName: string,
+    args: Record<string, unknown>,
+    abortSignal?: AbortSignal,
+  ): Promise<unknown> {
+    if (abortSignal?.aborted) {
+      throw new Error("Browser tool call aborted");
+    }
+
+    let client: Client;
+    try {
+      client = await withTimeout(
+        this.initialize(),
+        MCP_CONNECT_TIMEOUT_MS,
+        "MCP client initialization timed out",
+      );
+    } catch (error) {
+      this.forceKillProcess();
+      this.resetState();
+      throw error;
+    }
+
+    const callController = new AbortController();
+    let abortCleanup: (() => void) | undefined;
+
+    if (abortSignal) {
+      const handler = () => callController.abort(abortSignal.reason);
+      if (abortSignal.aborted) {
+        callController.abort(abortSignal.reason);
+      } else {
+        abortSignal.addEventListener("abort", handler, { once: true });
+        abortCleanup = () =>
+          abortSignal.removeEventListener("abort", handler);
+      }
+    }
+
+    const timeoutTimer = setTimeout(
+      () =>
+        callController.abort(
+          new Error(
+            `Browser tool "${toolName}" timed out after ${MCP_TOOL_CALL_TIMEOUT_MS / 1000}s`,
+          ),
+        ),
+      MCP_TOOL_CALL_TIMEOUT_MS,
+    );
+
+    try {
+      const result = await client.callTool(
+        { name: toolName, arguments: args },
+        undefined,
+        { signal: callController.signal },
+      );
+
+      if (result && "content" in result && Array.isArray(result.content)) {
+        const imageContent = result.content.find(
+          (c: { type: string }) => c.type === "image",
+        );
+        if (imageContent && "data" in imageContent) {
+          return { type: "image", data: imageContent.data };
+        }
+
+        const textContent = result.content.find(
+          (c: { type: string }) => c.type === "text",
+        );
+        if (textContent && "text" in textContent) {
+          try {
+            return JSON.parse(textContent.text as string);
+          } catch {
+            return textContent.text;
+          }
+        }
+        return result.content;
+      }
+
+      return result;
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      const isConnectionDead =
+        msg.includes("Not connected") ||
+        msg.includes("Connection closed") ||
+        msg.includes("EPIPE") ||
+        msg.includes("write after end");
+
+      if (isConnectionDead && this.mcpClient === client) {
+        this.forceKillProcess();
+        this.resetState();
+      }
+
+      throw error;
+    } finally {
+      clearTimeout(timeoutTimer);
+      abortCleanup?.();
+    }
   }
 }
 
@@ -637,13 +644,17 @@ Use this to check for:
 };
 
 /**
- * Create browser automation tools
+ * Create browser automation tools backed by a **dedicated** Playwright MCP
+ * session. Every invocation spins up its own MCP child-process / browser so
+ * that concurrent agents never share a browser context.
  *
  * @param targetUrl - Base target URL for context in descriptions
  * @param evidenceDir - Directory to save screenshots
  * @param mode - "pentest" for automated pentesting, "operator" for user-driven reconnaissance, "auth" for authentication flows
  * @param logger - Optional logger for error reporting
  * @param abortSignal - Optional abort signal for cleanup
+ * @param headless - Override headless mode for this session (defaults to the
+ *   value set by {@link setHeadlessMode}, which itself defaults to `true`)
  */
 export function createBrowserTools(
   targetUrl: string,
@@ -651,13 +662,12 @@ export function createBrowserTools(
   mode: BrowserToolMode = "pentest",
   logger?: Logger,
   abortSignal?: AbortSignal,
+  headless?: boolean,
 ) {
-  // On abort, immediately force-kill the MCP process (synchronous) and then
-  // do async cleanup. The synchronous kill ensures the Playwright process
-  // cannot hold the event loop even if disconnectMcpClient is slow.
+  const session = new PlaywrightMcpSession(headless ?? defaultHeadless);
+
   abortSignal?.addEventListener("abort", () => {
-    forceKillMcpProcess();
-    disconnectMcpClient().catch(() => {});
+    session.disconnect().catch(() => {});
   });
 
   // Ensure evidence directory exists
@@ -680,7 +690,7 @@ export function createBrowserTools(
       toolCallDescription,
     }): Promise<BrowserNavigateResult> => {
       try {
-        const result = await callMcpTool(
+        const result = await session.callTool(
           "browser_navigate",
           { url },
           abortSignal,
@@ -706,7 +716,7 @@ export function createBrowserTools(
       toolCallDescription,
     }): Promise<BrowserScreenshotResult> => {
       try {
-        const result = await callMcpTool(
+        const result = await session.callTool(
           "browser_screenshot",
           {},
           abortSignal,
@@ -757,7 +767,7 @@ Example workflow:
       toolCallDescription,
     }): Promise<{ success: boolean; snapshot?: string; error?: string }> => {
       try {
-        const result = await callMcpTool(
+        const result = await session.callTool(
           "browser_snapshot",
           {},
           abortSignal,
@@ -792,7 +802,7 @@ Example workflow:
         if (ref) {
           args.ref = ref;
         }
-        const result = await callMcpTool("browser_click", args, abortSignal);
+        const result = await session.callTool("browser_click", args, abortSignal);
         return { success: true, element, result };
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
@@ -819,7 +829,7 @@ Example workflow:
         if (ref) {
           args.ref = ref;
         }
-        const result = await callMcpTool("browser_type", args, abortSignal);
+        const result = await session.callTool("browser_type", args, abortSignal);
         return { success: true, element, result };
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
@@ -837,7 +847,7 @@ Example workflow:
       toolCallDescription,
     }): Promise<BrowserEvaluateResult> => {
       try {
-        const result = await callMcpTool(
+        const result = await session.callTool(
           "browser_evaluate",
           { expression: script },
           abortSignal,
@@ -856,7 +866,7 @@ Example workflow:
     inputSchema: BrowserConsoleInput,
     execute: async ({ toolCallDescription }): Promise<BrowserConsoleResult> => {
       try {
-        const result = await callMcpTool(
+        const result = await session.callTool(
           "browser_console_messages",
           {},
           abortSignal,
@@ -916,7 +926,7 @@ The returned cookies can be formatted as a Cookie header for use with http_reque
         if (urls && urls.length > 0) {
           args.urls = urls;
         }
-        const result = await callMcpTool(
+        const result = await session.callTool(
           "browser_get_cookies",
           args,
           abortSignal,
