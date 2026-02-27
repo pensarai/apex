@@ -93,7 +93,6 @@ Severity is determined based on:
 
 Local-only code execution within internal developer tooling does not automatically equate to production remote code execution. Severity classifications reflect the actual deployment context and user exposure of affected components.
 
-
 ## Acknowledgment
 
 We appreciate responsible security research. Valid, in-scope reports will be acknowledged in accordance with this policy. We follow a consistent, process-driven approach to disclosure and do not provide additional recognition beyond our standard acknowledgment process.
