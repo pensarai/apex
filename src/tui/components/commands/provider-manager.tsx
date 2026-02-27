@@ -6,12 +6,12 @@ import {
   type ProviderType,
   AVAILABLE_PROVIDERS,
 } from "../../../core/providers";
-import ProviderSelection from "./provider-selection";
-import APIKeyInput from "./api-key-input";
+import { ProviderSelection } from "./provider-selection";
+import { APIKeyInput } from "./api-key-input";
 
 type FlowState = "selecting" | "inputting";
 
-export default function ProviderManager() {
+export function ProviderManager() {
   const route = useRoute();
   const _config = useConfig();
   const [flowState, setFlowState] = useState<FlowState>("selecting");

@@ -340,4 +340,3 @@ function ApprovalInputArea({
     </box>
   );
 }
-

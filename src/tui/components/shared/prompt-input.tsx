@@ -305,4 +305,3 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
     );
   },
 );
-

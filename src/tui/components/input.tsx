@@ -8,7 +8,7 @@ interface InputComponentProps extends InputProps {
   description?: string;
 }
 
-const Input = forwardRef<InputRenderable, InputComponentProps>(
+export const Input = forwardRef<InputRenderable, InputComponentProps>(
   function Input(opts, ref) {
     const { colors } = useTheme();
     const { label, focused = true, description, ...inputProps } = opts;
@@ -39,5 +39,3 @@ const Input = forwardRef<InputRenderable, InputComponentProps>(
     );
   },
 );
-
-export default Input;

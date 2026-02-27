@@ -20,7 +20,7 @@ import {
 } from "../../hooks/use-sessions-list";
 import { useTheme } from "../../theme";
 
-export default function SessionsBrowser() {
+export function SessionsBrowser() {
   const { colors } = useTheme();
   const route = useRoute();
   const { load: loadSession } = useSession();

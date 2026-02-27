@@ -12,7 +12,7 @@ import { useTheme } from "../../theme";
 import { useRoute } from "../../context/route";
 import { update as updateConfig } from "../../../core/config";
 
-export default function ThemePicker() {
+export function ThemePicker() {
   const dimensions = useTerminalDimensions();
   const route = useRoute();
   const {

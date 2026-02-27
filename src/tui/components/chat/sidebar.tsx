@@ -369,5 +369,3 @@ export function useSidebarState(sessionId?: string) {
     hasFindings: state.verifiedVulns.length > 0,
   };
 }
-
-export default Sidebar;

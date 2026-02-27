@@ -16,7 +16,7 @@ interface SessionsDisplayProps {
   onClose: () => void;
 }
 
-export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
+export function SessionsDisplay({ onClose }: SessionsDisplayProps) {
   const { colors } = useTheme();
   const { refocusPrompt } = useFocus();
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);

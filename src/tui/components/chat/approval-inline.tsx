@@ -59,4 +59,3 @@ export function InlineApprovalPrompt({ approval }: InlineApprovalPromptProps) {
     </box>
   );
 }
-

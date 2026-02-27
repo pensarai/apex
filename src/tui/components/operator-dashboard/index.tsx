@@ -38,7 +38,7 @@ type DashboardStatus = "idle" | "running" | "waiting" | "done";
 /**
  * Operator Dashboard - interactive chat interface with the offensive security agent
  */
-export default function OperatorDashboard({
+export function OperatorDashboard({
   sessionId,
   isResume = false,
 }: OperatorDashboardProps) {

@@ -724,6 +724,7 @@ async function downloadResults(
   let findingsCount = 0;
   if (existsSync(findingsDir)) {
     try {
+      // eslint-disable-next-line no-restricted-syntax -- lazy load optional dependency
       const findingFiles = await import("fs/promises").then((fs) =>
         fs.readdir(findingsDir),
       );
@@ -753,6 +754,7 @@ async function downloadResults(
 
       if (expectedFlag) {
         console.log(`${prefix}🔎 Searching for flag: ${expectedFlag}`);
+        // eslint-disable-next-line no-restricted-syntax -- lazy load optional dependency
         const { detectFlagInArtifacts } = await import("../flag-detector.js");
         const flagResult = await detectFlagInArtifacts(
           localSessionPath,

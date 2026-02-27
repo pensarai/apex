@@ -184,6 +184,7 @@ describe("detectInstallMethod", () => {
     });
     process.argv[1] = "/usr/local/bin/pensar";
 
+    // eslint-disable-next-line no-restricted-syntax -- dynamic import for test mocking
     const { spawnSync } = await import("child_process");
     const mockedSpawnSync = vi.mocked(spawnSync);
     mockedSpawnSync.mockReturnValue({
@@ -210,6 +211,7 @@ describe("detectInstallMethod", () => {
     });
     process.argv[1] = "/usr/local/bin/pensar";
 
+    // eslint-disable-next-line no-restricted-syntax -- dynamic import for test mocking
     const { spawnSync } = await import("child_process");
     const mockedSpawnSync = vi.mocked(spawnSync);
     mockedSpawnSync.mockReturnValue({
@@ -330,6 +332,7 @@ describe("upgrade", () => {
       new Response(JSON.stringify({ version: "99.99.99" }), { status: 200 }),
     );
 
+    // eslint-disable-next-line no-restricted-syntax -- dynamic import for test mocking
     const { spawnSync } = await import("child_process");
     const mockedSpawnSync = vi.mocked(spawnSync);
     mockedSpawnSync.mockReturnValue({
@@ -353,6 +356,7 @@ describe("upgrade", () => {
       new Response(JSON.stringify({ version: "99.99.99" }), { status: 200 }),
     );
 
+    // eslint-disable-next-line no-restricted-syntax -- dynamic import for test mocking
     const { spawnSync } = await import("child_process");
     const mockedSpawnSync = vi.mocked(spawnSync);
     mockedSpawnSync.mockReturnValue({
@@ -378,6 +382,7 @@ describe("upgrade", () => {
       new Response(JSON.stringify({ version: "99.99.99" }), { status: 200 }),
     );
 
+    // eslint-disable-next-line no-restricted-syntax -- dynamic import for test mocking
     const { spawnSync } = await import("child_process");
     const mockedSpawnSync = vi.mocked(spawnSync);
     mockedSpawnSync.mockReturnValue({
@@ -403,6 +408,7 @@ describe("upgrade", () => {
       new Response(JSON.stringify({ version: "99.99.99" }), { status: 200 }),
     );
 
+    // eslint-disable-next-line no-restricted-syntax -- dynamic import for test mocking
     const { spawnSync } = await import("child_process");
     const mockedSpawnSync = vi.mocked(spawnSync);
     mockedSpawnSync.mockReturnValue({

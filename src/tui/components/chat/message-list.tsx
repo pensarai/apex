@@ -198,4 +198,3 @@ export function MessageList({
     </scrollbox>
   );
 }
-

@@ -4,7 +4,6 @@ const config: KnipConfig = {
   entry: [
     "src/tui/index.tsx",
     "src/cli.ts",
-    "bin/pensar.js",
     "scripts/generate-ascii-art.ts",
     "scripts/compare-results.ts",
     "scripts/generate-report.ts",
@@ -16,6 +15,7 @@ const config: KnipConfig = {
   ],
   project: ["src/**/*.{ts,tsx}", "scripts/**/*.ts", "bin/**/*.js"],
   ignore: ["build/**"],
+  includeEntryExports: true,
 };
 
 export default config;

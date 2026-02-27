@@ -52,6 +52,26 @@ export default tseslint.config(
           ],
         },
       ],
+      "no-restricted-syntax": [
+        "warn",
+        {
+          selector: "ImportExpression",
+          message:
+            "Prefer static imports. Use eslint-disable with a justification for intentional lazy loading.",
+        },
+      ],
+      "no-restricted-exports": [
+        "error",
+        {
+          restrictDefaultExports: {
+            direct: true,
+            named: true,
+            defaultFrom: true,
+            namedFrom: true,
+            namespaceFrom: true,
+          },
+        },
+      ],
       "unused-imports/no-unused-imports": "error",
       "no-useless-assignment": "off",
       "no-useless-escape": "off",

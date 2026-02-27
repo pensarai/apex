@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useKeyboard } from "@opentui/react";
-import AgentDisplay, { type DisplayMessage } from "../agent-display";
+import { AgentDisplay, type DisplayMessage } from "../agent-display";
 import { SpinnerDots } from "../sprites";
 import { useDialog } from "../../context/dialog";
 import type { ResumeInfo } from "../../../core/session";
@@ -34,7 +34,7 @@ interface SwarmDashboardProps {
   children?: React.ReactNode;
 }
 
-export default function SwarmDashboard({
+export function SwarmDashboard({
   subagents,
   isExecuting,
   startTime,

@@ -1,6 +1,6 @@
 import { useKeyboard } from "@opentui/react";
 import { useState } from "react";
-import Input from "../input";
+import { Input } from "../input";
 import { type ProviderType } from "../../../core/providers";
 import { useTheme } from "../../theme";
 
@@ -11,7 +11,7 @@ interface APIKeyInputProps {
   onCancel: () => void;
 }
 
-export default function APIKeyInput({
+export function APIKeyInput({
   provider,
   providerName,
   onSubmit,

@@ -373,4 +373,3 @@ export class InputBuffer {
     this.selection = null;
   }
 }
-

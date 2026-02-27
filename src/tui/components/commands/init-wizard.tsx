@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useKeyboard } from "@opentui/react";
-import Input from "../input";
+import { Input } from "../input";
 import { useRoute } from "../../context/route";
 import { sessions, type SessionConfig } from "../../../core/session";
 import { SpinnerDots } from "../sprites";
@@ -31,7 +31,7 @@ interface WizardState {
   };
 }
 
-export default function InitWizard() {
+export function InitWizard() {
   const { colors } = useTheme();
   const route = useRoute();
 

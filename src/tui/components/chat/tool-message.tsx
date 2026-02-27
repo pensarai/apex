@@ -177,5 +177,3 @@ function formatArgs(args: Record<string, unknown>): string {
     })
     .join("\n");
 }
-
-export default ToolMessage;

@@ -72,6 +72,7 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
       if (cwd) {
         try {
           const { WhiteboxAttackSurfaceAgent } =
+            // eslint-disable-next-line no-restricted-syntax -- lazy load to avoid circular dependency
             await import("../../specialized/whiteboxAttackSurface/agent");
 
           const agent = new WhiteboxAttackSurfaceAgent({
@@ -130,6 +131,7 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
       // -----------------------------------------------------------------------
       try {
         const { BlackboxAttackSurfaceAgent } =
+          // eslint-disable-next-line no-restricted-syntax -- lazy load to avoid circular dependency
           await import("../../specialized/attackSurface/blackboxAgent");
 
         const agent = new BlackboxAttackSurfaceAgent({

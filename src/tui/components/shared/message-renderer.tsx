@@ -125,4 +125,3 @@ export const MessageRenderer = memo(function MessageRenderer({
     </box>
   );
 });
-

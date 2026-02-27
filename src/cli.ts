@@ -229,9 +229,11 @@ if (command === "version" || command === "--version" || command === "-v") {
 } else if (command === "targeted-pentest") {
   await runTargetedPentest();
 } else if (command === "doctor") {
+  // eslint-disable-next-line no-restricted-syntax -- lazy load to reduce CLI startup time
   const { runDoctor } = await import("./core/doctor");
   await runDoctor();
 } else if (args.length === 0) {
+  // eslint-disable-next-line no-restricted-syntax -- lazy load TUI to reduce CLI startup time
   await import("./tui/index.tsx");
 } else {
   console.error(`Error: Unknown command '${command}'`);

@@ -159,4 +159,3 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
     </box>
   );
 }
-

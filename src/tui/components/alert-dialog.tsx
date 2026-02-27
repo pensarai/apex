@@ -16,7 +16,7 @@ export interface AlertDialogProps {
   size?: "medium" | "large";
 }
 
-export default function AlertDialog({
+export function AlertDialog({
   title = "",
   message,
   open,

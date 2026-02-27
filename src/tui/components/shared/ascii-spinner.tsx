@@ -38,4 +38,3 @@ export function AsciiSpinner({ label, fg }: AsciiSpinnerProps) {
     <text fg={spinnerColor} content={`${SPINNER_FRAMES[frame]} ${label}`} />
   );
 }
-

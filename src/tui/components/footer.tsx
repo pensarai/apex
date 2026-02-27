@@ -21,7 +21,7 @@ function formatTokenCount(count: number): string {
   return count.toString();
 }
 
-export default function Footer({
+export function Footer({
   cwd = process.cwd(),
   showExitWarning = false,
 }: FooterProps) {

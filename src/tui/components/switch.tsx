@@ -73,10 +73,9 @@ function createSwitch<T extends string>() {
 }
 
 // Generic Switch for general use
-const Switch = Object.assign(SwitchComponent, {
+export const Switch = Object.assign(SwitchComponent, {
   Case: CaseComponent,
   Default: DefaultComponent,
 });
 
-export default Switch;
 export { createSwitch };

@@ -143,5 +143,3 @@ export function Header({
     </box>
   );
 }
-
-export default Header;

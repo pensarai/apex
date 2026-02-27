@@ -144,7 +144,7 @@ async function runSingleCodingAgent(
   objective: string,
   agentIndex: number,
 ): Promise<string> {
-  // Dynamic import to break circular dependency
+  // eslint-disable-next-line no-restricted-syntax -- lazy load to avoid circular dependency
   const { CodeAgent } = await import("../../specialized/codeAgent/agent");
 
   const subagentId = `coding-agent-${agentIndex}`;

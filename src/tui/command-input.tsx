@@ -12,7 +12,7 @@ interface CommandInputProps {
   inputKey?: number;
 }
 
-export default function CommandInput({
+export function CommandInput({
   focused = true,
   inputKey = 0,
 }: CommandInputProps) {

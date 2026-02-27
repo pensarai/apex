@@ -5,7 +5,7 @@ import { useConfig } from "../../context/config";
 import { ModelPicker } from "../model-picker";
 import { useTheme } from "../../theme";
 
-export default function ModelsDisplay() {
+export function ModelsDisplay() {
   const { colors } = useTheme();
   const route = useRoute();
   const config = useConfig();

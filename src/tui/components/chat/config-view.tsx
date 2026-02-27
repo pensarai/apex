@@ -257,4 +257,3 @@ function isValidUrl(url: string): boolean {
     return false;
   }
 }
-

@@ -167,6 +167,7 @@ async function main(): Promise<void> {
   if (mode === "local") {
     // Verify docker is available
     try {
+      // eslint-disable-next-line no-restricted-syntax -- lazy load for script performance
       const { execSync } = await import("child_process");
       execSync("docker compose version", { stdio: "pipe" });
     } catch {

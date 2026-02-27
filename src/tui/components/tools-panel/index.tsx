@@ -28,7 +28,7 @@ interface ToolsPanelProps {
   onToolsetChange?: (toolsetState: ToolsetState) => void;
 }
 
-export default function ToolsPanel({
+export function ToolsPanel({
   open,
   onClose,
   session,

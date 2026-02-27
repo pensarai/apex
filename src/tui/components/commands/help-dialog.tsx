@@ -15,7 +15,7 @@ import { useRoute } from "../../context/route";
 import type { CommandConfig } from "../../command-registry";
 import { useTheme } from "../../theme";
 
-export default function HelpDialog() {
+export function HelpDialog() {
   const { colors } = useTheme();
   const { commands } = useCommand();
   const route = useRoute();

@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import AlertDialog from "../alert-dialog";
+import { AlertDialog } from "../alert-dialog";
 import { get as getConfig, type Config } from "../../../core/config";
 import { useRoute } from "../../context/route";
 
-export default function ConfigDialog() {
+export function ConfigDialog() {
   const route = useRoute();
 
   const [open, setOpen] = useState(false);

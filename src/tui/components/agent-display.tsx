@@ -68,7 +68,7 @@ interface AgentDisplayProps {
   focused?: boolean; // Controls whether this scrollbox responds to scroll events
 }
 
-export default function AgentDisplay({
+export function AgentDisplay({
   messages,
   isStreaming = false,
   children,

@@ -14,7 +14,7 @@ interface ProviderSelectionProps {
   onClose: () => void;
 }
 
-export default function ProviderSelection({
+export function ProviderSelection({
   onProviderSelected,
   onClose,
 }: ProviderSelectionProps) {

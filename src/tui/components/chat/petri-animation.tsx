@@ -175,4 +175,3 @@ function getRowColor(
 
   return gradient[Math.min(colorIdx, gradient.length - 1)];
 }
-

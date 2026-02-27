@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useKeyboard } from "@opentui/react";
-import Input from "../input";
+import { Input } from "../input";
 import { useRoute } from "../../context/route";
 import { useConfig } from "../../context/config";
 import { useAgent } from "../../context/agent";
@@ -69,7 +69,7 @@ function parseHostFromUrl(url: string): string | null {
   }
 }
 
-export default function HITLWizard(props: HITLWizardProps) {
+export function HITLWizard(props: HITLWizardProps) {
   const { colors } = useTheme();
   const {
     initialTarget,

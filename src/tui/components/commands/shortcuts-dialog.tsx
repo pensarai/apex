@@ -9,10 +9,7 @@ interface ShortcutsDialogProps {
   onClose: () => void;
 }
 
-export default function ShortcutsDialog({
-  open,
-  onClose,
-}: ShortcutsDialogProps) {
+export function ShortcutsDialog({ open, onClose }: ShortcutsDialogProps) {
   const { colors } = useTheme();
   const { refocusPrompt } = useFocus();
 
