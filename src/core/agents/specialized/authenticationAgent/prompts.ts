@@ -117,6 +117,16 @@ If authentication fails:
 4. Try a different method (form_post vs json_post)
 5. If all else fails, call \`complete_authentication\` with success=false
 
+## Rate Limiting
+
+If you encounter rate-limiting errors (e.g. "Rate limit exceeded", HTTP 429, "too many requests"):
+1. Do NOT give up or report failure immediately — rate limits are temporary
+2. Use \`execute_command\` to sleep and wait for the rate limit to reset: \`sleep 120\`
+3. After sleeping, retry the authentication attempt
+4. If rate-limited again, sleep for another 120 seconds and retry
+5. Continue this retry loop — be persistent. Only report failure after 5+ consecutive rate-limited retries
+6. NEVER treat rate-limiting as a finding or vulnerability — it is an operational obstacle to work through
+
 # Key Rules
 
 1. **Be direct** — if credentials are provided, authenticate immediately. Don't over-analyze.
