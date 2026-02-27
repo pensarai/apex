@@ -90,6 +90,76 @@ function checkIfRateLimitError(error: unknown): boolean {
 }
 
 const MAX_RATE_LIMIT_RETRIES = 20;
+const MAX_IDLE_RETRIES = 3;
+
+// Between-step idle timeout: if no chunk arrives for this long after a tool
+// result, the model API call is presumed hung and the stream is recreated.
+const STREAM_IDLE_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes
+
+class StreamIdleTimeoutError extends Error {
+  constructor(idleMs: number) {
+    super(
+      `Stream idle for ${Math.round(idleMs / 1000)}s — no chunks received, presuming hung model call`,
+    );
+    this.name = "StreamIdleTimeoutError";
+  }
+}
+
+/**
+ * Iterate an async iterable with a per-chunk idle timeout.
+ * If no new value arrives within `idleMs`, throws {@link StreamIdleTimeoutError}.
+ */
+async function* iterateWithIdleTimeout<T>(
+  iterable: AsyncIterable<T>,
+  idleMs: number,
+  abortSignal?: AbortSignal,
+): AsyncGenerator<T> {
+  const iterator = iterable[Symbol.asyncIterator]();
+
+  try {
+    while (true) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+
+      const idlePromise = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new StreamIdleTimeoutError(idleMs)), idleMs);
+      });
+
+      // Also abort immediately if the agent's signal fires
+      let abortCleanup: (() => void) | undefined;
+      const abortPromise = abortSignal
+        ? new Promise<never>((_, reject) => {
+            const handler = () => reject(new Error("Stream aborted"));
+            if (abortSignal.aborted) {
+              handler();
+              return;
+            }
+            abortSignal.addEventListener("abort", handler, { once: true });
+            abortCleanup = () =>
+              abortSignal.removeEventListener("abort", handler);
+          })
+        : null;
+
+      try {
+        const racers: Promise<IteratorResult<T>>[] = [
+          iterator.next(),
+          idlePromise,
+        ];
+        if (abortPromise) racers.push(abortPromise);
+
+        const result = await Promise.race(racers);
+
+        if (result.done) return;
+        yield result.value;
+      } finally {
+        if (timer !== undefined) clearTimeout(timer);
+        abortCleanup?.();
+      }
+    }
+  } finally {
+    // Ensure the underlying iterator is cleaned up
+    await iterator.return?.();
+  }
+}
 
 // Helper function to wrap a stream with error handling for async errors
 function wrapStreamWithErrorHandler(
@@ -99,6 +169,7 @@ function wrapStreamWithErrorHandler(
   model: LanguageModel,
   silent?: boolean,
   rateLimitRetryCount: number = 0,
+  idleRetryCount: number = 0,
 ): StreamTextResult<ToolSet, never> {
   // Create a lazy getter for fullStream that wraps it with error handling
   let wrappedStream: AsyncIterable<TextStreamPart<ToolSet>> | null = null;
@@ -110,7 +181,11 @@ function wrapStreamWithErrorHandler(
         if (!wrappedStream) {
           wrappedStream = (async function* () {
             try {
-              for await (const chunk of originalStream.fullStream) {
+              for await (const chunk of iterateWithIdleTimeout(
+                originalStream.fullStream,
+                STREAM_IDLE_TIMEOUT_MS,
+                opts.abortSignal,
+              )) {
                 // Check if this chunk contains an error
                 if (chunk.type === "error" || "error" in chunk) {
                   const error =
@@ -125,6 +200,43 @@ function wrapStreamWithErrorHandler(
             } catch (error) {
               const errorMessage =
                 error instanceof Error ? error.message : String(error);
+
+              // Handle idle timeout — recreate stream from accumulated messages
+              const isIdle = error instanceof StreamIdleTimeoutError;
+              if (isIdle && idleRetryCount < MAX_IDLE_RETRIES) {
+                const nextIdleRetry = idleRetryCount + 1;
+                if (!silent) {
+                  console.warn(
+                    `Stream idle timeout (retry ${nextIdleRetry}/${MAX_IDLE_RETRIES}), recreating stream with ${messagesContainer.current.length} messages`,
+                  );
+                }
+
+                // Brief pause before retry
+                await new Promise((resolve) => setTimeout(resolve, 2000));
+
+                const retriedStream = streamResponse({
+                  ...opts,
+                  messages:
+                    messagesContainer.current.length > 0
+                      ? messagesContainer.current
+                      : undefined,
+                });
+
+                const wrappedRetriedStream = wrapStreamWithErrorHandler(
+                  retriedStream,
+                  messagesContainer,
+                  opts,
+                  model,
+                  silent,
+                  0, // reset rate-limit counter on idle retry
+                  nextIdleRetry,
+                );
+
+                for await (const chunk of wrappedRetriedStream.fullStream) {
+                  yield chunk;
+                }
+                return;
+              }
 
               // Handle rate limit errors with exponential backoff retry
               if (
@@ -157,6 +269,7 @@ function wrapStreamWithErrorHandler(
                   model,
                   silent,
                   nextRetryCount,
+                  idleRetryCount,
                 );
 
                 for await (const chunk of wrappedRetriedStream.fullStream) {
