@@ -173,7 +173,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "spawn_coding_agent",
   // "generate_report",
   "provide_comparison_results",
-  // Email tools
+  // Email
   "email_list_inboxes",
   "email_list_messages",
   "email_get_message",
