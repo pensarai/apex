@@ -24,9 +24,7 @@ the provider:
 Returns message summaries matching the query.`,
     inputSchema: z.object({
       inboxId: z.string().describe("The inbox ID from email_list_inboxes"),
-      query: z
-        .string()
-        .describe("Search query (syntax depends on provider)"),
+      query: z.string().describe("Search query (syntax depends on provider)"),
       folder: z
         .string()
         .optional()

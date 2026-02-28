@@ -38,7 +38,10 @@ Sets the read/seen flag on a message so it no longer appears as unread.`,
       try {
         const adapter = createEmailAdapter(inbox);
         await adapter.markAsRead(messageId, folder);
-        return { success: true, message: `Message ${messageId} marked as read` };
+        return {
+          success: true,
+          message: `Message ${messageId} marked as read`,
+        };
       } catch (error: unknown) {
         return {
           success: false,
