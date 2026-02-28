@@ -880,9 +880,16 @@ Example workflow:
       toolCallDescription,
     }): Promise<BrowserEvaluateResult> => {
       try {
+        // Playwright MCP's browser_evaluate expects a `function` param with a
+        // function expression like `() => document.cookie`. Wrap raw expressions
+        // that aren't already function-shaped.
+        const isFunction = /^\s*(async\s+)?\(/.test(script) ||
+          /^\s*(async\s+)?function\s*\(/.test(script);
+        const fnScript = isFunction ? script : `() => (${script})`;
+
         const result = await session.callTool(
           "browser_evaluate",
-          { expression: script },
+          { function: fnScript },
           abortSignal,
         );
         return { success: true, script, result };
@@ -955,17 +962,20 @@ The returned cookies can be formatted as a Cookie header for use with http_reque
       error?: string;
     }> => {
       try {
-        const args: Record<string, unknown> = {};
-        if (urls && urls.length > 0) {
-          args.urls = urls;
-        }
+        // Playwright MCP doesn't expose a dedicated cookie tool, so we use
+        // browser_run_code to call the Playwright context API directly.
+        // This gets ALL cookies including httpOnly ones.
+        const urlFilter = urls && urls.length > 0
+          ? JSON.stringify(urls)
+          : "undefined";
+        const code = `async (page) => { const cookies = await page.context().cookies(${urlFilter === "undefined" ? "" : urlFilter}); return cookies; }`;
+
         const result = await session.callTool(
-          "browser_get_cookies",
-          args,
+          "browser_run_code",
+          { code },
           abortSignal,
         );
 
-        // Parse cookies from result
         let cookies: Array<{
           name: string;
           value: string;
@@ -974,14 +984,33 @@ The returned cookies can be formatted as a Cookie header for use with http_reque
           httpOnly: boolean;
           secure: boolean;
         }> = [];
-        if (Array.isArray(result)) {
-          cookies = result as typeof cookies;
-        } else if (typeof result === "string") {
+
+        if (typeof result === "string") {
+          // Playwright MCP wraps results as "### Result\n<value>\n\n### Ran Playwright code\n...".
+          // Strip the prefix and any trailing Playwright output sections.
+          const stripped = result
+            .replace(/^###\s*Result\s*\n?/, "")
+            .replace(/\n\n###[\s\S]*$/, "")
+            .trim();
           try {
-            cookies = JSON.parse(result);
+            const parsed = JSON.parse(stripped);
+            if (Array.isArray(parsed)) {
+              cookies = parsed;
+            } else if (typeof parsed === "string") {
+              cookies = JSON.parse(parsed);
+            }
           } catch {
-            // Result might be in a different format
+            const jsonMatch = stripped.match(/\[[\s\S]*\]/);
+            if (jsonMatch) {
+              try {
+                cookies = JSON.parse(jsonMatch[0]);
+              } catch {
+                // Could not parse
+              }
+            }
           }
+        } else if (Array.isArray(result)) {
+          cookies = result as typeof cookies;
         } else if (
           result &&
           typeof result === "object" &&
@@ -990,7 +1019,6 @@ The returned cookies can be formatted as a Cookie header for use with http_reque
           cookies = (result as { cookies: typeof cookies }).cookies;
         }
 
-        // Build Cookie header string
         const cookieHeader = cookies
           .map((c) => `${c.name}=${c.value}`)
           .join("; ");
