@@ -129,7 +129,8 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
         // "detect_auth_scheme",
         // "probe_auth_endpoints",
         "authenticate_session",
-        "delegate_to_auth_subagent",
+        // NOTE: delegate_to_auth_subagent is intentionally excluded — this agent
+        // IS the auth subagent, so allowing it would cause recursive delegation.
         "complete_authentication",
         // Browser automation for login forms, OAuth, SPA auth
         "browser_navigate",
