@@ -45,6 +45,10 @@ export { spawnCodingAgent } from "./spawnCodingAgent";
 // export { generateReport } from "./generateReport";
 export { provideComparisonResults } from "./provideComparisonResults";
 
+// Email tools
+export { createEmailToolset, EMAIL_TOOL_NAMES } from "./email";
+export type { EmailToolName } from "./email";
+
 // ---------------------------------------------------------------------------
 // Tool registry
 // ---------------------------------------------------------------------------
@@ -74,6 +78,9 @@ import { spawnPentestSwarm } from "./spawnPentestSwarm";
 import { spawnCodingAgent } from "./spawnCodingAgent";
 // import { generateReport } from "./generateReport";
 import { provideComparisonResults } from "./provideComparisonResults";
+import { emailListMessages } from "./email/listMessages";
+import { emailSearchMessages } from "./email/searchMessages";
+import { emailGetMessage } from "./email/getMessage";
 
 /**
  * Create the full toolset for the OffensiveSecurityAgent.
@@ -121,6 +128,11 @@ export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
     // Reporting / benchmark tools
     // generate_report: generateReport(ctx),
     provide_comparison_results: provideComparisonResults(ctx),
+
+    // Email tools (read-only inbox access)
+    email_list_messages: emailListMessages(ctx),
+    email_search_messages: emailSearchMessages(ctx),
+    email_get_message: emailGetMessage(ctx),
   } as const;
 }
 
@@ -157,4 +169,8 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "spawn_coding_agent",
   // "generate_report",
   "provide_comparison_results",
+  // Email tools
+  "email_list_messages",
+  "email_search_messages",
+  "email_get_message",
 ] as const;
