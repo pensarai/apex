@@ -78,6 +78,7 @@ import { spawnPentestSwarm } from "./spawnPentestSwarm";
 import { spawnCodingAgent } from "./spawnCodingAgent";
 // import { generateReport } from "./generateReport";
 import { provideComparisonResults } from "./provideComparisonResults";
+import { emailListInboxes } from "./email/listInboxes";
 import { emailListMessages } from "./email/listMessages";
 import { emailSearchMessages } from "./email/searchMessages";
 import { emailGetMessage } from "./email/getMessage";
@@ -130,6 +131,7 @@ export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
     provide_comparison_results: provideComparisonResults(ctx),
 
     // Email tools (read-only inbox access)
+    email_list_inboxes: emailListInboxes(ctx),
     email_list_messages: emailListMessages(ctx),
     email_search_messages: emailSearchMessages(ctx),
     email_get_message: emailGetMessage(ctx),
@@ -170,6 +172,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   // "generate_report",
   "provide_comparison_results",
   // Email tools
+  "email_list_inboxes",
   "email_list_messages",
   "email_search_messages",
   "email_get_message",
