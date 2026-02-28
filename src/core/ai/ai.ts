@@ -31,6 +31,139 @@ export type AIModelProvider =
   | "bedrock"
   | "local";
 
+function checkIfRateLimitError(error: unknown): boolean {
+  const errObj =
+    typeof error === "object" && error !== null
+      ? (error as Record<string, unknown>)
+      : {};
+
+  // Check message — works for both Error instances and plain objects
+  // (Bedrock streaming errors are plain { message: "..." } records)
+  const errorMessage = (
+    typeof errObj.message === "string" ? errObj.message : ""
+  ).toLowerCase();
+  const errorCode = String(
+    typeof errObj.code === "string" ? errObj.code : "",
+  ).toLowerCase();
+  // AWS SDK errors surface the exception type via .name
+  const errorName = (
+    typeof errObj.name === "string" ? errObj.name : ""
+  ).toLowerCase();
+  // Bedrock HTTP-level errors include $metadata.httpStatusCode
+  const httpStatus =
+    typeof errObj.$metadata === "object" && errObj.$metadata !== null
+      ? (errObj.$metadata as Record<string, unknown>).httpStatusCode
+      : undefined;
+  // Stringified fallback for opaque error objects (e.g. Bedrock stream records)
+  const errorString =
+    errorMessage || errorName ? "" : String(error).toLowerCase();
+
+  return (
+    // Message-based detection
+    errorMessage.includes("too many tokens") ||
+    errorMessage.includes("rate limit") ||
+    errorMessage.includes("request rate") ||
+    errorMessage.includes("throttl") ||
+    errorMessage.includes("overloaded") ||
+    errorMessage.includes("too many requests") ||
+    errorMessage.includes("please wait") ||
+    errorMessage.includes("service unavailable") ||
+    // AWS SDK exception names (ThrottlingException, TooManyRequestsException)
+    errorName.includes("throttl") ||
+    errorName.includes("toomanyrequests") ||
+    errorName.includes("serviceunavailable") ||
+    // Error codes
+    errorCode === "rate_limit_exceeded" ||
+    errorCode === "throttling" ||
+    errorCode === "429" ||
+    // HTTP status from AWS SDK $metadata
+    httpStatus === 429 ||
+    httpStatus === 529 ||
+    httpStatus === 503 ||
+    // Fallback: stringified error for opaque Bedrock stream records
+    errorString.includes("throttl") ||
+    errorString.includes("too many") ||
+    errorString.includes("request rate")
+  );
+}
+
+const MAX_RATE_LIMIT_RETRIES = 20;
+const MAX_IDLE_RETRIES = 5;
+
+// Between-step idle timeout: if no chunk arrives for this long after a tool
+// result, the model API call is presumed hung and the stream is recreated.
+// 60s is aggressive but intentional — Bedrock can silently hang after tool
+// results, and the agent's per-endpoint timeout is typically 10-15 minutes.
+const STREAM_IDLE_TIMEOUT_MS = 60_000; // 60 seconds
+
+class StreamIdleTimeoutError extends Error {
+  constructor(idleMs: number) {
+    super(
+      `Stream idle for ${Math.round(idleMs / 1000)}s — no chunks received, presuming hung model call`,
+    );
+    this.name = "StreamIdleTimeoutError";
+  }
+}
+
+/**
+ * Iterate an async iterable with a per-chunk idle timeout.
+ * If no new value arrives within `idleMs`, throws {@link StreamIdleTimeoutError}.
+ */
+async function* iterateWithIdleTimeout<T>(
+  iterable: AsyncIterable<T>,
+  idleMs: number,
+  abortSignal?: AbortSignal,
+): AsyncGenerator<T> {
+  const iterator = iterable[Symbol.asyncIterator]();
+
+  try {
+    while (true) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+
+      const idlePromise = new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new StreamIdleTimeoutError(idleMs)),
+          idleMs,
+        );
+      });
+
+      // Also abort immediately if the agent's signal fires
+      let abortCleanup: (() => void) | undefined;
+      const abortPromise = abortSignal
+        ? new Promise<never>((_, reject) => {
+            const handler = () => reject(new Error("Stream aborted"));
+            if (abortSignal.aborted) {
+              handler();
+              return;
+            }
+            abortSignal.addEventListener("abort", handler, { once: true });
+            abortCleanup = () =>
+              abortSignal.removeEventListener("abort", handler);
+          })
+        : null;
+
+      try {
+        const racers: Promise<IteratorResult<T>>[] = [
+          iterator.next(),
+          idlePromise,
+        ];
+        if (abortPromise) racers.push(abortPromise);
+
+        const result = await Promise.race(racers);
+
+        if (result.done) return;
+        yield result.value;
+      } finally {
+        if (timer !== undefined) clearTimeout(timer);
+        abortCleanup?.();
+      }
+    }
+  } finally {
+    // Ensure the underlying iterator is cleaned up
+    await iterator.return?.();
+  }
+}
+
 // Helper function to wrap a stream with error handling for async errors
 function wrapStreamWithErrorHandler(
   originalStream: StreamTextResult<ToolSet, never>,
@@ -38,6 +171,8 @@ function wrapStreamWithErrorHandler(
   opts: StreamResponseOpts,
   model: LanguageModel,
   silent?: boolean,
+  rateLimitRetryCount: number = 0,
+  idleRetryCount: number = 0,
 ): StreamTextResult<ToolSet, never> {
   // Create a lazy getter for fullStream that wraps it with error handling
   let wrappedStream: AsyncIterable<TextStreamPart<ToolSet>> | null = null;
@@ -49,7 +184,11 @@ function wrapStreamWithErrorHandler(
         if (!wrappedStream) {
           wrappedStream = (async function* () {
             try {
-              for await (const chunk of originalStream.fullStream) {
+              for await (const chunk of iterateWithIdleTimeout(
+                originalStream.fullStream,
+                STREAM_IDLE_TIMEOUT_MS,
+                opts.abortSignal,
+              )) {
                 // Check if this chunk contains an error
                 if (chunk.type === "error" || "error" in chunk) {
                   const error =
@@ -62,22 +201,97 @@ function wrapStreamWithErrorHandler(
                 yield chunk;
               }
             } catch (error) {
-              // Check if it's a context length error
               const errorMessage =
                 error instanceof Error ? error.message : String(error);
 
-              const isContextLengthError = checkIfContextLengthError(error);
+              // Handle idle timeout — recreate stream from accumulated messages
+              const isIdle = error instanceof StreamIdleTimeoutError;
+              if (isIdle && idleRetryCount < MAX_IDLE_RETRIES) {
+                const nextIdleRetry = idleRetryCount + 1;
+                if (!silent) {
+                  console.warn(
+                    `Stream idle timeout (retry ${nextIdleRetry}/${MAX_IDLE_RETRIES}), recreating stream with ${messagesContainer.current.length} messages`,
+                  );
+                }
 
-              if (isContextLengthError) {
-                // Try to get the actual messages that were sent to the API
-                // from the stream's response property
+                // Brief pause before retry
+                await new Promise((resolve) => setTimeout(resolve, 2000));
+
+                const retriedStream = streamResponse({
+                  ...opts,
+                  messages:
+                    messagesContainer.current.length > 0
+                      ? messagesContainer.current
+                      : undefined,
+                });
+
+                const wrappedRetriedStream = wrapStreamWithErrorHandler(
+                  retriedStream,
+                  messagesContainer,
+                  opts,
+                  model,
+                  silent,
+                  0, // reset rate-limit counter on idle retry
+                  nextIdleRetry,
+                );
+
+                for await (const chunk of wrappedRetriedStream.fullStream) {
+                  yield chunk;
+                }
+                return;
+              }
+
+              // Handle rate limit errors with exponential backoff retry
+              if (
+                checkIfRateLimitError(error) &&
+                rateLimitRetryCount < MAX_RATE_LIMIT_RETRIES
+              ) {
+                const nextRetryCount = rateLimitRetryCount + 1;
+                const delayMs = Math.min(1000 * nextRetryCount, 30000);
+
+                if (!silent) {
+                  console.warn(
+                    `Rate limit error (attempt ${nextRetryCount}/${MAX_RATE_LIMIT_RETRIES}), waiting ${delayMs}ms: ${errorMessage}`,
+                  );
+                }
+
+                await new Promise((resolve) => setTimeout(resolve, delayMs));
+
+                const retriedStream = streamResponse({
+                  ...opts,
+                  messages:
+                    messagesContainer.current.length > 0
+                      ? messagesContainer.current
+                      : undefined,
+                });
+
+                const wrappedRetriedStream = wrapStreamWithErrorHandler(
+                  retriedStream,
+                  messagesContainer,
+                  opts,
+                  model,
+                  silent,
+                  nextRetryCount,
+                  idleRetryCount,
+                );
+
+                for await (const chunk of wrappedRetriedStream.fullStream) {
+                  yield chunk;
+                }
+                return;
+              }
+
+              // Handle context length errors with summarization
+              const isCtxError = checkIfContextLengthError(error);
+
+              if (isCtxError) {
                 let currentMessages: ModelMessage[] = messagesContainer.current;
                 try {
                   const response = await originalStream.response;
                   if (response.messages && response.messages.length > 0) {
                     currentMessages = response.messages as ModelMessage[];
                   }
-                } catch (e) {
+                } catch {
                   // Fall back to container messages if response is not available
                 }
                 if (!silent) {
@@ -98,11 +312,10 @@ function wrapStreamWithErrorHandler(
               } else {
                 if (!silent) {
                   console.error(
-                    "Non-context length error, re-throwing",
+                    "Non-recoverable stream error, re-throwing:",
                     errorMessage,
                   );
                 }
-                // Re-throw if it's not a context length error
                 throw error;
               }
             }
@@ -169,7 +382,6 @@ export function streamResponse(
   const messagesContainer = { current: messages || [] };
   const providerModel = getProviderModel(model, authConfig);
 
-  let rateLimitRetryCount = 0;
   try {
     // Create the appropriate provider instance
     const response = streamText({
@@ -184,23 +396,6 @@ export function streamResponse(
         // Update the container with the latest messages
         messagesContainer.current = opts.messages;
         return undefined;
-      },
-      onError: async ({ error }: { error: unknown }) => {
-        const errorMessage =
-          error instanceof Error ? error.message : String(error);
-        if (
-          errorMessage.toLowerCase().includes("too many tokens") ||
-          errorMessage.toLowerCase().includes("overloaded")
-        ) {
-          rateLimitRetryCount++;
-          await new Promise((resolve) =>
-            setTimeout(resolve, 1000 * rateLimitRetryCount),
-          );
-          if (rateLimitRetryCount < 20) {
-            return;
-          }
-        }
-        throw error;
       },
       onStepFinish,
       abortSignal,

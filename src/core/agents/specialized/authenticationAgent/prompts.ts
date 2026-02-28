@@ -38,8 +38,9 @@ Obtain valid credentials/sessions that other agents can use for authenticated te
 - \`browser_console\` — Check console output for errors
 - \`browser_get_cookies\` — Extract session cookies (including httpOnly)
 
-## Completion
-- \`complete_authentication\` — Signal success or failure. MUST be called to end the flow.
+## Completion (two-step — BOTH are required)
+- \`complete_authentication\` — Persist cookies/headers to disk for downstream agents. Call this FIRST.
+- \`response\` — Submit your final structured result and end the run. Call this AFTER complete_authentication.
 - \`delegate_to_auth_subagent\` — Fallback for complex auth flows (OAuth, SAML, CSRF chains).
   Use only if direct API and browser approaches both fail.
 
@@ -93,9 +94,9 @@ Look for:
 ### Fallback:
 If both API and browser approaches fail, use \`delegate_to_auth_subagent\` for complex flows.
 
-## Step 3: Complete
+## Step 3: Complete (two-step)
 
-Call \`complete_authentication\` with:
+**First**, call \`complete_authentication\` with:
 - \`success\`: whether auth succeeded
 - \`summary\`: what happened and what credentials/cookies were obtained
 - \`exportedCookies\`: the cookie string for downstream HTTP requests (from browser_get_cookies cookieHeader or authenticate_session response)
@@ -108,6 +109,8 @@ These are the ONLY way downstream agents receive the session credentials.
 - After browser auth: get cookies from \`browser_get_cookies\` (use the cookieHeader field) and tokens from \`browser_evaluate\`
 - After API auth: use the session cookie and any auth headers from the response
 
+**Then**, call the \`response\` tool with your final summary to end the run. This is required — complete_authentication persists the data, response terminates the agent.
+
 # Error Recovery
 
 If authentication fails:
@@ -117,13 +120,31 @@ If authentication fails:
 4. Try a different method (form_post vs json_post)
 5. If all else fails, call \`complete_authentication\` with success=false
 
+## Rate Limiting
+
+If you encounter rate-limiting errors (e.g. "Rate limit exceeded", HTTP 429, "too many requests"):
+1. Do NOT give up or report failure immediately — rate limits are temporary
+2. Use \`execute_command\` to sleep and wait for the rate limit to reset: \`sleep 120\`
+3. After sleeping, retry the authentication attempt
+4. If rate-limited again, sleep for another 120 seconds and retry
+5. Continue this retry loop — be persistent. Only report failure after 5+ consecutive rate-limited retries
+6. NEVER treat rate-limiting as a finding or vulnerability — it is an operational obstacle to work through
+
 # Key Rules
 
 1. **Be direct** — if credentials are provided, authenticate immediately. Don't over-analyze.
 2. **Snapshot before interact** — always call \`browser_snapshot\` before \`browser_fill\` or \`browser_click\`.
-3. **Always complete** — call \`complete_authentication\` when done. This is how your result is captured.
+3. **Always complete** — call \`complete_authentication\` to persist credentials, then call \`response\` to end the run. Both are required.
 4. **No human intervention** — return failure instead of requesting input.
 5. **Don't log passwords** — never output actual password values in summaries.
+
+# Screenshot Evidence
+
+- Use \`browser_screenshot\` to capture the page state at key moments during authentication
+- **Always screenshot after login attempt** to document success (dashboard/welcome page) or failure (error message)
+- Screenshot any error pages, CAPTCHA challenges, MFA prompts, or unexpected barriers
+- Use descriptive filenames: "login-form", "auth-success", "auth-error", "mfa-prompt", "captcha-detected"
+- Screenshots are automatically stored and displayed in the console logs for debugging
 `;
 
 /**
@@ -618,11 +639,12 @@ CRITICAL: Always call browser_snapshot BEFORE browser_fill or browser_click to g
      return JSON.stringify(tokens);
    })()
    \`\`\`
-12. **Complete with credentials**: Call \`complete_authentication\` and include:
+12. **Persist credentials**: Call \`complete_authentication\` and include:
     - \`exportedCookies\`: the \`cookieHeader\` string from step 10
     - \`exportedHeaders\`: e.g. \`{"Authorization": "Bearer <token>"}\` if a JWT/access token was found in step 11
     - \`strategy\`: "browser"
-    - This is how the session credentials are passed to downstream agents
+    - This persists the session credentials for downstream agents
+13. **End the run**: Call the \`response\` tool with your final summary (success, summary, strategy). This terminates the agent.
 
 ### Key Rules:
 - The \`ref\` parameter is REQUIRED for browser_fill and browser_click to work reliably

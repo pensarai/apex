@@ -281,11 +281,55 @@ function runScript(
   return new Promise((resolve) => {
     const child = spawn(runner, [scriptPath], {
       stdio: ["ignore", "pipe", "pipe"],
-      timeout,
+      detached: process.platform !== "win32",
     });
 
     let stdout = "";
     let stderr = "";
+    let killed = false;
+    let resolved = false;
+
+    const safeResolve = (result: {
+      stdout: string;
+      stderr: string;
+      exitCode: number;
+    }) => {
+      if (!resolved) {
+        resolved = true;
+        resolve(result);
+      }
+    };
+
+    const killProcess = () => {
+      if (killed) return;
+      killed = true;
+
+      try {
+        if (child.pid && process.platform !== "win32") {
+          process.kill(-child.pid, "SIGTERM");
+        } else {
+          child.kill("SIGTERM");
+        }
+      } catch {
+        // Process may have already exited
+      }
+
+      setTimeout(() => {
+        try {
+          if (child.pid && process.platform !== "win32") {
+            process.kill(-child.pid, "SIGKILL");
+          } else {
+            child.kill("SIGKILL");
+          }
+        } catch {
+          // Process may have already exited
+        }
+
+        safeResolve({ stdout, stderr, exitCode: 1 });
+      }, 5000);
+    };
+
+    const timeoutTimer = setTimeout(killProcess, timeout);
 
     child.stdout.on("data", (data) => {
       stdout += data.toString();
@@ -295,15 +339,17 @@ function runScript(
     });
 
     child.on("close", (code) => {
-      resolve({ stdout, stderr, exitCode: code ?? 1 });
+      clearTimeout(timeoutTimer);
+      safeResolve({ stdout, stderr, exitCode: code ?? 1 });
     });
 
     child.on("error", (err) => {
-      resolve({ stdout, stderr, exitCode: 1 });
+      clearTimeout(timeoutTimer);
+      safeResolve({ stdout, stderr, exitCode: 1 });
     });
 
     if (abortSignal) {
-      const handler = () => child.kill("SIGTERM");
+      const handler = () => killProcess();
       abortSignal.addEventListener("abort", handler, { once: true });
       child.on("close", () =>
         abortSignal.removeEventListener("abort", handler),

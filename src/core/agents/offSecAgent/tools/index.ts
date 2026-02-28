@@ -13,7 +13,7 @@ export type { BrowserToolName } from "./browserTools";
 // Core pentest tools
 export { executeCommand } from "./executeCommand";
 export { httpRequest } from "./httpRequest";
-export { documentFinding } from "./documentFinding";
+export { documentVulnerability } from "./documentFinding";
 export { createPoc } from "./createPoc";
 
 // Filesystem / search tools
@@ -53,7 +53,7 @@ import type { ToolContext } from "./types";
 import { createBrowserToolset } from "./browserTools";
 import { executeCommand } from "./executeCommand";
 import { httpRequest } from "./httpRequest";
-import { documentFinding } from "./documentFinding";
+import { documentVulnerability } from "./documentFinding";
 import { createPoc } from "./createPoc";
 import { readFile } from "./readFile";
 import { listFiles } from "./listFiles";
@@ -90,7 +90,7 @@ export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
     // Core pentest tools
     execute_command: executeCommand(ctx),
     http_request: httpRequest(ctx),
-    document_finding: documentFinding(ctx),
+    document_vulnerability: documentVulnerability(ctx),
     create_poc: createPoc(ctx),
 
     // Filesystem / search tools
@@ -141,7 +141,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   // Core pentest
   "execute_command",
   "http_request",
-  "document_finding",
+  "document_vulnerability",
   "create_poc",
   // Filesystem / search
   "read_file",

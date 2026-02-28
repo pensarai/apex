@@ -1,5 +1,6 @@
 import type { AIModel } from "../../../ai";
 import type { AIAuthConfig } from "../../../ai/utils";
+import type { FindingsRegistry } from "../../../findings/registry";
 import type { SessionInfo } from "../../../session";
 
 import type { ConsumeCallbacks, SubagentConsumeCallbacks } from "../types";
@@ -37,4 +38,10 @@ export type ToolContext = {
    * route execution through this sandbox instead of running locally.
    */
   sandbox?: UnifiedSandbox;
+
+  /**
+   * Shared findings registry for cross-agent dedup.
+   * When present, `document_vulnerability` checks for duplicates before writing.
+   */
+  findingsRegistry?: FindingsRegistry;
 };
