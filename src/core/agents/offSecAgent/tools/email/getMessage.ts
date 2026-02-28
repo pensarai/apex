@@ -18,13 +18,19 @@ first to find the message ID.`,
     inputSchema: z.object({
       inboxId: z.string().describe("The inbox ID from email_list_inboxes"),
       messageId: z.string().describe("The message ID to retrieve"),
+      folder: z
+        .string()
+        .optional()
+        .describe(
+          "Mailbox folder the message lives in (default INBOX). Must match the folder used when listing.",
+        ),
       toolCallDescription: z
         .string()
         .describe(
           "A concise, human-readable description of what this tool call is doing",
         ),
     }),
-    execute: async ({ inboxId, messageId }) => {
+    execute: async ({ inboxId, messageId, folder }) => {
       const inboxes = ctx.session.config?.emailIntegration?.inboxes ?? [];
       const inbox = inboxes.find((i) => i.id === inboxId);
       if (!inbox) {
@@ -33,7 +39,7 @@ first to find the message ID.`,
 
       try {
         const adapter = createEmailAdapter(inbox);
-        const message = await adapter.getMessage(messageId);
+        const message = await adapter.getMessage(messageId, folder);
         return { success: true, message };
       } catch (error: unknown) {
         return {

@@ -27,6 +27,12 @@ Returns message summaries matching the query.`,
       query: z
         .string()
         .describe("Search query (syntax depends on provider)"),
+      folder: z
+        .string()
+        .optional()
+        .describe(
+          "Mailbox folder to search within (default INBOX). For IMAP, restricts the search to this folder.",
+        ),
       maxResults: z
         .number()
         .optional()
@@ -41,7 +47,7 @@ Returns message summaries matching the query.`,
           "A concise, human-readable description of what this tool call is doing",
         ),
     }),
-    execute: async ({ inboxId, query, maxResults, pageToken }) => {
+    execute: async ({ inboxId, query, folder, maxResults, pageToken }) => {
       const inboxes = ctx.session.config?.emailIntegration?.inboxes ?? [];
       const inbox = inboxes.find((i) => i.id === inboxId);
       if (!inbox) {
@@ -52,6 +58,7 @@ Returns message summaries matching the query.`,
         const adapter = createEmailAdapter(inbox);
         const result = await adapter.searchMessages({
           query,
+          folder,
           maxResults: Math.min(maxResults ?? 20, 50),
           pageToken,
         });

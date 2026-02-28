@@ -17,6 +17,8 @@ import type {
   EmailMessageSummary,
   EmailSearchResult,
 } from "./types";
+import { simpleParser } from "mailparser";
+import type { Attachment as ParsedAttachment } from "mailparser";
 
 // ---------------------------------------------------------------------------
 // Unified adapter interface
@@ -29,22 +31,24 @@ export interface EmailAdapter {
     pageToken?: string;
   }): Promise<EmailListResult>;
 
-  getMessage(messageId: string): Promise<EmailMessageFull>;
+  getMessage(messageId: string, folder?: string): Promise<EmailMessageFull>;
 
   searchMessages(opts: {
     query: string;
+    folder?: string;
     maxResults?: number;
     pageToken?: string;
   }): Promise<EmailSearchResult>;
 
-  getAttachments(messageId: string): Promise<EmailAttachment[]>;
+  getAttachments(messageId: string, folder?: string): Promise<EmailAttachment[]>;
 
   getAttachmentContent(
     messageId: string,
     attachmentId: string,
+    folder?: string,
   ): Promise<{ filename: string; mimeType: string; base64Content: string }>;
 
-  markAsRead(messageId: string): Promise<void>;
+  markAsRead(messageId: string, folder?: string): Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -56,7 +60,11 @@ export function createEmailAdapter(inbox: EmailInboxConfig): EmailAdapter {
     case "gmail":
       return new GmailAdapter(inbox.accessToken, inbox.refreshToken);
     case "outlook":
-      return new OutlookAdapter(inbox.accessToken, inbox.refreshToken);
+      return new OutlookAdapter(
+        inbox.accessToken,
+        inbox.refreshToken,
+        inbox.clientId,
+      );
     case "imap":
       return new ImapAdapter(inbox);
     default:
@@ -119,7 +127,7 @@ class GmailAdapter implements EmailAdapter {
     return gmailToSummary(res.data);
   }
 
-  async getMessage(messageId: string): Promise<EmailMessageFull> {
+  async getMessage(messageId: string, _folder?: string): Promise<EmailMessageFull> {
     const res = await this.client.users.messages.get({
       userId: "me",
       id: messageId,
@@ -130,6 +138,7 @@ class GmailAdapter implements EmailAdapter {
 
   async searchMessages(opts: {
     query: string;
+    folder?: string;
     maxResults?: number;
     pageToken?: string;
   }): Promise<EmailSearchResult> {
@@ -155,7 +164,7 @@ class GmailAdapter implements EmailAdapter {
     };
   }
 
-  async getAttachments(messageId: string): Promise<EmailAttachment[]> {
+  async getAttachments(messageId: string, _folder?: string): Promise<EmailAttachment[]> {
     const res = await this.client.users.messages.get({
       userId: "me",
       id: messageId,
@@ -167,6 +176,7 @@ class GmailAdapter implements EmailAdapter {
   async getAttachmentContent(
     messageId: string,
     attachmentId: string,
+    _folder?: string,
   ): Promise<{ filename: string; mimeType: string; base64Content: string }> {
     const attRes = await this.client.users.messages.attachments.get({
       userId: "me",
@@ -184,7 +194,7 @@ class GmailAdapter implements EmailAdapter {
     };
   }
 
-  async markAsRead(messageId: string): Promise<void> {
+  async markAsRead(messageId: string, _folder?: string): Promise<void> {
     await this.client.users.messages.modify({
       userId: "me",
       id: messageId,
@@ -307,12 +317,91 @@ function extractGmailAttachments(
 import { Client as GraphClient } from "@microsoft/microsoft-graph-client";
 
 class OutlookAdapter implements EmailAdapter {
+  private accessToken: string;
+  private refreshToken: string;
+  private clientId: string | undefined;
+  private tokenExpiresAt = 0;
+  private refreshPromise: Promise<void> | null = null;
   private client: GraphClient;
 
-  constructor(accessToken: string, _refreshToken: string) {
+  constructor(
+    accessToken: string,
+    refreshToken: string,
+    clientId?: string,
+  ) {
+    this.accessToken = accessToken;
+    this.refreshToken = refreshToken;
+    this.clientId = clientId;
+    this.tokenExpiresAt = OutlookAdapter.parseJwtExpiry(accessToken);
     this.client = GraphClient.init({
-      authProvider: (done) => done(null, accessToken),
+      authProvider: (done) => {
+        this.ensureFreshToken()
+          .then(() => done(null, this.accessToken))
+          .catch(() => done(null, this.accessToken));
+      },
     });
+  }
+
+  /**
+   * Decode the `exp` claim from a JWT without verifying the signature.
+   * Returns epoch-seconds, or 0 if the token is not a parseable JWT.
+   */
+  private static parseJwtExpiry(token: string): number {
+    try {
+      const payload = JSON.parse(
+        Buffer.from(token.split(".")[1], "base64url").toString(),
+      );
+      return typeof payload.exp === "number" ? payload.exp : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  private async ensureFreshToken(): Promise<void> {
+    const nowSec = Math.floor(Date.now() / 1000);
+    const bufferSec = 300; // refresh 5 min before expiry
+    if (this.tokenExpiresAt > 0 && nowSec < this.tokenExpiresAt - bufferSec) {
+      return;
+    }
+    if (!this.clientId || !this.refreshToken) return;
+    if (this.refreshPromise) return this.refreshPromise;
+
+    this.refreshPromise = (async () => {
+      try {
+        const body = new URLSearchParams({
+          client_id: this.clientId!,
+          grant_type: "refresh_token",
+          refresh_token: this.refreshToken,
+          scope: "https://graph.microsoft.com/.default offline_access",
+        });
+
+        const res = await fetch(
+          "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+          { method: "POST", body },
+        );
+
+        if (!res.ok) return;
+
+        const data = (await res.json()) as {
+          access_token?: string;
+          refresh_token?: string;
+        };
+
+        if (data.access_token) {
+          this.accessToken = data.access_token;
+          this.tokenExpiresAt = OutlookAdapter.parseJwtExpiry(
+            data.access_token,
+          );
+        }
+        if (data.refresh_token) {
+          this.refreshToken = data.refresh_token;
+        }
+      } finally {
+        this.refreshPromise = null;
+      }
+    })();
+
+    return this.refreshPromise;
   }
 
   async listMessages(opts: {
@@ -343,7 +432,7 @@ class OutlookAdapter implements EmailAdapter {
     };
   }
 
-  async getMessage(messageId: string): Promise<EmailMessageFull> {
+  async getMessage(messageId: string, _folder?: string): Promise<EmailMessageFull> {
     const msg: OutlookMsg = await this.client
       .api(`/me/messages/${messageId}`)
       .get();
@@ -352,6 +441,7 @@ class OutlookAdapter implements EmailAdapter {
 
   async searchMessages(opts: {
     query: string;
+    folder?: string;
     maxResults?: number;
     pageToken?: string;
   }): Promise<EmailSearchResult> {
@@ -377,7 +467,7 @@ class OutlookAdapter implements EmailAdapter {
     };
   }
 
-  async getAttachments(messageId: string): Promise<EmailAttachment[]> {
+  async getAttachments(messageId: string, _folder?: string): Promise<EmailAttachment[]> {
     const data = await this.client
       .api(`/me/messages/${messageId}/attachments`)
       .get();
@@ -394,6 +484,7 @@ class OutlookAdapter implements EmailAdapter {
   async getAttachmentContent(
     messageId: string,
     attachmentId: string,
+    _folder?: string,
   ): Promise<{ filename: string; mimeType: string; base64Content: string }> {
     const data = await this.client
       .api(`/me/messages/${messageId}/attachments/${attachmentId}`)
@@ -405,7 +496,7 @@ class OutlookAdapter implements EmailAdapter {
     };
   }
 
-  async markAsRead(messageId: string): Promise<void> {
+  async markAsRead(messageId: string, _folder?: string): Promise<void> {
     await this.client.api(`/me/messages/${messageId}`).patch({ isRead: true });
   }
 }
@@ -454,7 +545,11 @@ function outlookToFull(msg: OutlookMsg): EmailMessageFull {
 // IMAP adapter  (imapflow)
 // ---------------------------------------------------------------------------
 
-import { ImapFlow } from "imapflow";
+import {
+  ImapFlow,
+  type MessageAddressObject,
+  type MessageStructureObject,
+} from "imapflow";
 
 class ImapAdapter implements EmailAdapter {
   private cfg: {
@@ -487,7 +582,7 @@ class ImapAdapter implements EmailAdapter {
       port: this.cfg.port,
       secure: this.cfg.tls,
       auth: { user: this.cfg.user, pass: this.cfg.pass },
-      logger: false as any,
+      logger: false,
     });
     await client.connect();
     return client;
@@ -508,8 +603,8 @@ class ImapAdapter implements EmailAdapter {
       try {
         const status = await client.status(folder, { messages: true });
         const total = status.messages ?? 0;
-        if (total === 0) {
-          return { messages: [], totalEstimate: 0 };
+        if (total === 0 || offset >= total) {
+          return { messages: [], totalEstimate: total };
         }
 
         // IMAP sequence numbers are 1-based, newest last
@@ -526,16 +621,12 @@ class ImapAdapter implements EmailAdapter {
           const env = msg.envelope;
           messages.push({
             id: String(msg.uid),
-            from: env.from?.[0]
-              ? `${env.from[0].name ?? ""} <${env.from[0].address ?? ""}>`.trim()
-              : "",
-            to: (env.to ?? []).map(
-              (a: any) => `${a.name ?? ""} <${a.address ?? ""}>`.trim(),
-            ),
-            subject: env.subject ?? "",
-            date: env.date?.toISOString() ?? "",
+            from: env?.from?.[0] ? fmtImapAddr(env.from[0]) : "",
+            to: (env?.to ?? []).map(fmtImapAddr),
+            subject: env?.subject ?? "",
+            date: env?.date?.toISOString() ?? "",
             snippet: "",
-            isRead: msg.flags.has("\\Seen"),
+            isRead: msg.flags?.has("\\Seen") ?? false,
             hasAttachments: hasImapAttachments(msg.bodyStructure),
           });
         }
@@ -555,10 +646,10 @@ class ImapAdapter implements EmailAdapter {
     }
   }
 
-  async getMessage(messageId: string): Promise<EmailMessageFull> {
+  async getMessage(messageId: string, folder?: string): Promise<EmailMessageFull> {
     const client = await this.connect();
     try {
-      const lock = await client.getMailboxLock("INBOX");
+      const lock = await client.getMailboxLock(folder ?? "INBOX");
       try {
         const uid = parseInt(messageId, 10);
         let result: EmailMessageFull | null = null;
@@ -573,30 +664,21 @@ class ImapAdapter implements EmailAdapter {
           },
         )) {
           const env = msg.envelope;
-          // Parse body from raw source
-          const { simpleParser } = await import("mailparser");
+          if (!msg.source) continue;
           const parsed = await simpleParser(msg.source);
 
           result = {
             id: String(msg.uid),
-            from: env.from?.[0]
-              ? `${env.from[0].name ?? ""} <${env.from[0].address ?? ""}>`.trim()
-              : "",
-            to: (env.to ?? []).map(
-              (a: any) =>
-                `${a.name ?? ""} <${a.address ?? ""}>`.trim(),
-            ),
-            subject: env.subject ?? "",
-            date: env.date?.toISOString() ?? "",
+            from: env?.from?.[0] ? fmtImapAddr(env.from[0]) : "",
+            to: (env?.to ?? []).map(fmtImapAddr),
+            subject: env?.subject ?? "",
+            date: env?.date?.toISOString() ?? "",
             snippet: (parsed.text ?? "").slice(0, 200),
-            isRead: msg.flags.has("\\Seen"),
+            isRead: msg.flags?.has("\\Seen") ?? false,
             hasAttachments: (parsed.attachments?.length ?? 0) > 0,
             body: truncate(parsed.text || parsed.html || "", 50000),
-            cc: (env.cc ?? []).map(
-              (a: any) =>
-                `${a.name ?? ""} <${a.address ?? ""}>`.trim(),
-            ),
-            replyTo: env.replyTo?.[0]?.address ?? undefined,
+            cc: (env?.cc ?? []).map(fmtImapAddr),
+            replyTo: env?.replyTo?.[0]?.address ?? undefined,
           };
         }
 
@@ -612,21 +694,21 @@ class ImapAdapter implements EmailAdapter {
 
   async searchMessages(opts: {
     query: string;
+    folder?: string;
     maxResults?: number;
     pageToken?: string;
   }): Promise<EmailSearchResult> {
     const client = await this.connect();
     try {
-      const lock = await client.getMailboxLock("INBOX");
+      const lock = await client.getMailboxLock(opts.folder ?? "INBOX");
       try {
         const uids = await client.search({ body: opts.query });
-        const total = uids.length;
-        const max = opts.maxResults ?? 20;
-
-        if (total === 0) {
+        if (!uids || uids.length === 0) {
           return { messages: [], totalEstimate: 0 };
         }
 
+        const total = uids.length;
+        const max = opts.maxResults ?? 20;
         const page = uids.slice(-max).reverse();
         const messages: EmailMessageSummary[] = [];
 
@@ -637,17 +719,12 @@ class ImapAdapter implements EmailAdapter {
           const env = msg.envelope;
           messages.push({
             id: String(msg.uid),
-            from: env.from?.[0]
-              ? `${env.from[0].name ?? ""} <${env.from[0].address ?? ""}>`.trim()
-              : "",
-            to: (env.to ?? []).map(
-              (a: any) =>
-                `${a.name ?? ""} <${a.address ?? ""}>`.trim(),
-            ),
-            subject: env.subject ?? "",
-            date: env.date?.toISOString() ?? "",
+            from: env?.from?.[0] ? fmtImapAddr(env.from[0]) : "",
+            to: (env?.to ?? []).map(fmtImapAddr),
+            subject: env?.subject ?? "",
+            date: env?.date?.toISOString() ?? "",
             snippet: "",
-            isRead: msg.flags.has("\\Seen"),
+            isRead: msg.flags?.has("\\Seen") ?? false,
             hasAttachments: hasImapAttachments(msg.bodyStructure),
           });
         }
@@ -661,10 +738,10 @@ class ImapAdapter implements EmailAdapter {
     }
   }
 
-  async getAttachments(messageId: string): Promise<EmailAttachment[]> {
+  async getAttachments(messageId: string, folder?: string): Promise<EmailAttachment[]> {
     const client = await this.connect();
     try {
-      const lock = await client.getMailboxLock("INBOX");
+      const lock = await client.getMailboxLock(folder ?? "INBOX");
       try {
         const uid = parseInt(messageId, 10);
 
@@ -672,14 +749,16 @@ class ImapAdapter implements EmailAdapter {
           { uid },
           { source: true },
         )) {
-          const { simpleParser } = await import("mailparser");
+          if (!msg.source) continue;
           const parsed = await simpleParser(msg.source);
-          return (parsed.attachments ?? []).map((att, i) => ({
-            id: att.checksum ?? String(i),
-            filename: att.filename ?? `attachment_${i}`,
-            mimeType: att.contentType ?? "application/octet-stream",
-            size: att.size ?? 0,
-          }));
+          return (parsed.attachments ?? []).map(
+            (att: ParsedAttachment, i: number) => ({
+              id: att.checksum ?? String(i),
+              filename: att.filename ?? `attachment_${i}`,
+              mimeType: att.contentType ?? "application/octet-stream",
+              size: att.size ?? 0,
+            }),
+          );
         }
 
         return [];
@@ -694,10 +773,11 @@ class ImapAdapter implements EmailAdapter {
   async getAttachmentContent(
     messageId: string,
     attachmentId: string,
+    folder?: string,
   ): Promise<{ filename: string; mimeType: string; base64Content: string }> {
     const client = await this.connect();
     try {
-      const lock = await client.getMailboxLock("INBOX");
+      const lock = await client.getMailboxLock(folder ?? "INBOX");
       try {
         const uid = parseInt(messageId, 10);
 
@@ -705,11 +785,12 @@ class ImapAdapter implements EmailAdapter {
           { uid },
           { source: true },
         )) {
-          const { simpleParser } = await import("mailparser");
+          if (!msg.source) continue;
           const parsed = await simpleParser(msg.source);
 
           const att = (parsed.attachments ?? []).find(
-            (a, i) => (a.checksum ?? String(i)) === attachmentId,
+            (a: ParsedAttachment, i: number) =>
+              (a.checksum ?? String(i)) === attachmentId,
           );
 
           if (!att) throw new Error(`Attachment ${attachmentId} not found`);
@@ -730,10 +811,10 @@ class ImapAdapter implements EmailAdapter {
     }
   }
 
-  async markAsRead(messageId: string): Promise<void> {
+  async markAsRead(messageId: string, folder?: string): Promise<void> {
     const client = await this.connect();
     try {
-      const lock = await client.getMailboxLock("INBOX");
+      const lock = await client.getMailboxLock(folder ?? "INBOX");
       try {
         await client.messageFlagsAdd({ uid: parseInt(messageId, 10) }, ["\\Seen"]);
       } finally {
@@ -745,7 +826,13 @@ class ImapAdapter implements EmailAdapter {
   }
 }
 
-function hasImapAttachments(bodyStructure: any): boolean {
+function fmtImapAddr(a: MessageAddressObject): string {
+  return `${a.name ?? ""} <${a.address ?? ""}>`.trim();
+}
+
+function hasImapAttachments(
+  bodyStructure: MessageStructureObject | undefined,
+): boolean {
   if (!bodyStructure) return false;
   if (bodyStructure.disposition === "attachment") return true;
   if (bodyStructure.childNodes) {

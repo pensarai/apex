@@ -25,13 +25,19 @@ the attachment content as base64.`,
         .describe(
           "If provided, download this specific attachment. Otherwise list all.",
         ),
+      folder: z
+        .string()
+        .optional()
+        .describe(
+          "Mailbox folder the message lives in (default INBOX). Must match the folder used when listing.",
+        ),
       toolCallDescription: z
         .string()
         .describe(
           "A concise, human-readable description of what this tool call is doing",
         ),
     }),
-    execute: async ({ inboxId, messageId, attachmentId }) => {
+    execute: async ({ inboxId, messageId, attachmentId, folder }) => {
       const inboxes = ctx.session.config?.emailIntegration?.inboxes ?? [];
       const inbox = inboxes.find((i) => i.id === inboxId);
       if (!inbox) {
@@ -45,11 +51,12 @@ the attachment content as base64.`,
           const content = await adapter.getAttachmentContent(
             messageId,
             attachmentId,
+            folder,
           );
           return { success: true, attachment: content };
         }
 
-        const attachments = await adapter.getAttachments(messageId);
+        const attachments = await adapter.getAttachments(messageId, folder);
         return { success: true, attachments };
       } catch (error: unknown) {
         return {
