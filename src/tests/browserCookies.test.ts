@@ -21,7 +21,9 @@ describe("Browser Cookie Extraction", () => {
       const username = process.env.TEST_AUTH_USERNAME;
       const password = process.env.TEST_AUTH_PASSWORD;
       if (!username || !password) {
-        console.warn("Skipping: TEST_AUTH_USERNAME and TEST_AUTH_PASSWORD must be set");
+        console.warn(
+          "Skipping: TEST_AUTH_USERNAME and TEST_AUTH_PASSWORD must be set",
+        );
         return;
       }
 
@@ -38,7 +40,8 @@ describe("Browser Cookie Extraction", () => {
       let snapStr = typeof snap === "string" ? snap : JSON.stringify(snap);
 
       // Fill email
-      const emailRef = snapStr.match(/textbox "Email".*?\[ref=(e\d+)\]/)?.[1] || "e16";
+      const emailRef =
+        snapStr.match(/textbox "Email".*?\[ref=(e\d+)\]/)?.[1] || "e16";
       await session.callTool("browser_type", {
         element: "Email",
         ref: emailRef,
@@ -47,8 +50,12 @@ describe("Browser Cookie Extraction", () => {
       });
 
       // Click Continue
-      const contRef = snapStr.match(/button "Continue".*?\[ref=(e\d+)\]/)?.[1] || "e17";
-      await session.callTool("browser_click", { element: "Continue", ref: contRef });
+      const contRef =
+        snapStr.match(/button "Continue".*?\[ref=(e\d+)\]/)?.[1] || "e17";
+      await session.callTool("browser_click", {
+        element: "Continue",
+        ref: contRef,
+      });
 
       // Wait for password page
       await new Promise((r) => setTimeout(r, 3000));
@@ -68,7 +75,10 @@ describe("Browser Cookie Extraction", () => {
       // Click Sign in
       const signInRef = snapStr.match(/button "Sign in".*?\[ref=(e\d+)\]/)?.[1];
       expect(signInRef).toBeDefined();
-      await session.callTool("browser_click", { element: "Sign in", ref: signInRef! });
+      await session.callTool("browser_click", {
+        element: "Sign in",
+        ref: signInRef!,
+      });
 
       // Wait for redirect to dashboard
       await new Promise((r) => setTimeout(r, 5000));
@@ -87,11 +97,17 @@ describe("Browser Cookie Extraction", () => {
         .trim();
 
       const parsed = JSON.parse(stripped);
-      const cookies: Array<{ name: string; value: string; domain: string; httpOnly: boolean }> =
-        typeof parsed === "string" ? JSON.parse(parsed) : parsed;
+      const cookies: Array<{
+        name: string;
+        value: string;
+        domain: string;
+        httpOnly: boolean;
+      }> = typeof parsed === "string" ? JSON.parse(parsed) : parsed;
 
       console.log(`Extracted ${cookies.length} cookies:`);
-      cookies.forEach((c) => console.log(`  ${c.name} (${c.domain}, httpOnly=${c.httpOnly})`));
+      cookies.forEach((c) =>
+        console.log(`  ${c.name} (${c.domain}, httpOnly=${c.httpOnly})`),
+      );
 
       expect(cookies.length).toBeGreaterThan(0);
 
@@ -99,7 +115,10 @@ describe("Browser Cookie Extraction", () => {
       expect(httpOnlyCookies.length).toBeGreaterThan(0);
 
       const sessionCookies = cookies.filter(
-        (c) => c.name === "wos-session" || c.name === "session" || c.name === "access-token",
+        (c) =>
+          c.name === "wos-session" ||
+          c.name === "session" ||
+          c.name === "access-token",
       );
       expect(sessionCookies.length).toBeGreaterThan(0);
     },

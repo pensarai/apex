@@ -57,7 +57,8 @@ describe("Authentication Agent — Cookie Export", () => {
               `\n→ calling ${d.toolName}\n  ${JSON.stringify(d.input, null, 2)}`,
             ),
           onToolResult: (d) => {
-            const output = (d as Record<string, unknown>).output ??
+            const output =
+              (d as Record<string, unknown>).output ??
               (d as Record<string, unknown>).result;
             console.log(
               `✓ ${d.toolName} completed\n  result: ${JSON.stringify(output, null, 2)}`,

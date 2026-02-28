@@ -56,9 +56,7 @@ function checkIfRateLimitError(error: unknown): boolean {
       : undefined;
   // Stringified fallback for opaque error objects (e.g. Bedrock stream records)
   const errorString =
-    errorMessage || errorName
-      ? ""
-      : String(error).toLowerCase();
+    errorMessage || errorName ? "" : String(error).toLowerCase();
 
   return (
     // Message-based detection
@@ -123,7 +121,10 @@ async function* iterateWithIdleTimeout<T>(
       let timer: ReturnType<typeof setTimeout> | undefined;
 
       const idlePromise = new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new StreamIdleTimeoutError(idleMs)), idleMs);
+        timer = setTimeout(
+          () => reject(new StreamIdleTimeoutError(idleMs)),
+          idleMs,
+        );
       });
 
       // Also abort immediately if the agent's signal fires

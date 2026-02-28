@@ -23,7 +23,9 @@ export const documentVulnerabilityInputSchema = z.object({
     ),
 });
 
-export type DocumentVulnerabilityInput = z.infer<typeof documentVulnerabilityInputSchema>;
+export type DocumentVulnerabilityInput = z.infer<
+  typeof documentVulnerabilityInputSchema
+>;
 
 export function documentVulnerability(ctx: ToolContext) {
   const { session } = ctx;

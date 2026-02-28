@@ -240,9 +240,7 @@ export class PlaywrightMcpSession {
    */
   async initialize(): Promise<Client> {
     if (this.mcpClient) {
-      if (
-        (this.mcpClient as unknown as { transport?: unknown }).transport
-      ) {
+      if ((this.mcpClient as unknown as { transport?: unknown }).transport) {
         return this.mcpClient;
       }
       this.forceKillProcess();
@@ -256,9 +254,7 @@ export class PlaywrightMcpSession {
     this.connectionPromise = (async () => {
       try {
         const require_ = createRequire(import.meta.url);
-        const mcpPkgJsonPath = require_.resolve(
-          "@playwright/mcp/package.json",
-        );
+        const mcpPkgJsonPath = require_.resolve("@playwright/mcp/package.json");
         const cliPath = join(dirname(mcpPkgJsonPath), "cli.js");
 
         const args = [cliPath, "--isolated"];
@@ -401,8 +397,7 @@ export class PlaywrightMcpSession {
         callController.abort(abortSignal.reason);
       } else {
         abortSignal.addEventListener("abort", handler, { once: true });
-        abortCleanup = () =>
-          abortSignal.removeEventListener("abort", handler);
+        abortCleanup = () => abortSignal.removeEventListener("abort", handler);
       }
     }
 
@@ -752,10 +747,7 @@ export function createBrowserTools(
           if (!existsSync(dir)) {
             mkdirSync(dir, { recursive: true });
           }
-          writeFileSync(
-            screenshotPath,
-            Buffer.from(base64Data, "base64"),
-          );
+          writeFileSync(screenshotPath, Buffer.from(base64Data, "base64"));
           return {
             success: true,
             path: screenshotPath,
@@ -835,7 +827,11 @@ Example workflow:
         if (ref) {
           args.ref = ref;
         }
-        const result = await session.callTool("browser_click", args, abortSignal);
+        const result = await session.callTool(
+          "browser_click",
+          args,
+          abortSignal,
+        );
         return { success: true, element, result };
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
@@ -862,7 +858,11 @@ Example workflow:
         if (ref) {
           args.ref = ref;
         }
-        const result = await session.callTool("browser_type", args, abortSignal);
+        const result = await session.callTool(
+          "browser_type",
+          args,
+          abortSignal,
+        );
         return { success: true, element, result };
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
@@ -883,7 +883,8 @@ Example workflow:
         // Playwright MCP's browser_evaluate expects a `function` param with a
         // function expression like `() => document.cookie`. Wrap raw expressions
         // that aren't already function-shaped.
-        const isFunction = /^\s*(async\s+)?\(/.test(script) ||
+        const isFunction =
+          /^\s*(async\s+)?\(/.test(script) ||
           /^\s*(async\s+)?function\s*\(/.test(script);
         const fnScript = isFunction ? script : `() => (${script})`;
 
@@ -965,9 +966,8 @@ The returned cookies can be formatted as a Cookie header for use with http_reque
         // Playwright MCP doesn't expose a dedicated cookie tool, so we use
         // browser_run_code to call the Playwright context API directly.
         // This gets ALL cookies including httpOnly ones.
-        const urlFilter = urls && urls.length > 0
-          ? JSON.stringify(urls)
-          : "undefined";
+        const urlFilter =
+          urls && urls.length > 0 ? JSON.stringify(urls) : "undefined";
         const code = `async (page) => { const cookies = await page.context().cookies(${urlFilter === "undefined" ? "" : urlFilter}); return cookies; }`;
 
         const result = await session.callTool(
