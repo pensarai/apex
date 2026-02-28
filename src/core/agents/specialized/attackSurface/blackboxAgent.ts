@@ -119,6 +119,11 @@ export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSur
         "browser_evaluate",
         "browser_console",
         "browser_get_cookies",
+        // Email tools (filtered out by base class when no inboxes configured)
+        "email_list_inboxes",
+        "email_list_messages",
+        "email_search_messages",
+        "email_get_message",
       ],
 
       stopWhen: [

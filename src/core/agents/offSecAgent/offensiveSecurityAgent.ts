@@ -7,7 +7,7 @@ import type {
 } from "ai";
 import { hasToolCall } from "ai";
 import type { OffensiveSecurityAgentInput, ConsumeCallbacks } from "./types";
-import { createAllTools } from "./tools";
+import { createAllTools, EMAIL_TOOL_NAMES_ACTIVE } from "./tools";
 import { createResponseTool, RESPONSE_TOOL_NAME } from "./tools/response";
 import { DEFAULT_SYSTEM_PROMPT } from "./prompt";
 
@@ -114,6 +114,15 @@ export class OffensiveSecurityAgent<TResult = void> {
       }
     }
 
+    // -- Filter email tools when no inboxes are configured -------------------
+    const hasEmail =
+      (input.session.config?.emailIntegration?.inboxes?.length ?? 0) > 0;
+
+    const emailToolSet = new Set<string>(EMAIL_TOOL_NAMES_ACTIVE);
+    const activeTools = hasEmail
+      ? (input.activeTools as string[])
+      : (input.activeTools as string[]).filter((t) => !emailToolSet.has(t));
+
     // -- Stream ---------------------------------------------------------------
     this.streamResult = streamResponse({
       prompt: input.prompt,
@@ -121,7 +130,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       model: input.model,
       messages: input.messages,
       tools,
-      activeTools: input.activeTools as string[],
+      activeTools,
       stopWhen,
       toolChoice: "auto",
       onStepFinish: input.onStepFinish,
