@@ -61,7 +61,12 @@ export interface EmailAdapter {
 export function createEmailAdapter(inbox: EmailInboxConfig): EmailAdapter {
   switch (inbox.provider) {
     case "gmail":
-      return new GmailAdapter(inbox.accessToken, inbox.refreshToken);
+      return new GmailAdapter(
+        inbox.accessToken,
+        inbox.refreshToken,
+        inbox.clientId,
+        inbox.clientSecret,
+      );
     case "outlook":
       return new OutlookAdapter(
         inbox.accessToken,
@@ -83,11 +88,46 @@ export function createEmailAdapter(inbox: EmailInboxConfig): EmailAdapter {
 
 import { gmail_v1, auth as gauth } from "@googleapis/gmail";
 
+/**
+ * Extract a useful message from a Google API / GaxiosError.  The raw
+ * `error.message` is often just "invalid_request" — the real detail
+ * lives in the response body.
+ */
+function gmailErrorMessage(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+  const msg = error.message;
+
+  const res = (error as { response?: { data?: unknown } }).response;
+  if (res?.data) {
+    const data = res.data as {
+      error?: string;
+      error_description?: string;
+    };
+    if (data.error_description) {
+      return `Gmail API error: ${data.error} – ${data.error_description}`;
+    }
+    if (typeof res.data === "string") {
+      return `Gmail API error: ${msg} – ${res.data}`;
+    }
+  }
+
+  if (msg === "invalid_request" || msg === "invalid_grant") {
+    return `Gmail OAuth error: ${msg}. This usually means the access token has expired and the refresh token could not be used. Ensure clientId and clientSecret are provided in the inbox config.`;
+  }
+
+  return msg;
+}
+
 class GmailAdapter implements EmailAdapter {
   private client: gmail_v1.Gmail;
 
-  constructor(accessToken: string, refreshToken: string) {
-    const oauth2 = new gauth.OAuth2();
+  constructor(
+    accessToken: string,
+    refreshToken: string,
+    clientId?: string,
+    clientSecret?: string,
+  ) {
+    const oauth2 = new gauth.OAuth2(clientId, clientSecret);
     oauth2.setCredentials({
       access_token: accessToken,
       refresh_token: refreshToken,
@@ -100,27 +140,34 @@ class GmailAdapter implements EmailAdapter {
     maxResults?: number;
     pageToken?: string;
   }): Promise<EmailListResult> {
-    const q = opts.folder ? `in:${opts.folder}` : "in:inbox";
-    const res = await this.client.users.messages.list({
-      userId: "me",
-      q,
-      maxResults: opts.maxResults ?? 20,
-      pageToken: opts.pageToken,
-    });
+    try {
+      const q = opts.folder ? `in:${opts.folder}` : "in:inbox";
+      const res = await this.client.users.messages.list({
+        userId: "me",
+        q,
+        maxResults: opts.maxResults ?? 20,
+        pageToken: opts.pageToken,
+      });
 
-    if (!res.data.messages?.length) {
-      return { messages: [], totalEstimate: res.data.resultSizeEstimate ?? 0 };
+      if (!res.data.messages?.length) {
+        return {
+          messages: [],
+          totalEstimate: res.data.resultSizeEstimate ?? 0,
+        };
+      }
+
+      const summaries = await Promise.all(
+        res.data.messages.map((m) => this.fetchSummary(m.id!)),
+      );
+
+      return {
+        messages: summaries,
+        nextPageToken: res.data.nextPageToken ?? undefined,
+        totalEstimate: res.data.resultSizeEstimate ?? undefined,
+      };
+    } catch (error) {
+      throw new Error(gmailErrorMessage(error), { cause: error });
     }
-
-    const summaries = await Promise.all(
-      res.data.messages.map((m) => this.fetchSummary(m.id!)),
-    );
-
-    return {
-      messages: summaries,
-      nextPageToken: res.data.nextPageToken ?? undefined,
-      totalEstimate: res.data.resultSizeEstimate ?? undefined,
-    };
   }
 
   private async fetchSummary(id: string): Promise<EmailMessageSummary> {
@@ -137,12 +184,16 @@ class GmailAdapter implements EmailAdapter {
     messageId: string,
     _folder?: string,
   ): Promise<EmailMessageFull> {
-    const res = await this.client.users.messages.get({
-      userId: "me",
-      id: messageId,
-      format: "full",
-    });
-    return gmailToFull(res.data);
+    try {
+      const res = await this.client.users.messages.get({
+        userId: "me",
+        id: messageId,
+        format: "full",
+      });
+      return gmailToFull(res.data);
+    } catch (error) {
+      throw new Error(gmailErrorMessage(error), { cause: error });
+    }
   }
 
   async searchMessages(opts: {
@@ -151,26 +202,33 @@ class GmailAdapter implements EmailAdapter {
     maxResults?: number;
     pageToken?: string;
   }): Promise<EmailSearchResult> {
-    const res = await this.client.users.messages.list({
-      userId: "me",
-      q: opts.query,
-      maxResults: opts.maxResults ?? 20,
-      pageToken: opts.pageToken,
-    });
+    try {
+      const res = await this.client.users.messages.list({
+        userId: "me",
+        q: opts.query,
+        maxResults: opts.maxResults ?? 20,
+        pageToken: opts.pageToken,
+      });
 
-    if (!res.data.messages?.length) {
-      return { messages: [], totalEstimate: res.data.resultSizeEstimate ?? 0 };
+      if (!res.data.messages?.length) {
+        return {
+          messages: [],
+          totalEstimate: res.data.resultSizeEstimate ?? 0,
+        };
+      }
+
+      const summaries = await Promise.all(
+        res.data.messages.map((m) => this.fetchSummary(m.id!)),
+      );
+
+      return {
+        messages: summaries,
+        nextPageToken: res.data.nextPageToken ?? undefined,
+        totalEstimate: res.data.resultSizeEstimate ?? undefined,
+      };
+    } catch (error) {
+      throw new Error(gmailErrorMessage(error), { cause: error });
     }
-
-    const summaries = await Promise.all(
-      res.data.messages.map((m) => this.fetchSummary(m.id!)),
-    );
-
-    return {
-      messages: summaries,
-      nextPageToken: res.data.nextPageToken ?? undefined,
-      totalEstimate: res.data.resultSizeEstimate ?? undefined,
-    };
   }
 
   async getAttachments(

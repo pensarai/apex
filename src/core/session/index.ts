@@ -89,6 +89,8 @@ const EmailInboxConfigObject = z.discriminatedUnion("provider", [
     emailAddress: z.string(),
     accessToken: z.string(),
     refreshToken: z.string(),
+    clientId: z.string().optional(),
+    clientSecret: z.string().optional(),
   }),
   z.object({
     provider: z.literal("outlook"),
