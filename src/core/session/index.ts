@@ -100,6 +100,7 @@ const EmailInboxConfigObject = z.discriminatedUnion("provider", [
     accessToken: z.string(),
     refreshToken: z.string(),
     clientId: z.string().optional(),
+    clientSecret: z.string().optional(),
   }),
   z.object({
     provider: z.literal("imap"),

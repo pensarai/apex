@@ -72,6 +72,7 @@ export function createEmailAdapter(inbox: EmailInboxConfig): EmailAdapter {
         inbox.accessToken,
         inbox.refreshToken,
         inbox.clientId,
+        inbox.clientSecret,
       );
     case "imap":
       return new ImapAdapter(inbox);
@@ -415,14 +416,21 @@ class OutlookAdapter implements EmailAdapter {
   private accessToken: string;
   private refreshToken: string;
   private clientId: string | undefined;
+  private clientSecret: string | undefined;
   private tokenExpiresAt = 0;
   private refreshPromise: Promise<void> | null = null;
   private client: GraphClient;
 
-  constructor(accessToken: string, refreshToken: string, clientId?: string) {
+  constructor(
+    accessToken: string,
+    refreshToken: string,
+    clientId?: string,
+    clientSecret?: string,
+  ) {
     this.accessToken = accessToken;
     this.refreshToken = refreshToken;
     this.clientId = clientId;
+    this.clientSecret = clientSecret;
     this.tokenExpiresAt = OutlookAdapter.parseJwtExpiry(accessToken);
     this.client = GraphClient.init({
       authProvider: (done) => {
@@ -459,12 +467,16 @@ class OutlookAdapter implements EmailAdapter {
 
     this.refreshPromise = (async () => {
       try {
-        const body = new URLSearchParams({
+        const params: Record<string, string> = {
           client_id: this.clientId!,
           grant_type: "refresh_token",
           refresh_token: this.refreshToken,
           scope: "https://graph.microsoft.com/.default offline_access",
-        });
+        };
+        if (this.clientSecret) {
+          params.client_secret = this.clientSecret;
+        }
+        const body = new URLSearchParams(params);
 
         const res = await fetch(
           "https://login.microsoftonline.com/common/oauth2/v2.0/token",
