@@ -121,6 +121,30 @@ function wrapStreamWithErrorHandler(
   return new Proxy(originalStream, handler);
 }
 
+// Exponential backoff with jitter for rate limit and overloaded errors
+const MAX_RETRIES = 10;
+const BASE_DELAY_MS = 1000;
+const MAX_DELAY_MS = 60_000;
+
+function isRetryableError(error: unknown): boolean {
+  const msg =
+    error instanceof Error ? error.message : String(error);
+  const lower = msg.toLowerCase();
+  return (
+    lower.includes("overloaded") ||
+    lower.includes("rate limit") ||
+    lower.includes("rate_limit") ||
+    lower.includes("too many requests") ||
+    lower.includes("429")
+  );
+}
+
+function getBackoffDelay(attempt: number): number {
+  const exponential = Math.min(BASE_DELAY_MS * 2 ** attempt, MAX_DELAY_MS);
+  const jitter = exponential * (0.5 + Math.random() * 0.5);
+  return jitter;
+}
+
 // Available models with names
 export interface ModelInfo {
   id: AIModel;
@@ -169,7 +193,7 @@ export function streamResponse(
   const messagesContainer = { current: messages || [] };
   const providerModel = getProviderModel(model, authConfig);
 
-  let rateLimitRetryCount = 0;
+  let retryCount = 0;
   try {
     // Create the appropriate provider instance
     const response = streamText({
@@ -186,19 +210,16 @@ export function streamResponse(
         return undefined;
       },
       onError: async ({ error }: { error: unknown }) => {
-        const errorMessage =
-          error instanceof Error ? error.message : String(error);
-        if (
-          errorMessage.toLowerCase().includes("too many tokens") ||
-          errorMessage.toLowerCase().includes("overloaded")
-        ) {
-          rateLimitRetryCount++;
-          await new Promise((resolve) =>
-            setTimeout(resolve, 1000 * rateLimitRetryCount),
-          );
-          if (rateLimitRetryCount < 20) {
-            return;
+        if (isRetryableError(error) && retryCount < MAX_RETRIES) {
+          const delay = getBackoffDelay(retryCount);
+          retryCount++;
+          if (!silent) {
+            console.warn(
+              `Rate limited/overloaded (attempt ${retryCount}/${MAX_RETRIES}), retrying in ${Math.round(delay)}ms`,
+            );
           }
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          return;
         }
         throw error;
       },
@@ -377,21 +398,38 @@ export async function generateObjectResponse<T extends z.ZodType>(
 
   const providerModel = getProviderModel(model, authConfig);
 
-  const { output, usage } = await generateText({
-    model: providerModel,
-    output: Output.object({
-      schema,
-    }),
-    prompt,
-    system,
-    maxOutputTokens: maxTokens,
-    temperature,
-  });
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const { output, usage } = await generateText({
+        model: providerModel,
+        output: Output.object({
+          schema,
+        }),
+        prompt,
+        system,
+        maxOutputTokens: maxTokens,
+        temperature,
+      });
 
-  // Report token usage if callback provided
-  if (onTokenUsage && usage) {
-    onTokenUsage(usage.inputTokens ?? 0, usage.outputTokens ?? 0);
+      // Report token usage if callback provided
+      if (onTokenUsage && usage) {
+        onTokenUsage(usage.inputTokens ?? 0, usage.outputTokens ?? 0);
+      }
+
+      return output;
+    } catch (error) {
+      lastError = error;
+      if (isRetryableError(error) && attempt < MAX_RETRIES) {
+        const delay = getBackoffDelay(attempt);
+        console.warn(
+          `Rate limited/overloaded (attempt ${attempt + 1}/${MAX_RETRIES}), retrying in ${Math.round(delay)}ms`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        continue;
+      }
+      throw error;
+    }
   }
-
-  return output;
+  throw lastError;
 }
