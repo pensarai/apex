@@ -29,14 +29,29 @@ export function serializeThreatModelToMarkdown(model: ThreatModel): string {
   // Header
   // =========================================================================
 
-  sections.push(`# Threat Model
+  const headerLines = [
+    `# Threat Model`,
+    ``,
+    `**Generated:** ${model.metadata.generatedAt}`,
+    `**Mode:** ${capitalize(model.metadata.mode)}`,
+  ];
 
-**Generated:** ${model.metadata.generatedAt}
-**Codebase:** ${model.metadata.codebasePath}
-**Repo Type:** ${model.metadata.repoType}
-**Package Manager:** ${model.metadata.packageManager}
+  if (model.metadata.codebasePath) {
+    headerLines.push(`**Codebase:** ${model.metadata.codebasePath}`);
+  }
+  if (model.metadata.target) {
+    headerLines.push(`**Target:** ${model.metadata.target}`);
+  }
+  if (model.metadata.repoType) {
+    headerLines.push(`**Repo Type:** ${model.metadata.repoType}`);
+  }
+  if (model.metadata.packageManager) {
+    headerLines.push(`**Package Manager:** ${model.metadata.packageManager}`);
+  }
 
----`);
+  headerLines.push(``, `---`);
+
+  sections.push(headerLines.join("\n"));
 
   // =========================================================================
   // Application Context

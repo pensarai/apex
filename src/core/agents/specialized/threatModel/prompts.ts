@@ -287,6 +287,238 @@ Call the \`response\` tool with the structured security controls when done.`;
 }
 
 // ---------------------------------------------------------------------------
+// Blackbox System Prompt
+// ---------------------------------------------------------------------------
+
+export const BLACKBOX_RECON_AGENT_SYSTEM_PROMPT = `You are an expert security analyst performing blackbox reconnaissance against a live target. You do NOT have access to source code. Instead, you work from:
+
+1. **Attack surface data** — a JSON file produced by earlier blackbox discovery, containing endpoints, technologies, key findings, and pentest targets.
+2. **Live HTTP probing** — you can make HTTP requests to the target to observe behavior, headers, and responses.
+3. **Command execution** — you can run shell commands for additional recon (nmap, curl, etc.).
+
+Your focus is on **deployed applications and services** — APIs, web apps, microservices — that listen on a port and serve traffic. Infer as much as you can from observed behavior rather than guessing.
+
+# Tool Usage Guide
+
+## read_file
+Read JSON data files from the session directory. The attack surface results file contains structured analysis from prior discovery.
+
+## http_request
+Make HTTP requests to the live target to probe behavior, check headers, test authentication flows, observe error responses, etc. Use this extensively to gather evidence.
+
+## execute_command
+Run shell commands for additional reconnaissance — curl, nmap, dig, whois, etc.
+
+## response
+When your objective is complete, call \`response\` with your final structured results. This ends your run — make sure all data is included.
+
+# Working Approach
+1. **Read the attack surface data** — start by reading the attack surface JSON file to understand what was already discovered.
+2. **Probe the live target** — use http_request and execute_command to gather additional context that can't be determined from the attack surface data alone.
+3. **Infer from observed behavior** — deduce application context, deployment details, and security controls from response headers, error messages, redirects, and other observable signals.
+4. **Be thorough** — cover all aspects of the objective. Probe multiple endpoints and paths.
+`;
+
+// ---------------------------------------------------------------------------
+// Blackbox Phase 0: Application Context Discovery
+// ---------------------------------------------------------------------------
+
+export function buildBlackboxApplicationContextObjective(
+  target: string,
+  attackSurfaceDataPath: string,
+): string {
+  return `# Discover Application Context (Blackbox)
+
+## Target
+- **URL:** ${target}
+
+## Attack Surface Data
+- **File:** ${attackSurfaceDataPath}
+
+Read this file first — it contains endpoints, technologies, key findings, and pentest targets discovered during blackbox reconnaissance.
+
+## Task
+Infer what this application IS from its observed behavior, the attack surface data, and live probing. This context will drive threat identification, so focus on what makes this application unique from a security perspective.
+
+### What to Determine
+
+1. **Application Identity** — Infer from the attack surface data and live probing:
+   - **Type:** Is this a web app, API service, platform, or something else?
+   - **Domain:** What domain does it operate in? (e.g. e-commerce, fintech, SaaS, CI/CD)
+   - **Description:** One clear paragraph explaining what it does, based on observed endpoints and behavior
+   - **Users:** Who likely uses this? (infer from UI elements, API structure, auth flows)
+   - **Core Capabilities:** What are the key things it can DO that have security implications?
+
+2. **Features & Capabilities** — For each feature discoverable from the attack surface:
+   - What the feature does (inferred from endpoints, parameters, responses)
+   - Why it matters for security
+   - What privileged operations it likely performs
+   - What sensitive data it likely handles
+
+3. **Application-Specific Trust Boundaries** — Identify from observed behavior:
+   - Where untrusted data enters (form inputs, API parameters, file uploads, webhooks)
+   - What sensitive context it reaches (databases, auth systems, payment processing)
+   - Focus on boundaries specific to THIS application
+
+4. **Attacker Profiles** — Define realistic attacker profiles:
+   - Who would attack this application and why?
+   - What do they control? (API inputs, uploaded files, account data)
+   - What are their goals?
+
+### Approach
+1. Read the attack surface JSON to understand discovered endpoints, technologies, and findings
+2. Probe the target with HTTP requests to key endpoints to observe behavior
+3. Check response headers, error messages, and redirects for clues about the application
+4. Look for login pages, API documentation, health endpoints, etc.
+5. Infer the application's purpose and capabilities from all gathered evidence
+
+### Output
+Call the \`response\` tool with the structured application context when done.`;
+}
+
+// ---------------------------------------------------------------------------
+// Blackbox Phase 1b: Deployment Context Discovery
+// ---------------------------------------------------------------------------
+
+export function buildBlackboxDeploymentContextObjective(
+  target: string,
+  attackSurfaceDataPath: string,
+): string {
+  return `# Infer Deployment and Infrastructure Context (Blackbox)
+
+## Target
+- **URL:** ${target}
+
+## Attack Surface Data
+- **File:** ${attackSurfaceDataPath}
+
+Read this file first — it contains technologies and server fingerprints discovered during reconnaissance.
+
+## Task
+Infer the deployment and infrastructure context from HTTP response headers, technology fingerprints, and observed behavior. You do NOT have access to source code — work entirely from external observations.
+
+### What to Infer
+
+1. **Cloud Provider & Services** — Look for clues in:
+   - Server headers (e.g. "Server: AmazonS3", "x-amz-*", "x-goog-*", "x-ms-*")
+   - IP ranges and DNS records (use dig, nslookup)
+   - CDN headers (CloudFront, Cloudflare, Fastly, Akamai)
+   - Error pages that reveal cloud services
+
+2. **Containers & Orchestration** — Look for:
+   - Headers suggesting container orchestration (x-kubernetes-*, x-envoy-*)
+   - Load balancer patterns suggesting container deployments
+   - Health check endpoints typical of containerized apps
+
+3. **Reverse Proxy / CDN** — Look for:
+   - Server headers (nginx, Apache, Caddy, Traefik, envoy)
+   - CDN-specific headers (cf-ray, x-cache, x-served-by, via)
+   - HSTS, certificate details
+
+4. **Databases** — Infer from:
+   - Error messages that leak database type
+   - API response patterns (pagination style, ID formats — UUIDs suggest PostgreSQL, ObjectIDs suggest MongoDB)
+   - Technology stack clues from the attack surface data
+
+5. **CI/CD** — Look for:
+   - Exposed CI/CD endpoints or artifacts
+   - Build version headers or meta tags
+   - Deployment timestamps in responses
+
+### Approach
+1. Read the attack surface data for technology fingerprints
+2. Make HTTP requests to the target root and key endpoints, examining all response headers
+3. Run dig/nslookup for DNS information
+4. Check common paths that reveal infrastructure (/healthz, /status, /info, /.well-known/*)
+5. Analyze error responses for technology leaks
+
+### Output
+Call the \`response\` tool with the structured deployment context when done.`;
+}
+
+// ---------------------------------------------------------------------------
+// Blackbox Phase 1c: Security Controls Discovery
+// ---------------------------------------------------------------------------
+
+export function buildBlackboxSecurityControlsObjective(
+  target: string,
+  attackSurfaceDataPath: string,
+  deploymentContext: DeploymentContext,
+  sessionRootPath: string,
+): string {
+  const dbTypes =
+    deploymentContext.databases?.map((d) => d.type).join(", ") ?? "unknown";
+
+  return `# Infer Security Controls from Observed Behavior (Blackbox)
+
+## Target
+- **URL:** ${target}
+- **Inferred Databases:** ${dbTypes}
+
+## Attack Surface Data
+- **File:** ${attackSurfaceDataPath}
+
+Read this file to understand the application's endpoints and technologies.
+
+## Task
+Infer security controls from the target's observed behavior. Probe the live target to discover authentication mechanisms, authorization models, input validation, security headers, and other controls.
+
+### What to Probe For
+
+1. **Authentication Mechanisms** — Test:
+   - Visit login/signup pages and observe auth flow (session cookies, JWT tokens, OAuth redirects)
+   - Check for API key requirements on API endpoints
+   - Look for WWW-Authenticate headers on protected endpoints
+   - Test unauthenticated access to endpoints that should require auth
+
+2. **Authorization / Access Control** — Test:
+   - Try accessing admin paths (/admin, /dashboard, /api/admin/*)
+   - Check if different HTTP methods return different auth responses
+   - Look for IDOR patterns in API responses
+
+3. **Input Validation** — Test:
+   - Send malformed input to a few endpoints and observe error responses
+   - Check if error messages reveal validation framework (e.g. "zod", "joi", "class-validator")
+   - Test basic payloads to see if they're rejected or sanitized
+
+4. **Security Headers** — Check:
+   - Content-Security-Policy (CSP)
+   - Strict-Transport-Security (HSTS)
+   - X-Frame-Options, X-Content-Type-Options, X-XSS-Protection
+   - Referrer-Policy, Permissions-Policy
+   - CORS headers (Access-Control-Allow-Origin, etc.)
+
+5. **Rate Limiting** — Test:
+   - Check for rate limit headers (X-RateLimit-*, RateLimit-*, Retry-After)
+   - Observe if rapid requests trigger throttling
+
+6. **CSRF Protection** — Check:
+   - Look for CSRF tokens in forms and cookies
+   - Check SameSite cookie attributes
+   - Test if state-changing requests work without CSRF tokens
+
+7. **WAF / CDN Protection** — Check:
+   - Send basic attack payloads and observe if they're blocked
+   - Look for WAF-specific headers or block pages (Cloudflare, AWS WAF, ModSecurity)
+
+8. **Encryption** — Check:
+   - TLS version and cipher suites (use execute_command with openssl/nmap)
+   - HSTS configuration
+   - Cookie secure/httponly flags
+
+### For Each Control, Determine:
+- **type**: The control type
+- **name**: A descriptive name
+- **implementation**: What was observed (e.g. "Cloudflare WAF detected via cf-ray header")
+- **scope**: What it applies to (inferred from testing multiple endpoints)
+- **effectiveness**: strong, moderate, weak, or unknown
+- **gaps**: Any weaknesses observed
+
+### Output
+Call the \`response\` tool with the structured security controls when done.`;
+}
+
+// ---------------------------------------------------------------------------
 // Phase 2: Architecture Synthesis
 // ---------------------------------------------------------------------------
 

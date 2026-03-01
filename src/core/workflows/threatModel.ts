@@ -17,10 +17,14 @@ import {
 } from "../agents/specialized/threatModel/types";
 import {
   WHITEBOX_CODE_AGENT_SYSTEM_PROMPT,
+  BLACKBOX_RECON_AGENT_SYSTEM_PROMPT,
   DATA_SYNTHESIS_AGENT_SYSTEM_PROMPT,
   buildApplicationContextObjective,
+  buildBlackboxApplicationContextObjective,
   buildDeploymentContextObjective,
+  buildBlackboxDeploymentContextObjective,
   buildSecurityControlsObjective,
+  buildBlackboxSecurityControlsObjective,
   buildArchitectureSynthesisObjective,
   buildAttackPathSynthesisObjective,
 } from "../agents/specialized/threatModel/prompts";
@@ -42,8 +46,11 @@ import type { SessionInfo } from "../session";
 // ---------------------------------------------------------------------------
 
 export interface ThreatModelWorkflowInput {
-  /** Local codebase path (absolute) */
-  cwd: string;
+  /** Local codebase path (absolute) — required for whitebox mode */
+  cwd?: string;
+
+  /** Live target URL — required for blackbox mode */
+  target?: string;
 
   model: AIModel;
   session: SessionInfo;
@@ -63,12 +70,18 @@ export interface ThreatModelWorkflowInput {
 /**
  * Deterministic threat model workflow.
  *
- * Phase 0: Application Context Discovery (CodeAgent reads source code)
- * Phase 1a: Attack Surface Reconnaissance (reuses whitebox workflow)
- * Phase 1b: Deployment Context (CodeAgent reads source code)
- * Phase 1c: Security Controls (CodeAgent reads source code + attack surface data)
- * Phase 2: Architecture Synthesis (CodeAgent reads JSON data files)
- * Phase 3: Attack Path Synthesis (CodeAgent reads JSON data files)
+ * Supports two modes:
+ * - **whitebox** (cwd provided): phases read source code via CodeAgent
+ * - **blackbox** (target provided): phases infer context from attack surface
+ *   data + live HTTP probing. Attack surface JSON must already exist at
+ *   `session.rootPath/attack-surface-results.json`.
+ *
+ * Phase 0: Application Context Discovery
+ * Phase 1a: Attack Surface Reconnaissance (whitebox only — blackbox skips)
+ * Phase 1b: Deployment Context
+ * Phase 1c: Security Controls
+ * Phase 2: Architecture Synthesis (reads JSON data files)
+ * Phase 3: Attack Path Synthesis (reads JSON data files)
  * Phase 4: Assembly + Serialization (deterministic, no LLM)
  */
 export async function runThreatModelWorkflow(
@@ -76,6 +89,7 @@ export async function runThreatModelWorkflow(
 ): Promise<ThreatModelResult> {
   const {
     cwd,
+    target,
     model,
     session,
     applicationIdentity,
@@ -84,10 +98,22 @@ export async function runThreatModelWorkflow(
     eventBus,
   } = input;
 
+  const mode: "whitebox" | "blackbox" = cwd ? "whitebox" : "blackbox";
+
+  if (mode === "blackbox" && !target) {
+    throw new Error(
+      "Blackbox threat model requires a target URL (no cwd or target provided)",
+    );
+  }
+
   const threatModelDir = join(session.rootPath, "threat-model");
   mkdirSync(threatModelDir, { recursive: true });
 
   const baseAgentInput = { model, session, authConfig, abortSignal };
+  const attackSurfaceDataPath = join(
+    session.rootPath,
+    "attack-surface-results.json",
+  );
 
   // =========================================================================
   // Phase 0: Application Context Discovery
@@ -95,14 +121,31 @@ export async function runThreatModelWorkflow(
 
   emitPhase(eventBus, "application-context", "pending");
 
-  const agent0 = new CodeAgent<ApplicationContext>({
-    codebasePath: cwd,
-    objective: buildApplicationContextObjective(cwd, applicationIdentity),
-    system: WHITEBOX_CODE_AGENT_SYSTEM_PROMPT,
-    responseSchema: ApplicationContextSchema,
-    ...baseAgentInput,
-    eventBus: eventBus?.child("application-context"),
-  });
+  let agent0: CodeAgent<ApplicationContext>;
+
+  if (mode === "whitebox") {
+    agent0 = new CodeAgent<ApplicationContext>({
+      codebasePath: cwd!,
+      objective: buildApplicationContextObjective(cwd!, applicationIdentity),
+      system: WHITEBOX_CODE_AGENT_SYSTEM_PROMPT,
+      responseSchema: ApplicationContextSchema,
+      ...baseAgentInput,
+      eventBus: eventBus?.child("application-context"),
+    });
+  } else {
+    agent0 = new CodeAgent<ApplicationContext>({
+      codebasePath: session.rootPath,
+      objective: buildBlackboxApplicationContextObjective(
+        target!,
+        attackSurfaceDataPath,
+      ),
+      system: BLACKBOX_RECON_AGENT_SYSTEM_PROMPT,
+      responseSchema: ApplicationContextSchema,
+      ...baseAgentInput,
+      eventBus: eventBus?.child("application-context"),
+    });
+  }
+
   const applicationContext = await agent0.consume();
 
   if (!applicationContext) {
@@ -110,30 +153,43 @@ export async function runThreatModelWorkflow(
   }
 
   writeJSON(threatModelDir, "application-context.json", applicationContext);
+  // Also write to session root for downstream synthesis prompts
+  writeJSON(session.rootPath, "application-context.json", applicationContext);
   emitPhase(eventBus, "application-context", "completed");
 
   // =========================================================================
-  // Phase 1a: Attack Surface Reconnaissance (reuses existing workflow)
+  // Phase 1a: Attack Surface Reconnaissance
+  //   - Whitebox: run the whitebox attack surface workflow
+  //   - Blackbox: SKIP — data already at session.rootPath/attack-surface-results.json
   // =========================================================================
 
-  emitPhase(eventBus, "attack-surface", "pending");
+  let attackSurfaceRepoType: string | undefined;
+  let attackSurfacePackageManager: string | undefined;
 
-  const attackSurfaceInput: WhiteboxAttackSurfaceWorkflowInput = {
-    codebasePath: cwd,
-    ...baseAgentInput,
-    eventBus: eventBus?.child("attack-surface"),
-  };
+  if (mode === "whitebox") {
+    emitPhase(eventBus, "attack-surface", "pending");
 
-  const attackSurfaceResult =
-    await runWhiteboxAttackSurfaceWorkflow(attackSurfaceInput);
+    const attackSurfaceInput: WhiteboxAttackSurfaceWorkflowInput = {
+      codebasePath: cwd!,
+      ...baseAgentInput,
+      eventBus: eventBus?.child("attack-surface"),
+    };
 
-  // Persist for downstream phases that read JSON data files
-  writeJSON(
-    session.rootPath,
-    "attack-surface-results.json",
-    attackSurfaceResult,
-  );
-  emitPhase(eventBus, "attack-surface", "completed");
+    const attackSurfaceResult =
+      await runWhiteboxAttackSurfaceWorkflow(attackSurfaceInput);
+
+    attackSurfaceRepoType = attackSurfaceResult.repoType;
+    attackSurfacePackageManager = attackSurfaceResult.packageManager;
+
+    // Persist for downstream phases that read JSON data files
+    writeJSON(
+      session.rootPath,
+      "attack-surface-results.json",
+      attackSurfaceResult,
+    );
+    emitPhase(eventBus, "attack-surface", "completed");
+  }
+  // Blackbox: attack-surface-results.json already exists from pentest workflow
 
   // =========================================================================
   // Phase 1b: Deployment Context
@@ -141,13 +197,30 @@ export async function runThreatModelWorkflow(
 
   emitPhase(eventBus, "deployment-context", "pending");
 
-  const agent1b = new CodeAgent<DeploymentContext>({
-    codebasePath: cwd,
-    objective: buildDeploymentContextObjective(cwd),
-    responseSchema: DeploymentContextSchema,
-    ...baseAgentInput,
-    eventBus: eventBus?.child("deployment-context"),
-  });
+  let agent1b: CodeAgent<DeploymentContext>;
+
+  if (mode === "whitebox") {
+    agent1b = new CodeAgent<DeploymentContext>({
+      codebasePath: cwd!,
+      objective: buildDeploymentContextObjective(cwd!),
+      responseSchema: DeploymentContextSchema,
+      ...baseAgentInput,
+      eventBus: eventBus?.child("deployment-context"),
+    });
+  } else {
+    agent1b = new CodeAgent<DeploymentContext>({
+      codebasePath: session.rootPath,
+      objective: buildBlackboxDeploymentContextObjective(
+        target!,
+        attackSurfaceDataPath,
+      ),
+      system: BLACKBOX_RECON_AGENT_SYSTEM_PROMPT,
+      responseSchema: DeploymentContextSchema,
+      ...baseAgentInput,
+      eventBus: eventBus?.child("deployment-context"),
+    });
+  }
+
   const deployment = (await agent1b.consume()) ?? emptyDeploymentContext();
 
   writeJSON(threatModelDir, "deployment-context.json", deployment);
@@ -161,17 +234,36 @@ export async function runThreatModelWorkflow(
 
   emitPhase(eventBus, "security-controls", "pending");
 
-  const agent1c = new CodeAgent<SecurityControlsResult>({
-    codebasePath: cwd,
-    objective: buildSecurityControlsObjective(
-      cwd,
-      deployment,
-      session.rootPath,
-    ),
-    responseSchema: SecurityControlsResultSchema,
-    ...baseAgentInput,
-    eventBus: eventBus?.child("security-controls"),
-  });
+  let agent1c: CodeAgent<SecurityControlsResult>;
+
+  if (mode === "whitebox") {
+    agent1c = new CodeAgent<SecurityControlsResult>({
+      codebasePath: cwd!,
+      objective: buildSecurityControlsObjective(
+        cwd!,
+        deployment,
+        session.rootPath,
+      ),
+      responseSchema: SecurityControlsResultSchema,
+      ...baseAgentInput,
+      eventBus: eventBus?.child("security-controls"),
+    });
+  } else {
+    agent1c = new CodeAgent<SecurityControlsResult>({
+      codebasePath: session.rootPath,
+      objective: buildBlackboxSecurityControlsObjective(
+        target!,
+        attackSurfaceDataPath,
+        deployment,
+        session.rootPath,
+      ),
+      system: BLACKBOX_RECON_AGENT_SYSTEM_PROMPT,
+      responseSchema: SecurityControlsResultSchema,
+      ...baseAgentInput,
+      eventBus: eventBus?.child("security-controls"),
+    });
+  }
+
   const securityControls = (await agent1c.consume()) ?? { controls: [] };
 
   writeJSON(threatModelDir, "security-controls.json", securityControls);
@@ -240,13 +332,15 @@ export async function runThreatModelWorkflow(
 
   const threatModelResult: Omit<ThreatModelResult, "files"> = {
     metadata: {
-      mode: "whitebox",
-      target: cwd,
+      mode,
+      target: mode === "whitebox" ? cwd! : target!,
       generatedAt: new Date().toISOString(),
       modelUsed: model,
       schemaVersion: "2.0.0",
-      repoType: attackSurfaceResult.repoType,
-      packageManager: attackSurfaceResult.packageManager,
+      ...(attackSurfaceRepoType ? { repoType: attackSurfaceRepoType } : {}),
+      ...(attackSurfacePackageManager
+        ? { packageManager: attackSurfacePackageManager }
+        : {}),
     },
     applicationContext,
     deployment,
@@ -264,9 +358,14 @@ export async function runThreatModelWorkflow(
   const threatModel: ThreatModel = {
     metadata: {
       generatedAt: threatModelResult.metadata.generatedAt,
-      codebasePath: cwd,
-      repoType: attackSurfaceResult.repoType,
-      packageManager: attackSurfaceResult.packageManager,
+      mode,
+      ...(mode === "whitebox"
+        ? { codebasePath: cwd! }
+        : { target: target! }),
+      ...(attackSurfaceRepoType ? { repoType: attackSurfaceRepoType } : {}),
+      ...(attackSurfacePackageManager
+        ? { packageManager: attackSurfacePackageManager }
+        : {}),
     },
     applicationContext,
     deployment,

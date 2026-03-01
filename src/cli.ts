@@ -93,10 +93,16 @@ function showHelp() {
   console.log();
   console.log("threat-model options:");
   console.log(
-    "  --cwd <path>            (required) Local codebase path for whitebox analysis",
+    "  --cwd <path>            Local codebase path for whitebox analysis",
+  );
+  console.log(
+    "  --target <url>          Target URL for blackbox analysis",
   );
   console.log(
     "  --model <model>         AI model (default: claude-sonnet-4-5)",
+  );
+  console.log(
+    "                          (at least one of --cwd or --target is required)",
   );
   console.log();
   console.log("knowledge subcommands:");
@@ -282,25 +288,36 @@ async function runThreatModel() {
   const { config: appConfig } = await import("./core/config");
   type AIModel = import("./core/ai").AIModel;
 
-  const cwd = getArgRequired("--cwd");
+  const cwd = getArg("--cwd");
+  const target = getArg("--target");
   const model = (getArg("--model") ?? "claude-sonnet-4-5") as AIModel;
+
+  if (!cwd && !target) {
+    console.error("Error: at least one of --cwd or --target is required");
+    process.exit(1);
+  }
+
+  const mode = cwd ? "whitebox" : "blackbox";
 
   console.log("=".repeat(60));
   console.log("THREAT MODEL");
   console.log("=".repeat(60));
-  console.log(`Codebase: ${cwd}`);
+  console.log(`Mode:     ${mode}`);
+  if (cwd) console.log(`Codebase: ${cwd}`);
+  if (target) console.log(`Target:   ${target}`);
   console.log(`Model:    ${model}`);
   console.log();
 
   const pensarConfig = await appConfig.get();
 
   const session = await sessions.create({
-    name: "Threat Model",
-    targets: [cwd],
+    name: `Threat Model (${mode})`,
+    targets: [cwd ?? target!],
   });
 
   const run = runThreatModelAgent({
-    cwd,
+    ...(cwd ? { cwd } : {}),
+    ...(target ? { target } : {}),
     session,
     model,
     authConfig: {

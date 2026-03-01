@@ -407,13 +407,13 @@ export type AttackPathsResult = z.infer<typeof AttackPathsResultSchema>;
 
 export interface ThreatModelResult {
   metadata: {
-    mode: "whitebox";
+    mode: "whitebox" | "blackbox";
     target: string;
     generatedAt: string;
     modelUsed: string;
     schemaVersion: string;
-    repoType: string;
-    packageManager: string;
+    repoType?: string;
+    packageManager?: string;
   };
   applicationContext: ApplicationContext;
   deployment: DeploymentContext;
@@ -438,9 +438,11 @@ export interface ThreatModelResult {
 export interface ThreatModel {
   metadata: {
     generatedAt: string;
-    codebasePath: string;
-    repoType: string;
-    packageManager: string;
+    mode: "whitebox" | "blackbox";
+    codebasePath?: string;
+    target?: string;
+    repoType?: string;
+    packageManager?: string;
   };
   applicationContext: ApplicationContext;
   deployment: DeploymentContext;
