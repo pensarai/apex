@@ -44,6 +44,9 @@ const AuthCredentialsObject = z.object({
   additionalFields: z.record(z.string(), z.string()).optional(),
   // API key auth
   apiKey: z.string().optional(),
+  // Credential identity metadata
+  role: z.string().optional(),
+  context: z.string().optional(),
   // Pre-existing tokens for verification
   tokens: z
     .object({

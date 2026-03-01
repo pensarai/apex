@@ -135,7 +135,8 @@ export class CredentialManager {
       additionalFields: creds.additionalFields,
       tokens: creds.tokens,
       label: extra?.label,
-      role: extra?.role,
+      role: extra?.role ?? creds.role,
+      metadata: creds.context ? { context: creds.context } : undefined,
     };
 
     const existingId = this.findDuplicate(candidate);
