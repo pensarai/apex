@@ -10,6 +10,12 @@ import type { ToolContext } from "./types";
  * Performs simple credential-based authentication (form POST, JSON POST,
  * or HTTP Basic) and persists the resulting session cookie for reuse
  * by other tools.
+ *
+ * Supports two modes:
+ * 1. **Credential ID** — pass a `credentialId` obtained from the
+ *    credential manager. The tool resolves the full secret internally.
+ * 2. **Direct credentials** — pass `username` / `password` directly
+ *    (legacy behaviour, still supported for backward compatibility).
  */
 export function authenticateSession(ctx: ToolContext) {
   return tool({
@@ -18,11 +24,26 @@ export function authenticateSession(ctx: ToolContext) {
 Use this to:
 - Test discovered credentials
 - Obtain session cookies for authenticated exploration
-- Access protected areas of the application`,
+- Access protected areas of the application
+
+You can either pass a credentialId (preferred when credentials are managed)
+or provide username/password directly.`,
     inputSchema: z.object({
       loginUrl: z.string().describe("Login endpoint URL"),
-      username: z.string().describe("Username to authenticate with"),
-      password: z.string().describe("Password to authenticate with"),
+      credentialId: z
+        .string()
+        .optional()
+        .describe(
+          "ID of a stored credential to use. When provided, username/password are resolved automatically.",
+        ),
+      username: z
+        .string()
+        .optional()
+        .describe("Username to authenticate with (ignored if credentialId is set)"),
+      password: z
+        .string()
+        .optional()
+        .describe("Password to authenticate with (ignored if credentialId is set)"),
       method: z
         .enum(["form_post", "json_post", "basic_auth"])
         .default("form_post")
@@ -47,15 +68,38 @@ Use this to:
     }),
     execute: async (params) => {
       try {
+        let { loginUrl, username, password } = params;
         const {
-          loginUrl,
-          username,
-          password,
+          credentialId,
           method,
           usernameField,
           passwordField,
           additionalFields,
         } = params;
+
+        // Resolve credential from manager when an ID is provided
+        if (credentialId && ctx.credentialManager) {
+          const stored = ctx.credentialManager.resolve(credentialId);
+          if (!stored) {
+            return {
+              success: false,
+              authenticated: false,
+              message: `Unknown credential ID: ${credentialId}`,
+            };
+          }
+          username = stored.username ?? username;
+          password = stored.password ?? password;
+          if (stored.loginUrl && !loginUrl) loginUrl = stored.loginUrl;
+        }
+
+        if (!username || !password) {
+          return {
+            success: false,
+            authenticated: false,
+            message:
+              "Username and password are required. Provide them directly or via a credentialId.",
+          };
+        }
 
         const authRequest: RequestInit = { method: "POST" };
 

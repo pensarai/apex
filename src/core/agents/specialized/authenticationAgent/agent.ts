@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import type { AIModel } from "../../../ai";
 import type { AIAuthConfig } from "../../../ai/utils";
+import type { CredentialManager } from "../../../credentials";
 import { type SessionInfo } from "../../../session";
 import { AUTH_SUBAGENT_SYSTEM_PROMPT } from "./prompts";
 import { detectOSAndEnhancePrompt } from "../utils";
@@ -52,6 +53,13 @@ export interface AuthenticationAgentInput {
 
   /** Optional persistence callbacks for external storage integration */
   callbacks?: ConsumeCallbacks;
+
+  /**
+   * In-memory credential store. When present, the agent prompt will
+   * contain only credential references (IDs + metadata) and tools
+   * will resolve secrets at execution time.
+   */
+  credentialManager?: CredentialManager;
 }
 
 /** The typed result returned by `AuthenticationAgent.consume()`. */
@@ -141,17 +149,19 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
       authConfig,
       onStepFinish,
       abortSignal,
+      credentialManager,
     } = opts;
 
     super({
       system: detectOSAndEnhancePrompt(AUTH_SUBAGENT_SYSTEM_PROMPT),
-      prompt: buildAuthPrompt(target, credentials, authHints),
+      prompt: buildAuthPrompt(target, credentials, authHints, credentialManager),
       model,
       session,
       target,
       authConfig,
       onStepFinish,
       abortSignal,
+      credentialManager,
       toolChoice: "auto",
       activeTools: [
         // Auth flow tools
@@ -237,10 +247,16 @@ function buildAuthPrompt(
   target: string,
   credentials?: AuthenticationAgentInput["credentials"],
   authHints?: AuthenticationAgentInput["authHints"],
+  credentialManager?: CredentialManager,
 ): string {
   const parts: string[] = [`TARGET: ${target}\n`];
 
-  if (credentials) {
+  // When a credential manager is available, emit only references (no secrets)
+  const credBlock = credentialManager?.formatForPrompt();
+  if (credBlock) {
+    parts.push(credBlock);
+    parts.push("");
+  } else if (credentials) {
     parts.push("CREDENTIALS:");
     if (credentials.username) parts.push(`- Username: ${credentials.username}`);
     if (credentials.password) parts.push(`- Password: ${credentials.password}`);
@@ -269,10 +285,11 @@ function buildAuthPrompt(
     parts.push("");
   }
 
-  if (credentials?.loginUrl || credentials?.username) {
+  const hasCredentials = credBlock || credentials?.loginUrl || credentials?.username;
+  if (hasCredentials) {
     parts.push(`INSTRUCTIONS:
 You have credentials — authenticate immediately.
-1. Use authenticate_session (API) or the browser tools depending on the target
+1. Use authenticate_session (pass the credentialId) or the browser tools depending on the target
 2. If authenticate_session fails, try via browser or delegate_to_auth_subagent
 3. Call complete_authentication to persist credentials (success or failure)
 4. Call the response tool with your final summary to end the run`);

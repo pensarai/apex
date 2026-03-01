@@ -105,10 +105,16 @@ When to use delegate_to_auth_subagent vs authenticate_session:
 - Token verification needed -> delegate_to_auth_subagent`,
     inputSchema: z.object({
       target: z.string().describe("Target URL requiring authentication"),
+      credentialId: z
+        .string()
+        .optional()
+        .describe(
+          "ID of a stored credential. When provided, secrets are resolved automatically — do not pass username/password/apiKey/tokens.",
+        ),
       loginUrl: z.string().optional().describe("Discovered login URL if known"),
-      username: z.string().optional().describe("Username if available"),
-      password: z.string().optional().describe("Password if available"),
-      apiKey: z.string().optional().describe("API key if available"),
+      username: z.string().optional().describe("Username if available (ignored if credentialId is set)"),
+      password: z.string().optional().describe("Password if available (ignored if credentialId is set)"),
+      apiKey: z.string().optional().describe("API key if available (ignored if credentialId is set)"),
       tokens: z
         .object({
           bearerToken: z
@@ -161,6 +167,7 @@ When to use delegate_to_auth_subagent vs authenticate_session:
     }),
     execute: async ({
       target,
+      credentialId,
       loginUrl,
       username,
       password,
@@ -177,6 +184,25 @@ When to use delegate_to_auth_subagent vs authenticate_session:
             message:
               "delegate_to_auth_subagent requires a model in the tool context.",
           };
+        }
+
+        // Resolve credential from manager when an ID is provided
+        if (credentialId && ctx.credentialManager) {
+          const stored = ctx.credentialManager.resolve(credentialId);
+          if (!stored) {
+            return {
+              success: false,
+              authenticated: false,
+              message: `Unknown credential ID: ${credentialId}`,
+            };
+          }
+          username = stored.username ?? username;
+          password = stored.password ?? password;
+          apiKey = stored.apiKey ?? apiKey;
+          loginUrl = stored.loginUrl ?? loginUrl;
+          if (stored.tokens && !tokens) {
+            tokens = { ...stored.tokens };
+          }
         }
 
         console.log(`\n🔐 Delegating to authentication subagent...`);

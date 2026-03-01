@@ -7,6 +7,7 @@ import type { AttackSurfaceAnalysisResults, PentestTarget } from "./types";
 import { loadAttackSurfaceResults } from "./types";
 import { OffensiveSecurityAgent } from "../../offSecAgent/offensiveSecurityAgent";
 import type { SpecializedAgentInput } from "../../offSecAgent/types";
+import type { CredentialManager } from "../../../credentials";
 import type { SessionInfo } from "../../../session";
 
 // ---------------------------------------------------------------------------
@@ -70,7 +71,7 @@ export interface AttackSurfaceResult {
  */
 export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSurfaceResult> {
   constructor(opts: AttackSurfaceAgentInput) {
-    const { model, session, authConfig, onStepFinish, abortSignal } = opts;
+    const { model, session, authConfig, onStepFinish, abortSignal, credentialManager } = opts;
     const target = opts.target ?? opts.cwd!;
 
     const resultsPath = join(session.rootPath, "attack-surface-results.json");
@@ -88,11 +89,12 @@ export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSur
 
     super({
       system: detectOSAndEnhancePrompt(ATTACK_SURFACE_SYSTEM_PROMPT),
-      prompt: buildPrompt(target, session),
+      prompt: buildPrompt(target, session, credentialManager),
       model,
       session,
       target,
       authConfig,
+      credentialManager,
       onStepFinish: (e) => {
         onStepFinish?.(e);
         const messages = e.response.messages;
@@ -155,7 +157,11 @@ export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSur
 // Prompt builder
 // ---------------------------------------------------------------------------
 
-function buildPrompt(target: string, session: SessionInfo): string {
+function buildPrompt(
+  target: string,
+  session: SessionInfo,
+  credentialManager?: CredentialManager,
+): string {
   const scopeConstraints = session.config?.scopeConstraints;
   const authenticationInstructions = session.config?.authenticationInstructions;
   const authCredentials = session.config?.authCredentials;
@@ -163,7 +169,30 @@ function buildPrompt(target: string, session: SessionInfo): string {
 
   // --- Authentication block ---
   let authBlock: string;
-  if (authenticationInstructions || authCredentials) {
+
+  // Prefer credential manager references (no secrets in prompts)
+  const credManagerBlock = credentialManager?.formatForPrompt();
+
+  if (credManagerBlock) {
+    const parts: string[] = [];
+    if (authenticationInstructions) {
+      parts.push(
+        `<authentication_instructions>\n${authenticationInstructions}\n</authentication_instructions>`,
+      );
+    }
+    parts.push(credManagerBlock);
+
+    const loginTarget = authCredentials?.loginUrl ?? target;
+    authBlock = `⚠️ AUTHENTICATION CREDENTIALS PROVIDED — YOU MUST LOG IN FIRST.
+
+Your FIRST tool call must be: browser_navigate to ${loginTarget}
+Then use browser tools to authenticate. Pass the credentialId to authenticate_session or delegate_to_auth_subagent — secrets are resolved automatically.
+
+Do NOT run curl, nmap, dig, or any other command before completing login.
+Include authentication information with EVERY target that requires it in your final report.
+
+${parts.join("\n\n")}`;
+  } else if (authenticationInstructions || authCredentials) {
     const parts: string[] = [];
     if (authenticationInstructions) {
       parts.push(
