@@ -81,6 +81,50 @@ const OperatorSettingsObject = z.object({
 
 export type OperatorSettings = z.infer<typeof OperatorSettingsObject>;
 
+const EmailInboxConfigObject = z.discriminatedUnion("provider", [
+  z.object({
+    provider: z.literal("gmail"),
+    id: z.string(),
+    name: z.string(),
+    emailAddress: z.string(),
+    accessToken: z.string(),
+    refreshToken: z.string(),
+    clientId: z.string().optional(),
+    clientSecret: z.string().optional(),
+  }),
+  z.object({
+    provider: z.literal("outlook"),
+    id: z.string(),
+    name: z.string(),
+    emailAddress: z.string(),
+    accessToken: z.string(),
+    refreshToken: z.string(),
+    clientId: z.string().optional(),
+    clientSecret: z.string().optional(),
+  }),
+  z.object({
+    provider: z.literal("imap"),
+    id: z.string(),
+    name: z.string(),
+    emailAddress: z.string(),
+    imapHost: z.string(),
+    imapPort: z.number(),
+    username: z.string(),
+    password: z.string(),
+    tls: z.boolean(),
+  }),
+]);
+
+export type EmailInboxConfig = z.infer<typeof EmailInboxConfigObject>;
+
+const EmailIntegrationConfigObject = z.object({
+  inboxes: z.array(EmailInboxConfigObject),
+});
+
+export type EmailIntegrationConfig = z.infer<
+  typeof EmailIntegrationConfigObject
+>;
+
 const SessionConfigObject = z.object({
   offensiveHeaders: OffensiveHeadersConfigObject.optional(),
   sessionType: z.enum(["web-app"]).optional(),
@@ -101,6 +145,8 @@ const SessionConfigObject = z.object({
   enumerateSubdomains: z.boolean().optional(),
   /** Local codebase path for whitebox analysis (source code access) */
   cwd: z.string().optional(),
+  /** Email inboxes available to the agent for monitoring/reading email */
+  emailIntegration: EmailIntegrationConfigObject.optional(),
 });
 
 export type SessionConfig = z.infer<typeof SessionConfigObject>;

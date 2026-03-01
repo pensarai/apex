@@ -170,6 +170,11 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
         "browser_evaluate",
         "browser_console",
         "browser_get_cookies",
+        // Email tools (filtered out by base class when no inboxes configured)
+        "email_list_inboxes",
+        "email_list_messages",
+        "email_search_messages",
+        "email_get_message",
         // Structured termination (same pattern as pentest agent)
         "response",
       ],

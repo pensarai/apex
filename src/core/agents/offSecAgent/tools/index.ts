@@ -45,6 +45,10 @@ export { spawnCodingAgent } from "./spawnCodingAgent";
 // export { generateReport } from "./generateReport";
 export { provideComparisonResults } from "./provideComparisonResults";
 
+// Email tools
+export { createEmailToolset, EMAIL_TOOL_NAMES } from "./email";
+export type { EmailToolName } from "./email";
+
 // ---------------------------------------------------------------------------
 // Tool registry
 // ---------------------------------------------------------------------------
@@ -74,6 +78,7 @@ import { spawnPentestSwarm } from "./spawnPentestSwarm";
 import { spawnCodingAgent } from "./spawnCodingAgent";
 // import { generateReport } from "./generateReport";
 import { provideComparisonResults } from "./provideComparisonResults";
+import { createEmailToolset } from "./email";
 
 /**
  * Create the full toolset for the OffensiveSecurityAgent.
@@ -121,6 +126,9 @@ export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
     // Reporting / benchmark tools
     // generate_report: generateReport(ctx),
     provide_comparison_results: provideComparisonResults(ctx),
+
+    // Email tools (read-only inbox access)
+    ...createEmailToolset(ctx),
   } as const;
 }
 
@@ -157,4 +165,14 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "spawn_coding_agent",
   // "generate_report",
   "provide_comparison_results",
-] as const;
+  // Email
+  "email_list_inboxes",
+  "email_list_messages",
+  "email_get_message",
+  "email_search_messages",
+  "email_get_attachments",
+  "email_mark_read",
+];
+
+/** Email tool names — auto-appended to activeTools by the base class when inboxes are configured. */
+export { EMAIL_TOOL_NAMES as EMAIL_TOOL_NAMES_ACTIVE } from "./email";
