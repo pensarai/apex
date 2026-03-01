@@ -132,7 +132,9 @@ const SessionConfigObject = z.object({
   mode: z.enum(["auto", "driver", "operator"]).optional(),
   outcomeGuidance: z.string().optional(),
   scopeConstraints: ScopeConstraintsObject.optional(),
-  authCredentials: AuthCredentialsObject.optional(),
+  authCredentials: z
+    .union([AuthCredentialsObject, z.array(AuthCredentialsObject)])
+    .optional(),
   authenticationInstructions: z.string().optional(),
   requestsPerSecond: z.number().optional(),
   operatorSettings: OperatorSettingsObject.optional(),
@@ -388,7 +390,12 @@ export async function create(input: CreateInputProps) {
   let credentialManager: CredentialManager | undefined;
   if (input.config?.authCredentials) {
     credentialManager = new CredentialManager();
-    credentialManager.addFromAuthCredentials(input.config.authCredentials);
+    const creds = Array.isArray(input.config.authCredentials)
+      ? input.config.authCredentials
+      : [input.config.authCredentials];
+    for (const cred of creds) {
+      credentialManager.addFromAuthCredentials(cred);
+    }
   }
 
   const result: SessionInfo = {
