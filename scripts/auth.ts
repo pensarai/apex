@@ -86,11 +86,26 @@ async function runAuth(options: AuthOptions): Promise<void> {
   console.log();
 
   try {
-    // Create session
+    // Build credentials for the session
+    const authCredentials: AuthCredentials = {};
+    if (username) authCredentials.username = username;
+    if (password) authCredentials.password = password;
+    if (apiKey) authCredentials.apiKey = apiKey;
+    if (bearer || cookies || headers) {
+      authCredentials.tokens = {};
+      if (bearer) authCredentials.tokens.bearerToken = bearer;
+      if (cookies) authCredentials.tokens.cookies = cookies;
+      if (headers) authCredentials.tokens.customHeaders = headers;
+    }
+
+    const hasCredentials = username || apiKey || bearer || cookies || headers;
+
+    // Create session — credential manager is auto-provisioned from authCredentials
     const session = await sessions.create({
       targets: [target],
       name: "auth-session",
       prefix: "auth",
+      config: hasCredentials ? { authCredentials } : undefined,
     });
 
     console.log(`Session ID: ${session.id}`);
@@ -116,10 +131,6 @@ async function runAuth(options: AuthOptions): Promise<void> {
         session,
         model: model as AIModel,
         target,
-        credentials: {
-          username,
-          password,
-        },
         callbacks: {
           onTextDelta: (d) => process.stdout.write(d.text),
           onToolCall: (d) => console.log(`→ calling ${d.toolName}`),
@@ -154,24 +165,6 @@ async function runAuth(options: AuthOptions): Promise<void> {
     console.log("=".repeat(80));
     console.log();
 
-    // Build credentials object
-    const credentials: AuthCredentials = {};
-
-    if (username) credentials.username = username;
-    if (password) credentials.password = password;
-    if (apiKey) credentials.apiKey = apiKey;
-
-    // Handle pre-existing tokens
-    if (bearer || cookies || headers) {
-      credentials.tokens = {};
-      if (bearer) credentials.tokens.bearerToken = bearer;
-      if (cookies) credentials.tokens.cookies = cookies;
-      if (headers) credentials.tokens.customHeaders = headers;
-    }
-
-    // Check if we have any credentials at all
-    const hasCredentials = username || apiKey || bearer || cookies || headers;
-
     if (!hasCredentials) {
       console.log(
         "No credentials provided. Will discover auth requirements and probe for registration.",
@@ -182,7 +175,6 @@ async function runAuth(options: AuthOptions): Promise<void> {
     const result = await runAuthenticationAgent({
       target,
       session,
-      credentials: hasCredentials ? credentials : undefined,
       model: model as AIModel,
     });
 

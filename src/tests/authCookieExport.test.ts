@@ -33,15 +33,18 @@ describe("Authentication Agent — Cookie Export", () => {
         },
       });
 
+      // Session auto-provisions credential manager — password must not be in prompt
+      expect(session.credentialManager).toBeDefined();
+      expect(session.credentialManager!.formatForPrompt()).not.toContain(
+        password,
+      );
+
+      const toolCalls: { name: string; input: Record<string, unknown> }[] = [];
+
       const result = await runAuthenticationAgent({
         target: TARGET_URL,
         model: "claude-haiku-4-5",
         session,
-        credentials: {
-          username,
-          password,
-          loginUrl: `https://${TARGET_URL}/login`,
-        },
         authHints: {
           authScheme: "form",
           browserRequired: true,
@@ -52,10 +55,15 @@ describe("Authentication Agent — Cookie Export", () => {
         },
         callbacks: {
           onTextDelta: (d) => process.stdout.write(d.text),
-          onToolCall: (d) =>
+          onToolCall: (d) => {
+            toolCalls.push({
+              name: d.toolName,
+              input: d.input as Record<string, unknown>,
+            });
             console.log(
               `\n→ calling ${d.toolName}\n  ${JSON.stringify(d.input, null, 2)}`,
-            ),
+            );
+          },
           onToolResult: (d) => {
             const output =
               (d as Record<string, unknown>).output ??
@@ -118,6 +126,15 @@ describe("Authentication Agent — Cookie Export", () => {
 
       expect(result.strategy).toBeDefined();
       expect(result.strategy).not.toBe("unknown");
+
+      // Verify no raw password in browser_fill calls
+      const browserFills = toolCalls.filter((t) => t.name === "browser_fill");
+      for (const fill of browserFills) {
+        expect(
+          fill.input.value !== password,
+          `browser_fill should use credentialId, not raw password`,
+        ).toBe(true);
+      }
     },
     { timeout: 300_000 },
   );

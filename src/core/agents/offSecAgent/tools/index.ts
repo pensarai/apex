@@ -79,6 +79,10 @@ import { spawnCodingAgent } from "./spawnCodingAgent";
 // import { generateReport } from "./generateReport";
 import { provideComparisonResults } from "./provideComparisonResults";
 import { createEmailToolset } from "./email";
+import { emailListInboxes } from "./email/listInboxes";
+import { emailListMessages } from "./email/listMessages";
+import { emailSearchMessages } from "./email/searchMessages";
+import { emailGetMessage } from "./email/getMessage";
 
 /**
  * Create the full toolset for the OffensiveSecurityAgent.
@@ -129,6 +133,10 @@ export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
 
     // Email tools (read-only inbox access)
     ...createEmailToolset(ctx),
+    email_list_inboxes: emailListInboxes(ctx),
+    email_list_messages: emailListMessages(ctx),
+    email_search_messages: emailSearchMessages(ctx),
+    email_get_message: emailGetMessage(ctx),
   } as const;
 }
 

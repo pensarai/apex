@@ -4,6 +4,7 @@ import { join } from "path";
 import { writeFileSync } from "fs";
 import type { ToolContext } from "./types";
 import { type AuthCredentials } from "../../specialized/authenticationAgent/types";
+import { CredentialManager } from "../../../credentials";
 // runAuthenticationAgent is dynamically imported inside execute() to break
 // the circular dependency: authAgent → offensiveSecurityAgent → tools → delegateAuth → authAgent
 
@@ -105,10 +106,25 @@ When to use delegate_to_auth_subagent vs authenticate_session:
 - Token verification needed -> delegate_to_auth_subagent`,
     inputSchema: z.object({
       target: z.string().describe("Target URL requiring authentication"),
+      credentialId: z
+        .string()
+        .optional()
+        .describe(
+          "ID of a stored credential. When provided, secrets are resolved automatically — do not pass username/password/apiKey/tokens.",
+        ),
       loginUrl: z.string().optional().describe("Discovered login URL if known"),
-      username: z.string().optional().describe("Username if available"),
-      password: z.string().optional().describe("Password if available"),
-      apiKey: z.string().optional().describe("API key if available"),
+      username: z
+        .string()
+        .optional()
+        .describe("Username if available (ignored if credentialId is set)"),
+      password: z
+        .string()
+        .optional()
+        .describe("Password if available (ignored if credentialId is set)"),
+      apiKey: z
+        .string()
+        .optional()
+        .describe("API key if available (ignored if credentialId is set)"),
       tokens: z
         .object({
           bearerToken: z
@@ -161,6 +177,7 @@ When to use delegate_to_auth_subagent vs authenticate_session:
     }),
     execute: async ({
       target,
+      credentialId,
       loginUrl,
       username,
       password,
@@ -179,6 +196,25 @@ When to use delegate_to_auth_subagent vs authenticate_session:
           };
         }
 
+        // Resolve credential from manager when an ID is provided
+        if (credentialId && ctx.credentialManager) {
+          const stored = ctx.credentialManager.resolve(credentialId);
+          if (!stored) {
+            return {
+              success: false,
+              authenticated: false,
+              message: `Unknown credential ID: ${credentialId}`,
+            };
+          }
+          username = stored.username ?? username;
+          password = stored.password ?? password;
+          apiKey = stored.apiKey ?? apiKey;
+          loginUrl = stored.loginUrl ?? loginUrl;
+          if (stored.tokens && !tokens) {
+            tokens = { ...stored.tokens };
+          }
+        }
+
         console.log(`\n🔐 Delegating to authentication subagent...`);
         console.log(`   Target: ${target}`);
         console.log(`   Reason: ${reason}`);
@@ -192,7 +228,12 @@ When to use delegate_to_auth_subagent vs authenticate_session:
             `   Custom Headers: ${Object.keys(tokens.customHeaders).join(", ")}`,
           );
 
-        const sessionCreds = ctx.session.config?.authCredentials;
+        const rawSessionCreds = ctx.session.config?.authCredentials;
+        const sessionCreds: AuthCredentials | undefined = rawSessionCreds
+          ? Array.isArray(rawSessionCreds)
+            ? rawSessionCreds[0]
+            : rawSessionCreds
+          : undefined;
         if (sessionCreds && !username && !apiKey && !tokens) {
           console.log(`   [Inheriting session credentials]`);
           if (sessionCreds.username)
@@ -234,6 +275,16 @@ When to use delegate_to_auth_subagent vs authenticate_session:
           tokens,
         });
 
+        // Ensure the session has a credential manager with the resolved credentials.
+        // This is the single path for secret management — the auth agent reads
+        // from session.credentialManager and never sees raw secrets.
+        if (!ctx.session.credentialManager) {
+          ctx.session.credentialManager = new CredentialManager();
+        }
+        if (credentials) {
+          ctx.session.credentialManager.addFromAuthCredentials(credentials);
+        }
+
         // Dynamic import to break circular dependency:
         // authAgent → offensiveSecurityAgent → tools/index → delegateAuth → api/authentication → authAgent
         const { runAuthenticationAgent } =
@@ -242,7 +293,6 @@ When to use delegate_to_auth_subagent vs authenticate_session:
         const result = await runAuthenticationAgent({
           target,
           session: ctx.session,
-          credentials,
           authHints,
           model: ctx.model,
           authConfig: ctx.authConfig,
