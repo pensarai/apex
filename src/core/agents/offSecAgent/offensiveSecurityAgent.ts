@@ -60,6 +60,9 @@ export class OffensiveSecurityAgent<TResult = void> {
     this.subagentId = input.subagentId;
 
     // -- Tools ----------------------------------------------------------------
+    const credentialManager =
+      input.credentialManager ?? input.session.credentialManager;
+
     const builtinTools = createAllTools({
       session: input.session,
       target: input.target,
@@ -70,7 +73,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       subagentCallbacks: input.subagentCallbacks,
       sandbox: input.sandbox,
       findingsRegistry: input.findingsRegistry,
-      credentialManager: input.credentialManager,
+      credentialManager,
     });
 
     let tools: ToolSet = input.extraTools

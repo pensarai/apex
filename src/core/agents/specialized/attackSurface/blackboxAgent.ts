@@ -7,7 +7,6 @@ import type { AttackSurfaceAnalysisResults, PentestTarget } from "./types";
 import { loadAttackSurfaceResults } from "./types";
 import { OffensiveSecurityAgent } from "../../offSecAgent/offensiveSecurityAgent";
 import type { SpecializedAgentInput } from "../../offSecAgent/types";
-import type { CredentialManager } from "../../../credentials";
 import type { SessionInfo } from "../../../session";
 
 // ---------------------------------------------------------------------------
@@ -71,7 +70,7 @@ export interface AttackSurfaceResult {
  */
 export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSurfaceResult> {
   constructor(opts: AttackSurfaceAgentInput) {
-    const { model, session, authConfig, onStepFinish, abortSignal, credentialManager } = opts;
+    const { model, session, authConfig, onStepFinish, abortSignal } = opts;
     const target = opts.target ?? opts.cwd!;
 
     const resultsPath = join(session.rootPath, "attack-surface-results.json");
@@ -89,12 +88,11 @@ export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSur
 
     super({
       system: detectOSAndEnhancePrompt(ATTACK_SURFACE_SYSTEM_PROMPT),
-      prompt: buildPrompt(target, session, credentialManager),
+      prompt: buildPrompt(target, session),
       model,
       session,
       target,
       authConfig,
-      credentialManager,
       onStepFinish: (e) => {
         onStepFinish?.(e);
         const messages = e.response.messages;
@@ -160,84 +158,49 @@ export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSur
 function buildPrompt(
   target: string,
   session: SessionInfo,
-  credentialManager?: CredentialManager,
 ): string {
   const scopeConstraints = session.config?.scopeConstraints;
   const authenticationInstructions = session.config?.authenticationInstructions;
-  const authCredentials = session.config?.authCredentials;
   const enumerateSubdomains = session.config?.enumerateSubdomains ?? false;
+
+  const cm = session.credentialManager;
+  const credBlock = cm?.formatForPrompt();
+  const firstRef = cm?.listReferences()[0];
+  const loginTarget = firstRef?.loginUrl ?? target;
 
   // --- Authentication block ---
   let authBlock: string;
 
-  // Prefer credential manager references (no secrets in prompts)
-  const credManagerBlock = credentialManager?.formatForPrompt();
-
-  if (credManagerBlock) {
+  if (credBlock) {
     const parts: string[] = [];
     if (authenticationInstructions) {
       parts.push(
         `<authentication_instructions>\n${authenticationInstructions}\n</authentication_instructions>`,
       );
     }
-    parts.push(credManagerBlock);
+    parts.push(credBlock);
 
-    const loginTarget = authCredentials?.loginUrl ?? target;
     authBlock = `⚠️ AUTHENTICATION CREDENTIALS PROVIDED — YOU MUST LOG IN FIRST.
 
 Your FIRST tool call must be: browser_navigate to ${loginTarget}
 Then use browser tools to authenticate. Pass the credentialId to authenticate_session or delegate_to_auth_subagent — secrets are resolved automatically.
+For browser_fill on password/secret fields, use credentialId + credentialField instead of raw values.
 
 Do NOT run curl, nmap, dig, or any other command before completing login.
 Include authentication information with EVERY target that requires it in your final report.
 
 ${parts.join("\n\n")}`;
-  } else if (authenticationInstructions || authCredentials) {
-    const parts: string[] = [];
-    if (authenticationInstructions) {
-      parts.push(
-        `<authentication_instructions>\n${authenticationInstructions}\n</authentication_instructions>`,
-      );
-    }
-    if (authCredentials) {
-      const creds = authCredentials;
-      const credLines: string[] = [];
-      if (creds.username) credLines.push(`Username: ${creds.username}`);
-      if (creds.password) credLines.push(`Password: ${creds.password}`);
-      if (creds.loginUrl) credLines.push(`Login URL: ${creds.loginUrl}`);
-      if (creds.apiKey) credLines.push(`API Key: ${creds.apiKey}`);
-      if (creds.tokens?.bearerToken)
-        credLines.push(`Bearer Token: ${creds.tokens.bearerToken}`);
-      if (creds.tokens?.cookies)
-        credLines.push(`Cookies: ${creds.tokens.cookies}`);
-      if (creds.tokens?.sessionToken)
-        credLines.push(`Session Token: ${creds.tokens.sessionToken}`);
-      if (creds.additionalFields) {
-        for (const [k, v] of Object.entries(creds.additionalFields)) {
-          credLines.push(`${k}: ${v}`);
-        }
-      }
-      if (creds.tokens?.customHeaders) {
-        for (const [k, v] of Object.entries(creds.tokens.customHeaders)) {
-          credLines.push(`Header ${k}: ${v}`);
-        }
-      }
-      if (credLines.length > 0) {
-        parts.push(
-          `<auth_credentials>\n${credLines.join("\n")}\n</auth_credentials>`,
-        );
-      }
-    }
-    const loginTarget = authCredentials?.loginUrl ?? target;
-    authBlock = `⚠️ AUTHENTICATION CREDENTIALS PROVIDED — YOU MUST LOG IN FIRST.
+  } else if (authenticationInstructions) {
+    authBlock = `⚠️ AUTHENTICATION INSTRUCTIONS PROVIDED — YOU MUST LOG IN FIRST.
 
 Your FIRST tool call must be: browser_navigate to ${loginTarget}
-Then: browser_snapshot → browser_fill (username) → browser_fill (password) → browser_click (submit) → browser_snapshot (confirm) → browser_get_cookies
 
 Do NOT run curl, nmap, dig, or any other command before completing login.
 Include authentication information with EVERY target that requires it in your final report.
 
-${parts.join("\n\n")}`;
+<authentication_instructions>
+${authenticationInstructions}
+</authentication_instructions>`;
   } else {
     authBlock = `AUTHENTICATION: No credentials provided. Skip Phase 1 and proceed with unauthenticated discovery.
 Note any login pages you find as assets and flag them for pentest agents.`;
@@ -254,8 +217,8 @@ Note any login pages you find as assets and flag them for pentest agents.`;
     : `SUBDOMAIN ENUMERATION: DISABLED — Skip Phase 2 entirely. Focus only on the provided target URL.`;
 
   const startDirective =
-    authenticationInstructions || authCredentials
-      ? `Begin NOW by logging in. Your first tool call must be browser_navigate to ${authCredentials?.loginUrl ?? target}. After login, continue with the remaining phases.`
+    credBlock || authenticationInstructions
+      ? `Begin NOW by logging in. Your first tool call must be browser_navigate to ${loginTarget}. After login, continue with the remaining phases.`
       : `Begin attack surface analysis now. Follow the phases defined in your system prompt in order.`;
 
   return `TARGET: ${target}

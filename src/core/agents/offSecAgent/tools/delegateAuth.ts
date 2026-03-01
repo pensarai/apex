@@ -4,6 +4,7 @@ import { join } from "path";
 import { writeFileSync } from "fs";
 import type { ToolContext } from "./types";
 import { type AuthCredentials } from "../../specialized/authenticationAgent/types";
+import { CredentialManager } from "../../../credentials";
 // runAuthenticationAgent is dynamically imported inside execute() to break
 // the circular dependency: authAgent → offensiveSecurityAgent → tools → delegateAuth → authAgent
 
@@ -260,6 +261,16 @@ When to use delegate_to_auth_subagent vs authenticate_session:
           tokens,
         });
 
+        // Ensure the session has a credential manager with the resolved credentials.
+        // This is the single path for secret management — the auth agent reads
+        // from session.credentialManager and never sees raw secrets.
+        if (!ctx.session.credentialManager) {
+          ctx.session.credentialManager = new CredentialManager();
+        }
+        if (credentials) {
+          ctx.session.credentialManager.addFromAuthCredentials(credentials);
+        }
+
         // Dynamic import to break circular dependency:
         // authAgent → offensiveSecurityAgent → tools/index → delegateAuth → api/authentication → authAgent
         const { runAuthenticationAgent } =
@@ -268,7 +279,6 @@ When to use delegate_to_auth_subagent vs authenticate_session:
         const result = await runAuthenticationAgent({
           target,
           session: ctx.session,
-          credentials,
           authHints,
           model: ctx.model,
           authConfig: ctx.authConfig,

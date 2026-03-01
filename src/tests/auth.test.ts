@@ -8,7 +8,7 @@ config();
 const TARGET_URL = "staging-console.pensar.dev";
 
 describe("Authentication Agent", () => {
-  it("should authenticate with credentials", async () => {
+  it("should authenticate with credential manager (auto-provisioned)", async () => {
     const username = process.env.TEST_AUTH_USERNAME;
     const password = process.env.TEST_AUTH_PASSWORD;
 
@@ -31,21 +31,29 @@ describe("Authentication Agent", () => {
       },
     });
 
+    // Session should auto-provision a CredentialManager
+    expect(session.credentialManager).toBeDefined();
+    expect(session.credentialManager!.size).toBe(1);
+
+    // Prompt must contain the credential ID but NOT the raw password
+    const prompt = session.credentialManager!.formatForPrompt();
+    expect(prompt).toContain(username);
+    expect(prompt).not.toContain(password);
+
+    const toolCalls: { name: string; input: Record<string, unknown> }[] = [];
+
     const result = await runAuthenticationAgent({
       target: TARGET_URL,
       model: "claude-haiku-4-5",
       session,
-      credentials: {
-        username,
-        password,
-        loginUrl: `https://${TARGET_URL}/login`,
-      },
       callbacks: {
         onTextDelta: (d) => process.stdout.write(d.text),
-        onToolCall: (d) =>
+        onToolCall: (d) => {
+          toolCalls.push({ name: d.toolName, input: d.input as Record<string, unknown> });
           console.log(
             `\n→ calling ${d.toolName}\n  ${JSON.stringify(d.input, null, 2)}`,
-          ),
+          );
+        },
         onToolResult: (d) => console.log(`✓ ${d.toolName} completed`),
         onError: (e) => console.error("Agent error:", e),
       },
@@ -57,6 +65,15 @@ describe("Authentication Agent", () => {
 
     expect(result).toBeDefined();
     expect(result.summary).toBeDefined();
+
+    // Verify the agent never typed the raw password in browser_fill
+    const browserFills = toolCalls.filter((t) => t.name === "browser_fill");
+    for (const fill of browserFills) {
+      expect(
+        fill.input.value !== password,
+        `browser_fill should use credentialId, not raw password`,
+      ).toBe(true);
+    }
   });
 
   it("should probe target without credentials", async () => {
@@ -65,6 +82,9 @@ describe("Authentication Agent", () => {
       targets: [TARGET_URL],
     });
 
+    // No authCredentials → no credential manager
+    expect(session.credentialManager).toBeUndefined();
+
     const result = await runAuthenticationAgent({
       target: TARGET_URL,
       model: "claude-haiku-4-5",
@@ -88,7 +108,7 @@ describe("Authentication Agent", () => {
     expect(result.summary).toBeDefined();
   });
 
-  it("should authenticate with auth hints", async () => {
+  it("should authenticate with auth hints (credential manager auto-provisioned)", async () => {
     const username = process.env.TEST_AUTH_USERNAME;
     const password = process.env.TEST_AUTH_PASSWORD;
 
@@ -111,15 +131,14 @@ describe("Authentication Agent", () => {
       },
     });
 
+    expect(session.credentialManager).toBeDefined();
+
+    const toolCalls: { name: string; input: Record<string, unknown> }[] = [];
+
     const result = await runAuthenticationAgent({
       target: TARGET_URL,
       model: "claude-haiku-4-5",
       session,
-      credentials: {
-        username,
-        password,
-        loginUrl: `https://${TARGET_URL}/login`,
-      },
       authHints: {
         authScheme: "form",
         browserRequired: true,
@@ -130,10 +149,12 @@ describe("Authentication Agent", () => {
       },
       callbacks: {
         onTextDelta: (d) => process.stdout.write(d.text),
-        onToolCall: (d) =>
+        onToolCall: (d) => {
+          toolCalls.push({ name: d.toolName, input: d.input as Record<string, unknown> });
           console.log(
             `\n→ calling ${d.toolName}\n  ${JSON.stringify(d.input, null, 2)}`,
-          ),
+          );
+        },
         onToolResult: (d) => console.log(`✓ ${d.toolName} completed`),
         onError: (e) => console.error("Agent error:", e),
       },
@@ -146,5 +167,13 @@ describe("Authentication Agent", () => {
     expect(result).toBeDefined();
     expect(result.success).toBe(true);
     expect(result.summary).toBeDefined();
+
+    const browserFills = toolCalls.filter((t) => t.name === "browser_fill");
+    for (const fill of browserFills) {
+      expect(
+        fill.input.value !== password,
+        `browser_fill should use credentialId, not raw password`,
+      ).toBe(true);
+    }
   });
 });

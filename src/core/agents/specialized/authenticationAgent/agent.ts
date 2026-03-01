@@ -1,10 +1,9 @@
 import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
-import { z } from "zod";
+import { hasToolCall } from "ai";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import type { AIModel } from "../../../ai";
 import type { AIAuthConfig } from "../../../ai/utils";
-import type { CredentialManager } from "../../../credentials";
 import { type SessionInfo } from "../../../session";
 import { AUTH_SUBAGENT_SYSTEM_PROMPT } from "./prompts";
 import { detectOSAndEnhancePrompt } from "../utils";
@@ -23,16 +22,13 @@ export interface AuthenticationAgentInput {
   /** AI model to drive the agent */
   model: AIModel;
 
-  /** Session that provides paths */
+  /**
+   * Session that provides paths and, when created with `authCredentials`,
+   * an auto-provisioned {@link CredentialManager}. The agent reads
+   * `session.credentialManager` automatically — callers never need to
+   * create or pass a credential manager manually.
+   */
   session: SessionInfo;
-
-  /** Optional credentials to use */
-  credentials?: {
-    username?: string;
-    password?: string;
-    apiKey?: string;
-    loginUrl?: string;
-  };
 
   /** Hints about the auth flow */
   authHints?: {
@@ -53,13 +49,6 @@ export interface AuthenticationAgentInput {
 
   /** Optional persistence callbacks for external storage integration */
   callbacks?: ConsumeCallbacks;
-
-  /**
-   * In-memory credential store. When present, the agent prompt will
-   * contain only credential references (IDs + metadata) and tools
-   * will resolve secrets at execution time.
-   */
-  credentialManager?: CredentialManager;
 }
 
 /** The typed result returned by `AuthenticationAgent.consume()`. */
@@ -81,61 +70,39 @@ export interface AuthenticationResult {
 }
 
 // ---------------------------------------------------------------------------
-// Response schema — the agent calls "response" when done (same pattern as
-// TargetedPentestAgent). complete_authentication persists auth data to disk;
-// this schema captures the structured result and terminates the agent.
-// ---------------------------------------------------------------------------
-
-const AuthResponseSchema = z.object({
-  success: z.boolean().describe("Whether authentication was successful"),
-  summary: z
-    .string()
-    .describe("Brief summary of the authentication process and result"),
-  strategy: z
-    .string()
-    .optional()
-    .describe(
-      "Authentication strategy used (browser, form_post, json_post, basic_auth, bearer, api_key)",
-    ),
-  barrierType: z
-    .string()
-    .optional()
-    .describe(
-      "If an auth barrier was encountered, its type (captcha, mfa, oauth_consent, rate_limit, unknown)",
-    ),
-  barrierDetails: z
-    .string()
-    .optional()
-    .describe("Details about the auth barrier encountered"),
-});
-
-// ---------------------------------------------------------------------------
 // AuthenticationAgent
 // ---------------------------------------------------------------------------
 
 /**
  * An authentication-focused specialisation of {@link OffensiveSecurityAgent}.
  *
- * Uses a subset of tools to discover and complete authentication flows:
- * detect auth scheme, probe endpoints, simple auth, delegate to sub-agent,
- * and signal completion.
+ * Credentials are managed automatically via the session's
+ * {@link CredentialManager} — the agent never sees raw secrets.
+ * Create the session with `authCredentials` and the credential manager
+ * is provisioned for you.
  *
  * `consume()` returns an {@link AuthenticationResult}.
  *
  * @example
  * ```ts
+ * const session = await sessions.create({
+ *   name: "Auth test",
+ *   targets: ["https://example.com"],
+ *   config: {
+ *     authCredentials: { username: "admin", password: "admin",
+ *                        loginUrl: "https://example.com/login" },
+ *   },
+ * });
+ *
  * const agent = new AuthenticationAgent({
  *   target: "https://example.com",
  *   model: "claude-sonnet-4-20250514",
- *   session,
- *   credentials: { username: "admin", password: "admin" },
+ *   session, // credential manager is auto-provisioned
  * });
  *
  * const { success, summary } = await agent.consume({
  *   onTextDelta: (d) => process.stdout.write(d.text),
  * });
- *
- * console.log(success ? "Authenticated!" : "Failed");
  * ```
  */
 export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationResult> {
@@ -144,31 +111,27 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
       model,
       target,
       session,
-      credentials,
       authHints,
       authConfig,
       onStepFinish,
       abortSignal,
-      credentialManager,
     } = opts;
+
+    const cm = session.credentialManager;
 
     super({
       system: detectOSAndEnhancePrompt(AUTH_SUBAGENT_SYSTEM_PROMPT),
-      prompt: buildAuthPrompt(target, credentials, authHints, credentialManager),
+      prompt: buildAuthPrompt(target, authHints, cm),
       model,
       session,
       target,
       authConfig,
       onStepFinish,
       abortSignal,
-      credentialManager,
       toolChoice: "auto",
       activeTools: [
         // Auth flow tools
         "execute_command",
-        // "http_request",
-        // "detect_auth_scheme",
-        // "probe_auth_endpoints",
         "authenticate_session",
         "complete_authentication",
         // Browser automation for login forms, OAuth, SPA auth
@@ -185,11 +148,9 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
         "email_list_messages",
         "email_search_messages",
         "email_get_message",
-        // Structured termination (same pattern as pentest agent)
-        "response",
       ],
 
-      responseSchema: AuthResponseSchema,
+      stopWhen: hasToolCall("complete_authentication"),
 
       resolveResult: () => {
         const authDataPath = join(session.rootPath, "auth", "auth-data.json");
@@ -245,24 +206,14 @@ function loadAuthResult(authDataPath: string): AuthenticationResult {
 
 function buildAuthPrompt(
   target: string,
-  credentials?: AuthenticationAgentInput["credentials"],
   authHints?: AuthenticationAgentInput["authHints"],
-  credentialManager?: CredentialManager,
+  credentialManager?: import("../../../credentials").CredentialManager,
 ): string {
   const parts: string[] = [`TARGET: ${target}\n`];
 
-  // When a credential manager is available, emit only references (no secrets)
   const credBlock = credentialManager?.formatForPrompt();
   if (credBlock) {
     parts.push(credBlock);
-    parts.push("");
-  } else if (credentials) {
-    parts.push("CREDENTIALS:");
-    if (credentials.username) parts.push(`- Username: ${credentials.username}`);
-    if (credentials.password) parts.push(`- Password: ${credentials.password}`);
-    if (credentials.apiKey) parts.push(`- API Key: [PROVIDED]`);
-    if (credentials.loginUrl)
-      parts.push(`- Login URL: ${credentials.loginUrl}`);
     parts.push("");
   } else {
     parts.push(
@@ -285,21 +236,20 @@ function buildAuthPrompt(
     parts.push("");
   }
 
-  const hasCredentials = credBlock || credentials?.loginUrl || credentials?.username;
-  if (hasCredentials) {
+  if (credBlock) {
     parts.push(`INSTRUCTIONS:
-You have credentials — authenticate immediately.
-1. Use authenticate_session (pass the credentialId) or the browser tools depending on the target
-2. If authenticate_session fails, try via browser or delegate_to_auth_subagent
-3. Call complete_authentication to persist credentials (success or failure)
-4. Call the response tool with your final summary to end the run`);
+You have credentials available via credential IDs — authenticate immediately.
+1. Try authenticate_session first (pass the credentialId — secrets are resolved automatically)
+2. If authenticate_session fails, use browser tools. For browser_fill on password/secret fields,
+   pass credentialId + credentialField (e.g. credentialField="password") instead of the raw value —
+   the secret is resolved securely at execution time. NEVER type a password directly.
+3. Call complete_authentication with exported cookies/headers to persist credentials and end the run`);
   } else {
     parts.push(`INSTRUCTIONS:
 1. Probe the target with execute_command (curl) to determine the auth mechanism
 2. Attempt authentication with authenticate_session or the browser tools
 3. If that fails, try delegate_to_auth_subagent as a fallback
-4. Call complete_authentication to persist credentials (success or failure)
-5. Call the response tool with your final summary to end the run`);
+4. Call complete_authentication with exported cookies/headers to persist credentials and end the run`);
   }
 
   return parts.join("\n");
