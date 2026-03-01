@@ -72,6 +72,31 @@ export class CredentialManager {
   private readonly store = new Map<string, StoredCredential>();
 
   /**
+   * Return the ID of an existing credential whose meaningful secret
+   * fields match `candidate`, or `undefined` if no match is found.
+   */
+  private findDuplicate(
+    candidate: Omit<StoredCredential, "id" | "type">,
+  ): string | undefined {
+    for (const [id, existing] of this.store) {
+      if (
+        existing.username === candidate.username &&
+        existing.password === candidate.password &&
+        existing.apiKey === candidate.apiKey &&
+        existing.loginUrl === candidate.loginUrl &&
+        existing.tokens?.bearerToken === candidate.tokens?.bearerToken &&
+        existing.tokens?.cookies === candidate.tokens?.cookies &&
+        existing.tokens?.sessionToken === candidate.tokens?.sessionToken &&
+        JSON.stringify(existing.tokens?.customHeaders) ===
+          JSON.stringify(candidate.tokens?.customHeaders)
+      ) {
+        return id;
+      }
+    }
+    return undefined;
+  }
+
+  /**
    * Store a credential and return its generated ID.
    *
    * If `input.id` is provided it will be used as-is (useful for
@@ -94,13 +119,15 @@ export class CredentialManager {
   /**
    * Convenience method: convert an {@link AuthCredentials} object (the
    * legacy session-level format) into a stored credential and return
-   * the ID.
+   * the ID.  If an equivalent credential already exists (same username,
+   * password, apiKey, loginUrl, and tokens), returns the existing ID
+   * instead of creating a duplicate.
    */
   addFromAuthCredentials(
     creds: AuthCredentials,
     extra?: { label?: string; role?: string },
   ): string {
-    return this.add({
+    const candidate = {
       username: creds.username,
       password: creds.password,
       apiKey: creds.apiKey,
@@ -109,7 +136,12 @@ export class CredentialManager {
       tokens: creds.tokens,
       label: extra?.label,
       role: extra?.role,
-    });
+    };
+
+    const existingId = this.findDuplicate(candidate);
+    if (existingId) return existingId;
+
+    return this.add(candidate);
   }
 
   /**

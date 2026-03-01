@@ -141,6 +141,54 @@ describe("CredentialManager", () => {
       const id = cm.addFromAuthCredentials({ username: "u", password: "p" });
       expect(cm.resolve(id)!.type).toBe("username-password");
     });
+
+    it("returns existing ID when duplicate credentials are added", () => {
+      const creds: AuthCredentials = {
+        username: "admin",
+        password: "admin123",
+        loginUrl: "https://app.test/login",
+      };
+
+      const id1 = cm.addFromAuthCredentials(creds);
+      const id2 = cm.addFromAuthCredentials(creds);
+
+      expect(id1).toBe(id2);
+      expect(cm.size).toBe(1);
+    });
+
+    it("deduplicates credentials with matching tokens", () => {
+      const creds: AuthCredentials = {
+        username: "user",
+        password: "pass",
+        tokens: {
+          bearerToken: "jwt.abc",
+          cookies: "sess=xyz",
+          customHeaders: { "X-Key": "val" },
+        },
+      };
+
+      const id1 = cm.addFromAuthCredentials(creds);
+      const id2 = cm.addFromAuthCredentials(creds);
+      const id3 = cm.addFromAuthCredentials(creds);
+
+      expect(id1).toBe(id2);
+      expect(id2).toBe(id3);
+      expect(cm.size).toBe(1);
+    });
+
+    it("stores separately when credentials differ", () => {
+      const id1 = cm.addFromAuthCredentials({
+        username: "admin",
+        password: "pass1",
+      });
+      const id2 = cm.addFromAuthCredentials({
+        username: "admin",
+        password: "pass2",
+      });
+
+      expect(id1).not.toBe(id2);
+      expect(cm.size).toBe(2);
+    });
   });
 
   // =========================================================================
