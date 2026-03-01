@@ -225,14 +225,39 @@ function hdr(msg: gmail_v1.Schema$Message, name: string): string {
   );
 }
 
+/**
+ * Split an RFC 5322 address-list header on commas while respecting
+ * quoted strings (e.g. `"Doe, John" <john@example.com>`).
+ */
+function splitAddressList(header: string): string[] {
+  const result: string[] = [];
+  let current = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < header.length; i++) {
+    const ch = header[i];
+    if (ch === '"' && (i === 0 || header[i - 1] !== "\\")) {
+      inQuotes = !inQuotes;
+      current += ch;
+    } else if (ch === "," && !inQuotes) {
+      const trimmed = current.trim();
+      if (trimmed) result.push(trimmed);
+      current = "";
+    } else {
+      current += ch;
+    }
+  }
+
+  const trimmed = current.trim();
+  if (trimmed) result.push(trimmed);
+  return result;
+}
+
 function gmailToSummary(msg: gmail_v1.Schema$Message): EmailMessageSummary {
   return {
     id: msg.id ?? "",
     from: hdr(msg, "From"),
-    to: hdr(msg, "To")
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean),
+    to: splitAddressList(hdr(msg, "To")),
     subject: hdr(msg, "Subject"),
     date: hdr(msg, "Date"),
     snippet: msg.snippet ?? "",
@@ -246,10 +271,7 @@ function gmailToFull(msg: gmail_v1.Schema$Message): EmailMessageFull {
   return {
     ...gmailToSummary(msg),
     body: extractGmailBody(msg),
-    cc: hdr(msg, "Cc")
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean),
+    cc: splitAddressList(hdr(msg, "Cc")),
     replyTo: hdr(msg, "Reply-To") || undefined,
   };
 }
