@@ -228,7 +228,12 @@ When to use delegate_to_auth_subagent vs authenticate_session:
             `   Custom Headers: ${Object.keys(tokens.customHeaders).join(", ")}`,
           );
 
-        const sessionCreds = ctx.session.config?.authCredentials;
+        const rawSessionCreds = ctx.session.config?.authCredentials;
+        const sessionCreds: AuthCredentials | undefined = rawSessionCreds
+          ? Array.isArray(rawSessionCreds)
+            ? rawSessionCreds[0]
+            : rawSessionCreds
+          : undefined;
         if (sessionCreds && !username && !apiKey && !tokens) {
           console.log(`   [Inheriting session credentials]`);
           if (sessionCreds.username)
