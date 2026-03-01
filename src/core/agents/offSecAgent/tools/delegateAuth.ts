@@ -113,9 +113,18 @@ When to use delegate_to_auth_subagent vs authenticate_session:
           "ID of a stored credential. When provided, secrets are resolved automatically — do not pass username/password/apiKey/tokens.",
         ),
       loginUrl: z.string().optional().describe("Discovered login URL if known"),
-      username: z.string().optional().describe("Username if available (ignored if credentialId is set)"),
-      password: z.string().optional().describe("Password if available (ignored if credentialId is set)"),
-      apiKey: z.string().optional().describe("API key if available (ignored if credentialId is set)"),
+      username: z
+        .string()
+        .optional()
+        .describe("Username if available (ignored if credentialId is set)"),
+      password: z
+        .string()
+        .optional()
+        .describe("Password if available (ignored if credentialId is set)"),
+      apiKey: z
+        .string()
+        .optional()
+        .describe("API key if available (ignored if credentialId is set)"),
       tokens: z
         .object({
           bearerToken: z

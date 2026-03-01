@@ -155,10 +155,7 @@ export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSur
 // Prompt builder
 // ---------------------------------------------------------------------------
 
-function buildPrompt(
-  target: string,
-  session: SessionInfo,
-): string {
+function buildPrompt(target: string, session: SessionInfo): string {
   const scopeConstraints = session.config?.scopeConstraints;
   const authenticationInstructions = session.config?.authenticationInstructions;
   const enumerateSubdomains = session.config?.enumerateSubdomains ?? false;

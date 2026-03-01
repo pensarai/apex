@@ -39,11 +39,15 @@ or provide username/password directly.`,
       username: z
         .string()
         .optional()
-        .describe("Username to authenticate with (ignored if credentialId is set)"),
+        .describe(
+          "Username to authenticate with (ignored if credentialId is set)",
+        ),
       password: z
         .string()
         .optional()
-        .describe("Password to authenticate with (ignored if credentialId is set)"),
+        .describe(
+          "Password to authenticate with (ignored if credentialId is set)",
+        ),
       method: z
         .enum(["form_post", "json_post", "basic_auth"])
         .default("form_post")

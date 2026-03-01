@@ -98,7 +98,14 @@ export function createBrowserToolset(ctx: ToolContext) {
           "ID of a stored credential. When provided with credentialField, the secret is resolved automatically.",
         ),
       credentialField: z
-        .enum(["password", "username", "apiKey", "bearerToken", "cookies", "sessionToken"])
+        .enum([
+          "password",
+          "username",
+          "apiKey",
+          "bearerToken",
+          "cookies",
+          "sessionToken",
+        ])
         .optional()
         .describe(
           "Which field to extract from the credential (e.g. 'password'). Required when credentialId is set.",
@@ -109,14 +116,27 @@ export function createBrowserToolset(ctx: ToolContext) {
     }),
     execute: async (params) => {
       let { value } = params;
-      const { element, ref, credentialId, credentialField, toolCallDescription } = params;
+      const {
+        element,
+        ref,
+        credentialId,
+        credentialField,
+        toolCallDescription,
+      } = params;
 
       if (credentialId && credentialField) {
         const stored = cm.resolve(credentialId);
         if (!stored) {
-          return { success: false, error: `Unknown credential ID: ${credentialId}` };
+          return {
+            success: false,
+            error: `Unknown credential ID: ${credentialId}`,
+          };
         }
-        if (credentialField === "bearerToken" || credentialField === "cookies" || credentialField === "sessionToken") {
+        if (
+          credentialField === "bearerToken" ||
+          credentialField === "cookies" ||
+          credentialField === "sessionToken"
+        ) {
           value = stored.tokens?.[credentialField] ?? "";
         } else {
           value = stored[credentialField] ?? "";
@@ -132,7 +152,8 @@ export function createBrowserToolset(ctx: ToolContext) {
       if (!value) {
         return {
           success: false,
-          error: "Either value or credentialId + credentialField must be provided",
+          error:
+            "Either value or credentialId + credentialField must be provided",
         };
       }
 

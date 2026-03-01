@@ -49,7 +49,10 @@ describe("Authentication Agent", () => {
       callbacks: {
         onTextDelta: (d) => process.stdout.write(d.text),
         onToolCall: (d) => {
-          toolCalls.push({ name: d.toolName, input: d.input as Record<string, unknown> });
+          toolCalls.push({
+            name: d.toolName,
+            input: d.input as Record<string, unknown>,
+          });
           console.log(
             `\n→ calling ${d.toolName}\n  ${JSON.stringify(d.input, null, 2)}`,
           );
@@ -150,7 +153,10 @@ describe("Authentication Agent", () => {
       callbacks: {
         onTextDelta: (d) => process.stdout.write(d.text),
         onToolCall: (d) => {
-          toolCalls.push({ name: d.toolName, input: d.input as Record<string, unknown> });
+          toolCalls.push({
+            name: d.toolName,
+            input: d.input as Record<string, unknown>,
+          });
           console.log(
             `\n→ calling ${d.toolName}\n  ${JSON.stringify(d.input, null, 2)}`,
           );

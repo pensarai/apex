@@ -22,11 +22,14 @@ function generateCredentialId(): string {
   return `cred_${randomBytes(8).toString("hex")}`;
 }
 
-function inferType(cred: Omit<StoredCredential, "id" | "type">): CredentialType {
+function inferType(
+  cred: Omit<StoredCredential, "id" | "type">,
+): CredentialType {
   const hasPwd = !!cred.password;
   const hasApiKey = !!cred.apiKey;
   const hasBearer = !!cred.tokens?.bearerToken;
-  const hasHeaders = !!cred.tokens?.customHeaders &&
+  const hasHeaders =
+    !!cred.tokens?.customHeaders &&
     Object.keys(cred.tokens.customHeaders).length > 0;
   const hasCookies = !!cred.tokens?.cookies;
 

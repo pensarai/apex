@@ -35,7 +35,9 @@ describe("Authentication Agent — Cookie Export", () => {
 
       // Session auto-provisions credential manager — password must not be in prompt
       expect(session.credentialManager).toBeDefined();
-      expect(session.credentialManager!.formatForPrompt()).not.toContain(password);
+      expect(session.credentialManager!.formatForPrompt()).not.toContain(
+        password,
+      );
 
       const toolCalls: { name: string; input: Record<string, unknown> }[] = [];
 
@@ -54,7 +56,10 @@ describe("Authentication Agent — Cookie Export", () => {
         callbacks: {
           onTextDelta: (d) => process.stdout.write(d.text),
           onToolCall: (d) => {
-            toolCalls.push({ name: d.toolName, input: d.input as Record<string, unknown> });
+            toolCalls.push({
+              name: d.toolName,
+              input: d.input as Record<string, unknown>,
+            });
             console.log(
               `\n→ calling ${d.toolName}\n  ${JSON.stringify(d.input, null, 2)}`,
             );
