@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { CodeAgent } from "../agents/specialized/codeAgent/agent";
 import {
@@ -36,6 +36,7 @@ import {
   runWhiteboxAttackSurfaceWorkflow,
   type WhiteboxAttackSurfaceWorkflowInput,
 } from "./whiteboxAttackSurface";
+import { BlackboxAttackSurfaceAgent } from "../agents/specialized/attackSurface/blackboxAgent";
 import type { AgentEventBus } from "../agents/offSecAgent/eventBus";
 import type { AIModel } from "../ai";
 import type { AIAuthConfig } from "../ai/utils";
@@ -160,7 +161,8 @@ export async function runThreatModelWorkflow(
   // =========================================================================
   // Phase 1a: Attack Surface Reconnaissance
   //   - Whitebox: run the whitebox attack surface workflow
-  //   - Blackbox: SKIP — data already at session.rootPath/attack-surface-results.json
+  //   - Blackbox: run blackbox discovery (skip if data already exists from
+  //     a prior pentest run)
   // =========================================================================
 
   let attackSurfaceRepoType: string | undefined;
@@ -188,8 +190,24 @@ export async function runThreatModelWorkflow(
       attackSurfaceResult,
     );
     emitPhase(eventBus, "attack-surface", "completed");
+  } else if (!existsSync(attackSurfaceDataPath)) {
+    // Blackbox: run discovery if not already present from a prior pentest run
+    emitPhase(eventBus, "attack-surface", "pending");
+
+    const bbAgent = new BlackboxAttackSurfaceAgent({
+      target: target!,
+      model,
+      session,
+      authConfig,
+      abortSignal,
+      eventBus: eventBus?.child("attack-surface"),
+    });
+
+    // The agent writes attack-surface-results.json to session.rootPath internally
+    await bbAgent.consume();
+
+    emitPhase(eventBus, "attack-surface", "completed");
   }
-  // Blackbox: attack-surface-results.json already exists from pentest workflow
 
   // =========================================================================
   // Phase 1b: Deployment Context
