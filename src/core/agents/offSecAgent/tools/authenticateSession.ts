@@ -29,7 +29,12 @@ Use this to:
 You can either pass a credentialId (preferred when credentials are managed)
 or provide username/password directly.`,
     inputSchema: z.object({
-      loginUrl: z.string().describe("Login endpoint URL"),
+      loginUrl: z
+        .string()
+        .optional()
+        .describe(
+          "Login endpoint URL. Can be omitted when using a credentialId that includes a loginUrl.",
+        ),
       credentialId: z
         .string()
         .optional()
@@ -102,6 +107,15 @@ or provide username/password directly.`,
             authenticated: false,
             message:
               "Username and password are required. Provide them directly or via a credentialId.",
+          };
+        }
+
+        if (!loginUrl) {
+          return {
+            success: false,
+            authenticated: false,
+            message:
+              "loginUrl is required. Provide it directly or via a credentialId that includes one.",
           };
         }
 
