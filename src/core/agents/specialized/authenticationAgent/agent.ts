@@ -9,7 +9,7 @@ import { AUTH_SUBAGENT_SYSTEM_PROMPT } from "./prompts";
 import { detectOSAndEnhancePrompt } from "../utils";
 import { OffensiveSecurityAgent } from "../../offSecAgent/offensiveSecurityAgent";
 import type { ConsumeCallbacks } from "../../offSecAgent/types";
-import type { AuthBarrier, AuthCredentials } from "./types";
+import type { AuthBarrier } from "./types";
 
 // ---------------------------------------------------------------------------
 // Types
