@@ -175,8 +175,10 @@ function formatModelName(modelId: string, provider: string): string {
   // But keep "-v2:1" when it's the model version (e.g. claude-v2:1)
   let dateSuffix = "";
 
-  // First try: date followed by version suffix
-  const dateVersionMatch = id.match(/^(.*)-(\d{4})(\d{2})(\d{2})-v\d+:\d+$/);
+  // First try: date followed by version suffix (-v1:0 or -v1)
+  const dateVersionMatch = id.match(
+    /^(.*)-(\d{4})(\d{2})(\d{2})-v\d+(?::\d+)?$/,
+  );
   if (dateVersionMatch) {
     id = dateVersionMatch[1]!;
     dateSuffix = ` (${dateVersionMatch[2]}-${dateVersionMatch[3]}-${dateVersionMatch[4]})`;
@@ -186,20 +188,23 @@ function formatModelName(modelId: string, provider: string): string {
       dateSuffix = ` (${y}-${m}-${d})`;
       return "";
     });
-    // Try: version suffix only on non-model-version IDs
-    // Only strip -v\d+:\d+ if the base part contains a date or is a known pattern
-    // (i.e., don't strip from claude-v2:1 or claude-instant-v1)
-    if (dateSuffix) {
-      id = id.replace(/-v\d+:\d+$/, "");
-    } else {
-      // Strip only clearly infrastructure version suffixes (after known model names)
-      id = id.replace(/(-(?:text|light|r|r-plus))-v\d+:\d+$/, "$1");
-      // For IDs like command-r-v1:0 → command-r
-      id = id.replace(/-v\d+:\d+$/, (match) => {
-        // Keep if it looks like it's the model version (e.g., claude-v2:1)
-        if (/claude-v\d|instant-v\d/.test(id)) return match;
-        return "";
-      });
+
+    // Try: standalone Bedrock infrastructure version suffix (-v1:0 or -v1)
+    // Don't strip if it's the model version (claude-v2, claude-v2:1, instant-v1)
+    const isModelVersion = /claude-v\d|instant-v\d/.test(id);
+    if (!isModelVersion) {
+      if (dateSuffix) {
+        id = id.replace(/-v\d+(?::\d+)?$/, "");
+      } else {
+        id = id.replace(/-v\d+:\d+$/, "");
+        // Also strip bare -v\d+ suffix when NOT a model version
+        // (e.g., claude-opus-4-6-v1 → claude-opus-4-6)
+        id = id.replace(/-v\d+$/, (match) => {
+          // Only strip if preceded by a model family pattern, not "claude-v2"
+          if (/\d-v\d+$/.test(id)) return "";
+          return match;
+        });
+      }
     }
   }
 

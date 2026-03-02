@@ -113,6 +113,24 @@ export const OPENAI_MODELS: ModelInfo[] = [
     contextLength: 128000,
   },
   {
+    id: "gpt-4o-audio-preview",
+    name: "GPT-4o-audio Preview",
+    provider: "openai",
+    contextLength: 128000,
+  },
+  {
+    id: "gpt-4o-audio-preview-2024-12-17",
+    name: "GPT-4o-audio-preview-2024-12-17",
+    provider: "openai",
+    contextLength: 128000,
+  },
+  {
+    id: "gpt-4o-audio-preview-2025-06-03",
+    name: "GPT-4o-audio-preview-2025-06-03",
+    provider: "openai",
+    contextLength: 128000,
+  },
+  {
     id: "gpt-4o-mini",
     name: "GPT-4o-mini",
     provider: "openai",
@@ -121,6 +139,42 @@ export const OPENAI_MODELS: ModelInfo[] = [
   {
     id: "gpt-4o-mini-2024-07-18",
     name: "GPT-4o-mini-2024-07-18",
+    provider: "openai",
+    contextLength: 128000,
+  },
+  {
+    id: "gpt-4o-mini-audio-preview",
+    name: "GPT-4o-mini-audio Preview",
+    provider: "openai",
+    contextLength: 128000,
+  },
+  {
+    id: "gpt-4o-mini-audio-preview-2024-12-17",
+    name: "GPT-4o-mini-audio-preview-2024-12-17",
+    provider: "openai",
+    contextLength: 128000,
+  },
+  {
+    id: "gpt-4o-search-preview",
+    name: "GPT-4o-search Preview",
+    provider: "openai",
+    contextLength: 128000,
+  },
+  {
+    id: "gpt-4o-search-preview-2025-03-11",
+    name: "GPT-4o-search-preview-2025-03-11",
+    provider: "openai",
+    contextLength: 128000,
+  },
+  {
+    id: "gpt-4o-mini-search-preview",
+    name: "GPT-4o-mini-search Preview",
+    provider: "openai",
+    contextLength: 128000,
+  },
+  {
+    id: "gpt-4o-mini-search-preview-2025-03-11",
+    name: "GPT-4o-mini-search-preview-2025-03-11",
     provider: "openai",
     contextLength: 128000,
   },
@@ -149,18 +203,6 @@ export const OPENAI_MODELS: ModelInfo[] = [
     contextLength: 8192,
   },
   {
-    id: "gpt-4.5-preview",
-    name: "GPT-4.5 Preview",
-    provider: "openai",
-    contextLength: 128000,
-  },
-  {
-    id: "gpt-4.5-preview-2025-02-27",
-    name: "GPT-4.5-preview-2025-02-27",
-    provider: "openai",
-    contextLength: 128000,
-  },
-  {
     id: "gpt-3.5-turbo-0125",
     name: "GPT-3.5-turbo-0125",
     provider: "openai",
@@ -175,6 +217,12 @@ export const OPENAI_MODELS: ModelInfo[] = [
   {
     id: "gpt-3.5-turbo-1106",
     name: "GPT-3.5-turbo-1106",
+    provider: "openai",
+    contextLength: 16385,
+  },
+  {
+    id: "gpt-3.5-turbo-16k",
+    name: "GPT-3.5-turbo-16k",
     provider: "openai",
     contextLength: 16385,
   },
@@ -233,6 +281,12 @@ export const OPENAI_MODELS: ModelInfo[] = [
     contextLength: 200000,
   },
   {
+    id: "gpt-5.1-2025-11-13",
+    name: "GPT-5.1-2025-11-13",
+    provider: "openai",
+    contextLength: 200000,
+  },
+  {
     id: "gpt-5.1-chat-latest",
     name: "GPT-5.1-chat (Latest)",
     provider: "openai",
@@ -245,6 +299,12 @@ export const OPENAI_MODELS: ModelInfo[] = [
     contextLength: 200000,
   },
   {
+    id: "gpt-5.2-2025-12-11",
+    name: "GPT-5.2-2025-12-11",
+    provider: "openai",
+    contextLength: 200000,
+  },
+  {
     id: "gpt-5.2-chat-latest",
     name: "GPT-5.2-chat (Latest)",
     provider: "openai",
@@ -253,6 +313,12 @@ export const OPENAI_MODELS: ModelInfo[] = [
   {
     id: "gpt-5.2-pro",
     name: "GPT-5.2-pro",
+    provider: "openai",
+    contextLength: 200000,
+  },
+  {
+    id: "gpt-5.2-pro-2025-12-11",
+    name: "GPT-5.2-pro-2025-12-11",
     provider: "openai",
     contextLength: 200000,
   },
