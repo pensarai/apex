@@ -10,6 +10,14 @@ export {
 export { createBrowserToolset, BROWSER_TOOL_NAMES } from "./browserTools";
 export type { BrowserToolName } from "./browserTools";
 
+// Sandbox Playwright helpers (check / install Playwright in a sandbox)
+export {
+  checkSandboxPlaywright,
+  installSandboxPlaywright,
+  ensureSandboxPlaywright,
+  ensureSandboxBrowser,
+} from "./sandboxPlaywright";
+
 // Core pentest tools
 export { executeCommand } from "./executeCommand";
 export { httpRequest } from "./httpRequest";

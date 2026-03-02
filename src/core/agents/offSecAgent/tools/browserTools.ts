@@ -21,6 +21,7 @@ import { tool } from "ai";
 import { z } from "zod";
 import { join } from "path";
 import { createBrowserTools } from "./playwrightMcp";
+import { createSandboxBrowserTools } from "./sandboxPlaywright";
 import type { ToolContext } from "./types";
 
 /**
@@ -42,23 +43,27 @@ export type BrowserToolName = (typeof BROWSER_TOOL_NAMES)[number];
 /**
  * Create the full set of browser automation tools from a {@link ToolContext}.
  *
- * Uses `"operator"` mode by default for the most general-purpose descriptions.
+ * When `ctx.sandbox` is set, browser tools run inside the sandbox via direct
+ * Playwright execution (no MCP). Playwright and Chromium are installed
+ * on-demand in the sandbox on the first browser tool call.
+ *
+ * Otherwise, uses `"operator"` mode with the local Playwright MCP server.
  * The evidence directory is derived from `session.rootPath + "/evidence"`.
  *
  * When `ctx.credentialManager` is set, `browser_fill` is replaced with a
  * credential-aware wrapper that resolves secrets from IDs at execution time.
  */
 export function createBrowserToolset(ctx: ToolContext) {
-  const evidenceDir = join(ctx.session.rootPath, "evidence");
-  const targetUrl = ctx.target ?? "";
-
-  const tools = createBrowserTools(
-    targetUrl,
-    evidenceDir,
-    "operator",
-    undefined,
-    ctx.abortSignal,
-  );
+  // Sandbox mode: use direct Playwright execution inside the sandbox
+  const tools = ctx.sandbox
+    ? createSandboxBrowserTools(ctx)
+    : createBrowserTools(
+        ctx.target ?? "",
+        join(ctx.session.rootPath, "evidence"),
+        "operator",
+        undefined,
+        ctx.abortSignal,
+      );
 
   if (!ctx.credentialManager) {
     return tools;
