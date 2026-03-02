@@ -26,6 +26,12 @@ export const OPENROUTER_MODELS: ModelInfo[] = [
     contextLength: 200000,
   },
   {
+    id: "anthropic/claude-opus-4.6",
+    name: "Claude Opus 4.6 (OpenRouter)",
+    provider: "openrouter",
+    contextLength: 200000,
+  },
+  {
     id: "anthropic/claude-opus-4.5",
     name: "Claude Opus 4.5 (OpenRouter)",
     provider: "openrouter",
