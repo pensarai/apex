@@ -2,7 +2,6 @@ import type {
   LanguageModelV2CallOptions,
   LanguageModelV2Content,
   LanguageModelV2FinishReason,
-  LanguageModelV2Message,
   LanguageModelV2TextPart,
   LanguageModelV2ToolCallPart,
   LanguageModelV2ToolResultPart,
@@ -15,7 +14,7 @@ import type {
  */
 export function convertToBedrockFormat(
   modelId: string,
-  options: LanguageModelV2CallOptions
+  options: LanguageModelV2CallOptions,
 ): Record<string, unknown> {
   if (modelId.includes("anthropic.claude")) {
     return convertToAnthropicFormat(options);
@@ -26,7 +25,7 @@ export function convertToBedrockFormat(
 }
 
 function convertToAnthropicFormat(
-  options: LanguageModelV2CallOptions
+  options: LanguageModelV2CallOptions,
 ): Record<string, unknown> {
   const messages: Array<{
     role: string;
@@ -53,7 +52,7 @@ function convertToAnthropicFormat(
           LanguageModelV2TextPart | LanguageModelV2ToolCallPart
         >;
         const hasToolCalls = assistantContent.some(
-          (c) => c.type === "tool-call"
+          (c) => c.type === "tool-call",
         );
 
         if (hasToolCalls) {
@@ -64,9 +63,7 @@ function convertToAnthropicFormat(
               content.push({ type: "text", text: c.text });
             } else if (c.type === "tool-call") {
               const parsedInput =
-                typeof c.input === "string"
-                  ? JSON.parse(c.input)
-                  : c.input;
+                typeof c.input === "string" ? JSON.parse(c.input) : c.input;
               content.push({
                 type: "tool_use",
                 id: c.toolCallId,
@@ -143,7 +140,7 @@ function convertToAnthropicFormat(
     body.tools = options.tools
       .filter(
         (tool): tool is Extract<typeof tool, { type: "function" }> =>
-          tool.type === "function"
+          tool.type === "function",
       )
       .map((tool) => ({
         name: tool.name,
@@ -179,11 +176,15 @@ function convertToAnthropicFormat(
 export function parseBedrockResponse(
   modelId: string,
   response: Record<string, unknown>,
-  usage: { inputTokens: number; outputTokens: number }
+  usage: { inputTokens: number; outputTokens: number },
 ): {
   content: LanguageModelV2Content[];
   finishReason: LanguageModelV2FinishReason;
-  usage: { inputTokens: number | undefined; outputTokens: number | undefined; totalTokens: number | undefined };
+  usage: {
+    inputTokens: number | undefined;
+    outputTokens: number | undefined;
+    totalTokens: number | undefined;
+  };
 } {
   if (modelId.includes("anthropic.claude")) {
     return parseAnthropicResponse(response, usage);
@@ -195,11 +196,15 @@ export function parseBedrockResponse(
 
 function parseAnthropicResponse(
   response: Record<string, unknown>,
-  usage: { inputTokens: number; outputTokens: number }
+  usage: { inputTokens: number; outputTokens: number },
 ): {
   content: LanguageModelV2Content[];
   finishReason: LanguageModelV2FinishReason;
-  usage: { inputTokens: number | undefined; outputTokens: number | undefined; totalTokens: number | undefined };
+  usage: {
+    inputTokens: number | undefined;
+    outputTokens: number | undefined;
+    totalTokens: number | undefined;
+  };
 } {
   const rawContent = response.content as
     | Array<Record<string, unknown>>

@@ -7,9 +7,13 @@ import type {
   LanguageModelV2StreamPart,
   LanguageModelV2Usage,
 } from "@ai-sdk/provider";
-import { convertToBedrockFormat, parseBedrockResponse } from "./pensarFormatters";
+import {
+  convertToBedrockFormat,
+  parseBedrockResponse,
+} from "./pensarFormatters";
 
-const DEBUG = process.env.PENSAR_DEBUG === "1" || process.env.PENSAR_DEBUG === "true";
+const DEBUG =
+  process.env.PENSAR_DEBUG === "1" || process.env.PENSAR_DEBUG === "true";
 
 function log(...args: unknown[]) {
   if (DEBUG) console.log("[pensar]", ...args);
@@ -46,7 +50,7 @@ export interface PensarModelConfig {
  */
 export function createPensarModel(
   bedrockModelId: string,
-  config: PensarModelConfig
+  config: PensarModelConfig,
 ): LanguageModelV2 {
   const modelId = `pensar:${bedrockModelId}`;
 
@@ -62,7 +66,7 @@ export function createPensarModel(
       const result = await config.getToken();
       if (!result) {
         throw new Error(
-          "Pensar authentication failed. Run /auth to reconnect."
+          "Pensar authentication failed. Run /auth to reconnect.",
         );
       }
       headers.Authorization = `Bearer ${result.token}`;
@@ -90,9 +94,7 @@ export function createPensarModel(
     modelId,
     supportedUrls: {},
 
-    async doGenerate(
-      options: LanguageModelV2CallOptions
-    ): Promise<{
+    async doGenerate(options: LanguageModelV2CallOptions): Promise<{
       content: Array<LanguageModelV2Content>;
       finishReason: LanguageModelV2FinishReason;
       usage: LanguageModelV2Usage;
@@ -106,7 +108,9 @@ export function createPensarModel(
 
       log(`doGenerate → ${bedrockModelId}`);
       log(`  URL: ${url}`);
-      log(`  messages: ${(body.messages as unknown[])?.length ?? 0}, tools: ${(body.tools as unknown[])?.length ?? 0}`);
+      log(
+        `  messages: ${(body.messages as unknown[])?.length ?? 0}, tools: ${(body.tools as unknown[])?.length ?? 0}`,
+      );
 
       const startTime = Date.now();
       const headers = await buildHeaders();
@@ -139,12 +143,12 @@ export function createPensarModel(
         if (response.status === 402) {
           throw new Error(
             `Insufficient Pensar credits: ${errorMessage}. ` +
-              `Top up at https://console.pensar.dev`
+              `Top up at https://console.pensar.dev`,
           );
         }
 
         throw new Error(
-          `Pensar API error (${response.status}): ${errorMessage}`
+          `Pensar API error (${response.status}): ${errorMessage}`,
         );
       }
 
@@ -167,8 +171,12 @@ export function createPensarModel(
         outputTokens: usageFromProxy.outputTokens,
       });
 
-      log(`  finish: ${parsed.finishReason}, content: ${parsed.content.length} parts`);
-      log(`  usage: ${parsed.usage.inputTokens}in / ${parsed.usage.outputTokens}out`);
+      log(
+        `  finish: ${parsed.finishReason}, content: ${parsed.content.length} parts`,
+      );
+      log(
+        `  usage: ${parsed.usage.inputTokens}in / ${parsed.usage.outputTokens}out`,
+      );
       if (result.usage?.totalCost != null) {
         log(`  cost: $${result.usage.totalCost.toFixed(6)}`);
       }
@@ -187,9 +195,7 @@ export function createPensarModel(
       };
     },
 
-    async doStream(
-      options: LanguageModelV2CallOptions
-    ): Promise<{
+    async doStream(options: LanguageModelV2CallOptions): Promise<{
       stream: ReadableStream<LanguageModelV2StreamPart>;
       request?: { body?: unknown };
       response?: { headers?: Record<string, string> };

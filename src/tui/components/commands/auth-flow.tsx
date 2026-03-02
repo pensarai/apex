@@ -3,7 +3,10 @@ import { useKeyboard } from "@opentui/react";
 import { config } from "../../../core/config";
 import { useRoute } from "../../context/route";
 import { useConfig } from "../../context/config";
-import { getPensarApiUrl, getPensarConsoleUrl } from "../../../core/api/constants";
+import {
+  getPensarApiUrl,
+  getPensarConsoleUrl,
+} from "../../../core/api/constants";
 
 type AuthStep =
   | "start"
@@ -60,15 +63,21 @@ export default function AuthFlow() {
   const appConfig = useConfig();
 
   // Determine if already connected (WorkOS token or legacy API key)
-  const isConnected = !!(appConfig.data.accessToken || appConfig.data.pensarAPIKey);
+  const isConnected = !!(
+    appConfig.data.accessToken || appConfig.data.pensarAPIKey
+  );
 
   const [step, setStep] = useState<AuthStep>(isConnected ? "success" : "start");
   const [error, setError] = useState<string | null>(null);
   const [authMode, setAuthMode] = useState<"workos" | "legacy" | null>(null);
-  const [deviceInfo, setDeviceInfo] = useState<WorkOSDeviceResponse | null>(null);
-  const [legacyDeviceInfo, setLegacyDeviceInfo] = useState<LegacyDeviceCodeResponse | null>(null);
+  const [deviceInfo, setDeviceInfo] = useState<WorkOSDeviceResponse | null>(
+    null,
+  );
+  const [legacyDeviceInfo, setLegacyDeviceInfo] =
+    useState<LegacyDeviceCodeResponse | null>(null);
   const [workspaces, setWorkspaces] = useState<WorkspaceInfo[]>([]);
-  const [selectedWorkspace, setSelectedWorkspace] = useState<WorkspaceInfo | null>(null);
+  const [selectedWorkspace, setSelectedWorkspace] =
+    useState<WorkspaceInfo | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [billingUrl, setBillingUrl] = useState<string | null>(null);
   const [balance, setBalance] = useState<number | null>(null);
@@ -135,7 +144,7 @@ export default function AuthFlow() {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ client_id: cliConfig.workosClientId }),
-          }
+          },
         );
 
         if (response.ok) {
@@ -149,7 +158,7 @@ export default function AuthFlow() {
             cliConfig.workosClientId,
             data.device_code,
             data.interval,
-            data.expires_in
+            data.expires_in,
           );
           return;
         }
@@ -174,10 +183,15 @@ export default function AuthFlow() {
       setLegacyDeviceInfo(data);
       openUrl(data.verificationUriComplete);
       setStep("polling");
-      pollForLegacyToken(apiUrl, data.deviceCode, data.interval, data.expiresIn);
+      pollForLegacyToken(
+        apiUrl,
+        data.deviceCode,
+        data.interval,
+        data.expiresIn,
+      );
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "Failed to start authorization"
+        err instanceof Error ? err.message : "Failed to start authorization",
       );
       setStep("error");
     }
@@ -190,7 +204,7 @@ export default function AuthFlow() {
     clientId: string,
     deviceCode: string,
     interval: number,
-    expiresIn: number
+    expiresIn: number,
   ) => {
     const deadline = Date.now() + expiresIn * 1000;
 
@@ -214,7 +228,7 @@ export default function AuthFlow() {
               grant_type: "urn:ietf:params:oauth:grant-type:device_code",
               device_code: deviceCode,
             }),
-          }
+          },
         );
 
         if (cancelledRef.current) return;
@@ -259,7 +273,7 @@ export default function AuthFlow() {
     apiUrl: string,
     deviceCode: string,
     interval: number,
-    expiresIn: number
+    expiresIn: number,
   ) => {
     const deadline = Date.now() + expiresIn * 1000;
 
@@ -300,8 +314,12 @@ export default function AuthFlow() {
 
           setSelectedWorkspace(
             data.workspace
-              ? { ...data.workspace, balance: data.credits?.balance ?? 0, hasPaymentMethod: true }
-              : null
+              ? {
+                  ...data.workspace,
+                  balance: data.credits?.balance ?? 0,
+                  hasPaymentMethod: true,
+                }
+              : null,
           );
           setBalance(data.credits?.balance ?? null);
           setStep("success");
@@ -361,7 +379,7 @@ export default function AuthFlow() {
       setStep("select-workspace");
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "Failed to fetch workspaces"
+        err instanceof Error ? err.message : "Failed to fetch workspaces",
       );
       setStep("error");
     }
@@ -372,7 +390,7 @@ export default function AuthFlow() {
   const selectWorkspace = async (
     apiUrl: string,
     accessToken: string,
-    workspace: WorkspaceInfo
+    workspace: WorkspaceInfo,
   ) => {
     setSelectedWorkspace(workspace);
     setStep("checking-billing");
@@ -410,7 +428,7 @@ export default function AuthFlow() {
       setStep("success");
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "Failed to select workspace"
+        err instanceof Error ? err.message : "Failed to select workspace",
       );
       setStep("error");
     }
@@ -513,9 +531,7 @@ export default function AuthFlow() {
     >
       {/* Header */}
       <box marginBottom={1}>
-        <text fg="green">
-          Pensar Console — Managed Inference
-        </text>
+        <text fg="green">Pensar Console — Managed Inference</text>
       </box>
 
       <box marginBottom={1}>
@@ -643,18 +659,23 @@ export default function AuthFlow() {
               <text fg="yellow">
                 {billingUrl
                   ? "Your workspace needs credits to use Apex CLI."
-                  : "Your credit balance is very low. We recommend at least $30 to run"}{"\n"}
+                  : "Your credit balance is very low. We recommend at least $30 to run"}
+                {"\n"}
                 {billingUrl
                   ? "Press ENTER to open billing and add credits."
                   : "pentests without interruptions. Press ENTER to open billing."}
               </text>
             </box>
           )}
-          {!selectedWorkspace && !connectedWorkspace && appConfig.data.pensarAPIKey && (
-            <box>
-              <text fg="gray">Already connected (legacy key saved in config)</text>
-            </box>
-          )}
+          {!selectedWorkspace &&
+            !connectedWorkspace &&
+            appConfig.data.pensarAPIKey && (
+              <box>
+                <text fg="gray">
+                  Already connected (legacy key saved in config)
+                </text>
+              </box>
+            )}
           <box marginTop={1}>
             <text fg="gray">
               Pensar models are now available in the model selector.

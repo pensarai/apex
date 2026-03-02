@@ -21,7 +21,7 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
  */
 export function isTokenExpired(
   token: string,
-  bufferSeconds: number = 60
+  bufferSeconds: number = 60,
 ): boolean {
   const payload = decodeJwtPayload(token);
   if (!payload || typeof payload.exp !== "number") return true;
@@ -38,7 +38,7 @@ export function isTokenExpired(
  */
 export async function refreshAccessToken(
   clientId: string,
-  refreshToken: string
+  refreshToken: string,
 ): Promise<string | null> {
   try {
     const response = await fetch(
@@ -51,12 +51,12 @@ export async function refreshAccessToken(
           grant_type: "refresh_token",
           refresh_token: refreshToken,
         }),
-      }
+      },
     );
 
     if (!response.ok) {
       console.error(
-        `[pensar] Token refresh failed: ${response.status} ${response.statusText}`
+        `[pensar] Token refresh failed: ${response.status} ${response.statusText}`,
       );
       return null;
     }

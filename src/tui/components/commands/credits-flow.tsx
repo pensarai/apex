@@ -3,7 +3,10 @@ import { execSync } from "child_process";
 import { useKeyboard } from "@opentui/react";
 import { useRoute } from "../../context/route";
 import { useConfig } from "../../context/config";
-import { getPensarApiUrl, getPensarConsoleUrl } from "../../../core/api/constants";
+import {
+  getPensarApiUrl,
+  getPensarConsoleUrl,
+} from "../../../core/api/constants";
 import { ensureValidToken } from "../../../core/api/tokenRefresh";
 
 type CreditsStep = "loading" | "no-auth" | "display" | "browser-opened";
@@ -148,9 +151,7 @@ export default function CreditsFlow() {
       {step === "no-auth" && (
         <box flexDirection="column" gap={1}>
           <box>
-            <text fg="yellow">
-              Not connected to Pensar Console.
-            </text>
+            <text fg="yellow">Not connected to Pensar Console.</text>
           </box>
           <box>
             <text fg="gray">
@@ -199,13 +200,12 @@ export default function CreditsFlow() {
 
           <box marginTop={1}>
             <text fg="gray">
-              Press <span fg="green">[ENTER]</span> to buy credits in your browser.
+              Press <span fg="green">[ENTER]</span> to buy credits in your
+              browser.
             </text>
           </box>
           <box>
-            <text fg="gray">
-              Or visit: {creditsUrl}
-            </text>
+            <text fg="gray">Or visit: {creditsUrl}</text>
           </box>
           <box marginTop={1}>
             <text fg="gray">
@@ -227,7 +227,8 @@ export default function CreditsFlow() {
           </box>
           <box marginTop={1}>
             <text fg="gray">
-              Press <span fg="green">[ENTER]</span> to refresh your balance after purchasing.
+              Press <span fg="green">[ENTER]</span> to refresh your balance
+              after purchasing.
             </text>
           </box>
           <box marginTop={1}>

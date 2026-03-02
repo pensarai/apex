@@ -21,7 +21,13 @@ const PREFERRED_DEFAULTS: Record<string, string> = {
 
 // Provider preference order when multiple are available
 // Pensar first: if connected to Pensar Console, prefer managed inference
-const PROVIDER_PREFERENCE = ["pensar", "anthropic", "openai", "openrouter", "bedrock"];
+const PROVIDER_PREFERENCE = [
+  "pensar",
+  "anthropic",
+  "openai",
+  "openrouter",
+  "bedrock",
+];
 
 interface TokenUsage {
   inputTokens: number;
