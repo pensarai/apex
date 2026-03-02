@@ -57,11 +57,15 @@ async function createDaytonaSandbox(): Promise<DaytonaSandboxInfo> {
       autoStopInterval: 0,
     }),
   });
-  if (!res.ok) throw new Error(`Create sandbox failed: ${res.status} ${await res.text()}`);
+  if (!res.ok)
+    throw new Error(`Create sandbox failed: ${res.status} ${await res.text()}`);
   return (await res.json()) as DaytonaSandboxInfo;
 }
 
-async function waitForSandboxReady(id: string, timeoutMs = 60000): Promise<void> {
+async function waitForSandboxReady(
+  id: string,
+  timeoutMs = 60000,
+): Promise<void> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     const res = await fetch(`${API_BASE}/sandbox/${id}`, { headers });
@@ -206,12 +210,24 @@ async function main() {
     log("test", "Step 3: checkSandboxPlaywright (expect true)");
 
     // Debug: check what's in the sandbox
-    const debugLs = await sandbox.execute("ls /tmp/sandbox-playwright/node_modules/ 2>&1");
+    const debugLs = await sandbox.execute(
+      "ls /tmp/sandbox-playwright/node_modules/ 2>&1",
+    );
     log("debug", `node_modules: ${debugLs.stdout.trim()}`);
-    const debugCheck = await sandbox.execute("cd /tmp/sandbox-playwright && echo 'console.log(\"PW_OK\")' > /tmp/dbg.js && node /tmp/dbg.js 2>&1");
-    log("debug", `simple script: ${debugCheck.stdout.trim()} (exit: ${debugCheck.exitCode})`);
-    const debugReq = await sandbox.execute("cd /tmp/sandbox-playwright && echo 'try{require(\"playwright\");console.log(\"PW_OK\")}catch(e){console.log(\"FAIL:\"+e.message)}' > /tmp/dbg2.js && node /tmp/dbg2.js 2>&1");
-    log("debug", `require test: ${debugReq.stdout.trim()} (exit: ${debugReq.exitCode})`);
+    const debugCheck = await sandbox.execute(
+      "cd /tmp/sandbox-playwright && echo 'console.log(\"PW_OK\")' > /tmp/dbg.js && node /tmp/dbg.js 2>&1",
+    );
+    log(
+      "debug",
+      `simple script: ${debugCheck.stdout.trim()} (exit: ${debugCheck.exitCode})`,
+    );
+    const debugReq = await sandbox.execute(
+      'cd /tmp/sandbox-playwright && echo \'try{require("playwright");console.log("PW_OK")}catch(e){console.log("FAIL:"+e.message)}\' > /tmp/dbg2.js && node /tmp/dbg2.js 2>&1',
+    );
+    log(
+      "debug",
+      `require test: ${debugReq.stdout.trim()} (exit: ${debugReq.exitCode})`,
+    );
 
     const after = await checkSandboxPlaywright(sandbox);
     if (after) {
@@ -269,7 +285,11 @@ async function main() {
     };
 
     const tools = createSandboxBrowserTools(ctx);
-    const callOpts = { toolCallId: "t", messages: [] as never[], abortSignal: undefined as never };
+    const callOpts = {
+      toolCallId: "t",
+      messages: [] as never[],
+      abortSignal: undefined as never,
+    };
 
     // 5a: browser_navigate
     log("tool", "browser_navigate → https://example.com");
@@ -302,7 +322,9 @@ async function main() {
       callOpts,
     )) as { success: boolean; snapshot?: string; error?: string };
     if (snap.success && snap.snapshot) {
-      console.log("  snapshot (first 400 chars):\n" + snap.snapshot.substring(0, 400));
+      console.log(
+        "  snapshot (first 400 chars):\n" + snap.snapshot.substring(0, 400),
+      );
       pass(`snapshot: ${snap.snapshot.length} chars`);
     } else {
       fail("snapshot", snap.error);
