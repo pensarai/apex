@@ -2,6 +2,11 @@ import { tool } from "ai";
 import { z } from "zod";
 import { spawn } from "child_process";
 import type { ToolContext } from "./types";
+import {
+  persistCommandOutput,
+  shouldPersistOutput,
+  OUTPUT_SIZE_THRESHOLD,
+} from "./outputPersistence";
 
 export const executeCommandInputSchema = z.object({
   command: z.string().describe("The shell command to execute"),
@@ -24,6 +29,8 @@ export type ExecuteCommandResult = {
   stdout: string;
   stderr: string;
   command: string;
+  /** Path to persisted output file when output exceeds threshold */
+  outputPath?: string;
 };
 
 export function executeCommand(ctx: ToolContext) {
@@ -76,14 +83,34 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
           const result = await ctx.sandbox.execute(command, {
             timeout: ssmTimeout,
           });
+
+          const rawStdout = result.stdout || "(no output)";
+          const rawStderr = result.stderr || "";
+
+          // Persist large outputs to file and return path
+          if (shouldPersistOutput(rawStdout, rawStderr)) {
+            const persisted = persistCommandOutput(
+              ctx.session,
+              command,
+              rawStdout,
+              rawStderr,
+              result.success ? 0 : 1,
+            );
+            return {
+              success: result.success,
+              error: !result.success ? rawStderr || "Command failed" : "",
+              stdout: `Output saved to: ${persisted.relativePath}\n\nPreview (first ${OUTPUT_SIZE_THRESHOLD} chars):\n${rawStdout.substring(0, OUTPUT_SIZE_THRESHOLD)}...`,
+              stderr: rawStderr.length > 1000 ? rawStderr.substring(0, 1000) + "..." : rawStderr,
+              command,
+              outputPath: persisted.relativePath,
+            };
+          }
+
           return {
             success: result.success,
-            error: !result.success ? result.stderr || "Command failed" : "",
-            stdout:
-              result.stdout.length > 50000
-                ? `${result.stdout.substring(0, 50000)}...\n\n(truncated) call the command again with grep / tail to paginate`
-                : result.stdout || "(no output)",
-            stderr: result.stderr || "",
+            error: !result.success ? rawStderr || "Command failed" : "",
+            stdout: rawStdout,
+            stderr: rawStderr,
             command,
           };
         } catch (error: unknown) {
@@ -121,6 +148,44 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
           }
         };
 
+        // Helper to resolve with output persistence logic
+        const resolveWithPersistence = (
+          success: boolean,
+          rawStdout: string,
+          rawStderr: string,
+          error: string,
+          exitCode?: number,
+        ) => {
+          const finalStdout = rawStdout || "(no output)";
+          const finalStderr = rawStderr || "";
+
+          if (shouldPersistOutput(finalStdout, finalStderr)) {
+            const persisted = persistCommandOutput(
+              ctx.session,
+              command,
+              finalStdout,
+              finalStderr,
+              exitCode,
+            );
+            safeResolve({
+              success,
+              stdout: `Output saved to: ${persisted.relativePath}\n\nPreview (first ${OUTPUT_SIZE_THRESHOLD} chars):\n${finalStdout.substring(0, OUTPUT_SIZE_THRESHOLD)}...`,
+              stderr: finalStderr.length > 1000 ? finalStderr.substring(0, 1000) + "..." : finalStderr,
+              command,
+              error,
+              outputPath: persisted.relativePath,
+            });
+          } else {
+            safeResolve({
+              success,
+              stdout: finalStdout,
+              stderr: finalStderr,
+              command,
+              error,
+            });
+          }
+        };
+
         const killProcess = () => {
           if (killed) return;
           killed = true;
@@ -150,16 +215,13 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
               // Process may have already exited
             }
 
-            safeResolve({
-              success: false,
-              stdout:
-                stdout.length > 50000
-                  ? `${stdout.substring(0, 50000)}...\n\n(truncated)`
-                  : stdout || "(no output)",
-              stderr: stderr || "",
-              command,
-              error: "Command killed (did not exit after SIGTERM)",
-            });
+            resolveWithPersistence(
+              false,
+              stdout,
+              stderr,
+              "Command killed (did not exit after SIGTERM)",
+              1,
+            );
           }, 5000);
         };
 
@@ -175,31 +237,22 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
 
         child.on("close", (code) => {
           clearTimeout(timeoutTimer);
-          safeResolve({
-            success: code === 0 && !killed,
-            stdout:
-              stdout.length > 50000
-                ? `${stdout.substring(0, 50000)}...\n\n(truncated) call the command again with grep / tail to paginate`
-                : stdout || "(no output)",
-            stderr: stderr || "",
-            command,
-            error: killed
+          resolveWithPersistence(
+            code === 0 && !killed,
+            stdout,
+            stderr,
+            killed
               ? "Command timed out"
               : code !== 0
                 ? `Exit code: ${code}`
                 : "",
-          });
+            code ?? 1,
+          );
         });
 
         child.on("error", (err) => {
           clearTimeout(timeoutTimer);
-          safeResolve({
-            success: false,
-            error: err.message,
-            stdout,
-            stderr,
-            command,
-          });
+          resolveWithPersistence(false, stdout, stderr, err.message, 1);
         });
 
         // Wire up abort signal

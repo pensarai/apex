@@ -10,6 +10,7 @@ import {
   mkdirSync,
 } from "fs";
 import type { ToolContext } from "./types";
+import { persistPocOutput } from "./outputPersistence";
 
 const MAX_POC_ATTEMPTS = 3;
 
@@ -44,6 +45,8 @@ export type CreatePocResult = {
   exitCode?: number;
   error?: string;
   attemptsRemaining?: number;
+  /** Path to persisted POC execution output file */
+  outputPath?: string;
 };
 
 export function createPoc(ctx: ToolContext) {
@@ -127,6 +130,16 @@ async function executeLocalPoc(
       ctx.abortSignal,
     );
 
+    // Always persist POC execution output for evidence
+    const persisted = persistPocOutput(
+      ctx.session,
+      filename,
+      stdout || "(no output)",
+      stderr || "",
+      exitCode,
+      poc.description,
+    );
+
     if (exitCode !== 0) {
       try {
         unlinkSync(pocPath);
@@ -142,6 +155,7 @@ async function executeLocalPoc(
       stderr,
       exitCode,
       attemptsRemaining: MAX_POC_ATTEMPTS - currentAttempts,
+      outputPath: persisted.relativePath,
       error:
         exitCode !== 0
           ? `POC exited with code ${exitCode}. ${MAX_POC_ATTEMPTS - currentAttempts} attempts remaining.`
@@ -207,6 +221,21 @@ async function executeSandboxPoc(
     );
 
     const executionSuccess = result.success || result.exitCode === 0;
+    const rawStdout = result.stdout || "(no output)";
+    const rawStderr = executionSuccess
+      ? result.stderr || "(no errors)"
+      : (result.stderr || "POC execution failed") +
+        "\n\nPOC file has been deleted.";
+
+    // Always persist POC execution output for evidence
+    const persisted = persistPocOutput(
+      ctx.session,
+      filename,
+      rawStdout,
+      result.stderr || "",
+      result.exitCode ?? 1,
+      poc.description,
+    );
 
     if (!executionSuccess) {
       await ctx.sandbox!.execute(`rm -f ${sandboxPocPath}`);
@@ -220,13 +249,11 @@ async function executeSandboxPoc(
     return {
       success: executionSuccess,
       pocPath: executionSuccess ? `pocs/${filename}` : undefined,
-      stdout: result.stdout || "(no output)",
-      stderr: executionSuccess
-        ? result.stderr || "(no errors)"
-        : (result.stderr || "POC execution failed") +
-          "\n\nPOC file has been deleted.",
+      stdout: rawStdout,
+      stderr: rawStderr,
       exitCode: result.exitCode,
       attemptsRemaining: MAX_POC_ATTEMPTS - currentAttempts,
+      outputPath: persisted.relativePath,
       error: !executionSuccess
         ? `POC exited with code ${result.exitCode}. ${MAX_POC_ATTEMPTS - currentAttempts} attempts remaining.`
         : undefined,
