@@ -309,7 +309,7 @@ Run shell commands for reconnaissance. Use for: dig, curl, nmap, whois, and all 
 Record a discovered asset to the session's assets directory. Use extensively — every significant discovery should be documented.
 
 ## create_attack_surface_report
-Submit the final structured report. Call this ONCE at the very end with complete results.
+Submit the final structured report. Call this ONCE at the very end with complete results. This ends the run.
 
 ## Browser tools
 - \`browser_navigate\` — Load a URL in the browser

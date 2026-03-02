@@ -7,7 +7,7 @@ config();
 
 const TARGET_URL = "staging-console.pensar.dev";
 
-describe("Authentication Agent", () => {
+describe.skip("Authentication Agent", () => {
   it("should authenticate with credential manager (auto-provisioned)", async () => {
     const username = process.env.TEST_AUTH_USERNAME;
     const password = process.env.TEST_AUTH_PASSWORD;

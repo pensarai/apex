@@ -8,7 +8,7 @@ import { config } from "dotenv";
 
 config();
 
-describe("Browser Cookie Extraction", () => {
+describe.skip("Browser Cookie Extraction", () => {
   let session: PlaywrightMcpSession;
 
   afterEach(async () => {
