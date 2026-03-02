@@ -163,6 +163,15 @@ export default function OperatorDashboard({
               approvalGateRef.current.updateConfig({
                 requireApproval: savedState.requireApproval ?? true,
               });
+
+              // Restore saved messages
+              if (Array.isArray(savedState.messages) && savedState.messages.length > 0) {
+                const restored = (savedState.messages as DisplayMessage[]).map((m) => ({
+                  ...m,
+                  createdAt: new Date(m.createdAt),
+                }));
+                setMessages(restored);
+              }
             }
           }
         }
