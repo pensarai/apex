@@ -1,6 +1,8 @@
+// Curated manually — OpenRouter SDK doesn't enumerate specific model IDs.
+// Add or remove models here as needed.
+
 import type { ModelInfo } from "../ai";
 export const OPENROUTER_MODELS: ModelInfo[] = [
-  // OpenRouter Models
   {
     id: "anthropic/claude-haiku-4.5",
     name: "Claude Haiku 4.5 (OpenRouter)",
