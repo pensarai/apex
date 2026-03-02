@@ -82,6 +82,7 @@ export default function OperatorDashboard({
   const conversationRef = useRef<ModelMessage[]>([]);
   const messagesRef = useRef<DisplayMessage[]>([]);
 
+
   // Input state
   const [inputValue, setInputValue] = useState("");
 
@@ -164,13 +165,23 @@ export default function OperatorDashboard({
                 requireApproval: savedState.requireApproval ?? true,
               });
 
-              // Restore saved messages
-              if (Array.isArray(savedState.messages) && savedState.messages.length > 0) {
-                const restored = (savedState.messages as DisplayMessage[]).map((m) => ({
-                  ...m,
-                  createdAt: new Date(m.createdAt),
-                }));
+              // Restore saved display messages
+              if (
+                Array.isArray(savedState.messages) &&
+                savedState.messages.length > 0
+              ) {
+                const restored = (savedState.messages as DisplayMessage[]).map(
+                  (m) => ({
+                    ...m,
+                    createdAt: new Date(m.createdAt),
+                  }),
+                );
                 setMessages(restored);
+              }
+
+              // Restore raw model messages for conversation continuity
+              if (Array.isArray(savedState.modelMessages)) {
+                conversationRef.current = savedState.modelMessages as ModelMessage[];
               }
             }
           }
@@ -387,6 +398,7 @@ export default function OperatorDashboard({
                 autoApproveTier: operatorState.autoApproveTier,
                 currentStage: operatorState.currentStage,
                 messages: messagesRef.current,
+                modelMessages: conversationRef.current,
                 attackSurface: [],
                 credentials: [],
                 verifiedVulns: [],

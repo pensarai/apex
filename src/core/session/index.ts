@@ -534,8 +534,10 @@ export interface OperatorSessionState {
   requireApproval: boolean;
   /** Current stage: setup, recon, foothold, etc. */
   currentStage: string;
-  /** Chat messages history */
+  /** Chat messages history (display format) */
   messages: unknown[];
+  /** Raw AI SDK model messages for conversation continuity */
+  modelMessages?: unknown[];
   /** Discovered attack surface endpoints */
   attackSurface: unknown[];
   /** Found credentials */

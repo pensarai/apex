@@ -1,5 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync } from "fs";
+import {
+  mkdtempSync,
+  rmSync,
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+  existsSync,
+} from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import {
@@ -89,7 +96,9 @@ describe("mapToSavedMessage", () => {
 
   it("maps tool-call: args → input", () => {
     const result = mapToSavedMessage(
-      makeMsg("assistant", [makeToolCallPart("execute_command", { cmd: "ls" })]),
+      makeMsg("assistant", [
+        makeToolCallPart("execute_command", { cmd: "ls" }),
+      ]),
     );
     const parts = result.content as Array<{
       type: string;
@@ -190,9 +199,7 @@ describe("convertMessagesToUI", () => {
   const baseTime = new Date("2025-01-01T00:00:00Z");
 
   it("converts assistant text message", () => {
-    const messages: SavedMessage[] = [
-      { role: "assistant", content: "Hello" },
-    ];
+    const messages: SavedMessage[] = [{ role: "assistant", content: "Hello" }];
     const result = convertMessagesToUI(messages, baseTime);
     expect(result).toHaveLength(1);
     expect(result[0].role).toBe("assistant");
@@ -552,5 +559,130 @@ describe("loadSubagents manifest merge", () => {
 
     const loaded = loadSubagents(tmpDir);
     expect(loaded).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Operator state modelMessages persistence
+// ---------------------------------------------------------------------------
+
+describe("operator state modelMessages persistence", () => {
+  // These tests verify the roundtrip of modelMessages through the
+  // operator-state.json file, which is what saveOperatorState/loadOperatorState
+  // do under the hood (JSON.stringify → writeFile → readFile → JSON.parse).
+
+  const STATE_FILE = "operator-state.json";
+
+  function writeOperatorState(rootPath: string, state: Record<string, unknown>) {
+    writeFileSync(join(rootPath, STATE_FILE), JSON.stringify(state, null, 2));
+  }
+
+  function readOperatorState(rootPath: string): Record<string, unknown> | null {
+    const statePath = join(rootPath, STATE_FILE);
+    if (!existsSync(statePath)) return null;
+    return JSON.parse(readFileSync(statePath, "utf-8"));
+  }
+
+  it("roundtrips modelMessages through save and load", () => {
+    const modelMessages = [
+      { role: "user", content: "what tools do you have?" },
+      {
+        role: "assistant",
+        content: [
+          { type: "text", text: "I have several tools available." },
+          {
+            type: "tool-call",
+            toolCallId: "tc-1",
+            toolName: "execute_command",
+            args: { cmd: "ls" },
+          },
+        ],
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "tc-1",
+            toolName: "execute_command",
+            result: "file1.txt\nfile2.txt",
+          },
+        ],
+      },
+      { role: "assistant", content: "I found two files." },
+    ];
+
+    writeOperatorState(tmpDir, {
+      mode: "manual",
+      autoApproveTier: 2,
+      currentStage: "recon",
+      messages: [],
+      modelMessages,
+    });
+
+    const loaded = readOperatorState(tmpDir);
+    expect(loaded).not.toBeNull();
+    expect(loaded!.modelMessages).toEqual(modelMessages);
+  });
+
+  it("handles missing modelMessages (backward compat)", () => {
+    // Saved state from before modelMessages was added
+    writeOperatorState(tmpDir, {
+      mode: "manual",
+      autoApproveTier: 2,
+      currentStage: "recon",
+      messages: [],
+    });
+
+    const loaded = readOperatorState(tmpDir);
+    expect(loaded).not.toBeNull();
+    expect(loaded!.modelMessages).toBeUndefined();
+
+    // Simulates the resume logic: default to empty array when missing
+    const restored = Array.isArray(loaded!.modelMessages)
+      ? loaded!.modelMessages
+      : [];
+    expect(restored).toEqual([]);
+  });
+
+  it("preserves empty modelMessages array", () => {
+    writeOperatorState(tmpDir, {
+      mode: "manual",
+      autoApproveTier: 2,
+      currentStage: "recon",
+      messages: [],
+      modelMessages: [],
+    });
+
+    const loaded = readOperatorState(tmpDir);
+    expect(loaded).not.toBeNull();
+    expect(loaded!.modelMessages).toEqual([]);
+  });
+
+  it("preserves display messages alongside model messages", () => {
+    const displayMessages = [
+      { role: "user", content: "hello", createdAt: new Date().toISOString() },
+      {
+        role: "assistant",
+        content: "Hi there!",
+        createdAt: new Date().toISOString(),
+      },
+    ];
+    const modelMessages = [
+      { role: "user", content: "hello" },
+      { role: "assistant", content: "Hi there!" },
+    ];
+
+    writeOperatorState(tmpDir, {
+      mode: "auto",
+      autoApproveTier: 3,
+      currentStage: "foothold",
+      messages: displayMessages,
+      modelMessages,
+    });
+
+    const loaded = readOperatorState(tmpDir);
+    expect(loaded!.messages).toEqual(displayMessages);
+    expect(loaded!.modelMessages).toEqual(modelMessages);
   });
 });
