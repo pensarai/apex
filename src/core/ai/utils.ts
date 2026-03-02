@@ -65,9 +65,7 @@ export function buildAuthConfig(cfg: {
     accessToken: cfg.accessToken ?? undefined,
     refreshToken: cfg.refreshToken ?? undefined,
     workspaceId: cfg.workspaceId ?? undefined,
-    bedrock: cfg.bedrockAPIKey
-      ? { apiKey: cfg.bedrockAPIKey }
-      : undefined,
+    bedrock: cfg.bedrockAPIKey ? { apiKey: cfg.bedrockAPIKey } : undefined,
     local: cfg.localModelUrl ? { baseURL: cfg.localModelUrl } : undefined,
   };
 }
