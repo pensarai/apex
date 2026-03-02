@@ -15,6 +15,7 @@
  *   bun run scripts/run-benchmarks.ts --all --mode daytona --model claude-sonnet-4-5
  */
 
+import { execSync } from "child_process";
 import { existsSync, mkdirSync, writeFileSync } from "fs";
 import path from "path";
 import { runBenchmarkSuite } from "../src/core/benchmark/runner";
@@ -167,8 +168,6 @@ async function main(): Promise<void> {
   if (mode === "local") {
     // Verify docker is available
     try {
-      // eslint-disable-next-line no-restricted-syntax -- lazy load for script performance
-      const { execSync } = await import("child_process");
       execSync("docker compose version", { stdio: "pipe" });
     } catch {
       console.error(

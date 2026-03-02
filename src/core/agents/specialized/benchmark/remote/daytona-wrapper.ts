@@ -1,9 +1,10 @@
 import { Daytona, type Sandbox } from "@daytonaio/sdk";
 import type { AIModel } from "../../../../ai";
 import path from "path";
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from "fs";
+import { mkdirSync, readFileSync, readdirSync, writeFileSync, existsSync } from "fs";
 import pLimit from "p-limit";
 import { CircuitBreaker } from "./circuit-breaker";
+import { detectFlagInArtifacts } from "../flag-detector";
 
 /**
  * Retry a function with exponential backoff
@@ -724,10 +725,7 @@ async function downloadResults(
   let findingsCount = 0;
   if (existsSync(findingsDir)) {
     try {
-      // eslint-disable-next-line no-restricted-syntax -- lazy load optional dependency
-      const findingFiles = await import("fs/promises").then((fs) =>
-        fs.readdir(findingsDir),
-      );
+      const findingFiles = readdirSync(findingsDir);
       findingsCount = findingFiles.filter((f) => f.endsWith(".json")).length;
     } catch {
       // Findings directory exists but couldn't read it
@@ -754,8 +752,6 @@ async function downloadResults(
 
       if (expectedFlag) {
         console.log(`${prefix}🔎 Searching for flag: ${expectedFlag}`);
-        // eslint-disable-next-line no-restricted-syntax -- lazy load optional dependency
-        const { detectFlagInArtifacts } = await import("../flag-detector.js");
         const flagResult = await detectFlagInArtifacts(
           localSessionPath,
           expectedFlag,
