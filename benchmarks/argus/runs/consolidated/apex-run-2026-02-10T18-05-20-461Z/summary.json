@@ -1,0 +1,27 @@
+{
+  "timestamp": "2026-02-10T18:35:45.005Z",
+  "repoUrl": "https://github.com/Yuvanesh-ux/argus-validation-benchmarks",
+  "model": "claude-haiku-4-5",
+  "totalBenchmarks": 1,
+  "completed": 1,
+  "failed": 0,
+  "aggregateMetrics": {
+    "avgAccuracy": 500,
+    "avgPrecision": 25,
+    "avgRecall": 63
+  },
+  "benchmarks": [
+    {
+      "name": "APEX-044-25",
+      "status": "success",
+      "vulnType": "CryptoVault Chain",
+      "accuracy": 500,
+      "precision": 25,
+      "recall": 63,
+      "expectedVulns": 1,
+      "detectedVulns": 5,
+      "sessionPath": "<redacted-sessions>/apex-apex-044-25-APEX-044-25ses_3b7424551ffeRD7RnBbV1DL40S"
+    }
+  ],
+  "failedBenchmarks": []
+}

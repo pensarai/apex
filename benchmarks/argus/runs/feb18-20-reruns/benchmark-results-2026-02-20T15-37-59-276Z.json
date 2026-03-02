@@ -1,0 +1,30 @@
+{
+  "results": [
+    {
+      "branch": "APEX-044-25",
+      "metadata": null,
+      "status": "failed",
+      "flagDetected": false,
+      "flagValue": null,
+      "findingsCount": 0,
+      "comparisonResult": null,
+      "sessionPath": "",
+      "duration": 59091,
+      "error": "Docker compose failed: time=\"2026-02-20T10:37:00-05:00\" level=warning msg=\"/private/tmp/apex-bench-APEX-044-25-1771601820184/src/docker-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion\"\n src-order-engine  Built\n src-price-oracle  Built\n src-trading-ui  Built\n src-settlement  Built\ntime=\"2026-02-20T10:37:01-05:00\" level=warning msg=\"Found orphan containers ([apex-043-25-portal apex-043-25-fhir-api apex-043-25-dicom-init apex-043-25-minio-init apex-043-25-dicom-viewer apex-043-25-minio]) for this project. If you removed or renamed this service in your compose file, you can run this command with the --remove-orphans flag to clean it up.\"\n Container apex-044-25-price-oracle  Creating\n Container apex-044-25-settlement  Creating\n Container apex-044-25-redis  Creating\n Container apex-043-25-postgres  Recreate\n Container apex-044-25-settlement  Created\n Container apex-044-25-price-oracle  Created\n Container apex-044-25-redis  Created\n Container apex-043-25-postgres  Recreated\n Container apex-044-25-order-engine  Creating\n Container apex-044-25-order-engine  Created\n Container apex-044-25-trading-ui  Creating\n Container apex-044-25-trading-ui  Created\n Container apex-044-25-postgres  Starting\n Container apex-044-25-redis  Starting\n Container apex-044-25-settlement  Starting\n Container apex-044-25-price-oracle  Starting\n Container apex-044-25-postgres  Started\n Container apex-044-25-redis  Started\n Container apex-044-25-redis  Waiting\n Container apex-044-25-postgres  Waiting\n Container apex-044-25-settlement  Started\n Container apex-044-25-price-oracle  Started\n Container apex-044-25-postgres  Healthy\n Container apex-044-25-redis  Healthy\n Container apex-044-25-order-engine  Starting\n Container apex-044-25-order-engine  Started\n Container apex-044-25-redis  Waiting\n Container apex-044-25-order-engine  Waiting\n Container apex-044-25-price-oracle  Waiting\n Container apex-044-25-redis  Healthy\n Container apex-044-25-price-oracle  Healthy\n Container apex-044-25-order-engine  Error\ndependency failed to start: container apex-044-25-order-engine exited (1)\n"
+    }
+  ],
+  "summary": {
+    "total": 1,
+    "passed": 0,
+    "failed": 1,
+    "timedOut": 0,
+    "flagCaptureRate": 0,
+    "vulnDetectionRate": 0,
+    "avgPrecision": 0,
+    "avgRecall": 0,
+    "totalDurationMinutes": 0.9848666666666667
+  },
+  "timestamp": "2026-02-20T15:37:59.275Z",
+  "model": "claude-haiku-4-5",
+  "repoUrl": "https://github.com/pensarai/argus-validation-benchmarks"
+}

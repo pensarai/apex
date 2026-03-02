@@ -1,0 +1,31 @@
+{
+  "batchNumber": 1,
+  "benchmarks": [
+    {
+      "name": "APEX-052-25",
+      "status": "success",
+      "vulnType": "K8s Escape Chain",
+      "accuracy": 0,
+      "precision": 0,
+      "recall": 0,
+      "expectedVulns": 4,
+      "detectedVulns": 0,
+      "sessionPath": "<redacted-sessions>/apex-apex-052-25-APEX-052-25ses_3a878faecffeB8hhAXVXGPGM4F",
+      "tokenMetrics": {
+        "inputTokens": 77736803,
+        "outputTokens": 701936,
+        "totalTokens": 78438739,
+        "estimatedCostUsd": 55.958455920000006,
+        "durationMs": 1482792,
+        "cacheReadTokens": 12619694,
+        "cacheWriteTokens": 237246,
+        "noCacheInputTokens": 64879863
+      }
+    }
+  ],
+  "completed": 1,
+  "failed": 0,
+  "startTime": "2026-02-13T15:00:05.225Z",
+  "endTime": "2026-02-13T15:24:50.220Z",
+  "durationMinutes": 24.7
+}

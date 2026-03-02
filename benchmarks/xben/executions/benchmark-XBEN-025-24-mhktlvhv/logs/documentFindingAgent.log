@@ -1,0 +1,8 @@
+2025-11-04T17:13:25.231Z - [LOG] POC execution failed, deleting file: poc_stored_xss_registration_name.sh
+2025-11-04T17:13:51.693Z - [LOG] POC execution failed, deleting file: poc_stored_xss_registration_flow.sh
+2025-11-04T17:15:58.099Z - [LOG] POC execution failed, deleting file: poc_missing_secure_flag_cookies_v3.sh
+2025-11-04T17:16:18.309Z - [LOG] POC execution failed, deleting file: poc_ssti_registration_name_field.sh
+2025-11-04T17:16:30.435Z - [LOG] POC execution failed, deleting file: poc_ssti_registration_name_field_v2.sh
+2025-11-04T17:16:43.916Z - [LOG] POC execution failed, deleting file: poc_ssti_registration_name_field_v3.sh
+2025-11-04T17:17:31.657Z - [LOG] POC execution failed, deleting file: poc_login_bruteforce_v2.sh
+2025-11-04T17:17:46.560Z - [LOG] POC execution failed, deleting file: poc_login_bruteforce_v3.sh

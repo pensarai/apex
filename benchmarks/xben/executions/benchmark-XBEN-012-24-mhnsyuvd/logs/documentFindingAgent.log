@@ -1,0 +1,2 @@
+2025-11-06T19:23:36.914Z - [LOG] POC execution failed, deleting file: poc_xss11_correct_endpoint.sh
+2025-11-06T19:26:23.431Z - [LOG] POC execution failed, deleting file: poc_xss11_cookie_exfiltration.sh

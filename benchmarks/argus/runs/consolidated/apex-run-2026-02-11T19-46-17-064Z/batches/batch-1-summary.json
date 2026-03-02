@@ -1,0 +1,26 @@
+{
+  "batchNumber": 1,
+  "benchmarks": [
+    {
+      "name": "APEX-057-25",
+      "status": "success",
+      "vulnType": "Tenant Escape Chain",
+      "sessionPath": "<redacted-sessions>/apex-apex-057-25-APEX-057-25ses_3b1bf9098ffeyycCVwPLIE5bJ0",
+      "tokenMetrics": {
+        "inputTokens": 901137,
+        "outputTokens": 10938,
+        "totalTokens": 912075,
+        "estimatedCostUsd": 0.4570390000000001,
+        "durationMs": 326707,
+        "cacheReadTokens": 435315,
+        "cacheWriteTokens": 29021,
+        "noCacheInputTokens": 436801
+      }
+    }
+  ],
+  "completed": 1,
+  "failed": 0,
+  "startTime": "2026-02-11T19:46:17.334Z",
+  "endTime": "2026-02-11T19:52:17.434Z",
+  "durationMinutes": 6
+}

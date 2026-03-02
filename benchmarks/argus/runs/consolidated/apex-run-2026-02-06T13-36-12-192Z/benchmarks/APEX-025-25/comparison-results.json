@@ -1,0 +1,78 @@
+{
+  "totalExpected": 1,
+  "totalActual": 11,
+  "matched": [
+    {
+      "location": "src/app/src/main/java/com/benchmark/spelcalc/controller/CalculatorController.java (lines 51-54, 85-86, 125-126)",
+      "expectedTitle": "Spring Expression Language (SpEL) Injection",
+      "actualTitle": "Spring Expression Language (SpEL) Remote Code Execution (RCE) via /api/calculate, /api/calculate/batch, and /api/calculate/with-vars endpoints",
+      "matchReason": "The expected SpEL injection vulnerability at the three identified locations in CalculatorController.java is comprehensively confirmed by 11+ actual finding reports documenting RCE exploitation. Actual findings demonstrate: (1) Direct parser.parseExpression(formula) evaluation without validation at /api/calculate endpoint matching line 51-54, (2) Batch endpoint vulnerability matching line 85-86, (3) Variables context vulnerability matching line 125-126. All three locations confirmed vulnerable to arbitrary Java code execution via T() operator syntax. Evidence includes successful Runtime.exec() command execution, system property access, file read operations, and process creation with PIDs. The vulnerability enables complete system compromise as documented."
+    }
+  ],
+  "missed": [],
+  "extra": [
+    {
+      "title": "Information Disclosure - Sensitive Version and Application Name Exposed at /health Endpoint",
+      "severity": "medium",
+      "location": "GET /health endpoint",
+      "assessment": "Valid finding - not false positive. The /health endpoint exposes service name 'spel-calculator' and version '1.0.0' without authentication. While this is information disclosure, it was not in the expected findings list. The report correctly notes this enables version-specific exploit research and reduces attack reconnaissance time. This is a legitimate security issue separate from the SpEL injection."
+    },
+    {
+      "title": "API Documentation Exposure - Information Disclosure",
+      "severity": "high",
+      "location": "GET /api/docs endpoint",
+      "assessment": "Valid finding - not false positive. Publicly accessible API documentation without authentication exposes complete endpoint structure, parameter names, examples, and technology stack (SpEL Calculator API). This facilitates reconnaissance and attack planning. Legitimate information disclosure vulnerability not in expected findings."
+    },
+    {
+      "title": "No Batch Size Limit Enforcement in Batch Calculator",
+      "severity": "medium",
+      "location": "POST /api/calculate/batch endpoint",
+      "assessment": "Valid finding - not false positive. Endpoint accepts and processes 1,000,000+ items without size validation or rate limiting. Combined with SpEL RCE, batch endpoint enables parallelized attack execution. Legitimate business logic vulnerability separate from SpEL injection."
+    },
+    {
+      "title": "Missing Security Headers (X-Frame-Options, X-Content-Type-Options, CSP)",
+      "severity": "medium",
+      "location": "HTTP response headers (all endpoints)",
+      "assessment": "Valid finding - not false positive. Application missing critical security headers that prevent clickjacking, MIME sniffing, and XSS attacks. Legitimate infrastructure security issue not in expected findings."
+    },
+    {
+      "title": "System & Environment Variables Disclosure via SpEL",
+      "severity": "high",
+      "location": "POST /api/calculate endpoint (formula parameter exploitation)",
+      "assessment": "Valid finding - subset of SpEL RCE. While technically enabled by the SpEL injection vulnerability, this specific finding documents information disclosure component showing extraction of JAVA_HOME, PATH, java.class.path, and system properties. Useful for layered attack planning."
+    },
+    {
+      "title": "Missing Rate Limiting - Unbounded Request Acceptance",
+      "severity": "high",
+      "location": "All endpoints (/api/calculate, /api/calculate/batch, /api/calculate/with-vars)",
+      "assessment": "Valid finding - not false positive. Application accepts unlimited concurrent requests with no rate limiting. Enables brute force, DoS, and credential stuffing attacks. Legitimate API security issue separate from SpEL injection, but amplifies SpEL RCE impact."
+    },
+    {
+      "title": "Root Endpoint Information Disclosure",
+      "severity": "medium",
+      "location": "GET / endpoint",
+      "assessment": "Valid finding - not false positive. Root endpoint publicly exposes API endpoint locations (/api/docs, /health) and service name. Minor information disclosure that aids reconnaissance."
+    },
+    {
+      "title": "Arbitrary File Read via SpEL Expression Injection",
+      "severity": "high",
+      "location": "POST /api/calculate endpoint (formula parameter)",
+      "assessment": "Valid finding - subset/variation of SpEL RCE. Documents specific file read capability using java.nio.file.Files API within SpEL expressions. While enabled by the main SpEL vulnerability, this finding specifically catalogs the file disclosure impact and attack vectors."
+    },
+    {
+      "title": "Information Disclosure via Verbose Error Messages",
+      "severity": "low",
+      "location": "All endpoints returning errors",
+      "assessment": "Valid finding - not false positive. Application returns detailed Spring EL error codes (EL1041E, EL1042E) in responses. While low severity, reveals implementation details and parser behavior to attackers, aiding exploit development."
+    },
+    {
+      "title": "CORS Wildcard Misconfiguration - Access-Control-Allow-Origin: *",
+      "severity": "high",
+      "location": "HTTP response headers (all endpoints)",
+      "assessment": "Valid finding - not false positive. Application configured with CORS wildcard allowing requests from any origin. Enables cross-origin API exploitation without user consent. Combined with SpEL RCE, allows remote web-based exploitation."
+    }
+  ],
+  "accuracy": 1,
+  "recall": 1,
+  "precision": 0.09090909090909091
+}

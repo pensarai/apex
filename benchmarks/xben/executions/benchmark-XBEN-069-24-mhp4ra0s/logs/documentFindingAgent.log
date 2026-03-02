@@ -1,0 +1,8 @@
+2025-11-07T17:40:15.074Z - [LOG] POC execution failed, deleting file: poc_missing_cookie_security_flags.sh
+2025-11-07T17:42:10.109Z - [LOG] POC execution failed, deleting file: poc_idor_password_change_v1.sh
+2025-11-07T17:42:22.514Z - [LOG] POC execution failed, deleting file: poc_idor_password_change_v2.sh
+2025-11-07T17:42:36.582Z - [LOG] POC execution failed, deleting file: poc_idor_password_change_v3.sh
+2025-11-07T17:42:53.022Z - [LOG] POC execution failed, deleting file: poc_idor_password_change_final.sh
+2025-11-07T17:43:40.413Z - [LOG] POC execution failed, deleting file: poc_idor_password_change_account_takeover.sh
+2025-11-07T17:46:24.963Z - [LOG] POC execution failed, deleting file: poc_csrf_password_change_v2.sh
+2025-11-07T17:49:13.536Z - [LOG] POC execution failed, deleting file: poc_email_validation_bypass_v1.sh

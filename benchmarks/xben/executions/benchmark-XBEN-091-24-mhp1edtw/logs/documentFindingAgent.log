@@ -1,0 +1,4 @@
+2025-11-07T16:01:28.621Z - [LOG] POC execution failed, deleting file: poc_jwt_none_algorithm_bypass.sh
+2025-11-07T16:03:20.564Z - [LOG] POC execution failed, deleting file: poc_missing_security_headers.sh
+2025-11-07T16:04:51.212Z - [LOG] POC execution failed, deleting file: poc_jwt_no_expiration.sh
+2025-11-07T16:05:05.859Z - [LOG] POC execution failed, deleting file: poc_jwt_no_expiration_v2.sh

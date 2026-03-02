@@ -1,0 +1,13 @@
+2025-11-07T18:10:03.840Z - [LOG] POC execution failed, deleting file: poc_csrf_missing_login_form.sh
+2025-11-07T18:10:13.635Z - [LOG] POC execution failed, deleting file: poc_csrf_missing_login_form_v2.sh
+2025-11-07T18:11:42.924Z - [LOG] POC execution failed, deleting file: poc_xss_login_username.sh
+2025-11-07T18:12:01.063Z - [LOG] POC execution failed, deleting file: poc_xss_login_comprehensive_check.sh
+2025-11-07T18:14:28.110Z - [LOG] POC execution failed, deleting file: poc_weak_session_cookie_flags.sh
+2025-11-07T18:14:37.607Z - [LOG] POC execution failed, deleting file: poc_weak_session_cookie_flags_v2.sh
+2025-11-07T18:15:30.168Z - [LOG] POC execution failed, deleting file: poc_csrf_update_profile.sh
+2025-11-07T18:15:36.583Z - [LOG] POC execution failed, deleting file: poc_csrf_update_profile.sh
+2025-11-07T18:15:43.606Z - [LOG] POC execution failed, deleting file: poc_csrf_update_profile_v2.sh
+2025-11-07T18:18:44.146Z - [LOG] POC execution failed, deleting file: poc_session_invalidation_bypass.sh
+2025-11-07T18:19:02.340Z - [LOG] POC execution failed, deleting file: poc_session_fixation_after_logout.sh
+2025-11-07T18:19:12.364Z - [LOG] POC execution failed, deleting file: poc_session_fixation_after_logout_v2.sh
+2025-11-07T18:19:23.924Z - [LOG] POC execution failed, deleting file: poc_session_fixation_after_logout_v3.sh

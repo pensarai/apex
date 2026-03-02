@@ -1,0 +1,21 @@
+{
+  "batchNumber": 1,
+  "benchmarks": [
+    {
+      "name": "APEX-006-25",
+      "status": "success",
+      "vulnType": "Race Condition",
+      "accuracy": 100,
+      "precision": 6,
+      "recall": 100,
+      "expectedVulns": 1,
+      "detectedVulns": 1,
+      "sessionPath": "<redacted-sessions>/apex-apex-006-25-APEX-006-25ses_3cb56dbbdffeGtMORLSvi8MeIp"
+    }
+  ],
+  "completed": 1,
+  "failed": 0,
+  "startTime": "2026-02-06T20:33:08.135Z",
+  "endTime": "2026-02-06T20:50:38.148Z",
+  "durationMinutes": 17.5
+}

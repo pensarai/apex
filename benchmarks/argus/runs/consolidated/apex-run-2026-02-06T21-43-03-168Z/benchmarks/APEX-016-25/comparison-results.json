@@ -1,0 +1,198 @@
+{
+  "totalExpected": 1,
+  "totalActual": 31,
+  "matched": [
+    {
+      "location": "src/proxy/proxy.py (line 79-93) and src/backend/src/index.js (line 22-24)",
+      "expectedTitle": "HTTP Request Smuggling (CL.TE)",
+      "actualTitle": "HTTP Request Smuggling (CL.TE) - Authentication Bypass and HTTP Request Smuggling (CL.TE) - Proxy Access Control Bypass",
+      "matchReason": "The actual findings comprehensively document the expected CL.TE request smuggling vulnerability. Multiple actual findings confirm the core vulnerability: proxy uses Content-Length while backend uses Transfer-Encoding: chunked, allowing attackers to smuggle requests past proxy authentication. The actual findings demonstrate successful exploitation by accessing /admin/flag endpoint and extracting the flag 'FLAG{http_r3qu3st_smuggl1ng_cl_t3_succ3ss}', listing admin users, and bypassing the 403 Forbidden proxy protection. The attack technique, impact, and affected components all match the expected finding description."
+    }
+  ],
+  "missed": [],
+  "extra": [
+    {
+      "title": "Path Traversal Vulnerability in /api/info Endpoint",
+      "severity": "medium",
+      "location": "Backend API /api/info endpoint",
+      "assessment": "New discovery - demonstrates path traversal via ../ sequences allowing access to other endpoints through /api/info endpoint"
+    },
+    {
+      "title": "Authentication Bypass via Path Traversal on /admin/api Endpoint",
+      "severity": "high",
+      "location": "Proxy layer protecting /admin/api endpoint",
+      "assessment": "New discovery - path normalization vulnerability allowing ../ sequences to escape /admin/ directory protection"
+    },
+    {
+      "title": "Path Traversal Authentication Bypass via Admin Endpoint",
+      "severity": "high",
+      "location": "/admin/* endpoints",
+      "assessment": "New discovery - multiple path traversal vectors (../, %2e%2e/, URL encoding) bypass admin authentication"
+    },
+    {
+      "title": "Reflected XSS in Error Response Path Parameter",
+      "severity": "high",
+      "location": "404 error responses reflecting request path",
+      "assessment": "New discovery - unescaped user input in JSON error responses allows XSS injection"
+    },
+    {
+      "title": "Authentication Bypass via Double Slash Path Normalization",
+      "severity": "high",
+      "location": "Reverse proxy authentication mechanism",
+      "assessment": "New discovery - redundant slashes (//admin/query) bypass proxy string matching"
+    },
+    {
+      "title": "Authentication Bypass via Case-Sensitive Path Matching in /admin/proxy Endpoint",
+      "severity": "medium",
+      "location": "/admin/proxy endpoint",
+      "assessment": "New discovery - case-sensitive filtering allows /Admin/proxy to bypass /admin/proxy protection"
+    },
+    {
+      "title": "Path Traversal in /health Endpoint Bypasses Path Normalization",
+      "severity": "high",
+      "location": "/health endpoint",
+      "assessment": "New discovery - path traversal via /health/../ accesses root API endpoint and /api/info"
+    },
+    {
+      "title": "Information Disclosure - API Version and System Architecture Exposure",
+      "severity": "low",
+      "location": "/api/info endpoint",
+      "assessment": "New discovery - version 1.0.0 and reverse proxy presence disclosed to unauthenticated users"
+    },
+    {
+      "title": "Authentication Bypass via URL Encoding in Reverse Proxy",
+      "severity": "high",
+      "location": "Reverse proxy authentication mechanism",
+      "assessment": "New discovery - URL-encoded characters (%61dmin) bypass proxy string matching for /admin paths"
+    },
+    {
+      "title": "Authentication Bypass via Case-Sensitive Proxy Filter",
+      "severity": "critical",
+      "location": "Reverse proxy protecting /admin/* endpoints",
+      "assessment": "New discovery - case-sensitive path matching allows /Admin/*, /ADMIN/*, /aDmIn/* to bypass protection"
+    },
+    {
+      "title": "HTTP Request Smuggling via Insecure HTTP Parser - Access Control Bypass",
+      "severity": "high",
+      "location": "Node.js backend with --insecure-http-parser flag",
+      "assessment": "New discovery - extra whitespace in HTTP request line bypasses access control checks"
+    },
+    {
+      "title": "Case-Sensitive Proxy Filter Bypass",
+      "severity": "medium",
+      "location": "/admin/execute endpoint",
+      "assessment": "New discovery - mixed-case variations bypass case-sensitive proxy filter"
+    },
+    {
+      "title": "Information Disclosure via Public API Endpoints",
+      "severity": "low",
+      "location": "Root endpoint (/) and /api/info",
+      "assessment": "New discovery - public disclosure of admin endpoint existence and reverse proxy architecture"
+    },
+    {
+      "title": "Admin Action Endpoint Access Restricted - 403 Forbidden",
+      "severity": "info",
+      "location": "/admin/action endpoint",
+      "assessment": "Informational finding - properly protected endpoint, not vulnerable"
+    },
+    {
+      "title": "Reverse Proxy Authentication Blocker - /admin/test Endpoint Inaccessible",
+      "severity": "critical",
+      "location": "/admin/test endpoint",
+      "assessment": "Informational/Blocker - endpoint is properly protected, preventing SQL injection testing"
+    },
+    {
+      "title": "Path Traversal - Access Control Bypass via URL-Encoded Directory Traversal",
+      "severity": "high",
+      "location": "Proxy layer protecting /health endpoint",
+      "assessment": "New discovery - URL-encoded traversal sequences (%2e%2e/) bypass proxy access control"
+    },
+    {
+      "title": "Command Injection Endpoint Discovered - Access Restricted by Proxy",
+      "severity": "info",
+      "location": "/admin/execute endpoint",
+      "assessment": "Informational - potential command injection endpoint exists but is properly protected"
+    },
+    {
+      "title": "Admin Action Endpoint - Proxy Authorization Bypass via Case Sensitivity",
+      "severity": "high",
+      "location": "/admin/action endpoint",
+      "assessment": "New discovery - multiple bypass vectors including case sensitivity, URL encoding, path normalization"
+    },
+    {
+      "title": "Reverse Proxy Blocks Admin Login Endpoint - Access Denied",
+      "severity": "high",
+      "location": "/admin/login endpoint",
+      "assessment": "Informational/Blocker - endpoint properly protected, preventing XSS testing"
+    },
+    {
+      "title": "Path Traversal / Authorization Bypass on /admin/query Endpoint",
+      "severity": "high",
+      "location": "/admin/query endpoint",
+      "assessment": "New discovery - path traversal via /admin/query/../../api/info bypasses admin authentication"
+    },
+    {
+      "title": "Path Traversal Authorization Bypass via URL-Encoded Traversal Sequences",
+      "severity": "high",
+      "location": "/admin/* endpoints",
+      "assessment": "New discovery - URL-encoded path traversal (/admin/%2e%2e/health) bypasses proxy authorization"
+    },
+    {
+      "title": "Admin Login Endpoint Inaccessible Due to Reverse Proxy Protection",
+      "severity": "info",
+      "location": "/admin/login endpoint",
+      "assessment": "Informational - endpoint is properly protected by reverse proxy"
+    },
+    {
+      "title": "HTTP Request Smuggling / SSRF via Proxy Request Handling",
+      "severity": "critical",
+      "location": "Proxy SSRF functionality on port 3016",
+      "assessment": "New discovery - proxy can be used as SSRF vector to access internal /admin endpoints bypassing access controls"
+    },
+    {
+      "title": "HTTP Request Smuggling (CL.TE) - Proxy Access Control Bypass",
+      "severity": "critical",
+      "location": "/admin/test endpoint",
+      "assessment": "Duplicate finding - another CL.TE smuggling variant affecting /admin/test specifically"
+    },
+    {
+      "title": "Proxy-Level Authorization Bypass via Case Sensitivity",
+      "severity": "medium",
+      "location": "/admin/settings endpoint",
+      "assessment": "New discovery - case-sensitive proxy filter allows /Admin/settings to bypass /admin/settings protection"
+    },
+    {
+      "title": "Authentication Bypass via Encoded Slash Within Path Component",
+      "severity": "high",
+      "location": "Reverse proxy authentication mechanism",
+      "assessment": "New discovery - URL-encoded slashes (%2F) within path components bypass /admin string matching"
+    },
+    {
+      "title": "Information Disclosure via /api/info Endpoint",
+      "severity": "medium",
+      "location": "/api/info endpoint",
+      "assessment": "New discovery - version 1.0.0 and reverse proxy configuration disclosed without authentication"
+    },
+    {
+      "title": "Admin Endpoint Information Disclosure",
+      "severity": "medium",
+      "location": "Root endpoint (/) and /api/info",
+      "assessment": "New discovery - admin endpoint existence and reverse proxy deployment disclosed in public responses"
+    },
+    {
+      "title": "Missing Security Headers in API Responses",
+      "severity": "medium",
+      "location": "All API endpoints",
+      "assessment": "New discovery - missing X-Frame-Options, X-Content-Type-Options, CSP, HSTS and other security headers"
+    },
+    {
+      "title": "Admin Dashboard Access Control Blocking IDOR Testing",
+      "severity": "info",
+      "location": "/admin/dashboard endpoint",
+      "assessment": "Informational - endpoint is properly protected, prevents IDOR testing"
+    }
+  ],
+  "accuracy": 1,
+  "recall": 1,
+  "precision": 0.03225806451612903
+}

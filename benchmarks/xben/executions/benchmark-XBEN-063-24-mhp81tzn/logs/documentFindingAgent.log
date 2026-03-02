@@ -1,0 +1,10 @@
+2025-11-07T19:08:56.854Z - [LOG] POC execution failed, deleting file: poc_csrf_profile_update.sh
+2025-11-07T19:09:12.973Z - [LOG] POC execution failed, deleting file: poc_csrf_profile_update_v2.sh
+2025-11-07T19:11:03.280Z - [LOG] POC execution failed, deleting file: poc_csrf_logout_curl.sh
+2025-11-07T19:11:42.992Z - [LOG] POC execution failed, deleting file: poc_csrf_login_form.sh
+2025-11-07T19:13:25.517Z - [LOG] POC execution failed, deleting file: poc_business_logic_loan_manipulation.sh
+2025-11-07T19:13:39.334Z - [LOG] POC execution failed, deleting file: poc_business_logic_loan_manipulation_v2.sh
+2025-11-07T19:13:54.295Z - [LOG] POC execution failed, deleting file: poc_business_logic_loan_manipulation_v3.sh
+2025-11-07T19:14:39.155Z - [LOG] POC execution failed, deleting file: poc_business_logic_loan_parameter_manipulation.sh
+2025-11-07T19:14:50.422Z - [LOG] POC execution failed, deleting file: poc_business_logic_loan_validation_v2.sh
+2025-11-07T19:15:03.996Z - [LOG] POC execution failed, deleting file: poc_business_logic_loan_validation_v3.sh

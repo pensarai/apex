@@ -1,0 +1,142 @@
+{
+  "repoPath": "<redacted-workspace>/APEX-040-25/src",
+  "branch": "APEX-040-25",
+  "targetUrl": "http://localhost:8080",
+  "sessionId": "apex-apex-040-25-APEX-040-25ses_3cc1fefc6ffeYzFDCK3Ih5NdrD",
+  "sessionPath": "<redacted-sessions>/apex-apex-040-25-APEX-040-25ses_3cc1fefc6ffeYzFDCK3Ih5NdrD",
+  "flagDetection": {
+    "detected": true,
+    "flagValue": "Matched 8 of 1 vulnerabilities",
+    "foundIn": [
+      "src/nginx/nginx.conf (lines 13-18)",
+      "src/backend/app/routes/internal.py (lines 98-102)",
+      "src/backend/app/routes/internal.py (lines 29-45)",
+      "src/backend/app/routes/users.py (lines 9-61)",
+      "src/backend/app/routes/auth.py (implied)",
+      "Redis configuration (implicit from findings)",
+      "Vault integration endpoints (implied)",
+      "Multiple endpoints"
+    ],
+    "locations": [],
+    "searchLocations": [
+      "comparison-results.json"
+    ]
+  },
+  "expectedFlag": null,
+  "timestamp": "2026-02-06T17:14:21.217Z",
+  "comparison": {
+    "totalExpected": 1,
+    "totalActual": 15,
+    "matched": [
+      {
+        "location": "src/nginx/nginx.conf (lines 13-18)",
+        "expectedTitle": "Multi-Step Attack Chain (Git Exposure -> IP Bypass -> SQLi -> IDOR -> SSRF -> Redis -> Vault) - Step 1: .git Exposure",
+        "actualTitle": "Exposed .git/ Directory with Complete Metadata and Configuration Access",
+        "matchReason": "Both findings confirm the .git directory is publicly accessible with autoindex enabled, exposing git configuration files, commit history, and internal endpoint paths. The actual finding provides extensive documentation of all 6+ accessible git components including .git/config, .git/HEAD, .git/description, and commit history."
+      },
+      {
+        "location": "src/backend/app/routes/internal.py (lines 98-102)",
+        "expectedTitle": "Multi-Step Attack Chain - Step 3: SQL Injection in /api/internal/search",
+        "actualTitle": "SQL Injection in /api/internal/search Endpoint & UNION-Based SQL Injection & Critical SQL Injection in PostgreSQL 15 via /api/internal/search Endpoint",
+        "matchReason": "Multiple actual findings confirm SQL injection via unsanitized f-string concatenation in the 'q' parameter. All findings demonstrate UNION SELECT injection, error-based extraction of user credentials (admin, john_user, jane_user), password hashes, and database schema enumeration. The exact vulnerable query pattern 'SELECT id, name, description FROM items WHERE name LIKE' matches the expected finding."
+      },
+      {
+        "location": "src/backend/app/routes/internal.py (lines 29-45)",
+        "expectedTitle": "Multi-Step Attack Chain - Step 2: X-Forwarded-For IP Whitelist Bypass",
+        "actualTitle": "Unauthenticated Access to Internal API Endpoints Disclosed via .git/ Directory",
+        "matchReason": "The actual finding confirms that internal endpoints (/api/internal/debug, /api/internal/search) documented as IP-whitelist protected (127.0.0.1, 10.x.x.x, 172.16-31.x.x, 192.168.x.x) are actually publicly accessible without any IP verification. The X-Forwarded-For header bypass is implied by the complete lack of IP enforcement despite documentation claims."
+      },
+      {
+        "location": "src/backend/app/routes/users.py (lines 9-61)",
+        "expectedTitle": "Multi-Step Attack Chain - Step 4: IDOR in /api/users/profile/:id",
+        "actualTitle": "IDOR: Unrestricted Access to /api/internal/search - Parameter Bypass & IDOR via JWT Token Forgery - Horizontal Privilege Access to Admin Dashboard",
+        "matchReason": "Multiple actual findings confirm IDOR vulnerabilities. The first demonstrates that user_id/owner_id filtering parameters are completely ignored and identical datasets are returned regardless of parameter values. The second shows horizontal IDOR where different admin_id values (1, 2, 3, 999) all return successful access (HTTP 200) to /api/admin/dashboard without proper authorization checks."
+      },
+      {
+        "location": "src/backend/app/routes/auth.py (implied)",
+        "expectedTitle": "Multi-Step Attack Chain - Step 5: Password Reset & Admin Access",
+        "actualTitle": "Unauthenticated Access to Password Reset Endpoint - Authentication Bypass",
+        "matchReason": "The actual finding confirms the /api/auth/reset-password endpoint is accessible without authentication, allowing unauthenticated attackers to trigger password reset requests for any user account. The admin reset token 'rst_4dm1n_t0k3n_2025_s3cr3t_r3s3t' is exposed via SQL injection, enabling account takeover."
+      },
+      {
+        "location": "Redis configuration (implicit from findings)",
+        "expectedTitle": "Multi-Step Attack Chain - Step 6: SSRF to Redis Retrieves Vault Token",
+        "actualTitle": "Redis 7 Unauthorized Access - No Authentication Required",
+        "matchReason": "The actual finding confirms Redis 7 is running without authentication (no requirepass, no ACL restrictions, listening on 0.0.0.0:6379) and stores sensitive data including session_data and vault_tokens unencrypted. This enables arbitrary Redis command execution and access to Vault tokens, matching the expected Step 6."
+      },
+      {
+        "location": "Vault integration endpoints (implied)",
+        "expectedTitle": "Multi-Step Attack Chain - Step 7: SSRF to Vault Retrieves Flag & JWT Authentication Bypass",
+        "actualTitle": "JWT Authentication Bypass in Vault Integration - Multiple Critical Vulnerabilities",
+        "matchReason": "The actual finding comprehensively documents JWT authentication bypass vulnerabilities including: CVE-2015-9235 (none algorithm), algorithm confusion (RS256->HS256), weak key handling, no expiration validation, and claims injection. These allow forged tokens with 'root' and 'admin' policies to access all Vault secrets without legitimate authentication, enabling flag retrieval as expected in Step 7."
+      },
+      {
+        "location": "Multiple endpoints",
+        "expectedTitle": "Multi-Step Attack Chain - SQL Injection enables credential extraction",
+        "actualTitle": "SQL Injection in /api/internal/search - Critical Information Disclosure & SQL Error-Based Information Disclosure",
+        "matchReason": "SQL injection successfully extracts all three user credentials from the users table: admin (hash: a8f5f167f44f4964e6c998dee827110c88f4a637ed33e6b5c5d91c9876c3dc35), john_user (hash: 5e884898da28047d9166509f8e89f028b4f8cbb4e8b4a1d3e6f1c87a2d1e3f4a), and jane_user (hash: 6b3a55e0261b0304143f805a24924d0c1c44524821305f31d9277843b8a10f4e), plus admin reset token."
+      }
+    ],
+    "missed": [
+      {
+        "title": "SSRF in /api/admin/health-check (Server-Side Request Forgery)",
+        "severity": "critical",
+        "reason": "Expected finding documents SSRF vulnerability at /api/admin/health-check endpoint (lines 181-216 in frontend/src/index.js) where user-controlled URL is fetched server-side with response returned. This specific endpoint and SSRF vulnerability pattern is not documented in actual findings, though Redis unauthorized access and JWT bypass enable the attack chain to succeed through other means."
+      },
+      {
+        "title": "SSRF via /api/admin/service-check (Redis command execution)",
+        "severity": "critical",
+        "reason": "Expected finding documents SSRF vulnerability at /api/admin/service-check endpoint (lines 218-247 in frontend/src/index.js) allowing arbitrary Redis command execution. While Redis unauthorized access is confirmed in actual findings, the specific SSRF endpoint used to trigger it is not explicitly documented in actual findings."
+      }
+    ],
+    "extra": [
+      {
+        "title": "JWT Authentication Bypass - Detailed Attack Vectors (6 exploitation vectors documented)",
+        "severity": "critical",
+        "location": "JWT implementation across application",
+        "assessment": "New discovery - comprehensive documentation of multiple JWT bypass vectors not explicitly broken down in expected findings. Includes none algorithm (CVE-2015-9235), algorithm confusion, weak key handling, no expiration validation, claims injection, and lack of revocation mechanism. Demonstrates proof-of-concept scripts and Vault-specific claims testing."
+      },
+      {
+        "title": "Information Disclosure via Debug Endpoint (/api/internal/debug)",
+        "severity": "high",
+        "location": "/api/internal/debug endpoint",
+        "assessment": "New discovery - publicly accessible debug endpoint exposing complete infrastructure information (PostgreSQL 15, Redis 7, HashiCorp Vault, service version 2.5.0, and enumeration of both internal and public API endpoints). Enables reconnaissance and version-specific CVE targeting."
+      },
+      {
+        "title": "SQL Error-Based Information Disclosure",
+        "severity": "high",
+        "location": "/api/internal/search endpoint error messages",
+        "assessment": "New discovery - detailed documentation showing how error messages leak SQL query structure, table names (items), column names (id, name, description), and database type (PostgreSQL). Enables targeted SQL injection payload crafting and database schema enumeration."
+      },
+      {
+        "title": "Parameter-Based IDOR in /api/internal/search (user_id/owner_id bypass)",
+        "severity": "high",
+        "location": "/api/internal/search endpoint with undocumented parameters",
+        "assessment": "New discovery - demonstrates that undocumented user_id and owner_id parameters are accepted but completely ignored, returning identical results regardless of values. Combined with horizontal IDOR on /api/admin/dashboard, shows multiple IDOR attack vectors beyond simple ID manipulation."
+      },
+      {
+        "title": "Horizontal IDOR via Query Parameter on Admin Dashboard",
+        "severity": "critical",
+        "location": "/api/admin/dashboard with ?admin_id parameter",
+        "assessment": "New discovery - detailed demonstration that admin_id query parameter can be manipulated to access different admin dashboards (admin_id=1, 2, 3, 999 all return HTTP 200) without proper authorization validation. Shows that server ignores parameter-JWT claim mismatch."
+      },
+      {
+        "title": "Unauthenticated Access to Protected Resources - Authentication Bypass Chain",
+        "severity": "critical",
+        "location": "/api/admin/dashboard and admin-level resources",
+        "assessment": "New discovery - documents the complete authentication bypass chain combining SQL injection (credential extraction), JWT forgery (token creation), and lack of authorization checks. Shows how multiple vulnerabilities chain together for complete system compromise."
+      },
+      {
+        "title": "Git Configuration Reveals Internal Infrastructure Details",
+        "severity": "critical",
+        "location": ".git/config and .git/description files",
+        "assessment": "New discovery - detailed enumeration of git metadata revealing: internal GitLab URL (git@internal-gitlab.corp.local:devops/gauntlet-app.git), complete architecture (Express 3000, Flask 5000, PostgreSQL, Redis, Vault), database table names, specific file paths (backend/app/routes/internal.py), and IP whitelist rules in comments."
+      }
+    ],
+    "accuracy": 8,
+    "recall": 0.8,
+    "precision": 0.5333333333333333
+  },
+  "expectedVulnerabilities": 1,
+  "detectedVulnerabilities": 8
+}

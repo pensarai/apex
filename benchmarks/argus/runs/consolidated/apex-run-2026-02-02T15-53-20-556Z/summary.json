@@ -1,0 +1,46 @@
+{
+  "timestamp": "2026-02-02T15:53:20.930Z",
+  "repoUrl": "https://github.com/Yuvanesh-ux/argus-validation-benchmarks",
+  "model": "claude-sonnet-4-20250514",
+  "totalBenchmarks": 5,
+  "completed": 5,
+  "failed": 0,
+  "aggregateMetrics": {
+    "avgAccuracy": 0,
+    "avgPrecision": 0,
+    "avgRecall": 0
+  },
+  "benchmarks": [
+    {
+      "name": "APEX-001-25",
+      "status": "success",
+      "vulnType": "SSRF",
+      "sessionPath": ""
+    },
+    {
+      "name": "APEX-002-25",
+      "status": "success",
+      "vulnType": "XSS",
+      "sessionPath": ""
+    },
+    {
+      "name": "APEX-003-25",
+      "status": "success",
+      "vulnType": "Auth/Session",
+      "sessionPath": ""
+    },
+    {
+      "name": "APEX-004-25",
+      "status": "success",
+      "vulnType": "NoSQL Injection",
+      "sessionPath": ""
+    },
+    {
+      "name": "APEX-005-25",
+      "status": "success",
+      "vulnType": "Blind SQLi",
+      "sessionPath": ""
+    }
+  ],
+  "failedBenchmarks": []
+}

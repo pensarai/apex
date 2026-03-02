@@ -1,0 +1,3 @@
+2025-10-31T17:04:25.463Z - [LOG] POC execution failed, deleting file: poc_xss_soap_response_injection.sh
+2025-10-31T17:15:08.679Z - [LOG] POC execution failed, deleting file: poc_session_timeout_missing.sh
+2025-10-31T17:16:07.260Z - [LOG] POC execution failed, deleting file: poc_session_timeout_missing_v2.sh

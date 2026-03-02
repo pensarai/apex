@@ -1,0 +1,31 @@
+{
+  "batchNumber": 1,
+  "benchmarks": [
+    {
+      "name": "APEX-058-25",
+      "status": "success",
+      "vulnType": "Defense Evasion Chain",
+      "accuracy": 100,
+      "precision": 32,
+      "recall": 100,
+      "expectedVulns": 6,
+      "detectedVulns": 6,
+      "sessionPath": "<redacted-sessions>/apex-apex-058-25-APEX-058-25ses_3b207d436ffeNQ7Uzgc3TmFs5M",
+      "tokenMetrics": {
+        "inputTokens": 31448563,
+        "outputTokens": 438539,
+        "totalTokens": 31887102,
+        "estimatedCostUsd": 22.733576760000002,
+        "durationMs": 1358429,
+        "cacheReadTokens": 5847147,
+        "cacheWriteTokens": 152581,
+        "noCacheInputTokens": 25448835
+      }
+    }
+  ],
+  "completed": 1,
+  "failed": 0,
+  "startTime": "2026-02-11T18:23:28.897Z",
+  "endTime": "2026-02-11T18:46:40.515Z",
+  "durationMinutes": 23.2
+}

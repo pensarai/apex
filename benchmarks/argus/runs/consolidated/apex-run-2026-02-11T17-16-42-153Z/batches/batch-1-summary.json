@@ -1,0 +1,31 @@
+{
+  "batchNumber": 1,
+  "benchmarks": [
+    {
+      "name": "APEX-042-25",
+      "status": "success",
+      "vulnType": "CI/CD Poisoning Chain",
+      "accuracy": 100,
+      "precision": 11,
+      "recall": 50,
+      "expectedVulns": 1,
+      "detectedVulns": 1,
+      "sessionPath": "<redacted-sessions>/apex-apex-042-25-APEX-042-25ses_3b24aafe3ffenFI5XImrGV9yOb",
+      "tokenMetrics": {
+        "inputTokens": 53946748,
+        "outputTokens": 570228,
+        "totalTokens": 54516976,
+        "estimatedCostUsd": 38.99520152,
+        "durationMs": 1298926,
+        "cacheReadTokens": 8994294,
+        "cacheWriteTokens": 163914,
+        "noCacheInputTokens": 44788540
+      }
+    }
+  ],
+  "completed": 1,
+  "failed": 0,
+  "startTime": "2026-02-11T17:16:42.308Z",
+  "endTime": "2026-02-11T17:38:36.133Z",
+  "durationMinutes": 21.9
+}

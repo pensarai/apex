@@ -1,0 +1,4 @@
+2025-11-07T17:10:28.098Z - [LOG] POC execution failed, deleting file: poc_stored_xss_image_filename.sh
+2025-11-07T17:11:42.815Z - [LOG] POC execution failed, deleting file: poc_csrf_file_upload.sh
+2025-11-07T17:15:22.747Z - [LOG] POC execution failed, deleting file: poc_brute_force_no_protection.sh
+2025-11-07T17:20:20.431Z - [LOG] POC execution failed, deleting file: poc_rate_limit_file_upload.sh

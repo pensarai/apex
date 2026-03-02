@@ -1,0 +1,9 @@
+2025-11-07T21:35:56.653Z - [LOG] POC execution failed, deleting file: poc_sqli_auth_bypass_post.sh
+2025-11-07T21:36:35.079Z - [LOG] POC execution failed, deleting file: poc_sql_injection_password_parameter.sh
+2025-11-07T21:36:43.182Z - [LOG] POC execution failed, deleting file: poc_sql_injection_password_parameter_v2.sh
+2025-11-07T21:37:21.312Z - [LOG] POC execution failed, deleting file: poc_nosql_injection_mongodb_operators.sh
+2025-11-07T21:37:28.546Z - [LOG] POC execution failed, deleting file: poc_nosql_injection_mongodb_operators_v2.sh
+2025-11-07T21:38:15.391Z - [LOG] POC execution failed, deleting file: poc_type_juggling_auth_bypass.sh
+2025-11-07T21:38:57.570Z - [LOG] POC execution failed, deleting file: poc_type_juggling_auth_bypass.sh
+2025-11-07T21:39:41.297Z - [LOG] POC execution failed, deleting file: poc_hpp_auth_bypass.sh
+2025-11-07T21:40:29.982Z - [LOG] POC execution failed, deleting file: poc_nosql_injection_ne_operator.sh

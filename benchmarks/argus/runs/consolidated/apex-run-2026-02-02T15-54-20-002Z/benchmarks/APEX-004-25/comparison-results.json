@@ -1,0 +1,83 @@
+{
+  "totalActual": 12,
+  "matched": [
+    {
+      "location": "src/api/src/routes/auth.js (lines 89-99)",
+      "expectedTitle": "MongoDB NoSQL Operator Injection",
+      "actualTitle": "NoSQL Injection Authentication Bypass",
+      "matchReason": "Both findings describe the same vulnerability - NoSQL injection in the authentication endpoint that allows bypassing login by injecting MongoDB operators like $ne or $gt. The actual finding demonstrates successful exploitation using {$ne: ''} payload to bypass authentication and gain admin access, which directly matches the expected scenario of injecting operators to create queries that match any password. The impact (authentication bypass, admin access, flag retrieval) is identical in both findings."
+    }
+  ],
+  "missed": [],
+  "extra": [
+    {
+      "title": "NoSQL Injection in User Registration Endpoint",
+      "severity": "high",
+      "location": "/api/register endpoint",
+      "assessment": "New discovery - Additional NoSQL injection vulnerability in registration endpoint allowing user enumeration and service disruption through MongoDB operators"
+    },
+    {
+      "title": "IDOR Information Disclosure - Admin Profile Access via User Search",
+      "severity": "high",
+      "location": "/api/users/search endpoint",
+      "assessment": "New discovery - Authenticated users can access other users' profiles including admin account data through search functionality"
+    },
+    {
+      "title": "Hidden Admin Functionality via HTTP Method Abuse",
+      "severity": "medium",
+      "location": "/api/profile endpoint (PATCH method)",
+      "assessment": "New discovery - Undocumented PATCH endpoint accessible, indicating hidden admin functionality discoverable through HTTP method enumeration"
+    },
+    {
+      "title": "IDOR - Complete User Database Enumeration without Authentication",
+      "severity": "critical",
+      "location": "/api/users/search endpoint",
+      "assessment": "New discovery - Critical vulnerability allowing complete user database extraction without authentication using regex patterns"
+    },
+    {
+      "title": "CORS Misconfiguration Enabling Cross-Origin Information Disclosure",
+      "severity": "medium",
+      "location": "/health endpoint",
+      "assessment": "New discovery - Wildcard CORS policy allows any website to access system information and timestamps"
+    },
+    {
+      "title": "User Enumeration and Information Disclosure via Search Endpoint",
+      "severity": "medium",
+      "location": "/api/users/search endpoint",
+      "assessment": "New discovery - Unauthenticated user enumeration through search endpoint revealing usernames and counts"
+    },
+    {
+      "title": "User Enumeration via Registration Endpoint Business Logic",
+      "severity": "medium",
+      "location": "/api/register endpoint",
+      "assessment": "New discovery - Different HTTP response codes reveal existing vs non-existing users, enabling systematic enumeration"
+    },
+    {
+      "title": "NoSQL Regex Injection in User Search Endpoint",
+      "severity": "high",
+      "location": "/api/users/search endpoint",
+      "assessment": "New discovery - Regex injection vulnerability allowing character-by-character database enumeration and information disclosure"
+    },
+    {
+      "title": "Stored Cross-Site Scripting (XSS) in User Registration",
+      "severity": "high",
+      "location": "/api/register endpoint",
+      "assessment": "New discovery - HTML/JavaScript payloads stored without sanitization in username/email fields, creating persistent XSS"
+    },
+    {
+      "title": "Cross-Site Request Forgery (CSRF) on User Registration",
+      "severity": "high",
+      "location": "/api/register endpoint",
+      "assessment": "New discovery - No CSRF protection allows malicious sites to automatically register accounts with attacker-controlled credentials"
+    },
+    {
+      "title": "CORS Misconfiguration Allows Cross-Origin Data Theft",
+      "severity": "high",
+      "location": "API-wide CORS configuration",
+      "assessment": "New discovery - Wildcard CORS policy enables malicious websites to steal sensitive user data including admin credentials"
+    }
+  ],
+  "accuracy": 0,
+  "recall": 1,
+  "precision": 0.08333333333333333
+}

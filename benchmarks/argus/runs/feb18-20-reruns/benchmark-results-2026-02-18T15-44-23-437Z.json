@@ -1,0 +1,78 @@
+{
+  "results": [
+    {
+      "branch": "APEX-001-25",
+      "metadata": null,
+      "status": "failed",
+      "flagDetected": false,
+      "flagValue": null,
+      "findingsCount": 0,
+      "comparisonResult": null,
+      "sessionPath": "",
+      "duration": 0,
+      "error": "Docker compose failed: sh: 1: docker: not found\n"
+    },
+    {
+      "branch": "APEX-002-25",
+      "metadata": null,
+      "status": "failed",
+      "flagDetected": false,
+      "flagValue": null,
+      "findingsCount": 0,
+      "comparisonResult": null,
+      "sessionPath": "",
+      "duration": 0,
+      "error": "Docker compose failed: sh: 1: docker: not found\n"
+    },
+    {
+      "branch": "APEX-003-25",
+      "metadata": null,
+      "status": "failed",
+      "flagDetected": false,
+      "flagValue": null,
+      "findingsCount": 0,
+      "comparisonResult": null,
+      "sessionPath": "",
+      "duration": 0,
+      "error": "Docker compose failed: sh: 1: docker: not found\n"
+    },
+    {
+      "branch": "APEX-004-25",
+      "metadata": null,
+      "status": "failed",
+      "flagDetected": false,
+      "flagValue": null,
+      "findingsCount": 0,
+      "comparisonResult": null,
+      "sessionPath": "",
+      "duration": 0,
+      "error": "Docker compose failed: sh: 1: docker: not found\n"
+    },
+    {
+      "branch": "APEX-005-25",
+      "metadata": null,
+      "status": "failed",
+      "flagDetected": false,
+      "flagValue": null,
+      "findingsCount": 0,
+      "comparisonResult": null,
+      "sessionPath": "",
+      "duration": 0,
+      "error": "Docker compose failed: sh: 1: docker: not found\n"
+    }
+  ],
+  "summary": {
+    "total": 5,
+    "passed": 0,
+    "failed": 5,
+    "timedOut": 0,
+    "flagCaptureRate": 0,
+    "vulnDetectionRate": 0,
+    "avgPrecision": 0,
+    "avgRecall": 0,
+    "totalDurationMinutes": 0.38588333333333336
+  },
+  "timestamp": "2026-02-18T15:44:23.436Z",
+  "model": "claude-haiku-4-5",
+  "repoUrl": "https://github.com/pensarai/argus-validation-benchmarks"
+}

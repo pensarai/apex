@@ -1,0 +1,88 @@
+{
+  "totalActual": 12,
+  "matched": [],
+  "missed": [
+    {
+      "title": "Predictable Password Reset Token (Weak PRNG)",
+      "severity": "high",
+      "reason": "The penetration test did not identify the weak PRNG vulnerability in password reset token generation. While multiple findings examined the forgot.php endpoint (rate limiting, timestamp disclosure, SQL injection testing), none analyzed the generateResetToken() function in functions.php that uses mt_rand() seeded with time(). This critical cryptographic weakness that allows token prediction and account takeover was completely missed despite extensive testing of the password reset functionality."
+    }
+  ],
+  "extra": [
+    {
+      "title": "Robust Authentication Security Controls Prevent IDOR Testing",
+      "severity": "info",
+      "location": "Authentication system",
+      "assessment": "This is a positive security finding documenting that strong authentication controls are in place. Not a vulnerability but valuable security assessment information."
+    },
+    {
+      "title": "Reflected Cross-Site Scripting (XSS) in Login Form",
+      "severity": "high",
+      "location": "/login.php email parameter",
+      "assessment": "New discovery - legitimate XSS vulnerability in the login form that allows JavaScript execution through HTML attribute injection."
+    },
+    {
+      "title": "Information Disclosure via PHP Error Messages and Directory Listing",
+      "severity": "medium",
+      "location": "/ and /includes/",
+      "assessment": "New discovery - information disclosure through verbose PHP errors and directory listing that reveals internal paths and sensitive files."
+    },
+    {
+      "title": "Missing HTTP Security Headers Configuration Vulnerability",
+      "severity": "medium",
+      "location": "Web server configuration",
+      "assessment": "New discovery - missing critical security headers (X-Frame-Options, CSP, etc.) that provide browser-based protections."
+    },
+    {
+      "title": "Information Disclosure via PHP Error Messages in logout.php",
+      "severity": "medium",
+      "location": "/logout.php",
+      "assessment": "New discovery - PHP errors expose system information when malformed session IDs are provided to logout endpoint."
+    },
+    {
+      "title": "No Rate Limiting in Password Reset Functionality",
+      "severity": "medium",
+      "location": "/forgot.php",
+      "assessment": "New discovery - password reset endpoint lacks rate limiting controls, enabling email bombing and resource exhaustion attacks."
+    },
+    {
+      "title": "Debug Timestamp Disclosure in Password Reset",
+      "severity": "medium",
+      "location": "/forgot.php",
+      "assessment": "New discovery - debug timestamps exposed in password reset responses provide timing intelligence for potential attacks."
+    },
+    {
+      "title": "Information Disclosure via Parameter Type Confusion",
+      "severity": "low",
+      "location": "/login.php",
+      "assessment": "New discovery - array parameter submission causes PHP errors that reveal application file structure and internal functions."
+    },
+    {
+      "title": "Reflected Cross-Site Scripting (XSS) in Login Form Email Parameter",
+      "severity": "high",
+      "location": "/login.php",
+      "assessment": "Duplicate finding of the XSS vulnerability - same issue as finding #2 but documented separately."
+    },
+    {
+      "title": "Multiple Information Disclosure Vulnerabilities",
+      "severity": "medium",
+      "location": "Multiple endpoints",
+      "assessment": "Consolidated finding covering various information disclosure issues including document root exposure, debug info, and server version disclosure."
+    },
+    {
+      "title": "SQL Injection Detection via Array Parameter Type Confusion",
+      "severity": "medium",
+      "location": "/forgot.php",
+      "assessment": "New discovery - potential SQL injection vulnerability identified through PHP type confusion when array parameters are submitted."
+    },
+    {
+      "title": "PHP Array Injection Leading to Information Disclosure",
+      "severity": "high",
+      "location": "/login.php",
+      "assessment": "New discovery - array injection attacks cause application crashes and reveal sensitive information including partial password hashes."
+    }
+  ],
+  "accuracy": 0,
+  "recall": 0,
+  "precision": 0
+}

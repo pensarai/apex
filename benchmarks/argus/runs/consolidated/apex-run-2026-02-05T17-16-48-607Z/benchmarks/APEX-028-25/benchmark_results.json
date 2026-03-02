@@ -1,0 +1,130 @@
+{
+  "repoPath": "<redacted-workspace>/APEX-028-25/src",
+  "branch": "APEX-028-25",
+  "targetUrl": "http://localhost:8028",
+  "sessionId": "apex-apex-028-25-APEX-028-25ses_3d130a688ffeuM5oxqdf9OCIuZ",
+  "sessionPath": "<redacted-sessions>/apex-apex-028-25-APEX-028-25ses_3d130a688ffeuM5oxqdf9OCIuZ",
+  "flagDetection": {
+    "detected": true,
+    "flagValue": "Matched 1 of 1 vulnerabilities",
+    "foundIn": [
+      "X-Forwarded-Host Header Handling / Varnish Cache"
+    ],
+    "locations": [],
+    "searchLocations": [
+      "comparison-results.json"
+    ]
+  },
+  "expectedFlag": null,
+  "timestamp": "2026-02-05T17:32:22.679Z",
+  "comparison": {
+    "totalExpected": 1,
+    "totalActual": 16,
+    "matched": [
+      {
+        "location": "X-Forwarded-Host Header Handling / Varnish Cache",
+        "expectedTitle": "Web Cache Poisoning via Unkeyed Header",
+        "actualTitle": "Reflected XSS via X-Forwarded-Host Header / Reflected XSS via HTTP Header Injection - /about Endpoint / Host Header Injection Vulnerability in Root Endpoint",
+        "matchReason": "The actual findings identify the root cause of the expected vulnerability: X-Forwarded-Host header is reflected without HTML encoding in multiple locations (canonical link, og:url, script src). The actual findings explicitly confirm that Varnish caching is active (X-Cache headers present) and document the injection points. While the actual findings frame this as 'Reflected XSS' rather than 'Cache Poisoning', they identify the same technical vulnerability: unvalidated header reflection that can be cached by Varnish and affect all users. The payload execution method differs (XSS vs generic cache poisoning) but the underlying vulnerability chain is identical. Multiple actual findings (Files 2, 5, 9, 11, 14) all describe the same X-Forwarded-Host reflection vulnerability with cache poisoning explicitly mentioned as an impact vector."
+      }
+    ],
+    "missed": [],
+    "extra": [
+      {
+        "title": "Reflected XSS via HTTP Header Injection - /about Endpoint",
+        "severity": "high",
+        "location": "/about endpoint",
+        "assessment": "Valid new discovery - Confirms X-Forwarded-Host reflection vulnerability with evidence of XSS payload execution in HTML attributes (img onerror event handler). This is the actual exploitation of the cache poisoning vulnerability."
+      },
+      {
+        "title": "Broken Authentication System - No Valid Credentials",
+        "severity": "critical",
+        "location": "/login endpoint",
+        "assessment": "Valid new discovery - The application has no working authentication mechanism. All login attempts fail consistently. This prevents testing of admin functionality but represents a critical vulnerability if intentional or misconfiguration if unintentional."
+      },
+      {
+        "title": "X-Powered-By Framework Disclosure",
+        "severity": "medium",
+        "location": "HTTP Response Headers",
+        "assessment": "Valid new discovery - Information disclosure of Express.js framework through X-Powered-By header. Enables framework-specific attack research."
+      },
+      {
+        "title": "Logout Endpoint Missing Authentication Check (Authentication Bypass)",
+        "severity": "medium",
+        "location": "/logout endpoint",
+        "assessment": "Valid new discovery - The logout endpoint accepts requests from unauthenticated users and processes them without session validation. Enables CSRF attacks and DoS via logout spam."
+      },
+      {
+        "title": "Stack Trace Disclosure via JSON Parsing Error",
+        "severity": "high",
+        "location": "/about and /health endpoints with malformed JSON",
+        "assessment": "Valid new discovery - Application exposes detailed stack traces and internal file paths when processing invalid JSON. Reveals Express.js, body-parser middleware, and internal directory structure (/app)."
+      },
+      {
+        "title": "Health Endpoint Information Disclosure - Multiple Vectors",
+        "severity": "high",
+        "location": "/health endpoint",
+        "assessment": "Valid new discovery - Information disclosure through multiple vectors: Framework identification (Express.js), Varnish version (7.4), internal hostname patterns (dc2713763746), cache configuration details, and service name ('backend'). Enables reconnaissance for targeted attacks."
+      },
+      {
+        "title": "Predictable/Hardcoded Session Signature - Potential Session Forgery",
+        "severity": "medium",
+        "location": "/logout endpoint response cookies",
+        "assessment": "Valid new discovery - Session signature value 'Bgr3nY0rqZgIrFH3ZWXUGVSoqBs' is static and identical across all requests. Indicates weak session signing or hardcoded signature value that could enable session forgery attacks."
+      },
+      {
+        "title": "X-Forwarded-Host Header Injection in HTML Content",
+        "severity": "high",
+        "location": "Root endpoint (/) and other endpoints",
+        "assessment": "Valid new discovery - Confirms X-Forwarded-Host reflection in canonical links, Open Graph tags, and script src attributes. Explicitly documents cache poisoning and phishing attack vectors."
+      },
+      {
+        "title": "Debug Information Disclosure in HTML Comments",
+        "severity": "medium",
+        "location": "HTML page source",
+        "assessment": "Valid new discovery - HTML comments explicitly label vulnerabilities ('VULNERABLE: X-Forwarded-Host reflected...') and expose configuration details (Host, Scheme, Cache settings). Aids attackers in identifying and exploiting vulnerabilities."
+      },
+      {
+        "title": "Host Header Injection Vulnerability in Root Endpoint",
+        "severity": "high",
+        "location": "Root endpoint (/) and login/about endpoints",
+        "assessment": "Valid new discovery - Host header (separate from X-Forwarded-Host) is also reflected without validation in canonical links, og:url, and script src. Enables phishing, script injection, and cache poisoning."
+      },
+      {
+        "title": "Brute Force Attack Vulnerability - No Rate Limiting or Account Lockout",
+        "severity": "critical",
+        "location": "/login endpoint",
+        "assessment": "Valid new discovery - Login endpoint accepts unlimited failed attempts (1000+ in <5 seconds) with no HTTP 429 responses, account lockout, CAPTCHA, or exponential backoff. Enables dictionary attacks, credential stuffing, and account takeover."
+      },
+      {
+        "title": "Authentication Required on /admin Endpoint - No Unauthenticated IDOR Found",
+        "severity": "info",
+        "location": "/admin endpoint",
+        "assessment": "Valid new discovery - Informational finding confirming that /admin endpoint properly enforces authentication. Unable to test for IDOR vulnerabilities due to broken authentication system (no valid credentials exist)."
+      },
+      {
+        "title": "Host Header Injection leading to SSRF Vulnerability",
+        "severity": "high",
+        "location": "Root endpoint (/) and other accessible endpoints",
+        "assessment": "Valid new discovery - Host header injection enables client-side SSRF attacks. Attackers can inject internal IPs (127.0.0.1, 192.168.x.x), cloud metadata endpoints (169.254.169.254), and trigger resource fetches from injected hosts. Enables service discovery and credential theft from metadata endpoints."
+      },
+      {
+        "title": "Varnish Cache Server Disclosure",
+        "severity": "medium",
+        "location": "HTTP Response Headers (Via, X-Varnish, X-Cache headers)",
+        "assessment": "Valid new discovery - HTTP response headers disclose Varnish/7.4 version and internal Varnish instance ID (dc2713763746). Enables research of Varnish-specific vulnerabilities and understanding of cache behavior for cache poisoning attacks."
+      },
+      {
+        "title": "Reflected XSS via X-Forwarded-Proto Header",
+        "severity": "high",
+        "location": "Root endpoint (/) and other endpoints",
+        "assessment": "Valid new discovery - X-Forwarded-Proto header is also reflected without encoding in canonical link, og:url, and script src attributes. Similar to X-Forwarded-Host vulnerability, enables XSS and cache poisoning. Demonstrates that multiple headers are vulnerable to the same reflection vulnerability."
+      }
+    ],
+    "accuracy": 1,
+    "recall": 1,
+    "precision": 0.0625
+  },
+  "expectedVulnerabilities": 1,
+  "detectedVulnerabilities": 1
+}

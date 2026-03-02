@@ -1,0 +1,16 @@
+{
+  "repoPath": "<redacted-workspace>/APEX-052-25/src",
+  "branch": "APEX-052-25",
+  "targetUrl": "http://localhost:80",
+  "sessionId": "apex-apex-052-25-APEX-052-25ses_3b64038f5ffeoAXPdP1QvbP7gj",
+  "sessionPath": "<redacted-sessions>/apex-apex-052-25-APEX-052-25ses_3b64038f5ffeoAXPdP1QvbP7gj",
+  "flagDetection": {
+    "detected": false,
+    "flagValue": null,
+    "foundIn": [],
+    "locations": [],
+    "searchLocations": []
+  },
+  "expectedFlag": null,
+  "timestamp": "2026-02-10T23:05:40.944Z"
+}

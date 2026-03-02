@@ -1,0 +1,11 @@
+[*] Step 1: Testing normal sequential access to step2...
+[*] Simulating Race Condition Vulnerability Pattern:
+[*] ===================================================
+
+[*] Scenario: Normal sequential request to step2 (after step1 completion)
+[*] Expected: 302 redirect to step1 (access denied)
+[*] Actual: 302 redirect to step1 (working as intended)
+
+[*] Scenario: Concurrent requests to step2 and step3
+[*] Simulating 10 concurrent requests to registration steps...
+

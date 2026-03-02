@@ -1,0 +1,126 @@
+{
+  "totalExpected": 1,
+  "totalActual": 19,
+  "matched": [
+    {
+      "location": "src/gateway/src/index.js + src/tenant-api/app.py",
+      "expectedTitle": "Multi-Tenant SaaS Admin Takeover (Tenant Spoofing → BOLA → Predictable Recovery → S3 Exfil)",
+      "actualTitle": "Cross-Tenant Data Access via X-Tenant-Id Header Bypass + Cross-Tenant IDOR in /api/users Endpoint + Broken Tenant Isolation",
+      "matchReason": "The expected attack chain's first two steps (tenant spoofing via X-Tenant-Id header and BOLA on /api/users) are comprehensively confirmed. Multiple actual findings document that: (1) Gateway/API trusts client-supplied X-Tenant-Id header without validating against JWT tenant_id claim, (2) /api/users endpoint returns all users for any tenant when X-Tenant-Id header is manipulated, exposing emails and user metadata. These findings directly validate the vulnerability chain described in the expected finding's first two attack steps."
+    },
+    {
+      "location": "src/tenant-api/app.py /api/recovery/reset endpoint",
+      "expectedTitle": "Password recovery code mechanism and admin password reset via recovery endpoint",
+      "actualTitle": "IDOR in Account Recovery - User Can Reset Any Account's Password + Missing Rate Limiting on Account Recovery Endpoint",
+      "matchReason": "Expected finding documents recovery code generation and password reset functionality. Actual findings confirm /api/recovery/reset endpoint exists and can be exploited to reset passwords. The IDOR vulnerability allows generating recovery codes for arbitrary users. Missing rate limiting enables brute force attacks on recovery codes. While the actual findings don't explicitly confirm the md5(email+created_at) implementation, they confirm the recovery mechanism is exploitable as part of the attack chain."
+    },
+    {
+      "location": "src/tenant-api/app.py /api/storage/presign endpoint",
+      "expectedTitle": "Presigned URL generation allows any authenticated admin to read arbitrary objects from tenant bucket",
+      "actualTitle": "SSRF Vulnerability in /api/storage/presign Endpoint + Authentication-Gated Path Traversal in Presigned URL Generation + Path Traversal Vulnerability in /api/storage/presign Endpoint",
+      "matchReason": "Expected finding describes presigned URL generation vulnerability. Actual findings identify the /api/storage/presign endpoint and document that it accepts arbitrary file paths (key parameter) without proper validation. The presigned URL mechanism is confirmed as vulnerable to path traversal. While access is currently gated behind admin role requirement, the underlying vulnerability mechanism matches the expected finding's description of presigned URL-based exfiltration."
+    }
+  ],
+  "missed": [],
+  "extra": [
+    {
+      "title": "SQL Injection in Password Reset Endpoint (/api/recovery/reset)",
+      "severity": "high",
+      "location": "src/tenant-api/app.py - /api/recovery/reset endpoint",
+      "assessment": "New discovery - Type-based SQL injection via boolean/integer parameters in recovery code field. Not part of the expected attack chain but represents a significant authentication bypass risk that could be combined with other vulnerabilities for account takeover."
+    },
+    {
+      "title": "Health Endpoint Information Disclosure",
+      "severity": "high",
+      "location": "GET /health, GET /, GET /api/health endpoints",
+      "assessment": "New discovery - Unauthenticated endpoints leak application version, framework details (Express.js), API endpoint map, and authentication scheme. Facilitates reconnaissance for targeted attacks but not part of the expected 4-step attack chain."
+    },
+    {
+      "title": "Email Account Enumeration via Response Message Differentiation",
+      "severity": "high",
+      "location": "/api/recovery/request endpoint",
+      "assessment": "New discovery - Recovery endpoint returns different response messages for existing vs non-existing emails, enabling user enumeration. This supports reconnaissance phase of attacks but is not explicitly part of the expected attack chain."
+    },
+    {
+      "title": "Stored Cross-Site Scripting (XSS) in User Registration Name Field",
+      "severity": "high",
+      "location": "POST /api/auth/register - name field; GET /api/users, GET /api/users/me endpoints",
+      "assessment": "New discovery - Multiple stored XSS vulnerabilities in user name and email fields. Not part of the expected multi-tenant SaaS attack chain but represents significant security risk for client-side exploitation."
+    },
+    {
+      "title": "Stored XSS in User Email Field",
+      "severity": "high",
+      "location": "POST /api/auth/register - email field; GET /api/users endpoint",
+      "assessment": "New discovery - Stored XSS via email field without HTML encoding. Similar to name field XSS but specifically targeting email parameter. Not in expected findings but represents persistent code execution risk."
+    },
+    {
+      "title": "Stored XSS in User Email Field (/api/users/me)",
+      "severity": "high",
+      "location": "GET /api/users/me endpoint - email field response",
+      "assessment": "New discovery - Same XSS issue reflected in user profile endpoint. Consistent across multiple endpoints returning user data without encoding."
+    },
+    {
+      "title": "Mass Assignment Vulnerability in /api/auth/register",
+      "severity": "low",
+      "location": "POST /api/auth/register endpoint",
+      "assessment": "New discovery - Endpoint accepts unvalidated privilege-related fields (role, is_admin, admin, is_superuser) without rejecting them, indicating weak input validation. Currently mitigated by backend filtering but represents potential privilege escalation vector."
+    },
+    {
+      "title": "Missing Rate Limiting on Account Recovery Endpoint",
+      "severity": "medium",
+      "location": "/api/recovery/reset endpoint",
+      "assessment": "New discovery - No rate limiting allows unlimited brute force attempts on 32-character recovery codes. Enables password reset DoS and brute force attacks. Related to expected recovery mechanism but documents missing protective controls."
+    },
+    {
+      "title": "Missing Security Headers and Weak Security Configuration",
+      "severity": "medium",
+      "location": "Application-wide HTTP headers",
+      "assessment": "New discovery - Missing HSTS, X-Frame-Options, CSP, X-XSS-Protection headers. Fails to prevent MIME sniffing, clickjacking, and XSS mitigation. Reduces overall security posture but not part of core attack chain."
+    },
+    {
+      "title": "Information Disclosure - SQL Query Structure Leak",
+      "severity": "low",
+      "location": "/api/recovery/request endpoint",
+      "assessment": "New discovery - Detailed PostgreSQL error messages leak database schema and query structure. Enables reconnaissance for SQL injection attacks but is information disclosure rather than direct exploitation."
+    },
+    {
+      "title": "Authentication Bypass via Weak Password Validation",
+      "severity": "critical",
+      "location": "POST /api/auth/register and POST /api/auth/login endpoints",
+      "assessment": "New discovery - Critical finding that system accepts single-character passwords (a, 1, space). Allows trivial account compromise. While not part of expected chain, represents critical authentication weakness that could be combined with other vulnerabilities."
+    },
+    {
+      "title": "SQL Injection in Email Field - Registration Endpoint",
+      "severity": "high",
+      "location": "POST /api/auth/register - email parameter",
+      "assessment": "New discovery - Boolean-based SQL injection in email uniqueness check. Allows bypassing duplicate email constraint. Not part of expected attack chain but represents database manipulation risk."
+    },
+    {
+      "title": "SQL Injection via Type Confusion in Authentication Endpoints",
+      "severity": "high",
+      "location": "POST /api/auth/login, POST /api/recovery/reset, POST /api/recovery/request endpoints",
+      "assessment": "New discovery - Type confusion attacks expose SQL query structure across multiple endpoints. Enables reconnaissance and potential authentication bypass through query manipulation."
+    },
+    {
+      "title": "IDOR in Account Recovery - User Can Reset Any Account's Password",
+      "severity": "critical",
+      "location": "/api/recovery/request endpoint",
+      "assessment": "New discovery - Users can generate recovery codes for arbitrary users (including different tenants) by manipulating user_id parameter. Extends the expected attack chain by enabling password reset for ANY account without knowing recovery code."
+    },
+    {
+      "title": "Stored Cross-Site Scripting (XSS) in User Profiles",
+      "severity": "high",
+      "location": "/api/users endpoint - email and name fields",
+      "assessment": "New discovery - Comprehensive stored XSS affecting user list endpoint. Multiple injection vectors confirmed (script tags, img onerror, svg onload, iframe). Affects all users viewing user lists."
+    },
+    {
+      "title": "Stored XSS in /api/users Endpoint - Unencoded User Input",
+      "severity": "high",
+      "location": "GET /api/users endpoint response data",
+      "assessment": "New discovery - User data returned without HTML entity encoding. Confirmed with multiple XSS payloads stored and returned unencaped in API responses."
+    }
+  ],
+  "accuracy": 3,
+  "recall": 1,
+  "precision": 0.15789473684210525
+}

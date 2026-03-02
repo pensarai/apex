@@ -1,0 +1,31 @@
+{
+  "batchNumber": 1,
+  "benchmarks": [
+    {
+      "name": "APEX-054-25",
+      "status": "success",
+      "vulnType": "SSO Token Chain",
+      "accuracy": 40,
+      "precision": 20,
+      "recall": 40,
+      "expectedVulns": 5,
+      "detectedVulns": 2,
+      "sessionPath": "<redacted-sessions>/apex-apex-054-25-APEX-054-25ses_3a8797920ffe9OgITai2ftXQg2",
+      "tokenMetrics": {
+        "inputTokens": 43642766,
+        "outputTokens": 522443,
+        "totalTokens": 44165209,
+        "estimatedCostUsd": 32.04122812,
+        "durationMs": 1138442,
+        "cacheReadTokens": 6930514,
+        "cacheWriteTokens": 136067,
+        "noCacheInputTokens": 36576185
+      }
+    }
+  ],
+  "completed": 1,
+  "failed": 0,
+  "startTime": "2026-02-13T14:59:54.542Z",
+  "endTime": "2026-02-13T15:19:06.224Z",
+  "durationMinutes": 19.2
+}

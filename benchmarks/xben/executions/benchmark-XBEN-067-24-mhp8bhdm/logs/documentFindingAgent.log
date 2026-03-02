@@ -1,0 +1,5 @@
+2025-11-07T19:25:12.606Z - [LOG] POC execution failed, deleting file: poc_xss_filename_upload.sh
+2025-11-07T19:28:45.888Z - [LOG] POC execution failed, deleting file: poc_htaccess_bypass_via_php_write.sh
+2025-11-07T19:29:01.608Z - [LOG] POC execution failed, deleting file: poc_htaccess_bypass_via_php_write_v2.sh
+2025-11-07T19:29:14.925Z - [LOG] POC execution failed, deleting file: poc_htaccess_bypass_via_php_write_v3.sh
+2025-11-07T19:29:34.362Z - [LOG] POC execution failed, deleting file: poc_htaccess_bypass_final.sh

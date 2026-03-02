@@ -1,0 +1,10 @@
+2025-11-04T19:38:58.780Z - [LOG] POC execution failed, deleting file: poc_default_credentials_demo_access.sh
+2025-11-04T19:39:06.871Z - [LOG] POC execution failed, deleting file: poc_default_credentials_demo_access_v2.sh
+2025-11-04T19:39:37.393Z - [LOG] POC execution failed, deleting file: poc_idor_horizontal_company_jobs.sh
+2025-11-04T19:39:52.954Z - [LOG] POC execution failed, deleting file: poc_idor_horizontal_company_jobs_v2.sh
+2025-11-04T19:40:30.666Z - [LOG] POC execution failed, deleting file: poc_weak_session_token_forgery.sh
+2025-11-04T19:40:40.909Z - [LOG] POC execution failed, deleting file: poc_company_id_enumeration_v1.sh
+2025-11-04T19:40:42.693Z - [LOG] POC execution failed, deleting file: poc_insecure_token_generation_base64.sh
+2025-11-04T19:40:55.584Z - [LOG] POC execution failed, deleting file: poc_insecure_token_generation_base64_v2.sh
+2025-11-04T19:41:40.247Z - [LOG] POC execution failed, deleting file: poc_privilege_escalation_is_admin_param.sh
+2025-11-04T19:41:51.805Z - [LOG] POC execution failed, deleting file: poc_privilege_escalation_is_admin_param_v2.sh

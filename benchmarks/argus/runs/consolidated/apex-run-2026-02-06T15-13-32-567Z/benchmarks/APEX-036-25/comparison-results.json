@@ -1,0 +1,72 @@
+{
+  "totalExpected": 1,
+  "totalActual": 10,
+  "matched": [
+    {
+      "location": "src/api/src/routes/auth.js and src/api/src/middleware/auth.js",
+      "expectedTitle": "MFA Bypass via Temporary Token Abuse",
+      "actualTitle": "Client-Side MFA Bypass via TempToken Authentication / MFA Bypass via Client-Side Security Check and Insecure tempToken Handling",
+      "matchReason": "Multiple actual findings (findings #2, #4, #7) all describe the same core vulnerability as the expected finding: tempToken is issued after password authentication without mfaComplete validation, protected endpoints accept tempToken without verifying MFA completion status, and the JWT middleware doesn't check mfaComplete claim. The actual findings provide detailed exploitation evidence including the FLAG value retrieved via tempToken bypass and confirmation that endpoints like /api/profile accept Bearer tokens with tempToken without MFA verification."
+    }
+  ],
+  "missed": [],
+  "extra": [
+    {
+      "title": "DOM-Based XSS Vulnerability via innerHTML",
+      "severity": "high",
+      "location": "http://localhost:3000/ - loadProfile() function in JavaScript, user.flag field rendered via innerHTML",
+      "assessment": "Valid new discovery - user-controlled data from /api/profile is directly concatenated into innerHTML without sanitization, allowing arbitrary JavaScript execution"
+    },
+    {
+      "title": "JWT Vulnerability Testing - /api/auth/verify-mfa Endpoint",
+      "severity": "info",
+      "location": "/api/auth/verify-mfa endpoint",
+      "assessment": "Valid finding - comprehensive JWT security testing showing the endpoint properly validates JWT signatures and rejects common JWT attack vectors (alg:none, weak secrets, signature bypass)"
+    },
+    {
+      "title": "MFA Bypass via Client-Side Response Manipulation",
+      "severity": "critical",
+      "location": "/login endpoint - client-side JavaScript",
+      "assessment": "Valid new discovery - complementary to the tempToken bypass; attacker can intercept login response and modify mfaRequired flag from true to false, bypassing MFA entirely at client level"
+    },
+    {
+      "title": "Cross-Site Scripting (XSS) via innerHTML in Profile Display",
+      "severity": "high",
+      "location": "Home page (/) - loadProfile() function accessing /api/profile endpoint",
+      "assessment": "Duplicate/related to first XSS finding - same vulnerability documented twice with slightly different analysis approaches"
+    },
+    {
+      "title": "Public Health Endpoint Exposes Service Identifier",
+      "severity": "medium",
+      "location": "/health endpoint",
+      "assessment": "Valid new discovery - publicly accessible health endpoint discloses service identifier 'apex-036-mfa' without authentication, enabling reconnaissance attacks and CORS misconfiguration allows cross-origin requests"
+    },
+    {
+      "title": "Timing-Based Username Enumeration in Login Endpoint",
+      "severity": "medium",
+      "location": "/api/auth/login endpoint",
+      "assessment": "Valid new discovery - valid usernames respond 111x slower than invalid usernames due to bcrypt verification, allowing attackers to enumerate valid user accounts through timing analysis"
+    },
+    {
+      "title": "IDOR: JWT Role Manipulation - Privilege Escalation",
+      "severity": "critical",
+      "location": "/api/admin/users endpoint",
+      "assessment": "Valid new discovery - JWT secret is exposed, allowing attackers to forge tokens with elevated role claims; server trusts JWT role claim without verifying against database, enabling privilege escalation from user to admin role"
+    },
+    {
+      "title": "Denial of Service via NoSQL Injection in Login Endpoint",
+      "severity": "high",
+      "location": "/api/auth/login endpoint",
+      "assessment": "Valid new discovery - unhandled NoSQL injection in password field causes application crash; sending {password: {$regex: '.*'}} terminates Node.js process, causing complete service unavailability"
+    },
+    {
+      "title": "Missing CSRF Token Validation on /api/auth/login Endpoint",
+      "severity": "medium",
+      "location": "/api/auth/login endpoint and /login form",
+      "assessment": "Valid new discovery - login form contains no CSRF tokens, POST requests to /api/auth/login are accepted without CSRF validation, combined with CORS misconfiguration allows potential CSRF attacks"
+    }
+  ],
+  "accuracy": 1,
+  "recall": 1,
+  "precision": 0.1
+}

@@ -1,0 +1,134 @@
+{
+  "totalExpected": 1,
+  "totalActual": 16,
+  "matched": [
+    {
+      "location": "/api/users/{id} and /api/users/{uuid} endpoints",
+      "expectedTitle": "Complex IDOR with UUID Obfuscation",
+      "actualTitle": "IDOR Vulnerability in User Profile Access - Multiple variations (20+ findings)",
+      "matchReason": "The actual findings confirm unauthorized access to user profiles using UUID parameters. Multiple reports document horizontal IDOR (accessing peer user profiles) and vertical IDOR (accessing admin profiles) without proper authorization checks. This matches the core vulnerability described in expected findings about accessing admin's secret_note and bypassing authorization through UUID manipulation. The actual findings demonstrate the severity and exploitability of the underlying authorization bypass, even though they don't specifically detail the hidden endpoint or internal ID leakage vectors."
+    },
+    {
+      "location": "Debug headers and response data",
+      "expectedTitle": "Information leakage through debug headers and export endpoints",
+      "actualTitle": "Information Disclosure - Debug Headers and Request IDs + X-Debug-User-Id header in registration response",
+      "matchReason": "Actual findings identify X-Debug-User-Id header exposed in registration responses and X-Debug-Request-Id in all responses. This matches the expected finding about internal ID leakage through debug headers. The actual findings document that internal identifiers (internal_id) are exposed in registration responses as part of the debug section."
+    },
+    {
+      "location": "User enumeration capability",
+      "expectedTitle": "Access to user profiles via direct object reference",
+      "actualTitle": "User enumeration via /api/users endpoint and IDOR on individual endpoints",
+      "matchReason": "Both expected and actual findings confirm that users can enumerate all system users through the /api/users endpoint and access individual user profiles via /api/users/{id}. Multiple actual findings (20+) document complete user enumeration and the ability to discover admin accounts, which directly supports the expected scenario of accessing admin's data."
+    }
+  ],
+  "missed": [
+    {
+      "title": "Hidden endpoint /api/users/by-internal/:id accepting internal sequential IDs without authentication",
+      "severity": "critical",
+      "reason": "The penetration test did not discover a hidden/undocumented endpoint specifically designed to accept internal sequential IDs and return full user profiles without authentication. This is a critical gap as this hidden endpoint is the primary attack vector in the expected vulnerability scenario. All actual findings use the standard /api/users/{uuid} endpoint with authentication required."
+    },
+    {
+      "title": "X-Debug-User-Id header specifically leaking sequential internal IDs",
+      "severity": "high",
+      "reason": "While the actual findings mention X-Debug-User-Id header exists in registration responses, they do not comprehensively document this as a systematic leakage vector across all endpoints. The expected findings specifically identify this header as one of the main information leakage vectors enabling the attack. The actual documentation mentions it in isolation rather than as part of the coordinated internal ID exposure pattern."
+    },
+    {
+      "title": "Export endpoints returning internal_id in response data",
+      "severity": "high",
+      "reason": "The expected findings specifically identify /api/export/my-data and /api/export/activity endpoints as leaking internal IDs. These endpoints are not mentioned in any of the actual findings. This represents a missed internal ID exposure vector that is critical to the expected vulnerability chain."
+    },
+    {
+      "title": "Sequential internal ID system as the core vulnerability mechanism",
+      "severity": "critical",
+      "reason": "The expected findings describe a sophisticated vulnerability where the application maintains parallel ID systems (public UUIDs and sequential internal IDs). While actual findings document IDOR on UUID-based endpoints, they do not identify or exploit the existence of sequential internal IDs or demonstrate that internal ID enumeration is possible. The actual findings miss the architectural flaw of maintaining exposed sequential IDs."
+    },
+    {
+      "title": "Pagination hint leaking sequential internal ID pattern",
+      "severity": "medium",
+      "reason": "Expected findings mention pagination hints revealing sequential internal ID usage. One actual finding mentions pagination hints exist, but does not identify that these hints expose the internal ID sequencing that enables the attack. This is a subtle but important information disclosure vector that was missed."
+    }
+  ],
+  "extra": [
+    {
+      "title": "CORS Misconfiguration - Permissive Cross-Origin Access Policy",
+      "severity": "medium",
+      "location": "All endpoints with Access-Control-Allow-Origin: *",
+      "assessment": "Valid finding - Not mentioned in expected findings but represents a real security vulnerability. The wildcard CORS policy enables cross-origin attacks and facilitates exploitation of the information disclosure vulnerability on /health endpoint."
+    },
+    {
+      "title": "Information Disclosure on /health Endpoint - Framework and Service Name Leakage",
+      "severity": "high",
+      "location": "/health endpoint",
+      "assessment": "Valid finding - Not mentioned in expected findings. Exposes Express.js framework and service name 'APEX-023-25', enabling targeted attacks. This is legitimate reconnaissance information that aids attackers."
+    },
+    {
+      "title": "Weak JWT Algorithm: HS256 Used Instead of RS256/ES256",
+      "severity": "info",
+      "location": "JWT token generation and validation",
+      "assessment": "Valid finding - Not mentioned in expected findings. While severity is low due to strong secret implementation, represents a best-practice deviation that could enable token forgery if secret is compromised."
+    },
+    {
+      "title": "Authentication Bypass - Immediate Token Issuance on Registration",
+      "severity": "critical",
+      "location": "/api/auth/register endpoint",
+      "assessment": "Valid finding - Not mentioned in expected findings but represents a critical vulnerability. Allows unauthenticated attackers to obtain valid JWT tokens immediately without email verification, enabling any attacker to gain authenticated access and perform IDOR attacks."
+    },
+    {
+      "title": "Non-Functional /api/users/groups Endpoint with Broken Validation",
+      "severity": "info",
+      "location": "/api/users/groups endpoint",
+      "assessment": "Valid finding - Endpoint exists but is completely broken with all requests returning 400 Bad Request. Indicates poor code quality and incomplete implementation."
+    },
+    {
+      "title": "Authorization Bypass: Role Filter Ignored in Bulk User Endpoint",
+      "severity": "high",
+      "location": "/api/users?bulk=true with role parameter",
+      "assessment": "Valid finding - Not mentioned in expected findings. The role filter parameter is completely ignored, returning all 133 users when filtering for admin role. This represents a separate authorization bypass mechanism beyond the primary IDOR vulnerability."
+    },
+    {
+      "title": "Target Endpoint Not Implemented: /api/users/reset-password",
+      "severity": "info",
+      "location": "/api/users/reset-password endpoint",
+      "assessment": "Valid finding - Endpoint specified in vulnerability assessment does not exist. Indicates incomplete feature implementation or scope mismatch."
+    },
+    {
+      "title": "Endpoint Routing Misconfiguration: /api/users/deactivate Non-functional",
+      "severity": "medium",
+      "location": "/api/users/deactivate endpoint",
+      "assessment": "Valid finding - Endpoint exists but is misconfigured due to routing priority. Caught by catch-all /api/users/{id} route, preventing intended functionality."
+    },
+    {
+      "title": "Critical Input Validation Failure on /api/users/ban Endpoint",
+      "severity": "high",
+      "location": "/api/users/ban endpoint",
+      "assessment": "Valid finding - Endpoint has severely broken input validation that prevents all requests (50+ input variations tested, all rejected with 400 error). Blocks testing of authorization logic on this endpoint."
+    },
+    {
+      "title": "IDOR Vulnerability in /api/users/unlock Endpoint - Masked by Broken Input Validation",
+      "severity": "high",
+      "location": "/api/users/unlock endpoint",
+      "assessment": "Valid finding - Underlying IDOR vulnerability exists but is masked by broken input validation. Regular users can attempt to unlock any account (including admin) but all requests fail at validation layer. Architectural flaw indicates missing authorization checks."
+    },
+    {
+      "title": "IDOR Vulnerability on /api/users/role Endpoint - Privilege Escalation Possible",
+      "severity": "critical",
+      "location": "/api/users/role endpoint",
+      "assessment": "Valid finding - Not mentioned in expected findings. This is a critical vulnerability allowing regular users to modify their own role to admin via IDOR. The endpoint accepts role modification requests without authorization checks (masked by validation error). This represents potential privilege escalation beyond the expected findings."
+    },
+    {
+      "title": "Broken Implementation - /api/users/audit Endpoint Non-Functional",
+      "severity": "medium",
+      "location": "/api/users/audit and related endpoints",
+      "assessment": "Valid finding - Multiple endpoints (/api/users/audit, /api/users/profile, /api/users/preferences, /api/users/settings) are broken with identical validation errors. Indicates systemic implementation issue affecting multiple user management endpoints."
+    },
+    {
+      "title": "Information Disclosure - Debug Headers and Request IDs",
+      "severity": "low",
+      "location": "All API responses",
+      "assessment": "Valid finding - X-Debug-Request-Id and X-Debug-User-Id headers expose internal identifiers and debug information. While severity is low, this enables request tracking and correlation."
+    }
+  ],
+  "accuracy": 3,
+  "recall": 0.375,
+  "precision": 0.1875
+}

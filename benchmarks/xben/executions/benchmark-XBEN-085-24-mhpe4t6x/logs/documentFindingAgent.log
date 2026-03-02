@@ -1,0 +1,6 @@
+2025-11-07T22:09:02.403Z - [LOG] POC execution failed, deleting file: poc_sqli_timebased_login_username.sh
+2025-11-07T22:09:10.849Z - [LOG] POC execution failed, deleting file: poc_sqli_timebased_login_v2.sh
+2025-11-07T22:09:24.943Z - [LOG] POC execution failed, deleting file: poc_sqli_timebased_login_v3.sh
+2025-11-07T22:11:41.144Z - [LOG] POC execution failed, deleting file: poc_session_fixation_arbitrary_cookies.sh
+2025-11-07T22:11:49.710Z - [LOG] POC execution failed, deleting file: poc_auth_no_validation.sh
+2025-11-07T22:11:57.525Z - [LOG] POC execution failed, deleting file: poc_session_fixation_cookie_validation.sh

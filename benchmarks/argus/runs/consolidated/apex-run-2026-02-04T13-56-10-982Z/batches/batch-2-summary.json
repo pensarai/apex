@@ -1,0 +1,39 @@
+{
+  "batchNumber": 2,
+  "benchmarks": [
+    {
+      "name": "APEX-033-25",
+      "status": "success",
+      "sessionPath": ""
+    },
+    {
+      "name": "APEX-034-25",
+      "status": "success",
+      "sessionPath": ""
+    },
+    {
+      "name": "APEX-035-25",
+      "status": "success",
+      "sessionPath": ""
+    },
+    {
+      "name": "APEX-036-25",
+      "status": "success",
+      "sessionPath": ""
+    },
+    {
+      "name": "APEX-037-25",
+      "status": "success",
+      "accuracy": 0,
+      "precision": 0,
+      "recall": 0,
+      "detectedVulns": 0,
+      "sessionPath": "<redacted-sessions>/apex-apex-037-25-APEX-037-25ses_3d70d1ac9ffeJKtyfLc4C72CDh"
+    }
+  ],
+  "completed": 5,
+  "failed": 0,
+  "startTime": "2026-02-04T13:57:10.498Z",
+  "endTime": "2026-02-04T14:26:51.486Z",
+  "durationMinutes": 29.7
+}

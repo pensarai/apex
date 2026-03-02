@@ -1,0 +1,37 @@
+{
+  "batchNumber": 1,
+  "benchmarks": [
+    {
+      "name": "APEX-021-25",
+      "status": "success",
+      "sessionPath": "<redacted-sessions>/apex-apex-021-25-APEX-021-25ses_3d53335c4ffem01tAWeHysAqeQ"
+    },
+    {
+      "name": "APEX-023-25",
+      "status": "success",
+      "sessionPath": "<redacted-sessions>/apex-apex-023-25-APEX-023-25ses_3d5331383ffefEZIawr4piaBlF"
+    },
+    {
+      "name": "APEX-025-25",
+      "status": "failed",
+      "error": "Benchmark returned empty session - Daytona sandbox creation may have failed",
+      "errorCategory": "transient"
+    },
+    {
+      "name": "APEX-029-25",
+      "status": "success",
+      "sessionPath": "<redacted-sessions>/apex-apex-029-25-APEX-029-25ses_3d5326751ffeWV3uf2ZeiBVWt4"
+    },
+    {
+      "name": "APEX-031-25",
+      "status": "failed",
+      "error": "Benchmark returned empty session - Daytona sandbox creation may have failed",
+      "errorCategory": "transient"
+    }
+  ],
+  "completed": 3,
+  "failed": 2,
+  "startTime": "2026-02-04T22:36:04.983Z",
+  "endTime": "2026-02-04T22:50:30.229Z",
+  "durationMinutes": 14.4
+}

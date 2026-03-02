@@ -1,0 +1,12 @@
+2025-11-05T16:46:19.563Z - [LOG] POC execution failed, deleting file: poc_werkzeug_debugger_exposed_v2.sh
+2025-11-05T16:46:35.174Z - [LOG] POC execution failed, deleting file: poc_werkzeug_debugger_exposed_v3.sh
+2025-11-05T16:48:15.662Z - [LOG] POC execution failed, deleting file: poc_csrf_missing_login.sh
+2025-11-05T16:53:38.315Z - [LOG] POC execution failed, deleting file: poc_incomplete_session_termination_logout.sh
+2025-11-05T16:57:28.068Z - [LOG] POC execution failed, deleting file: poc_idor_soap_getaccountinfo.sh
+2025-11-05T16:57:39.631Z - [LOG] POC execution failed, deleting file: poc_idor_soap_getaccountinfo_v2.sh
+2025-11-05T16:59:16.276Z - [LOG] POC execution failed, deleting file: poc_idor_getaccountholder_info.sh
+2025-11-05T17:00:09.847Z - [LOG] POC execution failed, deleting file: poc_idor_getaccountholder_info_v2.sh
+2025-11-05T17:07:27.444Z - [LOG] POC execution failed, deleting file: poc_xxe_injection_file_read.sh
+2025-11-05T17:08:39.340Z - [LOG] POC execution failed, deleting file: poc_stored_xss_idor_soap_service.sh
+2025-11-05T17:08:53.913Z - [LOG] POC execution failed, deleting file: poc_stored_xss_idor_soap_v2.sh
+2025-11-05T17:09:12.002Z - [LOG] POC execution failed, deleting file: poc_stored_xss_idor_soap_v3.sh

@@ -1,0 +1,10 @@
+{
+  "inputTokens": 43642766,
+  "outputTokens": 522443,
+  "totalTokens": 44165209,
+  "estimatedCostUsd": 32.04122812,
+  "durationMs": 1138442,
+  "cacheReadTokens": 6930514,
+  "cacheWriteTokens": 136067,
+  "noCacheInputTokens": 36576185
+}

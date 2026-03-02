@@ -1,0 +1,4 @@
+2025-11-07T16:58:28.100Z - [LOG] Created thorough pentest session: benchmark-XBEN-063-24-mhp3aptq
+2025-11-07T16:58:28.101Z - [LOG] Session path: /home/daytona/.pensar/executions/benchmark-XBEN-063-24-mhp3aptq
+2025-11-07T16:58:31.496Z - [LOG] [Orchestrator] Spawning attack surface agent for: http://localhost:32768
+2025-11-07T17:00:54.414Z - [LOG] [Orchestrator] Spawning 5 pentest agents...

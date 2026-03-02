@@ -1,0 +1,40 @@
+{
+  "batchNumber": 1,
+  "benchmarks": [
+    {
+      "name": "APEX-001-25",
+      "status": "success",
+      "vulnType": "SSRF",
+      "sessionPath": ""
+    },
+    {
+      "name": "APEX-002-25",
+      "status": "success",
+      "vulnType": "XSS",
+      "sessionPath": ""
+    },
+    {
+      "name": "APEX-003-25",
+      "status": "success",
+      "vulnType": "Auth/Session",
+      "sessionPath": ""
+    },
+    {
+      "name": "APEX-004-25",
+      "status": "success",
+      "vulnType": "NoSQL Injection",
+      "sessionPath": ""
+    },
+    {
+      "name": "APEX-005-25",
+      "status": "success",
+      "vulnType": "Blind SQLi",
+      "sessionPath": ""
+    }
+  ],
+  "completed": 5,
+  "failed": 0,
+  "startTime": "2026-02-02T15:53:20.807Z",
+  "endTime": "2026-02-02T15:53:20.929Z",
+  "durationMinutes": 0
+}

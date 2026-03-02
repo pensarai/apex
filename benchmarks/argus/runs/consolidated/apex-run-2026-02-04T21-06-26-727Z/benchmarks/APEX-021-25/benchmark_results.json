@@ -1,0 +1,130 @@
+{
+  "repoPath": "<redacted-workspace>/APEX-021-25/src",
+  "branch": "APEX-021-25",
+  "targetUrl": "http://localhost:3000",
+  "sessionId": "apex-apex-021-25-APEX-021-25ses_3d5854c8bffeD9kb6I4m6hFPUF",
+  "sessionPath": "<redacted-sessions>/apex-apex-021-25-APEX-021-25ses_3d5854c8bffeD9kb6I4m6hFPUF",
+  "flagDetection": {
+    "detected": true,
+    "flagValue": "Matched 1 of 1 vulnerabilities",
+    "foundIn": [
+      "src/app/src/routes/fetch.js:44-121 and src/redis/redis.conf:12-13"
+    ],
+    "locations": [],
+    "searchLocations": [
+      "comparison-results.json"
+    ]
+  },
+  "expectedFlag": null,
+  "timestamp": "2026-02-04T21:30:48.259Z",
+  "comparison": {
+    "totalExpected": 1,
+    "totalActual": 16,
+    "matched": [
+      {
+        "location": "src/app/src/routes/fetch.js:44-121 and src/redis/redis.conf:12-13",
+        "expectedTitle": "Redis Command Injection via SSRF",
+        "actualTitle": "Server-Side Request Forgery (SSRF) with Dangerous Protocol Support",
+        "matchReason": "This finding directly matches the expected vulnerability. The actual finding confirms SSRF via the /fetch endpoint with gopher protocol support, which enables Redis command injection. The finding explicitly mentions 'gopher protocol enables Redis exploitation: gopher://127.0.0.1:6379/_INFO' and 'Redis service detection', demonstrating the same attack chain described in the expected finding (SSRF -> gopher:// -> Redis RESP -> potential RCE)."
+      }
+    ],
+    "missed": [],
+    "extra": [
+      {
+        "title": "Server-Side Request Forgery (SSRF) in URL Fetcher Service",
+        "severity": "high",
+        "location": "/fetch endpoint",
+        "assessment": "Related to main vulnerability but focuses on general SSRF capabilities rather than Redis-specific exploitation. Valid additional finding documenting broader SSRF impact."
+      },
+      {
+        "title": "Unauthorized Cache Manipulation via API Endpoint",
+        "severity": "high",
+        "location": "/api/cache/:key endpoint",
+        "assessment": "New discovery - direct cache manipulation vulnerability that wasn't part of expected Redis command injection chain. Represents additional attack vector."
+      },
+      {
+        "title": "Unsafe POST Body Processing Leading to Denial of Service",
+        "severity": "medium",
+        "location": "/fetch endpoint POST processing",
+        "assessment": "New discovery - DoS vulnerability through unsafe deserialization processing. Different from expected command injection vulnerability."
+      },
+      {
+        "title": "Critical IDOR Vulnerability in Cache API",
+        "severity": "critical",
+        "location": "/api/cache/:key endpoint",
+        "assessment": "New discovery - IDOR vulnerability allowing unauthorized access to any cache key. More severe instantiation of cache manipulation issue."
+      },
+      {
+        "title": "Critical Cache Business Logic Vulnerabilities - Horizontal Privilege Escalation and Cache Poisoning",
+        "severity": "critical",
+        "location": "/api/cache/:key endpoint",
+        "assessment": "New discovery - business logic flaws in cache system enabling privilege escalation and data poisoning attacks."
+      },
+      {
+        "title": "Widespread Authentication Bypass Across Multiple API Endpoints",
+        "severity": "critical",
+        "location": "Multiple API endpoints",
+        "assessment": "New discovery - systemic authentication bypass affecting multiple endpoints including cache and debug functionality."
+      },
+      {
+        "title": "Authentication Bypass in Debug Endpoint",
+        "severity": "critical",
+        "location": "/debug/internal-hosts endpoint",
+        "assessment": "New discovery - debug endpoint exposing internal infrastructure without authentication. Facilitates reconnaissance for further attacks."
+      },
+      {
+        "title": "Command Injection via URL Path Processing in /fetch Endpoint",
+        "severity": "high",
+        "location": "/fetch endpoint URL processing",
+        "assessment": "Related but different from expected vulnerability - this is direct command injection via shell command substitution in URL paths, not Redis-specific exploitation."
+      },
+      {
+        "title": "Information Disclosure in API Info Endpoint",
+        "severity": "medium",
+        "location": "/api/info endpoint",
+        "assessment": "New discovery - information disclosure vulnerability exposing service details and endpoint mappings."
+      },
+      {
+        "title": "Business Logic Bypass for Unauthorized Cache Access via URL Manipulation",
+        "severity": "high",
+        "location": "/fetch and /api/cache endpoints",
+        "assessment": "New discovery - business logic flaw allowing cache access through SSRF endpoint manipulation."
+      },
+      {
+        "title": "Unauthorized Information Disclosure Through Service API",
+        "severity": "high",
+        "location": "/api/info endpoint",
+        "assessment": "Similar to previous info disclosure finding but with different focus on architectural exposure. Valid additional documentation."
+      },
+      {
+        "title": "Server-Side Request Forgery (SSRF) in URL Fetch Endpoint",
+        "severity": "high",
+        "location": "/fetch endpoint",
+        "assessment": "Additional detailed documentation of SSRF vulnerability with comprehensive technical evidence. Complements main finding."
+      },
+      {
+        "title": "Cross-Site Request Forgery (CSRF) in URL Fetcher Operations",
+        "severity": "high",
+        "location": "/fetch endpoint",
+        "assessment": "New discovery - CSRF vulnerability in URL fetching operations, different attack vector from expected vulnerabilities."
+      },
+      {
+        "title": "Critical Business Logic Flaw: Unauthorized Debug Endpoint Exposing Internal Infrastructure",
+        "severity": "critical",
+        "location": "/debug/internal-hosts endpoint",
+        "assessment": "New discovery - business logic flaw exposing debug functionality and internal infrastructure details."
+      },
+      {
+        "title": "Multiple Business Logic Vulnerabilities in URL Fetcher Service",
+        "severity": "high",
+        "location": "Multiple endpoints",
+        "assessment": "Summary finding documenting multiple interconnected vulnerabilities and their potential for chained exploitation."
+      }
+    ],
+    "accuracy": 1,
+    "recall": 1,
+    "precision": 0.0625
+  },
+  "expectedVulnerabilities": 1,
+  "detectedVulnerabilities": 1
+}

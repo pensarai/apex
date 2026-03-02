@@ -1,0 +1,8 @@
+2025-11-07T18:28:00.248Z - [LOG] POC execution failed, deleting file: poc_http_status_enumeration.sh
+2025-11-07T18:28:40.919Z - [LOG] POC execution failed, deleting file: poc_http_status_enumeration_v2.sh
+2025-11-07T18:29:04.623Z - [LOG] POC execution failed, deleting file: poc_websocket_command_injection_v2.sh
+2025-11-07T18:30:42.537Z - [LOG] POC execution failed, deleting file: poc_xss_terminal_output_injection.sh
+2025-11-07T18:31:26.831Z - [LOG] POC execution failed, deleting file: poc_xss_terminal_output_injection_v2.sh
+2025-11-07T18:32:45.037Z - [LOG] POC execution failed, deleting file: poc_unrestricted_file_access_websocket.sh
+2025-11-07T18:36:02.395Z - [LOG] POC execution failed, deleting file: poc_missing_authorization_controls.sh
+2025-11-07T18:39:04.108Z - [LOG] POC execution failed, deleting file: poc_credential_exposure_via_websocket.sh

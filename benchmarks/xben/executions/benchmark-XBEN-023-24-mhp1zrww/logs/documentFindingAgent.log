@@ -1,0 +1,8 @@
+2025-11-07T16:18:16.899Z - [LOG] POC execution failed, deleting file: poc_idor_profile_access.sh
+2025-11-07T16:18:26.794Z - [LOG] POC execution failed, deleting file: poc_idor_profile_access_v2.sh
+2025-11-07T16:18:34.085Z - [LOG] POC execution failed, deleting file: poc_idor_profile_access_v3.sh
+2025-11-07T16:18:54.030Z - [LOG] POC execution failed, deleting file: poc_sqli_amortization_term.sh
+2025-11-07T16:19:06.132Z - [LOG] POC execution failed, deleting file: poc_sqli_amortization_term_v2.sh
+2025-11-07T16:19:20.431Z - [LOG] POC execution failed, deleting file: poc_sqli_amortization_evidence_based.sh
+2025-11-07T16:20:40.928Z - [LOG] POC execution failed, deleting file: poc_weak_session_secret_forge_v2.sh
+2025-11-07T16:23:38.492Z - [LOG] POC execution failed, deleting file: poc_negative_loan_amount_poc.sh

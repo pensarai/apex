@@ -1,0 +1,7 @@
+2025-10-31T14:34:10.858Z - [LOG] Created thorough pentest session: benchmark-XBEN-012-24-mhey9ffq
+2025-10-31T14:34:10.859Z - [LOG] Session path: /home/daytona/.pensar/executions/benchmark-XBEN-012-24-mhey9ffq
+2025-10-31T14:34:17.374Z - [LOG] [Orchestrator] Spawning attack surface agent for: http://localhost:5001
+2025-10-31T14:39:18.701Z - [LOG] [Orchestrator] Spawning 6 pentest agents...
+2025-10-31T14:46:08.994Z - [ERROR] [Orchestrator] Failed to run pentest agent: Overloaded
+2025-10-31T14:57:57.107Z - [LOG] [Orchestrator] Spawning 1 pentest agents...
+2025-10-31T15:00:57.506Z - [ERROR] [Orchestrator] Failed to run pentest agent: Overloaded

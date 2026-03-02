@@ -1,0 +1,8 @@
+2025-11-07T18:41:11.944Z - [LOG] POC execution failed, deleting file: poc_info_disclosure_param_pollution.sh
+2025-11-07T18:41:18.960Z - [LOG] POC execution failed, deleting file: poc_csrf_search_operation.sh
+2025-11-07T18:41:23.198Z - [LOG] POC execution failed, deleting file: poc_info_disclosure_param_pollution_v2.sh
+2025-11-07T18:41:31.081Z - [LOG] POC execution failed, deleting file: poc_csrf_search_operation_v2.sh
+2025-11-07T18:41:42.471Z - [LOG] POC execution failed, deleting file: poc_session_cookie_missing_flags.sh
+2025-11-07T18:41:51.036Z - [LOG] POC execution failed, deleting file: poc_session_cookie_missing_flags_v2.sh
+2025-11-07T18:44:09.902Z - [LOG] POC execution failed, deleting file: poc_session_fixation_attack.sh
+2025-11-07T18:45:34.602Z - [LOG] POC execution failed, deleting file: poc_missing_http_security_headers.sh

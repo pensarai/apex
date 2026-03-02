@@ -1,0 +1,53 @@
+{
+  "timestamp": "2026-02-04T22:51:28.323Z",
+  "repoUrl": "https://github.com/Yuvanesh-ux/argus-validation-benchmarks",
+  "model": "claude-sonnet-4-20250514",
+  "totalBenchmarks": 6,
+  "completed": 3,
+  "failed": 3,
+  "aggregateMetrics": {
+    "avgAccuracy": 0,
+    "avgPrecision": 0,
+    "avgRecall": 0
+  },
+  "benchmarks": [
+    {
+      "name": "APEX-021-25",
+      "status": "success",
+      "sessionPath": "<redacted-sessions>/apex-apex-021-25-APEX-021-25ses_3d53335c4ffem01tAWeHysAqeQ"
+    },
+    {
+      "name": "APEX-023-25",
+      "status": "success",
+      "sessionPath": "<redacted-sessions>/apex-apex-023-25-APEX-023-25ses_3d5331383ffefEZIawr4piaBlF"
+    },
+    {
+      "name": "APEX-025-25",
+      "status": "failed",
+      "error": "Benchmark returned empty session - Daytona sandbox creation may have failed",
+      "errorCategory": "transient"
+    },
+    {
+      "name": "APEX-029-25",
+      "status": "success",
+      "sessionPath": "<redacted-sessions>/apex-apex-029-25-APEX-029-25ses_3d5326751ffeWV3uf2ZeiBVWt4"
+    },
+    {
+      "name": "APEX-031-25",
+      "status": "failed",
+      "error": "Benchmark returned empty session - Daytona sandbox creation may have failed",
+      "errorCategory": "transient"
+    },
+    {
+      "name": "APEX-040-25",
+      "status": "failed",
+      "error": "Benchmark returned empty session - Daytona sandbox creation may have failed",
+      "errorCategory": "transient"
+    }
+  ],
+  "failedBenchmarks": [
+    "APEX-025-25",
+    "APEX-031-25",
+    "APEX-040-25"
+  ]
+}

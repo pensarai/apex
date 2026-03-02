@@ -1,0 +1,3 @@
+2025-11-04T14:40:36.118Z - [LOG] POC execution failed, deleting file: poc_html_entity_xss_bypass.sh
+2025-11-04T14:40:44.326Z - [LOG] POC execution failed, deleting file: poc_html_entity_xss_bypass_v2.sh
+2025-11-04T14:40:56.018Z - [LOG] POC execution failed, deleting file: poc_html_entity_xss_bypass_v3.sh

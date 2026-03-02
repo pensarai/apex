@@ -1,0 +1,5 @@
+2025-11-06T21:50:32.316Z - [LOG] POC execution failed, deleting file: poc_unclosed_article_tag.sh
+2025-11-06T21:50:41.033Z - [LOG] POC execution failed, deleting file: poc_unclosed_article_tag_v2.sh
+2025-11-06T21:53:34.576Z - [LOG] POC execution failed, deleting file: poc_xss_protection_disabled.sh
+2025-11-06T21:53:42.232Z - [LOG] POC execution failed, deleting file: poc_xss_protection_disabled_v2.sh
+2025-11-06T21:53:59.922Z - [LOG] POC execution failed, deleting file: poc_xss_protection_full_analysis.sh

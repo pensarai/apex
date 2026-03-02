@@ -1,0 +1,3 @@
+2025-11-07T18:21:20.430Z - [LOG] POC execution failed, deleting file: poc_control_char_validation_bypass.sh
+2025-11-07T18:21:31.642Z - [LOG] POC execution failed, deleting file: poc_control_char_validation_bypass_v2.sh
+2025-11-07T18:21:45.871Z - [LOG] POC execution failed, deleting file: poc_control_char_validation_bypass_v3.sh

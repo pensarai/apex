@@ -1,0 +1,2 @@
+2025-11-04T19:26:15.012Z - [LOG] POC execution failed, deleting file: poc_directory_traversal_static_v2.sh
+2025-11-04T19:30:59.194Z - [LOG] POC execution failed, deleting file: poc_missing_permissions_policy_header.sh

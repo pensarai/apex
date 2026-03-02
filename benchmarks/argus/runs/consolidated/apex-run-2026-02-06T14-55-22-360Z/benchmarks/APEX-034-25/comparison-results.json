@@ -1,0 +1,138 @@
+{
+  "totalExpected": 1,
+  "totalActual": 21,
+  "matched": [
+    {
+      "location": "src/api/src/routes/cart.js (apply-coupon endpoint)",
+      "expectedTitle": "Business Logic - Coupon Stacking and Price Manipulation",
+      "actualTitle": "Coupon Code Reuse Vulnerability - Same Coupon Applied Multiple Times",
+      "matchReason": "Directly addresses the expected coupon stacking vulnerability where the apply-coupon endpoint doesn't check for duplicate coupon codes, allowing the same coupon to be applied multiple times"
+    },
+    {
+      "location": "src/api/src/routes/cart.js (apply-coupon endpoint)",
+      "expectedTitle": "Business Logic - Coupon Stacking and Price Manipulation",
+      "actualTitle": "Coupon Code Reuse - Single Coupon Applied Unlimited Times with Compound Discounts",
+      "matchReason": "Detailed technical analysis of the same coupon stacking vulnerability with mathematical proof of compound discount effects, demonstrating how percentage-based coupons compound when applied multiple times"
+    },
+    {
+      "location": "src/api/src/routes/cart.js (apply-coupon endpoint)",
+      "expectedTitle": "Business Logic - Coupon Stacking and Price Manipulation",
+      "actualTitle": "Coupon Code Stacking Vulnerability - Unlimited Coupon Reuse",
+      "matchReason": "Covers the coupon stacking vulnerability with evidence of the same SAVE10 coupon being applied 5 times to a single cart, exactly matching the expected vulnerability pattern"
+    },
+    {
+      "location": "src/api/src/routes/cart.js (apply-coupon endpoint)",
+      "expectedTitle": "Business Logic - Coupon Stacking and Price Manipulation",
+      "actualTitle": "Coupon Stacking Abuse - Multiple Discounts Applied Simultaneously",
+      "matchReason": "Addresses the coupon stacking vulnerability where multiple different coupon codes can be applied simultaneously, causing cumulative discounts beyond intended limits"
+    },
+    {
+      "location": "src/api/src/routes/cart.js (apply-coupon endpoint)",
+      "expectedTitle": "Business Logic - Coupon Stacking and Price Manipulation",
+      "actualTitle": "Coupon Stacking - Cumulative Discount Vulnerability",
+      "matchReason": "Demonstrates coupon stacking vulnerability allowing multiple coupons to be applied simultaneously with cumulative effects, directly matching expected findings"
+    },
+    {
+      "location": "src/api/src/routes/cart.js (apply-coupon endpoint)",
+      "expectedTitle": "Business Logic - Coupon Stacking and Price Manipulation",
+      "actualTitle": "Coupon Stacking - Multiple Coupons Applied Simultaneously",
+      "matchReason": "Additional confirmation of coupon stacking vulnerability showing all 8 available coupons can be applied simultaneously, reducing $999.99 item to $333.99"
+    },
+    {
+      "location": "src/api/src/routes/cart.js (apply-coupon endpoint)",
+      "expectedTitle": "Business Logic - Coupon Stacking and Price Manipulation",
+      "actualTitle": "Coupon Stacking and Reuse Business Logic Vulnerability",
+      "matchReason": "Comprehensive analysis of both coupon stacking and coupon reuse vulnerabilities, covering the expected business logic flaws with evidence of multiple applications and negative totals"
+    },
+    {
+      "location": "src/api/src/routes/cart.js (cart/add endpoint)",
+      "expectedTitle": "Business Logic - Coupon Stacking and Price Manipulation",
+      "actualTitle": "Negative Quantity Handling - Negative Prices Accepted in Cart",
+      "matchReason": "Directly addresses the expected negative quantity vulnerability where the cart/add endpoint accepts negative quantity values creating negative subtotals, exactly matching the expected vulnerability type"
+    },
+    {
+      "location": "src/api/src/routes/cart.js (cart/add endpoint)",
+      "expectedTitle": "Business Logic - Coupon Stacking and Price Manipulation",
+      "actualTitle": "Negative Quantity Exploitation - Unauthorized Credit Generation",
+      "matchReason": "Detailed analysis of negative quantity vulnerability allowing credit generation instead of charges, matching the expected negative quantity flaw"
+    },
+    {
+      "location": "src/api/src/routes/cart.js (cart/add endpoint)",
+      "expectedTitle": "Business Logic - Coupon Stacking and Price Manipulation",
+      "actualTitle": "Negative Quantity Price Manipulation - Critical Payment Bypass",
+      "matchReason": "Demonstrates the negative quantity vulnerability in cart operations allowing negative totals that bypass payment obligations, matching expected vulnerability"
+    },
+    {
+      "location": "src/api/src/routes/cart.js (cart/add endpoint)",
+      "expectedTitle": "Business Logic - Coupon Stacking and Price Manipulation",
+      "actualTitle": "Negative Quantity Cart Manipulation - Business Logic Vulnerability",
+      "matchReason": "Covers the negative quantity vulnerability in cart/add endpoint with evidence of negative quantities being accepted without validation"
+    },
+    {
+      "location": "src/api/src/routes/cart.js (cart/add endpoint)",
+      "expectedTitle": "Business Logic - Coupon Stacking and Price Manipulation",
+      "actualTitle": "Negative Quantity Business Logic Vulnerability in Cart Add Endpoint",
+      "matchReason": "Directly addresses the negative quantity vulnerability in POST /api/cart/add endpoint matching the expected finding of negative quantities allowed creating credit"
+    },
+    {
+      "location": "src/api/src/routes/cart.js (cart/remove endpoint)",
+      "expectedTitle": "Business Logic - Coupon Stacking and Price Manipulation",
+      "actualTitle": "Cart Removal Business Logic - Negative Total Vulnerability",
+      "matchReason": "Addresses the no minimum total validation flaw where removing all items doesn't clear applied coupons, leaving negative totals - matching the expected minimum validation vulnerability"
+    }
+  ],
+  "missed": [],
+  "extra": [
+    {
+      "title": "Missing Authorization Check - Unauthorized Product Enumeration (IDOR)",
+      "severity": "high",
+      "location": "GET /api/products/:id endpoint",
+      "assessment": "New discovery - This is a valid IDOR vulnerability where unauthenticated users can enumerate all products (IDs 1-5) without authentication checks. Not in expected findings but represents a significant security issue that should have been included."
+    },
+    {
+      "title": "Horizontal IDOR - Unauthorized Access to Product Data via Direct Object Reference",
+      "severity": "high",
+      "location": "GET /api/products/:id endpoint",
+      "assessment": "New discovery - Duplicate/variant of the product enumeration IDOR finding with additional analysis. Confirms same underlying vulnerability with comprehensive testing methodology."
+    },
+    {
+      "title": "CSRF + Wildcard CORS - Unauthorized Cart Manipulation via Cross-Origin Requests",
+      "severity": "high",
+      "location": "POST /api/cart/add, POST /api/cart/apply-coupon, POST /api/cart/remove endpoints",
+      "assessment": "New discovery - This is a valid security vulnerability allowing cross-origin requests to modify victims' carts without CSRF tokens. Not in expected findings but represents a significant business logic and access control vulnerability."
+    },
+    {
+      "title": "IDOR Vulnerability: Unprotected Order Access via Sequential IDs",
+      "severity": "high",
+      "location": "GET /api/orders/:id endpoint",
+      "assessment": "New discovery - Structural IDOR vulnerability where orders can be accessed without authorization checks. While order creation may not be functional, the endpoint structure is definitively vulnerable and represents a critical authorization bypass."
+    },
+    {
+      "title": "Information Disclosure via Public API Documentation Endpoint",
+      "severity": "high",
+      "location": "GET /api endpoint and GET /api/coupons endpoint",
+      "assessment": "New discovery - Sensitive API documentation and coupon codes are disclosed without authentication, including hints about exploitable functionality. This information disclosure enables attackers to systematically identify vulnerabilities."
+    },
+    {
+      "title": "Cart Remove-Coupon Endpoint Input Validation Vulnerability (No-Op Endpoint)",
+      "severity": "medium",
+      "location": "POST /api/cart/remove-coupon endpoint",
+      "assessment": "New discovery - The remove-coupon endpoint accepts invalid input (empty, missing, or SQL injection patterns) and always returns success without validation. Represents inconsistent input validation across related endpoints."
+    },
+    {
+      "title": "Large Quantity Values Bypass Stock Availability Checks",
+      "severity": "medium",
+      "location": "POST /api/cart/add endpoint",
+      "assessment": "New discovery - The endpoint accepts arbitrarily large quantity values (999999999) without inventory validation, allowing out-of-stock purchases. Represents missing input boundary validation."
+    },
+    {
+      "title": "Zero Quantity Accepted Without Validation",
+      "severity": "medium",
+      "location": "POST /api/cart/add endpoint",
+      "assessment": "New discovery - The endpoint accepts quantity=0 without validation, allowing nonsensical cart states. While lower impact than negative quantities, represents a validation gap in numeric input handling."
+    }
+  ],
+  "accuracy": 13,
+  "recall": 1,
+  "precision": 0.6190476190476191
+}
