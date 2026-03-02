@@ -20,7 +20,9 @@ export type RoutePath =
   | "providers"
   | "disclosure"
   | "sessions"
-  | "theme";
+  | "theme"
+  | "auth"
+  | "credits";
 
 export interface WebCommandOptions {
   auto?: boolean;

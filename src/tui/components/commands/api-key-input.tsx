@@ -38,6 +38,8 @@ export default function APIKeyInput({
         return "Get your API key from openrouter.ai/keys";
       case "bedrock":
         return "Enter your AWS Access Key ID (configure region separately) or AWS Bedrock API Key";
+      case "pensar":
+        return "Get your API key from console.pensar.dev/connect (or run /auth)";
       default:
         return "Enter your API key";
     }

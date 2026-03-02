@@ -346,6 +346,42 @@ export const commands: CommandConfig[] = [
       process.kill(process.pid, "SIGINT");
     },
   },
+  {
+    name: "auth",
+    description: "Connect to Pensar Console for managed inference",
+    category: "General",
+    handler: async (args, ctx) => {
+      ctx.navigate({
+        type: "base",
+        path: "auth",
+      });
+    },
+  },
+
+  {
+    name: "credits",
+    aliases: ["buy"],
+    description: "Buy credits / check balance",
+    category: "General",
+    handler: async (args, ctx) => {
+      ctx.navigate({
+        type: "base",
+        path: "credits",
+      });
+    },
+  },
+
+  // Add more commands here...
+  // Example:
+  // {
+  //   name: "clear",
+  //   aliases: ["cls"],
+  //   description: "Clear the screen",
+  //   category: "General",
+  //   handler: async (args, ctx) => {
+  //     ctx.clearScreen?.();
+  //   },
+  // },
 ];
 
 /**

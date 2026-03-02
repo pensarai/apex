@@ -11,6 +11,7 @@ import { useKeyboard } from "@opentui/react";
 
 import { sessions, type SessionInfo } from "../../../core/session";
 import { runOffensiveSecurityAgent } from "../../../core/api/offesecAgent";
+import { buildAuthConfig } from "../../../core/ai/utils";
 import { ALL_TOOL_NAMES } from "../../../core/agents/offSecAgent";
 import { useAgent } from "../../context/agent";
 import { useRoute } from "../../context/route";
@@ -209,14 +210,7 @@ export default function OperatorDashboard({
           target: session.targets[0],
           activeTools: [...ALL_TOOL_NAMES],
           abortSignal: controller.signal,
-          authConfig: {
-            anthropicAPIKey: config.data.anthropicAPIKey ?? undefined,
-            openAiAPIKey: config.data.openAiAPIKey ?? undefined,
-            openRouterAPIKey: config.data.openRouterAPIKey ?? undefined,
-            local: config.data.localModelUrl
-              ? { baseURL: config.data.localModelUrl }
-              : undefined,
-          },
+          authConfig: buildAuthConfig(config.data),
           callbacks: {
             onTextDelta: (d) => {
               setThinking(false);
