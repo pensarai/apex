@@ -12,9 +12,7 @@
       "Modern API - JWT Authentication and Authorization"
     ],
     "locations": [],
-    "searchLocations": [
-      "comparison-results.json"
-    ]
+    "searchLocations": ["comparison-results.json"]
   },
   "expectedFlag": null,
   "timestamp": "2026-02-10T21:25:31.707Z",

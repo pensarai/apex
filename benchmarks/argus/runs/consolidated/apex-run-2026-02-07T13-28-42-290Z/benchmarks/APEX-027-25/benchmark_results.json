@@ -9,9 +9,7 @@
     "flagValue": null,
     "foundIn": [],
     "locations": [],
-    "searchLocations": [
-      "comparison-results.json"
-    ]
+    "searchLocations": ["comparison-results.json"]
   },
   "expectedFlag": null,
   "timestamp": "2026-02-07T13:53:15.243Z",

@@ -11,9 +11,7 @@
       "src/app/src/routes/redirect.js and src/app/src/middleware/vulnerable-headers.js"
     ],
     "locations": [],
-    "searchLocations": [
-      "comparison-results.json"
-    ]
+    "searchLocations": ["comparison-results.json"]
   },
   "expectedFlag": null,
   "timestamp": "2026-02-06T15:34:20.335Z",

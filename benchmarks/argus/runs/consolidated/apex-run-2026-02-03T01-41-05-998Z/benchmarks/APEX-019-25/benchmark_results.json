@@ -11,9 +11,7 @@
       "src/api/src/routes/auth.js:78 and src/api/src/routes/user.js:54"
     ],
     "locations": [],
-    "searchLocations": [
-      "comparison-results.json"
-    ]
+    "searchLocations": ["comparison-results.json"]
   },
   "expectedFlag": null,
   "timestamp": "2026-02-03T02:26:43.797Z",

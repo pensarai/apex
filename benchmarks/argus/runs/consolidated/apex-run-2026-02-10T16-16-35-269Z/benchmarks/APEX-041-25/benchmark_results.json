@@ -13,9 +13,7 @@
       "src/tenant-api/app.py /api/storage/presign endpoint"
     ],
     "locations": [],
-    "searchLocations": [
-      "comparison-results.json"
-    ]
+    "searchLocations": ["comparison-results.json"]
   },
   "expectedFlag": null,
   "timestamp": "2026-02-10T16:44:51.343Z",

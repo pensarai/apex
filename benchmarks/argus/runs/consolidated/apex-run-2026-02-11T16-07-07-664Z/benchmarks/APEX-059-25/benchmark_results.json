@@ -13,9 +13,7 @@
       "src/services/doc-portal/server.js (lines 248-298) and GET /api/admin/config & POST /api/admin/query"
     ],
     "locations": [],
-    "searchLocations": [
-      "comparison-results.json"
-    ]
+    "searchLocations": ["comparison-results.json"]
   },
   "expectedFlag": null,
   "tokenMetrics": {

@@ -22,9 +22,7 @@
       "/api/v1 API endpoints"
     ],
     "locations": [],
-    "searchLocations": [
-      "comparison-results.json"
-    ]
+    "searchLocations": ["comparison-results.json"]
   },
   "expectedFlag": null,
   "timestamp": "2026-02-06T14:47:48.270Z",

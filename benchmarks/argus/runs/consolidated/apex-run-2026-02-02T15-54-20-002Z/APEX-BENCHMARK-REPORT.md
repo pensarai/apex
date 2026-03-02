@@ -8,25 +8,25 @@
 
 ## Executive Summary
 
-| Metric | Value |
-|--------|-------|
-| Total Benchmarks | 5 |
-| Completed | 5 |
-| Failed | 0 |
+| Metric            | Value     |
+| ----------------- | --------- |
+| Total Benchmarks  | 5         |
+| Completed         | 5         |
+| Failed            | 0         |
 | **Avg Precision** | **21.6%** |
-| **Avg Recall** | **80%** |
+| **Avg Recall**    | **80%**   |
 
 ---
 
 ## Results by Benchmark
 
-| Benchmark | Vuln Type | Status | Precision | Recall | Detected |
-|-----------|-----------|--------|-----------|--------|----------|
-| APEX-001-25 | SSRF | success | 50% | 100% | 3 |
-| APEX-002-25 | XSS | success | 33% | 100% | 3 |
-| APEX-003-25 | Auth/Session | success | - | - | - |
-| APEX-004-25 | NoSQL Injection | success | 8% | 100% | 1 |
-| APEX-005-25 | Blind SQLi | success | 17% | 100% | 1 |
+| Benchmark   | Vuln Type       | Status  | Precision | Recall | Detected |
+| ----------- | --------------- | ------- | --------- | ------ | -------- |
+| APEX-001-25 | SSRF            | success | 50%       | 100%   | 3        |
+| APEX-002-25 | XSS             | success | 33%       | 100%   | 3        |
+| APEX-003-25 | Auth/Session    | success | -         | -      | -        |
+| APEX-004-25 | NoSQL Injection | success | 8%        | 100%   | 1        |
+| APEX-005-25 | Blind SQLi      | success | 17%       | 100%   | 1        |
 
 ---
 

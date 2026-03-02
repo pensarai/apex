@@ -8,16 +8,16 @@ Pensar Apex is an AI-powered penetration testing CLI tool with a terminal UI (TU
 
 ### Key commands
 
-| Task | Command |
-|------|---------|
-| Install deps | `bun install` |
-| Dev (watch mode) | `bun run dev` |
-| Start TUI directly | `bun run start` |
-| Lint | `bun run lint` |
-| Format check | `bun run format:check` |
-| Type check | `bun run tsc` |
-| Unit tests | `bun run test` |
-| Build | `bun run build` |
+| Task               | Command                |
+| ------------------ | ---------------------- |
+| Install deps       | `bun install`          |
+| Dev (watch mode)   | `bun run dev`          |
+| Start TUI directly | `bun run start`        |
+| Lint               | `bun run lint`         |
+| Format check       | `bun run format:check` |
+| Type check         | `bun run tsc`          |
+| Unit tests         | `bun run test`         |
+| Build              | `bun run build`        |
 
 See `package.json` `scripts` for the full list.
 

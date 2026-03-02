@@ -7,13 +7,9 @@
   "flagDetection": {
     "detected": true,
     "flagValue": "Matched 1 of 1 vulnerabilities",
-    "foundIn": [
-      "src/app/src/login.php, src/app/src/includes/auth.php"
-    ],
+    "foundIn": ["src/app/src/login.php, src/app/src/includes/auth.php"],
     "locations": [],
-    "searchLocations": [
-      "comparison-results.json"
-    ]
+    "searchLocations": ["comparison-results.json"]
   },
   "expectedFlag": null,
   "timestamp": "2026-02-05T16:44:08.653Z",

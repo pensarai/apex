@@ -11,9 +11,7 @@
       "Multiple endpoints: /api/auth/login, /api/users, /api/users/search, /api/products"
     ],
     "locations": [],
-    "searchLocations": [
-      "comparison-results.json"
-    ]
+    "searchLocations": ["comparison-results.json"]
   },
   "expectedFlag": null,
   "timestamp": "2026-02-05T18:39:16.664Z",

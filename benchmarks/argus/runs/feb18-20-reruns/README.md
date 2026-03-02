@@ -5,6 +5,7 @@
 ## Purpose
 
 These re-runs served two purposes:
+
 1. **Infrastructure debugging (Feb 18-19):** Testing Daytona sandbox connectivity and benchmark runner reliability
 2. **Model comparison (Feb 20):** Re-running selected benchmarks on Haiku to compare against the original Sonnet results
 
