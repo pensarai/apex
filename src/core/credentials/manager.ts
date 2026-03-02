@@ -61,6 +61,8 @@ function toReference(stored: StoredCredential): CredentialReference {
   if (stored.tokens?.customHeaders) {
     ref.customHeaderKeys = Object.keys(stored.tokens.customHeaders);
   }
+  const ctx = stored.metadata?.context;
+  if (typeof ctx === "string" && ctx) ref.context = ctx;
   return ref;
 }
 
@@ -227,6 +229,7 @@ export class CredentialManager {
       if (ref.customHeaderKeys?.length) {
         parts.push(`  Header keys: ${ref.customHeaderKeys.join(", ")}`);
       }
+      if (ref.context) parts.push(`  Context: ${ref.context}`);
       return parts.join("\n");
     });
 

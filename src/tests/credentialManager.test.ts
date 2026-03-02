@@ -363,6 +363,63 @@ describe("CredentialManager", () => {
   });
 
   // =========================================================================
+  // context passthrough
+  // =========================================================================
+
+  describe("context passthrough", () => {
+    it("surfaces context from metadata in references", () => {
+      const id = cm.add({
+        username: "admin",
+        password: "secret",
+        role: "admin",
+        metadata: { context: "Use the admin login page at /admin/login" },
+      });
+
+      const ref = cm.getReference(id)!;
+      expect(ref.context).toBe("Use the admin login page at /admin/login");
+    });
+
+    it("surfaces context from addFromAuthCredentials in references", () => {
+      const id = cm.addFromAuthCredentials({
+        username: "admin",
+        password: "admin123",
+        role: "admin",
+        context: "Login via the main form, select 'Admin' from the role dropdown",
+      });
+
+      const ref = cm.getReference(id)!;
+      expect(ref.context).toBe(
+        "Login via the main form, select 'Admin' from the role dropdown",
+      );
+    });
+
+    it("includes context in formatForPrompt output", () => {
+      cm.addFromAuthCredentials({
+        username: "tester",
+        password: "pass",
+        role: "qa",
+        context: "Navigate to /qa-portal and use the SSO button",
+      });
+
+      const prompt = cm.formatForPrompt();
+      expect(prompt).toContain(
+        "Context: Navigate to /qa-portal and use the SSO button",
+      );
+    });
+
+    it("omits context line when context is not set", () => {
+      cm.add({
+        id: "no-ctx",
+        username: "user",
+        password: "pass",
+      });
+
+      const prompt = cm.formatForPrompt();
+      expect(prompt).not.toContain("Context:");
+    });
+  });
+
+  // =========================================================================
   // Multiple credentials
   // =========================================================================
 
