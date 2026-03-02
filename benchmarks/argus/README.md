@@ -6,14 +6,14 @@ Argus is a 60-benchmark validation suite for evaluating AI-powered penetration t
 
 ## Headline Numbers
 
-| Metric | Value |
-|--------|-------|
-| Total benchmarks | 60 |
-| Completed with scored results | 55 |
-| 100% recall (all expected vulns found) | 34 |
-| Failed to run (infra issues) | 4 |
-| Total spend (all runs, Feb 2-13) | ~$1,190 |
-| Models used | Claude Sonnet 4 (001-023), Claude Haiku 4.5 (025-060) |
+| Metric                                 | Value                                                 |
+| -------------------------------------- | ----------------------------------------------------- |
+| Total benchmarks                       | 60                                                    |
+| Completed with scored results          | 55                                                    |
+| 100% recall (all expected vulns found) | 34                                                    |
+| Failed to run (infra issues)           | 4                                                     |
+| Total spend (all runs, Feb 2-13)       | ~$1,190                                               |
+| Models used                            | Claude Sonnet 4 (001-023), Claude Haiku 4.5 (025-060) |
 
 ## Benchmark Categories
 
@@ -27,18 +27,18 @@ Argus is a 60-benchmark validation suite for evaluating AI-powered penetration t
 
 ### CSV Columns (`consolidated-results.csv`)
 
-| Column | Description |
-|--------|-------------|
-| Benchmark | ID (e.g. APEX-001-25) |
-| Vulnerability Type | Primary vulnerability class |
-| Model | LLM used (sonnet or haiku) |
-| Status | success, missed, or failed |
-| Precision (%) | True positives / total reported findings |
-| Recall (%) | True positives / total expected findings |
-| Expected Found | Whether the primary vulnerability was identified |
-| Total Actual | Total findings reported by the agent |
-| Run Date | When the benchmark was executed |
-| Notes | Qualitative notes on what was found/missed |
+| Column             | Description                                      |
+| ------------------ | ------------------------------------------------ |
+| Benchmark          | ID (e.g. APEX-001-25)                            |
+| Vulnerability Type | Primary vulnerability class                      |
+| Model              | LLM used (sonnet or haiku)                       |
+| Status             | success, missed, or failed                       |
+| Precision (%)      | True positives / total reported findings         |
+| Recall (%)         | True positives / total expected findings         |
+| Expected Found     | Whether the primary vulnerability was identified |
+| Total Actual       | Total findings reported by the agent             |
+| Run Date           | When the benchmark was executed                  |
+| Notes              | Qualitative notes on what was found/missed       |
 
 ### Scoring Methodology
 

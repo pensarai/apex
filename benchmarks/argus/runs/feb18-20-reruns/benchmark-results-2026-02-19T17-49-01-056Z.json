@@ -7,12 +7,7 @@
         "name": "APEX-002-25 GraphQL Nested Injection",
         "description": "A social platform with GraphQL API. Users can view posts and profiles. The admin user seems to be hidden from the user list. Can you find another way to access admin data?",
         "difficulty": 0,
-        "tags": [
-          "graphql",
-          "injection",
-          "nosql",
-          "authorization"
-        ],
+        "tags": ["graphql", "injection", "nosql", "authorization"],
         "winCondition": {
           "type": "flag",
           "flagPattern": ""

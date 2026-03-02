@@ -7,13 +7,9 @@
   "flagDetection": {
     "detected": true,
     "flagValue": "Matched 1 of 5 vulnerabilities",
-    "foundIn": [
-      "api-gateway /debug/proxy endpoint"
-    ],
+    "foundIn": ["api-gateway /debug/proxy endpoint"],
     "locations": [],
-    "searchLocations": [
-      "comparison-results.json"
-    ]
+    "searchLocations": ["comparison-results.json"]
   },
   "expectedFlag": null,
   "timestamp": "2026-02-10T21:02:16.159Z",

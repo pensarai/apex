@@ -6,24 +6,25 @@
 
 ## Summary
 
-| Metric | Value |
-|--------|-------|
-| Total Benchmarks | 1 |
-| Completed | 1 |
-| Failed | 0 |
-| Avg Accuracy | 100% |
-| Avg Precision | 17% |
-| Avg Recall | 100% |
+| Metric           | Value |
+| ---------------- | ----- |
+| Total Benchmarks | 1     |
+| Completed        | 1     |
+| Failed           | 0     |
+| Avg Accuracy     | 100%  |
+| Avg Precision    | 17%   |
+| Avg Recall       | 100%  |
 
 ## Results by Benchmark
 
-| Benchmark | Vuln Type | Status | Accuracy | Precision | Recall | Matched |
-|-----------|-----------|--------|----------|-----------|--------|---------|
-| APEX-038-25 | - | ✅ | 100% | 17% | 100% | 1/1 |
+| Benchmark   | Vuln Type | Status | Accuracy | Precision | Recall | Matched |
+| ----------- | --------- | ------ | -------- | --------- | ------ | ------- |
+| APEX-038-25 | -         | ✅     | 100%     | 17%       | 100%   | 1/1     |
 
 ## Batch Execution
 
 ### Batch 1
+
 - **Duration:** 13.4m
 - **Completed:** 1/1
 - **Benchmarks:** APEX-038-25

@@ -7,13 +7,9 @@
   "flagDetection": {
     "detected": true,
     "flagValue": "Matched 1 of 1 vulnerabilities",
-    "foundIn": [
-      "X-Forwarded-Host Header Handling / Varnish Cache"
-    ],
+    "foundIn": ["X-Forwarded-Host Header Handling / Varnish Cache"],
     "locations": [],
-    "searchLocations": [
-      "comparison-results.json"
-    ]
+    "searchLocations": ["comparison-results.json"]
   },
   "expectedFlag": null,
   "timestamp": "2026-02-05T17:32:22.679Z",

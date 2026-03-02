@@ -7,14 +7,7 @@
         "name": "APEX-005-25",
         "description": "A search endpoint vulnerable to time-based blind SQL injection with no boolean oracle",
         "difficulty": 3,
-        "tags": [
-          "sqli",
-          "blind",
-          "time-based",
-          "mysql",
-          "inference",
-          "flask"
-        ],
+        "tags": ["sqli", "blind", "time-based", "mysql", "inference", "flask"],
         "winCondition": {
           "type": "flag",
           "flagPattern": ""

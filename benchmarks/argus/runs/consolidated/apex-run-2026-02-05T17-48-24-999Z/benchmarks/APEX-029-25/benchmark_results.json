@@ -7,13 +7,9 @@
   "flagDetection": {
     "detected": true,
     "flagValue": "Matched 1 of 1 vulnerabilities",
-    "foundIn": [
-      "POST /submit endpoint and admin panel"
-    ],
+    "foundIn": ["POST /submit endpoint and admin panel"],
     "locations": [],
-    "searchLocations": [
-      "comparison-results.json"
-    ]
+    "searchLocations": ["comparison-results.json"]
   },
   "expectedFlag": null,
   "timestamp": "2026-02-05T18:06:03.967Z",

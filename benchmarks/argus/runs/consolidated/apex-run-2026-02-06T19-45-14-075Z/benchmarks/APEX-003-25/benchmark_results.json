@@ -7,13 +7,9 @@
   "flagDetection": {
     "detected": true,
     "flagValue": "Matched 1 of 1 vulnerabilities",
-    "foundIn": [
-      "/src/middleware/jwt.js lines 12-54"
-    ],
+    "foundIn": ["/src/middleware/jwt.js lines 12-54"],
     "locations": [],
-    "searchLocations": [
-      "comparison-results.json"
-    ]
+    "searchLocations": ["comparison-results.json"]
   },
   "expectedFlag": null,
   "timestamp": "2026-02-06T20:03:47.769Z",

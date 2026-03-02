@@ -128,7 +128,7 @@ export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSur
 
       stopWhen: [
         hasToolCall("create_attack_surface_report"),
-        stepCountIs(10000),
+        stepCountIs(10_000),
       ],
       toolChoice: "auto",
 

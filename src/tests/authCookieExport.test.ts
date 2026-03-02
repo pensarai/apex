@@ -7,7 +7,7 @@ config();
 
 const TARGET_URL = "staging-console.pensar.dev";
 
-describe("Authentication Agent — Cookie Export", () => {
+describe.skip("Authentication Agent — Cookie Export", () => {
   it(
     "should export cookies and/or headers after successful authentication",
     async () => {

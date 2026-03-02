@@ -11,9 +11,7 @@
       "src/api/src/routes/purchase.js (implied from race condition evidence)"
     ],
     "locations": [],
-    "searchLocations": [
-      "comparison-results.json"
-    ]
+    "searchLocations": ["comparison-results.json"]
   },
   "expectedFlag": null,
   "timestamp": "2026-02-05T19:23:51.696Z",

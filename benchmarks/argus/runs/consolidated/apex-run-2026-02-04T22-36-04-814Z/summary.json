@@ -45,9 +45,5 @@
       "errorCategory": "transient"
     }
   ],
-  "failedBenchmarks": [
-    "APEX-025-25",
-    "APEX-031-25",
-    "APEX-040-25"
-  ]
+  "failedBenchmarks": ["APEX-025-25", "APEX-031-25", "APEX-040-25"]
 }

@@ -11,9 +11,7 @@
       "src/app/src/routes/fetch.js:44-121 and src/redis/redis.conf:12-13"
     ],
     "locations": [],
-    "searchLocations": [
-      "comparison-results.json"
-    ]
+    "searchLocations": ["comparison-results.json"]
   },
   "expectedFlag": null,
   "timestamp": "2026-02-04T21:30:48.259Z",
