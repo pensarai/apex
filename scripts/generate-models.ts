@@ -440,7 +440,27 @@ function generateFileContent(models: ModelEntry[], exportName: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// 6. Main
+// 6. Model ID filters — exclude non-chat models
+// ---------------------------------------------------------------------------
+
+const EXCLUDED_PATTERNS = [
+  /audio/i,
+  /search/i,
+  /transcri/i,
+  /speech/i,
+  /tts/i,
+  /whisper/i,
+  /image/i,
+  /dall-e/i,
+  /embed/i,
+];
+
+function isRelevantChatModel(id: string): boolean {
+  return !EXCLUDED_PATTERNS.some((re) => re.test(id));
+}
+
+// ---------------------------------------------------------------------------
+// 7. Main
 // ---------------------------------------------------------------------------
 
 function main() {
@@ -465,7 +485,9 @@ function main() {
     ROOT,
     "node_modules/@ai-sdk/openai/dist/internal/index.d.ts",
   );
-  const openaiIds = extractUnionMembers(openaiDts, "OpenAIChatModelId");
+  const openaiIds = extractUnionMembers(openaiDts, "OpenAIChatModelId").filter(
+    isRelevantChatModel,
+  );
   const openaiModels: ModelEntry[] = openaiIds.map((id) => ({
     id,
     name: formatModelName(id, "openai"),

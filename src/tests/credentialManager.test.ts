@@ -384,7 +384,8 @@ describe("CredentialManager", () => {
         username: "admin",
         password: "admin123",
         role: "admin",
-        context: "Login via the main form, select 'Admin' from the role dropdown",
+        context:
+          "Login via the main form, select 'Admin' from the role dropdown",
       });
 
       const ref = cm.getReference(id)!;
