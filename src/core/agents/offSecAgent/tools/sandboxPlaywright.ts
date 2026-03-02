@@ -37,10 +37,10 @@ import type {
 // Constants
 // ---------------------------------------------------------------------------
 
-const SANDBOX_CDP_PORT = 9222;
 const SANDBOX_PW_DIR = "/tmp/sandbox-playwright";
 const SANDBOX_EVIDENCE_DIR = "/tmp/evidence";
 const SANDBOX_REFS_FILE = "/tmp/pw-refs.json";
+const SANDBOX_URL_FILE = "/tmp/pw-current-url";
 
 /** Marker pair used to extract JSON results from script stdout. */
 const RESULT_START = "__PW_RESULT__";
@@ -62,10 +62,17 @@ const installationCache = new WeakMap<UnifiedSandbox, Promise<void>>();
 export async function checkSandboxPlaywright(
   sandbox: UnifiedSandbox,
 ): Promise<boolean> {
-  const result = await sandbox.execute(
-    `cd ${SANDBOX_PW_DIR} 2>/dev/null && node -e "try { require('playwright'); console.log('OK'); } catch(e) { process.exit(1); }"`,
-    { timeout: 30 },
+  // Write the check script inside the PW dir so require() can resolve
+  // node_modules relative to the script's __dirname.
+  const script = `try{require("playwright");console.log("OK")}catch(e){process.exit(1)}`;
+  const b64 = Buffer.from(script).toString("base64");
+  await sandbox.execute(
+    `mkdir -p ${SANDBOX_PW_DIR} && echo "${b64}" | base64 -d > ${SANDBOX_PW_DIR}/pw_check.js`,
+    { timeout: 10 },
   );
+  const result = await sandbox.execute(`node ${SANDBOX_PW_DIR}/pw_check.js`, {
+    timeout: 30,
+  });
   return result.success && result.stdout.includes("OK");
 }
 
@@ -99,13 +106,29 @@ export async function installSandboxPlaywright(
     );
   }
 
-  const browserResult = await sandbox.execute(
-    `cd ${SANDBOX_PW_DIR} && npx playwright install chromium --with-deps 2>&1`,
-    { timeout: 300 },
+  // Remove broken Yarn apt repo (common on Daytona node images) before
+  // installing Chromium system deps, otherwise apt-get update fails.
+  await sandbox.execute(
+    `(sudo rm -f /etc/apt/sources.list.d/yarn.list /etc/apt/sources.list.d/yarn.sources 2>/dev/null || rm -f /etc/apt/sources.list.d/yarn.list /etc/apt/sources.list.d/yarn.sources 2>/dev/null || true)`,
+    { timeout: 10 },
   );
-  if (!browserResult.success) {
+
+  // Install Chromium + system deps. Retry up to 3 times because browser
+  // binary downloads can hit transient network errors (ECONNRESET, etc.).
+  let browserResult;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    browserResult = await sandbox.execute(
+      `cd ${SANDBOX_PW_DIR} && npx playwright install chromium --with-deps 2>&1`,
+      { timeout: 300 },
+    );
+    if (browserResult.success) break;
+    if (attempt < 3) {
+      await new Promise((r) => setTimeout(r, 3000));
+    }
+  }
+  if (!browserResult!.success) {
     throw new Error(
-      `Failed to install Chromium in sandbox: ${browserResult.stderr || browserResult.stdout}`,
+      `Failed to install Chromium in sandbox: ${browserResult!.stderr || browserResult!.stdout}`,
     );
   }
 }
@@ -142,70 +165,20 @@ export async function ensureSandboxPlaywright(
 // ---------------------------------------------------------------------------
 
 /**
- * Ensure a headless Chromium is running in the sandbox with CDP enabled.
- * Waits until the browser accepts connections before returning.
+ * Verify that Playwright can launch Chromium in the sandbox.
+ * This is a lightweight smoke-test — the actual browser is launched per-script
+ * via `launchPersistentContext` so no long-running process is needed.
  */
 export async function ensureSandboxBrowser(
   sandbox: UnifiedSandbox,
 ): Promise<void> {
-  const check = await sandbox.execute(
-    `curl -sf http://127.0.0.1:${SANDBOX_CDP_PORT}/json/version 2>/dev/null`,
-    { timeout: 10 },
-  );
-
-  if (check.success && check.stdout.includes("webSocketDebuggerUrl")) {
-    return;
-  }
-
-  // Resolve the Chromium binary path that Playwright installed.
-  const chromePath = await sandbox.execute(
-    `cd ${SANDBOX_PW_DIR} && node -e "console.log(require('playwright').chromium.executablePath())"`,
-    { timeout: 15 },
-  );
-
-  const chromeBin = chromePath.stdout?.trim();
-  if (!chromeBin || !chromePath.success) {
-    throw new Error(
-      "Could not determine Chromium path in sandbox. Is Playwright installed?",
-    );
-  }
-
-  await sandbox.execute(`mkdir -p ${SANDBOX_EVIDENCE_DIR}`, { timeout: 5 });
-
-  await sandbox.execute(
-    `nohup "${chromeBin}" ` +
-      `--headless --no-sandbox --disable-setuid-sandbox ` +
-      `--disable-dev-shm-usage --disable-gpu ` +
-      `--remote-debugging-address=0.0.0.0 ` +
-      `--remote-debugging-port=${SANDBOX_CDP_PORT} ` +
-      `--user-data-dir=/tmp/pw-user-data ` +
-      `> /tmp/pw-browser.log 2>&1 &`,
-    { timeout: 10 },
-  );
-
-  for (let i = 0; i < 30; i++) {
-    const ready = await sandbox.execute(
-      `curl -sf http://127.0.0.1:${SANDBOX_CDP_PORT}/json/version 2>/dev/null`,
-      { timeout: 5 },
-    );
-
-    if (ready.success && ready.stdout.includes("webSocketDebuggerUrl")) {
-      return;
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-  }
-
-  const logs = await sandbox.execute("cat /tmp/pw-browser.log 2>/dev/null", {
+  await sandbox.execute(`mkdir -p ${SANDBOX_EVIDENCE_DIR} /tmp/pw-user-data`, {
     timeout: 5,
   });
-  throw new Error(
-    `Chromium failed to start in sandbox within 30 s. Logs:\n${logs.stdout || logs.stderr || "(empty)"}`,
-  );
 }
 
 /**
- * Full setup: install Playwright if needed, then ensure browser is running.
+ * Full setup: install Playwright if needed, then prepare directories.
  */
 async function ensureSandboxReady(sandbox: UnifiedSandbox): Promise<void> {
   await ensureSandboxPlaywright(sandbox);
@@ -221,11 +194,13 @@ async function ensureSandboxReady(sandbox: UnifiedSandbox): Promise<void> {
  * the JSON result from between the {@link RESULT_START}/{@link RESULT_END}
  * markers in stdout.
  *
+ * Each script launches a persistent browser context (with a shared user-data
+ * dir) so that cookies, localStorage, and other state survive across calls.
+ * The browser is closed when the script exits.
+ *
  * @param sandbox  - The sandbox to execute in
- * @param body     - The *body* of the async IIFE (everything between
- *                   `try {` and the closing `}`). Has `browser`, `context`,
- *                   and `page` in scope. Must call `resolve(jsonValue)` to
- *                   return a result.
+ * @param body     - The *body* of the async IIFE. Has `context` and `page`
+ *                   in scope. Must call `resolve(jsonValue)` to return a result.
  * @param timeout  - Sandbox execution timeout in seconds (default 60)
  */
 async function runPlaywrightScript(
@@ -241,21 +216,31 @@ const { chromium } = require('playwright');
     process.stdout.write('${RESULT_START}' + JSON.stringify(value) + '${RESULT_END}');
   }
 
-  let browser;
+  let context;
   try {
-    browser = await chromium.connectOverCDP('http://127.0.0.1:${SANDBOX_CDP_PORT}');
-    const contexts = browser.contexts();
-    const context = contexts[0] || await browser.newContext();
+    context = await chromium.launchPersistentContext('/tmp/pw-user-data', {
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+    });
     const pages = context.pages();
     const page = pages.length > 0 ? pages[pages.length - 1] : await context.newPage();
+
+    // Restore the last-visited URL so page state persists across tool calls.
+    const fs = require('fs');
+    if (page.url() === 'about:blank') {
+      try {
+        const savedUrl = fs.readFileSync('${SANDBOX_URL_FILE}', 'utf-8').trim();
+        if (savedUrl) await page.goto(savedUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
+      } catch {}
+    }
 
     ${body}
 
   } catch (error) {
     resolve({ success: false, error: error.message || String(error) });
   } finally {
-    if (browser) {
-      try { browser.disconnect(); } catch {}
+    if (context) {
+      try { await context.close(); } catch {}
     }
   }
 })();
@@ -263,7 +248,7 @@ const { chromium } = require('playwright');
 
   const b64 = Buffer.from(script).toString("base64");
   const result = await sandbox.execute(
-    `echo "${b64}" | base64 -d > /tmp/pw_action.js && cd ${SANDBOX_PW_DIR} && node /tmp/pw_action.js`,
+    `echo "${b64}" | base64 -d > ${SANDBOX_PW_DIR}/pw_action.js && node ${SANDBOX_PW_DIR}/pw_action.js`,
     { timeout },
   );
 
@@ -422,6 +407,8 @@ Target base URL: ${targetUrl}`,
           sandbox,
           `
     await page.goto(${JSON.stringify(url)}, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    // Persist current URL so subsequent tool calls can restore the page
+    require('fs').writeFileSync('${SANDBOX_URL_FILE}', page.url());
     const title = await page.title();
 
     // Inject console interceptor for later retrieval
@@ -531,7 +518,28 @@ Example workflow:
         const result = (await runPlaywrightScript(
           sandbox,
           `
-    const snapshot = await page.accessibility.snapshot();
+    // Build accessibility snapshot via page.evaluate — works on all
+    // Playwright versions and doesn't depend on the deprecated
+    // page.accessibility.snapshot() API.
+    const treeData = await page.evaluate(() => {
+      function walk(el, depth) {
+        const role = el.getAttribute('role')
+          || el.tagName.toLowerCase();
+        const name = el.getAttribute('aria-label')
+          || el.getAttribute('name')
+          || el.getAttribute('placeholder')
+          || (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' ? el.getAttribute('type') || '' : '')
+          || el.textContent?.trim().substring(0, 60) || '';
+        const value = el.value !== undefined && el.value !== '' ? el.value : undefined;
+        const children = [];
+        for (const child of el.children) {
+          children.push(walk(child, depth + 1));
+        }
+        return { role, name, value, children, depth };
+      }
+      return walk(document.body, 0);
+    });
+
     const refMap = {};
     let refId = 0;
 
@@ -556,7 +564,7 @@ Example workflow:
       return lines.join('\\n');
     }
 
-    const text = formatNode(snapshot, 0);
+    const text = formatNode(treeData, 0);
     require('fs').writeFileSync(${JSON.stringify(SANDBOX_REFS_FILE)}, JSON.stringify(refMap));
     resolve({ success: true, snapshot: text });
           `,
@@ -736,7 +744,8 @@ The JavaScript is executed in the page context and the result is returned.`,
         const result = (await runPlaywrightScript(
           sandbox,
           `
-    const fn = ${JSON.stringify(fnScript)};
+    const fnStr = ${JSON.stringify(fnScript)};
+    const fn = new Function('return (' + fnStr + ')')();
     const evalResult = await page.evaluate(fn);
     resolve({ success: true, script: ${JSON.stringify(script)}, result: evalResult });
           `,
