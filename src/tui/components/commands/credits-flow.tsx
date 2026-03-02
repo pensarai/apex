@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { execSync } from "child_process";
 import { useKeyboard } from "@opentui/react";
 import { useRoute } from "../../context/route";
 import { useConfig } from "../../context/config";
@@ -34,11 +33,11 @@ export default function CreditsFlow() {
     try {
       const platform = process.platform;
       if (platform === "darwin") {
-        execSync(`open ${JSON.stringify(url)}`);
+        Bun.spawn(["open", url]);
       } else if (platform === "win32") {
-        execSync(`start ${JSON.stringify(url)}`);
+        Bun.spawn(["cmd", "/c", "start", url]);
       } else {
-        execSync(`xdg-open ${JSON.stringify(url)}`);
+        Bun.spawn(["xdg-open", url]);
       }
     } catch {
       // Browser open failed — user will see the fallback URL

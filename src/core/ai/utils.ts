@@ -40,6 +40,38 @@ export type AIAuthConfig = {
   };
 };
 
+/**
+ * Build an AIAuthConfig from persisted config, converting null → undefined
+ * and including Pensar/WorkOS fields alongside the standard provider keys.
+ */
+export function buildAuthConfig(cfg: {
+  anthropicAPIKey?: string | null;
+  openAiAPIKey?: string | null;
+  openRouterAPIKey?: string | null;
+  pensarAPIKey?: string | null;
+  pensarApiUrl?: string | null;
+  accessToken?: string | null;
+  refreshToken?: string | null;
+  workspaceId?: string | null;
+  bedrockAPIKey?: string | null;
+  localModelUrl?: string | null;
+}): AIAuthConfig {
+  return {
+    anthropicAPIKey: cfg.anthropicAPIKey ?? undefined,
+    openAiAPIKey: cfg.openAiAPIKey ?? undefined,
+    openRouterAPIKey: cfg.openRouterAPIKey ?? undefined,
+    pensarAPIKey: cfg.pensarAPIKey ?? undefined,
+    pensarApiUrl: cfg.pensarApiUrl ?? undefined,
+    accessToken: cfg.accessToken ?? undefined,
+    refreshToken: cfg.refreshToken ?? undefined,
+    workspaceId: cfg.workspaceId ?? undefined,
+    bedrock: cfg.bedrockAPIKey
+      ? { apiKey: cfg.bedrockAPIKey }
+      : undefined,
+    local: cfg.localModelUrl ? { baseURL: cfg.localModelUrl } : undefined,
+  };
+}
+
 export function getProviderModel(
   model: AIModel,
   authConfig?: AIAuthConfig,

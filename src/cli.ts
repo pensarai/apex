@@ -9,6 +9,7 @@
 
 import packageJson from "../package.json";
 import { getCurrentVersion, upgrade } from "./core/installation";
+import { buildAuthConfig } from "./core/ai/utils";
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -125,14 +126,7 @@ async function runPentest() {
       ...(cwd ? { cwd } : {}),
       session,
       model,
-      authConfig: {
-        anthropicAPIKey: pensarConfig.anthropicAPIKey ?? undefined,
-        openAiAPIKey: pensarConfig.openAiAPIKey ?? undefined,
-        openRouterAPIKey: pensarConfig.openRouterAPIKey ?? undefined,
-        local: pensarConfig.localModelUrl
-          ? { baseURL: pensarConfig.localModelUrl }
-          : undefined,
-      },
+      authConfig: buildAuthConfig(pensarConfig),
       callbacks: {
         onTextDelta: (d) => process.stdout.write(d.text),
         onToolCall: (d) => console.log(`\n→ ${d.toolName}`),
@@ -191,14 +185,7 @@ async function runTargetedPentest() {
     objectives,
     session,
     model,
-    authConfig: {
-      anthropicAPIKey: pensarConfig.anthropicAPIKey ?? undefined,
-      openAiAPIKey: pensarConfig.openAiAPIKey ?? undefined,
-      openRouterAPIKey: pensarConfig.openRouterAPIKey ?? undefined,
-      local: pensarConfig.localModelUrl
-        ? { baseURL: pensarConfig.localModelUrl }
-        : undefined,
-    },
+    authConfig: buildAuthConfig(pensarConfig),
   });
 
   console.log();
