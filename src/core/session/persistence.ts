@@ -1,42 +1,131 @@
 /**
- * Session Persistence Utilities
+ * Session Persistence — Subagent I/O
  *
- * Saves subagent data and agent manifests in the format expected by the
- * session loader (loader.ts). Designed to be called from workflows and
- * tools after each agent completes or fails.
+ * Single source of truth for writing AND reading subagent data.
+ * Both saveSubagentData (write) and loadSubagents (read) share the
+ * same path constants and filename conventions so they can never drift.
  */
 
-import { existsSync, mkdirSync, writeFileSync, readFileSync } from "fs";
+import {
+  existsSync,
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+  readdirSync,
+} from "fs";
 import { join } from "path";
 import type { SessionInfo } from "./index";
-import type {
-  SavedSubagentData,
-  SavedMessage,
-  MessageContentPart,
-} from "./loader";
+import type { AuthenticationInfo } from "./types";
 
 // ---------------------------------------------------------------------------
-// Subagent data persistence
+// Shared path constants — used by both writer and reader
 // ---------------------------------------------------------------------------
 
-interface SubagentSaveInput {
+const SUBAGENTS_DIR = "subagents";
+const MANIFEST_FILE = "agent-manifest.json";
+
+// ---------------------------------------------------------------------------
+// Types (previously in loader.ts — canonical home is now here)
+// ---------------------------------------------------------------------------
+
+/**
+ * Message content part from AI SDK format
+ */
+export interface MessageContentPart {
+  type: "text" | "tool-call" | "tool-result";
+  text?: string;
+  toolCallId?: string;
+  toolName?: string;
+  input?: Record<string, unknown>;
+  output?: unknown;
+}
+
+/**
+ * Raw message format from saved subagent files
+ */
+export interface SavedMessage {
+  role: "assistant" | "tool" | "user";
+  content: MessageContentPart[] | string;
+}
+
+/**
+ * Saved subagent data format
+ */
+export interface SavedSubagentData {
+  agentName: string;
+  timestamp: string;
+  target?: string;
+  objective?: string;
+  vulnerabilityClass?: string;
+  toolCallCount?: number;
+  stepCount?: number;
+  findingsCount?: number;
+  status?: string;
+  error?: string;
+  messages: SavedMessage[];
+}
+
+/**
+ * UI-compatible message format
+ */
+export interface UIMessage {
+  role: "user" | "assistant" | "tool";
+  content: string;
+  createdAt: Date;
+  toolCallId?: string;
+  toolName?: string;
+  args?: Record<string, unknown>;
+  result?: unknown;
+  status?: "pending" | "completed";
+}
+
+/**
+ * Information needed to resume a paused agent
+ */
+export interface ResumeInfo {
+  target: string;
+  objective: string;
+  vulnerabilityClass: string;
+  authenticationInfo?: AuthenticationInfo;
+}
+
+/**
+ * UI-compatible subagent format
+ */
+export interface UISubagent {
+  id: string;
+  name: string;
+  type: "attack-surface" | "pentest";
+  target: string;
+  messages: UIMessage[];
+  createdAt: Date;
+  status: "pending" | "completed" | "failed" | "paused" | "canceled";
+  resumeInfo?: ResumeInfo;
+}
+
+// ---------------------------------------------------------------------------
+// Subagent data persistence (write)
+// ---------------------------------------------------------------------------
+
+export interface SubagentSaveInput {
   agentName: string;
   target: string;
   objective?: string;
   vulnerabilityClass?: string;
   status: string;
   error?: string;
+  findingsCount?: number;
   /** Raw AI SDK messages from onStepFinish (e.response.messages) */
   messages: unknown[];
 }
 
 /**
- * Map an AI SDK message to the SavedMessage format expected by the loader.
+ * Map an AI SDK message to the SavedMessage format.
  *
  * The AI SDK uses `args` for tool call parameters and `result` for tool
- * results, while the loader expects `input` and `output` respectively.
+ * results, while the saved format uses `input` and `output` respectively.
  */
-function mapToSavedMessage(msg: unknown): SavedMessage {
+export function mapToSavedMessage(msg: unknown): SavedMessage {
   const m = msg as { role: string; content: unknown };
 
   if (typeof m.content === "string") {
@@ -75,17 +164,16 @@ function mapToSavedMessage(msg: unknown): SavedMessage {
 }
 
 /**
- * Save subagent data in the format expected by the session loader.
+ * Save subagent data as a flat JSON file.
  *
- * Writes a flat JSON file to `{session.rootPath}/subagents/{name}-{timestamp}.json`.
- * The loader (loadSubagents) reads all `.json` files in this directory and
- * parses them as SavedSubagentData.
+ * Writes to `{session.rootPath}/{SUBAGENTS_DIR}/{name}-{timestamp}.json`.
+ * loadSubagents reads back from the same directory with the same convention.
  */
 export function saveSubagentData(
   session: SessionInfo,
   data: SubagentSaveInput,
 ): void {
-  const subagentsDir = join(session.rootPath, "subagents");
+  const subagentsDir = join(session.rootPath, SUBAGENTS_DIR);
   if (!existsSync(subagentsDir)) {
     mkdirSync(subagentsDir, { recursive: true });
   }
@@ -115,7 +203,7 @@ export function saveSubagentData(
     vulnerabilityClass: data.vulnerabilityClass,
     toolCallCount,
     stepCount,
-    findingsCount: 0,
+    findingsCount: data.findingsCount ?? 0,
     status: data.status,
     error: data.error,
     messages: savedMessages,
@@ -154,7 +242,7 @@ export function writeAgentManifest(
   session: SessionInfo,
   entries: AgentManifestEntry[],
 ): void {
-  const manifestPath = join(session.rootPath, "agent-manifest.json");
+  const manifestPath = join(session.rootPath, MANIFEST_FILE);
   writeFileSync(manifestPath, JSON.stringify(entries, null, 2));
 }
 
@@ -162,11 +250,272 @@ export function writeAgentManifest(
  * Read the current agent manifest, or return empty array if none exists.
  */
 export function readAgentManifest(session: SessionInfo): AgentManifestEntry[] {
-  const manifestPath = join(session.rootPath, "agent-manifest.json");
+  const manifestPath = join(session.rootPath, MANIFEST_FILE);
   if (!existsSync(manifestPath)) return [];
   try {
     return JSON.parse(readFileSync(manifestPath, "utf-8"));
   } catch {
     return [];
   }
+}
+
+// ---------------------------------------------------------------------------
+// Subagent data loading (read) — previously in loader.ts
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse a subagent filename to extract agent type and display name.
+ *
+ * Handles every naming convention the writer has ever used:
+ *  - "attack-surface-agent-..."  → attack-surface
+ *  - "pentest-agent-3-..."       → pentest, "Pentest Agent 3"
+ *  - "vuln-test-sqli-..."        → pentest (back-compat)
+ *  - "orchestrator-..."          → skipped upstream
+ *  - fallback                    → pentest
+ */
+export function parseSubagentFilename(filename: string): {
+  agentType: "attack-surface" | "pentest";
+  name: string;
+} {
+  if (filename.startsWith("attack-surface-agent")) {
+    return { agentType: "attack-surface", name: "Attack Surface Discovery" };
+  }
+
+  // Current convention: pentest-agent-{N}-{timestamp}.json
+  const pentestMatch = filename.match(/^pentest-agent-(\d+)-/);
+  if (pentestMatch) {
+    return {
+      agentType: "pentest",
+      name: `Pentest Agent ${pentestMatch[1]}`,
+    };
+  }
+
+  // Legacy convention: vuln-test-{vulnClass}-...
+  if (filename.startsWith("vuln-test-")) {
+    const parts = filename.replace("vuln-test-", "").split("-");
+    const vulnClass = parts[0] || "generic";
+    const vulnClassFormatted = vulnClass
+      .replace(/-/g, " ")
+      .replace(/\b\w/g, (c) => c.toUpperCase());
+    return {
+      agentType: "pentest",
+      name: `${vulnClassFormatted} Test`,
+    };
+  }
+
+  if (filename.startsWith("orchestrator-")) {
+    return { agentType: "pentest", name: "Orchestrator Summary" };
+  }
+
+  return { agentType: "pentest", name: filename.split("-")[0] || "Unknown" };
+}
+
+/**
+ * Convert saved messages to UI-compatible format.
+ *
+ * Two-pass algorithm:
+ *  1. Collect tool results by toolCallId so we can pair them with calls.
+ *  2. Emit UIMessage[] with tool-call messages enriched with their results.
+ */
+export function convertMessagesToUI(
+  messages: SavedMessage[],
+  baseTime: Date,
+): UIMessage[] {
+  const uiMessages: UIMessage[] = [];
+  let messageIndex = 0;
+
+  // First pass: collect tool results by toolCallId
+  const toolResults = new Map<string, unknown>();
+  for (const msg of messages) {
+    if (Array.isArray(msg.content)) {
+      for (const part of msg.content) {
+        if (part.type === "tool-result" && part.toolCallId) {
+          toolResults.set(part.toolCallId, part.output);
+        }
+      }
+    }
+  }
+
+  for (const msg of messages) {
+    const createdAt = new Date(baseTime.getTime() + messageIndex * 1000);
+    messageIndex++;
+
+    if (typeof msg.content === "string") {
+      uiMessages.push({
+        role: msg.role as "user" | "assistant" | "tool",
+        content: msg.content,
+        createdAt,
+      });
+    } else if (Array.isArray(msg.content)) {
+      for (const part of msg.content) {
+        if (part.type === "text" && part.text) {
+          uiMessages.push({
+            role: "assistant",
+            content: part.text,
+            createdAt,
+          });
+        } else if (part.type === "tool-call") {
+          const toolDescription =
+            typeof part.input?.toolCallDescription === "string"
+              ? part.input.toolCallDescription
+              : part.toolName || "tool";
+          const result = part.toolCallId
+            ? toolResults.get(part.toolCallId)
+            : undefined;
+          uiMessages.push({
+            role: "tool",
+            content: toolDescription,
+            createdAt,
+            toolCallId: part.toolCallId,
+            toolName: part.toolName,
+            args: part.input,
+            result: result,
+            status: "completed",
+          });
+        }
+        // tool-result parts are already collected in the first pass
+      }
+    }
+  }
+
+  return uiMessages;
+}
+
+/**
+ * Load all subagent data from disk and merge with the agent manifest.
+ *
+ * This is the single reader for subagent state. It:
+ *  1. Reads all .json files from {rootPath}/{SUBAGENTS_DIR}/
+ *  2. Reads the agent manifest from {rootPath}/{MANIFEST_FILE}
+ *  3. Matches manifest entries to loaded files by agentName === entry.id
+ *  4. Marks matched "running" manifest entries as "paused"
+ *  5. Creates paused stubs for unmatched "running" manifest entries
+ */
+export function loadSubagents(rootPath: string): UISubagent[] {
+  const subagentsPath = join(rootPath, SUBAGENTS_DIR);
+
+  // --- Load files ---
+  const subagents: UISubagent[] = [];
+  /** Map from agentName → index in subagents[] for manifest matching */
+  const agentNameIndex = new Map<string, number>();
+
+  if (existsSync(subagentsPath)) {
+    const files = readdirSync(subagentsPath).filter((f) =>
+      f.endsWith(".json"),
+    );
+
+    // Sort files by timestamp in filename
+    files.sort((a, b) => {
+      const timeA =
+        a.match(/\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}/)?.[0] || "";
+      const timeB =
+        b.match(/\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}/)?.[0] || "";
+      return timeA.localeCompare(timeB);
+    });
+
+    for (const file of files) {
+      // Skip orchestrator summary files — not real subagents
+      if (file.startsWith("orchestrator-")) continue;
+
+      try {
+        const filePath = join(subagentsPath, file);
+        const data = JSON.parse(
+          readFileSync(filePath, "utf-8"),
+        ) as SavedSubagentData;
+
+        const { agentType, name } = parseSubagentFilename(file);
+        const timestamp = new Date(data.timestamp);
+        const messages = convertMessagesToUI(data.messages, timestamp);
+
+        let status: "pending" | "completed" | "failed" | "canceled" =
+          "completed";
+        switch (data.status) {
+          case "canceled":
+          case "failed":
+          case "completed":
+          case "pending":
+            status = data.status;
+            break;
+          default:
+            if (
+              typeof data.findingsCount === "number" &&
+              data.findingsCount < 0
+            ) {
+              status = "failed";
+            }
+            break;
+        }
+
+        const idx = subagents.length;
+        subagents.push({
+          id: `loaded-${file.replace(".json", "")}`,
+          name:
+            data.agentName === "attack-surface-agent"
+              ? "Attack Surface Discovery"
+              : name,
+          type: agentType,
+          target: data.target || "Unknown",
+          messages,
+          createdAt: timestamp,
+          status,
+        });
+
+        // Index by agentName for manifest matching
+        agentNameIndex.set(data.agentName, idx);
+      } catch (e) {
+        console.error(`Failed to load subagent file ${file}:`, e);
+      }
+    }
+  }
+
+  // --- Merge with manifest ---
+  const manifestPath = join(rootPath, MANIFEST_FILE);
+  if (existsSync(manifestPath)) {
+    try {
+      const manifest: AgentManifestEntry[] = JSON.parse(
+        readFileSync(manifestPath, "utf-8"),
+      );
+
+      for (const entry of manifest) {
+        if (entry.status !== "running") continue;
+
+        const resumeInfo: ResumeInfo = {
+          target: entry.target,
+          objective: entry.objective,
+          vulnerabilityClass: entry.vulnerabilityClass,
+          authenticationInfo: entry.authInfo as
+            | AuthenticationInfo
+            | undefined,
+        };
+
+        // Match by agentName === manifest entry.id (both are "pentest-agent-{N}")
+        const existingIndex = agentNameIndex.get(entry.id);
+
+        if (existingIndex !== undefined) {
+          // File exists but manifest says running → interrupted after partial save
+          subagents[existingIndex] = {
+            ...subagents[existingIndex],
+            status: "paused",
+            resumeInfo,
+          };
+        } else {
+          // No file for this running entry — create a paused stub
+          subagents.push({
+            id: entry.id,
+            name: entry.name,
+            type: "pentest",
+            target: entry.target,
+            messages: [],
+            createdAt: new Date(entry.spawnedAt),
+            status: "paused",
+            resumeInfo,
+          });
+        }
+      }
+    } catch (e) {
+      console.error("Failed to load agent manifest:", e);
+    }
+  }
+
+  return subagents;
 }
