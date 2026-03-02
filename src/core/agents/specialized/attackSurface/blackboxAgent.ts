@@ -119,6 +119,11 @@ export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSur
         "browser_evaluate",
         "browser_console",
         "browser_get_cookies",
+        // Email tools (filtered out by base class when no inboxes configured)
+        "email_list_inboxes",
+        "email_list_messages",
+        "email_search_messages",
+        "email_get_message",
       ],
 
       stopWhen: [
@@ -153,57 +158,46 @@ export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSur
 function buildPrompt(target: string, session: SessionInfo): string {
   const scopeConstraints = session.config?.scopeConstraints;
   const authenticationInstructions = session.config?.authenticationInstructions;
-  const authCredentials = session.config?.authCredentials;
   const enumerateSubdomains = session.config?.enumerateSubdomains ?? false;
+
+  const cm = session.credentialManager;
+  const credBlock = cm?.formatForPrompt();
+  const firstRef = cm?.listReferences()[0];
+  const loginTarget = firstRef?.loginUrl ?? target;
 
   // --- Authentication block ---
   let authBlock: string;
-  if (authenticationInstructions || authCredentials) {
+
+  if (credBlock) {
     const parts: string[] = [];
     if (authenticationInstructions) {
       parts.push(
         `<authentication_instructions>\n${authenticationInstructions}\n</authentication_instructions>`,
       );
     }
-    if (authCredentials) {
-      const creds = authCredentials;
-      const credLines: string[] = [];
-      if (creds.username) credLines.push(`Username: ${creds.username}`);
-      if (creds.password) credLines.push(`Password: ${creds.password}`);
-      if (creds.loginUrl) credLines.push(`Login URL: ${creds.loginUrl}`);
-      if (creds.apiKey) credLines.push(`API Key: ${creds.apiKey}`);
-      if (creds.tokens?.bearerToken)
-        credLines.push(`Bearer Token: ${creds.tokens.bearerToken}`);
-      if (creds.tokens?.cookies)
-        credLines.push(`Cookies: ${creds.tokens.cookies}`);
-      if (creds.tokens?.sessionToken)
-        credLines.push(`Session Token: ${creds.tokens.sessionToken}`);
-      if (creds.additionalFields) {
-        for (const [k, v] of Object.entries(creds.additionalFields)) {
-          credLines.push(`${k}: ${v}`);
-        }
-      }
-      if (creds.tokens?.customHeaders) {
-        for (const [k, v] of Object.entries(creds.tokens.customHeaders)) {
-          credLines.push(`Header ${k}: ${v}`);
-        }
-      }
-      if (credLines.length > 0) {
-        parts.push(
-          `<auth_credentials>\n${credLines.join("\n")}\n</auth_credentials>`,
-        );
-      }
-    }
-    const loginTarget = authCredentials?.loginUrl ?? target;
+    parts.push(credBlock);
+
     authBlock = `⚠️ AUTHENTICATION CREDENTIALS PROVIDED — YOU MUST LOG IN FIRST.
 
 Your FIRST tool call must be: browser_navigate to ${loginTarget}
-Then: browser_snapshot → browser_fill (username) → browser_fill (password) → browser_click (submit) → browser_snapshot (confirm) → browser_get_cookies
+Then use browser tools to authenticate. Pass the credentialId to authenticate_session or delegate_to_auth_subagent — secrets are resolved automatically.
+For browser_fill on password/secret fields, use credentialId + credentialField instead of raw values.
 
 Do NOT run curl, nmap, dig, or any other command before completing login.
 Include authentication information with EVERY target that requires it in your final report.
 
 ${parts.join("\n\n")}`;
+  } else if (authenticationInstructions) {
+    authBlock = `⚠️ AUTHENTICATION INSTRUCTIONS PROVIDED — YOU MUST LOG IN FIRST.
+
+Your FIRST tool call must be: browser_navigate to ${loginTarget}
+
+Do NOT run curl, nmap, dig, or any other command before completing login.
+Include authentication information with EVERY target that requires it in your final report.
+
+<authentication_instructions>
+${authenticationInstructions}
+</authentication_instructions>`;
   } else {
     authBlock = `AUTHENTICATION: No credentials provided. Skip Phase 1 and proceed with unauthenticated discovery.
 Note any login pages you find as assets and flag them for pentest agents.`;
@@ -220,8 +214,8 @@ Note any login pages you find as assets and flag them for pentest agents.`;
     : `SUBDOMAIN ENUMERATION: DISABLED — Skip Phase 2 entirely. Focus only on the provided target URL.`;
 
   const startDirective =
-    authenticationInstructions || authCredentials
-      ? `Begin NOW by logging in. Your first tool call must be browser_navigate to ${authCredentials?.loginUrl ?? target}. After login, continue with the remaining phases.`
+    credBlock || authenticationInstructions
+      ? `Begin NOW by logging in. Your first tool call must be browser_navigate to ${loginTarget}. After login, continue with the remaining phases.`
       : `Begin attack surface analysis now. Follow the phases defined in your system prompt in order.`;
 
   return `TARGET: ${target}

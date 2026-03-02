@@ -31,6 +31,64 @@ export type AIModelProvider =
   | "bedrock"
   | "local";
 
+function checkIfRateLimitError(error: unknown): boolean {
+  const errObj =
+    typeof error === "object" && error !== null
+      ? (error as Record<string, unknown>)
+      : {};
+
+  // Check message — works for both Error instances and plain objects
+  // (Bedrock streaming errors are plain { message: "..." } records)
+  const errorMessage = (
+    typeof errObj.message === "string" ? errObj.message : ""
+  ).toLowerCase();
+  const errorCode = String(
+    typeof errObj.code === "string" ? errObj.code : "",
+  ).toLowerCase();
+  // AWS SDK errors surface the exception type via .name
+  const errorName = (
+    typeof errObj.name === "string" ? errObj.name : ""
+  ).toLowerCase();
+  // Bedrock HTTP-level errors include $metadata.httpStatusCode
+  const httpStatus =
+    typeof errObj.$metadata === "object" && errObj.$metadata !== null
+      ? (errObj.$metadata as Record<string, unknown>).httpStatusCode
+      : undefined;
+  // Stringified fallback for opaque error objects (e.g. Bedrock stream records)
+  const errorString =
+    errorMessage || errorName ? "" : String(error).toLowerCase();
+
+  return (
+    // Message-based detection
+    errorMessage.includes("too many tokens") ||
+    errorMessage.includes("rate limit") ||
+    errorMessage.includes("request rate") ||
+    errorMessage.includes("throttl") ||
+    errorMessage.includes("overloaded") ||
+    errorMessage.includes("too many requests") ||
+    errorMessage.includes("please wait") ||
+    errorMessage.includes("service unavailable") ||
+    // AWS SDK exception names (ThrottlingException, TooManyRequestsException)
+    errorName.includes("throttl") ||
+    errorName.includes("toomanyrequests") ||
+    errorName.includes("serviceunavailable") ||
+    // Error codes
+    errorCode === "rate_limit_exceeded" ||
+    errorCode === "throttling" ||
+    errorCode === "429" ||
+    // HTTP status from AWS SDK $metadata
+    httpStatus === 429 ||
+    httpStatus === 529 ||
+    httpStatus === 503 ||
+    // Fallback: stringified error for opaque Bedrock stream records
+    errorString.includes("throttl") ||
+    errorString.includes("too many") ||
+    errorString.includes("request rate")
+  );
+}
+
+const MAX_RATE_LIMIT_RETRIES = 20;
+
 // Helper function to wrap a stream with error handling for async errors
 function wrapStreamWithErrorHandler(
   originalStream: StreamTextResult<ToolSet, never>,
@@ -38,6 +96,7 @@ function wrapStreamWithErrorHandler(
   opts: StreamResponseOpts,
   model: LanguageModel,
   silent?: boolean,
+  rateLimitRetryCount: number = 0,
 ): StreamTextResult<ToolSet, never> {
   // Create a lazy getter for fullStream that wraps it with error handling
   let wrappedStream: AsyncIterable<TextStreamPart<ToolSet>> | null = null;
@@ -50,7 +109,6 @@ function wrapStreamWithErrorHandler(
           wrappedStream = (async function* () {
             try {
               for await (const chunk of originalStream.fullStream) {
-                // Check if this chunk contains an error
                 if (chunk.type === "error" || "error" in chunk) {
                   const error =
                     "error" in chunk
@@ -62,22 +120,59 @@ function wrapStreamWithErrorHandler(
                 yield chunk;
               }
             } catch (error) {
-              // Check if it's a context length error
               const errorMessage =
                 error instanceof Error ? error.message : String(error);
 
-              const isContextLengthError = checkIfContextLengthError(error);
+              // Handle rate limit errors with exponential backoff retry
+              if (
+                checkIfRateLimitError(error) &&
+                rateLimitRetryCount < MAX_RATE_LIMIT_RETRIES
+              ) {
+                const nextRetryCount = rateLimitRetryCount + 1;
+                const delayMs = Math.min(1000 * nextRetryCount, 30000);
 
-              if (isContextLengthError) {
-                // Try to get the actual messages that were sent to the API
-                // from the stream's response property
+                if (!silent) {
+                  console.warn(
+                    `Rate limit error (attempt ${nextRetryCount}/${MAX_RATE_LIMIT_RETRIES}), waiting ${delayMs}ms: ${errorMessage}`,
+                  );
+                }
+
+                await new Promise((resolve) => setTimeout(resolve, delayMs));
+
+                const retriedStream = streamResponse({
+                  ...opts,
+                  messages:
+                    messagesContainer.current.length > 0
+                      ? messagesContainer.current
+                      : undefined,
+                });
+
+                const wrappedRetriedStream = wrapStreamWithErrorHandler(
+                  retriedStream,
+                  messagesContainer,
+                  opts,
+                  model,
+                  silent,
+                  nextRetryCount,
+                );
+
+                for await (const chunk of wrappedRetriedStream.fullStream) {
+                  yield chunk;
+                }
+                return;
+              }
+
+              // Handle context length errors with summarization
+              const isCtxError = checkIfContextLengthError(error);
+
+              if (isCtxError) {
                 let currentMessages: ModelMessage[] = messagesContainer.current;
                 try {
                   const response = await originalStream.response;
                   if (response.messages && response.messages.length > 0) {
                     currentMessages = response.messages as ModelMessage[];
                   }
-                } catch (e) {
+                } catch {
                   // Fall back to container messages if response is not available
                 }
                 if (!silent) {
@@ -98,11 +193,10 @@ function wrapStreamWithErrorHandler(
               } else {
                 if (!silent) {
                   console.error(
-                    "Non-context length error, re-throwing",
+                    "Non-recoverable stream error, re-throwing:",
                     errorMessage,
                   );
                 }
-                // Re-throw if it's not a context length error
                 throw error;
               }
             }
@@ -169,7 +263,6 @@ export function streamResponse(
   const messagesContainer = { current: messages || [] };
   const providerModel = getProviderModel(model, authConfig);
 
-  let rateLimitRetryCount = 0;
   try {
     // Create the appropriate provider instance
     const response = streamText({
@@ -184,23 +277,6 @@ export function streamResponse(
         // Update the container with the latest messages
         messagesContainer.current = opts.messages;
         return undefined;
-      },
-      onError: async ({ error }: { error: unknown }) => {
-        const errorMessage =
-          error instanceof Error ? error.message : String(error);
-        if (
-          errorMessage.toLowerCase().includes("too many tokens") ||
-          errorMessage.toLowerCase().includes("overloaded")
-        ) {
-          rateLimitRetryCount++;
-          await new Promise((resolve) =>
-            setTimeout(resolve, 1000 * rateLimitRetryCount),
-          );
-          if (rateLimitRetryCount < 20) {
-            return;
-          }
-        }
-        throw error;
       },
       onStepFinish,
       abortSignal,

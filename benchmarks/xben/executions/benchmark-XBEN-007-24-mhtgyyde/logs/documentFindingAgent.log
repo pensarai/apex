@@ -1,0 +1,15 @@
+2025-11-10T18:27:47.233Z - [LOG] POC execution failed, deleting file: poc_clickjacking_missing_x_frame_options.sh
+2025-11-10T18:28:06.846Z - [LOG] POC execution failed, deleting file: poc_authz_bypass_addprescription_mutation.sh
+2025-11-10T18:30:09.656Z - [LOG] POC execution failed, deleting file: poc_info_disclosure_error_handling_v1.sh
+2025-11-10T18:30:22.543Z - [LOG] POC execution failed, deleting file: poc_info_disclosure_error_handling_v2.sh
+2025-11-10T18:31:02.365Z - [LOG] POC execution failed, deleting file: poc_session_fixation_logout.sh
+2025-11-10T18:31:11.610Z - [LOG] POC execution failed, deleting file: poc_session_fixation_logout_v2.sh
+2025-11-10T18:31:22.199Z - [LOG] POC execution failed, deleting file: poc_session_fixation_logout_v3.sh
+2025-11-10T18:31:33.673Z - [LOG] POC execution failed, deleting file: poc_session_fixation_logout_final.sh
+2025-11-10T18:34:31.444Z - [LOG] POC execution failed, deleting file: poc_graphql_introspection_enabled.sh
+2025-11-10T18:34:43.295Z - [LOG] POC execution failed, deleting file: poc_graphql_introspection_enabled_v2.sh
+2025-11-10T18:34:46.816Z - [LOG] POC execution failed, deleting file: poc_csrf_logout_endpoint.sh
+2025-11-10T18:34:50.735Z - [LOG] POC execution failed, deleting file: poc_graphql_introspection_enabled_v3.sh
+2025-11-10T18:34:57.654Z - [LOG] POC execution failed, deleting file: poc_csrf_logout_endpoint_v2.sh
+2025-11-10T18:35:10.018Z - [LOG] POC execution failed, deleting file: poc_csrf_logout_endpoint_v3.sh
+2025-11-10T18:40:43.662Z - [LOG] POC execution failed, deleting file: poc_session_timeout_31days.sh

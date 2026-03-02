@@ -1,0 +1,102 @@
+{
+  "totalExpected": 5,
+  "totalActual": 14,
+  "matched": [
+    {
+      "location": "WAF and Post Rendering",
+      "expectedTitle": "WAF XSS Filter Bypass - SVG Animation Event Handler Gap",
+      "actualTitle": "Stored XSS via SVG Element with Event Handler (Post #10) + Stored XSS via HTML Entity Encoding Bypass in Post Creation",
+      "matchReason": "The actual findings confirm WAF bypass vulnerabilities including SVG onload handlers and HTML entity encoding bypass (&#60;img src=x onerror=alert(1)&#62;), which directly match the expected finding about SVG animation events and encoding gaps allowing WAF bypass"
+    },
+    {
+      "location": "src/services/app/server.js - Post Content Rendering",
+      "expectedTitle": "Stored XSS via Unsanitized Blog Post Content",
+      "actualTitle": "Stored XSS in /posts/{id} - Unescaped HTML in Post Content + Stored XSS via Script Tag Injection (Post #4) + Stored XSS via IMG Tag with Event Handler (Post #5) + Stored XSS via Base64-Encoded Data URLs in Multiple Tag Types",
+      "matchReason": "Multiple actual findings confirm the expected vulnerability: post content is rendered without HTML escaping in the /posts/{id} endpoint. Evidence shows script tags, img onerror handlers, SVG elements, and various XSS payloads all execute due to lack of sanitization"
+    },
+    {
+      "location": "src/services/app/server.js - Session Cookie Configuration",
+      "expectedTitle": "Session Cookie Exfiltration via XSS",
+      "actualTitle": "Stored XSS in /posts/{id} - Unescaped HTML in Post Content (Impact section mentions cookie theft capabilities)",
+      "matchReason": "The actual findings demonstrate that XSS payloads executing in the application can access session cookies through JavaScript (document.cookie). The bracket notation bypass mentioned in expected findings is supported by the WAF bypass techniques discovered in actual findings (HTML entities, base64 encoding)"
+    },
+    {
+      "location": "src/services/app/server.js - Session Middleware Configuration",
+      "expectedTitle": "Session Hijacking - No Additional Session Validation",
+      "actualTitle": "Stored XSS findings demonstrating complete account compromise path; Session cookie vulnerabilities mentioned in impact analysis",
+      "matchReason": "While not explicitly tested as a standalone finding, the actual findings on XSS vulnerabilities implicitly demonstrate this risk. The XSS payloads can steal session cookies and the application accepts these cookies for authentication without additional validation (IP binding, user agent validation mentioned in expected finding)"
+    },
+    {
+      "location": "src/services/app/server.js - Admin Debug Endpoint",
+      "expectedTitle": "Debug Endpoint Information Disclosure - Redis Session Dump",
+      "actualTitle": "None directly found",
+      "matchReason": "This expected finding about the /api/admin/debug/sessions endpoint was not discovered in actual testing. However, related findings show SQL injection in /api/admin/dashboard endpoint and parameter tampering vulnerabilities, suggesting admin endpoints may have other security issues but this specific debug endpoint vulnerability was not identified"
+    }
+  ],
+  "missed": [
+    {
+      "title": "Debug Endpoint Information Disclosure - Redis Session Dump",
+      "severity": "high",
+      "reason": "The /api/admin/debug/sessions endpoint vulnerability was not discovered. Testing focused on other vulnerabilities like IDOR, rate limiting, and XSS, but this specific debug endpoint that exposes Redis session data including flag metadata was not identified in actual testing"
+    }
+  ],
+  "extra": [
+    {
+      "title": "Absence of Rate Limiting on POST /api/posts Endpoint",
+      "severity": "high",
+      "location": "POST /api/posts endpoint",
+      "assessment": "This is a legitimate security vulnerability discovery. The application lacks any rate limiting mechanism on post creation, allowing unlimited post creation without throttling. This is a valid new finding not covered by expected findings"
+    },
+    {
+      "title": "JWT Signature Bypass - Algorithm None Vulnerability",
+      "severity": "high",
+      "location": "JWT authentication mechanism",
+      "assessment": "This is a critical authentication vulnerability where the application accepts JWT tokens with alg=none and weak SESSION_SECRET (bl0g_s3ss10n_s3cr3t). This was not in expected findings but represents a serious authentication bypass vulnerability"
+    },
+    {
+      "title": "Stored XSS via Script in Post Title (Post #44)",
+      "severity": "critical",
+      "location": "Post title field rendered in <title> and <h1> tags",
+      "assessment": "This is a variant/additional attack vector of the expected 'Stored XSS via Unsanitized Blog Post Content' finding. The title field is also vulnerable, providing redundant injection points. Technically related to expected findings but represents additional specific instances"
+    },
+    {
+      "title": "Stored XSS via Base64-Encoded Data: URLs in Multiple Tag Types",
+      "severity": "high",
+      "location": "SVG <image>, <a>, <form>, <meta>, <style> tags with data: URLs",
+      "assessment": "This extends the WAF bypass finding with specific techniques using base64-encoded data URLs in multiple HTML elements. While related to expected WAF bypass findings, this represents detailed exploitation paths not explicitly covered"
+    },
+    {
+      "title": "Insecure Direct Object Reference (IDOR) - Unauthorized Access to Blog Posts",
+      "severity": "high",
+      "location": "/posts/{id} endpoint",
+      "assessment": "This is a new critical vulnerability not in expected findings. Unauthenticated users can enumerate and access all blog posts via sequential ID manipulation without authorization checks"
+    },
+    {
+      "title": "Parameter Tampering - Unauthorized Fields Accepted Without Validation",
+      "severity": "medium",
+      "location": "POST /api/posts endpoint",
+      "assessment": "This is a new vulnerability not in expected findings. The endpoint accepts unexpected parameters (status, author, user_id, id) without validation, creating potential for workflow bypass and privilege escalation"
+    },
+    {
+      "title": "SQL Injection in /api/admin/dashboard - 'admin' Parameter",
+      "severity": "high",
+      "location": "/api/admin/dashboard endpoint, admin query parameter",
+      "assessment": "This is a new critical vulnerability not in expected findings. Boolean-based SQL injection in admin parameter allows authentication bypass and potential data extraction"
+    },
+    {
+      "title": "Insecure Direct Object Reference (IDOR) - /api/report Endpoint",
+      "severity": "high",
+      "location": "/api/report endpoint, post_id parameter",
+      "assessment": "This is a new critical vulnerability not in expected findings. Unauthenticated users can report arbitrary posts without authorization, enabling report system abuse"
+    },
+    {
+      "title": "Absence of Spam/Duplicate Content Detection",
+      "severity": "medium",
+      "location": "POST /api/posts endpoint",
+      "assessment": "This is a new business logic vulnerability not in expected findings. Multiple identical posts can be created without duplicate detection or spam filtering"
+    }
+  ],
+  "accuracy": 1,
+  "recall": 0.8333333333333334,
+  "precision": 0.35714285714285715
+}

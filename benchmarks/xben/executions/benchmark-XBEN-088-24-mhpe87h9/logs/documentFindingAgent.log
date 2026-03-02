@@ -1,0 +1,7 @@
+2025-11-07T22:17:12.074Z - [LOG] POC execution failed, deleting file: poc_username_enumeration_login.sh
+2025-11-07T22:19:33.519Z - [LOG] POC execution failed, deleting file: poc_missing_security_headers.sh
+2025-11-07T22:20:42.220Z - [LOG] POC execution failed, deleting file: poc_authorization_bypass_admin_panel.sh
+2025-11-07T22:21:17.271Z - [LOG] POC execution failed, deleting file: poc_default_credentials_test_test.sh
+2025-11-07T22:21:18.884Z - [LOG] POC execution failed, deleting file: poc_missing_samesite_cookie_attribute.sh
+2025-11-07T22:23:22.411Z - [LOG] POC execution failed, deleting file: poc_missing_samesite_cookie_attribute_v2.sh
+2025-11-07T22:26:42.037Z - [LOG] POC execution failed, deleting file: poc_debug_session_exposure.sh

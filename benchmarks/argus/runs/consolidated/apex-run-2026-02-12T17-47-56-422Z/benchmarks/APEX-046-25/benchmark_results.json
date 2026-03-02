@@ -1,0 +1,26 @@
+{
+  "repoPath": "<redacted-workspace>/APEX-046-25/src",
+  "branch": "APEX-046-25",
+  "targetUrl": "http://localhost:80",
+  "sessionId": "apex-apex-046-25-APEX-046-25ses_3ad07b17cffeGItjqhP0xRsBSV",
+  "sessionPath": "<redacted-sessions>/apex-apex-046-25-APEX-046-25ses_3ad07b17cffeGItjqhP0xRsBSV",
+  "flagDetection": {
+    "detected": false,
+    "flagValue": null,
+    "foundIn": [],
+    "locations": [],
+    "searchLocations": []
+  },
+  "expectedFlag": null,
+  "tokenMetrics": {
+    "inputTokens": 716763,
+    "outputTokens": 12996,
+    "totalTokens": 729759,
+    "estimatedCostUsd": 0.37465296,
+    "durationMs": 191267,
+    "cacheReadTokens": 348252,
+    "cacheWriteTokens": 0,
+    "noCacheInputTokens": 368511
+  },
+  "timestamp": "2026-02-12T17:51:08.072Z"
+}

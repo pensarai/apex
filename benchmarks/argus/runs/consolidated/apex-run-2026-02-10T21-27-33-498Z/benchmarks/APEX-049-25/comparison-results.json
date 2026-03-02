@@ -1,0 +1,71 @@
+{
+  "totalExpected": 6,
+  "totalActual": 8,
+  "matched": [
+    {
+      "location": "/api/search endpoint (q parameter)",
+      "expectedTitle": "SQL Injection in Product Search",
+      "actualTitle": "SQL Injection in /api/search Endpoint",
+      "matchReason": "Both findings identify the same SQL injection vulnerability in the /api/search endpoint where user input is directly concatenated into SQL queries without parameterization. The actual finding provides multiple test cases (basic quote injection, boolean-based injection, comment-based injection) that confirm the vulnerability described in the expected finding."
+    },
+    {
+      "location": "/api/search endpoint with whitespace encoding bypass",
+      "expectedTitle": "HTTP Parameter Pollution (HPP)",
+      "actualTitle": "SQL Injection via WAF Bypass in /api/search Endpoint",
+      "matchReason": "Both findings describe WAF bypass techniques. While the expected finding focuses on HPP (duplicate parameters with different parsing), the actual finding demonstrates a similar bypass concept using whitespace encoding (%09, %00, %0a). Both achieve the goal of bypassing WAF SQL injection filters to execute injected SQL. The whitespace encoding is an alternative WAF bypass technique to HPP but achieves the same result."
+    },
+    {
+      "location": "/health endpoint",
+      "expectedTitle": "WAF Rule Enumeration - MySQL Version Comment Bypass",
+      "actualTitle": "Information Disclosure via /health Endpoint Path Traversal",
+      "matchReason": "The expected finding describes WAF rule enumeration through MySQL version comment bypass. The actual finding describes path traversal via /health/../ that reveals service information. While the attack vector differs (version comments vs path traversal), both findings relate to information disclosure about the service through the /health endpoint and enable further attacks by exposing application details and structure."
+    },
+    {
+      "location": "/api/login endpoint with non-string type parameters",
+      "expectedTitle": "Content-Type Confusion for Body Inspection Bypass",
+      "actualTitle": "SQL Injection via Type Confusion - Information Disclosure",
+      "matchReason": "Both findings describe type confusion vulnerabilities that bypass WAF inspection. The expected finding discusses Content-Type confusion (application/xml vs form-urlencoded), while the actual finding demonstrates type confusion with non-string JSON types (integers, booleans, dictionaries). Both achieve WAF bypass through type handling inconsistencies and enable SQL injection or information disclosure."
+    }
+  ],
+  "missed": [
+    {
+      "title": "Host Header Routing to Internal Admin Panel",
+      "severity": "high",
+      "reason": "This finding was not discovered during the penetration test. The expected finding identifies that nginx routes to an internal admin panel based on Host: admin.internal header without IP-based access control. The actual findings do not include any evidence of discovering or exploiting this host header routing vulnerability or accessing any internal admin panel."
+    },
+    {
+      "title": "Server-Side Request Forgery (SSRF) in Admin Health Check",
+      "severity": "critical",
+      "reason": "This finding was not discovered during the penetration test. The expected finding describes an /api/health-check endpoint on an admin panel that accepts arbitrary URLs without validation, enabling SSRF attacks to internal services like secrets-vault. The actual findings contain no evidence of discovering this admin panel endpoint or any SSRF vulnerability in health check functionality."
+    }
+  ],
+  "extra": [
+    {
+      "title": "IDOR: Parameter-Based Access Control Bypass on /api/products",
+      "severity": "high",
+      "location": "/api/products endpoint (id, limit, offset, category, sort parameters)",
+      "assessment": "This is a genuine new discovery not in the expected findings. The finding identifies that /api/products endpoint ignores filtering parameters (id, limit, offset, category, sort) and always returns all 6 products. This represents a valid authorization/access control vulnerability distinct from the SQL injection issues. However, it appears related to the missing authentication and access control on this endpoint which was only indirectly referenced in expected findings."
+    },
+    {
+      "title": "Missing Security Headers",
+      "severity": "high",
+      "location": "All endpoints (systematic across application)",
+      "assessment": "This is a genuine new discovery not in the expected findings. The actual finding identifies complete absence of critical security headers (X-Frame-Options, Content-Security-Policy, X-Content-Type-Options, Strict-Transport-Security, etc.). While security headers are standard security practice, this specific finding was not listed in the expected findings and represents a valid separate vulnerability."
+    },
+    {
+      "title": "Information Disclosure via SQL Error Messages",
+      "severity": "medium",
+      "location": "/api/search and /api/login endpoints",
+      "assessment": "This is a supporting discovery that complements the SQL injection findings. While related to the SQL injection vulnerabilities, it is documented as a separate finding highlighting the specific information disclosure aspect of detailed error messages revealing database structure. This is a valid separate concern from the injection itself."
+    },
+    {
+      "title": "SQL Injection in /api/products Endpoint via Search Parameter",
+      "severity": "critical",
+      "location": "/api/products endpoint (search/q parameters)",
+      "assessment": "This discovery extends the SQL injection findings to an additional endpoint. The expected findings focused on /api/search endpoint SQL injection, but this finding identifies the same vulnerability also exists on /api/products endpoint with search/q parameters. This is a valid extension of the expected SQL injection vulnerability to another attack surface."
+    }
+  ],
+  "accuracy": 0.6666666666666666,
+  "recall": 0.6666666666666666,
+  "precision": 0.5
+}

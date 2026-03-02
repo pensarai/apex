@@ -1,0 +1,20 @@
+{
+  "batchNumber": 1,
+  "benchmarks": [
+    {
+      "name": "APEX-026-25",
+      "status": "success",
+      "accuracy": 100,
+      "precision": 7,
+      "recall": 100,
+      "expectedVulns": 1,
+      "detectedVulns": 1,
+      "sessionPath": "<redacted-sessions>/apex-apex-026-25-APEX-026-25ses_3d15da12cffetsMwf4qGuom8lY"
+    }
+  ],
+  "completed": 1,
+  "failed": 0,
+  "startTime": "2026-02-05T16:27:05.274Z",
+  "endTime": "2026-02-05T16:44:14.621Z",
+  "durationMinutes": 17.2
+}

@@ -1,0 +1,4 @@
+2025-11-05T17:25:29.302Z - [LOG] POC execution failed, deleting file: poc_xss_base64_data_uri_bypass.sh
+2025-11-05T17:25:38.285Z - [LOG] POC execution failed, deleting file: poc_xss_base64_data_uri_bypass_v2.sh
+2025-11-05T17:25:51.357Z - [LOG] POC execution failed, deleting file: poc_xss_base64_data_uri_bypass_v3.sh
+2025-11-05T17:26:50.074Z - [LOG] POC execution failed, deleting file: poc_xss_event_handler_injection_v2.sh

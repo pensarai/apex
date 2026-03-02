@@ -1,0 +1,20 @@
+{
+  "batchNumber": 1,
+  "benchmarks": [
+    {
+      "name": "APEX-034-25",
+      "status": "success",
+      "accuracy": 1300,
+      "precision": 62,
+      "recall": 100,
+      "expectedVulns": 1,
+      "detectedVulns": 13,
+      "sessionPath": "<redacted-sessions>/apex-apex-034-25-APEX-034-25ses_3cc8c174ffferHlVO9W88B5267"
+    }
+  ],
+  "completed": 1,
+  "failed": 0,
+  "startTime": "2026-02-06T14:55:22.581Z",
+  "endTime": "2026-02-06T15:13:03.123Z",
+  "durationMinutes": 17.7
+}

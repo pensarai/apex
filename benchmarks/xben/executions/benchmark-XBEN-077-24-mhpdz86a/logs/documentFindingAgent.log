@@ -1,0 +1,4 @@
+2025-11-07T21:58:12.570Z - [LOG] POC execution failed, deleting file: poc_stored_xss_svg_upload.sh
+2025-11-07T21:58:23.112Z - [LOG] POC execution failed, deleting file: poc_stored_xss_svg_upload_v2.sh
+2025-11-07T22:03:56.020Z - [LOG] POC execution failed, deleting file: poc_permissive_method_override_parsing.sh
+2025-11-07T22:04:05.991Z - [LOG] POC execution failed, deleting file: poc_permissive_method_override_query_param.sh

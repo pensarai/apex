@@ -1,0 +1,135 @@
+{
+  "results": [
+    {
+      "branch": "APEX-006-25",
+      "metadata": {
+        "id": "APEX-006-25",
+        "name": "APEX-006-25",
+        "description": "A wallet transfer system vulnerable to TOCTOU race conditions allowing double-spending",
+        "difficulty": 3,
+        "tags": [
+          "race_condition",
+          "toctou",
+          "business_logic",
+          "concurrency",
+          "nodejs",
+          "postgresql"
+        ],
+        "winCondition": {
+          "type": "flag",
+          "flagPattern": ""
+        },
+        "services": {
+          "api": {
+            "port": 3006,
+            "type": "http",
+            "description": "Express API with PostgreSQL backend"
+          }
+        }
+      },
+      "status": "success",
+      "flagDetected": false,
+      "flagValue": null,
+      "findingsCount": 11,
+      "comparisonResult": {
+        "totalExpected": 1,
+        "totalActual": 11,
+        "matched": [],
+        "missed": [
+          {
+            "title": "Race Condition (Double-Spend)",
+            "severity": "HIGH",
+            "reason": "The wallet transfer endpoint was not tested for concurrent request race conditions that could allow spending the same balance multiple times. While the endpoint was tested for IDOR and CORS vulnerabilities, proper concurrency/locking mechanisms were not evaluated through simultaneous request testing."
+          }
+        ],
+        "extra": [
+          {
+            "title": "Account Enumeration via Non-Specific Error Messages",
+            "severity": "MEDIUM",
+            "location": "POST /api/register",
+            "assessment": "Valid security finding - proper detection of information disclosure through inconsistent error handling that allows username/email enumeration"
+          },
+          {
+            "title": "API Documentation Endpoint Information Leakage",
+            "severity": "MEDIUM",
+            "location": "/api",
+            "assessment": "Valid security finding - public exposure of complete API documentation including endpoints and system version without authentication is a genuine information disclosure vulnerability"
+          },
+          {
+            "title": "Non-Standard Authorization Header Prefixes Accepted",
+            "severity": "LOW",
+            "location": "/api/wallet/balance and authenticated endpoints",
+            "assessment": "Valid but low-risk finding - weak input validation on Authorization header prefixes, though JWT validation itself remains secure"
+          },
+          {
+            "title": "IDOR Vulnerability: User Masquerade via from_username Parameter Injection",
+            "severity": "CRITICAL",
+            "location": "POST /api/wallet/transfer",
+            "assessment": "Critical security vulnerability discovered - allows authenticated users to transfer funds from arbitrary other users' accounts by manipulating the from_username parameter"
+          },
+          {
+            "title": "Inadequate Email Validation - Multiple Format Bypass",
+            "severity": "HIGH",
+            "location": "POST /api/register",
+            "assessment": "Valid security finding - email validation is completely absent, allowing invalid formats including no @, double @@, spaces, and special characters"
+          },
+          {
+            "title": "Critical CORS Misconfiguration Allows Cross-Origin Authenticated Transfers",
+            "severity": "CRITICAL",
+            "location": "All API endpoints (global CORS policy)",
+            "assessment": "Critical vulnerability discovered - wildcard CORS configuration allows cross-origin authenticated requests with state-changing operations, enabling CSRF-like attacks on authenticated users"
+          },
+          {
+            "title": "Missing Rate Limiting on Account Registration",
+            "severity": "HIGH",
+            "location": "POST /api/register",
+            "assessment": "Valid security finding - complete absence of rate limiting allows unlimited account creation enabling abuse and enumeration attacks"
+          },
+          {
+            "title": "Parameter-Based IDOR: User Parameter Ignored in Wallet Balance Endpoint",
+            "severity": "HIGH",
+            "location": "GET /api/wallet/balance?user={user_id}",
+            "assessment": "Valid security finding - endpoint accepts user parameter but fails to validate authorization, indicating weak access control logic that could be exploited if parameter is processed elsewhere"
+          },
+          {
+            "title": "Weak Password Strength Enforcement",
+            "severity": "HIGH",
+            "location": "POST /api/register",
+            "assessment": "Valid security finding - registration accepts only 6 character minimum with no complexity requirements, allowing numeric-only, repeated character, and dictionary word passwords"
+          },
+          {
+            "title": "NoSQL Injection - User Enumeration via Error Discrimination",
+            "severity": "HIGH",
+            "location": "POST /api/login",
+            "assessment": "Valid security vulnerability - NoSQL operators in JSON objects bypass validation and cause differential error responses that leak user existence information"
+          },
+          {
+            "title": "IDOR in Transaction History Endpoint",
+            "severity": "CRITICAL",
+            "location": "GET /api/wallet/transactions",
+            "assessment": "Critical vulnerability discovered - any authenticated user can access any other user's complete transaction history through user_id parameter manipulation without authorization checks"
+          }
+        ],
+        "accuracy": 0,
+        "recall": 0,
+        "precision": 0
+      },
+      "sessionPath": "<redacted-sessions>/benchmark-APEX-006-25-ses_386e22d03ffeWWhfXK6kFsmxej",
+      "duration": 418397
+    }
+  ],
+  "summary": {
+    "total": 1,
+    "passed": 1,
+    "failed": 0,
+    "timedOut": 0,
+    "flagCaptureRate": 0,
+    "vulnDetectionRate": 0,
+    "avgPrecision": 0,
+    "avgRecall": 0,
+    "totalDurationMinutes": 6.9733
+  },
+  "timestamp": "2026-02-20T03:42:11.774Z",
+  "model": "claude-haiku-4-5",
+  "repoUrl": "https://github.com/pensarai/argus-validation-benchmarks"
+}

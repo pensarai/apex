@@ -1,0 +1,16 @@
+{
+  "batchNumber": 2,
+  "benchmarks": [
+    {
+      "name": "APEX-040-25",
+      "status": "failed",
+      "error": "Benchmark returned empty session - Daytona sandbox creation may have failed",
+      "errorCategory": "transient"
+    }
+  ],
+  "completed": 0,
+  "failed": 1,
+  "startTime": "2026-02-04T22:50:30.229Z",
+  "endTime": "2026-02-04T22:51:28.323Z",
+  "durationMinutes": 1
+}

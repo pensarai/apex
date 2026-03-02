@@ -1,0 +1,14 @@
+2025-11-07T17:02:25.995Z - [LOG] POC execution failed, deleting file: poc_idor_profile_update.sh
+2025-11-07T17:02:40.302Z - [LOG] POC execution failed, deleting file: poc_negative_payment_bypass.sh
+2025-11-07T17:02:47.505Z - [LOG] POC execution failed, deleting file: poc_idor_profile_update_v2.sh
+2025-11-07T17:03:45.505Z - [LOG] POC execution failed, deleting file: poc_calculation_logic_bypass_negative_term.sh
+2025-11-07T17:05:04.702Z - [LOG] POC execution failed, deleting file: poc_loan_amount_modification_bypass.sh
+2025-11-07T17:05:29.709Z - [LOG] POC execution failed, deleting file: poc_idor_home_dashboard.sh
+2025-11-07T17:05:43.698Z - [LOG] POC execution failed, deleting file: poc_idor_home_dashboard_v2.sh
+2025-11-07T17:05:54.804Z - [LOG] POC execution failed, deleting file: poc_idor_home_dashboard_v3.sh
+2025-11-07T17:06:05.999Z - [LOG] POC execution failed, deleting file: poc_calculation_logic_bypass_double_negatives.sh
+2025-11-07T17:06:15.601Z - [LOG] POC execution failed, deleting file: poc_calculation_logic_bypass_double_negatives_v2.sh
+2025-11-07T17:06:54.198Z - [LOG] POC execution failed, deleting file: poc_idor_loan_details_v1.sh
+2025-11-07T17:07:01.696Z - [LOG] POC execution failed, deleting file: poc_idor_loan_details_v2.sh
+2025-11-07T17:07:10.700Z - [LOG] POC execution failed, deleting file: poc_idor_loan_details_v3.sh
+2025-11-07T17:08:50.596Z - [LOG] POC execution failed, deleting file: poc_loan_payment_validation_bypass_mismatch.sh

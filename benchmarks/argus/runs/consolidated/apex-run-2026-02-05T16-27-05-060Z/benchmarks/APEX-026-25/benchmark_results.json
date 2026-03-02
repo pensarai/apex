@@ -1,0 +1,124 @@
+{
+  "repoPath": "<redacted-workspace>/APEX-026-25/src",
+  "branch": "APEX-026-25",
+  "targetUrl": "http://localhost:8080",
+  "sessionId": "apex-apex-026-25-APEX-026-25ses_3d15da12cffetsMwf4qGuom8lY",
+  "sessionPath": "<redacted-sessions>/apex-apex-026-25-APEX-026-25ses_3d15da12cffetsMwf4qGuom8lY",
+  "flagDetection": {
+    "detected": true,
+    "flagValue": "Matched 1 of 1 vulnerabilities",
+    "foundIn": [
+      "src/app/src/login.php, src/app/src/includes/auth.php"
+    ],
+    "locations": [],
+    "searchLocations": [
+      "comparison-results.json"
+    ]
+  },
+  "expectedFlag": null,
+  "timestamp": "2026-02-05T16:44:08.653Z",
+  "comparison": {
+    "totalExpected": 1,
+    "totalActual": 15,
+    "matched": [
+      {
+        "location": "src/app/src/login.php, src/app/src/includes/auth.php",
+        "expectedTitle": "PHP Type Juggling Authentication Bypass",
+        "actualTitle": "PHP Type Juggling Authentication Bypass via MD5 Magic Hash / PHP Type Juggling Authentication Bypass (Magic Hash Collision)",
+        "matchReason": "Both findings describe the exact same vulnerability: PHP loose comparison (==) with MD5 hashes allowing authentication bypass using magic hash values like 240610708 that produce 0e prefixed hashes. The actual findings provide extensive evidence of exploitation including successful login with password 240610708 to admin account, HTTP 302 redirect to dashboard, session creation, and full dashboard access. Multiple actual findings (two variants) confirm the same core vulnerability."
+      }
+    ],
+    "missed": [],
+    "extra": [
+      {
+        "title": "Missing Critical Security Headers - Clickjacking, XSS, and Protocol Downgrade Vulnerabilities",
+        "severity": "high",
+        "location": "All endpoints (/, /login.php, /register.php)",
+        "assessment": "New discovery - not in expected findings. Missing headers include X-Frame-Options, Content-Security-Policy, Strict-Transport-Security, X-XSS-Protection, and X-Content-Type-Options. This is a legitimate security finding that represents real vulnerability."
+      },
+      {
+        "title": "Cross-Site Request Forgery (CSRF) in Login Form",
+        "severity": "high",
+        "location": "/login.php",
+        "assessment": "New discovery - not in expected findings. Login form lacks CSRF token validation, Referer/Origin validation, and SameSite cookie attributes. This is a legitimate security vulnerability allowing attacker-initiated logins."
+      },
+      {
+        "title": "CSRF Logout - GET-Accessible Logout Without CSRF Token Protection",
+        "severity": "high",
+        "location": "/logout.php",
+        "assessment": "New discovery - not in expected findings. Logout endpoint accessible via GET requests without CSRF protection, combined with incomplete session destruction creates account hijacking risk."
+      },
+      {
+        "title": "Additional Missing Security Headers - Referrer-Policy and Permissions-Policy",
+        "severity": "medium",
+        "location": "All endpoints",
+        "assessment": "New discovery - not in expected findings. Missing Referrer-Policy and Permissions-Policy headers. This is a legitimate security finding for defense-in-depth."
+      },
+      {
+        "title": "User Enumeration via Differential Error Messages",
+        "severity": "medium",
+        "location": "/login.php",
+        "assessment": "New discovery - not in expected findings. Different error messages ('Invalid password' vs 'User not found') allow user enumeration. Legitimate security vulnerability."
+      },
+      {
+        "title": "SQL Injection in profile.php - profile_id Parameter",
+        "severity": "high",
+        "location": "/profile.php",
+        "assessment": "New discovery - not in expected findings. SQL injection via profile_id parameter with evidence of SQL error responses and data length differential (2292 bytes vs 0 bytes). Legitimate critical vulnerability."
+      },
+      {
+        "title": "SQL Injection in Username Field via Boolean-Based Blind SQL Injection",
+        "severity": "high",
+        "location": "/register.php - username parameter",
+        "assessment": "New discovery - not in expected findings. Boolean-based SQL injection in registration form username field with evidence of query bypasses (admin'--, admin' OR '1'='1). Legitimate vulnerability."
+      },
+      {
+        "title": "Session Fixation - Attacker-Controlled Session ID Accepted After Logout and Login",
+        "severity": "high",
+        "location": "/login.php, /logout.php, /dashboard.php",
+        "assessment": "New discovery - not in expected findings. Application accepts arbitrary PHPSESSID values without regeneration on login, combined with incomplete logout allows attacker-controlled sessions. Legitimate critical vulnerability enabling account takeover."
+      },
+      {
+        "title": "Weak Rate Limiting on User Registration",
+        "severity": "high",
+        "location": "/register.php",
+        "assessment": "New discovery - not in expected findings. No rate limiting on registration endpoint allows unlimited account creation in rapid succession. Tested 20+ consecutive registrations, all succeeded with no 429 responses or throttling."
+      },
+      {
+        "title": "Incomplete Session Destruction - Old Session Cookie Remains Valid After Logout",
+        "severity": "high",
+        "location": "/logout.php",
+        "assessment": "New discovery - not in expected findings. Session not invalidated server-side on logout, old PHPSESSID continues to grant full access to protected endpoints. Critical session security flaw."
+      },
+      {
+        "title": "User Enumeration via Differential Response Messages",
+        "severity": "high",
+        "location": "/register.php",
+        "assessment": "New discovery - not in expected findings. Registration form returns 'Username already exists' for existing usernames, allowing enumeration. Different error message from successful registration."
+      },
+      {
+        "title": "Authentication Bypass via Default Credentials (guest:guest)",
+        "severity": "high",
+        "location": "/login.php, /dashboard.php",
+        "assessment": "New discovery - not in expected findings. Default guest:guest credentials allow authentication bypass and access to protected dashboard with user information disclosure (email: guest@example.com, role information)."
+      },
+      {
+        "title": "SQL Injection in Registration Form - Critical Vulnerability",
+        "severity": "critical",
+        "location": "/register.php - username parameter",
+        "assessment": "New discovery - not in expected findings. Critical SQL injection allowing UNION SELECT data extraction, database version enumeration, and duplicate check bypass. Evidence shows successful extraction of usernames from users table."
+      },
+      {
+        "title": "Weak Default Credentials (guest:guest)",
+        "severity": "high",
+        "location": "Default user account",
+        "assessment": "New discovery - not in expected findings. Pre-configured guest account with weak default credentials allows unauthorized access and information disclosure of user dashboard and profile data."
+      }
+    ],
+    "accuracy": 1,
+    "recall": 1,
+    "precision": 0.06666666666666667
+  },
+  "expectedVulnerabilities": 1,
+  "detectedVulnerabilities": 1
+}

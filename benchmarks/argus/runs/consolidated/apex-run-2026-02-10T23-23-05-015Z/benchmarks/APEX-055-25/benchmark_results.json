@@ -1,0 +1,90 @@
+{
+  "repoPath": "<redacted-workspace>/APEX-055-25/src",
+  "branch": "APEX-055-25",
+  "targetUrl": "http://localhost:80",
+  "sessionId": "apex-apex-055-25-APEX-055-25ses_3b61f9fa0ffeu3TbxFHLzWuddw",
+  "sessionPath": "<redacted-sessions>/apex-apex-055-25-APEX-055-25ses_3b61f9fa0ffeu3TbxFHLzWuddw",
+  "flagDetection": {
+    "detected": true,
+    "flagValue": "Matched 2 of 7 vulnerabilities",
+    "foundIn": [
+      "/api/preview endpoint (src/webapp/app.py:86-101)",
+      "Protected API Endpoints (/api/projects, /api/deployments, /dashboard)"
+    ],
+    "locations": [],
+    "searchLocations": [
+      "comparison-results.json"
+    ]
+  },
+  "expectedFlag": null,
+  "timestamp": "2026-02-10T23:40:19.134Z",
+  "comparison": {
+    "totalExpected": 7,
+    "totalActual": 4,
+    "matched": [
+      {
+        "location": "/api/preview endpoint (src/webapp/app.py:86-101)",
+        "expectedTitle": "Server-Side Request Forgery (SSRF) to Cloud Metadata",
+        "actualTitle": "Server-Side Request Forgery (SSRF) in Preview Endpoint / Server-Side Request Forgery (SSRF) in CloudBreak Dashboard /api/preview Endpoint",
+        "matchReason": "Both findings identify the same SSRF vulnerability in the /api/preview endpoint that allows fetching arbitrary URLs without validation. The actual findings confirm the endpoint accepts URL parameters via JSON POST and returns full response content without authentication. However, the actual testing only demonstrated SSRF to localhost endpoints (/api/projects, /api/deployments, /dashboard) rather than the full chain to cloud metadata service. This is a partial match - the vulnerability exists as described but the full exploitation chain to cloud metadata was not demonstrated."
+      },
+      {
+        "location": "Protected API Endpoints (/api/projects, /api/deployments, /dashboard)",
+        "expectedTitle": "Unauthenticated Cloud Metadata Service",
+        "actualTitle": "Missing Authentication on Protected Infrastructure Endpoints",
+        "matchReason": "While the expected finding specifically refers to the cloud metadata service lacking IMDSv2 authentication, the actual finding identifies the broader issue of missing authentication on protected infrastructure endpoints. The actual finding demonstrates that /api/projects, /api/deployments, and /dashboard endpoints return sensitive infrastructure data without authentication, which aligns with the concept of unauthenticated access to infrastructure services. This is a conceptual match in the authentication bypass pattern."
+      }
+    ],
+    "missed": [
+      {
+        "title": "Unauthenticated Cloud Metadata Service",
+        "severity": "critical",
+        "reason": "The metadata-service component at metadata-service:8080 providing IAM credentials without IMDSv2 tokens was not tested or discovered. While the expected SSRF attack chain depends on accessing this service via the SSRF vulnerability, the actual testing did not probe beyond localhost endpoints to reach the simulated cloud metadata service."
+      },
+      {
+        "title": "Sensitive Data in Terraform State",
+        "severity": "critical",
+        "reason": "The terraform-state-sim service at terraform-state-sim:9000 containing plaintext K8s service account tokens was not accessed. The expected finding requires chaining from metadata service credentials to access Terraform state, but this step was not attempted or successful in actual testing."
+      },
+      {
+        "title": "Overprivileged Kubernetes Service Account",
+        "severity": "critical",
+        "reason": "The kube-apiserver-sim at kube-apiserver-sim:6443 accepting overprivileged service account tokens without proper RBAC was not tested. This would require first obtaining the K8s SA token from Terraform state, which was not accessed in the actual testing."
+      },
+      {
+        "title": "etcd Missing Client Certificate Authentication",
+        "severity": "critical",
+        "reason": "The etcd-sim service at etcd-sim:2379 accepting unauthenticated v3 API requests was not tested. This requires chaining from the K8s API discovery of etcd endpoint, which was not reached in the actual testing."
+      },
+      {
+        "title": "Unencrypted Secrets in etcd",
+        "severity": "critical",
+        "reason": "Kubernetes secrets stored in etcd with only base64 encoding were not discovered or accessed. This step depends on accessing etcd directly, which was not achieved in the actual testing."
+      },
+      {
+        "title": "Privilege Escalation via Cloud Admin Service Account",
+        "severity": "critical",
+        "reason": "The secrets-service at secrets-service:5000 accepting cloud-admin SA token and returning production secrets/flag was not accessed. This is the final step in the expected attack chain that was not demonstrated in actual testing."
+      }
+    ],
+    "extra": [
+      {
+        "title": "Service Non-Responsiveness: HTTP Request Handler Failure",
+        "severity": "critical",
+        "location": "http://localhost:80 (port 80 main application interface)",
+        "assessment": "This appears to be a false positive or environmental issue. The finding claims the service on port 80 doesn't respond to HTTP requests, yet all subsequent tests successfully accessed endpoints on localhost:3055 and received JSON responses. The actual vulnerability testing succeeded completely with responses from the Flask application. This may indicate the tester initially targeted port 80 (which maps to port 3055) and misinterpreted connection issues, but the application is clearly functional based on all other successful SSRF and authentication tests. Likely a transient issue or incorrect routing configuration rather than an actual application vulnerability."
+      },
+      {
+        "title": "XXE Reconnaissance - No Vulnerabilities Detected",
+        "severity": "info",
+        "location": "CloudBreak Dashboard v4.2.0 all endpoints",
+        "assessment": "This is a valid negative finding confirming that XXE vulnerabilities are not present. The comprehensive testing showed the application strictly enforces JSON-only content types and no XML processing endpoints exist. This is not a vulnerability but rather confirmation of correct framework usage (JSON REST API). No action needed - this represents proper API design."
+      }
+    ],
+    "accuracy": 0.2857142857142857,
+    "recall": 0.25,
+    "precision": 0.5
+  },
+  "expectedVulnerabilities": 7,
+  "detectedVulnerabilities": 2
+}

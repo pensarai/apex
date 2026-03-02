@@ -1,0 +1,5 @@
+2025-11-07T18:09:20.602Z - [LOG] POC execution failed, deleting file: poc_missing_rate_limiting_brute_force.sh
+2025-11-07T18:11:28.462Z - [LOG] POC execution failed, deleting file: poc_horizontal_escalation_jwt_forgery.sh
+2025-11-07T18:12:51.281Z - [LOG] POC execution failed, deleting file: poc_jwt_missing_expiration.sh
+2025-11-07T18:13:06.261Z - [LOG] POC execution failed, deleting file: poc_jwt_missing_expiration_v2.sh
+2025-11-07T18:13:20.952Z - [LOG] POC execution failed, deleting file: poc_jwt_missing_expiration_v3.sh

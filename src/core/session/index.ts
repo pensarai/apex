@@ -8,6 +8,7 @@ import * as Storage from "../storage";
 import type { Message } from "../messages/types";
 import * as Messages from "../messages";
 import { RateLimiter } from "../services/rateLimiter";
+import { CredentialManager } from "../credentials";
 import {
   ToolsetStateSchema,
   type ToolsetState,
@@ -43,6 +44,9 @@ const AuthCredentialsObject = z.object({
   additionalFields: z.record(z.string(), z.string()).optional(),
   // API key auth
   apiKey: z.string().optional(),
+  // Credential identity metadata
+  role: z.string().optional(),
+  context: z.string().optional(),
   // Pre-existing tokens for verification
   tokens: z
     .object({
@@ -81,13 +85,59 @@ const OperatorSettingsObject = z.object({
 
 export type OperatorSettings = z.infer<typeof OperatorSettingsObject>;
 
+const EmailInboxConfigObject = z.discriminatedUnion("provider", [
+  z.object({
+    provider: z.literal("gmail"),
+    id: z.string(),
+    name: z.string(),
+    emailAddress: z.string(),
+    accessToken: z.string(),
+    refreshToken: z.string(),
+    clientId: z.string().optional(),
+    clientSecret: z.string().optional(),
+  }),
+  z.object({
+    provider: z.literal("outlook"),
+    id: z.string(),
+    name: z.string(),
+    emailAddress: z.string(),
+    accessToken: z.string(),
+    refreshToken: z.string(),
+    clientId: z.string().optional(),
+    clientSecret: z.string().optional(),
+  }),
+  z.object({
+    provider: z.literal("imap"),
+    id: z.string(),
+    name: z.string(),
+    emailAddress: z.string(),
+    imapHost: z.string(),
+    imapPort: z.number(),
+    username: z.string(),
+    password: z.string(),
+    tls: z.boolean(),
+  }),
+]);
+
+export type EmailInboxConfig = z.infer<typeof EmailInboxConfigObject>;
+
+const EmailIntegrationConfigObject = z.object({
+  inboxes: z.array(EmailInboxConfigObject),
+});
+
+export type EmailIntegrationConfig = z.infer<
+  typeof EmailIntegrationConfigObject
+>;
+
 const SessionConfigObject = z.object({
   offensiveHeaders: OffensiveHeadersConfigObject.optional(),
   sessionType: z.enum(["web-app"]).optional(),
   mode: z.enum(["auto", "driver", "operator"]).optional(),
   outcomeGuidance: z.string().optional(),
   scopeConstraints: ScopeConstraintsObject.optional(),
-  authCredentials: AuthCredentialsObject.optional(),
+  authCredentials: z
+    .union([AuthCredentialsObject, z.array(AuthCredentialsObject)])
+    .optional(),
   authenticationInstructions: z.string().optional(),
   requestsPerSecond: z.number().optional(),
   operatorSettings: OperatorSettingsObject.optional(),
@@ -101,6 +151,8 @@ const SessionConfigObject = z.object({
   enumerateSubdomains: z.boolean().optional(),
   /** Local codebase path for whitebox analysis (source code access) */
   cwd: z.string().optional(),
+  /** Email inboxes available to the agent for monitoring/reading email */
+  emailIntegration: EmailIntegrationConfigObject.optional(),
 });
 
 export type SessionConfig = z.infer<typeof SessionConfigObject>;
@@ -306,6 +358,7 @@ export const SessionInfoObject = z.object({
 
 export type SessionInfo = z.output<typeof SessionInfoObject> & {
   _rateLimiter?: RateLimiter;
+  credentialManager?: CredentialManager;
   tokensIn?: number;
   tokensOut?: number;
 };
@@ -335,6 +388,19 @@ export async function create(input: CreateInputProps) {
     requestsPerSecond: input.config?.requestsPerSecond,
   });
 
+  // Auto-create CredentialManager when authCredentials are provided.
+  // Secrets live only in memory — they are never serialized to disk.
+  let credentialManager: CredentialManager | undefined;
+  if (input.config?.authCredentials) {
+    credentialManager = new CredentialManager();
+    const creds = Array.isArray(input.config.authCredentials)
+      ? input.config.authCredentials
+      : [input.config.authCredentials];
+    for (const cred of creds) {
+      credentialManager.addFromAuthCredentials(cred);
+    }
+  }
+
   const result: SessionInfo = {
     id: id,
     version: getCurrentVersion(),
@@ -357,6 +423,7 @@ export async function create(input: CreateInputProps) {
         input.config?.outcomeGuidance || DEFAULT_OUTCOME_GUIDANCE,
     },
     _rateLimiter: rateLimiter,
+    credentialManager,
     rootPath,
     logsPath,
     pocsPath,
@@ -366,10 +433,9 @@ export async function create(input: CreateInputProps) {
 
   console.info("created session", result);
 
-  // Exclude _rateLimiter from serialization (it's a class instance with methods)
-  const { _rateLimiter, ...sessionData } = result;
+  // Exclude non-serializable fields (class instances with methods)
+  const { _rateLimiter, credentialManager: _cm, ...sessionData } = result;
   await Storage.write(["session", result.id], sessionData);
-  // await Storage.createDir(["executions", result.id]);
   await createExecution({ session: result });
   return result;
 }

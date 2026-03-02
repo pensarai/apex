@@ -1,0 +1,8 @@
+2025-11-06T19:38:08.760Z - [LOG] POC execution failed, deleting file: poc_websocket_auth_bypass_v2.sh
+2025-11-06T19:38:17.675Z - [LOG] POC execution failed, deleting file: poc_rce_process_execute_v2.sh
+2025-11-06T19:38:26.810Z - [LOG] POC execution failed, deleting file: poc_rce_process_execute_v3.sh
+2025-11-06T19:39:31.538Z - [LOG] POC execution failed, deleting file: poc_cswsh_origin_validation.sh
+2025-11-06T19:39:54.716Z - [LOG] POC execution failed, deleting file: poc_cswsh_origin_check_v2.sh
+2025-11-06T19:40:25.182Z - [LOG] POC execution failed, deleting file: poc_env_variable_exposure_rce_v2.sh
+2025-11-06T19:41:01.628Z - [LOG] POC execution failed, deleting file: poc_http_method_inconsistency_head_404.sh
+2025-11-06T19:41:54.430Z - [LOG] POC execution failed, deleting file: poc_api_keys_env_exposure.sh

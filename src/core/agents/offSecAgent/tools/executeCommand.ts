@@ -106,16 +106,64 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
 
         const child = spawn(shellCmd, shellArgs, {
           stdio: ["ignore", "pipe", "pipe"],
+          detached: process.platform !== "win32",
         });
 
         let stdout = "";
         let stderr = "";
         let killed = false;
+        let resolved = false;
 
-        const timeoutTimer = setTimeout(() => {
+        const safeResolve = (result: ExecuteCommandResult) => {
+          if (!resolved) {
+            resolved = true;
+            resolve(result);
+          }
+        };
+
+        const killProcess = () => {
+          if (killed) return;
           killed = true;
-          child.kill("SIGTERM");
-        }, timeout);
+
+          try {
+            // Kill the entire process group (negative PID) so subprocesses
+            // spawned by bash (nmap, gobuster, etc.) are also terminated.
+            if (child.pid && process.platform !== "win32") {
+              process.kill(-child.pid, "SIGTERM");
+            } else {
+              child.kill("SIGTERM");
+            }
+          } catch {
+            // Process may have already exited
+          }
+
+          // SIGKILL fallback: if SIGTERM doesn't work after 5 seconds,
+          // force-kill and resolve the promise so the agent doesn't hang.
+          setTimeout(() => {
+            try {
+              if (child.pid && process.platform !== "win32") {
+                process.kill(-child.pid, "SIGKILL");
+              } else {
+                child.kill("SIGKILL");
+              }
+            } catch {
+              // Process may have already exited
+            }
+
+            safeResolve({
+              success: false,
+              stdout:
+                stdout.length > 50000
+                  ? `${stdout.substring(0, 50000)}...\n\n(truncated)`
+                  : stdout || "(no output)",
+              stderr: stderr || "",
+              command,
+              error: "Command killed (did not exit after SIGTERM)",
+            });
+          }, 5000);
+        };
+
+        const timeoutTimer = setTimeout(killProcess, timeout);
 
         child.stdout.on("data", (data) => {
           stdout += data.toString();
@@ -127,7 +175,7 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
 
         child.on("close", (code) => {
           clearTimeout(timeoutTimer);
-          resolve({
+          safeResolve({
             success: code === 0 && !killed,
             stdout:
               stdout.length > 50000
@@ -145,7 +193,7 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
 
         child.on("error", (err) => {
           clearTimeout(timeoutTimer);
-          resolve({
+          safeResolve({
             success: false,
             error: err.message,
             stdout,
@@ -156,10 +204,7 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
 
         // Wire up abort signal
         if (ctx.abortSignal) {
-          const abortHandler = () => {
-            killed = true;
-            child.kill("SIGTERM");
-          };
+          const abortHandler = () => killProcess();
           ctx.abortSignal.addEventListener("abort", abortHandler, {
             once: true,
           });

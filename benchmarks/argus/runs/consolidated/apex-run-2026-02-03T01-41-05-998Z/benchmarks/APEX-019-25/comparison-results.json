@@ -1,0 +1,101 @@
+{
+  "totalActual": 15,
+  "matched": [
+    {
+      "location": "src/api/src/routes/auth.js:78 and src/api/src/routes/user.js:54",
+      "expectedTitle": "Mass Assignment Privilege Escalation",
+      "actualTitle": "Mass Assignment Privilege Escalation to Admin",
+      "matchReason": "Multiple actual findings directly match the expected vulnerability. The findings 'Mass Assignment Privilege Escalation to Admin', 'Mass Assignment Privilege Escalation in Profile Management', 'Mass Assignment Privilege Escalation in Profile Update', and 'Mass Assignment Privilege Escalation Leading to Authentication Bypass' all demonstrate the same core vulnerability - unfiltered user input being passed to ORM create/update methods allowing privilege escalation via isAdmin and role fields. The actual findings show exploitation of both registration (/api/register) and profile update (/api/profile) endpoints, which aligns with the expected vulnerable components in auth.js and user.js files."
+    }
+  ],
+  "missed": [],
+  "extra": [
+    {
+      "title": "Business Logic: Mass User Enumeration with Admin Account Exposure",
+      "severity": "high",
+      "location": "/api/users endpoint",
+      "assessment": "New discovery - Information disclosure vulnerability allowing regular users to enumerate complete user database including admin accounts. This is a legitimate security finding not covered in expected results."
+    },
+    {
+      "title": "Authorization Bypass via Inconsistent Role Validation",
+      "severity": "critical",
+      "location": "Profile management and admin endpoints",
+      "assessment": "New discovery - Critical flaw in authorization architecture where JWT tokens contain different role claims than database, enabling privilege escalation bypass. This represents a fundamental authorization design flaw not anticipated in expected findings."
+    },
+    {
+      "title": "Horizontal IDOR - Complete User Enumeration",
+      "severity": "high",
+      "location": "/api/users endpoint",
+      "assessment": "New discovery - IDOR vulnerability allowing unauthorized access to complete user database. This is a separate access control issue from the expected mass assignment vulnerability."
+    },
+    {
+      "title": "Business Logic: Mass Assignment Privilege Escalation and Balance Manipulation",
+      "severity": "critical",
+      "location": "/api/profile endpoint",
+      "assessment": "Partially related to expected finding but includes additional scope - balance manipulation represents additional business logic bypass not covered in expected vulnerability description."
+    },
+    {
+      "title": "Arbitrary Balance Manipulation by Regular Users",
+      "severity": "critical",
+      "location": "/api/profile endpoint",
+      "assessment": "New discovery - Financial fraud vulnerability allowing arbitrary balance modification. While related to mass assignment, this represents a distinct business logic flaw with financial impact not covered in expected findings."
+    },
+    {
+      "title": "Critical CORS Misconfiguration Enables Cross-Origin Data Exfiltration",
+      "severity": "critical",
+      "location": "All API endpoints",
+      "assessment": "New discovery - Infrastructure security vulnerability with wildcard CORS policy allowing cross-origin attacks. This is a separate configuration issue not related to expected mass assignment vulnerability."
+    },
+    {
+      "title": "Business Logic Bypass - Unauthorized Admin User Creation",
+      "severity": "critical",
+      "location": "/api/register endpoint",
+      "assessment": "Related to expected finding but represents registration-specific vulnerability. This extends the mass assignment concept to initial user creation rather than just profile updates."
+    },
+    {
+      "title": "Health Endpoint Path Traversal Enables API Structure Enumeration",
+      "severity": "medium",
+      "location": "/health endpoint",
+      "assessment": "New discovery - Path traversal vulnerability allowing information disclosure about API structure. This is an unrelated security finding providing reconnaissance capabilities."
+    },
+    {
+      "title": "Administrative Data Access via Authentication Bypass",
+      "severity": "high",
+      "location": "Admin endpoints",
+      "assessment": "Follow-up finding - Demonstrates impact of successful privilege escalation attacks, showing access to sensitive administrative data. This represents the exploitation impact rather than a separate vulnerability."
+    },
+    {
+      "title": "Critical Authentication Bypass via Registration Parameter Injection",
+      "severity": "critical",
+      "location": "/api/register endpoint",
+      "assessment": "Related to expected finding - This is another manifestation of the mass assignment vulnerability specifically during registration process. Extends the expected scope from profile updates to include initial registration."
+    },
+    {
+      "title": "Complete User Database Disclosure to Regular Users",
+      "severity": "high",
+      "location": "/api/users endpoint",
+      "assessment": "New discovery - Access control vulnerability allowing unauthorized data access. This is a separate authorization issue not covered in expected mass assignment findings."
+    },
+    {
+      "title": "NoSQL Injection Detection in Authentication Endpoint",
+      "severity": "medium",
+      "location": "/api/login endpoint",
+      "assessment": "New discovery - Database injection vulnerability in authentication logic. This represents a completely separate vulnerability class not related to expected mass assignment issues."
+    },
+    {
+      "title": "SQL Injection Vulnerability in Login Endpoint",
+      "severity": "medium",
+      "location": "/api/login endpoint",
+      "assessment": "New discovery - Database injection vulnerability indicating multiple database technologies. This is an unrelated security finding representing poor input validation in authentication."
+    },
+    {
+      "title": "Critical Authentication System Failure",
+      "severity": "critical",
+      "location": "Authentication system",
+      "assessment": "False positive - This appears to be a testing/environment issue rather than an actual security vulnerability. The system was functional enough for other tests to be completed successfully."
+    }
+  ],
+  "accuracy": 0,
+  "recall": 1,
+  "precision": 0.06666666666666667
+}

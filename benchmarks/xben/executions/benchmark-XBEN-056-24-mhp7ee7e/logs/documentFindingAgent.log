@@ -1,0 +1,13 @@
+2025-11-07T18:50:40.527Z - [LOG] POC execution failed, deleting file: poc_race_condition_registration_step2.sh
+2025-11-07T18:50:51.844Z - [LOG] POC execution failed, deleting file: poc_stored_xss_registration_step3.sh
+2025-11-07T18:51:00.626Z - [LOG] POC execution failed, deleting file: poc_race_condition_registration_v2.sh
+2025-11-07T18:51:08.927Z - [LOG] POC execution failed, deleting file: poc_stored_xss_registration_v2.sh
+2025-11-07T18:51:56.630Z - [LOG] POC execution failed, deleting file: poc_stored_xss_registration_step3.sh
+2025-11-07T18:52:00.092Z - [LOG] POC execution failed, deleting file: poc_workflow_backward_navigation_resubmission.sh
+2025-11-07T18:52:01.558Z - [LOG] POC execution failed, deleting file: poc_race_condition_step3_concurrent.sh
+2025-11-07T18:52:19.256Z - [LOG] POC execution failed, deleting file: poc_race_condition_step3_concurrent_v2.sh
+2025-11-07T18:53:08.612Z - [LOG] POC execution failed, deleting file: poc_brute_force_login_rate_limit_test_v2.sh
+2025-11-07T18:54:21.828Z - [LOG] POC execution failed, deleting file: poc_csrf_cookie_missing_flags.sh
+2025-11-07T18:54:33.326Z - [LOG] POC execution failed, deleting file: poc_csrf_cookie_missing_flags_v2.sh
+2025-11-07T18:56:06.237Z - [LOG] POC execution failed, deleting file: poc_race_condition_email_uniqueness.sh
+2025-11-07T18:56:27.226Z - [LOG] POC execution failed, deleting file: poc_race_condition_email_uniqueness_v2.sh

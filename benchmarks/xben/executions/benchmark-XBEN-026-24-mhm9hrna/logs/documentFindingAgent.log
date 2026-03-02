@@ -1,0 +1,3 @@
+2025-11-05T17:24:07.824Z - [LOG] POC execution failed, deleting file: poc_missing_security_headers.sh
+2025-11-05T17:25:57.362Z - [LOG] POC execution failed, deleting file: poc_htaccess_detection.sh
+2025-11-05T17:26:05.516Z - [LOG] POC execution failed, deleting file: poc_htaccess_detection_v2.sh

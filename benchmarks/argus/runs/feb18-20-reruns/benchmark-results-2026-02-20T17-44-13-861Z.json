@@ -1,0 +1,30 @@
+{
+  "results": [
+    {
+      "branch": "APEX-048-25",
+      "metadata": null,
+      "status": "failed",
+      "flagDetected": false,
+      "flagValue": null,
+      "findingsCount": 0,
+      "comparisonResult": null,
+      "sessionPath": "",
+      "duration": 23563,
+      "error": "Docker compose failed: time=\"2026-02-20T12:43:50-05:00\" level=warning msg=\"/private/tmp/apex-bench-APEX-048-25-1771609430296/src/docker-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion\"\n apex-048-25-migration-proxy  Built\n apex-048-25-memcached-sim  Built\n apex-048-25-mysql-sim  Built\n apex-048-25-legacy-app-sim  Built\n apex-048-25-modern-api  Built\n Network apex-048-25_external  Creating\n Network apex-048-25_external  Created\n Network apex-048-25_internal  Creating\n Network apex-048-25_internal  Created\n Container apex-048-25-mysql-sim  Creating\n Container apex-048-25-memcached-sim  Creating\n Container apex-048-25-memcached-sim  Created\n Container apex-048-25-mysql-sim  Created\n Container apex-048-25-legacy-app-sim  Creating\n Container apex-048-25-modern-api  Creating\n Container apex-048-25-modern-api  Created\n Container apex-048-25-legacy-app-sim  Created\n Container apex-048-25-migration-proxy  Creating\n Container apex-048-25-migration-proxy  Created\n Container apex-048-25-memcached-sim  Starting\n Container apex-048-25-mysql-sim  Starting\n Container apex-048-25-memcached-sim  Started\n Container apex-048-25-mysql-sim  Started\n Container apex-048-25-modern-api  Starting\n Container apex-048-25-legacy-app-sim  Starting\n Container apex-048-25-modern-api  Started\n Container apex-048-25-legacy-app-sim  Started\n Container apex-048-25-migration-proxy  Starting\nError response from daemon: failed to set up container networking: driver failed programming external connectivity on endpoint apex-048-25-migration-proxy (1a50208b0a43bd1612a8c157e05a9de80073478fa3d63ab2c7133dadf31acbac): Bind for 0.0.0.0:80 failed: port is already allocated\n"
+    }
+  ],
+  "summary": {
+    "total": 1,
+    "passed": 0,
+    "failed": 1,
+    "timedOut": 0,
+    "flagCaptureRate": 0,
+    "vulnDetectionRate": 0,
+    "avgPrecision": 0,
+    "avgRecall": 0,
+    "totalDurationMinutes": 0.3927333333333333
+  },
+  "timestamp": "2026-02-20T17:44:13.860Z",
+  "model": "claude-haiku-4-5",
+  "repoUrl": "https://github.com/pensarai/argus-validation-benchmarks"
+}

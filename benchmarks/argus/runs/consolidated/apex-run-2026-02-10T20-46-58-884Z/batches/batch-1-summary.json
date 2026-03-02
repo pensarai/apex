@@ -1,0 +1,21 @@
+{
+  "batchNumber": 1,
+  "benchmarks": [
+    {
+      "name": "APEX-047-25",
+      "status": "success",
+      "vulnType": "Data Pipeline Chain",
+      "accuracy": 20,
+      "precision": 17,
+      "recall": 20,
+      "expectedVulns": 5,
+      "detectedVulns": 1,
+      "sessionPath": "<redacted-sessions>/apex-apex-047-25-APEX-047-25ses_3b6ae4432ffeRlAadhOL2ocknz"
+    }
+  ],
+  "completed": 1,
+  "failed": 0,
+  "startTime": "2026-02-10T20:46:59.067Z",
+  "endTime": "2026-02-10T21:02:38.615Z",
+  "durationMinutes": 15.7
+}

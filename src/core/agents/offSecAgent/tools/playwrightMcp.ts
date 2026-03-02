@@ -12,6 +12,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { tool } from "ai";
 import { z } from "zod";
+import { createRequire } from "module";
 import { writeFileSync, mkdirSync, existsSync } from "fs";
 import { join, dirname } from "path";
 import type { Logger } from "../../../logger";
@@ -141,148 +142,323 @@ const BrowserGetCookiesInput = z.object({
     .describe("Why you need to extract cookies from the browser"),
 });
 
-// MCP Client singleton management
-let mcpClient: Client | null = null;
-let mcpTransport: StdioClientTransport | null = null;
-let isConnecting = false;
-let connectionPromise: Promise<Client> | null = null;
-let configuredHeadless = true;
+const MCP_CONNECT_TIMEOUT_MS = 30_000;
+const MCP_TOOL_CALL_TIMEOUT_MS = 60_000;
 
 /**
- * Configure headless mode for the next browser session.
- * Call this BEFORE any browser tools are used.
+ * Race a promise against a timeout. Rejects with a descriptive error
+ * if the timeout fires first.
+ */
+function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  message: string,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+// ---------------------------------------------------------------------------
+// Module-level default headless setting (used when not explicitly provided)
+// ---------------------------------------------------------------------------
+
+let defaultHeadless = true;
+
+/**
+ * Configure the default headless mode for new browser sessions.
+ * Call this BEFORE any browser tools are created.
  * Default is headless=true for normal operation.
  */
 export function setHeadlessMode(headless: boolean): void {
-  configuredHeadless = headless;
+  defaultHeadless = headless;
 }
 
 /**
- * Initialize or return existing MCP client connection
- * Handles race conditions when multiple tools try to connect simultaneously
+ * Isolated MCP browser session.
+ *
+ * Each instance owns its own Playwright MCP child-process and browser.
+ * Create one per agent so concurrent agents never collide on the same
+ * browser context.
+ *
+ * Incorporates all robustness features: connection timeouts, force-kill
+ * of stuck processes, dead-transport detection, and per-call abort
+ * signal + timeout support.
  */
-export async function initializeMcpClient(): Promise<Client> {
-  // If already connected, return existing client
-  if (mcpClient) {
-    return mcpClient;
+export class PlaywrightMcpSession {
+  private mcpClient: Client | null = null;
+  private mcpTransport: StdioClientTransport | null = null;
+  private mcpProcess: import("child_process").ChildProcess | null = null;
+  private connectionPromise: Promise<Client> | null = null;
+  private disconnecting = false;
+  private readonly headless: boolean;
+
+  constructor(headless = true) {
+    this.headless = headless;
   }
 
-  // If connection is in progress, wait for it
-  if (isConnecting && connectionPromise) {
-    return connectionPromise;
+  /** Immediately reset all instance state. Synchronous — no I/O. */
+  private resetState(): void {
+    this.mcpClient = null;
+    this.mcpTransport = null;
+    this.mcpProcess = null;
+    this.connectionPromise = null;
+    this.disconnecting = false;
   }
 
-  // Start new connection
-  isConnecting = true;
-  connectionPromise = (async () => {
+  /**
+   * Force-kill the MCP child process. Sends SIGKILL directly — no graceful
+   * shutdown, no waiting. Used during disconnect and error recovery so the
+   * agent is never blocked on a hung Playwright process.
+   */
+  private forceKillProcess(): void {
+    const proc = this.mcpProcess;
+    if (!proc || proc.exitCode !== null) return;
+
     try {
-      const args = ["@playwright/mcp@latest", "--isolated"];
-      if (configuredHeadless) {
-        args.push("--headless");
+      if (proc.pid) {
+        try {
+          process.kill(-proc.pid, "SIGKILL");
+        } catch {
+          proc.kill("SIGKILL");
+        }
+      } else {
+        proc.kill("SIGKILL");
       }
+    } catch {
+      // Already dead — fine
+    }
+  }
 
-      // Disable Chromium sandbox when running as root (e.g., in Docker/ECS containers).
-      // Chrome refuses to run as root with sandboxing enabled.
-      if (process.getuid?.() === 0) {
-        args.push("--no-sandbox");
+  /**
+   * Initialize or return existing MCP client connection for this session.
+   * Handles race conditions when multiple tools within the same agent
+   * try to connect simultaneously. Detects dead transports and
+   * auto-reconnects.
+   */
+  async initialize(): Promise<Client> {
+    if (this.mcpClient) {
+      if ((this.mcpClient as unknown as { transport?: unknown }).transport) {
+        return this.mcpClient;
       }
+      this.forceKillProcess();
+      this.resetState();
+    }
 
-      const transport = new StdioClientTransport({
-        command: "npx",
-        args,
-        stderr: "pipe",
-      });
+    if (this.connectionPromise) {
+      return this.connectionPromise;
+    }
 
-      const client = new Client({
-        name: "apex-browser-agent",
-        version: "1.0.0",
-      });
+    this.connectionPromise = (async () => {
+      try {
+        const require_ = createRequire(import.meta.url);
+        const mcpPkgJsonPath = require_.resolve("@playwright/mcp/package.json");
+        const cliPath = join(dirname(mcpPkgJsonPath), "cli.js");
 
-      await client.connect(transport);
+        const args = [cliPath, "--isolated"];
+        if (this.headless) {
+          args.push("--headless");
+        }
 
-      mcpClient = client;
-      mcpTransport = transport;
+        // Disable Chromium sandbox when running as root (e.g., in Docker/ECS containers).
+        if (process.getuid?.() === 0) {
+          args.push("--no-sandbox");
+        }
 
-      return client;
+        const transport = new StdioClientTransport({
+          command: "node",
+          args,
+          stderr: "pipe",
+        });
+
+        const client = new Client({
+          name: "apex-browser-agent",
+          version: "1.0.0",
+        });
+
+        // Hook into transport to capture the child process reference
+        const origStart = transport.start.bind(transport);
+        transport.start = async () => {
+          await origStart();
+          this.mcpProcess =
+            (
+              transport as unknown as {
+                _process?: import("child_process").ChildProcess;
+              }
+            )._process ?? null;
+        };
+
+        await withTimeout(
+          client.connect(transport),
+          MCP_CONNECT_TIMEOUT_MS,
+          "MCP client connection timed out",
+        );
+
+        this.mcpClient = client;
+        this.mcpTransport = transport;
+
+        client.onclose = () => {
+          if (this.mcpClient === client) {
+            this.resetState();
+          }
+        };
+
+        return client;
+      } catch (error) {
+        this.forceKillProcess();
+        this.resetState();
+        throw error;
+      }
+    })();
+
+    return this.connectionPromise;
+  }
+
+  /**
+   * Disconnect and cleanup this session's MCP client and browser.
+   *
+   * Designed to NEVER hang: resets state synchronously, then kills
+   * the transport and process. Does NOT call browser_close (which
+   * could block for 60 s if the server is hung).
+   */
+  async disconnect(): Promise<void> {
+    if (this.disconnecting) return;
+    this.disconnecting = true;
+
+    const transport = this.mcpTransport;
+    const client = this.mcpClient;
+
+    this.resetState();
+    this.disconnecting = true; // re-set because resetState clears it
+
+    if (client) {
+      try {
+        await client.close();
+      } catch {
+        // Ignore — may already be closed
+      }
+    }
+
+    if (transport) {
+      try {
+        await transport.close();
+      } catch {
+        // Ignore — may already be closed
+      }
+    }
+
+    this.forceKillProcess();
+    this.disconnecting = false;
+  }
+
+  /** Check if this session's client is currently connected. */
+  isConnected(): boolean {
+    return this.mcpClient !== null;
+  }
+
+  /**
+   * Call a tool on this session's MCP server and extract the result.
+   *
+   * Each call is guarded by:
+   * 1. The SDK's native abort signal (properly cancels the request)
+   * 2. An outer timeout (in case the SDK's cancellation gets stuck)
+   * 3. Auto-reconnection on transport errors
+   */
+  async callTool(
+    toolName: string,
+    args: Record<string, unknown>,
+    abortSignal?: AbortSignal,
+  ): Promise<unknown> {
+    if (abortSignal?.aborted) {
+      throw new Error("Browser tool call aborted");
+    }
+
+    let client: Client;
+    try {
+      client = await withTimeout(
+        this.initialize(),
+        MCP_CONNECT_TIMEOUT_MS,
+        "MCP client initialization timed out",
+      );
     } catch (error) {
-      isConnecting = false;
-      connectionPromise = null;
+      this.forceKillProcess();
+      this.resetState();
       throw error;
     }
-  })();
 
-  return connectionPromise;
-}
+    const callController = new AbortController();
+    let abortCleanup: (() => void) | undefined;
 
-/**
- * Disconnect and cleanup MCP client
- */
-export async function disconnectMcpClient(): Promise<void> {
-  if (mcpClient) {
-    try {
-      await mcpClient.callTool({ name: "browser_close", arguments: {} });
-    } catch {
-      // Ignore cleanup errors
-    }
-  }
-  if (mcpTransport) {
-    try {
-      await mcpTransport.close();
-    } catch {
-      // Ignore close errors
-    }
-  }
-  mcpClient = null;
-  mcpTransport = null;
-  isConnecting = false;
-  connectionPromise = null;
-}
-
-/**
- * Check if client is currently connected
- */
-export function isClientConnected(): boolean {
-  return mcpClient !== null;
-}
-
-/**
- * Call a tool on the MCP server and extract the result
- */
-async function callMcpTool(
-  toolName: string,
-  args: Record<string, unknown>,
-): Promise<unknown> {
-  const client = await initializeMcpClient();
-  const result = await client.callTool({
-    name: toolName,
-    arguments: args,
-  });
-
-  // Extract content from the result
-  if (result && "content" in result && Array.isArray(result.content)) {
-    // Check for image content first (screenshots)
-    const imageContent = result.content.find(
-      (c: { type: string }) => c.type === "image",
-    );
-    if (imageContent && "data" in imageContent) {
-      return { type: "image", data: imageContent.data };
-    }
-
-    // Then check for text content
-    const textContent = result.content.find(
-      (c: { type: string }) => c.type === "text",
-    );
-    if (textContent && "text" in textContent) {
-      try {
-        return JSON.parse(textContent.text as string);
-      } catch {
-        return textContent.text;
+    if (abortSignal) {
+      const handler = () => callController.abort(abortSignal.reason);
+      if (abortSignal.aborted) {
+        callController.abort(abortSignal.reason);
+      } else {
+        abortSignal.addEventListener("abort", handler, { once: true });
+        abortCleanup = () => abortSignal.removeEventListener("abort", handler);
       }
     }
-    return result.content;
-  }
 
-  return result;
+    const timeoutTimer = setTimeout(
+      () =>
+        callController.abort(
+          new Error(
+            `Browser tool "${toolName}" timed out after ${MCP_TOOL_CALL_TIMEOUT_MS / 1000}s`,
+          ),
+        ),
+      MCP_TOOL_CALL_TIMEOUT_MS,
+    );
+
+    try {
+      const result = await client.callTool(
+        { name: toolName, arguments: args },
+        undefined,
+        { signal: callController.signal },
+      );
+
+      if (result && "content" in result && Array.isArray(result.content)) {
+        const imageContent = result.content.find(
+          (c: { type: string }) => c.type === "image",
+        );
+        if (imageContent && "data" in imageContent) {
+          return { type: "image", data: imageContent.data };
+        }
+
+        const textContent = result.content.find(
+          (c: { type: string }) => c.type === "text",
+        );
+        if (textContent && "text" in textContent) {
+          try {
+            return JSON.parse(textContent.text as string);
+          } catch {
+            return textContent.text;
+          }
+        }
+        return result.content;
+      }
+
+      return result;
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      const isConnectionDead =
+        msg.includes("Not connected") ||
+        msg.includes("Connection closed") ||
+        msg.includes("EPIPE") ||
+        msg.includes("write after end");
+
+      if (isConnectionDead && this.mcpClient === client) {
+        this.forceKillProcess();
+        this.resetState();
+      }
+
+      throw error;
+    } finally {
+      clearTimeout(timeoutTimer);
+      abortCleanup?.();
+    }
+  }
 }
 
 // Mode-specific descriptions
@@ -463,13 +639,17 @@ Use this to check for:
 };
 
 /**
- * Create browser automation tools
+ * Create browser automation tools backed by a **dedicated** Playwright MCP
+ * session. Every invocation spins up its own MCP child-process / browser so
+ * that concurrent agents never share a browser context.
  *
  * @param targetUrl - Base target URL for context in descriptions
  * @param evidenceDir - Directory to save screenshots
  * @param mode - "pentest" for automated pentesting, "operator" for user-driven reconnaissance, "auth" for authentication flows
  * @param logger - Optional logger for error reporting
  * @param abortSignal - Optional abort signal for cleanup
+ * @param headless - Override headless mode for this session (defaults to the
+ *   value set by {@link setHeadlessMode}, which itself defaults to `true`)
  */
 export function createBrowserTools(
   targetUrl: string,
@@ -477,10 +657,12 @@ export function createBrowserTools(
   mode: BrowserToolMode = "pentest",
   logger?: Logger,
   abortSignal?: AbortSignal,
+  headless?: boolean,
 ) {
-  // Setup abort handler for cleanup
+  const session = new PlaywrightMcpSession(headless ?? defaultHeadless);
+
   abortSignal?.addEventListener("abort", () => {
-    disconnectMcpClient().catch(() => {});
+    session.disconnect().catch(() => {});
   });
 
   // Ensure evidence directory exists
@@ -503,7 +685,11 @@ export function createBrowserTools(
       toolCallDescription,
     }): Promise<BrowserNavigateResult> => {
       try {
-        const result = await callMcpTool("browser_navigate", { url });
+        const result = await session.callTool(
+          "browser_navigate",
+          { url },
+          abortSignal,
+        );
         return {
           success: true,
           url,
@@ -525,10 +711,35 @@ export function createBrowserTools(
       toolCallDescription,
     }): Promise<BrowserScreenshotResult> => {
       try {
-        const result = await callMcpTool("browser_screenshot", {});
+        const result = await session.callTool(
+          "browser_take_screenshot",
+          {},
+          abortSignal,
+        );
 
-        // Handle image data from MCP response
-        if (result && typeof result === "object" && "data" in result) {
+        // Extract base64 image data from various response formats
+        let base64Data: string | undefined;
+
+        if (result && typeof result === "object") {
+          const r = result as Record<string, unknown>;
+
+          // Format 1: { type: "image", data: "<base64>" } — from callTool's image extraction
+          if ("data" in r && typeof r.data === "string") {
+            base64Data = r.data;
+          }
+
+          // Format 2: Raw MCP content array — [{type:"image", data:"...", mimeType:"..."}]
+          if (!base64Data && Array.isArray(result)) {
+            const imgItem = (result as Array<Record<string, unknown>>).find(
+              (c) => c.type === "image" && typeof c.data === "string",
+            );
+            if (imgItem) {
+              base64Data = imgItem.data as string;
+            }
+          }
+        }
+
+        if (base64Data) {
           const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
           const screenshotFilename = `${filename}_${timestamp}.png`;
           const screenshotPath = join(evidenceDir, screenshotFilename);
@@ -536,10 +747,7 @@ export function createBrowserTools(
           if (!existsSync(dir)) {
             mkdirSync(dir, { recursive: true });
           }
-          writeFileSync(
-            screenshotPath,
-            Buffer.from((result as { data: string }).data, "base64"),
-          );
+          writeFileSync(screenshotPath, Buffer.from(base64Data, "base64"));
           return {
             success: true,
             path: screenshotPath,
@@ -547,7 +755,19 @@ export function createBrowserTools(
           };
         }
 
-        return { success: false, error: "No screenshot data returned" };
+        // Log the actual response shape to aid debugging
+        const resultShape =
+          result === null
+            ? "null"
+            : Array.isArray(result)
+              ? `array(${(result as unknown[]).length})`
+              : typeof result === "object"
+                ? `object(${Object.keys(result as Record<string, unknown>).join(",")})`
+                : typeof result;
+        return {
+          success: false,
+          error: `No screenshot data returned (response type: ${resultShape})`,
+        };
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         logger?.error(`browser_screenshot failed: ${message}`);
@@ -572,7 +792,11 @@ Example workflow:
       toolCallDescription,
     }): Promise<{ success: boolean; snapshot?: string; error?: string }> => {
       try {
-        const result = await callMcpTool("browser_snapshot", {});
+        const result = await session.callTool(
+          "browser_snapshot",
+          {},
+          abortSignal,
+        );
         return {
           success: true,
           snapshot:
@@ -603,7 +827,11 @@ Example workflow:
         if (ref) {
           args.ref = ref;
         }
-        const result = await callMcpTool("browser_click", args);
+        const result = await session.callTool(
+          "browser_click",
+          args,
+          abortSignal,
+        );
         return { success: true, element, result };
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
@@ -630,7 +858,11 @@ Example workflow:
         if (ref) {
           args.ref = ref;
         }
-        const result = await callMcpTool("browser_type", args);
+        const result = await session.callTool(
+          "browser_type",
+          args,
+          abortSignal,
+        );
         return { success: true, element, result };
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
@@ -648,9 +880,19 @@ Example workflow:
       toolCallDescription,
     }): Promise<BrowserEvaluateResult> => {
       try {
-        const result = await callMcpTool("browser_evaluate", {
-          expression: script,
-        });
+        // Playwright MCP's browser_evaluate expects a `function` param with a
+        // function expression like `() => document.cookie`. Wrap raw expressions
+        // that aren't already function-shaped.
+        const isFunction =
+          /^\s*(async\s+)?\(/.test(script) ||
+          /^\s*(async\s+)?function\s*\(/.test(script);
+        const fnScript = isFunction ? script : `() => (${script})`;
+
+        const result = await session.callTool(
+          "browser_evaluate",
+          { function: fnScript },
+          abortSignal,
+        );
         return { success: true, script, result };
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
@@ -665,7 +907,11 @@ Example workflow:
     inputSchema: BrowserConsoleInput,
     execute: async ({ toolCallDescription }): Promise<BrowserConsoleResult> => {
       try {
-        const result = await callMcpTool("browser_console_messages", {});
+        const result = await session.callTool(
+          "browser_console_messages",
+          {},
+          abortSignal,
+        );
 
         // Parse console messages if they're in JSON format
         let messages: Array<{ type: string; text: string }> | undefined;
@@ -717,13 +963,19 @@ The returned cookies can be formatted as a Cookie header for use with http_reque
       error?: string;
     }> => {
       try {
-        const args: Record<string, unknown> = {};
-        if (urls && urls.length > 0) {
-          args.urls = urls;
-        }
-        const result = await callMcpTool("browser_get_cookies", args);
+        // Playwright MCP doesn't expose a dedicated cookie tool, so we use
+        // browser_run_code to call the Playwright context API directly.
+        // This gets ALL cookies including httpOnly ones.
+        const urlFilter =
+          urls && urls.length > 0 ? JSON.stringify(urls) : "undefined";
+        const code = `async (page) => { const cookies = await page.context().cookies(${urlFilter === "undefined" ? "" : urlFilter}); return cookies; }`;
 
-        // Parse cookies from result
+        const result = await session.callTool(
+          "browser_run_code",
+          { code },
+          abortSignal,
+        );
+
         let cookies: Array<{
           name: string;
           value: string;
@@ -732,14 +984,33 @@ The returned cookies can be formatted as a Cookie header for use with http_reque
           httpOnly: boolean;
           secure: boolean;
         }> = [];
-        if (Array.isArray(result)) {
-          cookies = result as typeof cookies;
-        } else if (typeof result === "string") {
+
+        if (typeof result === "string") {
+          // Playwright MCP wraps results as "### Result\n<value>\n\n### Ran Playwright code\n...".
+          // Strip the prefix and any trailing Playwright output sections.
+          const stripped = result
+            .replace(/^###\s*Result\s*\n?/, "")
+            .replace(/\n\n###[\s\S]*$/, "")
+            .trim();
           try {
-            cookies = JSON.parse(result);
+            const parsed = JSON.parse(stripped);
+            if (Array.isArray(parsed)) {
+              cookies = parsed;
+            } else if (typeof parsed === "string") {
+              cookies = JSON.parse(parsed);
+            }
           } catch {
-            // Result might be in a different format
+            const jsonMatch = stripped.match(/\[[\s\S]*\]/);
+            if (jsonMatch) {
+              try {
+                cookies = JSON.parse(jsonMatch[0]);
+              } catch {
+                // Could not parse
+              }
+            }
           }
+        } else if (Array.isArray(result)) {
+          cookies = result as typeof cookies;
         } else if (
           result &&
           typeof result === "object" &&
@@ -748,7 +1019,6 @@ The returned cookies can be formatted as a Cookie header for use with http_reque
           cookies = (result as { cookies: typeof cookies }).cookies;
         }
 
-        // Build Cookie header string
         const cookieHeader = cookies
           .map((c) => `${c.name}=${c.value}`)
           .join("; ");

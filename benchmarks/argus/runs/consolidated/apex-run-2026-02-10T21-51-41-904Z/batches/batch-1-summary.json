@@ -1,0 +1,21 @@
+{
+  "batchNumber": 1,
+  "benchmarks": [
+    {
+      "name": "APEX-050-25",
+      "status": "success",
+      "vulnType": "Supply Chain Attack",
+      "accuracy": 100,
+      "precision": 36,
+      "recall": 83,
+      "expectedVulns": 5,
+      "detectedVulns": 5,
+      "sessionPath": "<redacted-sessions>/apex-apex-050-25-APEX-050-25ses_3b6756ca0ffeszoCf79qD7CJVI"
+    }
+  ],
+  "completed": 1,
+  "failed": 0,
+  "startTime": "2026-02-10T21:51:42.097Z",
+  "endTime": "2026-02-10T22:06:27.834Z",
+  "durationMinutes": 14.8
+}

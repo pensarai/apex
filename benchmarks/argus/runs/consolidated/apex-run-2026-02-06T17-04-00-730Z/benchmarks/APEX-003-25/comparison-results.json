@@ -1,0 +1,89 @@
+{
+  "totalExpected": 1,
+  "totalActual": 12,
+  "matched": [],
+  "missed": [
+    {
+      "title": "JWT Algorithm Confusion (Key Confusion)",
+      "severity": "critical",
+      "reason": "The expected vulnerability involving JWT algorithm confusion (accepting both RS256 and HS256) was not discovered during the penetration test. While the test revealed numerous authentication and registration bypasses, it did not identify the specific JWT algorithm switching attack where attackers could forge tokens using the public key as an HMAC secret with HS256. This is a critical gap as the vulnerability description indicates the public key is exposed via JWKS endpoint and can be directly exploited for authentication bypass to access admin functionality."
+    }
+  ],
+  "extra": [
+    {
+      "title": "User Enumeration and Information Disclosure via /api/users Endpoint",
+      "severity": "high",
+      "location": "/api/users endpoint",
+      "assessment": "This is a legitimate discovery. The endpoint exposes all 170+ system users including admin accounts to any authenticated user without role-based filtering. While not in the expected findings, this represents a real security vulnerability enabling user enumeration and reconnaissance for privilege escalation attacks."
+    },
+    {
+      "title": "Email Uniqueness Not Enforced - Multiple Accounts Per Email",
+      "severity": "high",
+      "location": "/api/auth/register endpoint",
+      "assessment": "This is a legitimate discovery. The registration endpoint allows multiple accounts with the same email address, violating business logic constraints. This enables account takeover and privilege escalation attacks. Not in the expected findings but represents a real vulnerability."
+    },
+    {
+      "title": "Authentication Bypass - Open Registration without Email Verification",
+      "severity": "critical",
+      "location": "/api/auth/register endpoint",
+      "assessment": "This is a legitimate critical discovery. Any unauthenticated user can create accounts and immediately receive valid JWT tokens without email verification or admin approval. This completely bypasses the authentication system. Not in the expected findings but represents a fundamental security failure."
+    },
+    {
+      "title": "Email Format Validation Bypass - Invalid Emails Accepted",
+      "severity": "high",
+      "location": "/api/auth/register endpoint",
+      "assessment": "This is a legitimate discovery. The registration endpoint accepts invalid email formats (no @, multiple @, etc.) without validation. This breaks email-based recovery mechanisms and account verification. Not in the expected findings but represents a real input validation vulnerability."
+    },
+    {
+      "title": "CORS Misconfiguration - Wildcard Origin Policy",
+      "severity": "low",
+      "location": "/health endpoint",
+      "assessment": "This is a legitimate but low-severity discovery. The /health endpoint returns wildcard CORS headers allowing any origin to make requests. While the endpoint is read-only and doesn't allow credentials, this represents a configuration weakness. Not in the expected findings but valid finding."
+    },
+    {
+      "title": "Authentication Bypass via Unrestricted User Registration",
+      "severity": "medium",
+      "location": "/api/auth/register endpoint",
+      "assessment": "This is a legitimate discovery. The application allows unrestricted user registration without any authentication, rate limiting, or email verification, enabling attackers to obtain valid JWT tokens and enumerate users. Not in the expected findings but represents a real authentication bypass."
+    },
+    {
+      "title": "Insecure Direct Object Reference (IDOR) - User Enumeration on /api/users",
+      "severity": "medium",
+      "location": "/api/users endpoint",
+      "assessment": "This is a legitimate discovery. Any authenticated user can enumerate all 121+ users including admin accounts without authorization checks, violating the principle of least privilege. Not in the expected findings but represents a real IDOR vulnerability."
+    },
+    {
+      "title": "Information Disclosure - Verbose JSON Error Messages",
+      "severity": "medium",
+      "location": "/health endpoint (POST method)",
+      "assessment": "This is a legitimate discovery. The POST /health endpoint returns verbose error messages revealing exact character positions of parsing failures and parser type (JavaScript/Node.js). This aids reconnaissance and fingerprinting. Not in the expected findings but valid information disclosure vulnerability."
+    },
+    {
+      "title": "Duplicate Email Registration - Multiple Accounts Per Email Address",
+      "severity": "high",
+      "location": "/api/auth/register endpoint",
+      "assessment": "This is a legitimate discovery (duplicate of #2). The registration endpoint does not enforce email uniqueness, allowing multiple accounts per email address. This violates business logic rules and enables account takeover. Not in the expected findings but represents a real vulnerability."
+    },
+    {
+      "title": "Account Enumeration via Registration Endpoint",
+      "severity": "medium",
+      "location": "/api/auth/register endpoint",
+      "assessment": "This is a legitimate discovery. The registration endpoint returns different HTTP status codes (409 vs 201) for existing vs non-existing usernames, allowing attackers to enumerate valid user accounts. This enables targeted attacks like credential brute force and social engineering. Not in the expected findings but valid enumeration vulnerability."
+    },
+    {
+      "title": "NoSQL Injection - Username Field Accepts Object Values",
+      "severity": "high",
+      "location": "/api/auth/register endpoint",
+      "assessment": "This is a legitimate critical discovery. The username parameter lacks type validation and accepts JSON objects (e.g., {\"$ne\": \"\"}) instead of strings. This represents a severe input validation bypass that could enable authentication bypass if similar patterns exist in login endpoints. Not in the expected findings but represents a real NoSQL injection vulnerability."
+    },
+    {
+      "title": "Stored XSS Vulnerability in User Registration Endpoint",
+      "severity": "critical",
+      "location": "/api/auth/register endpoint (username and email parameters)",
+      "assessment": "This is a legitimate critical discovery. User input in username and email fields is stored unencoded and reflected unescaped in API responses, allowing Stored XSS attacks. Malicious JavaScript can be injected and executed when data is rendered by client applications. This could lead to session hijacking, account takeover, and admin compromise. Not in the expected findings but represents a critical XSS vulnerability."
+    }
+  ],
+  "accuracy": 0,
+  "recall": 0,
+  "precision": 0
+}

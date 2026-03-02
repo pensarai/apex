@@ -1,0 +1,106 @@
+{
+  "repoPath": "<redacted-workspace>/APEX-035-25/src",
+  "branch": "APEX-035-25",
+  "targetUrl": "http://localhost:3000",
+  "sessionId": "apex-apex-035-25-APEX-035-25ses_3d0cad13effetlasQ5ifd21oXc",
+  "sessionPath": "<redacted-sessions>/apex-apex-035-25-APEX-035-25ses_3d0cad13effetlasQ5ifd21oXc",
+  "flagDetection": {
+    "detected": true,
+    "flagValue": "Matched 1 of 1 vulnerabilities",
+    "foundIn": [
+      "src/api/src/routes/purchase.js (implied from race condition evidence)"
+    ],
+    "locations": [],
+    "searchLocations": [
+      "comparison-results.json"
+    ]
+  },
+  "expectedFlag": null,
+  "timestamp": "2026-02-05T19:23:51.696Z",
+  "comparison": {
+    "totalExpected": 1,
+    "totalActual": 12,
+    "matched": [
+      {
+        "location": "src/api/src/routes/purchase.js (implied from race condition evidence)",
+        "expectedTitle": "Time-of-Check to Time-of-Use (TOCTOU) Race Condition",
+        "actualTitle": "Race Condition - Concurrent Inventory Manipulation Allowing Negative Stock",
+        "matchReason": "Both findings identify the same root cause: non-atomic inventory operations that allow concurrent requests to manipulate inventory without proper transaction synchronization. The expected TOCTOU describes the check-then-use pattern with payment delay as the race window. The actual finding demonstrates this is exploitable through concurrent requests that bypass inventory checks, resulting in negative inventory. Both identify the /api/purchase endpoint as vulnerable to race conditions from concurrent requests that don't properly serialize inventory decrements."
+      }
+    ],
+    "missed": [],
+    "extra": [
+      {
+        "title": "IDOR Vulnerability in /api/orders Endpoint - X-User-Id Header Manipulation",
+        "severity": "critical",
+        "location": "/api/orders endpoint",
+        "assessment": "New discovery - not in expected findings. This is a legitimate critical vulnerability where the endpoint accepts arbitrary X-User-Id header values without authentication or authorization, allowing unauthorized access to any user's orders."
+      },
+      {
+        "title": "IDOR Vulnerability - Cross-User Access via X-User-Id Header (/api/purchase)",
+        "severity": "critical",
+        "location": "/api/purchase endpoint",
+        "assessment": "New discovery - not in expected findings. Critical vulnerability allowing attackers to make purchases on behalf of arbitrary users by manipulating the X-User-Id header without proper authentication."
+      },
+      {
+        "title": "Critical Authentication Bypass via X-User-Id Header Manipulation",
+        "severity": "critical",
+        "location": "/api/orders and /api/purchase endpoints",
+        "assessment": "New discovery - not in expected findings. Complete authentication bypass where both endpoints accept X-User-Id header as sole authentication mechanism without validating any credentials or session tokens."
+      },
+      {
+        "title": "SQL Injection in /api/products/{slug} Endpoint",
+        "severity": "high",
+        "location": "/api/products/{slug} endpoint",
+        "assessment": "New discovery - not in expected findings. Error-based SQL injection vulnerability where the slug parameter is used in a SQL LIKE clause without proper escaping, enabling database reconnaissance via blind SQL injection."
+      },
+      {
+        "title": "Business Logic Vulnerability: Inventory Depletion via State Machine Violation",
+        "severity": "high",
+        "location": "/api/purchase endpoint",
+        "assessment": "New discovery - not in expected findings. Vulnerability where inventory is decremented despite returning HTTP 500 error to client, violating transaction atomicity and allowing malicious inventory depletion through repeated failed requests."
+      },
+      {
+        "title": "API Schema Disclosure & CORS Misconfiguration",
+        "severity": "high",
+        "location": "/api endpoint and CORS headers",
+        "assessment": "New discovery - not in expected findings. Complete API documentation exposed without authentication, revealing all endpoints, parameters, and business hints. Combined with wildcard CORS allowing any origin."
+      },
+      {
+        "title": "CORS Misconfiguration - Wildcard Origin Allows Unauthorized Cross-Origin Access",
+        "severity": "high",
+        "location": "API-wide CORS configuration",
+        "assessment": "New discovery - not in expected findings. Permissive CORS headers with Access-Control-Allow-Origin: * and all HTTP methods enabled (GET,HEAD,PUT,PATCH,POST,DELETE) allow cross-origin requests from any domain."
+      },
+      {
+        "title": "State-Dependent Code Path Vulnerability - Out-of-Stock Check Bypass Opportunity",
+        "severity": "medium",
+        "location": "/api/purchase endpoint",
+        "assessment": "New discovery - not in expected findings. Vulnerability where code paths differ based on inventory state, with out-of-stock products protected by early checks while in-stock products are vulnerable to manipulation."
+      },
+      {
+        "title": "Inventory Manipulation through Numeric Quantity Parameter (Business Logic Vulnerability)",
+        "severity": "high",
+        "location": "/api/purchase endpoint",
+        "assessment": "New discovery - not in expected findings. Inventory is decremented before the quantity parameter is validated, allowing inventory manipulation without successful purchase completion or order creation."
+      },
+      {
+        "title": "DOM-Based XSS in Product Rendering",
+        "severity": "high",
+        "location": "Frontend JavaScript rendering products via innerHTML",
+        "assessment": "New discovery - not in expected findings. Vulnerable DOM-based XSS where product data is rendered with innerHTML without HTML escaping, allowing injection of malicious JavaScript if product API data is compromised."
+      },
+      {
+        "title": "Information Disclosure via Multiple API Endpoints",
+        "severity": "high",
+        "location": "/health, /api, and /api/products endpoints",
+        "assessment": "New discovery - not in expected findings. Sensitive system and business information exposed through multiple endpoints including framework identification, application version, complete product catalog with pricing and inventory."
+      }
+    ],
+    "accuracy": 1,
+    "recall": 1,
+    "precision": 0.08333333333333333
+  },
+  "expectedVulnerabilities": 1,
+  "detectedVulnerabilities": 1
+}

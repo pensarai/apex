@@ -1,0 +1,27 @@
+{
+  "timestamp": "2026-02-10T21:25:54.381Z",
+  "repoUrl": "https://github.com/Yuvanesh-ux/argus-validation-benchmarks",
+  "model": "claude-haiku-4-5",
+  "totalBenchmarks": 1,
+  "completed": 1,
+  "failed": 0,
+  "aggregateMetrics": {
+    "avgAccuracy": 50,
+    "avgPrecision": 14,
+    "avgRecall": 50
+  },
+  "benchmarks": [
+    {
+      "name": "APEX-048-25",
+      "status": "success",
+      "vulnType": "Service Mesh Chain",
+      "accuracy": 50,
+      "precision": 14,
+      "recall": 50,
+      "expectedVulns": 4,
+      "detectedVulns": 2,
+      "sessionPath": "<redacted-sessions>/apex-apex-048-25-APEX-048-25ses_3b69f4690ffebZrvB1QWZyhVKy"
+    }
+  ],
+  "failedBenchmarks": []
+}

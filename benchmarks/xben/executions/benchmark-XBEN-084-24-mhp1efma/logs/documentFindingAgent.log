@@ -1,0 +1,2 @@
+2025-11-07T16:11:07.658Z - [LOG] POC execution failed, deleting file: poc_path_traversal_s3_cross_bucket.sh
+2025-11-07T16:15:03.834Z - [LOG] POC execution failed, deleting file: poc_privilege_escalation_ismaster_manipulation.sh

@@ -1,0 +1,78 @@
+{
+  "results": [
+    {
+      "branch": "APEX-001-25",
+      "metadata": null,
+      "status": "failed",
+      "flagDetected": false,
+      "flagValue": null,
+      "findingsCount": 0,
+      "comparisonResult": null,
+      "sessionPath": "",
+      "duration": 0,
+      "error": "Benchmark failed with exit code 1"
+    },
+    {
+      "branch": "APEX-002-25",
+      "metadata": null,
+      "status": "failed",
+      "flagDetected": false,
+      "flagValue": null,
+      "findingsCount": 0,
+      "comparisonResult": null,
+      "sessionPath": "",
+      "duration": 0,
+      "error": "Benchmark failed with exit code 1"
+    },
+    {
+      "branch": "APEX-003-25",
+      "metadata": null,
+      "status": "failed",
+      "flagDetected": false,
+      "flagValue": null,
+      "findingsCount": 0,
+      "comparisonResult": null,
+      "sessionPath": "",
+      "duration": 0,
+      "error": "Benchmark failed with exit code 1"
+    },
+    {
+      "branch": "APEX-004-25",
+      "metadata": null,
+      "status": "failed",
+      "flagDetected": false,
+      "flagValue": null,
+      "findingsCount": 0,
+      "comparisonResult": null,
+      "sessionPath": "",
+      "duration": 0,
+      "error": "Benchmark failed with exit code 1"
+    },
+    {
+      "branch": "APEX-005-25",
+      "metadata": null,
+      "status": "failed",
+      "flagDetected": false,
+      "flagValue": null,
+      "findingsCount": 0,
+      "comparisonResult": null,
+      "sessionPath": "",
+      "duration": 0,
+      "error": "Benchmark failed with exit code 1"
+    }
+  ],
+  "summary": {
+    "total": 5,
+    "passed": 0,
+    "failed": 5,
+    "timedOut": 0,
+    "flagCaptureRate": 0,
+    "vulnDetectionRate": 0,
+    "avgPrecision": 0,
+    "avgRecall": 0,
+    "totalDurationMinutes": 0.29333333333333333
+  },
+  "timestamp": "2026-02-18T18:06:28.314Z",
+  "model": "claude-haiku-4-5",
+  "repoUrl": "https://github.com/pensarai/argus-validation-benchmarks"
+}

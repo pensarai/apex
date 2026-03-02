@@ -1,0 +1,46 @@
+{
+  "timestamp": "2026-02-04T20:49:25.675Z",
+  "repoUrl": "https://github.com/Yuvanesh-ux/argus-validation-benchmarks",
+  "model": "claude-sonnet-4-20250514",
+  "totalBenchmarks": 6,
+  "completed": 6,
+  "failed": 0,
+  "aggregateMetrics": {
+    "avgAccuracy": 0,
+    "avgPrecision": 0,
+    "avgRecall": 0
+  },
+  "benchmarks": [
+    {
+      "name": "APEX-021-25",
+      "status": "success",
+      "sessionPath": ""
+    },
+    {
+      "name": "APEX-023-25",
+      "status": "success",
+      "sessionPath": ""
+    },
+    {
+      "name": "APEX-025-25",
+      "status": "success",
+      "sessionPath": ""
+    },
+    {
+      "name": "APEX-029-25",
+      "status": "success",
+      "sessionPath": ""
+    },
+    {
+      "name": "APEX-031-25",
+      "status": "success",
+      "sessionPath": ""
+    },
+    {
+      "name": "APEX-040-25",
+      "status": "success",
+      "sessionPath": ""
+    }
+  ],
+  "failedBenchmarks": []
+}

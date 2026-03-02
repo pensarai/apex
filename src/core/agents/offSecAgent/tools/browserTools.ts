@@ -7,11 +7,18 @@
  * default — the descriptions are broad enough for recon, auth flows,
  * and pentest use-cases alike.
  *
+ * When a {@link CredentialManager} is present in the tool context,
+ * `browser_fill` is wrapped so the agent can pass a `credentialId` +
+ * `credentialField` instead of a raw secret value — the secret is
+ * resolved at execution time and never appears in the agent prompt.
+ *
  * Individual agents don't need to worry about Playwright initialisation
  * or MCP plumbing — they just list the browser tool names they want
  * in their `activeTools` array.
  */
 
+import { tool } from "ai";
+import { z } from "zod";
 import { join } from "path";
 import { createBrowserTools } from "./playwrightMcp";
 import type { ToolContext } from "./types";
@@ -37,16 +44,128 @@ export type BrowserToolName = (typeof BROWSER_TOOL_NAMES)[number];
  *
  * Uses `"operator"` mode by default for the most general-purpose descriptions.
  * The evidence directory is derived from `session.rootPath + "/evidence"`.
+ *
+ * When `ctx.credentialManager` is set, `browser_fill` is replaced with a
+ * credential-aware wrapper that resolves secrets from IDs at execution time.
  */
 export function createBrowserToolset(ctx: ToolContext) {
   const evidenceDir = join(ctx.session.rootPath, "evidence");
   const targetUrl = ctx.target ?? "";
 
-  return createBrowserTools(
+  const tools = createBrowserTools(
     targetUrl,
     evidenceDir,
-    "operator", // generic mode — works for recon, auth, and pentest
-    undefined, // no Logger (tools use console)
+    "operator",
+    undefined,
     ctx.abortSignal,
   );
+
+  if (!ctx.credentialManager) {
+    return tools;
+  }
+
+  const originalFill = tools.browser_fill;
+  const cm = ctx.credentialManager;
+
+  const credentialAwareFill = tool({
+    description:
+      originalFill.description +
+      `\n\nCredential mode: Instead of passing a raw secret as "value", you can pass ` +
+      `"credentialId" + "credentialField" (e.g. "password") and the value will be ` +
+      `resolved securely. Always prefer this when filling password or secret fields.`,
+    inputSchema: z.object({
+      element: z
+        .string()
+        .describe(
+          "Description of form field, e.g., 'Username field' or 'Search input'",
+        ),
+      ref: z
+        .string()
+        .optional()
+        .describe(
+          "Element reference from browser_snapshot (e.g., 'e3'). If provided, uses exact element reference for precise filling.",
+        ),
+      value: z
+        .string()
+        .optional()
+        .describe(
+          "Value to fill into the field. Omit when using credentialId + credentialField.",
+        ),
+      credentialId: z
+        .string()
+        .optional()
+        .describe(
+          "ID of a stored credential. When provided with credentialField, the secret is resolved automatically.",
+        ),
+      credentialField: z
+        .enum([
+          "password",
+          "username",
+          "apiKey",
+          "bearerToken",
+          "cookies",
+          "sessionToken",
+        ])
+        .optional()
+        .describe(
+          "Which field to extract from the credential (e.g. 'password'). Required when credentialId is set.",
+        ),
+      toolCallDescription: z
+        .string()
+        .describe("Why you are filling this field with this value"),
+    }),
+    execute: async (params) => {
+      let { value } = params;
+      const {
+        element,
+        ref,
+        credentialId,
+        credentialField,
+        toolCallDescription,
+      } = params;
+
+      if (credentialId && credentialField) {
+        const stored = cm.resolve(credentialId);
+        if (!stored) {
+          return {
+            success: false,
+            error: `Unknown credential ID: ${credentialId}`,
+          };
+        }
+        if (
+          credentialField === "bearerToken" ||
+          credentialField === "cookies" ||
+          credentialField === "sessionToken"
+        ) {
+          value = stored.tokens?.[credentialField] ?? "";
+        } else {
+          value = stored[credentialField] ?? "";
+        }
+        if (!value) {
+          return {
+            success: false,
+            error: `Credential ${credentialId} has no ${credentialField} field`,
+          };
+        }
+      }
+
+      if (!value) {
+        return {
+          success: false,
+          error:
+            "Either value or credentialId + credentialField must be provided",
+        };
+      }
+
+      return originalFill.execute!(
+        { element, ref, value, toolCallDescription },
+        { toolCallId: "", messages: [], abortSignal: undefined as never },
+      );
+    },
+  });
+
+  return {
+    ...tools,
+    browser_fill: credentialAwareFill,
+  };
 }

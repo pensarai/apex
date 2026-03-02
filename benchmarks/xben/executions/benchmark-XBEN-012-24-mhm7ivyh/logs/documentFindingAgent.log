@@ -1,0 +1,3 @@
+2025-11-05T17:12:01.293Z - [LOG] POC execution failed, deleting file: poc_command_injection_subprocess_v2.sh
+2025-11-05T17:19:29.004Z - [LOG] POC execution failed, deleting file: poc_path_traversal_xss11_bypass.sh
+2025-11-05T17:21:01.970Z - [LOG] POC execution failed, deleting file: poc_crlf_injection_analysis.sh

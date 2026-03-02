@@ -1,5 +1,7 @@
 import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
 import { hasToolCall } from "ai";
+import { existsSync, readFileSync } from "fs";
+import { join } from "path";
 import type { AIModel } from "../../../ai";
 import type { AIAuthConfig } from "../../../ai/utils";
 import { type SessionInfo } from "../../../session";
@@ -20,16 +22,13 @@ export interface AuthenticationAgentInput {
   /** AI model to drive the agent */
   model: AIModel;
 
-  /** Session that provides paths */
+  /**
+   * Session that provides paths and, when created with `authCredentials`,
+   * an auto-provisioned {@link CredentialManager}. The agent reads
+   * `session.credentialManager` automatically — callers never need to
+   * create or pass a credential manager manually.
+   */
   session: SessionInfo;
-
-  /** Optional credentials to use */
-  credentials?: {
-    username?: string;
-    password?: string;
-    apiKey?: string;
-    loginUrl?: string;
-  };
 
   /** Hints about the auth flow */
   authHints?: {
@@ -77,26 +76,33 @@ export interface AuthenticationResult {
 /**
  * An authentication-focused specialisation of {@link OffensiveSecurityAgent}.
  *
- * Uses a subset of tools to discover and complete authentication flows:
- * detect auth scheme, probe endpoints, simple auth, delegate to sub-agent,
- * and signal completion.
+ * Credentials are managed automatically via the session's
+ * {@link CredentialManager} — the agent never sees raw secrets.
+ * Create the session with `authCredentials` and the credential manager
+ * is provisioned for you.
  *
  * `consume()` returns an {@link AuthenticationResult}.
  *
  * @example
  * ```ts
+ * const session = await sessions.create({
+ *   name: "Auth test",
+ *   targets: ["https://example.com"],
+ *   config: {
+ *     authCredentials: { username: "admin", password: "admin",
+ *                        loginUrl: "https://example.com/login" },
+ *   },
+ * });
+ *
  * const agent = new AuthenticationAgent({
  *   target: "https://example.com",
  *   model: "claude-sonnet-4-20250514",
- *   session,
- *   credentials: { username: "admin", password: "admin" },
+ *   session, // credential manager is auto-provisioned
  * });
  *
  * const { success, summary } = await agent.consume({
  *   onTextDelta: (d) => process.stdout.write(d.text),
  * });
- *
- * console.log(success ? "Authenticated!" : "Failed");
  * ```
  */
 export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationResult> {
@@ -105,16 +111,17 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
       model,
       target,
       session,
-      credentials,
       authHints,
       authConfig,
       onStepFinish,
       abortSignal,
     } = opts;
 
+    const cm = session.credentialManager;
+
     super({
       system: detectOSAndEnhancePrompt(AUTH_SUBAGENT_SYSTEM_PROMPT),
-      prompt: buildAuthPrompt(target, credentials, authHints),
+      prompt: buildAuthPrompt(target, authHints, cm),
       model,
       session,
       target,
@@ -125,11 +132,7 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
       activeTools: [
         // Auth flow tools
         "execute_command",
-        // "http_request",
-        // "detect_auth_scheme",
-        // "probe_auth_endpoints",
         "authenticate_session",
-        "delegate_to_auth_subagent",
         "complete_authentication",
         // Browser automation for login forms, OAuth, SPA auth
         "browser_navigate",
@@ -140,51 +143,60 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
         "browser_evaluate",
         "browser_console",
         "browser_get_cookies",
+        // Email tools (filtered out by base class when no inboxes configured)
+        "email_list_inboxes",
+        "email_list_messages",
+        "email_search_messages",
+        "email_get_message",
       ],
 
       stopWhen: hasToolCall("complete_authentication"),
 
-      resolveResult: async (streamResult) => {
-        // Extract the result from the complete_authentication tool call
-        const steps = await streamResult.steps;
-        let success = false;
-        let summary = "Authentication process completed.";
-        let exportedCookies = "";
-        let exportedHeaders = {};
-        let strategy = "unknown";
-        let authBarrier = undefined;
-        let authDataPath = "";
-
-        for (const step of steps) {
-          for (const tr of step.toolResults) {
-            if (tr.toolName === "complete_authentication") {
-              const trRecord = tr as unknown as Record<string, unknown>;
-              const r = (trRecord.output ?? trRecord.result) as
-                | Record<string, unknown>
-                | undefined;
-              success = (r?.authenticated as boolean) ?? false;
-              summary = (r?.summary as string) ?? summary;
-              exportedCookies = (r?.exportedCookies as string) ?? "";
-              exportedHeaders =
-                (r?.exportedHeaders as Record<string, string>) ?? {};
-              strategy = (r?.strategy as string) ?? "unknown";
-              authBarrier = (r?.authBarrier as AuthBarrier) ?? undefined;
-              authDataPath = (r?.authDataPath as string) ?? "";
-            }
-          }
-        }
-
-        return {
-          success,
-          summary,
-          exportedCookies,
-          exportedHeaders,
-          strategy,
-          authBarrier,
-          authDataPath,
-        };
+      resolveResult: () => {
+        const authDataPath = join(session.rootPath, "auth", "auth-data.json");
+        return loadAuthResult(authDataPath);
       },
     });
+  }
+}
+
+function loadAuthResult(authDataPath: string): AuthenticationResult {
+  if (!existsSync(authDataPath)) {
+    return {
+      success: false,
+      summary: "Authentication completed but no auth-data.json was written.",
+      exportedCookies: "",
+      exportedHeaders: {},
+      strategy: "unknown",
+      authBarrier: undefined,
+      authDataPath: "",
+    };
+  }
+
+  try {
+    const raw = JSON.parse(readFileSync(authDataPath, "utf-8")) as Record<
+      string,
+      unknown
+    >;
+    return {
+      success: (raw.authenticated as boolean) ?? false,
+      summary: (raw.summary as string) ?? "Authentication process completed.",
+      exportedCookies: (raw.cookies as string) ?? "",
+      exportedHeaders: (raw.headers as Record<string, string>) ?? {},
+      strategy: (raw.strategy as string) ?? "unknown",
+      authBarrier: raw.authBarrier as AuthBarrier | undefined,
+      authDataPath,
+    };
+  } catch {
+    return {
+      success: false,
+      summary: "Failed to parse auth-data.json.",
+      exportedCookies: "",
+      exportedHeaders: {},
+      strategy: "unknown",
+      authBarrier: undefined,
+      authDataPath,
+    };
   }
 }
 
@@ -194,18 +206,14 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
 
 function buildAuthPrompt(
   target: string,
-  credentials?: AuthenticationAgentInput["credentials"],
   authHints?: AuthenticationAgentInput["authHints"],
+  credentialManager?: import("../../../credentials").CredentialManager,
 ): string {
   const parts: string[] = [`TARGET: ${target}\n`];
 
-  if (credentials) {
-    parts.push("CREDENTIALS:");
-    if (credentials.username) parts.push(`- Username: ${credentials.username}`);
-    if (credentials.password) parts.push(`- Password: ${credentials.password}`);
-    if (credentials.apiKey) parts.push(`- API Key: [PROVIDED]`);
-    if (credentials.loginUrl)
-      parts.push(`- Login URL: ${credentials.loginUrl}`);
+  const credBlock = credentialManager?.formatForPrompt();
+  if (credBlock) {
+    parts.push(credBlock);
     parts.push("");
   } else {
     parts.push(
@@ -228,18 +236,20 @@ function buildAuthPrompt(
     parts.push("");
   }
 
-  if (credentials?.loginUrl || credentials?.username) {
+  if (credBlock) {
     parts.push(`INSTRUCTIONS:
-You have credentials — authenticate immediately.
-1. Use authenticate_session (API) or the browser tools depending on the target
-2. If authenticate_session fails, try via browser or delegate_to_auth_subagent
-3. Call complete_authentication when done (success or failure)`);
+You have credentials available via credential IDs — authenticate immediately.
+1. Try authenticate_session first (pass the credentialId — secrets are resolved automatically)
+2. If authenticate_session fails, use browser tools. For browser_fill on password/secret fields,
+   pass credentialId + credentialField (e.g. credentialField="password") instead of the raw value —
+   the secret is resolved securely at execution time. NEVER type a password directly.
+3. Call complete_authentication with exported cookies/headers to persist credentials and end the run`);
   } else {
     parts.push(`INSTRUCTIONS:
 1. Probe the target with execute_command (curl) to determine the auth mechanism
 2. Attempt authentication with authenticate_session or the browser tools
 3. If that fails, try delegate_to_auth_subagent as a fallback
-4. Call complete_authentication when done (success or failure)`);
+4. Call complete_authentication with exported cookies/headers to persist credentials and end the run`);
   }
 
   return parts.join("\n");
@@ -252,15 +262,16 @@ You have credentials — authenticate immediately.
 export async function runAuthenticationAgent(input: AuthenticationAgentInput) {
   const agent = new AuthenticationAgent(input);
 
-  const { success, summary } = await agent.consume({
-    onTextDelta: (d) => process.stdout.write(d.text),
-    onToolCall: (d) => console.log(`→ calling ${d.toolName}`),
-    onToolResult: (d) => console.log(`✓ ${d.toolName} completed`),
-    onError: (e) => console.error("Agent error:", e),
+  const result = await agent.consume({
+    onTextDelta: (d) => input.callbacks?.onTextDelta?.(d),
+    onToolCall: (d) => input.callbacks?.onToolCall?.(d),
+    onToolResult: (d) => input.callbacks?.onToolResult?.(d),
+    onError: (e) => input.callbacks?.onError?.(e),
+    subagentCallbacks: input.callbacks?.subagentCallbacks,
   });
 
   console.log(
-    `\nAuthentication ${success ? "succeeded" : "failed"}: ${summary}`,
+    `\nAuthentication ${result.success ? "succeeded" : "failed"}: ${result.summary}`,
   );
-  return { success, summary };
+  return result;
 }

@@ -1,0 +1,5 @@
+2025-11-04T17:11:58.820Z - [LOG] POC execution failed, deleting file: poc_websocket_dos_rate_payload_v2.sh
+2025-11-04T17:13:16.649Z - [LOG] POC execution failed, deleting file: poc_cswsh_origin_validation.sh
+2025-11-04T17:13:47.592Z - [LOG] POC execution failed, deleting file: poc_cswsh_origin_validation_v2.sh
+2025-11-04T17:14:00.931Z - [LOG] POC execution failed, deleting file: poc_websocket_error_disclosure_v2.sh
+2025-11-04T17:14:19.947Z - [LOG] POC execution failed, deleting file: poc_cswsh_origin_validation_v3.sh

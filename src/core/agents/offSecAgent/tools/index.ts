@@ -13,7 +13,7 @@ export type { BrowserToolName } from "./browserTools";
 // Core pentest tools
 export { executeCommand } from "./executeCommand";
 export { httpRequest } from "./httpRequest";
-export { documentFinding } from "./documentFinding";
+export { documentVulnerability } from "./documentFinding";
 export { createPoc } from "./createPoc";
 
 // Filesystem / search tools
@@ -45,6 +45,10 @@ export { spawnCodingAgent } from "./spawnCodingAgent";
 // export { generateReport } from "./generateReport";
 export { provideComparisonResults } from "./provideComparisonResults";
 
+// Email tools
+export { createEmailToolset, EMAIL_TOOL_NAMES } from "./email";
+export type { EmailToolName } from "./email";
+
 // ---------------------------------------------------------------------------
 // Tool registry
 // ---------------------------------------------------------------------------
@@ -53,7 +57,7 @@ import type { ToolContext } from "./types";
 import { createBrowserToolset } from "./browserTools";
 import { executeCommand } from "./executeCommand";
 import { httpRequest } from "./httpRequest";
-import { documentFinding } from "./documentFinding";
+import { documentVulnerability } from "./documentFinding";
 import { createPoc } from "./createPoc";
 import { readFile } from "./readFile";
 import { listFiles } from "./listFiles";
@@ -74,6 +78,11 @@ import { spawnPentestSwarm } from "./spawnPentestSwarm";
 import { spawnCodingAgent } from "./spawnCodingAgent";
 // import { generateReport } from "./generateReport";
 import { provideComparisonResults } from "./provideComparisonResults";
+import { createEmailToolset } from "./email";
+import { emailListInboxes } from "./email/listInboxes";
+import { emailListMessages } from "./email/listMessages";
+import { emailSearchMessages } from "./email/searchMessages";
+import { emailGetMessage } from "./email/getMessage";
 
 /**
  * Create the full toolset for the OffensiveSecurityAgent.
@@ -90,7 +99,7 @@ export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
     // Core pentest tools
     execute_command: executeCommand(ctx),
     http_request: httpRequest(ctx),
-    document_finding: documentFinding(ctx),
+    document_vulnerability: documentVulnerability(ctx),
     create_poc: createPoc(ctx),
 
     // Filesystem / search tools
@@ -121,6 +130,13 @@ export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
     // Reporting / benchmark tools
     // generate_report: generateReport(ctx),
     provide_comparison_results: provideComparisonResults(ctx),
+
+    // Email tools (read-only inbox access)
+    ...createEmailToolset(ctx),
+    email_list_inboxes: emailListInboxes(ctx),
+    email_list_messages: emailListMessages(ctx),
+    email_search_messages: emailSearchMessages(ctx),
+    email_get_message: emailGetMessage(ctx),
   } as const;
 }
 
@@ -141,7 +157,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   // Core pentest
   "execute_command",
   "http_request",
-  "document_finding",
+  "document_vulnerability",
   "create_poc",
   // Filesystem / search
   "read_file",
@@ -157,4 +173,14 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "spawn_coding_agent",
   // "generate_report",
   "provide_comparison_results",
-] as const;
+  // Email
+  "email_list_inboxes",
+  "email_list_messages",
+  "email_get_message",
+  "email_search_messages",
+  "email_get_attachments",
+  "email_mark_read",
+];
+
+/** Email tool names — auto-appended to activeTools by the base class when inboxes are configured. */
+export { EMAIL_TOOL_NAMES as EMAIL_TOOL_NAMES_ACTIVE } from "./email";

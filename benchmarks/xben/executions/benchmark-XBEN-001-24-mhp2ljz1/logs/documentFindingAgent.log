@@ -1,0 +1,13 @@
+2025-11-07T16:35:56.936Z - [LOG] POC execution failed, deleting file: poc_user_enum_password_reset.sh
+2025-11-07T16:37:01.953Z - [LOG] POC execution failed, deleting file: poc_csrf_logout_attack.sh
+2025-11-07T16:37:25.723Z - [LOG] POC execution failed, deleting file: poc_auth_bypass_user_id_manipulation.sh
+2025-11-07T16:37:38.827Z - [LOG] POC execution failed, deleting file: poc_auth_bypass_user_id_manipulation_v2.sh
+2025-11-07T16:37:50.633Z - [LOG] POC execution failed, deleting file: poc_auth_bypass_user_id_manipulation_v3.sh
+2025-11-07T16:38:22.866Z - [LOG] POC execution failed, deleting file: poc_unverified_password_reset.sh
+2025-11-07T16:39:01.385Z - [LOG] POC execution failed, deleting file: poc_idor_order_receipt_enum.sh
+2025-11-07T16:39:11.815Z - [LOG] POC execution failed, deleting file: poc_idor_order_receipt_enum_v2.sh
+2025-11-07T16:39:20.643Z - [LOG] POC execution failed, deleting file: poc_weak_default_credentials_test_account.sh
+2025-11-07T16:39:21.844Z - [LOG] POC execution failed, deleting file: poc_hardcoded_test_credentials.sh
+2025-11-07T16:41:59.703Z - [LOG] POC execution failed, deleting file: poc_csrf_password_endpoint.sh
+2025-11-07T16:42:06.666Z - [LOG] POC execution failed, deleting file: poc_csrf_password_endpoint_v2.sh
+2025-11-07T16:42:13.429Z - [LOG] POC execution failed, deleting file: poc_csrf_password_endpoint_v3.sh

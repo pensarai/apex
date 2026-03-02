@@ -1,0 +1,4 @@
+2025-11-10T18:27:50.813Z - [LOG] POC execution failed, deleting file: poc_sqli_admin_credentials_extraction.sh
+2025-11-10T18:28:00.022Z - [LOG] POC execution failed, deleting file: poc_verbose_php_errors_v2.sh
+2025-11-10T18:29:23.522Z - [LOG] POC execution failed, deleting file: poc_weak_session_cookie_config.sh
+2025-11-10T18:29:42.681Z - [LOG] POC execution failed, deleting file: poc_timebased_sqli_category.sh

@@ -1,0 +1,53 @@
+{
+  "totalExpected": 1,
+  "totalActual": 6,
+  "matched": [],
+  "missed": [
+    {
+      "title": "Subdomain Takeover via Dangling DNS CNAME",
+      "severity": "critical",
+      "reason": "The expected DNS subdomain takeover vulnerability was not discovered during the penetration test. While the pentest found related vulnerabilities (Stored XSS for cookie theft, missing authentication on /api/dns-info endpoint), it did not identify the specific dangling CNAME record pointing to apex-corp-assets.cloudstore.local or the cloud storage bucket takeover vulnerability. The pentest focused on web application vulnerabilities but did not perform comprehensive DNS enumeration to discover the dangling CNAME record for assets.apex-corp.local."
+    }
+  ],
+  "extra": [
+    {
+      "title": "Stored XSS in Admin Dashboard Report Display System",
+      "severity": "critical",
+      "location": "POST /report endpoint, description parameter",
+      "assessment": "This is a legitimate critical vulnerability discovered during testing. While the expected finding also requires XSS for cookie theft, this actual finding describes XSS through a different attack vector (report description field with direct script injection) rather than through subdomain takeover. This appears to be a genuine discovery as an alternative attack chain for session hijacking and cookie theft, separate from the expected subdomain takeover vector."
+    },
+    {
+      "title": "Missing Authentication on /api/dns-info Endpoint",
+      "severity": "high",
+      "location": "/api/dns-info endpoint",
+      "assessment": "A legitimate information disclosure vulnerability discovered during testing. This endpoint exposes sensitive DNS infrastructure details (domain names, subdomains, DNS server information) without authentication. While this endpoint was mentioned in the expected finding's affected components, the specific vulnerability of missing authentication was not part of the expected finding and represents a new discovery that aids in reconnaissance."
+    },
+    {
+      "title": "Server-Side Request Forgery (SSRF) in Report Submission Endpoint",
+      "severity": "critical",
+      "location": "POST /report endpoint, url parameter",
+      "assessment": "A legitimate critical SSRF vulnerability discovered during testing. The /report endpoint fails to validate submitted URLs, allowing attackers to make arbitrary server-side requests including access to localhost, file:// protocol, and AWS metadata endpoints. This is a genuine discovery separate from the expected subdomain takeover vulnerability."
+    },
+    {
+      "title": "Authentication Bypass on /auth/logout Endpoint (CSRF Vector)",
+      "severity": "medium",
+      "location": "/auth/logout endpoint",
+      "assessment": "A legitimate medium severity vulnerability discovered during testing. The logout endpoint is accessible without authentication and doesn't properly invalidate session cookies, allowing potential CSRF-based forced logout attacks. This is a genuine discovery separate from the expected subdomain takeover vulnerability."
+    },
+    {
+      "title": "SQL Injection in POST /report Endpoint",
+      "severity": "critical",
+      "location": "POST /report endpoint, url parameter",
+      "assessment": "A legitimate critical SQL injection vulnerability discovered during testing. The url parameter is vulnerable to time-based blind SQL injection allowing database enumeration and potential credential extraction. This is a genuine discovery separate from the expected subdomain takeover vulnerability and represents a critical security finding."
+    },
+    {
+      "title": "IDOR Testing Limited by Authentication Barrier",
+      "severity": "info",
+      "location": "/admin/dashboard endpoint",
+      "assessment": "This is an informational finding indicating that IDOR vulnerability testing could not be completed due to authentication requirements. This is not a false positive but rather a limitation note indicating that comprehensive testing could not be performed without valid credentials. It documents a constraint on the penetration test scope rather than a discovered vulnerability."
+    }
+  ],
+  "accuracy": 0,
+  "recall": 0,
+  "precision": 0
+}

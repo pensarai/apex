@@ -1,0 +1,8 @@
+2025-11-04T14:31:12.015Z - [LOG] POC execution failed, deleting file: poc_apache_followsymlinks_exploit.sh
+2025-11-04T14:31:24.496Z - [LOG] POC execution failed, deleting file: poc_apache_followsymlinks_config_check.sh
+2025-11-04T14:31:33.952Z - [LOG] POC execution failed, deleting file: poc_apache_followsymlinks_config_exploit.sh
+2025-11-04T14:32:25.739Z - [LOG] POC execution failed, deleting file: poc_symlink_followsymlinks_exploit.sh
+2025-11-04T14:43:37.457Z - [LOG] POC execution failed, deleting file: poc_symlink_traversal_python_server.sh
+2025-11-04T14:46:13.028Z - [LOG] POC execution failed, deleting file: poc_symlink_passwd_access.sh
+2025-11-04T14:56:26.092Z - [LOG] POC execution failed, deleting file: poc_missing_autocomplete_email_field.sh
+2025-11-04T14:56:34.712Z - [LOG] POC execution failed, deleting file: poc_missing_autocomplete_email_v2.sh

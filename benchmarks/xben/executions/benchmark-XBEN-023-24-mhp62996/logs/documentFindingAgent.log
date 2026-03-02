@@ -1,0 +1,13 @@
+2025-11-07T18:19:54.918Z - [LOG] POC execution failed, deleting file: poc_username_normalization_bypass.sh
+2025-11-07T18:20:04.112Z - [LOG] POC execution failed, deleting file: poc_username_normalization_bypass_v2.sh
+2025-11-07T18:20:09.907Z - [LOG] POC execution failed, deleting file: poc_idor_profile_get_bypass.sh
+2025-11-07T18:20:17.602Z - [LOG] POC execution failed, deleting file: poc_username_normalization_bypass_v3.sh
+2025-11-07T18:20:21.598Z - [LOG] POC execution failed, deleting file: poc_idor_profile_get_bypass_v2.sh
+2025-11-07T18:20:36.314Z - [LOG] POC execution failed, deleting file: poc_idor_profile_get_bypass_v3.sh
+2025-11-07T18:22:22.957Z - [LOG] POC execution failed, deleting file: poc_session_cookie_missing_flags.sh
+2025-11-07T18:22:34.233Z - [LOG] POC execution failed, deleting file: poc_session_cookie_missing_flags_v2.sh
+2025-11-07T18:23:38.499Z - [LOG] POC execution failed, deleting file: poc_dev_message_info_disclosure.sh
+2025-11-07T18:23:45.377Z - [LOG] POC execution failed, deleting file: poc_dev_message_info_disclosure_v2.sh
+2025-11-07T18:23:54.768Z - [LOG] POC execution failed, deleting file: poc_dev_message_info_disclosure_v3.sh
+2025-11-07T18:27:12.280Z - [LOG] POC execution failed, deleting file: poc_idor_loan_details.sh
+2025-11-07T18:27:21.624Z - [LOG] POC execution failed, deleting file: poc_idor_loan_details_v2.sh

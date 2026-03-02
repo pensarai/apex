@@ -1,5 +1,7 @@
 import type { AIModel } from "../../../ai";
 import type { AIAuthConfig } from "../../../ai/utils";
+import type { CredentialManager } from "../../../credentials";
+import type { FindingsRegistry } from "../../../findings/registry";
 import type { SessionInfo } from "../../../session";
 
 import type { ConsumeCallbacks, SubagentConsumeCallbacks } from "../types";
@@ -37,4 +39,16 @@ export type ToolContext = {
    * route execution through this sandbox instead of running locally.
    */
   sandbox?: UnifiedSandbox;
+
+  /**
+   * Shared findings registry for cross-agent dedup.
+   * When present, `document_vulnerability` checks for duplicates before writing.
+   */
+  findingsRegistry?: FindingsRegistry;
+
+  /**
+   * In-memory credential store. When present, tools can resolve
+   * credential IDs to full secrets without the agent ever seeing them.
+   */
+  credentialManager?: CredentialManager;
 };

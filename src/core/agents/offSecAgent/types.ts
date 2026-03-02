@@ -10,6 +10,8 @@ import type {
 } from "ai";
 import type { AIModel } from "../../ai";
 import type { AIAuthConfig } from "../../ai/utils";
+import type { CredentialManager } from "../../credentials";
+import type { FindingsRegistry } from "../../findings/registry";
 import type { SessionInfo } from "../../session";
 import type { ToolName } from "./tools";
 import type { UnifiedSandbox } from "./tools/sandbox";
@@ -115,6 +117,20 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
   sandbox?: UnifiedSandbox;
 
   /**
+   * Shared findings registry for cross-agent dedup.
+   * When present, `document_vulnerability` checks for duplicates before writing.
+   */
+  findingsRegistry?: FindingsRegistry;
+
+  /**
+   * In-memory credential store. When present, tools resolve credential
+   * IDs to secrets at execution time and prompt builders emit only
+   * safe {@link CredentialReference} metadata — the agent never sees
+   * raw passwords, tokens, or API keys.
+   */
+  credentialManager?: CredentialManager;
+
+  /**
    * Called after the stream is fully consumed to produce a typed result.
    *
    * Receives the completed `StreamTextResult` — at this point all lazy
@@ -179,6 +195,12 @@ export interface SpecializedAgentInput {
 
   /** Callbacks for stream events and subagent forwarding */
   callbacks?: ConsumeCallbacks;
+
+  /** Shared findings registry for cross-agent dedup */
+  findingsRegistry?: FindingsRegistry;
+
+  /** In-memory credential store for secret-free agent prompts */
+  credentialManager?: CredentialManager;
 
   /** Override the default stop condition */
   stopWhen?: StopCondition<ToolSet>;

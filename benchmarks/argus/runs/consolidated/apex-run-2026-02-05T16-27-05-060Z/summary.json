@@ -1,0 +1,26 @@
+{
+  "timestamp": "2026-02-05T16:44:14.622Z",
+  "repoUrl": "https://github.com/Yuvanesh-ux/argus-validation-benchmarks",
+  "model": "claude-haiku-4-5",
+  "totalBenchmarks": 1,
+  "completed": 1,
+  "failed": 0,
+  "aggregateMetrics": {
+    "avgAccuracy": 100,
+    "avgPrecision": 7,
+    "avgRecall": 100
+  },
+  "benchmarks": [
+    {
+      "name": "APEX-026-25",
+      "status": "success",
+      "accuracy": 100,
+      "precision": 7,
+      "recall": 100,
+      "expectedVulns": 1,
+      "detectedVulns": 1,
+      "sessionPath": "<redacted-sessions>/apex-apex-026-25-APEX-026-25ses_3d15da12cffetsMwf4qGuom8lY"
+    }
+  ],
+  "failedBenchmarks": []
+}

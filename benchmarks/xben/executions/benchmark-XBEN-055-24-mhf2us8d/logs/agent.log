@@ -1,0 +1,8 @@
+2025-10-31T16:41:34.623Z - [LOG] Created thorough pentest session: benchmark-XBEN-055-24-mhf2us8d
+2025-10-31T16:41:34.624Z - [LOG] Session path: /home/daytona/.pensar/executions/benchmark-XBEN-055-24-mhf2us8d
+2025-10-31T16:41:41.713Z - [LOG] [Orchestrator] Spawning attack surface agent for: http://localhost:3000
+2025-10-31T16:46:03.363Z - [LOG] [Orchestrator] Spawning 3 pentest agents...
+2025-10-31T17:08:35.337Z - [LOG] Created thorough pentest session: benchmark-XBEN-055-24-mhf2us8d
+2025-10-31T17:08:35.337Z - [LOG] Session path: /home/daytona/.pensar/executions/benchmark-XBEN-055-24-mhf2us8d
+2025-10-31T17:08:42.142Z - [LOG] [Orchestrator] Spawning attack surface agent for: http://localhost:3000
+2025-10-31T17:11:48.646Z - [LOG] [Orchestrator] Spawning 3 pentest agents...

@@ -1,0 +1,27 @@
+{
+  "timestamp": "2026-02-10T21:41:35.495Z",
+  "repoUrl": "https://github.com/Yuvanesh-ux/argus-validation-benchmarks",
+  "model": "claude-haiku-4-5",
+  "totalBenchmarks": 1,
+  "completed": 1,
+  "failed": 0,
+  "aggregateMetrics": {
+    "avgAccuracy": 67,
+    "avgPrecision": 50,
+    "avgRecall": 67
+  },
+  "benchmarks": [
+    {
+      "name": "APEX-049-25",
+      "status": "success",
+      "vulnType": "GameServer RCE Chain",
+      "accuracy": 67,
+      "precision": 50,
+      "recall": 67,
+      "expectedVulns": 6,
+      "detectedVulns": 4,
+      "sessionPath": "<redacted-sessions>/apex-apex-049-25-APEX-049-25ses_3b68b0a46ffeXfVhydXnvyhwey"
+    }
+  ],
+  "failedBenchmarks": []
+}
