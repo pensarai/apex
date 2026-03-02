@@ -117,6 +117,12 @@ export const BEDROCK_MODELS: ModelInfo[] = [
     provider: "bedrock",
     contextLength: 200000,
   },
+  {
+    id: "anthropic.claude-opus-4-6-v1:0",
+    name: "Claude Opus 4.6 (Bedrock)",
+    provider: "bedrock",
+    contextLength: 200000,
+  },
 
   // Cohere Models
   {
@@ -339,6 +345,12 @@ export const BEDROCK_MODELS: ModelInfo[] = [
     provider: "bedrock",
     contextLength: 200000,
   },
+  {
+    id: "us.anthropic.claude-opus-4-6-v1:0",
+    name: "Claude Opus 4.6 (US)",
+    provider: "bedrock",
+    contextLength: 200000,
+  },
 
   // US Region - Meta Llama Models
   {
@@ -422,6 +434,12 @@ export const BEDROCK_MODELS: ModelInfo[] = [
   {
     id: "global.anthropic.claude-sonnet-4-5-20250929-v1:0",
     name: "Claude Sonnet 4.5 (Global)",
+    provider: "bedrock",
+    contextLength: 200000,
+  },
+  {
+    id: "global.anthropic.claude-opus-4-6-v1:0",
+    name: "Claude Opus 4.6 (Global)",
     provider: "bedrock",
     contextLength: 200000,
   },
