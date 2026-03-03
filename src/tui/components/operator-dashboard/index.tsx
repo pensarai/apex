@@ -146,9 +146,6 @@ export default function OperatorDashboard({
             setOperatorState((prev) => ({
               ...prev,
               mode: (savedState.mode as OperatorMode) || prev.mode,
-              autoApproveTier:
-                (savedState.autoApproveTier as 1 | 2 | 3 | 4 | 5) ||
-                prev.autoApproveTier,
               currentStage:
                 (savedState.currentStage as OperatorSessionState["currentStage"]) ||
                 prev.currentStage,
@@ -356,7 +353,7 @@ export default function OperatorDashboard({
         try {
           const response = await streamResult.response;
           if (gen === generationRef.current && response.messages) {
-            conversationRef.current = response.messages as ModelMessage[];
+            conversationRef.current = [...nextMessages, ...response.messages] as ModelMessage[];
           }
         } catch {
           // Stream may have been aborted; conversation stays as-is
@@ -387,7 +384,7 @@ export default function OperatorDashboard({
             sessions
               .saveOperatorState(session.id, {
                 mode: operatorState.mode,
-                autoApproveTier: operatorState.autoApproveTier,
+                requireApproval: operatorState.requireApproval,
                 currentStage: operatorState.currentStage,
                 messages: conversationRef.current,
                 attackSurface: [],
