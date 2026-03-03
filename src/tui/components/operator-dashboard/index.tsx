@@ -57,6 +57,7 @@ export default function OperatorDashboard({
   // Agent/status state
   const [status, setStatus] = useState<DashboardStatus>("idle");
   const abortControllerRef = useRef<AbortController | null>(null);
+  const generationRef = useRef(0);
 
   // Messages — same pattern as pentest component
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
@@ -251,6 +252,14 @@ export default function OperatorDashboard({
     async (prompt: string) => {
       if (!session) return;
 
+      // Abort any previous run before starting a new one
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+
+      const gen = ++generationRef.current;
+
       setStatus("running");
       setThinking(true);
       setIsExecuting(true);
@@ -312,13 +321,14 @@ export default function OperatorDashboard({
         // Persist full conversation for next turn
         try {
           const response = await streamResult.response;
-          if (response.messages) {
+          if (gen === generationRef.current && response.messages) {
             conversationRef.current = response.messages as ModelMessage[];
           }
         } catch {
           // Stream may have been aborted; conversation stays as-is
         }
       } catch (e) {
+        if (gen !== generationRef.current) return;
         if ((e as Error).name !== "AbortError") {
           const errorMsg = e instanceof Error ? e.message : "Agent failed";
           setError(errorMsg);
@@ -332,10 +342,12 @@ export default function OperatorDashboard({
           ]);
         }
       } finally {
-        setStatus("idle");
-        setThinking(false);
-        setIsExecuting(false);
-        abortControllerRef.current = null;
+        if (gen === generationRef.current) {
+          setStatus("idle");
+          setThinking(false);
+          setIsExecuting(false);
+          abortControllerRef.current = null;
+        }
       }
     },
     [
@@ -363,6 +375,7 @@ export default function OperatorDashboard({
         }
       }
 
+      // Block submission only when the agent is actively running (not waiting)
       if (status === "running") return;
 
       setInputValue("");
@@ -373,6 +386,8 @@ export default function OperatorDashboard({
 
   const handleAbort = useCallback(() => {
     if (abortControllerRef.current) {
+      // Increment generation to prevent the aborted run's cleanup from firing
+      generationRef.current++;
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
       setStatus("idle");
