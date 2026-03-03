@@ -337,18 +337,10 @@ function CommandDisplay({
   if (route.data.type === "pentest") {
     // When openAsOperator is set, render operator dashboard instead of pentest
     if (route.data.openAsOperator) {
-      return (
-        <OperatorDashboard
-          sessionId={route.data.sessionId}
-          isResume={route.data.isResume}
-        />
-      );
+      return <OperatorDashboard sessionId={route.data.sessionId} />;
     }
     return (
-      <Pentest
-        sessionId={route.data.sessionId}
-        isResume={route.data.isResume}
-      />
+      <Pentest sessionId={route.data.sessionId} />
     );
   }
 

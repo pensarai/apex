@@ -53,8 +53,6 @@ export type Route =
   | {
       type: "pentest";
       sessionId: string;
-      /** If true, load existing session state without starting a new pentest */
-      isResume?: boolean;
       /** If true, open an auto-mode session in operator mode */
       openAsOperator?: boolean;
     }

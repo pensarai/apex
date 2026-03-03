@@ -68,7 +68,6 @@ export default function SessionsBrowser() {
       route.navigate({
         type: "pentest",
         sessionId: session.id,
-        isResume: true,
         openAsOperator: asOperator || undefined,
       });
     },

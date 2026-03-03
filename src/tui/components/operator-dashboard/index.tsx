@@ -35,12 +35,6 @@ import {
 } from "../../../core/operator";
 import { stepCountIs, type ModelMessage } from "ai";
 
-interface OperatorDashboardProps {
-  sessionId: string;
-  /** If true, restore saved state from disk instead of starting fresh */
-  isResume?: boolean;
-}
-
 type DashboardStatus = "idle" | "running" | "waiting" | "done";
 
 /**
@@ -48,8 +42,9 @@ type DashboardStatus = "idle" | "running" | "waiting" | "done";
  */
 export default function OperatorDashboard({
   sessionId,
-  isResume = false,
-}: OperatorDashboardProps) {
+}: {
+  sessionId: string;
+}) {
   const { colors } = useTheme();
   const route = useRoute();
   const config = useConfig();
@@ -142,53 +137,50 @@ export default function OperatorDashboard({
         const s = await sessions.get(sessionId);
         setSession(s);
 
-        // Load operator state if resuming
-        if (isResume) {
-          const hasState = sessions.hasOperatorState(s);
-          if (hasState) {
-            const savedState = await sessions.loadOperatorState(sessionId);
-            if (savedState) {
-              setOperatorState((prev) => ({
-                ...prev,
-                mode: (savedState.mode as OperatorMode) || prev.mode,
-                requireApproval:
-                  savedState.requireApproval ?? prev.requireApproval,
-                currentStage:
-                  (savedState.currentStage as OperatorSessionState["currentStage"]) ||
-                  prev.currentStage,
-              }));
-              approvalGateRef.current.updateConfig({
-                requireApproval: savedState.requireApproval ?? true,
-              });
+        // Always attempt to load saved operator state
+        const hasState = sessions.hasOperatorState(s);
+        if (hasState) {
+          const savedState = await sessions.loadOperatorState(sessionId);
+          if (savedState) {
+            // Map persisted state to runtime operator state
+            setOperatorState((prev) => ({
+              ...prev,
+              mode: (savedState.mode as OperatorMode) || prev.mode,
+              autoApproveTier:
+                (savedState.autoApproveTier as 1 | 2 | 3 | 4 | 5) ||
+                prev.autoApproveTier,
+              currentStage:
+                (savedState.currentStage as OperatorSessionState["currentStage"]) ||
+                prev.currentStage,
+            }));
+            approvalGateRef.current.updateConfig({
+              requireApproval: savedState.requireApproval ?? true,
+            });
 
-              // Restore model messages and derive display messages
-              if (
-                Array.isArray(savedState.messages) &&
-                savedState.messages.length > 0
-              ) {
-                const modelMsgs = savedState.messages as ModelMessage[];
-                conversationRef.current = modelMsgs;
+            // Restore model messages and derive display messages
+            if (
+              Array.isArray(savedState.messages) &&
+              savedState.messages.length > 0
+            ) {
+              const modelMsgs = savedState.messages as ModelMessage[];
+              conversationRef.current = modelMsgs;
 
-                const uiMsgs = convertModelMessagesToUI(modelMsgs);
-                setMessages(
-                  uiMsgs.map((m: UIMessage) => ({
-                    role: m.role,
-                    content: m.content,
-                    createdAt: m.createdAt,
-                    toolCallId: m.toolCallId,
-                    toolName: m.toolName,
-                    args: m.args,
-                    result: m.result,
-                    status: m.status,
-                  })),
-                );
-              }
+              const uiMsgs = convertModelMessagesToUI(modelMsgs);
+              setMessages(
+                uiMsgs.map((m: UIMessage) => ({
+                  role: m.role,
+                  content: m.content,
+                  createdAt: m.createdAt,
+                  toolCallId: m.toolCallId,
+                  toolName: m.toolName,
+                  args: m.args,
+                  result: m.result,
+                  status: m.status,
+                })),
+              );
             }
           }
-        }
-
-        // Initialize operator state from session config (only if not resuming)
-        if (!isResume && s.config?.operatorSettings) {
+        } else if (s.config?.operatorSettings) {
           const settings = s.config.operatorSettings;
           const requireApproval = settings.requireApproval ?? true;
           const initialState = createInitialOperatorState(
@@ -205,7 +197,7 @@ export default function OperatorDashboard({
       }
     }
     loadSession();
-  }, [sessionId, isResume]);
+  }, [sessionId]);
 
   // ---------------------------------------------------------------------------
   // Message helpers — same pattern as pentest component
