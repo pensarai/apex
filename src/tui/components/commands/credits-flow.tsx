@@ -81,7 +81,13 @@ export default function CreditsFlow() {
       const result = (await response.json()) as {
         workspace: { name: string };
         credits: { balance: number };
+        endpoints?: { stream?: string };
       };
+
+      // Cache the streaming endpoint URL if the server provides one
+      if (result.endpoints?.stream) {
+        await appConfig.update({ pensarStreamUrl: result.endpoints.stream });
+      }
 
       setCredits({
         balance: result.credits.balance,
