@@ -65,7 +65,9 @@ function App({ appConfig }: AppProps) {
             <InputProvider>
               <DialogProvider>
                 <AgentProvider>
-                  <CommandProvider>
+                  <CommandProvider
+                    onOpenSessionsDialog={() => setShowSessionsDialog(true)}
+                  >
                     <KeybindingProvider
                       deps={{
                         ctrlCPressTime,

@@ -14,6 +14,7 @@ import { config } from "../core/config";
 export interface AppCommandContext {
   route: Route;
   navigate: (route: Route) => void;
+  openSessionsDialog?: () => void;
 }
 
 /**
@@ -254,6 +255,10 @@ export const commands: CommandConfig[] = [
     description: "Browse previous sessions",
     category: "Pentesting",
     handler: async (args, ctx) => {
+      if (ctx.openSessionsDialog) {
+        ctx.openSessionsDialog();
+        return;
+      }
       ctx.navigate({
         type: "base",
         path: "sessions",

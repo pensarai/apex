@@ -45,9 +45,13 @@ export function useCommand(): CommandContextValue {
 
 interface CommandProviderProps {
   children: ReactNode;
+  onOpenSessionsDialog?: () => void;
 }
 
-export function CommandProvider({ children }: CommandProviderProps) {
+export function CommandProvider({
+  children,
+  onOpenSessionsDialog,
+}: CommandProviderProps) {
   const route = useRoute();
   const [skills, setSkills] = useState<Skill[]>([]);
 
@@ -55,9 +59,10 @@ export function CommandProvider({ children }: CommandProviderProps) {
     const ctx: AppCommandContext = {
       route: route.data,
       navigate: route.navigate,
+      openSessionsDialog: onOpenSessionsDialog,
     };
     return ctx;
-  }, [route]);
+  }, [route, onOpenSessionsDialog]);
 
   const refreshSkills = useCallback(async () => {
     const loaded = await loadSkills();
