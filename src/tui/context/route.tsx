@@ -22,7 +22,8 @@ export type RoutePath =
   | "sessions"
   | "theme"
   | "auth"
-  | "credits";
+  | "credits"
+  | "create-skill";
 
 export interface WebCommandOptions {
   auto?: boolean;

@@ -16,6 +16,7 @@ import { ALL_TOOL_NAMES } from "../../../core/agents/offSecAgent";
 import { useAgent } from "../../context/agent";
 import { useRoute } from "../../context/route";
 import { useConfig } from "../../context/config";
+import { useCommand } from "../../context/command";
 import { MessageList } from "../chat/message-list";
 import { InputArea } from "../chat/input-area";
 import { useTheme } from "../../theme";
@@ -48,6 +49,8 @@ export default function OperatorDashboard({
   const route = useRoute();
   const config = useConfig();
   const { model, setThinking, setIsExecuting } = useAgent();
+  const { autocompleteOptions, executeCommand, resolveSkillContent } =
+    useCommand();
 
   // Session state
   const [session, setSession] = useState<SessionInfo | null>(null);
@@ -384,6 +387,20 @@ export default function OperatorDashboard({
     [status, runAgent],
   );
 
+  const handleCommandExecute = useCallback(
+    async (command: string) => {
+      // Check if this matches a skill — if so, inject its content as a directive
+      const skillContent = resolveSkillContent(command);
+      if (skillContent) {
+        handleSubmit(skillContent);
+        return;
+      }
+      // Otherwise, delegate to the standard command router
+      await executeCommand(command);
+    },
+    [resolveSkillContent, handleSubmit, executeCommand],
+  );
+
   const handleAbort = useCallback(() => {
     if (abortControllerRef.current) {
       // Increment generation to prevent the aborted run's cleanup from firing
@@ -570,7 +587,7 @@ export default function OperatorDashboard({
             ? "Agent is working..."
             : status === "waiting"
               ? "Type to redirect agent, or Y/A to approve..."
-              : "Enter directive (e.g., 'Explore the attack surface')..."
+              : "Enter directive or / for commands & skills..."
         }
         focused={status !== "running"}
         status={status === "waiting" ? "running" : status}
@@ -581,6 +598,10 @@ export default function OperatorDashboard({
         pendingApproval={currentPending}
         onApprove={handleApprove}
         onAutoApprove={handleAutoApprove}
+        enableAutocomplete={true}
+        autocompleteOptions={autocompleteOptions}
+        enableCommands={true}
+        onCommandExecute={handleCommandExecute}
       />
     </box>
   );
