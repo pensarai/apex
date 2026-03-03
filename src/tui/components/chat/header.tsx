@@ -5,12 +5,8 @@
  * Layout: MODE | target URL | endpoints found | findings documented | tokens | tool calls
  */
 
-import { useTheme, getTierColor } from "../../theme";
-import type {
-  OperatorMode,
-  OperatorStage,
-  PermissionTier,
-} from "../../../core/operator";
+import { useTheme } from "../../theme";
+import type { OperatorMode, OperatorStage } from "../../../core/operator";
 
 export interface HeaderProps {
   /** Session mode */
@@ -27,8 +23,8 @@ export interface HeaderProps {
   operatorMode?: OperatorMode;
   /** Operator-specific: current stage */
   currentStage?: OperatorStage;
-  /** Operator-specific: auto-approve tier */
-  autoApproveTier?: PermissionTier;
+  /** Whether command approval is enabled */
+  requireApproval?: boolean;
   /** Operator-specific: approval stats */
   stats?: { approved: number; denied: number };
   /** Number of endpoints discovered */
@@ -51,7 +47,7 @@ export function Header({
   tokenUsage,
   operatorMode,
   currentStage,
-  autoApproveTier,
+  requireApproval,
   stats,
   endpointsCount = 0,
   findingsCount = 0,
@@ -118,12 +114,12 @@ export function Header({
           </>
         )}
 
-        {/* Auto-approve tier indicator */}
-        {autoApproveTier && mode === "operator" && (
+        {/* Approval status indicator */}
+        {requireApproval !== undefined && mode === "operator" && (
           <>
             <text fg={colors.textMuted}>│</text>
-            <text fg={getTierColor(colors, autoApproveTier)}>
-              T{autoApproveTier}
+            <text fg={requireApproval ? colors.warning : colors.primary}>
+              {requireApproval ? "approval:on" : "approval:off"}
             </text>
           </>
         )}

@@ -205,7 +205,7 @@ export interface StageProgress {
 export interface OperatorSessionState {
   mode: OperatorMode;
   currentStage: OperatorStage;
-  autoApproveTier: PermissionTier;
+  requireApproval: boolean;
   pendingApprovals: PendingApproval[];
   actionHistory: ActionHistoryEntry[];
   stageProgress: Record<OperatorStage, StageProgress>;
@@ -213,7 +213,7 @@ export interface OperatorSessionState {
 
 export function createInitialOperatorState(
   initialMode: OperatorMode = "manual",
-  autoApproveTier: PermissionTier = 2,
+  requireApproval: boolean = true,
 ): OperatorSessionState {
   const stageProgress = {} as Record<OperatorStage, StageProgress>;
   for (const stage of Object.keys(OPERATOR_STAGES) as OperatorStage[]) {
@@ -222,7 +222,7 @@ export function createInitialOperatorState(
   return {
     mode: initialMode,
     currentStage: "setup",
-    autoApproveTier,
+    requireApproval,
     pendingApprovals: [],
     actionHistory: [],
     stageProgress,
@@ -232,7 +232,7 @@ export function createInitialOperatorState(
 /** Operator settings for session config */
 export const OperatorSettingsObject = z.object({
   initialMode: z.enum(["plan", "manual", "auto"]).default("manual"),
-  autoApproveTier: z.number().min(1).max(5).default(2),
+  requireApproval: z.boolean().default(true),
 });
 
 export type OperatorSettings = z.infer<typeof OperatorSettingsObject>;

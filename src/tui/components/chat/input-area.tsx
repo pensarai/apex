@@ -9,7 +9,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useKeyboard } from "@opentui/react";
-import { useTheme, getTierColor } from "../../theme";
+import { useTheme } from "../../theme";
 import { PromptInput, type PromptInputRef } from "../shared/prompt-input";
 import { InputProvider, useInput } from "../../context/input";
 import type { PendingApproval, OperatorMode } from "../../../core/operator";
@@ -234,7 +234,6 @@ function ApprovalInputArea({
 }: ApprovalInputAreaProps) {
   const { colors } = useTheme();
   const [focusedElement, setFocusedElement] = useState(0); // 0=Yes, 1=Auto, 2=Input
-  const tierColor = getTierColor(colors, approval.tier);
 
   useKeyboard((key) => {
     // Navigation
@@ -293,7 +292,7 @@ function ApprovalInputArea({
         />
         <text
           fg={focusedElement === 1 ? colors.text : colors.textMuted}
-          content={`[A] Auto-approve T1-T${approval.tier} from now`}
+          content="[A] Auto-approve all commands from now"
         />
       </box>
 

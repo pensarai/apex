@@ -274,11 +274,8 @@ function CommandDisplay({
           <RouteSwitch.Case when="operator">
             <HITLWizard
               initialTarget={route.data.options?.target}
-              initialMode={route.data.options?.mode}
               initialName={route.data.options?.name}
-              initialTier={route.data.options?.tier}
-              initialHosts={route.data.options?.hosts}
-              initialStrict={route.data.options?.strict}
+              initialRequireApproval={route.data.options?.requireApproval}
               initialModel={route.data.options?.model}
             />
           </RouteSwitch.Case>

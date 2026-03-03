@@ -79,7 +79,7 @@ export type OffensiveHeadersConfig = z.infer<
 
 const OperatorSettingsObject = z.object({
   initialMode: z.enum(["plan", "manual", "auto"]).default("manual"),
-  autoApproveTier: z.number().min(1).max(5).default(2),
+  requireApproval: z.boolean().default(true),
   enableSuggestions: z.boolean().default(true),
 });
 
@@ -530,8 +530,8 @@ export const removeMessage = async (input: z.output<typeof RemoveMsgInput>) => {
 export interface OperatorSessionState {
   /** Operator mode: plan, manual, auto */
   mode: string;
-  /** Auto-approve tier level */
-  autoApproveTier: number;
+  /** Whether commands require user approval before execution */
+  requireApproval: boolean;
   /** Current stage: setup, recon, foothold, etc. */
   currentStage: string;
   /** Chat messages history */
@@ -614,7 +614,7 @@ export async function updateOperatorSettings(
     if (!session.config.operatorSettings) {
       session.config.operatorSettings = {
         initialMode: "manual",
-        autoApproveTier: 2,
+        requireApproval: true,
         enableSuggestions: true,
       };
     }
@@ -623,9 +623,9 @@ export async function updateOperatorSettings(
     if (settings.initialMode !== undefined) {
       session.config.operatorSettings.initialMode = settings.initialMode;
     }
-    if (settings.autoApproveTier !== undefined) {
-      session.config.operatorSettings.autoApproveTier =
-        settings.autoApproveTier;
+    if (settings.requireApproval !== undefined) {
+      session.config.operatorSettings.requireApproval =
+        settings.requireApproval;
     }
     if (settings.enableSuggestions !== undefined) {
       session.config.operatorSettings.enableSuggestions =

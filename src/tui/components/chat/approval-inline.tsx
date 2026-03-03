@@ -5,7 +5,7 @@
  * Provides visual context for pending approvals.
  */
 
-import { useTheme, getTierColor } from "../../theme";
+import { useTheme } from "../../theme";
 import { getToolSummary } from "../shared/tool-registry";
 import type { PendingApproval } from "../../../core/operator";
 
@@ -14,17 +14,12 @@ interface InlineApprovalPromptProps {
 }
 
 /**
- * Inline approval prompt - shows pending tool call with tier info.
- * Displayed in the chat flow.
+ * Inline approval prompt — shows pending tool call awaiting approval.
  */
 export function InlineApprovalPrompt({ approval }: InlineApprovalPromptProps) {
   const { colors } = useTheme();
-  const tierColor = getTierColor(colors, approval.tier);
 
-  // Get the description if provided
   const description = approval.args?.toolCallDescription as string | undefined;
-
-  // Get tool summary from registry
   const summary = getToolSummary(approval.toolName, approval.args || {});
 
   return (
@@ -33,17 +28,15 @@ export function InlineApprovalPrompt({ approval }: InlineApprovalPromptProps) {
       <text fg={colors.warning}>{"  │ "}</text>
 
       <box flexDirection="column">
-        {/* Description from agent if available */}
         {description && (
           <box flexDirection="row" marginBottom={1}>
             <text fg={colors.text} content={description} />
           </box>
         )}
 
-        {/* Approval line with tier indicator */}
+        {/* Approval line */}
         <box flexDirection="row" gap={1}>
           <text fg={colors.warning} content="?" />
-          <text fg={tierColor} content={`[T${approval.tier}]`} />
           <text fg={colors.info} content={summary} />
         </box>
 
@@ -52,7 +45,7 @@ export function InlineApprovalPrompt({ approval }: InlineApprovalPromptProps) {
           <text fg={colors.primary}>Y</text>
           <text fg={colors.textMuted}>approve</text>
           <text fg={colors.secondary}>A</text>
-          <text fg={colors.textMuted}>auto-approve</text>
+          <text fg={colors.textMuted}>approve all</text>
           <text fg={colors.textMuted}>or type to redirect</text>
         </box>
       </box>

@@ -10,6 +10,8 @@ import type { OffensiveSecurityAgentInput, ConsumeCallbacks } from "./types";
 import { createAllTools, EMAIL_TOOL_NAMES_ACTIVE } from "./tools";
 import { createResponseTool, RESPONSE_TOOL_NAME } from "./tools/response";
 import { DEFAULT_SYSTEM_PROMPT } from "./prompt";
+import type { ApprovalGate } from "../../operator";
+import { ApprovalDeniedError } from "../../operator";
 
 /**
  * General-purpose offensive security agent harness.
@@ -79,6 +81,11 @@ export class OffensiveSecurityAgent<TResult = void> {
     let tools: ToolSet = input.extraTools
       ? { ...builtinTools, ...input.extraTools }
       : { ...builtinTools };
+
+    // -- Approval gate wrapping -----------------------------------------------
+    if (input.approvalGate) {
+      tools = wrapToolsWithApprovalGate(tools, input.approvalGate);
+    }
 
     // -- Response schema → auto capture / stop / resolve ----------------------
     let capturedResponse: TResult | null = null;
@@ -231,4 +238,50 @@ export class OffensiveSecurityAgent<TResult = void> {
   get response() {
     return this.streamResult.response;
   }
+}
+
+/**
+ * Wrap every tool's execute function with the approval gate so that
+ * tool calls are held until the operator approves them.
+ */
+function wrapToolsWithApprovalGate(
+  tools: ToolSet,
+  gate: ApprovalGate,
+): ToolSet {
+  const wrapped: ToolSet = {};
+
+  for (const [name, coreTool] of Object.entries(tools)) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const t = coreTool as any;
+
+    if (!t.execute) {
+      wrapped[name] = coreTool;
+      continue;
+    }
+
+    const originalExecute = t.execute;
+
+    wrapped[name] = {
+      ...t,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      execute: async (args: Record<string, unknown>, options: any) => {
+        const toolCallId =
+          args.toolCallId ??
+          `tc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+        try {
+          await gate.check(name, String(toolCallId), args);
+        } catch (err) {
+          if (err instanceof ApprovalDeniedError) {
+            return { blocked: true, reason: "Denied by operator" };
+          }
+          throw err;
+        }
+
+        return originalExecute(args, options);
+      },
+    };
+  }
+
+  return wrapped;
 }

@@ -30,7 +30,7 @@ export interface WebCommandOptions {
   name?: string;
   swarm?: boolean;
   mode?: "plan" | "manual" | "auto";
-  tier?: number;
+  requireApproval?: boolean;
   authUrl?: string;
   authUser?: string;
   authPass?: string;

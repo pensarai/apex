@@ -23,10 +23,11 @@ import type { DisplayMessage } from "../agent-display";
 import { isToolMessage } from "../shared/type-guards";
 import type { OperatorMode, PendingApproval } from "../../../core/operator";
 import {
+  ApprovalGate,
   createInitialOperatorState,
   type OperatorSessionState,
 } from "../../../core/operator";
-import { stepCountIs } from "ai";
+import { stepCountIs, type ModelMessage } from "ai";
 
 interface OperatorDashboardProps {
   sessionId: string;
@@ -56,24 +57,64 @@ export default function OperatorDashboard({
   // Agent/status state
   const [status, setStatus] = useState<DashboardStatus>("idle");
   const abortControllerRef = useRef<AbortController | null>(null);
+  const generationRef = useRef(0);
 
   // Messages — same pattern as pentest component
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const textRef = useRef("");
+  // AI SDK conversation history for multi-turn continuity
+  const conversationRef = useRef<ModelMessage[]>([]);
 
   // Input state
   const [inputValue, setInputValue] = useState("");
 
   // Operator state
   const [operatorState, setOperatorState] = useState<OperatorSessionState>(() =>
-    createInitialOperatorState("manual", 2),
+    createInitialOperatorState("manual", true),
   );
-  const [pendingApprovals] = useState<PendingApproval[]>([]);
-  const [lastApprovedAction] = useState<string | null>(null);
+
+  // Approval gate — created once and updated when config changes
+  const approvalGateRef = useRef<ApprovalGate>(
+    new ApprovalGate({ requireApproval: true }),
+  );
+  const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>(
+    [],
+  );
+  const [lastApprovedAction, setLastApprovedAction] = useState<string | null>(
+    null,
+  );
 
   // Display options
   const [verboseMode, setVerboseMode] = useState(false);
   const [expandedLogs, setExpandedLogs] = useState(false);
+
+  // Subscribe to approval gate events
+  useEffect(() => {
+    const gate = approvalGateRef.current;
+
+    const onApprovalNeeded = () => {
+      setPendingApprovals(gate.getPendingApprovals());
+      setStatus("waiting");
+    };
+
+    const onApprovalResolved = (event: { id: string; decision: string }) => {
+      setPendingApprovals(gate.getPendingApprovals());
+      if (event.decision === "approved") {
+        setLastApprovedAction(event.id);
+      }
+      if (gate.getPendingApprovals().length === 0) {
+        setStatus("running");
+      }
+    };
+
+    gate.on("approval-needed", onApprovalNeeded);
+    gate.on("approval-resolved", onApprovalResolved);
+
+    return () => {
+      gate.off("approval-needed", onApprovalNeeded);
+      gate.off("approval-resolved", onApprovalResolved);
+    };
+  }, []);
 
   // Load session on mount
   useEffect(() => {
@@ -88,17 +129,18 @@ export default function OperatorDashboard({
           if (hasState) {
             const savedState = await sessions.loadOperatorState(sessionId);
             if (savedState) {
-              // Map persisted state to runtime operator state
               setOperatorState((prev) => ({
                 ...prev,
                 mode: (savedState.mode as OperatorMode) || prev.mode,
-                autoApproveTier:
-                  (savedState.autoApproveTier as 1 | 2 | 3 | 4 | 5) ||
-                  prev.autoApproveTier,
+                requireApproval:
+                  savedState.requireApproval ?? prev.requireApproval,
                 currentStage:
                   (savedState.currentStage as OperatorSessionState["currentStage"]) ||
                   prev.currentStage,
               }));
+              approvalGateRef.current.updateConfig({
+                requireApproval: savedState.requireApproval ?? true,
+              });
             }
           }
         }
@@ -106,11 +148,13 @@ export default function OperatorDashboard({
         // Initialize operator state from session config (only if not resuming)
         if (!isResume && s.config?.operatorSettings) {
           const settings = s.config.operatorSettings;
+          const requireApproval = settings.requireApproval ?? true;
           const initialState = createInitialOperatorState(
             (settings.initialMode as OperatorMode) || "manual",
-            (settings.autoApproveTier as 1 | 2 | 3 | 4 | 5) || 2,
+            requireApproval,
           );
           setOperatorState(initialState);
+          approvalGateRef.current.updateConfig({ requireApproval });
         }
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to load session");
@@ -178,12 +222,43 @@ export default function OperatorDashboard({
   );
 
   // ---------------------------------------------------------------------------
+  // Approval handlers
+  // ---------------------------------------------------------------------------
+
+  const handleApprove = useCallback(() => {
+    const pending = approvalGateRef.current.getPendingApprovals();
+    if (pending.length > 0) {
+      approvalGateRef.current.approve(pending[0].id);
+    }
+  }, []);
+
+  const handleAutoApprove = useCallback(() => {
+    // Disable approval for the rest of the session
+    approvalGateRef.current.updateConfig({ requireApproval: false });
+    setOperatorState((prev) => ({ ...prev, requireApproval: false }));
+
+    // Approve all currently pending
+    const pending = approvalGateRef.current.getPendingApprovals();
+    for (const p of pending) {
+      approvalGateRef.current.approve(p.id);
+    }
+  }, []);
+
+  // ---------------------------------------------------------------------------
   // Run agent
   // ---------------------------------------------------------------------------
 
   const runAgent = useCallback(
     async (prompt: string) => {
       if (!session) return;
+
+      // Abort any previous run before starting a new one
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+
+      const gen = ++generationRef.current;
 
       setStatus("running");
       setThinking(true);
@@ -200,17 +275,25 @@ export default function OperatorDashboard({
         { role: "user", content: prompt, createdAt: new Date() },
       ]);
 
+      // Build messages array — append user turn to conversation history
+      const nextMessages: ModelMessage[] = [
+        ...conversationRef.current,
+        { role: "user", content: prompt },
+      ];
+
       try {
-        await runOffensiveSecurityAgent({
+        const streamResult = await runOffensiveSecurityAgent({
           system: buildOperatorSystemPrompt(session, operatorState),
           prompt,
           model: model.id,
           session,
+          messages: nextMessages,
           stopWhen: [stepCountIs(10000)],
           target: session.targets[0],
           activeTools: [...ALL_TOOL_NAMES],
           abortSignal: controller.signal,
           authConfig: buildAuthConfig(config.data),
+          approvalGate: approvalGateRef.current,
           callbacks: {
             onTextDelta: (d) => {
               setThinking(false);
@@ -234,7 +317,18 @@ export default function OperatorDashboard({
             },
           },
         });
+
+        // Persist full conversation for next turn
+        try {
+          const response = await streamResult.response;
+          if (gen === generationRef.current && response.messages) {
+            conversationRef.current = response.messages as ModelMessage[];
+          }
+        } catch {
+          // Stream may have been aborted; conversation stays as-is
+        }
       } catch (e) {
+        if (gen !== generationRef.current) return;
         if ((e as Error).name !== "AbortError") {
           const errorMsg = e instanceof Error ? e.message : "Agent failed";
           setError(errorMsg);
@@ -248,10 +342,12 @@ export default function OperatorDashboard({
           ]);
         }
       } finally {
-        setStatus("idle");
-        setThinking(false);
-        setIsExecuting(false);
-        abortControllerRef.current = null;
+        if (gen === generationRef.current) {
+          setStatus("idle");
+          setThinking(false);
+          setIsExecuting(false);
+          abortControllerRef.current = null;
+        }
       }
     },
     [
@@ -269,7 +365,19 @@ export default function OperatorDashboard({
 
   const handleSubmit = useCallback(
     (value: string) => {
-      if (!value.trim() || status === "running") return;
+      if (!value.trim()) return;
+
+      // If there's a pending approval and the user types, deny and redirect
+      const pending = approvalGateRef.current.getPendingApprovals();
+      if (pending.length > 0) {
+        for (const p of pending) {
+          approvalGateRef.current.deny(p.id);
+        }
+      }
+
+      // Block submission only when the agent is actively running (not waiting)
+      if (status === "running") return;
+
       setInputValue("");
       runAgent(value.trim());
     },
@@ -278,11 +386,17 @@ export default function OperatorDashboard({
 
   const handleAbort = useCallback(() => {
     if (abortControllerRef.current) {
+      // Increment generation to prevent the aborted run's cleanup from firing
+      generationRef.current++;
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
       setStatus("idle");
       setThinking(false);
       setIsExecuting(false);
+
+      // Deny all pending approvals on abort
+      approvalGateRef.current.denyAll();
+
       setMessages((prev) => [
         ...prev,
         {
@@ -294,11 +408,19 @@ export default function OperatorDashboard({
     }
   }, [setThinking, setIsExecuting]);
 
+  // Toggle approval requirement at runtime
+  const toggleApproval = useCallback(() => {
+    setOperatorState((prev) => {
+      const newVal = !prev.requireApproval;
+      approvalGateRef.current.updateConfig({ requireApproval: newVal });
+      return { ...prev, requireApproval: newVal };
+    });
+  }, []);
+
   // Keyboard shortcuts
   useKeyboard((key) => {
-    // Ctrl+C - abort or clear input
     if (key.ctrl && key.name === "c") {
-      if (status === "running") {
+      if (status === "running" || status === "waiting") {
         handleAbort();
       } else if (inputValue.trim()) {
         setInputValue("");
@@ -306,8 +428,7 @@ export default function OperatorDashboard({
       return;
     }
 
-    // Escape - go home
-    if (key.name === "escape" && status !== "running") {
+    if (key.name === "escape" && status !== "running" && status !== "waiting") {
       route.navigate({ type: "base", path: "home" });
       return;
     }
@@ -324,14 +445,29 @@ export default function OperatorDashboard({
       return;
     }
 
-    // Shift+Tab - cycle operator mode
+    // Shift+Tab - toggle command approval on/off
     if (key.name === "tab" && key.shift) {
-      setOperatorState((prev) => {
-        const modes: OperatorMode[] = ["plan", "manual", "auto"];
-        const idx = modes.indexOf(prev.mode);
-        const nextIdx = (idx + 1) % modes.length;
-        return { ...prev, mode: modes[nextIdx] };
-      });
+      toggleApproval();
+      return;
+    }
+
+    // Y/y to approve pending
+    if (
+      status === "waiting" &&
+      pendingApprovals.length > 0 &&
+      (key.name === "y" || key.raw === "Y")
+    ) {
+      handleApprove();
+      return;
+    }
+
+    // A/a to auto-approve (disable approval)
+    if (
+      status === "waiting" &&
+      pendingApprovals.length > 0 &&
+      (key.name === "a" || key.raw === "A")
+    ) {
+      handleAutoApprove();
       return;
     }
   });
@@ -351,7 +487,6 @@ export default function OperatorDashboard({
     );
   }
 
-  // Error state (session failed to load)
   if (!session) {
     return (
       <box
@@ -368,6 +503,10 @@ export default function OperatorDashboard({
       </box>
     );
   }
+
+  // Determine the current pending approval for the input area
+  const currentPending =
+    pendingApprovals.length > 0 ? pendingApprovals[0] : undefined;
 
   return (
     <box flexDirection="column" width="100%" height="100%" flexGrow={1}>
@@ -394,15 +533,9 @@ export default function OperatorDashboard({
         </box>
         <box flexDirection="row" gap={2}>
           <text
-            fg={
-              operatorState.mode === "auto"
-                ? colors.primary
-                : operatorState.mode === "plan"
-                  ? colors.warning
-                  : colors.info
-            }
+            fg={operatorState.requireApproval ? colors.warning : colors.primary}
           >
-            {operatorState.mode.toUpperCase()}
+            {operatorState.requireApproval ? "APPROVAL ON" : "APPROVAL OFF"}
           </text>
           <text fg={colors.textMuted}>{model.name}</text>
         </box>
@@ -418,7 +551,7 @@ export default function OperatorDashboard({
       {/* Message display */}
       <MessageList
         messages={messages}
-        isRunning={status === "running"}
+        isRunning={status === "running" || status === "waiting"}
         variant="operator"
         focused={true}
         verbose={verboseMode}
@@ -435,14 +568,19 @@ export default function OperatorDashboard({
         placeholder={
           status === "running"
             ? "Agent is working..."
-            : "Enter directive (e.g., 'Explore the attack surface')..."
+            : status === "waiting"
+              ? "Type to redirect agent, or Y/A to approve..."
+              : "Enter directive (e.g., 'Explore the attack surface')..."
         }
         focused={status !== "running"}
-        status={status}
+        status={status === "waiting" ? "running" : status}
         mode="operator"
         operatorMode={operatorState.mode}
         verboseMode={verboseMode}
         expandedLogs={expandedLogs}
+        pendingApproval={currentPending}
+        onApprove={handleApprove}
+        onAutoApprove={handleAutoApprove}
       />
     </box>
   );
@@ -456,20 +594,15 @@ function buildOperatorSystemPrompt(
   operatorState: OperatorSessionState,
 ): string {
   const target = session.targets[0] || "unknown";
-  const mode = operatorState.mode;
 
   return `You are an offensive security agent operating in interactive operator mode.
 
 Target: ${target}
-Mode: ${mode}
 Stage: ${operatorState.currentStage}
+Command approval: ${operatorState.requireApproval ? "enabled — the operator will approve each tool call" : "disabled — tool calls execute automatically"}
 
 You are tasked with performing security testing on the target system. The human operator
 will guide your actions through directives. Follow their instructions carefully.
-
-${mode === "plan" ? "PLAN MODE: You should only propose actions and explain your reasoning. Do not execute any tools." : ""}
-${mode === "manual" ? "MANUAL MODE: Execute the requested actions. The operator will approve individual tool calls." : ""}
-${mode === "auto" ? "AUTO MODE: Execute actions autonomously within the approved tier level." : ""}
 
 Guidelines:
 - Be thorough and methodical in your testing approach
