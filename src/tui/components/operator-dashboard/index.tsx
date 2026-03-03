@@ -146,6 +146,8 @@ export default function OperatorDashboard({
             setOperatorState((prev) => ({
               ...prev,
               mode: (savedState.mode as OperatorMode) || prev.mode,
+              requireApproval:
+                savedState.requireApproval ?? prev.requireApproval,
               currentStage:
                 (savedState.currentStage as OperatorSessionState["currentStage"]) ||
                 prev.currentStage,
