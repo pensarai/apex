@@ -6,7 +6,7 @@
  * Reuses MessageList and InputArea from the shared/chat components.
  */
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useKeyboard } from "@opentui/react";
 
 import { sessions, type SessionInfo } from "../../../core/session";
@@ -16,12 +16,14 @@ import { ALL_TOOL_NAMES } from "../../../core/agents/offSecAgent";
 import { useAgent } from "../../context/agent";
 import { useRoute } from "../../context/route";
 import { useConfig } from "../../context/config";
+import { useCommand } from "../../context/command";
 import { MessageList } from "../chat/message-list";
 import { InputArea } from "../chat/input-area";
 import { useTheme } from "../../theme";
 import type { DisplayMessage } from "../agent-display";
 import { isToolMessage } from "../shared/type-guards";
 import type { OperatorMode, PendingApproval } from "../../../core/operator";
+import { slugify } from "../../../core/skills";
 import {
   ApprovalGate,
   createInitialOperatorState,
@@ -48,6 +50,20 @@ export default function OperatorDashboard({
   const route = useRoute();
   const config = useConfig();
   const { model, setThinking, setIsExecuting } = useAgent();
+  const {
+    autocompleteOptions: allAutocompleteOptions,
+    executeCommand,
+    resolveSkillContent,
+    skills,
+  } = useCommand();
+
+  const autocompleteOptions = useMemo(() => {
+    const allowedCommands = new Set(["/create-skill"]);
+    const skillSlugs = new Set(skills.map((s) => `/${slugify(s.name)}`));
+    return allAutocompleteOptions.filter(
+      (opt) => allowedCommands.has(opt.value) || skillSlugs.has(opt.value),
+    );
+  }, [allAutocompleteOptions, skills]);
 
   // Session state
   const [session, setSession] = useState<SessionInfo | null>(null);
@@ -384,6 +400,20 @@ export default function OperatorDashboard({
     [status, runAgent],
   );
 
+  const handleCommandExecute = useCallback(
+    async (command: string) => {
+      // Check if this matches a skill — if so, inject its content as a directive
+      const skillContent = resolveSkillContent(command);
+      if (skillContent) {
+        handleSubmit(skillContent);
+        return;
+      }
+      // Otherwise, delegate to the standard command router
+      await executeCommand(command);
+    },
+    [resolveSkillContent, handleSubmit, executeCommand],
+  );
+
   const handleAbort = useCallback(() => {
     if (abortControllerRef.current) {
       // Increment generation to prevent the aborted run's cleanup from firing
@@ -570,7 +600,7 @@ export default function OperatorDashboard({
             ? "Agent is working..."
             : status === "waiting"
               ? "Type to redirect agent, or Y/A to approve..."
-              : "Enter directive (e.g., 'Explore the attack surface')..."
+              : "Enter directive or / for commands & skills..."
         }
         focused={status !== "running"}
         status={status === "waiting" ? "running" : status}
@@ -581,6 +611,10 @@ export default function OperatorDashboard({
         pendingApproval={currentPending}
         onApprove={handleApprove}
         onAutoApprove={handleAutoApprove}
+        enableAutocomplete={true}
+        autocompleteOptions={autocompleteOptions}
+        enableCommands={true}
+        onCommandExecute={handleCommandExecute}
       />
     </box>
   );

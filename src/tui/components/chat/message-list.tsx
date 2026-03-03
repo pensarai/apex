@@ -123,19 +123,12 @@ export function MessageList({
           <box flexDirection="column" gap={0} marginTop={1}>
             <text fg={colors.text}>Tips:</text>
             <box flexDirection="row">
-              <text fg={colors.primary}>/auth</text>
-              <text fg={colors.textMuted}> - Configure authentication</text>
+              <text fg={colors.primary}>/</text>
+              <text fg={colors.textMuted}> - Create or use skills</text>
             </box>
             <box flexDirection="row">
               <text fg={colors.primary}>Shift+Tab</text>
-              <text fg={colors.textMuted}>
-                {" "}
-                - Cycle modes (plan/manual/auto)
-              </text>
-            </box>
-            <box flexDirection="row">
-              <text fg={colors.primary}>Ctrl+S</text>
-              <text fg={colors.textMuted}> - Change stage</text>
+              <text fg={colors.textMuted}> - Cycle approval on/off</text>
             </box>
           </box>
         </box>
