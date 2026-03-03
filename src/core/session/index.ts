@@ -141,10 +141,6 @@ const SessionConfigObject = z.object({
   authenticationInstructions: z.string().optional(),
   requestsPerSecond: z.number().optional(),
   operatorSettings: OperatorSettingsObject.optional(),
-  /** Enable CVSS 4.0 scoring for findings (defaults to true if not specified) */
-  enableCvssScoring: z.boolean().optional(),
-  /** Model to use for CVSS scorer subagent (default: claude-4-5-haiku) */
-  cvssModel: z.string().optional(),
   /** Toolset state for controlling which tools are available */
   toolsetState: ToolsetStateSchema.optional(),
   /** Whether to enumerate subdomains during attack surface discovery (default: false) */

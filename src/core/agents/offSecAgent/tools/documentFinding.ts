@@ -3,6 +3,10 @@ import { z } from "zod";
 import { join } from "path";
 import { writeFileSync, appendFileSync } from "fs";
 import type { ToolContext } from "./types";
+import {
+  scoreFindingWithCVSS,
+  type CVSSScorerResult,
+} from "../../specialized/cvssScorer";
 
 export const documentVulnerabilityInputSchema = z.object({
   title: z.string().describe("Finding title"),
@@ -72,11 +76,47 @@ FINDING STRUCTURE:
         }
 
         const timestamp = new Date().toISOString();
+
+        // -- CVSS 4.0 scoring ------------------------------------------------
+        let cvssResult: CVSSScorerResult | undefined;
+        try {
+          cvssResult = await scoreFindingWithCVSS(
+            {
+              finding: {
+                title: finding.title,
+                description: finding.description,
+                impact: finding.impact,
+                evidence: finding.evidence,
+                endpoint: finding.endpoint,
+                remediation: finding.remediation,
+              },
+              agentMessages: [],
+            },
+            ctx.model!,
+            ctx.authConfig,
+          );
+        } catch (err) {
+          console.warn(
+            "CVSS scoring failed, proceeding without score:",
+            err instanceof Error ? err.message : err,
+          );
+        }
+
         const findingWithMeta = {
           ...finding,
           timestamp,
           sessionId: session.id,
           target: session.targets[0],
+          ...(cvssResult && {
+            cvss: {
+              score: cvssResult.score,
+              severity: cvssResult.severity,
+              vectorString: cvssResult.vectorString,
+              metrics: cvssResult.metrics,
+              scoreType: cvssResult.scoreType,
+              reasoning: cvssResult.reasoning,
+            },
+          }),
         };
 
         // Safe filename from title
@@ -97,9 +137,16 @@ FINDING STRUCTURE:
           writeFileSync(jsonPath, JSON.stringify(findingWithMeta, null, 2));
 
           // Write human-readable markdown
+          const cvssLine = cvssResult
+            ? `\n**CVSS 4.0 Score:** ${cvssResult.score} (${cvssResult.severity})  \n**Vector:** \`${cvssResult.vectorString}\`  `
+            : "";
+          const cvssSection = cvssResult
+            ? `\n## CVSS 4.0 Assessment\n\n**Score:** ${cvssResult.score} / 10.0 (${cvssResult.severity})  \n**Vector:** \`${cvssResult.vectorString}\`  \n**Score Type:** ${cvssResult.scoreType}\n\n**Reasoning:** ${cvssResult.reasoning}\n`
+            : "";
+
           const markdown = `# ${finding.title}
 
-**Severity:** ${finding.severity}  
+**Severity:** ${finding.severity}  ${cvssLine}
 **Target:** ${session.targets[0]}  
 **Endpoint:** ${finding.endpoint}  
 **Date:** ${timestamp}  
@@ -112,7 +159,7 @@ ${finding.description}
 ## Impact
 
 ${finding.impact}
-
+${cvssSection}
 ## Evidence
 
 \`\`\`
@@ -138,7 +185,8 @@ ${finding.references ? `## References\n\n${finding.references}` : ""}
 
           // Append to summary
           const summaryPath = join(session.rootPath, "findings-summary.md");
-          const summaryEntry = `- [${finding.severity}] ${finding.title} - \`findings/${mdFilename}\`\n`;
+          const cvssTag = cvssResult ? ` (CVSS ${cvssResult.score})` : "";
+          const summaryEntry = `- [${finding.severity}]${cvssTag} ${finding.title} - \`findings/${mdFilename}\`\n`;
 
           try {
             appendFileSync(summaryPath, summaryEntry);
