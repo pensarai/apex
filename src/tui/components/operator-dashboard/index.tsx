@@ -13,6 +13,10 @@ import { sessions, type SessionInfo } from "../../../core/session";
 import { runOffensiveSecurityAgent } from "../../../core/api/offesecAgent";
 import { buildAuthConfig } from "../../../core/ai/utils";
 import { ALL_TOOL_NAMES } from "../../../core/agents/offSecAgent";
+import {
+  convertModelMessagesToUI,
+  type UIMessage,
+} from "../../../core/session/persistence";
 import { useAgent } from "../../context/agent";
 import { useRoute } from "../../context/route";
 import { useConfig } from "../../context/config";
@@ -80,8 +84,6 @@ export default function OperatorDashboard({
   const textRef = useRef("");
   // AI SDK conversation history for multi-turn continuity
   const conversationRef = useRef<ModelMessage[]>([]);
-  const messagesRef = useRef<DisplayMessage[]>([]);
-
   // Input state
   const [inputValue, setInputValue] = useState("");
 
@@ -133,11 +135,6 @@ export default function OperatorDashboard({
     };
   }, []);
 
-  // Keep messages ref in sync for persistence
-  useEffect(() => {
-    messagesRef.current = messages;
-  }, [messages]);
-
   // Load session on mount
   useEffect(() => {
     async function loadSession() {
@@ -164,23 +161,27 @@ export default function OperatorDashboard({
                 requireApproval: savedState.requireApproval ?? true,
               });
 
-              // Restore saved display messages
+              // Restore model messages and derive display messages
               if (
                 Array.isArray(savedState.messages) &&
                 savedState.messages.length > 0
               ) {
-                const restored = (savedState.messages as DisplayMessage[]).map(
-                  (m) => ({
-                    ...m,
-                    createdAt: new Date(m.createdAt),
-                  }),
-                );
-                setMessages(restored);
-              }
+                const modelMsgs = savedState.messages as ModelMessage[];
+                conversationRef.current = modelMsgs;
 
-              // Restore raw model messages for conversation continuity
-              if (Array.isArray(savedState.modelMessages)) {
-                conversationRef.current = savedState.modelMessages as ModelMessage[];
+                const uiMsgs = convertModelMessagesToUI(modelMsgs);
+                setMessages(
+                  uiMsgs.map((m: UIMessage) => ({
+                    role: m.role,
+                    content: m.content,
+                    createdAt: m.createdAt,
+                    toolCallId: m.toolCallId,
+                    toolName: m.toolName,
+                    args: m.args,
+                    result: m.result,
+                    status: m.status,
+                  })),
+                );
               }
             }
           }
@@ -396,8 +397,7 @@ export default function OperatorDashboard({
                 mode: operatorState.mode,
                 autoApproveTier: operatorState.autoApproveTier,
                 currentStage: operatorState.currentStage,
-                messages: messagesRef.current,
-                modelMessages: conversationRef.current,
+                messages: conversationRef.current,
                 attackSurface: [],
                 credentials: [],
                 verifiedVulns: [],

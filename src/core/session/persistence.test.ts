@@ -15,6 +15,7 @@ import {
   loadSubagents,
   writeAgentManifest,
   readAgentManifest,
+  convertModelMessagesToUI,
   type SavedMessage,
   type AgentManifestEntry,
   type SessionInfo,
@@ -420,13 +421,14 @@ describe("loadSubagents manifest merge", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Operator state modelMessages persistence
+// Operator state persistence (single messages field)
 // ---------------------------------------------------------------------------
 
-describe("operator state modelMessages persistence", () => {
-  // These tests verify the roundtrip of modelMessages through the
-  // operator-state.json file, which is what saveOperatorState/loadOperatorState
-  // do under the hood (JSON.stringify → writeFile → readFile → JSON.parse).
+describe("operator state persistence", () => {
+  // These tests verify the roundtrip of model messages through the
+  // operator-state.json file. The persisted state stores a single `messages`
+  // field containing raw AI SDK model messages. Display messages are derived
+  // on resume via convertModelMessagesToUI.
 
   const STATE_FILE = "operator-state.json";
 
@@ -440,8 +442,8 @@ describe("operator state modelMessages persistence", () => {
     return JSON.parse(readFileSync(statePath, "utf-8"));
   }
 
-  it("roundtrips modelMessages through save and load", () => {
-    const modelMessages = [
+  it("roundtrips model messages through save and load", () => {
+    const messages = [
       { role: "user", content: "what tools do you have?" },
       {
         role: "assistant",
@@ -473,17 +475,15 @@ describe("operator state modelMessages persistence", () => {
       mode: "manual",
       autoApproveTier: 2,
       currentStage: "recon",
-      messages: [],
-      modelMessages,
+      messages,
     });
 
     const loaded = readOperatorState(tmpDir);
     expect(loaded).not.toBeNull();
-    expect(loaded!.modelMessages).toEqual(modelMessages);
+    expect(loaded!.messages).toEqual(messages);
   });
 
-  it("handles missing modelMessages (backward compat)", () => {
-    // Saved state from before modelMessages was added
+  it("handles empty messages array", () => {
     writeOperatorState(tmpDir, {
       mode: "manual",
       autoApproveTier: 2,
@@ -493,53 +493,65 @@ describe("operator state modelMessages persistence", () => {
 
     const loaded = readOperatorState(tmpDir);
     expect(loaded).not.toBeNull();
-    expect(loaded!.modelMessages).toBeUndefined();
-
-    // Simulates the resume logic: default to empty array when missing
-    const restored = Array.isArray(loaded!.modelMessages)
-      ? loaded!.modelMessages
-      : [];
-    expect(restored).toEqual([]);
+    expect(loaded!.messages).toEqual([]);
   });
+});
 
-  it("preserves empty modelMessages array", () => {
-    writeOperatorState(tmpDir, {
-      mode: "manual",
-      autoApproveTier: 2,
-      currentStage: "recon",
-      messages: [],
-      modelMessages: [],
-    });
+// ---------------------------------------------------------------------------
+// convertModelMessagesToUI
+// ---------------------------------------------------------------------------
 
-    const loaded = readOperatorState(tmpDir);
-    expect(loaded).not.toBeNull();
-    expect(loaded!.modelMessages).toEqual([]);
-  });
-
-  it("preserves display messages alongside model messages", () => {
-    const displayMessages = [
-      { role: "user", content: "hello", createdAt: new Date().toISOString() },
-      {
-        role: "assistant",
-        content: "Hi there!",
-        createdAt: new Date().toISOString(),
-      },
-    ];
-    const modelMessages = [
-      { role: "user", content: "hello" },
-      { role: "assistant", content: "Hi there!" },
+describe("convertModelMessagesToUI", () => {
+  it("converts model messages to UI format with tool pairing", () => {
+    const modelMessages: ModelMessage[] = [
+      makeMsg("user", "run a scan"),
+      makeMsg("assistant", [
+        { type: "text", text: "I'll run a command" },
+        {
+          type: "tool-call",
+          toolCallId: "tc-1",
+          toolName: "execute_command",
+          args: { cmd: "nmap localhost" },
+        },
+      ]),
+      makeMsg("tool", [
+        {
+          type: "tool-result",
+          toolCallId: "tc-1",
+          toolName: "execute_command",
+          result: "PORT 80/tcp open",
+        },
+      ]),
+      makeMsg("assistant", "Found port 80 open."),
     ];
 
-    writeOperatorState(tmpDir, {
-      mode: "auto",
-      autoApproveTier: 3,
-      currentStage: "foothold",
-      messages: displayMessages,
-      modelMessages,
-    });
+    const uiMsgs = convertModelMessagesToUI(modelMessages);
 
-    const loaded = readOperatorState(tmpDir);
-    expect(loaded!.messages).toEqual(displayMessages);
-    expect(loaded!.modelMessages).toEqual(modelMessages);
+    // Should have: user msg, assistant text, tool call, assistant text
+    expect(uiMsgs.length).toBe(4);
+
+    // User message
+    expect(uiMsgs[0].role).toBe("user");
+    expect(uiMsgs[0].content).toBe("run a scan");
+
+    // Assistant text
+    expect(uiMsgs[1].role).toBe("assistant");
+    expect(uiMsgs[1].content).toBe("I'll run a command");
+
+    // Tool call with paired result
+    expect(uiMsgs[2].role).toBe("tool");
+    expect(uiMsgs[2].toolName).toBe("execute_command");
+    expect(uiMsgs[2].args).toEqual({ cmd: "nmap localhost" });
+    expect(uiMsgs[2].result).toBe("PORT 80/tcp open");
+    expect(uiMsgs[2].status).toBe("completed");
+
+    // Final assistant text
+    expect(uiMsgs[3].role).toBe("assistant");
+    expect(uiMsgs[3].content).toBe("Found port 80 open.");
+  });
+
+  it("returns empty array for empty input", () => {
+    const uiMsgs = convertModelMessagesToUI([]);
+    expect(uiMsgs).toEqual([]);
   });
 });

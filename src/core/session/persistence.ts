@@ -589,6 +589,17 @@ function convertMessagesToUI(
 }
 
 /**
+ * Convert raw AI SDK model messages to UI-compatible display format.
+ *
+ * Used when restoring operator state on resume: the persisted state stores
+ * only model messages, and this function derives the display messages.
+ */
+export function convertModelMessagesToUI(messages: ModelMessage[]): UIMessage[] {
+  const saved = messages.map((m) => mapToSavedMessage(m));
+  return convertMessagesToUI(saved, new Date());
+}
+
+/**
  * Load all subagent data from disk and merge with the agent manifest.
  *
  * This is the single reader for subagent state. It:
