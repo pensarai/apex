@@ -13,6 +13,7 @@ import type { AIAuthConfig } from "../../ai/utils";
 import type { CredentialManager } from "../../credentials";
 import type { FindingsRegistry } from "../../findings/registry";
 import type { SessionInfo } from "../../session";
+import type { ApprovalGate } from "../../operator";
 import type { ToolName } from "./tools";
 import type { UnifiedSandbox } from "./tools/sandbox";
 import { z } from "zod";
@@ -169,6 +170,13 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    * `activeTools` to get typed structured output from `consume()`.
    */
   responseSchema?: z.ZodSchema;
+
+  /**
+   * When provided, each tool call is gated through the approval gate.
+   * The gate will pause execution until the operator approves or denies
+   * the call (when `requireApproval` is enabled on the gate).
+   */
+  approvalGate?: ApprovalGate;
 };
 
 /**

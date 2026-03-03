@@ -110,7 +110,7 @@ export function ChatApp({
         },
         operatorSettings: {
           initialMode: "manual",
-          autoApproveTier: 2,
+          requireApproval: true,
           enableSuggestions: true,
         },
       },

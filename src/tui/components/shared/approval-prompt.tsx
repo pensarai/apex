@@ -2,12 +2,11 @@
  * Unified Approval Prompt Components
  *
  * Single implementation for approval UI used in both operator and chat views.
- * Replaces 2 duplicate implementations.
  */
 
 import { useState } from "react";
 import { useKeyboard } from "@opentui/react";
-import { useTheme, getTierColor } from "../../theme";
+import { useTheme } from "../../theme";
 import { getToolSummary } from "./tool-registry";
 import type { PendingApproval } from "../../../core/operator";
 
@@ -16,22 +15,17 @@ interface InlineApprovalPromptProps {
 }
 
 /**
- * Inline approval prompt - shows pending tool call with tier info.
+ * Inline approval prompt - shows pending tool call.
  * Displayed in the chat flow.
  */
 export function InlineApprovalPrompt({ approval }: InlineApprovalPromptProps) {
   const { colors } = useTheme();
-  const tierColor = getTierColor(colors, approval.tier);
 
-  // Get the description if provided
   const description = approval.args?.toolCallDescription as string | undefined;
-
-  // Get tool summary from registry
   const summary = getToolSummary(approval.toolName, approval.args || {});
 
   return (
     <box flexDirection="column" marginTop={2}>
-      {/* Description from agent if available */}
       {description && (
         <box flexDirection="row" marginBottom={1}>
           <text fg={colors.primary} content="| " />
@@ -39,10 +33,8 @@ export function InlineApprovalPrompt({ approval }: InlineApprovalPromptProps) {
         </box>
       )}
 
-      {/* Approval line */}
       <box flexDirection="row" gap={1} marginLeft={2}>
         <text fg={colors.warning} content="?" />
-        <text fg={tierColor} content={`[T${approval.tier}]`} />
         <text fg={colors.info} content={summary} />
       </box>
     </box>
@@ -73,10 +65,9 @@ export function ApprovalInputArea({
   lastDeclineNote,
 }: ApprovalInputAreaProps) {
   const { colors } = useTheme();
-  const [focusedElement, setFocusedElement] = useState(0); // 0=Yes, 1=Auto, 2=Input
+  const [focusedElement, setFocusedElement] = useState(0);
 
   useKeyboard((key) => {
-    // Navigation
     if (key.name === "up") {
       setFocusedElement((prev) => Math.max(0, prev - 1));
       return;
@@ -90,7 +81,6 @@ export function ApprovalInputArea({
       return;
     }
 
-    // Enter to select
     if (key.name === "return") {
       if (focusedElement === 0) {
         onApprove();
@@ -131,7 +121,7 @@ export function ApprovalInputArea({
         />
         <text
           fg={focusedElement === 1 ? colors.text : colors.textMuted}
-          content={`Auto - auto-approve T1-T${approval.tier} from now`}
+          content="Auto - approve all commands from now"
         />
       </box>
 
@@ -158,7 +148,6 @@ export function ApprovalInputArea({
         />
       </box>
 
-      {/* Last decline note */}
       {lastDeclineNote && (
         <box marginTop={1} marginLeft={2}>
           <text

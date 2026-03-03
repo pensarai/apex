@@ -276,7 +276,7 @@ function CommandDisplay({
               initialTarget={route.data.options?.target}
               initialMode={route.data.options?.mode}
               initialName={route.data.options?.name}
-              initialTier={route.data.options?.tier}
+              initialRequireApproval={route.data.options?.requireApproval}
               initialHosts={route.data.options?.hosts}
               initialStrict={route.data.options?.strict}
               initialModel={route.data.options?.model}

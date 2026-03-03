@@ -41,7 +41,6 @@ export {
 // Permission Policy
 export {
   checkPermission,
-  shouldBlockAction,
   shouldAutoApprove,
   getApprovalRequirement,
   getPolicySummary,
