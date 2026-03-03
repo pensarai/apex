@@ -58,9 +58,10 @@ export default function OperatorDashboard({
   } = useCommand();
 
   const autocompleteOptions = useMemo(() => {
+    const allowedCommands = new Set(["/create-skill"]);
     const skillSlugs = new Set(skills.map((s) => `/${slugify(s.name)}`));
     return allAutocompleteOptions.filter(
-      (opt) => opt.value === "/create-skill" || skillSlugs.has(opt.value),
+      (opt) => allowedCommands.has(opt.value) || skillSlugs.has(opt.value),
     );
   }, [allAutocompleteOptions, skills]);
 
