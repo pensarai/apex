@@ -273,9 +273,7 @@ export default function HITLWizard(props: HITLWizardProps) {
           <input
             width={30}
             value={state.name}
-            onInput={(v: string) =>
-              setState((prev) => ({ ...prev, name: v }))
-            }
+            onInput={(v: string) => setState((prev) => ({ ...prev, name: v }))}
             focused={true}
             placeholder="swift-falcon"
             textColor={colors.text}
@@ -303,9 +301,7 @@ export default function HITLWizard(props: HITLWizardProps) {
             ? "- approve each command before execution"
             : "- commands execute automatically"}
         </text>
-        {focusedField === 1 && (
-          <text fg={colors.textMuted}>(Enter/←/→)</text>
-        )}
+        {focusedField === 1 && <text fg={colors.textMuted}>(Enter/←/→)</text>}
       </box>
 
       {/* Model Selection - Field 2 */}
