@@ -353,7 +353,10 @@ export default function OperatorDashboard({
         try {
           const response = await streamResult.response;
           if (gen === generationRef.current && response.messages) {
-            conversationRef.current = [...nextMessages, ...response.messages] as ModelMessage[];
+            conversationRef.current = [
+              ...nextMessages,
+              ...response.messages,
+            ] as ModelMessage[];
           }
         } catch {
           // Stream may have been aborted; conversation stays as-is
