@@ -49,6 +49,9 @@ export { provideComparisonResults } from "./provideComparisonResults";
 export { queryAttackKnowledge } from "./queryAttackKnowledge";
 export { querySharedFindings } from "./querySharedFindings";
 
+// Context management tools
+export { scratchpad } from "./scratchpad";
+
 // Attacker infrastructure tools
 export {
   startCallbackServer,
@@ -97,6 +100,7 @@ import {
 } from "./callbackServer";
 import { serveMaliciousPage } from "./maliciousPageServer";
 import { hostPayload } from "./hostPayload";
+import { scratchpad } from "./scratchpad";
 
 /**
  * Create the full toolset for the OffensiveSecurityAgent.
@@ -155,6 +159,9 @@ export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
     stop_callback_server: stopCallbackServer(ctx),
     serve_malicious_page: serveMaliciousPage(ctx),
     host_payload: hostPayload(ctx),
+
+    // Context management tools
+    scratchpad: scratchpad(ctx),
   } as const;
 }
 
@@ -200,4 +207,6 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "stop_callback_server",
   "serve_malicious_page",
   "host_payload",
+  // Context management
+  "scratchpad",
 ] as const;

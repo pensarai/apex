@@ -21,6 +21,7 @@ import {
   getProviderModel,
   type AIAuthConfig,
 } from "./utils";
+import { compactToolResults } from "./contextManager";
 
 export type AIModel = AnthropicMessagesModelId | OpenAIChatModelId | string; // For OpenRouter and Bedrock models
 
@@ -207,7 +208,8 @@ export function streamResponse(
       prepareStep: (opts) => {
         // Update the container with the latest messages
         messagesContainer.current = opts.messages;
-        return undefined;
+        const compacted = compactToolResults(opts.messages, 6);
+        return { messages: compacted };
       },
       onError: async ({ error }: { error: unknown }) => {
         if (isRetryableError(error) && retryCount < MAX_RETRIES) {
