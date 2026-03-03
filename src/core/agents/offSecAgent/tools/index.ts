@@ -14,7 +14,7 @@ export type { BrowserToolName } from "./browserTools";
 export { executeCommand } from "./executeCommand";
 export { httpRequest } from "./httpRequest";
 export { documentVulnerability } from "./documentFinding";
-export { createPoc } from "./createPoc";
+export { createPoc, executePocScript } from "./createPoc";
 
 // Filesystem / search tools
 export { readFile } from "./readFile";

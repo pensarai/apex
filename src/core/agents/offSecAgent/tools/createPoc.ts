@@ -46,6 +46,24 @@ export type CreatePocResult = {
   attemptsRemaining?: number;
 };
 
+/**
+ * Execute a POC script without tool-level attempt tracking.
+ *
+ * Shared between the standalone `create_poc` tool and the embedded POC
+ * step inside `document_vulnerability`. Routes through the sandbox when
+ * one is configured on the context, otherwise runs locally.
+ */
+export async function executePocScript(
+  ctx: ToolContext,
+  poc: CreatePocInput,
+  attemptNumber: number = 1,
+): Promise<CreatePocResult> {
+  if (ctx.sandbox) {
+    return executeSandboxPoc(ctx, poc, attemptNumber);
+  }
+  return executeLocalPoc(ctx, poc, attemptNumber);
+}
+
 export function createPoc(ctx: ToolContext) {
   const pocAttempts = new Map<string, number>();
 
@@ -83,11 +101,7 @@ Max ${MAX_POC_ATTEMPTS} attempts per approach before pivoting.`,
         };
       }
 
-      if (ctx.sandbox) {
-        return executeSandboxPoc(ctx, poc, currentAttempts);
-      }
-
-      return executeLocalPoc(ctx, poc, currentAttempts);
+      return executePocScript(ctx, poc, currentAttempts);
     },
   });
 }

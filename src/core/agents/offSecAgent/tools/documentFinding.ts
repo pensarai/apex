@@ -7,6 +7,7 @@ import {
   scoreFindingWithCVSS,
   type CVSSScorerResult,
 } from "../../specialized/cvssScorer";
+import { executePocScript, type CreatePocResult } from "./createPoc";
 
 export const documentVulnerabilityInputSchema = z.object({
   title: z.string().describe("Finding title"),
@@ -15,9 +16,18 @@ export const documentVulnerabilityInputSchema = z.object({
   impact: z.string().describe("Potential impact if exploited"),
   evidence: z.string().describe("Evidence/proof of the vulnerability"),
   endpoint: z.string().describe("The affected endpoint or URL"),
-  pocPath: z
-    .string()
-    .describe("Relative path to the POC script (e.g., pocs/poc_sqli.sh)"),
+  poc: z.object({
+    name: z.string().describe("Short descriptive name for the POC"),
+    type: z
+      .enum(["bash", "python", "javascript"])
+      .describe("Script language for the POC"),
+    content: z.string().describe("The full POC script content"),
+    description: z
+      .string()
+      .describe(
+        "What this POC demonstrates (e.g., 'SQL injection via id parameter')",
+      ),
+  }),
   remediation: z.string().describe("Steps to fix the issue"),
   references: z.string().optional().describe("CVE, CWE, or related references"),
   toolCallDescription: z
@@ -35,13 +45,21 @@ export function documentVulnerability(ctx: ToolContext) {
   const { session } = ctx;
 
   return tool({
-    description: `Document a CONFIRMED security vulnerability that you have successfully exploited with a working proof-of-concept.
+    description: `Document a CONFIRMED security vulnerability with an embedded proof-of-concept.
+
+This tool creates, executes, and validates a POC script, then documents the finding only if the POC succeeds. This guarantees every documented vulnerability has a working, verified POC on disk.
 
 CRITICAL RULES — READ BEFORE CALLING:
 - ONLY call this tool for actual security vulnerabilities you have verified and exploited
-- You MUST have a working PoC script (created via create_poc) that reliably demonstrates the vulnerability BEFORE calling this tool
-- Do NOT use this tool for: positive/negative observations, informational notes, testing limitations, authentication issues, rate-limiting, infrastructure notes, or anything that is not a exploitable security vulnerability
+- You MUST provide a POC script (in the \`poc\` field) that reliably demonstrates the vulnerability — this tool will execute it and only document the finding if it exits 0
+- Do NOT use this tool for: positive/negative observations, informational notes, testing limitations, authentication issues, rate-limiting, infrastructure notes, or anything that is not an exploitable security vulnerability
 - If you could not exploit a vulnerability, do NOT document it — mention it in your final response summary instead
+
+POC REQUIREMENTS:
+- The POC script must exit 0 on success (vulnerability confirmed) and non-zero on failure
+- The script should print clear evidence of exploitation to stdout
+- Supported languages: bash (.sh), python (.py), javascript (.js)
+- Include rate limiting (sleep between requests) if the POC makes multiple HTTP calls
 
 SEVERITY LEVELS:
 - CRITICAL: Immediate risk of system compromise (RCE, auth bypass, SQL injection with data access)
@@ -55,12 +73,63 @@ FINDING STRUCTURE:
 - Description: Detailed technical explanation of the vulnerability
 - Impact: Business and technical consequences if exploited
 - Evidence: Commands run, responses received, proof of exploitation
+- POC: The proof-of-concept script (name, type, content, description)
 - Remediation: Specific, actionable steps to fix
 - References: CVE, CWE, OWASP, or security advisories`,
     inputSchema: documentVulnerabilityInputSchema,
-    execute: async (finding) => {
+    execute: async (input) => {
       try {
-        // -- Dedup check (when a shared registry is available) ----------------
+        // -- Step 1: Create and execute the POC ----------------------------------
+        let pocResult: CreatePocResult;
+        try {
+          pocResult = await executePocScript(ctx, {
+            pocName: input.poc.name,
+            pocType: input.poc.type,
+            pocContent: input.poc.content,
+            description: input.poc.description,
+            toolCallDescription: `POC for: ${input.title}`,
+          });
+        } catch (pocError: unknown) {
+          const msg =
+            pocError instanceof Error ? pocError.message : String(pocError);
+          return {
+            success: false,
+            error: `POC execution failed: ${msg}`,
+            message: `Could not create/run POC for "${input.title}". Fix the POC script and retry.`,
+          };
+        }
+
+        if (!pocResult.success || !pocResult.pocPath) {
+          return {
+            success: false,
+            pocFailed: true,
+            stdout: pocResult.stdout,
+            stderr: pocResult.stderr,
+            exitCode: pocResult.exitCode,
+            error:
+              pocResult.error ??
+              `POC exited with code ${pocResult.exitCode ?? "unknown"}`,
+            message: `POC did not succeed for "${input.title}". The script must exit 0 to confirm the vulnerability. Fix the POC and call document_vulnerability again.`,
+          };
+        }
+
+        const pocPath = pocResult.pocPath;
+
+        // Build a Finding-shaped object (pocPath comes from the verified POC)
+        const finding = {
+          title: input.title,
+          severity: input.severity,
+          description: input.description,
+          impact: input.impact,
+          evidence: input.evidence,
+          endpoint: input.endpoint,
+          pocPath,
+          remediation: input.remediation,
+          references: input.references,
+          toolCallDescription: input.toolCallDescription,
+        };
+
+        // -- Step 2: Dedup check (when a shared registry is available) -----------
         if (ctx.findingsRegistry) {
           const check = await ctx.findingsRegistry.register(finding);
           if (check.duplicate) {
@@ -77,7 +146,7 @@ FINDING STRUCTURE:
 
         const timestamp = new Date().toISOString();
 
-        // -- CVSS 4.0 scoring ------------------------------------------------
+        // -- Step 3: CVSS 4.0 scoring ------------------------------------------
         let cvssResult: CVSSScorerResult | undefined;
         try {
           cvssResult = await scoreFindingWithCVSS(
@@ -132,11 +201,10 @@ FINDING STRUCTURE:
         const mdFilename = `${findingId}.md`;
         const mdPath = join(session.findingsPath, mdFilename);
 
+        // -- Step 4: Persist finding to disk ------------------------------------
         try {
-          // Write structured JSON (consumed by resolveResult)
           writeFileSync(jsonPath, JSON.stringify(findingWithMeta, null, 2));
 
-          // Write human-readable markdown
           const cvssLine = cvssResult
             ? `\n**CVSS 4.0 Score:** ${cvssResult.score} (${cvssResult.severity})  \n**Vector:** \`${cvssResult.vectorString}\`  `
             : "";
@@ -168,7 +236,7 @@ ${finding.evidence}
 
 ## POC
 
-Path: \`${finding.pocPath}\`
+Path: \`${pocPath}\`
 
 ## Remediation
 
@@ -183,7 +251,6 @@ ${finding.references ? `## References\n\n${finding.references}` : ""}
 
           writeFileSync(mdPath, markdown);
 
-          // Append to summary
           const summaryPath = join(session.rootPath, "findings-summary.md");
           const cvssTag = cvssResult ? ` (CVSS ${cvssResult.score})` : "";
           const summaryEntry = `- [${finding.severity}]${cvssTag} ${finding.title} - \`findings/${mdFilename}\`\n`;
@@ -204,8 +271,10 @@ ${finding.references ? `## References\n\n${finding.references}` : ""}
         return {
           success: true,
           finding: findingWithMeta,
+          pocPath,
+          pocStdout: pocResult.stdout,
           filepath: mdPath,
-          message: `Finding documented: [${finding.severity}] ${finding.title}`,
+          message: `Finding documented: [${finding.severity}] ${finding.title} (POC verified: ${pocPath})`,
         };
       } catch (error: unknown) {
         const errorMsg = error instanceof Error ? error.message : String(error);

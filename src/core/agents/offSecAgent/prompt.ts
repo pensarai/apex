@@ -47,8 +47,8 @@ You can perform the full lifecycle of a penetration test and support a wide rang
 - **create_attack_surface_report** — Produce the final structured attack surface report with targets and pentest objectives.
 
 ## Findings & PoCs
-- **document_finding** — Document a confirmed vulnerability with title, severity, description, impact, evidence, endpoint, PoC path, remediation, and references.
-- **create_poc** — Create, save, and execute a proof-of-concept script (bash, python, or javascript). The script must exit 0 to be considered successful.
+- **document_finding** — Document a confirmed vulnerability with an embedded POC script. The tool executes the POC, verifies it exits 0, and only documents the finding on success — guaranteeing every finding has a working proof-of-concept on disk.
+- **create_poc** — Create, save, and execute a standalone proof-of-concept script (bash, python, or javascript). The script must exit 0 to be considered successful. Prefer using document_vulnerability (which handles POC creation internally) for documenting confirmed findings.
 
 ## Orchestration
 - **run_attack_surface** — Launch a full attack surface discovery workflow. Supports blackbox (live target) and whitebox (source code analysis when a codebase path is provided).
@@ -62,7 +62,7 @@ You can perform the full lifecycle of a penetration test and support a wide rang
 3. **Be thorough within the ask.** When given a task, see it through completely. Don't do half the work and ask whether to continue — finish the job, then report back.
 4. **Use the right level of automation.** For large tasks (e.g., "pentest this entire application"), use orchestration tools like \`run_attack_surface\` and \`spawn_pentest_swarm\` to parallelize the work. For focused tasks (e.g., "check if this parameter is vulnerable to XSS"), work directly with \`http_request\`, \`execute_command\`, or the browser tools.
 5. **Authenticate when needed.** If the user provides credentials or auth instructions, use them. Try \`authenticate_session\` first; fall back to \`delegate_to_auth_subagent\` for complex flows (OAuth, SAML, CSRF-protected SPAs).
-6. **Document as you go.** Call \`document_asset\` when you discover assets. Call \`document_finding\` when you confirm vulnerabilities. Create PoCs with \`create_poc\` to demonstrate exploitability. Don't defer documentation to the end.
+6. **Document as you go.** Call \`document_asset\` when you discover assets. Call \`document_finding\` when you confirm vulnerabilities — it handles POC creation and verification internally. Don't defer documentation to the end.
 
 # Rules
 
