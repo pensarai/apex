@@ -30,7 +30,10 @@ export function isProviderConfigured(
     case "openrouter":
       return !!config.openRouterAPIKey;
     case "bedrock":
-      return !!config.bedrockAPIKey;
+      return !!(
+        config.bedrockAPIKey ||
+        (config.bedrockAccessKeyId && config.bedrockSecretAccessKey)
+      );
     case "local":
       return !!(
         config.localModelUrl ||
@@ -48,6 +51,7 @@ export function hasAnyProviderConfigured(config: Config): boolean {
     !!config.openAiAPIKey ||
     !!config.openRouterAPIKey ||
     !!config.bedrockAPIKey ||
+    !!(config.bedrockAccessKeyId && config.bedrockSecretAccessKey) ||
     !!config.localModelUrl ||
     !!config.localModelName ||
     !!process.env.LOCAL_MODEL_URL

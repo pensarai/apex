@@ -166,6 +166,13 @@ async function runPentest() {
       anthropicAPIKey: pensarConfig.anthropicAPIKey ?? undefined,
       openAiAPIKey: pensarConfig.openAiAPIKey ?? undefined,
       openRouterAPIKey: pensarConfig.openRouterAPIKey ?? undefined,
+      bedrock: {
+        apiKey: pensarConfig.bedrockAPIKey ?? undefined,
+        accessKeyId: pensarConfig.bedrockAccessKeyId ?? undefined,
+        secretAccessKey: pensarConfig.bedrockSecretAccessKey ?? undefined,
+        sessionToken: pensarConfig.bedrockSessionToken ?? undefined,
+        region: pensarConfig.bedrockRegion ?? undefined,
+      },
       local: pensarConfig.localModelUrl
         ? { baseURL: pensarConfig.localModelUrl }
         : undefined,
@@ -245,6 +252,13 @@ async function runTargetedPentest() {
       anthropicAPIKey: pensarConfig.anthropicAPIKey ?? undefined,
       openAiAPIKey: pensarConfig.openAiAPIKey ?? undefined,
       openRouterAPIKey: pensarConfig.openRouterAPIKey ?? undefined,
+      bedrock: {
+        apiKey: pensarConfig.bedrockAPIKey ?? undefined,
+        accessKeyId: pensarConfig.bedrockAccessKeyId ?? undefined,
+        secretAccessKey: pensarConfig.bedrockSecretAccessKey ?? undefined,
+        sessionToken: pensarConfig.bedrockSessionToken ?? undefined,
+        region: pensarConfig.bedrockRegion ?? undefined,
+      },
       local: pensarConfig.localModelUrl
         ? { baseURL: pensarConfig.localModelUrl }
         : undefined,
@@ -324,6 +338,13 @@ async function runThreatModel() {
       anthropicAPIKey: pensarConfig.anthropicAPIKey ?? undefined,
       openAiAPIKey: pensarConfig.openAiAPIKey ?? undefined,
       openRouterAPIKey: pensarConfig.openRouterAPIKey ?? undefined,
+      bedrock: {
+        apiKey: pensarConfig.bedrockAPIKey ?? undefined,
+        accessKeyId: pensarConfig.bedrockAccessKeyId ?? undefined,
+        secretAccessKey: pensarConfig.bedrockSecretAccessKey ?? undefined,
+        sessionToken: pensarConfig.bedrockSessionToken ?? undefined,
+        region: pensarConfig.bedrockRegion ?? undefined,
+      },
       local: pensarConfig.localModelUrl
         ? { baseURL: pensarConfig.localModelUrl }
         : undefined,

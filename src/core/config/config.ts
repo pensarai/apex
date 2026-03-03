@@ -13,6 +13,10 @@ export interface Config {
   anthropicAPIKey?: string | null;
   openRouterAPIKey?: string | null;
   bedrockAPIKey?: string | null;
+  bedrockAccessKeyId?: string | null;
+  bedrockSecretAccessKey?: string | null;
+  bedrockSessionToken?: string | null;
+  bedrockRegion?: string | null;
   responsibleUseAccepted: boolean;
   // Remote execution providers
   daytonaAPIKey?: string | null;
@@ -73,6 +77,13 @@ export async function get(): Promise<Config> {
     openRouterAPIKey:
       process.env.OPENROUTER_API_KEY ?? parsedConfig.openRouterAPIKey,
     bedrockAPIKey: process.env.BEDROCK_API_KEY ?? parsedConfig.bedrockAPIKey,
+    bedrockAccessKeyId:
+      process.env.AWS_ACCESS_KEY_ID ?? parsedConfig.bedrockAccessKeyId,
+    bedrockSecretAccessKey:
+      process.env.AWS_SECRET_ACCESS_KEY ?? parsedConfig.bedrockSecretAccessKey,
+    bedrockSessionToken:
+      process.env.AWS_SESSION_TOKEN ?? parsedConfig.bedrockSessionToken,
+    bedrockRegion: process.env.AWS_REGION ?? parsedConfig.bedrockRegion,
     daytonaAPIKey: process.env.DAYTONA_API_KEY ?? parsedConfig.daytonaAPIKey,
     daytonaOrgId: process.env.DAYTONA_ORG_ID ?? parsedConfig.daytonaOrgId,
     runloopAPIKey: process.env.RUNLOOP_API_KEY ?? parsedConfig.runloopAPIKey,

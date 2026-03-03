@@ -212,6 +212,13 @@ export default function OperatorDashboard({
           anthropicAPIKey: config.data.anthropicAPIKey ?? undefined,
           openAiAPIKey: config.data.openAiAPIKey ?? undefined,
           openRouterAPIKey: config.data.openRouterAPIKey ?? undefined,
+          bedrock: {
+            apiKey: config.data.bedrockAPIKey ?? undefined,
+            accessKeyId: config.data.bedrockAccessKeyId ?? undefined,
+            secretAccessKey: config.data.bedrockSecretAccessKey ?? undefined,
+            sessionToken: config.data.bedrockSessionToken ?? undefined,
+            region: config.data.bedrockRegion ?? undefined,
+          },
           local: config.data.localModelUrl
             ? { baseURL: config.data.localModelUrl }
             : undefined,
