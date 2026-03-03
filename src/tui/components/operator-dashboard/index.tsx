@@ -162,7 +162,7 @@ export default function OperatorDashboard({
               Array.isArray(savedState.messages) &&
               savedState.messages.length > 0
             ) {
-              const modelMsgs = savedState.messages as ModelMessage[];
+              const modelMsgs = savedState.messages;
               conversationRef.current = modelMsgs;
 
               const uiMsgs = convertModelMessagesToUI(modelMsgs);

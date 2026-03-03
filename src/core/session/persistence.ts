@@ -594,7 +594,9 @@ function convertMessagesToUI(
  * Used when restoring operator state on resume: the persisted state stores
  * only model messages, and this function derives the display messages.
  */
-export function convertModelMessagesToUI(messages: ModelMessage[]): UIMessage[] {
+export function convertModelMessagesToUI(
+  messages: ModelMessage[],
+): UIMessage[] {
   const saved = messages.map((m) => mapToSavedMessage(m));
   return convertMessagesToUI(saved, new Date());
 }

@@ -432,7 +432,10 @@ describe("operator state persistence", () => {
 
   const STATE_FILE = "operator-state.json";
 
-  function writeOperatorState(rootPath: string, state: Record<string, unknown>) {
+  function writeOperatorState(
+    rootPath: string,
+    state: Record<string, unknown>,
+  ) {
     writeFileSync(join(rootPath, STATE_FILE), JSON.stringify(state, null, 2));
   }
 

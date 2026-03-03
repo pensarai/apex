@@ -1,3 +1,4 @@
+import type { ModelMessage } from "ai";
 import z from "zod";
 import path from "path";
 import os from "os";
@@ -525,7 +526,7 @@ export interface PersistedOperatorState {
   /** Current stage: setup, recon, foothold, etc. */
   currentStage: string;
   /** Raw AI SDK model messages — single source of truth for conversation history */
-  messages: unknown[];
+  messages: ModelMessage[];
   /** Discovered attack surface endpoints */
   attackSurface: unknown[];
   /** Found credentials */
