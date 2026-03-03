@@ -1,0 +1,61 @@
+{
+  "id": "auth-parser-differential-bypass",
+  "title": "Authentication Bypass via JSON/HTTP Parser Differentials",
+  "category": "auth_bypass",
+  "tags": ["parser-differential", "json-duplicate-keys", "duplicate-headers", "auth-bypass", "multi-tier"],
+  "applicability": {
+    "technologies": ["node", "python", "java", "go", "ruby", "php"],
+    "contexts": ["api-endpoint", "json-body", "authentication-header"],
+    "preconditions": ["multi-tier-architecture", "json-parsing", "proxy-or-gateway"]
+  },
+  "technique": {
+    "summary": "Exploit parser disagreements in multi-tier architectures (proxy/gateway + backend) to bypass authentication. When two JSON parsers handle duplicate keys differently (first-wins vs last-wins), or two HTTP layers handle duplicate headers differently, an attacker can present different identities to the authorization layer vs the processing layer.",
+    "steps": [
+      "Identify multi-tier architecture: reverse proxy, API gateway, WAF, or load balancer in front of application server",
+      "Test JSON duplicate keys: send {\"role\":\"user\",\"role\":\"admin\"} — if authorization checks first key but backend uses last, role escalation occurs",
+      "Test duplicate HTTP headers: send two Authorization headers via rawHeaders — proxy may check first, backend may use second",
+      "Test Content-Type differential: send application/json body with Content-Type text/plain — WAF may skip JSON inspection",
+      "Test Unicode key collision: use \\u0072ole instead of role — one parser normalizes, the other treats as different key",
+      "Confirm differential behavior by observing different responses/access levels"
+    ],
+    "payloads": [
+      {
+        "payload": "{\"role\":\"user\",\"role\":\"admin\"}",
+        "encoding": "json",
+        "context": "json-body",
+        "notes": "JSON duplicate key exploit — Python json uses last value, Go encoding/json uses last, some parsers use first"
+      },
+      {
+        "payload": "rawHeaders: [[\"Authorization\",\"Bearer user-token\"],[\"Authorization\",\"Bearer admin-token\"]]",
+        "encoding": "raw",
+        "context": "authentication-header",
+        "notes": "Duplicate Authorization headers via rawHeaders — proxy may validate first, backend may use second"
+      },
+      {
+        "payload": "{\"\\u0072ole\":\"admin\"}",
+        "encoding": "json",
+        "context": "json-body",
+        "notes": "Unicode-escaped key 'role' — some parsers normalize before comparison, others treat as distinct key"
+      },
+      {
+        "payload": "{\"role\":\"user\", \"role\" :\"admin\"}",
+        "encoding": "json",
+        "context": "json-body",
+        "notes": "Whitespace variation in duplicate key — some parsers trim before dedup, others don't"
+      }
+    ],
+    "bypassTechniques": [
+      "Unicode-escaped JSON keys: \\u0072ole instead of role — bypasses key-name matching in authorization layer",
+      "Trailing whitespace in header names: 'Authorization ' vs 'Authorization' — proxy may not match",
+      "Chunked Transfer-Encoding splitting: fragment JSON body across chunks so proxy sees incomplete JSON",
+      "Content-Type mismatch: send JSON body with Content-Type: text/plain to bypass JSON-aware WAF inspection",
+      "JSON comments or trailing commas: some parsers accept {\"role\":\"admin\",} while strict parsers reject it",
+      "Duplicate keys with different casing: {\"Role\":\"user\",\"role\":\"admin\"} — depends on case-sensitivity of each parser"
+    ]
+  },
+  "references": [
+    "https://youtube.com/watch?v=Dq_KVLXzxH8",
+    "https://portswigger.net/research/top-10-web-hacking-techniques-of-2025"
+  ],
+  "source": "portswigger-top10-2025"
+}

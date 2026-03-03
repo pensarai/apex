@@ -1,0 +1,62 @@
+{
+  "id": "misconfiguration-nextjs-cache-poisoning",
+  "title": "Next.js Internal Cache Poisoning",
+  "category": "misconfiguration",
+  "tags": ["cache-poisoning", "nextjs", "react", "vercel", "ssr", "ssg", "web-cache"],
+  "applicability": {
+    "technologies": ["node", "nextjs", "vercel"],
+    "contexts": ["url-parameter", "api-endpoint", "ssr-page"],
+    "preconditions": ["nextjs-application", "server-side-rendering-or-ssg"]
+  },
+  "technique": {
+    "summary": "Manipulate Next.js internal caching mechanisms to poison cached responses. The __nextDataReq parameter flips HTML responses to JSON format, x-now-route-matches header can trick SSG classification, and these can be combined to serve poisoned content to other users from the cache.",
+    "steps": [
+      "Confirm target is running Next.js (check /_next/ paths, __NEXT_DATA__ in source, x-nextjs-* headers)",
+      "Test __nextDataReq=1 parameter: append to any SSR page URL — if response flips from HTML to JSON, the parameter is processed",
+      "Check cache headers (x-nextjs-cache, x-vercel-cache, cache-control) to confirm caching behavior",
+      "Test x-now-route-matches header: send header with route parameters to trick SSG classification",
+      "Combine __nextDataReq with cache poisoning: if JSON response gets cached, all users receive broken JSON instead of HTML",
+      "Test x-matched-path header as alternative to x-now-route-matches",
+      "Verify poison persists by requesting the same URL without the poison parameter"
+    ],
+    "payloads": [
+      {
+        "payload": "?__nextDataReq=1",
+        "encoding": "url-query",
+        "context": "url-parameter",
+        "notes": "Flips SSR HTML response to JSON data format — if cached, serves JSON to all users expecting HTML"
+      },
+      {
+        "payload": "x-now-route-matches: 1=admin",
+        "encoding": "raw",
+        "context": "url-parameter",
+        "notes": "Header that tricks Next.js SSG route classification — may serve different page content"
+      },
+      {
+        "payload": "x-matched-path: /admin",
+        "encoding": "raw",
+        "context": "url-parameter",
+        "notes": "Alternative header for route matching manipulation on Vercel-hosted Next.js"
+      },
+      {
+        "payload": "/_next/data/<buildId>/page.json",
+        "encoding": "raw",
+        "context": "url-parameter",
+        "notes": "Direct Next.js data route — may bypass cache key isolation and serve page data"
+      }
+    ],
+    "bypassTechniques": [
+      "URL-encode __nextDataReq: __%6eextDataReq=1 or %5f%5fnextDataReq=1 to bypass WAF rules",
+      "Try x-matched-path header if x-now-route-matches is blocked",
+      "Target locale-prefixed routes: /en/page?__nextDataReq=1 — locale routing may have different cache behavior",
+      "Direct /_next/data/ paths: access data routes directly to bypass page-level cache protections",
+      "Combine with Accept-Encoding variations: different encodings may create separate cache entries to poison",
+      "Test on preview/staging deployments which may have weaker cache protections"
+    ]
+  },
+  "references": [
+    "https://zhero-web-sec.github.io/research-and-things/nextjs-cache-and-chains-the-stale-elixir",
+    "https://portswigger.net/research/top-10-web-hacking-techniques-of-2025"
+  ],
+  "source": "portswigger-top10-2025"
+}

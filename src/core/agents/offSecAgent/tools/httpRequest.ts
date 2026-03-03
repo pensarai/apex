@@ -20,6 +20,12 @@ export const httpRequestInputSchema = z.object({
     }, z.record(z.string(), z.string()).optional())
     .describe("HTTP headers as key-value pairs (object or JSON string)"),
   body: z.string().optional().describe("Request body (for POST, PUT, PATCH)"),
+  rawHeaders: z
+    .array(z.tuple([z.string(), z.string()]))
+    .optional()
+    .describe(
+      "Raw header tuples for sending duplicate headers (e.g., two Authorization headers for parser differential testing). When provided, takes precedence over `headers`.",
+    ),
   followRedirects: z
     .boolean()
     .default(false)
@@ -44,6 +50,7 @@ export type HttpRequestResult = {
   body: string;
   url: string;
   redirected: boolean;
+  responseTimeMs?: number;
   error?: string;
   method?: string;
 };
@@ -58,7 +65,8 @@ USAGE GUIDANCE:
 - Analyze cookies for HttpOnly, Secure, SameSite flags
 - Check for verbose error messages that leak information
 - Test for common web vulnerabilities (SQL injection, XSS, IDOR)
-- Monitor response times for blind injection attacks
+- Monitor response times for blind injection attacks (responseTimeMs in result)
+- Use rawHeaders for parser differential testing (duplicate headers, e.g. two Authorization values)
 - Test different HTTP methods (GET, POST, PUT, DELETE, PATCH, OPTIONS)
 
 COMMON TESTING PATTERNS:
@@ -73,6 +81,7 @@ COMMON TESTING PATTERNS:
       url,
       method,
       headers,
+      rawHeaders,
       body,
       followRedirects,
       timeout,
@@ -83,6 +92,7 @@ COMMON TESTING PATTERNS:
           url,
           method,
           headers,
+          rawHeaders,
           body,
           followRedirects,
           timeout,
@@ -104,6 +114,7 @@ COMMON TESTING PATTERNS:
             headers: {},
             body: "",
             redirected: false,
+            responseTimeMs: 0,
           };
         }
 
@@ -114,9 +125,23 @@ COMMON TESTING PATTERNS:
           ? AbortSignal.any([ctx.abortSignal, timeoutController.signal])
           : timeoutController.signal;
 
+        // Build headers — rawHeaders supports duplicates via Headers.append()
+        let fetchHeaders: HeadersInit;
+        if (rawHeaders) {
+          const h = new Headers();
+          for (const [key, value] of rawHeaders) {
+            h.append(key, value);
+          }
+          fetchHeaders = h;
+        } else {
+          fetchHeaders = headers || {};
+        }
+
+        const startTime = Date.now();
+
         const response = await fetch(url, {
           method,
-          headers: headers || {},
+          headers: fetchHeaders,
           body: body || undefined,
           redirect: followRedirects ? "follow" : "manual",
           signal: combinedSignal,
@@ -136,6 +161,8 @@ COMMON TESTING PATTERNS:
           responseBody = "(unable to read response body)";
         }
 
+        const responseTimeMs = Date.now() - startTime;
+
         return {
           success: true,
           status: response.status,
@@ -147,6 +174,7 @@ COMMON TESTING PATTERNS:
               : responseBody,
           url: response.url,
           redirected: response.redirected,
+          responseTimeMs,
         };
       } catch (error: unknown) {
         if (timeoutId) clearTimeout(timeoutId);
@@ -170,6 +198,7 @@ COMMON TESTING PATTERNS:
           headers: {},
           body: "",
           redirected: false,
+          responseTimeMs: 0,
         };
       }
     },
@@ -186,17 +215,24 @@ async function executeSandboxHttpRequest(
     url: string;
     method: string;
     headers?: Record<string, string>;
+    rawHeaders?: [string, string][];
     body?: string;
     followRedirects: boolean;
     timeout: number;
   },
 ): Promise<HttpRequestResult> {
-  const { url, method, headers, body, followRedirects, timeout } = opts;
+  const { url, method, headers, rawHeaders, body, followRedirects, timeout } =
+    opts;
 
   try {
     let curlCommand = `curl -i -X ${method}`;
 
-    if (headers) {
+    // rawHeaders takes precedence — each tuple becomes a separate -H flag (supports duplicates)
+    if (rawHeaders) {
+      for (const [key, value] of rawHeaders) {
+        curlCommand += ` -H "${key}: ${value}"`;
+      }
+    } else if (headers) {
       for (const [key, value] of Object.entries(headers)) {
         curlCommand += ` -H "${key}: ${value}"`;
       }
@@ -213,6 +249,7 @@ async function executeSandboxHttpRequest(
 
     const timeoutSeconds = Math.ceil(timeout / 1000);
     curlCommand += ` --max-time ${timeoutSeconds}`;
+    curlCommand += ` --write-out "\\n__APEX_TIMING__:%{time_total}"`;
     curlCommand += ` "${url}" 2>&1`;
 
     const ssmTimeout = Math.max(timeoutSeconds, 30);
@@ -220,7 +257,17 @@ async function executeSandboxHttpRequest(
       timeout: ssmTimeout,
     });
 
-    const output = result.stdout || "";
+    const rawOutput = result.stdout || "";
+
+    // Extract timing from __APEX_TIMING__ marker appended by --write-out
+    let responseTimeMs = 0;
+    const timingMatch = rawOutput.match(/__APEX_TIMING__:([\d.]+)/);
+    if (timingMatch) {
+      responseTimeMs = Math.round(parseFloat(timingMatch[1]) * 1000);
+    }
+
+    // Strip the timing marker from output before parsing headers/body
+    const output = rawOutput.replace(/\n?__APEX_TIMING__:[\d.]+/, "");
     const lines = output.split("\n");
     let statusLine = "";
     const responseHeaders: Record<string, string> = {};
@@ -260,6 +307,7 @@ async function executeSandboxHttpRequest(
           : responseBody,
       url,
       redirected: false,
+      responseTimeMs,
     };
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : String(error);
@@ -272,6 +320,7 @@ async function executeSandboxHttpRequest(
       body: "",
       url,
       redirected: false,
+      responseTimeMs: 0,
     };
   }
 }

