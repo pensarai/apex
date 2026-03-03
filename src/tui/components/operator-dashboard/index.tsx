@@ -6,7 +6,7 @@
  * Reuses MessageList and InputArea from the shared/chat components.
  */
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useKeyboard } from "@opentui/react";
 
 import { sessions, type SessionInfo } from "../../../core/session";
@@ -23,6 +23,7 @@ import { useTheme } from "../../theme";
 import type { DisplayMessage } from "../agent-display";
 import { isToolMessage } from "../shared/type-guards";
 import type { OperatorMode, PendingApproval } from "../../../core/operator";
+import { slugify } from "../../../core/skills";
 import {
   ApprovalGate,
   createInitialOperatorState,
@@ -49,8 +50,19 @@ export default function OperatorDashboard({
   const route = useRoute();
   const config = useConfig();
   const { model, setThinking, setIsExecuting } = useAgent();
-  const { autocompleteOptions, executeCommand, resolveSkillContent } =
-    useCommand();
+  const {
+    autocompleteOptions: allAutocompleteOptions,
+    executeCommand,
+    resolveSkillContent,
+    skills,
+  } = useCommand();
+
+  const autocompleteOptions = useMemo(() => {
+    const skillSlugs = new Set(skills.map((s) => `/${slugify(s.name)}`));
+    return allAutocompleteOptions.filter(
+      (opt) => opt.value === "/create-skill" || skillSlugs.has(opt.value),
+    );
+  }, [allAutocompleteOptions, skills]);
 
   // Session state
   const [session, setSession] = useState<SessionInfo | null>(null);
