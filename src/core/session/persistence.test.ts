@@ -16,7 +16,6 @@ import {
   writeAgentManifest,
   readAgentManifest,
   convertModelMessagesToUI,
-  type SavedMessage,
   type AgentManifestEntry,
   type SessionInfo,
 } from "./persistence";

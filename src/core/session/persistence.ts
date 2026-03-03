@@ -18,7 +18,6 @@ import type { SessionInfo } from "./index";
 export type { SessionInfo };
 import type { AuthenticationInfo } from "./types";
 import type { ModelMessage } from "ai";
-import type { SubagentConsumeCallbacks } from "../agents/offSecAgent/types";
 
 // ---------------------------------------------------------------------------
 // Shared path constants — used by both writer and reader
@@ -270,15 +269,6 @@ export interface SwarmTarget {
   objectives: string[];
 }
 
-/** Input for {@link runPentestAgentWithPersistence} */
-export interface RunPentestAgentInput {
-  subagentId: string;
-  target: string;
-  objectives: string[];
-  session: SessionInfo;
-  subagentCallbacks?: SubagentConsumeCallbacks;
-}
-
 /**
  * Build initial manifest entries for a swarm of pentest agents.
  * All entries start with status "running".
@@ -315,155 +305,6 @@ export function finalizeManifest(
     completedAt: new Date().toISOString(),
   }));
   writeAgentManifest(session, finalManifest);
-}
-
-/**
- * Run a pentest agent with automatic message persistence.
- *
- * Encapsulates the common pattern:
- *  1. Capture messages via onStepFinish
- *  2. Wrap subagent callbacks with subagentId injection
- *  3. Fire onSubagentSpawn before running
- *  4. saveSubagentData on success or failure
- *  5. Fire onSubagentComplete after running
- *
- * The `run` callback receives the onStepFinish handler and wrapped callbacks.
- * It should create the agent, wire up onStepFinish, and call agent.consume().
- * On error, this function persists partial messages and re-throws.
- */
-export async function runPentestAgentWithPersistence<
-  TResult extends { findings: { length: number } },
->(
-  input: RunPentestAgentInput,
-  run: (ctx: {
-    onStepFinish: (e: { response: { messages?: ModelMessage[] } }) => void;
-    subagentCallbacks: SubagentConsumeCallbacks | undefined;
-  }) => Promise<TResult>,
-): Promise<TResult> {
-  let lastMessages: ModelMessage[] = [];
-
-  const onStepFinish = (e: { response: { messages?: ModelMessage[] } }) => {
-    if (e.response.messages) {
-      lastMessages = e.response.messages;
-    }
-  };
-
-  const wrappedCallbacks: SubagentConsumeCallbacks | undefined =
-    input.subagentCallbacks
-      ? {
-          onTextDelta: (d) =>
-            input.subagentCallbacks!.onTextDelta?.({
-              ...d,
-              subagentId: input.subagentId,
-            }),
-          onToolCall: (d) =>
-            input.subagentCallbacks!.onToolCall?.({
-              ...d,
-              subagentId: input.subagentId,
-            }),
-          onToolResult: (d) =>
-            input.subagentCallbacks!.onToolResult?.({
-              ...d,
-              subagentId: input.subagentId,
-            }),
-          onError: (e) => input.subagentCallbacks!.onError?.(e),
-        }
-      : undefined;
-
-  input.subagentCallbacks?.onSubagentSpawn?.({
-    subagentId: input.subagentId,
-    input: { target: input.target, objectives: input.objectives },
-    status: "pending",
-  });
-
-  try {
-    const result = await run({
-      onStepFinish,
-      subagentCallbacks: wrappedCallbacks,
-    });
-
-    saveSubagentData(input.session, {
-      agentName: input.subagentId,
-      target: input.target,
-      objective: input.objectives.join("; "),
-      status: "completed",
-      findingsCount: result.findings.length,
-      messages: lastMessages,
-    });
-
-    input.subagentCallbacks?.onSubagentComplete?.({
-      subagentId: input.subagentId,
-      input: { target: input.target, objectives: input.objectives },
-      status: "completed",
-    });
-
-    return result;
-  } catch (error) {
-    saveSubagentData(input.session, {
-      agentName: input.subagentId,
-      target: input.target,
-      objective: input.objectives.join("; "),
-      status: "failed",
-      error: error instanceof Error ? error.message : String(error),
-      messages: lastMessages,
-    });
-
-    input.subagentCallbacks?.onSubagentComplete?.({
-      subagentId: input.subagentId,
-      input: { target: input.target, objectives: input.objectives },
-      status: "failed",
-    });
-
-    throw error;
-  }
-}
-
-/**
- * Run tasks with bounded concurrency.
- * Returns an array of results in the same order as items.
- * Failed tasks produce null in the results array.
- */
-export async function runWithBoundedConcurrency<T, R>(
-  items: T[],
-  concurrency: number,
-  fn: (item: T, index: number) => Promise<R>,
-): Promise<(R | null)[]> {
-  const results: (R | null)[] = new Array(items.length).fill(null);
-  let nextIdx = 0;
-  let completed = 0;
-
-  await new Promise<void>((resolve) => {
-    let active = 0;
-
-    function next() {
-      if (completed === items.length) {
-        resolve();
-        return;
-      }
-
-      while (active < concurrency && nextIdx < items.length) {
-        const idx = nextIdx++;
-        active++;
-
-        fn(items[idx]!, idx)
-          .then((r) => {
-            results[idx] = r;
-          })
-          .catch(() => {
-            results[idx] = null;
-          })
-          .finally(() => {
-            active--;
-            completed++;
-            next();
-          });
-      }
-    }
-
-    next();
-  });
-
-  return results;
 }
 
 // ---------------------------------------------------------------------------

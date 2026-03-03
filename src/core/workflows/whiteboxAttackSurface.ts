@@ -10,6 +10,7 @@ import type { AIModel } from "../ai";
 import type { AIAuthConfig } from "../ai/utils";
 import type { SessionInfo } from "../session";
 import type { ConsumeCallbacks } from "../agents/offSecAgent/types";
+import { runWithBoundedConcurrency } from "../utils/concurrency";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -200,7 +201,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
   const taskResults = await runWithBoundedConcurrency(
     tasks,
     DEFAULT_CONCURRENCY,
-    async (task) => {
+    async (task, _index) => {
       const subagentId = `${task.type}-${task.appInfo.name}`;
 
       callbacks?.subagentCallbacks?.onSubagentSpawn?.({
@@ -281,6 +282,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
   const apiEndpointsByApp = new Map<string, Endpoint[]>();
 
   for (const r of taskResults) {
+    if (!r) continue;
     const map = r.type === "pages" ? pagesByApp : apiEndpointsByApp;
     map.set(r.appName, r.endpoints);
   }
@@ -320,53 +322,6 @@ export async function runWhiteboxAttackSurfaceWorkflow(
       totalPentestObjectives,
     },
   };
-}
-
-// ---------------------------------------------------------------------------
-// Bounded-concurrency helper
-// ---------------------------------------------------------------------------
-
-async function runWithBoundedConcurrency<T, R>(
-  items: T[],
-  concurrency: number,
-  fn: (item: T) => Promise<R>,
-): Promise<R[]> {
-  const results: R[] = new Array(items.length);
-  let nextIdx = 0;
-  let completed = 0;
-
-  await new Promise<void>((resolve) => {
-    let active = 0;
-
-    function next() {
-      if (completed === items.length) {
-        resolve();
-        return;
-      }
-
-      while (active < concurrency && nextIdx < items.length) {
-        const idx = nextIdx++;
-        active++;
-
-        fn(items[idx]!)
-          .then((r) => {
-            results[idx] = r;
-          })
-          .catch(() => {
-            results[idx] = undefined as unknown as R;
-          })
-          .finally(() => {
-            active--;
-            completed++;
-            next();
-          });
-      }
-    }
-
-    next();
-  });
-
-  return results;
 }
 
 // ---------------------------------------------------------------------------
