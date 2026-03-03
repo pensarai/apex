@@ -9,10 +9,8 @@ import {
 } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
+import type { ModelMessage } from "ai";
 import {
-  mapToSavedMessage,
-  parseSubagentFilename,
-  convertMessagesToUI,
   saveSubagentData,
   loadSubagents,
   writeAgentManifest,
@@ -52,8 +50,8 @@ function makeSession(overrides?: Partial<SessionInfo>): SessionInfo {
   } as SessionInfo;
 }
 
-function makeMsg(role: string, content: unknown) {
-  return { role, content };
+function makeMsg(role: string, content: unknown): ModelMessage {
+  return { role, content } as ModelMessage;
 }
 
 function makeToolCallPart(toolName: string, args: Record<string, unknown>) {
@@ -75,192 +73,73 @@ function makeToolResultPart(toolName: string, result: unknown) {
 }
 
 // ---------------------------------------------------------------------------
-// mapToSavedMessage
-// ---------------------------------------------------------------------------
-
-describe("mapToSavedMessage", () => {
-  it("maps string content", () => {
-    const result = mapToSavedMessage(makeMsg("assistant", "hello"));
-    expect(result).toEqual({ role: "assistant", content: "hello" });
-  });
-
-  it("maps array content with text parts", () => {
-    const result = mapToSavedMessage(
-      makeMsg("assistant", [{ type: "text", text: "thinking..." }]),
-    );
-    expect(result.role).toBe("assistant");
-    expect(Array.isArray(result.content)).toBe(true);
-    const parts = result.content as Array<{ type: string; text?: string }>;
-    expect(parts[0]).toEqual({ type: "text", text: "thinking..." });
-  });
-
-  it("maps tool-call: args → input", () => {
-    const result = mapToSavedMessage(
-      makeMsg("assistant", [
-        makeToolCallPart("execute_command", { cmd: "ls" }),
-      ]),
-    );
-    const parts = result.content as Array<{
-      type: string;
-      input?: Record<string, unknown>;
-    }>;
-    expect(parts[0].type).toBe("tool-call");
-    expect(parts[0].input).toEqual({ cmd: "ls" });
-  });
-
-  it("maps tool-result: result → output", () => {
-    const result = mapToSavedMessage(
-      makeMsg("tool", [makeToolResultPart("execute_command", "output data")]),
-    );
-    const parts = result.content as Array<{ type: string; output?: unknown }>;
-    expect(parts[0].type).toBe("tool-result");
-    expect(parts[0].output).toBe("output data");
-  });
-
-  it("handles mixed content array", () => {
-    const result = mapToSavedMessage(
-      makeMsg("assistant", [
-        { type: "text", text: "I'll run a command" },
-        makeToolCallPart("execute_command", { cmd: "whoami" }),
-      ]),
-    );
-    const parts = result.content as Array<{ type: string }>;
-    expect(parts).toHaveLength(2);
-    expect(parts[0].type).toBe("text");
-    expect(parts[1].type).toBe("tool-call");
-  });
-
-  it("handles empty array content", () => {
-    const result = mapToSavedMessage(makeMsg("assistant", []));
-    expect(result.content).toEqual([]);
-  });
-
-  it("falls back to String() for non-string non-array content", () => {
-    const result = mapToSavedMessage(makeMsg("assistant", 42));
-    expect(result.content).toBe("42");
-  });
-
-  it("falls back to String() for null content", () => {
-    const result = mapToSavedMessage(makeMsg("assistant", null));
-    expect(result.content).toBe("null");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// parseSubagentFilename
-// ---------------------------------------------------------------------------
-
-describe("parseSubagentFilename", () => {
-  it("parses attack-surface-agent filename", () => {
-    const result = parseSubagentFilename(
-      "attack-surface-agent-2025-12-05T10-30-00-000Z.json",
-    );
-    expect(result.agentType).toBe("attack-surface");
-    expect(result.name).toBe("Attack Surface Discovery");
-  });
-
-  it("parses pentest-agent-{N} filename", () => {
-    const result = parseSubagentFilename(
-      "pentest-agent-3-2025-12-05T10-30-00-000Z.json",
-    );
-    expect(result.agentType).toBe("pentest");
-    expect(result.name).toBe("Pentest Agent 3");
-  });
-
-  it("parses vuln-test filename (backwards compat)", () => {
-    const result = parseSubagentFilename(
-      "vuln-test-sqli-http---localhost-2025-12-05T10-30-00-000Z.json",
-    );
-    expect(result.agentType).toBe("pentest");
-    expect(result.name).toMatch(/Test/);
-  });
-
-  it("parses orchestrator filename", () => {
-    const result = parseSubagentFilename(
-      "orchestrator-2025-12-05T10-30-00-000Z.json",
-    );
-    expect(result.agentType).toBe("pentest");
-    expect(result.name).toBe("Orchestrator Summary");
-  });
-
-  it("uses fallback for unknown prefix", () => {
-    const result = parseSubagentFilename(
-      "custom-agent-2025-12-05T10-30-00-000Z.json",
-    );
-    expect(result.agentType).toBe("pentest");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// convertMessagesToUI
-// ---------------------------------------------------------------------------
-
-describe("convertMessagesToUI", () => {
-  const baseTime = new Date("2025-01-01T00:00:00Z");
-
-  it("converts assistant text message", () => {
-    const messages: SavedMessage[] = [{ role: "assistant", content: "Hello" }];
-    const result = convertMessagesToUI(messages, baseTime);
-    expect(result).toHaveLength(1);
-    expect(result[0].role).toBe("assistant");
-    expect(result[0].content).toBe("Hello");
-  });
-
-  it("converts tool-call with result pairing", () => {
-    const messages: SavedMessage[] = [
-      {
-        role: "assistant",
-        content: [
-          {
-            type: "tool-call",
-            toolCallId: "tc-1",
-            toolName: "execute_command",
-            input: { cmd: "ls" },
-          },
-        ],
-      },
-      {
-        role: "tool",
-        content: [
-          {
-            type: "tool-result",
-            toolCallId: "tc-1",
-            toolName: "execute_command",
-            output: "file1.txt\nfile2.txt",
-          },
-        ],
-      },
-    ];
-    const result = convertMessagesToUI(messages, baseTime);
-    const toolMsg = result.find((m) => m.role === "tool");
-    expect(toolMsg).toBeDefined();
-    expect(toolMsg!.toolName).toBe("execute_command");
-    expect(toolMsg!.result).toBe("file1.txt\nfile2.txt");
-    expect(toolMsg!.status).toBe("completed");
-  });
-
-  it("returns empty array for empty messages", () => {
-    expect(convertMessagesToUI([], baseTime)).toEqual([]);
-  });
-
-  it("increments timestamps correctly", () => {
-    const messages: SavedMessage[] = [
-      { role: "assistant", content: "First" },
-      { role: "assistant", content: "Second" },
-      { role: "assistant", content: "Third" },
-    ];
-    const result = convertMessagesToUI(messages, baseTime);
-    expect(result[0].createdAt.getTime()).toBe(baseTime.getTime());
-    expect(result[1].createdAt.getTime()).toBe(baseTime.getTime() + 1000);
-    expect(result[2].createdAt.getTime()).toBe(baseTime.getTime() + 2000);
-  });
-});
-
-// ---------------------------------------------------------------------------
 // saveSubagentData + loadSubagents roundtrip
 // ---------------------------------------------------------------------------
 
 describe("saveSubagentData + loadSubagents roundtrip", () => {
+  it("roundtrips tool-call args→input and tool-result result→output", () => {
+    const session = makeSession();
+    saveSubagentData(session, {
+      agentName: "pentest-agent-1",
+      target: "http://localhost:8080",
+      status: "completed",
+      messages: [
+        makeMsg("assistant", [
+          { type: "text", text: "I'll run a command" },
+          makeToolCallPart("execute_command", { cmd: "ls" }),
+        ]),
+        makeMsg("tool", [
+          makeToolResultPart("execute_command", "file1.txt\nfile2.txt"),
+        ]),
+      ],
+    });
+
+    const loaded = loadSubagents(tmpDir);
+    expect(loaded).toHaveLength(1);
+
+    // Verify tool-call was paired with its result in UI messages
+    const toolMsg = loaded[0].messages.find((m) => m.role === "tool");
+    expect(toolMsg).toBeDefined();
+    expect(toolMsg!.toolName).toBe("execute_command");
+    expect(toolMsg!.args).toEqual({ cmd: "ls" });
+    expect(toolMsg!.result).toBe("file1.txt\nfile2.txt");
+    expect(toolMsg!.status).toBe("completed");
+
+    // Verify text part also came through
+    const textMsg = loaded[0].messages.find(
+      (m) => m.role === "assistant" && m.content.includes("run a command"),
+    );
+    expect(textMsg).toBeDefined();
+  });
+
+  it("roundtrips attack-surface and pentest agent types", () => {
+    const session = makeSession();
+    saveSubagentData(session, {
+      agentName: "attack-surface-agent",
+      target: "http://localhost:8080",
+      status: "completed",
+      messages: [makeMsg("assistant", "Discovered 3 endpoints")],
+    });
+    saveSubagentData(session, {
+      agentName: "pentest-agent-1",
+      target: "http://localhost:8080/api",
+      status: "completed",
+      messages: [makeMsg("assistant", "Testing...")],
+    });
+
+    const loaded = loadSubagents(tmpDir);
+    expect(loaded).toHaveLength(2);
+    const types = loaded.map((s) => s.type);
+    expect(types).toContain("attack-surface");
+    expect(types).toContain("pentest");
+
+    // Verify names are parsed correctly from filenames
+    const attackSurface = loaded.find((s) => s.type === "attack-surface");
+    expect(attackSurface!.name).toBe("Attack Surface Discovery");
+    const pentest = loaded.find((s) => s.type === "pentest");
+    expect(pentest!.name).toBe("Pentest Agent 1");
+  });
+
   it("saves and loads a single agent", () => {
     const session = makeSession();
     saveSubagentData(session, {
@@ -298,28 +177,6 @@ describe("saveSubagentData + loadSubagents roundtrip", () => {
 
     const loaded = loadSubagents(tmpDir);
     expect(loaded).toHaveLength(2);
-  });
-
-  it("saves attack-surface + pentest agents with correct types", () => {
-    const session = makeSession();
-    saveSubagentData(session, {
-      agentName: "attack-surface-agent",
-      target: "http://localhost:8080",
-      status: "completed",
-      messages: [makeMsg("assistant", "Discovered 3 endpoints")],
-    });
-    saveSubagentData(session, {
-      agentName: "pentest-agent-1",
-      target: "http://localhost:8080/api",
-      status: "completed",
-      messages: [makeMsg("assistant", "Testing...")],
-    });
-
-    const loaded = loadSubagents(tmpDir);
-    expect(loaded).toHaveLength(2);
-    const types = loaded.map((s) => s.type);
-    expect(types).toContain("attack-surface");
-    expect(types).toContain("pentest");
   });
 
   it("handles empty messages", () => {

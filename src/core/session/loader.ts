@@ -11,11 +11,7 @@
 import { join } from "path";
 import { existsSync, readFileSync } from "fs";
 import type { SessionInfo } from "./index";
-import {
-  loadSubagents,
-  type UISubagent,
-  type UIMessage,
-} from "./persistence";
+import { loadSubagents, type UISubagent, type UIMessage } from "./persistence";
 
 // Re-export types that consumers import from this module
 export type {

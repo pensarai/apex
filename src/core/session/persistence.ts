@@ -15,7 +15,10 @@ import {
 } from "fs";
 import { join } from "path";
 import type { SessionInfo } from "./index";
+export type { SessionInfo };
 import type { AuthenticationInfo } from "./types";
+import type { ModelMessage } from "ai";
+import type { SubagentConsumeCallbacks } from "../agents/offSecAgent/types";
 
 // ---------------------------------------------------------------------------
 // Shared path constants — used by both writer and reader
@@ -116,7 +119,7 @@ export interface SubagentSaveInput {
   error?: string;
   findingsCount?: number;
   /** Raw AI SDK messages from onStepFinish (e.response.messages) */
-  messages: unknown[];
+  messages: ModelMessage[];
 }
 
 /**
@@ -125,7 +128,7 @@ export interface SubagentSaveInput {
  * The AI SDK uses `args` for tool call parameters and `result` for tool
  * results, while the saved format uses `input` and `output` respectively.
  */
-export function mapToSavedMessage(msg: unknown): SavedMessage {
+function mapToSavedMessage(msg: ModelMessage): SavedMessage {
   const m = msg as { role: string; content: unknown };
 
   if (typeof m.content === "string") {
@@ -174,20 +177,17 @@ export function saveSubagentData(
   data: SubagentSaveInput,
 ): void {
   const subagentsDir = join(session.rootPath, SUBAGENTS_DIR);
-  if (!existsSync(subagentsDir)) {
-    mkdirSync(subagentsDir, { recursive: true });
-  }
+  mkdirSync(subagentsDir, { recursive: true });
 
   let toolCallCount = 0;
   let stepCount = 0;
   const savedMessages: SavedMessage[] = [];
 
   for (const msg of data.messages) {
-    const m = msg as { role: string; content: unknown };
-    if (m.role === "assistant") {
+    if (msg.role === "assistant") {
       stepCount++;
-      if (Array.isArray(m.content)) {
-        for (const part of m.content as Array<{ type: string }>) {
+      if (Array.isArray(msg.content)) {
+        for (const part of msg.content) {
           if (part.type === "tool-call") toolCallCount++;
         }
       }
@@ -195,9 +195,10 @@ export function saveSubagentData(
     savedMessages.push(mapToSavedMessage(msg));
   }
 
+  const now = new Date();
   const savedData: SavedSubagentData = {
     agentName: data.agentName,
-    timestamp: new Date().toISOString(),
+    timestamp: now.toISOString(),
     target: data.target,
     objective: data.objective,
     vulnerabilityClass: data.vulnerabilityClass,
@@ -209,7 +210,7 @@ export function saveSubagentData(
     messages: savedMessages,
   };
 
-  const ts = new Date().toISOString().replace(/[:.]/g, "-");
+  const ts = now.toISOString().replace(/[:.]/g, "-");
   const filename = `${data.agentName}-${ts}.json`;
   writeFileSync(
     join(subagentsDir, filename),
@@ -260,6 +261,212 @@ export function readAgentManifest(session: SessionInfo): AgentManifestEntry[] {
 }
 
 // ---------------------------------------------------------------------------
+// Swarm orchestration helpers
+// ---------------------------------------------------------------------------
+
+/** A normalized target for the pentest swarm */
+export interface SwarmTarget {
+  target: string;
+  objectives: string[];
+}
+
+/** Input for {@link runPentestAgentWithPersistence} */
+export interface RunPentestAgentInput {
+  subagentId: string;
+  target: string;
+  objectives: string[];
+  session: SessionInfo;
+  subagentCallbacks?: SubagentConsumeCallbacks;
+}
+
+/**
+ * Build initial manifest entries for a swarm of pentest agents.
+ * All entries start with status "running".
+ */
+export function buildManifestEntries(
+  targets: SwarmTarget[],
+): AgentManifestEntry[] {
+  return targets.map((t, i) => ({
+    id: `pentest-agent-${i + 1}`,
+    name: `Pentest Agent ${i + 1}`,
+    target: t.target,
+    vulnerabilityClass: t.objectives[0] || "general",
+    objective: t.objectives.join("; "),
+    status: "running" as const,
+    spawnedAt: new Date().toISOString(),
+  }));
+}
+
+/**
+ * Rewrite the agent manifest with final statuses.
+ * Uses index-based matching (not target-based) to correctly handle
+ * duplicate targets.
+ */
+export function finalizeManifest(
+  session: SessionInfo,
+  entries: AgentManifestEntry[],
+  results: (unknown | null)[],
+): void {
+  const finalManifest = entries.map((entry, i) => ({
+    ...entry,
+    status: (results[i] != null ? "completed" : "failed") as
+      | "completed"
+      | "failed",
+    completedAt: new Date().toISOString(),
+  }));
+  writeAgentManifest(session, finalManifest);
+}
+
+/**
+ * Run a pentest agent with automatic message persistence.
+ *
+ * Encapsulates the common pattern:
+ *  1. Capture messages via onStepFinish
+ *  2. Wrap subagent callbacks with subagentId injection
+ *  3. Fire onSubagentSpawn before running
+ *  4. saveSubagentData on success or failure
+ *  5. Fire onSubagentComplete after running
+ *
+ * The `run` callback receives the onStepFinish handler and wrapped callbacks.
+ * It should create the agent, wire up onStepFinish, and call agent.consume().
+ * On error, this function persists partial messages and re-throws.
+ */
+export async function runPentestAgentWithPersistence<
+  TResult extends { findings: { length: number } },
+>(
+  input: RunPentestAgentInput,
+  run: (ctx: {
+    onStepFinish: (e: { response: { messages?: ModelMessage[] } }) => void;
+    subagentCallbacks: SubagentConsumeCallbacks | undefined;
+  }) => Promise<TResult>,
+): Promise<TResult> {
+  let lastMessages: ModelMessage[] = [];
+
+  const onStepFinish = (e: { response: { messages?: ModelMessage[] } }) => {
+    if (e.response.messages) {
+      lastMessages = e.response.messages;
+    }
+  };
+
+  const wrappedCallbacks: SubagentConsumeCallbacks | undefined =
+    input.subagentCallbacks
+      ? {
+          onTextDelta: (d) =>
+            input.subagentCallbacks!.onTextDelta?.({
+              ...d,
+              subagentId: input.subagentId,
+            }),
+          onToolCall: (d) =>
+            input.subagentCallbacks!.onToolCall?.({
+              ...d,
+              subagentId: input.subagentId,
+            }),
+          onToolResult: (d) =>
+            input.subagentCallbacks!.onToolResult?.({
+              ...d,
+              subagentId: input.subagentId,
+            }),
+          onError: (e) => input.subagentCallbacks!.onError?.(e),
+        }
+      : undefined;
+
+  input.subagentCallbacks?.onSubagentSpawn?.({
+    subagentId: input.subagentId,
+    input: { target: input.target, objectives: input.objectives },
+    status: "pending",
+  });
+
+  try {
+    const result = await run({
+      onStepFinish,
+      subagentCallbacks: wrappedCallbacks,
+    });
+
+    saveSubagentData(input.session, {
+      agentName: input.subagentId,
+      target: input.target,
+      objective: input.objectives.join("; "),
+      status: "completed",
+      findingsCount: result.findings.length,
+      messages: lastMessages,
+    });
+
+    input.subagentCallbacks?.onSubagentComplete?.({
+      subagentId: input.subagentId,
+      input: { target: input.target, objectives: input.objectives },
+      status: "completed",
+    });
+
+    return result;
+  } catch (error) {
+    saveSubagentData(input.session, {
+      agentName: input.subagentId,
+      target: input.target,
+      objective: input.objectives.join("; "),
+      status: "failed",
+      error: error instanceof Error ? error.message : String(error),
+      messages: lastMessages,
+    });
+
+    input.subagentCallbacks?.onSubagentComplete?.({
+      subagentId: input.subagentId,
+      input: { target: input.target, objectives: input.objectives },
+      status: "failed",
+    });
+
+    throw error;
+  }
+}
+
+/**
+ * Run tasks with bounded concurrency.
+ * Returns an array of results in the same order as items.
+ * Failed tasks produce null in the results array.
+ */
+export async function runWithBoundedConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<(R | null)[]> {
+  const results: (R | null)[] = new Array(items.length).fill(null);
+  let nextIdx = 0;
+  let completed = 0;
+
+  await new Promise<void>((resolve) => {
+    let active = 0;
+
+    function next() {
+      if (completed === items.length) {
+        resolve();
+        return;
+      }
+
+      while (active < concurrency && nextIdx < items.length) {
+        const idx = nextIdx++;
+        active++;
+
+        fn(items[idx]!, idx)
+          .then((r) => {
+            results[idx] = r;
+          })
+          .catch(() => {
+            results[idx] = null;
+          })
+          .finally(() => {
+            active--;
+            completed++;
+            next();
+          });
+      }
+    }
+
+    next();
+  });
+
+  return results;
+}
+
+// ---------------------------------------------------------------------------
 // Subagent data loading (read) — previously in loader.ts
 // ---------------------------------------------------------------------------
 
@@ -273,7 +480,7 @@ export function readAgentManifest(session: SessionInfo): AgentManifestEntry[] {
  *  - "orchestrator-..."          → skipped upstream
  *  - fallback                    → pentest
  */
-export function parseSubagentFilename(filename: string): {
+function parseSubagentFilename(filename: string): {
   agentType: "attack-surface" | "pentest";
   name: string;
 } {
@@ -317,7 +524,7 @@ export function parseSubagentFilename(filename: string): {
  *  1. Collect tool results by toolCallId so we can pair them with calls.
  *  2. Emit UIMessage[] with tool-call messages enriched with their results.
  */
-export function convertMessagesToUI(
+function convertMessagesToUI(
   messages: SavedMessage[],
   baseTime: Date,
 ): UIMessage[] {
@@ -400,16 +607,12 @@ export function loadSubagents(rootPath: string): UISubagent[] {
   const agentNameIndex = new Map<string, number>();
 
   if (existsSync(subagentsPath)) {
-    const files = readdirSync(subagentsPath).filter((f) =>
-      f.endsWith(".json"),
-    );
+    const files = readdirSync(subagentsPath).filter((f) => f.endsWith(".json"));
 
     // Sort files by timestamp in filename
     files.sort((a, b) => {
-      const timeA =
-        a.match(/\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}/)?.[0] || "";
-      const timeB =
-        b.match(/\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}/)?.[0] || "";
+      const timeA = a.match(/\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}/)?.[0] || "";
+      const timeB = b.match(/\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}/)?.[0] || "";
       return timeA.localeCompare(timeB);
     });
 
@@ -483,9 +686,7 @@ export function loadSubagents(rootPath: string): UISubagent[] {
           target: entry.target,
           objective: entry.objective,
           vulnerabilityClass: entry.vulnerabilityClass,
-          authenticationInfo: entry.authInfo as
-            | AuthenticationInfo
-            | undefined,
+          authenticationInfo: entry.authInfo as AuthenticationInfo | undefined,
         };
 
         // Match by agentName === manifest entry.id (both are "pentest-agent-{N}")

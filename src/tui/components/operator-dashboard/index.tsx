@@ -82,7 +82,6 @@ export default function OperatorDashboard({
   const conversationRef = useRef<ModelMessage[]>([]);
   const messagesRef = useRef<DisplayMessage[]>([]);
 
-
   // Input state
   const [inputValue, setInputValue] = useState("");
 
