@@ -27,7 +27,7 @@ import {
   createInitialOperatorState,
   type OperatorSessionState,
 } from "../../../core/operator";
-import { stepCountIs } from "ai";
+import { stepCountIs, type ModelMessage } from "ai";
 
 interface OperatorDashboardProps {
   sessionId: string;
@@ -61,6 +61,8 @@ export default function OperatorDashboard({
   // Messages — same pattern as pentest component
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const textRef = useRef("");
+  // AI SDK conversation history for multi-turn continuity
+  const conversationRef = useRef<ModelMessage[]>([]);
 
   // Input state
   const [inputValue, setInputValue] = useState("");
@@ -264,12 +266,19 @@ export default function OperatorDashboard({
         { role: "user", content: prompt, createdAt: new Date() },
       ]);
 
+      // Build messages array — append user turn to conversation history
+      const nextMessages: ModelMessage[] = [
+        ...conversationRef.current,
+        { role: "user", content: prompt },
+      ];
+
       try {
-        await runOffensiveSecurityAgent({
+        const streamResult = await runOffensiveSecurityAgent({
           system: buildOperatorSystemPrompt(session, operatorState),
           prompt,
           model: model.id,
           session,
+          messages: nextMessages,
           stopWhen: [stepCountIs(10000)],
           target: session.targets[0],
           activeTools: [...ALL_TOOL_NAMES],
@@ -299,6 +308,16 @@ export default function OperatorDashboard({
             },
           },
         });
+
+        // Persist full conversation for next turn
+        try {
+          const response = await streamResult.response;
+          if (response.messages) {
+            conversationRef.current = response.messages as ModelMessage[];
+          }
+        } catch {
+          // Stream may have been aborted; conversation stays as-is
+        }
       } catch (e) {
         if ((e as Error).name !== "AbortError") {
           const errorMsg = e instanceof Error ? e.message : "Agent failed";
