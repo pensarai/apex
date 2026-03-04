@@ -41,7 +41,12 @@ interface TokenUsage {
 
 interface AgentContextValue {
   model: ModelInfo;
-  setModel: (model: ModelInfo) => void;
+  /**
+   * Update the active model.
+   * Pass `persist = false` for programmatic/initialization calls that should
+   * not overwrite the user's saved preference on disk.
+   */
+  setModel: (model: ModelInfo, persist?: boolean) => void;
   isModelUserSelected: boolean;
   tokenUsage: TokenUsage;
   addTokenUsage: (input: number, output: number) => void;
@@ -80,14 +85,17 @@ export function AgentProvider({ children }: AgentProviderProps) {
   const [thinking, setThinking] = useState<boolean>(false);
   const [isExecuting, setIsExecuting] = useState<boolean>(false);
 
-  // Wrapper that marks model as user-selected and persists to config
-  const setModel = useCallback((newModel: ModelInfo) => {
+  // Wrapper that marks model as user-selected and persists to config.
+  // Pass `persist = false` for programmatic/initialization calls so the
+  // user's previously saved preference is not silently overwritten.
+  const setModel = useCallback((newModel: ModelInfo, persist = true) => {
     setModelInternal(newModel);
-    setIsModelUserSelected(true);
-    // Persist user's model preference to config
-    updateConfig({ selectedModelId: newModel.id }).catch((err) => {
-      writeErrorLog(err, "AGENT_CONTEXT");
-    });
+    if (persist) {
+      setIsModelUserSelected(true);
+      updateConfig({ selectedModelId: newModel.id }).catch((err) => {
+        writeErrorLog(err, "AGENT_CONTEXT");
+      });
+    }
   }, []);
 
   // Smart default model selection:

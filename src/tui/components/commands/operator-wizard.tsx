@@ -73,7 +73,7 @@ export default function HITLWizard(props: HITLWizardProps) {
         if (initialModel) {
           const targetModel = models.find((m) => m.id === initialModel);
           if (targetModel) {
-            setModel(targetModel);
+            setModel(targetModel, false);
             setExpandedProviders(new Set([targetModel.provider]));
             return;
           }
