@@ -39,8 +39,9 @@ function renderFinding(
     "## Remediation",
     "",
     finding.remediation,
-    "",
-    finding.references ? `## References\n\n${finding.references}` : "",
+    ...(finding.references
+      ? ["", `## References`, "", finding.references]
+      : []),
     "",
     "---",
     "",
