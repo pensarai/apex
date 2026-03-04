@@ -37,7 +37,7 @@ import type {
 // Constants
 // ---------------------------------------------------------------------------
 
-const SANDBOX_PW_DIR = "/tmp/sandbox-playwright";
+const SANDBOX_PW_DIR = "/opt/sandbox-playwright";
 const SANDBOX_EVIDENCE_DIR = "/tmp/evidence";
 const SANDBOX_REFS_FILE = "/tmp/pw-refs.json";
 const SANDBOX_URL_FILE = "/tmp/pw-current-url";
@@ -79,12 +79,22 @@ export async function checkSandboxPlaywright(
 /**
  * Install Playwright and the Chromium browser inside the sandbox.
  *
- * Requires `node` and `npm` (or compatible) to be available in the sandbox.
+ * When Playwright + Chromium have already been baked into the Daytona image
+ * snapshot (via `createSandbox({ installPlaywright: true })`), this function
+ * is never called because {@link checkSandboxPlaywright} will return `true`
+ * and {@link ensureSandboxPlaywright} will skip it.
+ *
+ * As a fallback this handles both Alpine (system Chromium via `apk`) and
+ * Debian (Playwright's own installer).
  */
 export async function installSandboxPlaywright(
   sandbox: UnifiedSandbox,
 ): Promise<void> {
   await sandbox.execute(`mkdir -p ${SANDBOX_PW_DIR}`, { timeout: 10 });
+
+  const isAlpine = (
+    await sandbox.execute("which apk", { timeout: 5 })
+  ).success;
 
   const initResult = await sandbox.execute(
     `cd ${SANDBOX_PW_DIR} && npm init -y --silent 2>/dev/null`,
@@ -96,40 +106,53 @@ export async function installSandboxPlaywright(
     );
   }
 
-  const installResult = await sandbox.execute(
-    `cd ${SANDBOX_PW_DIR} && npm install playwright 2>&1`,
-    { timeout: 300 },
-  );
+  // On Alpine, skip Playwright's bundled browser download — we install
+  // system Chromium via apk instead.
+  const npmInstallCmd = isAlpine
+    ? `cd ${SANDBOX_PW_DIR} && PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install playwright 2>&1`
+    : `cd ${SANDBOX_PW_DIR} && npm install playwright 2>&1`;
+
+  const installResult = await sandbox.execute(npmInstallCmd, { timeout: 300 });
   if (!installResult.success) {
     throw new Error(
       `Failed to install Playwright in sandbox: ${installResult.stderr || installResult.stdout}`,
     );
   }
 
-  // Remove broken Yarn apt repo (common on Daytona node images) before
-  // installing Chromium system deps, otherwise apt-get update fails.
-  await sandbox.execute(
-    `(sudo rm -f /etc/apt/sources.list.d/yarn.list /etc/apt/sources.list.d/yarn.sources 2>/dev/null || rm -f /etc/apt/sources.list.d/yarn.list /etc/apt/sources.list.d/yarn.sources 2>/dev/null || true)`,
-    { timeout: 10 },
-  );
-
-  // Install Chromium + system deps. Retry up to 3 times because browser
-  // binary downloads can hit transient network errors (ECONNRESET, etc.).
-  let browserResult;
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    browserResult = await sandbox.execute(
-      `cd ${SANDBOX_PW_DIR} && npx playwright install chromium --with-deps 2>&1`,
-      { timeout: 300 },
+  if (isAlpine) {
+    const apkResult = await sandbox.execute(
+      "apk add --no-cache chromium nss freetype harfbuzz ca-certificates ttf-freefont 2>&1",
+      { timeout: 120 },
     );
-    if (browserResult.success) break;
-    if (attempt < 3) {
-      await new Promise((r) => setTimeout(r, 3000));
+    if (!apkResult.success) {
+      throw new Error(
+        `Failed to install Chromium via apk: ${apkResult.stderr || apkResult.stdout}`,
+      );
     }
-  }
-  if (!browserResult!.success) {
-    throw new Error(
-      `Failed to install Chromium in sandbox: ${browserResult!.stderr || browserResult!.stdout}`,
+  } else {
+    // Debian/Ubuntu: use Playwright's own installer.
+    // Remove broken Yarn apt repo before installing system deps.
+    await sandbox.execute(
+      `(sudo rm -f /etc/apt/sources.list.d/yarn.list /etc/apt/sources.list.d/yarn.sources 2>/dev/null || rm -f /etc/apt/sources.list.d/yarn.list /etc/apt/sources.list.d/yarn.sources 2>/dev/null || true)`,
+      { timeout: 10 },
     );
+
+    let browserResult;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      browserResult = await sandbox.execute(
+        `cd ${SANDBOX_PW_DIR} && npx playwright install chromium --with-deps 2>&1`,
+        { timeout: 300 },
+      );
+      if (browserResult.success) break;
+      if (attempt < 3) {
+        await new Promise((r) => setTimeout(r, 3000));
+      }
+    }
+    if (!browserResult!.success) {
+      throw new Error(
+        `Failed to install Chromium in sandbox: ${browserResult!.stderr || browserResult!.stdout}`,
+      );
+    }
   }
 }
 
@@ -210,23 +233,30 @@ async function runPlaywrightScript(
 ): Promise<unknown> {
   const script = `
 const { chromium } = require('playwright');
+const fs = require('fs');
 
 (async () => {
   function resolve(value) {
     process.stdout.write('${RESULT_START}' + JSON.stringify(value) + '${RESULT_END}');
   }
 
+  // Prefer system Chromium (Alpine apk install) over Playwright's bundled binary.
+  let executablePath;
+  for (const p of ['/usr/bin/chromium-browser', '/usr/bin/chromium']) {
+    try { fs.accessSync(p, fs.constants.X_OK); executablePath = p; break; } catch {}
+  }
+
   let context;
   try {
     context = await chromium.launchPersistentContext('/tmp/pw-user-data', {
       headless: true,
+      ...(executablePath ? { executablePath } : {}),
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
     });
     const pages = context.pages();
     const page = pages.length > 0 ? pages[pages.length - 1] : await context.newPage();
 
     // Restore the last-visited URL so page state persists across tool calls.
-    const fs = require('fs');
     if (page.url() === 'about:blank') {
       try {
         const savedUrl = fs.readFileSync('${SANDBOX_URL_FILE}', 'utf-8').trim();
