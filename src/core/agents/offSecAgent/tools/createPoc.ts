@@ -6,12 +6,14 @@ import {
   existsSync,
   writeFileSync,
   chmodSync,
-  unlinkSync,
+  renameSync,
   mkdirSync,
 } from "fs";
 import type { ToolContext } from "./types";
 
 const MAX_POC_ATTEMPTS = 3;
+const DEFAULT_POC_TIMEOUT_MS = 60_000;
+const MAX_POC_TIMEOUT_MS = 300_000;
 
 function sanitizeFilename(str: string): string {
   return str
@@ -27,6 +29,14 @@ export const createPocInputSchema = z.object({
   pocType: z.enum(["bash", "python", "javascript"]).describe("Script language"),
   pocContent: z.string().describe("The full POC script content"),
   description: z.string().describe("What this POC demonstrates"),
+  timeoutSeconds: z
+    .number()
+    .min(10)
+    .max(300)
+    .optional()
+    .describe(
+      "Execution timeout in seconds (default: 60, max: 300). Increase for POCs that chain multiple requests or involve slow network operations like SSRF pivoting.",
+    ),
   toolCallDescription: z
     .string()
     .describe(
@@ -61,12 +71,14 @@ This tool:
 1. Creates the POC file in the pocs/ directory
 2. Makes executable and runs it
 3. Returns execution output for analysis
-4. Deletes the file if execution fails
+4. On failure, keeps the file (renamed with _failed suffix) so you can debug it
 
 POC requirements:
 - Exit 0 on success (vuln confirmed), 1 on failure
 - Print clear evidence of exploitation
 - Include rate limiting (sleep between requests)
+
+Use timeoutSeconds to increase the execution timeout for POCs that chain multiple requests (e.g. SSRF pivoting). Default is 60s, max 300s.
 
 Max ${MAX_POC_ATTEMPTS} attempts per approach before pivoting.`,
     inputSchema: createPocInputSchema,
@@ -120,32 +132,45 @@ async function executeLocalPoc(
           ? "python3"
           : "node";
 
+    const timeoutMs = poc.timeoutSeconds
+      ? Math.min(poc.timeoutSeconds * 1000, MAX_POC_TIMEOUT_MS)
+      : DEFAULT_POC_TIMEOUT_MS;
+
     const { stdout, stderr, exitCode } = await runScript(
       runner,
       pocPath,
-      60000,
+      timeoutMs,
       ctx.abortSignal,
     );
 
     if (exitCode !== 0) {
+      // Keep failed POCs with _failed suffix for debugging
+      const failedFilename = filename.replace(/(\.\w+)$/, `_failed$1`);
+      const failedPath = join(pocsPath, failedFilename);
       try {
-        unlinkSync(pocPath);
+        renameSync(pocPath, failedPath);
       } catch {
-        // ignore cleanup errors
+        // ignore rename errors
       }
+
+      return {
+        success: false,
+        pocPath: `pocs/${failedFilename}`,
+        stdout,
+        stderr,
+        exitCode,
+        attemptsRemaining: MAX_POC_ATTEMPTS - currentAttempts,
+        error: `POC exited with code ${exitCode}. File kept at pocs/${failedFilename} for debugging. ${MAX_POC_ATTEMPTS - currentAttempts} attempts remaining.`,
+      };
     }
 
     return {
-      success: exitCode === 0,
-      pocPath: exitCode === 0 ? `pocs/${filename}` : undefined,
+      success: true,
+      pocPath: `pocs/${filename}`,
       stdout,
       stderr,
       exitCode,
       attemptsRemaining: MAX_POC_ATTEMPTS - currentAttempts,
-      error:
-        exitCode !== 0
-          ? `POC exited with code ${exitCode}. ${MAX_POC_ATTEMPTS - currentAttempts} attempts remaining.`
-          : undefined,
     };
   } catch (error: unknown) {
     const errorMsg = error instanceof Error ? error.message : String(error);
@@ -201,35 +226,49 @@ async function executeSandboxPoc(
           ? "python3"
           : "node";
 
+    const timeoutSec = poc.timeoutSeconds
+      ? Math.min(poc.timeoutSeconds, MAX_POC_TIMEOUT_MS / 1000)
+      : DEFAULT_POC_TIMEOUT_MS / 1000;
+
     const result = await ctx.sandbox!.execute(
       `cd /tmp && ${runner} ${sandboxPocPath}`,
-      { timeout: 60 },
+      { timeout: timeoutSec },
     );
 
     const executionSuccess = result.success || result.exitCode === 0;
 
     if (!executionSuccess) {
-      await ctx.sandbox!.execute(`rm -f ${sandboxPocPath}`);
+      // Keep failed POCs with _failed suffix for debugging
+      const failedFilename = filename.replace(/(\.\w+)$/, `_failed$1`);
+      const failedSandboxPath = `/tmp/pocs/${failedFilename}`;
+      await ctx.sandbox!.execute(
+        `mv ${sandboxPocPath} ${failedSandboxPath} 2>/dev/null || true`,
+      );
+      const failedLocalPath = join(localPocsPath, failedFilename);
       try {
-        unlinkSync(localPocPath);
+        renameSync(localPocPath, failedLocalPath);
       } catch {
         // ignore
       }
+
+      return {
+        success: false,
+        pocPath: `pocs/${failedFilename}`,
+        stdout: result.stdout || "(no output)",
+        stderr: result.stderr || "POC execution failed",
+        exitCode: result.exitCode,
+        attemptsRemaining: MAX_POC_ATTEMPTS - currentAttempts,
+        error: `POC exited with code ${result.exitCode}. File kept at pocs/${failedFilename} for debugging. ${MAX_POC_ATTEMPTS - currentAttempts} attempts remaining.`,
+      };
     }
 
     return {
-      success: executionSuccess,
-      pocPath: executionSuccess ? `pocs/${filename}` : undefined,
+      success: true,
+      pocPath: `pocs/${filename}`,
       stdout: result.stdout || "(no output)",
-      stderr: executionSuccess
-        ? result.stderr || "(no errors)"
-        : (result.stderr || "POC execution failed") +
-          "\n\nPOC file has been deleted.",
+      stderr: result.stderr || "(no errors)",
       exitCode: result.exitCode,
       attemptsRemaining: MAX_POC_ATTEMPTS - currentAttempts,
-      error: !executionSuccess
-        ? `POC exited with code ${result.exitCode}. ${MAX_POC_ATTEMPTS - currentAttempts} attempts remaining.`
-        : undefined,
     };
   } catch (error: unknown) {
     const errorMsg = error instanceof Error ? error.message : String(error);

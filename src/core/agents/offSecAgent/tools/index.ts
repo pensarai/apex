@@ -48,6 +48,7 @@ export { probeAuthEndpoints } from "./probeAuthEndpoints";
 export { runAttackSurface } from "./runAttackSurface";
 export { spawnPentestSwarm } from "./spawnPentestSwarm";
 export { spawnCodingAgent } from "./spawnCodingAgent";
+export { delegateFlagExtraction } from "./delegateFlagExtraction";
 
 // Reporting / benchmark tools
 // export { generateReport } from "./generateReport";
@@ -84,6 +85,7 @@ import { probeAuthEndpoints } from "./probeAuthEndpoints";
 import { runAttackSurface } from "./runAttackSurface";
 import { spawnPentestSwarm } from "./spawnPentestSwarm";
 import { spawnCodingAgent } from "./spawnCodingAgent";
+import { delegateFlagExtraction } from "./delegateFlagExtraction";
 // import { generateReport } from "./generateReport";
 import { provideComparisonResults } from "./provideComparisonResults";
 import { createEmailToolset } from "./email";
@@ -134,6 +136,7 @@ export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
     run_attack_surface: runAttackSurface(ctx),
     spawn_pentest_swarm: spawnPentestSwarm(ctx),
     spawn_coding_agent: spawnCodingAgent(ctx),
+    delegate_flag_extraction: delegateFlagExtraction(ctx),
 
     // Reporting / benchmark tools
     // generate_report: generateReport(ctx),
@@ -179,6 +182,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "run_attack_surface",
   "spawn_pentest_swarm",
   "spawn_coding_agent",
+  "delegate_flag_extraction",
   // "generate_report",
   "provide_comparison_results",
   // Email
