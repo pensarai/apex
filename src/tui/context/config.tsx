@@ -28,11 +28,11 @@ export function ConfigProvider({ children, config }: ConfigProviderProps) {
     () => ({
       data: appConfig,
       update: async (newConfig: Partial<Config>) => {
-        await _config.update(newConfig);
         setAppConfig({
           ...appConfig,
           ...newConfig,
         });
+        await _config.update(newConfig);
       },
       reload: async () => {
         const freshConfig = await _config.get();
