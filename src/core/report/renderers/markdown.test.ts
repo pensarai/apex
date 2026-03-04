@@ -45,6 +45,15 @@ describe("renderMarkdown", () => {
     // The expected output matches the exact template from documentFinding.ts
     // Two trailing spaces on Severity/Target/Endpoint/Date lines for markdown line breaks
     const expected = [
+      "# Pentest Report — https://example.com",
+      "",
+      "**Date:** 2026-02-26T10:00:00.000Z  ",
+      "**Session:** sess-abc123  ",
+      "**Model:** claude-sonnet-4-20250514  ",
+      "**Mode:** blackbox",
+      "",
+      "**Findings:** 1",
+      "",
       "# SQL Injection in Login Form",
       "",
       "**Severity:** HIGH  ",

@@ -1,8 +1,33 @@
 import type { PentestReport, PentestReportFinding } from "../schemas";
 
 export function renderMarkdown(report: PentestReport): string {
-  const { metadata, findings } = report;
-  return findings.map((finding) => renderFinding(finding, metadata)).join("\n");
+  const { metadata, findings, summary } = report;
+
+  const header = [
+    `# Pentest Report — ${metadata.target}`,
+    "",
+    `**Date:** ${metadata.timestamp}  `,
+    `**Session:** ${metadata.sessionId}  `,
+    `**Model:** ${metadata.model}  `,
+    `**Mode:** ${metadata.mode}`,
+    "",
+    `**Findings:** ${summary.totalFindings}`,
+    "",
+  ];
+
+  if (findings.length === 0) {
+    return [
+      ...header,
+      "No findings were identified during this assessment.",
+      "",
+    ].join("\n");
+  }
+
+  const body = findings
+    .map((finding) => renderFinding(finding, metadata))
+    .join("\n");
+
+  return [...header, body].join("\n");
 }
 
 function renderFinding(
