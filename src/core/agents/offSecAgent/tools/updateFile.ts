@@ -69,6 +69,13 @@ operation fails with an error — double-check whitespace and indentation.`,
   });
 }
 
+function replaceFirst(content: string, oldContent: string, newContent: string) {
+  const idx = content.indexOf(oldContent);
+  return (
+    content.slice(0, idx) + newContent + content.slice(idx + oldContent.length)
+  );
+}
+
 async function executeLocalUpdate(
   filePath: string,
   oldContent: string,
@@ -96,7 +103,7 @@ async function executeLocalUpdate(
       updated = parts.join(newContent);
     } else {
       replacements = 1;
-      updated = content.replace(oldContent, newContent);
+      updated = replaceFirst(content, oldContent, newContent);
     }
 
     await writeFile(filePath, updated, "utf-8");
@@ -159,7 +166,7 @@ async function executeSandboxUpdate(
       updated = parts.join(newContent);
     } else {
       replacements = 1;
-      updated = content.replace(oldContent, newContent);
+      updated = replaceFirst(content, oldContent, newContent);
     }
 
     const base64Updated = Buffer.from(updated).toString("base64");

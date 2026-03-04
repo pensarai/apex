@@ -13,9 +13,9 @@ export interface RunPatchingAgentInput extends PatchingAgentInput {
 /**
  * Run the patching agent to fix a security vulnerability in a codebase.
  *
- * The agent operates in lite mode: it reads/searches/modifies code directly
- * on the filesystem without a sandbox or code execution. It returns a
- * structured result with the list of changed files, PR title, and description.
+ * The agent reads, searches, and modifies code, then verifies the fix via
+ * lint, type-check, and tests. When a sandbox is provided in the input,
+ * tools automatically route operations through it.
  *
  * @returns Structured patch result with file changes and PR metadata.
  */

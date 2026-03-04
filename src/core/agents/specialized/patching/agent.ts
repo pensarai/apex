@@ -8,7 +8,12 @@ import {
   type PatchingAgentInput,
 } from "./types";
 
-const AGENTS_MD_FILENAMES = ["AGENTS.md", "agents.md", "CLAUDE.md", "claude.md"];
+const AGENTS_MD_FILENAMES = [
+  "AGENTS.md",
+  "agents.md",
+  "CLAUDE.md",
+  "claude.md",
+];
 const MAX_AGENTS_MD_SIZE = 50_000;
 
 /**
@@ -36,14 +41,9 @@ function readAgentsMd(cwd: string): string | undefined {
  * Uses filesystem tools to read, search, and modify code directly, and
  * `execute_command` to run lint, type-check, and test suites for verification.
  *
- * Supports two modes controlled by the optional `sandbox` parameter:
- *
- * - **Lite mode** (no sandbox): commands run on the local filesystem.
- *   The agent uses lint/type-check/tests for verification.
- *
- * - **Sandbox mode** (sandbox provided): commands route through an isolated
- *   sandbox environment. The agent can restart services, run POC scripts,
- *   and fully verify its fix end-to-end.
+ * When an optional `sandbox` is provided, tools like `execute_command`,
+ * `create_file`, and `update_file` automatically route operations through
+ * the sandbox instead of the local filesystem.
  *
  * Automatically reads AGENTS.md (or CLAUDE.md) from the repository root and
  * injects it into the prompt so the agent knows the project's build/test
@@ -54,21 +54,12 @@ function readAgentsMd(cwd: string): string | undefined {
  *
  * @example
  * ```ts
- * // Lite mode (no sandbox)
  * const agent = new PatchingAgent({
  *   cwd: "/tmp/cloned-repo",
  *   vulnerability: { name: "SQL Injection", severity: "critical", description: "..." },
  *   model: "claude-sonnet-4-20250514",
  *   session,
- * });
- *
- * // Sandbox mode
- * const agent = new PatchingAgent({
- *   cwd: "/workspace/repo",
- *   vulnerability: { name: "SQL Injection", severity: "critical", description: "..." },
- *   model: "claude-sonnet-4-20250514",
- *   session,
- *   sandbox, // pre-configured UnifiedSandbox
+ *   sandbox, // optional — tools route through sandbox when provided
  * });
  *
  * const result = await agent.consume({
@@ -90,12 +81,11 @@ export class PatchingAgent extends OffensiveSecurityAgent<PatchResult> {
       sandbox,
     } = opts;
 
-    const hasSandbox = !!sandbox;
     const agentsMd = readAgentsMd(cwd);
 
     super({
-      system: buildSystemPrompt(hasSandbox),
-      prompt: buildPatchingPrompt(vulnerability, cwd, agentsMd, hasSandbox),
+      system: buildSystemPrompt(),
+      prompt: buildPatchingPrompt(vulnerability, cwd, agentsMd),
       model,
       session,
       authConfig,

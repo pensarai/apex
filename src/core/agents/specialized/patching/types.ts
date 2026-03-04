@@ -51,14 +51,9 @@ export interface PatchingAgentInput extends SpecializedAgentInput {
   /**
    * Optional pre-configured sandbox for isolated code execution.
    *
-   * When provided, the agent operates in **sandbox mode**:
-   * - `execute_command` routes through the sandbox
-   * - The agent is instructed it can run code, restart services, and
-   *   execute POC scripts to verify fixes
-   *
-   * When absent, the agent operates in **lite mode**:
-   * - Commands execute on the local filesystem
-   * - The agent relies on code analysis, lint, and tests for verification
+   * When provided, tools like `execute_command`, `create_file`, and
+   * `update_file` automatically route operations through the sandbox
+   * instead of the local filesystem.
    *
    * The sandbox should be fully set up before passing it in (repo cloned,
    * dev environment started, etc.).

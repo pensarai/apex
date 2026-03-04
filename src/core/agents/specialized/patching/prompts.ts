@@ -1,7 +1,7 @@
 import type { VulnerabilityDetails } from "./types";
 
 // ---------------------------------------------------------------------------
-// System prompt — built dynamically based on whether a sandbox is available
+// System prompt
 // ---------------------------------------------------------------------------
 
 const PREAMBLE = `You are an expert security vulnerability patching agent. Your goal is to analyze security vulnerabilities, provide high-quality fixes, and verify the fixes don't break existing functionality.`;
@@ -39,41 +39,25 @@ const APPLY_STEP = `5. **Apply the Patch**:
    - Follow the existing code style and conventions
    - Ensure your changes integrate cleanly with the existing codebase`;
 
-const VERIFY_STEP_LITE = `6. **Verify the Patch**:
-   - Use execute_command to run the project's lint command (e.g. \`npm run lint\`, \`ruff check\`, \`cargo clippy\`)
-   - Use execute_command to run the project's type-check command if applicable (e.g. \`npx tsc --noEmit\`, \`mypy\`)
-   - Use execute_command to run the project's test suite (e.g. \`npm test\`, \`pytest\`, \`cargo test\`)
-   - If any check fails, read the error output carefully, fix the issues, and re-run until all checks pass
-   - If the project has no clear lint/test commands, at minimum verify the changed files parse correctly (e.g. \`node -c file.js\`, \`python -m py_compile file.py\`)`;
-
-const VERIFY_STEP_SANDBOX = `6. **Restart Dev Environment** (if applicable):
+const RESTART_STEP = `6. **Restart Dev Environment** (if applicable):
    - Use execute_command to restart any dev servers or services so your changes are loaded
-   - Wait for the services to become healthy
+   - Wait for the services to become healthy`;
 
-7. **Verify the Patch**:
+const VERIFY_STEP = `7. **Verify the Patch**:
    - Use execute_command to run the project's lint command (e.g. \`npm run lint\`, \`ruff check\`, \`cargo clippy\`)
    - Use execute_command to run the project's type-check command if applicable (e.g. \`npx tsc --noEmit\`, \`mypy\`)
    - Use execute_command to run the project's test suite (e.g. \`npm test\`, \`pytest\`, \`cargo test\`)
    - If a Proof of Concept (POC) is provided, run it to verify the vulnerability is fixed — the POC should FAIL (non-zero exit code) after a successful patch
-   - If any check fails, read the error output carefully, fix the issues, and re-run until all checks pass`;
+   - If any check fails, read the error output carefully, fix the issues, and re-run until all checks pass
+   - If the project has no clear lint/test commands, at minimum verify the changed files parse correctly (e.g. \`node -c file.js\`, \`python -m py_compile file.py\`)`;
 
-const FINALIZE_STEP_LITE = `7. **Finalize**:
+const FINALIZE_STEP = `8. **Finalize**:
    - Use the response tool to complete the patching process
    - Provide a clear, detailed summary of:
      * Each file you changed and why
      * The security principles applied
      * How your fix addresses the vulnerability
-     * Verification results (lint, type-check, test outcomes)
-     * Any assumptions or limitations of the fix
-   - Write a professional PR title and description that explains the security fix`;
-
-const FINALIZE_STEP_SANDBOX = `8. **Finalize**:
-   - Use the response tool to complete the patching process
-   - Provide a clear, detailed summary of:
-     * Each file you changed and why
-     * The security principles applied
-     * How your fix addresses the vulnerability
-     * Verification results (lint, type-check, test outcomes, POC result)
+     * Verification results (lint, type-check, test outcomes, POC result if applicable)
      * Any assumptions or limitations of the fix
    - Write a professional PR title and description that explains the security fix`;
 
@@ -134,46 +118,17 @@ const SECURITY_BEST_PRACTICES = `# Security Best Practices by Vulnerability Type
 - Encrypt sensitive data at rest and in transit
 - Remove sensitive data from client-side code`;
 
-const TOOL_USAGE_LITE = `# Tool Usage
+const TOOL_USAGE = `# Tool Usage
 
 - **list_files**: Explore directory structure and find relevant files
 - **read_file**: Read file contents to understand code
 - **grep**: Search for patterns across the codebase
 - **update_file**: Modify existing files with security fixes
 - **create_file**: Create new files if needed (utilities, middleware, etc.)
-- **execute_command**: Run shell commands — use for linting, type-checking, running tests, installing dependencies, and verifying your changes
+- **execute_command**: Run shell commands — use for linting, type-checking, running tests, restarting services, running POCs, installing dependencies, and verifying your changes
 - **response**: Complete the process with the structured patch result`;
 
-const TOOL_USAGE_SANDBOX = `# Tool Usage
-
-- **list_files**: Explore directory structure and find relevant files
-- **read_file**: Read file contents to understand code
-- **grep**: Search for patterns across the codebase
-- **update_file**: Modify existing files with security fixes
-- **create_file**: Create new files if needed (utilities, middleware, etc.)
-- **execute_command**: Run shell commands in the sandbox — use for linting, type-checking, running tests, restarting services, running POCs, installing dependencies, and verifying your changes
-- **response**: Complete the process with the structured patch result`;
-
-const REQUIREMENTS_LITE = `# Critical Requirements
-
-1. **Be Thorough**: Your analysis must be comprehensive — read related code, not just the vulnerable file
-2. **Be Conservative**: When in doubt, prefer defense-in-depth approaches
-3. **Be Specific**: Provide exact code changes, not vague suggestions
-4. **Be Contextual**: Respect the existing codebase, frameworks, and patterns
-5. **Verify Your Work**: Always run lint, type-check, and tests after applying the patch. Fix any failures before finalizing.
-6. **Be Complete**: Address the root cause, not just symptoms
-
-# Important Notes
-
-- You are creating production code that will be deployed
-- Your fixes must not break existing functionality — verify this by running the project's tests
-- Consider backward compatibility and edge cases
-- Follow language and framework conventions
-- When multiple approaches exist, choose the most secure and idiomatic
-- If a fix requires configuration changes or environment variables, note this clearly
-- If AGENTS.md or project docs specify particular lint/test/build commands, use those exact commands`;
-
-const REQUIREMENTS_SANDBOX = `# Critical Requirements
+const REQUIREMENTS = `# Critical Requirements
 
 1. **Be Thorough**: Your analysis must be comprehensive — read related code, not just the vulnerable file
 2. **Be Conservative**: When in doubt, prefer defense-in-depth approaches
@@ -187,9 +142,8 @@ const REQUIREMENTS_SANDBOX = `# Critical Requirements
 # Important Notes
 
 - You are creating production code that will be deployed
-- You have a full sandbox environment — use it to run, test, and verify your changes
 - Your fixes must not break existing functionality — verify this by running the project's tests
-- The POC should FAIL after patching (meaning the exploit no longer works)
+- If a POC is provided, the POC should FAIL after patching (meaning the exploit no longer works)
 - Consider backward compatibility and edge cases
 - Follow language and framework conventions
 - When multiple approaches exist, choose the most secure and idiomatic
@@ -197,31 +151,11 @@ const REQUIREMENTS_SANDBOX = `# Critical Requirements
 - If AGENTS.md or project docs specify particular lint/test/build commands, use those exact commands`;
 
 /**
- * Build the system prompt, varying instructions based on sandbox availability.
+ * Build the patching agent system prompt.
  */
-export function buildSystemPrompt(hasSandbox: boolean): string {
-  const modeContext = hasSandbox
-    ? `# Execution Environment
-
-You have access to a **sandbox environment** with a fully cloned repository and
-(optionally) a running dev environment. You can execute commands, restart
-services, install dependencies, and run POC scripts to verify your fix.`
-    : `# Execution Environment
-
-You are operating in **lite mode** — commands execute on the local filesystem
-where the repository has been cloned. You can run lint, type-check, and test
-commands to verify your fix, but there is no isolated sandbox or running
-dev environment.`;
-
-  const verifyStep = hasSandbox ? VERIFY_STEP_SANDBOX : VERIFY_STEP_LITE;
-  const finalizeStep = hasSandbox ? FINALIZE_STEP_SANDBOX : FINALIZE_STEP_LITE;
-  const toolUsage = hasSandbox ? TOOL_USAGE_SANDBOX : TOOL_USAGE_LITE;
-  const requirements = hasSandbox ? REQUIREMENTS_SANDBOX : REQUIREMENTS_LITE;
-
+export function buildSystemPrompt(): string {
   return [
     PREAMBLE,
-    "",
-    modeContext,
     "",
     "# Process",
     "",
@@ -237,20 +171,21 @@ dev environment.`;
     "",
     APPLY_STEP,
     "",
-    verifyStep,
+    RESTART_STEP,
     "",
-    finalizeStep,
+    VERIFY_STEP,
+    "",
+    FINALIZE_STEP,
     "",
     SECURITY_BEST_PRACTICES,
     "",
-    toolUsage,
+    TOOL_USAGE,
     "",
-    requirements,
+    REQUIREMENTS,
   ].join("\n");
 }
 
-// Keep a static export for backwards compatibility / direct imports
-export const PATCHING_SYSTEM_PROMPT = buildSystemPrompt(false);
+export const PATCHING_SYSTEM_PROMPT = buildSystemPrompt();
 
 // ---------------------------------------------------------------------------
 // User prompt builder
@@ -260,7 +195,6 @@ export function buildPatchingPrompt(
   vulnerability: VulnerabilityDetails,
   cwd: string,
   agentsMd?: string,
-  hasSandbox?: boolean,
 ): string {
   const sections = [
     "# Security Vulnerability Patching Task",
@@ -269,17 +203,6 @@ export function buildPatchingPrompt(
     `The repository is located at: ${cwd}`,
     "",
   ];
-
-  if (hasSandbox) {
-    sections.push(
-      "## Sandbox Environment",
-      "",
-      "You have a **sandbox environment** available. The repository has been",
-      "cloned and uploaded to the sandbox. Commands you run via execute_command",
-      "will execute inside the sandbox.",
-      "",
-    );
-  }
 
   if (agentsMd) {
     sections.push(
@@ -360,140 +283,68 @@ export function buildPatchingPrompt(
       vulnerability.poc.contents,
       "```",
       "",
-    );
-
-    if (hasSandbox) {
-      sections.push(
-        "You can run this POC using execute_command to verify the vulnerability",
-        "exists before patching, and confirm it is fixed afterwards.",
-        "The POC should FAIL (non-zero exit code) after a successful patch.",
-        "",
-      );
-    } else {
-      sections.push(
-        "Note: You cannot execute this POC, but it shows you:",
-        "- How an attacker would exploit the vulnerability",
-        "- What inputs trigger the vulnerability",
-        "- What the expected malicious outcome would be",
-        "",
-        "Use this information to ensure your fix prevents the attack demonstrated in the POC.",
-        "",
-      );
-    }
-  }
-
-  // Task steps vary based on sandbox availability
-  if (hasSandbox) {
-    sections.push(
-      "## Your Task",
+      "Run this POC using execute_command to verify the vulnerability exists",
+      "before patching, and confirm it is fixed afterwards.",
+      "The POC should FAIL (non-zero exit code) after a successful patch.",
       "",
-      "Follow the prescriptive process outlined in your system prompt:",
-      "",
-      "1. **Orient Yourself**",
-      "   - Review the AGENTS.md content above (if provided) for build/lint/test commands",
-      "   - Read package.json or equivalent to understand the project toolchain",
-      "",
-      "2. **Understand the Vulnerability**",
-      "   - Analyze the vulnerability description, CWE mappings, and dataflow",
-      "   - Identify the root cause and attack vector",
-      "",
-      "3. **Review the Code**",
-      "   - Use list_files to explore the repository structure",
-      "   - Use read_file to examine the vulnerable file and related code",
-      "   - Use grep to search for patterns, similar issues, or existing security controls",
-      "",
-      "4. **Plan Your Fix**",
-      "   - Determine exactly what code needs to change",
-      "   - Choose the appropriate security control",
-      "   - Consider side effects and edge cases",
-      "   - State your complete plan clearly",
-      "",
-      "5. **Apply the Patch**",
-      "   - Use update_file to implement your security fixes",
-      "   - Use create_file if you need to add new utilities",
-      "   - Make minimal, targeted changes",
-      "   - Follow existing code style and conventions",
-      "",
-      "6. **Restart Dev Environment** (if applicable)",
-      "   - Restart any dev servers so your changes are loaded",
-      "",
-      "7. **Verify the Patch**",
-      "   - Run lint, type-check, and tests via execute_command",
-      "   - Run the POC — it should FAIL after a successful patch",
-      "   - If any check fails, fix the issues and re-run",
-      "",
-      "8. **Finalize**",
-      "   - Use the response tool to submit your result",
-      "   - Include verification and POC results in your descriptions",
-      "   - Write a professional PR title and description",
-      "",
-      "## Success Criteria",
-      "",
-      "- The root cause of the vulnerability is addressed",
-      "- Security best practices are applied correctly",
-      "- Changes are minimal and don't break functionality",
-      "- Code follows the existing style and conventions",
-      "- Lint, type-check, and tests pass after the patch",
-      "- The POC fails after patching (exploit no longer works)",
-      "",
-      "Begin by orienting yourself: read the project documentation and package.json,",
-      "then explore the repository and read the vulnerable file(s).",
-    );
-  } else {
-    sections.push(
-      "## Your Task",
-      "",
-      "Follow the prescriptive process outlined in your system prompt:",
-      "",
-      "1. **Orient Yourself**",
-      "   - Review the AGENTS.md content above (if provided) for build/lint/test commands",
-      "   - Read package.json or equivalent to understand the project toolchain",
-      "",
-      "2. **Understand the Vulnerability**",
-      "   - Analyze the vulnerability description, CWE mappings, and dataflow",
-      "   - Identify the root cause and attack vector",
-      "",
-      "3. **Review the Code**",
-      "   - Use list_files to explore the repository structure",
-      "   - Use read_file to examine the vulnerable file and related code",
-      "   - Use grep to search for patterns, similar issues, or existing security controls",
-      "",
-      "4. **Plan Your Fix**",
-      "   - Determine exactly what code needs to change",
-      "   - Choose the appropriate security control",
-      "   - Consider side effects and edge cases",
-      "   - State your complete plan clearly",
-      "",
-      "5. **Apply the Patch**",
-      "   - Use update_file to implement your security fixes",
-      "   - Use create_file if you need to add new utilities",
-      "   - Make minimal, targeted changes",
-      "   - Follow existing code style and conventions",
-      "",
-      "6. **Verify the Patch**",
-      "   - Run the project's lint command with execute_command",
-      "   - Run the project's type-check command if applicable",
-      "   - Run the project's test suite with execute_command",
-      "   - If any check fails, fix the issues and re-run",
-      "",
-      "7. **Finalize**",
-      "   - Use the response tool to submit your result",
-      "   - Include verification results in your descriptions",
-      "   - Write a professional PR title and description",
-      "",
-      "## Success Criteria",
-      "",
-      "- The root cause of the vulnerability is addressed",
-      "- Security best practices are applied correctly",
-      "- Changes are minimal and don't break functionality",
-      "- Code follows the existing style and conventions",
-      "- Lint, type-check, and tests pass after the patch",
-      "- The fix would prevent the attack shown in the POC (if provided)",
-      "",
-      "Begin by orienting yourself: read the project documentation and package.json,",
-      "then explore the repository and read the vulnerable file(s).",
     );
   }
+
+  sections.push(
+    "## Your Task",
+    "",
+    "Follow the prescriptive process outlined in your system prompt:",
+    "",
+    "1. **Orient Yourself**",
+    "   - Review the AGENTS.md content above (if provided) for build/lint/test commands",
+    "   - Read package.json or equivalent to understand the project toolchain",
+    "",
+    "2. **Understand the Vulnerability**",
+    "   - Analyze the vulnerability description, CWE mappings, and dataflow",
+    "   - Identify the root cause and attack vector",
+    "",
+    "3. **Review the Code**",
+    "   - Use list_files to explore the repository structure",
+    "   - Use read_file to examine the vulnerable file and related code",
+    "   - Use grep to search for patterns, similar issues, or existing security controls",
+    "",
+    "4. **Plan Your Fix**",
+    "   - Determine exactly what code needs to change",
+    "   - Choose the appropriate security control",
+    "   - Consider side effects and edge cases",
+    "   - State your complete plan clearly",
+    "",
+    "5. **Apply the Patch**",
+    "   - Use update_file to implement your security fixes",
+    "   - Use create_file if you need to add new utilities",
+    "   - Make minimal, targeted changes",
+    "   - Follow existing code style and conventions",
+    "",
+    "6. **Restart Dev Environment** (if applicable)",
+    "   - Restart any dev servers so your changes are loaded",
+    "",
+    "7. **Verify the Patch**",
+    "   - Run lint, type-check, and tests via execute_command",
+    "   - If a POC was provided, run it — it should FAIL after a successful patch",
+    "   - If any check fails, fix the issues and re-run",
+    "",
+    "8. **Finalize**",
+    "   - Use the response tool to submit your result",
+    "   - Include verification results (and POC result if applicable) in your descriptions",
+    "   - Write a professional PR title and description",
+    "",
+    "## Success Criteria",
+    "",
+    "- The root cause of the vulnerability is addressed",
+    "- Security best practices are applied correctly",
+    "- Changes are minimal and don't break functionality",
+    "- Code follows the existing style and conventions",
+    "- Lint, type-check, and tests pass after the patch",
+    "- The POC fails after patching (if one was provided)",
+    "",
+    "Begin by orienting yourself: read the project documentation and package.json,",
+    "then explore the repository and read the vulnerable file(s).",
+  );
 
   return sections.filter(Boolean).join("\n");
 }
