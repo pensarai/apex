@@ -3,6 +3,7 @@ import { streamResponse, type AIModel, type StreamResponseOpts } from "./ai";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { createAmazonBedrock } from "@ai-sdk/amazon-bedrock";
 import { createAnthropic } from "@ai-sdk/anthropic";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { getModelInfo } from "./models";
 import { createPensarModel } from "./providers/pensar";
 import { getPensarApiUrl } from "../api/constants";
@@ -20,6 +21,7 @@ import {
 export type AIAuthConfig = {
   openAiAPIKey?: string;
   anthropicAPIKey?: string;
+  googleAPIKey?: string;
   openRouterAPIKey?: string;
   pensarAPIKey?: string;
   pensarApiUrl?: string;
@@ -47,6 +49,7 @@ export type AIAuthConfig = {
 export function buildAuthConfig(cfg: {
   anthropicAPIKey?: string | null;
   openAiAPIKey?: string | null;
+  googleAPIKey?: string | null;
   openRouterAPIKey?: string | null;
   pensarAPIKey?: string | null;
   pensarApiUrl?: string | null;
@@ -59,6 +62,7 @@ export function buildAuthConfig(cfg: {
   return {
     anthropicAPIKey: cfg.anthropicAPIKey ?? undefined,
     openAiAPIKey: cfg.openAiAPIKey ?? undefined,
+    googleAPIKey: cfg.googleAPIKey ?? undefined,
     openRouterAPIKey: cfg.openRouterAPIKey ?? undefined,
     pensarAPIKey: cfg.pensarAPIKey ?? undefined,
     pensarApiUrl: cfg.pensarApiUrl ?? undefined,
@@ -79,6 +83,8 @@ export function getProviderModel(
   const openAiAPIKey = authConfig?.openAiAPIKey || process.env.OPENAI_API_KEY;
   const anthropicAPIKey =
     authConfig?.anthropicAPIKey || process.env.ANTHROPIC_API_KEY;
+  const googleAPIKey =
+    authConfig?.googleAPIKey || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
   const openRouterAPIKey =
     authConfig?.openRouterAPIKey || process.env.OPENROUTER_API_KEY;
   const bedrockApiKey =
@@ -135,6 +141,14 @@ export function getProviderModel(
         apiKey: anthropicAPIKey,
       }).chat(model);
       break;
+
+    case "google": {
+      const google = createGoogleGenerativeAI({
+        apiKey: googleAPIKey,
+      });
+      providerModel = google(model);
+      break;
+    }
 
     case "pensar": {
       const pensarApiKey =

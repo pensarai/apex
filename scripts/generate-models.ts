@@ -66,6 +66,15 @@ const CONTEXT_LENGTHS: Record<string, number> = {
   "o3-mini": 128000,
   o4: 200000,
 
+  // Google Gemini
+  "gemini-2.0": 1000000,
+  "gemini-2.5": 1000000,
+  "gemini-3": 1000000,
+  "gemini-3.1": 1000000,
+  "gemini-pro": 1000000,
+  "gemini-flash": 1000000,
+  "gemma-3": 8192,
+
   // Bedrock provider-specific
   "amazon.titan-tg1": 8000,
   "amazon.titan-text-express": 8000,
@@ -365,6 +374,56 @@ function formatModelName(modelId: string, provider: string): string {
       : name;
   }
 
+  // --- Google Gemini/Gemma models ---
+  if (id.startsWith("gemini-") || id.startsWith("gemma-")) {
+    const parts = id.split("-");
+    let name = "";
+    if (parts[0] === "gemini") {
+      name = "Gemini";
+      const rest = parts.slice(1);
+      if (rest.length > 0) {
+        const version = rest[0]!;
+        name += ` ${version}`;
+        const remaining = rest.slice(1);
+        if (remaining.length > 0) {
+          name +=
+            " " +
+            remaining
+              .map((p) => {
+                if (p === "pro") return "Pro";
+                if (p === "flash") return "Flash";
+                if (p === "lite") return "Lite";
+                if (p === "exp") return "Experimental";
+                if (p === "preview") return "Preview";
+                if (p === "latest") return "Latest";
+                if (p === "image") return "Image";
+                if (p === "native") return "Native";
+                if (p === "audio") return "Audio";
+                if (p === "tts") return "TTS";
+                if (p === "customtools") return "Custom Tools";
+                return capitalize(p);
+              })
+              .join(" ");
+        }
+      }
+    } else if (parts[0] === "gemma") {
+      name = "Gemma";
+      const rest = parts.slice(1);
+      if (rest.length > 0) {
+        name +=
+          " " +
+          rest
+            .map((p) => {
+              if (p === "it") return "Instruct";
+              if (/^\d+b$/.test(p)) return p.replace("b", "B");
+              return p;
+            })
+            .join(" ");
+      }
+    }
+    return name + dateSuffix;
+  }
+
   // --- Fallback ---
   const name = id + dateSuffix;
   if (provider === "bedrock") {
@@ -495,6 +554,22 @@ function main() {
     contextLength: getContextLength(id),
   }));
 
+  // ---- Google ----
+  const googleDts = resolve(
+    ROOT,
+    "node_modules/@ai-sdk/google/dist/internal/index.d.ts",
+  );
+  const googleIds = extractUnionMembers(
+    googleDts,
+    "GoogleGenerativeAIModelId",
+  ).filter(isRelevantChatModel);
+  const googleModels: ModelEntry[] = googleIds.map((id) => ({
+    id,
+    name: formatModelName(id, "google"),
+    provider: "google",
+    contextLength: getContextLength(id),
+  }));
+
   // ---- Bedrock ----
   const bedrockDts = resolve(
     ROOT,
@@ -524,6 +599,12 @@ function main() {
     generateFileContent(openaiModels, "OPENAI_MODELS"),
   );
   console.log(`✓ openai.ts — ${openaiModels.length} models`);
+
+  writeFileSync(
+    resolve(MODELS_DIR, "google.ts"),
+    generateFileContent(googleModels, "GOOGLE_MODELS"),
+  );
+  console.log(`✓ google.ts — ${googleModels.length} models`);
 
   writeFileSync(
     resolve(MODELS_DIR, "bedrock.ts"),
