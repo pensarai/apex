@@ -11,7 +11,9 @@ export const createFileInputSchema = z.object({
   overwrite: z
     .boolean()
     .optional()
-    .describe("If true, overwrite the file if it already exists (default: false)"),
+    .describe(
+      "If true, overwrite the file if it already exists (default: false)",
+    ),
   toolCallDescription: z
     .string()
     .describe(
@@ -27,7 +29,7 @@ export type CreateFileResult = {
   path: string;
 };
 
-export function createFile(_ctx: ToolContext) {
+export function createFile(ctx: ToolContext) {
   return tool({
     description: `Create a new file with the given content.
 
@@ -41,30 +43,89 @@ Parent directories are created automatically if they don't exist.`,
       content,
       overwrite = false,
     }): Promise<CreateFileResult> => {
-      try {
-        if (!overwrite && existsSync(filePath)) {
-          return {
-            success: false,
-            error: `File already exists: ${filePath}. Set overwrite=true to replace it.`,
-            path: filePath,
-          };
-        }
+      if (ctx.sandbox) {
+        return executeSandboxCreate(ctx, filePath, content, overwrite);
+      }
+      return executeLocalCreate(filePath, content, overwrite);
+    },
+  });
+}
 
-        await mkdir(dirname(filePath), { recursive: true });
-        await writeFile(filePath, content, "utf-8");
+async function executeLocalCreate(
+  filePath: string,
+  content: string,
+  overwrite: boolean,
+): Promise<CreateFileResult> {
+  try {
+    if (!overwrite && existsSync(filePath)) {
+      return {
+        success: false,
+        error: `File already exists: ${filePath}. Set overwrite=true to replace it.`,
+        path: filePath,
+      };
+    }
 
-        return {
-          success: true,
-          error: "",
-          path: filePath,
-        };
-      } catch (err: unknown) {
+    await mkdir(dirname(filePath), { recursive: true });
+    await writeFile(filePath, content, "utf-8");
+
+    return {
+      success: true,
+      error: "",
+      path: filePath,
+    };
+  } catch (err: unknown) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : String(err),
+      path: filePath,
+    };
+  }
+}
+
+async function executeSandboxCreate(
+  ctx: ToolContext,
+  filePath: string,
+  content: string,
+  overwrite: boolean,
+): Promise<CreateFileResult> {
+  try {
+    if (!overwrite) {
+      const checkResult = await ctx.sandbox!.execute(`test -e "${filePath}"`);
+      if (checkResult.exitCode === 0) {
         return {
           success: false,
-          error: err instanceof Error ? err.message : String(err),
+          error: `File already exists: ${filePath}. Set overwrite=true to replace it.`,
           path: filePath,
         };
       }
-    },
-  });
+    }
+
+    const dirPath = dirname(filePath);
+    await ctx.sandbox!.execute(`mkdir -p "${dirPath}"`);
+
+    const base64Content = Buffer.from(content).toString("base64");
+    const writeResult = await ctx.sandbox!.execute(
+      `echo "${base64Content}" | base64 -d > "${filePath}"`,
+    );
+
+    if (!writeResult.success && writeResult.exitCode !== 0) {
+      return {
+        success: false,
+        error: writeResult.stderr || "Failed to write file in sandbox",
+        path: filePath,
+      };
+    }
+
+    return {
+      success: true,
+      error: "",
+      path: filePath,
+    };
+  } catch (err: unknown) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : String(err),
+      path: filePath,
+    };
+  }
 }
