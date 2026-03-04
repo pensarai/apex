@@ -10,6 +10,7 @@ import {
   sessions as sessionModule,
   type SessionInfo,
 } from "../../core/session";
+import { REPORT_FILENAME_MD } from "../../core/report";
 
 export interface EnrichedSession extends SessionInfo {
   findingsCount: number;
@@ -33,7 +34,7 @@ function countFindings(findingsPath: string): number {
 }
 
 function checkHasReport(rootPath: string): boolean {
-  return existsSync(join(rootPath, "comprehensive-pentest-report.md"));
+  return existsSync(join(rootPath, REPORT_FILENAME_MD));
 }
 
 export function formatRelativeTime(timestamp: number): string {

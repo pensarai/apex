@@ -12,6 +12,7 @@ import { join } from "path";
 import { existsSync, readFileSync } from "fs";
 import type { SessionInfo } from "./index";
 import { loadSubagents, type UISubagent, type UIMessage } from "./persistence";
+import { REPORT_FILENAME_MD } from "../report";
 
 // Re-export types that consumers import from this module
 export type {
@@ -76,7 +77,7 @@ function loadAttackSurfaceResults(
  * Check if a final report exists
  */
 function hasReport(rootPath: string): boolean {
-  const reportPath = join(rootPath, "comprehensive-pentest-report.md");
+  const reportPath = join(rootPath, REPORT_FILENAME_MD);
   return existsSync(reportPath);
 }
 

@@ -1,11 +1,10 @@
 import { useState, useEffect, useRef } from "react";
 import { useKeyboard } from "@opentui/react";
-import { exec } from "child_process";
-import { existsSync } from "fs";
 import { useRoute } from "../../context/route";
 import { useFocus } from "../../context/focus";
-import { sessions } from "../../../core/session";
+import { sessions, type SessionInfo } from "../../../core/session";
 import * as Storage from "../../../core/storage";
+import { openSessionReport } from "../../utils/open-report";
 import { Dialog } from "../../context/dialog";
 import { ScrollBoxRenderable } from "@opentui/core";
 import { scrollToIndex } from "../../utils/scroll";
@@ -36,26 +35,11 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
 
   async function openReport(sessionId: string) {
     const session = await sessions.get(sessionId);
-    const reportPath = await Storage.locate(
-      [session.id, "pentest-report"],
-      ".md",
-    );
-
-    if (!existsSync(reportPath)) {
-      setStatusMessage("Report not found");
+    const err = openSessionReport(session.rootPath);
+    if (err) {
+      setStatusMessage(err);
       setTimeout(() => setStatusMessage(""), 2000);
-      return;
     }
-
-    exec(`open "${reportPath}"`, (error) => {
-      if (error) {
-        console.error("Error opening report:", error);
-        setStatusMessage("Error opening report");
-        setTimeout(() => setStatusMessage(""), 2000);
-      } else {
-        setTimeout(() => setStatusMessage(""), 2000);
-      }
-    });
   }
 
   // Clamp selectedIndex when list changes

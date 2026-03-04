@@ -313,9 +313,7 @@ export default function SwarmDashboard({
           gap={1}
         >
           <text fg={colors.primary}>Pentest Completed</text>
-          <text fg={colors.textMuted}>
-            {sessionPath}/comprehensive-pentest-report.md
-          </text>
+          <text fg={colors.textMuted}>{sessionPath}/pentest-report.md</text>
           <box flexDirection="row" gap={2}>
             <text>
               <span fg={colors.primary}>[Enter]</span>

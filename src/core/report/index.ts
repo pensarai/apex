@@ -1,3 +1,7 @@
+/** Canonical report filenames — use these instead of hardcoding strings. */
+export const REPORT_FILENAME_MD = "pentest-report.md";
+export const REPORT_FILENAME_JSON = "pentest-report.json";
+
 export {
   PentestReportSchema,
   PentestReportFindingSchema,
