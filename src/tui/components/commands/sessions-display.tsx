@@ -10,10 +10,7 @@ import { Dialog } from "../../context/dialog";
 import { ScrollBoxRenderable } from "@opentui/core";
 import { scrollToIndex } from "../../utils/scroll";
 import { useTheme } from "../../theme";
-import {
-  useSessionsList,
-  formatRelativeTime,
-} from "../../hooks/use-sessions-list";
+import { useSessionsList } from "../../hooks/use-sessions-list";
 
 interface SessionsDisplayProps {
   onClose: () => void;
@@ -245,7 +242,12 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
                   {/* Sessions in this date group */}
                   {group.sessions.map((session) => {
                     const isSelected = session.index === selectedIndex;
-                    const timeStr = formatRelativeTime(session.time.updated);
+                    const startTime = new Date(session.time.created);
+                    const timeStr = startTime.toLocaleTimeString("en-US", {
+                      hour: "numeric",
+                      minute: "2-digit",
+                      hour12: true,
+                    });
                     const mode = session.config?.mode || "auto";
                     const modeBadge =
                       mode === "operator" ? "[operator]" : "[auto]";
@@ -269,9 +271,13 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
                       >
                         <box flexDirection="row" gap={1}>
                           <text
+                            fg={isSelected ? colors.primary : colors.textMuted}
+                          >
+                            {isSelected ? "●" : " "}
+                          </text>
+                          <text
                             fg={isSelected ? colors.text : colors.textMuted}
                           >
-                            {isSelected ? "● " : "  "}
                             {session.name}
                           </text>
                           <text
