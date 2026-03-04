@@ -200,10 +200,17 @@ export async function loadSessionState(
   }
 
   // Determine if session is complete
+  const pentestSubagents = subagents.filter((s) => s.type === "pentest");
+  const allPentestDone =
+    pentestSubagents.length > 0 &&
+    pentestSubagents.every(
+      (s) => s.status === "completed" || s.status === "failed",
+    );
+
   const isComplete =
     hasReportFile ||
     (attackSurfaceResults?.summary?.analysisComplete === true &&
-      subagents.length > 1);
+      allPentestDone);
 
   return {
     session,
