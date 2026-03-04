@@ -108,7 +108,7 @@ async function executeSandboxCreate(
       `echo "${base64Content}" | base64 -d > "${filePath}"`,
     );
 
-    if (!writeResult.success && writeResult.exitCode !== 0) {
+    if (!writeResult.success) {
       return {
         success: false,
         error: writeResult.stderr || "Failed to write file in sandbox",

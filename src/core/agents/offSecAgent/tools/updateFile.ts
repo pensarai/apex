@@ -135,7 +135,7 @@ async function executeSandboxUpdate(
     const readResult = await ctx.sandbox!.execute(
       `cat "${filePath}" | base64 -w 0`,
     );
-    if (!readResult.success && readResult.exitCode !== 0) {
+    if (!readResult.success) {
       return {
         success: false,
         error: readResult.stderr || `Failed to read file: ${filePath}`,
@@ -174,7 +174,7 @@ async function executeSandboxUpdate(
       `echo "${base64Updated}" | base64 -d > "${filePath}"`,
     );
 
-    if (!writeResult.success && writeResult.exitCode !== 0) {
+    if (!writeResult.success) {
       return {
         success: false,
         error: writeResult.stderr || "Failed to write file in sandbox",
