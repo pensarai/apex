@@ -1,3 +1,5 @@
+import { readFileSync } from "fs";
+import { join } from "path";
 import { OffensiveSecurityAgent } from "../../offSecAgent/offensiveSecurityAgent";
 import { PATCHING_SYSTEM_PROMPT, buildPatchingPrompt } from "./prompts";
 import {
@@ -6,11 +8,37 @@ import {
   type PatchingAgentInput,
 } from "./types";
 
+const AGENTS_MD_FILENAMES = ["AGENTS.md", "agents.md", "CLAUDE.md", "claude.md"];
+const MAX_AGENTS_MD_SIZE = 50_000;
+
+/**
+ * Try to read an AGENTS.md (or similar) file from the repository root.
+ * Returns the file content or undefined if none is found.
+ */
+function readAgentsMd(cwd: string): string | undefined {
+  for (const name of AGENTS_MD_FILENAMES) {
+    try {
+      const content = readFileSync(join(cwd, name), "utf-8");
+      if (content.length > MAX_AGENTS_MD_SIZE) {
+        return content.slice(0, MAX_AGENTS_MD_SIZE) + "\n\n(truncated)";
+      }
+      return content;
+    } catch {
+      // file doesn't exist, try next
+    }
+  }
+  return undefined;
+}
+
 /**
  * A security patching agent that analyzes vulnerabilities and applies fixes.
  *
- * Operates in "lite mode" — no sandbox, no code execution, no POC verification.
- * Uses filesystem tools to read, search, and modify code directly.
+ * Uses filesystem tools to read, search, and modify code directly, and
+ * `execute_command` to run lint, type-check, and test suites for verification.
+ *
+ * Automatically reads AGENTS.md (or CLAUDE.md) from the repository root and
+ * injects it into the prompt so the agent knows the project's build/test
+ * commands and conventions.
  *
  * Returns a structured {@link PatchResult} with the list of changed files,
  * PR title, and PR description.
@@ -50,9 +78,11 @@ export class PatchingAgent extends OffensiveSecurityAgent<PatchResult> {
       callbacks,
     } = opts;
 
+    const agentsMd = readAgentsMd(cwd);
+
     super({
       system: PATCHING_SYSTEM_PROMPT,
-      prompt: buildPatchingPrompt(vulnerability, cwd),
+      prompt: buildPatchingPrompt(vulnerability, cwd, agentsMd),
       model,
       session,
       authConfig,
