@@ -13,6 +13,10 @@ import { sessions, type SessionInfo } from "../../../core/session";
 import { runOffensiveSecurityAgent } from "../../../core/api/offesecAgent";
 import { buildAuthConfig } from "../../../core/ai/utils";
 import { ALL_TOOL_NAMES } from "../../../core/agents/offSecAgent";
+import {
+  convertModelMessagesToUI,
+  type UIMessage,
+} from "../../../core/session/persistence";
 import { useAgent } from "../../context/agent";
 import { useRoute } from "../../context/route";
 import { useConfig } from "../../context/config";
@@ -32,12 +36,6 @@ import {
 } from "../../../core/operator";
 import { stepCountIs, type ModelMessage } from "ai";
 
-interface OperatorDashboardProps {
-  sessionId: string;
-  /** If true, restore saved state from disk instead of starting fresh */
-  isResume?: boolean;
-}
-
 type DashboardStatus = "idle" | "running" | "waiting" | "done";
 
 /**
@@ -45,8 +43,9 @@ type DashboardStatus = "idle" | "running" | "waiting" | "done";
  */
 export default function OperatorDashboard({
   sessionId,
-  isResume = false,
-}: OperatorDashboardProps) {
+}: {
+  sessionId: string;
+}) {
   const { colors } = useTheme();
   const route = useRoute();
   const config = useConfig();
@@ -82,7 +81,6 @@ export default function OperatorDashboard({
   const textRef = useRef("");
   // AI SDK conversation history for multi-turn continuity
   const conversationRef = useRef<ModelMessage[]>([]);
-
   // Input state
   const [inputValue, setInputValue] = useState("");
 
@@ -141,30 +139,49 @@ export default function OperatorDashboard({
         const s = await sessions.get(sessionId);
         setSession(s);
 
-        // Load operator state if resuming
-        if (isResume) {
-          const hasState = sessions.hasOperatorState(s);
-          if (hasState) {
-            const savedState = await sessions.loadOperatorState(sessionId);
-            if (savedState) {
-              setOperatorState((prev) => ({
-                ...prev,
-                mode: (savedState.mode as OperatorMode) || prev.mode,
-                requireApproval:
-                  savedState.requireApproval ?? prev.requireApproval,
-                currentStage:
-                  (savedState.currentStage as OperatorSessionState["currentStage"]) ||
-                  prev.currentStage,
-              }));
-              approvalGateRef.current.updateConfig({
-                requireApproval: savedState.requireApproval ?? true,
-              });
+        // Always attempt to load saved operator state
+        const hasState = sessions.hasOperatorState(s);
+        if (hasState) {
+          const savedState = await sessions.loadOperatorState(sessionId);
+          if (savedState) {
+            // Map persisted state to runtime operator state
+            setOperatorState((prev) => ({
+              ...prev,
+              mode: (savedState.mode as OperatorMode) || prev.mode,
+              requireApproval:
+                savedState.requireApproval ?? prev.requireApproval,
+              currentStage:
+                (savedState.currentStage as OperatorSessionState["currentStage"]) ||
+                prev.currentStage,
+            }));
+            approvalGateRef.current.updateConfig({
+              requireApproval: savedState.requireApproval ?? true,
+            });
+
+            // Restore model messages and derive display messages
+            if (
+              Array.isArray(savedState.messages) &&
+              savedState.messages.length > 0
+            ) {
+              const modelMsgs = savedState.messages;
+              conversationRef.current = modelMsgs;
+
+              const uiMsgs = convertModelMessagesToUI(modelMsgs);
+              setMessages(
+                uiMsgs.map((m: UIMessage) => ({
+                  role: m.role,
+                  content: m.content,
+                  createdAt: m.createdAt,
+                  toolCallId: m.toolCallId,
+                  toolName: m.toolName,
+                  args: m.args,
+                  result: m.result,
+                  status: m.status,
+                })),
+              );
             }
           }
-        }
-
-        // Initialize operator state from session config (only if not resuming)
-        if (!isResume && s.config?.operatorSettings) {
+        } else if (s.config?.operatorSettings) {
           const settings = s.config.operatorSettings;
           const requireApproval = settings.requireApproval ?? true;
           const initialState = createInitialOperatorState(
@@ -181,7 +198,7 @@ export default function OperatorDashboard({
       }
     }
     loadSession();
-  }, [sessionId, isResume]);
+  }, [sessionId]);
 
   // ---------------------------------------------------------------------------
   // Message helpers — same pattern as pentest component
@@ -340,7 +357,10 @@ export default function OperatorDashboard({
         try {
           const response = await streamResult.response;
           if (gen === generationRef.current && response.messages) {
-            conversationRef.current = response.messages as ModelMessage[];
+            conversationRef.current = [
+              ...nextMessages,
+              ...response.messages,
+            ] as ModelMessage[];
           }
         } catch {
           // Stream may have been aborted; conversation stays as-is
@@ -365,6 +385,27 @@ export default function OperatorDashboard({
           setThinking(false);
           setIsExecuting(false);
           abortControllerRef.current = null;
+
+          // Persist operator state for session resume
+          if (session) {
+            sessions
+              .saveOperatorState(session.id, {
+                mode: operatorState.mode,
+                requireApproval: operatorState.requireApproval,
+                currentStage: operatorState.currentStage,
+                messages: conversationRef.current,
+                attackSurface: [],
+                credentials: [],
+                verifiedVulns: [],
+                targetState: null,
+                hypotheses: [],
+                evidence: [],
+                actionHistory: [],
+                pausedAt: new Date().toISOString(),
+                lastRunId: session.id,
+              })
+              .catch(console.error);
+          }
         }
       }
     },

@@ -20,10 +20,7 @@ import { useTheme } from "../../theme";
 type ViewType = "home" | "config" | "chat";
 
 interface HomeViewProps {
-  onNavigate: (
-    view: ViewType,
-    options?: { sessionId?: string; isResume?: boolean },
-  ) => void;
+  onNavigate: (view: ViewType, options?: { sessionId?: string }) => void;
   onStartSession: (directive: string) => void;
 }
 

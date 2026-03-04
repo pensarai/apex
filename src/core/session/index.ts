@@ -1,3 +1,4 @@
+import type { ModelMessage } from "ai";
 import z from "zod";
 import path from "path";
 import os from "os";
@@ -6,7 +7,6 @@ import * as Identifier from "../id/id";
 import { getCurrentVersion } from "../installation";
 import * as Storage from "../storage";
 import type { Message } from "../messages/types";
-import * as Messages from "../messages";
 import { RateLimiter } from "../services/rateLimiter";
 import { CredentialManager } from "../credentials";
 import {
@@ -468,21 +468,6 @@ export async function update(
   return result;
 }
 
-const MessagesInput = z.object({
-  sessionId: Identifier.schema("session"),
-  limit: z.number().optional(),
-});
-
-export const messages = async (input: z.output<typeof MessagesInput>) => {
-  const result = [] as Message[];
-  for await (const msg of Messages.stream(input)) {
-    if (input.limit && result.length >= input.limit) break;
-    result.push(msg);
-  }
-  result.reverse();
-  return result;
-};
-
 export async function* list() {
   for (const item of await Storage.list(["session"])) {
     yield Storage.read<SessionInfo>(item);
@@ -525,17 +510,23 @@ export const removeMessage = async (input: z.output<typeof RemoveMsgInput>) => {
 // ============================================================================
 
 /**
- * Persisted operator dashboard state for session resumption
+ * Persisted operator dashboard state for session resumption.
+ *
+ * `messages` stores raw AI SDK model messages (the single source of truth).
+ * Display messages are derived on resume via `convertModelMessagesToUI`.
+ *
+ * Note: The runtime operator state type lives in `operator/types.ts` as
+ * `OperatorSessionState` — this is the persistence shape only.
  */
-export interface OperatorSessionState {
+export interface PersistedOperatorState {
   /** Operator mode: plan, manual, auto */
   mode: string;
   /** Whether commands require user approval before execution */
   requireApproval: boolean;
   /** Current stage: setup, recon, foothold, etc. */
   currentStage: string;
-  /** Chat messages history */
-  messages: unknown[];
+  /** Raw AI SDK model messages — single source of truth for conversation history */
+  messages: ModelMessage[];
   /** Discovered attack surface endpoints */
   attackSurface: unknown[];
   /** Found credentials */
@@ -561,7 +552,7 @@ export interface OperatorSessionState {
  */
 export async function saveOperatorState(
   sessionId: string,
-  state: OperatorSessionState,
+  state: PersistedOperatorState,
 ): Promise<void> {
   const session = await get(sessionId);
   const statePath = path.join(session.rootPath, "operator-state.json");
@@ -574,13 +565,13 @@ export async function saveOperatorState(
  */
 export async function loadOperatorState(
   sessionId: string,
-): Promise<OperatorSessionState | null> {
+): Promise<PersistedOperatorState | null> {
   try {
     const session = await get(sessionId);
     const statePath = path.join(session.rootPath, "operator-state.json");
     if (!existsSync(statePath)) return null;
     const data = readFileSync(statePath, "utf-8");
-    return JSON.parse(data) as OperatorSessionState;
+    return JSON.parse(data) as PersistedOperatorState;
   } catch (error) {
     console.error("Error loading operator state:", error);
     return null;

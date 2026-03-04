@@ -196,7 +196,6 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
       route.navigate({
         type: "pentest",
         sessionId: _session.id,
-        isResume: true, // Load existing state, don't start new pentest
       });
       return;
     }
