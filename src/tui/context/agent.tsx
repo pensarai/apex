@@ -9,8 +9,9 @@ import {
 } from "react";
 import { type ModelInfo } from "../../core/ai";
 import { AVAILABLE_MODELS } from "../../core/ai/models";
-import { get as getConfig } from "../../core/config/config";
+import { writeErrorLog } from "../../core/logger";
 import { getAvailableModels } from "../../core/providers/utils";
+import { useConfig } from "./config";
 
 // Preferred defaults by provider (fast + cheap models)
 const PREFERRED_DEFAULTS: Record<string, string> = {
@@ -64,9 +65,8 @@ interface AgentProviderProps {
 }
 
 export function AgentProvider({ children }: AgentProviderProps) {
+  const config = useConfig();
   const [model, setModelInternal] = useState<ModelInfo>(AVAILABLE_MODELS[0]!);
-  const [isModelUserSelected, setIsModelUserSelected] =
-    useState<boolean>(false);
   const [tokenUsage, setTokenUsage] = useState<TokenUsage>({
     inputTokens: 0,
     outputTokens: 0,
@@ -76,58 +76,76 @@ export function AgentProvider({ children }: AgentProviderProps) {
   const [thinking, setThinking] = useState<boolean>(false);
   const [isExecuting, setIsExecuting] = useState<boolean>(false);
 
-  // Wrapper that marks model as user-selected
-  const setModel = useCallback((newModel: ModelInfo) => {
-    setModelInternal(newModel);
-    setIsModelUserSelected(true);
-  }, []);
+  // Derived from config — true when the user has explicitly selected a model
+  const isModelUserSelected = !!config.data.selectedModelId;
+
+  // Persist model selection to config
+  const setModel = useCallback(
+    (newModel: ModelInfo) => {
+      setModelInternal(newModel);
+      config.update({ selectedModelId: newModel.id }).catch((err) => {
+        writeErrorLog(err, "CONFIG");
+      });
+    },
+    [config],
+  );
 
   // Smart default model selection:
-  // 1. Prefer Pensar Haiku 4.5 if connected to Pensar Console
-  // 2. Fall back to Claude Haiku 4.5 if Anthropic is configured
-  // 3. Fall back to GPT-4o Mini if OpenAI is configured
-  // 4. Otherwise use first available model
+  // 1. Restore persisted user selection if still available
+  // 2. Prefer Pensar Haiku 4.5 if connected to Pensar Console
+  // 3. Fall back to Claude Haiku 4.5 if Anthropic is configured
+  // 4. Fall back to GPT-4o Mini if OpenAI is configured
+  // 5. Otherwise use first available model
   useEffect(() => {
-    getConfig()
-      .then((config) => {
-        const available = getAvailableModels(config);
-        if (available.length === 0) return;
+    const available = getAvailableModels(config.data);
+    if (available.length === 0) return;
 
-        // Group available models by provider
-        const byProvider = new Map<string, ModelInfo[]>();
-        for (const m of available) {
-          const list = byProvider.get(m.provider) || [];
-          list.push(m);
-          byProvider.set(m.provider, list);
-        }
+    // Restore persisted model selection
+    const persistedId = config.data.selectedModelId;
+    if (persistedId) {
+      const persisted = available.find((m) => m.id === persistedId);
+      if (persisted) {
+        setModelInternal(persisted);
+        return;
+      }
+      // Persisted model is stale — clean it up
+      config.update({ selectedModelId: null }).catch((err) => {
+        writeErrorLog(err, "CONFIG");
+      });
+    }
 
-        // Find best default based on provider preference
-        let selectedModel: ModelInfo | null = null;
-        for (const provider of PROVIDER_PREFERENCE) {
-          const models = byProvider.get(provider);
-          if (!models || models.length === 0) continue;
+    // Group available models by provider
+    const byProvider = new Map<string, ModelInfo[]>();
+    for (const m of available) {
+      const list = byProvider.get(m.provider) || [];
+      list.push(m);
+      byProvider.set(m.provider, list);
+    }
 
-          // Try to find the preferred model for this provider
-          const preferredId = PREFERRED_DEFAULTS[provider];
-          if (preferredId) {
-            const preferred = models.find((m) => m.id === preferredId);
-            if (preferred) {
-              selectedModel = preferred;
-              break;
-            }
-          }
-          // Fall back to first model from this provider
-          selectedModel = models[0]!;
+    // Find best default based on provider preference
+    let selectedModel: ModelInfo | null = null;
+    for (const provider of PROVIDER_PREFERENCE) {
+      const models = byProvider.get(provider);
+      if (!models || models.length === 0) continue;
+
+      // Try to find the preferred model for this provider
+      const preferredId = PREFERRED_DEFAULTS[provider];
+      if (preferredId) {
+        const preferred = models.find((m) => m.id === preferredId);
+        if (preferred) {
+          selectedModel = preferred;
           break;
         }
+      }
+      // Fall back to first model from this provider
+      selectedModel = models[0]!;
+      break;
+    }
 
-        if (selectedModel) {
-          setModelInternal(selectedModel);
-          // Don't mark as user-selected since this is auto-default
-        }
-      })
-      .catch(() => {});
-  }, []);
+    if (selectedModel) {
+      setModelInternal(selectedModel);
+    }
+  }, [config.data]);
 
   const addTokenUsage = useCallback((input: number, output: number) => {
     setHasExecuted(true);

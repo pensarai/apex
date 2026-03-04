@@ -23,6 +23,8 @@ export interface Config {
   // Local LLM
   localModelUrl?: string | null;
   localModelName?: string | null;
+  // Model preference
+  selectedModelId?: string | null;
   // Theme preferences
   theme?: string;
   themeMode?: "dark" | "light" | "auto";
