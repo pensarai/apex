@@ -1,0 +1,39 @@
+import { PatchingAgent } from "../agents/specialized/patching/agent";
+import type { PatchingAgentInput } from "../agents/specialized/patching/types";
+import type { PatchResult } from "../agents/specialized/patching/types";
+import type { ConsumeCallbacks } from "../agents/offSecAgent/types";
+
+export type { PatchResult, PatchingAgentInput };
+
+export interface RunPatchingAgentInput extends PatchingAgentInput {
+  /** Optional callbacks for stream consumption. Falls back to console logging. */
+  consumeCallbacks?: ConsumeCallbacks;
+}
+
+/**
+ * Run the patching agent to fix a security vulnerability in a codebase.
+ *
+ * The agent reads, searches, and modifies code, then verifies the fix via
+ * lint, type-check, and tests. When a sandbox is provided in the input,
+ * tools automatically route operations through it.
+ *
+ * @returns Structured patch result with file changes and PR metadata.
+ */
+export async function runPatchingAgent(
+  input: RunPatchingAgentInput,
+): Promise<PatchResult> {
+  const { consumeCallbacks, ...agentInput } = input;
+
+  const agent = new PatchingAgent(agentInput);
+
+  const result = await agent.consume(
+    consumeCallbacks ?? {
+      onTextDelta: (d) => process.stdout.write(d.text),
+      onToolCall: (d) => console.log(`→ calling ${d.toolName}`),
+      onToolResult: (d) => console.log(`✓ ${d.toolName} completed`),
+      onError: (e) => console.error("Patching agent error:", e),
+    },
+  );
+
+  return result;
+}
