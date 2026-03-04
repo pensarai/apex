@@ -9,7 +9,10 @@ import {
 } from "react";
 import { type ModelInfo } from "../../core/ai";
 import { AVAILABLE_MODELS } from "../../core/ai/models";
-import { get as getConfig, update as updateConfig } from "../../core/config/config";
+import {
+  get as getConfig,
+  update as updateConfig,
+} from "../../core/config/config";
 import { getAvailableModels } from "../../core/providers/utils";
 
 // Preferred defaults by provider (fast + cheap models)
@@ -98,7 +101,9 @@ export function AgentProvider({ children }: AgentProviderProps) {
 
         // Priority 1: Check if user has a saved model preference
         if (config.selectedModelId) {
-          const savedModel = available.find((m) => m.id === config.selectedModelId);
+          const savedModel = available.find(
+            (m) => m.id === config.selectedModelId,
+          );
           if (savedModel) {
             setModelInternal(savedModel);
             setIsModelUserSelected(true);
