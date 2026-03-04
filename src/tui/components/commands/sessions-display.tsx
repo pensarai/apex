@@ -175,6 +175,8 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
     onClose();
   };
 
+  if (loading) return null;
+
   return (
     <Dialog size="large" onClose={handleClose}>
       <box flexDirection="column" padding={2} gap={2} width="100%">
@@ -202,9 +204,7 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
         </box>
 
         {/* Sessions List */}
-        {loading ? (
-          <text fg={colors.textMuted}>Loading sessions...</text>
-        ) : visualOrderSessions.length === 0 ? (
+        {visualOrderSessions.length === 0 ? (
           <text fg={colors.textMuted}>No sessions found</text>
         ) : (
           <box
