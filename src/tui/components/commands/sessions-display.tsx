@@ -75,14 +75,7 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
       await hookDeleteSession(sessionId);
       setStatusMessage("Session deleted");
       setTimeout(() => setStatusMessage(""), 2000);
-
-      // Adjust selected index - use visualOrderSessions.length - 1 since one was deleted
-      const newLength = visualOrderSessions.length - 1;
-      if (selectedIndex >= newLength && newLength > 0) {
-        setSelectedIndex(newLength - 1);
-      } else if (newLength === 0) {
-        setSelectedIndex(0);
-      }
+      // selectedIndex clamping handled by the useEffect above after re-render
     } catch (error) {
       console.error("Error deleting session:", error);
       setStatusMessage("Error deleting session");
@@ -103,6 +96,13 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
       key.preventDefault();
       const currentSelection = visualOrderSessions[selectedIndex];
       if (!currentSelection) return;
+      try {
+        await sessions.get(currentSelection.id);
+      } catch {
+        setStatusMessage("Session not found");
+        setTimeout(() => setStatusMessage(""), 2000);
+        return;
+      }
       const isOperator =
         currentSelection.config?.mode === "operator" ||
         currentSelection.hasOperatorState;
@@ -125,6 +125,13 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
     ) {
       const currentSelection = visualOrderSessions[selectedIndex];
       if (!currentSelection) return;
+      try {
+        await sessions.get(currentSelection.id);
+      } catch {
+        setStatusMessage("Session not found");
+        setTimeout(() => setStatusMessage(""), 2000);
+        return;
+      }
       refocusPrompt();
       onClose();
       route.navigate({
