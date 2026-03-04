@@ -41,6 +41,7 @@ const SANDBOX_PW_DIR = "/opt/sandbox-playwright";
 const SANDBOX_EVIDENCE_DIR = "/tmp/evidence";
 const SANDBOX_REFS_FILE = "/tmp/pw-refs.json";
 const SANDBOX_URL_FILE = "/tmp/pw-current-url";
+const SANDBOX_CONSOLE_FILE = "/tmp/pw-console-log.json";
 
 /** Marker pair used to extract JSON results from script stdout. */
 const RESULT_START = "__PW_RESULT__";
@@ -245,6 +246,7 @@ const fs = require('fs');
   }
 
   let context;
+  const __consoleMessages = [];
   try {
     context = await chromium.launchPersistentContext('/tmp/pw-user-data', {
       headless: true,
@@ -253,6 +255,10 @@ const fs = require('fs');
     });
     const pages = context.pages();
     const page = pages.length > 0 ? pages[pages.length - 1] : await context.newPage();
+
+    page.on('console', msg => {
+      __consoleMessages.push({ type: msg.type(), text: msg.text() });
+    });
 
     // Restore the last-visited URL so page state persists across tool calls.
     if (page.url() === 'about:blank') {
@@ -267,6 +273,16 @@ const fs = require('fs');
   } catch (error) {
     resolve({ success: false, error: error.message || String(error) });
   } finally {
+    if (__consoleMessages.length > 0) {
+      try {
+        const fs = require('fs');
+        let existing = [];
+        try { existing = JSON.parse(fs.readFileSync('${SANDBOX_CONSOLE_FILE}', 'utf-8')); } catch {}
+        existing.push(...__consoleMessages);
+        if (existing.length > 200) existing = existing.slice(-200);
+        fs.writeFileSync('${SANDBOX_CONSOLE_FILE}', JSON.stringify(existing));
+      } catch {}
+    }
     if (context) {
       try { await context.close(); } catch {}
     }
@@ -439,20 +455,6 @@ Target base URL: ${targetUrl}`,
     require('fs').writeFileSync('${SANDBOX_URL_FILE}', page.url());
     const title = await page.title();
 
-    // Inject console interceptor for later retrieval
-    await page.evaluate(() => {
-      if (!window.__pw_console) {
-        window.__pw_console = [];
-        for (const m of ['log', 'warn', 'error', 'info', 'debug']) {
-          const orig = console[m];
-          console[m] = function(...args) {
-            window.__pw_console.push({ type: m, text: args.map(String).join(' ') });
-            orig.apply(console, args);
-          };
-        }
-      }
-    });
-
     resolve({ success: true, url: page.url(), title });
           `,
           60,
@@ -550,9 +552,45 @@ Example workflow:
     // Playwright versions and doesn't depend on the deprecated
     // page.accessibility.snapshot() API.
     const treeData = await page.evaluate(() => {
+      function tagToAriaRole(el) {
+        const tag = el.tagName.toLowerCase();
+        switch (tag) {
+          case 'a': return el.hasAttribute('href') ? 'link' : 'generic';
+          case 'button': return 'button';
+          case 'input': {
+            const t = (el.getAttribute('type') || 'text').toLowerCase();
+            if (t === 'button' || t === 'submit' || t === 'reset' || t === 'image') return 'button';
+            if (t === 'checkbox') return 'checkbox';
+            if (t === 'radio') return 'radio';
+            if (t === 'range') return 'slider';
+            if (t === 'number') return 'spinbutton';
+            if (t === 'search') return 'searchbox';
+            return 'textbox';
+          }
+          case 'select': return el.hasAttribute('multiple') ? 'listbox' : 'combobox';
+          case 'textarea': return 'textbox';
+          case 'img': return 'img';
+          case 'h1': case 'h2': case 'h3': case 'h4': case 'h5': case 'h6': return 'heading';
+          case 'table': return 'table';
+          case 'form': return 'form';
+          case 'nav': return 'navigation';
+          case 'main': return 'main';
+          case 'header': return 'banner';
+          case 'footer': return 'contentinfo';
+          case 'aside': return 'complementary';
+          case 'article': return 'article';
+          case 'ul': case 'ol': return 'list';
+          case 'li': return 'listitem';
+          case 'dialog': return 'dialog';
+          case 'progress': return 'progressbar';
+          case 'option': return 'option';
+          case 'fieldset': return 'group';
+          case 'output': return 'status';
+          default: return tag;
+        }
+      }
       function walk(el, depth) {
-        const role = el.getAttribute('role')
-          || el.tagName.toLowerCase();
+        const role = el.getAttribute('role') || tagToAriaRole(el);
         const name = el.getAttribute('aria-label')
           || el.getAttribute('name')
           || el.getAttribute('placeholder')
@@ -629,13 +667,23 @@ IMPORTANT: For reliable clicking, first call browser_snapshot to get element ref
     const ref = ${JSON.stringify(ref || "")};
     const element = ${JSON.stringify(element)};
 
+    const TAG_TO_ROLE = {
+      a:'link',input:'textbox',select:'combobox',textarea:'textbox',
+      img:'img',h1:'heading',h2:'heading',h3:'heading',h4:'heading',
+      h5:'heading',h6:'heading',nav:'navigation',main:'main',
+      header:'banner',footer:'contentinfo',aside:'complementary',
+      article:'article',ul:'list',ol:'list',li:'listitem',
+      dialog:'dialog',progress:'progressbar',option:'option',
+      fieldset:'group',output:'status',button:'button',form:'form',table:'table'
+    };
+
     if (ref) {
-      // Use stored ref mapping for precise targeting
       try {
         const refData = JSON.parse(require('fs').readFileSync(${JSON.stringify(SANDBOX_REFS_FILE)}, 'utf-8'));
         const info = refData[ref];
         if (info && info.role && info.name) {
-          await page.getByRole(info.role, { name: info.name }).first().click({ timeout: 10000 });
+          const role = TAG_TO_ROLE[info.role] || info.role;
+          await page.getByRole(role, { name: info.name }).first().click({ timeout: 10000 });
           resolve({ success: true, element, result: 'Clicked via ref ' + ref });
           return;
         }
@@ -698,12 +746,23 @@ IMPORTANT: For reliable form filling, first call browser_snapshot to get element
     const element = ${JSON.stringify(element)};
     const value = ${JSON.stringify(value)};
 
+    const TAG_TO_ROLE = {
+      a:'link',input:'textbox',select:'combobox',textarea:'textbox',
+      img:'img',h1:'heading',h2:'heading',h3:'heading',h4:'heading',
+      h5:'heading',h6:'heading',nav:'navigation',main:'main',
+      header:'banner',footer:'contentinfo',aside:'complementary',
+      article:'article',ul:'list',ol:'list',li:'listitem',
+      dialog:'dialog',progress:'progressbar',option:'option',
+      fieldset:'group',output:'status',button:'button',form:'form',table:'table'
+    };
+
     if (ref) {
       try {
         const refData = JSON.parse(require('fs').readFileSync(${JSON.stringify(SANDBOX_REFS_FILE)}, 'utf-8'));
         const info = refData[ref];
         if (info && info.role && info.name) {
-          await page.getByRole(info.role, { name: info.name }).first().fill(value, { timeout: 10000 });
+          const role = TAG_TO_ROLE[info.role] || info.role;
+          await page.getByRole(role, { name: info.name }).first().fill(value, { timeout: 10000 });
           resolve({ success: true, element, result: 'Filled via ref ' + ref });
           return;
         }
@@ -806,8 +865,13 @@ Use this to check for:
         const result = (await runPlaywrightScript(
           sandbox,
           `
-    const messages = await page.evaluate(() => window.__pw_console || []);
-    resolve({ success: true, messages, result: messages });
+    const fs = require('fs');
+    let persisted = [];
+    try { persisted = JSON.parse(fs.readFileSync('${SANDBOX_CONSOLE_FILE}', 'utf-8')); } catch {}
+    const allMessages = [...persisted, ...__consoleMessages];
+    try { fs.writeFileSync('${SANDBOX_CONSOLE_FILE}', '[]'); } catch {}
+    __consoleMessages.length = 0;
+    resolve({ success: true, messages: allMessages, result: allMessages });
           `,
           15,
         )) as BrowserConsoleResult;
