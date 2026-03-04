@@ -40,6 +40,32 @@ export function scrollToIndex<T>(
   }
 }
 
+/**
+ * Scrolls a ScrollBox only if the child with the given ID is not fully visible.
+ * Unlike `scrollToIndex`, this has no first/last index shortcuts — it purely
+ * checks visibility, making it suitable for grid layouts.
+ */
+export function scrollToChild(
+  scrollBox: ScrollBoxRenderable | null,
+  id: string,
+) {
+  if (!scrollBox) return;
+
+  const target = findChildById(scrollBox, id);
+  if (!target) return;
+
+  const viewportY = scrollBox.viewport.y;
+  const viewportHeight = scrollBox.viewport.height;
+  const targetTop = target.y - viewportY;
+  const targetBottom = targetTop + (target.height || 1);
+
+  if (targetBottom > viewportHeight) {
+    scrollBox.scrollBy(targetBottom - viewportHeight);
+  } else if (targetTop < 0) {
+    scrollBox.scrollBy(targetTop);
+  }
+}
+
 function findChildById(
   scrollBox: ScrollBoxRenderable,
   id: string,
