@@ -1,6 +1,6 @@
 /**
  * Shared hook for loading, enriching, filtering, and grouping sessions.
- * Used by SessionsBrowser and SessionsDisplay.
+ * Used by SessionsDisplay.
  */
 
 import { useState, useEffect, useCallback } from "react";
