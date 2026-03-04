@@ -2,6 +2,7 @@ import { useRenderer } from "@opentui/react";
 import { useRoute } from "../context/route";
 import { useFocus } from "../context/focus";
 import { useInput } from "../context/input";
+import { useDialog } from "../context/dialog";
 
 export interface KeybindingEntry {
   combo: string;
@@ -45,6 +46,7 @@ export function createKeybindings(
   const renderer = useRenderer();
   const { promptRef } = useFocus();
   const { inputValue, setInputValue, clearInput } = useInput();
+  const { stack, externalDialogOpen } = useDialog();
 
   return [
     {
@@ -75,11 +77,16 @@ export function createKeybindings(
       combo: "escape",
       description: "Return to home",
       fn: async () => {
+        if (stack.length > 0 || externalDialogOpen) {
+          return;
+        }
+
         const isHome = route.data.type === "base" && route.data.path === "home";
         const isWeb = route.data.type === "base" && route.data.path === "web";
         const isOperator =
           route.data.type === "base" && route.data.path === "operator";
-        const isSession = route.data.type === "pentest";
+        const isSession =
+          route.data.type === "pentest" || route.data.type === "operator";
 
         if (!isHome && !isWeb && !isOperator && !isSession) {
           route.navigate({

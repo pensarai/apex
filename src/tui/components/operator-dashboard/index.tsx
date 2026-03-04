@@ -17,6 +17,7 @@ import { useAgent } from "../../context/agent";
 import { useRoute } from "../../context/route";
 import { useConfig } from "../../context/config";
 import { useCommand } from "../../context/command";
+import { useDialog } from "../../context/dialog";
 import { MessageList } from "../chat/message-list";
 import { InputArea } from "../chat/input-area";
 import { useTheme } from "../../theme";
@@ -56,6 +57,7 @@ export default function OperatorDashboard({
     resolveSkillContent,
     skills,
   } = useCommand();
+  const { stack, externalDialogOpen } = useDialog();
 
   const autocompleteOptions = useMemo(() => {
     const allowedCommands = new Set(["/create-skill"]);
@@ -449,6 +451,9 @@ export default function OperatorDashboard({
 
   // Keyboard shortcuts
   useKeyboard((key) => {
+    // Skip local shortcuts when dialogs are open (e.g. shortcuts popup)
+    if (stack.length > 0 || externalDialogOpen) return;
+
     if (key.ctrl && key.name === "c") {
       if (status === "running" || status === "waiting") {
         handleAbort();
