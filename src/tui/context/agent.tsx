@@ -14,6 +14,7 @@ import {
   update as updateConfig,
 } from "../../core/config/config";
 import { getAvailableModels } from "../../core/providers/utils";
+import { writeErrorLog } from "../../core/logger";
 
 // Preferred defaults by provider (fast + cheap models)
 const PREFERRED_DEFAULTS: Record<string, string> = {
@@ -84,7 +85,9 @@ export function AgentProvider({ children }: AgentProviderProps) {
     setModelInternal(newModel);
     setIsModelUserSelected(true);
     // Persist user's model preference to config
-    updateConfig({ selectedModelId: newModel.id }).catch(() => {});
+    updateConfig({ selectedModelId: newModel.id }).catch((err) => {
+      writeErrorLog(err, "AGENT_CONTEXT");
+    });
   }, []);
 
   // Smart default model selection:
@@ -145,7 +148,9 @@ export function AgentProvider({ children }: AgentProviderProps) {
           // Don't mark as user-selected since this is auto-default
         }
       })
-      .catch(() => {});
+      .catch((err) => {
+        writeErrorLog(err, "AGENT_CONTEXT");
+      });
   }, []);
 
   const addTokenUsage = useCallback((input: number, output: number) => {
