@@ -30,6 +30,7 @@ export type AIModelProvider =
   | "openrouter"
   | "bedrock"
   | "pensar"
+  | "inception"
   | "local";
 
 function checkIfRateLimitError(error: unknown): boolean {
