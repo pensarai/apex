@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vitest";
 import { buildPentestReport, type ReportContext } from "./builder";
 import { PentestReportSchema, REPORT_VERSION } from "./schemas";
 import type { Finding } from "../agents/offSecAgent/types";
