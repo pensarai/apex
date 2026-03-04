@@ -92,9 +92,7 @@ export async function installSandboxPlaywright(
 ): Promise<void> {
   await sandbox.execute(`mkdir -p ${SANDBOX_PW_DIR}`, { timeout: 10 });
 
-  const isAlpine = (
-    await sandbox.execute("which apk", { timeout: 5 })
-  ).success;
+  const isAlpine = (await sandbox.execute("which apk", { timeout: 5 })).success;
 
   const initResult = await sandbox.execute(
     `cd ${SANDBOX_PW_DIR} && npm init -y --silent 2>/dev/null`,
