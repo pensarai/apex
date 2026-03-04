@@ -23,9 +23,9 @@ export const DEFAULT_OUTCOME_GUIDANCE =
   "Create proof-of-concept exploits that demonstrate the vulnerability exists without causing damage.";
 
 /**
- * Benchmark outcome guidance (extract flags)
+ * Exfil-mode outcome guidance (extract flags / sensitive data)
  */
-export const BENCHMARK_OUTCOME_GUIDANCE =
+export const EXFIL_OUTCOME_GUIDANCE =
   "Exfiltrate data to extract the flag value. " +
   "Create proof-of-concept exploits that successfully extract the flag from the target system.";
 
@@ -149,6 +149,8 @@ const SessionConfigObject = z.object({
   cwd: z.string().optional(),
   /** Email inboxes available to the agent for monitoring/reading email */
   emailIntegration: EmailIntegrationConfigObject.optional(),
+  /** Enable exfiltration mode — allows internal pivoting and flag extraction through confirmed vulnerabilities */
+  exfilMode: z.boolean().optional(),
 });
 
 export type SessionConfig = z.infer<typeof SessionConfigObject>;
@@ -416,7 +418,10 @@ export async function create(input: CreateInputProps) {
         },
       },
       outcomeGuidance:
-        input.config?.outcomeGuidance || DEFAULT_OUTCOME_GUIDANCE,
+        input.config?.outcomeGuidance ||
+        (input.config?.exfilMode
+          ? EXFIL_OUTCOME_GUIDANCE
+          : DEFAULT_OUTCOME_GUIDANCE),
     },
     _rateLimiter: rateLimiter,
     credentialManager,
@@ -673,7 +678,7 @@ export const sessions = {
   getExecutionRoot,
   getOffensiveHeaders,
   DEFAULT_OUTCOME_GUIDANCE,
-  BENCHMARK_OUTCOME_GUIDANCE,
+  EXFIL_OUTCOME_GUIDANCE,
   create,
   get,
   update,
