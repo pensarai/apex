@@ -1,9 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { ModelInfo } from "../../../core/ai";
-
-// ---------------------------------------------------------------------------
-// Test fixtures
-// ---------------------------------------------------------------------------
+import type { ModelInfo } from "../../core/ai";
 
 const FAKE_MODELS: ModelInfo[] = [
   {
@@ -44,11 +40,6 @@ const FAKE_MODELS: ModelInfo[] = [
   },
 ];
 
-// ---------------------------------------------------------------------------
-// Shared mock state — written to by vi.mock factories, read by tests
-// ---------------------------------------------------------------------------
-
-// Captured from the React mocks so tests can invoke component internals
 let capturedEffect: (() => void) | null = null;
 let capturedSetModel: ((m: ModelInfo) => void) | null = null;
 let capturedContextValue: Record<string, unknown> | null = null;
@@ -63,10 +54,6 @@ const mockWriteErrorLog = vi.fn();
 const mockGetAvailableModels = vi.fn<
   (config: Record<string, unknown>) => ModelInfo[]
 >(() => []);
-
-// ---------------------------------------------------------------------------
-// Module mocks (hoisted)
-// ---------------------------------------------------------------------------
 
 vi.mock("react", async () => {
   const actual = await vi.importActual<typeof import("react")>("react");
@@ -114,34 +101,26 @@ vi.mock("react", async () => {
   };
 });
 
-vi.mock("../config", () => ({
+vi.mock("./config", () => ({
   useConfig: vi.fn(() => ({
     data: mockConfigData,
     update: mockConfigUpdate,
   })),
 }));
 
-vi.mock("../../../core/ai/models", () => ({
+vi.mock("../../core/ai/models", () => ({
   AVAILABLE_MODELS: FAKE_MODELS,
 }));
 
-vi.mock("../../../core/providers/utils", () => ({
+vi.mock("../../core/providers/utils", () => ({
   getAvailableModels: (...args: unknown[]) =>
     mockGetAvailableModels(args[0] as Record<string, unknown>),
 }));
 
-vi.mock("../../../core/logger", () => ({
+vi.mock("../../core/logger", () => ({
   writeErrorLog: (...args: unknown[]) => mockWriteErrorLog(...args),
 }));
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Re-import and invoke AgentProvider with fresh mock state.
- * Returns helpers to run the captured useEffect and invoke setModel.
- */
 async function renderProvider(configData: Record<string, unknown> = {}) {
   capturedEffect = null;
   capturedSetModel = null;
@@ -196,27 +175,27 @@ async function renderProvider(configData: Record<string, unknown> = {}) {
     };
   });
 
-  vi.doMock("../config", () => ({
+  vi.doMock("./config", () => ({
     useConfig: vi.fn(() => ({
       data: mockConfigData,
       update: mockConfigUpdate,
     })),
   }));
 
-  vi.doMock("../../../core/ai/models", () => ({
+  vi.doMock("../../core/ai/models", () => ({
     AVAILABLE_MODELS: FAKE_MODELS,
   }));
 
-  vi.doMock("../../../core/providers/utils", () => ({
+  vi.doMock("../../core/providers/utils", () => ({
     getAvailableModels: (...args: unknown[]) =>
       mockGetAvailableModels(args[0] as Record<string, unknown>),
   }));
 
-  vi.doMock("../../../core/logger", () => ({
+  vi.doMock("../../core/logger", () => ({
     writeErrorLog: (...args: unknown[]) => mockWriteErrorLog(...args),
   }));
 
-  const mod = await import("../agent");
+  const mod = await import("./agent");
   mod.AgentProvider({ children: null });
 
   return {
@@ -234,10 +213,6 @@ async function renderProvider(configData: Record<string, unknown> = {}) {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
 beforeEach(() => {
   mockGetAvailableModels.mockReset();
   mockConfigUpdate.mockReset().mockResolvedValue(undefined);
@@ -246,9 +221,6 @@ beforeEach(() => {
 });
 
 describe("AgentProvider model selection", () => {
-  // -----------------------------------------------------------------------
-  // 1. Restoring a persisted model
-  // -----------------------------------------------------------------------
   describe("restoring a persisted model", () => {
     it("sets the persisted model when it matches an available model", async () => {
       const persistedId = "gpt-4o-mini";
@@ -296,9 +268,6 @@ describe("AgentProvider model selection", () => {
     });
   });
 
-  // -----------------------------------------------------------------------
-  // 2. Cleaning up a stale persisted model
-  // -----------------------------------------------------------------------
   describe("cleaning up a stale persisted model", () => {
     it("clears selectedModelId when persisted model is not in available list", async () => {
       mockGetAvailableModels.mockReturnValue([FAKE_MODELS[0]!]);
@@ -351,9 +320,6 @@ describe("AgentProvider model selection", () => {
     });
   });
 
-  // -----------------------------------------------------------------------
-  // 3. Smart default selection
-  // -----------------------------------------------------------------------
   describe("smart default selection (no persisted model)", () => {
     it("selects pensar preferred default when pensar models are available", async () => {
       mockGetAvailableModels.mockReturnValue(FAKE_MODELS);
@@ -459,9 +425,6 @@ describe("AgentProvider model selection", () => {
     });
   });
 
-  // -----------------------------------------------------------------------
-  // 4. isModelUserSelected derivation
-  // -----------------------------------------------------------------------
   describe("isModelUserSelected derivation", () => {
     it("is true when config.data.selectedModelId is a non-empty string", async () => {
       mockGetAvailableModels.mockReturnValue(FAKE_MODELS);
@@ -502,9 +465,6 @@ describe("AgentProvider model selection", () => {
     });
   });
 
-  // -----------------------------------------------------------------------
-  // 5. setModel persists to config
-  // -----------------------------------------------------------------------
   describe("setModel persists to config", () => {
     it("calls setModelInternal and config.update when invoked", async () => {
       mockGetAvailableModels.mockReturnValue(FAKE_MODELS);
@@ -546,9 +506,6 @@ describe("AgentProvider model selection", () => {
     });
   });
 
-  // -----------------------------------------------------------------------
-  // 6. Error logging on config write failure
-  // -----------------------------------------------------------------------
   describe("error logging on config write failure", () => {
     it("calls writeErrorLog when config.update rejects in setModel", async () => {
       const error = new Error("write failed");
@@ -602,9 +559,6 @@ describe("AgentProvider model selection", () => {
     });
   });
 
-  // -----------------------------------------------------------------------
-  // 7. No model available
-  // -----------------------------------------------------------------------
   describe("no model available", () => {
     it("does not change model when getAvailableModels returns empty array", async () => {
       mockGetAvailableModels.mockReturnValue([]);
@@ -640,9 +594,6 @@ describe("AgentProvider model selection", () => {
     });
   });
 
-  // -----------------------------------------------------------------------
-  // Edge cases
-  // -----------------------------------------------------------------------
   describe("edge cases", () => {
     it("handles provider with no entry in PREFERRED_DEFAULTS (bedrock)", async () => {
       const bedrockOnly = FAKE_MODELS.filter((m) => m.provider === "bedrock");

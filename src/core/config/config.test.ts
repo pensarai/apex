@@ -5,10 +5,6 @@ import { tmpdir } from "os";
 import * as config from "./config";
 import { getAvailableModels } from "../providers/utils";
 
-// ---------------------------------------------------------------------------
-// Helpers — redirect config I/O to a temp directory via HOME env var
-// ---------------------------------------------------------------------------
-
 let tmpDir: string;
 let originalHome: string | undefined;
 
@@ -29,10 +25,6 @@ function writeConfigToDisk(data: Record<string, unknown>) {
   mkdirSync(configDir, { recursive: true });
   writeFileSync(join(configDir, "config.json"), JSON.stringify(data));
 }
-
-// ---------------------------------------------------------------------------
-// Config persistence layer
-// ---------------------------------------------------------------------------
 
 describe("config persistence", () => {
   it("returns default config when no file exists", async () => {
@@ -87,10 +79,6 @@ describe("config persistence", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Model resolution on startup
-// ---------------------------------------------------------------------------
-
 describe("model resolution from config", () => {
   it("finds persisted model in available models", async () => {
     const cfg = {
@@ -129,10 +117,6 @@ describe("model resolution from config", () => {
     expect(saved).toBeUndefined();
   });
 });
-
-// ---------------------------------------------------------------------------
-// End-to-end persistence across simulated restart
-// ---------------------------------------------------------------------------
 
 describe("model persistence across restart", () => {
   it("persists non-default model across simulated restart", async () => {
