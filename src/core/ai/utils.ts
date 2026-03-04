@@ -98,7 +98,8 @@ export function getProviderModel(
   const bedrockSessionToken =
     authConfig?.bedrock?.sessionToken || process.env.AWS_SESSION_TOKEN;
   const bedrockRegion = authConfig?.bedrock?.region || process.env.AWS_REGION;
-  const inceptionApiKey = authConfig?.inceptionAPIKey || process.env.INCEPTION_API_KEY;
+  const inceptionApiKey =
+    authConfig?.inceptionAPIKey || process.env.INCEPTION_API_KEY;
   const localBaseURL =
     authConfig?.local?.baseURL ||
     process.env.LOCAL_MODEL_URL ||
@@ -127,7 +128,7 @@ export function getProviderModel(
       const inception = createOpenAICompatible({
         name: "inception",
         apiKey: inceptionApiKey,
-        baseURL: "https://api.inceptionlabs.ai/v1"
+        baseURL: "https://api.inceptionlabs.ai/v1",
       });
       providerModel = inception("mercury-2");
       break;
