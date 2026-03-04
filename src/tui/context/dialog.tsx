@@ -36,6 +36,8 @@ export function Dialog({ size = "medium", onClose, children }: DialogProps) {
       alignItems="center"
       justifyContent="center"
       position="absolute"
+      paddingTop={2}
+      paddingBottom={2}
       left={0}
       top={0}
       backgroundColor={themeColors.backgroundOverlay}
@@ -47,6 +49,8 @@ export function Dialog({ size = "medium", onClose, children }: DialogProps) {
         }}
         width={size === "large" ? 80 : 60}
         maxWidth={dimensions.width - 2}
+        maxHeight={dimensions.height - 4}
+        overflow="hidden"
         backgroundColor={themeColors.backgroundElement}
         paddingTop={1}
       >
