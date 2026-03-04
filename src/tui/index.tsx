@@ -187,7 +187,9 @@ function AppContent({
 
   const handleCloseShortcutsDialog = () => {
     setShowShortcutsDialog(false);
-    setExternalDialogOpen(false);
+    setTimeout(() => {
+      setExternalDialogOpen(false);
+    }, 0);
     setInputKey((prev) => prev + 1);
     refocusPrompt();
   };
