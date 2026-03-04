@@ -1,7 +1,7 @@
 import { readFileSync } from "fs";
 import { join } from "path";
 import { OffensiveSecurityAgent } from "../../offSecAgent/offensiveSecurityAgent";
-import { PATCHING_SYSTEM_PROMPT, buildPatchingPrompt } from "./prompts";
+import { buildSystemPrompt, buildPatchingPrompt } from "./prompts";
 import {
   PatchResultSchema,
   type PatchResult,
@@ -36,6 +36,15 @@ function readAgentsMd(cwd: string): string | undefined {
  * Uses filesystem tools to read, search, and modify code directly, and
  * `execute_command` to run lint, type-check, and test suites for verification.
  *
+ * Supports two modes controlled by the optional `sandbox` parameter:
+ *
+ * - **Lite mode** (no sandbox): commands run on the local filesystem.
+ *   The agent uses lint/type-check/tests for verification.
+ *
+ * - **Sandbox mode** (sandbox provided): commands route through an isolated
+ *   sandbox environment. The agent can restart services, run POC scripts,
+ *   and fully verify its fix end-to-end.
+ *
  * Automatically reads AGENTS.md (or CLAUDE.md) from the repository root and
  * injects it into the prompt so the agent knows the project's build/test
  * commands and conventions.
@@ -45,24 +54,26 @@ function readAgentsMd(cwd: string): string | undefined {
  *
  * @example
  * ```ts
+ * // Lite mode (no sandbox)
  * const agent = new PatchingAgent({
  *   cwd: "/tmp/cloned-repo",
- *   vulnerability: {
- *     name: "SQL Injection in login handler",
- *     severity: "critical",
- *     description: "User input concatenated into SQL query",
- *     location: "src/auth/login.ts",
- *   },
+ *   vulnerability: { name: "SQL Injection", severity: "critical", description: "..." },
  *   model: "claude-sonnet-4-20250514",
  *   session,
+ * });
+ *
+ * // Sandbox mode
+ * const agent = new PatchingAgent({
+ *   cwd: "/workspace/repo",
+ *   vulnerability: { name: "SQL Injection", severity: "critical", description: "..." },
+ *   model: "claude-sonnet-4-20250514",
+ *   session,
+ *   sandbox, // pre-configured UnifiedSandbox
  * });
  *
  * const result = await agent.consume({
  *   onTextDelta: (d) => process.stdout.write(d.text),
  * });
- *
- * console.log(result.prTitle);
- * console.log(result.filesChanged);
  * ```
  */
 export class PatchingAgent extends OffensiveSecurityAgent<PatchResult> {
@@ -76,19 +87,22 @@ export class PatchingAgent extends OffensiveSecurityAgent<PatchResult> {
       onStepFinish,
       abortSignal,
       callbacks,
+      sandbox,
     } = opts;
 
+    const hasSandbox = !!sandbox;
     const agentsMd = readAgentsMd(cwd);
 
     super({
-      system: PATCHING_SYSTEM_PROMPT,
-      prompt: buildPatchingPrompt(vulnerability, cwd, agentsMd),
+      system: buildSystemPrompt(hasSandbox),
+      prompt: buildPatchingPrompt(vulnerability, cwd, agentsMd, hasSandbox),
       model,
       session,
       authConfig,
       onStepFinish,
       abortSignal,
       callbacks,
+      sandbox,
 
       activeTools: [
         "read_file",

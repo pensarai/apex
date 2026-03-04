@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { SpecializedAgentInput } from "../../offSecAgent/types";
+import type { UnifiedSandbox } from "../../offSecAgent/tools/sandbox";
 
 /**
  * Structured result returned by the patching agent via the `response` tool.
@@ -46,4 +47,21 @@ export interface PatchingAgentInput extends SpecializedAgentInput {
 
   /** Vulnerability details to patch */
   vulnerability: VulnerabilityDetails;
+
+  /**
+   * Optional pre-configured sandbox for isolated code execution.
+   *
+   * When provided, the agent operates in **sandbox mode**:
+   * - `execute_command` routes through the sandbox
+   * - The agent is instructed it can run code, restart services, and
+   *   execute POC scripts to verify fixes
+   *
+   * When absent, the agent operates in **lite mode**:
+   * - Commands execute on the local filesystem
+   * - The agent relies on code analysis, lint, and tests for verification
+   *
+   * The sandbox should be fully set up before passing it in (repo cloned,
+   * dev environment started, etc.).
+   */
+  sandbox?: UnifiedSandbox;
 }
