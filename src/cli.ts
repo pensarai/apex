@@ -10,6 +10,7 @@
 import packageJson from "../package.json";
 import { getCurrentVersion, upgrade } from "./core/installation";
 import { buildAuthConfig } from "./core/ai/utils";
+import { resolvePentestMode } from "./core/cli/pentestMode";
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -107,7 +108,11 @@ async function runPentest() {
   const cwd = getArg("--cwd");
   const mode = getArg("--mode");
   const model = (getArg("--model") ?? "claude-sonnet-4-5") as AIModel;
-  const exfilMode = mode === "exfil";
+  const { exfilMode, warning: modeWarning } = resolvePentestMode(mode);
+
+  if (modeWarning) {
+    console.warn(modeWarning);
+  }
 
   console.log("=".repeat(60));
   console.log("PENTEST ORCHESTRATION");
