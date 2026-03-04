@@ -200,6 +200,8 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
             onInput={setSearchTerm}
             focused
             cursorColor={colors.textMuted}
+            textColor={colors.text}
+            focusedTextColor={colors.text}
           />
         </box>
 
