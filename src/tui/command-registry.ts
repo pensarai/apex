@@ -254,15 +254,8 @@ export const commands: CommandConfig[] = [
     aliases: ["s"],
     description: "Browse previous sessions",
     category: "Pentesting",
-    handler: async (args, ctx) => {
-      if (ctx.openSessionsDialog) {
-        ctx.openSessionsDialog();
-        return;
-      }
-      ctx.navigate({
-        type: "base",
-        path: "sessions",
-      });
+    handler: async (_args, ctx) => {
+      ctx.openSessionsDialog?.();
     },
   },
   {

@@ -19,7 +19,6 @@ export type RoutePath =
   | "models"
   | "providers"
   | "disclosure"
-  | "sessions"
   | "theme"
   | "auth"
   | "credits"

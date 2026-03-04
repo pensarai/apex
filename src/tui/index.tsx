@@ -8,7 +8,6 @@ import ConfigDialog from "./components/commands/config-dialog";
 import ChatApp from "./components/chat";
 import HITLWizard from "./components/commands/operator-wizard";
 import WebWizard from "./components/commands/web-wizard";
-import SessionsBrowser from "./components/commands/sessions-browser";
 import ProviderManager from "./components/commands/provider-manager";
 import type { Config } from "../core/config/config";
 import { config } from "../core/config";
@@ -304,9 +303,6 @@ function CommandDisplay({
           </RouteSwitch.Case>
           <RouteSwitch.Case when="providers">
             <ProviderManager />
-          </RouteSwitch.Case>
-          <RouteSwitch.Case when="sessions">
-            <SessionsBrowser />
           </RouteSwitch.Case>
           <RouteSwitch.Case when="theme">
             <ThemePicker />

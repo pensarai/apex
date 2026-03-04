@@ -12,7 +12,7 @@ import {
   type ReactNode,
 } from "react";
 import { type Renderable } from "@opentui/core";
-import { colors } from "../theme";
+import { useTheme } from "../theme";
 
 interface DialogProps {
   size?: "medium" | "large";
@@ -23,6 +23,7 @@ interface DialogProps {
 export function Dialog({ size = "medium", onClose, children }: DialogProps) {
   const dimensions = useTerminalDimensions();
   const renderer = useRenderer();
+  const { colors: themeColors } = useTheme();
 
   return (
     <box
@@ -37,7 +38,7 @@ export function Dialog({ size = "medium", onClose, children }: DialogProps) {
       paddingTop={dimensions.height / 4}
       left={0}
       top={0}
-      backgroundColor={colors.modalOverlay}
+      backgroundColor={themeColors.backgroundOverlay}
     >
       <box
         onMouseUp={async (e: { stopPropagation: () => void }) => {
@@ -46,7 +47,7 @@ export function Dialog({ size = "medium", onClose, children }: DialogProps) {
         }}
         width={size === "large" ? 80 : 60}
         maxWidth={dimensions.width - 2}
-        backgroundColor={colors.backgroundElement}
+        backgroundColor={themeColors.backgroundElement}
         paddingTop={1}
       >
         {children}
