@@ -7,3 +7,4 @@ export * from "./pentest";
 export * from "./whiteboxAttackSurface";
 export * from "./benchmarkComparisonAgent";
 export * from "./cvssScorer";
+export * from "./patching";
