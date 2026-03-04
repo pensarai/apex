@@ -154,7 +154,7 @@ export default function WebWizard({
       if (initialModel) {
         const targetModel = models.find((m) => m.id === initialModel);
         if (targetModel) {
-          setModel(targetModel);
+          setModel(targetModel, false);
           const newIndex = models.findIndex((m) => m.id === targetModel.id);
           if (newIndex >= 0) {
             setSelectedModelIndex(newIndex);
