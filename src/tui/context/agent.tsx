@@ -5,6 +5,7 @@ import {
   useMemo,
   useCallback,
   useEffect,
+  useRef,
   type ReactNode,
 } from "react";
 import { type ModelInfo } from "../../core/ai";
@@ -90,6 +91,10 @@ export function AgentProvider({ children }: AgentProviderProps) {
     [config],
   );
 
+  // Track stale model IDs we've already attempted to clean up to avoid
+  // infinite loops if the disk write keeps failing and rolling back.
+  const cleanedStaleIds = useRef<Set<string>>(new Set());
+
   // Smart default model selection:
   // 1. Restore persisted user selection if still available
   // 2. Prefer Pensar Haiku 4.5 if connected to Pensar Console
@@ -108,10 +113,13 @@ export function AgentProvider({ children }: AgentProviderProps) {
         setModelInternal(persisted);
         return;
       }
-      // Persisted model is stale — clean it up
-      config.update({ selectedModelId: null }).catch((err) => {
-        writeErrorLog(err, "CONFIG");
-      });
+      // Persisted model is stale — clean it up (only attempt once per ID)
+      if (!cleanedStaleIds.current.has(persistedId)) {
+        cleanedStaleIds.current.add(persistedId);
+        config.update({ selectedModelId: null }).catch((err) => {
+          writeErrorLog(err, "CONFIG");
+        });
+      }
     }
 
     // Group available models by provider

@@ -70,6 +70,7 @@ vi.mock("react", async () => {
       }
       return [init, vi.fn()];
     }),
+    useRef: vi.fn((init: unknown) => ({ current: init })),
     useEffect: vi.fn((cb: () => void) => {
       capturedEffect = cb;
     }),
@@ -147,6 +148,7 @@ async function renderProvider(configData: Record<string, unknown> = {}) {
         }
         return [init, vi.fn()];
       }),
+      useRef: vi.fn((init: unknown) => ({ current: init })),
       useEffect: vi.fn((cb: () => void) => {
         capturedEffect = cb;
       }),
