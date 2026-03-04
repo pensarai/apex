@@ -9,7 +9,7 @@ import {
 } from "react";
 import { type ModelInfo } from "../../core/ai";
 import { AVAILABLE_MODELS } from "../../core/ai/models";
-import { get as getConfig } from "../../core/config/config";
+import { get as getConfig, update as updateConfig } from "../../core/config/config";
 import { getAvailableModels } from "../../core/providers/utils";
 
 // Preferred defaults by provider (fast + cheap models)
@@ -76,23 +76,37 @@ export function AgentProvider({ children }: AgentProviderProps) {
   const [thinking, setThinking] = useState<boolean>(false);
   const [isExecuting, setIsExecuting] = useState<boolean>(false);
 
-  // Wrapper that marks model as user-selected
+  // Wrapper that marks model as user-selected and persists to config
   const setModel = useCallback((newModel: ModelInfo) => {
     setModelInternal(newModel);
     setIsModelUserSelected(true);
+    // Persist user's model preference to config
+    updateConfig({ selectedModelId: newModel.id }).catch(() => {});
   }, []);
 
   // Smart default model selection:
-  // 1. Prefer Pensar Haiku 4.5 if connected to Pensar Console
-  // 2. Fall back to Claude Haiku 4.5 if Anthropic is configured
-  // 3. Fall back to GPT-4o Mini if OpenAI is configured
-  // 4. Otherwise use first available model
+  // 1. Use user's saved model preference if it still exists
+  // 2. Prefer Pensar Haiku 4.5 if connected to Pensar Console
+  // 3. Fall back to Claude Haiku 4.5 if Anthropic is configured
+  // 4. Fall back to GPT-4o Mini if OpenAI is configured
+  // 5. Otherwise use first available model
   useEffect(() => {
     getConfig()
       .then((config) => {
         const available = getAvailableModels(config);
         if (available.length === 0) return;
 
+        // Priority 1: Check if user has a saved model preference
+        if (config.selectedModelId) {
+          const savedModel = available.find((m) => m.id === config.selectedModelId);
+          if (savedModel) {
+            setModelInternal(savedModel);
+            setIsModelUserSelected(true);
+            return;
+          }
+        }
+
+        // Priority 2: Use auto-default logic
         // Group available models by provider
         const byProvider = new Map<string, ModelInfo[]>();
         for (const m of available) {
