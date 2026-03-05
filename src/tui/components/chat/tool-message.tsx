@@ -119,15 +119,26 @@ export const ToolMessage = memo(function ToolMessage({
       {/* Result display for completed tools */}
       {(isCompleted || isError) && resultDisplay && (
         <box flexDirection="column" marginLeft={2}>
-          {/* Summary line - always visible */}
+          {/* Label + indicator */}
           <box flexDirection="row" gap={1}>
             <text fg={resultDisplay.isError ? colors.error : colors.textMuted}>
               {resultDisplay.isError ? "✗" : "→"}
             </text>
-            <text fg={resultDisplay.isError ? colors.error : colors.text}>
-              {resultDisplay.text}
-            </text>
+            {resultDisplay.styledText ? (
+              resultDisplay.label ? (
+                <text fg={colors.textMuted}>{resultDisplay.label}</text>
+              ) : null
+            ) : (
+              <text fg={resultDisplay.isError ? colors.error : colors.text}>
+                {resultDisplay.text}
+              </text>
+            )}
           </box>
+
+          {/* Syntax-highlighted code preview */}
+          {resultDisplay.styledText && (
+            <text content={resultDisplay.styledText} />
+          )}
 
           {/* Expandable output */}
           {resultDisplay.fullText && (

@@ -37,8 +37,17 @@ export class PersistentShell {
 
     this.proc = spawn(shell, args, {
       stdio: ["pipe", "pipe", "pipe"],
-      detached: false,
-      env: { ...process.env, PS1: "" },
+      // New session so child has no controlling terminal — prevents
+      // interactive programs from writing prompts to the TUI's TTY.
+      detached: process.platform !== "win32",
+      env: {
+        ...process.env,
+        PS1: "",
+        // Hint to CLI tools that we're non-interactive
+        CI: "true",
+        TERM: "dumb",
+        NO_COLOR: "1",
+      },
     });
 
     this.alive = true;
@@ -246,13 +255,30 @@ export class PersistentShell {
       }
 
       const p = this.proc;
+      const pid = p.pid;
       setTimeout(() => {
+        // Kill the entire process group (detached session) so all
+        // child processes are cleaned up, not just the shell itself.
+        if (pid && process.platform !== "win32") {
+          try {
+            process.kill(-pid, "SIGTERM");
+          } catch {
+            // group may already be gone
+          }
+        }
         try {
           p.kill("SIGTERM");
         } catch {
           // already dead
         }
         setTimeout(() => {
+          if (pid && process.platform !== "win32") {
+            try {
+              process.kill(-pid, "SIGKILL");
+            } catch {
+              // group may already be gone
+            }
+          }
           try {
             p.kill("SIGKILL");
           } catch {

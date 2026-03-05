@@ -5,11 +5,18 @@
  * Handles HTTP status, errors, collections, browser results, etc.
  */
 
+import type { StyledText } from "@opentui/core";
+import { highlightCode } from "./syntax-highlight";
+
 export interface ResultSummary {
   text: string;
   isError: boolean;
   /** Optional full text for expandable display */
   fullText?: string;
+  /** Syntax-highlighted rich text (preferred over plain text when available) */
+  styledText?: StyledText;
+  /** Optional label shown above styledText (e.g. "2 replacements") */
+  label?: string;
 }
 
 /**
@@ -84,7 +91,7 @@ export function getResultSummary(
               isError: true,
             };
           }
-          const filePath = String(obj.path || "");
+          const filePath = String(obj.path || args?.path || "");
           const content = typeof args?.content === "string" ? args.content : "";
           if (content) {
             const lines = content.split("\n");
@@ -94,6 +101,8 @@ export function getResultSummary(
             return {
               text: preview + suffix,
               isError: false,
+              styledText:
+                highlightCode(preview + suffix, filePath) ?? undefined,
               fullText:
                 content.length > 400 ? content.slice(0, 2000) : undefined,
             };
@@ -111,6 +120,7 @@ export function getResultSummary(
               isError: true,
             };
           }
+          const filePath = String(obj.path || args?.path || "");
           const n = Number(obj.replacements ?? 1);
           const newContent =
             typeof args?.newContent === "string" ? args.newContent : "";
@@ -119,9 +129,12 @@ export function getResultSummary(
             const preview = lines.slice(0, 4).join("\n");
             const suffix =
               lines.length > 4 ? `\n… (${lines.length} lines)` : "";
+            const codePreview = preview + suffix;
             return {
-              text: `${n} replacement${n !== 1 ? "s" : ""}\n${preview}${suffix}`,
+              text: `${n} replacement${n !== 1 ? "s" : ""}\n${codePreview}`,
               isError: false,
+              label: `${n} replacement${n !== 1 ? "s" : ""}`,
+              styledText: highlightCode(codePreview, filePath) ?? undefined,
               fullText:
                 newContent.length > 400 ? newContent.slice(0, 2000) : undefined,
             };

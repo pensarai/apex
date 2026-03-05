@@ -92,6 +92,7 @@
     "ai": "^6.0.105",
     "glob": "^13.0.0",
     "google-auth-library": "^10.6.1",
+    "highlight.js": "^11.11.1",
     "ignore": "^7.0.5",
     "imapflow": "^1.2.10",
     "mailparser": "^3.9.3",
