@@ -58,6 +58,7 @@ export type Route =
   | {
       type: "operator";
       sessionId: string;
+      initialMessage?: string;
     };
 
 type RouteContext = {

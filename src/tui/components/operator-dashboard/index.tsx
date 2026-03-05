@@ -47,8 +47,10 @@ type DashboardStatus = "idle" | "running" | "waiting" | "done";
  */
 export default function OperatorDashboard({
   sessionId,
+  initialMessage,
 }: {
   sessionId: string;
+  initialMessage?: string;
 }) {
   const { colors } = useTheme();
   const route = useRoute();
@@ -570,15 +572,29 @@ export default function OperatorDashboard({
     [status, runAgent],
   );
 
+  // Auto-send initial message once the session finishes loading
+  const initialMessageSentRef = useRef(false);
+  const runAgentRef = useRef(runAgent);
+  runAgentRef.current = runAgent;
+  useEffect(() => {
+    if (
+      !loading &&
+      session &&
+      initialMessage &&
+      !initialMessageSentRef.current
+    ) {
+      initialMessageSentRef.current = true;
+      runAgentRef.current(initialMessage);
+    }
+  }, [loading, session, initialMessage]);
+
   const handleCommandExecute = useCallback(
     async (command: string) => {
-      // Check if this matches a skill — if so, inject its content as a directive
       const skillContent = resolveSkillContent(command);
       if (skillContent) {
         handleSubmit(skillContent);
         return;
       }
-      // Otherwise, delegate to the standard command router
       await executeCommand(command);
     },
     [resolveSkillContent, handleSubmit, executeCommand],

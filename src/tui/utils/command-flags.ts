@@ -125,6 +125,7 @@ export interface WebCommandFlags {
   // Operator mode options (ignored if swarm)
   mode?: OperatorMode;
   requireApproval?: boolean;
+  autopilot?: boolean;
 
   // Auth options
   authUrl?: string;
@@ -155,6 +156,7 @@ const webFlagSchema: FlagSchema = {
   mode: { type: "string", aliases: ["m"] },
   "require-approval": { type: "boolean" },
   "no-approval": { type: "boolean" },
+  autopilot: { type: "boolean" },
   "auth-url": { type: "string" },
   "auth-user": { type: "string" },
   "auth-pass": { type: "string" },
@@ -190,6 +192,10 @@ export function parseWebFlags(args: string[]): WebCommandFlags {
   }
   if (raw.requireApproval) flags.requireApproval = true;
   if (raw.noApproval) flags.requireApproval = false;
+  if (raw.autopilot) {
+    flags.autopilot = true;
+    flags.requireApproval = false;
+  }
 
   // Auth options
   if (raw.authUrl) flags.authUrl = String(raw.authUrl);
@@ -317,8 +323,9 @@ export async function createOperatorSessionFromFlags(
     };
   }
 
+  const targets = flags.target ? [flags.target] : [];
   const session = await sessions.create({
-    targets: [flags.target!],
+    targets,
     name: flags.name || generateRandomName(),
     config: sessionConfig,
   });
