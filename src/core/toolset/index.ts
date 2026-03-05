@@ -382,11 +382,7 @@ export const TOOLSETS: ToolsetDefinition[] = [
     id: "minimal",
     name: "Minimal",
     description: "Basic tools for lightweight testing",
-    enabledTools: [
-      "execute_command",
-      "scratchpad",
-      "document_finding",
-    ],
+    enabledTools: ["execute_command", "scratchpad", "document_finding"],
   },
 ];
 
