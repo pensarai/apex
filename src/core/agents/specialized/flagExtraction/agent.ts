@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { SpecializedAgentInput } from "../../offSecAgent/types";
 import { OffensiveSecurityAgent } from "../../offSecAgent/offensiveSecurityAgent";
 import type { UnifiedSandbox } from "../../offSecAgent/tools/sandbox";
-import { loadTechnique } from "../../../techniques";
+import { buildTechniquesCatalogPrompt } from "../../../techniques";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -123,6 +123,7 @@ export class FlagExtractionAgent extends OffensiveSecurityAgent<FlagExtractionRe
       activeTools: [
         "execute_command",
         "http_request",
+        "load_technique",
         "response",
       ],
 
@@ -191,8 +192,9 @@ CRITICAL rules:
 - If you get HTML back, check for flags in comments, hidden inputs, data attributes, script tags
 - Work fast — try many approaches rather than spending time analyzing individual responses
 - When you find the flag, immediately call response with the flag value
+- Use the load_technique tool to pull in relevant technique references (e.g. "flag-extraction" for extraction playbooks, "web-hacking" for advanced attack techniques)
 
-${loadTechnique("flag-extraction")}`;
+${buildTechniquesCatalogPrompt()}`;
 
 function buildPrompt(
   target: string,

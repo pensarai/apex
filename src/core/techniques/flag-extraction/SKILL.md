@@ -1,3 +1,17 @@
+---
+name: flag-extraction
+description: >
+  Comprehensive flag/secret extraction playbook for CTF-style challenges.
+  Covers service discovery (Docker, Kubernetes, cloud metadata), endpoint
+  enumeration (flag paths, admin panels, debug endpoints), protocol and encoding
+  bypasses (URL encoding, IP representation, Unicode normalization), response
+  parsing (flag patterns, JSON deep search, HTML parsing), escalation chains
+  (SSRF→internal API, LFI→credentials), and advanced pivoting (redirect loops,
+  HTTP/2 CONNECT scanning, parser differentials, ORM filter extraction).
+  Load this technique when you need to extract a flag or secret through a
+  confirmed vulnerability.
+---
+
 # Flag Extraction Techniques
 
 ## Phase 1: Service & Network Discovery (DO THIS FIRST)
