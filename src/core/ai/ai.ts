@@ -24,6 +24,19 @@ import {
 
 export type AIModel = AnthropicMessagesModelId | OpenAIChatModelId | string; // For OpenRouter and Bedrock models
 
+/** Callback for reporting token usage from AI operations */
+type UsageCallback = (
+  model: string,
+  inputTokens: number,
+  outputTokens: number,
+) => void;
+let _usageCallback: UsageCallback | null = null;
+
+/** Register a callback to receive token usage reports from all AI operations */
+export function onUsage(cb: UsageCallback | null): void {
+  _usageCallback = cb;
+}
+
 export type AIModelProvider =
   | "anthropic"
   | "openai"
@@ -253,13 +266,23 @@ export function streamResponse(
     stopWhen,
     toolChoice,
     tools,
-    onStepFinish,
+    onStepFinish: userOnStepFinish,
     abortSignal,
     activeTools,
     silent,
     authConfig,
     onFinish,
   } = opts;
+
+  // Wrap onStepFinish to fire usage callback for every step
+  const onStepFinish: typeof userOnStepFinish = (step) => {
+    userOnStepFinish?.(step);
+    if (_usageCallback) {
+      const inp = step.usage?.inputTokens ?? 0;
+      const out = step.usage?.outputTokens ?? 0;
+      if (inp > 0 || out > 0) _usageCallback(model, inp, out);
+    }
+  };
   // Use a container object so the reference stays stable but the value can be updated
   const messagesContainer = { current: messages || [] };
   const providerModel = getProviderModel(model, authConfig);
@@ -468,6 +491,13 @@ export async function generateObjectResponse<T extends z.ZodType>(
   // Report token usage if callback provided
   if (onTokenUsage && usage) {
     onTokenUsage(usage.inputTokens ?? 0, usage.outputTokens ?? 0);
+  }
+
+  // Fire global usage callback
+  if (_usageCallback && usage) {
+    const inp = usage.inputTokens ?? 0;
+    const out = usage.outputTokens ?? 0;
+    if (inp > 0 || out > 0) _usageCallback(model, inp, out);
   }
 
   return output;
