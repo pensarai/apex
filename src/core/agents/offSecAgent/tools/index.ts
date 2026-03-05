@@ -50,6 +50,9 @@ export { spawnPentestSwarm } from "./spawnPentestSwarm";
 export { spawnCodingAgent } from "./spawnCodingAgent";
 export { delegateFlagExtraction } from "./delegateFlagExtraction";
 
+// Technique loading
+export { loadTechnique } from "./loadTechnique";
+
 // Reporting / benchmark tools
 // export { generateReport } from "./generateReport";
 export { provideComparisonResults } from "./provideComparisonResults";
@@ -86,6 +89,7 @@ import { runAttackSurface } from "./runAttackSurface";
 import { spawnPentestSwarm } from "./spawnPentestSwarm";
 import { spawnCodingAgent } from "./spawnCodingAgent";
 import { delegateFlagExtraction } from "./delegateFlagExtraction";
+import { loadTechnique } from "./loadTechnique";
 // import { generateReport } from "./generateReport";
 import { provideComparisonResults } from "./provideComparisonResults";
 import { createEmailToolset } from "./email";
@@ -138,6 +142,9 @@ export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
     spawn_coding_agent: spawnCodingAgent(ctx),
     delegate_flag_extraction: delegateFlagExtraction(ctx),
 
+    // Technique loading (dynamic — agent decides which to load)
+    load_technique: loadTechnique(),
+
     // Reporting / benchmark tools
     // generate_report: generateReport(ctx),
     provide_comparison_results: provideComparisonResults(ctx),
@@ -183,6 +190,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "spawn_pentest_swarm",
   "spawn_coding_agent",
   "delegate_flag_extraction",
+  "load_technique",
   // "generate_report",
   "provide_comparison_results",
   // Email
