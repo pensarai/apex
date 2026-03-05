@@ -43,7 +43,10 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
   const [isCreatingSession, setIsCreatingSession] = useState(false);
 
   const launchOperatorWithMessage = useCallback(
-    async (message: string) => {
+    async (
+      message: string,
+      options?: { requireApproval?: boolean },
+    ) => {
       if (isCreatingSession) return;
       setIsCreatingSession(true);
       try {
@@ -52,7 +55,7 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
           mode: "operator",
           operatorSettings: {
             initialMode: "auto",
-            requireApproval: true,
+            requireApproval: options?.requireApproval ?? true,
             enableSuggestions: true,
           },
         };
@@ -91,9 +94,17 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
 
   const handleCommandExecute = useCallback(
     async (command: string) => {
-      const skillContent = resolveSkillContent(command);
+      // Split command into slug and args to detect --autopilot on skills
+      const parts = command.trim().replace(/^\/+/, "").split(/\s+/);
+      const slug = parts[0]?.toLowerCase() ?? "";
+      const args = parts.slice(1);
+      const autopilot = args.includes("--autopilot");
+
+      const skillContent = resolveSkillContent(`/${slug}`);
       if (skillContent) {
-        await launchOperatorWithMessage(skillContent);
+        await launchOperatorWithMessage(skillContent, {
+          requireApproval: !autopilot,
+        });
         return;
       }
       await executeCommand(command);

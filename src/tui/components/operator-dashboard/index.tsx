@@ -35,6 +35,7 @@ import {
   createInitialOperatorState,
   type OperatorSessionState,
 } from "../../../core/operator";
+import { ModelPicker } from "../model-picker";
 import { stepCountIs, type ModelMessage } from "ai";
 import { isTerminalCopyShortcut, shouldHandleOperatorCtrlC } from "./keyboard";
 import { existsSync, readFileSync } from "fs";
@@ -55,17 +56,18 @@ export default function OperatorDashboard({
   const { colors } = useTheme();
   const route = useRoute();
   const config = useConfig();
-  const { model, setThinking, setIsExecuting } = useAgent();
+  const { model, setModel, isModelUserSelected, setThinking, setIsExecuting } =
+    useAgent();
   const {
     autocompleteOptions: allAutocompleteOptions,
     executeCommand,
     resolveSkillContent,
     skills,
   } = useCommand();
-  const { stack, externalDialogOpen } = useDialog();
+  const { stack, externalDialogOpen, replace: showDialog, clear: clearDialog, setSize: setDialogSize } = useDialog();
 
   const autocompleteOptions = useMemo(() => {
-    const allowedCommands = new Set(["/create-skill"]);
+    const allowedCommands = new Set(["/create-skill", "/models"]);
     const skillSlugs = new Set(skills.map((s) => `/${slugify(s.name)}`));
     return allAutocompleteOptions.filter(
       (opt) => allowedCommands.has(opt.value) || skillSlugs.has(opt.value),
@@ -588,16 +590,61 @@ export default function OperatorDashboard({
     }
   }, [loading, session, initialMessage]);
 
+  const showModelPicker = useCallback(() => {
+    setDialogSize("large");
+    showDialog(
+      <box flexDirection="column" width="100%" paddingLeft={4} paddingTop={1}>
+        <text>
+          <span fg={colors.primary}>█ </span>
+          <span fg={colors.text}>Select AI Model</span>
+          <span fg={colors.textMuted}> ({model.name})</span>
+        </text>
+        <box flexDirection="column" paddingLeft={2} marginTop={1}>
+          <ModelPicker
+            config={config.data}
+            selectedModel={model}
+            onSelectModel={setModel}
+            onConfirm={clearDialog}
+            onConfigUpdate={config.update}
+            focused={true}
+            isModelUserSelected={isModelUserSelected}
+          />
+        </box>
+        <box marginTop={1} paddingLeft={2}>
+          <text fg={colors.textMuted}>
+            [Enter] confirm • [ESC] close
+          </text>
+        </box>
+      </box>,
+    );
+  }, [colors, model, setModel, isModelUserSelected, config, showDialog, clearDialog, setDialogSize]);
+
   const handleCommandExecute = useCallback(
     async (command: string) => {
-      const skillContent = resolveSkillContent(command);
+      // Split command into slug and args to detect --autopilot on skills
+      const parts = command.trim().replace(/^\/+/, "").split(/\s+/);
+      const slug = parts[0]?.toLowerCase() ?? "";
+      const args = parts.slice(1);
+      const autopilot = args.includes("--autopilot");
+
+      // /models — show model picker dialog inline
+      if (slug === "models" || slug === "model") {
+        showModelPicker();
+        return;
+      }
+
+      const skillContent = resolveSkillContent(`/${slug}`);
       if (skillContent) {
+        if (autopilot) {
+          approvalGateRef.current.updateConfig({ requireApproval: false });
+          setOperatorState((prev) => ({ ...prev, requireApproval: false }));
+        }
         handleSubmit(skillContent);
         return;
       }
       await executeCommand(command);
     },
-    [resolveSkillContent, handleSubmit, executeCommand],
+    [resolveSkillContent, handleSubmit, executeCommand, showModelPicker],
   );
 
   const handleAbort = useCallback(() => {
