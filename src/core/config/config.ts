@@ -11,6 +11,7 @@ export interface Config {
   version?: string;
   openAiAPIKey?: string | null;
   anthropicAPIKey?: string | null;
+  googleAPIKey?: string | null;
   openRouterAPIKey?: string | null;
   bedrockAPIKey?: string | null;
   pensarAPIKey?: string | null;
@@ -79,6 +80,8 @@ export async function get(): Promise<Config> {
     openAiAPIKey: process.env.OPENAI_API_KEY ?? parsedConfig.openAiAPIKey,
     anthropicAPIKey:
       process.env.ANTHROPIC_API_KEY ?? parsedConfig.anthropicAPIKey,
+    googleAPIKey:
+      process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? parsedConfig.googleAPIKey,
     openRouterAPIKey:
       process.env.OPENROUTER_API_KEY ?? parsedConfig.openRouterAPIKey,
     bedrockAPIKey: process.env.BEDROCK_API_KEY ?? parsedConfig.bedrockAPIKey,

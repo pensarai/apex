@@ -1,6 +1,7 @@
 export type ProviderType =
   | "anthropic"
   | "openai"
+  | "google"
   | "bedrock"
   | "openrouter"
   | "pensar"
@@ -30,6 +31,12 @@ export const AVAILABLE_PROVIDERS: Provider[] = [
     id: "openai",
     name: "OpenAI",
     description: "GPT-4 and other OpenAI models",
+    requiresAPIKey: true,
+  },
+  {
+    id: "google",
+    name: "Google",
+    description: "Gemini and other Google AI models",
     requiresAPIKey: true,
   },
   {

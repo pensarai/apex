@@ -21,6 +21,7 @@ const PREFERRED_DEFAULTS: Record<string, string> = {
   pensar: "pensar:anthropic.claude-haiku-4-5-20251001-v1:0",
   anthropic: "claude-haiku-4-5",
   openai: "gpt-4o-mini",
+  google: "gemini-2.5-flash",
 };
 
 // Provider preference order when multiple are available
@@ -29,6 +30,7 @@ const PROVIDER_PREFERENCE = [
   "pensar",
   "anthropic",
   "openai",
+  "google",
   "openrouter",
   "bedrock",
 ];

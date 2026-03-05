@@ -57,6 +57,10 @@ function ConfigForm({ appConfig }: { appConfig: Config | null }) {
         {appConfig.anthropicAPIKey ? "Configured" : "Not set"}
       </text>
       <text>
+        {appConfig.googleAPIKey ? "✓" : "✗"} Google:{" "}
+        {appConfig.googleAPIKey ? "Configured" : "Not set"}
+      </text>
+      <text>
         {appConfig.openRouterAPIKey ? "✓" : "✗"} OpenRouter:{" "}
         {appConfig.openRouterAPIKey ? "Configured" : "Not set"}
       </text>
