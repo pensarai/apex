@@ -385,7 +385,7 @@ export function streamResponse(
                 : String(repairError),
             );
           }
-          return null;
+          throw repairError;
         }
       },
       onFinish,
