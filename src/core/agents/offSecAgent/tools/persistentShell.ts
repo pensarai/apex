@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "child_process";
+import { spawn, spawnSync, type ChildProcess } from "child_process";
 import { randomBytes } from "crypto";
 
 /** Hard memory safety cap — prevents OOM on pathological output (5 MB). */
@@ -170,11 +170,18 @@ export class PersistentShell {
       if (timeoutSeconds != null && timeoutSeconds > 0) {
         timeoutTimer = setTimeout(() => {
           if (resolved) return;
-          // Try to kill the foreground job without killing the shell itself
-          try {
-            proc.stdin!.write("kill %% 2>/dev/null\n");
-          } catch {
-            // stdin may be closed
+          // Kill child processes of the bash shell using signals.
+          // Writing to stdin doesn't work because bash is blocked on the
+          // foreground command and won't read stdin until it completes.
+          const pid = proc.pid;
+          if (pid && process.platform !== "win32") {
+            try {
+              spawnSync("pkill", ["-TERM", "-P", pid.toString()], {
+                stdio: "ignore",
+              });
+            } catch {
+              // pkill may not be available or no processes matched
+            }
           }
           setTimeout(() => {
             safeResolve({
@@ -222,11 +229,18 @@ export class PersistentShell {
     const stdout = this.pendingStdout?.() ?? "";
     const stderr = this.pendingStderr?.() ?? "";
 
-    // Kill the foreground job (same pattern as the timeout path)
-    try {
-      this.proc.stdin!.write("kill %% 2>/dev/null\n");
-    } catch {
-      // stdin may be closed
+    // Kill child processes of the bash shell using signals.
+    // Writing to stdin doesn't work because bash is blocked on the
+    // foreground command and won't read stdin until it completes.
+    const pid = this.proc.pid;
+    if (pid && process.platform !== "win32") {
+      try {
+        spawnSync("pkill", ["-TERM", "-P", pid.toString()], {
+          stdio: "ignore",
+        });
+      } catch {
+        // pkill may not be available or no processes matched
+      }
     }
 
     // Give the process a moment to die, then force-resolve with partial output
