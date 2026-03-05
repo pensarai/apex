@@ -8,7 +8,18 @@ export const executeCommandInputSchema = z.object({
   timeout: z
     .number()
     .optional()
-    .describe("Timeout in milliseconds (default: 30000)"),
+    .describe(
+      "Timeout in seconds. In foreground mode the process is killed after this duration. " +
+        "In background mode this controls how long to collect initial output before returning (default: 2s). " +
+        "If omitted in foreground mode the command runs until completion or abort.",
+    ),
+  background: z
+    .boolean()
+    .optional()
+    .describe(
+      "Run the command as a background process. Returns immediately with initial output and the process PID. " +
+        "Use for long-running processes like servers, listeners, or watchers.",
+    ),
   toolCallDescription: z
     .string()
     .describe(
@@ -24,7 +35,16 @@ export type ExecuteCommandResult = {
   stdout: string;
   stderr: string;
   command: string;
+  pid?: number;
+  isBackgroundProcess?: boolean;
 };
+
+const MAX_OUTPUT = 50_000;
+
+function truncateOutput(output: string): string {
+  if (output.length <= MAX_OUTPUT) return output;
+  return `${output.substring(0, MAX_OUTPUT)}...\n\n(truncated) call the command again with grep / tail to paginate`;
+}
 
 export function executeCommand(ctx: ToolContext) {
   return tool({
@@ -51,13 +71,17 @@ SSL/TLS TESTING:
 
 OUTPUT HANDLING:
 - Use 2>&1 to capture stderr
-- Use timeout command for long-running scans
+
+BACKGROUND MODE:
+Set background=true for long-running processes (servers, listeners, watchers).
+The command starts in the background and the tool returns initial output with the process PID.
 
 IMPORTANT: Always analyze results and adjust your approach based on findings.`,
     inputSchema: executeCommandInputSchema,
     execute: async ({
       command,
-      timeout = 30000,
+      timeout,
+      background,
     }): Promise<ExecuteCommandResult> => {
       if (ctx.abortSignal?.aborted) {
         return {
@@ -69,36 +93,15 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
         };
       }
 
-      // Sandbox mode: route execution through the sandbox
+      // --- Sandbox mode ---
       if (ctx.sandbox) {
-        try {
-          const ssmTimeout = Math.max(Math.ceil(timeout / 1000), 30);
-          const result = await ctx.sandbox.execute(command, {
-            timeout: ssmTimeout,
-          });
-          return {
-            success: result.success,
-            error: !result.success ? result.stderr || "Command failed" : "",
-            stdout:
-              result.stdout.length > 50000
-                ? `${result.stdout.substring(0, 50000)}...\n\n(truncated) call the command again with grep / tail to paginate`
-                : result.stdout || "(no output)",
-            stderr: result.stderr || "",
-            command,
-          };
-        } catch (error: unknown) {
-          const msg = error instanceof Error ? error.message : String(error);
-          return {
-            success: false,
-            error: msg,
-            stdout: "",
-            stderr: msg,
-            command,
-          };
+        if (background) {
+          return sandboxBackground(ctx, command);
         }
+        return sandboxForeground(ctx, command, timeout);
       }
 
-      // Local mode: spawn a child process
+      // --- Local mode ---
       return new Promise((resolve) => {
         const shellCmd = process.platform === "win32" ? "cmd" : "bash";
         const shellArgs =
@@ -126,8 +129,6 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
           killed = true;
 
           try {
-            // Kill the entire process group (negative PID) so subprocesses
-            // spawned by bash (nmap, gobuster, etc.) are also terminated.
             if (child.pid && process.platform !== "win32") {
               process.kill(-child.pid, "SIGTERM");
             } else {
@@ -137,8 +138,7 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
             // Process may have already exited
           }
 
-          // SIGKILL fallback: if SIGTERM doesn't work after 5 seconds,
-          // force-kill and resolve the promise so the agent doesn't hang.
+          // SIGKILL fallback after 5 s
           setTimeout(() => {
             try {
               if (child.pid && process.platform !== "win32") {
@@ -152,57 +152,116 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
 
             safeResolve({
               success: false,
-              stdout:
-                stdout.length > 50000
-                  ? `${stdout.substring(0, 50000)}...\n\n(truncated)`
-                  : stdout || "(no output)",
+              stdout: truncateOutput(stdout) || "(no output)",
               stderr: stderr || "",
               command,
               error: "Command killed (did not exit after SIGTERM)",
             });
-          }, 5000);
+          }, 5_000);
         };
 
-        const timeoutTimer = setTimeout(killProcess, timeout);
-
-        child.stdout.on("data", (data) => {
+        child.stdout.on("data", (data: Buffer) => {
           stdout += data.toString();
         });
 
-        child.stderr.on("data", (data) => {
+        child.stderr.on("data", (data: Buffer) => {
           stderr += data.toString();
         });
 
-        child.on("close", (code) => {
-          clearTimeout(timeoutTimer);
-          safeResolve({
-            success: code === 0 && !killed,
-            stdout:
-              stdout.length > 50000
-                ? `${stdout.substring(0, 50000)}...\n\n(truncated) call the command again with grep / tail to paginate`
-                : stdout || "(no output)",
-            stderr: stderr || "",
-            command,
-            error: killed
-              ? "Command timed out"
-              : code !== 0
-                ? `Exit code: ${code}`
-                : "",
-          });
-        });
+        if (background) {
+          // Background: collect initial output for a settle period, then detach
+          let exited = false;
+          let exitCode: number | null = null;
 
-        child.on("error", (err) => {
-          clearTimeout(timeoutTimer);
-          safeResolve({
-            success: false,
-            error: err.message,
-            stdout,
-            stderr,
-            command,
+          child.on("close", (code) => {
+            exited = true;
+            exitCode = code;
           });
-        });
 
-        // Wire up abort signal
+          child.on("error", (err) => {
+            exited = true;
+            safeResolve({
+              success: false,
+              error: err.message,
+              stdout,
+              stderr,
+              command,
+            });
+          });
+
+          const settleMs = timeout != null ? timeout * 1_000 : 2_000;
+          setTimeout(() => {
+            if (exited) {
+              // Process already exited during the settle period
+              safeResolve({
+                success: exitCode === 0,
+                stdout: truncateOutput(stdout) || "(no output)",
+                stderr: stderr || "",
+                command,
+                error:
+                  exitCode !== 0
+                    ? `Process exited during startup (code ${exitCode})`
+                    : "",
+              });
+            } else {
+              // Still running — detach so Node doesn't wait on it
+              child.stdout.removeAllListeners("data");
+              child.stderr.removeAllListeners("data");
+              child.stdout.resume();
+              child.stderr.resume();
+              child.removeAllListeners("close");
+              child.removeAllListeners("error");
+              child.unref();
+
+              safeResolve({
+                success: true,
+                stdout:
+                  truncateOutput(stdout) ||
+                  "(process running, no output yet)",
+                stderr: stderr || "",
+                command,
+                error: "",
+                pid: child.pid,
+                isBackgroundProcess: true,
+              });
+            }
+          }, settleMs);
+        } else {
+          // Foreground: wait for completion or timeout
+          const timeoutTimer =
+            timeout != null
+              ? setTimeout(killProcess, timeout * 1_000)
+              : undefined;
+
+          child.on("close", (code) => {
+            if (timeoutTimer) clearTimeout(timeoutTimer);
+            safeResolve({
+              success: code === 0 && !killed,
+              stdout: truncateOutput(stdout) || "(no output)",
+              stderr: stderr || "",
+              command,
+              error: killed
+                ? "Command timed out"
+                : code !== 0
+                  ? `Exit code: ${code}`
+                  : "",
+            });
+          });
+
+          child.on("error", (err) => {
+            if (timeoutTimer) clearTimeout(timeoutTimer);
+            safeResolve({
+              success: false,
+              error: err.message,
+              stdout,
+              stderr,
+              command,
+            });
+          });
+        }
+
+        // Abort signal: kill the process (foreground or background) when the
+        // agent is cancelled by the user.
         if (ctx.abortSignal) {
           const abortHandler = () => killProcess();
           ctx.abortSignal.addEventListener("abort", abortHandler, {
@@ -215,4 +274,59 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
       });
     },
   });
+}
+
+// ---------------------------------------------------------------------------
+// Sandbox helpers
+// ---------------------------------------------------------------------------
+
+async function sandboxBackground(
+  ctx: ToolContext,
+  command: string,
+): Promise<ExecuteCommandResult> {
+  try {
+    const escaped = command.replace(/'/g, "'\\''");
+    const logFile = `/tmp/bg_${Date.now()}.log`;
+    const result = await ctx.sandbox!.execute(
+      `nohup bash -c '${escaped}' > ${logFile} 2>&1 & echo $!`,
+      { timeout: 10 },
+    );
+    const bgPid = parseInt(result.stdout.trim(), 10);
+    return {
+      success: true,
+      error: "",
+      stdout: `Background process started (PID: ${isNaN(bgPid) ? "unknown" : bgPid}). Output: ${logFile}`,
+      stderr: "",
+      command,
+      pid: isNaN(bgPid) ? undefined : bgPid,
+      isBackgroundProcess: true,
+    };
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
+    return { success: false, error: msg, stdout: "", stderr: msg, command };
+  }
+}
+
+async function sandboxForeground(
+  ctx: ToolContext,
+  command: string,
+  timeout?: number,
+): Promise<ExecuteCommandResult> {
+  try {
+    const ssmOpts: { timeout?: number } = {};
+    if (timeout != null) {
+      ssmOpts.timeout = timeout;
+    }
+    const result = await ctx.sandbox!.execute(command, ssmOpts);
+    return {
+      success: result.success,
+      error: !result.success ? result.stderr || "Command failed" : "",
+      stdout: truncateOutput(result.stdout) || "(no output)",
+      stderr: result.stderr || "",
+      command,
+    };
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
+    return { success: false, error: msg, stdout: "", stderr: msg, command };
+  }
 }

@@ -177,6 +177,12 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    * the call (when `requireApproval` is enabled on the gate).
    */
   approvalGate?: ApprovalGate;
+
+  /**
+   * Directory where `messages.json` is persisted after each step.
+   * Defaults to `session.rootPath`.
+   */
+  messagesDir?: string;
 };
 
 /**

@@ -12,6 +12,8 @@ import { createResponseTool, RESPONSE_TOOL_NAME } from "./tools/response";
 import { DEFAULT_SYSTEM_PROMPT } from "./prompt";
 import type { ApprovalGate } from "../../operator";
 import { ApprovalDeniedError } from "../../operator";
+import { join } from "path";
+import { writeFileSync, mkdirSync, existsSync } from "fs";
 
 /**
  * General-purpose offensive security agent harness.
@@ -134,6 +136,13 @@ export class OffensiveSecurityAgent<TResult = void> {
       ? (input.activeTools as string[])
       : (input.activeTools as string[]).filter((t) => !emailToolSet.has(t));
 
+    // -- Messages persistence -------------------------------------------------
+    const messagesDir = input.messagesDir ?? input.session.rootPath;
+    if (!existsSync(messagesDir)) {
+      mkdirSync(messagesDir, { recursive: true });
+    }
+    const messagesPath = join(messagesDir, "messages.json");
+
     // -- Stream ---------------------------------------------------------------
     this.streamResult = streamResponse({
       prompt: input.prompt,
@@ -144,7 +153,17 @@ export class OffensiveSecurityAgent<TResult = void> {
       activeTools,
       stopWhen,
       toolChoice: "auto",
-      onStepFinish: input.onStepFinish,
+      onStepFinish: (event) => {
+        try {
+          writeFileSync(
+            messagesPath,
+            JSON.stringify(event.response.messages, null, 2),
+          );
+        } catch {
+          // Best-effort persistence — don't break the agent loop
+        }
+        input.onStepFinish?.(event);
+      },
       onFinish: input.onFinish,
       abortSignal: input.abortSignal,
       authConfig: input.authConfig,
