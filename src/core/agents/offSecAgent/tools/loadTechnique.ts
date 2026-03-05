@@ -22,7 +22,7 @@ export function loadTechnique() {
       `each load adds context, so be selective. ` +
       `Available techniques: ${available.join(", ")}`,
 
-    parameters: z.object({
+    inputSchema: z.object({
       name: z
         .string()
         .describe(
