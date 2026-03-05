@@ -79,6 +79,10 @@ export default function OperatorDashboard({
   const abortControllerRef = useRef<AbortController | null>(null);
   const generationRef = useRef(0);
 
+  // Two-stage abort: first Ctrl+C cancels the command, second kills the agent
+  const cancelCommandRef = useRef<(() => boolean) | null>(null);
+  const commandCancelledRef = useRef(false);
+
   // Messages — same pattern as pentest component
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const textRef = useRef("");
@@ -406,6 +410,7 @@ export default function OperatorDashboard({
             },
             onToolCall: (d) => {
               setThinking(false);
+              commandCancelledRef.current = false;
               addToolCall(
                 d.toolCallId,
                 d.toolName,
@@ -423,6 +428,9 @@ export default function OperatorDashboard({
               updateToolResult(d.toolCallId, d.toolName, d.output);
             },
             onCommandOutput,
+            onCancelCommandAvailable: (cancelFn) => {
+              cancelCommandRef.current = cancelFn;
+            },
             onError: (e) => {
               console.error("Agent error:", e);
               setError(e instanceof Error ? e.message : "Unknown error");
@@ -516,51 +524,66 @@ export default function OperatorDashboard({
   );
 
   const handleAbort = useCallback(() => {
-    if (abortControllerRef.current) {
-      // Increment generation to prevent the aborted run's cleanup from firing
-      generationRef.current++;
-      abortControllerRef.current.abort();
-      abortControllerRef.current = null;
-      setStatus("idle");
-      setThinking(false);
-      setIsExecuting(false);
+    if (!abortControllerRef.current) return;
 
-      // Deny all pending approvals on abort
-      approvalGateRef.current.denyAll();
-
-      // Read back persisted messages so the next run has full context
-      // including the agent's work up to the last completed step.
-      if (session) {
-        try {
-          const messagesPath = join(session.rootPath, "messages.json");
-          if (existsSync(messagesPath)) {
-            const raw = JSON.parse(readFileSync(messagesPath, "utf-8"));
-            if (Array.isArray(raw) && raw.length > 0) {
-              conversationRef.current = raw as ModelMessage[];
-            }
-          }
-        } catch {
-          // Best-effort — keep whatever conversationRef already has
-        }
-      }
-
-      setMessages((prev) => {
-        // Mark any in-flight tool calls as failed
-        const updated = prev.map((m) =>
-          isToolMessage(m) && m.status === "pending"
-            ? { ...m, status: "error" as const, result: "Cancelled by user" }
-            : m,
-        );
-        return [
-          ...updated,
-          {
-            role: "system" as const,
-            content: "Agent stopped by user.",
-            createdAt: new Date(),
-          },
-        ];
-      });
+    // Stage 1: If a command is running and hasn't been cancelled yet,
+    // cancel just the command and let the agent continue.
+    if (!commandCancelledRef.current && cancelCommandRef.current?.()) {
+      commandCancelledRef.current = true;
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "system" as const,
+          content:
+            "Command cancelled — agent will continue with partial output.",
+          createdAt: new Date(),
+        },
+      ]);
+      return;
     }
+
+    // Stage 2: No command running, or second Ctrl+C — kill the agent.
+    generationRef.current++;
+    abortControllerRef.current.abort();
+    abortControllerRef.current = null;
+    cancelCommandRef.current = null;
+    commandCancelledRef.current = false;
+    setStatus("idle");
+    setThinking(false);
+    setIsExecuting(false);
+
+    approvalGateRef.current.denyAll();
+
+    // Read back persisted messages so the next run has full context
+    if (session) {
+      try {
+        const messagesPath = join(session.rootPath, "messages.json");
+        if (existsSync(messagesPath)) {
+          const raw = JSON.parse(readFileSync(messagesPath, "utf-8"));
+          if (Array.isArray(raw) && raw.length > 0) {
+            conversationRef.current = raw as ModelMessage[];
+          }
+        }
+      } catch {
+        // Best-effort — keep whatever conversationRef already has
+      }
+    }
+
+    setMessages((prev) => {
+      const updated = prev.map((m) =>
+        isToolMessage(m) && m.status === "pending"
+          ? { ...m, status: "error" as const, result: "Cancelled by user" }
+          : m,
+      );
+      return [
+        ...updated,
+        {
+          role: "system" as const,
+          content: "Agent stopped by user.",
+          createdAt: new Date(),
+        },
+      ];
+    });
   }, [session, setThinking, setIsExecuting]);
 
   // Toggle approval requirement at runtime

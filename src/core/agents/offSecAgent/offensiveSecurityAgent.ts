@@ -69,15 +69,13 @@ export class OffensiveSecurityAgent<TResult = void> {
     this.subagentId = input.subagentId;
 
     // -- Persistent shell (local mode only) -----------------------------------
+    // Shell survives command cancellation; only disposed in consume() after the
+    // stream ends, or when the agent is fully killed.
     if (!input.sandbox) {
       this.persistentShell = new PersistentShell();
-
-      if (input.abortSignal) {
-        const shell = this.persistentShell;
-        input.abortSignal.addEventListener("abort", () => shell.dispose(), {
-          once: true,
-        });
-      }
+      input.callbacks?.onCancelCommandAvailable?.(() =>
+        this.persistentShell!.cancelCurrentCommand(),
+      );
     }
 
     // -- Tools ----------------------------------------------------------------

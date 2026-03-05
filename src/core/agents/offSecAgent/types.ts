@@ -236,6 +236,8 @@ export type ConsumeCallbacks = {
   ) => void;
   /** Streaming stdout chunks from execute_command while it is still running. */
   onCommandOutput?: (data: string) => void;
+  /** Called when the persistent shell is ready, providing a function to cancel the current command. */
+  onCancelCommandAvailable?: (cancelFn: () => boolean) => void;
   onError?: (error: unknown) => void;
   subagentCallbacks?: SubagentConsumeCallbacks;
 };

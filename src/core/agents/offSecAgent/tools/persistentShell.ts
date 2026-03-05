@@ -23,6 +23,12 @@ export class PersistentShell {
   private alive = false;
   private disposed = false;
 
+  /** Allows cancelCurrentCommand() to force-resolve the running execute(). */
+  private pendingCancel: ((result: ShellExecuteResult) => void) | null = null;
+  /** Snapshot accessors set by execute(), read by cancelCurrentCommand(). */
+  private pendingStdout: (() => string) | null = null;
+  private pendingStderr: (() => string) | null = null;
+
   private spawn(): void {
     if (this.disposed) return;
 
@@ -80,14 +86,22 @@ export class PersistentShell {
       let resolved = false;
       let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
 
+      this.pendingStdout = () => stdout;
+      this.pendingStderr = () => stderr;
+
       const safeResolve = (result: ShellExecuteResult) => {
         if (resolved) return;
         resolved = true;
+        this.pendingCancel = null;
+        this.pendingStdout = null;
+        this.pendingStderr = null;
         if (timeoutTimer) clearTimeout(timeoutTimer);
         proc.stdout!.removeListener("data", onStdout);
         proc.stderr!.removeListener("data", onStderr);
         resolve(result);
       };
+
+      this.pendingCancel = safeResolve;
 
       const onStdout = (data: Buffer) => {
         const chunk = data.toString();
@@ -186,6 +200,38 @@ export class PersistentShell {
         });
       }
     });
+  }
+
+  /**
+   * Cancel the currently running command without killing the shell.
+   * Returns true if a command was running and was cancelled.
+   */
+  cancelCurrentCommand(): boolean {
+    if (!this.pendingCancel || !this.proc) return false;
+
+    const cancel = this.pendingCancel;
+    const stdout = this.pendingStdout?.() ?? "";
+    const stderr = this.pendingStderr?.() ?? "";
+
+    // Kill the foreground job (same pattern as the timeout path)
+    try {
+      this.proc.stdin!.write("kill %% 2>/dev/null\n");
+    } catch {
+      // stdin may be closed
+    }
+
+    // Give the process a moment to die, then force-resolve with partial output
+    setTimeout(() => {
+      cancel({
+        stdout: stdout || "(no output)",
+        stderr: stderr
+          ? stderr + "\n(cancelled by user)"
+          : "(cancelled by user)",
+        exitCode: 130,
+      });
+    }, 500);
+
+    return true;
   }
 
   dispose(): void {
