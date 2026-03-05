@@ -45,6 +45,7 @@ import { stepCountIs, type ModelMessage } from "ai";
 import { isTerminalCopyShortcut, shouldHandleOperatorCtrlC } from "./keyboard";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
+import * as History from "../../../core/history";
 
 type DashboardStatus = "idle" | "running" | "waiting" | "done";
 
@@ -111,7 +112,13 @@ export default function OperatorDashboard({
   const conversationRef = useRef<ModelMessage[]>([]);
   // Input state
   const [inputValue, setInputValue] = useState("");
-  const [commandHistory, setCommandHistory] = useState<string[]>([]);
+  const [commandHistory, setCommandHistory] = useState<string[]>(
+    History.getEntries,
+  );
+
+  useEffect(() => {
+    History.load().then(setCommandHistory);
+  }, []);
 
   // Operator state
   const [operatorState, setOperatorState] = useState<OperatorSessionState>(() =>
@@ -608,10 +615,9 @@ export default function OperatorDashboard({
       if (status === "running") return;
 
       const trimmed = value.trim();
-      setCommandHistory((prev) => {
-        if (prev[prev.length - 1] === trimmed) return prev;
-        return [...prev, trimmed];
-      });
+      History.push(trimmed).then(() =>
+        setCommandHistory([...History.getEntries()]),
+      );
       setInputValue("");
       runAgent(trimmed);
     },

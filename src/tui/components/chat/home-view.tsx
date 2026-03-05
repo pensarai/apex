@@ -18,9 +18,7 @@ import { useRoute } from "../../context/route";
 import { PromptInput } from "../shared/prompt-input";
 import { useTheme } from "../../theme";
 import { slugify } from "../../../core/skills";
-
-// Persists across re-mounts so history survives navigating away and back
-const homeCommandHistory: string[] = [];
+import * as History from "../../../core/history";
 
 type ViewType = "home" | "config" | "chat";
 
@@ -41,6 +39,13 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
   const { promptRef } = useFocus();
 
   const [hintMessage, setHintMessage] = useState<string | null>(null);
+  const [commandHistory, setCommandHistory] = useState<string[]>(
+    History.getEntries,
+  );
+
+  useEffect(() => {
+    History.load().then(setCommandHistory);
+  }, []);
 
   const launchOperator = useCallback(
     (message: string, options?: { requireApproval?: boolean }) => {
@@ -53,13 +58,8 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
     [route],
   );
 
-  const [, forceUpdate] = useState(0);
-
   const pushHistory = useCallback((entry: string) => {
-    if (homeCommandHistory[homeCommandHistory.length - 1] !== entry) {
-      homeCommandHistory.push(entry);
-      forceUpdate((n) => n + 1);
-    }
+    History.push(entry).then(() => setCommandHistory([...History.getEntries()]));
   }, []);
 
   const handleSubmit = useCallback(
@@ -190,7 +190,7 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
           autocompleteOptions={autocompleteOptions}
           enableCommands={true}
           onCommandExecute={handleCommandExecute}
-          commandHistory={homeCommandHistory}
+          commandHistory={commandHistory}
           showPromptIndicator={true}
         />
 
