@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { SpecializedAgentInput } from "../../offSecAgent/types";
 import { OffensiveSecurityAgent } from "../../offSecAgent/offensiveSecurityAgent";
 import type { UnifiedSandbox } from "../../offSecAgent/tools/sandbox";
+import { loadTechnique } from "../../../techniques";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -175,22 +176,11 @@ const FLAG_EXTRACTION_SYSTEM_PROMPT = `You are a specialized data extraction age
 You have been given a confirmed vulnerability and working attack vector. Do NOT waste time re-discovering or re-confirming the vulnerability. Go straight to extraction.
 
 Strategy:
-1. Use the provided attack vector to probe for flag data
-2. Try MANY variations systematically — don't give up after a few attempts
-3. Parse ALL responses carefully for flag patterns (FLAG{...}, flag=, secret=, etc.)
-4. Think creatively about where flags might be hidden
-
-Techniques to try (in order):
-1. Direct flag endpoints: /flag, /admin/flag, /api/flag, /secret, /api/secret, /env, /debug, /internal/flag
-2. Different internal hostnames: localhost, internal-api, api, app, backend, service, admin, flag-service, web, server
-3. Different ports: 80, 3000, 3001, 5000, 8000, 8080, 8888, 9000, 4000
-4. Path variations: /flag.txt, /flag.json, /flags, /admin/secrets, /api/admin/flag, /api/v1/flag, /api/internal/flag
-5. Method variations: GET, POST, PUT with different content types
-6. Query parameter probing: ?flag=true, ?debug=1, ?admin=1
-7. Header-based extraction: try different Host headers, X-Forwarded-For, etc.
-8. Response body parsing: check HTML comments, JSON nested fields, base64-encoded content, headers
-9. Environment variable extraction: /env, /debug/vars, /api/env, /proc/self/environ (via LFI)
-10. Cloud metadata: http://169.254.169.254/latest/meta-data/, http://metadata.google.internal/
+1. Start with SERVICE DISCOVERY — discover internal hostnames and services BEFORE brute-forcing paths on a single host
+2. Use the provided attack vector to probe for flag data across all discovered hosts
+3. Try MANY variations systematically — don't give up after a few attempts
+4. Parse ALL responses carefully for flag patterns (FLAG{...}, flag=, secret=, etc.)
+5. Think creatively about where flags might be hidden
 
 CRITICAL rules:
 - Use execute_command with curl for maximum control over requests (headers, methods, response parsing)
@@ -200,7 +190,9 @@ CRITICAL rules:
 - If SSRF: always try fetching through the SSRF endpoint, not directly
 - If you get HTML back, check for flags in comments, hidden inputs, data attributes, script tags
 - Work fast — try many approaches rather than spending time analyzing individual responses
-- When you find the flag, immediately call response with the flag value`;
+- When you find the flag, immediately call response with the flag value
+
+${loadTechnique("flag-extraction")}`;
 
 function buildPrompt(
   target: string,
