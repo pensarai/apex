@@ -36,6 +36,8 @@ import {
 } from "../../../core/operator";
 import { stepCountIs, type ModelMessage } from "ai";
 import { isTerminalCopyShortcut, shouldHandleOperatorCtrlC } from "./keyboard";
+import { existsSync, readFileSync } from "fs";
+import { join } from "path";
 
 type DashboardStatus = "idle" | "running" | "waiting" | "done";
 
@@ -452,6 +454,22 @@ export default function OperatorDashboard({
       // Deny all pending approvals on abort
       approvalGateRef.current.denyAll();
 
+      // Read back persisted messages so the next run has full context
+      // including the agent's work up to the last completed step.
+      if (session) {
+        try {
+          const messagesPath = join(session.rootPath, "messages.json");
+          if (existsSync(messagesPath)) {
+            const raw = JSON.parse(readFileSync(messagesPath, "utf-8"));
+            if (Array.isArray(raw) && raw.length > 0) {
+              conversationRef.current = raw as ModelMessage[];
+            }
+          }
+        } catch {
+          // Best-effort — keep whatever conversationRef already has
+        }
+      }
+
       setMessages((prev) => {
         // Mark any in-flight tool calls as failed
         const updated = prev.map((m) =>
@@ -469,7 +487,7 @@ export default function OperatorDashboard({
         ];
       });
     }
-  }, [setThinking, setIsExecuting]);
+  }, [session, setThinking, setIsExecuting]);
 
   // Toggle approval requirement at runtime
   const toggleApproval = useCallback(() => {

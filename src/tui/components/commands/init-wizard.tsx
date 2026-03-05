@@ -119,8 +119,8 @@ export default function InitWizard() {
         };
       }
 
-      // Create execution session
-      // const session = await Session.createExecution({
+      // Create session
+      // const session = await Session.createSessionDirs({
       //   target: state.target,
       //   objective: `Pentest: ${state.target}`,
       //   prefix: state.name || undefined,
