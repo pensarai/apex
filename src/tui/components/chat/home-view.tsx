@@ -17,8 +17,6 @@ import { useConfig } from "../../context/config";
 import { useRoute } from "../../context/route";
 import { PromptInput } from "../shared/prompt-input";
 import { useTheme } from "../../theme";
-import { sessions, type SessionConfig } from "../../../core/session";
-import { generateRandomName } from "../../../util/name";
 import { slugify } from "../../../core/skills";
 
 type ViewType = "home" | "config" | "chat";
@@ -40,49 +38,24 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
   const { promptRef } = useFocus();
 
   const [hintMessage, setHintMessage] = useState<string | null>(null);
-  const [isCreatingSession, setIsCreatingSession] = useState(false);
 
-  const launchOperatorWithMessage = useCallback(
-    async (
-      message: string,
-      options?: { requireApproval?: boolean },
-    ) => {
-      if (isCreatingSession) return;
-      setIsCreatingSession(true);
-      try {
-        const sessionConfig: SessionConfig = {
-          sessionType: "web-app",
-          mode: "operator",
-          operatorSettings: {
-            initialMode: "auto",
-            requireApproval: options?.requireApproval ?? true,
-            enableSuggestions: true,
-          },
-        };
-        const session = await sessions.create({
-          targets: [],
-          name: generateRandomName(),
-          config: sessionConfig,
-        });
-        route.navigate({
-          type: "operator",
-          sessionId: session.id,
-          initialMessage: message,
-        });
-      } catch {
-        setHintMessage("Failed to create session");
-        setIsCreatingSession(false);
-      }
+  const launchOperator = useCallback(
+    (message: string, options?: { requireApproval?: boolean }) => {
+      route.navigate({
+        type: "operator",
+        initialMessage: message,
+        initialConfig: { requireApproval: options?.requireApproval ?? true },
+      });
     },
-    [isCreatingSession, route],
+    [route],
   );
 
   const handleSubmit = useCallback(
     (value: string) => {
       if (!value.trim()) return;
-      launchOperatorWithMessage(value.trim());
+      launchOperator(value.trim());
     },
-    [launchOperatorWithMessage],
+    [launchOperator],
   );
 
   // Auto-clear hint after 3 seconds
@@ -94,7 +67,6 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
 
   const handleCommandExecute = useCallback(
     async (command: string) => {
-      // Split command into slug and args to detect --autopilot on skills
       const parts = command.trim().replace(/^\/+/, "").split(/\s+/);
       const slug = parts[0]?.toLowerCase() ?? "";
       const args = parts.slice(1);
@@ -102,14 +74,12 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
 
       const skillContent = resolveSkillContent(`/${slug}`);
       if (skillContent) {
-        await launchOperatorWithMessage(skillContent, {
-          requireApproval: !autopilot,
-        });
+        launchOperator(skillContent, { requireApproval: !autopilot });
         return;
       }
       await executeCommand(command);
     },
-    [resolveSkillContent, launchOperatorWithMessage, executeCommand],
+    [resolveSkillContent, launchOperator, executeCommand],
   );
 
   const skillItems = skills.slice(0, 5).map((s) => ({
@@ -195,11 +165,7 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
           minHeight={1}
           maxHeight={4}
           onSubmit={handleSubmit}
-          placeholder={
-            isCreatingSession
-              ? "Starting operator session..."
-              : "Type a message to start operator, or / for commands..."
-          }
+          placeholder="Type a message to start operator, or / for commands..."
           textColor={colors.text}
           focusedTextColor={colors.text}
           backgroundColor="transparent"

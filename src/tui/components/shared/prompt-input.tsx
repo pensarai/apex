@@ -100,9 +100,13 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
     const textareaRef = useRef<TextareaRenderable | null>(null);
     const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(-1);
 
-    // Refs to avoid stale closures in handleSubmit
+    // Refs to avoid stale closures in handleSubmit (textarea caches onSubmit)
     const selectedIndexRef = useRef(selectedSuggestionIndex);
     const suggestionsRef = useRef<AutocompleteOption[]>([]);
+    const onCommandExecuteRef = useRef(onCommandExecute);
+    onCommandExecuteRef.current = onCommandExecute;
+    const onSubmitRef = useRef(onSubmit);
+    onSubmitRef.current = onSubmit;
 
     // Filter suggestions using inputValue from context
     const suggestions = useMemo(() => {
@@ -201,13 +205,12 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
       }
     });
 
-    // Submit handler called by textarea's onSubmit
+    // Submit handler called by textarea's onSubmit.
+    // Uses refs for all callbacks because textarea caches onSubmit at mount.
     const handleSubmit = async () => {
-      // Read from refs to avoid stale closure
       const currentSuggestions = suggestionsRef.current;
       const currentSelectedIndex = selectedIndexRef.current;
 
-      // If a suggestion is selected, use it as the value to submit
       let valueToSubmit: string;
       if (currentSuggestions.length > 0 && currentSelectedIndex >= 0) {
         const selected = currentSuggestions[currentSelectedIndex];
@@ -223,17 +226,15 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
 
       if (!valueToSubmit) return;
 
-      // Handle commands
       if (enableCommands && valueToSubmit.startsWith("/")) {
-        await onCommandExecute?.(valueToSubmit);
+        await onCommandExecuteRef.current?.(valueToSubmit);
         setInputValue("");
         textareaRef.current?.setText("");
         setSelectedSuggestionIndex(-1);
         return;
       }
 
-      // Regular submit
-      onSubmit?.(valueToSubmit);
+      onSubmitRef.current?.(valueToSubmit);
     };
 
     // Content change syncs to context

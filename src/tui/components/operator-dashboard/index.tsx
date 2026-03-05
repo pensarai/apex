@@ -9,8 +9,13 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useKeyboard } from "@opentui/react";
 
-import { sessions, type SessionInfo } from "../../../core/session";
+import {
+  sessions,
+  type SessionInfo,
+  type SessionConfig,
+} from "../../../core/session";
 import { runOffensiveSecurityAgent } from "../../../core/api/offesecAgent";
+import { generateRandomName } from "../../../util/name";
 import { buildAuthConfig } from "../../../core/ai/utils";
 import { ALL_TOOL_NAMES } from "../../../core/agents/offSecAgent";
 import {
@@ -49,9 +54,11 @@ type DashboardStatus = "idle" | "running" | "waiting" | "done";
 export default function OperatorDashboard({
   sessionId,
   initialMessage,
+  initialConfig,
 }: {
-  sessionId: string;
+  sessionId?: string;
   initialMessage?: string;
+  initialConfig?: { requireApproval?: boolean };
 }) {
   const { colors } = useTheme();
   const route = useRoute();
@@ -64,7 +71,13 @@ export default function OperatorDashboard({
     resolveSkillContent,
     skills,
   } = useCommand();
-  const { stack, externalDialogOpen, replace: showDialog, clear: clearDialog, setSize: setDialogSize } = useDialog();
+  const {
+    stack,
+    externalDialogOpen,
+    replace: showDialog,
+    clear: clearDialog,
+    setSize: setDialogSize,
+  } = useDialog();
 
   const autocompleteOptions = useMemo(() => {
     const allowedCommands = new Set(["/create-skill", "/models"]);
@@ -147,64 +160,89 @@ export default function OperatorDashboard({
     };
   }, []);
 
-  // Load session on mount
+  // Load or create session on mount
   useEffect(() => {
     async function loadSession() {
       try {
-        const s = await sessions.get(sessionId);
+        let s: SessionInfo;
+
+        if (sessionId) {
+          s = await sessions.get(sessionId);
+        } else {
+          const requireApproval = initialConfig?.requireApproval ?? true;
+          const sessionConfig: SessionConfig = {
+            sessionType: "web-app",
+            mode: "operator",
+            operatorSettings: {
+              initialMode: "auto",
+              requireApproval,
+              enableSuggestions: true,
+            },
+          };
+          s = await sessions.create({
+            targets: [],
+            name: generateRandomName(),
+            config: sessionConfig,
+          });
+
+          const state = createInitialOperatorState("auto", requireApproval);
+          setOperatorState(state);
+          approvalGateRef.current.updateConfig({ requireApproval });
+        }
+
         setSession(s);
 
-        // Always attempt to load saved operator state
-        const hasState = sessions.hasOperatorState(s);
-        if (hasState) {
-          const savedState = await sessions.loadOperatorState(sessionId);
-          if (savedState) {
-            // Map persisted state to runtime operator state
-            setOperatorState((prev) => ({
-              ...prev,
-              mode: (savedState.mode as OperatorMode) || prev.mode,
-              requireApproval:
-                savedState.requireApproval ?? prev.requireApproval,
-              currentStage:
-                (savedState.currentStage as OperatorSessionState["currentStage"]) ||
-                prev.currentStage,
-            }));
-            approvalGateRef.current.updateConfig({
-              requireApproval: savedState.requireApproval ?? true,
-            });
+        // For existing sessions, attempt to load saved operator state
+        if (sessionId) {
+          const hasState = sessions.hasOperatorState(s);
+          if (hasState) {
+            const savedState = await sessions.loadOperatorState(sessionId);
+            if (savedState) {
+              setOperatorState((prev) => ({
+                ...prev,
+                mode: (savedState.mode as OperatorMode) || prev.mode,
+                requireApproval:
+                  savedState.requireApproval ?? prev.requireApproval,
+                currentStage:
+                  (savedState.currentStage as OperatorSessionState["currentStage"]) ||
+                  prev.currentStage,
+              }));
+              approvalGateRef.current.updateConfig({
+                requireApproval: savedState.requireApproval ?? true,
+              });
 
-            // Restore model messages and derive display messages
-            if (
-              Array.isArray(savedState.messages) &&
-              savedState.messages.length > 0
-            ) {
-              const modelMsgs = savedState.messages;
-              conversationRef.current = modelMsgs;
+              if (
+                Array.isArray(savedState.messages) &&
+                savedState.messages.length > 0
+              ) {
+                const modelMsgs = savedState.messages;
+                conversationRef.current = modelMsgs;
 
-              const uiMsgs = convertModelMessagesToUI(modelMsgs);
-              setMessages(
-                uiMsgs.map((m: UIMessage) => ({
-                  role: m.role,
-                  content: m.content,
-                  createdAt: m.createdAt,
-                  toolCallId: m.toolCallId,
-                  toolName: m.toolName,
-                  args: m.args,
-                  result: m.result,
-                  status: m.status,
-                })),
-              );
+                const uiMsgs = convertModelMessagesToUI(modelMsgs);
+                setMessages(
+                  uiMsgs.map((m: UIMessage) => ({
+                    role: m.role,
+                    content: m.content,
+                    createdAt: m.createdAt,
+                    toolCallId: m.toolCallId,
+                    toolName: m.toolName,
+                    args: m.args,
+                    result: m.result,
+                    status: m.status,
+                  })),
+                );
+              }
             }
+          } else if (s.config?.operatorSettings) {
+            const settings = s.config.operatorSettings;
+            const requireApproval = settings.requireApproval ?? true;
+            const initialState = createInitialOperatorState(
+              (settings.initialMode as OperatorMode) || "manual",
+              requireApproval,
+            );
+            setOperatorState(initialState);
+            approvalGateRef.current.updateConfig({ requireApproval });
           }
-        } else if (s.config?.operatorSettings) {
-          const settings = s.config.operatorSettings;
-          const requireApproval = settings.requireApproval ?? true;
-          const initialState = createInitialOperatorState(
-            (settings.initialMode as OperatorMode) || "manual",
-            requireApproval,
-          );
-          setOperatorState(initialState);
-          approvalGateRef.current.updateConfig({ requireApproval });
         }
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to load session");
@@ -611,29 +649,36 @@ export default function OperatorDashboard({
           />
         </box>
         <box marginTop={1} paddingLeft={2}>
-          <text fg={colors.textMuted}>
-            [Enter] confirm • [ESC] close
-          </text>
+          <text fg={colors.textMuted}>[Enter] confirm • [ESC] close</text>
         </box>
       </box>,
     );
-  }, [colors, model, setModel, isModelUserSelected, config, showDialog, clearDialog, setDialogSize]);
+  }, [
+    colors,
+    model,
+    setModel,
+    isModelUserSelected,
+    config,
+    showDialog,
+    clearDialog,
+    setDialogSize,
+  ]);
 
   const handleCommandExecute = useCallback(
     async (command: string) => {
-      // Split command into slug and args to detect --autopilot on skills
-      const parts = command.trim().replace(/^\/+/, "").split(/\s+/);
-      const slug = parts[0]?.toLowerCase() ?? "";
-      const args = parts.slice(1);
-      const autopilot = args.includes("--autopilot");
+      const commandLower = command.trim().replace(/^\/+/, "").toLowerCase();
 
       // /models — show model picker dialog inline
-      if (slug === "models" || slug === "model") {
+      if (commandLower === "models" || commandLower === "model") {
         showModelPicker();
         return;
       }
 
-      const skillContent = resolveSkillContent(`/${slug}`);
+      // Detect and strip --autopilot flag before resolving
+      const autopilot = command.includes("--autopilot");
+      const cleanedCommand = command.replace(/\s*--autopilot\s*/g, "").trim();
+
+      const skillContent = resolveSkillContent(cleanedCommand);
       if (skillContent) {
         if (autopilot) {
           approvalGateRef.current.updateConfig({ requireApproval: false });

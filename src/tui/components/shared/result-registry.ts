@@ -42,6 +42,39 @@ export function getResultSummary(
       // File system tools
       case "Read":
       case "read_file": {
+        if (typeof result === "object" && result !== null) {
+          const obj = result as Record<string, unknown>;
+          if (obj.success === false) {
+            return {
+              text: String(obj.error || "Failed to read file").slice(0, 120),
+              isError: true,
+            };
+          }
+          const filePath = String(obj.path || args?.path || "");
+          const content = typeof obj.content === "string" ? obj.content : "";
+          const totalLines = obj.totalLines
+            ? Number(obj.totalLines)
+            : content.split("\n").length;
+
+          if (content) {
+            const lines = content.split("\n");
+            const preview = lines.slice(0, 4).join("\n");
+            const suffix = lines.length > 4 ? `\n… (${totalLines} lines)` : "";
+            return {
+              text: preview + suffix,
+              isError: false,
+              label: `${totalLines} lines`,
+              styledText:
+                highlightCode(preview + suffix, filePath) ?? undefined,
+              fullText:
+                content.length > 400 ? content.slice(0, 2000) : undefined,
+            };
+          }
+          return {
+            text: `Read ${totalLines} lines`,
+            isError: false,
+          };
+        }
         if (typeof result === "string") {
           const lines = result.split("\n").length;
           return { text: `Read ${lines} lines`, isError: false };

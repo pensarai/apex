@@ -335,6 +335,7 @@ function CommandDisplay({
       <OperatorDashboard
         sessionId={route.data.sessionId}
         initialMessage={route.data.initialMessage}
+        initialConfig={route.data.initialConfig}
       />
     );
   }
