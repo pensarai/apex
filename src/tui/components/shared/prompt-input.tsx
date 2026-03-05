@@ -275,12 +275,12 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
               },
               {
                 action: "newline",
-                meta: true,
+                shift: true,
                 name: "return",
               },
               {
                 action: "newline",
-                meta: true,
+                shift: true,
                 name: "linefeed",
               },
             ]}
