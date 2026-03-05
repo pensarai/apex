@@ -1,0 +1,203 @@
+---
+title: "/providers"
+description: "Manage AI providers and configure API keys"
+---
+
+## Overview
+
+The `/providers` command opens the provider management interface where you can connect and configure AI providers for use with Apex. This is where you set up your API keys to enable AI-powered penetration testing.
+
+## Usage
+
+```bash
+/providers
+```
+
+## Supported Providers
+
+Apex supports the following AI providers:
+
+<CardGroup cols={2}>
+  <Card title="Anthropic" icon="sparkles">
+    **Recommended** - Claude Pro/Max or API key. Best performance for
+    penetration testing tasks.
+  </Card>
+  <Card title="OpenAI" icon="openai" iconType="brands">
+    GPT-4 and other OpenAI models.
+  </Card>
+  <Card title="OpenRouter" icon="route">
+    Access multiple AI models through one API. Great for flexibility and model
+    comparison.
+  </Card>
+  <Card title="AWS Bedrock" icon="aws" iconType="brands">
+    Amazon Bedrock AI models for enterprise deployments.
+  </Card>
+</CardGroup>
+
+<Callout intent="success">
+  **Anthropic is recommended** for optimal penetration testing performance.
+  Claude models provide superior reasoning capabilities for security testing.
+</Callout>
+
+## How It Works
+
+<Steps>
+  <Step title="Open Provider Selection">
+    Run `/providers` to open the provider selection interface
+  </Step>
+  <Step title="Choose Provider">
+    Use `↑/↓` arrows to navigate and `[Enter]` to select a provider
+  </Step>
+  <Step title="Enter API Key">
+    Input your API key for the selected provider
+  </Step>
+  <Step title="Select Model">
+    After configuring, you'll be redirected to `/models` to select a model
+  </Step>
+</Steps>
+
+## Provider Setup
+
+<AccordionGroup>
+  <Accordion title="Anthropic" icon="sparkles">
+    **Best for**: All penetration testing tasks
+    
+    ### Get Your API Key
+    1. Visit [console.anthropic.com](https://console.anthropic.com/)
+    2. Sign up or log in to your account
+    3. Navigate to API Keys section
+    4. Create a new API key
+    
+    ### Configure in Apex
+    1. Run `/providers`
+    2. Select "Anthropic"
+    3. Paste your API key
+    4. Press Enter to save
+    
+    <Callout intent="info">
+      Claude Pro/Max subscribers can use their subscription. API keys provide more flexibility for heavy usage.
+    </Callout>
+  </Accordion>
+
+<Accordion title="OpenAI" icon="openai" iconType="brands">
+  **Best for**: Users already invested in the OpenAI ecosystem ### Get Your API
+  Key 1. Visit [platform.openai.com](https://platform.openai.com/) 2. Navigate
+  to API Keys 3. Create a new secret key ### Configure in Apex 1. Run
+  `/providers` 2. Select "OpenAI" 3. Paste your API key 4. Press Enter to save
+</Accordion>
+
+<Accordion title="OpenRouter" icon="route">
+  **Best for**: Access to multiple models through a single API ### Get Your API
+  Key 1. Visit [openrouter.ai](https://openrouter.ai/) 2. Create an account 3.
+  Navigate to Keys section 4. Generate a new API key ### Configure in Apex 1.
+  Run `/providers` 2. Select "OpenRouter" 3. Paste your API key 4. Press Enter
+  to save
+  <Callout intent="info">
+    OpenRouter provides access to models from multiple providers including
+    Anthropic, OpenAI, Meta, and more through a unified API.
+  </Callout>
+</Accordion>
+
+  <Accordion title="AWS Bedrock" icon="aws" iconType="brands">
+    **Best for**: Enterprise deployments with existing AWS infrastructure
+    
+    ### Prerequisites
+    - AWS account with Bedrock access
+    - IAM permissions for Bedrock models
+    - Model access enabled in your region
+    
+    ### Get Your Credentials
+    1. Log in to AWS Console
+    2. Navigate to IAM
+    3. Create or use existing access keys
+    4. Ensure Bedrock permissions are attached
+    
+    ### Configure in Apex
+    1. Run `/providers`
+    2. Select "AWS Bedrock"
+    3. Enter your AWS credentials
+    4. Press Enter to save
+    
+    <Callout intent="warning">
+      Ensure your IAM role has permissions to invoke Bedrock models and that model access is enabled in your AWS region.
+    </Callout>
+  </Accordion>
+</AccordionGroup>
+
+## Keyboard Navigation
+
+| Key       | Action                     |
+| --------- | -------------------------- |
+| `[↑/↓]`   | Navigate between providers |
+| `[Enter]` | Select provider            |
+| `[ESC]`   | Close and return home      |
+
+## Provider Status
+
+In the provider selection screen, configured providers display a green checkmark (✓) indicating they're ready to use.
+
+## After Configuration
+
+Once you've configured a provider:
+
+1. You'll be automatically redirected to the `/models` command
+2. Select a model from your configured provider
+3. Start testing with `/init`
+
+## Quick Access
+
+You can also access providers from the models screen:
+
+- Press `Ctrl+P` while in `/models` to open provider management
+
+## Security Best Practices
+
+<Callout intent="warning">
+  **API Key Security**: - Never share your API keys - Rotate keys periodically -
+  Use separate keys for different environments - Monitor usage for unexpected
+  activity
+</Callout>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="API key not working" icon="key">
+    **Issue**: Provider shows configured but models won't load
+    
+    **Solutions**:
+    1. Verify the API key is correct (no extra spaces)
+    2. Check that your account has credits/access
+    3. Ensure the key has appropriate permissions
+    4. Try regenerating the key
+  </Accordion>
+
+<Accordion title="Provider not showing" icon="eye-slash">
+  **Issue**: Expected provider not in the list **Solutions**: 1. Update Apex to
+  the latest version 2. Restart Apex 3. Check if provider requires additional
+  setup
+</Accordion>
+
+  <Accordion title="AWS Bedrock errors" icon="aws" iconType="brands">
+    **Issue**: Cannot connect to AWS Bedrock
+    
+    **Solutions**:
+    1. Verify AWS credentials are correct
+    2. Check IAM permissions include Bedrock access
+    3. Ensure model access is enabled in your region
+    4. Verify your account has Bedrock quota
+  </Accordion>
+</AccordionGroup>
+
+## Related Commands
+
+<CardGroup cols={2}>
+  <Card title="/models" icon="microchip" href="/apex/commands/models">
+    Select AI model after configuring provider
+  </Card>
+  <Card title="/init" icon="play" href="/apex/commands/init">
+    Start a penetration test
+  </Card>
+  <Card title="/help" icon="circle-question" href="/apex/commands/help">
+    View all available commands
+  </Card>
+</CardGroup>
