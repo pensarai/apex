@@ -1,6 +1,8 @@
-import { readFileSync, readdirSync, statSync } from "fs";
+import { readFileSync, readdirSync, statSync, existsSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
+
+import bundledTechniques from "./generated-techniques-bundle.json";
 
 const techniquesDir = dirname(fileURLToPath(import.meta.url));
 
@@ -62,27 +64,52 @@ function parseFrontmatter(content: string): {
 let _catalog: TechniqueMetadata[] | null = null;
 let _bodies: Map<string, string> | null = null;
 
+function loadFromFilesystem(): boolean {
+  try {
+    if (!existsSync(techniquesDir)) return false;
+    const entries = readdirSync(techniquesDir);
+
+    for (const entry of entries) {
+      const entryPath = join(techniquesDir, entry);
+      if (!statSync(entryPath).isDirectory()) continue;
+
+      const skillPath = join(entryPath, "SKILL.md");
+      try {
+        const content = readFileSync(skillPath, "utf-8");
+        const { metadata, body } = parseFrontmatter(content);
+        _catalog!.push(metadata);
+        _bodies!.set(metadata.name, body);
+      } catch {
+        // Skip directories without valid SKILL.md
+      }
+    }
+    return _catalog!.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+function loadFromBundle(): void {
+  for (const technique of bundledTechniques) {
+    try {
+      const { metadata, body } = parseFrontmatter(technique.content);
+      _catalog!.push(metadata);
+      _bodies!.set(metadata.name, body);
+    } catch {
+      // Skip techniques with invalid frontmatter
+    }
+  }
+}
+
 function ensureLoaded(): void {
   if (_catalog) return;
 
   _catalog = [];
   _bodies = new Map();
 
-  const entries = readdirSync(techniquesDir);
-
-  for (const entry of entries) {
-    const entryPath = join(techniquesDir, entry);
-    if (!statSync(entryPath).isDirectory()) continue;
-
-    const skillPath = join(entryPath, "SKILL.md");
-    try {
-      const content = readFileSync(skillPath, "utf-8");
-      const { metadata, body } = parseFrontmatter(content);
-      _catalog.push(metadata);
-      _bodies.set(metadata.name, body);
-    } catch {
-      // Skip directories without valid SKILL.md
-    }
+  // Try filesystem first (works in dev mode), fall back to embedded bundle (compiled binary)
+  if (!loadFromFilesystem()) {
+    loadFromBundle();
   }
 }
 
