@@ -23,5 +23,7 @@ export function shouldHandleOperatorCtrlC(
 ): boolean {
   if (isTerminalCopyShortcut(key)) return false;
   if (!key.ctrl || key.name !== "c") return false;
-  return status === "running" || status === "waiting" || inputValue.trim() !== "";
+  return (
+    status === "running" || status === "waiting" || inputValue.trim() !== ""
+  );
 }

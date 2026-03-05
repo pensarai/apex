@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  isTerminalCopyShortcut,
-  shouldHandleOperatorCtrlC,
-} from "./keyboard";
+import { isTerminalCopyShortcut, shouldHandleOperatorCtrlC } from "./keyboard";
 
 describe("operator dashboard keyboard helpers", () => {
   it("detects terminal copy shortcuts", () => {

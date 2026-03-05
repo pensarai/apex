@@ -35,10 +35,7 @@ import {
   type OperatorSessionState,
 } from "../../../core/operator";
 import { stepCountIs, type ModelMessage } from "ai";
-import {
-  isTerminalCopyShortcut,
-  shouldHandleOperatorCtrlC,
-} from "./keyboard";
+import { isTerminalCopyShortcut, shouldHandleOperatorCtrlC } from "./keyboard";
 
 type DashboardStatus = "idle" | "running" | "waiting" | "done";
 
