@@ -14,11 +14,6 @@ type ToolSummaryFn = (args: Record<string, unknown>) => string;
  */
 const TOOL_SUMMARY_MAP: Record<string, ToolSummaryFn> = {
   // HTTP/Network tools
-  http_request: (args) => {
-    const method = ((args.method as string) || "GET").toUpperCase();
-    const url = (args.url as string) || "";
-    return `${method} ${url}`;
-  },
   crawl: (args) => `crawl ${args.url || args.target || ""}`,
 
   // Shell/Command tools

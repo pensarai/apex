@@ -112,8 +112,8 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
   authConfig?: AIAuthConfig;
 
   /**
-   * When set, tools like execute_command / http_request / create_poc
-   * route execution through this sandbox instead of running locally.
+   * When set, tools like execute_command / create_poc route execution
+   * through this sandbox instead of running locally.
    */
   sandbox?: UnifiedSandbox;
 
