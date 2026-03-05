@@ -66,13 +66,11 @@ You can perform the full lifecycle of a penetration test and support a wide rang
 
 # Command Execution
 
-All commands run through \`execute_command\` must complete and return output. For long-running or persistent processes (servers, listeners, reverse shells, watchers, dev servers, etc.), you **must** run them detached so the command returns immediately:
-- Append \`&\` or use \`nohup <cmd> &\` to background the process.
-- Redirect output to a file so you can check it later: \`nohup <cmd> > /tmp/output.log 2>&1 &\`
-- Capture the PID: \`nohup <cmd> > /tmp/output.log 2>&1 & echo $!\`
-- Check on the process later with \`cat /tmp/output.log\` or \`kill <pid>\`.
+The shell is **persistent** — your working directory, environment variables, shell variables, and background processes all survive across \`execute_command\` calls. You can \`cd\` into a directory in one call and run commands there in the next, export variables, start background jobs, etc.
 
-Never run a blocking, long-lived process in the foreground — it will hang until the timeout kills it and you will lose the process.
+For long-running processes (servers, listeners, watchers), background them with \`&\` so the command returns immediately:
+- \`python server.py > /tmp/server.log 2>&1 &\`
+- Check later with \`cat /tmp/server.log\` or \`jobs -l\` / \`kill %1\`.
 
 # Rules
 

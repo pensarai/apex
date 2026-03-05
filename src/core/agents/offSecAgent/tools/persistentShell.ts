@@ -1,0 +1,208 @@
+import { spawn, type ChildProcess } from "child_process";
+import { randomBytes } from "crypto";
+
+/** Hard memory safety cap — prevents OOM on pathological output (5 MB). */
+const MAX_BUFFER = 5_000_000;
+
+export interface ShellExecuteResult {
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+}
+
+/**
+ * A long-lived bash process that persists across execute_command calls.
+ *
+ * Commands are sent to stdin and delimited with unique markers so the
+ * caller can extract per-command stdout, stderr, and the exit code.
+ * Background processes (`&`) survive between calls because the parent
+ * shell never exits.
+ */
+export class PersistentShell {
+  private proc: ChildProcess | null = null;
+  private alive = false;
+  private disposed = false;
+
+  private spawn(): void {
+    if (this.disposed) return;
+
+    const shell =
+      process.platform === "win32" ? "cmd" : "bash";
+    const args =
+      process.platform === "win32" ? [] : ["--norc", "--noprofile"];
+
+    this.proc = spawn(shell, args, {
+      stdio: ["pipe", "pipe", "pipe"],
+      detached: false,
+      env: { ...process.env, PS1: "" },
+    });
+
+    this.alive = true;
+
+    this.proc.on("close", () => {
+      this.alive = false;
+      this.proc = null;
+    });
+
+    this.proc.on("error", () => {
+      this.alive = false;
+      this.proc = null;
+    });
+  }
+
+  private ensureAlive(): void {
+    if (!this.alive || !this.proc) {
+      this.spawn();
+    }
+  }
+
+  async execute(
+    command: string,
+    timeoutSeconds?: number,
+  ): Promise<ShellExecuteResult> {
+    if (this.disposed) {
+      return { stdout: "", stderr: "Shell has been disposed", exitCode: 1 };
+    }
+
+    this.ensureAlive();
+
+    const proc = this.proc;
+    if (!proc || !proc.stdin || !proc.stdout || !proc.stderr) {
+      return { stdout: "", stderr: "Failed to spawn shell", exitCode: 1 };
+    }
+
+    const marker = `__APEX_${randomBytes(8).toString("hex")}__`;
+    const exitMarkerPrefix = `${marker}_EXIT_`;
+
+    return new Promise<ShellExecuteResult>((resolve) => {
+      let stdout = "";
+      let stderr = "";
+      let resolved = false;
+      let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
+
+      const safeResolve = (result: ShellExecuteResult) => {
+        if (resolved) return;
+        resolved = true;
+        if (timeoutTimer) clearTimeout(timeoutTimer);
+        proc.stdout!.removeListener("data", onStdout);
+        proc.stderr!.removeListener("data", onStderr);
+        resolve(result);
+      };
+
+      const onStdout = (data: Buffer) => {
+        stdout += data.toString();
+
+        const markerIdx = stdout.indexOf(exitMarkerPrefix);
+        if (markerIdx === -1) return;
+
+        const afterPrefix = stdout.substring(
+          markerIdx + exitMarkerPrefix.length,
+        );
+        const nlIdx = afterPrefix.indexOf("\n");
+        const exitStr = nlIdx >= 0 ? afterPrefix.substring(0, nlIdx) : afterPrefix;
+        const exitCode = parseInt(exitStr, 10);
+
+        const commandOutput = stdout.substring(0, markerIdx);
+
+        safeResolve({
+          stdout: commandOutput || "(no output)",
+          stderr: stderr || "",
+          exitCode: isNaN(exitCode) ? 1 : exitCode,
+        });
+      };
+
+      const onStderr = (data: Buffer) => {
+        stderr += data.toString();
+        if (stderr.length > MAX_BUFFER) {
+          stderr = stderr.substring(0, MAX_BUFFER) + "...\n(stderr truncated)";
+        }
+      };
+
+      proc.stdout!.on("data", onStdout);
+      proc.stderr!.on("data", onStderr);
+
+      const onClose = () => {
+        safeResolve({
+          stdout: stdout || "(no output)",
+          stderr: stderr || "",
+          exitCode: 1,
+        });
+      };
+      proc.once("close", onClose);
+
+      if (timeoutSeconds != null && timeoutSeconds > 0) {
+        timeoutTimer = setTimeout(() => {
+          if (resolved) return;
+          // Try to kill the foreground job without killing the shell itself
+          try {
+            proc.stdin!.write("kill %% 2>/dev/null\n");
+          } catch {
+            // stdin may be closed
+          }
+          setTimeout(() => {
+            safeResolve({
+              stdout: stdout || "(no output)",
+              stderr: stderr || "",
+              exitCode: 124,
+            });
+          }, 1_000);
+        }, timeoutSeconds * 1_000);
+      }
+
+      // Wrap command: capture stderr to temp file, echo exit marker on stdout.
+      // The subshell (...) isolates the command so `set -e` etc. don't kill
+      // our marker echo, and stderr redirection is clean.
+      const wrapped = [
+        `__APEX_ERR=$(mktemp 2>/dev/null || echo /tmp/.apex_err_$$)`,
+        `( ${command} ) 2>"$__APEX_ERR"`,
+        `__APEX_EC=$?`,
+        `cat "$__APEX_ERR" >&2`,
+        `rm -f "$__APEX_ERR"`,
+        `echo "${exitMarkerPrefix}$__APEX_EC"`,
+        ``,
+      ].join("\n");
+
+      try {
+        proc.stdin!.write(wrapped);
+      } catch {
+        safeResolve({
+          stdout: "",
+          stderr: "Failed to write to shell stdin",
+          exitCode: 1,
+        });
+      }
+    });
+  }
+
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+
+    if (this.proc) {
+      try {
+        this.proc.stdin?.write("exit\n");
+      } catch {
+        // ignore
+      }
+
+      const p = this.proc;
+      setTimeout(() => {
+        try {
+          p.kill("SIGTERM");
+        } catch {
+          // already dead
+        }
+        setTimeout(() => {
+          try {
+            p.kill("SIGKILL");
+          } catch {
+            // already dead
+          }
+        }, 2_000);
+      }, 1_000);
+    }
+
+    this.alive = false;
+    this.proc = null;
+  }
+}

@@ -63,7 +63,7 @@ export function useSessionsList() {
       const enriched: EnrichedSession[] = [];
       for await (const session of sessionModule.list()) {
         const hasOperatorState = existsSync(
-          join(session.rootPath, "operator-state.json"),
+          join(session.rootPath, "messages.json"),
         );
         const findingsCount = countFindings(session.findingsPath);
         const hasReport = checkHasReport(session.rootPath);

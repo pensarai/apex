@@ -2,7 +2,7 @@ import type { ModelMessage } from "ai";
 import z from "zod";
 import path from "path";
 import os from "os";
-import { existsSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import * as Identifier from "../id/id";
 import { getCurrentVersion } from "../installation";
 import * as Storage from "../storage";
@@ -553,19 +553,6 @@ export interface PersistedOperatorState {
 }
 
 /**
- * Save operator dashboard state for later resumption
- */
-export async function saveOperatorState(
-  sessionId: string,
-  state: PersistedOperatorState,
-): Promise<void> {
-  const session = await get(sessionId);
-  const statePath = path.join(session.rootPath, "operator-state.json");
-  writeFileSync(statePath, JSON.stringify(state, null, 2));
-  console.info("saved operator state for session", sessionId);
-}
-
-/**
  * Load operator dashboard state for session resumption
  */
 export async function loadOperatorState(
@@ -573,7 +560,7 @@ export async function loadOperatorState(
 ): Promise<PersistedOperatorState | null> {
   try {
     const session = await get(sessionId);
-    const statePath = path.join(session.rootPath, "operator-state.json");
+    const statePath = path.join(session.rootPath, "messages.json");
     if (!existsSync(statePath)) return null;
     const data = readFileSync(statePath, "utf-8");
     return JSON.parse(data) as PersistedOperatorState;
@@ -587,7 +574,7 @@ export async function loadOperatorState(
  * Check if a session has saved operator state
  */
 export function hasOperatorState(session: SessionInfo): boolean {
-  const statePath = path.join(session.rootPath, "operator-state.json");
+  const statePath = path.join(session.rootPath, "messages.json");
   return existsSync(statePath);
 }
 
@@ -686,7 +673,6 @@ export const sessions = {
   remove,
   updateMessage,
   removeMessage,
-  saveOperatorState,
   loadOperatorState,
   hasOperatorState,
   updateOperatorSettings,

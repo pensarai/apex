@@ -425,11 +425,11 @@ describe("loadSubagents manifest merge", () => {
 
 describe("operator state persistence", () => {
   // These tests verify the roundtrip of model messages through the
-  // operator-state.json file. The persisted state stores a single `messages`
+  // messages.json file. The persisted state stores a single `messages`
   // field containing raw AI SDK model messages. Display messages are derived
   // on resume via convertModelMessagesToUI.
 
-  const STATE_FILE = "operator-state.json";
+  const STATE_FILE = "messages.json";
 
   function writeOperatorState(
     rootPath: string,

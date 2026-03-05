@@ -1,5 +1,6 @@
 import { streamResponse } from "../../ai";
 import type {
+  ModelMessage,
   StreamTextResult,
   StopCondition,
   TextStreamPart,
@@ -9,6 +10,7 @@ import { hasToolCall } from "ai";
 import type { OffensiveSecurityAgentInput, ConsumeCallbacks } from "./types";
 import { createAllTools, EMAIL_TOOL_NAMES_ACTIVE } from "./tools";
 import { createResponseTool, RESPONSE_TOOL_NAME } from "./tools/response";
+import { PersistentShell } from "./tools/persistentShell";
 import { DEFAULT_SYSTEM_PROMPT } from "./prompt";
 import type { ApprovalGate } from "../../operator";
 import { ApprovalDeniedError } from "../../operator";
@@ -60,8 +62,25 @@ export class OffensiveSecurityAgent<TResult = void> {
   /** Identifier for this agent when it is running as a subagent. */
   private readonly subagentId?: string;
 
+  /** Persistent shell for local-mode command execution; disposed on consume() completion. */
+  private readonly persistentShell?: PersistentShell;
+
   constructor(input: OffensiveSecurityAgentInput<TResult>) {
     this.subagentId = input.subagentId;
+
+    // -- Persistent shell (local mode only) -----------------------------------
+    if (!input.sandbox) {
+      this.persistentShell = new PersistentShell();
+
+      if (input.abortSignal) {
+        const shell = this.persistentShell;
+        input.abortSignal.addEventListener(
+          "abort",
+          () => shell.dispose(),
+          { once: true },
+        );
+      }
+    }
 
     // -- Tools ----------------------------------------------------------------
     const credentialManager =
@@ -78,6 +97,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       sandbox: input.sandbox,
       findingsRegistry: input.findingsRegistry,
       credentialManager,
+      persistentShell: this.persistentShell,
     });
 
     let tools: ToolSet = input.extraTools
@@ -143,6 +163,10 @@ export class OffensiveSecurityAgent<TResult = void> {
     }
     const messagesPath = join(messagesDir, "messages.json");
 
+    const initialMessages: ModelMessage[] = input.messages
+      ? [...input.messages]
+      : [{ role: "user" as const, content: [{ type: "text", text: input.prompt }] }];
+
     // -- Stream ---------------------------------------------------------------
     this.streamResult = streamResponse({
       prompt: input.prompt,
@@ -155,9 +179,10 @@ export class OffensiveSecurityAgent<TResult = void> {
       toolChoice: "auto",
       onStepFinish: (event) => {
         try {
+          const allMessages = [...initialMessages, ...event.response.messages];
           writeFileSync(
             messagesPath,
-            JSON.stringify(event.response.messages, null, 2),
+            JSON.stringify(allMessages, null, 2),
           );
         } catch {
           // Best-effort persistence — don't break the agent loop
@@ -243,6 +268,8 @@ export class OffensiveSecurityAgent<TResult = void> {
           break;
       }
     }
+
+    this.persistentShell?.dispose();
 
     if (this.resolveResult) {
       return this.resolveResult(this.streamResult);

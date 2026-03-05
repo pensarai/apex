@@ -388,27 +388,6 @@ export default function OperatorDashboard({
           setThinking(false);
           setIsExecuting(false);
           abortControllerRef.current = null;
-
-          // Persist operator state for session resume
-          if (session) {
-            sessions
-              .saveOperatorState(session.id, {
-                mode: operatorState.mode,
-                requireApproval: operatorState.requireApproval,
-                currentStage: operatorState.currentStage,
-                messages: conversationRef.current,
-                attackSurface: [],
-                credentials: [],
-                verifiedVulns: [],
-                targetState: null,
-                hypotheses: [],
-                evidence: [],
-                actionHistory: [],
-                pausedAt: new Date().toISOString(),
-                lastRunId: session.id,
-              })
-              .catch(console.error);
-          }
         }
       }
     },

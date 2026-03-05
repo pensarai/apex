@@ -5,6 +5,7 @@ import type { FindingsRegistry } from "../../../findings/registry";
 import type { SessionInfo } from "../../../session";
 
 import type { ConsumeCallbacks, SubagentConsumeCallbacks } from "../types";
+import type { PersistentShell } from "./persistentShell";
 import type { UnifiedSandbox } from "./sandbox";
 
 /**
@@ -51,4 +52,11 @@ export type ToolContext = {
    * credential IDs to full secrets without the agent ever seeing them.
    */
   credentialManager?: CredentialManager;
+
+  /**
+   * Long-lived bash process shared across execute_command calls.
+   * Environment variables, working directory, and background processes
+   * persist between invocations. Only used in local (non-sandbox) mode.
+   */
+  persistentShell?: PersistentShell;
 };
