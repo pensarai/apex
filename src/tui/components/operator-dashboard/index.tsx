@@ -311,11 +311,13 @@ export default function OperatorDashboard({
         { role: "user", content: prompt, createdAt: new Date() },
       ]);
 
-      // Build messages array — append user turn to conversation history
+      // Build messages array — append user turn to conversation history.
+      // Update conversationRef eagerly so the user turn survives an abort.
       const nextMessages: ModelMessage[] = [
         ...conversationRef.current,
         { role: "user", content: prompt },
       ];
+      conversationRef.current = nextMessages;
 
       try {
         const streamResult = await runOffensiveSecurityAgent({
@@ -471,14 +473,22 @@ export default function OperatorDashboard({
       // Deny all pending approvals on abort
       approvalGateRef.current.denyAll();
 
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "system",
-          content: "Agent stopped by user.",
-          createdAt: new Date(),
-        },
-      ]);
+      setMessages((prev) => {
+        // Mark any in-flight tool calls as failed
+        const updated = prev.map((m) =>
+          isToolMessage(m) && m.status === "pending"
+            ? { ...m, status: "error" as const, result: "Cancelled by user" }
+            : m,
+        );
+        return [
+          ...updated,
+          {
+            role: "system" as const,
+            content: "Agent stopped by user.",
+            createdAt: new Date(),
+          },
+        ];
+      });
     }
   }, [setThinking, setIsExecuting]);
 

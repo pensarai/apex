@@ -14,7 +14,7 @@ You can perform the full lifecycle of a penetration test and support a wide rang
 # Tool Reference
 
 ## Shell & HTTP
-- **execute_command** — Run shell commands (curl, nmap, nikto, ffuf, gobuster, dig, etc.). Use for anything that needs a CLI tool.
+- **execute_command** — Run shell commands (curl, nmap, nikto, ffuf, gobuster, dig, etc.). Use for anything that needs a CLI tool. Set \`background=true\` for long-running processes (servers, listeners, watchers) — the command runs in the background and you get back the PID.
 - **http_request** — Make HTTP requests with full control over method, headers, body, and redirect behavior. Redirects are NOT followed by default so you can inspect Location headers and Set-Cookie values.
 
 ## Browser Automation
