@@ -298,8 +298,12 @@ export function createPensarModel(
                     controller.enqueue({ type: "stream-start", warnings: [] });
                     startEmitted = true;
                   }
-                  const msg = parsed.message as Record<string, unknown> | undefined;
-                  const usage = msg?.usage as Record<string, number> | undefined;
+                  const msg = parsed.message as
+                    | Record<string, unknown>
+                    | undefined;
+                  const usage = msg?.usage as
+                    | Record<string, number>
+                    | undefined;
                   if (usage?.input_tokens) {
                     inputTokens = usage.input_tokens;
                   }
@@ -311,11 +315,16 @@ export function createPensarModel(
                     controller.enqueue({ type: "stream-start", warnings: [] });
                     startEmitted = true;
                   }
-                  const cb = parsed.content_block as Record<string, unknown> | undefined;
+                  const cb = parsed.content_block as
+                    | Record<string, unknown>
+                    | undefined;
                   const cbType = cb?.type as string | undefined;
                   if (cbType === "text") {
                     activeTextId = `text-${Date.now()}-${parsed.index}`;
-                    controller.enqueue({ type: "text-start", id: activeTextId });
+                    controller.enqueue({
+                      type: "text-start",
+                      id: activeTextId,
+                    });
                   } else if (cbType === "tool_use") {
                     activeToolId = (cb?.id as string) ?? `tool-${Date.now()}`;
                     activeToolName = (cb?.name as string) ?? "unknown";
@@ -330,7 +339,9 @@ export function createPensarModel(
                 }
 
                 case "content_block_delta": {
-                  const delta = parsed.delta as Record<string, unknown> | undefined;
+                  const delta = parsed.delta as
+                    | Record<string, unknown>
+                    | undefined;
                   const deltaType = delta?.type as string | undefined;
                   if (deltaType === "text_delta" && activeTextId) {
                     controller.enqueue({
@@ -355,7 +366,10 @@ export function createPensarModel(
                     controller.enqueue({ type: "text-end", id: activeTextId });
                     activeTextId = null;
                   } else if (activeToolId && activeToolName) {
-                    controller.enqueue({ type: "tool-input-end", id: activeToolId });
+                    controller.enqueue({
+                      type: "tool-input-end",
+                      id: activeToolId,
+                    });
                     controller.enqueue({
                       type: "tool-call",
                       toolCallId: activeToolId,
@@ -370,12 +384,16 @@ export function createPensarModel(
                 }
 
                 case "message_delta": {
-                  const delta = parsed.delta as Record<string, unknown> | undefined;
+                  const delta = parsed.delta as
+                    | Record<string, unknown>
+                    | undefined;
                   const stopReason = delta?.stop_reason as string | undefined;
                   if (stopReason) {
                     finishReason = mapStopReason(stopReason);
                   }
-                  const usage = parsed.usage as Record<string, number> | undefined;
+                  const usage = parsed.usage as
+                    | Record<string, number>
+                    | undefined;
                   if (usage?.output_tokens) {
                     outputTokens = usage.output_tokens;
                   }
@@ -389,7 +407,9 @@ export function createPensarModel(
               }
             }
 
-            log(`  stream done: ${finishReason}, ${inputTokens}in/${outputTokens}out`);
+            log(
+              `  stream done: ${finishReason}, ${inputTokens}in/${outputTokens}out`,
+            );
 
             controller.enqueue({
               type: "finish",
