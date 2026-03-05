@@ -1,0 +1,91 @@
+instances:
+  - url: pensar.docs.buildwithfern.com/apex
+    custom-domain: docs.pensar.dev/apex
+
+experimental:
+  basepath-aware: true
+
+title: Pensar Apex
+
+metadata:
+  og:site_name: "Pensar Apex Documentation"
+  og:title: "Pensar Apex | Documentation"
+  og:description: "AI-powered penetration testing CLI."
+  og:url: "https://docs.pensar.dev/apex"
+  og:image: "https://pensar-brand-assets.s3.us-east-1.amazonaws.com/docs-og-image.png"
+  og:image:width: 1200
+  og:image:height: 630
+  og:locale: "en_US"
+  twitter:title: "Pensar Apex Documentation"
+  twitter:description: "AI-powered penetration testing CLI."
+  twitter:handle: "@ai_pensar"
+  twitter:image: "https://pensar-brand-assets.s3.us-east-1.amazonaws.com/docs-og-image.png"
+  twitter:site: "@ai_pensar"
+  twitter:card: "summary_large_image"
+
+layout:
+  searchbar-placement: header
+  page-width: full
+
+tabs:
+  blog:
+    display-name: Blog
+    icon: fa-regular fa-newspaper
+    href: https://pensarai.com/blog
+  apex:
+    display-name: Apex
+    icon: fa-regular fa-laptop
+    slug: ""
+  console:
+    display-name: Console
+    icon: fa-regular fa-book
+    href: https://docs.pensar.dev/console
+
+navigation:
+  - tab: blog
+    layout:
+  - tab: apex
+    layout:
+      - section: Overview
+        contents:
+          - page: Introduction
+            path: ./docs/intro.mdx
+          - page: Getting Started
+            path: ./docs/getting-started.mdx
+      - section: Commands
+        contents:
+          - page: /help
+            path: ./docs/commands/help.mdx
+          - page: /init
+            path: ./docs/commands/init.mdx
+          - page: /models
+            path: ./docs/commands/models.mdx
+          - page: /providers
+            path: ./docs/commands/providers.mdx
+  - tab: console
+    layout:
+
+navbar-links:
+  - type: secondary
+    text: Support
+    url: mailto:team@pensarai.com
+  - type: filled
+    rightIcon: arrow-right
+    text: Console
+    url: https://console.pensar.dev
+
+colors:
+  accentPrimary:
+    dark: "#15803D"
+    light: "#16A34A"
+  background:
+    dark: "#000000"
+    light: "#ffffff"
+
+logo:
+  dark: docs/assets/logo/dark.svg
+  light: docs/assets/logo/light.svg
+  height: 40
+  href: https://console.pensar.dev
+
+favicon: docs/assets/favicon.svg
