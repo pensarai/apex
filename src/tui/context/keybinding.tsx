@@ -9,7 +9,6 @@ import {
   type KeybindingDependencies,
   type KeybindingEntry,
 } from "../keybindings";
-import { useInput } from "./input";
 import { useFocus } from "./focus";
 import { useDialog } from "./dialog";
 
@@ -36,7 +35,6 @@ export function KeybindingProvider({
   deps: ContextDeps;
 }) {
   const { promptRef, refocusPrompt } = useFocus();
-  const { isInputEmpty } = useInput();
   const { setExternalDialogOpen } = useDialog();
 
   const registry = createKeybindings({
@@ -62,7 +60,10 @@ export function KeybindingProvider({
             const isInputFocused =
               textareaRef && !textareaRef.isDestroyed && textareaRef.focused;
 
-            if (!isInputFocused || !isInputEmpty) {
+            const actualValue = promptRef.current?.getValue() ?? "";
+            const isPromptEmpty = actualValue.trim().length === 0;
+
+            if (!isInputFocused || !isPromptEmpty) {
               continue;
             }
           }
