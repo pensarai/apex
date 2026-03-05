@@ -270,9 +270,18 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
                 name: "return",
               },
               {
+                action: "submit",
+                name: "linefeed",
+              },
+              {
                 action: "newline",
                 meta: true,
                 name: "return",
+              },
+              {
+                action: "newline",
+                meta: true,
+                name: "linefeed",
               },
             ]}
             onContentChange={handleContentChange}
