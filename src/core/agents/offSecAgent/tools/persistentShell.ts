@@ -75,6 +75,7 @@ export class PersistentShell {
     return new Promise<ShellExecuteResult>((resolve) => {
       let stdout = "";
       let stderr = "";
+      let stdoutTruncated = false;
       let resolved = false;
       let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -91,23 +92,32 @@ export class PersistentShell {
         stdout += data.toString();
 
         const markerIdx = stdout.indexOf(exitMarkerPrefix);
-        if (markerIdx === -1) return;
+        if (markerIdx !== -1) {
+          const afterPrefix = stdout.substring(
+            markerIdx + exitMarkerPrefix.length,
+          );
+          const nlIdx = afterPrefix.indexOf("\n");
+          const exitStr =
+            nlIdx >= 0 ? afterPrefix.substring(0, nlIdx) : afterPrefix;
+          const exitCode = parseInt(exitStr, 10);
 
-        const afterPrefix = stdout.substring(
-          markerIdx + exitMarkerPrefix.length,
-        );
-        const nlIdx = afterPrefix.indexOf("\n");
-        const exitStr =
-          nlIdx >= 0 ? afterPrefix.substring(0, nlIdx) : afterPrefix;
-        const exitCode = parseInt(exitStr, 10);
+          let commandOutput = stdout.substring(0, markerIdx);
+          if (stdoutTruncated) {
+            commandOutput = "(stdout truncated)...\n" + commandOutput;
+          }
 
-        const commandOutput = stdout.substring(0, markerIdx);
+          safeResolve({
+            stdout: commandOutput || "(no output)",
+            stderr: stderr || "",
+            exitCode: isNaN(exitCode) ? 1 : exitCode,
+          });
+          return;
+        }
 
-        safeResolve({
-          stdout: commandOutput || "(no output)",
-          stderr: stderr || "",
-          exitCode: isNaN(exitCode) ? 1 : exitCode,
-        });
+        if (stdout.length > MAX_BUFFER) {
+          stdout = stdout.substring(stdout.length - MAX_BUFFER);
+          stdoutTruncated = true;
+        }
       };
 
       const onStderr = (data: Buffer) => {
