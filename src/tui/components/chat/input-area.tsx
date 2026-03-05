@@ -51,6 +51,8 @@ export interface InputAreaProps {
   enableCommands?: boolean;
   /** Handler for slash-command execution */
   onCommandExecute?: (command: string) => Promise<void>;
+  /** Command history for up/down arrow navigation */
+  commandHistory?: string[];
 }
 
 /**
@@ -72,6 +74,7 @@ function NormalInputAreaInner({
   autocompleteOptions = [],
   enableCommands = false,
   onCommandExecute,
+  commandHistory = [],
 }: Omit<
   InputAreaProps,
   "pendingApproval" | "onApprove" | "onAutoApprove" | "lastDeclineNote"
@@ -134,6 +137,7 @@ function NormalInputAreaInner({
           autocompleteOptions={autocompleteOptions}
           enableCommands={enableCommands}
           onCommandExecute={onCommandExecute}
+          commandHistory={commandHistory}
         />
       </box>
 
@@ -200,6 +204,7 @@ export function InputArea(props: InputAreaProps) {
     autocompleteOptions,
     enableCommands,
     onCommandExecute,
+    commandHistory,
     ...normalProps
   } = props;
 
@@ -229,6 +234,7 @@ export function InputArea(props: InputAreaProps) {
         autocompleteOptions={autocompleteOptions}
         enableCommands={enableCommands}
         onCommandExecute={onCommandExecute}
+        commandHistory={commandHistory}
         {...normalProps}
       />
     </InputProvider>

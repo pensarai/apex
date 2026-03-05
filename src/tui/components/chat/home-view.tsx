@@ -19,6 +19,9 @@ import { PromptInput } from "../shared/prompt-input";
 import { useTheme } from "../../theme";
 import { slugify } from "../../../core/skills";
 
+// Persists across re-mounts so history survives navigating away and back
+const homeCommandHistory: string[] = [];
+
 type ViewType = "home" | "config" | "chat";
 
 interface HomeViewProps {
@@ -50,12 +53,22 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
     [route],
   );
 
+  const [, forceUpdate] = useState(0);
+
+  const pushHistory = useCallback((entry: string) => {
+    if (homeCommandHistory[homeCommandHistory.length - 1] !== entry) {
+      homeCommandHistory.push(entry);
+      forceUpdate((n) => n + 1);
+    }
+  }, []);
+
   const handleSubmit = useCallback(
     (value: string) => {
       if (!value.trim()) return;
+      pushHistory(value.trim());
       launchOperator(value.trim());
     },
-    [launchOperator],
+    [launchOperator, pushHistory],
   );
 
   // Auto-clear hint after 3 seconds
@@ -67,7 +80,10 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
 
   const handleCommandExecute = useCallback(
     async (command: string) => {
-      const parts = command.trim().replace(/^\/+/, "").split(/\s+/);
+      const trimmed = command.trim();
+      pushHistory(trimmed);
+
+      const parts = trimmed.replace(/^\/+/, "").split(/\s+/);
       const slug = parts[0]?.toLowerCase() ?? "";
       const args = parts.slice(1);
       const autopilot = args.includes("--autopilot");
@@ -79,7 +95,7 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
       }
       await executeCommand(command);
     },
-    [resolveSkillContent, launchOperator, executeCommand],
+    [resolveSkillContent, launchOperator, executeCommand, pushHistory],
   );
 
   const skillItems = skills.slice(0, 5).map((s) => ({
@@ -174,6 +190,7 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
           autocompleteOptions={autocompleteOptions}
           enableCommands={true}
           onCommandExecute={handleCommandExecute}
+          commandHistory={homeCommandHistory}
           showPromptIndicator={true}
         />
 

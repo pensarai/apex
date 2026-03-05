@@ -111,6 +111,7 @@ export default function OperatorDashboard({
   const conversationRef = useRef<ModelMessage[]>([]);
   // Input state
   const [inputValue, setInputValue] = useState("");
+  const [commandHistory, setCommandHistory] = useState<string[]>([]);
 
   // Operator state
   const [operatorState, setOperatorState] = useState<OperatorSessionState>(() =>
@@ -606,8 +607,13 @@ export default function OperatorDashboard({
       // Block submission only when the agent is actively running (not waiting)
       if (status === "running") return;
 
+      const trimmed = value.trim();
+      setCommandHistory((prev) => {
+        if (prev[prev.length - 1] === trimmed) return prev;
+        return [...prev, trimmed];
+      });
       setInputValue("");
-      runAgent(value.trim());
+      runAgent(trimmed);
     },
     [status, runAgent],
   );
@@ -941,6 +947,7 @@ export default function OperatorDashboard({
         autocompleteOptions={autocompleteOptions}
         enableCommands={true}
         onCommandExecute={handleCommandExecute}
+        commandHistory={commandHistory}
       />
     </box>
   );
