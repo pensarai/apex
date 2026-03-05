@@ -31,7 +31,10 @@ export async function* parseSSE(
       // Keep the last (potentially incomplete) line in the buffer
       buffer = lines.pop() ?? "";
 
-      for (const line of lines) {
+      for (let line of lines) {
+        // Trim carriage return if present (handles both \r\n and \n line endings)
+        line = line.replace(/\r$/, "");
+
         if (line === "") {
           // Blank line = end of SSE message
           if (currentData.length > 0) {

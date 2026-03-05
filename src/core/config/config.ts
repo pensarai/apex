@@ -15,8 +15,6 @@ export interface Config {
   bedrockAPIKey?: string | null;
   pensarAPIKey?: string | null;
   pensarApiUrl?: string | null;
-  /** Lambda Function URL for SSE streaming (discovered via /bedrock/validate). */
-  pensarStreamUrl?: string | null;
   responsibleUseAccepted: boolean;
   // Remote execution providers
   daytonaAPIKey?: string | null;

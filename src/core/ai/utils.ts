@@ -23,8 +23,6 @@ export type AIAuthConfig = {
   openRouterAPIKey?: string;
   pensarAPIKey?: string;
   pensarApiUrl?: string;
-  /** Lambda Function URL for SSE streaming (discovered via /bedrock/validate). */
-  pensarStreamUrl?: string;
   // WorkOS CLI auth
   accessToken?: string;
   refreshToken?: string;
@@ -52,7 +50,6 @@ export function buildAuthConfig(cfg: {
   openRouterAPIKey?: string | null;
   pensarAPIKey?: string | null;
   pensarApiUrl?: string | null;
-  pensarStreamUrl?: string | null;
   accessToken?: string | null;
   refreshToken?: string | null;
   workspaceId?: string | null;
@@ -65,7 +62,6 @@ export function buildAuthConfig(cfg: {
     openRouterAPIKey: cfg.openRouterAPIKey ?? undefined,
     pensarAPIKey: cfg.pensarAPIKey ?? undefined,
     pensarApiUrl: cfg.pensarApiUrl ?? undefined,
-    pensarStreamUrl: cfg.pensarStreamUrl ?? undefined,
     accessToken: cfg.accessToken ?? undefined,
     refreshToken: cfg.refreshToken ?? undefined,
     workspaceId: cfg.workspaceId ?? undefined,
@@ -169,7 +165,6 @@ export function getProviderModel(
         apiKey: pensarApiKey || authConfig?.accessToken || "",
         baseUrl: pensarApiUrl,
         workspaceId: authConfig?.workspaceId,
-        streamUrl: authConfig?.pensarStreamUrl,
       };
 
       // If WorkOS tokens are available, use token refresh callback.

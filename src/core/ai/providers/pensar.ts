@@ -35,12 +35,6 @@ export interface PensarModelConfig {
    * allowing transparent token refresh for WorkOS auth.
    */
   getToken?: () => Promise<{ token: string; type: "workos" | "legacy" } | null>;
-  /**
-   * Lambda Function URL for SSE streaming. When set, doStream() will POST
-   * directly to this URL and parse SSE events token-by-token. When absent,
-   * doStream() falls back to wrapping doGenerate().
-   */
-  streamUrl?: string;
 }
 
 /**
@@ -51,9 +45,8 @@ export interface PensarModelConfig {
  * Supports both legacy API key auth and WorkOS JWT auth.
  * When workspaceId is provided, sends X-Workspace-Id header for WorkOS auth.
  *
- * When a streamUrl is configured, doStream() posts directly to a Lambda
- * Function URL and parses SSE events for real token-by-token streaming.
- * Falls back to wrapping doGenerate() when streamUrl is not available.
+ * doStream() posts to /bedrock/stream and parses SSE events for real
+ * token-by-token streaming. Falls back to wrapping doGenerate() on error.
  */
 export function createPensarModel(
   bedrockModelId: string,
@@ -207,14 +200,8 @@ export function createPensarModel(
       request?: { body?: unknown };
       response?: { headers?: Record<string, string> };
     }> {
-      // If no streaming URL, fall back to wrapping doGenerate
-      if (!config.streamUrl) {
-        log(`doStream → wrapping doGenerate (no streamUrl) for ${bedrockModelId}`);
-        return doStreamFallback(model, options);
-      }
-
       const body = convertToBedrockFormat(bedrockModelId, options);
-      const url = config.streamUrl;
+      const url = `${config.baseUrl}/bedrock/stream`;
 
       log(`doStream → SSE streaming for ${bedrockModelId}`);
       log(`  URL: ${url}`);
@@ -407,7 +394,11 @@ export function createPensarModel(
             controller.enqueue({
               type: "finish",
               finishReason,
-              usage: { inputTokens, outputTokens },
+              usage: {
+                inputTokens,
+                outputTokens,
+                totalTokens: inputTokens + outputTokens,
+              },
             });
             controller.close();
           } catch (err) {
@@ -448,7 +439,7 @@ function mapStopReason(reason: string): LanguageModelV2FinishReason {
 
 /**
  * Non-streaming fallback: call doGenerate and wrap in a ReadableStream.
- * Used when streamUrl is not available.
+ * Used when streaming fails or is not available.
  */
 async function doStreamFallback(
   model: LanguageModelV2,
