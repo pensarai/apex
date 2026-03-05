@@ -1,3 +1,16 @@
+---
+name: web-hacking
+description: >
+  Advanced web application attack techniques from PortSwigger's Top 10 (2025).
+  Covers SSTI (error-based/blind/polyglot), ORM injection and data leaking,
+  advanced SSRF (redirect loops, HTTP/2 CONNECT, protocol smuggling, DNS rebinding),
+  Unicode normalization WAF bypasses, cache poisoning (Next.js, web cache deception),
+  parser differentials (content-type confusion, request smuggling, URL parsing),
+  XS-Leaks (ETag, connection pool timing), and SOAP/WSDL exploitation.
+  Load this technique when testing web applications for injection, SSRF, cache,
+  or filter bypass vulnerabilities.
+---
+
 # Web Hacking Techniques Reference
 
 ## Server-Side Template Injection (SSTI)
