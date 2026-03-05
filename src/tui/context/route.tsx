@@ -57,7 +57,11 @@ export type Route =
     }
   | {
       type: "operator";
-      sessionId: string;
+      sessionId?: string;
+      initialMessage?: string;
+      initialConfig?: {
+        requireApproval?: boolean;
+      };
     };
 
 type RouteContext = {

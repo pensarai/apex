@@ -1,7 +1,7 @@
 /**
  * Session State Loader
  *
- * Loads and reconstructs session state from the executions directory
+ * Loads and reconstructs session state from the sessions directory
  * for displaying completed or interrupted sessions in the TUI.
  *
  * Subagent I/O (save + load + filename conventions) lives in persistence.ts.

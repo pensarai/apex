@@ -1,14 +1,19 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { spawn } from "child_process";
+import { join } from "path";
+import { writeFileSync, mkdirSync, existsSync } from "fs";
 import type { ToolContext } from "./types";
+
+const MAX_INLINE = 50_000;
 
 export const executeCommandInputSchema = z.object({
   command: z.string().describe("The shell command to execute"),
   timeout: z
     .number()
     .optional()
-    .describe("Timeout in milliseconds (default: 30000)"),
+    .describe(
+      "Timeout in seconds. If omitted, the command runs until completion or abort.",
+    ),
   toolCallDescription: z
     .string()
     .describe(
@@ -24,11 +29,53 @@ export type ExecuteCommandResult = {
   stdout: string;
   stderr: string;
   command: string;
+  outputFile?: string;
 };
+
+/**
+ * If `raw` exceeds the inline limit, save the full text to a file under
+ * `{session.logsPath}/cmd-output/` and return truncated text + file path.
+ * Otherwise return the text as-is with no file.
+ */
+function maybeSaveFullOutput(
+  raw: string,
+  ctx: ToolContext,
+): { text: string; file?: string } {
+  if (raw.length <= MAX_INLINE) {
+    return { text: raw || "(no output)" };
+  }
+
+  const outputDir = join(ctx.session.logsPath, "cmd-output");
+  if (!existsSync(outputDir)) {
+    mkdirSync(outputDir, { recursive: true });
+  }
+
+  const ts = new Date().toISOString().replace(/[:.]/g, "-");
+  const filename = `output-${ts}.txt`;
+  const filePath = join(outputDir, filename);
+
+  try {
+    writeFileSync(filePath, raw);
+  } catch {
+    return {
+      text: `${raw.substring(0, MAX_INLINE)}...\n\n(truncated — failed to save full output to file)`,
+    };
+  }
+
+  const truncated = raw.substring(0, MAX_INLINE);
+  return {
+    text: `${truncated}...\n\n(truncated — full output saved to ${filePath}). Use read_file or grep to analyze.`,
+    file: filePath,
+  };
+}
 
 export function executeCommand(ctx: ToolContext) {
   return tool({
     description: `Execute a shell command for penetration testing activities.
+
+The shell is persistent — environment variables, working directory (cd), and
+background processes survive across calls. You do NOT need nohup/& tricks to
+keep processes alive between calls; just background them normally with &.
 
 COMMON COMMANDS FOR BLACK BOX TESTING:
 
@@ -55,10 +102,7 @@ OUTPUT HANDLING:
 
 IMPORTANT: Always analyze results and adjust your approach based on findings.`,
     inputSchema: executeCommandInputSchema,
-    execute: async ({
-      command,
-      timeout = 30000,
-    }): Promise<ExecuteCommandResult> => {
+    execute: async ({ command, timeout }): Promise<ExecuteCommandResult> => {
       if (ctx.abortSignal?.aborted) {
         return {
           success: false,
@@ -72,19 +116,22 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
       // Sandbox mode: route execution through the sandbox
       if (ctx.sandbox) {
         try {
-          const ssmTimeout = Math.max(Math.ceil(timeout / 1000), 30);
-          const result = await ctx.sandbox.execute(command, {
-            timeout: ssmTimeout,
-          });
+          const ssmOpts: { timeout?: number } = {};
+          if (timeout != null) {
+            ssmOpts.timeout = timeout;
+          }
+          const result = await ctx.sandbox.execute(command, ssmOpts);
+          const { text: stdout, file: outputFile } = maybeSaveFullOutput(
+            result.stdout,
+            ctx,
+          );
           return {
             success: result.success,
             error: !result.success ? result.stderr || "Command failed" : "",
-            stdout:
-              result.stdout.length > 50000
-                ? `${result.stdout.substring(0, 50000)}...\n\n(truncated) call the command again with grep / tail to paginate`
-                : result.stdout || "(no output)",
+            stdout,
             stderr: result.stderr || "",
             command,
+            outputFile,
           };
         } catch (error: unknown) {
           const msg = error instanceof Error ? error.message : String(error);
@@ -98,121 +145,50 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
         }
       }
 
-      // Local mode: spawn a child process
-      return new Promise((resolve) => {
-        const shellCmd = process.platform === "win32" ? "cmd" : "bash";
-        const shellArgs =
-          process.platform === "win32" ? ["/c", command] : ["-lc", command];
-
-        const child = spawn(shellCmd, shellArgs, {
-          stdio: ["ignore", "pipe", "pipe"],
-          detached: process.platform !== "win32",
-        });
-
-        let stdout = "";
-        let stderr = "";
-        let killed = false;
-        let resolved = false;
-
-        const safeResolve = (result: ExecuteCommandResult) => {
-          if (!resolved) {
-            resolved = true;
-            resolve(result);
-          }
-        };
-
-        const killProcess = () => {
-          if (killed) return;
-          killed = true;
-
-          try {
-            // Kill the entire process group (negative PID) so subprocesses
-            // spawned by bash (nmap, gobuster, etc.) are also terminated.
-            if (child.pid && process.platform !== "win32") {
-              process.kill(-child.pid, "SIGTERM");
-            } else {
-              child.kill("SIGTERM");
-            }
-          } catch {
-            // Process may have already exited
-          }
-
-          // SIGKILL fallback: if SIGTERM doesn't work after 5 seconds,
-          // force-kill and resolve the promise so the agent doesn't hang.
-          setTimeout(() => {
-            try {
-              if (child.pid && process.platform !== "win32") {
-                process.kill(-child.pid, "SIGKILL");
-              } else {
-                child.kill("SIGKILL");
-              }
-            } catch {
-              // Process may have already exited
-            }
-
-            safeResolve({
-              success: false,
-              stdout:
-                stdout.length > 50000
-                  ? `${stdout.substring(0, 50000)}...\n\n(truncated)`
-                  : stdout || "(no output)",
-              stderr: stderr || "",
-              command,
-              error: "Command killed (did not exit after SIGTERM)",
-            });
-          }, 5000);
-        };
-
-        const timeoutTimer = setTimeout(killProcess, timeout);
-
-        child.stdout.on("data", (data) => {
-          stdout += data.toString();
-        });
-
-        child.stderr.on("data", (data) => {
-          stderr += data.toString();
-        });
-
-        child.on("close", (code) => {
-          clearTimeout(timeoutTimer);
-          safeResolve({
-            success: code === 0 && !killed,
-            stdout:
-              stdout.length > 50000
-                ? `${stdout.substring(0, 50000)}...\n\n(truncated) call the command again with grep / tail to paginate`
-                : stdout || "(no output)",
-            stderr: stderr || "",
+      // Local mode: use the persistent shell
+      if (ctx.persistentShell) {
+        try {
+          const result = await ctx.persistentShell.execute(
             command,
-            error: killed
-              ? "Command timed out"
-              : code !== 0
-                ? `Exit code: ${code}`
-                : "",
-          });
-        });
-
-        child.on("error", (err) => {
-          clearTimeout(timeoutTimer);
-          safeResolve({
-            success: false,
-            error: err.message,
+            timeout,
+            ctx.onCommandOutput,
+          );
+          const { text: stdout, file: outputFile } = maybeSaveFullOutput(
+            result.stdout,
+            ctx,
+          );
+          return {
+            success: result.exitCode === 0,
+            error:
+              result.exitCode === 124
+                ? "Command timed out"
+                : result.exitCode !== 0
+                  ? `Exit code: ${result.exitCode}`
+                  : "",
             stdout,
-            stderr,
+            stderr: result.stderr,
             command,
-          });
-        });
-
-        // Wire up abort signal
-        if (ctx.abortSignal) {
-          const abortHandler = () => killProcess();
-          ctx.abortSignal.addEventListener("abort", abortHandler, {
-            once: true,
-          });
-          child.on("close", () => {
-            ctx.abortSignal!.removeEventListener("abort", abortHandler);
-          });
+            outputFile,
+          };
+        } catch (error: unknown) {
+          const msg = error instanceof Error ? error.message : String(error);
+          return {
+            success: false,
+            error: msg,
+            stdout: "",
+            stderr: msg,
+            command,
+          };
         }
-      });
+      }
+
+      return {
+        success: false,
+        error: "No shell or sandbox available",
+        stdout: "",
+        stderr: "",
+        command,
+      };
     },
   });
 }
