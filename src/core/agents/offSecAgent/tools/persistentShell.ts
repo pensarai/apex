@@ -26,10 +26,8 @@ export class PersistentShell {
   private spawn(): void {
     if (this.disposed) return;
 
-    const shell =
-      process.platform === "win32" ? "cmd" : "bash";
-    const args =
-      process.platform === "win32" ? [] : ["--norc", "--noprofile"];
+    const shell = process.platform === "win32" ? "cmd" : "bash";
+    const args = process.platform === "win32" ? [] : ["--norc", "--noprofile"];
 
     this.proc = spawn(shell, args, {
       stdio: ["pipe", "pipe", "pipe"],
@@ -99,7 +97,8 @@ export class PersistentShell {
           markerIdx + exitMarkerPrefix.length,
         );
         const nlIdx = afterPrefix.indexOf("\n");
-        const exitStr = nlIdx >= 0 ? afterPrefix.substring(0, nlIdx) : afterPrefix;
+        const exitStr =
+          nlIdx >= 0 ? afterPrefix.substring(0, nlIdx) : afterPrefix;
         const exitCode = parseInt(exitStr, 10);
 
         const commandOutput = stdout.substring(0, markerIdx);

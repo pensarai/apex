@@ -457,17 +457,19 @@ export const get = async (id: string) => {
   return read;
 };
 
-export const sessionPath = (id: string) =>
-  Storage.locate(["sessions", id], "");
+export const sessionPath = (id: string) => Storage.locate(["sessions", id], "");
 
 export async function update(
   id: string,
   editor: (session: SessionInfo) => void,
 ) {
-  const result = await Storage.update<SessionInfo>(["sessions", id, "session"], (draft) => {
-    editor(draft);
-    draft.time.updated = Date.now();
-  });
+  const result = await Storage.update<SessionInfo>(
+    ["sessions", id, "session"],
+    (draft) => {
+      editor(draft);
+      draft.time.updated = Date.now();
+    },
+  );
   console.info("updated session", result);
   return result;
 }
@@ -522,7 +524,12 @@ const RemoveMsgInput = z.object({
 });
 
 export const removeMessage = async (input: z.output<typeof RemoveMsgInput>) => {
-  await Storage.remove(["sessions", input.sessionId, "messages", input.messageId]);
+  await Storage.remove([
+    "sessions",
+    input.sessionId,
+    "messages",
+    input.messageId,
+  ]);
   return input.messageId;
 };
 
@@ -588,7 +595,8 @@ export async function loadOperatorState(
     if (Array.isArray(parsed)) {
       return {
         mode: session.config?.operatorSettings?.initialMode ?? "manual",
-        requireApproval: session.config?.operatorSettings?.requireApproval ?? true,
+        requireApproval:
+          session.config?.operatorSettings?.requireApproval ?? true,
         currentStage: "recon",
         messages: parsed as ModelMessage[],
         attackSurface: [],

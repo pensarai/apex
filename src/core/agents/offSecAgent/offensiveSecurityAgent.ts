@@ -74,11 +74,9 @@ export class OffensiveSecurityAgent<TResult = void> {
 
       if (input.abortSignal) {
         const shell = this.persistentShell;
-        input.abortSignal.addEventListener(
-          "abort",
-          () => shell.dispose(),
-          { once: true },
-        );
+        input.abortSignal.addEventListener("abort", () => shell.dispose(), {
+          once: true,
+        });
       }
     }
 
@@ -165,7 +163,12 @@ export class OffensiveSecurityAgent<TResult = void> {
 
     const initialMessages: ModelMessage[] = input.messages
       ? [...input.messages]
-      : [{ role: "user" as const, content: [{ type: "text", text: input.prompt }] }];
+      : [
+          {
+            role: "user" as const,
+            content: [{ type: "text", text: input.prompt }],
+          },
+        ];
 
     // -- Stream ---------------------------------------------------------------
     this.streamResult = streamResponse({
@@ -180,10 +183,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       onStepFinish: (event) => {
         try {
           const allMessages = [...initialMessages, ...event.response.messages];
-          writeFileSync(
-            messagesPath,
-            JSON.stringify(allMessages, null, 2),
-          );
+          writeFileSync(messagesPath, JSON.stringify(allMessages, null, 2));
         } catch {
           // Best-effort persistence — don't break the agent loop
         }

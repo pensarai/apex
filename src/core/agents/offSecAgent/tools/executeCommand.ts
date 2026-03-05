@@ -102,10 +102,7 @@ OUTPUT HANDLING:
 
 IMPORTANT: Always analyze results and adjust your approach based on findings.`,
     inputSchema: executeCommandInputSchema,
-    execute: async ({
-      command,
-      timeout,
-    }): Promise<ExecuteCommandResult> => {
+    execute: async ({ command, timeout }): Promise<ExecuteCommandResult> => {
       if (ctx.abortSignal?.aborted) {
         return {
           success: false,
