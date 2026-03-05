@@ -1,14 +1,10 @@
-import { useRenderer } from "@opentui/react";
-import { useRoute } from "../context/route";
-import { useFocus } from "../context/focus";
-import { useInput } from "../context/input";
-import { useDialog } from "../context/dialog";
-
-export interface KeybindingEntry {
-  combo: string;
-  description: string;
-  fn: () => Promise<void>;
-}
+import type { Route } from "../context/route";
+import { shouldHandlePromptSensitiveShortcut } from "./guards";
+import {
+  createKeybindingRegistry,
+  type KeybindingRuntimeContext,
+  type RegisteredKeybinding,
+} from "./system";
 
 export interface KeybindingDependencies {
   refocusPrompt: () => void;
@@ -24,6 +20,17 @@ export interface KeybindingDependencies {
   /** Optional: Toggle tools panel visibility (session context only) */
   setShowToolsPanel?: (show: boolean) => void;
 }
+
+export interface KeybindingActionContext extends KeybindingRuntimeContext {
+  route: Route;
+  navigate: (route: Route) => void;
+  toggleConsole: () => void;
+  clearPromptInput: () => void;
+  blurPrompt: () => void;
+  exitApp: () => void;
+}
+
+export type KeybindingEntry = RegisteredKeybinding<KeybindingActionContext>;
 
 export function createKeybindings(
   deps: KeybindingDependencies,
@@ -42,105 +49,140 @@ export function createKeybindings(
     setShowToolsPanel,
   } = deps;
 
-  const route = useRoute();
-  const renderer = useRenderer();
-  const { promptRef } = useFocus();
-  const { inputValue, setInputValue, clearInput } = useInput();
-  const { stack, externalDialogOpen } = useDialog();
+  const registry = createKeybindingRegistry<KeybindingActionContext>();
 
-  return [
-    {
-      combo: "ctrl+c",
-      description: "Exit (press twice)",
-      fn: async () => {
-        const now = Date.now();
-        const lastPress = ctrlCPressTime;
+  registry.register({
+    id: "exit-on-double-ctrl-c",
+    combo: "ctrl+c",
+    description: "Exit (press twice)",
+    scope: "global",
+    priority: 100,
+    handler: async (context) => {
+      const { exitApp } = context;
+      const now = Date.now();
+      const lastPress = ctrlCPressTime;
 
-        if (lastPress && now - lastPress < 1000) {
-          renderer.destroy();
-          process.exit(0);
-        } else {
-          setInputKey((prev) => prev + 1);
-          setCtrlCPressTime(now);
-          setShowExitWarning(true);
-        }
-      },
+      if (lastPress && now - lastPress < 1000) {
+        exitApp();
+      } else {
+        setInputKey((prev) => prev + 1);
+        setCtrlCPressTime(now);
+        setShowExitWarning(true);
+      }
     },
-    {
-      combo: "ctrl+k",
-      description: "Toggle console",
-      fn: async () => {
-        renderer.console.toggle();
-      },
-    },
-    {
-      combo: "escape",
-      description: "Return to home",
-      fn: async () => {
-        if (stack.length > 0 || externalDialogOpen) {
-          return;
-        }
+  });
 
-        const isHome = route.data.type === "base" && route.data.path === "home";
-        const isWeb = route.data.type === "base" && route.data.path === "web";
-        const isOperator =
-          route.data.type === "base" && route.data.path === "operator";
-        const isSession =
-          route.data.type === "pentest" || route.data.type === "operator";
+  registry.register({
+    id: "toggle-console",
+    combo: "ctrl+k",
+    description: "Toggle console",
+    scope: "global",
+    priority: 90,
+    handler: async (context) => {
+      context.toggleConsole();
+    },
+  });
 
-        if (!isHome && !isWeb && !isOperator && !isSession) {
-          route.navigate({
-            type: "base",
-            path: "home",
-          });
-          refocusPrompt();
-        }
-      },
+  registry.register({
+    id: "navigate-home-on-escape",
+    combo: "escape",
+    description: "Return to home",
+    scope: "global",
+    priority: 80,
+    when: ({ dialogStackDepth, externalDialogOpen }) =>
+      dialogStackDepth === 0 && !externalDialogOpen,
+    handler: async (context) => {
+      const { route, navigate } = context;
+
+      const isHome = route.type === "base" && route.path === "home";
+      const isWeb = route.type === "base" && route.path === "web";
+      const isOperator = route.type === "base" && route.path === "operator";
+      const isSession = route.type === "pentest" || route.type === "operator";
+
+      if (!isHome && !isWeb && !isOperator && !isSession) {
+        navigate({
+          type: "base",
+          path: "home",
+        });
+        refocusPrompt();
+      }
     },
-    {
-      combo: "ctrl+s",
-      description: "Show sessions",
-      fn: async () => {
-        if (route.data.type === "base" && route.data.path === "home") {
-          setShowSessionsDialog(true);
-        }
-      },
+  });
+
+  registry.register({
+    id: "show-sessions",
+    combo: "ctrl+s",
+    description: "Show sessions",
+    scope: "global",
+    priority: 70,
+    when: ({ routeType, routePath }) =>
+      routeType === "base" && routePath === "home",
+    handler: async () => {
+      setShowSessionsDialog(true);
     },
-    {
-      combo: "?",
-      description: "Show keyboard shortcuts",
-      fn: async () => {
-        clearInput();
-        promptRef.current?.blur();
-        setExternalDialogOpen(true);
-        setShowShortcutsDialog(true);
-      },
+  });
+
+  registry.register({
+    id: "show-shortcuts-dialog",
+    combo: "?",
+    description: "Show keyboard shortcuts",
+    scope: "prompt",
+    priority: 70,
+    when: ({ isPromptFocused, promptValue }) =>
+      shouldHandlePromptSensitiveShortcut({
+        combo: "?",
+        isPromptFocused,
+        promptValue,
+      }),
+    handler: async (context) => {
+      context.clearPromptInput();
+      context.blurPrompt();
+      setExternalDialogOpen(true);
+      setShowShortcutsDialog(true);
     },
-    {
-      combo: "tab",
-      description: "Next focusable item",
-      fn: async () => {
-        setFocusIndex((prev) => (prev + 1) % navigableItems.length);
-      },
+  });
+
+  registry.register({
+    id: "focus-next-item",
+    combo: "tab",
+    description: "Next focusable item",
+    scope: "global",
+    priority: 60,
+    handler: async () => {
+      setFocusIndex((prev) => (prev + 1) % navigableItems.length);
     },
-    {
-      combo: "shift+tab",
-      description: "Previous focusable item",
-      fn: async () => {
-        setFocusIndex(
-          (prev) => (prev - 1 + navigableItems.length) % navigableItems.length,
-        );
-      },
+  });
+
+  registry.register({
+    id: "focus-previous-item",
+    combo: "shift+tab",
+    description: "Previous focusable item",
+    scope: "prompt",
+    priority: 60,
+    when: ({ isPromptFocused, promptValue }) =>
+      shouldHandlePromptSensitiveShortcut({
+        combo: "shift+tab",
+        isPromptFocused,
+        promptValue,
+      }),
+    handler: async () => {
+      setFocusIndex(
+        (prev) => (prev - 1 + navigableItems.length) % navigableItems.length,
+      );
     },
-    {
-      combo: "ctrl+t",
-      description: "Toggle tools panel",
-      fn: async () => {
-        // Only works in session context
-        if (route.data.type === "pentest" && setShowToolsPanel) {
-          setShowToolsPanel(true);
-        }
-      },
+  });
+
+  registry.register({
+    id: "toggle-tools-panel",
+    combo: "ctrl+t",
+    description: "Toggle tools panel",
+    scope: "session",
+    priority: 60,
+    when: ({ routeType }) => routeType === "pentest" && Boolean(setShowToolsPanel),
+    handler: async () => {
+      setShowToolsPanel?.(true);
     },
-  ];
+  });
+
+  return registry.list();
 }

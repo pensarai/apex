@@ -1,17 +1,17 @@
 import type { KeyEvent } from "@opentui/core";
-import { useKeyboard } from "@opentui/react";
+import { useKeyboard, useRenderer } from "@opentui/react";
 import { createContext, useContext, type ReactNode } from "react";
 import {
   createKeybindings,
   fromParsedKey,
-  parseKeybind,
-  matchesKeybind,
-  shouldHandlePromptSensitiveShortcut,
+  resolveKeybinding,
+  type KeybindingRuntimeContext,
   type KeybindingDependencies,
   type KeybindingEntry,
 } from "../keybindings";
 import { useFocus } from "./focus";
 import { useDialog } from "./dialog";
+import { useRoute } from "./route";
 
 export type { KeybindingEntry };
 
@@ -36,7 +36,9 @@ export function KeybindingProvider({
   deps: ContextDeps;
 }) {
   const { promptRef, refocusPrompt } = useFocus();
-  const { setExternalDialogOpen } = useDialog();
+  const { setExternalDialogOpen, stack, externalDialogOpen } = useDialog();
+  const route = useRoute();
+  const renderer = useRenderer();
 
   const registry = createKeybindings({
     ...deps,
@@ -46,35 +48,42 @@ export function KeybindingProvider({
 
   useKeyboard((key: KeyEvent) => {
     const pressedKey = fromParsedKey(key);
+    const textareaRef = promptRef.current?.getTextareaRef();
+    const isPromptFocused = Boolean(
+      textareaRef && !textareaRef.isDestroyed && textareaRef.focused,
+    );
+    const promptValue = promptRef.current?.getValue() ?? "";
 
-    for (const binding of registry) {
-      const parsedCombos = parseKeybind(binding.combo);
+    const runtimeContext: KeybindingRuntimeContext = {
+      routeType: route.data.type,
+      routePath: route.data.type === "base" ? route.data.path : undefined,
+      dialogStackDepth: stack.length,
+      externalDialogOpen,
+      isPromptFocused,
+      promptValue,
+    };
 
-      for (const combo of parsedCombos) {
-        if (matchesKeybind(pressedKey, combo)) {
-          // Prompt-sensitive shortcuts only run when prompt is focused + empty.
-          const textareaRef = promptRef.current?.getTextareaRef();
-          const isInputFocused = Boolean(
-            textareaRef && !textareaRef.isDestroyed && textareaRef.focused,
-          );
-          const promptValue = promptRef.current?.getValue() ?? "";
-
-          if (
-            !shouldHandlePromptSensitiveShortcut({
-              combo: binding.combo,
-              isPromptFocused: isInputFocused,
-              promptValue,
-            })
-          ) {
-            continue;
-          }
-
-          // Execute the keybinding function
-          binding.fn();
-          return;
-        }
-      }
+    const match = resolveKeybinding(registry, pressedKey, runtimeContext);
+    if (!match) {
+      return;
     }
+
+    void match.handler({
+      ...runtimeContext,
+      route: route.data,
+      navigate: route.navigate,
+      toggleConsole: () => renderer.console.toggle(),
+      clearPromptInput: () => {
+        promptRef.current?.reset();
+      },
+      blurPrompt: () => {
+        promptRef.current?.blur();
+      },
+      exitApp: () => {
+        renderer.destroy();
+        process.exit(0);
+      },
+    });
   });
 
   return (

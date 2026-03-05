@@ -1,7 +1,8 @@
 import { useKeyboard } from "@opentui/react";
 import { useFocus } from "../../context/focus";
+import { useKeybinding } from "../../context/keybinding";
 import { Dialog } from "../../context/dialog";
-import { keybindings } from "../../keybindings-registry";
+import { formatKeybindingCombo } from "../../keybindings";
 import { useTheme } from "../../theme";
 
 interface ShortcutsDialogProps {
@@ -15,6 +16,7 @@ export default function ShortcutsDialog({
 }: ShortcutsDialogProps) {
   const { colors } = useTheme();
   const { refocusPrompt } = useFocus();
+  const { registry } = useKeybinding();
 
   useKeyboard((key) => {
     if (key.name === "escape") {
@@ -42,10 +44,10 @@ export default function ShortcutsDialog({
 
         {/* Shortcuts List */}
         <box flexDirection="column" gap={1}>
-          {keybindings.map((keybinding, index) => (
-            <box key={index} flexDirection="row" gap={2}>
+          {registry.map((keybinding) => (
+            <box key={keybinding.id} flexDirection="row" gap={2}>
               <text fg={colors.primary} width={15}>
-                [{keybinding.key}]
+                [{formatKeybindingCombo(keybinding.combo)}]
               </text>
               <text fg={colors.text}>{keybinding.description}</text>
             </box>
