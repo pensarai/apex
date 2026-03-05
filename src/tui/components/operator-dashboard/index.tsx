@@ -35,6 +35,10 @@ import {
   type OperatorSessionState,
 } from "../../../core/operator";
 import { stepCountIs, type ModelMessage } from "ai";
+import {
+  isTerminalCopyShortcut,
+  shouldHandleOperatorCtrlC,
+} from "./keyboard";
 
 type DashboardStatus = "idle" | "running" | "waiting" | "done";
 
@@ -495,7 +499,14 @@ export default function OperatorDashboard({
     // Skip local shortcuts when dialogs are open (e.g. shortcuts popup)
     if (stack.length > 0 || externalDialogOpen) return;
 
-    if (key.ctrl && key.name === "c") {
+    // Let terminal-native copy shortcuts pass through so selected output text
+    // in operator mode can still be copied.
+    if (isTerminalCopyShortcut(key)) {
+      return;
+    }
+
+    if (shouldHandleOperatorCtrlC(key, status, inputValue)) {
+      key.preventDefault?.();
       if (status === "running" || status === "waiting") {
         handleAbort();
       } else if (inputValue.trim()) {
