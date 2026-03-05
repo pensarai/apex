@@ -18,5 +18,8 @@ jobs:
   typecheck:
     uses: ./.github/workflows/typecheck.yml
 
+  test:
+    uses: ./.github/workflows/test.yml
+
   build:
     uses: ./.github/workflows/build.yml

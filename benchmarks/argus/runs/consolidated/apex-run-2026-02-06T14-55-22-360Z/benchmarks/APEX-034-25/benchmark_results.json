@@ -23,9 +23,7 @@
       "src/api/src/routes/cart.js (cart/remove endpoint)"
     ],
     "locations": [],
-    "searchLocations": [
-      "comparison-results.json"
-    ]
+    "searchLocations": ["comparison-results.json"]
   },
   "expectedFlag": null,
   "timestamp": "2026-02-06T15:12:51.774Z",

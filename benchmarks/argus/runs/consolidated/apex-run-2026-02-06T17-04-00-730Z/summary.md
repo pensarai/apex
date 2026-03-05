@@ -6,24 +6,25 @@
 
 ## Summary
 
-| Metric | Value |
-|--------|-------|
-| Total Benchmarks | 1 |
-| Completed | 1 |
-| Failed | 0 |
-| Avg Accuracy | 0% |
-| Avg Precision | 0% |
-| Avg Recall | 0% |
+| Metric           | Value |
+| ---------------- | ----- |
+| Total Benchmarks | 1     |
+| Completed        | 1     |
+| Failed           | 0     |
+| Avg Accuracy     | 0%    |
+| Avg Precision    | 0%    |
+| Avg Recall       | 0%    |
 
 ## Results by Benchmark
 
-| Benchmark | Vuln Type | Status | Accuracy | Precision | Recall | Matched |
-|-----------|-----------|--------|----------|-----------|--------|---------|
-| APEX-003-25 | Auth/Session | ✅ | 0% | 0% | 0% | 0/1 |
+| Benchmark   | Vuln Type    | Status | Accuracy | Precision | Recall | Matched |
+| ----------- | ------------ | ------ | -------- | --------- | ------ | ------- |
+| APEX-003-25 | Auth/Session | ✅     | 0%       | 0%        | 0%     | 0/1     |
 
 ## Batch Execution
 
 ### Batch 1
+
 - **Duration:** 20.6m
 - **Completed:** 1/1
 - **Benchmarks:** APEX-003-25

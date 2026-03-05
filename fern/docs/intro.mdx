@@ -1,0 +1,143 @@
+---
+title: "Introduction"
+description: "AI-powered penetration testing CLI tool for comprehensive security testing"
+---
+
+## What is Pensar Apex?
+
+**Pensar Apex** is an AI-powered penetration testing CLI tool that enables you to use an AI agent to perform comprehensive black box security testing. Built with a powerful terminal user interface, Apex brings autonomous penetration testing capabilities directly to your command line.
+
+## How It Works
+
+<Steps>
+  <Step title="Install Apex">
+    Install Apex globally using your preferred package manager:
+
+    <Tabs>
+      <Tab title="macOS/Linux">
+        ```bash
+        curl -fsSL https://pensarai.com/install.sh | bash
+        ```
+      </Tab>
+      <Tab title="Homebrew">
+        ```bash
+        brew tap pensarai/tap
+        brew install apex
+        ```
+      </Tab>
+      <Tab title="Windows">
+        ```powershell
+        irm https://pensarai.com/apex.ps1 | iex
+        ```
+      </Tab>
+      <Tab title="npm">
+        ```bash
+        npm install -g @pensar/apex
+        ```
+        Requires [Node.js](https://nodejs.org)
+      </Tab>
+    </Tabs>
+
+  </Step>
+  <Step title="Launch Apex">
+    Start the interactive terminal interface by running `pensar` in your
+    terminal.
+  </Step>
+  <Step title="Configure AI Provider">
+    Use the `/providers` command to connect your AI provider (Anthropic, OpenAI, OpenRouter, or AWS Bedrock) and configure your API key.
+  </Step>
+  <Step title="Select Model">
+    Use the `/models` command to select which AI model to use for testing.
+  </Step>
+  <Step title="Start Testing">
+    Use the `/init` command to configure your target and launch an autonomous AI agent
+    that will test your application.
+  </Step>
+  <Step title="Review Results">
+    Watch in real-time as the AI agent discovers vulnerabilities, executes
+    tests, and documents findings with proof-of-concepts.
+  </Step>
+</Steps>
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="AI-Powered Testing" icon="robot">
+    Leverage state-of-the-art AI models to perform autonomous penetration
+    testing with minimal human intervention.
+  </Card>
+  <Card title="Terminal Interface" icon="terminal">
+    Beautiful, responsive terminal UI built with React for an optimal
+    command-line experience.
+  </Card>
+  <Card title="Multiple AI Providers" icon="microchip">
+    Support for Anthropic, OpenAI, OpenRouter, and AWS Bedrock. Anthropic models
+    provide the best performance.
+  </Card>
+  <Card title="Session Management" icon="clock-rotate-left">
+    Sessions are automatically saved to continue work across multiple runs.
+  </Card>
+  <Card title="Comprehensive Testing" icon="shield-check">
+    Automated reconnaissance, vulnerability detection, and exploitation testing
+    in a single workflow.
+  </Card>
+  <Card title="Kali Container" icon="docker" iconType="brands">
+    Optional Kali Linux container with pre-configured security tools for maximum
+    compatibility.
+  </Card>
+</CardGroup>
+
+## Getting Started
+
+To begin testing with Apex, you'll typically follow this workflow:
+
+<Steps>
+  <Step title="Configure Provider">
+    Run `/providers` to set up your AI provider API key
+  </Step>
+  <Step title="Select Model">
+    Run `/models` to choose your preferred AI model
+  </Step>
+  <Step title="Initialize Test">
+    Run `/init` to configure target, authentication, scope, and start testing
+  </Step>
+</Steps>
+
+<Callout intent="info">
+  The `/init` command guides you through a wizard to configure your target URL,
+  optional authentication credentials, scope constraints, and custom headers
+  before starting the penetration test.
+</Callout>
+
+## AI Provider Support
+
+Apex supports multiple AI providers to give you flexibility in your testing setup:
+
+- **Anthropic** (Recommended) - Best performance and results
+- **OpenAI** - GPT-4 and other OpenAI models
+- **OpenRouter** - Access multiple models through one API
+- **AWS Bedrock** - Enterprise-grade AI through AWS
+
+<Callout intent="warning">
+  **Anthropic models are recommended** for optimal penetration testing
+  performance and accuracy.
+</Callout>
+
+## Responsible Use
+
+<Callout intent="error">
+  This tool is intended for **authorized security testing only**. You must have
+  explicit permission to test any systems. Unauthorized testing is illegal and
+  unethical.
+</Callout>
+
+By using Apex, you agree to:
+
+- Only test systems you own or have written authorization to test
+- Comply with all applicable laws and regulations
+- Use the tool ethically and responsibly
+- Not use the tool for malicious purposes
+
+## Ready to Get Started?
+
+Head over to the [Getting Started](/apex/getting-started) guide to install Apex and run your first penetration test.

@@ -8,12 +8,22 @@ import { useTheme } from "../../theme";
 const providerNames: Record<string, string> = {
   anthropic: "Claude",
   openai: "OpenAI",
+  google: "Gemini",
   openrouter: "OpenRouter",
   bedrock: "Bedrock",
+  pensar: "Pensar",
   local: "Local LLM",
 };
 
-const providerOrder = ["anthropic", "openai", "openrouter", "bedrock", "local"];
+const providerOrder = [
+  "pensar",
+  "anthropic",
+  "openai",
+  "google",
+  "openrouter",
+  "bedrock",
+  "local",
+];
 
 type NavigationItem =
   | { type: "provider"; provider: string }

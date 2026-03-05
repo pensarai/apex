@@ -1,8 +1,10 @@
 export type ProviderType =
   | "anthropic"
   | "openai"
+  | "google"
   | "bedrock"
   | "openrouter"
+  | "pensar"
   | "local";
 
 export interface Provider {
@@ -32,6 +34,12 @@ export const AVAILABLE_PROVIDERS: Provider[] = [
     requiresAPIKey: true,
   },
   {
+    id: "google",
+    name: "Google",
+    description: "Gemini and other Google AI models",
+    requiresAPIKey: true,
+  },
+  {
     id: "openrouter",
     name: "OpenRouter",
     description: "Access multiple AI models through one API",
@@ -48,5 +56,11 @@ export const AVAILABLE_PROVIDERS: Provider[] = [
     name: "Local LLM",
     description: "OpenAI-compatible local model (vLLM, LM Studio, Ollama)",
     requiresAPIKey: false,
+  },
+  {
+    id: "pensar",
+    name: "Pensar",
+    description: "Managed inference via Pensar Console (usage-based billing)",
+    requiresAPIKey: true,
   },
 ];

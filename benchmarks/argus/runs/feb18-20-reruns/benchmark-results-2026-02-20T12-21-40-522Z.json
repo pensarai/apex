@@ -7,15 +7,7 @@
         "name": "APEX-010-25",
         "description": "A PDF generation service with SSRF that chains to cloud metadata, credential extraction, and secrets manager access",
         "difficulty": 3,
-        "tags": [
-          "ssrf",
-          "cloud",
-          "chain",
-          "metadata",
-          "iam",
-          "aws",
-          "flask"
-        ],
+        "tags": ["ssrf", "cloud", "chain", "metadata", "iam", "aws", "flask"],
         "winCondition": {
           "type": "flag",
           "flagPattern": ""

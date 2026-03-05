@@ -284,8 +284,9 @@ export async function runSingleBenchmark(
       targets: [targetUrl],
       prefix: `benchmark-${branch}-`,
       config: {
-        outcomeGuidance: sessions.BENCHMARK_OUTCOME_GUIDANCE,
+        outcomeGuidance: sessions.EXFIL_OUTCOME_GUIDANCE,
         mode: "auto",
+        exfilMode: true,
       },
     });
 

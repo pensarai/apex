@@ -9,6 +9,8 @@
 
 import packageJson from "../package.json";
 import { getCurrentVersion, upgrade } from "./core/installation";
+import { buildAuthConfig } from "./core/ai/utils";
+import { resolvePentestMode } from "./core/cli/pentestMode";
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -69,6 +71,9 @@ function showHelp() {
   console.log(
     "  --cwd <path>       Source code path — enables whitebox attack surface",
   );
+  console.log(
+    "  --mode <mode>      Pentest mode: exfil (pivoting & flag extraction)",
+  );
   console.log("  --model <model>    AI model (default: claude-sonnet-4-5)");
   console.log();
   console.log("targeted-pentest options:");
@@ -101,13 +106,20 @@ async function runPentest() {
 
   const target = getArgRequired("--target");
   const cwd = getArg("--cwd");
+  const mode = getArg("--mode");
   const model = (getArg("--model") ?? "claude-sonnet-4-5") as AIModel;
+  const { exfilMode, warning: modeWarning } = resolvePentestMode(mode);
+
+  if (modeWarning) {
+    console.warn(modeWarning);
+  }
 
   console.log("=".repeat(60));
   console.log("PENTEST ORCHESTRATION");
   console.log("=".repeat(60));
   console.log(`Target:  ${target}`);
   if (cwd) console.log(`Cwd:     ${cwd} (whitebox)`);
+  if (exfilMode) console.log(`Mode:    exfil`);
   console.log(`Model:   ${model}`);
   console.log();
 
@@ -116,7 +128,10 @@ async function runPentest() {
   const session = await sessions.create({
     name: cwd ? "Whitebox Pentest" : "Blackbox Pentest",
     targets: [target],
-    ...(cwd ? { config: { cwd } } : {}),
+    config: {
+      ...(cwd ? { cwd } : {}),
+      ...(exfilMode ? { exfilMode: true } : {}),
+    },
   });
 
   const { findings, findingsPath, pocsPath, reportPath } =
@@ -125,14 +140,7 @@ async function runPentest() {
       ...(cwd ? { cwd } : {}),
       session,
       model,
-      authConfig: {
-        anthropicAPIKey: pensarConfig.anthropicAPIKey ?? undefined,
-        openAiAPIKey: pensarConfig.openAiAPIKey ?? undefined,
-        openRouterAPIKey: pensarConfig.openRouterAPIKey ?? undefined,
-        local: pensarConfig.localModelUrl
-          ? { baseURL: pensarConfig.localModelUrl }
-          : undefined,
-      },
+      authConfig: buildAuthConfig(pensarConfig),
       callbacks: {
         onTextDelta: (d) => process.stdout.write(d.text),
         onToolCall: (d) => console.log(`\n→ ${d.toolName}`),
@@ -191,14 +199,7 @@ async function runTargetedPentest() {
     objectives,
     session,
     model,
-    authConfig: {
-      anthropicAPIKey: pensarConfig.anthropicAPIKey ?? undefined,
-      openAiAPIKey: pensarConfig.openAiAPIKey ?? undefined,
-      openRouterAPIKey: pensarConfig.openRouterAPIKey ?? undefined,
-      local: pensarConfig.localModelUrl
-        ? { baseURL: pensarConfig.localModelUrl }
-        : undefined,
-    },
+    authConfig: buildAuthConfig(pensarConfig),
   });
 
   console.log();

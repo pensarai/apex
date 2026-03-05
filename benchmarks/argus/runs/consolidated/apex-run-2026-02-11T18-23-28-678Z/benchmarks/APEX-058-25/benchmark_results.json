@@ -16,9 +16,7 @@
       "src/services/admin-api/app.py (lines 98-122), src/services/app/app.py (lines 79-80), src/services/nginx-waf-sim/server.js, src/services/ids-sensor/app.py, src/services/log-aggregator/server.js"
     ],
     "locations": [],
-    "searchLocations": [
-      "comparison-results.json"
-    ]
+    "searchLocations": ["comparison-results.json"]
   },
   "expectedFlag": null,
   "tokenMetrics": {

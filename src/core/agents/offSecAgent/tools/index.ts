@@ -10,6 +10,14 @@ export {
 export { createBrowserToolset, BROWSER_TOOL_NAMES } from "./browserTools";
 export type { BrowserToolName } from "./browserTools";
 
+// Sandbox Playwright helpers (check / install Playwright in a sandbox)
+export {
+  checkSandboxPlaywright,
+  installSandboxPlaywright,
+  ensureSandboxPlaywright,
+  ensureSandboxBrowser,
+} from "./sandboxPlaywright";
+
 // Core pentest tools
 export { executeCommand } from "./executeCommand";
 export { httpRequest } from "./httpRequest";
@@ -20,6 +28,8 @@ export { createPoc } from "./createPoc";
 export { readFile } from "./readFile";
 export { listFiles } from "./listFiles";
 export { grep } from "./grep";
+export { createFile } from "./createFile";
+export { updateFile } from "./updateFile";
 
 // Attack surface / recon tools
 export { documentAsset } from "./documentAsset";
@@ -62,6 +72,8 @@ import { createPoc } from "./createPoc";
 import { readFile } from "./readFile";
 import { listFiles } from "./listFiles";
 import { grep } from "./grep";
+import { createFile } from "./createFile";
+import { updateFile } from "./updateFile";
 import { documentAsset } from "./documentAsset";
 import { authenticateSession } from "./authenticateSession";
 import { delegateAuth } from "./delegateAuth";
@@ -106,6 +118,8 @@ export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
     read_file: readFile(ctx),
     list_files: listFiles(ctx),
     grep: grep(ctx),
+    create_file: createFile(ctx),
+    update_file: updateFile(ctx),
 
     // Attack surface / recon tools
     document_asset: documentAsset(ctx),
@@ -163,6 +177,8 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "read_file",
   "list_files",
   "grep",
+  "create_file",
+  "update_file",
   "document_asset",
   "authenticate_session",
   "delegate_to_auth_subagent",

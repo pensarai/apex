@@ -8,7 +8,6 @@ import ConfigDialog from "./components/commands/config-dialog";
 import ChatApp from "./components/chat";
 import HITLWizard from "./components/commands/operator-wizard";
 import WebWizard from "./components/commands/web-wizard";
-import SessionsBrowser from "./components/commands/sessions-browser";
 import ProviderManager from "./components/commands/provider-manager";
 import type { Config } from "../core/config/config";
 import { config } from "../core/config";
@@ -31,10 +30,13 @@ import { checkForUpdate } from "../core/installation";
 import ShortcutsDialog from "./components/commands/shortcuts-dialog";
 import HelpDialog from "./components/commands/help-dialog";
 import ModelsDisplay from "./components/commands/models-display";
+import AuthFlow from "./components/commands/auth-flow";
+import CreditsFlow from "./components/commands/credits-flow";
 import { KeybindingProvider } from "./context/keybinding";
 import Pentest from "./components/pentest/pentest";
 import OperatorDashboard from "./components/operator-dashboard";
 import ThemePicker from "./components/commands/theme-picker";
+import CreateSkillWizard from "./components/commands/create-skill-wizard";
 import { ThemeProvider, useTheme, type ColorMode } from "./theme";
 import { registerBuiltinThemes } from "./theme/themes";
 import { detectTerminalMode } from "./theme/detect-mode";
@@ -62,7 +64,9 @@ function App({ appConfig }: AppProps) {
             <InputProvider>
               <DialogProvider>
                 <AgentProvider>
-                  <CommandProvider>
+                  <CommandProvider
+                    onOpenSessionsDialog={() => setShowSessionsDialog(true)}
+                  >
                     <KeybindingProvider
                       deps={{
                         ctrlCPressTime,
@@ -183,7 +187,9 @@ function AppContent({
 
   const handleCloseShortcutsDialog = () => {
     setShowShortcutsDialog(false);
-    setExternalDialogOpen(false);
+    setTimeout(() => {
+      setExternalDialogOpen(false);
+    }, 0);
     setInputKey((prev) => prev + 1);
     refocusPrompt();
   };
@@ -272,11 +278,8 @@ function CommandDisplay({
           <RouteSwitch.Case when="operator">
             <HITLWizard
               initialTarget={route.data.options?.target}
-              initialMode={route.data.options?.mode}
               initialName={route.data.options?.name}
-              initialTier={route.data.options?.tier}
-              initialHosts={route.data.options?.hosts}
-              initialStrict={route.data.options?.strict}
+              initialRequireApproval={route.data.options?.requireApproval}
               initialModel={route.data.options?.model}
             />
           </RouteSwitch.Case>
@@ -303,9 +306,6 @@ function CommandDisplay({
           <RouteSwitch.Case when="providers">
             <ProviderManager />
           </RouteSwitch.Case>
-          <RouteSwitch.Case when="sessions">
-            <SessionsBrowser />
-          </RouteSwitch.Case>
           <RouteSwitch.Case when="theme">
             <ThemePicker />
           </RouteSwitch.Case>
@@ -315,6 +315,15 @@ function CommandDisplay({
           <RouteSwitch.Case when="models">
             <ModelsDisplay />
           </RouteSwitch.Case>
+          <RouteSwitch.Case when="auth">
+            <AuthFlow />
+          </RouteSwitch.Case>
+          <RouteSwitch.Case when="credits">
+            <CreditsFlow />
+          </RouteSwitch.Case>
+          <RouteSwitch.Case when="create-skill">
+            <CreateSkillWizard />
+          </RouteSwitch.Case>
         </RouteSwitch>
       </box>
     );
@@ -322,10 +331,20 @@ function CommandDisplay({
 
   // Session route - render SessionView which handles pentest execution
   if (route.data.type === "operator") {
-    return <OperatorDashboard sessionId={route.data.sessionId} />;
+    return (
+      <OperatorDashboard
+        sessionId={route.data.sessionId}
+        initialMessage={route.data.initialMessage}
+        initialConfig={route.data.initialConfig}
+      />
+    );
   }
 
   if (route.data.type === "pentest") {
+    // When openAsOperator is set, render operator dashboard instead of pentest
+    if (route.data.openAsOperator) {
+      return <OperatorDashboard sessionId={route.data.sessionId} />;
+    }
     return <Pentest sessionId={route.data.sessionId} />;
   }
 

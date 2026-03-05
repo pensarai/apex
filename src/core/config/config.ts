@@ -11,8 +11,11 @@ export interface Config {
   version?: string;
   openAiAPIKey?: string | null;
   anthropicAPIKey?: string | null;
+  googleAPIKey?: string | null;
   openRouterAPIKey?: string | null;
   bedrockAPIKey?: string | null;
+  pensarAPIKey?: string | null;
+  pensarApiUrl?: string | null;
   responsibleUseAccepted: boolean;
   // Remote execution providers
   daytonaAPIKey?: string | null;
@@ -24,6 +27,13 @@ export interface Config {
   // Theme preferences
   theme?: string;
   themeMode?: "dark" | "light" | "auto";
+  // Model preference
+  selectedModelId?: string | null;
+  // WorkOS CLI auth (replaces pensarAPIKey for new auth flow)
+  accessToken?: string | null;
+  refreshToken?: string | null;
+  workspaceId?: string | null;
+  workspaceSlug?: string | null;
 }
 
 export async function init() {
@@ -70,9 +80,13 @@ export async function get(): Promise<Config> {
     openAiAPIKey: process.env.OPENAI_API_KEY ?? parsedConfig.openAiAPIKey,
     anthropicAPIKey:
       process.env.ANTHROPIC_API_KEY ?? parsedConfig.anthropicAPIKey,
+    googleAPIKey:
+      process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? parsedConfig.googleAPIKey,
     openRouterAPIKey:
       process.env.OPENROUTER_API_KEY ?? parsedConfig.openRouterAPIKey,
     bedrockAPIKey: process.env.BEDROCK_API_KEY ?? parsedConfig.bedrockAPIKey,
+    pensarAPIKey: process.env.PENSAR_API_KEY ?? parsedConfig.pensarAPIKey,
+    pensarApiUrl: process.env.PENSAR_API_URL ?? parsedConfig.pensarApiUrl,
     daytonaAPIKey: process.env.DAYTONA_API_KEY ?? parsedConfig.daytonaAPIKey,
     daytonaOrgId: process.env.DAYTONA_ORG_ID ?? parsedConfig.daytonaOrgId,
     runloopAPIKey: process.env.RUNLOOP_API_KEY ?? parsedConfig.runloopAPIKey,

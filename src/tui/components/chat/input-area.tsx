@@ -9,7 +9,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useKeyboard } from "@opentui/react";
-import { useTheme, getTierColor } from "../../theme";
+import { useTheme } from "../../theme";
 import { PromptInput, type PromptInputRef } from "../shared/prompt-input";
 import { InputProvider, useInput } from "../../context/input";
 import type { PendingApproval, OperatorMode } from "../../../core/operator";
@@ -43,6 +43,14 @@ export interface InputAreaProps {
   onAutoApprove?: () => void;
   /** Last decline note */
   lastDeclineNote?: string | null;
+  /** Enable autocomplete suggestions (e.g. slash commands, skills) */
+  enableAutocomplete?: boolean;
+  /** Autocomplete options to show */
+  autocompleteOptions?: import("../shared/prompt-input").AutocompleteOption[];
+  /** Enable slash-command handling */
+  enableCommands?: boolean;
+  /** Handler for slash-command execution */
+  onCommandExecute?: (command: string) => Promise<void>;
 }
 
 /**
@@ -60,6 +68,10 @@ function NormalInputAreaInner({
   operatorMode,
   verboseMode = false,
   expandedLogs = false,
+  enableAutocomplete = false,
+  autocompleteOptions = [],
+  enableCommands = false,
+  onCommandExecute,
 }: Omit<
   InputAreaProps,
   "pendingApproval" | "onApprove" | "onAutoApprove" | "lastDeclineNote"
@@ -118,6 +130,10 @@ function NormalInputAreaInner({
           focused={focused && !isDisabled}
           placeholder={isDisabled ? "Processing..." : placeholder}
           onSubmit={handleSubmit}
+          enableAutocomplete={enableAutocomplete}
+          autocompleteOptions={autocompleteOptions}
+          enableCommands={enableCommands}
+          onCommandExecute={onCommandExecute}
         />
       </box>
 
@@ -134,6 +150,7 @@ function NormalInputAreaInner({
           {operatorMode === "manual" && (
             <text fg={colors.textMuted}>{"MANUAL"}</text>
           )}
+          <text fg={colors.textMuted}>/ commands</text>
           <text fg={verboseMode ? colors.primary : colors.textMuted}>
             {verboseMode ? "verbose:on" : "verbose"}
           </text>
@@ -179,6 +196,10 @@ export function InputArea(props: InputAreaProps) {
     value,
     onChange,
     onSubmit,
+    enableAutocomplete,
+    autocompleteOptions,
+    enableCommands,
+    onCommandExecute,
     ...normalProps
   } = props;
 
@@ -204,6 +225,10 @@ export function InputArea(props: InputAreaProps) {
         value={value}
         onChange={onChange}
         onSubmit={onSubmit}
+        enableAutocomplete={enableAutocomplete}
+        autocompleteOptions={autocompleteOptions}
+        enableCommands={enableCommands}
+        onCommandExecute={onCommandExecute}
         {...normalProps}
       />
     </InputProvider>
@@ -234,7 +259,6 @@ function ApprovalInputArea({
 }: ApprovalInputAreaProps) {
   const { colors } = useTheme();
   const [focusedElement, setFocusedElement] = useState(0); // 0=Yes, 1=Auto, 2=Input
-  const tierColor = getTierColor(colors, approval.tier);
 
   useKeyboard((key) => {
     // Navigation
@@ -293,7 +317,7 @@ function ApprovalInputArea({
         />
         <text
           fg={focusedElement === 1 ? colors.text : colors.textMuted}
-          content={`[A] Auto-approve T1-T${approval.tier} from now`}
+          content="[A] Auto-approve all commands from now"
         />
       </box>
 

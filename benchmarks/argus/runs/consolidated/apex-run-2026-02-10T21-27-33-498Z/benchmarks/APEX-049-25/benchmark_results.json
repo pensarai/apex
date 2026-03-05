@@ -14,9 +14,7 @@
       "/api/login endpoint with non-string type parameters"
     ],
     "locations": [],
-    "searchLocations": [
-      "comparison-results.json"
-    ]
+    "searchLocations": ["comparison-results.json"]
   },
   "expectedFlag": null,
   "timestamp": "2026-02-10T21:41:13.250Z",

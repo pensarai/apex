@@ -14,6 +14,7 @@ import { config } from "../core/config";
 export interface AppCommandContext {
   route: Route;
   navigate: (route: Route) => void;
+  openSessionsDialog?: () => void;
 }
 
 /**
@@ -134,14 +135,13 @@ export const commands: CommandConfig[] = [
       },
       { name: "--name", valueHint: "<name>", description: "Session name" },
       {
+        name: "--autopilot",
+        description: "Disable approval gates (auto-approve all actions)",
+      },
+      {
         name: "--mode",
         valueHint: "<plan|manual|auto>",
         description: "Operator mode",
-      },
-      {
-        name: "--tier",
-        valueHint: "<1-5>",
-        description: "Auto-approve permission tier",
       },
       { name: "--auth-url", valueHint: "<url>", description: "Login page URL" },
       {
@@ -184,24 +184,12 @@ export const commands: CommandConfig[] = [
     ],
     handler: async (args, ctx) => {
       const flags = parseWebFlags(args);
-
-      // Operator mode - interactive session with human guidance
-      if (flags.target && hasEnoughFlagsToSkipWizard(flags)) {
-        try {
-          const session = await createOperatorSessionFromFlags(flags);
-          ctx.navigate({ type: "pentest", sessionId: session.id });
-          return;
-        } catch (e) {
-          // Fall through to wizard on error
-          console.error("Failed to create session:", e);
-        }
+      try {
+        const session = await createOperatorSessionFromFlags(flags);
+        ctx.navigate({ type: "operator", sessionId: session.id });
+      } catch (e) {
+        console.error("Failed to create operator session:", e);
       }
-      // Navigate to operator wizard with pre-filled values
-      ctx.navigate({
-        type: "base",
-        path: "operator",
-        options: flags as Record<string, unknown>,
-      });
     },
   },
   {
@@ -253,11 +241,8 @@ export const commands: CommandConfig[] = [
     aliases: ["s"],
     description: "Browse previous sessions",
     category: "Pentesting",
-    handler: async (args, ctx) => {
-      ctx.navigate({
-        type: "base",
-        path: "sessions",
-      });
+    handler: async (_args, ctx) => {
+      ctx.openSessionsDialog?.();
     },
   },
   {
@@ -346,6 +331,54 @@ export const commands: CommandConfig[] = [
       process.kill(process.pid, "SIGINT");
     },
   },
+  {
+    name: "auth",
+    description: "Connect to Pensar Console for managed inference",
+    category: "General",
+    handler: async (args, ctx) => {
+      ctx.navigate({
+        type: "base",
+        path: "auth",
+      });
+    },
+  },
+
+  {
+    name: "credits",
+    aliases: ["buy"],
+    description: "Buy credits / check balance",
+    category: "General",
+    handler: async (args, ctx) => {
+      ctx.navigate({
+        type: "base",
+        path: "credits",
+      });
+    },
+  },
+
+  {
+    name: "create-skill",
+    description: "Create a new operator skill",
+    category: "Skills",
+    handler: async (args, ctx) => {
+      ctx.navigate({
+        type: "base",
+        path: "create-skill",
+      });
+    },
+  },
+
+  // Add more commands here...
+  // Example:
+  // {
+  //   name: "clear",
+  //   aliases: ["cls"],
+  //   description: "Clear the screen",
+  //   category: "General",
+  //   handler: async (args, ctx) => {
+  //     ctx.clearScreen?.();
+  //   },
+  // },
 ];
 
 /**

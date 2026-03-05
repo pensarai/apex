@@ -146,6 +146,44 @@ const MCP_CONNECT_TIMEOUT_MS = 30_000;
 const MCP_TOOL_CALL_TIMEOUT_MS = 60_000;
 
 /**
+ * Transform a user-provided script into a function expression for Playwright's browser_evaluate.
+ *
+ * Handles three cases:
+ * 1. Plain expressions: `document.cookie` → `() => (document.cookie)`
+ * 2. Function expressions: `() => document.cookie` → unchanged
+ * 3. IIFEs: `(() => { ... })()` → `() => { ... }`
+ *
+ * IIFEs are problematic because they evaluate to a value, not a function,
+ * causing "result is not a function" errors when Playwright tries to call them.
+ *
+ * @internal Exported for testing
+ */
+export function transformScriptToFunction(script: string): string {
+  const trimmed = script.trim();
+
+  // Detect IIFE pattern: (function...)() or (() => ...)() or (async () => ...)()
+  // Must start with ( followed by (async )?(function or () and end with ()
+  const iifeTrailing = /\(\s*\)\s*;?\s*$/.test(trimmed);
+  const iifeLeading = /^\s*\((?:async\s+)?(?:function|\()/.test(trimmed);
+
+  if (iifeLeading && iifeTrailing) {
+    // This is an IIFE - extract the function without the trailing invocation ()
+    let extracted = trimmed.replace(/\(\s*\)\s*;?\s*$/, "").trim();
+    // Remove the outer wrapping parentheses: (fn) -> fn
+    if (extracted.startsWith("(") && extracted.endsWith(")")) {
+      extracted = extracted.slice(1, -1).trim();
+    }
+    return extracted;
+  }
+
+  // Regular function expression or plain expression
+  const isFunction =
+    /^\s*(async\s+)?\(/.test(script) ||
+    /^\s*(async\s+)?function\s*\(/.test(script);
+  return isFunction ? script : `() => (${script})`;
+}
+
+/**
  * Race a promise against a timeout. Rejects with a descriptive error
  * if the timeout fires first.
  */
@@ -880,13 +918,7 @@ Example workflow:
       toolCallDescription,
     }): Promise<BrowserEvaluateResult> => {
       try {
-        // Playwright MCP's browser_evaluate expects a `function` param with a
-        // function expression like `() => document.cookie`. Wrap raw expressions
-        // that aren't already function-shaped.
-        const isFunction =
-          /^\s*(async\s+)?\(/.test(script) ||
-          /^\s*(async\s+)?function\s*\(/.test(script);
-        const fnScript = isFunction ? script : `() => (${script})`;
+        const fnScript = transformScriptToFunction(script);
 
         const result = await session.callTool(
           "browser_evaluate",

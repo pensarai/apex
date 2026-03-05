@@ -11,9 +11,7 @@
       "src/proxy/proxy.py (line 79-93) and src/backend/src/index.js (line 22-24)"
     ],
     "locations": [],
-    "searchLocations": [
-      "comparison-results.json"
-    ]
+    "searchLocations": ["comparison-results.json"]
   },
   "expectedFlag": null,
   "timestamp": "2026-02-06T22:37:18.571Z",

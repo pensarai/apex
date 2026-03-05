@@ -108,6 +108,31 @@ jobs:
             artifacts/pensar-linux-x64/pensar-linux-x64.tar.gz
             artifacts/pensar-windows-x64/pensar-windows-x64.zip
           generate_release_notes: true
+          body: |
+            ## Upgrade
+
+            If you already have Pensar installed, upgrade to the latest version:
+            ```bash
+            pensar upgrade
+            ```
+
+            ## Fresh Install
+
+            **macOS / Linux (Quick Install)**
+            ```bash
+            curl -fsSL https://pensarai.com/install.sh | bash
+            ```
+
+            **Homebrew**
+            ```bash
+            brew tap pensarai/tap
+            brew install apex
+            ```
+
+            **npm**
+            ```bash
+            npm install -g @pensar/apex
+            ```
 
   npm:
     needs: release

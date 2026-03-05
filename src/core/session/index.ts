@@ -1,12 +1,12 @@
+import type { ModelMessage } from "ai";
 import z from "zod";
 import path from "path";
 import os from "os";
-import { existsSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import * as Identifier from "../id/id";
 import { getCurrentVersion } from "../installation";
 import * as Storage from "../storage";
 import type { Message } from "../messages/types";
-import * as Messages from "../messages";
 import { RateLimiter } from "../services/rateLimiter";
 import { CredentialManager } from "../credentials";
 import {
@@ -23,9 +23,9 @@ export const DEFAULT_OUTCOME_GUIDANCE =
   "Create proof-of-concept exploits that demonstrate the vulnerability exists without causing damage.";
 
 /**
- * Benchmark outcome guidance (extract flags)
+ * Exfil-mode outcome guidance (extract flags / sensitive data)
  */
-export const BENCHMARK_OUTCOME_GUIDANCE =
+export const EXFIL_OUTCOME_GUIDANCE =
   "Exfiltrate data to extract the flag value. " +
   "Create proof-of-concept exploits that successfully extract the flag from the target system.";
 
@@ -79,7 +79,7 @@ export type OffensiveHeadersConfig = z.infer<
 
 const OperatorSettingsObject = z.object({
   initialMode: z.enum(["plan", "manual", "auto"]).default("manual"),
-  autoApproveTier: z.number().min(1).max(5).default(2),
+  requireApproval: z.boolean().default(true),
   enableSuggestions: z.boolean().default(true),
 });
 
@@ -141,10 +141,6 @@ const SessionConfigObject = z.object({
   authenticationInstructions: z.string().optional(),
   requestsPerSecond: z.number().optional(),
   operatorSettings: OperatorSettingsObject.optional(),
-  /** Enable CVSS 4.0 scoring for findings (defaults to true if not specified) */
-  enableCvssScoring: z.boolean().optional(),
-  /** Model to use for CVSS scorer subagent (default: claude-4-5-haiku) */
-  cvssModel: z.string().optional(),
   /** Toolset state for controlling which tools are available */
   toolsetState: ToolsetStateSchema.optional(),
   /** Whether to enumerate subdomains during attack surface discovery (default: false) */
@@ -153,6 +149,8 @@ const SessionConfigObject = z.object({
   cwd: z.string().optional(),
   /** Email inboxes available to the agent for monitoring/reading email */
   emailIntegration: EmailIntegrationConfigObject.optional(),
+  /** Enable exfiltration mode — allows internal pivoting and flag extraction through confirmed vulnerabilities */
+  exfilMode: z.boolean().optional(),
 });
 
 export type SessionConfig = z.infer<typeof SessionConfigObject>;
@@ -170,15 +168,15 @@ export type SessionConfig = z.infer<typeof SessionConfigObject>;
 export interface ExecutionSession {
   /** Unique session identifier (format: {prefix}-ses_{timestamp}_{random}) */
   id: string;
-  /** Root path for all session artifacts (~/.pensar/executions/{id}) */
+  /** Root path for all session artifacts (~/.pensar/sessions/{id}) */
   rootPath: string;
-  /** Path for security findings (~/.pensar/executions/{id}/findings) */
+  /** Path for security findings (~/.pensar/sessions/{id}/findings) */
   findingsPath: string;
-  /** Path for agent scratchpad notes (~/.pensar/executions/{id}/scratchpad) */
+  /** Path for agent scratchpad notes (~/.pensar/sessions/{id}/scratchpad) */
   scratchpadPath: string;
-  /** Path for execution logs (~/.pensar/executions/{id}/logs) */
+  /** Path for execution logs (~/.pensar/sessions/{id}/logs) */
   logsPath: string;
-  /** Path for proof-of-concept scripts (~/.pensar/executions/{id}/pocs) */
+  /** Path for proof-of-concept scripts (~/.pensar/sessions/{id}/pocs) */
   pocsPath: string;
   /** Target URL or system being tested */
   target: string;
@@ -213,26 +211,25 @@ export function getPensarDir(): string {
 }
 
 /**
- * Get the executions directory path
+ * Get the sessions directory path
  */
-export function getExecutionsDir(): string {
-  return path.join(getPensarDir(), "executions");
+export function getSessionsDir(): string {
+  return path.join(getPensarDir(), "sessions");
 }
 
 /**
- * Get the root path for a session's execution directory
+ * Get the root path for a session's artifact directory
  */
-export function getExecutionRoot(id: string): string {
-  console.log("GET EXECUTION ROOT", id);
-  return path.join(getExecutionsDir(), id);
+export function getSessionRoot(id: string): string {
+  return path.join(getSessionsDir(), id);
 }
 
 /**
- * Create a new execution session with directory structure for agent artifacts.
+ * Create a new session with directory structure for agent artifacts.
  * Uses Storage namespace for safe writes with locking.
  *
  * Directory structure created:
- * ~/.pensar/executions/{id}/
+ * ~/.pensar/sessions/{id}/
  * ├── session.json      # Session metadata
  * ├── README.md         # Session documentation
  * ├── findings/         # Security findings
@@ -240,25 +237,25 @@ export function getExecutionRoot(id: string): string {
  * ├── logs/             # Execution logs
  * └── pocs/             # Proof-of-concept scripts
  */
-export async function createExecution(
+export async function createSessionDirs(
   input: CreateExecutionInput,
 ): Promise<void> {
   const { session } = input;
 
   // Create directory structure with locking
-  await Storage.createDir(["executions", session.id]);
-  await Storage.createDir(["executions", session.id, "findings"]);
-  await Storage.createDir(["executions", session.id, "scratchpad"]);
-  await Storage.createDir(["executions", session.id, "logs"]);
-  await Storage.createDir(["executions", session.id, "pocs"]);
+  await Storage.createDir(["sessions", session.id]);
+  await Storage.createDir(["sessions", session.id, "findings"]);
+  await Storage.createDir(["sessions", session.id, "scratchpad"]);
+  await Storage.createDir(["sessions", session.id, "logs"]);
+  await Storage.createDir(["sessions", session.id, "pocs"]);
 
   const startTime = new Date().toISOString();
 
   // Write README.md
   const readme = generateSessionReadme(session);
-  await Storage.writeRaw(["executions", session.id, "README.md"], readme);
+  await Storage.writeRaw(["sessions", session.id, "README.md"], readme);
 
-  console.info("created execution session", session.id);
+  console.info("created session", session.id);
 }
 
 /**
@@ -302,7 +299,7 @@ export async function getExecution(
         version: string;
         time: { created: number; updated: number };
       }
-    >(["executions", sessionId, "session"]);
+    >(["sessions", sessionId, "session"]);
     return metadata;
   } catch (e) {
     if (e instanceof Storage.NotFoundError) {
@@ -378,7 +375,7 @@ export async function create(input: CreateInputProps) {
     `${input.prefix ? input.prefix : ""}` +
     Identifier.descending("session", input.id);
 
-  const rootPath = getExecutionRoot(id);
+  const rootPath = getSessionRoot(id);
   const findingsPath = path.join(rootPath, "findings");
   const scratchpadPath = path.join(rootPath, "scratchpad");
   const logsPath = path.join(rootPath, "logs");
@@ -420,7 +417,10 @@ export async function create(input: CreateInputProps) {
         },
       },
       outcomeGuidance:
-        input.config?.outcomeGuidance || DEFAULT_OUTCOME_GUIDANCE,
+        input.config?.outcomeGuidance ||
+        (input.config?.exfilMode
+          ? EXFIL_OUTCOME_GUIDANCE
+          : DEFAULT_OUTCOME_GUIDANCE),
     },
     _rateLimiter: rateLimiter,
     credentialManager,
@@ -435,13 +435,13 @@ export async function create(input: CreateInputProps) {
 
   // Exclude non-serializable fields (class instances with methods)
   const { _rateLimiter, credentialManager: _cm, ...sessionData } = result;
-  await Storage.write(["session", result.id], sessionData);
-  await createExecution({ session: result });
+  await createSessionDirs({ session: result });
+  await Storage.write(["sessions", result.id, "session"], sessionData);
   return result;
 }
 
 export const get = async (id: string) => {
-  const read = await Storage.read<SessionInfo>(["session", id]);
+  const read = await Storage.read<SessionInfo>(["sessions", id, "session"]);
 
   // Reconstruct RateLimiter instance (it gets serialized as plain object)
   // This ensures the session has a proper RateLimiter with methods
@@ -457,39 +457,44 @@ export const get = async (id: string) => {
   return read;
 };
 
-export const executionPath = (id: string) =>
-  Storage.locate(["executions", id], "");
+export const sessionPath = (id: string) => Storage.locate(["sessions", id], "");
 
 export async function update(
   id: string,
   editor: (session: SessionInfo) => void,
 ) {
-  const result = await Storage.update<SessionInfo>(["session", id], (draft) => {
-    editor(draft);
-    draft.time.updated = Date.now();
-  });
+  const result = await Storage.update<SessionInfo>(
+    ["sessions", id, "session"],
+    (draft) => {
+      editor(draft);
+      draft.time.updated = Date.now();
+    },
+  );
   console.info("updated session", result);
   return result;
 }
 
-const MessagesInput = z.object({
-  sessionId: Identifier.schema("session"),
-  limit: z.number().optional(),
-});
-
-export const messages = async (input: z.output<typeof MessagesInput>) => {
-  const result = [] as Message[];
-  for await (const msg of Messages.stream(input)) {
-    if (input.limit && result.length >= input.limit) break;
-    result.push(msg);
-  }
-  result.reverse();
-  return result;
-};
-
 export async function* list() {
-  for (const item of await Storage.list(["session"])) {
-    yield Storage.read<SessionInfo>(item);
+  const sessionsDir = getSessionsDir();
+  let entries: import("fs").Dirent[];
+  try {
+    entries = await import("fs/promises").then((fsp) =>
+      fsp.readdir(sessionsDir, { withFileTypes: true }),
+    );
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    try {
+      yield await Storage.read<SessionInfo>([
+        "sessions",
+        entry.name,
+        "session",
+      ]);
+    } catch {
+      // Skip directories without a valid session.json
+    }
   }
 }
 
@@ -499,18 +504,17 @@ const RemoveInput = z.object({
 
 export const remove = async (input: z.output<typeof RemoveInput>) => {
   try {
-    const session = await get(input.sessionId);
-    for (const msg of await Storage.list(["message", input.sessionId])) {
-      await Storage.remove(msg);
-    }
-    await Storage.remove(["session", input.sessionId]);
+    // Remove the entire session directory (metadata + artifacts)
+    const sessionDir = getSessionRoot(input.sessionId);
+    const fsp = await import("fs/promises");
+    await fsp.rm(sessionDir, { recursive: true, force: true });
   } catch (e) {
     console.error(e);
   }
 };
 
 export const updateMessage = async (msg: Message) => {
-  await Storage.write(["message", msg.sessionId, msg.id], msg);
+  await Storage.write(["sessions", msg.sessionId, "messages", msg.id], msg);
   return msg;
 };
 
@@ -520,7 +524,12 @@ const RemoveMsgInput = z.object({
 });
 
 export const removeMessage = async (input: z.output<typeof RemoveMsgInput>) => {
-  await Storage.remove(["message", input.sessionId, input.messageId]);
+  await Storage.remove([
+    "sessions",
+    input.sessionId,
+    "messages",
+    input.messageId,
+  ]);
   return input.messageId;
 };
 
@@ -529,17 +538,23 @@ export const removeMessage = async (input: z.output<typeof RemoveMsgInput>) => {
 // ============================================================================
 
 /**
- * Persisted operator dashboard state for session resumption
+ * Persisted operator dashboard state for session resumption.
+ *
+ * `messages` stores raw AI SDK model messages (the single source of truth).
+ * Display messages are derived on resume via `convertModelMessagesToUI`.
+ *
+ * Note: The runtime operator state type lives in `operator/types.ts` as
+ * `OperatorSessionState` — this is the persistence shape only.
  */
-export interface OperatorSessionState {
+export interface PersistedOperatorState {
   /** Operator mode: plan, manual, auto */
   mode: string;
-  /** Auto-approve tier level */
-  autoApproveTier: number;
+  /** Whether commands require user approval before execution */
+  requireApproval: boolean;
   /** Current stage: setup, recon, foothold, etc. */
   currentStage: string;
-  /** Chat messages history */
-  messages: unknown[];
+  /** Raw AI SDK model messages — single source of truth for conversation history */
+  messages: ModelMessage[];
   /** Discovered attack surface endpoints */
   attackSurface: unknown[];
   /** Found credentials */
@@ -561,30 +576,42 @@ export interface OperatorSessionState {
 }
 
 /**
- * Save operator dashboard state for later resumption
- */
-export async function saveOperatorState(
-  sessionId: string,
-  state: OperatorSessionState,
-): Promise<void> {
-  const session = await get(sessionId);
-  const statePath = path.join(session.rootPath, "operator-state.json");
-  writeFileSync(statePath, JSON.stringify(state, null, 2));
-  console.info("saved operator state for session", sessionId);
-}
-
-/**
- * Load operator dashboard state for session resumption
+ * Load operator dashboard state for session resumption.
+ *
+ * The agent persists a plain `ModelMessage[]` array to `messages.json`,
+ * so we normalise that into a `PersistedOperatorState` envelope here.
  */
 export async function loadOperatorState(
   sessionId: string,
-): Promise<OperatorSessionState | null> {
+): Promise<PersistedOperatorState | null> {
   try {
     const session = await get(sessionId);
-    const statePath = path.join(session.rootPath, "operator-state.json");
+    const statePath = path.join(session.rootPath, "messages.json");
     if (!existsSync(statePath)) return null;
     const data = readFileSync(statePath, "utf-8");
-    return JSON.parse(data) as OperatorSessionState;
+    const parsed = JSON.parse(data);
+
+    // The agent writes a raw ModelMessage[] array — wrap it.
+    if (Array.isArray(parsed)) {
+      return {
+        mode: session.config?.operatorSettings?.initialMode ?? "manual",
+        requireApproval:
+          session.config?.operatorSettings?.requireApproval ?? true,
+        currentStage: "recon",
+        messages: parsed as ModelMessage[],
+        attackSurface: [],
+        credentials: [],
+        verifiedVulns: [],
+        targetState: null,
+        hypotheses: [],
+        evidence: [],
+        actionHistory: [],
+        pausedAt: new Date().toISOString(),
+        lastRunId: "",
+      };
+    }
+
+    return parsed as PersistedOperatorState;
   } catch (error) {
     console.error("Error loading operator state:", error);
     return null;
@@ -595,7 +622,7 @@ export async function loadOperatorState(
  * Check if a session has saved operator state
  */
 export function hasOperatorState(session: SessionInfo): boolean {
-  const statePath = path.join(session.rootPath, "operator-state.json");
+  const statePath = path.join(session.rootPath, "messages.json");
   return existsSync(statePath);
 }
 
@@ -618,7 +645,7 @@ export async function updateOperatorSettings(
     if (!session.config.operatorSettings) {
       session.config.operatorSettings = {
         initialMode: "manual",
-        autoApproveTier: 2,
+        requireApproval: true,
         enableSuggestions: true,
       };
     }
@@ -627,9 +654,9 @@ export async function updateOperatorSettings(
     if (settings.initialMode !== undefined) {
       session.config.operatorSettings.initialMode = settings.initialMode;
     }
-    if (settings.autoApproveTier !== undefined) {
-      session.config.operatorSettings.autoApproveTier =
-        settings.autoApproveTier;
+    if (settings.requireApproval !== undefined) {
+      session.config.operatorSettings.requireApproval =
+        settings.requireApproval;
     }
     if (settings.enableSuggestions !== undefined) {
       session.config.operatorSettings.enableSuggestions =
@@ -683,10 +710,10 @@ export async function toggleTool(
 }
 
 export const sessions = {
-  getExecutionRoot,
+  getSessionRoot,
   getOffensiveHeaders,
   DEFAULT_OUTCOME_GUIDANCE,
-  BENCHMARK_OUTCOME_GUIDANCE,
+  EXFIL_OUTCOME_GUIDANCE,
   create,
   get,
   update,
@@ -694,7 +721,6 @@ export const sessions = {
   remove,
   updateMessage,
   removeMessage,
-  saveOperatorState,
   loadOperatorState,
   hasOperatorState,
   updateOperatorSettings,

@@ -1,0 +1,198 @@
+---
+title: "Getting Started"
+description: "Install and configure Pensar Apex for AI-powered penetration testing"
+---
+
+## Prerequisites
+
+Before installing Apex, you'll need to install the required dependencies:
+
+### Install Bun
+
+Bun is a fast JavaScript runtime required by Apex. Install it using one of the following methods:
+
+<CodeBlock title="macOS, Linux, and WSL">
+  ```bash curl -fsSL https://bun.sh/install | bash ```
+</CodeBlock>
+
+<CodeBlock title="Windows (PowerShell)">
+  ```powershell powershell -c "irm bun.sh/install.ps1 | iex" ```
+</CodeBlock>
+
+<Callout intent="info">
+  After installation, restart your terminal to ensure `bun` is available in your
+  PATH.
+</Callout>
+
+### Install nmap
+
+nmap is required for network scanning functionality:
+
+<CodeBlock title="macOS">```bash brew install nmap ```</CodeBlock>
+
+<CodeBlock title="Debian/Ubuntu">
+  ```bash sudo apt-get update && sudo apt-get install -y nmap ```
+</CodeBlock>
+
+<CodeBlock title="Fedora/RHEL">```bash sudo dnf install -y nmap ```</CodeBlock>
+
+<CodeBlock title="Windows">
+  Download the installer from
+  [nmap.org/download.html](https://nmap.org/download.html) and ensure `nmap` is
+  in your PATH.
+</CodeBlock>
+
+## Installation
+
+Once the prerequisites are installed, install Apex globally using your preferred package manager:
+
+<Tabs>
+  <Tab title="macOS/Linux">
+    ```bash curl -fsSL https://pensarai.com/install.sh | bash ```
+  </Tab>
+  <Tab title="Homebrew">
+    ```bash brew tap pensarai/tap brew install apex ```
+  </Tab>
+  <Tab title="Windows">
+    ```powershell irm https://pensarai.com/apex.ps1 | iex ```
+  </Tab>
+  <Tab title="npm">
+    ```bash npm install -g @pensar/apex ``` Requires
+    [Node.js](https://nodejs.org)
+  </Tab>
+</Tabs>
+
+<Callout intent="success">
+  Apex is now installed! You can run it from anywhere by typing `pensar` in your
+  terminal.
+</Callout>
+
+## Configuration
+
+Before running Apex, you need to configure your AI provider API key. Apex supports multiple providers, but **Anthropic is recommended** for best results.
+
+<AccordionGroup>
+  <Accordion title="Anthropic (Recommended)" icon="sparkles">
+    Get your API key from [console.anthropic.com](https://console.anthropic.com/).
+
+    <Callout intent="success">
+      Anthropic models (especially Claude Sonnet) provide the best performance for penetration testing tasks.
+    </Callout>
+
+  </Accordion>
+
+  <Accordion title="OpenAI" icon="openai" iconType="brands">
+    Get your API key from [platform.openai.com](https://platform.openai.com/).
+
+  </Accordion>
+
+  <Accordion title="OpenRouter" icon="route">
+    Get your API key from [openrouter.ai](https://openrouter.ai/).
+
+    OpenRouter provides access to multiple AI models through a single API.
+
+  </Accordion>
+
+  <Accordion title="AWS Bedrock" icon="aws" iconType="brands">
+    Configure AWS credentials with Bedrock access.
+
+    Ensure you have access to Anthropic Claude models in AWS Bedrock.
+
+  </Accordion>
+</AccordionGroup>
+
+<Callout intent="info">
+  **Tip:** You'll configure your API key directly in Apex using the `/providers`
+  command - no environment variables needed!
+</Callout>
+
+## Running Apex
+
+Launch Apex by running:
+
+```bash
+pensar
+```
+
+This will start the interactive terminal interface where you can access all Apex commands.
+
+<img
+  src="./assets/apex-screenshot.png"
+  alt="Apex Terminal Interface"
+  style={{ borderRadius: "8px", marginTop: "16px" }}
+/>
+
+## Using Kali Linux Container (Optional)
+
+For **best performance** and maximum compatibility with security tools, we recommend running Apex in the included Kali Linux container:
+
+<Steps>
+  <Step title="Clone the Repository">
+    ```bash git clone https://github.com/pensarai/apex.git cd apex/container ```
+  </Step>
+  <Step title="Configure Environment">
+    ```bash cp env.example .env # Edit .env and add your API keys ```
+  </Step>
+  <Step title="Start Container">```bash docker compose up --build -d ```</Step>
+  <Step title="Enter Container">
+    ```bash docker compose exec kali-apex bash ```
+  </Step>
+  <Step title="Run Apex">Inside the container, run: ```bash pensar ```</Step>
+</Steps>
+
+<Callout intent="info">
+  **Linux Users:** Consider using `network_mode: host` in `docker-compose.yml`
+  for comprehensive network scanning capabilities.
+</Callout>
+
+## First Steps
+
+Now that Apex is installed, here's how to get started:
+
+<Steps>
+  <Step title="Configure AI Provider">
+    Run `/providers` to set up your AI provider API key
+  </Step>
+  <Step title="Select Model">
+    Run `/models` to choose which AI model to use
+  </Step>
+  <Step title="Start Testing">
+    Run `/init` to configure and launch your first penetration test
+  </Step>
+</Steps>
+
+<CardGroup cols={2}>
+  <Card title="/providers" icon="plug">
+    Connect your AI provider and configure API keys.
+  </Card>
+  <Card title="/models" icon="microchip">
+    Select which AI model to use for testing.
+  </Card>
+  <Card title="/init" icon="play">
+    Start a new penetration testing session.
+  </Card>
+  <Card title="/help" icon="circle-question">
+    View all available commands and their descriptions.
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Commands Reference" icon="terminal" href="/apex/commands/help">
+    Learn about all available commands in Apex.
+  </Card>
+  <Card title="AI Providers" icon="plug" href="/apex/commands/providers">
+    Configure your AI provider for testing.
+  </Card>
+  <Card title="Model Selection" icon="microchip" href="/apex/commands/models">
+    Choose the right AI model for your needs.
+  </Card>
+  <Card title="Start Testing" icon="play" href="/apex/commands/init">
+    Launch your first penetration test.
+  </Card>
+</CardGroup>
+
+## Need Help?
+
+If you encounter any issues or have questions, reach out to our support team at [team@pensarai.com](mailto:team@pensarai.com).

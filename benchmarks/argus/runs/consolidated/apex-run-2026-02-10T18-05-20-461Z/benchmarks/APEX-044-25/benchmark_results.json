@@ -15,9 +15,7 @@
       "src/trading-ui/src/index.js (lines 55-75)"
     ],
     "locations": [],
-    "searchLocations": [
-      "comparison-results.json"
-    ]
+    "searchLocations": ["comparison-results.json"]
   },
   "expectedFlag": null,
   "timestamp": "2026-02-10T18:35:23.081Z",

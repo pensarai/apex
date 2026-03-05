@@ -13,6 +13,7 @@ import type { AIAuthConfig } from "../../ai/utils";
 import type { CredentialManager } from "../../credentials";
 import type { FindingsRegistry } from "../../findings/registry";
 import type { SessionInfo } from "../../session";
+import type { ApprovalGate } from "../../operator";
 import type { ToolName } from "./tools";
 import type { UnifiedSandbox } from "./tools/sandbox";
 import { z } from "zod";
@@ -169,6 +170,33 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    * `activeTools` to get typed structured output from `consume()`.
    */
   responseSchema?: z.ZodSchema;
+
+  /**
+   * When provided, each tool call is gated through the approval gate.
+   * The gate will pause execution until the operator approves or denies
+   * the call (when `requireApproval` is enabled on the gate).
+   */
+  approvalGate?: ApprovalGate;
+
+  /**
+   * Directory where `messages.json` is persisted after each step.
+   * Defaults to `session.rootPath`.
+   */
+  messagesDir?: string;
+
+  /**
+   * Mutable handle the agent populates so the caller can cancel the
+   * currently running shell command without killing the agent.
+   */
+  commandCancelHandle?: CommandCancelHandle;
+};
+
+/**
+ * Mutable handle for cancelling the running shell command.
+ * The agent populates `cancel` at construction time; the caller invokes it.
+ */
+export type CommandCancelHandle = {
+  cancel: () => boolean;
 };
 
 /**
@@ -220,6 +248,8 @@ export type ConsumeCallbacks = {
   onToolResult?: (
     delta: Extract<TextStreamPart<ToolSet>, { type: "tool-result" }>,
   ) => void;
+  /** Streaming stdout chunks from execute_command while it is still running. */
+  onCommandOutput?: (data: string) => void;
   onError?: (error: unknown) => void;
   subagentCallbacks?: SubagentConsumeCallbacks;
 };

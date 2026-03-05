@@ -11,7 +11,7 @@ import {
   type SessionInfo,
 } from "../../core/session";
 import { generateRandomName } from "../../util/name";
-import type { OperatorMode, PermissionTier } from "../../core/operator";
+import type { OperatorMode } from "../../core/operator";
 import { createToolsetState } from "../../core/toolset";
 
 // ============================================================================
@@ -124,7 +124,8 @@ export interface WebCommandFlags {
 
   // Operator mode options (ignored if swarm)
   mode?: OperatorMode;
-  tier?: number;
+  requireApproval?: boolean;
+  autopilot?: boolean;
 
   // Auth options
   authUrl?: string;
@@ -153,7 +154,9 @@ const webFlagSchema: FlagSchema = {
   name: { type: "string", aliases: ["n"] },
   swarm: { type: "boolean" },
   mode: { type: "string", aliases: ["m"] },
-  tier: { type: "string" },
+  "require-approval": { type: "boolean" },
+  "no-approval": { type: "boolean" },
+  autopilot: { type: "boolean" },
   "auth-url": { type: "string" },
   "auth-user": { type: "string" },
   "auth-pass": { type: "string" },
@@ -187,11 +190,11 @@ export function parseWebFlags(args: string[]): WebCommandFlags {
       flags.mode = mode as OperatorMode;
     }
   }
-  if (raw.tier) {
-    const tier = parseInt(String(raw.tier), 10);
-    if (tier >= 1 && tier <= 5) {
-      flags.tier = tier;
-    }
+  if (raw.requireApproval) flags.requireApproval = true;
+  if (raw.noApproval) flags.requireApproval = false;
+  if (raw.autopilot) {
+    flags.autopilot = true;
+    flags.requireApproval = false;
   }
 
   // Auth options
@@ -259,7 +262,7 @@ export function hasEnoughFlagsToSkipWizard(flags: WebCommandFlags): boolean {
     // Operator mode - skip wizard if any additional config is provided
     return !!(
       flags.mode ||
-      flags.tier ||
+      flags.requireApproval !== undefined ||
       flags.authUrl ||
       flags.authUser ||
       flags.hosts ||
@@ -284,7 +287,7 @@ export async function createOperatorSessionFromFlags(
     mode: "operator",
     operatorSettings: {
       initialMode: flags.mode || "manual",
-      autoApproveTier: (flags.tier || 2) as PermissionTier,
+      requireApproval: flags.requireApproval ?? true,
       enableSuggestions: true,
     },
     // Initialize toolset with full web-pentest tools
@@ -320,8 +323,9 @@ export async function createOperatorSessionFromFlags(
     };
   }
 
+  const targets = flags.target ? [flags.target] : [];
   const session = await sessions.create({
-    targets: [flags.target!],
+    targets,
     name: flags.name || generateRandomName(),
     config: sessionConfig,
   });

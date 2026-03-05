@@ -15,9 +15,7 @@
       "src/services/app/server.js - Admin Debug Endpoint"
     ],
     "locations": [],
-    "searchLocations": [
-      "comparison-results.json"
-    ]
+    "searchLocations": ["comparison-results.json"]
   },
   "expectedFlag": null,
   "timestamp": "2026-02-10T22:06:05.857Z",

@@ -4,6 +4,7 @@ import AgentDisplay, { type DisplayMessage } from "../agent-display";
 import { SpinnerDots } from "../sprites";
 import { useDialog } from "../../context/dialog";
 import type { ResumeInfo } from "../../../core/session/loader";
+import { REPORT_FILENAME_MD } from "../../../core/report";
 import { useTheme } from "../../theme";
 
 // Re-export DisplayMessage as UIMessage for backwards compatibility
@@ -314,7 +315,7 @@ export default function SwarmDashboard({
         >
           <text fg={colors.primary}>Pentest Completed</text>
           <text fg={colors.textMuted}>
-            {sessionPath}/comprehensive-pentest-report.md
+            {sessionPath}/{REPORT_FILENAME_MD}
           </text>
           <box flexDirection="row" gap={2}>
             <text>

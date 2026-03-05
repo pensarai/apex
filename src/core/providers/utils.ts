@@ -27,6 +27,8 @@ export function isProviderConfigured(
       return !!config.anthropicAPIKey;
     case "openai":
       return !!config.openAiAPIKey;
+    case "google":
+      return !!config.googleAPIKey;
     case "openrouter":
       return !!config.openRouterAPIKey;
     case "bedrock":
@@ -37,6 +39,8 @@ export function isProviderConfigured(
         config.localModelName ||
         process.env.LOCAL_MODEL_URL
       );
+    case "pensar":
+      return !!(config.pensarAPIKey || config.accessToken);
     default:
       return false;
   }
@@ -46,11 +50,14 @@ export function hasAnyProviderConfigured(config: Config): boolean {
   return (
     !!config.anthropicAPIKey ||
     !!config.openAiAPIKey ||
+    !!config.googleAPIKey ||
     !!config.openRouterAPIKey ||
     !!config.bedrockAPIKey ||
     !!config.localModelUrl ||
     !!config.localModelName ||
-    !!process.env.LOCAL_MODEL_URL
+    !!process.env.LOCAL_MODEL_URL ||
+    !!config.pensarAPIKey ||
+    !!config.accessToken
   );
 }
 

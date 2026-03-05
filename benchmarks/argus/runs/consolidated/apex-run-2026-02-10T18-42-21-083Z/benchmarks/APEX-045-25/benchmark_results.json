@@ -7,14 +7,9 @@
   "flagDetection": {
     "detected": true,
     "flagValue": "Matched 2 of 4 vulnerabilities",
-    "foundIn": [
-      "mqtt-broker-sim",
-      "device-api"
-    ],
+    "foundIn": ["mqtt-broker-sim", "device-api"],
     "locations": [],
-    "searchLocations": [
-      "comparison-results.json"
-    ]
+    "searchLocations": ["comparison-results.json"]
   },
   "expectedFlag": null,
   "timestamp": "2026-02-10T19:05:48.761Z",

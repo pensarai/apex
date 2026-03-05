@@ -27,8 +27,10 @@ export type AIModel = AnthropicMessagesModelId | OpenAIChatModelId | string; // 
 export type AIModelProvider =
   | "anthropic"
   | "openai"
+  | "google"
   | "openrouter"
   | "bedrock"
+  | "pensar"
   | "local";
 
 function checkIfRateLimitError(error: unknown): boolean {

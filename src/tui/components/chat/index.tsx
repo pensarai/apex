@@ -23,14 +23,11 @@ interface ChatAppProps {
   initialView?: ChatAppView;
   /** Initial session ID (for resume) */
   initialSessionId?: string;
-  /** Is this a resume? */
-  isResume?: boolean;
 }
 
 export function ChatApp({
   initialView = "home",
   initialSessionId,
-  isResume: initialIsResume = false,
 }: ChatAppProps) {
   const config = useConfig();
   const { model } = useAgent();
@@ -38,7 +35,6 @@ export function ChatApp({
   // View state
   const [currentView, setCurrentView] = useState<ChatAppView>(initialView);
   const [activeSession, setActiveSession] = useState<SessionInfo | null>(null);
-  const [isResume, setIsResume] = useState(initialIsResume);
   const [sessionModel, setSessionModel] = useState<ModelInfo>(model);
   const [initialDirective, setInitialDirective] = useState<string | undefined>(
     undefined,
@@ -51,7 +47,6 @@ export function ChatApp({
         if (session) {
           setActiveSession(session);
           setCurrentView("chat");
-          setIsResume(initialIsResume);
         }
       });
     }
@@ -59,16 +54,11 @@ export function ChatApp({
 
   // Handle view navigation
   const handleNavigate = useCallback(
-    (
-      view: ChatAppView,
-      options?: { sessionId?: string; isResume?: boolean },
-    ) => {
+    (view: ChatAppView, options?: { sessionId?: string }) => {
       if (view === "chat" && options?.sessionId) {
-        // Resume session
         sessions.get(options.sessionId).then((session) => {
           if (session) {
             setActiveSession(session);
-            setIsResume(options.isResume ?? false);
             setCurrentView("chat");
           }
         });
@@ -88,7 +78,6 @@ export function ChatApp({
     });
     setActiveSession(session);
     setInitialDirective(directive); // Pass directive to Session component
-    setIsResume(false);
     setCurrentView("chat");
   }, []);
 
@@ -110,7 +99,7 @@ export function ChatApp({
         },
         operatorSettings: {
           initialMode: "manual",
-          autoApproveTier: 2,
+          requireApproval: true,
           enableSuggestions: true,
         },
       },
@@ -118,7 +107,6 @@ export function ChatApp({
 
     setActiveSession(session);
     setSessionModel(configData.model);
-    setIsResume(false);
     setCurrentView("chat");
   }, []);
 
@@ -126,7 +114,6 @@ export function ChatApp({
   const handleExitChat = useCallback(() => {
     setCurrentView("home");
     setActiveSession(null);
-    setIsResume(false);
     setInitialDirective(undefined);
   }, []);
 

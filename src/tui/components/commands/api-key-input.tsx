@@ -34,10 +34,14 @@ export default function APIKeyInput({
         return "Get your API key from console.anthropic.com";
       case "openai":
         return "Get your API key from platform.openai.com";
+      case "google":
+        return "Get your API key from aistudio.google.com/apikey";
       case "openrouter":
         return "Get your API key from openrouter.ai/keys";
       case "bedrock":
         return "Enter your AWS Access Key ID (configure region separately) or AWS Bedrock API Key";
+      case "pensar":
+        return "Get your API key from console.pensar.dev/connect (or run /auth)";
       default:
         return "Enter your API key";
     }

@@ -9,17 +9,31 @@ import {
 } from "react";
 import { type ModelInfo } from "../../core/ai";
 import { AVAILABLE_MODELS } from "../../core/ai/models";
-import { get as getConfig } from "../../core/config/config";
+import {
+  get as getConfig,
+  update as updateConfig,
+} from "../../core/config/config";
 import { getAvailableModels } from "../../core/providers/utils";
+import { writeErrorLog } from "../../core/logger";
 
 // Preferred defaults by provider (fast + cheap models)
 const PREFERRED_DEFAULTS: Record<string, string> = {
+  pensar: "pensar:anthropic.claude-haiku-4-5-20251001-v1:0",
   anthropic: "claude-haiku-4-5",
   openai: "gpt-4o-mini",
+  google: "gemini-2.5-flash",
 };
 
 // Provider preference order when multiple are available
-const PROVIDER_PREFERENCE = ["anthropic", "openai", "openrouter", "bedrock"];
+// Pensar first: if connected to Pensar Console, prefer managed inference
+const PROVIDER_PREFERENCE = [
+  "pensar",
+  "anthropic",
+  "openai",
+  "google",
+  "openrouter",
+  "bedrock",
+];
 
 interface TokenUsage {
   inputTokens: number;
@@ -29,7 +43,12 @@ interface TokenUsage {
 
 interface AgentContextValue {
   model: ModelInfo;
-  setModel: (model: ModelInfo) => void;
+  /**
+   * Update the active model.
+   * Pass `persist = false` for programmatic/initialization calls that should
+   * not overwrite the user's saved preference on disk.
+   */
+  setModel: (model: ModelInfo, persist?: boolean) => void;
   isModelUserSelected: boolean;
   tokenUsage: TokenUsage;
   addTokenUsage: (input: number, output: number) => void;
@@ -68,22 +87,44 @@ export function AgentProvider({ children }: AgentProviderProps) {
   const [thinking, setThinking] = useState<boolean>(false);
   const [isExecuting, setIsExecuting] = useState<boolean>(false);
 
-  // Wrapper that marks model as user-selected
-  const setModel = useCallback((newModel: ModelInfo) => {
+  // Wrapper that marks model as user-selected and persists to config.
+  // Pass `persist = false` for programmatic/initialization calls so the
+  // user's previously saved preference is not silently overwritten.
+  const setModel = useCallback((newModel: ModelInfo, persist = true) => {
     setModelInternal(newModel);
-    setIsModelUserSelected(true);
+    if (persist) {
+      setIsModelUserSelected(true);
+      updateConfig({ selectedModelId: newModel.id }).catch((err) => {
+        writeErrorLog(err, "AGENT_CONTEXT");
+      });
+    }
   }, []);
 
   // Smart default model selection:
-  // 1. Prefer Claude Haiku 4.5 if Anthropic is configured
-  // 2. Fall back to GPT-4o Mini if OpenAI is configured
-  // 3. Otherwise use first available model
+  // 1. Use user's saved model preference if it still exists
+  // 2. Prefer Pensar Haiku 4.5 if connected to Pensar Console
+  // 3. Fall back to Claude Haiku 4.5 if Anthropic is configured
+  // 4. Fall back to GPT-4o Mini if OpenAI is configured
+  // 5. Otherwise use first available model
   useEffect(() => {
     getConfig()
       .then((config) => {
         const available = getAvailableModels(config);
         if (available.length === 0) return;
 
+        // Priority 1: Check if user has a saved model preference
+        if (config.selectedModelId) {
+          const savedModel = available.find(
+            (m) => m.id === config.selectedModelId,
+          );
+          if (savedModel) {
+            setModelInternal(savedModel);
+            setIsModelUserSelected(true);
+            return;
+          }
+        }
+
+        // Priority 2: Use auto-default logic
         // Group available models by provider
         const byProvider = new Map<string, ModelInfo[]>();
         for (const m of available) {
@@ -117,7 +158,9 @@ export function AgentProvider({ children }: AgentProviderProps) {
           // Don't mark as user-selected since this is auto-default
         }
       })
-      .catch(() => {});
+      .catch((err) => {
+        writeErrorLog(err, "AGENT_CONTEXT");
+      });
   }, []);
 
   const addTokenUsage = useCallback((input: number, output: number) => {

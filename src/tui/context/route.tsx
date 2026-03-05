@@ -19,8 +19,10 @@ export type RoutePath =
   | "models"
   | "providers"
   | "disclosure"
-  | "sessions"
-  | "theme";
+  | "theme"
+  | "auth"
+  | "credits"
+  | "create-skill";
 
 export interface WebCommandOptions {
   auto?: boolean;
@@ -28,7 +30,7 @@ export interface WebCommandOptions {
   name?: string;
   swarm?: boolean;
   mode?: "plan" | "manual" | "auto";
-  tier?: number;
+  requireApproval?: boolean;
   authUrl?: string;
   authUser?: string;
   authPass?: string;
@@ -50,14 +52,16 @@ export type Route =
   | {
       type: "pentest";
       sessionId: string;
-      /** If true, load existing session state without starting a new pentest */
-      isResume?: boolean;
       /** If true, open an auto-mode session in operator mode */
       openAsOperator?: boolean;
     }
   | {
       type: "operator";
-      sessionId: string;
+      sessionId?: string;
+      initialMessage?: string;
+      initialConfig?: {
+        requireApproval?: boolean;
+      };
     };
 
 type RouteContext = {

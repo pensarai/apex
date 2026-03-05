@@ -41,7 +41,7 @@ function makeFinding(overrides: Partial<Finding> = {}): Finding {
   };
 }
 
-// Pre-built fixtures modeled after real findings from ~/.pensar/executions/
+// Pre-built fixtures modeled after real findings from ~/.pensar/sessions/
 const sqlInjectionProducts = makeFinding({
   title: "SQL Injection in /api/products Search Parameter",
   severity: "CRITICAL",

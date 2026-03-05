@@ -252,12 +252,6 @@ const AgentMessage = memo(function AgentMessage({
       gap={1}
       alignItems={message.role === "user" ? "flex-end" : "flex-start"}
     >
-      {message.role !== "tool" && (
-        <text
-          fg={colors.primary}
-          content={message.role === "user" ? "→ User" : "← Assistant"}
-        />
-      )}
       <box flexDirection="row" gap={0}>
         {message.role === "assistant" && (
           <box

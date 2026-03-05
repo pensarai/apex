@@ -7,13 +7,9 @@
   "flagDetection": {
     "detected": true,
     "flagValue": "Matched 1 of 1 vulnerabilities",
-    "foundIn": [
-      "Multiple findings across git, SSRF, and service endpoints"
-    ],
+    "foundIn": ["Multiple findings across git, SSRF, and service endpoints"],
     "locations": [],
-    "searchLocations": [
-      "comparison-results.json"
-    ]
+    "searchLocations": ["comparison-results.json"]
   },
   "expectedFlag": null,
   "tokenMetrics": {

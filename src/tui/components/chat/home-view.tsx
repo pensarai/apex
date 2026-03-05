@@ -14,16 +14,15 @@ import { useCommand } from "../../context/command";
 import { useInput } from "../../context/input";
 import { useFocus } from "../../context/focus";
 import { useConfig } from "../../context/config";
+import { useRoute } from "../../context/route";
 import { PromptInput } from "../shared/prompt-input";
 import { useTheme } from "../../theme";
+import { slugify } from "../../../core/skills";
 
 type ViewType = "home" | "config" | "chat";
 
 interface HomeViewProps {
-  onNavigate: (
-    view: ViewType,
-    options?: { sessionId?: string; isResume?: boolean },
-  ) => void;
+  onNavigate: (view: ViewType, options?: { sessionId?: string }) => void;
   onStartSession: (directive: string) => void;
 }
 
@@ -31,21 +30,32 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
   const { colors } = useTheme();
   const dimensions = useTerminalDimensions();
   const config = useConfig();
+  const route = useRoute();
 
-  // Get autocomplete options and input sync from contexts
-  const { executeCommand, autocompleteOptions } = useCommand();
+  const { executeCommand, autocompleteOptions, resolveSkillContent, skills } =
+    useCommand();
   const { setInputValue } = useInput();
   const { promptRef } = useFocus();
 
   const [hintMessage, setHintMessage] = useState<string | null>(null);
 
+  const launchOperator = useCallback(
+    (message: string, options?: { requireApproval?: boolean }) => {
+      route.navigate({
+        type: "operator",
+        initialMessage: message,
+        initialConfig: { requireApproval: options?.requireApproval ?? true },
+      });
+    },
+    [route],
+  );
+
   const handleSubmit = useCallback(
     (value: string) => {
-      // Commands are handled by PromptInput; non-command text shows a hint
-      setHintMessage("Type /help to get started");
-      setInputValue("");
+      if (!value.trim()) return;
+      launchOperator(value.trim());
     },
-    [setInputValue],
+    [launchOperator],
   );
 
   // Auto-clear hint after 3 seconds
@@ -57,10 +67,25 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
 
   const handleCommandExecute = useCallback(
     async (command: string) => {
+      const parts = command.trim().replace(/^\/+/, "").split(/\s+/);
+      const slug = parts[0]?.toLowerCase() ?? "";
+      const args = parts.slice(1);
+      const autopilot = args.includes("--autopilot");
+
+      const skillContent = resolveSkillContent(`/${slug}`);
+      if (skillContent) {
+        launchOperator(skillContent, { requireApproval: !autopilot });
+        return;
+      }
       await executeCommand(command);
     },
-    [executeCommand],
+    [resolveSkillContent, launchOperator, executeCommand],
   );
+
+  const skillItems = skills.slice(0, 5).map((s) => ({
+    cmd: `/${slugify(s.name)}`,
+    desc: s.description || "skill",
+  }));
 
   // Calculate layout dimensions
   const animationHeight = Math.max(6, Math.floor(dimensions.height * 0.2));
@@ -87,11 +112,12 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
         {[
           { cmd: "/pentest", desc: "autonomous pentest" },
           { cmd: "/operator", desc: "interactive operator" },
+          { cmd: "/auth", desc: "login to Pensar" },
           { cmd: "/models", desc: "select AI model" },
           { cmd: "/providers", desc: "manage API keys" },
         ].map(({ cmd, desc }) => (
           <box key={cmd} flexDirection="row">
-            <box width={14} justifyContent="flex-end">
+            <box width={24} justifyContent="flex-end">
               <text fg={colors.primary}>{cmd}</text>
             </box>
             <box width={4} />
@@ -100,6 +126,26 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
             </box>
           </box>
         ))}
+        {skillItems.length > 0 && (
+          <>
+            <box marginTop={1}>
+              <box width={24} justifyContent="flex-end">
+                <text fg={colors.textMuted}>Skills</text>
+              </box>
+            </box>
+            {skillItems.map(({ cmd, desc }) => (
+              <box key={cmd} flexDirection="row">
+                <box width={24} justifyContent="flex-end">
+                  <text fg={colors.accent}>{cmd}</text>
+                </box>
+                <box width={4} />
+                <box>
+                  <text fg={colors.textMuted}>{desc}</text>
+                </box>
+              </box>
+            ))}
+          </>
+        )}
       </box>
 
       {/* Centered Input Area */}
@@ -119,7 +165,7 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
           minHeight={1}
           maxHeight={4}
           onSubmit={handleSubmit}
-          placeholder="Type a command or message..."
+          placeholder="Type a message to start operator, or / for commands..."
           textColor={colors.text}
           focusedTextColor={colors.text}
           backgroundColor="transparent"
@@ -141,18 +187,17 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
         {/* Help text */}
         <box marginTop={1}>
           <text fg={colors.textMuted}>
-            <span>Type </span>
+            <span fg={colors.text}>[enter]</span>
+            <span> open operator</span>
+            <span> • </span>
             <span fg={colors.text}>/</span>
-            <span> for commands</span>
+            <span> commands</span>
             <span> • </span>
             <span fg={colors.text}>[↓][↑]</span>
             <span> navigate</span>
             <span> • </span>
             <span fg={colors.text}>[tab]</span>
             <span> complete</span>
-            <span> • </span>
-            <span fg={colors.text}>[enter]</span>
-            <span> run</span>
           </text>
         </box>
       </box>
