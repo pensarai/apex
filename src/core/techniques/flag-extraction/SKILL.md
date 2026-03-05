@@ -20,8 +20,8 @@ Before brute-forcing paths on a single host, discover what services exist on the
 
 ### Docker / Docker Compose Hostnames
 Common service names in containerized environments:
-- `internal-api`, `api`, `backend`, `app`, `web`, `server`, `service`
-- `flag-service`, `flag-api`, `secret-service`, `admin`, `admin-api`
+- `internal`, `api`, `backend`, `app`, `web`, `server`, `service`
+- `admin`, `admin-api`
 - `auth`, `gateway`, `proxy`, `nginx`, `caddy`, `traefik`
 - `db`, `database`, `postgres`, `mysql`, `redis`, `mongo`, `memcached`
 - `worker`, `queue`, `rabbitmq`, `kafka`, `celery`
@@ -57,9 +57,12 @@ For each discovered hostname, try common ports:
 For EACH discovered host+port, try these paths systematically.
 
 ### Flag / Secret Endpoints
-- `/flag`, `/flag.txt`, `/flag.json`, `/flags`, `/secret`, `/secret.txt`
-- `/api/flag`, `/api/secret`, `/api/v1/flag`, `/api/internal/flag`
-- `/admin/flag`, `/admin/secret`, `/admin/secrets`
+Common literal paths (try these first):
+- `/flag`, `/flag.txt`, `/secret`, `/secret.txt`
+
+Then combine discovered prefixes with flag-like suffixes — the flag is often behind whatever internal API or admin panel you've found:
+- `/<prefix>/flag`, `/<prefix>/secret`, `/<prefix>/secrets`
+- Typical prefixes: `/api`, `/api/v1`, `/api/v2`, `/admin`, `/internal`, `/private`, `/manage`
 
 ### Admin / Debug Endpoints
 - `/admin`, `/admin/`, `/dashboard`, `/internal`, `/debug`
@@ -102,9 +105,10 @@ For EACH discovered host+port, try these paths systematically.
 ### Request Variations
 - Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD
 - Content types: `application/json`, `application/x-www-form-urlencoded`, `text/xml`
-- Query parameters: `?flag=true`, `?debug=1`, `?admin=1`, `?token=admin`
-- Headers: `X-Forwarded-For: 127.0.0.1`, `X-Real-IP: 127.0.0.1`, `Host: internal-api`
-- Auth headers: `Authorization: Bearer admin`, `X-API-Key: admin`
+- Query parameters: `?debug=1`, `?admin=1`, `?internal=true`, `?show_hidden=1`
+- Headers: `X-Forwarded-For: 127.0.0.1`, `X-Real-IP: 127.0.0.1`, `X-Original-URL: /admin`
+- Host header: set to discovered internal hostnames to reach virtual hosts behind a reverse proxy
+- Auth: try tokens/keys found in env vars, config leaks, or error messages — don't guess static values
 
 ### Redirect Chains
 - Follow redirects with `curl -L` to see final destination
@@ -135,8 +139,9 @@ jq -r 'paths(strings) as $p | "\($p | join(".")): \(getpath($p))" | select(test(
 
 ### Response Headers
 - Check all headers: `curl -sI` or `curl -sv`
-- Custom headers: `X-Flag`, `X-Secret`, `X-Debug`, `X-Token`
-- Cookie values may contain flags
+- Custom headers: any `X-*` header with unusual values — flags hide in debug/trace headers
+- Cookie values, `Set-Cookie`, and `WWW-Authenticate` may contain secrets
+- `Location` headers on redirects may leak internal URLs
 
 ## Phase 5: Escalation Patterns
 
@@ -176,7 +181,7 @@ curl --http2 -X CONNECT localhost:5432 https://target/
 ```
 - Connection refused → port closed, timeout → filtered, success/data → port open
 - Bypasses traditional SSRF filters that only inspect HTTP/1.1 URLs
-- Try common internal ports: 6379 (redis), 5432 (postgres), 3306 (mysql), 8500 (consul), 8200 (vault)
+- Try common internal ports: 6379 (redis), 5432 (postgres), 3306 (mysql), 27017 (mongo), 8500 (consul), 8200 (vault), 2379 (etcd)
 
 ### Unicode Normalization Bypasses
 Use Unicode characters that normalize to ASCII equivalents to bypass SSRF URL filters:
@@ -196,8 +201,8 @@ Exploit inconsistent URL parsing between the filter and the HTTP client:
 
 ### ORM Filter Extraction
 If an SSRF target has search/filter endpoints, use ORM injection to extract data without knowing exact paths:
-1. Probe for filter endpoints: `/api/search?q=`, `/api/users?filter=`, `/api/data?field=`
-2. Test for MongoDB operators: `?field[$gt]=`, `?field[$regex]=^F`
-3. Test for relational ORM filters: `?field__startswith=FLAG`, `?field__contains=flag`
-4. Boolean-based extraction: `?secret[$regex]=^FLAG\{a` — iterate through characters
+1. Probe for filter/search endpoints: look for any query params that accept user input (`?q=`, `?search=`, `?filter=`, `?where=`, `?query=`)
+2. Test for MongoDB operators: `?param[$gt]=`, `?param[$regex]=^F`, `?param[$ne]=null`
+3. Test for relational ORM filters (Django/Rails style): `?param__startswith=`, `?param__contains=`, `?param__gt=`
+4. Boolean-based extraction: `?param[$regex]=^FLAG\{a` — iterate character by character, checking if results change
 5. Automate extraction with a loop: for each position, try all printable chars and check which returns results
