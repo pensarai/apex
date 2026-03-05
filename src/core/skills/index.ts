@@ -2,6 +2,7 @@ import os from "os";
 import path from "path";
 import fs from "fs/promises";
 import type { Skill, SkillFrontmatter } from "./types";
+import { getTechniquesCatalog, loadTechnique } from "../techniques";
 
 export type { Skill, SkillFrontmatter };
 
@@ -95,6 +96,21 @@ export async function loadSkills(): Promise<Skill[]> {
       });
     } catch {
       // Skip unreadable files
+    }
+  }
+
+  // Append built-in techniques as skills (user skills override by name)
+  const userSkillNames = new Set(skills.map((s) => s.name));
+  for (const technique of getTechniquesCatalog()) {
+    if (userSkillNames.has(technique.name)) continue;
+    try {
+      skills.push({
+        name: technique.name,
+        description: technique.description,
+        content: loadTechnique(technique.name),
+      });
+    } catch {
+      // Skip techniques that fail to load
     }
   }
 
