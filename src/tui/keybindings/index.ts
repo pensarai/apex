@@ -44,6 +44,11 @@ export {
   type KeybindingDependencies,
 } from "./registry";
 
+export {
+  shouldHandlePromptSensitiveShortcut,
+  type PromptSensitiveShortcutContext,
+} from "./guards";
+
 export type KeybindInfo = Pick<
   ParsedKey,
   "name" | "ctrl" | "meta" | "shift" | "super"

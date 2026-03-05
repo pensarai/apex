@@ -6,10 +6,10 @@ import {
   fromParsedKey,
   parseKeybind,
   matchesKeybind,
+  shouldHandlePromptSensitiveShortcut,
   type KeybindingDependencies,
   type KeybindingEntry,
 } from "../keybindings";
-import { useInput } from "./input";
 import { useFocus } from "./focus";
 import { useDialog } from "./dialog";
 
@@ -36,7 +36,6 @@ export function KeybindingProvider({
   deps: ContextDeps;
 }) {
   const { promptRef, refocusPrompt } = useFocus();
-  const { isInputEmpty } = useInput();
   const { setExternalDialogOpen } = useDialog();
 
   const registry = createKeybindings({
@@ -53,18 +52,21 @@ export function KeybindingProvider({
 
       for (const combo of parsedCombos) {
         if (matchesKeybind(pressedKey, combo)) {
-          // If combo starts with "shift", require input to be focused and empty
-          if (
-            binding.combo.toLowerCase().startsWith("shift") ||
-            binding.combo.toLowerCase() === "?"
-          ) {
-            const textareaRef = promptRef.current?.getTextareaRef();
-            const isInputFocused =
-              textareaRef && !textareaRef.isDestroyed && textareaRef.focused;
+          // Prompt-sensitive shortcuts only run when prompt is focused + empty.
+          const textareaRef = promptRef.current?.getTextareaRef();
+          const isInputFocused = Boolean(
+            textareaRef && !textareaRef.isDestroyed && textareaRef.focused,
+          );
+          const promptValue = promptRef.current?.getValue() ?? "";
 
-            if (!isInputFocused || !isInputEmpty) {
-              continue;
-            }
+          if (
+            !shouldHandlePromptSensitiveShortcut({
+              combo: binding.combo,
+              isPromptFocused: isInputFocused,
+              promptValue,
+            })
+          ) {
+            continue;
           }
 
           // Execute the keybinding function
