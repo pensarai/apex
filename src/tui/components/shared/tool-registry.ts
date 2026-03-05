@@ -70,6 +70,8 @@ const TOOL_SUMMARY_MAP: Record<string, ToolSummaryFn> = {
     const targets = args.targets as unknown[];
     return `pentest swarm ×${targets?.length ?? "?"}`;
   },
+  delegate_to_auth_subagent: (args) =>
+    `auth ${args.target || ""} — ${args.reason || ""}`,
 
   // Utility tools
   scratchpad: () => "note",
