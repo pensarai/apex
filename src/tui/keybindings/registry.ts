@@ -178,7 +178,8 @@ export function createKeybindings(
     description: "Toggle tools panel",
     scope: "session",
     priority: 60,
-    when: ({ routeType }) => routeType === "pentest" && Boolean(setShowToolsPanel),
+    when: ({ routeType }) =>
+      routeType === "pentest" && Boolean(setShowToolsPanel),
     handler: async () => {
       setShowToolsPanel?.(true);
     },

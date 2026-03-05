@@ -1,4 +1,9 @@
-import { keybindToString, matchesKeybind, parseKeybind, type KeybindInfo } from "./parser";
+import {
+  keybindToString,
+  matchesKeybind,
+  parseKeybind,
+  type KeybindInfo,
+} from "./parser";
 
 export type KeybindingScope = "global" | "prompt" | "dialog" | "session";
 
@@ -21,8 +26,10 @@ export interface KeybindingDefinition<ActionContext> {
   when?: (context: KeybindingRuntimeContext) => boolean;
 }
 
-export interface RegisteredKeybinding<ActionContext>
-  extends Omit<KeybindingDefinition<ActionContext>, "scope" | "priority" | "when"> {
+export interface RegisteredKeybinding<ActionContext> extends Omit<
+  KeybindingDefinition<ActionContext>,
+  "scope" | "priority" | "when"
+> {
   scope: KeybindingScope;
   priority: number;
   when: (context: KeybindingRuntimeContext) => boolean;
@@ -51,7 +58,9 @@ export function registerKeybinding<ActionContext>(
   return registered;
 }
 
-export function createKeybindingRegistry<ActionContext>(): KeybindingRegistry<ActionContext> {
+export function createKeybindingRegistry<
+  ActionContext,
+>(): KeybindingRegistry<ActionContext> {
   const entries: RegisteredKeybinding<ActionContext>[] = [];
   return {
     register: (definition) => registerKeybinding(entries, definition),

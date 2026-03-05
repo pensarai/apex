@@ -33,10 +33,7 @@ function runtimeContext(
   };
 }
 
-function key(
-  name: string,
-  overrides: Partial<KeybindInfo> = {},
-): KeybindInfo {
+function key(name: string, overrides: Partial<KeybindInfo> = {}): KeybindInfo {
   return {
     name,
     ctrl: false,

@@ -82,7 +82,10 @@ export function parseKeybind(key: string): KeybindInfo[] {
   });
 }
 
-export function matchesKeybind(pressed: KeybindInfo, combo: KeybindInfo): boolean {
+export function matchesKeybind(
+  pressed: KeybindInfo,
+  combo: KeybindInfo,
+): boolean {
   if (combo.sequence) {
     return (
       pressed.sequence === combo.sequence &&
