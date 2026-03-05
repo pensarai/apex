@@ -22,7 +22,10 @@ const TOOL_SUMMARY_MAP: Record<string, ToolSummaryFn> = {
   crawl: (args) => `crawl ${args.url || args.target || ""}`,
 
   // Shell/Command tools
-  execute_command: (args) => `$ ${args.command || ""}`,
+  execute_command: (args) => {
+    const cmd = String(args.command || "").split("\n")[0];
+    return cmd.length > 80 ? `$ ${cmd.slice(0, 80)}…` : `$ ${cmd}`;
+  },
 
   // File system tools
   read_file: (args) => `read ${args.path || ""}`,
