@@ -27,6 +27,7 @@ import { InputArea } from "../chat/input-area";
 import { useTheme } from "../../theme";
 import type { DisplayMessage } from "../agent-display";
 import { isToolMessage } from "../shared/type-guards";
+import { getToolSummary } from "../shared/tool-registry";
 import type { OperatorMode, PendingApproval } from "../../../core/operator";
 import { slugify } from "../../../core/skills";
 import {
@@ -79,8 +80,11 @@ export default function OperatorDashboard({
   const abortControllerRef = useRef<AbortController | null>(null);
   const generationRef = useRef(0);
 
-  // Two-stage abort: first Ctrl+C cancels the command, second kills the agent
-  const cancelCommandRef = useRef<(() => boolean) | null>(null);
+  // Two-stage abort: first Ctrl+C cancels the running command, second kills the agent.
+  // The agent populates cancelHandle.cancel with the shell's cancel function.
+  const cancelHandleRef = useRef<{ cancel: () => boolean }>({
+    cancel: () => false,
+  });
   const commandCancelledRef = useRef(false);
 
   // Messages — same pattern as pentest component
@@ -329,6 +333,28 @@ export default function OperatorDashboard({
   }, []);
 
   // ---------------------------------------------------------------------------
+  // Subagent activity — append log lines to the active (pending) tool message
+  // ---------------------------------------------------------------------------
+
+  const appendLogToActiveTool = useCallback((line: string) => {
+    setMessages((prev) => {
+      const idx = prev.findLastIndex(
+        (m) => isToolMessage(m) && m.status === "pending",
+      );
+      if (idx === -1) return prev;
+
+      const msg = prev[idx];
+      let logs = [...(msg.logs ?? []), line];
+      if (logs.length > MAX_LOG_LINES) {
+        logs = logs.slice(-MAX_LOG_LINES);
+      }
+      const updated = [...prev];
+      updated[idx] = { ...msg, logs };
+      return updated;
+    });
+  }, []);
+
+  // ---------------------------------------------------------------------------
   // Approval handlers
   // ---------------------------------------------------------------------------
 
@@ -403,6 +429,7 @@ export default function OperatorDashboard({
           abortSignal: controller.signal,
           authConfig: buildAuthConfig(config.data),
           approvalGate: approvalGateRef.current,
+          commandCancelHandle: cancelHandleRef.current,
           callbacks: {
             onTextDelta: (d) => {
               setThinking(false);
@@ -418,7 +445,6 @@ export default function OperatorDashboard({
               );
             },
             onToolResult: (d) => {
-              // Flush any remaining buffered command output before marking complete
               flushCommandOutput();
               if (cmdFlushTimerRef.current) {
                 clearInterval(cmdFlushTimerRef.current);
@@ -428,12 +454,46 @@ export default function OperatorDashboard({
               updateToolResult(d.toolCallId, d.toolName, d.output);
             },
             onCommandOutput,
-            onCancelCommandAvailable: (cancelFn) => {
-              cancelCommandRef.current = cancelFn;
-            },
             onError: (e) => {
               console.error("Agent error:", e);
               setError(e instanceof Error ? e.message : "Unknown error");
+            },
+            subagentCallbacks: {
+              onSubagentSpawn: ({ subagentId }) => {
+                appendLogToActiveTool(`▸ ${subagentId} started`);
+              },
+              onSubagentComplete: ({ subagentId, status }) => {
+                const icon = status === "completed" ? "✓" : "✗";
+                appendLogToActiveTool(`${icon} ${subagentId} ${status}`);
+              },
+              onTextDelta: (d) => {
+                if (!d.subagentId) return;
+                onCommandOutput(d.text);
+              },
+              onToolCall: (d) => {
+                if (!d.subagentId) return;
+                const args =
+                  ((d as Record<string, unknown>).input as Record<
+                    string,
+                    unknown
+                  >) ?? {};
+                const summary = getToolSummary(d.toolName, args);
+                appendLogToActiveTool(summary);
+              },
+              onToolResult: (d) => {
+                if (!d.subagentId) return;
+                const args =
+                  ((d as Record<string, unknown>).args as Record<
+                    string,
+                    unknown
+                  >) ?? {};
+                const summary = getToolSummary(d.toolName, args);
+                appendLogToActiveTool(`✓ ${summary}`);
+              },
+              onError: (e) => {
+                const msg = e instanceof Error ? e.message : "subagent error";
+                appendLogToActiveTool(`✗ ${msg}`);
+              },
             },
           },
         });
@@ -483,6 +543,7 @@ export default function OperatorDashboard({
       updateToolResult,
       flushCommandOutput,
       onCommandOutput,
+      appendLogToActiveTool,
       setThinking,
       setIsExecuting,
     ],
@@ -528,7 +589,7 @@ export default function OperatorDashboard({
 
     // Stage 1: If a command is running and hasn't been cancelled yet,
     // cancel just the command and let the agent continue.
-    if (!commandCancelledRef.current && cancelCommandRef.current?.()) {
+    if (!commandCancelledRef.current && cancelHandleRef.current.cancel()) {
       commandCancelledRef.current = true;
       setMessages((prev) => [
         ...prev,
@@ -546,7 +607,6 @@ export default function OperatorDashboard({
     generationRef.current++;
     abortControllerRef.current.abort();
     abortControllerRef.current = null;
-    cancelCommandRef.current = null;
     commandCancelledRef.current = false;
     setStatus("idle");
     setThinking(false);

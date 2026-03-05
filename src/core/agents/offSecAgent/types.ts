@@ -183,6 +183,20 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    * Defaults to `session.rootPath`.
    */
   messagesDir?: string;
+
+  /**
+   * Mutable handle the agent populates so the caller can cancel the
+   * currently running shell command without killing the agent.
+   */
+  commandCancelHandle?: CommandCancelHandle;
+};
+
+/**
+ * Mutable handle for cancelling the running shell command.
+ * The agent populates `cancel` at construction time; the caller invokes it.
+ */
+export type CommandCancelHandle = {
+  cancel: () => boolean;
 };
 
 /**
@@ -236,8 +250,6 @@ export type ConsumeCallbacks = {
   ) => void;
   /** Streaming stdout chunks from execute_command while it is still running. */
   onCommandOutput?: (data: string) => void;
-  /** Called when the persistent shell is ready, providing a function to cancel the current command. */
-  onCancelCommandAvailable?: (cancelFn: () => boolean) => void;
   onError?: (error: unknown) => void;
   subagentCallbacks?: SubagentConsumeCallbacks;
 };

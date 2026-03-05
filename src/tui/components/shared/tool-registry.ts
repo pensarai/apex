@@ -57,6 +57,20 @@ const TOOL_SUMMARY_MAP: Record<string, ToolSummaryFn> = {
   Task: (args) => (args.description as string) || "Task",
   task: (args) => (args.description as string) || "task",
 
+  // Subagent-spawning tools
+  run_attack_surface: (args) => {
+    const mode = args.cwd ? "whitebox" : "blackbox";
+    return `recon (${mode}) ${args.target || ""}`;
+  },
+  spawn_coding_agent: (args) => {
+    const tasks = args.tasks as unknown[];
+    return `coding agents ×${tasks?.length ?? "?"}`;
+  },
+  spawn_pentest_swarm: (args) => {
+    const targets = args.targets as unknown[];
+    return `pentest swarm ×${targets?.length ?? "?"}`;
+  },
+
   // Utility tools
   scratchpad: () => "note",
 };

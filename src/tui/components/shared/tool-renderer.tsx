@@ -13,6 +13,13 @@ import { getResultSummary, type ResultSummary } from "./result-registry";
 import { isToolMessage } from "./type-guards";
 import type { DisplayMessage } from "../agent-display";
 
+const TOOLS_WITH_LOG_WINDOW = new Set([
+  "execute_command",
+  "run_attack_surface",
+  "spawn_coding_agent",
+  "spawn_pentest_swarm",
+]);
+
 interface ToolRendererProps {
   message: DisplayMessage;
   verbose?: boolean;
@@ -74,9 +81,9 @@ export const ToolRenderer = memo(function ToolRenderer({
           )}
         </box>
 
-        {/* Streaming command output window for execute_command */}
+        {/* Streaming log window for tools with live output */}
         {isPending &&
-          toolName === "execute_command" &&
+          TOOLS_WITH_LOG_WINDOW.has(toolName) &&
           logs &&
           logs.length > 0 && (
             <box flexDirection="column" marginLeft={0} marginTop={0}>
@@ -93,7 +100,7 @@ export const ToolRenderer = memo(function ToolRenderer({
 
         {/* Streaming logs for other pending tools */}
         {isPending &&
-          toolName !== "execute_command" &&
+          !TOOLS_WITH_LOG_WINDOW.has(toolName) &&
           logs &&
           logs.length > 0 && (
             <box marginLeft={2}>

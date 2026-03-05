@@ -8,17 +8,11 @@ export const httpRequestInputSchema = z.object({
     .enum(["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"])
     .default("GET"),
   headers: z
-    .preprocess((val) => {
-      if (typeof val === "string") {
-        try {
-          return JSON.parse(val);
-        } catch {
-          return {};
-        }
-      }
-      return val;
-    }, z.record(z.string(), z.string()).optional())
-    .describe("HTTP headers as key-value pairs (object or JSON string)"),
+    .string()
+    .optional()
+    .describe(
+      'HTTP headers as a JSON-encoded object string, e.g. \'{"Content-Type": "application/json", "Authorization": "Bearer token"}\'',
+    ),
   body: z.string().optional().describe("Request body (for POST, PUT, PATCH)"),
   followRedirects: z
     .boolean()
@@ -48,6 +42,19 @@ export type HttpRequestResult = {
   method?: string;
 };
 
+function parseHeaders(raw: string | undefined): Record<string, string> {
+  if (!raw) return {};
+  if (typeof raw === "object") return raw as unknown as Record<string, string>;
+  try {
+    const parsed = JSON.parse(raw);
+    if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed))
+      return parsed as Record<string, string>;
+  } catch {
+    // ignore
+  }
+  return {};
+}
+
 export function httpRequest(ctx: ToolContext) {
   return tool({
     description: `Make HTTP requests with detailed response analysis for web application testing.
@@ -72,11 +79,13 @@ COMMON TESTING PATTERNS:
     execute: async ({
       url,
       method,
-      headers,
+      headers: rawHeaders,
       body,
       followRedirects,
       timeout,
     }): Promise<HttpRequestResult> => {
+      const headers = parseHeaders(rawHeaders);
+
       // Sandbox mode: build a curl command and run it inside the sandbox
       if (ctx.sandbox) {
         return executeSandboxHttpRequest(ctx, {
@@ -116,7 +125,7 @@ COMMON TESTING PATTERNS:
 
         const response = await fetch(url, {
           method,
-          headers: headers || {},
+          headers,
           body: body || undefined,
           redirect: followRedirects ? "follow" : "manual",
           signal: combinedSignal,

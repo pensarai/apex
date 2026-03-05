@@ -73,14 +73,18 @@ export class OffensiveSecurityAgent<TResult = void> {
     // stream ends, or when the agent is fully killed.
     if (!input.sandbox) {
       this.persistentShell = new PersistentShell();
-      input.callbacks?.onCancelCommandAvailable?.(() =>
-        this.persistentShell!.cancelCurrentCommand(),
-      );
+      if (input.commandCancelHandle) {
+        const shell = this.persistentShell;
+        input.commandCancelHandle.cancel = () => shell.cancelCurrentCommand();
+      }
     }
 
     // -- Tools ----------------------------------------------------------------
     const credentialManager =
       input.credentialManager ?? input.session.credentialManager;
+
+    const subagentCallbacks =
+      input.subagentCallbacks ?? input.callbacks?.subagentCallbacks;
 
     const builtinTools = createAllTools({
       session: input.session,
@@ -89,7 +93,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       model: input.model,
       authConfig: input.authConfig,
       callbacks: input.callbacks,
-      subagentCallbacks: input.subagentCallbacks,
+      subagentCallbacks,
       sandbox: input.sandbox,
       findingsRegistry: input.findingsRegistry,
       credentialManager,

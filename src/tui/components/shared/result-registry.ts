@@ -163,7 +163,7 @@ export function getResultSummary(
         break;
       }
 
-      // Command execution — show actual stdout or error, not raw keys
+      // Command execution — show exit code + stdout/stderr
       case "execute_command": {
         if (typeof result === "object" && result !== null) {
           const obj = result as Record<string, unknown>;
@@ -172,24 +172,37 @@ export function getResultSummary(
           const stderr = typeof obj.stderr === "string" ? obj.stderr : "";
           const error = typeof obj.error === "string" ? obj.error : "";
 
+          const output = stdout.replace(/^\(no output\)$/, "");
+          const outputLines = output.split("\n").filter((l) => l.length > 0);
+          const outputPreview = outputLines.slice(0, 3).join("\n");
+          const outputSuffix =
+            outputLines.length > 3 ? `\n… (${outputLines.length} lines)` : "";
+
           if (!ok) {
-            const errText = error || stderr || "Command failed";
+            const errLine = (error || stderr || "Command failed")
+              .split("\n")[0]
+              .slice(0, 120);
+            const parts = [errLine, outputPreview + outputSuffix]
+              .filter(Boolean)
+              .join("\n");
+            const fullParts = [
+              output.slice(0, 2000),
+              (stderr || error).slice(0, 2000),
+            ]
+              .filter(Boolean)
+              .join("\n---\n");
             return {
-              text: errText.split("\n")[0].slice(0, 120),
+              text: parts || "Command failed",
               isError: true,
-              fullText: (stderr || error).slice(0, 2000) || undefined,
+              fullText: fullParts.length > 400 ? fullParts : undefined,
             };
           }
 
-          const output = stdout.replace(/^\(no output\)$/, "");
           if (!output) {
             return { text: "(no output)", isError: false };
           }
-          const lines = output.split("\n").filter((l) => l.length > 0);
-          const preview = lines.slice(0, 3).join("\n");
-          const suffix = lines.length > 3 ? `\n… (${lines.length} lines)` : "";
           return {
-            text: preview + suffix,
+            text: outputPreview + outputSuffix,
             isError: false,
             fullText: output.length > 400 ? output.slice(0, 2000) : undefined,
           };
