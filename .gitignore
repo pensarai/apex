@@ -18,6 +18,7 @@ pensar
 
 # generated assets (created at build time)
 src/tui/generated-ascii-art.json
+src/core/techniques/generated-techniques-bundle.json
 
 # code coverage
 coverage
