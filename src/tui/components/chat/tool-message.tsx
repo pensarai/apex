@@ -65,7 +65,7 @@ export const ToolMessage = memo(function ToolMessage({
 
   // Get result summary for completed tools
   const resultDisplay: ResultSummary | null =
-    isCompleted || isError ? getResultSummary(result) : null;
+    isCompleted || isError ? getResultSummary(result, toolName, args) : null;
 
   // Get tool icon
   const icon = TOOL_ICONS[toolName] || TOOL_ICONS.default;

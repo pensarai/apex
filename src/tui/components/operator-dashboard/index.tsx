@@ -260,6 +260,71 @@ export default function OperatorDashboard({
   );
 
   // ---------------------------------------------------------------------------
+  // Streaming command output — throttled to avoid excessive re-renders
+  // ---------------------------------------------------------------------------
+
+  const cmdOutputBufRef = useRef("");
+  const cmdFlushTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const MAX_LOG_LINES = 200;
+
+  const flushCommandOutput = useCallback(() => {
+    const buf = cmdOutputBufRef.current;
+    if (!buf) return;
+    cmdOutputBufRef.current = "";
+
+    setMessages((prev) => {
+      const idx = prev.findLastIndex(
+        (m) => isToolMessage(m) && m.status === "pending",
+      );
+      if (idx === -1) return prev;
+
+      const msg = prev[idx];
+      const existing = msg.logs ?? [];
+      const incoming = buf.split("\n");
+      // If last existing line was partial (no trailing newline), merge it
+      let merged: string[];
+      if (existing.length > 0 && !buf.startsWith("\n")) {
+        merged = [...existing];
+        merged[merged.length - 1] += incoming[0];
+        merged.push(...incoming.slice(1));
+      } else {
+        merged = [...existing, ...incoming];
+      }
+      // Cap to last MAX_LOG_LINES
+      if (merged.length > MAX_LOG_LINES) {
+        merged = merged.slice(-MAX_LOG_LINES);
+      }
+
+      const updated = [...prev];
+      updated[idx] = { ...msg, logs: merged };
+      return updated;
+    });
+  }, []);
+
+  const onCommandOutput = useCallback(
+    (data: string) => {
+      cmdOutputBufRef.current += data;
+
+      if (!cmdFlushTimerRef.current) {
+        cmdFlushTimerRef.current = setInterval(() => {
+          flushCommandOutput();
+        }, 150);
+      }
+    },
+    [flushCommandOutput],
+  );
+
+  // Clean up the flush timer when the component unmounts or agent stops
+  useEffect(() => {
+    return () => {
+      if (cmdFlushTimerRef.current) {
+        clearInterval(cmdFlushTimerRef.current);
+        cmdFlushTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  // ---------------------------------------------------------------------------
   // Approval handlers
   // ---------------------------------------------------------------------------
 
@@ -348,9 +413,16 @@ export default function OperatorDashboard({
               );
             },
             onToolResult: (d) => {
+              // Flush any remaining buffered command output before marking complete
+              flushCommandOutput();
+              if (cmdFlushTimerRef.current) {
+                clearInterval(cmdFlushTimerRef.current);
+                cmdFlushTimerRef.current = null;
+              }
               setThinking(true);
               updateToolResult(d.toolCallId, d.toolName, d.output);
             },
+            onCommandOutput,
             onError: (e) => {
               console.error("Agent error:", e);
               setError(e instanceof Error ? e.message : "Unknown error");
@@ -401,6 +473,8 @@ export default function OperatorDashboard({
       appendText,
       addToolCall,
       updateToolResult,
+      flushCommandOutput,
+      onCommandOutput,
       setThinking,
       setIsExecuting,
     ],

@@ -148,7 +148,11 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
       // Local mode: use the persistent shell
       if (ctx.persistentShell) {
         try {
-          const result = await ctx.persistentShell.execute(command, timeout);
+          const result = await ctx.persistentShell.execute(
+            command,
+            timeout,
+            ctx.onCommandOutput,
+          );
           const { text: stdout, file: outputFile } = maybeSaveFullOutput(
             result.stdout,
             ctx,

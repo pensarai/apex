@@ -45,7 +45,7 @@ export const ToolRenderer = memo(function ToolRenderer({
 
   // Get result summary for completed tools
   const resultDisplay: ResultSummary | null =
-    isCompleted || isError ? getResultSummary(result, toolName) : null;
+    isCompleted || isError ? getResultSummary(result, toolName, args) : null;
 
   // Determine border color based on status
   const borderColor = isError
@@ -74,14 +74,34 @@ export const ToolRenderer = memo(function ToolRenderer({
           )}
         </box>
 
-        {/* Streaming logs while pending */}
-        {isPending && logs && logs.length > 0 && (
-          <box marginLeft={2}>
-            <text fg={colors.textMuted}>
-              {expandedLogs ? logs.join("\n") : logs.slice(-2).join("\n")}
-            </text>
-          </box>
-        )}
+        {/* Streaming command output window for execute_command */}
+        {isPending &&
+          toolName === "execute_command" &&
+          logs &&
+          logs.length > 0 && (
+            <box flexDirection="column" marginLeft={0} marginTop={0}>
+              <text fg={colors.textMuted}>{"  ┌─"}</text>
+              <box marginLeft={0}>
+                <text fg={colors.textMuted}>
+                  {"  │ "}
+                  {(expandedLogs ? logs : logs.slice(-15)).join("\n  │ ")}
+                </text>
+              </box>
+              <text fg={colors.textMuted}>{"  └─"}</text>
+            </box>
+          )}
+
+        {/* Streaming logs for other pending tools */}
+        {isPending &&
+          toolName !== "execute_command" &&
+          logs &&
+          logs.length > 0 && (
+            <box marginLeft={2}>
+              <text fg={colors.textMuted}>
+                {expandedLogs ? logs.join("\n") : logs.slice(-2).join("\n")}
+              </text>
+            </box>
+          )}
 
         {/* Result display for completed tools */}
         {(isCompleted || isError) && resultDisplay && (

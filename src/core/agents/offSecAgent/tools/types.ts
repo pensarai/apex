@@ -59,4 +59,10 @@ export type ToolContext = {
    * persist between invocations. Only used in local (non-sandbox) mode.
    */
   persistentShell?: PersistentShell;
+
+  /**
+   * Side-channel callback for streaming raw stdout chunks from
+   * execute_command back to the TUI while the command is still running.
+   */
+  onCommandOutput?: (data: string) => void;
 };

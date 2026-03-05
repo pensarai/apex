@@ -57,6 +57,7 @@ export class PersistentShell {
   async execute(
     command: string,
     timeoutSeconds?: number,
+    onData?: (chunk: string) => void,
   ): Promise<ShellExecuteResult> {
     if (this.disposed) {
       return { stdout: "", stderr: "Shell has been disposed", exitCode: 1 };
@@ -89,7 +90,11 @@ export class PersistentShell {
       };
 
       const onStdout = (data: Buffer) => {
-        stdout += data.toString();
+        const chunk = data.toString();
+        if (onData && !chunk.includes(exitMarkerPrefix)) {
+          onData(chunk);
+        }
+        stdout += chunk;
 
         const markerIdx = stdout.indexOf(exitMarkerPrefix);
         if (markerIdx !== -1) {

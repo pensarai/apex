@@ -234,6 +234,8 @@ export type ConsumeCallbacks = {
   onToolResult?: (
     delta: Extract<TextStreamPart<ToolSet>, { type: "tool-result" }>,
   ) => void;
+  /** Streaming stdout chunks from execute_command while it is still running. */
+  onCommandOutput?: (data: string) => void;
   onError?: (error: unknown) => void;
   subagentCallbacks?: SubagentConsumeCallbacks;
 };

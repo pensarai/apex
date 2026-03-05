@@ -17,11 +17,13 @@ export interface ResultSummary {
  *
  * @param result - The raw tool result
  * @param toolName - Optional tool name for tool-specific summaries
+ * @param args - Optional tool args (used by file tools to show content previews)
  * @returns Summary object with text and error flag, or null if no summary available
  */
 export function getResultSummary(
   result: unknown,
   toolName?: string,
+  args?: Record<string, unknown>,
 ): ResultSummary | null {
   if (result === null || result === undefined) {
     return null;
@@ -73,15 +75,124 @@ export function getResultSummary(
         }
         return { text: "File written", isError: false };
       }
+      case "create_file": {
+        if (typeof result === "object" && result !== null) {
+          const obj = result as Record<string, unknown>;
+          if (obj.success === false) {
+            return {
+              text: String(obj.error || "Failed").slice(0, 120),
+              isError: true,
+            };
+          }
+          const filePath = String(obj.path || "");
+          const content = typeof args?.content === "string" ? args.content : "";
+          if (content) {
+            const lines = content.split("\n");
+            const preview = lines.slice(0, 4).join("\n");
+            const suffix =
+              lines.length > 4 ? `\n… (${lines.length} lines)` : "";
+            return {
+              text: preview + suffix,
+              isError: false,
+              fullText:
+                content.length > 400 ? content.slice(0, 2000) : undefined,
+            };
+          }
+          return { text: `Created ${filePath}`, isError: false };
+        }
+        break;
+      }
+      case "update_file": {
+        if (typeof result === "object" && result !== null) {
+          const obj = result as Record<string, unknown>;
+          if (obj.success === false) {
+            return {
+              text: String(obj.error || "Failed").slice(0, 120),
+              isError: true,
+            };
+          }
+          const n = Number(obj.replacements ?? 1);
+          const newContent =
+            typeof args?.newContent === "string" ? args.newContent : "";
+          if (newContent) {
+            const lines = newContent.split("\n");
+            const preview = lines.slice(0, 4).join("\n");
+            const suffix =
+              lines.length > 4 ? `\n… (${lines.length} lines)` : "";
+            return {
+              text: `${n} replacement${n !== 1 ? "s" : ""}\n${preview}${suffix}`,
+              isError: false,
+              fullText:
+                newContent.length > 400 ? newContent.slice(0, 2000) : undefined,
+            };
+          }
+          return {
+            text: `${n} replacement${n !== 1 ? "s" : ""}`,
+            isError: false,
+          };
+        }
+        break;
+      }
+      case "create_poc": {
+        if (typeof result === "object" && result !== null) {
+          const obj = result as Record<string, unknown>;
+          if (obj.success === false) {
+            const errText = String(obj.error || obj.stderr || "POC failed");
+            return {
+              text: errText.split("\n")[0].slice(0, 120),
+              isError: true,
+              fullText:
+                typeof obj.stderr === "string"
+                  ? obj.stderr.slice(0, 2000)
+                  : undefined,
+            };
+          }
+          const stdout = typeof obj.stdout === "string" ? obj.stdout : "";
+          const pocPath = obj.pocPath ? String(obj.pocPath) : "";
+          const lines = stdout.split("\n").filter((l) => l.length > 0);
+          const preview = lines.slice(0, 3).join("\n");
+          const suffix = lines.length > 3 ? `\n… (${lines.length} lines)` : "";
+          return {
+            text: pocPath
+              ? `Saved ${pocPath}\n${preview}${suffix}`
+              : preview + suffix || "POC passed",
+            isError: false,
+            fullText: stdout.length > 400 ? stdout.slice(0, 2000) : undefined,
+          };
+        }
+        break;
+      }
 
-      // Command execution
+      // Command execution — show actual stdout or error, not raw keys
       case "execute_command": {
         if (typeof result === "object" && result !== null) {
           const obj = result as Record<string, unknown>;
-          if ("exitCode" in obj || "code" in obj) {
-            const code = Number(obj.exitCode ?? obj.code ?? 0);
-            return { text: `Exit ${code}`, isError: code !== 0 };
+          const ok = obj.success !== false;
+          const stdout = typeof obj.stdout === "string" ? obj.stdout : "";
+          const stderr = typeof obj.stderr === "string" ? obj.stderr : "";
+          const error = typeof obj.error === "string" ? obj.error : "";
+
+          if (!ok) {
+            const errText = error || stderr || "Command failed";
+            return {
+              text: errText.split("\n")[0].slice(0, 120),
+              isError: true,
+              fullText: (stderr || error).slice(0, 2000) || undefined,
+            };
           }
+
+          const output = stdout.replace(/^\(no output\)$/, "");
+          if (!output) {
+            return { text: "(no output)", isError: false };
+          }
+          const lines = output.split("\n").filter((l) => l.length > 0);
+          const preview = lines.slice(0, 3).join("\n");
+          const suffix = lines.length > 3 ? `\n… (${lines.length} lines)` : "";
+          return {
+            text: preview + suffix,
+            isError: false,
+            fullText: output.length > 400 ? output.slice(0, 2000) : undefined,
+          };
         }
         break;
       }
