@@ -110,6 +110,8 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
     const savedInputRef = useRef("");
     const historyRef = useRef(commandHistory);
     historyRef.current = commandHistory;
+    // Guard to prevent handleContentChange from resetting historyIndex during programmatic setText
+    const isNavigatingHistoryRef = useRef(false);
 
     // Refs to avoid stale closures in handleSubmit (textarea caches onSubmit)
     const selectedIndexRef = useRef(selectedSuggestionIndex);
@@ -230,8 +232,10 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
           const next = Math.min(prev + 1, history.length - 1);
           const entry = history[history.length - 1 - next];
           if (entry !== undefined) {
+            isNavigatingHistoryRef.current = true;
             textareaRef.current?.setText(entry);
             setInputValue(entry);
+            isNavigatingHistoryRef.current = false;
             setTimeout(() => textareaRef.current?.gotoLineEnd(), 0);
           }
           return next;
@@ -242,16 +246,20 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
         setHistoryIndex((prev) => {
           if (prev <= 0) {
             const saved = savedInputRef.current;
+            isNavigatingHistoryRef.current = true;
             textareaRef.current?.setText(saved);
             setInputValue(saved);
+            isNavigatingHistoryRef.current = false;
             setTimeout(() => textareaRef.current?.gotoLineEnd(), 0);
             return -1;
           }
           const next = prev - 1;
           const entry = history[history.length - 1 - next];
           if (entry !== undefined) {
+            isNavigatingHistoryRef.current = true;
             textareaRef.current?.setText(entry);
             setInputValue(entry);
+            isNavigatingHistoryRef.current = false;
             setTimeout(() => textareaRef.current?.gotoLineEnd(), 0);
           }
           return next;
@@ -298,7 +306,7 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
     const handleContentChange = () => {
       const text = textareaRef.current?.plainText ?? "";
       setInputValue(text);
-      if (historyIndex !== -1) {
+      if (historyIndex !== -1 && !isNavigatingHistoryRef.current) {
         setHistoryIndex(-1);
       }
     };
