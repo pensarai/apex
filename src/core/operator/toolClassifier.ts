@@ -21,7 +21,6 @@ const TOOL_BASE_TIERS: Record<string, PermissionTier> = {
   record_verified_finding: 1,
 
   // Tier 2 - Low-risk Active (light network interaction)
-  http_request: 2, // Escalates based on method
   enumerate_endpoints: 2,
   get_attack_surface: 2,
 
@@ -44,19 +43,6 @@ const TOOL_BASE_TIERS: Record<string, PermissionTier> = {
   browser_click: 3, // T3 - Probing (user interaction simulation)
   browser_fill: 3, // T3 - Probing (form filling with payloads)
   browser_evaluate: 4, // T4 - Intrusive (JavaScript execution)
-};
-
-/**
- * HTTP methods and their risk escalation
- */
-const HTTP_METHOD_TIERS: Record<string, PermissionTier> = {
-  GET: 2,
-  HEAD: 2,
-  OPTIONS: 2,
-  POST: 3,
-  PUT: 4,
-  PATCH: 4,
-  DELETE: 4,
 };
 
 /**
@@ -126,10 +112,6 @@ export function classifyToolCall(
 
   // Dynamic escalation based on tool and args
   switch (toolName) {
-    case "http_request":
-      tier = classifyHttpRequest(args, tier);
-      break;
-
     case "execute_command":
       tier = classifyExecuteCommand(args, tier);
       break;
@@ -147,34 +129,6 @@ export function classifyToolCall(
       }
       break;
     }
-  }
-
-  return tier;
-}
-
-/**
- * Classify http_request based on method and body
- */
-function classifyHttpRequest(
-  args: Record<string, unknown>,
-  baseTier: PermissionTier,
-): PermissionTier {
-  let tier = baseTier;
-
-  // Escalate based on HTTP method
-  const method = String(args.method || "GET").toUpperCase();
-  const methodTier = HTTP_METHOD_TIERS[method] ?? 3;
-  tier = Math.max(tier, methodTier) as PermissionTier;
-
-  // Check body/url for dangerous patterns
-  const body = String(args.body || "");
-  const url = String(args.url || "");
-  const combined = body + url;
-
-  if (containsExploitPatterns(combined)) {
-    tier = 5;
-  } else if (containsProbingPatterns(combined)) {
-    tier = Math.max(tier, 3) as PermissionTier;
   }
 
   return tier;
@@ -271,16 +225,6 @@ export function getClassificationReason(
 
   if (tier === baseTier) {
     return `${toolName} is classified as tier ${tier} by default`;
-  }
-
-  if (toolName === "http_request") {
-    const method = String(args.method || "GET").toUpperCase();
-    if (tier === 5) {
-      return `HTTP request contains potentially dangerous payload patterns`;
-    }
-    if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
-      return `${method} request escalated from tier ${baseTier} to ${tier}`;
-    }
   }
 
   if (toolName === "execute_command") {

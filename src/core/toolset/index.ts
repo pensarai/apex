@@ -49,15 +49,6 @@ export interface ToolDefinition {
 export const ALL_TOOLS: ToolDefinition[] = [
   // Reconnaissance tools
   {
-    id: "http_request",
-    name: "HTTP Request",
-    description: "Send HTTP requests",
-    detail:
-      "Make HTTP/HTTPS requests with custom headers, methods, and bodies. Supports GET, POST, PUT, DELETE and other methods. Used for probing endpoints and testing responses.",
-    category: "reconnaissance",
-    defaultEnabled: true,
-  },
-  {
     id: "execute_command",
     name: "Execute Command",
     description: "Run shell commands",
@@ -363,7 +354,6 @@ export const TOOLSETS: ToolsetDefinition[] = [
       "Only reconnaissance and utility tools - no active exploitation",
     enabledTools: [
       // Reconnaissance
-      "http_request",
       "execute_command",
       "smart_enumerate",
       "cve_lookup",
@@ -392,12 +382,7 @@ export const TOOLSETS: ToolsetDefinition[] = [
     id: "minimal",
     name: "Minimal",
     description: "Basic tools for lightweight testing",
-    enabledTools: [
-      "http_request",
-      "execute_command",
-      "scratchpad",
-      "document_finding",
-    ],
+    enabledTools: ["execute_command", "scratchpad", "document_finding"],
   },
 ];
 

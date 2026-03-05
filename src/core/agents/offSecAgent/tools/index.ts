@@ -20,7 +20,6 @@ export {
 
 // Core pentest tools
 export { executeCommand } from "./executeCommand";
-export { httpRequest } from "./httpRequest";
 export { documentVulnerability } from "./documentFinding";
 export { createPoc } from "./createPoc";
 
@@ -66,7 +65,6 @@ export type { EmailToolName } from "./email";
 import type { ToolContext } from "./types";
 import { createBrowserToolset } from "./browserTools";
 import { executeCommand } from "./executeCommand";
-import { httpRequest } from "./httpRequest";
 import { documentVulnerability } from "./documentFinding";
 import { createPoc } from "./createPoc";
 import { readFile } from "./readFile";
@@ -110,7 +108,6 @@ export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
 
     // Core pentest tools
     execute_command: executeCommand(ctx),
-    http_request: httpRequest(ctx),
     document_vulnerability: documentVulnerability(ctx),
     create_poc: createPoc(ctx),
 
@@ -170,7 +167,6 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "browser_get_cookies",
   // Core pentest
   "execute_command",
-  "http_request",
   "document_vulnerability",
   "create_poc",
   // Filesystem / search

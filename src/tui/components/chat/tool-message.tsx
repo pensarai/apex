@@ -21,7 +21,6 @@ import type { DisplayMessage } from "../agent-display";
 
 // Tool category icons
 const TOOL_ICONS: Record<string, string> = {
-  http_request: "→",
   execute_command: "$",
   read_file: "□",
   write_file: "□",

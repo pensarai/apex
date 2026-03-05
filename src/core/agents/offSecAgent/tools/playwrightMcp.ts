@@ -976,7 +976,7 @@ Returns all cookies including:
 - Authentication tokens
 - CSRF tokens
 
-The returned cookies can be formatted as a Cookie header for use with http_request tool.`,
+The returned cookies can be formatted as a Cookie header for use with execute_command (curl).`,
     inputSchema: BrowserGetCookiesInput,
     execute: async ({
       urls,

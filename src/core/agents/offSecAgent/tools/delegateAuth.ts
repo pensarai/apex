@@ -329,13 +329,13 @@ When to use delegate_to_auth_subagent vs authenticate_session:
             "\n\nTo make authenticated requests, use the returned values:\n";
           if (hasCookies) {
             usageInstructions += `- Pass sessionCookie to crawl_authenticated_area, extract_js_endpoints, and test_endpoint_variations tools\n`;
-            usageInstructions += `- For http_request, include Cookie header: "${result.exportedCookies}"\n`;
+            usageInstructions += `- For execute_command (curl), include -b "${result.exportedCookies}"\n`;
           }
           if (hasHeaders) {
             const headerList = Object.entries(result.exportedHeaders!)
               .map(([k, v]) => `${k}: ${v}`)
               .join(", ");
-            usageInstructions += `- Include these headers in http_request calls: ${headerList}\n`;
+            usageInstructions += `- Include these headers in execute_command (curl) calls: ${headerList}\n`;
           }
         }
 
