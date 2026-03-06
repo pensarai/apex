@@ -128,6 +128,21 @@ describe("memory system", () => {
       const result = await getMemory("framework", created.id);
       expect(result).toBeNull();
     });
+
+    it("rejects ids with path traversal sequences", async () => {
+      await expect(getMemory("general", "../../config")).rejects.toThrow(
+        "Invalid memory id: contains path traversal characters",
+      );
+      await expect(getMemory("general", "foo/bar")).rejects.toThrow(
+        "Invalid memory id: contains path traversal characters",
+      );
+      await expect(getMemory("general", "foo\\bar")).rejects.toThrow(
+        "Invalid memory id: contains path traversal characters",
+      );
+      await expect(getMemory("general", "..")).rejects.toThrow(
+        "Invalid memory id: contains path traversal characters",
+      );
+    });
   });
 
   // -------------------------------------------------------------------------

@@ -45,6 +45,16 @@ function makeId(title: string): string {
 }
 
 /**
+ * Validate that an id does not contain path traversal sequences.
+ * Throws an error if the id is unsafe.
+ */
+function validateId(id: string): void {
+  if (id.includes("/") || id.includes("\\") || id.includes("..")) {
+    throw new Error("Invalid memory id: contains path traversal characters");
+  }
+}
+
+/**
  * Create and persist a new memory.
  *
  * @param input.category — "app", "framework", or "general" (default)
@@ -81,6 +91,7 @@ export async function getMemory(
   category: MemoryCategory,
   id: string,
 ): Promise<Memory | null> {
+  validateId(id);
   try {
     return await Storage.read<Memory>(storageKey(category, id));
   } catch (e) {
