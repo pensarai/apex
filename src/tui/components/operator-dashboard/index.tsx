@@ -92,6 +92,7 @@ export default function OperatorDashboard({
     tokenUsage,
     addTokenUsage,
     resetTokenUsage,
+    setSessionCwd,
   } = useAgent();
   const {
     autocompleteOptions: allAutocompleteOptions,
@@ -215,6 +216,7 @@ export default function OperatorDashboard({
         if (sessionId) {
           const s = await sessions.get(sessionId);
           setSession(s);
+          setSessionCwd(s.rootPath);
 
           const hasState = sessions.hasOperatorState(s);
           if (hasState) {
@@ -281,6 +283,10 @@ export default function OperatorDashboard({
     }
     loadSession();
   }, [sessionId]);
+
+  useEffect(() => {
+    return () => setSessionCwd(null);
+  }, [setSessionCwd]);
 
   useEffect(() => {
     if (!session) return;
@@ -746,6 +752,7 @@ export default function OperatorDashboard({
             pendingNameRef.current = null;
           }
           setSession(created);
+          setSessionCwd(created.rootPath);
         }
 
         // Persist full conversation for next turn

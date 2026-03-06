@@ -24,9 +24,10 @@ export default function Footer({
   cwd = process.cwd(),
   showExitWarning = false,
 }: FooterProps) {
-  cwd = "~" + cwd.split(os.homedir()).pop() || "";
   const { colors } = useTheme();
-  const { model, isExecuting } = useAgent();
+  const { model, isExecuting, sessionCwd } = useAgent();
+  const effectiveCwd = sessionCwd || cwd;
+  const displayCwd = "~" + effectiveCwd.split(os.homedir()).pop() || "";
   const session = useSession();
   const route = useRoute();
   const { isInputEmpty } = useInput();
@@ -47,7 +48,7 @@ export default function Footer({
       flexShrink={0}
     >
       <box flexDirection="row" gap={1}>
-        <text fg={colors.textMuted}>{cwd}</text>
+        <text fg={colors.textMuted}>{displayCwd}</text>
         <box border={["right"]} borderColor={colors.primary} />
         <text fg={colors.textMuted}>
           <span fg={colors.text}>{model.name}</span>
