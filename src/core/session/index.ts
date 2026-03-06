@@ -341,7 +341,7 @@ export function getOffensiveHeaders(
 
 export const SessionInfoObject = z.object({
   id: Identifier.schema("session"),
-  name: z.string(),
+  name: z.string().optional(),
   version: z.string(),
   targets: z.array(z.string()),
   config: SessionConfigObject.optional(),
@@ -378,19 +378,7 @@ export interface CreateInputProps {
 }
 
 export async function create(input: CreateInputProps) {
-  let name = input.name;
-  if (!name) {
-    if (input.model) {
-      name =
-        (await generateSessionName({
-          targets: input.targets,
-          model: input.model,
-          authConfig: input.authConfig,
-        })) ?? generateRandomName();
-    } else {
-      name = generateRandomName();
-    }
-  }
+  const name = input.name ?? generateRandomName();
 
   const id =
     `${input.prefix ? input.prefix : ""}` +
@@ -458,6 +446,22 @@ export async function create(input: CreateInputProps) {
   const { _rateLimiter, credentialManager: _cm, ...sessionData } = result;
   await createSessionDirs({ session: result });
   await Storage.write(["sessions", result.id, "session"], sessionData);
+
+  // Fire-and-forget AI name generation — updates persisted session in the background
+  if (!input.name && input.model) {
+    generateSessionName({
+      targets: input.targets,
+      model: input.model,
+      authConfig: input.authConfig,
+    }).then((aiName) => {
+      if (aiName) {
+        update(result.id, (s) => {
+          s.name = aiName;
+        }).catch(() => {});
+      }
+    });
+  }
+
   return result;
 }
 
