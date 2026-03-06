@@ -310,12 +310,17 @@ export default function OperatorDashboard({
   }, []);
 
   // Ref to accumulate partial tool args JSON per toolCallId
-  const toolArgsDeltaRef = useRef<Map<string, string>>(new Map());
+  const toolArgsDeltaRef = useRef<
+    Map<string, { toolName: string; accumulated: string }>
+  >(new Map());
 
   const addStreamingToolCall = useCallback(
     (toolCallId: string, toolName: string) => {
       textRef.current = "";
-      toolArgsDeltaRef.current.set(toolCallId, "");
+      toolArgsDeltaRef.current.set(toolCallId, {
+        toolName,
+        accumulated: "",
+      });
       setMessages((prev) => [
         ...prev,
         {
@@ -334,12 +339,24 @@ export default function OperatorDashboard({
 
   const appendToolCallDelta = useCallback(
     (toolCallId: string, argsTextDelta: string) => {
-      const prev = toolArgsDeltaRef.current.get(toolCallId) ?? "";
-      const accumulated = prev + argsTextDelta;
-      toolArgsDeltaRef.current.set(toolCallId, accumulated);
+      const entry = toolArgsDeltaRef.current.get(toolCallId);
+      const accumulated = (entry?.accumulated ?? "") + argsTextDelta;
+      toolArgsDeltaRef.current.set(toolCallId, {
+        toolName: entry?.toolName ?? "",
+        accumulated,
+      });
 
       const parsed = tryParsePartialJson(accumulated);
       if (!parsed) return;
+
+      // Extract file content as streaming logs for file-creation tools
+      const contentText =
+        typeof parsed.content === "string"
+          ? parsed.content
+          : typeof parsed.pocContent === "string"
+            ? parsed.pocContent
+            : null;
+      const logs = contentText ? contentText.split("\n") : undefined;
 
       setMessages((msgs) => {
         const idx = msgs.findIndex(
@@ -347,7 +364,7 @@ export default function OperatorDashboard({
         );
         if (idx === -1) return msgs;
         const updated = [...msgs];
-        updated[idx] = { ...updated[idx], args: parsed };
+        updated[idx] = { ...updated[idx], args: parsed, ...(logs && { logs }) };
         return updated;
       });
     },
@@ -367,6 +384,7 @@ export default function OperatorDashboard({
           updated[idx] = {
             ...updated[idx],
             args,
+            logs: undefined,
             status: "pending" as const,
           };
           return updated;
