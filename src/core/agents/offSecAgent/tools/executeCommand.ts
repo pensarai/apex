@@ -4,7 +4,7 @@ import { join } from "path";
 import { writeFileSync, mkdirSync, existsSync } from "fs";
 import type { ToolContext } from "./types";
 
-const MAX_INLINE = 50_000;
+const MAX_INLINE = 20_000;
 
 export const executeCommandInputSchema = z.object({
   command: z.string().describe("The shell command to execute"),

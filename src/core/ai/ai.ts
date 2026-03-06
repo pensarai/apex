@@ -177,20 +177,29 @@ function wrapStreamWithErrorHandler(
                 } catch {
                   // Fall back to container messages if response is not available
                 }
-                if (!silent) {
-                  console.warn(
-                    `Context length error in wrapper, summarizing ${messagesContainer.current.length} messages: `,
-                    errorMessage,
-                  );
-                }
-
-                const summarizationStream = createSummarizationStream(
-                  currentMessages,
-                  opts,
-                  model,
+                console.warn(
+                  `[RLM] Context length error, summarizing ${currentMessages.length} messages: ${errorMessage}`,
                 );
-                for await (const chunk of summarizationStream.fullStream) {
-                  yield chunk;
+
+                try {
+                  const summarizationStream = createSummarizationStream(
+                    currentMessages,
+                    opts,
+                    model,
+                  );
+                  for await (const chunk of summarizationStream.fullStream) {
+                    yield chunk;
+                  }
+                } catch (summarizationError) {
+                  // If summarization itself fails, log and re-throw the
+                  // original error so the consumer can handle it gracefully.
+                  console.error(
+                    `[RLM] Summarization failed:`,
+                    summarizationError instanceof Error
+                      ? summarizationError.message
+                      : String(summarizationError),
+                  );
+                  throw error;
                 }
               } else {
                 if (!silent) {
@@ -406,12 +415,9 @@ export function streamResponse(
       error instanceof Error ? error.message : String(error);
 
     if (isContextLengthError) {
-      if (!silent) {
-        console.warn(
-          `Context length error, summarizing ${messagesContainer.current.length} messages: `,
-          outerErrorMessage,
-        );
-      }
+      console.warn(
+        `[RLM] Context length error (outer), summarizing ${messagesContainer.current.length} messages: ${outerErrorMessage}`,
+      );
       // Return a wrapped stream that shows summarization and then continues
       return createSummarizationStream(
         messagesContainer.current,

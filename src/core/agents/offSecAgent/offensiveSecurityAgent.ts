@@ -249,27 +249,37 @@ export class OffensiveSecurityAgent<TResult = void> {
 
     const sid = this.subagentId;
 
-    for await (const chunk of this.streamResult.fullStream) {
-      switch (chunk.type) {
-        case "text-delta":
-          onTextDelta?.(chunk);
-          subagentCallbacks?.onTextDelta?.({ ...chunk, subagentId: sid });
-          break;
-        case "tool-call":
-          onToolCall?.(chunk);
-          subagentCallbacks?.onToolCall?.({ ...chunk, subagentId: sid });
-          break;
-        case "tool-result":
-          onToolResult?.(chunk);
-          subagentCallbacks?.onToolResult?.({ ...chunk, subagentId: sid });
-          break;
-        case "error":
-          if (onError) {
-            onError((chunk as { type: "error"; error: unknown }).error);
-          }
-          subagentCallbacks?.onError?.(chunk.error);
-          break;
+    try {
+      for await (const chunk of this.streamResult.fullStream) {
+        switch (chunk.type) {
+          case "text-delta":
+            onTextDelta?.(chunk);
+            subagentCallbacks?.onTextDelta?.({ ...chunk, subagentId: sid });
+            break;
+          case "tool-call":
+            onToolCall?.(chunk);
+            subagentCallbacks?.onToolCall?.({ ...chunk, subagentId: sid });
+            break;
+          case "tool-result":
+            onToolResult?.(chunk);
+            subagentCallbacks?.onToolResult?.({ ...chunk, subagentId: sid });
+            break;
+          case "error":
+            if (onError) {
+              onError((chunk as { type: "error"; error: unknown }).error);
+            }
+            subagentCallbacks?.onError?.(chunk.error);
+            break;
+        }
       }
+    } catch (error) {
+      // Context length or other stream errors should be handled by the
+      // wrapper in ai.ts (summarize & resume), but if they escape,
+      // log and continue so the agent can still resolve partial results.
+      const msg = error instanceof Error ? error.message : String(error);
+      console.warn(`[agent] Stream error (recovering): ${msg}`);
+      onError?.(error);
+      subagentCallbacks?.onError?.(error);
     }
 
     this.persistentShell?.dispose();
