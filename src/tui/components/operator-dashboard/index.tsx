@@ -40,6 +40,10 @@ import {
   createInitialOperatorState,
   type OperatorSessionState,
 } from "../../../core/operator";
+import {
+  readExecutionMetrics,
+  writeExecutionMetrics,
+} from "../../../core/session/execution-metrics";
 import { ModelPicker } from "../model-picker";
 import { stepCountIs, type ModelMessage } from "ai";
 import { isTerminalCopyShortcut, shouldHandleOperatorCtrlC } from "./keyboard";
@@ -64,8 +68,16 @@ export default function OperatorDashboard({
   const { colors } = useTheme();
   const route = useRoute();
   const config = useConfig();
-  const { model, setModel, isModelUserSelected, setThinking, setIsExecuting } =
-    useAgent();
+  const {
+    model,
+    setModel,
+    isModelUserSelected,
+    setThinking,
+    setIsExecuting,
+    tokenUsage,
+    addTokenUsage,
+    resetTokenUsage,
+  } = useAgent();
   const {
     autocompleteOptions: allAutocompleteOptions,
     executeCommand,
@@ -139,6 +151,11 @@ export default function OperatorDashboard({
   // Display options
   const [verboseMode, setVerboseMode] = useState(false);
   const [expandedLogs, setExpandedLogs] = useState(false);
+  const tokenUsageRef = useRef(tokenUsage);
+
+  useEffect(() => {
+    tokenUsageRef.current = tokenUsage;
+  }, [tokenUsage]);
 
   // Subscribe to approval gate events
   useEffect(() => {
@@ -260,6 +277,32 @@ export default function OperatorDashboard({
     }
     loadSession();
   }, [sessionId]);
+
+  useEffect(() => {
+    if (!session) return;
+
+    resetTokenUsage();
+    tokenUsageRef.current = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
+
+    const metrics = readExecutionMetrics(session.rootPath);
+    const persisted = metrics?.tokenUsage;
+    if (
+      persisted &&
+      (persisted.inputTokens > 0 || persisted.outputTokens > 0)
+    ) {
+      addTokenUsage(persisted.inputTokens, persisted.outputTokens);
+      tokenUsageRef.current = persisted;
+    }
+
+    try {
+      writeExecutionMetrics({
+        sessionRootPath: session.rootPath,
+        tokenUsage: tokenUsageRef.current,
+      });
+    } catch {
+      // Best effort hydration write.
+    }
+  }, [session, addTokenUsage, resetTokenUsage]);
 
   // ---------------------------------------------------------------------------
   // Message helpers — same pattern as pentest component
@@ -480,6 +523,29 @@ export default function OperatorDashboard({
           authConfig: buildAuthConfig(config.data),
           approvalGate: approvalGateRef.current,
           commandCancelHandle: cancelHandleRef.current,
+          onStepFinish: (event) => {
+            const inputTokens = event.usage?.inputTokens ?? 0;
+            const outputTokens = event.usage?.outputTokens ?? 0;
+            if (inputTokens <= 0 && outputTokens <= 0) return;
+
+            const nextUsage = {
+              inputTokens: tokenUsageRef.current.inputTokens + inputTokens,
+              outputTokens: tokenUsageRef.current.outputTokens + outputTokens,
+              totalTokens:
+                tokenUsageRef.current.totalTokens + inputTokens + outputTokens,
+            };
+            tokenUsageRef.current = nextUsage;
+
+            addTokenUsage(inputTokens, outputTokens);
+            try {
+              writeExecutionMetrics({
+                sessionRootPath: session.rootPath,
+                tokenUsage: nextUsage,
+              });
+            } catch {
+              // Best effort: token metrics should not interrupt operator runs.
+            }
+          },
           callbacks: {
             onTextDelta: (d) => {
               setThinking(false);
@@ -588,6 +654,7 @@ export default function OperatorDashboard({
       model.id,
       config.data,
       operatorState,
+      addTokenUsage,
       appendText,
       addToolCall,
       updateToolResult,

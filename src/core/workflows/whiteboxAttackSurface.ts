@@ -126,6 +126,13 @@ export interface WhiteboxAttackSurfaceWorkflowInput {
   authConfig?: AIAuthConfig;
   abortSignal?: AbortSignal;
   callbacks?: ConsumeCallbacks;
+  onStepFinish?: (event: {
+    usage?: {
+      inputTokens?: number;
+      outputTokens?: number;
+      totalTokens?: number;
+    };
+  }) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -143,8 +150,15 @@ export interface WhiteboxAttackSurfaceWorkflowInput {
 export async function runWhiteboxAttackSurfaceWorkflow(
   input: WhiteboxAttackSurfaceWorkflowInput,
 ): Promise<WhiteboxAttackSurfaceResult> {
-  const { codebasePath, model, session, authConfig, abortSignal, callbacks } =
-    input;
+  const {
+    codebasePath,
+    model,
+    session,
+    authConfig,
+    abortSignal,
+    callbacks,
+    onStepFinish,
+  } = input;
 
   // =========================================================================
   // Phase 1: Identify all apps in the repository
@@ -159,6 +173,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     authConfig,
     abortSignal,
     callbacks,
+    onStepFinish: (event) => onStepFinish?.(event),
     responseSchema: AppsDiscoveryResultSchema,
   });
 
@@ -224,6 +239,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
         authConfig,
         abortSignal,
         callbacks,
+        onStepFinish: (event) => onStepFinish?.(event),
         responseSchema: EndpointsDiscoveryResultSchema,
       });
 
