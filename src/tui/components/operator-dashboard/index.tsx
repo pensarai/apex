@@ -48,11 +48,19 @@ import {
 } from "../../../core/session/execution-metrics";
 import { ModelPicker } from "../model-picker";
 import { stepCountIs, type ModelMessage } from "ai";
-import { isTerminalCopyShortcut, shouldHandleOperatorCtrlC } from "./keyboard";
+import {
+  type DashboardStatus,
+  filterOperatorAutocomplete,
+  resolveSubmit,
+  routeCommand,
+  resolveKeyboardShortcut,
+  resolveAbortAction,
+  buildOperatorSystemPrompt,
+  resolveInputFocused,
+  accumulateTokenUsage,
+} from "./logic";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
-
-type DashboardStatus = "idle" | "running" | "waiting" | "done";
 
 /**
  * Operator Dashboard - interactive chat interface with the offensive security agent
@@ -94,11 +102,8 @@ export default function OperatorDashboard({
   } = useDialog();
 
   const autocompleteOptions = useMemo(() => {
-    const allowedCommands = new Set(["/create-skill", "/models"]);
     const skillSlugs = new Set(skills.map((s) => `/${slugify(s.name)}`));
-    return allAutocompleteOptions.filter(
-      (opt) => allowedCommands.has(opt.value) || skillSlugs.has(opt.value),
-    );
+    return filterOperatorAutocomplete(allAutocompleteOptions, skillSlugs);
   }, [allAutocompleteOptions, skills]);
 
   // Session state
@@ -488,19 +493,18 @@ export default function OperatorDashboard({
       const onStepFinish = (event: {
         usage?: { inputTokens?: number; outputTokens?: number };
       }) => {
-        const inputTokens = event.usage?.inputTokens ?? 0;
-        const outputTokens = event.usage?.outputTokens ?? 0;
-        if (inputTokens <= 0 && outputTokens <= 0) return;
-
-        const nextUsage = {
-          inputTokens: tokenUsageRef.current.inputTokens + inputTokens,
-          outputTokens: tokenUsageRef.current.outputTokens + outputTokens,
-          totalTokens:
-            tokenUsageRef.current.totalTokens + inputTokens + outputTokens,
-        };
+        const nextUsage = accumulateTokenUsage(
+          tokenUsageRef.current,
+          event.usage?.inputTokens ?? 0,
+          event.usage?.outputTokens ?? 0,
+        );
+        if (!nextUsage) return;
         tokenUsageRef.current = nextUsage;
 
-        addTokenUsage(inputTokens, outputTokens);
+        addTokenUsage(
+          event.usage?.inputTokens ?? 0,
+          event.usage?.outputTokens ?? 0,
+        );
         if (session) {
           try {
             writeExecutionMetrics({
@@ -689,22 +693,19 @@ export default function OperatorDashboard({
 
   const handleSubmit = useCallback(
     (value: string) => {
-      if (!value.trim()) return;
-
-      // If there's a pending approval and the user types, deny and redirect
       const pending = approvalGateRef.current.getPendingApprovals();
-      if (pending.length > 0) {
+      const result = resolveSubmit(value, status, pending.length > 0);
+
+      if (result.denyPending) {
         for (const p of pending) {
           approvalGateRef.current.deny(p.id);
         }
       }
 
-      // Block submission only when the agent is actively running (not waiting)
-      if (status === "running") return;
+      if (result.action !== "run" || !result.prompt) return;
 
-      const trimmed = value.trim();
       setInputValue("");
-      runAgent(trimmed);
+      runAgent(result.prompt);
     },
     [status, runAgent],
   );
@@ -760,28 +761,23 @@ export default function OperatorDashboard({
 
   const handleCommandExecute = useCallback(
     async (command: string) => {
-      const commandLower = command.trim().replace(/^\/+/, "").toLowerCase();
+      const action = routeCommand(command, resolveSkillContent);
 
-      // /models — show model picker dialog inline
-      if (commandLower === "models" || commandLower === "model") {
-        showModelPicker();
-        return;
+      switch (action.type) {
+        case "show-models":
+          showModelPicker();
+          return;
+        case "run-skill":
+          if (action.autopilot) {
+            approvalGateRef.current.updateConfig({ requireApproval: false });
+            setOperatorState((prev) => ({ ...prev, requireApproval: false }));
+          }
+          handleSubmit(action.content);
+          return;
+        case "execute-command":
+          await executeCommand(action.command);
+          return;
       }
-
-      // Detect and strip --autopilot flag before resolving
-      const autopilot = command.includes("--autopilot");
-      const cleanedCommand = command.replace(/\s*--autopilot\s*/g, "").trim();
-
-      const skillContent = resolveSkillContent(cleanedCommand);
-      if (skillContent) {
-        if (autopilot) {
-          approvalGateRef.current.updateConfig({ requireApproval: false });
-          setOperatorState((prev) => ({ ...prev, requireApproval: false }));
-        }
-        handleSubmit(skillContent);
-        return;
-      }
-      await executeCommand(command);
     },
     [resolveSkillContent, handleSubmit, executeCommand, showModelPicker],
   );
@@ -789,9 +785,11 @@ export default function OperatorDashboard({
   const handleAbort = useCallback(() => {
     if (!abortControllerRef.current) return;
 
-    // Stage 1: If a command is running and hasn't been cancelled yet,
-    // cancel just the command and let the agent continue.
-    if (!commandCancelledRef.current && cancelHandleRef.current.cancel()) {
+    const action = resolveAbortAction(commandCancelledRef.current, () =>
+      cancelHandleRef.current.cancel(),
+    );
+
+    if (action.type === "cancel-command") {
       commandCancelledRef.current = true;
       setMessages((prev) => [
         ...prev,
@@ -805,7 +803,7 @@ export default function OperatorDashboard({
       return;
     }
 
-    // Stage 2: No command running, or second Ctrl+C — kill the agent.
+    // Kill the agent
     generationRef.current++;
     abortControllerRef.current.abort();
     abortControllerRef.current = null;
@@ -859,66 +857,44 @@ export default function OperatorDashboard({
 
   // Keyboard shortcuts
   useKeyboard((key) => {
-    // Skip local shortcuts when dialogs are open (e.g. shortcuts popup)
-    if (stack.length > 0 || externalDialogOpen) return;
+    const dialogOpen = stack.length > 0 || externalDialogOpen;
+    const action = resolveKeyboardShortcut(
+      key,
+      status,
+      inputValue,
+      pendingApprovals.length > 0,
+      dialogOpen,
+    );
 
-    // Let terminal-native copy shortcuts pass through so selected output text
-    // in operator mode can still be copied.
-    if (isTerminalCopyShortcut(key)) {
-      return;
-    }
-
-    if (shouldHandleOperatorCtrlC(key, status, inputValue)) {
-      key.preventDefault?.();
-      if (status === "running" || status === "waiting") {
+    switch (action.type) {
+      case "skip":
+        return;
+      case "ctrl-c-abort":
+        key.preventDefault?.();
         handleAbort();
-      } else if (inputValue.trim()) {
+        return;
+      case "ctrl-c-clear":
+        key.preventDefault?.();
         setInputValue("");
-      }
-      return;
-    }
-
-    if (key.name === "escape" && status !== "running" && status !== "waiting") {
-      route.navigate({ type: "base", path: "home" });
-      return;
-    }
-
-    // Ctrl+V - toggle verbose mode
-    if (key.ctrl && key.name === "v") {
-      setVerboseMode((v) => !v);
-      return;
-    }
-
-    // Ctrl+L - toggle expanded logs
-    if (key.ctrl && key.name === "l") {
-      setExpandedLogs((e) => !e);
-      return;
-    }
-
-    // Shift+Tab - toggle command approval on/off
-    if (key.name === "tab" && key.shift) {
-      toggleApproval();
-      return;
-    }
-
-    // Y/y to approve pending
-    if (
-      status === "waiting" &&
-      pendingApprovals.length > 0 &&
-      (key.name === "y" || key.raw === "Y")
-    ) {
-      handleApprove();
-      return;
-    }
-
-    // A/a to auto-approve (disable approval)
-    if (
-      status === "waiting" &&
-      pendingApprovals.length > 0 &&
-      (key.name === "a" || key.raw === "A")
-    ) {
-      handleAutoApprove();
-      return;
+        return;
+      case "escape":
+        route.navigate({ type: "base", path: "home" });
+        return;
+      case "toggle-verbose":
+        setVerboseMode((v) => !v);
+        return;
+      case "toggle-expanded-logs":
+        setExpandedLogs((e) => !e);
+        return;
+      case "toggle-approval":
+        toggleApproval();
+        return;
+      case "approve":
+        handleApprove();
+        return;
+      case "auto-approve":
+        handleAutoApprove();
+        return;
     }
   });
 
@@ -1024,7 +1000,7 @@ export default function OperatorDashboard({
               ? "Type to redirect agent, or Y/A to approve..."
               : "Enter directive or / for commands & skills..."
         }
-        focused={status !== "running"}
+        focused={resolveInputFocused(status, stack.length, externalDialogOpen)}
         status={status === "waiting" ? "running" : status}
         mode="operator"
         operatorMode={operatorState.mode}
@@ -1040,38 +1016,6 @@ export default function OperatorDashboard({
       />
     </box>
   );
-}
-
-/**
- * Build a system prompt that includes operator context
- */
-function buildOperatorSystemPrompt(
-  session: SessionInfo,
-  operatorState: OperatorSessionState,
-): string {
-  const target = session.targets[0] || "unknown";
-
-  return `You are an offensive security agent operating in interactive operator mode.
-
-Target: ${target}
-Stage: ${operatorState.currentStage}
-Command approval: ${operatorState.requireApproval ? "enabled — the operator will approve each tool call" : "disabled — tool calls execute automatically"}
-
-You are tasked with performing security testing on the target system. The human operator
-will guide your actions through directives. Follow their instructions carefully.
-
-Guidelines:
-- Be thorough and methodical in your testing approach
-- Document all findings clearly
-- Respect scope constraints
-- Report any interesting observations, even if not directly exploitable
-- When you discover credentials, endpoints, or vulnerabilities, note them clearly
-
-Session paths:
-- Findings: ${session.findingsPath}
-- POCs: ${session.pocsPath}
-- Logs: ${session.logsPath}
-- Scratchpad: ${session.scratchpadPath}`;
 }
 
 // Re-export types for backward compatibility
