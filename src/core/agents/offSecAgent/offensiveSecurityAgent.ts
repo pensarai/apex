@@ -137,6 +137,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       subagentCallbacks,
       sandbox: input.sandbox,
       findingsRegistry: input.findingsRegistry,
+      attackSurfaceRegistry: input.attackSurfaceRegistry,
       credentialManager,
       persistentShell: this.persistentShell,
       onCommandOutput: input.callbacks?.onCommandOutput,

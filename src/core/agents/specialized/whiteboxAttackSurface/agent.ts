@@ -58,6 +58,7 @@ export class WhiteboxAttackSurfaceAgent extends OffensiveSecurityAgent<WhiteboxA
       onStepFinish,
       abortSignal,
       callbacks,
+      attackSurfaceRegistry,
     } = opts;
 
     // Closure variable that the response tool writes to
@@ -84,6 +85,7 @@ This ends the agent run — make sure all data is included.`,
       authConfig,
       onStepFinish,
       abortSignal,
+      attackSurfaceRegistry,
       callbacks,
       subagentCallbacks: callbacks?.subagentCallbacks,
 

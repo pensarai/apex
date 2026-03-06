@@ -66,6 +66,7 @@ export class CodeAgent<TResult = void> extends OffensiveSecurityAgent<TResult> {
       stopWhen,
       responseSchema,
       system,
+      attackSurfaceRegistry,
     } = opts;
 
     const activeTools: string[] = [
@@ -88,6 +89,7 @@ export class CodeAgent<TResult = void> extends OffensiveSecurityAgent<TResult> {
       authConfig,
       onStepFinish,
       abortSignal,
+      attackSurfaceRegistry,
       callbacks,
       subagentCallbacks: callbacks?.subagentCallbacks,
       stopWhen: stopWhen ?? stepCountIs(10000),

@@ -78,6 +78,7 @@ async function runWhiteboxAttackSurface(
     session: input.session,
     authConfig: input.authConfig,
     abortSignal: input.abortSignal,
+    attackSurfaceRegistry: input.attackSurfaceRegistry,
     callbacks: input.callbacks,
   });
 

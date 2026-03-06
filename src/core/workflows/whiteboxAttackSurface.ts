@@ -126,6 +126,7 @@ export interface WhiteboxAttackSurfaceWorkflowInput {
   authConfig?: AIAuthConfig;
   abortSignal?: AbortSignal;
   callbacks?: ConsumeCallbacks;
+  attackSurfaceRegistry?: import("../findings/attackSurfaceRegistry").AttackSurfaceRegistry;
   onStepFinish?: (event: {
     usage?: {
       inputTokens?: number;
@@ -157,6 +158,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     authConfig,
     abortSignal,
     callbacks,
+    attackSurfaceRegistry,
     onStepFinish,
   } = input;
 
@@ -172,6 +174,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     session,
     authConfig,
     abortSignal,
+    attackSurfaceRegistry,
     callbacks,
     onStepFinish: (event) => onStepFinish?.(event),
     responseSchema: AppsDiscoveryResultSchema,
@@ -240,6 +243,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
         session,
         authConfig,
         abortSignal,
+        attackSurfaceRegistry,
         callbacks,
         onStepFinish: (event) => onStepFinish?.(event),
         responseSchema: EndpointsDiscoveryResultSchema,
