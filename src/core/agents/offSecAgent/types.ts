@@ -12,7 +12,7 @@ import type { AIModel } from "../../ai";
 import type { AIAuthConfig } from "../../ai/utils";
 import type { CredentialManager } from "../../credentials";
 import type { FindingsRegistry } from "../../findings/registry";
-import type { SessionInfo } from "../../session";
+import type { SessionInfo, SessionConfig } from "../../session";
 import type { ApprovalGate } from "../../operator";
 import type { ToolName } from "./tools";
 import type { UnifiedSandbox } from "./tools/sandbox";
@@ -293,4 +293,37 @@ export type SubagentConsumeCallbacks = {
     },
   ) => void;
   onError?: (error: unknown) => void;
+};
+
+/**
+ * Input for the `OffensiveSecurityAgent.create()` async factory.
+ *
+ * Identical to {@link OffensiveSecurityAgentInput} except `session` is
+ * optional. When omitted, the factory creates a new session automatically
+ * using the remaining fields.
+ *
+ * Pass an existing `session` to reuse one (e.g. from the console API or
+ * when spawning subagents).
+ */
+export type CreateAgentInput<TResult = void> = Omit<
+  OffensiveSecurityAgentInput<TResult>,
+  "session" | "system"
+> & {
+  /** Existing session to reuse. When omitted a new one is created. */
+  session?: SessionInfo;
+  /** Session config used when auto-creating a session (ignored when `session` is provided). */
+  sessionConfig?: SessionConfig;
+  /**
+   * Static system prompt. Used when `session` is provided.
+   * When omitted and `buildSystem` is set, the factory builds the prompt
+   * after creating the session.
+   */
+  system?: string;
+  /**
+   * Called with the created/resolved session to build the system prompt.
+   * Takes precedence over `system` when a session is auto-created.
+   */
+  buildSystem?: (session: SessionInfo) => string;
+  /** Called when the async AI name generation resolves with a name. */
+  onNameGenerated?: (name: string) => void;
 };

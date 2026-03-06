@@ -15,9 +15,11 @@ import {
   type SessionConfig,
 } from "../../../core/session";
 import { runOffensiveSecurityAgent } from "../../../core/api/offesecAgent";
-import { generateRandomName } from "../../../util/name";
 import { buildAuthConfig } from "../../../core/ai/utils";
-import { ALL_TOOL_NAMES } from "../../../core/agents/offSecAgent";
+import {
+  ALL_TOOL_NAMES,
+  type ConsumeCallbacks,
+} from "../../../core/agents/offSecAgent";
 import {
   convertModelMessagesToUI,
   type UIMessage,
@@ -46,12 +48,19 @@ import {
 } from "../../../core/session/execution-metrics";
 import { ModelPicker } from "../model-picker";
 import { stepCountIs, type ModelMessage } from "ai";
-import { isTerminalCopyShortcut, shouldHandleOperatorCtrlC } from "./keyboard";
+import {
+  type DashboardStatus,
+  filterOperatorAutocomplete,
+  resolveSubmit,
+  routeCommand,
+  resolveKeyboardShortcut,
+  resolveAbortAction,
+  buildOperatorSystemPrompt,
+  resolveInputFocused,
+  accumulateTokenUsage,
+} from "./logic";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
-import * as History from "../../../core/history";
-
-type DashboardStatus = "idle" | "running" | "waiting" | "done";
 
 /**
  * Operator Dashboard - interactive chat interface with the offensive security agent
@@ -63,7 +72,7 @@ export default function OperatorDashboard({
 }: {
   sessionId?: string;
   initialMessage?: string;
-  initialConfig?: { requireApproval?: boolean };
+  initialConfig?: { requireApproval?: boolean; target?: string };
 }) {
   const { colors } = useTheme();
   const route = useRoute();
@@ -93,17 +102,16 @@ export default function OperatorDashboard({
   } = useDialog();
 
   const autocompleteOptions = useMemo(() => {
-    const allowedCommands = new Set(["/create-skill", "/models"]);
     const skillSlugs = new Set(skills.map((s) => `/${slugify(s.name)}`));
-    return allAutocompleteOptions.filter(
-      (opt) => allowedCommands.has(opt.value) || skillSlugs.has(opt.value),
-    );
+    return filterOperatorAutocomplete(allAutocompleteOptions, skillSlugs);
   }, [allAutocompleteOptions, skills]);
 
   // Session state
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Captures an AI-generated name that arrives before the session is stored in state
+  const pendingNameRef = useRef<string | null>(null);
 
   // Agent/status state
   const [status, setStatus] = useState<DashboardStatus>("idle");
@@ -124,13 +132,6 @@ export default function OperatorDashboard({
   const conversationRef = useRef<ModelMessage[]>([]);
   // Input state
   const [inputValue, setInputValue] = useState("");
-  const [commandHistory, setCommandHistory] = useState<string[]>(
-    History.getEntries,
-  );
-
-  useEffect(() => {
-    History.load().then(setCommandHistory);
-  }, []);
 
   // Operator state
   const [operatorState, setOperatorState] = useState<OperatorSessionState>(() =>
@@ -185,40 +186,15 @@ export default function OperatorDashboard({
     };
   }, []);
 
-  // Load or create session on mount
+  // Load existing session or initialise operator state for a new one.
+  // New sessions are created lazily by the agent on the first runAgent call.
   useEffect(() => {
     async function loadSession() {
       try {
-        let s: SessionInfo;
-
         if (sessionId) {
-          s = await sessions.get(sessionId);
-        } else {
-          const requireApproval = initialConfig?.requireApproval ?? true;
-          const sessionConfig: SessionConfig = {
-            sessionType: "web-app",
-            mode: "operator",
-            operatorSettings: {
-              initialMode: "auto",
-              requireApproval,
-              enableSuggestions: true,
-            },
-          };
-          s = await sessions.create({
-            targets: [],
-            name: generateRandomName(),
-            config: sessionConfig,
-          });
+          const s = await sessions.get(sessionId);
+          setSession(s);
 
-          const state = createInitialOperatorState("auto", requireApproval);
-          setOperatorState(state);
-          approvalGateRef.current.updateConfig({ requireApproval });
-        }
-
-        setSession(s);
-
-        // For existing sessions, attempt to load saved operator state
-        if (sessionId) {
           const hasState = sessions.hasOperatorState(s);
           if (hasState) {
             const savedState = await sessions.loadOperatorState(sessionId);
@@ -268,6 +244,13 @@ export default function OperatorDashboard({
             setOperatorState(initialState);
             approvalGateRef.current.updateConfig({ requireApproval });
           }
+        } else {
+          // New session — just set up operator config; the agent creates the
+          // session on the first runAgent call.
+          const requireApproval = initialConfig?.requireApproval ?? true;
+          const state = createInitialOperatorState("auto", requireApproval);
+          setOperatorState(state);
+          approvalGateRef.current.updateConfig({ requireApproval });
         }
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to load session");
@@ -476,8 +459,6 @@ export default function OperatorDashboard({
 
   const runAgent = useCallback(
     async (prompt: string) => {
-      if (!session) return;
-
       // Abort any previous run before starting a new one
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
@@ -509,114 +490,158 @@ export default function OperatorDashboard({
       ];
       conversationRef.current = nextMessages;
 
+      const onStepFinish = (event: {
+        usage?: { inputTokens?: number; outputTokens?: number };
+      }) => {
+        const nextUsage = accumulateTokenUsage(
+          tokenUsageRef.current,
+          event.usage?.inputTokens ?? 0,
+          event.usage?.outputTokens ?? 0,
+        );
+        if (!nextUsage) return;
+        tokenUsageRef.current = nextUsage;
+
+        addTokenUsage(
+          event.usage?.inputTokens ?? 0,
+          event.usage?.outputTokens ?? 0,
+        );
+        if (session) {
+          try {
+            writeExecutionMetrics({
+              sessionRootPath: session.rootPath,
+              tokenUsage: nextUsage,
+            });
+          } catch {
+            // Best effort: token metrics should not interrupt operator runs.
+          }
+        }
+      };
+
+      const callbacks = {
+        onTextDelta: (d) => {
+          setThinking(false);
+          appendText(d.text);
+        },
+        onToolCall: (d) => {
+          setThinking(false);
+          commandCancelledRef.current = false;
+          addToolCall(
+            d.toolCallId,
+            d.toolName,
+            d.input as Record<string, unknown> | undefined,
+          );
+        },
+        onToolResult: (d) => {
+          flushCommandOutput();
+          if (cmdFlushTimerRef.current) {
+            clearInterval(cmdFlushTimerRef.current);
+            cmdFlushTimerRef.current = null;
+          }
+          setThinking(true);
+          updateToolResult(d.toolCallId, d.toolName, d.output);
+        },
+        onCommandOutput,
+        onError: (e) => {
+          console.error("Agent error:", e);
+          setError(e instanceof Error ? e.message : "Unknown error");
+        },
+        subagentCallbacks: {
+          onSubagentSpawn: ({ subagentId }) => {
+            appendLogToActiveTool(`▸ ${subagentId} started`);
+          },
+          onSubagentComplete: ({ subagentId, status }) => {
+            const icon = status === "completed" ? "✓" : "✗";
+            appendLogToActiveTool(`${icon} ${subagentId} ${status}`);
+          },
+          onTextDelta: (d) => {
+            if (!d.subagentId) return;
+            onCommandOutput(d.text);
+          },
+          onToolCall: (d) => {
+            if (!d.subagentId) return;
+            const args =
+              ((d as Record<string, unknown>).input as Record<
+                string,
+                unknown
+              >) ?? {};
+            const summary = getToolSummary(d.toolName, args);
+            appendLogToActiveTool(summary);
+          },
+          onToolResult: (d) => {
+            if (!d.subagentId) return;
+            const args =
+              ((d as Record<string, unknown>).args as Record<
+                string,
+                unknown
+              >) ?? {};
+            const summary = getToolSummary(d.toolName, args);
+            appendLogToActiveTool(`✓ ${summary}`);
+          },
+          onError: (e) => {
+            const msg = e instanceof Error ? e.message : "subagent error";
+            appendLogToActiveTool(`✗ ${msg}`);
+          },
+        },
+      } satisfies ConsumeCallbacks;
+
+      const commonInput = {
+        prompt,
+        model: model.id,
+        messages: nextMessages,
+        stopWhen: [stepCountIs(10000)],
+        target: initialConfig?.target,
+        activeTools: [...ALL_TOOL_NAMES] as string[],
+        abortSignal: controller.signal,
+        authConfig: buildAuthConfig(config.data),
+        approvalGate: approvalGateRef.current,
+        commandCancelHandle: cancelHandleRef.current,
+        onStepFinish,
+        callbacks,
+      };
+
       try {
-        const streamResult = await runOffensiveSecurityAgent({
-          system: buildOperatorSystemPrompt(session, operatorState),
-          prompt,
-          model: model.id,
-          session,
-          messages: nextMessages,
-          stopWhen: [stepCountIs(10000)],
-          target: session.targets[0],
-          activeTools: [...ALL_TOOL_NAMES],
-          abortSignal: controller.signal,
-          authConfig: buildAuthConfig(config.data),
-          approvalGate: approvalGateRef.current,
-          commandCancelHandle: cancelHandleRef.current,
-          onStepFinish: (event) => {
-            const inputTokens = event.usage?.inputTokens ?? 0;
-            const outputTokens = event.usage?.outputTokens ?? 0;
-            if (inputTokens <= 0 && outputTokens <= 0) return;
+        let agentResult;
 
-            const nextUsage = {
-              inputTokens: tokenUsageRef.current.inputTokens + inputTokens,
-              outputTokens: tokenUsageRef.current.outputTokens + outputTokens,
-              totalTokens:
-                tokenUsageRef.current.totalTokens + inputTokens + outputTokens,
-            };
-            tokenUsageRef.current = nextUsage;
-
-            addTokenUsage(inputTokens, outputTokens);
-            try {
-              writeExecutionMetrics({
-                sessionRootPath: session.rootPath,
-                tokenUsage: nextUsage,
-              });
-            } catch {
-              // Best effort: token metrics should not interrupt operator runs.
-            }
-          },
-          callbacks: {
-            onTextDelta: (d) => {
-              setThinking(false);
-              appendText(d.text);
+        if (session) {
+          agentResult = await runOffensiveSecurityAgent({
+            ...commonInput,
+            system: buildOperatorSystemPrompt(session, operatorState),
+            session,
+          });
+        } else {
+          // First call — let the agent factory create the session
+          const requireApproval = initialConfig?.requireApproval ?? true;
+          const sessionConfig: SessionConfig = {
+            sessionType: "web-app",
+            mode: "operator",
+            operatorSettings: {
+              initialMode: "auto",
+              requireApproval,
+              enableSuggestions: true,
             },
-            onToolCall: (d) => {
-              setThinking(false);
-              commandCancelledRef.current = false;
-              addToolCall(
-                d.toolCallId,
-                d.toolName,
-                d.input as Record<string, unknown> | undefined,
-              );
+          };
+          agentResult = await runOffensiveSecurityAgent({
+            ...commonInput,
+            buildSystem: (s: SessionInfo) =>
+              buildOperatorSystemPrompt(s, operatorState),
+            sessionConfig,
+            onNameGenerated: (name: string) => {
+              pendingNameRef.current = name;
+              setSession((prev) => (prev ? { ...prev, name } : prev));
             },
-            onToolResult: (d) => {
-              flushCommandOutput();
-              if (cmdFlushTimerRef.current) {
-                clearInterval(cmdFlushTimerRef.current);
-                cmdFlushTimerRef.current = null;
-              }
-              setThinking(true);
-              updateToolResult(d.toolCallId, d.toolName, d.output);
-            },
-            onCommandOutput,
-            onError: (e) => {
-              console.error("Agent error:", e);
-              setError(e instanceof Error ? e.message : "Unknown error");
-            },
-            subagentCallbacks: {
-              onSubagentSpawn: ({ subagentId }) => {
-                appendLogToActiveTool(`▸ ${subagentId} started`);
-              },
-              onSubagentComplete: ({ subagentId, status }) => {
-                const icon = status === "completed" ? "✓" : "✗";
-                appendLogToActiveTool(`${icon} ${subagentId} ${status}`);
-              },
-              onTextDelta: (d) => {
-                if (!d.subagentId) return;
-                onCommandOutput(d.text);
-              },
-              onToolCall: (d) => {
-                if (!d.subagentId) return;
-                const args =
-                  ((d as Record<string, unknown>).input as Record<
-                    string,
-                    unknown
-                  >) ?? {};
-                const summary = getToolSummary(d.toolName, args);
-                appendLogToActiveTool(summary);
-              },
-              onToolResult: (d) => {
-                if (!d.subagentId) return;
-                const args =
-                  ((d as Record<string, unknown>).args as Record<
-                    string,
-                    unknown
-                  >) ?? {};
-                const summary = getToolSummary(d.toolName, args);
-                appendLogToActiveTool(`✓ ${summary}`);
-              },
-              onError: (e) => {
-                const msg = e instanceof Error ? e.message : "subagent error";
-                appendLogToActiveTool(`✗ ${msg}`);
-              },
-            },
-          },
-        });
+          });
+          // Apply any AI-generated name that arrived while the stream was running
+          const created = agentResult.session;
+          if (pendingNameRef.current) {
+            created.name = pendingNameRef.current;
+            pendingNameRef.current = null;
+          }
+          setSession(created);
+        }
 
         // Persist full conversation for next turn
         try {
-          const response = await streamResult.response;
+          const response = await agentResult.streamResult.response;
           if (gen === generationRef.current && response.messages) {
             conversationRef.current = [
               ...nextMessages,
@@ -668,44 +693,35 @@ export default function OperatorDashboard({
 
   const handleSubmit = useCallback(
     (value: string) => {
-      if (!value.trim()) return;
-
-      // If there's a pending approval and the user types, deny and redirect
       const pending = approvalGateRef.current.getPendingApprovals();
-      if (pending.length > 0) {
+      const result = resolveSubmit(value, status, pending.length > 0);
+
+      if (result.denyPending) {
         for (const p of pending) {
           approvalGateRef.current.deny(p.id);
         }
       }
 
-      // Block submission only when the agent is actively running (not waiting)
-      if (status === "running") return;
+      if (result.action !== "run" || !result.prompt) return;
 
-      const trimmed = value.trim();
-      History.push(trimmed).then(() =>
-        setCommandHistory([...History.getEntries()]),
-      );
       setInputValue("");
-      runAgent(trimmed);
+      runAgent(result.prompt);
     },
     [status, runAgent],
   );
 
-  // Auto-send initial message once the session finishes loading
+  // Auto-send initial message once loading completes.
+  // For new sessions, `session` is null until the first runAgent call creates
+  // it via the agent factory, so we intentionally don't gate on `session`.
   const initialMessageSentRef = useRef(false);
   const runAgentRef = useRef(runAgent);
   runAgentRef.current = runAgent;
   useEffect(() => {
-    if (
-      !loading &&
-      session &&
-      initialMessage &&
-      !initialMessageSentRef.current
-    ) {
+    if (!loading && initialMessage && !initialMessageSentRef.current) {
       initialMessageSentRef.current = true;
       runAgentRef.current(initialMessage);
     }
-  }, [loading, session, initialMessage]);
+  }, [loading, initialMessage]);
 
   const showModelPicker = useCallback(() => {
     setDialogSize("large");
@@ -745,28 +761,23 @@ export default function OperatorDashboard({
 
   const handleCommandExecute = useCallback(
     async (command: string) => {
-      const commandLower = command.trim().replace(/^\/+/, "").toLowerCase();
+      const action = routeCommand(command, resolveSkillContent);
 
-      // /models — show model picker dialog inline
-      if (commandLower === "models" || commandLower === "model") {
-        showModelPicker();
-        return;
+      switch (action.type) {
+        case "show-models":
+          showModelPicker();
+          return;
+        case "run-skill":
+          if (action.autopilot) {
+            approvalGateRef.current.updateConfig({ requireApproval: false });
+            setOperatorState((prev) => ({ ...prev, requireApproval: false }));
+          }
+          handleSubmit(action.content);
+          return;
+        case "execute-command":
+          await executeCommand(action.command);
+          return;
       }
-
-      // Detect and strip --autopilot flag before resolving
-      const autopilot = command.includes("--autopilot");
-      const cleanedCommand = command.replace(/\s*--autopilot\s*/g, "").trim();
-
-      const skillContent = resolveSkillContent(cleanedCommand);
-      if (skillContent) {
-        if (autopilot) {
-          approvalGateRef.current.updateConfig({ requireApproval: false });
-          setOperatorState((prev) => ({ ...prev, requireApproval: false }));
-        }
-        handleSubmit(skillContent);
-        return;
-      }
-      await executeCommand(command);
     },
     [resolveSkillContent, handleSubmit, executeCommand, showModelPicker],
   );
@@ -774,9 +785,11 @@ export default function OperatorDashboard({
   const handleAbort = useCallback(() => {
     if (!abortControllerRef.current) return;
 
-    // Stage 1: If a command is running and hasn't been cancelled yet,
-    // cancel just the command and let the agent continue.
-    if (!commandCancelledRef.current && cancelHandleRef.current.cancel()) {
+    const action = resolveAbortAction(commandCancelledRef.current, () =>
+      cancelHandleRef.current.cancel(),
+    );
+
+    if (action.type === "cancel-command") {
       commandCancelledRef.current = true;
       setMessages((prev) => [
         ...prev,
@@ -790,7 +803,7 @@ export default function OperatorDashboard({
       return;
     }
 
-    // Stage 2: No command running, or second Ctrl+C — kill the agent.
+    // Kill the agent
     generationRef.current++;
     abortControllerRef.current.abort();
     abortControllerRef.current = null;
@@ -844,66 +857,44 @@ export default function OperatorDashboard({
 
   // Keyboard shortcuts
   useKeyboard((key) => {
-    // Skip local shortcuts when dialogs are open (e.g. shortcuts popup)
-    if (stack.length > 0 || externalDialogOpen) return;
+    const dialogOpen = stack.length > 0 || externalDialogOpen;
+    const action = resolveKeyboardShortcut(
+      key,
+      status,
+      inputValue,
+      pendingApprovals.length > 0,
+      dialogOpen,
+    );
 
-    // Let terminal-native copy shortcuts pass through so selected output text
-    // in operator mode can still be copied.
-    if (isTerminalCopyShortcut(key)) {
-      return;
-    }
-
-    if (shouldHandleOperatorCtrlC(key, status, inputValue)) {
-      key.preventDefault?.();
-      if (status === "running" || status === "waiting") {
+    switch (action.type) {
+      case "skip":
+        return;
+      case "ctrl-c-abort":
+        key.preventDefault?.();
         handleAbort();
-      } else if (inputValue.trim()) {
+        return;
+      case "ctrl-c-clear":
+        key.preventDefault?.();
         setInputValue("");
-      }
-      return;
-    }
-
-    if (key.name === "escape" && status !== "running" && status !== "waiting") {
-      route.navigate({ type: "base", path: "home" });
-      return;
-    }
-
-    // Ctrl+V - toggle verbose mode
-    if (key.ctrl && key.name === "v") {
-      setVerboseMode((v) => !v);
-      return;
-    }
-
-    // Ctrl+L - toggle expanded logs
-    if (key.ctrl && key.name === "l") {
-      setExpandedLogs((e) => !e);
-      return;
-    }
-
-    // Shift+Tab - toggle command approval on/off
-    if (key.name === "tab" && key.shift) {
-      toggleApproval();
-      return;
-    }
-
-    // Y/y to approve pending
-    if (
-      status === "waiting" &&
-      pendingApprovals.length > 0 &&
-      (key.name === "y" || key.raw === "Y")
-    ) {
-      handleApprove();
-      return;
-    }
-
-    // A/a to auto-approve (disable approval)
-    if (
-      status === "waiting" &&
-      pendingApprovals.length > 0 &&
-      (key.name === "a" || key.raw === "A")
-    ) {
-      handleAutoApprove();
-      return;
+        return;
+      case "escape":
+        route.navigate({ type: "base", path: "home" });
+        return;
+      case "toggle-verbose":
+        setVerboseMode((v) => !v);
+        return;
+      case "toggle-expanded-logs":
+        setExpandedLogs((e) => !e);
+        return;
+      case "toggle-approval":
+        toggleApproval();
+        return;
+      case "approve":
+        handleApprove();
+        return;
+      case "auto-approve":
+        handleAutoApprove();
+        return;
     }
   });
 
@@ -922,7 +913,7 @@ export default function OperatorDashboard({
     );
   }
 
-  if (!session) {
+  if (!session && error) {
     return (
       <box
         flexDirection="column"
@@ -933,7 +924,7 @@ export default function OperatorDashboard({
         gap={1}
       >
         <text fg={colors.error}>Failed to load session</text>
-        {error && <text fg={colors.textMuted}>{error}</text>}
+        <text fg={colors.textMuted}>{error}</text>
         <text fg={colors.textMuted}>Press ESC to go back</text>
       </box>
     );
@@ -958,11 +949,13 @@ export default function OperatorDashboard({
         <box flexDirection="row" gap={2}>
           <text fg={colors.primary}>Operator</text>
           <text fg={colors.textMuted}>•</text>
-          <text fg={colors.text}>{session.name}</text>
-          {session.targets[0] && (
+          <text fg={colors.text}>{session?.name ?? "New Session"}</text>
+          {(session?.targets[0] || initialConfig?.target) && (
             <>
               <text fg={colors.textMuted}>•</text>
-              <text fg={colors.textMuted}>{session.targets[0]}</text>
+              <text fg={colors.textMuted}>
+                {session?.targets[0] || initialConfig?.target}
+              </text>
             </>
           )}
         </box>
@@ -1007,7 +1000,7 @@ export default function OperatorDashboard({
               ? "Type to redirect agent, or Y/A to approve..."
               : "Enter directive or / for commands & skills..."
         }
-        focused={status !== "running"}
+        focused={resolveInputFocused(status, stack.length, externalDialogOpen)}
         status={status === "waiting" ? "running" : status}
         mode="operator"
         operatorMode={operatorState.mode}
@@ -1020,42 +1013,9 @@ export default function OperatorDashboard({
         autocompleteOptions={autocompleteOptions}
         enableCommands={true}
         onCommandExecute={handleCommandExecute}
-        commandHistory={commandHistory}
       />
     </box>
   );
-}
-
-/**
- * Build a system prompt that includes operator context
- */
-function buildOperatorSystemPrompt(
-  session: SessionInfo,
-  operatorState: OperatorSessionState,
-): string {
-  const target = session.targets[0] || "unknown";
-
-  return `You are an offensive security agent operating in interactive operator mode.
-
-Target: ${target}
-Stage: ${operatorState.currentStage}
-Command approval: ${operatorState.requireApproval ? "enabled — the operator will approve each tool call" : "disabled — tool calls execute automatically"}
-
-You are tasked with performing security testing on the target system. The human operator
-will guide your actions through directives. Follow their instructions carefully.
-
-Guidelines:
-- Be thorough and methodical in your testing approach
-- Document all findings clearly
-- Respect scope constraints
-- Report any interesting observations, even if not directly exploitable
-- When you discover credentials, endpoints, or vulnerabilities, note them clearly
-
-Session paths:
-- Findings: ${session.findingsPath}
-- POCs: ${session.pocsPath}
-- Logs: ${session.logsPath}
-- Scratchpad: ${session.scratchpadPath}`;
 }
 
 // Re-export types for backward compatibility

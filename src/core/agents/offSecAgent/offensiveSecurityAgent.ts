@@ -7,13 +7,18 @@ import type {
   ToolSet,
 } from "ai";
 import { hasToolCall } from "ai";
-import type { OffensiveSecurityAgentInput, ConsumeCallbacks } from "./types";
+import type {
+  OffensiveSecurityAgentInput,
+  CreateAgentInput,
+  ConsumeCallbacks,
+} from "./types";
 import { createAllTools, EMAIL_TOOL_NAMES_ACTIVE } from "./tools";
 import { createResponseTool, RESPONSE_TOOL_NAME } from "./tools/response";
 import { PersistentShell } from "./tools/persistentShell";
 import { DEFAULT_SYSTEM_PROMPT } from "./prompt";
 import type { ApprovalGate } from "../../operator";
 import { ApprovalDeniedError } from "../../operator";
+import { create as createSession, type SessionInfo } from "../../session";
 import { join } from "path";
 import { writeFileSync, mkdirSync, existsSync } from "fs";
 
@@ -65,7 +70,44 @@ export class OffensiveSecurityAgent<TResult = void> {
   /** Persistent shell for local-mode command execution; disposed on consume() completion. */
   private readonly persistentShell?: PersistentShell;
 
+  /** The session this agent is operating within. */
+  private readonly _session: SessionInfo;
+
+  /**
+   * Async factory that creates a session when one is not provided,
+   * then constructs the agent. Use this instead of `new` when you
+   * want the agent to own session lifecycle.
+   *
+   * Pass an existing `session` to reuse one (console integration,
+   * subagent spawning, etc.).
+   */
+  static async create<TResult = void>(
+    input: CreateAgentInput<TResult>,
+  ): Promise<OffensiveSecurityAgent<TResult>> {
+    let session = input.session;
+    if (!session) {
+      session = await createSession({
+        targets: input.target ? [input.target] : [],
+        config: input.sessionConfig,
+        model: input.model,
+        authConfig: input.authConfig,
+        userMessage: input.prompt,
+        onNameGenerated: input.onNameGenerated,
+      });
+    }
+    const system = input.buildSystem
+      ? input.buildSystem(session)
+      : (input.system ?? DEFAULT_SYSTEM_PROMPT);
+    return new OffensiveSecurityAgent({ ...input, session, system });
+  }
+
+  /** The session this agent is operating within. */
+  get session(): SessionInfo {
+    return this._session;
+  }
+
   constructor(input: OffensiveSecurityAgentInput<TResult>) {
+    this._session = input.session;
     this.subagentId = input.subagentId;
 
     // -- Persistent shell (local mode only) -----------------------------------

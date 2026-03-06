@@ -14,6 +14,9 @@ import {
   type ToolsetState,
   toggleTool as toolsetToggle,
 } from "../toolset";
+import type { AIModel } from "../ai/ai";
+import type { AIAuthConfig } from "../ai/utils";
+import { generateRandomName, generateSessionName } from "../../util/name";
 
 /**
  * Default outcome guidance (safe, non-destructive)
@@ -338,7 +341,7 @@ export function getOffensiveHeaders(
 
 export const SessionInfoObject = z.object({
   id: Identifier.schema("session"),
-  name: z.string(),
+  name: z.string().optional(),
   version: z.string(),
   targets: z.array(z.string()),
   config: SessionConfigObject.optional(),
@@ -360,17 +363,27 @@ export type SessionInfo = z.output<typeof SessionInfoObject> & {
   tokensOut?: number;
 };
 
-interface CreateInputProps {
+export interface CreateInputProps {
   id?: string;
   targets: string[];
-  name: string;
+  /** Explicit session name. When omitted, an AI-generated name is attempted
+   *  (requires `model` + `authConfig`), falling back to a random name. */
+  name?: string;
   prefix?: string;
   config?: SessionConfig;
-  // offensiveHeaders?: OffensiveHeadersConfig;
-  // outcomeGuidance?: string;
+  /** AI model for session name generation (optional). */
+  model?: AIModel;
+  /** Auth config for the AI provider (optional). */
+  authConfig?: AIAuthConfig;
+  /** User objective / first prompt — used as context for AI name generation. */
+  userMessage?: string;
+  /** Called when the async AI name generation resolves with a name. */
+  onNameGenerated?: (name: string) => void;
 }
 
 export async function create(input: CreateInputProps) {
+  const name = input.name ?? generateRandomName();
+
   const id =
     `${input.prefix ? input.prefix : ""}` +
     Identifier.descending("session", input.id);
@@ -402,7 +415,7 @@ export async function create(input: CreateInputProps) {
     id: id,
     version: getCurrentVersion(),
     targets: input.targets,
-    name: input.name,
+    name,
     time: {
       created: Date.now(),
       updated: Date.now(),
@@ -437,6 +450,25 @@ export async function create(input: CreateInputProps) {
   const { _rateLimiter, credentialManager: _cm, ...sessionData } = result;
   await createSessionDirs({ session: result });
   await Storage.write(["sessions", result.id, "session"], sessionData);
+
+  // Fire-and-forget AI name generation — updates persisted session in the background
+  if (!input.name && input.model) {
+    generateSessionName({
+      targets: input.targets,
+      userMessage: input.userMessage,
+      model: input.model,
+      authConfig: input.authConfig,
+    }).then((aiName) => {
+      if (aiName) {
+        result.name = aiName;
+        update(result.id, (s) => {
+          s.name = aiName;
+        }).catch(() => {});
+        input.onNameGenerated?.(aiName);
+      }
+    });
+  }
+
   return result;
 }
 
