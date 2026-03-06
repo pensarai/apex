@@ -2,6 +2,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { streamResponse, type AIModel, type StreamResponseOpts } from "./ai";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { createAmazonBedrock } from "@ai-sdk/amazon-bedrock";
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { getModelInfo } from "./models";
@@ -23,6 +24,7 @@ export type AIAuthConfig = {
   anthropicAPIKey?: string;
   googleAPIKey?: string;
   openRouterAPIKey?: string;
+  inceptionAPIKey?: string;
   pensarAPIKey?: string;
   pensarApiUrl?: string;
   // WorkOS CLI auth
@@ -51,6 +53,7 @@ export function buildAuthConfig(cfg: {
   openAiAPIKey?: string | null;
   googleAPIKey?: string | null;
   openRouterAPIKey?: string | null;
+  inceptionAPIKey?: string | null;
   pensarAPIKey?: string | null;
   pensarApiUrl?: string | null;
   accessToken?: string | null;
@@ -64,6 +67,7 @@ export function buildAuthConfig(cfg: {
     openAiAPIKey: cfg.openAiAPIKey ?? undefined,
     googleAPIKey: cfg.googleAPIKey ?? undefined,
     openRouterAPIKey: cfg.openRouterAPIKey ?? undefined,
+    inceptionAPIKey: cfg.inceptionAPIKey ?? undefined,
     pensarAPIKey: cfg.pensarAPIKey ?? undefined,
     pensarApiUrl: cfg.pensarApiUrl ?? undefined,
     accessToken: cfg.accessToken ?? undefined,
@@ -96,6 +100,8 @@ export function getProviderModel(
   const bedrockSessionToken =
     authConfig?.bedrock?.sessionToken || process.env.AWS_SESSION_TOKEN;
   const bedrockRegion = authConfig?.bedrock?.region || process.env.AWS_REGION;
+  const inceptionApiKey =
+    authConfig?.inceptionAPIKey || process.env.INCEPTION_API_KEY;
   const localBaseURL =
     authConfig?.local?.baseURL ||
     process.env.LOCAL_MODEL_URL ||
@@ -117,6 +123,16 @@ export function getProviderModel(
         apiKey: openRouterAPIKey,
       });
       providerModel = openrouter(model);
+      break;
+    }
+
+    case "inception": {
+      const inception = createOpenAICompatible({
+        name: "inception",
+        apiKey: inceptionApiKey,
+        baseURL: "https://api.inceptionlabs.ai/v1",
+      });
+      providerModel = inception("mercury-2");
       break;
     }
 
