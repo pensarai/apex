@@ -111,7 +111,9 @@ export class OffensiveSecurityAgent<TResult = void> {
     // Shell survives command cancellation; only disposed in consume() after the
     // stream ends, or when the agent is fully killed.
     if (!input.sandbox) {
-      this.persistentShell = new PersistentShell({ cwd: input.session.rootPath });
+      this.persistentShell = new PersistentShell({
+        cwd: input.session.rootPath,
+      });
       if (input.commandCancelHandle) {
         const shell = this.persistentShell;
         input.commandCancelHandle.cancel = () => shell.cancelCurrentCommand();
@@ -215,7 +217,9 @@ export class OffensiveSecurityAgent<TResult = void> {
     // -- Stream ---------------------------------------------------------------
     this.streamResult = streamResponse({
       prompt: input.prompt,
-      system: (input.system ?? BASE_SYSTEM_PROMPT) + buildSessionWorkspaceSection(input.session),
+      system:
+        (input.system ?? BASE_SYSTEM_PROMPT) +
+        buildSessionWorkspaceSection(input.session),
       model: input.model,
       messages: input.messages,
       tools,
