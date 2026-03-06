@@ -2,11 +2,19 @@ import { tool } from "ai";
 import { z } from "zod";
 import {
   listMemories as coreListMemories,
+  MEMORY_CATEGORIES,
   type MemorySummary,
 } from "../../../memory";
 import type { ToolContext } from "./types";
 
 export const listMemoriesInputSchema = z.object({
+  category: z
+    .enum(MEMORY_CATEGORIES)
+    .optional()
+    .describe(
+      'Filter by category: "app", "framework", or "general". ' +
+        "Omit to list memories across all categories.",
+    ),
   tag: z
     .string()
     .optional()
@@ -29,14 +37,15 @@ export type ListMemoriesResult = {
 
 export function listMemories(_ctx: ToolContext) {
   return tool({
-    description: `List all saved memories, optionally filtered by tag.
+    description: `List saved memories, optionally filtered by category and/or tag.
 
-Returns lightweight summaries (id, title, tags, createdAt) sorted by most
-recent first. Use the returned id with get_memory to retrieve full content.`,
+Returns lightweight summaries (id, category, title, tags, createdAt) sorted by
+most recent first. Use the returned category + id with get_memory to retrieve
+full content.`,
     inputSchema: listMemoriesInputSchema,
-    execute: async ({ tag }): Promise<ListMemoriesResult> => {
+    execute: async ({ category, tag }): Promise<ListMemoriesResult> => {
       try {
-        const memories = await coreListMemories(tag);
+        const memories = await coreListMemories({ category, tag });
         return {
           success: true,
           error: "",

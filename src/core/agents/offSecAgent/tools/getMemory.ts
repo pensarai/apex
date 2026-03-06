@@ -1,9 +1,18 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { getMemory as coreGetMemory, type Memory } from "../../../memory";
+import {
+  getMemory as coreGetMemory,
+  MEMORY_CATEGORIES,
+  type Memory,
+} from "../../../memory";
 import type { ToolContext } from "./types";
 
 export const getMemoryInputSchema = z.object({
+  category: z
+    .enum(MEMORY_CATEGORIES)
+    .describe(
+      'The memory category: "app", "framework", or "general" (returned by list_memories)',
+    ),
   id: z.string().describe("The unique memory id (returned by list_memories)"),
   toolCallDescription: z
     .string()
@@ -22,18 +31,18 @@ export type GetMemoryResult = {
 
 export function getMemory(_ctx: ToolContext) {
   return tool({
-    description: `Retrieve the full content of a memory by its id.
+    description: `Retrieve the full content of a memory by its category and id.
 
-Use list_memories first to discover available memory ids, then call this tool
-to fetch the complete content of a specific memory.`,
+Use list_memories first to discover available memories, then call this tool
+with the category and id from that listing to fetch full content.`,
     inputSchema: getMemoryInputSchema,
-    execute: async ({ id }): Promise<GetMemoryResult> => {
+    execute: async ({ category, id }): Promise<GetMemoryResult> => {
       try {
-        const memory = await coreGetMemory(id);
+        const memory = await coreGetMemory(category, id);
         if (!memory) {
           return {
             success: false,
-            error: `Memory not found: ${id}`,
+            error: `Memory not found: ${category}/${id}`,
             memory: null,
           };
         }
