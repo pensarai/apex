@@ -15,7 +15,7 @@ import {
   type SessionConfig,
 } from "../../../core/session";
 import { runOffensiveSecurityAgent } from "../../../core/api/offesecAgent";
-import { generateRandomName } from "../../../util/name";
+import { generateRandomName, generateSessionName } from "../../../util/name";
 import { buildAuthConfig } from "../../../core/ai/utils";
 import { ALL_TOOL_NAMES } from "../../../core/agents/offSecAgent";
 import {
@@ -122,6 +122,8 @@ export default function OperatorDashboard({
   const textRef = useRef("");
   // AI SDK conversation history for multi-turn continuity
   const conversationRef = useRef<ModelMessage[]>([]);
+  // Track whether we've already kicked off AI session name generation
+  const nameGenTriggeredRef = useRef(false);
   // Input state
   const [inputValue, setInputValue] = useState("");
   const [commandHistory, setCommandHistory] = useState<string[]>(
@@ -240,6 +242,7 @@ export default function OperatorDashboard({
                 Array.isArray(savedState.messages) &&
                 savedState.messages.length > 0
               ) {
+                nameGenTriggeredRef.current = true;
                 const modelMsgs = savedState.messages;
                 conversationRef.current = modelMsgs;
 
@@ -625,6 +628,24 @@ export default function OperatorDashboard({
           }
         } catch {
           // Stream may have been aborted; conversation stays as-is
+        }
+
+        // Fire-and-forget AI session name generation on first successful exchange
+        if (!nameGenTriggeredRef.current && session) {
+          nameGenTriggeredRef.current = true;
+          generateSessionName({
+            targets: session.targets,
+            userMessage: prompt,
+            model: model.id,
+            authConfig: buildAuthConfig(config.data),
+          }).then((name) => {
+            if (name) {
+              sessions.update(session.id, (s) => {
+                s.name = name;
+              });
+              setSession((prev) => (prev ? { ...prev, name } : prev));
+            }
+          });
         }
       } catch (e) {
         if (gen !== generationRef.current) return;

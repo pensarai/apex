@@ -16,7 +16,6 @@ type WizardStep = "target" | "configure" | "creating";
 
 // Wizard state interface
 interface WizardState {
-  name: string;
   target: string;
   sourceCodeAccess: boolean;
   cwd: string;
@@ -185,7 +184,6 @@ export default function WebWizard({
   // Wizard state
   const [currentStep, setCurrentStep] = useState<WizardStep>(initialStep);
   const [state, setState] = useState<WizardState>(() => ({
-    name: initialName || generateRandomName(),
     target: initialTarget || "",
     sourceCodeAccess: false,
     cwd: process.cwd(),
@@ -208,7 +206,7 @@ export default function WebWizard({
   }));
 
   // UI state for target step
-  const [targetFocusedField, setTargetFocusedField] = useState(0); // 0=name, 1=target, 2=source code access
+  const [targetFocusedField, setTargetFocusedField] = useState(0); // 0=target, 1=source code access, 2=cwd (if enabled)
 
   // UI state for configure step
   const [focusedSection, setFocusedSection] = useState(0); // 0=auth, 1=scope, 2=headers
@@ -285,7 +283,7 @@ export default function WebWizard({
 
       const session = await sessions.create({
         targets: [state.target],
-        name: state.name,
+        name: generateRandomName(),
         config: sessionConfig,
       });
 
@@ -328,7 +326,7 @@ export default function WebWizard({
 
     // Target step: Enter to start, Tab to navigate/configure
     if (currentStep === "target") {
-      const maxTargetField = state.sourceCodeAccess ? 3 : 2; // 0=name, 1=target, 2=toggle, 3=cwd (if enabled)
+      const maxTargetField = state.sourceCodeAccess ? 2 : 1; // 0=target, 1=toggle, 2=cwd (if enabled)
       // Tab navigation
       if (key.name === "tab") {
         if (key.shift) {
@@ -344,7 +342,7 @@ export default function WebWizard({
       }
       // Up/Down to toggle source code access when focused
       if (
-        targetFocusedField === 2 &&
+        targetFocusedField === 1 &&
         (key.name === "up" || key.name === "down")
       ) {
         setState((prev) => ({
@@ -611,27 +609,18 @@ export default function WebWizard({
         {error && <text fg={colors.error}>Error: {error}</text>}
 
         <Input
-          label="Session Name"
-          description="Auto-generated, edit if desired"
-          placeholder="swift-falcon"
-          value={state.name}
-          onInput={(v) => setState((prev) => ({ ...prev, name: v }))}
-          focused={targetFocusedField === 0}
-        />
-
-        <Input
           label="Target URL"
           description="e.g., https://example.com"
           placeholder="https://example.com"
           value={state.target}
           onInput={(v) => setState((prev) => ({ ...prev, target: v }))}
-          focused={targetFocusedField === 1}
+          focused={targetFocusedField === 0}
         />
 
         <box flexDirection="column" gap={1}>
           <box flexDirection="row" gap={1}>
             <text
-              fg={targetFocusedField === 2 ? colors.primary : colors.textMuted}
+              fg={targetFocusedField === 1 ? colors.primary : colors.textMuted}
             >
               Source Code Access:
             </text>
@@ -640,7 +629,7 @@ export default function WebWizard({
             >
               {state.sourceCodeAccess ? "● Enabled" : "○ Disabled"}
             </text>
-            {targetFocusedField === 2 && (
+            {targetFocusedField === 1 && (
               <text fg={colors.textMuted}>(↑/↓ to toggle)</text>
             )}
           </box>
@@ -651,7 +640,7 @@ export default function WebWizard({
               placeholder={process.cwd()}
               value={state.cwd}
               onInput={(v) => setState((prev) => ({ ...prev, cwd: v }))}
-              focused={targetFocusedField === 3}
+              focused={targetFocusedField === 2}
             />
           )}
         </box>
