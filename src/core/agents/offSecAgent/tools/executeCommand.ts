@@ -102,7 +102,13 @@ OUTPUT HANDLING:
 
 IMPORTANT: Always analyze results and adjust your approach based on findings.`,
     inputSchema: executeCommandInputSchema,
-    execute: async ({ command, timeout }): Promise<ExecuteCommandResult> => {
+    execute: async ({
+      command,
+      timeout: rawTimeout,
+    }): Promise<ExecuteCommandResult> => {
+      // Default 120s so agent commands don't hang indefinitely in benchmarks.
+      // The agent can override per-call (e.g. longer for heavy scans).
+      const timeout = rawTimeout ?? 120;
       if (ctx.abortSignal?.aborted) {
         return {
           success: false,
@@ -116,11 +122,7 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
       // Sandbox mode: route execution through the sandbox
       if (ctx.sandbox) {
         try {
-          const ssmOpts: { timeout?: number } = {};
-          if (timeout != null) {
-            ssmOpts.timeout = timeout;
-          }
-          const result = await ctx.sandbox.execute(command, ssmOpts);
+          const result = await ctx.sandbox.execute(command, { timeout });
           const { text: stdout, file: outputFile } = maybeSaveFullOutput(
             result.stdout,
             ctx,
