@@ -11,7 +11,6 @@ import {
   convertToBedrockFormat,
   parseBedrockResponse,
 } from "./pensarFormatters";
-import { parseSSE } from "./pensarSSE";
 
 const DEBUG =
   process.env.PENSAR_DEBUG === "1" || process.env.PENSAR_DEBUG === "true";
@@ -438,6 +437,63 @@ export function createPensarModel(
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────
+
+/**
+ * SSE event structure for streaming responses.
+ */
+interface SSEEvent {
+  event: string;
+  data: string;
+}
+
+/**
+ * Minimal SSE (Server-Sent Events) parser for consuming streaming responses.
+ * Reads a ReadableStream<Uint8Array> and yields {event, data} objects
+ * whenever a complete SSE message boundary (blank line) is encountered.
+ */
+async function* parseSSE(
+  stream: ReadableStream<Uint8Array>,
+): AsyncGenerator<SSEEvent> {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let currentEvent = "message";
+  let currentData: string[] = [];
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+
+      for (let line of lines) {
+        line = line.replace(/\r$/, "");
+
+        if (line === "") {
+          if (currentData.length > 0) {
+            yield { event: currentEvent, data: currentData.join("\n") };
+          }
+          currentEvent = "message";
+          currentData = [];
+        } else if (line.startsWith("event:")) {
+          currentEvent = line.slice(6).trim();
+        } else if (line.startsWith("data:")) {
+          currentData.push(line.slice(5).trim());
+        }
+      }
+    }
+
+    if (currentData.length > 0) {
+      yield { event: currentEvent, data: currentData.join("\n") };
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
 
 /**
  * Map Anthropic stop_reason strings to LanguageModelV2FinishReason.
