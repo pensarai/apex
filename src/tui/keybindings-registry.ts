@@ -40,4 +40,8 @@ export const keybindings: Keybinding[] = [
     key: "?",
     description: "Show keyboard shortcuts",
   },
+  {
+    key: "Cmd/Super+Shift+. (Ctrl+T fallback)",
+    description: "Toggle operator token tracker",
+  },
 ];

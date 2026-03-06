@@ -40,6 +40,10 @@ import {
   createInitialOperatorState,
   type OperatorSessionState,
 } from "../../../core/operator";
+import {
+  readExecutionMetrics,
+  writeExecutionMetrics,
+} from "../../../core/session/execution-metrics";
 import { ModelPicker } from "../model-picker";
 import { stepCountIs, type ModelMessage } from "ai";
 import { isTerminalCopyShortcut, shouldHandleOperatorCtrlC } from "./keyboard";
@@ -63,8 +67,16 @@ export default function OperatorDashboard({
   const { colors } = useTheme();
   const route = useRoute();
   const config = useConfig();
-  const { model, setModel, isModelUserSelected, setThinking, setIsExecuting } =
-    useAgent();
+  const {
+    model,
+    setModel,
+    isModelUserSelected,
+    setThinking,
+    setIsExecuting,
+    tokenUsage,
+    addTokenUsage,
+    resetTokenUsage,
+  } = useAgent();
   const {
     autocompleteOptions: allAutocompleteOptions,
     executeCommand,
@@ -131,6 +143,12 @@ export default function OperatorDashboard({
   // Display options
   const [verboseMode, setVerboseMode] = useState(false);
   const [expandedLogs, setExpandedLogs] = useState(false);
+  const [showTokenTracker, setShowTokenTracker] = useState(false);
+  const tokenUsageRef = useRef(tokenUsage);
+
+  useEffect(() => {
+    tokenUsageRef.current = tokenUsage;
+  }, [tokenUsage]);
 
   // Subscribe to approval gate events
   useEffect(() => {
@@ -252,6 +270,29 @@ export default function OperatorDashboard({
     }
     loadSession();
   }, [sessionId]);
+
+  useEffect(() => {
+    if (!session) return;
+
+    resetTokenUsage();
+    tokenUsageRef.current = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
+
+    const metrics = readExecutionMetrics(session.rootPath);
+    const persisted = metrics?.tokenUsage;
+    if (persisted && (persisted.inputTokens > 0 || persisted.outputTokens > 0)) {
+      addTokenUsage(persisted.inputTokens, persisted.outputTokens);
+      tokenUsageRef.current = persisted;
+    }
+
+    try {
+      writeExecutionMetrics({
+        sessionRootPath: session.rootPath,
+        tokenUsage: tokenUsageRef.current,
+      });
+    } catch {
+      // Best effort hydration write.
+    }
+  }, [session, addTokenUsage, resetTokenUsage]);
 
   // ---------------------------------------------------------------------------
   // Message helpers — same pattern as pentest component
@@ -472,6 +513,29 @@ export default function OperatorDashboard({
           authConfig: buildAuthConfig(config.data),
           approvalGate: approvalGateRef.current,
           commandCancelHandle: cancelHandleRef.current,
+          onStepFinish: (event) => {
+            const inputTokens = event.usage?.inputTokens ?? 0;
+            const outputTokens = event.usage?.outputTokens ?? 0;
+            if (inputTokens <= 0 && outputTokens <= 0) return;
+
+            const nextUsage = {
+              inputTokens: tokenUsageRef.current.inputTokens + inputTokens,
+              outputTokens: tokenUsageRef.current.outputTokens + outputTokens,
+              totalTokens:
+                tokenUsageRef.current.totalTokens + inputTokens + outputTokens,
+            };
+            tokenUsageRef.current = nextUsage;
+
+            addTokenUsage(inputTokens, outputTokens);
+            try {
+              writeExecutionMetrics({
+                sessionRootPath: session.rootPath,
+                tokenUsage: nextUsage,
+              });
+            } catch {
+              // Best effort: token metrics should not interrupt operator runs.
+            }
+          },
           callbacks: {
             onTextDelta: (d) => {
               setThinking(false);
@@ -580,6 +644,7 @@ export default function OperatorDashboard({
       model.id,
       config.data,
       operatorState,
+      addTokenUsage,
       appendText,
       addToolCall,
       updateToolResult,
@@ -801,6 +866,23 @@ export default function OperatorDashboard({
       return;
     }
 
+    // Cmd/Super+Shift+. (plus Ctrl+T fallback for terminal environments)
+    const isPrimaryTokenToggle =
+      (key.super || key.meta || key.ctrl) &&
+      key.shift &&
+      (key.name === "." || key.raw === ">");
+    const isFallbackTokenToggle =
+      key.shift &&
+      (key.name === "." || key.raw === ">") &&
+      inputValue.trim().length === 0;
+    const isCtrlFallbackToggle = key.ctrl && key.name === "t";
+
+    if (isPrimaryTokenToggle || isFallbackTokenToggle || isCtrlFallbackToggle) {
+      key.preventDefault?.();
+      setShowTokenTracker((show) => !show);
+      return;
+    }
+
     // Shift+Tab - toggle command approval on/off
     if (key.name === "tab" && key.shift) {
       toggleApproval();
@@ -904,6 +986,8 @@ export default function OperatorDashboard({
         </box>
       )}
 
+      {showTokenTracker && <TokenTrackerPanel tokenUsage={tokenUsage} />}
+
       {/* Message display */}
       <MessageList
         messages={messages}
@@ -942,6 +1026,41 @@ export default function OperatorDashboard({
         enableCommands={true}
         onCommandExecute={handleCommandExecute}
       />
+    </box>
+  );
+}
+
+function TokenTrackerPanel({
+  tokenUsage,
+}: {
+  tokenUsage: { inputTokens: number; outputTokens: number; totalTokens: number };
+}) {
+  const { colors } = useTheme();
+
+  return (
+    <box
+      marginLeft={2}
+      marginRight={2}
+      marginBottom={1}
+      paddingLeft={2}
+      paddingRight={2}
+      paddingTop={1}
+      paddingBottom={1}
+      border
+      borderColor={colors.primary}
+      backgroundColor={colors.backgroundElement}
+      flexDirection="column"
+      gap={1}
+    >
+      <text fg={colors.primary}>TOKEN TRACKER (OPERATOR SESSION)</text>
+      <text fg={colors.text}>
+        Input tokens: {tokenUsage.inputTokens.toLocaleString()}
+      </text>
+      <text fg={colors.text}>
+        Output tokens: {tokenUsage.outputTokens.toLocaleString()}
+      </text>
+      <text fg={colors.text}>Total tokens: {tokenUsage.totalTokens.toLocaleString()}</text>
+      <text fg={colors.textMuted}>Toggle with Cmd/Super+Shift+. or Ctrl+T</text>
     </box>
   );
 }
