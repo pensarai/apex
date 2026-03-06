@@ -427,13 +427,14 @@ describe("buildOperatorSystemPrompt", () => {
     scratchpadPath: "/tmp/scratchpad",
   } as unknown as SessionInfo;
 
-  const state: OperatorSessionState = {
+  const state = {
     mode: "auto",
     requireApproval: true,
-    currentStage: "reconnaissance",
-    stageHistory: [],
-    approvedActions: [],
-  };
+    currentStage: "recon",
+    pendingApprovals: [],
+    actionHistory: [],
+    stageProgress: {},
+  } as unknown as OperatorSessionState;
 
   it("includes the target", () => {
     const prompt = buildOperatorSystemPrompt(session, state);
@@ -442,7 +443,7 @@ describe("buildOperatorSystemPrompt", () => {
 
   it("includes the stage", () => {
     const prompt = buildOperatorSystemPrompt(session, state);
-    expect(prompt).toContain("Stage: reconnaissance");
+    expect(prompt).toContain("Stage: recon");
   });
 
   it("shows approval enabled when requireApproval is true", () => {
