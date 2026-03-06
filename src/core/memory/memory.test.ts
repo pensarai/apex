@@ -1,27 +1,26 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "fs/promises";
 import path from "path";
-import os from "os";
+import { mkdtempSync, rmSync } from "fs";
+import { tmpdir } from "os";
 
 import { addMemory, getMemory, listMemories } from "./index";
 
-const memoriesDir = path.join(os.homedir(), ".pensar", "memories");
+let tmpDir: string;
 
-async function cleanMemories() {
-  try {
-    await fs.rm(memoriesDir, { recursive: true, force: true });
-  } catch {
-    // noop — dir may not exist yet
-  }
+function memoriesDir() {
+  return path.join(tmpDir, "memories");
 }
 
 describe("memory system", () => {
-  beforeEach(async () => {
-    await cleanMemories();
+  beforeEach(() => {
+    tmpDir = mkdtempSync(path.join(tmpdir(), "memory-test-"));
+    process.env.PENSAR_DATA_DIR = tmpDir;
   });
 
-  afterEach(async () => {
-    await cleanMemories();
+  afterEach(() => {
+    delete process.env.PENSAR_DATA_DIR;
+    rmSync(tmpDir, { recursive: true, force: true });
   });
 
   // -------------------------------------------------------------------------
@@ -49,7 +48,7 @@ describe("memory system", () => {
       const mem = await addMemory({ title: "Catch all", content: "data" });
       expect(mem.category).toBe("general");
 
-      const onDisk = path.join(memoriesDir, "general", `${mem.id}.json`);
+      const onDisk = path.join(memoriesDir(), "general", `${mem.id}.json`);
       const raw = await fs.readFile(onDisk, "utf-8");
       expect(JSON.parse(raw).category).toBe("general");
     });
@@ -62,7 +61,7 @@ describe("memory system", () => {
       });
       expect(mem.category).toBe("app");
 
-      const onDisk = path.join(memoriesDir, "app", `${mem.id}.json`);
+      const onDisk = path.join(memoriesDir(), "app", `${mem.id}.json`);
       const raw = await fs.readFile(onDisk, "utf-8");
       expect(JSON.parse(raw).category).toBe("app");
     });
@@ -75,7 +74,7 @@ describe("memory system", () => {
       });
       expect(mem.category).toBe("framework");
 
-      const onDisk = path.join(memoriesDir, "framework", `${mem.id}.json`);
+      const onDisk = path.join(memoriesDir(), "framework", `${mem.id}.json`);
       const raw = await fs.readFile(onDisk, "utf-8");
       expect(JSON.parse(raw).category).toBe("framework");
     });

@@ -14,8 +14,12 @@ export const NotFoundError = NamedError.create(
   }),
 );
 
+function getBaseDir(): string {
+  return process.env.PENSAR_DATA_DIR ?? path.join(os.homedir(), ".pensar");
+}
+
 export async function remove(key: string[]) {
-  const dir = path.join(os.homedir(), ".pensar");
+  const dir = getBaseDir();
   const target = path.join(dir, ...key) + ".json";
   return withErrorHandling(async () => {
     await fs.unlink(target).catch(() => {});
@@ -23,13 +27,13 @@ export async function remove(key: string[]) {
 }
 
 export async function locate(key: string[], ext?: string) {
-  const dir = path.join(os.homedir(), ".pensar");
+  const dir = getBaseDir();
   const target = path.join(dir, ...key) + (ext ? ext : ".json");
   return target;
 }
 
 export async function write<T>(key: string[], content: T, ext?: string) {
-  const dir = path.join(os.homedir(), ".pensar");
+  const dir = getBaseDir();
   const target = path.join(dir, ...key) + (ext ? ext : ".json");
   return withErrorHandling(async () => {
     using _ = await Lock.write(target);
@@ -39,7 +43,7 @@ export async function write<T>(key: string[], content: T, ext?: string) {
 }
 
 export async function createDir(key: string[]) {
-  const dir = path.join(os.homedir(), ".pensar");
+  const dir = getBaseDir();
   const target = path.join(dir, ...key);
   return withErrorHandling(async () => {
     using _ = await Lock.write(target);
@@ -51,7 +55,7 @@ export async function createDir(key: string[]) {
  * Write raw content (non-JSON) to a file within the .pensar directory
  */
 export async function writeRaw(key: string[], content: string) {
-  const dir = path.join(os.homedir(), ".pensar");
+  const dir = getBaseDir();
   const target = path.join(dir, ...key);
   return withErrorHandling(async () => {
     using _ = await Lock.write(target);
@@ -65,7 +69,7 @@ export async function writeRaw(key: string[], content: string) {
  * Append raw content to a file within the .pensar directory
  */
 export async function appendRaw(key: string[], content: string) {
-  const dir = path.join(os.homedir(), ".pensar");
+  const dir = getBaseDir();
   const target = path.join(dir, ...key);
   return withErrorHandling(async () => {
     using _ = await Lock.write(target);
@@ -76,7 +80,7 @@ export async function appendRaw(key: string[], content: string) {
 }
 
 export async function read<T>(key: string[], ext?: string) {
-  const dir = path.join(os.homedir(), ".pensar");
+  const dir = getBaseDir();
   const target = path.join(dir, ...key) + (ext ? ext : ".json");
   return withErrorHandling(async () => {
     using _ = await Lock.read(target);
@@ -91,7 +95,7 @@ export async function update<T>(
   fn: (draft: T) => void,
   ext?: string,
 ) {
-  const dir = path.join(os.homedir(), ".pensar");
+  const dir = getBaseDir();
   const target = path.join(dir, ...key) + (ext ? ext : ".json");
   return withErrorHandling(async () => {
     using _ = await Lock.write(target);
@@ -131,7 +135,7 @@ async function listFilesRecursively(dir: string): Promise<string[]> {
 }
 
 export async function list(prefix: string[]) {
-  const dir = path.join(os.homedir(), ".pensar");
+  const dir = getBaseDir();
   const targetDir = path.join(dir, ...prefix);
   try {
     const files = await listFilesRecursively(targetDir);
