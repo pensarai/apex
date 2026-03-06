@@ -21,6 +21,7 @@ const TOOLS_WITH_LOG_WINDOW = new Set([
   "delegate_to_auth_subagent",
   "create_file",
   "create_poc",
+  "update_file",
 ]);
 
 interface ToolRendererProps {

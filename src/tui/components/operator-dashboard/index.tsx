@@ -349,13 +349,14 @@ export default function OperatorDashboard({
       const parsed = tryParsePartialJson(accumulated);
       if (!parsed) return;
 
-      // Extract file content as streaming logs for file-creation tools
       const contentText =
         typeof parsed.content === "string"
           ? parsed.content
           : typeof parsed.pocContent === "string"
             ? parsed.pocContent
-            : null;
+            : typeof parsed.newContent === "string"
+              ? parsed.newContent
+              : null;
       const logs = contentText ? contentText.split("\n") : undefined;
 
       setMessages((msgs) => {
