@@ -107,6 +107,7 @@ export class PersistentShell {
         if (timeoutTimer) clearTimeout(timeoutTimer);
         proc.stdout!.removeListener("data", onStdout);
         proc.stderr!.removeListener("data", onStderr);
+        proc.removeListener("close", onClose);
         resolve(result);
       };
 

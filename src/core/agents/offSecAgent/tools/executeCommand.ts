@@ -12,7 +12,7 @@ export const executeCommandInputSchema = z.object({
     .number()
     .optional()
     .describe(
-      "Timeout in seconds. If omitted, the command runs until completion or abort.",
+      "Timeout in seconds (default: 120). Use shorter timeouts for quick probes and longer ones for heavy scans.",
     ),
   toolCallDescription: z
     .string()
