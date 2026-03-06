@@ -18,6 +18,7 @@ const TOOLS_WITH_LOG_WINDOW = new Set([
   "run_attack_surface",
   "spawn_coding_agent",
   "spawn_pentest_swarm",
+  "delegate_to_auth_subagent",
 ]);
 
 interface ToolRendererProps {

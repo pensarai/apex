@@ -67,6 +67,9 @@ interface PromptInputProps {
   enableCommands?: boolean;
   onCommandExecute?: (command: string) => Promise<void>;
 
+  // Command history (up/down arrow navigation)
+  commandHistory?: string[];
+
   // Visual customization
   showPromptIndicator?: boolean;
 }
@@ -90,6 +93,7 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
       maxSuggestions = 10,
       enableCommands = false,
       onCommandExecute,
+      commandHistory = [],
       showPromptIndicator = false,
     },
     ref,
@@ -99,6 +103,15 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
     const { registerPromptRef } = useFocus();
     const textareaRef = useRef<TextareaRenderable | null>(null);
     const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(-1);
+
+    // Command history navigation state
+    // -1 = not browsing history (showing current input)
+    const [historyIndex, setHistoryIndex] = useState(-1);
+    const savedInputRef = useRef("");
+    const historyRef = useRef(commandHistory);
+    historyRef.current = commandHistory;
+    // Guard to prevent handleContentChange from resetting historyIndex during programmatic setText
+    const isNavigatingHistoryRef = useRef(false);
 
     // Refs to avoid stale closures in handleSubmit (textarea caches onSubmit)
     const selectedIndexRef = useRef(selectedSuggestionIndex);
@@ -169,38 +182,88 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
       return () => registerPromptRef(null);
     }, [registerPromptRef]);
 
-    // Handle keyboard navigation for suggestions (up/down/tab)
+    // Handle keyboard navigation for suggestions and command history
     useKeyboard((key) => {
-      if (!focused || suggestions.length === 0) return;
+      if (!focused) return;
+
+      // When autocomplete suggestions are visible, up/down navigates them
+      if (suggestions.length > 0) {
+        if (key.name === "up") {
+          setSelectedSuggestionIndex((prev) =>
+            prev <= 0 ? suggestions.length - 1 : prev - 1,
+          );
+          return;
+        }
+        if (key.name === "down") {
+          setSelectedSuggestionIndex((prev) =>
+            prev >= suggestions.length - 1 ? 0 : prev + 1,
+          );
+          return;
+        }
+        if (key.name === "tab") {
+          key.preventDefault?.();
+          const currentSelectedIndex = selectedIndexRef.current;
+          if (
+            currentSelectedIndex >= 0 &&
+            currentSelectedIndex < suggestions.length
+          ) {
+            const selected = suggestions[currentSelectedIndex];
+            if (selected) {
+              textareaRef.current?.setText(selected.value);
+              setInputValue(selected.value);
+              setSelectedSuggestionIndex(-1);
+              textareaRef.current?.gotoLineEnd();
+            }
+          }
+          return;
+        }
+        return;
+      }
+
+      // No autocomplete visible — up/down navigates command history
+      const history = historyRef.current;
+      if (history.length === 0) return;
 
       if (key.name === "up") {
-        setSelectedSuggestionIndex((prev) =>
-          prev <= 0 ? suggestions.length - 1 : prev - 1,
-        );
+        setHistoryIndex((prev) => {
+          if (prev === -1) {
+            savedInputRef.current = textareaRef.current?.plainText ?? "";
+          }
+          const next = Math.min(prev + 1, history.length - 1);
+          const entry = history[history.length - 1 - next];
+          if (entry !== undefined) {
+            isNavigatingHistoryRef.current = true;
+            textareaRef.current?.setText(entry);
+            setInputValue(entry);
+            isNavigatingHistoryRef.current = false;
+            setTimeout(() => textareaRef.current?.gotoLineEnd(), 0);
+          }
+          return next;
+        });
         return;
       }
       if (key.name === "down") {
-        setSelectedSuggestionIndex((prev) =>
-          prev >= suggestions.length - 1 ? 0 : prev + 1,
-        );
-        return;
-      }
-      // Tab to fill suggestion without running command
-      if (key.name === "tab") {
-        key.preventDefault?.();
-        const currentSelectedIndex = selectedIndexRef.current;
-        if (
-          currentSelectedIndex >= 0 &&
-          currentSelectedIndex < suggestions.length
-        ) {
-          const selected = suggestions[currentSelectedIndex];
-          if (selected) {
-            textareaRef.current?.setText(selected.value);
-            setInputValue(selected.value);
-            setSelectedSuggestionIndex(-1);
-            textareaRef.current?.gotoLineEnd();
+        setHistoryIndex((prev) => {
+          if (prev <= 0) {
+            const saved = savedInputRef.current;
+            isNavigatingHistoryRef.current = true;
+            textareaRef.current?.setText(saved);
+            setInputValue(saved);
+            isNavigatingHistoryRef.current = false;
+            setTimeout(() => textareaRef.current?.gotoLineEnd(), 0);
+            return -1;
           }
-        }
+          const next = prev - 1;
+          const entry = history[history.length - 1 - next];
+          if (entry !== undefined) {
+            isNavigatingHistoryRef.current = true;
+            textareaRef.current?.setText(entry);
+            setInputValue(entry);
+            isNavigatingHistoryRef.current = false;
+            setTimeout(() => textareaRef.current?.gotoLineEnd(), 0);
+          }
+          return next;
+        });
         return;
       }
     });
@@ -231,16 +294,21 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
         setInputValue("");
         textareaRef.current?.setText("");
         setSelectedSuggestionIndex(-1);
+        setHistoryIndex(-1);
         return;
       }
 
+      setHistoryIndex(-1);
       onSubmitRef.current?.(valueToSubmit);
     };
 
-    // Content change syncs to context
+    // Content change syncs to context and resets history browsing
     const handleContentChange = () => {
       const text = textareaRef.current?.plainText ?? "";
       setInputValue(text);
+      if (historyIndex !== -1 && !isNavigatingHistoryRef.current) {
+        setHistoryIndex(-1);
+      }
     };
 
     return (

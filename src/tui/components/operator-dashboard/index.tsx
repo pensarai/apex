@@ -45,6 +45,7 @@ import { stepCountIs, type ModelMessage } from "ai";
 import { isTerminalCopyShortcut, shouldHandleOperatorCtrlC } from "./keyboard";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
+import * as History from "../../../core/history";
 
 type DashboardStatus = "idle" | "running" | "waiting" | "done";
 
@@ -111,6 +112,13 @@ export default function OperatorDashboard({
   const conversationRef = useRef<ModelMessage[]>([]);
   // Input state
   const [inputValue, setInputValue] = useState("");
+  const [commandHistory, setCommandHistory] = useState<string[]>(
+    History.getEntries,
+  );
+
+  useEffect(() => {
+    History.load().then(setCommandHistory);
+  }, []);
 
   // Operator state
   const [operatorState, setOperatorState] = useState<OperatorSessionState>(() =>
@@ -606,8 +614,12 @@ export default function OperatorDashboard({
       // Block submission only when the agent is actively running (not waiting)
       if (status === "running") return;
 
+      const trimmed = value.trim();
+      History.push(trimmed).then(() =>
+        setCommandHistory([...History.getEntries()]),
+      );
       setInputValue("");
-      runAgent(value.trim());
+      runAgent(trimmed);
     },
     [status, runAgent],
   );
@@ -941,6 +953,7 @@ export default function OperatorDashboard({
         autocompleteOptions={autocompleteOptions}
         enableCommands={true}
         onCommandExecute={handleCommandExecute}
+        commandHistory={commandHistory}
       />
     </box>
   );
