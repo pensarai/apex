@@ -450,7 +450,10 @@ export function getResultSummary(
           const obj = result as Record<string, unknown>;
           if (obj.success === false) {
             return {
-              text: String(obj.error || "Failed to list memories").slice(0, 120),
+              text: String(obj.error || "Failed to list memories").slice(
+                0,
+                120,
+              ),
               isError: true,
             };
           }
@@ -516,10 +519,7 @@ export function getResultSummary(
             return {
               text: title,
               isError: false,
-              fullText:
-                content.length > 0
-                  ? preview + suffix
-                  : undefined,
+              fullText: content.length > 0 ? preview + suffix : undefined,
             };
           }
           return { text: "Memory retrieved", isError: false };

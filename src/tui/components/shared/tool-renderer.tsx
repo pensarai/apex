@@ -70,8 +70,7 @@ export const ToolRenderer = memo(function ToolRenderer({
       ? colors.warning
       : colors.info;
 
-  const hasSubagentLogs =
-    subagentLogs && Object.keys(subagentLogs).length > 0;
+  const hasSubagentLogs = subagentLogs && Object.keys(subagentLogs).length > 0;
 
   return (
     <box flexDirection="row" marginTop={0}>
@@ -212,11 +211,7 @@ const SubagentLogWindow = memo(function SubagentLogWindow({
         ? colors.error
         : colors.warning;
   const statusIcon =
-    entry.status === "completed"
-      ? "✓"
-      : entry.status === "failed"
-        ? "✗"
-        : "";
+    entry.status === "completed" ? "✓" : entry.status === "failed" ? "✗" : "";
   const displayLabel = entry.name ?? subagentId;
   const visibleLogs = expandedLogs
     ? entry.logs
