@@ -86,9 +86,7 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
         setTimeout(() => setStatusMessage(""), 2000);
         return;
       }
-      const isOperator =
-        currentSelection.config?.mode === "operator" ||
-        currentSelection.hasOperatorState;
+      const isOperator = currentSelection.config?.mode === "operator";
       refocusPrompt();
       onClose();
       route.navigate({
