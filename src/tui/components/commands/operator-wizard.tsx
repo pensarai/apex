@@ -5,8 +5,8 @@ import { useConfig } from "../../context/config";
 import { useAgent } from "../../context/agent";
 import { sessions, type SessionConfig } from "../../../core/session";
 import { SpinnerDots } from "../sprites";
-import { generateRandomName } from "../../../util/name";
 import type { ModelInfo } from "../../../core/ai";
+import { buildAuthConfig } from "../../../core/ai/utils";
 import { getAvailableModels } from "../../../core/providers/utils";
 import { useTheme } from "../../theme";
 
@@ -130,8 +130,9 @@ export default function HITLWizard(props: HITLWizardProps) {
       const targets = state.target.trim() ? [state.target] : [];
       const session = await sessions.create({
         targets,
-        name: generateRandomName(),
         config: sessionConfig,
+        model: model.id,
+        authConfig: buildAuthConfig(config.data),
       });
 
       route.navigate({

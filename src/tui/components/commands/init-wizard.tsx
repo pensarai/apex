@@ -4,7 +4,6 @@ import Input from "../input";
 import { useRoute } from "../../context/route";
 import { sessions, type SessionConfig } from "../../../core/session";
 import { SpinnerDots } from "../sprites";
-import { generateRandomName } from "../../../util/name";
 import { useTheme } from "../../theme";
 
 // Simplified wizard step types
@@ -127,7 +126,6 @@ export default function InitWizard() {
 
       const session = await sessions.create({
         targets: [state.target],
-        name: generateRandomName(),
         config: sessionConfig,
       });
 

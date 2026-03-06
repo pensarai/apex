@@ -12,7 +12,7 @@ import type { AIModel } from "../../ai";
 import type { AIAuthConfig } from "../../ai/utils";
 import type { CredentialManager } from "../../credentials";
 import type { FindingsRegistry } from "../../findings/registry";
-import type { SessionInfo } from "../../session";
+import type { SessionInfo, SessionConfig } from "../../session";
 import type { ApprovalGate } from "../../operator";
 import type { ToolName } from "./tools";
 import type { UnifiedSandbox } from "./tools/sandbox";
@@ -293,4 +293,24 @@ export type SubagentConsumeCallbacks = {
     },
   ) => void;
   onError?: (error: unknown) => void;
+};
+
+/**
+ * Input for the `OffensiveSecurityAgent.create()` async factory.
+ *
+ * Identical to {@link OffensiveSecurityAgentInput} except `session` is
+ * optional. When omitted, the factory creates a new session automatically
+ * using the remaining fields.
+ *
+ * Pass an existing `session` to reuse one (e.g. from the console API or
+ * when spawning subagents).
+ */
+export type CreateAgentInput<TResult = void> = Omit<
+  OffensiveSecurityAgentInput<TResult>,
+  "session"
+> & {
+  /** Existing session to reuse. When omitted a new one is created. */
+  session?: SessionInfo;
+  /** Session config used when auto-creating a session (ignored when `session` is provided). */
+  sessionConfig?: SessionConfig;
 };

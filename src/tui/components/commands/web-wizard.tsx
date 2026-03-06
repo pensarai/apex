@@ -6,8 +6,8 @@ import { useConfig } from "../../context/config";
 import { useAgent } from "../../context/agent";
 import { sessions, type SessionConfig } from "../../../core/session";
 import { SpinnerDots } from "../sprites";
-import { generateRandomName } from "../../../util/name";
 import { type ModelInfo } from "../../../core/ai";
+import { buildAuthConfig } from "../../../core/ai/utils";
 import { getAvailableModels } from "../../../core/providers/utils";
 import { useTheme } from "../../theme";
 
@@ -283,8 +283,9 @@ export default function WebWizard({
 
       const session = await sessions.create({
         targets: [state.target],
-        name: generateRandomName(),
         config: sessionConfig,
+        model: model.id,
+        authConfig: buildAuthConfig(config.data),
       });
 
       // Navigate to session route - SessionView will handle execution based on mode

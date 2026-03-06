@@ -10,7 +10,6 @@ import {
   type SessionConfig,
   type SessionInfo,
 } from "../../core/session";
-import { generateRandomName } from "../../util/name";
 import type { OperatorMode } from "../../core/operator";
 import { createToolsetState } from "../../core/toolset";
 
@@ -326,7 +325,7 @@ export async function createOperatorSessionFromFlags(
   const targets = flags.target ? [flags.target] : [];
   const session = await sessions.create({
     targets,
-    name: flags.name || generateRandomName(),
+    name: flags.name || undefined,
     config: sessionConfig,
   });
 
@@ -377,7 +376,7 @@ export async function createSwarmSessionFromFlags(
 
   const session = await sessions.create({
     targets: [flags.target!],
-    name: flags.name || generateRandomName(),
+    name: flags.name || undefined,
     config: sessionConfig,
   });
 
