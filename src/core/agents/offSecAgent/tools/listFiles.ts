@@ -1,7 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { readdir, stat } from "fs/promises";
-import { join, relative } from "path";
+import { join, relative, resolve, isAbsolute } from "path";
 import type { ToolContext } from "./types";
 
 export const listFilesInputSchema = z.object({
@@ -74,7 +74,7 @@ function toRelative(base: string, paths: string[]): string[] {
   });
 }
 
-export function listFiles(_ctx: ToolContext) {
+export function listFiles(ctx: ToolContext) {
   return tool({
     description: `List files and directories at a given path.
 
@@ -90,7 +90,11 @@ Each directory entry is suffixed with "/" for easy identification.`,
       directory,
       recursive = false,
     }): Promise<ListFilesResult> => {
-      const dir = directory || process.cwd();
+      const dir = directory
+        ? isAbsolute(directory)
+          ? directory
+          : resolve(ctx.session.rootPath, directory)
+        : ctx.session.rootPath;
 
       try {
         const info = await stat(dir);

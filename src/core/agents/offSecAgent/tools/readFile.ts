@@ -1,6 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { readFile as fsReadFile } from "fs/promises";
+import { resolve, isAbsolute } from "path";
 import type { ToolContext } from "./types";
 
 export const readFileInputSchema = z.object({
@@ -31,7 +32,7 @@ export type ReadFileResult = {
   linesReturned?: number;
 };
 
-export function readFile(_ctx: ToolContext) {
+export function readFile(ctx: ToolContext) {
   return tool({
     description: `Read the contents of a file from the filesystem.
 
@@ -42,8 +43,11 @@ the end. If only endLine is given, reads from the beginning to that line.
 Output lines are prefixed with their line number for easy reference.`,
     inputSchema: readFileInputSchema,
     execute: async ({ path, startLine, endLine }): Promise<ReadFileResult> => {
+      const resolved = isAbsolute(path)
+        ? path
+        : resolve(ctx.session.rootPath, path);
       try {
-        const raw = await fsReadFile(path, "utf-8");
+        const raw = await fsReadFile(resolved, "utf-8");
         const allLines = raw.split("\n");
         const totalLines = allLines.length;
 
