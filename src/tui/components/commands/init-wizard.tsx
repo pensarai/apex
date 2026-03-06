@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useKeyboard } from "@opentui/react";
 import Input from "../input";
 import { useRoute } from "../../context/route";
-import { sessions, type SessionConfig } from "../../../core/session";
+import type { SessionConfig } from "../../../core/session";
 import { SpinnerDots } from "../sprites";
 import { useTheme } from "../../theme";
 
@@ -116,23 +116,10 @@ export default function InitWizard() {
         };
       }
 
-      // Create session
-      // const session = await Session.createSessionDirs({
-      //   target: state.target,
-      //   objective: `Pentest: ${state.target}`,
-      //   prefix: state.name || undefined,
-      //   config: sessionConfig,
-      // });
-
-      const session = await sessions.create({
-        targets: [state.target],
-        config: sessionConfig,
-      });
-
-      // Navigate to session route - SessionView will handle execution
       route.navigate({
         type: "pentest",
-        sessionId: session.id,
+        targets: [state.target],
+        sessionConfig,
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to create session");

@@ -62,7 +62,7 @@ export default function OperatorDashboard({
 }: {
   sessionId?: string;
   initialMessage?: string;
-  initialConfig?: { requireApproval?: boolean };
+  initialConfig?: { requireApproval?: boolean; target?: string };
 }) {
   const { colors } = useTheme();
   const route = useRoute();
@@ -194,6 +194,7 @@ export default function OperatorDashboard({
           s = await sessions.get(sessionId);
         } else {
           const requireApproval = initialConfig?.requireApproval ?? true;
+          const target = initialConfig?.target;
           const sessionConfig: SessionConfig = {
             sessionType: "web-app",
             mode: "operator",
@@ -204,7 +205,7 @@ export default function OperatorDashboard({
             },
           };
           s = await sessions.create({
-            targets: [],
+            targets: target ? [target] : [],
             config: sessionConfig,
             model: model.id,
             authConfig: buildAuthConfig(config.data),

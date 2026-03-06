@@ -3,10 +3,8 @@ import { useKeyboard } from "@opentui/react";
 import { useRoute } from "../../context/route";
 import { useConfig } from "../../context/config";
 import { useAgent } from "../../context/agent";
-import { sessions, type SessionConfig } from "../../../core/session";
 import { SpinnerDots } from "../sprites";
 import type { ModelInfo } from "../../../core/ai";
-import { buildAuthConfig } from "../../../core/ai/utils";
 import { getAvailableModels } from "../../../core/providers/utils";
 import { useTheme } from "../../theme";
 
@@ -112,37 +110,14 @@ export default function HITLWizard(props: HITLWizardProps) {
     return result;
   }, [groupedModels, expandedProviders]);
 
-  async function createSessionAndNavigate() {
-    setCurrentStep("creating");
-    setError(null);
-
-    try {
-      const sessionConfig: SessionConfig = {
-        sessionType: "web-app",
-        mode: "operator",
-        operatorSettings: {
-          initialMode: "auto",
-          requireApproval: state.requireApproval,
-          enableSuggestions: true,
-        },
-      };
-
-      const targets = state.target.trim() ? [state.target] : [];
-      const session = await sessions.create({
-        targets,
-        config: sessionConfig,
-        model: model.id,
-        authConfig: buildAuthConfig(config.data),
-      });
-
-      route.navigate({
-        type: "operator",
-        sessionId: session.id,
-      });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to create session");
-      setCurrentStep("config");
-    }
+  function createSessionAndNavigate() {
+    route.navigate({
+      type: "operator",
+      initialConfig: {
+        requireApproval: state.requireApproval,
+        target: state.target.trim() || undefined,
+      },
+    });
   }
 
   // Config step fields:
