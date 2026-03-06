@@ -258,10 +258,17 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
       // --- Down arrow ---------------------------------------------------
       if (key.name === "down") {
         if (inAutocomplete) {
-          setSelectedSuggestionIndex((prev) =>
-            prev >= suggestions.length - 1 ? suggestions.length - 1 : prev + 1,
-          );
-          return;
+          if (suggestions.length <= 1) {
+            // Single suggestion — exit autocomplete, fall through to history
+            setSelectedSuggestionIndex(-1);
+          } else {
+            setSelectedSuggestionIndex((prev) =>
+              prev >= suggestions.length - 1
+                ? suggestions.length - 1
+                : prev + 1,
+            );
+            return;
+          }
         }
 
         if (history.length === 0) {
