@@ -35,7 +35,10 @@ import { useTheme } from "../../theme";
 import type { DisplayMessage } from "../agent-display";
 import { isToolMessage } from "../shared/type-guards";
 import { getToolSummary } from "../shared/tool-registry";
-import { tryParsePartialJson } from "../shared/message-utils";
+import {
+  tryParsePartialJson,
+  extractStreamableContent,
+} from "../shared/message-utils";
 import type { OperatorMode, PendingApproval } from "../../../core/operator";
 import { slugify } from "../../../core/skills";
 import {
@@ -349,14 +352,7 @@ export default function OperatorDashboard({
       const parsed = tryParsePartialJson(accumulated);
       if (!parsed) return;
 
-      const contentText =
-        typeof parsed.content === "string"
-          ? parsed.content
-          : typeof parsed.pocContent === "string"
-            ? parsed.pocContent
-            : typeof parsed.newContent === "string"
-              ? parsed.newContent
-              : null;
+      const contentText = extractStreamableContent(parsed);
       const logs = contentText ? contentText.split("\n") : undefined;
 
       setMessages((msgs) => {

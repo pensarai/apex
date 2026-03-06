@@ -22,6 +22,7 @@ const TOOLS_WITH_LOG_WINDOW = new Set([
   "create_file",
   "create_poc",
   "update_file",
+  "document_vulnerability",
 ]);
 
 interface ToolRendererProps {
