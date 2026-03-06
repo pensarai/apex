@@ -51,6 +51,10 @@ export interface InputAreaProps {
   enableCommands?: boolean;
   /** Handler for slash-command execution */
   onCommandExecute?: (command: string) => Promise<void>;
+  /** Command history for up/down arrow navigation */
+  commandHistory?: string[];
+  /** Suppress Up/Down history navigation in PromptInput (e.g. queue takes priority) */
+  disableHistoryNavigation?: boolean;
 }
 
 /**
@@ -72,6 +76,8 @@ function NormalInputAreaInner({
   autocompleteOptions = [],
   enableCommands = false,
   onCommandExecute,
+  commandHistory = [],
+  disableHistoryNavigation = false,
 }: Omit<
   InputAreaProps,
   "pendingApproval" | "onApprove" | "onAutoApprove" | "lastDeclineNote"
@@ -80,8 +86,6 @@ function NormalInputAreaInner({
   const { inputValue, setInputValue } = useInput();
   const promptRef = useRef<PromptInputRef>(null);
   const isExternalUpdate = useRef(false);
-
-  const isDisabled = status === "running";
 
   // Sync external value prop to context when it changes
   useEffect(() => {
@@ -120,20 +124,22 @@ function NormalInputAreaInner({
       backgroundColor="transparent"
     >
       <box flexDirection="row" gap={1} backgroundColor="transparent">
-        <text fg={isDisabled ? colors.textMuted : colors.primary}>{">"}</text>
+        <text fg={!focused ? colors.textMuted : colors.primary}>{">"}</text>
         <PromptInput
           ref={promptRef}
           width="100%"
           minHeight={1}
           maxHeight={3}
           textColor={colors.text}
-          focused={focused && !isDisabled}
-          placeholder={isDisabled ? "Processing..." : placeholder}
+          focused={focused}
+          placeholder={placeholder}
           onSubmit={handleSubmit}
           enableAutocomplete={enableAutocomplete}
           autocompleteOptions={autocompleteOptions}
           enableCommands={enableCommands}
           onCommandExecute={onCommandExecute}
+          commandHistory={commandHistory}
+          disableHistoryNavigation={disableHistoryNavigation}
         />
       </box>
 
@@ -200,6 +206,8 @@ export function InputArea(props: InputAreaProps) {
     autocompleteOptions,
     enableCommands,
     onCommandExecute,
+    commandHistory,
+    disableHistoryNavigation,
     ...normalProps
   } = props;
 
@@ -229,6 +237,8 @@ export function InputArea(props: InputAreaProps) {
         autocompleteOptions={autocompleteOptions}
         enableCommands={enableCommands}
         onCommandExecute={onCommandExecute}
+        commandHistory={commandHistory}
+        disableHistoryNavigation={disableHistoryNavigation}
         {...normalProps}
       />
     </InputProvider>

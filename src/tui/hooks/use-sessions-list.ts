@@ -99,7 +99,7 @@ export function useSessionsList() {
   // Filter by search term
   const filtered = searchTerm
     ? allSessions.filter((s) =>
-        s.name.toLowerCase().includes(searchTerm.toLowerCase()),
+        (s.name ?? "").toLowerCase().includes(searchTerm.toLowerCase()),
       )
     : allSessions;
 

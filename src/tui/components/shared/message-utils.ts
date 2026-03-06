@@ -88,3 +88,97 @@ export function formatResult(
     return String(result);
   }
 }
+
+/**
+ * Extract the primary text content from partially parsed tool args
+ * for streaming display in the log window.
+ */
+export function extractStreamableContent(
+  args: Record<string, unknown>,
+): string | null {
+  // create_file
+  if (typeof args.content === "string") return args.content;
+  // create_poc
+  if (typeof args.pocContent === "string") return args.pocContent;
+  // update_file
+  if (typeof args.newContent === "string") return args.newContent;
+  // document_vulnerability — combine the key narrative fields
+  if (typeof args.description === "string") {
+    let text = args.description;
+    if (typeof args.evidence === "string") text += "\n\n" + args.evidence;
+    if (typeof args.impact === "string") text += "\n\n" + args.impact;
+    if (typeof args.remediation === "string") text += "\n\n" + args.remediation;
+    return text;
+  }
+  return null;
+}
+
+/**
+ * Attempt to parse a partial JSON string produced by streaming tool-input deltas.
+ *
+ * Tries JSON.parse first. On failure, heuristically closes any unclosed
+ * braces/brackets/strings and retries. Returns `null` if the string is
+ * still unparseable (e.g. too little data has arrived).
+ */
+export function tryParsePartialJson(
+  text: string,
+): Record<string, unknown> | null {
+  if (!text || !text.trimStart().startsWith("{")) return null;
+
+  try {
+    const result = JSON.parse(text);
+    if (typeof result === "object" && result !== null) return result;
+    return null;
+  } catch {
+    // Fall through to heuristic repair
+  }
+
+  let repaired = text;
+
+  // Strip trailing comma (common in streaming)
+  repaired = repaired.replace(/,\s*$/, "");
+
+  // If we're inside a string value, close it
+  const quoteCount = (repaired.match(/(?<!\\)"/g) || []).length;
+  if (quoteCount % 2 !== 0) {
+    repaired += '"';
+  }
+
+  // Close unclosed braces/brackets
+  const opens: string[] = [];
+  let inString = false;
+  let escaped = false;
+  for (const ch of repaired) {
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (ch === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (ch === "{") opens.push("}");
+    else if (ch === "[") opens.push("]");
+    else if (ch === "}" || ch === "]") opens.pop();
+  }
+
+  // Strip trailing comma again after quote repair
+  repaired = repaired.replace(/,\s*$/, "");
+
+  for (let i = opens.length - 1; i >= 0; i--) {
+    repaired += opens[i];
+  }
+
+  try {
+    const result = JSON.parse(repaired);
+    if (typeof result === "object" && result !== null) return result;
+    return null;
+  } catch {
+    return null;
+  }
+}

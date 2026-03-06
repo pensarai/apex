@@ -35,7 +35,10 @@ function getLoadingState(
 function getPendingToolName(messages: DisplayMessage[]): string | null {
   const recentMessages = messages.slice(-5);
   for (const msg of recentMessages.reverse()) {
-    if (isToolMessage(msg) && msg.status === "pending") {
+    if (
+      isToolMessage(msg) &&
+      (msg.status === "pending" || msg.status === "streaming")
+    ) {
       return msg.toolName || null;
     }
   }

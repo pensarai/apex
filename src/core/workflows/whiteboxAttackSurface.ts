@@ -126,6 +126,13 @@ export interface WhiteboxAttackSurfaceWorkflowInput {
   authConfig?: AIAuthConfig;
   abortSignal?: AbortSignal;
   callbacks?: ConsumeCallbacks;
+  onStepFinish?: (event: {
+    usage?: {
+      inputTokens?: number;
+      outputTokens?: number;
+      totalTokens?: number;
+    };
+  }) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -143,8 +150,15 @@ export interface WhiteboxAttackSurfaceWorkflowInput {
 export async function runWhiteboxAttackSurfaceWorkflow(
   input: WhiteboxAttackSurfaceWorkflowInput,
 ): Promise<WhiteboxAttackSurfaceResult> {
-  const { codebasePath, model, session, authConfig, abortSignal, callbacks } =
-    input;
+  const {
+    codebasePath,
+    model,
+    session,
+    authConfig,
+    abortSignal,
+    callbacks,
+    onStepFinish,
+  } = input;
 
   // =========================================================================
   // Phase 1: Identify all apps in the repository
@@ -159,11 +173,14 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     authConfig,
     abortSignal,
     callbacks,
+    onStepFinish: (event) => onStepFinish?.(event),
     responseSchema: AppsDiscoveryResultSchema,
   });
 
   const appsResult = await appsAgent.consume({
     onTextDelta: (d) => callbacks?.onTextDelta?.(d),
+    onToolCallStreaming: (d) => callbacks?.onToolCallStreaming?.(d),
+    onToolCallDelta: (d) => callbacks?.onToolCallDelta?.(d),
     onToolCall: (d) => callbacks?.onToolCall?.(d),
     onToolResult: (d) => callbacks?.onToolResult?.(d),
     onError: (e) => callbacks?.onError?.(e),
@@ -224,6 +241,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
         authConfig,
         abortSignal,
         callbacks,
+        onStepFinish: (event) => onStepFinish?.(event),
         responseSchema: EndpointsDiscoveryResultSchema,
       });
 
@@ -234,6 +252,16 @@ export async function runWhiteboxAttackSurfaceWorkflow(
             ? {
                 onTextDelta: (d) =>
                   callbacks.subagentCallbacks!.onTextDelta?.({
+                    ...d,
+                    subagentId,
+                  }),
+                onToolCallStreaming: (d) =>
+                  callbacks.subagentCallbacks!.onToolCallStreaming?.({
+                    ...d,
+                    subagentId,
+                  }),
+                onToolCallDelta: (d) =>
+                  callbacks.subagentCallbacks!.onToolCallDelta?.({
                     ...d,
                     subagentId,
                   }),

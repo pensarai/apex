@@ -18,6 +18,7 @@ import { useRoute } from "../../context/route";
 import { PromptInput } from "../shared/prompt-input";
 import { useTheme } from "../../theme";
 import { slugify } from "../../../core/skills";
+import * as History from "../../../core/history";
 
 type ViewType = "home" | "config" | "chat";
 
@@ -38,6 +39,13 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
   const { promptRef } = useFocus();
 
   const [hintMessage, setHintMessage] = useState<string | null>(null);
+  const [commandHistory, setCommandHistory] = useState<string[]>(
+    History.getEntries,
+  );
+
+  useEffect(() => {
+    History.load().then(setCommandHistory);
+  }, []);
 
   const launchOperator = useCallback(
     (message: string, options?: { requireApproval?: boolean }) => {
@@ -50,12 +58,19 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
     [route],
   );
 
+  const pushHistory = useCallback((entry: string) => {
+    History.push(entry).then(() =>
+      setCommandHistory([...History.getEntries()]),
+    );
+  }, []);
+
   const handleSubmit = useCallback(
     (value: string) => {
       if (!value.trim()) return;
+      pushHistory(value.trim());
       launchOperator(value.trim());
     },
-    [launchOperator],
+    [launchOperator, pushHistory],
   );
 
   // Auto-clear hint after 3 seconds
@@ -67,7 +82,10 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
 
   const handleCommandExecute = useCallback(
     async (command: string) => {
-      const parts = command.trim().replace(/^\/+/, "").split(/\s+/);
+      const trimmed = command.trim();
+      pushHistory(trimmed);
+
+      const parts = trimmed.replace(/^\/+/, "").split(/\s+/);
       const slug = parts[0]?.toLowerCase() ?? "";
       const args = parts.slice(1);
       const autopilot = args.includes("--autopilot");
@@ -79,7 +97,7 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
       }
       await executeCommand(command);
     },
-    [resolveSkillContent, launchOperator, executeCommand],
+    [resolveSkillContent, launchOperator, executeCommand, pushHistory],
   );
 
   const skillItems = skills.slice(0, 5).map((s) => ({
@@ -174,6 +192,7 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
           autocompleteOptions={autocompleteOptions}
           enableCommands={true}
           onCommandExecute={handleCommandExecute}
+          commandHistory={commandHistory}
           showPromptIndicator={true}
         />
 

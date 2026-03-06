@@ -57,6 +57,16 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
         ? {
             onTextDelta: (d: { type: "text-delta"; [k: string]: unknown }) =>
               cbs.onTextDelta?.({ ...d, subagentId } as never),
+            onToolCallStreaming: (d: {
+              toolCallId: string;
+              toolName: string;
+              [k: string]: unknown;
+            }) => cbs.onToolCallStreaming?.({ ...d, subagentId } as never),
+            onToolCallDelta: (d: {
+              toolCallId: string;
+              argsTextDelta: string;
+              [k: string]: unknown;
+            }) => cbs.onToolCallDelta?.({ ...d, subagentId } as never),
             onToolCall: (d: { type: "tool-call"; [k: string]: unknown }) =>
               cbs.onToolCall?.({ ...d, subagentId } as never),
             onToolResult: (d: { type: "tool-result"; [k: string]: unknown }) =>
@@ -64,6 +74,12 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
             onError: (e: unknown) => cbs.onError?.(e),
           }
         : undefined;
+
+      cbs?.onSubagentSpawn?.({
+        subagentId,
+        input: { target, cwd },
+        status: "pending",
+      });
 
       // -----------------------------------------------------------------------
       // Whitebox mode — analyze source code (cwd is the indicator)
@@ -103,6 +119,12 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
             `\n✓ Whitebox attack surface complete: ${targets.length} targets from ${result.apps.length} apps`,
           );
 
+          cbs?.onSubagentComplete?.({
+            subagentId,
+            input: { target, cwd },
+            status: "completed",
+          });
+
           return {
             success: true,
             mode: "whitebox" as const,
@@ -115,6 +137,13 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
           const errorMsg =
             error instanceof Error ? error.message : String(error);
           console.error(`✗ Whitebox attack surface agent failed: ${errorMsg}`);
+
+          cbs?.onSubagentComplete?.({
+            subagentId,
+            input: { target, cwd },
+            status: "failed",
+          });
+
           return {
             success: false,
             targets: [],
@@ -152,6 +181,12 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
           `\n✓ Blackbox attack surface complete: ${targetCount} targets identified`,
         );
 
+        cbs?.onSubagentComplete?.({
+          subagentId,
+          input: { target },
+          status: "completed",
+        });
+
         return {
           success: true,
           mode: "blackbox" as const,
@@ -170,6 +205,13 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
       } catch (error: unknown) {
         const errorMsg = error instanceof Error ? error.message : String(error);
         console.error(`✗ Blackbox attack surface agent failed: ${errorMsg}`);
+
+        cbs?.onSubagentComplete?.({
+          subagentId,
+          input: { target },
+          status: "failed",
+        });
+
         return {
           success: false,
           targets: [],

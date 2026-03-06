@@ -7,13 +7,18 @@ import type {
   ToolSet,
 } from "ai";
 import { hasToolCall } from "ai";
-import type { OffensiveSecurityAgentInput, ConsumeCallbacks } from "./types";
+import type {
+  OffensiveSecurityAgentInput,
+  CreateAgentInput,
+  ConsumeCallbacks,
+} from "./types";
 import { createAllTools, EMAIL_TOOL_NAMES_ACTIVE } from "./tools";
 import { createResponseTool, RESPONSE_TOOL_NAME } from "./tools/response";
 import { PersistentShell } from "./tools/persistentShell";
-import { DEFAULT_SYSTEM_PROMPT } from "./prompt";
+import { BASE_SYSTEM_PROMPT, buildSessionWorkspaceSection } from "./prompt";
 import type { ApprovalGate } from "../../operator";
 import { ApprovalDeniedError } from "../../operator";
+import { create as createSession, type SessionInfo } from "../../session";
 import { join } from "path";
 import { writeFileSync, mkdirSync, existsSync } from "fs";
 
@@ -65,14 +70,50 @@ export class OffensiveSecurityAgent<TResult = void> {
   /** Persistent shell for local-mode command execution; disposed on consume() completion. */
   private readonly persistentShell?: PersistentShell;
 
+  /** The session this agent is operating within. */
+  private readonly _session: SessionInfo;
+
+  /**
+   * Async factory that creates a session when one is not provided,
+   * then constructs the agent. Use this instead of `new` when you
+   * want the agent to own session lifecycle.
+   *
+   * Pass an existing `session` to reuse one (console integration,
+   * subagent spawning, etc.).
+   */
+  static async create<TResult = void>(
+    input: CreateAgentInput<TResult>,
+  ): Promise<OffensiveSecurityAgent<TResult>> {
+    let session = input.session;
+    if (!session) {
+      session = await createSession({
+        targets: input.target ? [input.target] : [],
+        config: input.sessionConfig,
+        model: input.model,
+        authConfig: input.authConfig,
+        userMessage: input.prompt,
+        onNameGenerated: input.onNameGenerated,
+      });
+    }
+    return new OffensiveSecurityAgent({ ...input, session });
+  }
+
+  /** The session this agent is operating within. */
+  get session(): SessionInfo {
+    return this._session;
+  }
+
   constructor(input: OffensiveSecurityAgentInput<TResult>) {
+    this._session = input.session;
     this.subagentId = input.subagentId;
 
     // -- Persistent shell (local mode only) -----------------------------------
     // Shell survives command cancellation; only disposed in consume() after the
     // stream ends, or when the agent is fully killed.
     if (!input.sandbox) {
-      this.persistentShell = new PersistentShell();
+      this.persistentShell = new PersistentShell({
+        cwd: input.session.rootPath,
+      });
       if (input.commandCancelHandle) {
         const shell = this.persistentShell;
         input.commandCancelHandle.cancel = () => shell.cancelCurrentCommand();
@@ -176,7 +217,9 @@ export class OffensiveSecurityAgent<TResult = void> {
     // -- Stream ---------------------------------------------------------------
     this.streamResult = streamResponse({
       prompt: input.prompt,
-      system: input.system ?? DEFAULT_SYSTEM_PROMPT,
+      system:
+        (input.system ?? BASE_SYSTEM_PROMPT) +
+        buildSessionWorkspaceSection(input.session),
       model: input.model,
       messages: input.messages,
       tools,
@@ -241,6 +284,8 @@ export class OffensiveSecurityAgent<TResult = void> {
   async consume(callbacks: ConsumeCallbacks = {}): Promise<TResult> {
     const {
       onTextDelta,
+      onToolCallStreaming,
+      onToolCallDelta,
       onToolCall,
       onToolResult,
       onError,
@@ -255,6 +300,24 @@ export class OffensiveSecurityAgent<TResult = void> {
           onTextDelta?.(chunk);
           subagentCallbacks?.onTextDelta?.({ ...chunk, subagentId: sid });
           break;
+        case "tool-input-start": {
+          const delta = { toolCallId: chunk.id, toolName: chunk.toolName };
+          onToolCallStreaming?.(delta);
+          subagentCallbacks?.onToolCallStreaming?.({
+            ...delta,
+            subagentId: sid,
+          });
+          break;
+        }
+        case "tool-input-delta": {
+          const delta = { toolCallId: chunk.id, argsTextDelta: chunk.delta };
+          onToolCallDelta?.(delta);
+          subagentCallbacks?.onToolCallDelta?.({
+            ...delta,
+            subagentId: sid,
+          });
+          break;
+        }
         case "tool-call":
           onToolCall?.(chunk);
           subagentCallbacks?.onToolCall?.({ ...chunk, subagentId: sid });

@@ -37,10 +37,13 @@ export function isToolMessage(msg: DisplayMessage): msg is ToolDisplayMessage {
 }
 
 /**
- * Check if a message is a pending tool call.
+ * Check if a message is a pending tool call (executing or streaming args).
  */
 export function isPendingTool(msg: DisplayMessage): boolean {
-  return isToolMessage(msg) && msg.status === "pending";
+  return (
+    isToolMessage(msg) &&
+    (msg.status === "pending" || msg.status === "streaming")
+  );
 }
 
 /**

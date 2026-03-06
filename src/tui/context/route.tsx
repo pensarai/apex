@@ -5,6 +5,7 @@ import {
   type ReactNode,
   useMemo,
 } from "react";
+import type { SessionConfig } from "../../core/session";
 
 export type RoutePath =
   | "home"
@@ -51,7 +52,10 @@ export type Route =
     }
   | {
       type: "pentest";
-      sessionId: string;
+      sessionId?: string;
+      /** When sessionId is omitted, create a new session from these fields */
+      targets?: string[];
+      sessionConfig?: SessionConfig;
       /** If true, open an auto-mode session in operator mode */
       openAsOperator?: boolean;
     }
@@ -61,6 +65,7 @@ export type Route =
       initialMessage?: string;
       initialConfig?: {
         requireApproval?: boolean;
+        target?: string;
       };
     };
 

@@ -11,6 +11,14 @@ import type { TextareaRenderable, RGBA } from "@opentui/core";
 import { useTheme } from "../../theme";
 import { useInput } from "../../context/input";
 import { useFocus } from "../../context/focus";
+import {
+  filterSuggestions,
+  resolveSubmitValue,
+  computeUpArrow,
+  computeDownArrow,
+  computeTab,
+  shouldResetHistory,
+} from "./prompt-input-logic";
 export interface AutocompleteOption {
   value: string;
   label: string;
@@ -67,6 +75,12 @@ interface PromptInputProps {
   enableCommands?: boolean;
   onCommandExecute?: (command: string) => Promise<void>;
 
+  // Command history (up/down arrow navigation)
+  commandHistory?: string[];
+
+  // When true, Up/Down history navigation is suppressed (e.g. queue navigation takes priority)
+  disableHistoryNavigation?: boolean;
+
   // Visual customization
   showPromptIndicator?: boolean;
 }
@@ -90,6 +104,8 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
       maxSuggestions = 10,
       enableCommands = false,
       onCommandExecute,
+      commandHistory = [],
+      disableHistoryNavigation = false,
       showPromptIndicator = false,
     },
     ref,
@@ -100,6 +116,15 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
     const textareaRef = useRef<TextareaRenderable | null>(null);
     const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(-1);
 
+    // Command history navigation state
+    // -1 = not browsing history (showing current input)
+    const [historyIndex, setHistoryIndex] = useState(-1);
+    const savedInputRef = useRef("");
+    const historyRef = useRef(commandHistory);
+    historyRef.current = commandHistory;
+    // Guard to prevent handleContentChange from resetting historyIndex during programmatic setText
+    const isNavigatingHistoryRef = useRef(false);
+
     // Refs to avoid stale closures in handleSubmit (textarea caches onSubmit)
     const selectedIndexRef = useRef(selectedSuggestionIndex);
     const suggestionsRef = useRef<AutocompleteOption[]>([]);
@@ -108,21 +133,13 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
     const onSubmitRef = useRef(onSubmit);
     onSubmitRef.current = onSubmit;
 
-    // Filter suggestions using inputValue from context
-    const suggestions = useMemo(() => {
-      if (!enableAutocomplete || !autocompleteOptions || !inputValue) return [];
-      const input = inputValue.toLowerCase().trim();
-
-      if (!(input[0] === "/")) return [];
-
-      return autocompleteOptions
-        .filter(
-          (opt) =>
-            opt.value.toLowerCase().includes(input) ||
-            opt.label.toLowerCase().includes(input),
-        )
-        .slice(0, maxSuggestions);
-    }, [enableAutocomplete, autocompleteOptions, inputValue, maxSuggestions]);
+    const suggestions = useMemo(
+      () =>
+        enableAutocomplete
+          ? filterSuggestions(inputValue, autocompleteOptions, maxSuggestions)
+          : [],
+      [enableAutocomplete, autocompleteOptions, inputValue, maxSuggestions],
+    );
 
     // Keep refs in sync
     useEffect(() => {
@@ -169,37 +186,99 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
       return () => registerPromptRef(null);
     }, [registerPromptRef]);
 
-    // Handle keyboard navigation for suggestions (up/down/tab)
+    // Handle keyboard navigation for suggestions and command history.
+    //
+    // Priority: up/down navigate command history. When the user reaches
+    // the bottom of history (current input) and presses down again with
+    // autocomplete suggestions visible, navigation overflows into the
+    // suggestion list. Pressing up past the top of the list exits back
+    // to history. Tab always accepts the highlighted suggestion.
     useKeyboard((key) => {
-      if (!focused || suggestions.length === 0) return;
+      if (!focused) return;
 
-      if (key.name === "up") {
-        setSelectedSuggestionIndex((prev) =>
-          prev <= 0 ? suggestions.length - 1 : prev - 1,
-        );
+      // --- Ctrl+C: clear input ------------------------------------------
+      if (key.ctrl && key.name === "c") {
+        textareaRef.current?.setText("");
+        setInputValue("");
+        setHistoryIndex(-1);
+        setSelectedSuggestionIndex(-1);
         return;
       }
-      if (key.name === "down") {
-        setSelectedSuggestionIndex((prev) =>
-          prev >= suggestions.length - 1 ? 0 : prev + 1,
-        );
-        return;
-      }
-      // Tab to fill suggestion without running command
-      if (key.name === "tab") {
+
+      // --- Tab: accept the highlighted autocomplete suggestion -----------
+      if (suggestions.length > 0 && key.name === "tab") {
         key.preventDefault?.();
-        const currentSelectedIndex = selectedIndexRef.current;
-        if (
-          currentSelectedIndex >= 0 &&
-          currentSelectedIndex < suggestions.length
-        ) {
-          const selected = suggestions[currentSelectedIndex];
-          if (selected) {
-            textareaRef.current?.setText(selected.value);
-            setInputValue(selected.value);
-            setSelectedSuggestionIndex(-1);
+        const tabResult = computeTab(suggestions, selectedIndexRef.current);
+        if (tabResult) {
+          setSelectedSuggestionIndex(tabResult.selectedSuggestionIndex);
+          if (tabResult.acceptedValue !== null) {
+            textareaRef.current?.setText(tabResult.acceptedValue);
+            setInputValue(tabResult.acceptedValue);
             textareaRef.current?.gotoLineEnd();
           }
+        }
+        return;
+      }
+
+      // Skip history navigation when parent handles Up/Down (e.g. queue navigation)
+      if (disableHistoryNavigation) return;
+
+      const history = historyRef.current;
+      const currentState = {
+        historyIndex,
+        selectedSuggestionIndex: selectedIndexRef.current,
+      };
+
+      // --- Up arrow -----------------------------------------------------
+      if (key.name === "up") {
+        const result = computeUpArrow(
+          currentState,
+          history,
+          suggestions.length,
+        );
+        if (!result) return;
+
+        if (result.saveCurrentInput) {
+          savedInputRef.current = textareaRef.current?.plainText ?? "";
+        }
+        setSelectedSuggestionIndex(result.nextState.selectedSuggestionIndex);
+        if (result.textToSet !== null) {
+          isNavigatingHistoryRef.current = true;
+          textareaRef.current?.setText(result.textToSet);
+          setInputValue(result.textToSet);
+          setHistoryIndex(result.nextState.historyIndex);
+          setTimeout(() => {
+            isNavigatingHistoryRef.current = false;
+            textareaRef.current?.gotoLineEnd();
+          }, 0);
+        } else {
+          setHistoryIndex(result.nextState.historyIndex);
+        }
+        return;
+      }
+
+      // --- Down arrow ---------------------------------------------------
+      if (key.name === "down") {
+        const result = computeDownArrow(
+          currentState,
+          history,
+          suggestions.length,
+          savedInputRef.current,
+        );
+        if (!result) return;
+
+        setSelectedSuggestionIndex(result.nextState.selectedSuggestionIndex);
+        if (result.textToSet !== null) {
+          isNavigatingHistoryRef.current = true;
+          textareaRef.current?.setText(result.textToSet);
+          setInputValue(result.textToSet);
+          setHistoryIndex(result.nextState.historyIndex);
+          setTimeout(() => {
+            isNavigatingHistoryRef.current = false;
+            textareaRef.current?.gotoLineEnd();
+          }, 0);
+        } else {
+          setHistoryIndex(result.nextState.historyIndex);
         }
         return;
       }
@@ -211,17 +290,13 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
       const currentSuggestions = suggestionsRef.current;
       const currentSelectedIndex = selectedIndexRef.current;
 
-      let valueToSubmit: string;
+      const valueToSubmit = resolveSubmitValue(
+        textareaRef.current?.plainText ?? "",
+        currentSuggestions,
+        currentSelectedIndex,
+      );
       if (currentSuggestions.length > 0 && currentSelectedIndex >= 0) {
-        const selected = currentSuggestions[currentSelectedIndex];
-        if (selected) {
-          valueToSubmit = selected.value;
-          setSelectedSuggestionIndex(-1);
-        } else {
-          valueToSubmit = (textareaRef.current?.plainText ?? "").trim();
-        }
-      } else {
-        valueToSubmit = (textareaRef.current?.plainText ?? "").trim();
+        setSelectedSuggestionIndex(-1);
       }
 
       if (!valueToSubmit) return;
@@ -231,16 +306,21 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
         setInputValue("");
         textareaRef.current?.setText("");
         setSelectedSuggestionIndex(-1);
+        setHistoryIndex(-1);
         return;
       }
 
+      setHistoryIndex(-1);
       onSubmitRef.current?.(valueToSubmit);
     };
 
-    // Content change syncs to context
+    // Content change syncs to context and resets history browsing
     const handleContentChange = () => {
       const text = textareaRef.current?.plainText ?? "";
       setInputValue(text);
+      if (shouldResetHistory(historyIndex, isNavigatingHistoryRef.current)) {
+        setHistoryIndex(-1);
+      }
     };
 
     return (

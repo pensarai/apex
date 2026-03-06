@@ -345,7 +345,13 @@ function CommandDisplay({
     if (route.data.openAsOperator) {
       return <OperatorDashboard sessionId={route.data.sessionId} />;
     }
-    return <Pentest sessionId={route.data.sessionId} />;
+    return (
+      <Pentest
+        sessionId={route.data.sessionId}
+        targets={route.data.targets}
+        sessionConfig={route.data.sessionConfig}
+      />
+    );
   }
 
   return null;

@@ -176,6 +176,13 @@ async function runSingleCodingAgent(
         ? {
             onTextDelta: (d) =>
               ctx.subagentCallbacks!.onTextDelta?.({ ...d, subagentId }),
+            onToolCallStreaming: (d) =>
+              ctx.subagentCallbacks!.onToolCallStreaming?.({
+                ...d,
+                subagentId,
+              }),
+            onToolCallDelta: (d) =>
+              ctx.subagentCallbacks!.onToolCallDelta?.({ ...d, subagentId }),
             onToolCall: (d) =>
               ctx.subagentCallbacks!.onToolCall?.({ ...d, subagentId }),
             onToolResult: (d) =>
