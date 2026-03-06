@@ -139,8 +139,13 @@ function wrapStreamWithErrorHandler(
               const errorMessage =
                 error instanceof Error ? error.message : String(error);
 
+              // Check context length FIRST — these should never be retried
+              // as-is; the prompt must be reduced via summarization.
+              const isCtxError = checkIfContextLengthError(error);
+
               // Handle rate limit errors with exponential backoff retry
               if (
+                !isCtxError &&
                 checkIfRateLimitError(error) &&
                 rateLimitRetryCount < MAX_RATE_LIMIT_RETRIES
               ) {
@@ -177,9 +182,6 @@ function wrapStreamWithErrorHandler(
                 }
                 return;
               }
-
-              // Handle context length errors with summarization
-              const isCtxError = checkIfContextLengthError(error);
 
               if (isCtxError) {
                 let currentMessages: ModelMessage[] = messagesContainer.current;
@@ -463,6 +465,8 @@ export interface GenerateObjectOpts<T extends z.ZodType> {
   onTokenUsage?: (inputTokens: number, outputTokens: number) => void;
 }
 
+const MAX_OBJECT_RATE_LIMIT_RETRIES = 8;
+
 export async function generateObjectResponse<T extends z.ZodType>(
   opts: GenerateObjectOpts<T>,
 ) {
@@ -479,28 +483,62 @@ export async function generateObjectResponse<T extends z.ZodType>(
 
   const providerModel = getProviderModel(model, authConfig);
 
-  const { output, usage } = await generateText({
-    model: providerModel,
-    output: Output.object({
-      schema,
-    }),
-    prompt,
-    system,
-    maxOutputTokens: maxTokens,
-    temperature,
-  });
+  let lastError: unknown;
 
-  // Report token usage if callback provided
-  if (onTokenUsage && usage) {
-    onTokenUsage(usage.inputTokens ?? 0, usage.outputTokens ?? 0);
+  for (let attempt = 0; attempt <= MAX_OBJECT_RATE_LIMIT_RETRIES; attempt++) {
+    try {
+      const { output, usage } = await generateText({
+        model: providerModel,
+        output: Output.object({
+          schema,
+        }),
+        prompt,
+        system,
+        maxOutputTokens: maxTokens,
+        temperature,
+        maxRetries: 0,
+      });
+
+      if (onTokenUsage && usage) {
+        onTokenUsage(usage.inputTokens ?? 0, usage.outputTokens ?? 0);
+      }
+
+      if (_usageCallback && usage) {
+        const inp = usage.inputTokens ?? 0;
+        const out = usage.outputTokens ?? 0;
+        if (inp > 0 || out > 0) _usageCallback(model, inp, out);
+      }
+
+      return output;
+    } catch (error) {
+      lastError = error;
+
+      if (checkIfContextLengthError(error)) {
+        const msg = error instanceof Error ? error.message : String(error);
+        throw new ContextLengthError(
+          `Prompt exceeds model context window: ${msg}`,
+        );
+      }
+
+      if (
+        checkIfRateLimitError(error) &&
+        attempt < MAX_OBJECT_RATE_LIMIT_RETRIES
+      ) {
+        const delayMs = Math.min(1000 * 2 ** attempt, 60_000);
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        continue;
+      }
+
+      throw error;
+    }
   }
 
-  // Fire global usage callback
-  if (_usageCallback && usage) {
-    const inp = usage.inputTokens ?? 0;
-    const out = usage.outputTokens ?? 0;
-    if (inp > 0 || out > 0) _usageCallback(model, inp, out);
-  }
+  throw lastError;
+}
 
-  return output;
+export class ContextLengthError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ContextLengthError";
+  }
 }
