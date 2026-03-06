@@ -375,6 +375,10 @@ export interface CreateInputProps {
   model?: AIModel;
   /** Auth config for the AI provider (optional). */
   authConfig?: AIAuthConfig;
+  /** User objective / first prompt — used as context for AI name generation. */
+  userMessage?: string;
+  /** Called when the async AI name generation resolves with a name. */
+  onNameGenerated?: (name: string) => void;
 }
 
 export async function create(input: CreateInputProps) {
@@ -451,13 +455,16 @@ export async function create(input: CreateInputProps) {
   if (!input.name && input.model) {
     generateSessionName({
       targets: input.targets,
+      userMessage: input.userMessage,
       model: input.model,
       authConfig: input.authConfig,
     }).then((aiName) => {
       if (aiName) {
+        result.name = aiName;
         update(result.id, (s) => {
           s.name = aiName;
         }).catch(() => {});
+        input.onNameGenerated?.(aiName);
       }
     });
   }

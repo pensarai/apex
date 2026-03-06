@@ -182,49 +182,59 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
       return () => registerPromptRef(null);
     }, [registerPromptRef]);
 
-    // Handle keyboard navigation for suggestions and command history
+    // Handle keyboard navigation for suggestions and command history.
+    //
+    // Priority: up/down navigate command history. When the user reaches
+    // the bottom of history (current input) and presses down again with
+    // autocomplete suggestions visible, navigation overflows into the
+    // suggestion list. Pressing up past the top of the list exits back
+    // to history. Tab always accepts the highlighted suggestion.
     useKeyboard((key) => {
       if (!focused) return;
 
-      // When autocomplete suggestions are visible, up/down navigates them
-      if (suggestions.length > 0) {
-        if (key.name === "up") {
-          setSelectedSuggestionIndex((prev) =>
-            prev <= 0 ? suggestions.length - 1 : prev - 1,
-          );
-          return;
-        }
-        if (key.name === "down") {
-          setSelectedSuggestionIndex((prev) =>
-            prev >= suggestions.length - 1 ? 0 : prev + 1,
-          );
-          return;
-        }
-        if (key.name === "tab") {
-          key.preventDefault?.();
-          const currentSelectedIndex = selectedIndexRef.current;
-          if (
-            currentSelectedIndex >= 0 &&
-            currentSelectedIndex < suggestions.length
-          ) {
-            const selected = suggestions[currentSelectedIndex];
-            if (selected) {
-              textareaRef.current?.setText(selected.value);
-              setInputValue(selected.value);
-              setSelectedSuggestionIndex(-1);
-              textareaRef.current?.gotoLineEnd();
-            }
+      // --- Ctrl+C: clear input ------------------------------------------
+      if (key.ctrl && key.name === "c") {
+        textareaRef.current?.setText("");
+        setInputValue("");
+        setHistoryIndex(-1);
+        setSelectedSuggestionIndex(-1);
+        return;
+      }
+
+      // --- Tab: accept the highlighted autocomplete suggestion -----------
+      if (suggestions.length > 0 && key.name === "tab") {
+        key.preventDefault?.();
+        const idx = selectedIndexRef.current;
+        if (idx >= 0 && idx < suggestions.length) {
+          const selected = suggestions[idx];
+          if (selected) {
+            textareaRef.current?.setText(selected.value);
+            setInputValue(selected.value);
+            setSelectedSuggestionIndex(-1);
+            textareaRef.current?.gotoLineEnd();
           }
-          return;
+        } else {
+          setSelectedSuggestionIndex(0);
         }
         return;
       }
 
-      // No autocomplete visible — up/down navigates command history
+      const inAutocomplete = selectedIndexRef.current >= 0;
       const history = historyRef.current;
-      if (history.length === 0) return;
 
+      // --- Up arrow -----------------------------------------------------
       if (key.name === "up") {
+        if (inAutocomplete) {
+          // At top of suggestion list → exit back to normal input
+          if (selectedIndexRef.current <= 0) {
+            setSelectedSuggestionIndex(-1);
+          } else {
+            setSelectedSuggestionIndex((prev) => prev - 1);
+          }
+          return;
+        }
+
+        if (history.length === 0) return;
         setHistoryIndex((prev) => {
           if (prev === -1) {
             savedInputRef.current = textareaRef.current?.plainText ?? "";
@@ -235,22 +245,48 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
             isNavigatingHistoryRef.current = true;
             textareaRef.current?.setText(entry);
             setInputValue(entry);
-            isNavigatingHistoryRef.current = false;
-            setTimeout(() => textareaRef.current?.gotoLineEnd(), 0);
+            setTimeout(() => {
+              isNavigatingHistoryRef.current = false;
+              textareaRef.current?.gotoLineEnd();
+            }, 0);
           }
           return next;
         });
         return;
       }
+
+      // --- Down arrow ---------------------------------------------------
       if (key.name === "down") {
+        if (inAutocomplete) {
+          setSelectedSuggestionIndex((prev) =>
+            prev >= suggestions.length - 1 ? suggestions.length - 1 : prev + 1,
+          );
+          return;
+        }
+
+        if (history.length === 0) {
+          // No history — overflow into autocomplete (only when multiple suggestions)
+          if (suggestions.length > 1) {
+            setSelectedSuggestionIndex(0);
+          }
+          return;
+        }
+
         setHistoryIndex((prev) => {
           if (prev <= 0) {
             const saved = savedInputRef.current;
             isNavigatingHistoryRef.current = true;
             textareaRef.current?.setText(saved);
             setInputValue(saved);
-            isNavigatingHistoryRef.current = false;
-            setTimeout(() => textareaRef.current?.gotoLineEnd(), 0);
+            setTimeout(() => {
+              isNavigatingHistoryRef.current = false;
+              textareaRef.current?.gotoLineEnd();
+            }, 0);
+
+            // Already at current input — overflow into autocomplete (only when multiple suggestions)
+            if (prev === -1 && suggestions.length > 1) {
+              setSelectedSuggestionIndex(0);
+            }
             return -1;
           }
           const next = prev - 1;
@@ -259,8 +295,10 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
             isNavigatingHistoryRef.current = true;
             textareaRef.current?.setText(entry);
             setInputValue(entry);
-            isNavigatingHistoryRef.current = false;
-            setTimeout(() => textareaRef.current?.gotoLineEnd(), 0);
+            setTimeout(() => {
+              isNavigatingHistoryRef.current = false;
+              textareaRef.current?.gotoLineEnd();
+            }, 0);
           }
           return next;
         });

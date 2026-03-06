@@ -91,9 +91,14 @@ export class OffensiveSecurityAgent<TResult = void> {
         config: input.sessionConfig,
         model: input.model,
         authConfig: input.authConfig,
+        userMessage: input.prompt,
+        onNameGenerated: input.onNameGenerated,
       });
     }
-    return new OffensiveSecurityAgent({ ...input, session });
+    const system = input.buildSystem
+      ? input.buildSystem(session)
+      : (input.system ?? DEFAULT_SYSTEM_PROMPT);
+    return new OffensiveSecurityAgent({ ...input, session, system });
   }
 
   /** The session this agent is operating within. */

@@ -307,10 +307,23 @@ export type SubagentConsumeCallbacks = {
  */
 export type CreateAgentInput<TResult = void> = Omit<
   OffensiveSecurityAgentInput<TResult>,
-  "session"
+  "session" | "system"
 > & {
   /** Existing session to reuse. When omitted a new one is created. */
   session?: SessionInfo;
   /** Session config used when auto-creating a session (ignored when `session` is provided). */
   sessionConfig?: SessionConfig;
+  /**
+   * Static system prompt. Used when `session` is provided.
+   * When omitted and `buildSystem` is set, the factory builds the prompt
+   * after creating the session.
+   */
+  system?: string;
+  /**
+   * Called with the created/resolved session to build the system prompt.
+   * Takes precedence over `system` when a session is auto-created.
+   */
+  buildSystem?: (session: SessionInfo) => string;
+  /** Called when the async AI name generation resolves with a name. */
+  onNameGenerated?: (name: string) => void;
 };
