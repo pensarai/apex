@@ -63,6 +63,8 @@ import {
   resolveInputFocused,
   accumulateTokenUsage,
 } from "./logic";
+import { QueuedMessages } from "./queued-messages";
+import { navigateUp, navigateDown, selectionAfterRemove } from "./queue";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 
@@ -136,6 +138,21 @@ export default function OperatorDashboard({
   const conversationRef = useRef<ModelMessage[]>([]);
   // Input state
   const [inputValue, setInputValue] = useState("");
+
+  // Queued follow-up messages
+  const [queuedMessages, setQueuedMessages] = useState<string[]>([]);
+  const [selectedQueueIndex, setSelectedQueueIndex] = useState(-1);
+  const queuedMessagesRef = useRef<string[]>([]);
+
+  // Keep queue ref in sync and clamp selection
+  useEffect(() => {
+    queuedMessagesRef.current = queuedMessages;
+    if (queuedMessages.length === 0) {
+      setSelectedQueueIndex(-1);
+    } else if (selectedQueueIndex >= queuedMessages.length) {
+      setSelectedQueueIndex(queuedMessages.length - 1);
+    }
+  }, [queuedMessages, selectedQueueIndex]);
 
   // Operator state
   const [operatorState, setOperatorState] = useState<OperatorSessionState>(() =>
@@ -796,6 +813,13 @@ export default function OperatorDashboard({
         }
       }
 
+      // When agent is running, queue the message for later
+      if (result.action === "blocked" && value.trim()) {
+        setQueuedMessages((prev) => [...prev, value.trim()]);
+        setInputValue("");
+        return;
+      }
+
       if (result.action !== "run" || !result.prompt) return;
 
       setInputValue("");
@@ -816,6 +840,18 @@ export default function OperatorDashboard({
       runAgentRef.current(initialMessage);
     }
   }, [loading, initialMessage]);
+
+  // Auto-send queued messages when agent becomes idle
+  useEffect(() => {
+    if (status !== "idle") return;
+    const queue = queuedMessagesRef.current;
+    if (queue.length === 0) return;
+
+    const next = queue[0];
+    setQueuedMessages((prev) => prev.slice(1));
+    setSelectedQueueIndex(-1);
+    runAgentRef.current(next);
+  }, [status]);
 
   const showModelPicker = useCallback(() => {
     setDialogSize("large");
@@ -902,6 +938,12 @@ export default function OperatorDashboard({
     abortControllerRef.current.abort();
     abortControllerRef.current = null;
     commandCancelledRef.current = false;
+
+    // Clear queued messages before setting idle to prevent auto-send
+    setQueuedMessages([]);
+    queuedMessagesRef.current = [];
+    setSelectedQueueIndex(-1);
+
     setStatus("idle");
     setThinking(false);
     setIsExecuting(false);
@@ -951,6 +993,72 @@ export default function OperatorDashboard({
 
   // Keyboard shortcuts
   useKeyboard((key) => {
+    // Queue navigation: handle before general shortcuts
+    if (
+      status === "running" &&
+      queuedMessages.length > 0 &&
+      !inputValue.trim()
+    ) {
+      if (key.name === "up") {
+        key.preventDefault?.();
+        setSelectedQueueIndex((prev) =>
+          navigateUp(prev, queuedMessages.length),
+        );
+        return;
+      }
+
+      if (selectedQueueIndex >= 0) {
+        if (key.name === "down") {
+          key.preventDefault?.();
+          setSelectedQueueIndex((prev) =>
+            navigateDown(prev, queuedMessages.length),
+          );
+          return;
+        }
+        if (key.name === "backspace" || key.name === "delete") {
+          key.preventDefault?.();
+          const removeIdx = selectedQueueIndex;
+          setQueuedMessages((prev) => prev.filter((_, i) => i !== removeIdx));
+          setSelectedQueueIndex(() =>
+            selectionAfterRemove(queuedMessages.length, removeIdx),
+          );
+          return;
+        }
+        if (key.name === "return") {
+          key.preventDefault?.();
+          const msg = queuedMessages[selectedQueueIndex];
+          const removeIdx = selectedQueueIndex;
+          setQueuedMessages((prev) => prev.filter((_, i) => i !== removeIdx));
+          setSelectedQueueIndex(-1);
+
+          flushCommandOutput();
+          if (cmdFlushTimerRef.current) {
+            clearInterval(cmdFlushTimerRef.current);
+            cmdFlushTimerRef.current = null;
+          }
+          setMessages((prev) =>
+            prev.map((m) =>
+              isToolMessage(m) && m.status === "pending"
+                ? { ...m, status: "error" as const, result: "Interrupted" }
+                : m,
+            ),
+          );
+
+          runAgentRef.current(msg);
+          return;
+        }
+        if (key.raw === "e" || key.raw === "E") {
+          key.preventDefault?.();
+          const msg = queuedMessages[selectedQueueIndex];
+          const removeIdx = selectedQueueIndex;
+          setQueuedMessages((prev) => prev.filter((_, i) => i !== removeIdx));
+          setInputValue(msg);
+          setSelectedQueueIndex(-1);
+          return;
+        }
+      }
+    }
+
     const dialogOpen = stack.length > 0 || externalDialogOpen;
     const action = resolveKeyboardShortcut(
       key,
@@ -1082,6 +1190,12 @@ export default function OperatorDashboard({
         lastApprovedAction={lastApprovedAction}
       />
 
+      {/* Queued follow-up messages */}
+      <QueuedMessages
+        messages={queuedMessages}
+        selectedIndex={selectedQueueIndex}
+      />
+
       {/* Input area */}
       <InputArea
         value={inputValue}
@@ -1089,12 +1203,16 @@ export default function OperatorDashboard({
         onSubmit={handleSubmit}
         placeholder={
           status === "running"
-            ? "Agent is working..."
+            ? "Queue a follow-up message..."
             : status === "waiting"
               ? "Type to redirect agent, or Y/A to approve..."
               : "Enter directive or / for commands & skills..."
         }
-        focused={resolveInputFocused(status, stack.length, externalDialogOpen)}
+        focused={
+          status === "running"
+            ? selectedQueueIndex < 0
+            : resolveInputFocused(status, stack.length, externalDialogOpen)
+        }
         status={status === "waiting" ? "running" : status}
         mode="operator"
         operatorMode={operatorState.mode}
@@ -1107,6 +1225,9 @@ export default function OperatorDashboard({
         autocompleteOptions={autocompleteOptions}
         enableCommands={true}
         onCommandExecute={handleCommandExecute}
+        disableHistoryNavigation={
+          status === "running" && queuedMessages.length > 0
+        }
       />
     </box>
   );

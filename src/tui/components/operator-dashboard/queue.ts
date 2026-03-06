@@ -1,0 +1,67 @@
+/**
+ * Pure utility functions for queued-message state management.
+ * Extracted for testability — consumed by the OperatorDashboard keyboard handler.
+ */
+
+/** Add a message to the end of the queue. */
+export function queueAdd(queue: string[], message: string): string[] {
+  return [...queue, message];
+}
+
+/** Remove the item at `index` and return the new queue. */
+export function queueRemove(queue: string[], index: number): string[] {
+  return queue.filter((_, i) => i !== index);
+}
+
+/**
+ * Clamp or reset `selectedIndex` after the queue changes size.
+ * Returns -1 (deselected) when the queue is empty.
+ */
+export function clampQueueSelection(
+  queueLength: number,
+  selectedIndex: number,
+): number {
+  if (queueLength === 0) return -1;
+  if (selectedIndex >= queueLength) return queueLength - 1;
+  return selectedIndex;
+}
+
+/**
+ * Compute the next selectedIndex after deleting the item at `removedIndex`.
+ */
+export function selectionAfterRemove(
+  prevQueueLength: number,
+  selectedIndex: number,
+): number {
+  const newLen = prevQueueLength - 1;
+  if (newLen === 0) return -1;
+  return Math.min(selectedIndex, newLen - 1);
+}
+
+/**
+ * Navigate **up** within the queue.
+ * - From input (-1) → last queue item (enter queue).
+ * - From first item (0) → stay at 0.
+ * - Otherwise → prev - 1.
+ */
+export function navigateUp(selectedIndex: number, queueLength: number): number {
+  if (queueLength === 0) return -1;
+  if (selectedIndex === -1) return queueLength - 1;
+  if (selectedIndex === 0) return 0;
+  return selectedIndex - 1;
+}
+
+/**
+ * Navigate **down** within the queue.
+ * - From the last item → -1 (exit queue, back to input).
+ * - Otherwise → prev + 1.
+ * - From input (-1) → stay at -1 (no-op, handled by caller).
+ */
+export function navigateDown(
+  selectedIndex: number,
+  queueLength: number,
+): number {
+  if (selectedIndex === -1) return -1;
+  if (selectedIndex >= queueLength - 1) return -1;
+  return selectedIndex + 1;
+}

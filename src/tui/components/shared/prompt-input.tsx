@@ -78,6 +78,9 @@ interface PromptInputProps {
   // Command history (up/down arrow navigation)
   commandHistory?: string[];
 
+  // When true, Up/Down history navigation is suppressed (e.g. queue navigation takes priority)
+  disableHistoryNavigation?: boolean;
+
   // Visual customization
   showPromptIndicator?: boolean;
 }
@@ -102,6 +105,7 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
       enableCommands = false,
       onCommandExecute,
       commandHistory = [],
+      disableHistoryNavigation = false,
       showPromptIndicator = false,
     },
     ref,
@@ -215,6 +219,9 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
         }
         return;
       }
+
+      // Skip history navigation when parent handles Up/Down (e.g. queue navigation)
+      if (disableHistoryNavigation) return;
 
       const history = historyRef.current;
       const currentState = {
