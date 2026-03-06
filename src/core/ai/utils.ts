@@ -53,6 +53,7 @@ export function buildAuthConfig(cfg: {
   openAiAPIKey?: string | null;
   googleAPIKey?: string | null;
   openRouterAPIKey?: string | null;
+  inceptionAPIKey?: string | null;
   pensarAPIKey?: string | null;
   pensarApiUrl?: string | null;
   accessToken?: string | null;
@@ -66,6 +67,7 @@ export function buildAuthConfig(cfg: {
     openAiAPIKey: cfg.openAiAPIKey ?? undefined,
     googleAPIKey: cfg.googleAPIKey ?? undefined,
     openRouterAPIKey: cfg.openRouterAPIKey ?? undefined,
+    inceptionAPIKey: cfg.inceptionAPIKey ?? undefined,
     pensarAPIKey: cfg.pensarAPIKey ?? undefined,
     pensarApiUrl: cfg.pensarApiUrl ?? undefined,
     accessToken: cfg.accessToken ?? undefined,

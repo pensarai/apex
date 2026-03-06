@@ -13,6 +13,7 @@ export interface Config {
   anthropicAPIKey?: string | null;
   googleAPIKey?: string | null;
   openRouterAPIKey?: string | null;
+  inceptionAPIKey?: string | null;
   bedrockAPIKey?: string | null;
   pensarAPIKey?: string | null;
   pensarApiUrl?: string | null;
@@ -84,6 +85,8 @@ export async function get(): Promise<Config> {
       process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? parsedConfig.googleAPIKey,
     openRouterAPIKey:
       process.env.OPENROUTER_API_KEY ?? parsedConfig.openRouterAPIKey,
+    inceptionAPIKey:
+      process.env.INCEPTION_API_KEY ?? parsedConfig.inceptionAPIKey,
     bedrockAPIKey: process.env.BEDROCK_API_KEY ?? parsedConfig.bedrockAPIKey,
     pensarAPIKey: process.env.PENSAR_API_KEY ?? parsedConfig.pensarAPIKey,
     pensarApiUrl: process.env.PENSAR_API_URL ?? parsedConfig.pensarApiUrl,
