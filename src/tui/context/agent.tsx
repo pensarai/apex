@@ -58,6 +58,9 @@ interface AgentContextValue {
   setThinking: (thinking: boolean) => void;
   isExecuting: boolean;
   setIsExecuting: (isExecuting: boolean) => void;
+  /** The agent's working directory (session rootPath), shown in footer. */
+  sessionCwd: string | null;
+  setSessionCwd: (cwd: string | null) => void;
 }
 
 const AgentContext = createContext<AgentContextValue | null>(null);
@@ -86,6 +89,7 @@ export function AgentProvider({ children }: AgentProviderProps) {
   const [hasExecuted, setHasExecuted] = useState<boolean>(false);
   const [thinking, setThinking] = useState<boolean>(false);
   const [isExecuting, setIsExecuting] = useState<boolean>(false);
+  const [sessionCwd, setSessionCwd] = useState<string | null>(null);
 
   // Wrapper that marks model as user-selected and persists to config.
   // Pass `persist = false` for programmatic/initialization calls so the
@@ -190,6 +194,8 @@ export function AgentProvider({ children }: AgentProviderProps) {
       setThinking,
       isExecuting,
       setIsExecuting,
+      sessionCwd,
+      setSessionCwd,
     }),
     [
       model,
@@ -199,6 +205,7 @@ export function AgentProvider({ children }: AgentProviderProps) {
       hasExecuted,
       thinking,
       isExecuting,
+      sessionCwd,
       addTokenUsage,
       resetTokenUsage,
     ],

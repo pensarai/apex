@@ -66,6 +66,7 @@ search with flags or a more specific directory if results are truncated.`,
       }
 
       const dir = directory || ".";
+      const cwd = ctx.session.rootPath;
       const userFlags = flags ? flags.trim().split(/\s+/) : [];
 
       // Add -r by default when the user hasn't specified it and we're targeting a directory
@@ -79,6 +80,7 @@ search with flags or a more specific directory if results are truncated.`,
 
       return new Promise((resolve) => {
         const child = spawn("grep", args, {
+          cwd,
           stdio: ["ignore", "pipe", "pipe"],
         });
 

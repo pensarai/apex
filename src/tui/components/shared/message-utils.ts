@@ -110,6 +110,10 @@ export function extractStreamableContent(
     if (typeof args.remediation === "string") text += "\n\n" + args.remediation;
     return text;
   }
+  // add_memory — stream the title + content as it arrives
+  if (typeof args.title === "string" && typeof args.content === "string") {
+    return `${args.title}\n${args.content}`;
+  }
   return null;
 }
 

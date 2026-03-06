@@ -1,7 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { writeFile, mkdir } from "fs/promises";
-import { dirname } from "path";
+import { dirname, resolve, isAbsolute } from "path";
 import { existsSync } from "fs";
 import type { ToolContext } from "./types";
 
@@ -43,10 +43,13 @@ Parent directories are created automatically if they don't exist.`,
       content,
       overwrite = false,
     }): Promise<CreateFileResult> => {
+      const resolved = isAbsolute(filePath)
+        ? filePath
+        : resolve(ctx.session.rootPath, filePath);
       if (ctx.sandbox) {
-        return executeSandboxCreate(ctx, filePath, content, overwrite);
+        return executeSandboxCreate(ctx, resolved, content, overwrite);
       }
-      return executeLocalCreate(filePath, content, overwrite);
+      return executeLocalCreate(resolved, content, overwrite);
     },
   });
 }

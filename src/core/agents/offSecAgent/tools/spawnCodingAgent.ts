@@ -30,6 +30,11 @@ Returns an array of results with the text output from each agent.`,
       tasks: z
         .array(
           z.object({
+            name: z
+              .string()
+              .describe(
+                "Short human-readable label for this agent shown in the UI (e.g. 'parseurl module', 'auth middleware')",
+              ),
             codebasePath: z
               .string()
               .describe("Root directory for this agent to work in"),
@@ -88,6 +93,7 @@ Returns an array of results with the text output from each agent.`,
               item.codebasePath,
               item.objective,
               item.index + 1,
+              item.name,
             )
               .then((output) => {
                 results.push({
@@ -143,6 +149,7 @@ async function runSingleCodingAgent(
   codebasePath: string,
   objective: string,
   agentIndex: number,
+  name: string,
 ): Promise<string> {
   // Dynamic import to break circular dependency
   const { CodeAgent } = await import("../../specialized/codeAgent/agent");
@@ -151,6 +158,7 @@ async function runSingleCodingAgent(
 
   ctx.subagentCallbacks?.onSubagentSpawn?.({
     subagentId,
+    name,
     input: { codebasePath, objective },
     status: "pending",
   });

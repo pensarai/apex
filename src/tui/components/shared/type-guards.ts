@@ -5,7 +5,11 @@
  * Eliminates `(m as any).status` casts throughout the codebase which agents love to use.
  */
 
-import type { DisplayMessage, ToolStatus } from "../agent-display";
+import type {
+  DisplayMessage,
+  ToolStatus,
+  SubagentLogEntry,
+} from "../agent-display";
 
 /**
  * Tool message with required tool-specific fields.
@@ -21,6 +25,7 @@ export interface ToolDisplayMessage {
   result?: unknown;
   status: ToolStatus;
   logs?: string[];
+  subagentLogs?: Record<string, SubagentLogEntry>;
 }
 
 /**

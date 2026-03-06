@@ -1,6 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { readFile, writeFile } from "fs/promises";
+import { resolve, isAbsolute } from "path";
 import type { ToolContext } from "./types";
 
 export const updateFileInputSchema = z.object({
@@ -55,16 +56,19 @@ operation fails with an error — double-check whitespace and indentation.`,
       newContent,
       replaceAll = false,
     }): Promise<UpdateFileResult> => {
+      const resolved = isAbsolute(filePath)
+        ? filePath
+        : resolve(ctx.session.rootPath, filePath);
       if (ctx.sandbox) {
         return executeSandboxUpdate(
           ctx,
-          filePath,
+          resolved,
           oldContent,
           newContent,
           replaceAll,
         );
       }
-      return executeLocalUpdate(filePath, oldContent, newContent, replaceAll);
+      return executeLocalUpdate(resolved, oldContent, newContent, replaceAll);
     },
   });
 }
