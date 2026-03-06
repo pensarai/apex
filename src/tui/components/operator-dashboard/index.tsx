@@ -143,7 +143,6 @@ export default function OperatorDashboard({
   // Display options
   const [verboseMode, setVerboseMode] = useState(false);
   const [expandedLogs, setExpandedLogs] = useState(false);
-  const [showTokenTracker, setShowTokenTracker] = useState(false);
   const tokenUsageRef = useRef(tokenUsage);
 
   useEffect(() => {
@@ -869,23 +868,6 @@ export default function OperatorDashboard({
       return;
     }
 
-    // Cmd/Super+Shift+. (plus Ctrl+T fallback for terminal environments)
-    const isPrimaryTokenToggle =
-      (key.super || key.meta || key.ctrl) &&
-      key.shift &&
-      (key.name === "." || key.raw === ">");
-    const isFallbackTokenToggle =
-      key.shift &&
-      (key.name === "." || key.raw === ">") &&
-      inputValue.trim().length === 0;
-    const isCtrlFallbackToggle = key.ctrl && key.name === "t";
-
-    if (isPrimaryTokenToggle || isFallbackTokenToggle || isCtrlFallbackToggle) {
-      key.preventDefault?.();
-      setShowTokenTracker((show) => !show);
-      return;
-    }
-
     // Shift+Tab - toggle command approval on/off
     if (key.name === "tab" && key.shift) {
       toggleApproval();
@@ -989,8 +971,6 @@ export default function OperatorDashboard({
         </box>
       )}
 
-      {showTokenTracker && <TokenTrackerPanel tokenUsage={tokenUsage} />}
-
       {/* Message display */}
       <MessageList
         messages={messages}
@@ -1029,47 +1009,6 @@ export default function OperatorDashboard({
         enableCommands={true}
         onCommandExecute={handleCommandExecute}
       />
-    </box>
-  );
-}
-
-function TokenTrackerPanel({
-  tokenUsage,
-}: {
-  tokenUsage: {
-    inputTokens: number;
-    outputTokens: number;
-    totalTokens: number;
-  };
-}) {
-  const { colors } = useTheme();
-
-  return (
-    <box
-      marginLeft={2}
-      marginRight={2}
-      marginBottom={1}
-      paddingLeft={2}
-      paddingRight={2}
-      paddingTop={1}
-      paddingBottom={1}
-      border
-      borderColor={colors.primary}
-      backgroundColor={colors.backgroundElement}
-      flexDirection="column"
-      gap={1}
-    >
-      <text fg={colors.primary}>TOKEN TRACKER (OPERATOR SESSION)</text>
-      <text fg={colors.text}>
-        Input tokens: {tokenUsage.inputTokens.toLocaleString()}
-      </text>
-      <text fg={colors.text}>
-        Output tokens: {tokenUsage.outputTokens.toLocaleString()}
-      </text>
-      <text fg={colors.text}>
-        Total tokens: {tokenUsage.totalTokens.toLocaleString()}
-      </text>
-      <text fg={colors.textMuted}>Toggle with Cmd/Super+Shift+. or Ctrl+T</text>
     </box>
   );
 }

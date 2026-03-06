@@ -4,7 +4,6 @@ import { ProgressBar, SpinnerDots } from "./sprites";
 import { useSession } from "../context/session";
 import { useRoute } from "../context/route";
 import { useInput } from "../context/input";
-import { useEffect } from "react";
 import { useTheme } from "../theme";
 
 interface FooterProps {
@@ -27,7 +26,7 @@ export default function Footer({
 }: FooterProps) {
   cwd = "~" + cwd.split(os.homedir()).pop() || "";
   const { colors } = useTheme();
-  const { model, tokenUsage, hasExecuted, thinking, isExecuting } = useAgent();
+  const { model, isExecuting } = useAgent();
   const session = useSession();
   const route = useRoute();
   const { isInputEmpty } = useInput();
@@ -80,20 +79,20 @@ export default function Footer({
 
 export function AgentStatus() {
   const { colors } = useTheme();
-  const { tokenUsage, hasExecuted, thinking, isExecuting } = useAgent();
+  const route = useRoute();
+  const { tokenUsage, hasExecuted, thinking } = useAgent();
 
-  useEffect(() => {
-    console.log(tokenUsage);
-  }, [tokenUsage]);
+  const tokenLabel =
+    route.data.type === "operator"
+      ? `${formatTokenCount(tokenUsage.outputTokens)}↑ ${formatTokenCount(tokenUsage.inputTokens)}↓`
+      : `↓${formatTokenCount(tokenUsage.inputTokens)} ↑${formatTokenCount(tokenUsage.outputTokens)} Σ${formatTokenCount(tokenUsage.totalTokens)}`;
 
   return (
     <box flexDirection="row" gap={1}>
       {hasExecuted && (
         <>
           <box border={["right"]} borderColor={colors.primary} />
-          <text
-            fg={colors.text}
-          >{`↓${formatTokenCount(tokenUsage.inputTokens)} ↑${formatTokenCount(tokenUsage.outputTokens)} Σ${formatTokenCount(tokenUsage.totalTokens)}`}</text>
+          <text fg={colors.text}>{tokenLabel}</text>
         </>
       )}
       {thinking && (
