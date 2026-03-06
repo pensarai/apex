@@ -209,6 +209,33 @@ export function getResultSummary(
         break;
       }
 
+      case "list_files": {
+        if (typeof result === "object" && result !== null) {
+          const obj = result as Record<string, unknown>;
+          if (obj.success === false) {
+            return {
+              text: String(obj.error || "Failed to list files").slice(0, 120),
+              isError: true,
+            };
+          }
+          const files = Array.isArray(obj.files) ? (obj.files as string[]) : [];
+          const total = Number(obj.totalFound || obj.count || files.length);
+          const preview = files.slice(0, 15).join("\n");
+          const suffix =
+            files.length < total
+              ? `\n… (${total} total)`
+              : files.length > 15
+                ? `\n… (${files.length} files)`
+                : "";
+          return {
+            text: `${total} file${total !== 1 ? "s" : ""}`,
+            isError: false,
+            fullText: preview + suffix,
+          };
+        }
+        break;
+      }
+
       // Command execution — show exit code + stdout/stderr
       case "execute_command": {
         if (typeof result === "object" && result !== null) {
@@ -304,7 +331,27 @@ export function getResultSummary(
         }
         return { text: "Scan complete", isError: false };
       }
-      case "document_finding": {
+      case "document_finding":
+      case "document_vulnerability": {
+        if (typeof result === "object" && result !== null) {
+          const obj = result as Record<string, unknown>;
+          if (obj.success === false) {
+            const msg = String(obj.message || obj.error || "Failed").slice(
+              0,
+              120,
+            );
+            return { text: msg, isError: !obj.duplicate };
+          }
+          const finding =
+            typeof obj.finding === "object" && obj.finding !== null
+              ? (obj.finding as Record<string, unknown>)
+              : null;
+          const title = String(
+            finding?.title || args?.title || "Finding documented",
+          );
+          const severity = finding?.severity ? `[${finding.severity}] ` : "";
+          return { text: `${severity}${title}`, isError: false };
+        }
         return { text: "Finding documented", isError: false };
       }
       case "analyze_scan": {

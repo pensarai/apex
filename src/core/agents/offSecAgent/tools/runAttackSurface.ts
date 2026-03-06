@@ -57,6 +57,16 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
         ? {
             onTextDelta: (d: { type: "text-delta"; [k: string]: unknown }) =>
               cbs.onTextDelta?.({ ...d, subagentId } as never),
+            onToolCallStreaming: (d: {
+              toolCallId: string;
+              toolName: string;
+              [k: string]: unknown;
+            }) => cbs.onToolCallStreaming?.({ ...d, subagentId } as never),
+            onToolCallDelta: (d: {
+              toolCallId: string;
+              argsTextDelta: string;
+              [k: string]: unknown;
+            }) => cbs.onToolCallDelta?.({ ...d, subagentId } as never),
             onToolCall: (d: { type: "tool-call"; [k: string]: unknown }) =>
               cbs.onToolCall?.({ ...d, subagentId } as never),
             onToolResult: (d: { type: "tool-result"; [k: string]: unknown }) =>

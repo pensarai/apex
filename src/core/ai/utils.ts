@@ -459,12 +459,22 @@ export async function consumeStream(
   stream: StreamTextResult<ToolSet, never>,
   {
     onTextDelta,
+    onToolCallStreaming,
+    onToolCallDelta,
     onToolCall,
     onToolResult,
   }: {
     onTextDelta?: (
       delta: Extract<TextStreamPart<ToolSet>, { type: "text-delta" }>,
     ) => void;
+    onToolCallStreaming?: (delta: {
+      toolCallId: string;
+      toolName: string;
+    }) => void;
+    onToolCallDelta?: (delta: {
+      toolCallId: string;
+      argsTextDelta: string;
+    }) => void;
     onToolCall?: (
       delta: Extract<TextStreamPart<ToolSet>, { type: "tool-call" }>,
     ) => void;
@@ -476,6 +486,10 @@ export async function consumeStream(
   for await (const delta of stream.fullStream) {
     if (delta.type === "text-delta") {
       onTextDelta?.(delta);
+    } else if (delta.type === "tool-input-start") {
+      onToolCallStreaming?.({ toolCallId: delta.id, toolName: delta.toolName });
+    } else if (delta.type === "tool-input-delta") {
+      onToolCallDelta?.({ toolCallId: delta.id, argsTextDelta: delta.delta });
     } else if (delta.type === "tool-call") {
       onToolCall?.(delta);
     } else if (delta.type === "tool-result") {

@@ -12,6 +12,8 @@ export {
   getStableMessageKey,
   getMessageContent,
   formatResult,
+  tryParsePartialJson,
+  extractStreamableContent,
 } from "./message-utils";
 
 // Type guards

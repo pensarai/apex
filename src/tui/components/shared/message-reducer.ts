@@ -202,7 +202,9 @@ export function useMessageState(initialMessages?: DisplayMessage[]) {
   const hasPendingTool = useMemo(() => {
     const recentMessages = state.messages.slice(-5);
     return recentMessages.some(
-      (m) => isToolMessage(m) && m.status === "pending",
+      (m) =>
+        isToolMessage(m) &&
+        (m.status === "pending" || m.status === "streaming"),
     );
   }, [state.messages]);
 

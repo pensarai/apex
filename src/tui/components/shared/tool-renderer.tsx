@@ -19,6 +19,10 @@ const TOOLS_WITH_LOG_WINDOW = new Set([
   "spawn_coding_agent",
   "spawn_pentest_swarm",
   "delegate_to_auth_subagent",
+  "create_file",
+  "create_poc",
+  "update_file",
+  "document_vulnerability",
 ]);
 
 interface ToolRendererProps {
@@ -43,7 +47,8 @@ export const ToolRenderer = memo(function ToolRenderer({
     return null;
   }
 
-  const isPending = message.status === "pending";
+  const isStreaming = message.status === "streaming";
+  const isPending = message.status === "pending" || isStreaming;
   const isCompleted = message.status === "completed";
   const isError = message.status === "error";
   const { toolName, args, result, logs } = message;

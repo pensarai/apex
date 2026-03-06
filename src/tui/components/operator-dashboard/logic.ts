@@ -1,6 +1,6 @@
 import type { AutocompleteOption } from "../shared/prompt-input";
 import type { OperatorSessionState } from "../../../core/operator";
-import type { SessionInfo } from "../../../core/session";
+import { BASE_SYSTEM_PROMPT } from "../../../core/agents/offSecAgent/prompt";
 
 // ---------------------------------------------------------------------------
 // Autocomplete option filtering for operator mode
@@ -170,32 +170,18 @@ export function resolveAbortAction(
 // ---------------------------------------------------------------------------
 
 export function buildOperatorSystemPrompt(
-  session: SessionInfo,
+  target: string | undefined,
   operatorState: OperatorSessionState,
 ): string {
-  const target = session.targets[0] || "unknown";
+  return `${BASE_SYSTEM_PROMPT}
 
-  return `You are an offensive security agent operating in interactive operator mode.
+# Operator Mode
 
-Target: ${target}
+You are operating in interactive operator mode. The human operator will guide your actions through directives.
+
+Target: ${target || "unknown"}
 Stage: ${operatorState.currentStage}
-Command approval: ${operatorState.requireApproval ? "enabled — the operator will approve each tool call" : "disabled — tool calls execute automatically"}
-
-You are tasked with performing security testing on the target system. The human operator
-will guide your actions through directives. Follow their instructions carefully.
-
-Guidelines:
-- Be thorough and methodical in your testing approach
-- Document all findings clearly
-- Respect scope constraints
-- Report any interesting observations, even if not directly exploitable
-- When you discover credentials, endpoints, or vulnerabilities, note them clearly
-
-Session paths:
-- Findings: ${session.findingsPath}
-- POCs: ${session.pocsPath}
-- Logs: ${session.logsPath}
-- Scratchpad: ${session.scratchpadPath}`;
+Command approval: ${operatorState.requireApproval ? "enabled — the operator will approve each tool call" : "disabled — tool calls execute automatically"}`;
 }
 
 // ---------------------------------------------------------------------------
