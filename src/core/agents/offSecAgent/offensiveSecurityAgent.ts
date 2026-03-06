@@ -15,7 +15,7 @@ import type {
 import { createAllTools, EMAIL_TOOL_NAMES_ACTIVE } from "./tools";
 import { createResponseTool, RESPONSE_TOOL_NAME } from "./tools/response";
 import { PersistentShell } from "./tools/persistentShell";
-import { DEFAULT_SYSTEM_PROMPT } from "./prompt";
+import { BASE_SYSTEM_PROMPT, buildSessionWorkspaceSection } from "./prompt";
 import type { ApprovalGate } from "../../operator";
 import { ApprovalDeniedError } from "../../operator";
 import { create as createSession, type SessionInfo } from "../../session";
@@ -95,10 +95,7 @@ export class OffensiveSecurityAgent<TResult = void> {
         onNameGenerated: input.onNameGenerated,
       });
     }
-    const system = input.buildSystem
-      ? input.buildSystem(session)
-      : (input.system ?? DEFAULT_SYSTEM_PROMPT);
-    return new OffensiveSecurityAgent({ ...input, session, system });
+    return new OffensiveSecurityAgent({ ...input, session });
   }
 
   /** The session this agent is operating within. */
@@ -114,7 +111,9 @@ export class OffensiveSecurityAgent<TResult = void> {
     // Shell survives command cancellation; only disposed in consume() after the
     // stream ends, or when the agent is fully killed.
     if (!input.sandbox) {
-      this.persistentShell = new PersistentShell();
+      this.persistentShell = new PersistentShell({
+        cwd: input.session.rootPath,
+      });
       if (input.commandCancelHandle) {
         const shell = this.persistentShell;
         input.commandCancelHandle.cancel = () => shell.cancelCurrentCommand();
@@ -218,7 +217,9 @@ export class OffensiveSecurityAgent<TResult = void> {
     // -- Stream ---------------------------------------------------------------
     this.streamResult = streamResponse({
       prompt: input.prompt,
-      system: input.system ?? DEFAULT_SYSTEM_PROMPT,
+      system:
+        (input.system ?? BASE_SYSTEM_PROMPT) +
+        buildSessionWorkspaceSection(input.session),
       model: input.model,
       messages: input.messages,
       tools,
@@ -283,6 +284,8 @@ export class OffensiveSecurityAgent<TResult = void> {
   async consume(callbacks: ConsumeCallbacks = {}): Promise<TResult> {
     const {
       onTextDelta,
+      onToolCallStreaming,
+      onToolCallDelta,
       onToolCall,
       onToolResult,
       onError,
@@ -297,6 +300,24 @@ export class OffensiveSecurityAgent<TResult = void> {
           onTextDelta?.(chunk);
           subagentCallbacks?.onTextDelta?.({ ...chunk, subagentId: sid });
           break;
+        case "tool-input-start": {
+          const delta = { toolCallId: chunk.id, toolName: chunk.toolName };
+          onToolCallStreaming?.(delta);
+          subagentCallbacks?.onToolCallStreaming?.({
+            ...delta,
+            subagentId: sid,
+          });
+          break;
+        }
+        case "tool-input-delta": {
+          const delta = { toolCallId: chunk.id, argsTextDelta: chunk.delta };
+          onToolCallDelta?.(delta);
+          subagentCallbacks?.onToolCallDelta?.({
+            ...delta,
+            subagentId: sid,
+          });
+          break;
+        }
         case "tool-call":
           onToolCall?.(chunk);
           subagentCallbacks?.onToolCall?.({ ...chunk, subagentId: sid });

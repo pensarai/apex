@@ -35,6 +35,10 @@ import { useTheme } from "../../theme";
 import type { DisplayMessage } from "../agent-display";
 import { isToolMessage } from "../shared/type-guards";
 import { getToolSummary } from "../shared/tool-registry";
+import {
+  tryParsePartialJson,
+  extractStreamableContent,
+} from "../shared/message-utils";
 import type { OperatorMode, PendingApproval } from "../../../core/operator";
 import { slugify } from "../../../core/skills";
 import {
@@ -308,9 +312,18 @@ export default function OperatorDashboard({
     });
   }, []);
 
-  const addToolCall = useCallback(
-    (toolCallId: string, toolName: string, args?: Record<string, unknown>) => {
+  // Ref to accumulate partial tool args JSON per toolCallId
+  const toolArgsDeltaRef = useRef<
+    Map<string, { toolName: string; accumulated: string }>
+  >(new Map());
+
+  const addStreamingToolCall = useCallback(
+    (toolCallId: string, toolName: string) => {
       textRef.current = "";
+      toolArgsDeltaRef.current.set(toolCallId, {
+        toolName,
+        accumulated: "",
+      });
       setMessages((prev) => [
         ...prev,
         {
@@ -319,10 +332,73 @@ export default function OperatorDashboard({
           createdAt: new Date(),
           toolCallId,
           toolName,
-          args,
-          status: "pending" as const,
+          args: {},
+          status: "streaming" as const,
         },
       ]);
+    },
+    [],
+  );
+
+  const appendToolCallDelta = useCallback(
+    (toolCallId: string, argsTextDelta: string) => {
+      const entry = toolArgsDeltaRef.current.get(toolCallId);
+      const accumulated = (entry?.accumulated ?? "") + argsTextDelta;
+      toolArgsDeltaRef.current.set(toolCallId, {
+        toolName: entry?.toolName ?? "",
+        accumulated,
+      });
+
+      const parsed = tryParsePartialJson(accumulated);
+      if (!parsed) return;
+
+      const contentText = extractStreamableContent(parsed);
+      const logs = contentText ? contentText.split("\n") : undefined;
+
+      setMessages((msgs) => {
+        const idx = msgs.findIndex(
+          (m) => isToolMessage(m) && m.toolCallId === toolCallId,
+        );
+        if (idx === -1) return msgs;
+        const updated = [...msgs];
+        updated[idx] = { ...updated[idx], args: parsed, ...(logs && { logs }) };
+        return updated;
+      });
+    },
+    [],
+  );
+
+  const addToolCall = useCallback(
+    (toolCallId: string, toolName: string, args?: Record<string, unknown>) => {
+      textRef.current = "";
+      toolArgsDeltaRef.current.delete(toolCallId);
+      setMessages((prev) => {
+        const idx = prev.findIndex(
+          (m) => isToolMessage(m) && m.toolCallId === toolCallId,
+        );
+        if (idx !== -1) {
+          const updated = [...prev];
+          updated[idx] = {
+            ...updated[idx],
+            args,
+            logs: undefined,
+            status: "pending" as const,
+          };
+          return updated;
+        }
+        return [
+          ...prev,
+          {
+            role: "tool" as const,
+            content: "",
+            createdAt: new Date(),
+            toolCallId,
+            toolName,
+            args,
+            status: "pending" as const,
+          },
+        ];
+      });
     },
     [],
   );
@@ -358,7 +434,9 @@ export default function OperatorDashboard({
 
     setMessages((prev) => {
       const idx = prev.findLastIndex(
-        (m) => isToolMessage(m) && m.status === "pending",
+        (m) =>
+          isToolMessage(m) &&
+          (m.status === "pending" || m.status === "streaming"),
       );
       if (idx === -1) return prev;
 
@@ -415,7 +493,9 @@ export default function OperatorDashboard({
   const appendLogToActiveTool = useCallback((line: string) => {
     setMessages((prev) => {
       const idx = prev.findLastIndex(
-        (m) => isToolMessage(m) && m.status === "pending",
+        (m) =>
+          isToolMessage(m) &&
+          (m.status === "pending" || m.status === "streaming"),
       );
       if (idx === -1) return prev;
 
@@ -522,6 +602,13 @@ export default function OperatorDashboard({
           setThinking(false);
           appendText(d.text);
         },
+        onToolCallStreaming: (d) => {
+          setThinking(false);
+          addStreamingToolCall(d.toolCallId, d.toolName);
+        },
+        onToolCallDelta: (d) => {
+          appendToolCallDelta(d.toolCallId, d.argsTextDelta);
+        },
         onToolCall: (d) => {
           setThinking(false);
           commandCancelledRef.current = false;
@@ -605,7 +692,10 @@ export default function OperatorDashboard({
         if (session) {
           agentResult = await runOffensiveSecurityAgent({
             ...commonInput,
-            system: buildOperatorSystemPrompt(session, operatorState),
+            system: buildOperatorSystemPrompt(
+              initialConfig?.target,
+              operatorState,
+            ),
             session,
           });
         } else {
@@ -622,8 +712,10 @@ export default function OperatorDashboard({
           };
           agentResult = await runOffensiveSecurityAgent({
             ...commonInput,
-            buildSystem: (s: SessionInfo) =>
-              buildOperatorSystemPrompt(s, operatorState),
+            system: buildOperatorSystemPrompt(
+              initialConfig?.target,
+              operatorState,
+            ),
             sessionConfig,
             onNameGenerated: (name: string) => {
               pendingNameRef.current = name;
@@ -681,6 +773,8 @@ export default function OperatorDashboard({
       operatorState,
       addTokenUsage,
       appendText,
+      addStreamingToolCall,
+      appendToolCallDelta,
       addToolCall,
       updateToolResult,
       flushCommandOutput,
@@ -831,7 +925,7 @@ export default function OperatorDashboard({
 
     setMessages((prev) => {
       const updated = prev.map((m) =>
-        isToolMessage(m) && m.status === "pending"
+        isToolMessage(m) && (m.status === "pending" || m.status === "streaming")
           ? { ...m, status: "error" as const, result: "Cancelled by user" }
           : m,
       );

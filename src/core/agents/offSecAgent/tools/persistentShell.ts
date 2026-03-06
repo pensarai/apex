@@ -22,12 +22,17 @@ export class PersistentShell {
   private proc: ChildProcess | null = null;
   private alive = false;
   private disposed = false;
+  private readonly cwd?: string;
 
   /** Allows cancelCurrentCommand() to force-resolve the running execute(). */
   private pendingCancel: ((result: ShellExecuteResult) => void) | null = null;
   /** Snapshot accessors set by execute(), read by cancelCurrentCommand(). */
   private pendingStdout: (() => string) | null = null;
   private pendingStderr: (() => string) | null = null;
+
+  constructor(opts?: { cwd?: string }) {
+    this.cwd = opts?.cwd;
+  }
 
   private spawn(): void {
     if (this.disposed) return;
@@ -37,6 +42,7 @@ export class PersistentShell {
 
     this.proc = spawn(shell, args, {
       stdio: ["pipe", "pipe", "pipe"],
+      cwd: this.cwd,
       // New session so child has no controlling terminal — prevents
       // interactive programs from writing prompts to the TUI's TTY.
       detached: process.platform !== "win32",

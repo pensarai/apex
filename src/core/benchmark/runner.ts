@@ -309,6 +309,10 @@ export async function runSingleBenchmark(
         abortSignal: controller.signal,
         callbacks: {
           onTextDelta: (d) => process.stdout.write(d.text),
+          onToolCallStreaming: (d) =>
+            console.log(`[${branch}] -> ${d.toolName} (streaming)`),
+          onToolCallDelta: (d) =>
+            console.log(`[${branch}] -> ${d.toolCallId} delta`),
           onToolCall: (d) => console.log(`[${branch}] -> ${d.toolName}`),
           onToolResult: (d) => console.log(`[${branch}] <- ${d.toolName} done`),
           onError: (e) => console.error(`[${branch}] Error:`, e),
@@ -317,6 +321,14 @@ export async function runSingleBenchmark(
               console.log(`[${branch}] [${subagentId}] spawned`),
             onSubagentComplete: ({ subagentId, status }) =>
               console.log(`[${branch}] [${subagentId}] ${status}`),
+            onToolCallStreaming: (d) =>
+              console.log(
+                `[${branch}] [${d.subagentId}] -> ${d.toolName} (streaming)`,
+              ),
+            onToolCallDelta: (d) =>
+              console.log(
+                `[${branch}] [${d.subagentId}] -> ${d.toolCallId} delta`,
+              ),
             onToolCall: (d) =>
               console.log(`[${branch}] [${d.subagentId}] -> ${d.toolName}`),
             onToolResult: (d) =>

@@ -55,8 +55,8 @@ export type Finding = z.infer<typeof ApexFindingObject>;
  * @typeParam TResult - The type returned by `consume()`. Defaults to `void`.
  */
 export type OffensiveSecurityAgentInput<TResult = void> = {
-  /** System prompt defining agent persona and behavior */
-  system: string;
+  /** System prompt defining agent persona and behavior. Defaults to BASE_SYSTEM_PROMPT when omitted. */
+  system?: string;
 
   /** Initial user prompt that kicks off the agent */
   prompt: string;
@@ -242,6 +242,16 @@ export type ConsumeCallbacks = {
   onTextDelta?: (
     delta: Extract<TextStreamPart<ToolSet>, { type: "text-delta" }>,
   ) => void;
+  /** Fired as soon as the model starts generating a tool call (tool name is known, args still streaming). */
+  onToolCallStreaming?: (delta: {
+    toolCallId: string;
+    toolName: string;
+  }) => void;
+  /** Fired as tool call arguments are being generated (partial JSON delta). */
+  onToolCallDelta?: (delta: {
+    toolCallId: string;
+    argsTextDelta: string;
+  }) => void;
   onToolCall?: (
     delta: Extract<TextStreamPart<ToolSet>, { type: "tool-call" }>,
   ) => void;
@@ -282,6 +292,16 @@ export type SubagentConsumeCallbacks = {
       subagentId?: string;
     },
   ) => void;
+  onToolCallStreaming?: (
+    delta: { toolCallId: string; toolName: string } & {
+      subagentId?: string;
+    },
+  ) => void;
+  onToolCallDelta?: (
+    delta: { toolCallId: string; argsTextDelta: string } & {
+      subagentId?: string;
+    },
+  ) => void;
   onToolCall?: (
     delta: Extract<TextStreamPart<ToolSet>, { type: "tool-call" }> & {
       subagentId?: string;
@@ -313,17 +333,8 @@ export type CreateAgentInput<TResult = void> = Omit<
   session?: SessionInfo;
   /** Session config used when auto-creating a session (ignored when `session` is provided). */
   sessionConfig?: SessionConfig;
-  /**
-   * Static system prompt. Used when `session` is provided.
-   * When omitted and `buildSystem` is set, the factory builds the prompt
-   * after creating the session.
-   */
+  /** System prompt override. When omitted, BASE_SYSTEM_PROMPT is used. The session workspace section is always appended. */
   system?: string;
-  /**
-   * Called with the created/resolved session to build the system prompt.
-   * Takes precedence over `system` when a session is auto-created.
-   */
-  buildSystem?: (session: SessionInfo) => string;
   /** Called when the async AI name generation resolves with a name. */
   onNameGenerated?: (name: string) => void;
 };
