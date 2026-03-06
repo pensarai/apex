@@ -28,6 +28,7 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
     groupedSessions,
     visualOrderSessions,
     loading,
+    searchTerm,
     setSearchTerm,
     deleteSession: hookDeleteSession,
   } = useSessionsList();
@@ -99,11 +100,11 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
       return;
     }
 
-    // O - Open session in operator mode
     if (
       (key.name === "o" || key.name === "O") &&
       !key.ctrl &&
       !key.meta &&
+      !searchTerm &&
       visualOrderSessions.length > 0
     ) {
       const currentSelection = visualOrderSessions[selectedIndex];
@@ -143,8 +144,7 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
       return;
     }
 
-    // R - Open report
-    if (key.name === "r" && visualOrderSessions.length > 0) {
+    if (key.name === "r" && !searchTerm && visualOrderSessions.length > 0) {
       const currentSelection = visualOrderSessions[selectedIndex];
       if (!currentSelection) return;
       openReport(currentSelection.id);
