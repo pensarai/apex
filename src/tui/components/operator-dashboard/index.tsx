@@ -707,6 +707,9 @@ export default function OperatorDashboard({
         commandCancelHandle: cancelHandleRef.current,
         onStepFinish,
         callbacks,
+        onSessionReady: (s: { rootPath: string }) => {
+          setSessionCwd(s.rootPath);
+        },
       };
 
       try {
