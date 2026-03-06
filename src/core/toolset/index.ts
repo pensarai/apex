@@ -326,6 +326,33 @@ export const ALL_TOOLS: ToolDefinition[] = [
     category: "utility",
     defaultEnabled: true,
   },
+  {
+    id: "add_memory",
+    name: "Add Memory",
+    description: "Save to memory",
+    detail:
+      "Save a piece of knowledge to persistent memory. Memories survive across sessions and can store reusable techniques, target notes, credential patterns, useful payloads, or any information worth remembering.",
+    category: "utility",
+    defaultEnabled: true,
+  },
+  {
+    id: "list_memories",
+    name: "List Memories",
+    description: "Browse saved memories",
+    detail:
+      "List all saved memories with optional tag filtering. Returns summaries sorted by most recent first. Use the returned id with Get Memory to retrieve full content.",
+    category: "utility",
+    defaultEnabled: true,
+  },
+  {
+    id: "get_memory",
+    name: "Get Memory",
+    description: "Retrieve a memory",
+    detail:
+      "Retrieve the full content of a saved memory by its id. Use List Memories first to discover available memory ids.",
+    category: "utility",
+    defaultEnabled: true,
+  },
 ];
 
 // ============================================================================
