@@ -36,6 +36,10 @@ export function executeCommand(ctx: ToolContext) {
   return tool({
     description: `Execute a shell command for penetration testing activities.
 
+The shell is persistent — environment variables, working directory (cd), and
+background processes survive across calls. You do NOT need nohup/& tricks to
+keep processes alive between calls; just background them normally with &.
+
 COMMON COMMANDS FOR BLACK BOX TESTING:
 
 RECONNAISSANCE:
@@ -76,74 +80,140 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
         };
       }
 
-      const rawResult = await new Promise<{
+      // Convert timeout to seconds for sandbox/persistentShell (they use seconds)
+      const timeoutSeconds = Math.ceil(timeout / 1000);
+
+      let rawResult: {
         success: boolean;
         stdout: string;
         stderr: string;
         error: string;
-      }>((resolve) => {
-        const shellCmd = process.platform === "win32" ? "cmd" : "bash";
-        const shellArgs =
-          process.platform === "win32" ? ["/c", command] : ["-lc", command];
+      };
 
-        const child = spawn(shellCmd, shellArgs, {
-          stdio: ["ignore", "pipe", "pipe"],
-        });
-
-        let stdout = "";
-        let stderr = "";
-        let killed = false;
-
-        const timeoutTimer = setTimeout(() => {
-          killed = true;
-          child.kill("SIGTERM");
-        }, timeout);
-
-        child.stdout.on("data", (data) => {
-          stdout += data.toString();
-        });
-
-        child.stderr.on("data", (data) => {
-          stderr += data.toString();
-        });
-
-        child.on("close", (code) => {
-          clearTimeout(timeoutTimer);
-          resolve({
-            success: code === 0 && !killed,
-            stdout: stdout || "(no output)",
-            stderr: stderr || "",
-            error: killed
-              ? "Command timed out"
-              : code !== 0
-                ? `Exit code: ${code}`
-                : "",
-          });
-        });
-
-        child.on("error", (err) => {
-          clearTimeout(timeoutTimer);
-          resolve({
+      // Sandbox mode: route execution through the sandbox
+      if (ctx.sandbox) {
+        try {
+          const ssmOpts: { timeout?: number } = {};
+          if (timeoutSeconds > 0) {
+            ssmOpts.timeout = timeoutSeconds;
+          }
+          const result = await ctx.sandbox.execute(command, ssmOpts);
+          rawResult = {
+            success: result.success,
+            stdout: result.stdout || "(no output)",
+            stderr: result.stderr || "",
+            error: !result.success ? result.stderr || "Command failed" : "",
+          };
+        } catch (error: unknown) {
+          const msg = error instanceof Error ? error.message : String(error);
+          rawResult = {
             success: false,
-            error: err.message,
-            stdout,
-            stderr,
-          });
-        });
+            error: msg,
+            stdout: "",
+            stderr: msg,
+          };
+        }
+      }
+      // Local mode: use the persistent shell
+      else if (ctx.persistentShell) {
+        try {
+          const result = await ctx.persistentShell.execute(
+            command,
+            timeoutSeconds,
+            ctx.onCommandOutput,
+          );
+          rawResult = {
+            success: result.exitCode === 0,
+            stdout: result.stdout || "(no output)",
+            stderr: result.stderr || "",
+            error:
+              result.exitCode === 124
+                ? "Command timed out"
+                : result.exitCode !== 0
+                  ? `Exit code: ${result.exitCode}`
+                  : "",
+          };
+        } catch (error: unknown) {
+          const msg = error instanceof Error ? error.message : String(error);
+          rawResult = {
+            success: false,
+            error: msg,
+            stdout: "",
+            stderr: msg,
+          };
+        }
+      }
+      // Fallback: spawn a fresh process (no persistent state)
+      else {
+        rawResult = await new Promise<{
+          success: boolean;
+          stdout: string;
+          stderr: string;
+          error: string;
+        }>((resolve) => {
+          const shellCmd = process.platform === "win32" ? "cmd" : "bash";
+          const shellArgs =
+            process.platform === "win32" ? ["/c", command] : ["-lc", command];
 
-        if (ctx.abortSignal) {
-          const abortHandler = () => {
+          const child = spawn(shellCmd, shellArgs, {
+            stdio: ["ignore", "pipe", "pipe"],
+          });
+
+          let stdout = "";
+          let stderr = "";
+          let killed = false;
+
+          const timeoutTimer = setTimeout(() => {
             killed = true;
             child.kill("SIGTERM");
-          };
-          ctx.abortSignal.addEventListener("abort", abortHandler, {
-            once: true,
+          }, timeout);
+
+          child.stdout.on("data", (data) => {
+            stdout += data.toString();
           });
-          child.on("close", () => {
-            ctx.abortSignal!.removeEventListener("abort", abortHandler);
+
+          child.stderr.on("data", (data) => {
+            stderr += data.toString();
           });
-        }
-      });
+
+          child.on("close", (code) => {
+            clearTimeout(timeoutTimer);
+            resolve({
+              success: code === 0 && !killed,
+              stdout: stdout || "(no output)",
+              stderr: stderr || "",
+              error: killed
+                ? "Command timed out"
+                : code !== 0
+                  ? `Exit code: ${code}`
+                  : "",
+            });
+          });
+
+          child.on("error", (err) => {
+            clearTimeout(timeoutTimer);
+            resolve({
+              success: false,
+              error: err.message,
+              stdout,
+              stderr,
+            });
+          });
+
+          if (ctx.abortSignal) {
+            const abortHandler = () => {
+              killed = true;
+              child.kill("SIGTERM");
+            };
+            ctx.abortSignal.addEventListener("abort", abortHandler, {
+              once: true,
+            });
+            child.on("close", () => {
+              ctx.abortSignal!.removeEventListener("abort", abortHandler);
+            });
+          }
+        });
+      }
 
       const threshold = OUTPUT_THRESHOLDS.EXECUTE_COMMAND;
       if (rawResult.stdout.length > threshold) {
