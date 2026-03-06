@@ -23,11 +23,15 @@ export interface RunAgentResult {
  * session that was auto-created by the factory.
  */
 export async function runOffensiveSecurityAgent(
-  input: OffensiveSecurityAgentInput | CreateAgentInput,
+  input: (OffensiveSecurityAgentInput | CreateAgentInput) & {
+    onSessionReady?: (session: SessionInfo) => void;
+  },
 ): Promise<RunAgentResult> {
   const agent = input.session
     ? new OffensiveSecurityAgent(input as OffensiveSecurityAgentInput)
     : await OffensiveSecurityAgent.create(input as CreateAgentInput);
+
+  input.onSessionReady?.(agent.session);
 
   await agent.consume({
     onTextDelta: (d) => input.callbacks?.onTextDelta?.(d),

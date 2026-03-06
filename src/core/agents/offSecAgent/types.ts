@@ -271,10 +271,13 @@ export type ConsumeCallbacks = {
 export type SubagentConsumeCallbacks = {
   onSubagentSpawn?: ({
     subagentId,
+    name,
     input,
     status,
   }: {
     subagentId: string;
+    /** Short human-readable label for this sub-agent (e.g. truncated objective). */
+    name?: string;
     input: unknown;
     status: "pending" | "completed" | "failed";
   }) => void;

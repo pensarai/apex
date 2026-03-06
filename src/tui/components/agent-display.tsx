@@ -30,6 +30,15 @@ export type Subagent = {
 export type ToolStatus = "streaming" | "pending" | "completed" | "error";
 
 /**
+ * Per-subagent log entry for tools that spawn child agents.
+ */
+export type SubagentLogEntry = {
+  name?: string;
+  status: "pending" | "completed" | "failed";
+  logs: string[];
+};
+
+/**
  * Display message type - flexible type for UI display.
  *
  * For tool messages: toolCallId, toolName, args, and status are required.
@@ -48,6 +57,7 @@ export type DisplayMessage = {
   result?: unknown;
   status?: ToolStatus;
   logs?: string[];
+  subagentLogs?: Record<string, SubagentLogEntry>;
 };
 
 function getStableKey(

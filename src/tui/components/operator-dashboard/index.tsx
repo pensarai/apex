@@ -92,6 +92,7 @@ export default function OperatorDashboard({
     tokenUsage,
     addTokenUsage,
     resetTokenUsage,
+    setSessionCwd,
   } = useAgent();
   const {
     autocompleteOptions: allAutocompleteOptions,
@@ -215,6 +216,7 @@ export default function OperatorDashboard({
         if (sessionId) {
           const s = await sessions.get(sessionId);
           setSession(s);
+          setSessionCwd(s.rootPath);
 
           const hasState = sessions.hasOperatorState(s);
           if (hasState) {
@@ -281,6 +283,10 @@ export default function OperatorDashboard({
     }
     loadSession();
   }, [sessionId]);
+
+  useEffect(() => {
+    return () => setSessionCwd(null);
+  }, [setSessionCwd]);
 
   useEffect(() => {
     if (!session) return;
@@ -528,6 +534,81 @@ export default function OperatorDashboard({
   }, []);
 
   // ---------------------------------------------------------------------------
+  // Per-subagent log management
+  // ---------------------------------------------------------------------------
+
+  const initSubagent = useCallback((subagentId: string, name?: string) => {
+    setMessages((prev) => {
+      const idx = prev.findLastIndex(
+        (m) =>
+          isToolMessage(m) &&
+          (m.status === "pending" || m.status === "streaming"),
+      );
+      if (idx === -1) return prev;
+      const msg = prev[idx];
+      const subagentLogs = {
+        ...(msg.subagentLogs ?? {}),
+        [subagentId]: { name, status: "pending" as const, logs: [] },
+      };
+      const updated = [...prev];
+      updated[idx] = { ...msg, subagentLogs };
+      return updated;
+    });
+  }, []);
+
+  const completeSubagent = useCallback(
+    (subagentId: string, status: "completed" | "failed") => {
+      setMessages((prev) => {
+        const idx = prev.findLastIndex(
+          (m) =>
+            isToolMessage(m) &&
+            (m.status === "pending" || m.status === "streaming"),
+        );
+        if (idx === -1) return prev;
+        const msg = prev[idx];
+        const entry = msg.subagentLogs?.[subagentId];
+        if (!entry) return prev;
+        const subagentLogs = {
+          ...(msg.subagentLogs ?? {}),
+          [subagentId]: { ...entry, status },
+        };
+        const updated = [...prev];
+        updated[idx] = { ...msg, subagentLogs };
+        return updated;
+      });
+    },
+    [],
+  );
+
+  const appendLogToSubagent = useCallback(
+    (subagentId: string, line: string) => {
+      setMessages((prev) => {
+        const idx = prev.findLastIndex(
+          (m) =>
+            isToolMessage(m) &&
+            (m.status === "pending" || m.status === "streaming"),
+        );
+        if (idx === -1) return prev;
+        const msg = prev[idx];
+        const entry = msg.subagentLogs?.[subagentId];
+        if (!entry) return prev;
+        let logs = [...entry.logs, line];
+        if (logs.length > MAX_LOG_LINES) {
+          logs = logs.slice(-MAX_LOG_LINES);
+        }
+        const subagentLogs = {
+          ...(msg.subagentLogs ?? {}),
+          [subagentId]: { ...entry, logs },
+        };
+        const updated = [...prev];
+        updated[idx] = { ...msg, subagentLogs };
+        return updated;
+      });
+    },
+    [],
+  );
+
+  // ---------------------------------------------------------------------------
   // Approval handlers
   // ---------------------------------------------------------------------------
 
@@ -650,16 +731,15 @@ export default function OperatorDashboard({
           setError(e instanceof Error ? e.message : "Unknown error");
         },
         subagentCallbacks: {
-          onSubagentSpawn: ({ subagentId }) => {
-            appendLogToActiveTool(`▸ ${subagentId} started`);
+          onSubagentSpawn: ({ subagentId, name }) => {
+            initSubagent(subagentId, name);
           },
           onSubagentComplete: ({ subagentId, status }) => {
-            const icon = status === "completed" ? "✓" : "✗";
-            appendLogToActiveTool(`${icon} ${subagentId} ${status}`);
+            completeSubagent(subagentId, status);
           },
-          onTextDelta: (d) => {
-            if (!d.subagentId) return;
-            onCommandOutput(d.text);
+          onTextDelta: (_d) => {
+            // Text deltas from sub-agents are omitted from per-subagent
+            // windows — tool call summaries provide a cleaner activity log.
           },
           onToolCall: (d) => {
             if (!d.subagentId) return;
@@ -669,7 +749,7 @@ export default function OperatorDashboard({
                 unknown
               >) ?? {};
             const summary = getToolSummary(d.toolName, args);
-            appendLogToActiveTool(summary);
+            appendLogToSubagent(d.subagentId, summary);
           },
           onToolResult: (d) => {
             if (!d.subagentId) return;
@@ -679,7 +759,7 @@ export default function OperatorDashboard({
                 unknown
               >) ?? {};
             const summary = getToolSummary(d.toolName, args);
-            appendLogToActiveTool(`✓ ${summary}`);
+            appendLogToSubagent(d.subagentId, `✓ ${summary}`);
           },
           onError: (e) => {
             const msg = e instanceof Error ? e.message : "subagent error";
@@ -701,6 +781,9 @@ export default function OperatorDashboard({
         commandCancelHandle: cancelHandleRef.current,
         onStepFinish,
         callbacks,
+        onSessionReady: (s: { rootPath: string }) => {
+          setSessionCwd(s.rootPath);
+        },
       };
 
       try {
@@ -746,6 +829,7 @@ export default function OperatorDashboard({
             pendingNameRef.current = null;
           }
           setSession(created);
+          setSessionCwd(created.rootPath);
         }
 
         // Persist full conversation for next turn
@@ -797,6 +881,9 @@ export default function OperatorDashboard({
       flushCommandOutput,
       onCommandOutput,
       appendLogToActiveTool,
+      initSubagent,
+      completeSubagent,
+      appendLogToSubagent,
       setThinking,
       setIsExecuting,
     ],
