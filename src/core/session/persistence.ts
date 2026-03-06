@@ -265,6 +265,7 @@ export function readAgentManifest(session: SessionInfo): AgentManifestEntry[] {
 
 /** A normalized target for the pentest swarm */
 export interface SwarmTarget {
+  name?: string;
   target: string;
   objectives: string[];
 }

@@ -3,6 +3,7 @@
  *
  * Unified tool display component for both operator and chat views.
  * Handles pending spinner, completion status, expandable output.
+ * Renders per-subagent output windows when subagentLogs are present.
  */
 
 import { memo, useState } from "react";
@@ -11,7 +12,7 @@ import { AsciiSpinner } from "./ascii-spinner";
 import { getToolSummary } from "./tool-registry";
 import { getResultSummary, type ResultSummary } from "./result-registry";
 import { isToolMessage } from "./type-guards";
-import type { DisplayMessage } from "../agent-display";
+import type { DisplayMessage, SubagentLogEntry } from "../agent-display";
 
 const TOOLS_WITH_LOG_WINDOW = new Set([
   "execute_command",
@@ -24,6 +25,8 @@ const TOOLS_WITH_LOG_WINDOW = new Set([
   "update_file",
   "document_vulnerability",
 ]);
+
+const DEFAULT_SUBAGENT_LOG_LINES = 5;
 
 interface ToolRendererProps {
   message: DisplayMessage;
@@ -51,7 +54,7 @@ export const ToolRenderer = memo(function ToolRenderer({
   const isPending = message.status === "pending" || isStreaming;
   const isCompleted = message.status === "completed";
   const isError = message.status === "error";
-  const { toolName, args, result, logs } = message;
+  const { toolName, args, result, logs, subagentLogs } = message;
 
   // Get tool summary from registry
   const summary = getToolSummary(toolName, args);
@@ -66,6 +69,9 @@ export const ToolRenderer = memo(function ToolRenderer({
     : isPending
       ? colors.warning
       : colors.info;
+
+  const hasSubagentLogs =
+    subagentLogs && Object.keys(subagentLogs).length > 0;
 
   return (
     <box flexDirection="row" marginTop={0}>
@@ -87,8 +93,23 @@ export const ToolRenderer = memo(function ToolRenderer({
           )}
         </box>
 
-        {/* Streaming log window for tools with live output */}
+        {/* Per-subagent output windows */}
+        {isPending && hasSubagentLogs && (
+          <box flexDirection="column" marginLeft={0} marginTop={0}>
+            {Object.entries(subagentLogs!).map(([id, entry]) => (
+              <SubagentLogWindow
+                key={id}
+                subagentId={id}
+                entry={entry}
+                expandedLogs={expandedLogs}
+              />
+            ))}
+          </box>
+        )}
+
+        {/* Shared log window — only when no per-subagent logs */}
         {isPending &&
+          !hasSubagentLogs &&
           TOOLS_WITH_LOG_WINDOW.has(toolName) &&
           logs &&
           logs.length > 0 && (
@@ -106,6 +127,7 @@ export const ToolRenderer = memo(function ToolRenderer({
 
         {/* Streaming logs for other pending tools */}
         {isPending &&
+          !hasSubagentLogs &&
           !TOOLS_WITH_LOG_WINDOW.has(toolName) &&
           logs &&
           logs.length > 0 && (
@@ -164,6 +186,64 @@ export const ToolRenderer = memo(function ToolRenderer({
           </box>
         )}
       </box>
+    </box>
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Per-subagent log window
+// ---------------------------------------------------------------------------
+
+const SubagentLogWindow = memo(function SubagentLogWindow({
+  subagentId,
+  entry,
+  expandedLogs,
+}: {
+  subagentId: string;
+  entry: SubagentLogEntry;
+  expandedLogs: boolean;
+}) {
+  const { colors } = useTheme();
+  const isAgentPending = entry.status === "pending";
+  const statusColor =
+    entry.status === "completed"
+      ? colors.success
+      : entry.status === "failed"
+        ? colors.error
+        : colors.warning;
+  const statusIcon =
+    entry.status === "completed"
+      ? "✓"
+      : entry.status === "failed"
+        ? "✗"
+        : "";
+  const displayLabel = entry.name ?? subagentId;
+  const visibleLogs = expandedLogs
+    ? entry.logs
+    : entry.logs.slice(-DEFAULT_SUBAGENT_LOG_LINES);
+
+  return (
+    <box flexDirection="column">
+      <box flexDirection="row">
+        <text fg={colors.textMuted}>{"  ┌ "}</text>
+        {isAgentPending ? (
+          <AsciiSpinner label={displayLabel} fg={colors.warning} />
+        ) : (
+          <text>
+            <span fg={statusColor}>{statusIcon}</span>
+            <span fg={colors.textMuted}>{` ${displayLabel}`}</span>
+          </text>
+        )}
+      </box>
+      {visibleLogs.length > 0 && (
+        <box marginLeft={0}>
+          <text fg={colors.textMuted}>
+            {"  │ "}
+            {visibleLogs.join("\n  │ ")}
+          </text>
+        </box>
+      )}
+      <text fg={colors.textMuted}>{"  └─"}</text>
     </box>
   );
 });
