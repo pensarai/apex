@@ -67,6 +67,14 @@ Apex assumes the following trust boundaries:
 
 Issues that require a user to execute internal development scripts against malicious inputs outside their intended workflow, or that require modification of local configurations or files outside documented usage, may be classified as out of scope.
 
+### AI Model Trust Boundary
+
+Apex is an AI-agent system. Internal agent tools (e.g., file operations, command execution) receive their parameters from the AI model at inference time — not from external or untrusted input. The model operates as a delegate of the operator, within the operator's own system permissions.
+
+Model-generated tool parameters (file paths, command strings, etc.) are part of the model's inference output and are governed by the model's system prompt and alignment, not by input-validation controls designed for untrusted external data. The absence of path restrictions or input sanitization on agent tool parameters is a deliberate design choice consistent with the trust model of AI coding and security agents, not an implementation defect.
+
+Reports that characterize model-generated tool parameters as "unsanitized external input" do not align with the product's trust model and will generally be classified as informational.
+
 ### Operational Risk Assumptions
 
 APEX is an autonomous penetration testing tool designed to intentionally interact with potentially adversarial infrastructure.
@@ -77,10 +85,11 @@ Operators accept inherent risk when directing the tool at any target during auth
 - Exposure to intentionally malformed or hostile protocol responses
 - Deceptive application-layer behavior from test targets
 - Attempts by targets to fingerprint, throttle, or retaliate against scanning infrastructure
+- Prompt injection attempts by hostile targets designed to influence AI model behavior
 
-Compromise scenarios arising from expected interaction with hostile targets — during authorized and intended usage — are considered inherent operational risk of offensive security tooling, not product vulnerabilities.
+Compromise scenarios arising from expected interaction with hostile targets — during authorized and intended usage — are considered inherent operational risk of offensive security tooling, not product vulnerabilities. This includes scenarios where a hostile target attempts to influence the AI model's tool-calling behavior via prompt injection payloads embedded in application content.
 
-Reports must demonstrate a defect in Apex’s implementation that violates its documented threat model, rather than outcomes that stem from intentionally engaging adversarial systems.
+Reports must demonstrate a defect in Apex's implementation that violates its documented threat model, rather than outcomes that stem from intentionally engaging adversarial systems or from the AI model's inference behavior.
 
 ## Severity & Impact
 
