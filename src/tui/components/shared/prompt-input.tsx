@@ -11,6 +11,14 @@ import type { TextareaRenderable, RGBA } from "@opentui/core";
 import { useTheme } from "../../theme";
 import { useInput } from "../../context/input";
 import { useFocus } from "../../context/focus";
+import {
+  filterSuggestions,
+  resolveSubmitValue,
+  computeUpArrow,
+  computeDownArrow,
+  computeTab,
+  shouldResetHistory,
+} from "./prompt-input-logic";
 export interface AutocompleteOption {
   value: string;
   label: string;
@@ -121,21 +129,13 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
     const onSubmitRef = useRef(onSubmit);
     onSubmitRef.current = onSubmit;
 
-    // Filter suggestions using inputValue from context
-    const suggestions = useMemo(() => {
-      if (!enableAutocomplete || !autocompleteOptions || !inputValue) return [];
-      const input = inputValue.toLowerCase().trim();
-
-      if (!(input[0] === "/")) return [];
-
-      return autocompleteOptions
-        .filter(
-          (opt) =>
-            opt.value.toLowerCase().includes(input) ||
-            opt.label.toLowerCase().includes(input),
-        )
-        .slice(0, maxSuggestions);
-    }, [enableAutocomplete, autocompleteOptions, inputValue, maxSuggestions]);
+    const suggestions = useMemo(
+      () =>
+        enableAutocomplete
+          ? filterSuggestions(inputValue, autocompleteOptions, maxSuggestions)
+          : [],
+      [enableAutocomplete, autocompleteOptions, inputValue, maxSuggestions],
+    );
 
     // Keep refs in sync
     useEffect(() => {
@@ -204,111 +204,75 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
       // --- Tab: accept the highlighted autocomplete suggestion -----------
       if (suggestions.length > 0 && key.name === "tab") {
         key.preventDefault?.();
-        const idx = selectedIndexRef.current;
-        if (idx >= 0 && idx < suggestions.length) {
-          const selected = suggestions[idx];
-          if (selected) {
-            textareaRef.current?.setText(selected.value);
-            setInputValue(selected.value);
-            setSelectedSuggestionIndex(-1);
+        const tabResult = computeTab(suggestions, selectedIndexRef.current);
+        if (tabResult) {
+          setSelectedSuggestionIndex(tabResult.selectedSuggestionIndex);
+          if (tabResult.acceptedValue !== null) {
+            textareaRef.current?.setText(tabResult.acceptedValue);
+            setInputValue(tabResult.acceptedValue);
             textareaRef.current?.gotoLineEnd();
           }
-        } else {
-          setSelectedSuggestionIndex(0);
         }
         return;
       }
 
-      const inAutocomplete = selectedIndexRef.current >= 0;
       const history = historyRef.current;
+      const currentState = {
+        historyIndex,
+        selectedSuggestionIndex: selectedIndexRef.current,
+      };
 
       // --- Up arrow -----------------------------------------------------
       if (key.name === "up") {
-        if (inAutocomplete) {
-          // At top of suggestion list → exit back to normal input
-          if (selectedIndexRef.current <= 0) {
-            setSelectedSuggestionIndex(-1);
-          } else {
-            setSelectedSuggestionIndex((prev) => prev - 1);
-          }
-          return;
-        }
+        const result = computeUpArrow(
+          currentState,
+          history,
+          suggestions.length,
+        );
+        if (!result) return;
 
-        if (history.length === 0) return;
-        setHistoryIndex((prev) => {
-          if (prev === -1) {
-            savedInputRef.current = textareaRef.current?.plainText ?? "";
-          }
-          const next = Math.min(prev + 1, history.length - 1);
-          const entry = history[history.length - 1 - next];
-          if (entry !== undefined) {
-            isNavigatingHistoryRef.current = true;
-            textareaRef.current?.setText(entry);
-            setInputValue(entry);
-            setTimeout(() => {
-              isNavigatingHistoryRef.current = false;
-              textareaRef.current?.gotoLineEnd();
-            }, 0);
-          }
-          return next;
-        });
+        if (result.saveCurrentInput) {
+          savedInputRef.current = textareaRef.current?.plainText ?? "";
+        }
+        setSelectedSuggestionIndex(result.nextState.selectedSuggestionIndex);
+        if (result.textToSet !== null) {
+          isNavigatingHistoryRef.current = true;
+          textareaRef.current?.setText(result.textToSet);
+          setInputValue(result.textToSet);
+          setHistoryIndex(result.nextState.historyIndex);
+          setTimeout(() => {
+            isNavigatingHistoryRef.current = false;
+            textareaRef.current?.gotoLineEnd();
+          }, 0);
+        } else {
+          setHistoryIndex(result.nextState.historyIndex);
+        }
         return;
       }
 
       // --- Down arrow ---------------------------------------------------
       if (key.name === "down") {
-        if (inAutocomplete) {
-          if (suggestions.length <= 1) {
-            // Single suggestion — exit autocomplete, fall through to history
-            setSelectedSuggestionIndex(-1);
-          } else {
-            setSelectedSuggestionIndex((prev) =>
-              prev >= suggestions.length - 1
-                ? suggestions.length - 1
-                : prev + 1,
-            );
-            return;
-          }
+        const result = computeDownArrow(
+          currentState,
+          history,
+          suggestions.length,
+          savedInputRef.current,
+        );
+        if (!result) return;
+
+        setSelectedSuggestionIndex(result.nextState.selectedSuggestionIndex);
+        if (result.textToSet !== null) {
+          isNavigatingHistoryRef.current = true;
+          textareaRef.current?.setText(result.textToSet);
+          setInputValue(result.textToSet);
+          setHistoryIndex(result.nextState.historyIndex);
+          setTimeout(() => {
+            isNavigatingHistoryRef.current = false;
+            textareaRef.current?.gotoLineEnd();
+          }, 0);
+        } else {
+          setHistoryIndex(result.nextState.historyIndex);
         }
-
-        if (history.length === 0) {
-          // No history — overflow into autocomplete (only when multiple suggestions)
-          if (suggestions.length > 1) {
-            setSelectedSuggestionIndex(0);
-          }
-          return;
-        }
-
-        setHistoryIndex((prev) => {
-          if (prev <= 0) {
-            const saved = savedInputRef.current;
-            isNavigatingHistoryRef.current = true;
-            textareaRef.current?.setText(saved);
-            setInputValue(saved);
-            setTimeout(() => {
-              isNavigatingHistoryRef.current = false;
-              textareaRef.current?.gotoLineEnd();
-            }, 0);
-
-            // Already at current input — overflow into autocomplete (only when multiple suggestions)
-            if (prev === -1 && suggestions.length > 1) {
-              setSelectedSuggestionIndex(0);
-            }
-            return -1;
-          }
-          const next = prev - 1;
-          const entry = history[history.length - 1 - next];
-          if (entry !== undefined) {
-            isNavigatingHistoryRef.current = true;
-            textareaRef.current?.setText(entry);
-            setInputValue(entry);
-            setTimeout(() => {
-              isNavigatingHistoryRef.current = false;
-              textareaRef.current?.gotoLineEnd();
-            }, 0);
-          }
-          return next;
-        });
         return;
       }
     });
@@ -319,17 +283,13 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
       const currentSuggestions = suggestionsRef.current;
       const currentSelectedIndex = selectedIndexRef.current;
 
-      let valueToSubmit: string;
+      const valueToSubmit = resolveSubmitValue(
+        textareaRef.current?.plainText ?? "",
+        currentSuggestions,
+        currentSelectedIndex,
+      );
       if (currentSuggestions.length > 0 && currentSelectedIndex >= 0) {
-        const selected = currentSuggestions[currentSelectedIndex];
-        if (selected) {
-          valueToSubmit = selected.value;
-          setSelectedSuggestionIndex(-1);
-        } else {
-          valueToSubmit = (textareaRef.current?.plainText ?? "").trim();
-        }
-      } else {
-        valueToSubmit = (textareaRef.current?.plainText ?? "").trim();
+        setSelectedSuggestionIndex(-1);
       }
 
       if (!valueToSubmit) return;
@@ -351,7 +311,7 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
     const handleContentChange = () => {
       const text = textareaRef.current?.plainText ?? "";
       setInputValue(text);
-      if (historyIndex !== -1 && !isNavigatingHistoryRef.current) {
+      if (shouldResetHistory(historyIndex, isNavigatingHistoryRef.current)) {
         setHistoryIndex(-1);
       }
     };
