@@ -11,7 +11,6 @@ import {
   type DashboardStatus,
 } from "./logic";
 import type { AutocompleteOption } from "../shared/prompt-input";
-import type { SessionInfo } from "../../../core/session";
 import type { OperatorSessionState } from "../../../core/operator";
 
 // ---------------------------------------------------------------------------
@@ -419,13 +418,7 @@ describe("resolveAbortAction", () => {
 // ---------------------------------------------------------------------------
 
 describe("buildOperatorSystemPrompt", () => {
-  const session = {
-    targets: ["https://example.com"],
-    findingsPath: "/tmp/findings",
-    pocsPath: "/tmp/pocs",
-    logsPath: "/tmp/logs",
-    scratchpadPath: "/tmp/scratchpad",
-  } as unknown as SessionInfo;
+  const target = "https://example.com";
 
   const state = {
     mode: "auto",
@@ -437,40 +430,37 @@ describe("buildOperatorSystemPrompt", () => {
   } as unknown as OperatorSessionState;
 
   it("includes the target", () => {
-    const prompt = buildOperatorSystemPrompt(session, state);
+    const prompt = buildOperatorSystemPrompt(target, state);
     expect(prompt).toContain("Target: https://example.com");
   });
 
   it("includes the stage", () => {
-    const prompt = buildOperatorSystemPrompt(session, state);
+    const prompt = buildOperatorSystemPrompt(target, state);
     expect(prompt).toContain("Stage: recon");
   });
 
   it("shows approval enabled when requireApproval is true", () => {
-    const prompt = buildOperatorSystemPrompt(session, state);
+    const prompt = buildOperatorSystemPrompt(target, state);
     expect(prompt).toContain("Command approval: enabled");
   });
 
   it("shows approval disabled when requireApproval is false", () => {
-    const prompt = buildOperatorSystemPrompt(session, {
+    const prompt = buildOperatorSystemPrompt(target, {
       ...state,
       requireApproval: false,
     });
     expect(prompt).toContain("Command approval: disabled");
   });
 
-  it("includes session paths", () => {
-    const prompt = buildOperatorSystemPrompt(session, state);
-    expect(prompt).toContain("Findings: /tmp/findings");
-    expect(prompt).toContain("POCs: /tmp/pocs");
-    expect(prompt).toContain("Logs: /tmp/logs");
-    expect(prompt).toContain("Scratchpad: /tmp/scratchpad");
+  it("falls back to 'unknown' when no target", () => {
+    const prompt = buildOperatorSystemPrompt(undefined, state);
+    expect(prompt).toContain("Target: unknown");
   });
 
-  it("falls back to 'unknown' when no targets", () => {
-    const noTargets = { ...session, targets: [] } as unknown as SessionInfo;
-    const prompt = buildOperatorSystemPrompt(noTargets, state);
-    expect(prompt).toContain("Target: unknown");
+  it("includes the base system prompt", () => {
+    const prompt = buildOperatorSystemPrompt(target, state);
+    expect(prompt).toContain("# Command Execution");
+    expect(prompt).toContain("# Tool Reference");
   });
 });
 

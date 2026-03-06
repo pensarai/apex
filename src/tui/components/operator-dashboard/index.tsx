@@ -692,7 +692,7 @@ export default function OperatorDashboard({
         if (session) {
           agentResult = await runOffensiveSecurityAgent({
             ...commonInput,
-            system: buildOperatorSystemPrompt(session, operatorState),
+            system: buildOperatorSystemPrompt(initialConfig?.target, operatorState),
             session,
           });
         } else {
@@ -709,8 +709,7 @@ export default function OperatorDashboard({
           };
           agentResult = await runOffensiveSecurityAgent({
             ...commonInput,
-            buildSystem: (s: SessionInfo) =>
-              buildOperatorSystemPrompt(s, operatorState),
+            system: buildOperatorSystemPrompt(initialConfig?.target, operatorState),
             sessionConfig,
             onNameGenerated: (name: string) => {
               pendingNameRef.current = name;
