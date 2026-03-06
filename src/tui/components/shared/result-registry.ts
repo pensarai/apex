@@ -331,7 +331,27 @@ export function getResultSummary(
         }
         return { text: "Scan complete", isError: false };
       }
-      case "document_finding": {
+      case "document_finding":
+      case "document_vulnerability": {
+        if (typeof result === "object" && result !== null) {
+          const obj = result as Record<string, unknown>;
+          if (obj.success === false) {
+            const msg = String(obj.message || obj.error || "Failed").slice(
+              0,
+              120,
+            );
+            return { text: msg, isError: !obj.duplicate };
+          }
+          const finding =
+            typeof obj.finding === "object" && obj.finding !== null
+              ? (obj.finding as Record<string, unknown>)
+              : null;
+          const title = String(
+            finding?.title || args?.title || "Finding documented",
+          );
+          const severity = finding?.severity ? `[${finding.severity}] ` : "";
+          return { text: `${severity}${title}`, isError: false };
+        }
         return { text: "Finding documented", isError: false };
       }
       case "analyze_scan": {
