@@ -76,6 +76,16 @@ const TOOL_SUMMARY_MAP: Record<string, ToolSummaryFn> = {
   delegate_to_auth_subagent: (args) =>
     `auth ${args.target || ""} — ${args.reason || ""}`,
 
+  // Memory tools
+  add_memory: (args) => `remember "${args.title || ""}"`,
+  list_memories: (args) => {
+    const parts: string[] = ["list memories"];
+    if (args.category) parts.push(`[${args.category}]`);
+    if (args.tag) parts.push(`tag:${args.tag}`);
+    return parts.join(" ");
+  },
+  get_memory: (args) => `recall ${args.category || ""}/${args.id || ""}`,
+
   // Utility tools
   scratchpad: () => "note",
 };

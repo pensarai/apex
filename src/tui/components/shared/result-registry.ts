@@ -444,6 +444,89 @@ export function getResultSummary(
         return { text: "Console retrieved", isError: false };
       }
 
+      // Memory tools
+      case "list_memories": {
+        if (typeof result === "object" && result !== null) {
+          const obj = result as Record<string, unknown>;
+          if (obj.success === false) {
+            return {
+              text: String(obj.error || "Failed to list memories").slice(0, 120),
+              isError: true,
+            };
+          }
+          const memories = Array.isArray(obj.memories)
+            ? (obj.memories as Array<Record<string, unknown>>)
+            : [];
+          const count = Number(obj.count ?? memories.length);
+          if (count === 0) {
+            return { text: "No memories found", isError: false };
+          }
+          const preview = memories
+            .slice(0, 8)
+            .map((m) => {
+              const cat = m.category ? `[${m.category}]` : "";
+              return `${cat} ${m.title || m.id || "untitled"}`;
+            })
+            .join("\n");
+          const suffix = count > 8 ? `\n… (${count} total)` : "";
+          return {
+            text: `${count} memor${count === 1 ? "y" : "ies"}`,
+            isError: false,
+            fullText: preview + suffix,
+          };
+        }
+        break;
+      }
+      case "add_memory": {
+        if (typeof result === "object" && result !== null) {
+          const obj = result as Record<string, unknown>;
+          if (obj.success === false) {
+            return {
+              text: String(obj.error || "Failed to save memory").slice(0, 120),
+              isError: true,
+            };
+          }
+          const title = obj.title || args?.title || "memory";
+          const cat = obj.category ? `[${obj.category}] ` : "";
+          return { text: `${cat}Saved "${title}"`, isError: false };
+        }
+        break;
+      }
+      case "get_memory": {
+        if (typeof result === "object" && result !== null) {
+          const obj = result as Record<string, unknown>;
+          if (obj.success === false) {
+            return {
+              text: String(obj.error || "Memory not found").slice(0, 120),
+              isError: true,
+            };
+          }
+          const memory =
+            typeof obj.memory === "object" && obj.memory !== null
+              ? (obj.memory as Record<string, unknown>)
+              : null;
+          if (memory) {
+            const title = String(memory.title || "untitled");
+            const content =
+              typeof memory.content === "string" ? memory.content : "";
+            const lines = content.split("\n");
+            const preview = lines.slice(0, 4).join("\n");
+            const suffix =
+              lines.length > 4 ? `\n… (${lines.length} lines)` : "";
+            return {
+              text: title,
+              isError: false,
+              fullText:
+                content.length > 0
+                  ? preview + suffix
+                  : undefined,
+            };
+          }
+          return { text: "Memory retrieved", isError: false };
+        }
+        break;
+      }
+
       // Utility tools
       case "scratchpad": {
         return { text: "Note saved", isError: false };
