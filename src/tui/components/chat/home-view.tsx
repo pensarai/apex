@@ -59,7 +59,9 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
   );
 
   const pushHistory = useCallback((entry: string) => {
-    History.push(entry).then(() => setCommandHistory([...History.getEntries()]));
+    History.push(entry).then(() =>
+      setCommandHistory([...History.getEntries()]),
+    );
   }, []);
 
   const handleSubmit = useCallback(

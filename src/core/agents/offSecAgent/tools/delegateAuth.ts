@@ -301,10 +301,8 @@ When to use delegate_to_auth_subagent vs authenticate_session:
 
         const subagentCallbacks = cbs
           ? {
-              onTextDelta: (d: {
-                type: "text-delta";
-                [k: string]: unknown;
-              }) => cbs.onTextDelta?.({ ...d, subagentId } as never),
+              onTextDelta: (d: { type: "text-delta"; [k: string]: unknown }) =>
+                cbs.onTextDelta?.({ ...d, subagentId } as never),
               onToolCall: (d: { type: "tool-call"; [k: string]: unknown }) =>
                 cbs.onToolCall?.({ ...d, subagentId } as never),
               onToolResult: (d: {
