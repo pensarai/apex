@@ -40,6 +40,7 @@ function checkApiKeys(): { provider: string; configured: boolean }[] {
   const keys: { provider: string; env: string }[] = [
     { provider: "Anthropic", env: "ANTHROPIC_API_KEY" },
     { provider: "OpenAI", env: "OPENAI_API_KEY" },
+    { provider: "Google", env: "GOOGLE_GENERATIVE_AI_API_KEY" },
     { provider: "OpenRouter", env: "OPENROUTER_API_KEY" },
     { provider: "AWS Bedrock", env: "BEDROCK_API_KEY" },
     { provider: "AWS IAM", env: "AWS_ACCESS_KEY_ID" },

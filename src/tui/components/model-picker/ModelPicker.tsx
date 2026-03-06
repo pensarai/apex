@@ -8,6 +8,7 @@ import { useTheme } from "../../theme";
 const providerNames: Record<string, string> = {
   anthropic: "Claude",
   openai: "OpenAI",
+  google: "Gemini",
   openrouter: "OpenRouter",
   bedrock: "Bedrock",
   pensar: "Pensar",
@@ -18,6 +19,7 @@ const providerOrder = [
   "pensar",
   "anthropic",
   "openai",
+  "google",
   "openrouter",
   "bedrock",
   "local",

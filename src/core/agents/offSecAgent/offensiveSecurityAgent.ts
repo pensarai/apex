@@ -1,17 +1,26 @@
 import { streamResponse } from "../../ai";
 import type {
+  ModelMessage,
   StreamTextResult,
   StopCondition,
   TextStreamPart,
   ToolSet,
 } from "ai";
 import { hasToolCall } from "ai";
-import type { OffensiveSecurityAgentInput, ConsumeCallbacks } from "./types";
+import type {
+  OffensiveSecurityAgentInput,
+  CreateAgentInput,
+  ConsumeCallbacks,
+} from "./types";
 import { createAllTools, EMAIL_TOOL_NAMES_ACTIVE } from "./tools";
 import { createResponseTool, RESPONSE_TOOL_NAME } from "./tools/response";
+import { PersistentShell } from "./tools/persistentShell";
 import { DEFAULT_SYSTEM_PROMPT } from "./prompt";
 import type { ApprovalGate } from "../../operator";
 import { ApprovalDeniedError } from "../../operator";
+import { create as createSession, type SessionInfo } from "../../session";
+import { join } from "path";
+import { writeFileSync, mkdirSync, existsSync } from "fs";
 
 /**
  * General-purpose offensive security agent harness.
@@ -58,12 +67,66 @@ export class OffensiveSecurityAgent<TResult = void> {
   /** Identifier for this agent when it is running as a subagent. */
   private readonly subagentId?: string;
 
+  /** Persistent shell for local-mode command execution; disposed on consume() completion. */
+  private readonly persistentShell?: PersistentShell;
+
+  /** The session this agent is operating within. */
+  private readonly _session: SessionInfo;
+
+  /**
+   * Async factory that creates a session when one is not provided,
+   * then constructs the agent. Use this instead of `new` when you
+   * want the agent to own session lifecycle.
+   *
+   * Pass an existing `session` to reuse one (console integration,
+   * subagent spawning, etc.).
+   */
+  static async create<TResult = void>(
+    input: CreateAgentInput<TResult>,
+  ): Promise<OffensiveSecurityAgent<TResult>> {
+    let session = input.session;
+    if (!session) {
+      session = await createSession({
+        targets: input.target ? [input.target] : [],
+        config: input.sessionConfig,
+        model: input.model,
+        authConfig: input.authConfig,
+        userMessage: input.prompt,
+        onNameGenerated: input.onNameGenerated,
+      });
+    }
+    const system = input.buildSystem
+      ? input.buildSystem(session)
+      : (input.system ?? DEFAULT_SYSTEM_PROMPT);
+    return new OffensiveSecurityAgent({ ...input, session, system });
+  }
+
+  /** The session this agent is operating within. */
+  get session(): SessionInfo {
+    return this._session;
+  }
+
   constructor(input: OffensiveSecurityAgentInput<TResult>) {
+    this._session = input.session;
     this.subagentId = input.subagentId;
+
+    // -- Persistent shell (local mode only) -----------------------------------
+    // Shell survives command cancellation; only disposed in consume() after the
+    // stream ends, or when the agent is fully killed.
+    if (!input.sandbox) {
+      this.persistentShell = new PersistentShell();
+      if (input.commandCancelHandle) {
+        const shell = this.persistentShell;
+        input.commandCancelHandle.cancel = () => shell.cancelCurrentCommand();
+      }
+    }
 
     // -- Tools ----------------------------------------------------------------
     const credentialManager =
       input.credentialManager ?? input.session.credentialManager;
+
+    const subagentCallbacks =
+      input.subagentCallbacks ?? input.callbacks?.subagentCallbacks;
 
     const builtinTools = createAllTools({
       session: input.session,
@@ -72,10 +135,12 @@ export class OffensiveSecurityAgent<TResult = void> {
       model: input.model,
       authConfig: input.authConfig,
       callbacks: input.callbacks,
-      subagentCallbacks: input.subagentCallbacks,
+      subagentCallbacks,
       sandbox: input.sandbox,
       findingsRegistry: input.findingsRegistry,
       credentialManager,
+      persistentShell: this.persistentShell,
+      onCommandOutput: input.callbacks?.onCommandOutput,
     });
 
     let tools: ToolSet = input.extraTools
@@ -134,6 +199,22 @@ export class OffensiveSecurityAgent<TResult = void> {
       ? (input.activeTools as string[])
       : (input.activeTools as string[]).filter((t) => !emailToolSet.has(t));
 
+    // -- Messages persistence -------------------------------------------------
+    const messagesDir = input.messagesDir ?? input.session.rootPath;
+    if (!existsSync(messagesDir)) {
+      mkdirSync(messagesDir, { recursive: true });
+    }
+    const messagesPath = join(messagesDir, "messages.json");
+
+    const initialMessages: ModelMessage[] = input.messages
+      ? [...input.messages]
+      : [
+          {
+            role: "user" as const,
+            content: [{ type: "text", text: input.prompt }],
+          },
+        ];
+
     // -- Stream ---------------------------------------------------------------
     this.streamResult = streamResponse({
       prompt: input.prompt,
@@ -144,7 +225,15 @@ export class OffensiveSecurityAgent<TResult = void> {
       activeTools,
       stopWhen,
       toolChoice: "auto",
-      onStepFinish: input.onStepFinish,
+      onStepFinish: (event) => {
+        try {
+          const allMessages = [...initialMessages, ...event.response.messages];
+          writeFileSync(messagesPath, JSON.stringify(allMessages, null, 2));
+        } catch {
+          // Best-effort persistence — don't break the agent loop
+        }
+        input.onStepFinish?.(event);
+      },
       onFinish: input.onFinish,
       abortSignal: input.abortSignal,
       authConfig: input.authConfig,
@@ -224,6 +313,8 @@ export class OffensiveSecurityAgent<TResult = void> {
           break;
       }
     }
+
+    this.persistentShell?.dispose();
 
     if (this.resolveResult) {
       return this.resolveResult(this.streamResult);

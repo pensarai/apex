@@ -5,12 +5,7 @@
  * Supports: --flag value, --flag=value, --boolean-flag
  */
 
-import {
-  sessions,
-  type SessionConfig,
-  type SessionInfo,
-} from "../../core/session";
-import { generateRandomName } from "../../util/name";
+import type { SessionConfig } from "../../core/session";
 import type { OperatorMode } from "../../core/operator";
 import { createToolsetState } from "../../core/toolset";
 
@@ -125,6 +120,7 @@ export interface WebCommandFlags {
   // Operator mode options (ignored if swarm)
   mode?: OperatorMode;
   requireApproval?: boolean;
+  autopilot?: boolean;
 
   // Auth options
   authUrl?: string;
@@ -155,6 +151,7 @@ const webFlagSchema: FlagSchema = {
   mode: { type: "string", aliases: ["m"] },
   "require-approval": { type: "boolean" },
   "no-approval": { type: "boolean" },
+  autopilot: { type: "boolean" },
   "auth-url": { type: "string" },
   "auth-user": { type: "string" },
   "auth-pass": { type: "string" },
@@ -190,6 +187,10 @@ export function parseWebFlags(args: string[]): WebCommandFlags {
   }
   if (raw.requireApproval) flags.requireApproval = true;
   if (raw.noApproval) flags.requireApproval = false;
+  if (raw.autopilot) {
+    flags.autopilot = true;
+    flags.requireApproval = false;
+  }
 
   // Auth options
   if (raw.authUrl) flags.authUrl = String(raw.authUrl);
@@ -270,12 +271,18 @@ export function hasEnoughFlagsToSkipWizard(flags: WebCommandFlags): boolean {
   return true;
 }
 
+export interface SessionCreateParams {
+  targets: string[];
+  name?: string;
+  config: SessionConfig;
+}
+
 /**
- * Create an operator session from CLI flags
+ * Build operator session config from CLI flags (no session creation).
  */
-export async function createOperatorSessionFromFlags(
+export function buildOperatorSessionConfig(
   flags: WebCommandFlags,
-): Promise<SessionInfo> {
+): SessionCreateParams {
   const sessionConfig: SessionConfig = {
     sessionType: "web-app",
     mode: "operator",
@@ -284,11 +291,9 @@ export async function createOperatorSessionFromFlags(
       requireApproval: flags.requireApproval ?? true,
       enableSuggestions: true,
     },
-    // Initialize toolset with full web-pentest tools
     toolsetState: createToolsetState("web-pentest"),
   };
 
-  // Auth config
   if (flags.authInstructions || flags.authUser) {
     sessionConfig.authenticationInstructions = flags.authInstructions;
     if (flags.authUser) {
@@ -300,7 +305,6 @@ export async function createOperatorSessionFromFlags(
     }
   }
 
-  // Scope constraints
   if (flags.hosts?.length || flags.ports?.length || flags.strict) {
     sessionConfig.scopeConstraints = {
       allowedHosts: flags.hosts,
@@ -309,7 +313,6 @@ export async function createOperatorSessionFromFlags(
     };
   }
 
-  // Headers config
   if (flags.headersMode && flags.headersMode !== "default") {
     sessionConfig.offensiveHeaders = {
       mode: flags.headersMode,
@@ -317,29 +320,25 @@ export async function createOperatorSessionFromFlags(
     };
   }
 
-  const session = await sessions.create({
-    targets: [flags.target!],
-    name: flags.name || generateRandomName(),
+  return {
+    targets: flags.target ? [flags.target] : [],
+    name: flags.name || undefined,
     config: sessionConfig,
-  });
-
-  return session;
+  };
 }
 
 /**
- * Create a swarm session from CLI flags
+ * Build swarm session config from CLI flags (no session creation).
  */
-export async function createSwarmSessionFromFlags(
+export function buildSwarmSessionConfig(
   flags: WebCommandFlags,
-): Promise<SessionInfo> {
+): SessionCreateParams {
   const sessionConfig: SessionConfig = {
     sessionType: "web-app",
     mode: "auto",
-    // Initialize toolset with full web-pentest tools
     toolsetState: createToolsetState("web-pentest"),
   };
 
-  // Auth config
   if (flags.authInstructions || flags.authUser) {
     sessionConfig.authenticationInstructions = flags.authInstructions;
     if (flags.authUser) {
@@ -351,7 +350,6 @@ export async function createSwarmSessionFromFlags(
     }
   }
 
-  // Scope constraints
   if (flags.hosts?.length || flags.ports?.length || flags.strict) {
     sessionConfig.scopeConstraints = {
       allowedHosts: flags.hosts,
@@ -360,7 +358,6 @@ export async function createSwarmSessionFromFlags(
     };
   }
 
-  // Headers config
   if (flags.headersMode && flags.headersMode !== "default") {
     sessionConfig.offensiveHeaders = {
       mode: flags.headersMode,
@@ -368,11 +365,9 @@ export async function createSwarmSessionFromFlags(
     };
   }
 
-  const session = await sessions.create({
+  return {
     targets: [flags.target!],
-    name: flags.name || generateRandomName(),
+    name: flags.name || undefined,
     config: sessionConfig,
-  });
-
-  return session;
+  };
 }

@@ -331,7 +331,13 @@ function CommandDisplay({
 
   // Session route - render SessionView which handles pentest execution
   if (route.data.type === "operator") {
-    return <OperatorDashboard sessionId={route.data.sessionId} />;
+    return (
+      <OperatorDashboard
+        sessionId={route.data.sessionId}
+        initialMessage={route.data.initialMessage}
+        initialConfig={route.data.initialConfig}
+      />
+    );
   }
 
   if (route.data.type === "pentest") {
@@ -339,7 +345,13 @@ function CommandDisplay({
     if (route.data.openAsOperator) {
       return <OperatorDashboard sessionId={route.data.sessionId} />;
     }
-    return <Pentest sessionId={route.data.sessionId} />;
+    return (
+      <Pentest
+        sessionId={route.data.sessionId}
+        targets={route.data.targets}
+        sessionConfig={route.data.sessionConfig}
+      />
+    );
   }
 
   return null;

@@ -27,6 +27,8 @@ export function isProviderConfigured(
       return !!config.anthropicAPIKey;
     case "openai":
       return !!config.openAiAPIKey;
+    case "google":
+      return !!config.googleAPIKey;
     case "openrouter":
       return !!config.openRouterAPIKey;
     case "bedrock":
@@ -48,6 +50,7 @@ export function hasAnyProviderConfigured(config: Config): boolean {
   return (
     !!config.anthropicAPIKey ||
     !!config.openAiAPIKey ||
+    !!config.googleAPIKey ||
     !!config.openRouterAPIKey ||
     !!config.bedrockAPIKey ||
     !!config.localModelUrl ||

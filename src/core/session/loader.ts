@@ -1,7 +1,7 @@
 /**
  * Session State Loader
  *
- * Loads and reconstructs session state from the executions directory
+ * Loads and reconstructs session state from the sessions directory
  * for displaying completed or interrupted sessions in the TUI.
  *
  * Subagent I/O (save + load + filename conventions) lives in persistence.ts.
@@ -12,6 +12,7 @@ import { join } from "path";
 import { existsSync, readFileSync } from "fs";
 import type { SessionInfo } from "./index";
 import { loadSubagents, type UISubagent, type UIMessage } from "./persistence";
+import { REPORT_FILENAME_MD } from "../report";
 
 // Re-export types that consumers import from this module
 export type {
@@ -76,7 +77,7 @@ function loadAttackSurfaceResults(
  * Check if a final report exists
  */
 function hasReport(rootPath: string): boolean {
-  const reportPath = join(rootPath, "comprehensive-pentest-report.md");
+  const reportPath = join(rootPath, REPORT_FILENAME_MD);
   return existsSync(reportPath);
 }
 
@@ -199,10 +200,17 @@ export async function loadSessionState(
   }
 
   // Determine if session is complete
+  const pentestSubagents = subagents.filter((s) => s.type === "pentest");
+  const allPentestDone =
+    pentestSubagents.length > 0 &&
+    pentestSubagents.every(
+      (s) => s.status === "completed" || s.status === "failed",
+    );
+
   const isComplete =
     hasReportFile ||
     (attackSurfaceResults?.summary?.analysisComplete === true &&
-      subagents.length > 1);
+      allPentestDone);
 
   return {
     session,

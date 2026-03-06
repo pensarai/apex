@@ -36,6 +36,9 @@ export default function ProviderManager() {
       case "openai":
         configUpdate.openAiAPIKey = apiKey;
         break;
+      case "google":
+        configUpdate.googleAPIKey = apiKey;
+        break;
       case "openrouter":
         configUpdate.openRouterAPIKey = apiKey;
         break;

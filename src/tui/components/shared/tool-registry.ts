@@ -22,13 +22,19 @@ const TOOL_SUMMARY_MAP: Record<string, ToolSummaryFn> = {
   crawl: (args) => `crawl ${args.url || args.target || ""}`,
 
   // Shell/Command tools
-  execute_command: (args) => `$ ${args.command || ""}`,
+  execute_command: (args) => {
+    const cmd = String(args.command || "").split("\n")[0];
+    return cmd.length > 80 ? `$ ${cmd.slice(0, 80)}…` : `$ ${cmd}`;
+  },
 
   // File system tools
   read_file: (args) => `read ${args.path || ""}`,
   Read: (args) => `read ${args.path || args.file_path || ""}`,
   write_file: (args) => `write ${args.path || ""}`,
   Write: (args) => `write ${args.path || args.file_path || ""}`,
+  create_file: (args) => `create ${args.path || ""}`,
+  update_file: (args) => `update ${args.path || ""}`,
+  create_poc: (args) => `poc ${args.pocName || ""}`,
   Edit: (args) => `edit ${args.file_path || args.path || ""}`,
   Grep: (args) => `grep ${args.pattern || ""}`,
   Glob: (args) => `glob ${args.pattern || ""}`,
@@ -53,6 +59,22 @@ const TOOL_SUMMARY_MAP: Record<string, ToolSummaryFn> = {
   // Task/Agent tools
   Task: (args) => (args.description as string) || "Task",
   task: (args) => (args.description as string) || "task",
+
+  // Subagent-spawning tools
+  run_attack_surface: (args) => {
+    const mode = args.cwd ? "whitebox" : "blackbox";
+    return `recon (${mode}) ${args.target || ""}`;
+  },
+  spawn_coding_agent: (args) => {
+    const tasks = args.tasks as unknown[];
+    return `coding agents ×${tasks?.length ?? "?"}`;
+  },
+  spawn_pentest_swarm: (args) => {
+    const targets = args.targets as unknown[];
+    return `pentest swarm ×${targets?.length ?? "?"}`;
+  },
+  delegate_to_auth_subagent: (args) =>
+    `auth ${args.target || ""} — ${args.reason || ""}`,
 
   // Utility tools
   scratchpad: () => "note",

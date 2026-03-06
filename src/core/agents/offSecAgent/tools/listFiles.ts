@@ -1,7 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { readdir, stat } from "fs/promises";
-import { join } from "path";
+import { join, relative } from "path";
 import type { ToolContext } from "./types";
 
 export const listFilesInputSchema = z.object({
@@ -30,31 +30,48 @@ export type ListFilesResult = {
   files: string[];
   directory: string;
   count: number;
+  totalFound?: number;
 };
+
+const MAX_RECURSIVE = 200;
+const MAX_NON_RECURSIVE = 500;
 
 async function listRecursive(
   dir: string,
   maxEntries: number,
-): Promise<string[]> {
+): Promise<{ paths: string[]; total: number }> {
   const results: string[] = [];
+  let total = 0;
 
   async function walk(current: string) {
-    if (results.length >= maxEntries) return;
-    const entries = await readdir(current, { withFileTypes: true });
+    let entries;
+    try {
+      entries = await readdir(current, { withFileTypes: true });
+    } catch {
+      return;
+    }
     for (const entry of entries) {
-      if (results.length >= maxEntries) break;
+      total++;
       const fullPath = join(current, entry.name);
       if (entry.isDirectory()) {
-        results.push(`${fullPath}/`);
+        if (results.length < maxEntries) results.push(`${fullPath}/`);
         await walk(fullPath);
       } else {
-        results.push(fullPath);
+        if (results.length < maxEntries) results.push(fullPath);
       }
     }
   }
 
   await walk(dir);
-  return results;
+  return { paths: results, total };
+}
+
+function toRelative(base: string, paths: string[]): string[] {
+  return paths.map((p) => {
+    const isDir = p.endsWith("/");
+    const rel = relative(base, isDir ? p.slice(0, -1) : p);
+    return isDir ? `${rel}/` : rel;
+  });
 }
 
 export function listFiles(_ctx: ToolContext) {
@@ -62,7 +79,10 @@ export function listFiles(_ctx: ToolContext) {
     description: `List files and directories at a given path.
 
 By default lists the immediate contents of the directory. Set recursive=true
-to walk the tree (capped at 5 000 entries to avoid flooding context).
+to walk the tree. Returns paths relative to the listed directory.
+
+Recursive listings are capped at ${MAX_RECURSIVE} entries. Use grep or
+read_file for targeted exploration instead of recursive listing on large trees.
 
 Each directory entry is suffixed with "/" for easy identification.`,
     inputSchema: listFilesInputSchema,
@@ -84,29 +104,42 @@ Each directory entry is suffixed with "/" for easy identification.`,
           };
         }
 
-        const MAX_ENTRIES = 5_000;
-
-        let files: string[];
         if (recursive) {
-          files = await listRecursive(dir, MAX_ENTRIES);
-        } else {
-          const entries = await readdir(dir, { withFileTypes: true });
-          files = entries.map((e) => {
-            const name = join(dir, e.name);
-            return e.isDirectory() ? `${name}/` : name;
-          });
+          const { paths, total } = await listRecursive(dir, MAX_RECURSIVE);
+          const relPaths = toRelative(dir, paths);
+          return {
+            success: true,
+            error:
+              total > MAX_RECURSIVE
+                ? `Showing ${MAX_RECURSIVE} of ${total} entries — narrow the directory or use grep`
+                : "",
+            files: relPaths,
+            directory: dir,
+            count: relPaths.length,
+            totalFound: total > MAX_RECURSIVE ? total : undefined,
+          };
         }
 
-        const truncated = files.length >= MAX_ENTRIES;
+        const entries = await readdir(dir, { withFileTypes: true });
+        const fullPaths = entries.map((e) => {
+          const name = join(dir, e.name);
+          return e.isDirectory() ? `${name}/` : name;
+        });
+
+        const capped = fullPaths.slice(0, MAX_NON_RECURSIVE);
+        const relPaths = toRelative(dir, capped);
 
         return {
           success: true,
-          error: truncated
-            ? `Listing truncated at ${MAX_ENTRIES} entries — narrow the directory`
-            : "",
-          files,
+          error:
+            entries.length > MAX_NON_RECURSIVE
+              ? `Showing ${MAX_NON_RECURSIVE} of ${entries.length} entries`
+              : "",
+          files: relPaths,
           directory: dir,
-          count: files.length,
+          count: relPaths.length,
+          totalFound:
+            entries.length > MAX_NON_RECURSIVE ? entries.length : undefined,
         };
       } catch (err: unknown) {
         return {

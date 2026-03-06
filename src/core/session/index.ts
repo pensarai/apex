@@ -2,7 +2,7 @@ import type { ModelMessage } from "ai";
 import z from "zod";
 import path from "path";
 import os from "os";
-import { existsSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import * as Identifier from "../id/id";
 import { getCurrentVersion } from "../installation";
 import * as Storage from "../storage";
@@ -14,6 +14,9 @@ import {
   type ToolsetState,
   toggleTool as toolsetToggle,
 } from "../toolset";
+import type { AIModel } from "../ai/ai";
+import type { AIAuthConfig } from "../ai/utils";
+import { generateRandomName, generateSessionName } from "../../util/name";
 
 /**
  * Default outcome guidance (safe, non-destructive)
@@ -168,15 +171,15 @@ export type SessionConfig = z.infer<typeof SessionConfigObject>;
 export interface ExecutionSession {
   /** Unique session identifier (format: {prefix}-ses_{timestamp}_{random}) */
   id: string;
-  /** Root path for all session artifacts (~/.pensar/executions/{id}) */
+  /** Root path for all session artifacts (~/.pensar/sessions/{id}) */
   rootPath: string;
-  /** Path for security findings (~/.pensar/executions/{id}/findings) */
+  /** Path for security findings (~/.pensar/sessions/{id}/findings) */
   findingsPath: string;
-  /** Path for agent scratchpad notes (~/.pensar/executions/{id}/scratchpad) */
+  /** Path for agent scratchpad notes (~/.pensar/sessions/{id}/scratchpad) */
   scratchpadPath: string;
-  /** Path for execution logs (~/.pensar/executions/{id}/logs) */
+  /** Path for execution logs (~/.pensar/sessions/{id}/logs) */
   logsPath: string;
-  /** Path for proof-of-concept scripts (~/.pensar/executions/{id}/pocs) */
+  /** Path for proof-of-concept scripts (~/.pensar/sessions/{id}/pocs) */
   pocsPath: string;
   /** Target URL or system being tested */
   target: string;
@@ -211,26 +214,25 @@ export function getPensarDir(): string {
 }
 
 /**
- * Get the executions directory path
+ * Get the sessions directory path
  */
-export function getExecutionsDir(): string {
-  return path.join(getPensarDir(), "executions");
+export function getSessionsDir(): string {
+  return path.join(getPensarDir(), "sessions");
 }
 
 /**
- * Get the root path for a session's execution directory
+ * Get the root path for a session's artifact directory
  */
-export function getExecutionRoot(id: string): string {
-  console.log("GET EXECUTION ROOT", id);
-  return path.join(getExecutionsDir(), id);
+export function getSessionRoot(id: string): string {
+  return path.join(getSessionsDir(), id);
 }
 
 /**
- * Create a new execution session with directory structure for agent artifacts.
+ * Create a new session with directory structure for agent artifacts.
  * Uses Storage namespace for safe writes with locking.
  *
  * Directory structure created:
- * ~/.pensar/executions/{id}/
+ * ~/.pensar/sessions/{id}/
  * ├── session.json      # Session metadata
  * ├── README.md         # Session documentation
  * ├── findings/         # Security findings
@@ -238,25 +240,25 @@ export function getExecutionRoot(id: string): string {
  * ├── logs/             # Execution logs
  * └── pocs/             # Proof-of-concept scripts
  */
-export async function createExecution(
+export async function createSessionDirs(
   input: CreateExecutionInput,
 ): Promise<void> {
   const { session } = input;
 
   // Create directory structure with locking
-  await Storage.createDir(["executions", session.id]);
-  await Storage.createDir(["executions", session.id, "findings"]);
-  await Storage.createDir(["executions", session.id, "scratchpad"]);
-  await Storage.createDir(["executions", session.id, "logs"]);
-  await Storage.createDir(["executions", session.id, "pocs"]);
+  await Storage.createDir(["sessions", session.id]);
+  await Storage.createDir(["sessions", session.id, "findings"]);
+  await Storage.createDir(["sessions", session.id, "scratchpad"]);
+  await Storage.createDir(["sessions", session.id, "logs"]);
+  await Storage.createDir(["sessions", session.id, "pocs"]);
 
   const startTime = new Date().toISOString();
 
   // Write README.md
   const readme = generateSessionReadme(session);
-  await Storage.writeRaw(["executions", session.id, "README.md"], readme);
+  await Storage.writeRaw(["sessions", session.id, "README.md"], readme);
 
-  console.info("created execution session", session.id);
+  console.info("created session", session.id);
 }
 
 /**
@@ -300,7 +302,7 @@ export async function getExecution(
         version: string;
         time: { created: number; updated: number };
       }
-    >(["executions", sessionId, "session"]);
+    >(["sessions", sessionId, "session"]);
     return metadata;
   } catch (e) {
     if (e instanceof Storage.NotFoundError) {
@@ -339,7 +341,7 @@ export function getOffensiveHeaders(
 
 export const SessionInfoObject = z.object({
   id: Identifier.schema("session"),
-  name: z.string(),
+  name: z.string().optional(),
   version: z.string(),
   targets: z.array(z.string()),
   config: SessionConfigObject.optional(),
@@ -361,22 +363,32 @@ export type SessionInfo = z.output<typeof SessionInfoObject> & {
   tokensOut?: number;
 };
 
-interface CreateInputProps {
+export interface CreateInputProps {
   id?: string;
   targets: string[];
-  name: string;
+  /** Explicit session name. When omitted, an AI-generated name is attempted
+   *  (requires `model` + `authConfig`), falling back to a random name. */
+  name?: string;
   prefix?: string;
   config?: SessionConfig;
-  // offensiveHeaders?: OffensiveHeadersConfig;
-  // outcomeGuidance?: string;
+  /** AI model for session name generation (optional). */
+  model?: AIModel;
+  /** Auth config for the AI provider (optional). */
+  authConfig?: AIAuthConfig;
+  /** User objective / first prompt — used as context for AI name generation. */
+  userMessage?: string;
+  /** Called when the async AI name generation resolves with a name. */
+  onNameGenerated?: (name: string) => void;
 }
 
 export async function create(input: CreateInputProps) {
+  const name = input.name ?? generateRandomName();
+
   const id =
     `${input.prefix ? input.prefix : ""}` +
     Identifier.descending("session", input.id);
 
-  const rootPath = getExecutionRoot(id);
+  const rootPath = getSessionRoot(id);
   const findingsPath = path.join(rootPath, "findings");
   const scratchpadPath = path.join(rootPath, "scratchpad");
   const logsPath = path.join(rootPath, "logs");
@@ -403,7 +415,7 @@ export async function create(input: CreateInputProps) {
     id: id,
     version: getCurrentVersion(),
     targets: input.targets,
-    name: input.name,
+    name,
     time: {
       created: Date.now(),
       updated: Date.now(),
@@ -436,13 +448,32 @@ export async function create(input: CreateInputProps) {
 
   // Exclude non-serializable fields (class instances with methods)
   const { _rateLimiter, credentialManager: _cm, ...sessionData } = result;
-  await Storage.write(["session", result.id], sessionData);
-  await createExecution({ session: result });
+  await createSessionDirs({ session: result });
+  await Storage.write(["sessions", result.id, "session"], sessionData);
+
+  // Fire-and-forget AI name generation — updates persisted session in the background
+  if (!input.name && input.model) {
+    generateSessionName({
+      targets: input.targets,
+      userMessage: input.userMessage,
+      model: input.model,
+      authConfig: input.authConfig,
+    }).then((aiName) => {
+      if (aiName) {
+        result.name = aiName;
+        update(result.id, (s) => {
+          s.name = aiName;
+        }).catch(() => {});
+        input.onNameGenerated?.(aiName);
+      }
+    });
+  }
+
   return result;
 }
 
 export const get = async (id: string) => {
-  const read = await Storage.read<SessionInfo>(["session", id]);
+  const read = await Storage.read<SessionInfo>(["sessions", id, "session"]);
 
   // Reconstruct RateLimiter instance (it gets serialized as plain object)
   // This ensures the session has a proper RateLimiter with methods
@@ -458,24 +489,44 @@ export const get = async (id: string) => {
   return read;
 };
 
-export const executionPath = (id: string) =>
-  Storage.locate(["executions", id], "");
+export const sessionPath = (id: string) => Storage.locate(["sessions", id], "");
 
 export async function update(
   id: string,
   editor: (session: SessionInfo) => void,
 ) {
-  const result = await Storage.update<SessionInfo>(["session", id], (draft) => {
-    editor(draft);
-    draft.time.updated = Date.now();
-  });
+  const result = await Storage.update<SessionInfo>(
+    ["sessions", id, "session"],
+    (draft) => {
+      editor(draft);
+      draft.time.updated = Date.now();
+    },
+  );
   console.info("updated session", result);
   return result;
 }
 
 export async function* list() {
-  for (const item of await Storage.list(["session"])) {
-    yield Storage.read<SessionInfo>(item);
+  const sessionsDir = getSessionsDir();
+  let entries: import("fs").Dirent[];
+  try {
+    entries = await import("fs/promises").then((fsp) =>
+      fsp.readdir(sessionsDir, { withFileTypes: true }),
+    );
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    try {
+      yield await Storage.read<SessionInfo>([
+        "sessions",
+        entry.name,
+        "session",
+      ]);
+    } catch {
+      // Skip directories without a valid session.json
+    }
   }
 }
 
@@ -485,18 +536,17 @@ const RemoveInput = z.object({
 
 export const remove = async (input: z.output<typeof RemoveInput>) => {
   try {
-    const session = await get(input.sessionId);
-    for (const msg of await Storage.list(["message", input.sessionId])) {
-      await Storage.remove(msg);
-    }
-    await Storage.remove(["session", input.sessionId]);
+    // Remove the entire session directory (metadata + artifacts)
+    const sessionDir = getSessionRoot(input.sessionId);
+    const fsp = await import("fs/promises");
+    await fsp.rm(sessionDir, { recursive: true, force: true });
   } catch (e) {
     console.error(e);
   }
 };
 
 export const updateMessage = async (msg: Message) => {
-  await Storage.write(["message", msg.sessionId, msg.id], msg);
+  await Storage.write(["sessions", msg.sessionId, "messages", msg.id], msg);
   return msg;
 };
 
@@ -506,7 +556,12 @@ const RemoveMsgInput = z.object({
 });
 
 export const removeMessage = async (input: z.output<typeof RemoveMsgInput>) => {
-  await Storage.remove(["message", input.sessionId, input.messageId]);
+  await Storage.remove([
+    "sessions",
+    input.sessionId,
+    "messages",
+    input.messageId,
+  ]);
   return input.messageId;
 };
 
@@ -553,30 +608,42 @@ export interface PersistedOperatorState {
 }
 
 /**
- * Save operator dashboard state for later resumption
- */
-export async function saveOperatorState(
-  sessionId: string,
-  state: PersistedOperatorState,
-): Promise<void> {
-  const session = await get(sessionId);
-  const statePath = path.join(session.rootPath, "operator-state.json");
-  writeFileSync(statePath, JSON.stringify(state, null, 2));
-  console.info("saved operator state for session", sessionId);
-}
-
-/**
- * Load operator dashboard state for session resumption
+ * Load operator dashboard state for session resumption.
+ *
+ * The agent persists a plain `ModelMessage[]` array to `messages.json`,
+ * so we normalise that into a `PersistedOperatorState` envelope here.
  */
 export async function loadOperatorState(
   sessionId: string,
 ): Promise<PersistedOperatorState | null> {
   try {
     const session = await get(sessionId);
-    const statePath = path.join(session.rootPath, "operator-state.json");
+    const statePath = path.join(session.rootPath, "messages.json");
     if (!existsSync(statePath)) return null;
     const data = readFileSync(statePath, "utf-8");
-    return JSON.parse(data) as PersistedOperatorState;
+    const parsed = JSON.parse(data);
+
+    // The agent writes a raw ModelMessage[] array — wrap it.
+    if (Array.isArray(parsed)) {
+      return {
+        mode: session.config?.operatorSettings?.initialMode ?? "manual",
+        requireApproval:
+          session.config?.operatorSettings?.requireApproval ?? true,
+        currentStage: "recon",
+        messages: parsed as ModelMessage[],
+        attackSurface: [],
+        credentials: [],
+        verifiedVulns: [],
+        targetState: null,
+        hypotheses: [],
+        evidence: [],
+        actionHistory: [],
+        pausedAt: new Date().toISOString(),
+        lastRunId: "",
+      };
+    }
+
+    return parsed as PersistedOperatorState;
   } catch (error) {
     console.error("Error loading operator state:", error);
     return null;
@@ -587,7 +654,7 @@ export async function loadOperatorState(
  * Check if a session has saved operator state
  */
 export function hasOperatorState(session: SessionInfo): boolean {
-  const statePath = path.join(session.rootPath, "operator-state.json");
+  const statePath = path.join(session.rootPath, "messages.json");
   return existsSync(statePath);
 }
 
@@ -675,7 +742,7 @@ export async function toggleTool(
 }
 
 export const sessions = {
-  getExecutionRoot,
+  getSessionRoot,
   getOffensiveHeaders,
   DEFAULT_OUTCOME_GUIDANCE,
   EXFIL_OUTCOME_GUIDANCE,
@@ -686,7 +753,6 @@ export const sessions = {
   remove,
   updateMessage,
   removeMessage,
-  saveOperatorState,
   loadOperatorState,
   hasOperatorState,
   updateOperatorSettings,

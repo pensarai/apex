@@ -10,6 +10,7 @@ import {
   sessions as sessionModule,
   type SessionInfo,
 } from "../../core/session";
+import { REPORT_FILENAME_MD } from "../../core/report";
 
 export interface EnrichedSession extends SessionInfo {
   findingsCount: number;
@@ -33,7 +34,7 @@ function countFindings(findingsPath: string): number {
 }
 
 function checkHasReport(rootPath: string): boolean {
-  return existsSync(join(rootPath, "comprehensive-pentest-report.md"));
+  return existsSync(join(rootPath, REPORT_FILENAME_MD));
 }
 
 export function formatRelativeTime(timestamp: number): string {
@@ -62,7 +63,7 @@ export function useSessionsList() {
       const enriched: EnrichedSession[] = [];
       for await (const session of sessionModule.list()) {
         const hasOperatorState = existsSync(
-          join(session.rootPath, "operator-state.json"),
+          join(session.rootPath, "messages.json"),
         );
         const findingsCount = countFindings(session.findingsPath);
         const hasReport = checkHasReport(session.rootPath);
@@ -98,7 +99,7 @@ export function useSessionsList() {
   // Filter by search term
   const filtered = searchTerm
     ? allSessions.filter((s) =>
-        s.name.toLowerCase().includes(searchTerm.toLowerCase()),
+        (s.name ?? "").toLowerCase().includes(searchTerm.toLowerCase()),
       )
     : allSessions;
 

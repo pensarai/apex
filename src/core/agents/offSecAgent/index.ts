@@ -4,6 +4,7 @@
 export { OffensiveSecurityAgent } from "./offensiveSecurityAgent";
 export type {
   OffensiveSecurityAgentInput,
+  CreateAgentInput,
   SpecializedAgentInput,
   ConsumeCallbacks,
 } from "./types";

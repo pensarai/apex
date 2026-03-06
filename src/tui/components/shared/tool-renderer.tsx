@@ -13,6 +13,14 @@ import { getResultSummary, type ResultSummary } from "./result-registry";
 import { isToolMessage } from "./type-guards";
 import type { DisplayMessage } from "../agent-display";
 
+const TOOLS_WITH_LOG_WINDOW = new Set([
+  "execute_command",
+  "run_attack_surface",
+  "spawn_coding_agent",
+  "spawn_pentest_swarm",
+  "delegate_to_auth_subagent",
+]);
+
 interface ToolRendererProps {
   message: DisplayMessage;
   verbose?: boolean;
@@ -45,7 +53,7 @@ export const ToolRenderer = memo(function ToolRenderer({
 
   // Get result summary for completed tools
   const resultDisplay: ResultSummary | null =
-    isCompleted || isError ? getResultSummary(result, toolName) : null;
+    isCompleted || isError ? getResultSummary(result, toolName, args) : null;
 
   // Determine border color based on status
   const borderColor = isError
@@ -74,29 +82,60 @@ export const ToolRenderer = memo(function ToolRenderer({
           )}
         </box>
 
-        {/* Streaming logs while pending */}
-        {isPending && logs && logs.length > 0 && (
-          <box marginLeft={2}>
-            <text fg={colors.textMuted}>
-              {expandedLogs ? logs.join("\n") : logs.slice(-2).join("\n")}
-            </text>
-          </box>
-        )}
+        {/* Streaming log window for tools with live output */}
+        {isPending &&
+          TOOLS_WITH_LOG_WINDOW.has(toolName) &&
+          logs &&
+          logs.length > 0 && (
+            <box flexDirection="column" marginLeft={0} marginTop={0}>
+              <text fg={colors.textMuted}>{"  ┌─"}</text>
+              <box marginLeft={0}>
+                <text fg={colors.textMuted}>
+                  {"  │ "}
+                  {(expandedLogs ? logs : logs.slice(-15)).join("\n  │ ")}
+                </text>
+              </box>
+              <text fg={colors.textMuted}>{"  └─"}</text>
+            </box>
+          )}
+
+        {/* Streaming logs for other pending tools */}
+        {isPending &&
+          !TOOLS_WITH_LOG_WINDOW.has(toolName) &&
+          logs &&
+          logs.length > 0 && (
+            <box marginLeft={2}>
+              <text fg={colors.textMuted}>
+                {expandedLogs ? logs.join("\n") : logs.slice(-2).join("\n")}
+              </text>
+            </box>
+          )}
 
         {/* Result display for completed tools */}
         {(isCompleted || isError) && resultDisplay && (
           <box flexDirection="column" marginLeft={2}>
-            {/* Summary line - always visible */}
+            {/* Label + indicator */}
             <box flexDirection="row" gap={1}>
               <text
                 fg={resultDisplay.isError ? colors.error : colors.textMuted}
               >
                 {resultDisplay.isError ? "✗" : "→"}
               </text>
-              <text fg={resultDisplay.isError ? colors.error : colors.text}>
-                {resultDisplay.text}
-              </text>
+              {resultDisplay.styledText ? (
+                resultDisplay.label ? (
+                  <text fg={colors.textMuted}>{resultDisplay.label}</text>
+                ) : null
+              ) : (
+                <text fg={resultDisplay.isError ? colors.error : colors.text}>
+                  {resultDisplay.text}
+                </text>
+              )}
             </box>
+
+            {/* Syntax-highlighted code preview */}
+            {resultDisplay.styledText && (
+              <text content={resultDisplay.styledText} />
+            )}
 
             {/* Expandable output */}
             {resultDisplay.fullText && (verbose || showOutput) && (

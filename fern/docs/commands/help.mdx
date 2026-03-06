@@ -1,0 +1,89 @@
+---
+title: "/help"
+description: "Display help information and available commands"
+---
+
+## Overview
+
+The `/help` command displays a list of all available commands in Apex along with their descriptions. This is your go-to reference when you need to quickly see what commands are available.
+
+## Usage
+
+```bash
+/help
+```
+
+## What You'll See
+
+When you run `/help`, you'll see a dialog showing:
+
+- **Command List**: All available commands with their names
+- **Descriptions**: Brief explanation of what each command does
+
+## Available Commands
+
+<CardGroup cols={2}>
+  <Card title="/help" icon="circle-question">
+    Display this help information with all available commands
+  </Card>
+  <Card title="/init" icon="play">
+    Start a new penetration testing session with the configuration wizard
+  </Card>
+  <Card title="/models" icon="microchip">
+    View and select AI models from configured providers
+  </Card>
+  <Card title="/providers" icon="plug">
+    Manage AI providers and configure API keys
+  </Card>
+</CardGroup>
+
+## Command Details
+
+| Command      | Description                                                      |
+| ------------ | ---------------------------------------------------------------- |
+| `/help`      | Show help dialog with all available commands                     |
+| `/init`      | Start a new pentest session with target and configuration wizard |
+| `/models`    | View and select AI models grouped by provider                    |
+| `/providers` | Connect and configure AI provider API keys                       |
+
+## Getting Started Flow
+
+For new users, here's the recommended order of commands:
+
+<Steps>
+  <Step title="Configure Provider">
+    Run `/providers` to set up your AI provider API key (Anthropic recommended)
+  </Step>
+  <Step title="Select Model">
+    Run `/models` to choose which AI model to use for testing
+  </Step>
+  <Step title="Start Testing">
+    Run `/init` to configure and launch a penetration test
+  </Step>
+</Steps>
+
+## Tips
+
+<Callout intent="info">
+  Type `/help` at any time to quickly reference available commands without
+  leaving the Apex interface.
+</Callout>
+
+<Callout intent="success">
+  **Pro Tip**: Press `[ESC]` to close the help dialog and return to the main
+  screen.
+</Callout>
+
+## Related Commands
+
+<CardGroup cols={2}>
+  <Card title="/init" icon="play" href="/apex/commands/init">
+    Start a penetration test
+  </Card>
+  <Card title="/models" icon="microchip" href="/apex/commands/models">
+    Select AI model
+  </Card>
+  <Card title="/providers" icon="plug" href="/apex/commands/providers">
+    Configure AI providers
+  </Card>
+</CardGroup>

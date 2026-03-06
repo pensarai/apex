@@ -2,9 +2,8 @@ import { useState } from "react";
 import { useKeyboard } from "@opentui/react";
 import Input from "../input";
 import { useRoute } from "../../context/route";
-import { sessions, type SessionConfig } from "../../../core/session";
+import type { SessionConfig } from "../../../core/session";
 import { SpinnerDots } from "../sprites";
-import { generateRandomName } from "../../../util/name";
 import { useTheme } from "../../theme";
 
 // Simplified wizard step types
@@ -12,7 +11,6 @@ type WizardStep = "target" | "configure" | "creating";
 
 // Simplified wizard state interface
 interface WizardState {
-  name: string;
   target: string;
   auth: {
     loginUrl: string;
@@ -38,7 +36,6 @@ export default function InitWizard() {
   // Wizard state
   const [currentStep, setCurrentStep] = useState<WizardStep>("target");
   const [state, setState] = useState<WizardState>(() => ({
-    name: generateRandomName(),
     target: "",
     auth: {
       loginUrl: "",
@@ -119,24 +116,10 @@ export default function InitWizard() {
         };
       }
 
-      // Create execution session
-      // const session = await Session.createExecution({
-      //   target: state.target,
-      //   objective: `Pentest: ${state.target}`,
-      //   prefix: state.name || undefined,
-      //   config: sessionConfig,
-      // });
-
-      const session = await sessions.create({
-        targets: [state.target],
-        name: state.name,
-        config: sessionConfig,
-      });
-
-      // Navigate to session route - SessionView will handle execution
       route.navigate({
         type: "pentest",
-        sessionId: session.id,
+        targets: [state.target],
+        sessionConfig,
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to create session");
@@ -167,16 +150,9 @@ export default function InitWizard() {
 
     // Target step: Enter to start, Tab to navigate/configure
     if (currentStep === "target") {
-      // Tab navigation between name and target fields
       if (key.name === "tab") {
-        if (key.shift) {
-          setTargetFocusedField((prev) => Math.max(0, prev - 1));
-        } else {
-          if (targetFocusedField === 1 && state.target.trim()) {
-            setCurrentStep("configure");
-          } else {
-            setTargetFocusedField((prev) => Math.min(1, prev + 1));
-          }
+        if (!key.shift && targetFocusedField === 0 && state.target.trim()) {
+          setCurrentStep("configure");
         }
         return;
       }
@@ -331,21 +307,12 @@ export default function InitWizard() {
         {error && <text fg={colors.error}>Error: {error}</text>}
 
         <Input
-          label="Session Name"
-          description="Auto-generated, edit if desired"
-          placeholder="swift-falcon"
-          value={state.name}
-          onInput={(v) => setState((prev) => ({ ...prev, name: v }))}
-          focused={targetFocusedField === 0}
-        />
-
-        <Input
           label="Target URL"
           description="e.g., https://example.com"
           placeholder="https://example.com"
           value={state.target}
           onInput={(v) => setState((prev) => ({ ...prev, target: v }))}
-          focused={targetFocusedField === 1}
+          focused={targetFocusedField === 0}
         />
 
         <box flexDirection="column" gap={0} marginTop={1}>

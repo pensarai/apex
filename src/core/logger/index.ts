@@ -91,7 +91,7 @@ export class Logger {
 
   constructor(session: SessionInfo, fileName?: string) {
     this.session = session;
-    const rootPath = sessions.getExecutionRoot(session.id);
+    const rootPath = sessions.getSessionRoot(session.id);
     const logsPath = path.join(rootPath, "logs");
     this.logFilePath = path.join(logsPath, fileName || "agent.log");
 

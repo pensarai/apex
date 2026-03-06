@@ -3,8 +3,8 @@ import type { Route } from "./context/route";
 import {
   parseWebFlags,
   hasEnoughFlagsToSkipWizard,
-  createOperatorSessionFromFlags,
-  createSwarmSessionFromFlags,
+  buildOperatorSessionConfig,
+  buildSwarmSessionConfig,
 } from "./utils/command-flags";
 import { getAllThemeNames } from "./theme";
 import { config } from "../core/config";
@@ -105,14 +105,13 @@ export const commands: CommandConfig[] = [
 
       // Pentest command always uses swarm mode
       if (flags.target && hasEnoughFlagsToSkipWizard(flags)) {
-        try {
-          const session = await createSwarmSessionFromFlags(flags);
-          ctx.navigate({ type: "pentest", sessionId: session.id });
-          return;
-        } catch (e) {
-          // Fall through to wizard on error
-          console.error("Failed to create session:", e);
-        }
+        const params = buildSwarmSessionConfig(flags);
+        ctx.navigate({
+          type: "pentest",
+          targets: params.targets,
+          sessionConfig: params.config,
+        });
+        return;
       }
       // Navigate to WebWizard (swarm wizard) for target input
       ctx.navigate({
@@ -135,14 +134,13 @@ export const commands: CommandConfig[] = [
       },
       { name: "--name", valueHint: "<name>", description: "Session name" },
       {
+        name: "--autopilot",
+        description: "Disable approval gates (auto-approve all actions)",
+      },
+      {
         name: "--mode",
         valueHint: "<plan|manual|auto>",
         description: "Operator mode",
-      },
-      {
-        name: "--tier",
-        valueHint: "<1-5>",
-        description: "Auto-approve permission tier",
       },
       { name: "--auth-url", valueHint: "<url>", description: "Login page URL" },
       {
@@ -185,23 +183,13 @@ export const commands: CommandConfig[] = [
     ],
     handler: async (args, ctx) => {
       const flags = parseWebFlags(args);
-
-      // Operator mode - interactive session with human guidance
-      if (flags.target && hasEnoughFlagsToSkipWizard(flags)) {
-        try {
-          const session = await createOperatorSessionFromFlags(flags);
-          ctx.navigate({ type: "pentest", sessionId: session.id });
-          return;
-        } catch (e) {
-          // Fall through to wizard on error
-          console.error("Failed to create session:", e);
-        }
-      }
-      // Navigate to operator wizard with pre-filled values
+      const params = buildOperatorSessionConfig(flags);
       ctx.navigate({
-        type: "base",
-        path: "operator",
-        options: flags as Record<string, unknown>,
+        type: "operator",
+        initialConfig: {
+          requireApproval: flags.requireApproval ?? true,
+          target: flags.target,
+        },
       });
     },
   },

@@ -55,6 +55,11 @@ export { spawnCodingAgent } from "./spawnCodingAgent";
 // export { generateReport } from "./generateReport";
 export { provideComparisonResults } from "./provideComparisonResults";
 
+// Memory tools
+export { addMemory } from "./addMemory";
+export { listMemories } from "./listMemories";
+export { getMemory } from "./getMemory";
+
 // Email tools
 export { createEmailToolset, EMAIL_TOOL_NAMES } from "./email";
 export type { EmailToolName } from "./email";
@@ -90,6 +95,9 @@ import { spawnPentestSwarm } from "./spawnPentestSwarm";
 import { spawnCodingAgent } from "./spawnCodingAgent";
 // import { generateReport } from "./generateReport";
 import { provideComparisonResults } from "./provideComparisonResults";
+import { addMemory } from "./addMemory";
+import { listMemories } from "./listMemories";
+import { getMemory } from "./getMemory";
 import { createEmailToolset } from "./email";
 import { emailListInboxes } from "./email/listInboxes";
 import { emailListMessages } from "./email/listMessages";
@@ -145,6 +153,11 @@ export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
     // generate_report: generateReport(ctx),
     provide_comparison_results: provideComparisonResults(ctx),
 
+    // Memory tools (persistent cross-session knowledge)
+    add_memory: addMemory(ctx),
+    list_memories: listMemories(ctx),
+    get_memory: getMemory(ctx),
+
     // Email tools (read-only inbox access)
     ...createEmailToolset(ctx),
     email_list_inboxes: emailListInboxes(ctx),
@@ -189,6 +202,10 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "spawn_coding_agent",
   // "generate_report",
   "provide_comparison_results",
+  // Memory
+  "add_memory",
+  "list_memories",
+  "get_memory",
   // Email
   "email_list_inboxes",
   "email_list_messages",

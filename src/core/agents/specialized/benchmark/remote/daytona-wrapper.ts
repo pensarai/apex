@@ -653,7 +653,7 @@ async function cloneRepo(
 
 /**
  * Download pentest results from sandbox.
- * The `pensar pentest` CLI writes session data to ~/.pensar/executions/.
+ * The `pensar pentest` CLI writes session data to ~/.pensar/sessions/.
  * We find the most recent session directory and download it.
  */
 async function downloadResults(
@@ -669,20 +669,19 @@ async function downloadResults(
     throw new Error("Failed to get user home directory");
   }
 
-  // Path to executions directory
-  const executionsPath = path.join(userHome, ".pensar", "executions");
+  const sessionsPath = path.join(userHome, ".pensar", "sessions");
 
   // List all session directories
   const files = (await retryWithBackoff(
-    () => sandbox.fs.listFiles(executionsPath),
+    () => sandbox.fs.listFiles(sessionsPath),
     {
       branch,
     },
   )) as unknown as Array<{ name: string; isDirectory: boolean }>;
-  console.log(`${prefix}Found ${files.length} execution directories`);
+  console.log(`${prefix}Found ${files.length} session directories`);
 
   if (files.length === 0) {
-    throw new Error(`No execution sessions found for branch ${branch}`);
+    throw new Error(`No sessions found for branch ${branch}`);
   }
 
   // Get the most recent session (last in array)
@@ -691,11 +690,11 @@ async function downloadResults(
   console.log(`${prefix}Downloading session: ${sessionDir}`);
 
   // Download all files in the session directory recursively
-  const sessionPath = path.join(executionsPath, sessionDir);
+  const sessionPath = path.join(sessionsPath, sessionDir);
   const localSessionPath = path.join(
     process.cwd(),
     ".pensar",
-    "executions",
+    "sessions",
     sessionDir,
   );
 
@@ -887,7 +886,7 @@ async function generateSummaryReport(
   const summaryDir = path.join(
     process.cwd(),
     ".pensar",
-    "executions",
+    "sessions",
     `parallel-run-${new Date().toISOString().replace(/[:.]/g, "-")}`,
   );
 
