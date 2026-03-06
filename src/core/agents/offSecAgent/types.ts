@@ -242,6 +242,16 @@ export type ConsumeCallbacks = {
   onTextDelta?: (
     delta: Extract<TextStreamPart<ToolSet>, { type: "text-delta" }>,
   ) => void;
+  /** Fired as soon as the model starts generating a tool call (tool name is known, args still streaming). */
+  onToolCallStreaming?: (delta: {
+    toolCallId: string;
+    toolName: string;
+  }) => void;
+  /** Fired as tool call arguments are being generated (partial JSON delta). */
+  onToolCallDelta?: (delta: {
+    toolCallId: string;
+    argsTextDelta: string;
+  }) => void;
   onToolCall?: (
     delta: Extract<TextStreamPart<ToolSet>, { type: "tool-call" }>,
   ) => void;
@@ -279,6 +289,16 @@ export type SubagentConsumeCallbacks = {
   }) => void;
   onTextDelta?: (
     delta: Extract<TextStreamPart<ToolSet>, { type: "text-delta" }> & {
+      subagentId?: string;
+    },
+  ) => void;
+  onToolCallStreaming?: (
+    delta: { toolCallId: string; toolName: string } & {
+      subagentId?: string;
+    },
+  ) => void;
+  onToolCallDelta?: (
+    delta: { toolCallId: string; argsTextDelta: string } & {
       subagentId?: string;
     },
   ) => void;

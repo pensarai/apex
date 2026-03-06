@@ -31,6 +31,8 @@ export async function runOffensiveSecurityAgent(
 
   await agent.consume({
     onTextDelta: (d) => input.callbacks?.onTextDelta?.(d),
+    onToolCallStreaming: (d) => input.callbacks?.onToolCallStreaming?.(d),
+    onToolCallDelta: (d) => input.callbacks?.onToolCallDelta?.(d),
     onToolCall: (d) => input.callbacks?.onToolCall?.(d),
     onToolResult: (d) => input.callbacks?.onToolResult?.(d),
     onError: (e) => input.callbacks?.onError?.(e),

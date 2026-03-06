@@ -43,7 +43,8 @@ export const ToolRenderer = memo(function ToolRenderer({
     return null;
   }
 
-  const isPending = message.status === "pending";
+  const isStreaming = message.status === "streaming";
+  const isPending = message.status === "pending" || isStreaming;
   const isCompleted = message.status === "completed";
   const isError = message.status === "error";
   const { toolName, args, result, logs } = message;

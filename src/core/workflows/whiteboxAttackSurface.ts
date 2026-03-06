@@ -179,6 +179,8 @@ export async function runWhiteboxAttackSurfaceWorkflow(
 
   const appsResult = await appsAgent.consume({
     onTextDelta: (d) => callbacks?.onTextDelta?.(d),
+    onToolCallStreaming: (d) => callbacks?.onToolCallStreaming?.(d),
+    onToolCallDelta: (d) => callbacks?.onToolCallDelta?.(d),
     onToolCall: (d) => callbacks?.onToolCall?.(d),
     onToolResult: (d) => callbacks?.onToolResult?.(d),
     onError: (e) => callbacks?.onError?.(e),
@@ -250,6 +252,16 @@ export async function runWhiteboxAttackSurfaceWorkflow(
             ? {
                 onTextDelta: (d) =>
                   callbacks.subagentCallbacks!.onTextDelta?.({
+                    ...d,
+                    subagentId,
+                  }),
+                onToolCallStreaming: (d) =>
+                  callbacks.subagentCallbacks!.onToolCallStreaming?.({
+                    ...d,
+                    subagentId,
+                  }),
+                onToolCallDelta: (d) =>
+                  callbacks.subagentCallbacks!.onToolCallDelta?.({
                     ...d,
                     subagentId,
                   }),

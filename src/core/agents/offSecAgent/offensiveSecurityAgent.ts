@@ -283,6 +283,8 @@ export class OffensiveSecurityAgent<TResult = void> {
   async consume(callbacks: ConsumeCallbacks = {}): Promise<TResult> {
     const {
       onTextDelta,
+      onToolCallStreaming,
+      onToolCallDelta,
       onToolCall,
       onToolResult,
       onError,
@@ -297,6 +299,24 @@ export class OffensiveSecurityAgent<TResult = void> {
           onTextDelta?.(chunk);
           subagentCallbacks?.onTextDelta?.({ ...chunk, subagentId: sid });
           break;
+        case "tool-input-start": {
+          const delta = { toolCallId: chunk.id, toolName: chunk.toolName };
+          onToolCallStreaming?.(delta);
+          subagentCallbacks?.onToolCallStreaming?.({
+            ...delta,
+            subagentId: sid,
+          });
+          break;
+        }
+        case "tool-input-delta": {
+          const delta = { toolCallId: chunk.id, argsTextDelta: chunk.delta };
+          onToolCallDelta?.(delta);
+          subagentCallbacks?.onToolCallDelta?.({
+            ...delta,
+            subagentId: sid,
+          });
+          break;
+        }
         case "tool-call":
           onToolCall?.(chunk);
           subagentCallbacks?.onToolCall?.({ ...chunk, subagentId: sid });
