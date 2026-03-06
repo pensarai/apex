@@ -26,7 +26,9 @@ function toNonNegativeInteger(value: unknown): number {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
 }
 
-function normalizeTokenUsage(value?: Partial<TokenUsageTotals>): TokenUsageTotals {
+function normalizeTokenUsage(
+  value?: Partial<TokenUsageTotals>,
+): TokenUsageTotals {
   const inputTokens = toNonNegativeInteger(value?.inputTokens);
   const outputTokens = toNonNegativeInteger(value?.outputTokens);
   const derivedTotal = inputTokens + outputTokens;

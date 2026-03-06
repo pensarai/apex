@@ -279,7 +279,10 @@ export default function OperatorDashboard({
 
     const metrics = readExecutionMetrics(session.rootPath);
     const persisted = metrics?.tokenUsage;
-    if (persisted && (persisted.inputTokens > 0 || persisted.outputTokens > 0)) {
+    if (
+      persisted &&
+      (persisted.inputTokens > 0 || persisted.outputTokens > 0)
+    ) {
       addTokenUsage(persisted.inputTokens, persisted.outputTokens);
       tokenUsageRef.current = persisted;
     }
@@ -1033,7 +1036,11 @@ export default function OperatorDashboard({
 function TokenTrackerPanel({
   tokenUsage,
 }: {
-  tokenUsage: { inputTokens: number; outputTokens: number; totalTokens: number };
+  tokenUsage: {
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+  };
 }) {
   const { colors } = useTheme();
 
@@ -1059,7 +1066,9 @@ function TokenTrackerPanel({
       <text fg={colors.text}>
         Output tokens: {tokenUsage.outputTokens.toLocaleString()}
       </text>
-      <text fg={colors.text}>Total tokens: {tokenUsage.totalTokens.toLocaleString()}</text>
+      <text fg={colors.text}>
+        Total tokens: {tokenUsage.totalTokens.toLocaleString()}
+      </text>
       <text fg={colors.textMuted}>Toggle with Cmd/Super+Shift+. or Ctrl+T</text>
     </box>
   );
