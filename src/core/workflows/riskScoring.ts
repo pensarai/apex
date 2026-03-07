@@ -126,8 +126,8 @@ export async function scoreEndpoints(
     endpoints,
     concurrency,
     async (ep) => {
-      const key = `${ep.file}:${ep.path}`;
-      const subagentId = `risk-score-${ep.appName}-${ep.path}`;
+      const key = `${ep.method}:${ep.file}:${ep.path}`;
+      const subagentId = `risk-score-${ep.appName}-${ep.method}-${ep.path}`;
 
       callbacks?.subagentCallbacks?.onSubagentSpawn?.({
         subagentId,
