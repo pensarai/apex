@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 import { writeFileSync, mkdirSync, readdirSync, readFileSync, existsSync } from "fs";
 import { join } from "path";
 import { CodeAgent } from "../agents/specialized/codeAgent/agent";
@@ -579,8 +579,9 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
 
   const diffPath = join(session.rootPath, "diff-output.txt");
   try {
-    const diff = execSync(
-      `git diff ${previousCommitSha}..${currentCommitSha}`,
+    const diff = execFileSync(
+      "git",
+      ["diff", `${previousCommitSha}..${currentCommitSha}`],
       { cwd: codebasePath, maxBuffer: 50 * 1024 * 1024, encoding: "utf-8" },
     );
     writeFileSync(diffPath, diff, "utf-8");
