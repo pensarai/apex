@@ -22,6 +22,7 @@ import type { ConsumeCallbacks } from "../agents/offSecAgent/types";
 import { runWithBoundedConcurrency } from "../utils/concurrency";
 import { scoreEndpoints } from "./riskScoring";
 import { execFileSync } from "child_process";
+import { createHash } from "crypto";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -610,10 +611,20 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
 
   for (const app of existingResult.apps) {
     for (const ep of [...app.pages, ...app.apiEndpoints]) {
-      const sanitized = `${app.name}__${ep.method}__${ep.path}`
-        .toLowerCase()
-        .replace(/[^a-z0-9-_.]/g, "_");
-      const filename = `endpoint_${sanitized}.json`;
+      const rawKey = `${app.name}__${ep.method}__${ep.path}`.toLowerCase();
+      const sanitized = rawKey.replace(/[^a-z0-9-_.]/g, "_");
+      const hash = createHash("sha256")
+        .update(rawKey)
+        .digest("hex")
+        .slice(0, 8);
+      const filename = `endpoint_${sanitized}_${hash}.json`;
+
+      if (preloadedFiles.has(filename)) {
+        console.warn(
+          `Incremental recon: duplicate filename "${filename}" for endpoint ${ep.method} ${ep.path} in app ${app.name} — previous file will be overwritten`,
+        );
+      }
+
       const { riskScore: _staleScore, ...epWithoutScore } = ep;
       const assetData = {
         appName: app.name,
@@ -932,7 +943,7 @@ Each asset JSON file has this structure:
 \`\`\`
 
 **Rules for updating:**
-- **Adding** a new endpoint: Create a new file named \`endpoint_{appname}__{method}__{path}.json\` (sanitized)
+- **Adding** a new endpoint: Create a new file with a unique name in the assets directory (e.g. \`endpoint_{appname}__{method}__{sanitized_path}_{short_hash}.json\`). The name must not collide with any existing file.
 - **Modifying** an existing endpoint: Read the existing file, update the changed fields, and write it back
 - **Removing** an endpoint: Delete the file from the assets directory
 - If a change affects only internal logic (no route/path/method/auth changes), you may skip the update
