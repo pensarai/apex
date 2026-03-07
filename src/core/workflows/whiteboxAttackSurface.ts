@@ -1,6 +1,11 @@
 import { z } from "zod";
-import { execFileSync } from "child_process";
-import { writeFileSync, mkdirSync, readdirSync, readFileSync, existsSync } from "fs";
+import {
+  writeFileSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  existsSync,
+} from "fs";
 import { join } from "path";
 import { CodeAgent } from "../agents/specialized/codeAgent/agent";
 import {
@@ -16,6 +21,7 @@ import type { SessionInfo } from "../session";
 import type { ConsumeCallbacks } from "../agents/offSecAgent/types";
 import { runWithBoundedConcurrency } from "../utils/concurrency";
 import { scoreEndpoints } from "./riskScoring";
+import { execFileSync } from "child_process";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -586,7 +592,10 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
     );
     writeFileSync(diffPath, diff, "utf-8");
   } catch (error) {
-    console.error("Failed to generate git diff, falling back to full recon:", error);
+    console.error(
+      "Failed to generate git diff, falling back to full recon:",
+      error,
+    );
     return runWhiteboxAttackSurfaceWorkflow(input);
   }
 
@@ -612,7 +621,11 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
         endpointType: app.apiEndpoints.includes(ep) ? "api" : "page",
         ...ep,
       };
-      writeFileSync(join(assetsPath, filename), JSON.stringify(assetData, null, 2), "utf-8");
+      writeFileSync(
+        join(assetsPath, filename),
+        JSON.stringify(assetData, null, 2),
+        "utf-8",
+      );
       preloadedFiles.add(filename);
     }
   }
@@ -628,11 +641,13 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
   const IncrementalResultSchema = z.object({
     repoType: z.string(),
     packageManager: z.string(),
-    changedApps: z.array(z.string()).describe(
-      "Names of applications that were affected by the diff",
-    ),
+    changedApps: z
+      .array(z.string())
+      .describe("Names of applications that were affected by the diff"),
     addedEndpoints: z.number().describe("Count of new endpoints added"),
-    modifiedEndpoints: z.number().describe("Count of existing endpoints modified"),
+    modifiedEndpoints: z
+      .number()
+      .describe("Count of existing endpoints modified"),
     removedEndpoints: z.number().describe("Count of endpoints removed"),
     summary: z.string().describe("Brief summary of what changed"),
   });
@@ -682,13 +697,16 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
     ? readdirSync(assetsPath).filter((f) => f.endsWith(".json"))
     : [];
 
-  const appMap = new Map<string, {
-    framework: string;
-    description: string;
-    location: string;
-    pages: Endpoint[];
-    apiEndpoints: Endpoint[];
-  }>();
+  const appMap = new Map<
+    string,
+    {
+      framework: string;
+      description: string;
+      location: string;
+      pages: Endpoint[];
+      apiEndpoints: Endpoint[];
+    }
+  >();
 
   for (const existingApp of existingResult.apps) {
     appMap.set(existingApp.name, {
