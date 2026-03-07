@@ -1,6 +1,50 @@
 import { z } from "zod";
 
 // ---------------------------------------------------------------------------
+// Risk score schemas
+// ---------------------------------------------------------------------------
+
+export const RiskScoreBreakdownSchema = z.object({
+  exposure: z
+    .number()
+    .min(0)
+    .max(3)
+    .describe(
+      "Exposure Level (0-3): 3=Public no auth, 2=Standard user login, 1=Privileged/admin access, 0=Private/internal-only",
+    ),
+  dataSensitivity: z
+    .number()
+    .min(0)
+    .max(3)
+    .describe(
+      "Data Sensitivity (0-3): 3=PII/PHI/financial/passwords/tokens, 2=Business operations/configs, 1=Low-value user data, 0=No meaningful data",
+    ),
+  functionCriticality: z
+    .number()
+    .min(0)
+    .max(2)
+    .describe(
+      "Function Criticality (0-2): 2=Auth flows/payments/state-changing mutations, 1=Core product functionality, 0=Non-critical content",
+    ),
+  securityIndicators: z
+    .number()
+    .min(0)
+    .max(2)
+    .describe(
+      "Security Indicators (0-2): 2=Critical vuln patterns (SQLi, command injection, hardcoded secrets), 1=Moderate concerns (missing validation, weak error handling), 0=No obvious issues",
+    ),
+});
+
+export const RiskScoreSchema = z.object({
+  score: z.number().min(0).max(10).describe("Total risk score (0-10)"),
+  explanation: z.string().describe("Justification for the risk score"),
+  breakdown: RiskScoreBreakdownSchema,
+});
+
+export type RiskScore = z.infer<typeof RiskScoreSchema>;
+export type RiskScoreBreakdown = z.infer<typeof RiskScoreBreakdownSchema>;
+
+// ---------------------------------------------------------------------------
 // Endpoint & App schemas
 // ---------------------------------------------------------------------------
 
@@ -30,6 +74,9 @@ export const EndpointSchema = z.object({
     .describe(
       "Specific pentest objectives for this endpoint (e.g. 'Test for IDOR by enumerating user IDs', 'Test for SQL injection in search parameter')",
     ),
+  riskScore: RiskScoreSchema.optional().describe(
+    "AI-calculated risk score for prioritizing pentest efforts",
+  ),
 });
 
 export type Endpoint = z.infer<typeof EndpointSchema>;
