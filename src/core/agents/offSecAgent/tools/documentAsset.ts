@@ -4,6 +4,7 @@ import { join } from "path";
 import { writeFileSync, mkdirSync, existsSync } from "fs";
 import type { ToolContext } from "./types";
 import type { DocumentedAssetRecord } from "../../specialized/attackSurface/schemas";
+import { computeBlackboxRiskScore } from "../../specialized/attackSurface/blackboxRiskScoring";
 
 /**
  * Factory for the `document_asset` tool.
@@ -148,11 +149,19 @@ Each asset creates a JSON file in the assets directory for tracking and analysis
       const filename = `asset_${sanitizedName}_${timestamp}.json`;
       const filepath = join(assetsPath, filename);
 
+      const riskScore = computeBlackboxRiskScore(
+        asset.riskLevel,
+        asset.assetType,
+        asset.details,
+        asset.notes,
+      );
+
       const assetRecord: DocumentedAssetRecord = {
         ...asset,
         discoveredAt: new Date().toISOString(),
         sessionId: ctx.session.id,
         target: ctx.session.targets[0],
+        riskScore,
       };
 
       try {
