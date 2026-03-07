@@ -63,13 +63,12 @@ export function computeBlackboxRiskScore(
   const score = Math.min(10, Math.max(0, rawSum));
 
   const baseScore = RISK_LEVEL_BASE_SCORE[riskLevel] ?? 0;
-  const explanation = buildExplanation(
-    riskLevel,
-    assetType,
-    baseScore,
-    score,
-    { exposure, dataSensitivity, functionCriticality, securityIndicators },
-  );
+  const explanation = buildExplanation(riskLevel, assetType, baseScore, score, {
+    exposure,
+    dataSensitivity,
+    functionCriticality,
+    securityIndicators,
+  });
 
   return {
     score,
@@ -87,10 +86,7 @@ export function computeBlackboxRiskScore(
 // Dimension helpers
 // ---------------------------------------------------------------------------
 
-function computeExposure(
-  riskLevel: RiskLevel,
-  details?: AssetDetails,
-): number {
+function computeExposure(riskLevel: RiskLevel, details?: AssetDetails): number {
   let base = EXPOSURE_BY_RISK[riskLevel] ?? 1;
 
   if (details?.authentication) {
