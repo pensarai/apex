@@ -140,7 +140,11 @@ export class AttackSurfaceRegistry {
       try {
         const raw = readFileSync(join(assetsPath, file), "utf-8");
         const asset = JSON.parse(raw) as AssetRecord;
-        if (asset && typeof asset.assetName === "string" && typeof asset.assetType === "string") {
+        if (
+          asset &&
+          typeof asset.assetName === "string" &&
+          typeof asset.assetType === "string"
+        ) {
           registry.indexAsset(asset);
         }
       } catch {

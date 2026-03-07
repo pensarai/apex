@@ -70,7 +70,14 @@ export interface AttackSurfaceResult {
  */
 export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSurfaceResult> {
   constructor(opts: AttackSurfaceAgentInput) {
-    const { model, session, authConfig, onStepFinish, abortSignal, attackSurfaceRegistry } = opts;
+    const {
+      model,
+      session,
+      authConfig,
+      onStepFinish,
+      abortSignal,
+      attackSurfaceRegistry,
+    } = opts;
     const target = opts.target ?? opts.cwd!;
 
     const resultsPath = join(session.rootPath, "attack-surface-results.json");
