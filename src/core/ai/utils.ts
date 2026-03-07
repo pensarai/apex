@@ -356,6 +356,7 @@ export function checkIfContextLengthError(error: unknown): boolean {
     errorMessage.includes("context_length_exceeded") ||
     errorMessage.includes("tokens_exceeded") ||
     errorMessage.includes("maximum token") ||
+    errorMessage.includes("too many tokens") ||
     errorCode === "context_length_exceeded" ||
     errorCode === "tokens_exceeded"
   );

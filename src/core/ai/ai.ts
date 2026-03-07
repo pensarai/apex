@@ -62,7 +62,6 @@ function checkIfRateLimitError(error: unknown): boolean {
 
   return (
     // Message-based detection
-    errorMessage.includes("too many tokens") ||
     errorMessage.includes("rate limit") ||
     errorMessage.includes("request rate") ||
     errorMessage.includes("throttl") ||
@@ -125,47 +124,51 @@ function wrapStreamWithErrorHandler(
               const errorMessage =
                 error instanceof Error ? error.message : String(error);
 
-              // Handle rate limit errors with exponential backoff retry
-              if (
-                checkIfRateLimitError(error) &&
-                rateLimitRetryCount < MAX_RATE_LIMIT_RETRIES
-              ) {
-                const nextRetryCount = rateLimitRetryCount + 1;
-                const delayMs = Math.min(1000 * nextRetryCount, 30000);
-
-                if (!silent) {
-                  console.warn(
-                    `Rate limit error (attempt ${nextRetryCount}/${MAX_RATE_LIMIT_RETRIES}), waiting ${delayMs}ms: ${errorMessage}`,
-                  );
-                }
-
-                await new Promise((resolve) => setTimeout(resolve, delayMs));
-
-                const retriedStream = streamResponse({
-                  ...opts,
-                  messages:
-                    messagesContainer.current.length > 0
-                      ? messagesContainer.current
-                      : undefined,
-                });
-
-                const wrappedRetriedStream = wrapStreamWithErrorHandler(
-                  retriedStream,
-                  messagesContainer,
-                  opts,
-                  model,
-                  silent,
-                  nextRetryCount,
-                );
-
-                for await (const chunk of wrappedRetriedStream.fullStream) {
-                  yield chunk;
-                }
-                return;
-              }
-
-              // Handle context length errors with summarization
+              // Check context length FIRST — "too many tokens" errors from
+              // providers like Bedrock indicate input is too large, not a rate
+              // limit. Summarize rather than blindly retrying the same payload.
               const isCtxError = checkIfContextLengthError(error);
+
+              if (!isCtxError) {
+                // Handle rate limit errors with exponential backoff retry
+                if (
+                  checkIfRateLimitError(error) &&
+                  rateLimitRetryCount < MAX_RATE_LIMIT_RETRIES
+                ) {
+                  const nextRetryCount = rateLimitRetryCount + 1;
+                  const delayMs = Math.min(1000 * nextRetryCount, 30000);
+
+                  if (!silent) {
+                    console.warn(
+                      `Rate limit error (attempt ${nextRetryCount}/${MAX_RATE_LIMIT_RETRIES}), waiting ${delayMs}ms: ${errorMessage}`,
+                    );
+                  }
+
+                  await new Promise((resolve) => setTimeout(resolve, delayMs));
+
+                  const retriedStream = streamResponse({
+                    ...opts,
+                    messages:
+                      messagesContainer.current.length > 0
+                        ? messagesContainer.current
+                        : undefined,
+                  });
+
+                  const wrappedRetriedStream = wrapStreamWithErrorHandler(
+                    retriedStream,
+                    messagesContainer,
+                    opts,
+                    model,
+                    silent,
+                    nextRetryCount,
+                  );
+
+                  for await (const chunk of wrappedRetriedStream.fullStream) {
+                    yield chunk;
+                  }
+                  return;
+                }
+              }
 
               if (isCtxError) {
                 let currentMessages: ModelMessage[] = messagesContainer.current;
@@ -252,6 +255,59 @@ export interface StreamResponseOpts {
   onFinish?: StreamTextOnFinishCallback<ToolSet>;
 }
 
+/**
+ * Truncate tool-result content in older messages to keep the conversation
+ * within context limits. The most recent `keepRecent` tool-result messages
+ * are left intact; older ones have their content replaced with a short
+ * placeholder preserving the tool name and call ID.
+ *
+ * Mutates `messages` in place.
+ */
+function trimOldToolResults(
+  messages: ModelMessage[],
+  keepRecent: number,
+): void {
+  // Collect indices of all tool-result messages (role === "tool")
+  const toolResultIndices: number[] = [];
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i]!;
+    if (msg.role === "tool") {
+      toolResultIndices.push(i);
+    }
+  }
+
+  // Nothing to trim
+  if (toolResultIndices.length <= keepRecent) return;
+
+  const trimCount = toolResultIndices.length - keepRecent;
+
+  for (let t = 0; t < trimCount; t++) {
+    const idx = toolResultIndices[t]!;
+    const msg = messages[idx]!;
+
+    // Replace content array with a truncated placeholder
+    if (Array.isArray(msg.content)) {
+      msg.content = msg.content.map(
+        (part: Record<string, unknown>) => {
+          if (part.type === "tool-result") {
+            const resultStr =
+              typeof part.result === "string"
+                ? part.result
+                : JSON.stringify(part.result);
+            // Keep first 200 chars as a preview
+            const preview =
+              resultStr.length > 200
+                ? resultStr.slice(0, 200) + "... [truncated]"
+                : resultStr;
+            return { ...part, result: preview };
+          }
+          return part;
+        },
+      );
+    }
+  }
+}
+
 export function streamResponse(
   opts: StreamResponseOpts,
 ): StreamTextResult<ToolSet, never> {
@@ -287,6 +343,14 @@ export function streamResponse(
       prepareStep: (opts) => {
         // Update the container with the latest messages
         messagesContainer.current = opts.messages;
+
+        // Trim old tool results to prevent context overflow.
+        // Keep the last N tool-result messages intact; older ones get
+        // their content replaced with a short summary. This mirrors how
+        // Claude Code compresses older context.
+        const KEEP_RECENT_TOOL_RESULTS = 6;
+        trimOldToolResults(opts.messages, KEEP_RECENT_TOOL_RESULTS);
+
         return undefined;
       },
       onStepFinish,
