@@ -257,6 +257,13 @@ export interface StreamResponseOpts {
   silent?: boolean;
   authConfig?: AIAuthConfig;
   onFinish?: StreamTextOnFinishCallback<ToolSet>;
+  /**
+   * Called when the context window overflows and the conversation is
+   * summarized. Callers should use this to discard stale message history
+   * so that subsequent persistence writes only include the summary +
+   * new messages (not the full pre-summarization history).
+   */
+  onSummarized?: (summary: string) => void;
 }
 
 export function streamResponse(

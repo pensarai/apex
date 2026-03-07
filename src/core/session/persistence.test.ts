@@ -19,6 +19,7 @@ import {
   type AgentManifestEntry,
   type SessionInfo,
 } from "./persistence";
+import { getResumeMessages } from "./index";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -555,5 +556,101 @@ describe("convertModelMessagesToUI", () => {
   it("returns empty array for empty input", () => {
     const uiMsgs = convertModelMessagesToUI([]);
     expect(uiMsgs).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getResumeMessages
+// ---------------------------------------------------------------------------
+
+describe("getResumeMessages", () => {
+  it("returns all messages when under the limit", () => {
+    const msgs: ModelMessage[] = [
+      makeMsg("user", "hello"),
+      makeMsg("assistant", "hi"),
+      makeMsg("user", "scan"),
+      makeMsg("assistant", "scanning..."),
+    ];
+    expect(getResumeMessages(msgs, 10)).toEqual(msgs);
+  });
+
+  it("returns all messages when exactly at the limit", () => {
+    const msgs: ModelMessage[] = Array.from({ length: 5 }, (_, i) =>
+      makeMsg(i % 2 === 0 ? "user" : "assistant", `msg-${i}`),
+    );
+    expect(getResumeMessages(msgs, 5)).toEqual(msgs);
+  });
+
+  it("trims to the limit and cuts at a user message boundary", () => {
+    // 10 messages: u a u a u a u a u a
+    const msgs: ModelMessage[] = Array.from({ length: 10 }, (_, i) =>
+      makeMsg(i % 2 === 0 ? "user" : "assistant", `msg-${i}`),
+    );
+
+    const result = getResumeMessages(msgs, 5);
+    // Cut should start at index 5 (rough cut) or later at a user boundary.
+    // Index 5 is assistant, so it should advance to index 6 which is user.
+    expect(result.length).toBeLessThanOrEqual(5);
+    expect(result[0].role).toBe("user");
+  });
+
+  it("preserves tool-call / tool-result pairs by cutting at user boundary", () => {
+    const msgs: ModelMessage[] = [
+      makeMsg("user", "start"),
+      makeMsg("assistant", [
+        { type: "text", text: "I'll scan" },
+        {
+          type: "tool-call",
+          toolCallId: "tc-1",
+          toolName: "cmd",
+          args: { cmd: "ls" },
+        },
+      ]),
+      makeMsg("tool", [
+        {
+          type: "tool-result",
+          toolCallId: "tc-1",
+          toolName: "cmd",
+          result: "ok",
+        },
+      ]),
+      makeMsg("assistant", "done with first"),
+      makeMsg("user", "next step"),
+      makeMsg("assistant", "doing next"),
+    ];
+
+    // Limit 3 → rough cut at index 3 ("done with first"), then advance
+    // to index 4 ("next step" user msg) for a clean boundary.
+    const result = getResumeMessages(msgs, 3);
+    expect(result[0].role).toBe("user");
+    expect((result[0] as { content: string }).content).toBe("next step");
+    expect(result.length).toBe(2);
+  });
+
+  it("handles conversations with no user messages after cut point", () => {
+    // All assistant messages except the first
+    const msgs: ModelMessage[] = [
+      makeMsg("user", "go"),
+      ...Array.from({ length: 20 }, (_, i) =>
+        makeMsg("assistant", `step-${i}`),
+      ),
+    ];
+
+    // Limit 5 → rough cut at index 16, no user message after that → fallback
+    const result = getResumeMessages(msgs, 5);
+    expect(result.length).toBe(5);
+  });
+
+  it("returns empty array for empty input", () => {
+    expect(getResumeMessages([], 10)).toEqual([]);
+  });
+
+  it("works with default limit (does not throw)", () => {
+    const msgs: ModelMessage[] = [
+      makeMsg("user", "hello"),
+      makeMsg("assistant", "hi"),
+    ];
+    expect(() => getResumeMessages(msgs)).not.toThrow();
+    expect(getResumeMessages(msgs)).toEqual(msgs);
   });
 });

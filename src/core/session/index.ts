@@ -658,6 +658,52 @@ export function hasOperatorState(session: SessionInfo): boolean {
   return existsSync(statePath);
 }
 
+/**
+ * Maximum number of model messages to pass to the AI when resuming a session.
+ *
+ * Keeps enough context for the agent to continue effectively without hitting
+ * the model's context window and triggering an immediate summarization cycle.
+ * The value is conservative; tool-heavy conversations can produce many messages
+ * per logical "turn" (assistant → tool × N), so 200 messages ≈ 20–50 turns.
+ */
+const MAX_RESUME_MESSAGES = 200;
+
+/**
+ * Return the tail subset of model messages suitable for resuming an agent.
+ *
+ * The full message array may be very long after an extended session. Feeding
+ * it all back to the model on resume would immediately exceed the context
+ * window and force an expensive summarization pass. Instead we keep only the
+ * most recent messages, cutting at a clean "user" message boundary so that no
+ * tool-call / tool-result pairs are orphaned.
+ */
+export function getResumeMessages(
+  messages: ModelMessage[],
+  limit: number = MAX_RESUME_MESSAGES,
+): ModelMessage[] {
+  if (messages.length <= limit) return messages;
+
+  // Walk backward from `limit` positions before the end to find the nearest
+  // "user" message — that is a safe boundary because every tool-call /
+  // tool-result exchange that follows it will be complete.
+  let cutIndex = messages.length - limit;
+
+  // Search forward from the rough cut point for the next user message.
+  // This guarantees we don't start mid-turn (e.g. on an orphaned tool
+  // result whose assistant tool-call was trimmed).
+  while (cutIndex < messages.length) {
+    if (messages[cutIndex].role === "user") break;
+    cutIndex++;
+  }
+
+  // If we couldn't find a user message (unlikely), fall back to the raw cut.
+  if (cutIndex >= messages.length) {
+    cutIndex = messages.length - limit;
+  }
+
+  return messages.slice(cutIndex);
+}
+
 // ============================================================================
 // Runtime Operator Settings Update
 // ============================================================================
@@ -755,6 +801,7 @@ export const sessions = {
   removeMessage,
   loadOperatorState,
   hasOperatorState,
+  getResumeMessages,
   updateOperatorSettings,
   updateToolsetState,
   toggleTool,

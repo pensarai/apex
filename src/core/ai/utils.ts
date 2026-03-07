@@ -340,6 +340,10 @@ export async function summarizeConversation(
     originalLength > 100000
       ? `Context: The previous conversation contained very long content that was summarized.\n\nSummary: ${summary}\n\nOriginal task: Please respond based on this summary.`
       : `${opts.prompt}\n\nThe previous agent has summarized the conversation to pass to you to continue the task. Here is the summary: ${summary}`;
+
+  // Notify callers that context was reset so they can discard stale history.
+  opts.onSummarized?.(summary);
+
   // streamResponse always wraps with error handling, so if this call
   // also hits context length limits, it will recursively summarize again
   const resumed = streamResponse({
