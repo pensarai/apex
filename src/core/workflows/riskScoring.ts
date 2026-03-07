@@ -188,7 +188,15 @@ async function scoreEndpoint(opts: {
   abortSignal?: AbortSignal;
   callbacks?: ConsumeCallbacks;
 }): Promise<RiskScore> {
-  const { codebasePath, endpoint: ep, model, session, authConfig, abortSignal, callbacks } = opts;
+  const {
+    codebasePath,
+    endpoint: ep,
+    model,
+    session,
+    authConfig,
+    abortSignal,
+    callbacks,
+  } = opts;
 
   const lineRange = ep.line ? `around line ${ep.line}` : "";
   const authInfo = ep.authRequired

@@ -328,7 +328,10 @@ export async function runWhiteboxAttackSurfaceWorkflow(
   const allEndpointsForScoring = appsResult.apps.flatMap((appInfo) => {
     const pages = pagesByApp.get(appInfo.name) ?? [];
     const apiEps = apiEndpointsByApp.get(appInfo.name) ?? [];
-    return [...pages, ...apiEps].map((ep) => ({ ...ep, appName: appInfo.name }));
+    return [...pages, ...apiEps].map((ep) => ({
+      ...ep,
+      appName: appInfo.name,
+    }));
   });
 
   let riskScores = new Map<string, RiskScore>();
@@ -344,9 +347,14 @@ export async function runWhiteboxAttackSurfaceWorkflow(
         abortSignal,
         callbacks,
       });
-      console.log(`Risk scoring complete: ${riskScores.size}/${allEndpointsForScoring.length} endpoints scored`);
+      console.log(
+        `Risk scoring complete: ${riskScores.size}/${allEndpointsForScoring.length} endpoints scored`,
+      );
     } catch (error) {
-      console.error("Risk scoring phase failed, continuing without scores:", error);
+      console.error(
+        "Risk scoring phase failed, continuing without scores:",
+        error,
+      );
     }
   }
 
@@ -366,7 +374,9 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     description: appInfo.description,
     location: appInfo.location,
     pages: (pagesByApp.get(appInfo.name) ?? []).map(attachRiskScore),
-    apiEndpoints: (apiEndpointsByApp.get(appInfo.name) ?? []).map(attachRiskScore),
+    apiEndpoints: (apiEndpointsByApp.get(appInfo.name) ?? []).map(
+      attachRiskScore,
+    ),
   }));
 
   const totalPages = apps.reduce((sum, a) => sum + a.pages.length, 0);
