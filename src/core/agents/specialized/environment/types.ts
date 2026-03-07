@@ -6,9 +6,7 @@ import type { UnifiedSandbox } from "../../offSecAgent/tools/sandbox";
  * Structured result returned by the environment agent via the `response` tool.
  */
 export const EnvironmentResultSchema = z.object({
-  url: z
-    .string()
-    .describe("The URL where the application is accessible"),
+  url: z.string().describe("The URL where the application is accessible"),
   status: z
     .enum(["ready", "failed"])
     .describe("The status of the development environment"),
