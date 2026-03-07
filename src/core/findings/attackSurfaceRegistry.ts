@@ -1,6 +1,5 @@
 import { existsSync, readdirSync, readFileSync } from "fs";
 import { join } from "path";
-import type { DocumentedAssetRecord } from "../agents/specialized/attackSurface/schemas";
 
 // ---------------------------------------------------------------------------
 // Fingerprinting helpers
