@@ -363,7 +363,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
   // =========================================================================
 
   function attachRiskScore(ep: Endpoint): Endpoint {
-    const key = `${ep.file}:${ep.path}`;
+    const key = `${ep.file}:${ep.method}:${ep.path}`;
     const score = riskScores.get(key);
     return score ? { ...ep, riskScore: score } : ep;
   }
