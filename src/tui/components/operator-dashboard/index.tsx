@@ -240,7 +240,10 @@ export default function OperatorDashboard({
                 savedState.messages.length > 0
               ) {
                 const modelMsgs = savedState.messages;
-                conversationRef.current = modelMsgs;
+
+                // Only pass a recent subset to the AI to avoid immediately
+                // blowing the context window and triggering summarization.
+                conversationRef.current = sessions.getResumeMessages(modelMsgs);
 
                 const uiMsgs = convertModelMessagesToUI(modelMsgs);
                 setMessages(
@@ -1037,14 +1040,17 @@ export default function OperatorDashboard({
 
     approvalGateRef.current.denyAll();
 
-    // Read back persisted messages so the next run has full context
+    // Read back persisted messages so the next run has full context.
+    // Only keep a recent subset to avoid blowing the context window.
     if (session) {
       try {
         const messagesPath = join(session.rootPath, "messages.json");
         if (existsSync(messagesPath)) {
           const raw = JSON.parse(readFileSync(messagesPath, "utf-8"));
           if (Array.isArray(raw) && raw.length > 0) {
-            conversationRef.current = raw as ModelMessage[];
+            conversationRef.current = sessions.getResumeMessages(
+              raw as ModelMessage[],
+            );
           }
         }
       } catch {
