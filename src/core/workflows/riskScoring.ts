@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { CodeAgent } from "../agents/specialized/codeAgent/agent";
 import {
-  RiskScoreSchema,
   type RiskScore,
   type Endpoint,
 } from "../agents/specialized/whiteboxAttackSurface/types";
