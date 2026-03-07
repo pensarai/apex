@@ -4,6 +4,7 @@ import { join } from "path";
 import { writeFileSync, mkdirSync, existsSync } from "fs";
 import type { ToolContext } from "./types";
 import type { DocumentedAssetRecord } from "../../specialized/attackSurface/schemas";
+import { computeBlackboxRiskScore } from "../../specialized/attackSurface/blackboxRiskScoring";
 
 /**
  * Factory for the `document_asset` tool.
@@ -121,6 +122,21 @@ Each asset creates a JSON file in the assets directory for tracking and analysis
         ),
     }),
     execute: async (asset) => {
+      // -- Dedup check (when a shared registry is available) ----------------
+      if (ctx.attackSurfaceRegistry) {
+        const check = await ctx.attackSurfaceRegistry.register(asset);
+        if (check.duplicate) {
+          const matchName = check.matchedAsset?.assetName ?? "unknown";
+          return {
+            success: false,
+            duplicate: true,
+            matchType: check.matchType,
+            matchedAsset: matchName,
+            message: `Duplicate asset (${check.matchType}): already documented as "${matchName}". Skipping.`,
+          };
+        }
+      }
+
       // Ensure assets directory exists
       if (!existsSync(assetsPath)) {
         mkdirSync(assetsPath, { recursive: true });
@@ -133,14 +149,29 @@ Each asset creates a JSON file in the assets directory for tracking and analysis
       const filename = `asset_${sanitizedName}_${timestamp}.json`;
       const filepath = join(assetsPath, filename);
 
+      const riskScore = computeBlackboxRiskScore(
+        asset.riskLevel,
+        asset.assetType,
+        asset.details,
+        asset.notes,
+      );
+
       const assetRecord: DocumentedAssetRecord = {
         ...asset,
         discoveredAt: new Date().toISOString(),
         sessionId: ctx.session.id,
         target: ctx.session.targets[0],
+        riskScore,
       };
 
-      writeFileSync(filepath, JSON.stringify(assetRecord, null, 2));
+      try {
+        writeFileSync(filepath, JSON.stringify(assetRecord, null, 2));
+      } catch (writeError: unknown) {
+        if (ctx.attackSurfaceRegistry) {
+          await ctx.attackSurfaceRegistry.unregister(asset);
+        }
+        throw writeError;
+      }
 
       return {
         success: true,

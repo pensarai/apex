@@ -1,4 +1,14 @@
 import { z } from "zod";
+import {
+  RiskScoreSchema,
+  RiskScoreBreakdownSchema,
+} from "../whiteboxAttackSurface/types";
+
+export { RiskScoreSchema, RiskScoreBreakdownSchema };
+export type {
+  RiskScore,
+  RiskScoreBreakdown,
+} from "../whiteboxAttackSurface/types";
 
 /**
  * Shared schemas for attack surface agent tools.
@@ -157,6 +167,9 @@ export const DocumentedAssetRecordSchema = DocumentAssetSchema.extend({
   discoveredAt: z.string().describe("ISO timestamp when asset was discovered"),
   sessionId: z.string().describe("Session ID where asset was discovered"),
   target: z.string().describe("Target being analyzed when asset was found"),
+  riskScore: RiskScoreSchema.optional().describe(
+    "Computed risk score with breakdown (heuristic for blackbox, AI-scored for whitebox)",
+  ),
 });
 
 // Type exports

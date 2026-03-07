@@ -1,6 +1,10 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { join } from "path";
+import { writeFileSync, mkdirSync, existsSync } from "fs";
 import type { ToolContext } from "./types";
+
+const MAX_INLINE_BODY = 5_000;
 
 export const httpRequestInputSchema = z.object({
   url: z.string().describe("The URL to request"),
@@ -41,6 +45,39 @@ export type HttpRequestResult = {
   error?: string;
   method?: string;
 };
+
+/**
+ * If `body` exceeds the inline limit, save the full text to a file under
+ * `{session.logsPath}/http-responses/` and return truncated text + file path.
+ */
+function maybeSaveBody(
+  body: string,
+  ctx: ToolContext,
+): { text: string; file?: string } {
+  if (body.length <= MAX_INLINE_BODY) return { text: body };
+
+  const outputDir = join(ctx.session.logsPath, "http-responses");
+  if (!existsSync(outputDir)) {
+    mkdirSync(outputDir, { recursive: true });
+  }
+
+  const ts = new Date().toISOString().replace(/[:.]/g, "-");
+  const filename = `response-${ts}.txt`;
+  const filePath = join(outputDir, filename);
+
+  try {
+    writeFileSync(filePath, body);
+  } catch {
+    return {
+      text: `${body.substring(0, MAX_INLINE_BODY)}...\n\n(truncated — failed to save full response to file)`,
+    };
+  }
+
+  return {
+    text: `${body.substring(0, MAX_INLINE_BODY)}...\n\n(truncated — full response saved to ${filePath}). Use read_file or grep to analyze.`,
+    file: filePath,
+  };
+}
 
 function parseHeaders(raw: string | undefined): Record<string, string> {
   if (!raw) return {};
@@ -145,15 +182,14 @@ COMMON TESTING PATTERNS:
           responseBody = "(unable to read response body)";
         }
 
+        const { text: truncatedBody } = maybeSaveBody(responseBody, ctx);
+
         return {
           success: true,
           status: response.status,
           statusText: response.statusText,
           headers: responseHeaders,
-          body:
-            responseBody.length > 5000
-              ? `${responseBody.substring(0, 5000)}...\n\n(truncated) use execute_command with grep / tail to paginate the response`
-              : responseBody,
+          body: truncatedBody,
           url: response.url,
           redirected: response.redirected,
         };
@@ -258,15 +294,14 @@ async function executeSandboxHttpRequest(
     const statusText = statusMatch ? statusMatch[2] : "Unknown";
     const responseBody = lines.slice(bodyStartIndex).join("\n");
 
+    const { text: truncatedBody } = maybeSaveBody(responseBody, ctx);
+
     return {
       success: status >= 200 && status < 400,
       status,
       statusText,
       headers: responseHeaders,
-      body:
-        responseBody.length > 5000
-          ? `${responseBody.substring(0, 5000)}...\n\n(truncated) use execute_command with grep / tail to paginate the response`
-          : responseBody,
+      body: truncatedBody,
       url,
       redirected: false,
     };

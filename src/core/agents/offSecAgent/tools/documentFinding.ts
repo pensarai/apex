@@ -3,7 +3,10 @@ import { z } from "zod";
 import { join } from "path";
 import { writeFileSync, appendFileSync } from "fs";
 import type { ToolContext } from "./types";
-import { scoreFindingWithCVSS } from "../../specialized/cvssScorer";
+import {
+  scoreFindingWithCVSS,
+  type CVSSScorerResult,
+} from "../../specialized/cvssScorer";
 import type { Finding } from "../types";
 
 export const documentVulnerabilityInputSchema = z.object({
@@ -27,6 +30,31 @@ export const documentVulnerabilityInputSchema = z.object({
 export type DocumentVulnerabilityInput = z.infer<
   typeof documentVulnerabilityInputSchema
 >;
+
+const EVIDENCE_FILE_THRESHOLD = 20_000;
+
+const FALLBACK_CVSS: CVSSScorerResult = {
+  score: 5.0,
+  severity: "MEDIUM",
+  vectorString:
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:L/VI:L/VA:N/SC:N/SI:N/SA:N",
+  metrics: {
+    AV: "N",
+    AC: "L",
+    AT: "N",
+    PR: "N",
+    UI: "N",
+    VC: "L",
+    VI: "L",
+    VA: "N",
+    SC: "N",
+    SI: "N",
+    SA: "N",
+    E: "A",
+  },
+  scoreType: "CVSS-BT",
+  reasoning: "CVSS scoring unavailable — using conservative MEDIUM default.",
+};
 
 export function documentVulnerability(ctx: ToolContext) {
   const { session } = ctx;
@@ -53,22 +81,50 @@ FINDING STRUCTURE:
       try {
         const timestamp = new Date().toISOString();
 
-        // -- CVSS 4.0 scoring (determines severity) --------------------------
-        const cvssResult = await scoreFindingWithCVSS(
-          {
-            finding: {
-              title: input.title,
-              description: input.description,
-              impact: input.impact,
-              evidence: input.evidence,
-              endpoint: input.endpoint,
-              remediation: input.remediation,
+        // -- Persist large evidence to a sidecar file -----------------------
+        let evidenceForPrompt = input.evidence;
+        let evidenceFilePath: string | undefined;
+
+        if (input.evidence.length > EVIDENCE_FILE_THRESHOLD) {
+          const safeSlug = input.title
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "-")
+            .replace(/^-|-$/g, "")
+            .substring(0, 40);
+          const evidenceFilename = `${timestamp.split("T")[0]}-${safeSlug}-evidence.txt`;
+          evidenceFilePath = join(session.findingsPath, evidenceFilename);
+          writeFileSync(evidenceFilePath, input.evidence);
+          evidenceForPrompt =
+            input.evidence.substring(0, EVIDENCE_FILE_THRESHOLD) +
+            `\n... [truncated — full output saved to ${evidenceFilename}]`;
+        }
+
+        // -- CVSS 4.0 scoring (determines severity) ------------------------
+        let cvssResult: CVSSScorerResult;
+        let cvssWarning: string | undefined;
+
+        try {
+          cvssResult = await scoreFindingWithCVSS(
+            {
+              finding: {
+                title: input.title,
+                description: input.description,
+                impact: input.impact,
+                evidence: evidenceForPrompt,
+                endpoint: input.endpoint,
+                remediation: input.remediation,
+              },
+              agentMessages: [],
             },
-            agentMessages: [],
-          },
-          ctx.model!,
-          ctx.authConfig,
-        );
+            ctx.model!,
+            ctx.authConfig,
+          );
+        } catch (cvssError: unknown) {
+          const msg =
+            cvssError instanceof Error ? cvssError.message : String(cvssError);
+          cvssWarning = `CVSS scoring failed (${msg}), using fallback severity.`;
+          cvssResult = FALLBACK_CVSS;
+        }
 
         const severity =
           cvssResult.severity === "NONE" ? "LOW" : cvssResult.severity;
@@ -78,7 +134,7 @@ FINDING STRUCTURE:
           severity: severity as Finding["severity"],
         };
 
-        // -- Dedup check (when a shared registry is available) ----------------
+        // -- Dedup check (when a shared registry is available) --------------
         if (ctx.findingsRegistry) {
           const check = await ctx.findingsRegistry.register(finding);
           if (check.duplicate) {
@@ -98,6 +154,7 @@ FINDING STRUCTURE:
           timestamp,
           sessionId: session.id,
           target: session.targets[0],
+          ...(evidenceFilePath && { evidenceFile: evidenceFilePath }),
           cvss: {
             score: cvssResult.score,
             severity: cvssResult.severity,
@@ -122,10 +179,37 @@ FINDING STRUCTURE:
         const mdPath = join(session.findingsPath, mdFilename);
 
         try {
-          // Write structured JSON (consumed by resolveResult)
           writeFileSync(jsonPath, JSON.stringify(findingWithMeta, null, 2));
 
-          // Write human-readable markdown
+          const cvssSection = cvssWarning
+            ? `## CVSS 4.0 Assessment
+
+**Warning:** ${cvssWarning}
+
+**Score:** ${cvssResult.score} / 10.0 (${cvssResult.severity})  
+**Score Type:** ${cvssResult.scoreType}`
+            : `## CVSS 4.0 Assessment
+
+**Score:** ${cvssResult.score} / 10.0 (${cvssResult.severity})  
+**Vector:** \`${cvssResult.vectorString}\`  
+**Score Type:** ${cvssResult.scoreType}
+
+**Reasoning:** ${cvssResult.reasoning}`;
+
+          const evidenceSection = evidenceFilePath
+            ? `## Evidence
+
+\`\`\`
+${input.evidence.substring(0, 5_000)}
+\`\`\`
+
+> Full evidence output: \`${evidenceFilePath}\``
+            : `## Evidence
+
+\`\`\`
+${finding.evidence}
+\`\`\``;
+
           const markdown = `# ${finding.title}
 
 **Severity:** ${finding.severity}  
@@ -144,19 +228,9 @@ ${finding.description}
 
 ${finding.impact}
 
-## CVSS 4.0 Assessment
+${cvssSection}
 
-**Score:** ${cvssResult.score} / 10.0 (${cvssResult.severity})  
-**Vector:** \`${cvssResult.vectorString}\`  
-**Score Type:** ${cvssResult.scoreType}
-
-**Reasoning:** ${cvssResult.reasoning}
-
-## Evidence
-
-\`\`\`
-${finding.evidence}
-\`\`\`
+${evidenceSection}
 
 ## POC
 
@@ -192,11 +266,15 @@ ${finding.references ? `## References\n\n${finding.references}` : ""}
           throw writeError;
         }
 
+        const resultMessage = cvssWarning
+          ? `Finding documented: [${finding.severity}] ${finding.title} (${cvssWarning})`
+          : `Finding documented: [${finding.severity}] ${finding.title}`;
+
         return {
           success: true,
           finding: findingWithMeta,
           filepath: mdPath,
-          message: `Finding documented: [${finding.severity}] ${finding.title}`,
+          message: resultMessage,
         };
       } catch (error: unknown) {
         const errorMsg = error instanceof Error ? error.message : String(error);

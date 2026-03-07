@@ -95,6 +95,7 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
             session: ctx.session,
             authConfig: ctx.authConfig,
             abortSignal: ctx.abortSignal,
+            attackSurfaceRegistry: ctx.attackSurfaceRegistry,
             callbacks: ctx.callbacks,
           });
 
@@ -166,6 +167,7 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
           session: ctx.session,
           authConfig: ctx.authConfig,
           abortSignal: ctx.abortSignal,
+          attackSurfaceRegistry: ctx.attackSurfaceRegistry,
           callbacks: ctx.callbacks,
         });
 

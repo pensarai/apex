@@ -4,6 +4,7 @@ export type ProviderType =
   | "google"
   | "bedrock"
   | "openrouter"
+  | "inception"
   | "pensar"
   | "local";
 
@@ -43,6 +44,12 @@ export const AVAILABLE_PROVIDERS: Provider[] = [
     id: "openrouter",
     name: "OpenRouter",
     description: "Access multiple AI models through one API",
+    requiresAPIKey: true,
+  },
+  {
+    id: "inception",
+    name: "Inception",
+    description: "Mercury and other Inception models",
     requiresAPIKey: true,
   },
   {

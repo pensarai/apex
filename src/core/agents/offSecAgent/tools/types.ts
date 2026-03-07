@@ -1,6 +1,7 @@
 import type { AIModel } from "../../../ai";
 import type { AIAuthConfig } from "../../../ai/utils";
 import type { CredentialManager } from "../../../credentials";
+import type { AttackSurfaceRegistry } from "../../../findings/attackSurfaceRegistry";
 import type { FindingsRegistry } from "../../../findings/registry";
 import type { SessionInfo } from "../../../session";
 
@@ -46,6 +47,12 @@ export type ToolContext = {
    * When present, `document_vulnerability` checks for duplicates before writing.
    */
   findingsRegistry?: FindingsRegistry;
+
+  /**
+   * Shared attack surface registry for cross-agent asset dedup.
+   * When present, `document_asset` checks for duplicates before writing.
+   */
+  attackSurfaceRegistry?: AttackSurfaceRegistry;
 
   /**
    * In-memory credential store. When present, tools can resolve

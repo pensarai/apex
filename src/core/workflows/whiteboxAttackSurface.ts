@@ -5,12 +5,14 @@ import {
   type WhiteboxAttackSurfaceResult,
   type Endpoint,
   type App,
+  type RiskScore,
 } from "../agents/specialized/whiteboxAttackSurface/types";
 import type { AIModel } from "../ai";
 import type { AIAuthConfig } from "../ai/utils";
 import type { SessionInfo } from "../session";
 import type { ConsumeCallbacks } from "../agents/offSecAgent/types";
 import { runWithBoundedConcurrency } from "../utils/concurrency";
+import { scoreEndpoints } from "./riskScoring";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -126,6 +128,7 @@ export interface WhiteboxAttackSurfaceWorkflowInput {
   authConfig?: AIAuthConfig;
   abortSignal?: AbortSignal;
   callbacks?: ConsumeCallbacks;
+  attackSurfaceRegistry?: import("../findings/attackSurfaceRegistry").AttackSurfaceRegistry;
   onStepFinish?: (event: {
     usage?: {
       inputTokens?: number;
@@ -157,6 +160,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     authConfig,
     abortSignal,
     callbacks,
+    attackSurfaceRegistry,
     onStepFinish,
   } = input;
 
@@ -172,6 +176,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     session,
     authConfig,
     abortSignal,
+    attackSurfaceRegistry,
     callbacks,
     onStepFinish: (event) => onStepFinish?.(event),
     responseSchema: AppsDiscoveryResultSchema,
@@ -240,6 +245,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
         session,
         authConfig,
         abortSignal,
+        attackSurfaceRegistry,
         callbacks,
         onStepFinish: (event) => onStepFinish?.(event),
         responseSchema: EndpointsDiscoveryResultSchema,
@@ -303,7 +309,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
   );
 
   // =========================================================================
-  // Phase 3: Assemble the final result
+  // Phase 3: Assemble endpoints by app
   // =========================================================================
 
   const pagesByApp = new Map<string, Endpoint[]>();
@@ -315,13 +321,62 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     map.set(r.appName, r.endpoints);
   }
 
+  // =========================================================================
+  // Phase 4: Risk scoring — score all endpoints in parallel
+  // =========================================================================
+
+  const allEndpointsForScoring = appsResult.apps.flatMap((appInfo) => {
+    const pages = pagesByApp.get(appInfo.name) ?? [];
+    const apiEps = apiEndpointsByApp.get(appInfo.name) ?? [];
+    return [...pages, ...apiEps].map((ep) => ({
+      ...ep,
+      appName: appInfo.name,
+    }));
+  });
+
+  let riskScores = new Map<string, RiskScore>();
+
+  if (allEndpointsForScoring.length > 0) {
+    try {
+      riskScores = await scoreEndpoints({
+        codebasePath,
+        endpoints: allEndpointsForScoring,
+        model,
+        session,
+        authConfig,
+        abortSignal,
+        callbacks,
+      });
+      console.log(
+        `Risk scoring complete: ${riskScores.size}/${allEndpointsForScoring.length} endpoints scored`,
+      );
+    } catch (error) {
+      console.error(
+        "Risk scoring phase failed, continuing without scores:",
+        error,
+      );
+    }
+  }
+
+  // =========================================================================
+  // Phase 5: Final assembly with risk scores attached
+  // =========================================================================
+
+  function attachRiskScore(ep: Endpoint): Endpoint {
+    const key = `${ep.method}:${ep.file}:${ep.path}`;
+    const score = riskScores.get(key);
+    return score ? { ...ep, riskScore: score } : ep;
+  }
+
   const apps: App[] = appsResult.apps.map((appInfo) => ({
     name: appInfo.name,
     framework: appInfo.framework,
     description: appInfo.description,
     location: appInfo.location,
-    pages: pagesByApp.get(appInfo.name) ?? [],
-    apiEndpoints: apiEndpointsByApp.get(appInfo.name) ?? [],
+    pages: (pagesByApp.get(appInfo.name) ?? []).map(attachRiskScore),
+    apiEndpoints: (apiEndpointsByApp.get(appInfo.name) ?? []).map(
+      attachRiskScore,
+    ),
   }));
 
   const totalPages = apps.reduce((sum, a) => sum + a.pages.length, 0);

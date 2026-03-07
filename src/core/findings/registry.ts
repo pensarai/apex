@@ -165,14 +165,19 @@ Two findings are NOT duplicates if they describe genuinely different vulnerabili
 
 Be conservative: when in doubt, mark as NOT a duplicate. It is better to allow a borderline finding through than to suppress a genuinely new one.`;
 
+const MAX_SEMANTIC_DEDUP_FINDINGS = 25;
+
 function buildSemanticDedupPrompt(
   newFinding: Finding,
   existingFindings: readonly Finding[],
 ): string {
-  const existingList = existingFindings
+  const capped = existingFindings.slice(-MAX_SEMANTIC_DEDUP_FINDINGS);
+  const offset = existingFindings.length - capped.length;
+
+  const existingList = capped
     .map(
       (f, i) =>
-        `${i + 1}. [${f.severity}] "${f.title}" — endpoint: ${f.endpoint}\n   Description: ${f.description.substring(0, 200)}`,
+        `${offset + i + 1}. [${f.severity}] "${f.title}" — endpoint: ${f.endpoint}\n   Description: ${f.description.substring(0, 200)}`,
     )
     .join("\n\n");
 
@@ -182,7 +187,7 @@ Endpoint: ${newFinding.endpoint}
 Severity: ${newFinding.severity}
 Description: ${newFinding.description.substring(0, 300)}
 
-## Existing Findings
+## Existing Findings (${existingFindings.length} total${offset > 0 ? `, showing last ${capped.length}` : ""})
 ${existingList}
 
 Is the new finding a duplicate of any existing finding?`;

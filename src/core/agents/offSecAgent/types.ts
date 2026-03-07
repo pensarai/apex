@@ -11,6 +11,7 @@ import type {
 import type { AIModel } from "../../ai";
 import type { AIAuthConfig } from "../../ai/utils";
 import type { CredentialManager } from "../../credentials";
+import type { AttackSurfaceRegistry } from "../../findings/attackSurfaceRegistry";
 import type { FindingsRegistry } from "../../findings/registry";
 import type { SessionInfo, SessionConfig } from "../../session";
 import type { ApprovalGate } from "../../operator";
@@ -124,6 +125,12 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
   findingsRegistry?: FindingsRegistry;
 
   /**
+   * Shared attack surface registry for cross-agent asset dedup.
+   * When present, `document_asset` checks for duplicates before writing.
+   */
+  attackSurfaceRegistry?: AttackSurfaceRegistry;
+
+  /**
    * In-memory credential store. When present, tools resolve credential
    * IDs to secrets at execution time and prompt builders emit only
    * safe {@link CredentialReference} metadata — the agent never sees
@@ -226,6 +233,9 @@ export interface SpecializedAgentInput {
 
   /** Shared findings registry for cross-agent dedup */
   findingsRegistry?: FindingsRegistry;
+
+  /** Shared attack surface registry for cross-agent asset dedup */
+  attackSurfaceRegistry?: AttackSurfaceRegistry;
 
   /** In-memory credential store for secret-free agent prompts */
   credentialManager?: CredentialManager;

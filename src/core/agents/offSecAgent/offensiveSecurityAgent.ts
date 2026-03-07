@@ -137,6 +137,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       subagentCallbacks,
       sandbox: input.sandbox,
       findingsRegistry: input.findingsRegistry,
+      attackSurfaceRegistry: input.attackSurfaceRegistry,
       credentialManager,
       persistentShell: this.persistentShell,
       onCommandOutput: input.callbacks?.onCommandOutput,
@@ -205,14 +206,17 @@ export class OffensiveSecurityAgent<TResult = void> {
     }
     const messagesPath = join(messagesDir, "messages.json");
 
-    const initialMessages: ModelMessage[] = input.messages
-      ? [...input.messages]
-      : [
-          {
-            role: "user" as const,
-            content: [{ type: "text", text: input.prompt }],
-          },
-        ];
+    // Mutable so that summarization can clear stale history.
+    const initialMessagesRef: { current: ModelMessage[] } = {
+      current: input.messages
+        ? [...input.messages]
+        : [
+            {
+              role: "user" as const,
+              content: [{ type: "text", text: input.prompt }],
+            },
+          ],
+    };
 
     // -- Stream ---------------------------------------------------------------
     this.streamResult = streamResponse({
@@ -228,12 +232,20 @@ export class OffensiveSecurityAgent<TResult = void> {
       toolChoice: "auto",
       onStepFinish: (event) => {
         try {
-          const allMessages = [...initialMessages, ...event.response.messages];
+          const allMessages = [
+            ...initialMessagesRef.current,
+            ...event.response.messages,
+          ];
           writeFileSync(messagesPath, JSON.stringify(allMessages, null, 2));
         } catch {
           // Best-effort persistence — don't break the agent loop
         }
         input.onStepFinish?.(event);
+      },
+      onSummarized: () => {
+        // Context was reset by summarization — discard the old history so
+        // subsequent onStepFinish writes only persist post-summary messages.
+        initialMessagesRef.current = [];
       },
       onFinish: input.onFinish,
       abortSignal: input.abortSignal,

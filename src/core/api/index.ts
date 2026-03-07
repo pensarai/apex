@@ -4,3 +4,4 @@ export * from "./benchmark";
 export * from "./blackboxPentest";
 export * from "./targetedPentest";
 export * from "./patching";
+export * from "./environment";

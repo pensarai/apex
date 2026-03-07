@@ -10,6 +10,7 @@ import { BEDROCK_MODELS } from "./bedrock";
 // OpenRouter — curated manually (SDK doesn't enumerate models).
 import { OPENROUTER_MODELS } from "./openrouter";
 import { PENSAR_MODELS } from "./pensar";
+import { INCEPTION_MODELS } from "./inception";
 
 export const AVAILABLE_MODELS: ModelInfo[] = [
   ...ANTHROPIC_MODELS,
@@ -18,6 +19,7 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
   ...BEDROCK_MODELS,
   ...OPENROUTER_MODELS,
   ...PENSAR_MODELS,
+  ...INCEPTION_MODELS,
 ];
 
 export function getModelInfo(model: AIModel): ModelInfo {

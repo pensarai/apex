@@ -267,8 +267,21 @@ export async function scoreFindingWithCVSS(
 /**
  * Build the scoring prompt from finding data and context
  */
+const MAX_EVIDENCE_CHARS = 10_000;
+const MAX_DESCRIPTION_CHARS = 3_000;
+const MAX_IMPACT_CHARS = 2_000;
+
+function truncateField(value: string, limit: number): string {
+  if (value.length <= limit) return value;
+  return value.substring(0, limit) + "\n... [truncated]";
+}
+
 function buildScoringPrompt(input: CVSSScorerInput): string {
   const { finding, agentMessages } = input;
+
+  const description = truncateField(finding.description, MAX_DESCRIPTION_CHARS);
+  const impact = truncateField(finding.impact, MAX_IMPACT_CHARS);
+  const evidence = truncateField(finding.evidence, MAX_EVIDENCE_CHARS);
 
   let prompt = `# Vulnerability Finding to Score
 
@@ -279,14 +292,14 @@ function buildScoringPrompt(input: CVSSScorerInput): string {
 **Endpoint:** ${finding.endpoint}
 
 ### Description
-${finding.description}
+${description}
 
 ### Impact Assessment
-${finding.impact}
+${impact}
 
 ### Evidence (POC Output)
 \`\`\`
-${finding.evidence}
+${evidence}
 \`\`\`
 
 `;

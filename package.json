@@ -1,6 +1,6 @@
 {
   "name": "@pensar/apex",
-  "version": "0.0.86",
+  "version": "0.0.88",
   "description": "AI-powered penetration testing CLI tool with terminal UI",
   "module": "src/tui/index.tsx",
   "main": "build/index.js",
@@ -82,6 +82,7 @@
     "@ai-sdk/anthropic": "^3.0.50",
     "@ai-sdk/google": "^3.0.37",
     "@ai-sdk/openai": "^3.0.37",
+    "@ai-sdk/openai-compatible": "^2.0.35",
     "@daytonaio/sdk": "^0.112.1",
     "@googleapis/gmail": "^16.1.1",
     "@microsoft/microsoft-graph-client": "^3.0.7",
