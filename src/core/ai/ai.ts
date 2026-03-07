@@ -258,8 +258,11 @@ export interface StreamResponseOpts {
 /**
  * Truncate tool-result content in older messages to keep the conversation
  * within context limits. The most recent `keepRecent` tool-result messages
- * are left intact; older ones have their content replaced with a short
- * placeholder preserving the tool name and call ID.
+ * (role === "tool") are left intact; older ones have their output values
+ * replaced with a short preview.
+ *
+ * The Vercel AI SDK stores tool results as:
+ *   { type: "tool-result", toolCallId, toolName, output: { type: "json", value: {...} } }
  *
  * Mutates `messages` in place.
  */
@@ -267,44 +270,63 @@ function trimOldToolResults(
   messages: ModelMessage[],
   keepRecent: number,
 ): void {
+  const MAX_RESULT_CHARS = 300;
+
   // Collect indices of all tool-result messages (role === "tool")
-  const toolResultIndices: number[] = [];
+  const toolMsgIndices: number[] = [];
   for (let i = 0; i < messages.length; i++) {
-    const msg = messages[i]!;
-    if (msg.role === "tool") {
-      toolResultIndices.push(i);
+    if (messages[i]!.role === "tool") {
+      toolMsgIndices.push(i);
     }
   }
 
-  // Nothing to trim
-  if (toolResultIndices.length <= keepRecent) return;
+  if (toolMsgIndices.length <= keepRecent) return;
 
-  const trimCount = toolResultIndices.length - keepRecent;
+  const trimCount = toolMsgIndices.length - keepRecent;
 
   for (let t = 0; t < trimCount; t++) {
-    const idx = toolResultIndices[t]!;
-    const msg = messages[idx]!;
+    const msg = messages[toolMsgIndices[t]!]!;
+    if (!Array.isArray(msg.content)) continue;
 
-    // Replace content array with a truncated placeholder
-    if (Array.isArray(msg.content)) {
-      msg.content = msg.content.map(
-        (part: Record<string, unknown>) => {
-          if (part.type === "tool-result") {
-            const resultStr =
-              typeof part.result === "string"
-                ? part.result
-                : JSON.stringify(part.result);
-            // Keep first 200 chars as a preview
-            const preview =
-              resultStr.length > 200
-                ? resultStr.slice(0, 200) + "... [truncated]"
-                : resultStr;
-            return { ...part, result: preview };
-          }
-          return part;
-        },
-      );
-    }
+    msg.content = msg.content.map((part: Record<string, unknown>) => {
+      if (part.type !== "tool-result") return part;
+
+      // Handle output: { type: "json", value: ... }
+      const output = part.output as
+        | { type: string; value: unknown }
+        | undefined;
+      if (output?.value != null) {
+        const valueStr =
+          typeof output.value === "string"
+            ? output.value
+            : JSON.stringify(output.value);
+        if (valueStr.length > MAX_RESULT_CHARS) {
+          return {
+            ...part,
+            output: {
+              ...output,
+              value: valueStr.slice(0, MAX_RESULT_CHARS) + "... [truncated]",
+            },
+          };
+        }
+      }
+
+      // Handle direct result field (fallback)
+      if (part.result != null) {
+        const resultStr =
+          typeof part.result === "string"
+            ? part.result
+            : JSON.stringify(part.result);
+        if (resultStr.length > MAX_RESULT_CHARS) {
+          return {
+            ...part,
+            result: resultStr.slice(0, MAX_RESULT_CHARS) + "... [truncated]",
+          };
+        }
+      }
+
+      return part;
+    });
   }
 }
 
