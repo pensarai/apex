@@ -835,17 +835,36 @@ export default function OperatorDashboard({
           setSessionCwd(created.rootPath);
         }
 
-        // Persist full conversation for next turn
-        try {
-          const response = await agentResult.streamResult.response;
-          if (gen === generationRef.current && response.messages) {
-            conversationRef.current = [
-              ...nextMessages,
-              ...response.messages,
-            ] as ModelMessage[];
+        // Sync conversationRef from the agent's persisted state.
+        // messages.json is the single source of truth — after summarization
+        // the agent discards stale history, so reading back avoids
+        // re-accumulating old messages that would overflow the context.
+        if (gen === generationRef.current) {
+          try {
+            const rootPath = agentResult.session.rootPath;
+            const mp = join(rootPath, "messages.json");
+            if (existsSync(mp)) {
+              const raw = JSON.parse(readFileSync(mp, "utf-8"));
+              if (Array.isArray(raw) && raw.length > 0) {
+                conversationRef.current = sessions.getResumeMessages(
+                  raw as ModelMessage[],
+                );
+              }
+            }
+          } catch {
+            // Best effort — fall back to stream response
+            try {
+              const response = await agentResult.streamResult.response;
+              if (response.messages) {
+                conversationRef.current = [
+                  ...nextMessages,
+                  ...response.messages,
+                ] as ModelMessage[];
+              }
+            } catch {
+              // conversation stays as-is
+            }
           }
-        } catch {
-          // Stream may have been aborted; conversation stays as-is
         }
       } catch (e) {
         if (gen !== generationRef.current) return;
