@@ -121,6 +121,21 @@ Each asset creates a JSON file in the assets directory for tracking and analysis
         ),
     }),
     execute: async (asset) => {
+      // -- Dedup check (when a shared registry is available) ----------------
+      if (ctx.attackSurfaceRegistry) {
+        const check = await ctx.attackSurfaceRegistry.register(asset);
+        if (check.duplicate) {
+          const matchName = check.matchedAsset?.assetName ?? "unknown";
+          return {
+            success: false,
+            duplicate: true,
+            matchType: check.matchType,
+            matchedAsset: matchName,
+            message: `Duplicate asset (${check.matchType}): already documented as "${matchName}". Skipping.`,
+          };
+        }
+      }
+
       // Ensure assets directory exists
       if (!existsSync(assetsPath)) {
         mkdirSync(assetsPath, { recursive: true });
@@ -140,7 +155,14 @@ Each asset creates a JSON file in the assets directory for tracking and analysis
         target: ctx.session.targets[0],
       };
 
-      writeFileSync(filepath, JSON.stringify(assetRecord, null, 2));
+      try {
+        writeFileSync(filepath, JSON.stringify(assetRecord, null, 2));
+      } catch (writeError: unknown) {
+        if (ctx.attackSurfaceRegistry) {
+          await ctx.attackSurfaceRegistry.unregister(asset);
+        }
+        throw writeError;
+      }
 
       return {
         success: true,
