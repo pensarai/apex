@@ -202,6 +202,8 @@ export interface FindingsRegistryOptions {
   model?: AIModel;
   /** Per-provider API key overrides for the model. */
   authConfig?: AIAuthConfig;
+  /** Signal to cancel in-flight LLM calls (Tier 3 semantic dedup). */
+  abortSignal?: AbortSignal;
 }
 
 // ---------------------------------------------------------------------------
@@ -228,6 +230,7 @@ export class FindingsRegistry {
 
   private model?: AIModel;
   private authConfig?: AIAuthConfig;
+  private abortSignal?: AbortSignal;
 
   // Simple async mutex: a chain of promises. Each register() call
   // appends to the chain so concurrent callers serialise naturally.
@@ -236,6 +239,7 @@ export class FindingsRegistry {
   constructor(opts?: FindingsRegistryOptions) {
     this.model = opts?.model;
     this.authConfig = opts?.authConfig;
+    this.abortSignal = opts?.abortSignal;
   }
 
   /** How many findings are tracked. */
@@ -418,6 +422,7 @@ export class FindingsRegistry {
       prompt,
       system: SEMANTIC_DEDUP_SYSTEM,
       authConfig: this.authConfig,
+      abortSignal: this.abortSignal,
     });
 
     if (result.isDuplicate && result.matchedIndex != null) {

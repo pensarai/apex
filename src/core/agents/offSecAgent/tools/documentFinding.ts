@@ -118,6 +118,7 @@ FINDING STRUCTURE:
             },
             ctx.model!,
             ctx.authConfig,
+            ctx.abortSignal,
           );
         } catch (cvssError: unknown) {
           const msg =
