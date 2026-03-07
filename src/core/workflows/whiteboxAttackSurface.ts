@@ -614,12 +614,13 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
         .toLowerCase()
         .replace(/[^a-z0-9-_.]/g, "_");
       const filename = `endpoint_${sanitized}.json`;
+      const { riskScore: _staleScore, ...epWithoutScore } = ep;
       const assetData = {
         appName: app.name,
         appFramework: app.framework,
         appLocation: app.location,
         endpointType: app.apiEndpoints.includes(ep) ? "api" : "page",
-        ...ep,
+        ...epWithoutScore,
       };
       writeFileSync(
         join(assetsPath, filename),
@@ -767,21 +768,34 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
   // =========================================================================
 
   const changedEndpointsForScoring: Array<Endpoint & { appName: string }> = [];
-  const existingScoreKeys = new Set<string>();
 
+  const existingEndpointMap = new Map<string, Endpoint>();
   for (const existingApp of existingResult.apps) {
     for (const ep of [...existingApp.pages, ...existingApp.apiEndpoints]) {
-      if (ep.riskScore) {
-        existingScoreKeys.add(`${ep.method}:${ep.file}:${ep.path}`);
-      }
+      existingEndpointMap.set(`${ep.method}:${ep.file}:${ep.path}`, ep);
     }
   }
 
   for (const [appName, app] of appMap) {
     for (const ep of [...app.pages, ...app.apiEndpoints]) {
       const key = `${ep.method}:${ep.file}:${ep.path}`;
-      if (!existingScoreKeys.has(key) || !ep.riskScore) {
+      const existing = existingEndpointMap.get(key);
+
+      const isNew = !existing;
+      const hasNoScore = existing && !existing.riskScore;
+      const isModified =
+        existing &&
+        (existing.handler !== ep.handler ||
+          existing.authRequired !== ep.authRequired ||
+          existing.description !== ep.description ||
+          existing.line !== ep.line ||
+          JSON.stringify(existing.pentestObjectives) !==
+            JSON.stringify(ep.pentestObjectives));
+
+      if (isNew || hasNoScore || isModified) {
         changedEndpointsForScoring.push({ ...ep, appName });
+      } else if (existing?.riskScore) {
+        ep.riskScore = existing.riskScore;
       }
     }
   }
