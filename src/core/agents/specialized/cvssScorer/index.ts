@@ -237,6 +237,7 @@ export async function scoreFindingWithCVSS(
   input: CVSSScorerInput,
   model: AIModel,
   authConfig?: AIAuthConfig,
+  abortSignal?: AbortSignal,
 ): Promise<CVSSScorerResult> {
   const prompt = buildScoringPrompt(input);
 
@@ -247,6 +248,7 @@ export async function scoreFindingWithCVSS(
     prompt,
     system: CVSS_SCORER_SYSTEM_PROMPT,
     authConfig,
+    abortSignal,
   });
 
   // Calculate final score using the CVSS calculator

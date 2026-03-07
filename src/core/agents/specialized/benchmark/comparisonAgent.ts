@@ -52,12 +52,13 @@ interface ComparisonAgentProps {
   repoPath: string;
   sessionPath: string;
   model: AIModel;
+  abortSignal?: AbortSignal;
 }
 
 export async function runComparisonAgent(
   props: ComparisonAgentProps,
 ): Promise<ComparisonResult> {
-  const { repoPath, sessionPath, model } = props;
+  const { repoPath, sessionPath, model, abortSignal } = props;
 
   // Load expected results from expected_results folder
   const expectedResultsDir = join(repoPath, "expected_results");
@@ -266,6 +267,7 @@ Be thorough in your analysis and provide clear explanations for your matches. St
     tools: { provide_comparison_results },
     toolChoice: "auto",
     stopWhen: stepCountIs(10000),
+    abortSignal,
   });
 
   // Consume the stream and log progress

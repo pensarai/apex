@@ -79,9 +79,18 @@ export class PersistentShell {
     command: string,
     timeoutSeconds?: number,
     onData?: (chunk: string) => void,
+    abortSignal?: AbortSignal,
   ): Promise<ShellExecuteResult> {
     if (this.disposed) {
       return { stdout: "", stderr: "Shell has been disposed", exitCode: 1 };
+    }
+
+    if (abortSignal?.aborted) {
+      return {
+        stdout: "",
+        stderr: "Command aborted",
+        exitCode: 130,
+      };
     }
 
     this.ensureAlive();
@@ -111,12 +120,40 @@ export class PersistentShell {
         this.pendingStdout = null;
         this.pendingStderr = null;
         if (timeoutTimer) clearTimeout(timeoutTimer);
+        if (abortCleanup) abortCleanup();
         proc.stdout!.removeListener("data", onStdout);
         proc.stderr!.removeListener("data", onStderr);
         resolve(result);
       };
 
       this.pendingCancel = safeResolve;
+
+      // Wire abort signal to cancel running command
+      let abortCleanup: (() => void) | undefined;
+      if (abortSignal) {
+        const onAbort = () => {
+          if (resolved) return;
+          const pid = proc.pid;
+          if (pid && process.platform !== "win32") {
+            try {
+              spawnSync("pkill", ["-TERM", "-P", pid.toString()], {
+                stdio: "ignore",
+              });
+            } catch {
+              // pkill may not be available or no processes matched
+            }
+          }
+          setTimeout(() => {
+            safeResolve({
+              stdout: stdout || "(no output)",
+              stderr: stderr ? stderr + "\n(aborted)" : "(aborted)",
+              exitCode: 130,
+            });
+          }, 500);
+        };
+        abortSignal.addEventListener("abort", onAbort, { once: true });
+        abortCleanup = () => abortSignal.removeEventListener("abort", onAbort);
+      }
 
       const onStdout = (data: Buffer) => {
         const chunk = data.toString();

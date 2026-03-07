@@ -152,6 +152,7 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
             command,
             timeout,
             ctx.onCommandOutput,
+            ctx.abortSignal,
           );
           const { text: stdout, file: outputFile } = maybeSaveFullOutput(
             result.stdout,
