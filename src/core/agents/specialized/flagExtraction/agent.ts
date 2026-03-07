@@ -4,7 +4,10 @@ import { z } from "zod";
 import type { SpecializedAgentInput } from "../../offSecAgent/types";
 import { OffensiveSecurityAgent } from "../../offSecAgent/offensiveSecurityAgent";
 import type { UnifiedSandbox } from "../../offSecAgent/tools/sandbox";
-import { buildTechniquesCatalogPrompt } from "../../../techniques";
+import {
+  buildTechniquesCatalogPrompt,
+  loadTechnique as loadTechniqueContent,
+} from "../../../techniques";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -192,9 +195,29 @@ CRITICAL rules:
 - If you get HTML back, check for flags in comments, hidden inputs, data attributes, script tags
 - Work fast — try many approaches rather than spending time analyzing individual responses
 - When you find the flag, immediately call response with the flag value
-- Use the load_technique tool to pull in relevant technique references (e.g. "flag-extraction" for extraction playbooks, "web-hacking" for advanced attack techniques)
+- Use the load_technique tool to pull in additional technique references if needed (e.g. "web-hacking" for advanced attack techniques)
 
-${buildTechniquesCatalogPrompt()}`;
+${buildFlagExtractionPromptSuffix()}`;
+
+/**
+ * Pre-load the flag-extraction technique inline so the agent doesn't need
+ * to spend a tool call on load_technique. Also append the catalog so the
+ * agent can still load other techniques (e.g. web-hacking) if needed.
+ */
+function buildFlagExtractionPromptSuffix(): string {
+  let content = "";
+  try {
+    const technique = loadTechniqueContent("flag-extraction");
+    content += `## Flag Extraction Technique Reference\n\n${technique}\n\n`;
+  } catch {
+    // Technique not available — agent can still use load_technique
+  }
+  const catalog = buildTechniquesCatalogPrompt();
+  if (catalog) {
+    content += catalog;
+  }
+  return content;
+}
 
 function buildPrompt(
   target: string,

@@ -12,7 +12,7 @@ export const executeCommandInputSchema = z.object({
     .number()
     .optional()
     .describe(
-      "Timeout in seconds (default: 120). Use shorter timeouts for quick probes and longer ones for heavy scans.",
+      "Timeout in seconds (default: 30, max: 30). Use shorter timeouts for quick probes.",
     ),
   toolCallDescription: z
     .string()
@@ -106,9 +106,9 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
       command,
       timeout: rawTimeout,
     }): Promise<ExecuteCommandResult> => {
-      // Default 120s so agent commands don't hang indefinitely in benchmarks.
-      // The agent can override per-call (e.g. longer for heavy scans).
-      const timeout = rawTimeout ?? 120;
+      const defaultTimeout = ctx.commandConfig?.defaultTimeout ?? 30;
+      const maxTimeout = ctx.commandConfig?.maxTimeout ?? 30;
+      const timeout = Math.min(rawTimeout ?? defaultTimeout, maxTimeout);
       if (ctx.abortSignal?.aborted) {
         return {
           success: false,

@@ -99,6 +99,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       credentialManager,
       persistentShell: this.persistentShell,
       onCommandOutput: input.callbacks?.onCommandOutput,
+      commandConfig: input.commandConfig,
     });
 
     let tools: ToolSet = input.extraTools

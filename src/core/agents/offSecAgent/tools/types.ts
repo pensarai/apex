@@ -65,4 +65,14 @@ export type ToolContext = {
    * execute_command back to the TUI while the command is still running.
    */
   onCommandOutput?: (data: string) => void;
+
+  /**
+   * Command execution constraints. When omitted, defaults apply.
+   */
+  commandConfig?: {
+    /** Default timeout in seconds when the agent doesn't specify one (default: 30) */
+    defaultTimeout?: number;
+    /** Hard ceiling — agent-requested timeouts are clamped to this (default: 30) */
+    maxTimeout?: number;
+  };
 };

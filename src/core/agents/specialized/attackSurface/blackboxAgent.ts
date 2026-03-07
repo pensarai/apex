@@ -85,6 +85,7 @@ export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSur
       authConfig,
       onStepFinish,
       abortSignal,
+      commandConfig: opts.commandConfig,
 
       activeTools: [
         // Core recon tools

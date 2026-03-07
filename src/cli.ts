@@ -75,6 +75,12 @@ function showHelp() {
     "  --mode <mode>      Pentest mode: exfil (pivoting & flag extraction)",
   );
   console.log("  --model <model>    AI model (default: claude-sonnet-4-5)");
+  console.log(
+    "  --cmd-timeout <s>  Default command timeout in seconds (default: 30)",
+  );
+  console.log(
+    "  --cmd-max-timeout <s>  Max command timeout in seconds (default: 30)",
+  );
   console.log();
   console.log("targeted-pentest options:");
   console.log("  --target <url>          (required) Target URL / domain / IP");
@@ -108,7 +114,16 @@ async function runPentest() {
   const cwd = getArg("--cwd");
   const mode = getArg("--mode");
   const model = (getArg("--model") ?? "claude-sonnet-4-5") as AIModel;
+  const cmdTimeout = getArg("--cmd-timeout");
+  const cmdMaxTimeout = getArg("--cmd-max-timeout");
   const { exfilMode, warning: modeWarning } = resolvePentestMode(mode);
+
+  const commandConfig = cmdTimeout || cmdMaxTimeout
+    ? {
+        ...(cmdTimeout ? { defaultTimeout: Number(cmdTimeout) } : {}),
+        ...(cmdMaxTimeout ? { maxTimeout: Number(cmdMaxTimeout) } : {}),
+      }
+    : undefined;
 
   if (modeWarning) {
     console.warn(modeWarning);
@@ -141,6 +156,7 @@ async function runPentest() {
       session,
       model,
       authConfig: buildAuthConfig(pensarConfig),
+      commandConfig,
       callbacks: {
         onTextDelta: (d) => process.stdout.write(d.text),
         onToolCall: (d) => console.log(`\n→ ${d.toolName}`),

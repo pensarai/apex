@@ -189,6 +189,17 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    * currently running shell command without killing the agent.
    */
   commandCancelHandle?: CommandCancelHandle;
+
+  /**
+   * Command execution constraints passed to execute_command.
+   * Defaults: { defaultTimeout: 30, maxTimeout: 30 }
+   */
+  commandConfig?: {
+    /** Default timeout in seconds when the agent doesn't specify one */
+    defaultTimeout?: number;
+    /** Hard ceiling — agent-requested timeouts are clamped to this */
+    maxTimeout?: number;
+  };
 };
 
 /**
@@ -232,6 +243,12 @@ export interface SpecializedAgentInput {
 
   /** Override the default stop condition */
   stopWhen?: StopCondition<ToolSet>;
+
+  /** Command execution constraints (timeout defaults/caps) */
+  commandConfig?: {
+    defaultTimeout?: number;
+    maxTimeout?: number;
+  };
 }
 
 /**

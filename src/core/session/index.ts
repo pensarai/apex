@@ -27,7 +27,9 @@ export const DEFAULT_OUTCOME_GUIDANCE =
  */
 export const EXFIL_OUTCOME_GUIDANCE =
   "Exfiltrate data to extract the flag value. " +
-  "Create proof-of-concept exploits that successfully extract the flag from the target system.";
+  "For EVERY confirmed vulnerability, you MUST call delegate_flag_extraction with the vulnerability details and attack vector. " +
+  "Do NOT just document findings — exploit them to extract FLAG{...}. " +
+  "Do NOT call response until you have called delegate_flag_extraction for every exploitable vulnerability.";
 
 /**
  * Default headers for pensar-apex
