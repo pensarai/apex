@@ -134,6 +134,10 @@ async function runPentest() {
     },
   });
 
+  const ac = new AbortController();
+  process.on("SIGTERM", () => ac.abort());
+  process.on("SIGINT", () => ac.abort());
+
   const { findings, findingsPath, pocsPath, reportPath } =
     await runPentestAgent({
       target,
@@ -141,6 +145,7 @@ async function runPentest() {
       session,
       model,
       authConfig: buildAuthConfig(pensarConfig),
+      abortSignal: ac.signal,
       callbacks: {
         onTextDelta: (d) => process.stdout.write(d.text),
         onToolCall: (d) => console.log(`\n→ ${d.toolName}`),

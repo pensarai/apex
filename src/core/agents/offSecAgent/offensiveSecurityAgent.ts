@@ -221,9 +221,9 @@ export class OffensiveSecurityAgent<TResult = void> {
     // -- Stream ---------------------------------------------------------------
     this.streamResult = streamResponse({
       prompt: input.prompt,
-      system:
-        (input.system ?? BASE_SYSTEM_PROMPT) +
-        buildSessionWorkspaceSection(input.session),
+      system: input.system
+        ? input.system
+        : BASE_SYSTEM_PROMPT + buildSessionWorkspaceSection(input.session),
       model: input.model,
       messages: input.messages,
       tools,

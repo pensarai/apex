@@ -6,13 +6,15 @@ import type { ToolContext } from "./types";
 
 const MAX_INLINE = 50_000;
 
+const DEFAULT_TIMEOUT_SECONDS = 120;
+
 export const executeCommandInputSchema = z.object({
   command: z.string().describe("The shell command to execute"),
   timeout: z
     .number()
     .optional()
     .describe(
-      "Timeout in seconds. If omitted, the command runs until completion or abort.",
+      `Timeout in seconds (default: ${DEFAULT_TIMEOUT_SECONDS}). For long-running scans, set a higher value.`,
     ),
   toolCallDescription: z
     .string()
@@ -64,7 +66,7 @@ function maybeSaveFullOutput(
 
   const truncated = raw.substring(0, MAX_INLINE);
   return {
-    text: `${truncated}...\n\n(truncated — full output saved to ${filePath}). Use read_file or grep to analyze.`,
+    text: `${truncated}...\n\n(truncated — full output saved to ${filePath}). Run the command again with grep/tail/head to extract specific data.`,
     file: filePath,
   };
 }
@@ -102,7 +104,10 @@ OUTPUT HANDLING:
 
 IMPORTANT: Always analyze results and adjust your approach based on findings.`,
     inputSchema: executeCommandInputSchema,
-    execute: async ({ command, timeout }): Promise<ExecuteCommandResult> => {
+    execute: async ({
+      command,
+      timeout = DEFAULT_TIMEOUT_SECONDS,
+    }): Promise<ExecuteCommandResult> => {
       if (ctx.abortSignal?.aborted) {
         return {
           success: false,
