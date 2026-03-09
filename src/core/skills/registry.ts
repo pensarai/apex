@@ -149,7 +149,7 @@ export class SkillsRegistry {
    */
   toLegacySkills(): Skill[] {
     return Array.from(this.skills.values()).map((entry) => ({
-      name: entry.slug,
+      name: entry.manifest.name || entry.slug,
       description: entry.manifest.description,
       content: entry.instructions,
     }));

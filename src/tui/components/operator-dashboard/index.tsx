@@ -120,7 +120,7 @@ export default function OperatorDashboard({
     const commandOptions = filterOperatorAutocomplete(allAutocompleteOptions);
     const skillOptions = skills.map((s) => {
       const slug = `/${slugify(s.name)}`;
-      return { value: slug, label: slug };
+      return { value: slug, label: slug, description: s.description || "Skill" };
     });
     return [...commandOptions, ...skillOptions];
   }, [allAutocompleteOptions, skills]);

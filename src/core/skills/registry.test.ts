@@ -179,7 +179,7 @@ describe("SkillsRegistry", () => {
       await registry.load();
 
       const legacy = registry.toLegacySkills();
-      const found = legacy.find((s) => s.name === `${TEST_PREFIX}legacy`);
+      const found = legacy.find((s) => s.name === "Legacy Convert");
       expect(found).toBeDefined();
       expect(found!.description).toBe("Description");
       expect(found!.content).toContain("Content for Legacy Convert");
