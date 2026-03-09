@@ -7,6 +7,7 @@ import {
   getPensarConsoleUrl,
 } from "../../../core/api/constants";
 import { Dialog } from "../../context/dialog";
+import { useTheme } from "../../theme";
 
 interface AuthFlowProps {
   onClose: () => void;
@@ -63,6 +64,7 @@ interface SelectWorkspaceResponse {
 }
 
 export default function AuthFlow({ onClose }: AuthFlowProps) {
+  const { colors } = useTheme();
   const appConfig = useConfig();
 
   // Determine if already connected (WorkOS token or legacy API key)
@@ -537,11 +539,11 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
     >
       {/* Header */}
       <box marginBottom={1}>
-        <text fg="green">Pensar Console — Managed Inference</text>
+        <text fg={colors.primary}>Pensar Console — Managed Inference</text>
       </box>
 
       <box marginBottom={1}>
-        <text fg="gray">
+        <text fg={colors.textMuted}>
           Connect to Pensar Console for usage-based AI inference.{"\n"}
           No API keys needed — just a Pensar account with credits.
         </text>
@@ -551,15 +553,15 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
       {step === "start" && (
         <box flexDirection="column" gap={1}>
           <box>
-            <text fg="white">
-              Press <span fg="green">[ENTER]</span> to authorize via your
-              browser.
+            <text fg={colors.text}>
+              Press <span fg={colors.primary}>[ENTER]</span> to authorize via
+              your browser.
             </text>
           </box>
           <box marginTop={1}>
-            <text fg="gray">
-              <span fg="green">[ENTER]</span> Connect ·{" "}
-              <span fg="green">[ESC]</span> Cancel
+            <text fg={colors.textMuted}>
+              <span fg={colors.primary}>[ENTER]</span> Connect ·{" "}
+              <span fg={colors.primary}>[ESC]</span> Cancel
             </text>
           </box>
         </box>
@@ -568,7 +570,7 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
       {/* Step: Requesting */}
       {step === "requesting" && (
         <box>
-          <text fg="yellow">Starting authorization...</text>
+          <text fg={colors.warning}>Starting authorization...</text>
         </box>
       )}
 
@@ -576,26 +578,28 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
       {step === "polling" && (deviceInfo || legacyDeviceInfo) && (
         <box flexDirection="column" gap={1}>
           <box>
-            <text fg="yellow">Waiting for browser authorization...</text>
+            <text fg={colors.warning}>
+              Waiting for browser authorization...
+            </text>
           </box>
           <box marginTop={1}>
-            <text fg="white">
+            <text fg={colors.text}>
               Your code:{" "}
-              <span fg="green">
+              <span fg={colors.primary}>
                 {deviceInfo?.user_code || legacyDeviceInfo?.userCode}
               </span>
             </text>
           </box>
           <box marginTop={1}>
-            <text fg="gray">
+            <text fg={colors.textMuted}>
               If the browser didn't open, visit:{"\n"}
               {deviceInfo?.verification_uri_complete ||
                 legacyDeviceInfo?.verificationUriComplete}
             </text>
           </box>
           <box marginTop={1}>
-            <text fg="gray">
-              <span fg="green">[ESC]</span> Cancel
+            <text fg={colors.textMuted}>
+              <span fg={colors.primary}>[ESC]</span> Cancel
             </text>
           </box>
         </box>
@@ -605,15 +609,15 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
       {step === "select-workspace" && (
         <box flexDirection="column" gap={1}>
           <box>
-            <text fg="white">Select a workspace:</text>
+            <text fg={colors.text}>Select a workspace:</text>
           </box>
           <box flexDirection="column" marginTop={1}>
             {workspaces.map((ws, i) => (
               <box key={ws.id}>
-                <text fg={i === selectedIndex ? "green" : "gray"}>
+                <text fg={i === selectedIndex ? colors.primary : colors.textMuted}>
                   {i === selectedIndex ? "▸ " : "  "}
                   {ws.name}{" "}
-                  <span fg="gray">
+                  <span fg={colors.textMuted}>
                     ({ws.slug}) — ${ws.balance.toFixed(2)}
                   </span>
                 </text>
@@ -621,10 +625,10 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
             ))}
           </box>
           <box marginTop={1}>
-            <text fg="gray">
-              <span fg="green">[↑/↓]</span> Navigate ·{" "}
-              <span fg="green">[ENTER]</span> Select ·{" "}
-              <span fg="green">[ESC]</span> Cancel
+            <text fg={colors.textMuted}>
+              <span fg={colors.primary}>[↑/↓]</span> Navigate ·{" "}
+              <span fg={colors.primary}>[ENTER]</span> Select ·{" "}
+              <span fg={colors.primary}>[ESC]</span> Cancel
             </text>
           </box>
         </box>
@@ -633,7 +637,7 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
       {/* Step: Checking Billing */}
       {step === "checking-billing" && (
         <box>
-          <text fg="yellow">
+          <text fg={colors.warning}>
             Checking billing for {selectedWorkspace?.name}...
           </text>
         </box>
@@ -643,17 +647,17 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
       {step === "success" && (
         <box flexDirection="column" gap={1}>
           <box>
-            <text fg="green">Connected to Pensar Console</text>
+            <text fg={colors.success}>Connected to Pensar Console</text>
           </box>
           {(selectedWorkspace || connectedWorkspace) && (
             <box flexDirection="column">
-              <text fg="white">
+              <text fg={colors.text}>
                 Workspace: {selectedWorkspace?.name || connectedWorkspace?.name}
               </text>
               {balance !== null && (
-                <text fg="white">
+                <text fg={colors.text}>
                   Credits:{" "}
-                  <span fg={hasLowBalance ? "yellow" : "white"}>
+                  <span fg={hasLowBalance ? colors.warning : colors.text}>
                     ${balance.toFixed(2)}
                   </span>
                 </text>
@@ -662,7 +666,7 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
           )}
           {(hasLowBalance || billingUrl) && (
             <box marginTop={1}>
-              <text fg="yellow">
+              <text fg={colors.warning}>
                 {billingUrl
                   ? "Your workspace needs credits to use Apex CLI."
                   : "Your credit balance is very low. We recommend at least $30 to run"}
@@ -677,22 +681,22 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
             !connectedWorkspace &&
             appConfig.data.pensarAPIKey && (
               <box>
-                <text fg="gray">
+                <text fg={colors.textMuted}>
                   Already connected (legacy key saved in config)
                 </text>
               </box>
             )}
           <box marginTop={1}>
-            <text fg="gray">
+            <text fg={colors.textMuted}>
               Pensar models are now available in the model selector.
             </text>
           </box>
           <box marginTop={1}>
-            <text fg="gray">
-              <span fg="green">[ENTER]</span>{" "}
+            <text fg={colors.textMuted}>
+              <span fg={colors.primary}>[ENTER]</span>{" "}
               {hasLowBalance || billingUrl ? "Open billing" : "Done"} ·{" "}
-              <span fg="red">[D]</span> Disconnect ·{" "}
-              <span fg="green">[ESC]</span> Back
+              <span fg={colors.error}>[D]</span> Disconnect ·{" "}
+              <span fg={colors.primary}>[ESC]</span> Back
             </text>
           </box>
         </box>
@@ -702,12 +706,12 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
       {step === "error" && (
         <box flexDirection="column" gap={1}>
           <box>
-            <text fg="red">{error}</text>
+            <text fg={colors.error}>{error}</text>
           </box>
           <box marginTop={1}>
-            <text fg="gray">
-              <span fg="green">[ENTER]</span> Try again ·{" "}
-              <span fg="green">[ESC]</span> Cancel
+            <text fg={colors.textMuted}>
+              <span fg={colors.primary}>[ENTER]</span> Try again ·{" "}
+              <span fg={colors.primary}>[ESC]</span> Cancel
             </text>
           </box>
         </box>
