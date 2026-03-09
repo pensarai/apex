@@ -188,6 +188,7 @@ export const commands: CommandConfig[] = [
       const params = buildOperatorSessionConfig(flags);
       ctx.navigate({
         type: "operator",
+        nonce: Date.now(),
         initialConfig: {
           requireApproval: flags.requireApproval ?? true,
           target: flags.target,
@@ -253,7 +254,7 @@ export const commands: CommandConfig[] = [
     description: "Start a new operator session",
     category: "Session",
     handler: async (args, ctx) => {
-      ctx.navigate({ type: "operator" });
+      ctx.navigate({ type: "operator", nonce: Date.now() });
     },
   },
   {

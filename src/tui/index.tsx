@@ -197,6 +197,14 @@ function AppContent({
     }
   }, [config.data.responsibleUseAccepted, route.data]);
 
+  // Track external dialog state for theme/auth dialogs so operator input
+  // unfocuses while a dialog overlay is open
+  useEffect(() => {
+    if (showThemeDialog || showAuthDialog) {
+      setExternalDialogOpen(true);
+    }
+  }, [showThemeDialog, showAuthDialog]);
+
   // Auto-clear the exit warning after 1 second
   useEffect(() => {
     if (showExitWarning) {
@@ -225,12 +233,18 @@ function AppContent({
 
   const handleCloseThemeDialog = () => {
     setShowThemeDialog(false);
+    setTimeout(() => {
+      setExternalDialogOpen(false);
+    }, 0);
     setInputKey((prev) => prev + 1);
     refocusPrompt();
   };
 
   const handleCloseAuthDialog = () => {
     setShowAuthDialog(false);
+    setTimeout(() => {
+      setExternalDialogOpen(false);
+    }, 0);
     setInputKey((prev) => prev + 1);
     refocusPrompt();
   };
@@ -376,6 +390,7 @@ function CommandDisplay({
   if (route.data.type === "operator") {
     return (
       <OperatorDashboard
+        key={route.data.sessionId ?? route.data.nonce ?? "new"}
         sessionId={route.data.sessionId}
         initialMessage={route.data.initialMessage}
         initialConfig={route.data.initialConfig}
