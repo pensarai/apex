@@ -114,17 +114,9 @@ export default function ThemePicker({ onClose }: ThemePickerProps) {
 
   return (
     <Dialog size="large" onClose={handleClose}>
-      <box
-        width="100%"
-        flexDirection="column"
-        padding={1}
-      >
+      <box width="100%" flexDirection="column" padding={1}>
         {/* Header */}
-        <box
-          width="100%"
-          flexDirection="row"
-          justifyContent="space-between"
-        >
+        <box width="100%" flexDirection="row" justifyContent="space-between">
           <text fg={colors.primary}>Themes</text>
           <text fg={colors.textMuted}>mode: {mode}</text>
         </box>
@@ -135,10 +127,7 @@ export default function ThemePicker({ onClose }: ThemePickerProps) {
         </box>
 
         {/* Theme List */}
-        <box
-          flexDirection="column"
-          flexGrow={1}
-        >
+        <box flexDirection="column" flexGrow={1}>
           {visibleThemes.map((themeName) => {
             const actualIndex = availableThemes.indexOf(themeName);
             const isSelected = actualIndex === selectedIndex;

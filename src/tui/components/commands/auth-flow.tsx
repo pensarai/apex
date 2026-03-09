@@ -531,192 +531,195 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
 
   return (
     <Dialog size="large" onClose={goHome}>
-    <box
-      flexDirection="column"
-      width="100%"
-      alignItems="flex-start"
-      padding={1}
-    >
-      {/* Header */}
-      <box marginBottom={1}>
-        <text fg={colors.primary}>Pensar Console — Managed Inference</text>
-      </box>
-
-      <box marginBottom={1}>
-        <text fg={colors.textMuted}>
-          Connect to Pensar Console for usage-based AI inference.{"\n"}
-          No API keys needed — just a Pensar account with credits.
-        </text>
-      </box>
-
-      {/* Step: Start */}
-      {step === "start" && (
-        <box flexDirection="column" gap={1}>
-          <box>
-            <text fg={colors.text}>
-              Press <span fg={colors.primary}>[ENTER]</span> to authorize via
-              your browser.
-            </text>
-          </box>
-          <box marginTop={1}>
-            <text fg={colors.textMuted}>
-              <span fg={colors.primary}>[ENTER]</span> Connect ·{" "}
-              <span fg={colors.primary}>[ESC]</span> Cancel
-            </text>
-          </box>
+      <box
+        flexDirection="column"
+        width="100%"
+        alignItems="flex-start"
+        padding={1}
+      >
+        {/* Header */}
+        <box marginBottom={1}>
+          <text fg={colors.primary}>Pensar Console — Managed Inference</text>
         </box>
-      )}
 
-      {/* Step: Requesting */}
-      {step === "requesting" && (
-        <box>
-          <text fg={colors.warning}>Starting authorization...</text>
-        </box>
-      )}
-
-      {/* Step: Polling */}
-      {step === "polling" && (deviceInfo || legacyDeviceInfo) && (
-        <box flexDirection="column" gap={1}>
-          <box>
-            <text fg={colors.warning}>
-              Waiting for browser authorization...
-            </text>
-          </box>
-          <box marginTop={1}>
-            <text fg={colors.text}>
-              Your code:{" "}
-              <span fg={colors.primary}>
-                {deviceInfo?.user_code || legacyDeviceInfo?.userCode}
-              </span>
-            </text>
-          </box>
-          <box marginTop={1}>
-            <text fg={colors.textMuted}>
-              If the browser didn't open, visit:{"\n"}
-              {deviceInfo?.verification_uri_complete ||
-                legacyDeviceInfo?.verificationUriComplete}
-            </text>
-          </box>
-          <box marginTop={1}>
-            <text fg={colors.textMuted}>
-              <span fg={colors.primary}>[ESC]</span> Cancel
-            </text>
-          </box>
-        </box>
-      )}
-
-      {/* Step: Select Workspace */}
-      {step === "select-workspace" && (
-        <box flexDirection="column" gap={1}>
-          <box>
-            <text fg={colors.text}>Select a workspace:</text>
-          </box>
-          <box flexDirection="column" marginTop={1}>
-            {workspaces.map((ws, i) => (
-              <box key={ws.id}>
-                <text fg={i === selectedIndex ? colors.primary : colors.textMuted}>
-                  {i === selectedIndex ? "▸ " : "  "}
-                  {ws.name}{" "}
-                  <span fg={colors.textMuted}>
-                    ({ws.slug}) — ${ws.balance.toFixed(2)}
-                  </span>
-                </text>
-              </box>
-            ))}
-          </box>
-          <box marginTop={1}>
-            <text fg={colors.textMuted}>
-              <span fg={colors.primary}>[↑/↓]</span> Navigate ·{" "}
-              <span fg={colors.primary}>[ENTER]</span> Select ·{" "}
-              <span fg={colors.primary}>[ESC]</span> Cancel
-            </text>
-          </box>
-        </box>
-      )}
-
-      {/* Step: Checking Billing */}
-      {step === "checking-billing" && (
-        <box>
-          <text fg={colors.warning}>
-            Checking billing for {selectedWorkspace?.name}...
+        <box marginBottom={1}>
+          <text fg={colors.textMuted}>
+            Connect to Pensar Console for usage-based AI inference.{"\n"}
+            No API keys needed — just a Pensar account with credits.
           </text>
         </box>
-      )}
 
-      {/* Step: Success */}
-      {step === "success" && (
-        <box flexDirection="column" gap={1}>
-          <box>
-            <text fg={colors.success}>Connected to Pensar Console</text>
-          </box>
-          {(selectedWorkspace || connectedWorkspace) && (
-            <box flexDirection="column">
+        {/* Step: Start */}
+        {step === "start" && (
+          <box flexDirection="column" gap={1}>
+            <box>
               <text fg={colors.text}>
-                Workspace: {selectedWorkspace?.name || connectedWorkspace?.name}
+                Press <span fg={colors.primary}>[ENTER]</span> to authorize via
+                your browser.
               </text>
-              {balance !== null && (
-                <text fg={colors.text}>
-                  Credits:{" "}
-                  <span fg={hasLowBalance ? colors.warning : colors.text}>
-                    ${balance.toFixed(2)}
-                  </span>
-                </text>
-              )}
             </box>
-          )}
-          {(hasLowBalance || billingUrl) && (
             <box marginTop={1}>
-              <text fg={colors.warning}>
-                {billingUrl
-                  ? "Your workspace needs credits to use Apex CLI."
-                  : "Your credit balance is very low. We recommend at least $30 to run"}
-                {"\n"}
-                {billingUrl
-                  ? "Press ENTER to open billing and add credits."
-                  : "pentests without interruptions. Press ENTER to open billing."}
+              <text fg={colors.textMuted}>
+                <span fg={colors.primary}>[ENTER]</span> Connect ·{" "}
+                <span fg={colors.primary}>[ESC]</span> Cancel
               </text>
             </box>
-          )}
-          {!selectedWorkspace &&
-            !connectedWorkspace &&
-            appConfig.data.pensarAPIKey && (
-              <box>
-                <text fg={colors.textMuted}>
-                  Already connected (legacy key saved in config)
+          </box>
+        )}
+
+        {/* Step: Requesting */}
+        {step === "requesting" && (
+          <box>
+            <text fg={colors.warning}>Starting authorization...</text>
+          </box>
+        )}
+
+        {/* Step: Polling */}
+        {step === "polling" && (deviceInfo || legacyDeviceInfo) && (
+          <box flexDirection="column" gap={1}>
+            <box>
+              <text fg={colors.warning}>
+                Waiting for browser authorization...
+              </text>
+            </box>
+            <box marginTop={1}>
+              <text fg={colors.text}>
+                Your code:{" "}
+                <span fg={colors.primary}>
+                  {deviceInfo?.user_code || legacyDeviceInfo?.userCode}
+                </span>
+              </text>
+            </box>
+            <box marginTop={1}>
+              <text fg={colors.textMuted}>
+                If the browser didn't open, visit:{"\n"}
+                {deviceInfo?.verification_uri_complete ||
+                  legacyDeviceInfo?.verificationUriComplete}
+              </text>
+            </box>
+            <box marginTop={1}>
+              <text fg={colors.textMuted}>
+                <span fg={colors.primary}>[ESC]</span> Cancel
+              </text>
+            </box>
+          </box>
+        )}
+
+        {/* Step: Select Workspace */}
+        {step === "select-workspace" && (
+          <box flexDirection="column" gap={1}>
+            <box>
+              <text fg={colors.text}>Select a workspace:</text>
+            </box>
+            <box flexDirection="column" marginTop={1}>
+              {workspaces.map((ws, i) => (
+                <box key={ws.id}>
+                  <text
+                    fg={i === selectedIndex ? colors.primary : colors.textMuted}
+                  >
+                    {i === selectedIndex ? "▸ " : "  "}
+                    {ws.name}{" "}
+                    <span fg={colors.textMuted}>
+                      ({ws.slug}) — ${ws.balance.toFixed(2)}
+                    </span>
+                  </text>
+                </box>
+              ))}
+            </box>
+            <box marginTop={1}>
+              <text fg={colors.textMuted}>
+                <span fg={colors.primary}>[↑/↓]</span> Navigate ·{" "}
+                <span fg={colors.primary}>[ENTER]</span> Select ·{" "}
+                <span fg={colors.primary}>[ESC]</span> Cancel
+              </text>
+            </box>
+          </box>
+        )}
+
+        {/* Step: Checking Billing */}
+        {step === "checking-billing" && (
+          <box>
+            <text fg={colors.warning}>
+              Checking billing for {selectedWorkspace?.name}...
+            </text>
+          </box>
+        )}
+
+        {/* Step: Success */}
+        {step === "success" && (
+          <box flexDirection="column" gap={1}>
+            <box>
+              <text fg={colors.success}>Connected to Pensar Console</text>
+            </box>
+            {(selectedWorkspace || connectedWorkspace) && (
+              <box flexDirection="column">
+                <text fg={colors.text}>
+                  Workspace:{" "}
+                  {selectedWorkspace?.name || connectedWorkspace?.name}
+                </text>
+                {balance !== null && (
+                  <text fg={colors.text}>
+                    Credits:{" "}
+                    <span fg={hasLowBalance ? colors.warning : colors.text}>
+                      ${balance.toFixed(2)}
+                    </span>
+                  </text>
+                )}
+              </box>
+            )}
+            {(hasLowBalance || billingUrl) && (
+              <box marginTop={1}>
+                <text fg={colors.warning}>
+                  {billingUrl
+                    ? "Your workspace needs credits to use Apex CLI."
+                    : "Your credit balance is very low. We recommend at least $30 to run"}
+                  {"\n"}
+                  {billingUrl
+                    ? "Press ENTER to open billing and add credits."
+                    : "pentests without interruptions. Press ENTER to open billing."}
                 </text>
               </box>
             )}
-          <box marginTop={1}>
-            <text fg={colors.textMuted}>
-              Pensar models are now available in the model selector.
-            </text>
+            {!selectedWorkspace &&
+              !connectedWorkspace &&
+              appConfig.data.pensarAPIKey && (
+                <box>
+                  <text fg={colors.textMuted}>
+                    Already connected (legacy key saved in config)
+                  </text>
+                </box>
+              )}
+            <box marginTop={1}>
+              <text fg={colors.textMuted}>
+                Pensar models are now available in the model selector.
+              </text>
+            </box>
+            <box marginTop={1}>
+              <text fg={colors.textMuted}>
+                <span fg={colors.primary}>[ENTER]</span>{" "}
+                {hasLowBalance || billingUrl ? "Open billing" : "Done"} ·{" "}
+                <span fg={colors.error}>[D]</span> Disconnect ·{" "}
+                <span fg={colors.primary}>[ESC]</span> Back
+              </text>
+            </box>
           </box>
-          <box marginTop={1}>
-            <text fg={colors.textMuted}>
-              <span fg={colors.primary}>[ENTER]</span>{" "}
-              {hasLowBalance || billingUrl ? "Open billing" : "Done"} ·{" "}
-              <span fg={colors.error}>[D]</span> Disconnect ·{" "}
-              <span fg={colors.primary}>[ESC]</span> Back
-            </text>
-          </box>
-        </box>
-      )}
+        )}
 
-      {/* Step: Error */}
-      {step === "error" && (
-        <box flexDirection="column" gap={1}>
-          <box>
-            <text fg={colors.error}>{error}</text>
+        {/* Step: Error */}
+        {step === "error" && (
+          <box flexDirection="column" gap={1}>
+            <box>
+              <text fg={colors.error}>{error}</text>
+            </box>
+            <box marginTop={1}>
+              <text fg={colors.textMuted}>
+                <span fg={colors.primary}>[ENTER]</span> Try again ·{" "}
+                <span fg={colors.primary}>[ESC]</span> Cancel
+              </text>
+            </box>
           </box>
-          <box marginTop={1}>
-            <text fg={colors.textMuted}>
-              <span fg={colors.primary}>[ENTER]</span> Try again ·{" "}
-              <span fg={colors.primary}>[ESC]</span> Cancel
-            </text>
-          </box>
-        </box>
-      )}
-    </box>
+        )}
+      </box>
     </Dialog>
   );
 }

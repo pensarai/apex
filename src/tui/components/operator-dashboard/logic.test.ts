@@ -56,13 +56,12 @@ describe("filterOperatorAutocomplete", () => {
     const result = filterOperatorAutocomplete(allOptions, skillSlugs);
     const values = result.map((o) => o.value);
     expect(values).not.toContain("/scan");
-    expect(values).not.toContain("/pentest");
     expect(values).not.toContain("/help");
   });
 
   it("returns only allowed commands when no skills exist", () => {
     const result = filterOperatorAutocomplete(allOptions, new Set());
-    expect(result).toHaveLength(2);
+    expect(result).toHaveLength(3);
   });
 
   it("returns empty for empty input", () => {

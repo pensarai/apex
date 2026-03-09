@@ -277,13 +277,9 @@ function AppContent({
         />
       )}
 
-      {showThemeDialog && (
-        <ThemePicker onClose={handleCloseThemeDialog} />
-      )}
+      {showThemeDialog && <ThemePicker onClose={handleCloseThemeDialog} />}
 
-      {showAuthDialog && (
-        <AuthFlow onClose={handleCloseAuthDialog} />
-      )}
+      {showAuthDialog && <AuthFlow onClose={handleCloseAuthDialog} />}
     </box>
   );
 }
