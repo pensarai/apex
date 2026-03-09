@@ -54,6 +54,7 @@ const FALLBACK_CVSS: CVSSScorerResult = {
   },
   scoreType: "CVSS-BT",
   reasoning: "CVSS scoring unavailable — using conservative MEDIUM default.",
+  cwes: [],
 };
 
 export function documentVulnerability(ctx: ToolContext) {
