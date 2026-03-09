@@ -37,9 +37,22 @@ import Pentest from "./components/pentest/pentest";
 import OperatorDashboard from "./components/operator-dashboard";
 import ThemePicker from "./components/commands/theme-picker";
 import CreateSkillWizard from "./components/commands/create-skill-wizard";
-import { ThemeProvider, useTheme, type ColorMode } from "./theme";
+import {
+  ThemeProvider,
+  useTheme,
+  resolveThemeColors,
+  getTheme,
+  type ColorMode,
+} from "./theme";
 import { registerBuiltinThemes } from "./theme/themes";
 import { detectTerminalMode } from "./theme/detect-mode";
+import {
+  overlayThemeRef,
+  buildConsoleOptions,
+  ConsoleThemeSync,
+} from "./console-theme";
+import { createClipboardManager } from "./clipboard";
+import { setupAutoCopy } from "./auto-copy";
 
 interface AppProps {
   appConfig: Config;
@@ -360,10 +373,8 @@ function CommandDisplay({
 async function main() {
   const appConfig = await config.get();
 
-  // Register built-in themes
   registerBuiltinThemes();
 
-  // Resolve theme and mode from config
   const themeName = appConfig.theme ?? "apex";
   let mode: ColorMode;
   if (appConfig.themeMode === "dark" || appConfig.themeMode === "light") {
@@ -372,19 +383,24 @@ async function main() {
     mode = await detectTerminalMode();
   }
 
-  const renderer = await createCliRenderer({ exitOnCtrlC: false });
+  const themeColors = resolveThemeColors(getTheme(themeName), mode);
+  overlayThemeRef.current = themeColors;
 
-  // Graceful shutdown handler
+  const renderer = await createCliRenderer({
+    exitOnCtrlC: false,
+    consoleOptions: buildConsoleOptions(themeColors),
+  });
+
+  const { copyToClipboard } = createClipboardManager(renderer);
+  setupAutoCopy(renderer, copyToClipboard);
+
   const cleanup = () => {
     renderer.destroy();
     process.exit(0);
   };
-
-  // Handle process signals for graceful shutdown
   process.on("SIGINT", cleanup);
   process.on("SIGTERM", cleanup);
 
-  // Handle uncaught errors - cleanup terminal before crash
   process.on("uncaughtException", (err) => {
     renderer.destroy();
     console.error("Uncaught exception:", err);
@@ -401,6 +417,7 @@ async function main() {
 
   createRoot(renderer).render(
     <ThemeProvider initialTheme={themeName} initialMode={mode}>
+      <ConsoleThemeSync />
       <ToastProvider>
         <ErrorBoundary>
           <App appConfig={appConfig} />
