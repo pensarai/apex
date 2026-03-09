@@ -373,10 +373,8 @@ function CommandDisplay({
 async function main() {
   const appConfig = await config.get();
 
-  // Register built-in themes
   registerBuiltinThemes();
 
-  // Resolve theme and mode from config
   const themeName = appConfig.theme ?? "apex";
   let mode: ColorMode;
   if (appConfig.themeMode === "dark" || appConfig.themeMode === "light") {
@@ -385,7 +383,6 @@ async function main() {
     mode = await detectTerminalMode();
   }
 
-  // Resolve initial theme colors and seed the ref for overlay rendering
   const themeColors = resolveThemeColors(getTheme(themeName), mode);
   overlayThemeRef.current = themeColors;
 
@@ -394,21 +391,16 @@ async function main() {
     consoleOptions: buildConsoleOptions(themeColors),
   });
 
-  // Clipboard: OSC52 + native copy, notification overlay, auto-copy on select
   const { copyToClipboard } = createClipboardManager(renderer);
   setupAutoCopy(renderer, copyToClipboard);
 
-  // Graceful shutdown handler
   const cleanup = () => {
     renderer.destroy();
     process.exit(0);
   };
-
-  // Handle process signals for graceful shutdown
   process.on("SIGINT", cleanup);
   process.on("SIGTERM", cleanup);
 
-  // Handle uncaught errors - cleanup terminal before crash
   process.on("uncaughtException", (err) => {
     renderer.destroy();
     console.error("Uncaught exception:", err);

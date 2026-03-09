@@ -17,15 +17,13 @@ export function createClipboardManager(renderer: CliRenderer) {
       proc.stdin.write(text);
       proc.stdin.end();
     } catch {
-      // Clipboard command unavailable
+      // native clipboard command unavailable
     }
-    // Show "Copied to clipboard" notification for 2 seconds
     clipboardNotifExpiry = Date.now() + 2000;
     renderer.requestRender();
     setTimeout(() => renderer.requestRender(), 2010);
   };
 
-  // Draw the "Copied to clipboard" overlay in the top-right corner
   const notifLabel = "Copied to clipboard";
   const notifPadX = 1;
   const notifBoxWidth = 1 + notifPadX + notifLabel.length + notifPadX + 1;
@@ -54,14 +52,11 @@ export function createClipboardManager(renderer: CliRenderer) {
         c.text,
         c.backgroundElement,
       );
-      // NOTE: Do NOT call renderer.requestRender() here — post-process
-      // functions run during each render pass, so it would create an
-      // infinite render loop. The copyToClipboard function already triggers
-      // the initial render + a setTimeout for the cleanup render.
+      // Don't call renderer.requestRender() here — post-process functions
+      // run during each render pass, causing an infinite loop.
     }
   });
 
-  // Wire up console copy to system clipboard
   renderer.console.onCopySelection = copyToClipboard;
 
   return { copyToClipboard };

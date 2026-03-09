@@ -40,7 +40,6 @@ export function ConsoleThemeSync() {
   const renderer = useRenderer();
   useEffect(() => {
     overlayThemeRef.current = colors;
-    // Keep console colors in sync with the active theme
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const c = renderer.console as any;
     c.backgroundColor = withAlpha(colors.backgroundPanel, 0.85);
