@@ -4,24 +4,6 @@ import type { AutocompleteOption } from "./prompt-input";
 // Autocomplete filtering
 // ---------------------------------------------------------------------------
 
-export function filterSuggestions(
-  inputValue: string,
-  options: AutocompleteOption[],
-  maxSuggestions: number,
-): AutocompleteOption[] {
-  if (!options.length || !inputValue) return [];
-  const input = inputValue.toLowerCase().trim();
-  if (!input.startsWith("/")) return [];
-
-  return options
-    .filter(
-      (opt) =>
-        opt.value.toLowerCase().includes(input) ||
-        opt.label.toLowerCase().includes(input),
-    )
-    .slice(0, maxSuggestions);
-}
-
 // ---------------------------------------------------------------------------
 // Submit value resolution
 // ---------------------------------------------------------------------------

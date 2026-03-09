@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  filterSuggestions,
   filterInlineSuggestions,
   detectInlineSlash,
   computeInlineCompletion,
@@ -27,66 +26,6 @@ const options: AutocompleteOption[] = [
 ];
 
 const history = ["first cmd", "second cmd", "third cmd"];
-
-// ---------------------------------------------------------------------------
-// filterSuggestions
-// ---------------------------------------------------------------------------
-
-describe("filterSuggestions", () => {
-  it("returns empty for empty input", () => {
-    expect(filterSuggestions("", options, 10)).toEqual([]);
-  });
-
-  it("returns empty for input without leading /", () => {
-    expect(filterSuggestions("scan", options, 10)).toEqual([]);
-  });
-
-  it("returns all options matching /", () => {
-    const result = filterSuggestions("/", options, 10);
-    expect(result).toHaveLength(5);
-  });
-
-  it("filters by value substring", () => {
-    const result = filterSuggestions("/sc", options, 10);
-    expect(result).toHaveLength(1);
-    expect(result[0]!.value).toBe("/scan");
-  });
-
-  it("filters by label substring", () => {
-    const result = filterSuggestions("/pen", options, 10);
-    expect(result).toHaveLength(1);
-    expect(result[0]!.value).toBe("/pentest");
-  });
-
-  it("is case-insensitive", () => {
-    const result = filterSuggestions("/HELP", options, 10);
-    expect(result).toHaveLength(1);
-    expect(result[0]!.value).toBe("/help");
-  });
-
-  it("respects maxSuggestions", () => {
-    const result = filterSuggestions("/s", options, 2);
-    expect(result).toHaveLength(2);
-  });
-
-  it("matches multiple options with shared substring", () => {
-    const result = filterSuggestions("/se", options, 10);
-    expect(result.map((s) => s.value)).toEqual(["/session", "/settings"]);
-  });
-
-  it("returns empty for no matches", () => {
-    expect(filterSuggestions("/zzz", options, 10)).toEqual([]);
-  });
-
-  it("returns empty for empty options array", () => {
-    expect(filterSuggestions("/scan", [], 10)).toEqual([]);
-  });
-
-  it("trims whitespace from input", () => {
-    const result = filterSuggestions("  /scan  ", options, 10);
-    expect(result).toHaveLength(1);
-  });
-});
 
 // ---------------------------------------------------------------------------
 // resolveSubmitValue

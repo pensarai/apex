@@ -74,7 +74,7 @@ async function scanGlobalSkillsDir(
       try {
         const raw = await fs.readFile(filePath, "utf-8");
         const { name, description, content } = parseLegacySkillMd(raw);
-        const slug = dirent.name.replace(/\.md$/, "");
+        const slug = slugify(dirent.name.replace(/\.md$/, ""));
 
         entries.set(slug, {
           slug,

@@ -66,6 +66,10 @@ export function routeCommand(
     return { type: "show-models" };
   }
 
+  if (commandLower === "skills") {
+    return { type: "execute-command", command };
+  }
+
   const autopilot = command.includes("--autopilot");
   const cleanedCommand = command.replace(/\s*--autopilot\s*/g, "").trim();
 
