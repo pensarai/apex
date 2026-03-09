@@ -55,6 +55,8 @@ export interface InputAreaProps {
   commandHistory?: string[];
   /** Suppress Up/Down history navigation in PromptInput (e.g. queue takes priority) */
   disableHistoryNavigation?: boolean;
+  /** Whether autocomplete suggestions appear above or below the input */
+  autocompletePlacement?: "above" | "below";
 }
 
 /**
@@ -78,6 +80,7 @@ function NormalInputAreaInner({
   onCommandExecute,
   commandHistory = [],
   disableHistoryNavigation = false,
+  autocompletePlacement = "below",
 }: Omit<
   InputAreaProps,
   "pendingApproval" | "onApprove" | "onAutoApprove" | "lastDeclineNote"
@@ -140,6 +143,7 @@ function NormalInputAreaInner({
           onCommandExecute={onCommandExecute}
           commandHistory={commandHistory}
           disableHistoryNavigation={disableHistoryNavigation}
+          autocompletePlacement={autocompletePlacement}
         />
       </box>
 
@@ -208,6 +212,7 @@ export function InputArea(props: InputAreaProps) {
     onCommandExecute,
     commandHistory,
     disableHistoryNavigation,
+    autocompletePlacement,
     ...normalProps
   } = props;
 
@@ -239,6 +244,7 @@ export function InputArea(props: InputAreaProps) {
         onCommandExecute={onCommandExecute}
         commandHistory={commandHistory}
         disableHistoryNavigation={disableHistoryNavigation}
+        autocompletePlacement={autocompletePlacement}
         {...normalProps}
       />
     </InputProvider>

@@ -1,12 +1,16 @@
 import { useState, useRef, useEffect } from "react";
 import { useKeyboard } from "@opentui/react";
 import { config } from "../../../core/config";
-import { useRoute } from "../../context/route";
 import { useConfig } from "../../context/config";
 import {
   getPensarApiUrl,
   getPensarConsoleUrl,
 } from "../../../core/api/constants";
+import { Dialog } from "../../context/dialog";
+
+interface AuthFlowProps {
+  onClose: () => void;
+}
 
 type AuthStep =
   | "start"
@@ -58,8 +62,7 @@ interface SelectWorkspaceResponse {
   billingUrl?: string;
 }
 
-export default function AuthFlow() {
-  const route = useRoute();
+export default function AuthFlow({ onClose }: AuthFlowProps) {
   const appConfig = useConfig();
 
   // Determine if already connected (WorkOS token or legacy API key)
@@ -90,7 +93,7 @@ export default function AuthFlow() {
     : null;
 
   const goHome = () => {
-    route.navigate({ type: "base", path: "home" });
+    onClose();
   };
 
   const cleanup = () => {
@@ -522,10 +525,10 @@ export default function AuthFlow() {
   // ── Render ────────────────────────────────────────────────────────
 
   return (
+    <Dialog size="large" onClose={goHome}>
     <box
       flexDirection="column"
       width="100%"
-      maxWidth={80}
       alignItems="flex-start"
       padding={1}
     >
@@ -707,5 +710,6 @@ export default function AuthFlow() {
         </box>
       )}
     </box>
+    </Dialog>
   );
 }

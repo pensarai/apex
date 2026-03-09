@@ -15,6 +15,8 @@ export interface AppCommandContext {
   route: Route;
   navigate: (route: Route) => void;
   openSessionsDialog?: () => void;
+  openThemeDialog?: () => void;
+  openAuthDialog?: () => void;
 }
 
 /**
@@ -247,6 +249,14 @@ export const commands: CommandConfig[] = [
     },
   },
   {
+    name: "new",
+    description: "Start a new operator session",
+    category: "Session",
+    handler: async (args, ctx) => {
+      ctx.navigate({ type: "operator" });
+    },
+  },
+  {
     name: "chat",
     aliases: ["c"],
     description: "Open the Chat TUI interface",
@@ -303,7 +313,7 @@ export const commands: CommandConfig[] = [
       }
 
       // /theme — open picker
-      ctx.navigate({ type: "base", path: "theme" });
+      ctx.openThemeDialog?.();
     },
   },
   {
@@ -337,10 +347,7 @@ export const commands: CommandConfig[] = [
     description: "Connect to Pensar Console for managed inference",
     category: "General",
     handler: async (args, ctx) => {
-      ctx.navigate({
-        type: "base",
-        path: "auth",
-      });
+      ctx.openAuthDialog?.();
     },
   },
 

@@ -1335,6 +1335,7 @@ export default function OperatorDashboard({
         onAutoApprove={handleAutoApprove}
         enableAutocomplete={true}
         autocompleteOptions={autocompleteOptions}
+        autocompletePlacement="above"
         enableCommands={true}
         onCommandExecute={handleCommandExecute}
         disableHistoryNavigation={

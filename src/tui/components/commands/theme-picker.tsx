@@ -9,12 +9,15 @@
 import { useState, useCallback, useRef } from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { useTheme } from "../../theme";
-import { useRoute } from "../../context/route";
 import { config } from "../../../core/config";
+import { Dialog } from "../../context/dialog";
 
-export default function ThemePicker() {
+interface ThemePickerProps {
+  onClose: () => void;
+}
+
+export default function ThemePicker({ onClose }: ThemePickerProps) {
   const dimensions = useTerminalDimensions();
-  const route = useRoute();
   const {
     colors,
     theme,
@@ -35,8 +38,8 @@ export default function ThemePicker() {
     // Revert to original theme
     setTheme(originalThemeRef.current);
     setMode(originalModeRef.current);
-    route.navigate({ type: "base", path: "home" });
-  }, [setTheme, setMode, route]);
+    onClose();
+  }, [setTheme, setMode, onClose]);
 
   const handleConfirm = useCallback(async () => {
     // Persist the current theme and mode
@@ -44,8 +47,8 @@ export default function ThemePicker() {
     if (currentThemeName) {
       await config.update({ theme: currentThemeName });
     }
-    route.navigate({ type: "base", path: "home" });
-  }, [availableThemes, selectedIndex, route]);
+    onClose();
+  }, [availableThemes, selectedIndex, onClose]);
 
   useKeyboard((evt) => {
     if (evt.name === "escape") {
@@ -107,29 +110,15 @@ export default function ThemePicker() {
   );
 
   return (
-    <box
-      width={dimensions.width}
-      height={dimensions.height}
-      alignItems="center"
-      justifyContent="center"
-      position="absolute"
-      left={0}
-      top={0}
-      backgroundColor={colors.background}
-    >
+    <Dialog size="large" onClose={handleClose}>
       <box
-        width={panelWidth}
-        height={panelHeight}
-        backgroundColor={colors.backgroundPanel}
-        borderColor={colors.border}
-        borderStyle="single"
+        width="100%"
         flexDirection="column"
+        padding={1}
       >
         {/* Header */}
         <box
           width="100%"
-          paddingLeft={1}
-          paddingRight={1}
           flexDirection="row"
           justifyContent="space-between"
         >
@@ -146,8 +135,6 @@ export default function ThemePicker() {
         <box
           flexDirection="column"
           flexGrow={1}
-          paddingLeft={1}
-          paddingRight={1}
         >
           {visibleThemes.map((themeName) => {
             const actualIndex = availableThemes.indexOf(themeName);
@@ -174,12 +161,12 @@ export default function ThemePicker() {
         </box>
 
         {/* Footer */}
-        <box width="100%" paddingLeft={1} paddingRight={1} flexDirection="row">
+        <box width="100%" flexDirection="row">
           <text fg={colors.textMuted}>
             [↑↓] browse [enter] select [m] toggle mode [esc] cancel
           </text>
         </box>
       </box>
-    </box>
+    </Dialog>
   );
 }

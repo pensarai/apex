@@ -66,6 +66,8 @@ function App({ appConfig }: AppProps) {
   const [inputKey, setInputKey] = useState(0);
   const [showSessionsDialog, setShowSessionsDialog] = useState(false);
   const [showShortcutsDialog, setShowShortcutsDialog] = useState(false);
+  const [showThemeDialog, setShowThemeDialog] = useState(false);
+  const [showAuthDialog, setShowAuthDialog] = useState(false);
 
   const navigableItems = ["command-input"];
 
@@ -79,6 +81,8 @@ function App({ appConfig }: AppProps) {
                 <AgentProvider>
                   <CommandProvider
                     onOpenSessionsDialog={() => setShowSessionsDialog(true)}
+                    onOpenThemeDialog={() => setShowThemeDialog(true)}
+                    onOpenAuthDialog={() => setShowAuthDialog(true)}
                   >
                     <KeybindingProvider
                       deps={{
@@ -98,6 +102,10 @@ function App({ appConfig }: AppProps) {
                         setShowSessionsDialog={setShowSessionsDialog}
                         showShortcutsDialog={showShortcutsDialog}
                         setShowShortcutsDialog={setShowShortcutsDialog}
+                        showThemeDialog={showThemeDialog}
+                        setShowThemeDialog={setShowThemeDialog}
+                        showAuthDialog={showAuthDialog}
+                        setShowAuthDialog={setShowAuthDialog}
                         cwd={cwd}
                         setCtrlCPressTime={setCtrlCPressTime}
                         showExitWarning={showExitWarning}
@@ -123,6 +131,10 @@ function AppContent({
   setShowSessionsDialog,
   showShortcutsDialog,
   setShowShortcutsDialog,
+  showThemeDialog,
+  setShowThemeDialog,
+  showAuthDialog,
+  setShowAuthDialog,
   cwd,
   setCtrlCPressTime,
   showExitWarning,
@@ -135,6 +147,10 @@ function AppContent({
   setShowSessionsDialog: (show: boolean) => void;
   showShortcutsDialog: boolean;
   setShowShortcutsDialog: (show: boolean) => void;
+  showThemeDialog: boolean;
+  setShowThemeDialog: (show: boolean) => void;
+  showAuthDialog: boolean;
+  setShowAuthDialog: (show: boolean) => void;
   cwd: string;
   setCtrlCPressTime: (time: number | null) => void;
   showExitWarning: boolean;
@@ -207,6 +223,18 @@ function AppContent({
     refocusPrompt();
   };
 
+  const handleCloseThemeDialog = () => {
+    setShowThemeDialog(false);
+    setInputKey((prev) => prev + 1);
+    refocusPrompt();
+  };
+
+  const handleCloseAuthDialog = () => {
+    setShowAuthDialog(false);
+    setInputKey((prev) => prev + 1);
+    refocusPrompt();
+  };
+
   // Check if we're on the home route
   const isHomeRoute = route.data.type === "base" && route.data.path === "home";
 
@@ -233,6 +261,14 @@ function AppContent({
           open={showShortcutsDialog}
           onClose={handleCloseShortcutsDialog}
         />
+      )}
+
+      {showThemeDialog && (
+        <ThemePicker onClose={handleCloseThemeDialog} />
+      )}
+
+      {showAuthDialog && (
+        <AuthFlow onClose={handleCloseAuthDialog} />
       )}
     </box>
   );
@@ -319,17 +355,11 @@ function CommandDisplay({
           <RouteSwitch.Case when="providers">
             <ProviderManager />
           </RouteSwitch.Case>
-          <RouteSwitch.Case when="theme">
-            <ThemePicker />
-          </RouteSwitch.Case>
           <RouteSwitch.Case when="help">
             <HelpDialog />
           </RouteSwitch.Case>
           <RouteSwitch.Case when="models">
             <ModelsDisplay />
-          </RouteSwitch.Case>
-          <RouteSwitch.Case when="auth">
-            <AuthFlow />
           </RouteSwitch.Case>
           <RouteSwitch.Case when="credits">
             <CreditsFlow />
