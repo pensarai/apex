@@ -4,7 +4,13 @@ import path from "path";
 import { mkdtempSync, rmSync } from "fs";
 import { tmpdir } from "os";
 
-import { addMemory, getMemory, listMemories } from "./index";
+import {
+  addMemory,
+  addMemoryWithId,
+  deleteMemory,
+  getMemory,
+  listMemories,
+} from "./index";
 
 let tmpDir: string;
 
@@ -253,6 +259,104 @@ describe("memory system", () => {
       expect(list).toHaveLength(2);
       expect(list[0]!.title).toBe("Newer");
       expect(list[1]!.title).toBe("Older");
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // addMemoryWithId
+  // -------------------------------------------------------------------------
+
+  describe("addMemoryWithId", () => {
+    it("creates a memory with a predetermined id", async () => {
+      const mem = await addMemoryWithId({
+        id: "pk-abc123",
+        title: "Known false positive",
+        content: "The /health endpoint always returns 200",
+        category: "app",
+        tags: ["project-knowledge", "false_positive_pattern"],
+      });
+
+      expect(mem.id).toBe("pk-abc123");
+      expect(mem.category).toBe("app");
+      expect(mem.title).toBe("Known false positive");
+      expect(mem.tags).toEqual(["project-knowledge", "false_positive_pattern"]);
+
+      // Verify it can be retrieved
+      const fetched = await getMemory("app", "pk-abc123");
+      expect(fetched).not.toBeNull();
+      expect(fetched!.content).toBe("The /health endpoint always returns 200");
+    });
+
+    it("overwrites an existing memory preserving createdAt", async () => {
+      const original = await addMemoryWithId({
+        id: "pk-overwrite",
+        title: "Original",
+        content: "v1",
+        category: "app",
+      });
+
+      await new Promise((r) => setTimeout(r, 10));
+
+      const updated = await addMemoryWithId({
+        id: "pk-overwrite",
+        title: "Updated",
+        content: "v2",
+        category: "app",
+      });
+
+      expect(updated.id).toBe("pk-overwrite");
+      expect(updated.title).toBe("Updated");
+      expect(updated.content).toBe("v2");
+      expect(updated.createdAt).toBe(original.createdAt);
+      expect(updated.updatedAt).not.toBe(original.updatedAt);
+    });
+
+    it("rejects ids with path traversal sequences", async () => {
+      await expect(
+        addMemoryWithId({ id: "../evil", title: "t", content: "c" }),
+      ).rejects.toThrow("Invalid memory id");
+    });
+
+    it("defaults category to general", async () => {
+      const mem = await addMemoryWithId({
+        id: "pk-default-cat",
+        title: "No category",
+        content: "data",
+      });
+      expect(mem.category).toBe("general");
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // deleteMemory
+  // -------------------------------------------------------------------------
+
+  describe("deleteMemory", () => {
+    it("deletes an existing memory and returns true", async () => {
+      await addMemoryWithId({
+        id: "pk-to-delete",
+        title: "Doomed",
+        content: "will be removed",
+        category: "app",
+      });
+
+      const result = await deleteMemory("app", "pk-to-delete");
+      expect(result).toBe(true);
+
+      // Verify it's gone
+      const fetched = await getMemory("app", "pk-to-delete");
+      expect(fetched).toBeNull();
+    });
+
+    it("returns false for a non-existent memory", async () => {
+      const result = await deleteMemory("general", "does-not-exist");
+      expect(result).toBe(false);
+    });
+
+    it("rejects ids with path traversal sequences", async () => {
+      await expect(deleteMemory("general", "../../etc")).rejects.toThrow(
+        "Invalid memory id",
+      );
     });
   });
 });
