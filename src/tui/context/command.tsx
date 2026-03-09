@@ -16,7 +16,6 @@ import {
 import type { AutocompleteOption } from "../components/shared/prompt-input";
 import { useRoute, type WebCommandOptions } from "./route";
 import {
-  slugify,
   createSkillsRegistry,
   type Skill,
   type SkillsRegistry,
@@ -112,7 +111,6 @@ export function CommandProvider({
   // Derive legacy Skill[] from the registry (single source of truth)
   const skills = useMemo(
     () => registry.toLegacySkills(),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [registry, registryVersion],
   );
 
@@ -128,7 +126,6 @@ export function CommandProvider({
       }
       return null;
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [registry, registryVersion],
   );
 
@@ -149,6 +146,7 @@ export function CommandProvider({
       });
     }
 
+<<<<<<< HEAD
     // Append skills from registry (already deduplicated by slug)
     for (const entry of registry.listEnabled()) {
       options.push({
@@ -188,7 +186,7 @@ export function CommandProvider({
       return a.value.localeCompare(b.value);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [router]);
+  }, [router, registry, registryVersion]);
 
   const executeCommand = useCallback(
     async (input: string): Promise<boolean> => {

@@ -46,6 +46,7 @@ export function parseSkillMd(raw: string): {
   } catch (err) {
     throw new Error(
       `SKILL.md frontmatter YAML parse error: ${err instanceof Error ? err.message : String(err)}`,
+      { cause: err },
     );
   }
 
