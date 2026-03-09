@@ -17,6 +17,7 @@ export interface AppCommandContext {
   openSessionsDialog?: () => void;
   openThemeDialog?: () => void;
   openAuthDialog?: () => void;
+  openPentestDialog?: (flags?: Record<string, any>) => void;
 }
 
 /**
@@ -115,12 +116,8 @@ export const commands: CommandConfig[] = [
         });
         return;
       }
-      // Navigate to WebWizard (swarm wizard) for target input
-      ctx.navigate({
-        type: "base",
-        path: "web",
-        options: { auto: true, ...flags },
-      });
+      // Open WebWizard dialog for target input
+      ctx.openPentestDialog?.({ auto: true, ...flags });
     },
   },
   {

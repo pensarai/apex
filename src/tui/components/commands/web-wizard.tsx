@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useKeyboard } from "@opentui/react";
 import Input from "../input";
-import { useRoute } from "../../context/route";
 import { useConfig } from "../../context/config";
 import { useAgent } from "../../context/agent";
 import type { SessionConfig } from "../../../core/session";
@@ -9,6 +8,7 @@ import { SpinnerDots } from "../sprites";
 import { type ModelInfo } from "../../../core/ai";
 import { getAvailableModels } from "../../../core/providers/utils";
 import { useTheme } from "../../theme";
+import { Dialog } from "../../context/dialog";
 
 // Wizard step types
 type WizardStep = "target" | "configure" | "creating";
@@ -38,6 +38,10 @@ interface WizardState {
 
 // Props for the WebWizard
 interface WebWizardProps {
+  /** Called when the wizard is dismissed (ESC) */
+  onClose: () => void;
+  /** Called when the wizard completes and a pentest session should start */
+  onStartPentest: (targets: string[], sessionConfig: SessionConfig) => void;
   /** Pre-filled target URL from --target flag */
   initialTarget?: string;
   /** Enable auto mode from --auto flag */
@@ -67,6 +71,8 @@ interface WebWizardProps {
 }
 
 export default function WebWizard({
+  onClose,
+  onStartPentest,
   initialTarget,
   autoMode = false,
   initialName,
@@ -82,7 +88,6 @@ export default function WebWizard({
   initialModel,
 }: WebWizardProps) {
   const { colors } = useTheme();
-  const route = useRoute();
   const config = useConfig();
   const { model, setModel, isModelUserSelected } = useAgent();
 
@@ -280,11 +285,7 @@ export default function WebWizard({
         };
       }
 
-      route.navigate({
-        type: "pentest",
-        targets: [state.target],
-        sessionConfig,
-      });
+      onStartPentest([state.target], sessionConfig);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to create session");
       setCurrentStep(initialTarget ? "configure" : "target");
@@ -293,6 +294,8 @@ export default function WebWizard({
 
   // Keyboard handling
   useKeyboard((key) => {
+    key.preventDefault();
+
     // ESC - Go back or close
     if (key.name === "escape") {
       if (currentStep === "creating") {
@@ -300,9 +303,9 @@ export default function WebWizard({
         return;
       }
       if (currentStep === "configure") {
-        // If we have an initial target, go home instead of back to target step
+        // If we have an initial target, close dialog instead of back to target step
         if (initialTarget) {
-          route.navigate({ type: "base", path: "home" });
+          onClose();
         } else {
           setCurrentStep("target");
           setFocusedSection(0);
@@ -310,7 +313,7 @@ export default function WebWizard({
         }
         return;
       }
-      route.navigate({ type: "base", path: "home" });
+      onClose();
       return;
     }
 
@@ -573,25 +576,28 @@ export default function WebWizard({
   // Render creating state
   if (currentStep === "creating") {
     return (
-      <box
-        flexDirection="column"
-        width="100%"
-        height="100%"
-        alignItems="center"
-        justifyContent="center"
-        flexGrow={1}
-        gap={2}
-      >
-        <SpinnerDots label="Creating session..." fg={colors.primary} />
-        <text fg={colors.textMuted}>Target: {state.target}</text>
-        <text fg={colors.textMuted}>Mode: {modeLabel}</text>
-      </box>
+      <Dialog size="large" onClose={onClose}>
+        <box
+          flexDirection="column"
+          width="100%"
+          height="100%"
+          alignItems="center"
+          justifyContent="center"
+          flexGrow={1}
+          gap={2}
+        >
+          <SpinnerDots label="Creating session..." fg={colors.primary} />
+          <text fg={colors.textMuted}>Target: {state.target}</text>
+          <text fg={colors.textMuted}>Mode: {modeLabel}</text>
+        </box>
+      </Dialog>
     );
   }
 
   // Render target step
   if (currentStep === "target") {
     return (
+      <Dialog size="large" onClose={onClose}>
       <box width="100%" flexDirection="column" gap={2} paddingLeft={4}>
         <text fg={colors.text}>Configure Web App Pentest</text>
         <text fg={colors.textMuted}>{modeDescription}</text>
@@ -659,11 +665,13 @@ export default function WebWizard({
           </text>
         </box>
       </box>
+      </Dialog>
     );
   }
 
   // Render configure step
   return (
+    <Dialog size="large" onClose={onClose}>
     <box width="100%" flexDirection="column" gap={2} paddingLeft={4}>
       <box flexDirection="column">
         <text fg={colors.text}>Configure Web App Pentest - {modeLabel}</text>
@@ -1022,5 +1030,6 @@ export default function WebWizard({
         </text>
       </box>
     </box>
+    </Dialog>
   );
 }
