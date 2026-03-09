@@ -703,10 +703,16 @@ export default function OperatorDashboard({
       const controller = new AbortController();
       abortControllerRef.current = controller;
 
-      // Add user message
+      // Extract inline /skill-slug references from the prompt (e.g. "scan this /vulnerability-analysis")
+      const { prompt: cleanedPrompt } = extractInlineSkills(
+        prompt,
+        skillsRegistry,
+      );
+
+      // Add user message (with cleaned prompt — /slug tokens stripped)
       setMessages((prev) => [
         ...prev,
-        { role: "user", content: prompt, createdAt: new Date() },
+        { role: "user", content: cleanedPrompt, createdAt: new Date() },
       ]);
 
       // Build messages array — append user turn to conversation history.
@@ -715,7 +721,7 @@ export default function OperatorDashboard({
       const prevMessages = conversationRef.current;
       const nextMessages: ModelMessage[] = normalizeMessages([
         ...conversationRef.current,
-        { role: "user", content: prompt },
+        { role: "user", content: cleanedPrompt },
       ]);
       conversationRef.current = nextMessages;
 
@@ -837,12 +843,6 @@ export default function OperatorDashboard({
           },
         },
       } satisfies ConsumeCallbacks;
-
-      // Extract inline /skill-slug references from the prompt (e.g. "scan this /vulnerability-analysis")
-      const { prompt: cleanedPrompt } = extractInlineSkills(
-        prompt,
-        skillsRegistry,
-      );
 
       // Build catalog and active skill instructions for the system prompt
       const activeSkills = skillsRegistry.getActive();
