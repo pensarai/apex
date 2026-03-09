@@ -18,7 +18,6 @@ import { useRoute } from "../../context/route";
 import { useDialog } from "../../context/dialog";
 import { PromptInput } from "../shared/prompt-input";
 import { useTheme } from "../../theme";
-import { slugify } from "../../../core/skills";
 import * as History from "../../../core/history";
 
 type ViewType = "home" | "config" | "chat";
@@ -34,7 +33,7 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
   const config = useConfig();
   const route = useRoute();
 
-  const { executeCommand, autocompleteOptions, resolveSkillContent, skills } =
+  const { executeCommand, autocompleteOptions, resolveSkillContent } =
     useCommand();
   const { setInputValue } = useInput();
   const { promptRef } = useFocus();
@@ -102,11 +101,6 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
     [resolveSkillContent, launchOperator, executeCommand, pushHistory],
   );
 
-  const skillItems = skills.slice(0, 5).map((s) => ({
-    cmd: `/${slugify(s.name)}`,
-    desc: s.description || "skill",
-  }));
-
   // Calculate layout dimensions
   const animationHeight = Math.max(6, Math.floor(dimensions.height * 0.2));
   const inputWidth = Math.min(80, dimensions.width - 10);
@@ -146,26 +140,6 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
             </box>
           </box>
         ))}
-        {skillItems.length > 0 && (
-          <>
-            <box marginTop={1}>
-              <box width={24} justifyContent="flex-end">
-                <text fg={colors.textMuted}>Skills</text>
-              </box>
-            </box>
-            {skillItems.map(({ cmd, desc }) => (
-              <box key={cmd} flexDirection="row">
-                <box width={24} justifyContent="flex-end">
-                  <text fg={colors.accent}>{cmd}</text>
-                </box>
-                <box width={4} />
-                <box>
-                  <text fg={colors.textMuted}>{desc}</text>
-                </box>
-              </box>
-            ))}
-          </>
-        )}
       </box>
 
       {/* Centered Input Area */}

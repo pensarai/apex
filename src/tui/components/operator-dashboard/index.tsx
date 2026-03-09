@@ -20,6 +20,7 @@ import { buildAuthConfig } from "../../../core/ai/utils";
 import {
   ALL_TOOL_NAMES,
   PLAN_MODE_TOOL_NAMES,
+  SKILL_TOOL_NAMES,
   type ConsumeCallbacks,
   type AgentMode,
 } from "../../../core/agents/offSecAgent";
@@ -66,6 +67,7 @@ import {
   buildOperatorSystemPrompt,
   resolveInputFocused,
   accumulateTokenUsage,
+  extractInlineSkills,
 } from "./logic";
 import { QueuedMessages } from "./queued-messages";
 import { navigateUp, navigateDown, selectionAfterRemove } from "./queue";
@@ -103,6 +105,7 @@ export default function OperatorDashboard({
     executeCommand,
     resolveSkillContent,
     skills,
+    skillsRegistry,
   } = useCommand();
   const {
     stack,
@@ -247,10 +250,19 @@ export default function OperatorDashboard({
                 currentStage:
                   (savedState.currentStage as OperatorSessionState["currentStage"]) ||
                   prev.currentStage,
+                activeSkills: savedState.activeSkills,
               }));
               approvalGateRef.current.updateConfig({
                 requireApproval: savedState.requireApproval ?? true,
               });
+
+              // Re-activate skills from persisted state
+              if (
+                Array.isArray(savedState.activeSkills) &&
+                savedState.activeSkills.length > 0
+              ) {
+                skillsRegistry.restoreActive(savedState.activeSkills);
+              }
 
               if (
                 Array.isArray(savedState.messages) &&
@@ -818,20 +830,40 @@ export default function OperatorDashboard({
         },
       } satisfies ConsumeCallbacks;
 
-      const commonInput = {
+      // Extract inline /skill-slug references from the prompt (e.g. "scan this /vulnerability-analysis")
+      const { prompt: cleanedPrompt } = extractInlineSkills(
         prompt,
+        skillsRegistry,
+      );
+
+      // Build catalog and active skill instructions for the system prompt
+      const activeSkills = skillsRegistry.getActive();
+      const skillsOpts = {
+        skillsCatalog: skillsRegistry.buildCatalog() || undefined,
+        activeSkillInstructions: activeSkills.length > 0
+          ? activeSkills.map((s) => ({
+              name: s.manifest.name,
+              instructions: s.instructions,
+            }))
+          : undefined,
+      };
+
+      const commonInput = {
+        prompt: cleanedPrompt,
         model: model.id,
         messages: nextMessages,
         stopWhen: [stepCountIs(10000)],
         target: initialConfig?.target,
         activeTools: [
           ...(agentMode === "plan" ? PLAN_MODE_TOOL_NAMES : ALL_TOOL_NAMES),
+          ...SKILL_TOOL_NAMES,
         ] as string[],
         mode: agentMode,
         abortSignal: controller.signal,
         authConfig: buildAuthConfig(config.data),
         approvalGate: approvalGateRef.current,
         commandCancelHandle: cancelHandleRef.current,
+        skillsRegistry,
         onStepFinish,
         callbacks,
         onSessionReady: (s: SessionInfo) => {
@@ -853,6 +885,7 @@ export default function OperatorDashboard({
               initialConfig?.target,
               operatorState,
               agentMode,
+              skillsOpts,
             ),
             session,
           });
@@ -874,6 +907,7 @@ export default function OperatorDashboard({
               initialConfig?.target,
               operatorState,
               agentMode,
+              skillsOpts,
             ),
             sessionConfig,
             onNameGenerated: (name: string) => {
@@ -957,6 +991,15 @@ export default function OperatorDashboard({
           setThinking(false);
           setIsExecuting(false);
           abortControllerRef.current = null;
+
+          // Sync active skills to operator state for persistence across runs
+          const activeSlugs = skillsRegistry
+            .getActive()
+            .map((s) => s.slug);
+          setOperatorState((prev) => ({
+            ...prev,
+            activeSkills: activeSlugs,
+          }));
         }
       }
     },
@@ -1495,6 +1538,7 @@ export default function OperatorDashboard({
         autocompletePlacement="above"
         enableCommands={true}
         onCommandExecute={handleCommandExecute}
+        highlightSlashCommands={true}
         disableHistoryNavigation={
           status === "running" && queuedMessages.length > 0
         }

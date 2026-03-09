@@ -1,48 +1,30 @@
-import os from "os";
 import path from "path";
 import fs from "fs/promises";
 import type { Skill, SkillFrontmatter } from "./types";
+import { SkillsRegistry } from "./registry";
+import { parseLegacySkillMd } from "./parser";
+import { SKILLS_DIR, slugify } from "./utils";
 
 export type { Skill, SkillFrontmatter };
+export type {
+  SkillEntry,
+  SkillManifest,
+  SkillScript,
+  SkillSource,
+} from "./types";
+export { SkillsRegistry } from "./registry";
+export { parseSkillMd, parseLegacySkillMd } from "./parser";
+export { scanSkillRoots } from "./scanner";
+export { slugify } from "./utils";
 
-const SKILLS_DIR = path.join(os.homedir(), ".pensar", "skills");
+/** Create a new SkillsRegistry instance. */
+export function createSkillsRegistry(): SkillsRegistry {
+  return new SkillsRegistry();
+}
 
 /** Ensure the skills directory exists. */
 async function ensureSkillsDir(): Promise<void> {
   await fs.mkdir(SKILLS_DIR, { recursive: true });
-}
-
-/**
- * Parse simple YAML-style frontmatter from a markdown string.
- * Returns the parsed key-value pairs and the body after the frontmatter.
- */
-function parseFrontmatter(raw: string): {
-  meta: SkillFrontmatter;
-  body: string;
-} {
-  const trimmed = raw.trimStart();
-  if (!trimmed.startsWith("---")) {
-    return { meta: {}, body: raw };
-  }
-
-  const endIdx = trimmed.indexOf("---", 3);
-  if (endIdx === -1) {
-    return { meta: {}, body: raw };
-  }
-
-  const frontmatterBlock = trimmed.slice(3, endIdx).trim();
-  const body = trimmed.slice(endIdx + 3).trim();
-  const meta: Record<string, string> = {};
-
-  for (const line of frontmatterBlock.split("\n")) {
-    const colonIdx = line.indexOf(":");
-    if (colonIdx === -1) continue;
-    const key = line.slice(0, colonIdx).trim();
-    const value = line.slice(colonIdx + 1).trim();
-    meta[key] = value;
-  }
-
-  return { meta: meta as SkillFrontmatter, body };
 }
 
 /** Serialize a skill into a markdown string with frontmatter. */
@@ -56,14 +38,6 @@ function serializeSkill(skill: Skill): string {
     skill.content,
   ];
   return lines.join("\n");
-}
-
-/** Convert a display name to a filename-safe slug. */
-export function slugify(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
 }
 
 /** Load all skills from ~/.pensar/skills/ */
@@ -85,13 +59,13 @@ export async function loadSkills(): Promise<Skill[]> {
     const filePath = path.join(SKILLS_DIR, entry);
     try {
       const raw = await fs.readFile(filePath, "utf-8");
-      const { meta, body } = parseFrontmatter(raw);
+      const { name, description, content } = parseLegacySkillMd(raw);
       const slug = entry.replace(/\.md$/, "");
 
       skills.push({
-        name: meta.name || slug,
-        description: meta.description || "",
-        content: body,
+        name: name || slug,
+        description: description || "",
+        content,
       });
     } catch {
       // Skip unreadable files
@@ -107,11 +81,11 @@ export async function loadSkill(slug: string): Promise<Skill | null> {
   const filePath = path.join(SKILLS_DIR, `${slug}.md`);
   try {
     const raw = await fs.readFile(filePath, "utf-8");
-    const { meta, body } = parseFrontmatter(raw);
+    const { name, description, content } = parseLegacySkillMd(raw);
     return {
-      name: meta.name || slug,
-      description: meta.description || "",
-      content: body,
+      name: name || slug,
+      description: description || "",
+      content,
     };
   } catch {
     return null;

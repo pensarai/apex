@@ -15,7 +15,12 @@ import {
 } from "../command-registry";
 import type { AutocompleteOption } from "../components/shared/prompt-input";
 import { useRoute, type WebCommandOptions } from "./route";
-import { loadSkills, slugify, type Skill } from "../../core/skills";
+import {
+  slugify,
+  createSkillsRegistry,
+  type Skill,
+  type SkillsRegistry,
+} from "../../core/skills";
 
 interface CommandContextValue {
   router: CommandRouter<AppCommandContext>;
@@ -31,6 +36,8 @@ interface CommandContextValue {
    * Returns the skill's prompt content if the input matches a skill, else null.
    */
   resolveSkillContent: (input: string) => string | null;
+  /** skills.sh-compatible registry (includes both legacy and directory-based skills) */
+  skillsRegistry: SkillsRegistry;
 }
 
 const CommandContext = createContext<CommandContextValue | null>(null);
@@ -59,7 +66,8 @@ export function CommandProvider({
   onOpenPentestDialog,
 }: CommandProviderProps) {
   const route = useRoute();
-  const [skills, setSkills] = useState<Skill[]>([]);
+  const [registry] = useState(() => createSkillsRegistry());
+  const [registryVersion, setRegistryVersion] = useState(0);
 
   const ctx = useMemo(() => {
     const ctx: AppCommandContext = {
@@ -80,11 +88,11 @@ export function CommandProvider({
   ]);
 
   const refreshSkills = useCallback(async () => {
-    const loaded = await loadSkills();
-    setSkills(loaded);
-  }, []);
+    await registry.refresh();
+    setRegistryVersion((v) => v + 1);
+  }, [registry]);
 
-  // Load skills on mount and whenever we return to home
+  // Load skills + registry on mount and whenever we return to home
   useEffect(() => {
     refreshSkills();
   }, [route.data]);
@@ -101,22 +109,27 @@ export function CommandProvider({
     return router;
   }, []);
 
-  // Build a slug-to-content map for fast skill resolution
-  const skillSlugMap = useMemo(() => {
-    const map = new Map<string, Skill>();
-    for (const skill of skills) {
-      map.set(slugify(skill.name), skill);
-    }
-    return map;
-  }, [skills]);
+  // Derive legacy Skill[] from the registry (single source of truth)
+  const skills = useMemo(
+    () => registry.toLegacySkills(),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [registry, registryVersion],
+  );
 
   const resolveSkillContent = useCallback(
     (input: string): string | null => {
       const trimmed = input.trim().replace(/^\/+/, "").toLowerCase();
-      const skill = skillSlugMap.get(trimmed);
-      return skill?.content ?? null;
+      // Activation is intentional here: slash-command invocation implies the
+      // operator wants the skill active so its instructions enter the system prompt.
+      const entry = registry.get(trimmed);
+      if (entry?.enabled) {
+        registry.activate(trimmed);
+        return entry.instructions;
+      }
+      return null;
     },
-    [skillSlugMap],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [registry, registryVersion],
   );
 
   // Generate autocomplete options from router commands + skills
@@ -136,13 +149,12 @@ export function CommandProvider({
       });
     }
 
-    // Append skill-based slash commands
-    for (const skill of skills) {
-      const slug = slugify(skill.name);
+    // Append skills from registry (already deduplicated by slug)
+    for (const entry of registry.listEnabled()) {
       options.push({
-        value: `/${slug}`,
-        label: `/${slug}`,
-        description: skill.description || "Skill",
+        value: `/${entry.slug}`,
+        label: `/${entry.slug}`,
+        description: entry.manifest.description || "Skill",
       });
     }
 
@@ -175,7 +187,8 @@ export function CommandProvider({
       // Neither in priority list - sort alphabetically
       return a.value.localeCompare(b.value);
     });
-  }, [router, skills]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [router, registry, registryVersion]);
 
   const executeCommand = useCallback(
     async (input: string): Promise<boolean> => {
@@ -193,6 +206,7 @@ export function CommandProvider({
       skills,
       refreshSkills,
       resolveSkillContent,
+      skillsRegistry: registry,
     }),
     [
       router,
@@ -201,8 +215,11 @@ export function CommandProvider({
       skills,
       refreshSkills,
       resolveSkillContent,
+      registry,
     ],
   );
+  // Note: `skills` is derived from `registry` via `registryVersion`, so it
+  // naturally updates when the registry refreshes. No duplicate disk scans.
 
   return (
     <CommandContext.Provider value={value}>{children}</CommandContext.Provider>

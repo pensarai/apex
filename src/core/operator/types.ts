@@ -209,6 +209,8 @@ export interface OperatorSessionState {
   pendingApprovals: PendingApproval[];
   actionHistory: ActionHistoryEntry[];
   stageProgress: Record<OperatorStage, StageProgress>;
+  /** Slugs of skills activated via use_skill (persisted for session resume) */
+  activeSkills?: string[];
 }
 
 export function createInitialOperatorState(

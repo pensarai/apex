@@ -605,6 +605,8 @@ export interface PersistedOperatorState {
   pausedAt: string;
   /** Last run ID for log correlation */
   lastRunId: string;
+  /** Slugs of activated skills (for session resume) */
+  activeSkills?: string[];
 }
 
 /**

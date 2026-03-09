@@ -8,10 +8,12 @@ import {
   buildOperatorSystemPrompt,
   resolveInputFocused,
   accumulateTokenUsage,
+  extractInlineSkills,
   type DashboardStatus,
 } from "./logic";
 import type { AutocompleteOption } from "../shared/prompt-input";
 import type { OperatorSessionState } from "../../../core/operator";
+import type { SkillsRegistry } from "../../../core/skills/registry";
 
 // ---------------------------------------------------------------------------
 // Shared fixtures
@@ -27,6 +29,7 @@ const allOptions: AutocompleteOption[] = [
     description: "Create skill",
   },
   { value: "/models", label: "/models", description: "Switch model" },
+  { value: "/skills", label: "/skills", description: "View skills" },
   { value: "/sql-injection", label: "/sql-injection", description: "Skill" },
   { value: "/xss-test", label: "/xss-test", description: "Skill" },
 ];
@@ -61,7 +64,15 @@ describe("filterOperatorAutocomplete", () => {
 
   it("returns only allowed commands when no skills exist", () => {
     const result = filterOperatorAutocomplete(allOptions, new Set());
-    expect(result).toHaveLength(3);
+    expect(result).toHaveLength(4);
+  });
+
+  it("strips description from skill options", () => {
+    const result = filterOperatorAutocomplete(allOptions, skillSlugs);
+    const sqlOpt = result.find((o) => o.value === "/sql-injection");
+    const modelsOpt = result.find((o) => o.value === "/models");
+    expect(sqlOpt?.description).toBeUndefined();
+    expect(modelsOpt?.description).toBe("Switch model");
   });
 
   it("returns empty for empty input", () => {
@@ -489,6 +500,42 @@ describe("buildOperatorSystemPrompt", () => {
     const prompt = buildOperatorSystemPrompt(target, state);
     expect(prompt).not.toContain("Agent mode: PLAN");
   });
+
+  it("appends skills catalog when provided", () => {
+    const catalog = "# Available Skills\n\n- **sqli** (web) — SQL injection testing";
+    const prompt = buildOperatorSystemPrompt(target, state, undefined, {
+      skillsCatalog: catalog,
+    });
+    expect(prompt).toContain("# Skills");
+    expect(prompt).toContain("# Available Skills");
+    expect(prompt).toContain("sqli");
+  });
+
+  it("does not include skills section when catalog is undefined", () => {
+    const prompt = buildOperatorSystemPrompt(target, state);
+    expect(prompt).not.toContain("# Skills");
+  });
+
+  it("appends active skill instructions", () => {
+    const activeSkills = [
+      { name: "SQL Injection", instructions: "Step 1: Find params..." },
+      { name: "XSS", instructions: "Step 1: Inject payload..." },
+    ];
+    const prompt = buildOperatorSystemPrompt(target, state, undefined, {
+      activeSkillInstructions: activeSkills,
+    });
+    expect(prompt).toContain("# Active Skill: SQL Injection");
+    expect(prompt).toContain("Step 1: Find params...");
+    expect(prompt).toContain("# Active Skill: XSS");
+    expect(prompt).toContain("Step 1: Inject payload...");
+  });
+
+  it("does not include active skills section when array is empty", () => {
+    const prompt = buildOperatorSystemPrompt(target, state, undefined, {
+      activeSkillInstructions: [],
+    });
+    expect(prompt).not.toContain("# Active Skill:");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -563,5 +610,76 @@ describe("accumulateTokenUsage", () => {
       outputTokens: 5,
       totalTokens: 15,
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// extractInlineSkills
+// ---------------------------------------------------------------------------
+
+describe("extractInlineSkills", () => {
+  function mockRegistry(
+    slugs: string[],
+  ): SkillsRegistry {
+    const activated = new Set<string>();
+    return {
+      get: (slug: string) => {
+        if (slugs.includes(slug)) {
+          return { enabled: true, slug } as never;
+        }
+        return undefined;
+      },
+      activate: (slug: string) => {
+        activated.add(slug);
+        return { slug } as never;
+      },
+      isActive: (slug: string) => activated.has(slug),
+    } as unknown as SkillsRegistry;
+  }
+
+  it("extracts a single inline skill reference", () => {
+    const registry = mockRegistry(["vulnerability-analysis"]);
+    const result = extractInlineSkills(
+      "scan this codebase /vulnerability-analysis",
+      registry,
+    );
+    expect(result.activatedSlugs).toEqual(["vulnerability-analysis"]);
+    expect(result.prompt).toBe("scan this codebase");
+  });
+
+  it("extracts multiple inline skill references", () => {
+    const registry = mockRegistry(["vuln-scan", "recon"]);
+    const result = extractInlineSkills(
+      "run /vuln-scan and /recon on the target",
+      registry,
+    );
+    expect(result.activatedSlugs).toContain("vuln-scan");
+    expect(result.activatedSlugs).toContain("recon");
+    expect(result.prompt).toBe("run and on the target");
+  });
+
+  it("leaves unknown /references intact", () => {
+    const registry = mockRegistry(["recon"]);
+    const result = extractInlineSkills(
+      "check /nonexistent and /recon",
+      registry,
+    );
+    expect(result.activatedSlugs).toEqual(["recon"]);
+    expect(result.prompt).toContain("/nonexistent");
+  });
+
+  it("returns prompt unchanged when no skills match", () => {
+    const registry = mockRegistry([]);
+    const result = extractInlineSkills("just a normal prompt", registry);
+    expect(result.activatedSlugs).toEqual([]);
+    expect(result.prompt).toBe("just a normal prompt");
+  });
+
+  it("does not match /slug at the start of the string", () => {
+    const registry = mockRegistry(["recon"]);
+    const result = extractInlineSkills("/recon the target", registry);
+    // Leading /slug is handled by the command router, not inline extraction
+    expect(result.activatedSlugs).toEqual([]);
+    expect(result.prompt).toBe("/recon the target");
   });
 });

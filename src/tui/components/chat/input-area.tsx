@@ -54,6 +54,8 @@ export interface InputAreaProps {
   disableHistoryNavigation?: boolean;
   /** Whether autocomplete suggestions appear above or below the input */
   autocompletePlacement?: "above" | "below";
+  /** Highlight /slash-command patterns in the input text */
+  highlightSlashCommands?: boolean;
 }
 
 /**
@@ -76,6 +78,7 @@ function NormalInputAreaInner({
   commandHistory = [],
   disableHistoryNavigation = false,
   autocompletePlacement = "below",
+  highlightSlashCommands = false,
 }: Omit<
   InputAreaProps,
   "pendingApproval" | "onApprove" | "onAutoApprove" | "lastDeclineNote"
@@ -147,6 +150,7 @@ function NormalInputAreaInner({
           commandHistory={commandHistory}
           disableHistoryNavigation={disableHistoryNavigation}
           autocompletePlacement={autocompletePlacement}
+          highlightSlashCommands={highlightSlashCommands}
         />
       </box>
 
