@@ -477,7 +477,6 @@ async function main() {
         shouldFill: false,
       });
       buffer.drawText(notifLabel, x + 1 + notifPadX, y + 1, c.text, c.backgroundElement);
-      renderer.requestRender();
     }
   });
 
