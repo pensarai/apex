@@ -484,7 +484,8 @@ describe("buildOperatorSystemPrompt", () => {
   });
 
   it("appends skills catalog when provided", () => {
-    const catalog = "# Available Skills\n\n- **sqli** (web) — SQL injection testing";
+    const catalog =
+      "# Available Skills\n\n- **sqli** (web) — SQL injection testing";
     const prompt = buildOperatorSystemPrompt(target, state, undefined, {
       skillsCatalog: catalog,
     });
@@ -600,9 +601,7 @@ describe("accumulateTokenUsage", () => {
 // ---------------------------------------------------------------------------
 
 describe("extractInlineSkills", () => {
-  function mockRegistry(
-    slugs: string[],
-  ): SkillsRegistry {
+  function mockRegistry(slugs: string[]): SkillsRegistry {
     const activated = new Set<string>();
     return {
       get: (slug: string) => {

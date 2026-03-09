@@ -69,19 +69,21 @@ Do stuff.`;
   });
 
   it("throws when missing opening ---", () => {
-    expect(() => parseSkillMd("name: test")).toThrow("missing YAML frontmatter");
+    expect(() => parseSkillMd("name: test")).toThrow(
+      "missing YAML frontmatter",
+    );
   });
 
   it("throws when missing closing ---", () => {
-    expect(() =>
-      parseSkillMd("---\nname: test\ndescription: foo\n"),
-    ).toThrow("missing closing ---");
+    expect(() => parseSkillMd("---\nname: test\ndescription: foo\n")).toThrow(
+      "missing closing ---",
+    );
   });
 
   it("throws when name is missing", () => {
-    expect(() =>
-      parseSkillMd("---\ndescription: test\n---\nbody"),
-    ).toThrow("missing required field: name");
+    expect(() => parseSkillMd("---\ndescription: test\n---\nbody")).toThrow(
+      "missing required field: name",
+    );
   });
 
   it("throws when description is missing", () => {

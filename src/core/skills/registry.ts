@@ -126,9 +126,7 @@ export class SkillsRegistry {
         entry.manifest.tags && entry.manifest.tags.length > 0
           ? ` (${entry.manifest.tags.join(", ")})`
           : "";
-      lines.push(
-        `- **${entry.slug}**${tags} — ${entry.manifest.description}`,
-      );
+      lines.push(`- **${entry.slug}**${tags} — ${entry.manifest.description}`);
     }
 
     if (enabled.length > max) {

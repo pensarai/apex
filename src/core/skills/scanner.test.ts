@@ -58,9 +58,7 @@ describe("scanSkillRoots", () => {
     cleanup.push(dirPath);
 
     const entries = await scanSkillRoots();
-    const found = entries.find(
-      (e) => e.slug === `${TEST_PREFIX}dir-skill`,
-    );
+    const found = entries.find((e) => e.slug === `${TEST_PREFIX}dir-skill`);
 
     expect(found).toBeDefined();
     expect(found!.source).toBe("directory");
@@ -82,9 +80,7 @@ describe("scanSkillRoots", () => {
     cleanup.push(dirPath);
 
     const entries = await scanSkillRoots();
-    const found = entries.find(
-      (e) => e.slug === `${TEST_PREFIX}scripted`,
-    );
+    const found = entries.find((e) => e.slug === `${TEST_PREFIX}scripted`);
 
     expect(found).toBeDefined();
     expect(found!.scripts).toHaveLength(1);
@@ -93,10 +89,7 @@ describe("scanSkillRoots", () => {
 
   it("directory-based skills shadow legacy flat files with same slug", async () => {
     // Create legacy flat file
-    const legacyPath = path.join(
-      SKILLS_DIR,
-      `${TEST_PREFIX}shadow-test.md`,
-    );
+    const legacyPath = path.join(SKILLS_DIR, `${TEST_PREFIX}shadow-test.md`);
     await fs.writeFile(
       legacyPath,
       `---\nname: Shadow Test\ndescription: Legacy version\n---\n\nLegacy.`,
@@ -113,9 +106,7 @@ describe("scanSkillRoots", () => {
     cleanup.push(dirPath);
 
     const entries = await scanSkillRoots();
-    const found = entries.find(
-      (e) => e.slug === `${TEST_PREFIX}shadow-test`,
-    );
+    const found = entries.find((e) => e.slug === `${TEST_PREFIX}shadow-test`);
 
     expect(found).toBeDefined();
     // Directory-based should shadow legacy
@@ -137,9 +128,7 @@ describe("scanSkillRoots", () => {
     cleanup.push(tmpDir);
 
     const entries = await scanSkillRoots({ projectRoot: tmpDir });
-    const found = entries.find(
-      (e) => e.slug === `${TEST_PREFIX}proj`,
-    );
+    const found = entries.find((e) => e.slug === `${TEST_PREFIX}proj`);
 
     expect(found).toBeDefined();
     expect(found!.source).toBe("directory");
@@ -147,10 +136,7 @@ describe("scanSkillRoots", () => {
   });
 
   it("returns empty array when no skills exist", async () => {
-    const tmpDir = path.join(
-      os.tmpdir(),
-      `${TEST_PREFIX}empty-${Date.now()}`,
-    );
+    const tmpDir = path.join(os.tmpdir(), `${TEST_PREFIX}empty-${Date.now()}`);
     await fs.mkdir(tmpDir, { recursive: true });
     cleanup.push(tmpDir);
 

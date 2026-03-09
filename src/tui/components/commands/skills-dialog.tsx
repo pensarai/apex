@@ -99,17 +99,13 @@ export default function SkillsDialog() {
       case "up":
       case "k":
         evt.preventDefault();
-        setSelectedIndex((prev) =>
-          prev > 0 ? prev - 1 : flatList.length - 1,
-        );
+        setSelectedIndex((prev) => (prev > 0 ? prev - 1 : flatList.length - 1));
         break;
 
       case "down":
       case "j":
         evt.preventDefault();
-        setSelectedIndex((prev) =>
-          prev < flatList.length - 1 ? prev + 1 : 0,
-        );
+        setSelectedIndex((prev) => (prev < flatList.length - 1 ? prev + 1 : 0));
         break;
 
       case "return":
@@ -133,16 +129,21 @@ export default function SkillsDialog() {
     const instrLines = detailSkill.instructions.split("\n");
 
     return (
-      <box flexDirection="column" width="100%" height="100%" paddingLeft={4} paddingTop={2}>
+      <box
+        flexDirection="column"
+        width="100%"
+        height="100%"
+        paddingLeft={4}
+        paddingTop={2}
+      >
         {/* Header */}
         <text>
           <span fg={colors.primary}>█ </span>
           <span fg={colors.text}>{detailSkill.slug}</span>
-          {m.version && (
-            <span fg={colors.textMuted}> v{m.version}</span>
-          )}
+          {m.version && <span fg={colors.textMuted}> v{m.version}</span>}
           <span fg={colors.textMuted}>
-            {" "}· ~{instrTokens + descTokens} tokens
+            {" "}
+            · ~{instrTokens + descTokens} tokens
           </span>
         </text>
 

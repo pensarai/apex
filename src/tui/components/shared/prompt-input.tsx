@@ -166,22 +166,24 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
     );
     const inlineSlashContextRef = useRef<InlineSlashContext | null>(null);
 
-    const suggestions = useMemo(
-      () => {
-        if (!enableAutocomplete) return [];
-        // Inline slash detection drives suggestions for both start-of-line
-        // and mid-text /tokens
-        if (inlineSlashToken) {
-          return filterInlineSuggestions(
-            inlineSlashToken,
-            autocompleteOptions,
-            maxSuggestions,
-          );
-        }
-        return [];
-      },
-      [enableAutocomplete, autocompleteOptions, inlineSlashToken, maxSuggestions],
-    );
+    const suggestions = useMemo(() => {
+      if (!enableAutocomplete) return [];
+      // Inline slash detection drives suggestions for both start-of-line
+      // and mid-text /tokens
+      if (inlineSlashToken) {
+        return filterInlineSuggestions(
+          inlineSlashToken,
+          autocompleteOptions,
+          maxSuggestions,
+        );
+      }
+      return [];
+    }, [
+      enableAutocomplete,
+      autocompleteOptions,
+      inlineSlashToken,
+      maxSuggestions,
+    ]);
 
     // Keep refs in sync
     useEffect(() => {
@@ -232,9 +234,10 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
 
     // Slash command highlighting — creates a SyntaxStyle and applies
     // character-range highlights for known /slug patterns in the input text.
-    const slashStyleRef = useRef<{ style: SyntaxStyle; styleId: number } | null>(
-      null,
-    );
+    const slashStyleRef = useRef<{
+      style: SyntaxStyle;
+      styleId: number;
+    } | null>(null);
 
     // Build set of known slugs from autocomplete options for highlight matching
     const knownSlugs = useMemo(() => {
@@ -446,8 +449,7 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
     // Content change syncs to context and resets history browsing
     const handleContentChange = () => {
       const text = textareaRef.current?.plainText ?? "";
-      const cursorOffset =
-        textareaRef.current?.cursorOffset ?? text.length;
+      const cursorOffset = textareaRef.current?.cursorOffset ?? text.length;
       setInputValue(text);
 
       // Detect inline /token at cursor for autocomplete

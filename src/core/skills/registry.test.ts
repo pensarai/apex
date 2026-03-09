@@ -200,7 +200,11 @@ describe("SkillsRegistry", () => {
     });
 
     it("prunes active skills that no longer exist on refresh", async () => {
-      await createLegacySkill(`${TEST_PREFIX}prune`, "Prune", "Will be removed");
+      await createLegacySkill(
+        `${TEST_PREFIX}prune`,
+        "Prune",
+        "Will be removed",
+      );
       await registry.load();
       registry.activate(`${TEST_PREFIX}prune`);
       expect(registry.isActive(`${TEST_PREFIX}prune`)).toBe(true);

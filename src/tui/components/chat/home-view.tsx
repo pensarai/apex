@@ -33,8 +33,7 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
   const config = useConfig();
   const route = useRoute();
 
-  const { executeCommand, autocompleteOptions, skillsRegistry } =
-    useCommand();
+  const { executeCommand, autocompleteOptions, skillsRegistry } = useCommand();
   const { setInputValue } = useInput();
   const { promptRef } = useFocus();
   const { externalDialogOpen, stack } = useDialog();
@@ -86,7 +85,8 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
       const trimmed = command.trim();
       pushHistory(trimmed);
 
-      const slug = trimmed.replace(/^\/+/, "").split(/\s+/)[0]?.toLowerCase() ?? "";
+      const slug =
+        trimmed.replace(/^\/+/, "").split(/\s+/)[0]?.toLowerCase() ?? "";
 
       const entry = skillsRegistry.get(slug);
       if (entry?.enabled) {

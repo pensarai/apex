@@ -844,12 +844,13 @@ export default function OperatorDashboard({
       const activeSkills = skillsRegistry.getActive();
       const skillsOpts = {
         skillsCatalog: skillsRegistry.buildCatalog() || undefined,
-        activeSkillInstructions: activeSkills.length > 0
-          ? activeSkills.map((s) => ({
-              name: s.manifest.name,
-              instructions: s.instructions,
-            }))
-          : undefined,
+        activeSkillInstructions:
+          activeSkills.length > 0
+            ? activeSkills.map((s) => ({
+                name: s.manifest.name,
+                instructions: s.instructions,
+              }))
+            : undefined,
       };
 
       const commonInput = {
@@ -997,9 +998,7 @@ export default function OperatorDashboard({
           abortControllerRef.current = null;
 
           // Sync active skills to operator state for persistence across runs
-          const activeSlugs = skillsRegistry
-            .getActive()
-            .map((s) => s.slug);
+          const activeSlugs = skillsRegistry.getActive().map((s) => s.slug);
           setOperatorState((prev) => ({
             ...prev,
             activeSkills: activeSlugs,
