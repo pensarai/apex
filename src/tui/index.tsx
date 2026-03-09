@@ -1,4 +1,4 @@
-import { createRoot, useRenderer } from "@opentui/react";
+import { createRoot } from "@opentui/react";
 import { useState, useEffect } from "react";
 import Footer from "./components/footer";
 import { CommandProvider } from "./context/command";
@@ -11,7 +11,7 @@ import WebWizard from "./components/commands/web-wizard";
 import ProviderManager from "./components/commands/provider-manager";
 import type { Config } from "../core/config/config";
 import { config } from "../core/config";
-import { createCliRenderer, RGBA } from "@opentui/core";
+import { createCliRenderer } from "@opentui/core";
 import { ConfigProvider, useConfig } from "./context/config";
 import { createSwitch } from "./components/switch";
 import { type RoutePath, RouteProvider, useRoute } from "./context/route";
@@ -46,35 +46,13 @@ import {
 } from "./theme";
 import { registerBuiltinThemes } from "./theme/themes";
 import { detectTerminalMode } from "./theme/detect-mode";
-
-// Mutable theme colors for non-React overlay rendering (post-process functions).
-// Updated by OverlayThemeSync whenever the React theme context changes.
-let overlayThemeColors: import("./theme").ThemeColors | null = null;
-
-function OverlayThemeSync() {
-  const { colors } = useTheme();
-  const renderer = useRenderer();
-  useEffect(() => {
-    overlayThemeColors = colors;
-    // Keep console colors in sync with the active theme
-    const c = renderer.console as any;
-    const withAlpha = (rgba: import("@opentui/core").RGBA, a: number) =>
-      RGBA.fromValues(rgba.r, rgba.g, rgba.b, a);
-    c.backgroundColor = withAlpha(colors.backgroundPanel, 0.85);
-    c._rgbaTitleBar = withAlpha(colors.backgroundElement, 0.9);
-    c._rgbaTitleBarText = colors.text;
-    c._rgbaDefault = colors.textMuted;
-    c._rgbaInfo = colors.info;
-    c._rgbaWarn = colors.warning;
-    c._rgbaError = colors.error;
-    c._rgbaDebug = colors.textMuted;
-    c._rgbaSelection = withAlpha(colors.primary, 0.35);
-    c._rgbaCursor = colors.primary;
-    c._rgbaCopyButton = colors.primary;
-    c.markNeedsRerender();
-  }, [colors]);
-  return null;
-}
+import {
+  overlayThemeRef,
+  buildConsoleOptions,
+  ConsoleThemeSync,
+} from "./console-theme";
+import { createClipboardManager } from "./clipboard";
+import { setupAutoCopy } from "./auto-copy";
 
 interface AppProps {
   appConfig: Config;
@@ -407,114 +385,18 @@ async function main() {
     mode = await detectTerminalMode();
   }
 
-  // Resolve initial theme colors and seed the module-level ref for overlays
+  // Resolve initial theme colors and seed the ref for overlay rendering
   const themeColors = resolveThemeColors(getTheme(themeName), mode);
-  overlayThemeColors = themeColors;
-
-  // Semi-transparent variant of a color for console backgrounds
-  const withAlpha = (c: import("@opentui/core").RGBA, a: number) =>
-    RGBA.fromValues(c.r, c.g, c.b, a);
+  overlayThemeRef.current = themeColors;
 
   const renderer = await createCliRenderer({
     exitOnCtrlC: false,
-    consoleOptions: {
-      backgroundColor: withAlpha(themeColors.backgroundPanel, 0.85),
-      titleBarColor: withAlpha(themeColors.backgroundElement, 0.9),
-      titleBarTextColor: themeColors.text,
-      colorDefault: themeColors.textMuted,
-      colorInfo: themeColors.info,
-      colorWarn: themeColors.warning,
-      colorError: themeColors.error,
-      colorDebug: themeColors.textMuted,
-      selectionColor: withAlpha(themeColors.primary, 0.35),
-      cursorColor: themeColors.primary,
-      copyButtonColor: themeColors.primary,
-    },
+    consoleOptions: buildConsoleOptions(themeColors),
   });
 
-  // Copy text to the system clipboard using both OSC 52 and native commands
-  let clipboardNotifExpiry = 0;
-  const copyToClipboard = (text: string) => {
-    renderer.copyToClipboardOSC52(text);
-    try {
-      const proc = Bun.spawn(
-        process.platform === "darwin"
-          ? ["pbcopy"]
-          : ["xclip", "-selection", "clipboard"],
-        { stdin: "pipe" },
-      );
-      proc.stdin.write(text);
-      proc.stdin.end();
-    } catch {
-      // Clipboard command unavailable
-    }
-    // Show "Copied to clipboard" notification for 2 seconds
-    clipboardNotifExpiry = Date.now() + 2000;
-    renderer.requestRender();
-    setTimeout(() => renderer.requestRender(), 2010);
-  };
-
-  // Draw the "Copied to clipboard" overlay in the top-right corner
-  const notifLabel = "Copied to clipboard";
-  const notifPadX = 1; // horizontal padding between border and text
-  const notifBoxWidth = 1 + notifPadX + notifLabel.length + notifPadX + 1; // border + pad + text + pad + border
-  const notifBoxHeight = 3; // border + text + border
-  const notifMargin = 1; // equal margin from top and right edges
-  renderer.addPostProcessFn((buffer) => {
-    if (Date.now() < clipboardNotifExpiry && overlayThemeColors) {
-      const c = overlayThemeColors;
-      const x = buffer.width - notifBoxWidth - notifMargin;
-      const y = notifMargin;
-      buffer.fillRect(x, y, notifBoxWidth, notifBoxHeight, c.backgroundElement);
-      buffer.drawBox({
-        x,
-        y,
-        width: notifBoxWidth,
-        height: notifBoxHeight,
-        border: true,
-        borderColor: c.border,
-        backgroundColor: c.backgroundElement,
-        shouldFill: false,
-      });
-      buffer.drawText(notifLabel, x + 1 + notifPadX, y + 1, c.text, c.backgroundElement);
-    }
-  });
-
-  // Wire up console copy to system clipboard
-  renderer.console.onCopySelection = copyToClipboard;
-
-  // Replace the copy button with a static "Select to copy" label
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (renderer.console as any).getCopyButtonLabel = () => "Select to copy";
-
-  // Console: auto-copy on select — when user finishes a mouse selection,
-  // immediately copy to clipboard and clear the selection.
-  const originalHandleMouse = renderer.console.handleMouse.bind(
-    renderer.console,
-  );
-  renderer.console.handleMouse = (event) => {
-    const result = originalHandleMouse(event);
-    if (event.type === "up") {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const c = renderer.console as any;
-      if (typeof c.hasSelection === "function" && c.hasSelection()) {
-        c.triggerCopy();
-      }
-    }
-    return result;
-  };
-
-  // App-wide: auto-copy on select — when user finishes selecting text
-  // anywhere in the application, copy to clipboard and clear selection.
-  renderer.on("selection", (selection: any) => {
-    if (selection && !selection.isDragging) {
-      const text = selection.getSelectedText();
-      if (text) {
-        copyToClipboard(text);
-      }
-      process.nextTick(() => renderer.clearSelection());
-    }
-  });
+  // Clipboard: OSC52 + native copy, notification overlay, auto-copy on select
+  const { copyToClipboard } = createClipboardManager(renderer);
+  setupAutoCopy(renderer, copyToClipboard);
 
   // Graceful shutdown handler
   const cleanup = () => {
@@ -543,7 +425,7 @@ async function main() {
 
   createRoot(renderer).render(
     <ThemeProvider initialTheme={themeName} initialMode={mode}>
-      <OverlayThemeSync />
+      <ConsoleThemeSync />
       <ToastProvider>
         <ErrorBoundary>
           <App appConfig={appConfig} />
