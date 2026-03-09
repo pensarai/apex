@@ -86,10 +86,7 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
       const trimmed = command.trim();
       pushHistory(trimmed);
 
-      const parts = trimmed.replace(/^\/+/, "").split(/\s+/);
-      const slug = parts[0]?.toLowerCase() ?? "";
-      const args = parts.slice(1);
-      const autopilot = args.includes("--autopilot");
+      const slug = trimmed.replace(/^\/+/, "").split(/\s+/)[0]?.toLowerCase() ?? "";
 
       const entry = skillsRegistry.get(slug);
       if (entry?.enabled) {
