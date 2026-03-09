@@ -22,13 +22,13 @@ export type RoutePath =
   | "theme"
   | "auth"
   | "credits"
-  | "create-skill"
   | "skills";
 
 export interface WebCommandOptions {
   auto?: boolean;
   target?: string;
   name?: string;
+  skillSlug?: string;
   swarm?: boolean;
   mode?: "plan" | "manual" | "auto";
   requireApproval?: boolean;

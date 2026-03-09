@@ -42,7 +42,6 @@ import { KeybindingProvider } from "./context/keybinding";
 import Pentest from "./components/pentest/pentest";
 import OperatorDashboard from "./components/operator-dashboard";
 import ThemePicker from "./components/commands/theme-picker";
-import CreateSkillWizard from "./components/commands/create-skill-wizard";
 import SkillsDialog from "./components/commands/skills-dialog";
 import {
   ThemeProvider,
@@ -450,9 +449,6 @@ function CommandDisplay({
           </RouteSwitch.Case>
           <RouteSwitch.Case when="skills">
             <SkillsDialog />
-          </RouteSwitch.Case>
-          <RouteSwitch.Case when="create-skill">
-            <CreateSkillWizard />
           </RouteSwitch.Case>
         </RouteSwitch>
       </box>

@@ -1126,7 +1126,11 @@ export default function OperatorDashboard({
             approvalGateRef.current.updateConfig({ requireApproval: false });
             setOperatorState((prev) => ({ ...prev, requireApproval: false }));
           }
-          handleSubmit(action.content);
+          // Skill is already activated in the registry (system prompt).
+          // Send a brief message so the agent acknowledges and asks for a target.
+          handleSubmit(
+            `I'd like to use the ${action.slug} skill. What do you need from me to get started?`,
+          );
           return;
         case "execute-command":
           await executeCommand(action.command);

@@ -38,8 +38,18 @@ export default function SkillsDialog() {
   const route = useRoute();
   const dimensions = useTerminalDimensions();
 
+  // Auto-open detail view when navigated with a specific skill slug
+  const initialSlug =
+    route.data.type === "base" ? route.data.options?.skillSlug : undefined;
+
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [detailSkill, setDetailSkill] = useState<SkillEntry | null>(null);
+  const [detailSkill, setDetailSkill] = useState<SkillEntry | null>(() => {
+    if (initialSlug) {
+      const entry = skillsRegistry.get(initialSlug);
+      return entry ?? null;
+    }
+    return null;
+  });
 
   const allSkills = useMemo(
     () => skillsRegistry.listEnabled(),

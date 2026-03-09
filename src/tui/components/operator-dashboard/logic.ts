@@ -12,7 +12,6 @@ export function filterOperatorAutocomplete(
   skillSlugs: Set<string>,
 ): AutocompleteOption[] {
   const allowedCommands = new Set([
-    "/create-skill",
     "/models",
     "/auth",
     "/themes",
@@ -62,7 +61,7 @@ export function resolveSubmit(
 
 export type CommandAction =
   | { type: "show-models" }
-  | { type: "run-skill"; content: string; autopilot: boolean }
+  | { type: "run-skill"; slug: string; autopilot: boolean }
   | { type: "execute-command"; command: string };
 
 export function routeCommand(
@@ -77,10 +76,11 @@ export function routeCommand(
 
   const autopilot = command.includes("--autopilot");
   const cleanedCommand = command.replace(/\s*--autopilot\s*/g, "").trim();
-  const skillContent = resolveSkill(cleanedCommand);
 
-  if (skillContent) {
-    return { type: "run-skill", content: skillContent, autopilot };
+  if (resolveSkill(cleanedCommand)) {
+    // Reuse commandLower but take only the first word (slug without args)
+    const slug = commandLower.split(/\s+/)[0] ?? commandLower;
+    return { type: "run-skill", slug, autopilot };
   }
 
   return { type: "execute-command", command };

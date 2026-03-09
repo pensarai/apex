@@ -23,11 +23,6 @@ const allOptions: AutocompleteOption[] = [
   { value: "/scan", label: "/scan", description: "Run a scan" },
   { value: "/pentest", label: "/pentest", description: "Run a pentest" },
   { value: "/help", label: "/help", description: "Show help" },
-  {
-    value: "/create-skill",
-    label: "/create-skill",
-    description: "Create skill",
-  },
   { value: "/models", label: "/models", description: "Switch model" },
   { value: "/skills", label: "/skills", description: "View skills" },
   { value: "/sql-injection", label: "/sql-injection", description: "Skill" },
@@ -41,11 +36,11 @@ const skillSlugs = new Set(["/sql-injection", "/xss-test"]);
 // ---------------------------------------------------------------------------
 
 describe("filterOperatorAutocomplete", () => {
-  it("includes allowed commands (/create-skill, /models)", () => {
+  it("includes allowed commands (/models, /skills)", () => {
     const result = filterOperatorAutocomplete(allOptions, new Set());
     const values = result.map((o) => o.value);
-    expect(values).toContain("/create-skill");
     expect(values).toContain("/models");
+    expect(values).toContain("/skills");
   });
 
   it("includes skill slugs", () => {
@@ -64,7 +59,7 @@ describe("filterOperatorAutocomplete", () => {
 
   it("returns only allowed commands when no skills exist", () => {
     const result = filterOperatorAutocomplete(allOptions, new Set());
-    expect(result).toHaveLength(4);
+    expect(result).toHaveLength(3);
   });
 
   it("strips description from skill options", () => {
@@ -145,13 +140,13 @@ describe("routeCommand", () => {
     expect(routeCommand("/MODELS", noSkill)).toEqual({ type: "show-models" });
   });
 
-  it("routes a skill command to run-skill", () => {
+  it("routes a skill command to run-skill with slug", () => {
     const resolveSkill = (cmd: string) =>
       cmd === "/sql-injection" ? "Perform SQL injection testing" : null;
     const result = routeCommand("/sql-injection", resolveSkill);
     expect(result).toEqual({
       type: "run-skill",
-      content: "Perform SQL injection testing",
+      slug: "sql-injection",
       autopilot: false,
     });
   });
@@ -162,7 +157,7 @@ describe("routeCommand", () => {
     const result = routeCommand("/sql-injection --autopilot", resolveSkill);
     expect(result).toEqual({
       type: "run-skill",
-      content: "SQL injection",
+      slug: "sql-injection",
       autopilot: true,
     });
   });

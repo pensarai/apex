@@ -33,7 +33,7 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
   const config = useConfig();
   const route = useRoute();
 
-  const { executeCommand, autocompleteOptions, resolveSkillContent } =
+  const { executeCommand, autocompleteOptions, skillsRegistry } =
     useCommand();
   const { setInputValue } = useInput();
   const { promptRef } = useFocus();
@@ -91,14 +91,19 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
       const args = parts.slice(1);
       const autopilot = args.includes("--autopilot");
 
-      const skillContent = resolveSkillContent(`/${slug}`);
-      if (skillContent) {
-        launchOperator(skillContent, { requireApproval: !autopilot });
+      const entry = skillsRegistry.get(slug);
+      if (entry?.enabled) {
+        // Navigate to skills detail page to show skill info
+        route.navigate({
+          type: "base",
+          path: "skills",
+          options: { skillSlug: slug },
+        });
         return;
       }
       await executeCommand(command);
     },
-    [resolveSkillContent, launchOperator, executeCommand, pushHistory],
+    [skillsRegistry, route, executeCommand, pushHistory],
   );
 
   // Calculate layout dimensions
