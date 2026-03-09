@@ -51,7 +51,7 @@ export const gruvbox: ThemeDefinition = {
     },
     backgroundOverlay: {
       dark: RGBA.fromInts(0, 0, 0, 200),
-      light: RGBA.fromInts(255, 255, 255, 200),
+      light: RGBA.fromInts(0, 0, 0, 180),
     },
     backgroundSelected: {
       dark: RGBA.fromHex("#504945"), // bg2 (dark2)

@@ -52,7 +52,7 @@ export const monokai: ThemeDefinition = {
     },
     backgroundOverlay: {
       dark: RGBA.fromInts(0, 0, 0, 200),
-      light: RGBA.fromInts(255, 255, 255, 200),
+      light: RGBA.fromInts(0, 0, 0, 180),
     },
     backgroundSelected: {
       dark: RGBA.fromHex("#4a474c"),

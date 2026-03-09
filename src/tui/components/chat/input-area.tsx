@@ -85,7 +85,7 @@ function NormalInputAreaInner({
   InputAreaProps,
   "pendingApproval" | "onApprove" | "onAutoApprove" | "lastDeclineNote"
 >) {
-  const { colors } = useTheme();
+  const { colors, theme, mode: colorMode } = useTheme();
   const { inputValue, setInputValue } = useInput();
   const promptRef = useRef<PromptInputRef>(null);
   const isExternalUpdate = useRef(false);
@@ -129,6 +129,7 @@ function NormalInputAreaInner({
       <box flexDirection="row" gap={1} backgroundColor="transparent">
         <text fg={!focused ? colors.textMuted : colors.primary}>{">"}</text>
         <PromptInput
+          key={`${theme.name}-${colorMode}`}
           ref={promptRef}
           width="100%"
           minHeight={1}
