@@ -372,7 +372,7 @@ function CommandDisplay({
             <ModelsDisplay />
           </RouteSwitch.Case>
           <RouteSwitch.Case when="credits">
-            <CreditsFlow />
+            <CreditsFlow onOpenAuthDialog={() => setShowAuthDialog(true)} />
           </RouteSwitch.Case>
           <RouteSwitch.Case when="create-skill">
             <CreateSkillWizard />
