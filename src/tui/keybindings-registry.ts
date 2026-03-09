@@ -25,6 +25,14 @@ export const keybindings: Keybinding[] = [
     description: "Show sessions",
   },
   {
+    key: "Ctrl+Y",
+    description: "Copy selected (or last) message to clipboard",
+  },
+  {
+    key: "Ctrl+Up/Down",
+    description: "Navigate messages for copying",
+  },
+  {
     key: "Escape",
     description: "Return to home",
   },

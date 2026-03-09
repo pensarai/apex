@@ -8,8 +8,13 @@ import {
   buildOperatorSystemPrompt,
   resolveInputFocused,
   accumulateTokenUsage,
+  getCopyableIndices,
+  selectPrevCopyable,
+  selectNextCopyable,
+  lastAssistantIndex,
   type DashboardStatus,
 } from "./logic";
+import type { DisplayMessage } from "../agent-display";
 import type { AutocompleteOption } from "../shared/prompt-input";
 import type { OperatorSessionState } from "../../../core/operator";
 
@@ -536,5 +541,169 @@ describe("accumulateTokenUsage", () => {
       outputTokens: 5,
       totalTokens: 15,
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Copy keyboard shortcuts
+// ---------------------------------------------------------------------------
+
+describe("resolveKeyboardShortcut — copy actions", () => {
+  const idle: DashboardStatus = "idle";
+
+  it("Ctrl+Y returns copy-message", () => {
+    expect(
+      resolveKeyboardShortcut(
+        { name: "y", ctrl: true },
+        idle,
+        "",
+        false,
+        false,
+      ),
+    ).toEqual({ type: "copy-message" });
+  });
+
+  it("Ctrl+Up returns select-prev-message", () => {
+    expect(
+      resolveKeyboardShortcut(
+        { name: "up", ctrl: true },
+        idle,
+        "",
+        false,
+        false,
+      ),
+    ).toEqual({ type: "select-prev-message" });
+  });
+
+  it("Ctrl+Down returns select-next-message", () => {
+    expect(
+      resolveKeyboardShortcut(
+        { name: "down", ctrl: true },
+        idle,
+        "",
+        false,
+        false,
+      ),
+    ).toEqual({ type: "select-next-message" });
+  });
+
+  it("Ctrl+Y works even when running", () => {
+    expect(
+      resolveKeyboardShortcut(
+        { name: "y", ctrl: true },
+        "running",
+        "",
+        false,
+        false,
+      ),
+    ).toEqual({ type: "copy-message" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Message selection helpers
+// ---------------------------------------------------------------------------
+
+describe("getCopyableIndices", () => {
+  const msgs: DisplayMessage[] = [
+    { role: "user", content: "hello", createdAt: new Date() },
+    { role: "assistant", content: "hi", createdAt: new Date() },
+    {
+      role: "tool",
+      content: "",
+      createdAt: new Date(),
+      toolCallId: "t1",
+      toolName: "read_file",
+      status: "completed",
+    },
+    { role: "system", content: "info", createdAt: new Date() },
+  ];
+
+  it("returns indices of non-tool messages", () => {
+    expect(getCopyableIndices(msgs)).toEqual([0, 1, 3]);
+  });
+
+  it("returns empty for empty list", () => {
+    expect(getCopyableIndices([])).toEqual([]);
+  });
+});
+
+describe("selectPrevCopyable", () => {
+  const msgs: DisplayMessage[] = [
+    { role: "user", content: "a", createdAt: new Date() },
+    {
+      role: "tool",
+      content: "",
+      createdAt: new Date(),
+      toolCallId: "t1",
+      toolName: "x",
+      status: "completed",
+    },
+    { role: "assistant", content: "b", createdAt: new Date() },
+    { role: "system", content: "c", createdAt: new Date() },
+  ];
+
+  it("selects last copyable when nothing selected", () => {
+    expect(selectPrevCopyable(-1, msgs)).toBe(3);
+  });
+
+  it("moves to previous copyable, skipping tool", () => {
+    expect(selectPrevCopyable(2, msgs)).toBe(0);
+  });
+
+  it("stays at first when already at first copyable", () => {
+    expect(selectPrevCopyable(0, msgs)).toBe(0);
+  });
+});
+
+describe("selectNextCopyable", () => {
+  const msgs: DisplayMessage[] = [
+    { role: "user", content: "a", createdAt: new Date() },
+    {
+      role: "tool",
+      content: "",
+      createdAt: new Date(),
+      toolCallId: "t1",
+      toolName: "x",
+      status: "completed",
+    },
+    { role: "assistant", content: "b", createdAt: new Date() },
+    { role: "system", content: "c", createdAt: new Date() },
+  ];
+
+  it("deselects when nothing selected", () => {
+    expect(selectNextCopyable(-1, msgs)).toBe(-1);
+  });
+
+  it("moves to next copyable, skipping tool", () => {
+    expect(selectNextCopyable(0, msgs)).toBe(2);
+  });
+
+  it("deselects when at last copyable", () => {
+    expect(selectNextCopyable(3, msgs)).toBe(-1);
+  });
+});
+
+describe("lastAssistantIndex", () => {
+  it("returns -1 for empty messages", () => {
+    expect(lastAssistantIndex([])).toBe(-1);
+  });
+
+  it("returns index of last assistant message", () => {
+    const msgs: DisplayMessage[] = [
+      { role: "user", content: "a", createdAt: new Date() },
+      { role: "assistant", content: "b", createdAt: new Date() },
+      { role: "user", content: "c", createdAt: new Date() },
+      { role: "assistant", content: "d", createdAt: new Date() },
+    ];
+    expect(lastAssistantIndex(msgs)).toBe(3);
+  });
+
+  it("returns -1 when no assistant messages", () => {
+    const msgs: DisplayMessage[] = [
+      { role: "user", content: "a", createdAt: new Date() },
+      { role: "system", content: "b", createdAt: new Date() },
+    ];
+    expect(lastAssistantIndex(msgs)).toBe(-1);
   });
 });

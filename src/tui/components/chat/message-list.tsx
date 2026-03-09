@@ -70,6 +70,10 @@ export interface MessageListProps {
   hasPendingTool?: boolean;
   /** Last approved action description */
   lastApprovedAction?: string | null;
+  /** Index of the message selected for copying (-1 = none) */
+  selectedMessageIndex?: number;
+  /** Called when a message is clicked for selection */
+  onSelectMessage?: (index: number) => void;
 }
 
 /**
@@ -88,6 +92,8 @@ export function MessageList({
   pendingApprovals = [],
   hasPendingTool = false,
   lastApprovedAction = null,
+  selectedMessageIndex = -1,
+  onSelectMessage,
 }: MessageListProps) {
   const { colors } = useTheme();
   const hasMessages = messages.length > 0;
@@ -133,6 +139,10 @@ export function MessageList({
               <text fg={colors.primary}>Shift+Tab</text>
               <text fg={colors.textMuted}> - Cycle approval on/off</text>
             </box>
+            <box flexDirection="row">
+              <text fg={colors.primary}>Ctrl+Y</text>
+              <text fg={colors.textMuted}> - Copy message to clipboard</text>
+            </box>
           </box>
         </box>
       )}
@@ -175,8 +185,24 @@ export function MessageList({
           expandedLogs={expandedLogs}
           variant={variant}
           username={username}
+          isSelected={idx === selectedMessageIndex}
+          onSelect={
+            onSelectMessage && msg.role !== "tool"
+              ? () => onSelectMessage(idx)
+              : undefined
+          }
         />
       ))}
+
+      {/* Selection hint */}
+      {selectedMessageIndex >= 0 && (
+        <box flexDirection="row" gap={1} marginTop={1} paddingLeft={2}>
+          <text fg={colors.info}>▌</text>
+          <text fg={colors.textMuted}>
+            [Ctrl+Y] copy • [Ctrl+↑↓] navigate • [Esc] deselect
+          </text>
+        </box>
+      )}
 
       {/* Loading indicator - show when running but not when there's a pending approval */}
       {isRunning && !hasPendingApproval && hasMessages && (

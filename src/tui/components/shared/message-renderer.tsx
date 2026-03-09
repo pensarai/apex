@@ -21,6 +21,10 @@ interface MessageRendererProps {
   variant?: "operator" | "chat";
   /** Optional username for chat variant */
   username?: string;
+  /** Whether this message is currently selected for copying */
+  isSelected?: boolean;
+  /** Called when the user clicks this message */
+  onSelect?: () => void;
 }
 
 /**
@@ -33,6 +37,8 @@ export const MessageRenderer = memo(function MessageRenderer({
   expandedLogs = false,
   variant = "operator",
   username = "user",
+  isSelected = false,
+  onSelect,
 }: MessageRendererProps) {
   const { colors } = useTheme();
   // Get string content
@@ -50,7 +56,9 @@ export const MessageRenderer = memo(function MessageRenderer({
     [content, message.role, colors],
   );
 
-  // Tool messages
+  const selectedBg = isSelected ? colors.backgroundSelected : undefined;
+
+  // Tool messages (not selectable)
   if (isToolMessage(message)) {
     return (
       <ToolRenderer
@@ -64,9 +72,13 @@ export const MessageRenderer = memo(function MessageRenderer({
   // User messages
   if (message.role === "user") {
     if (variant === "chat") {
-      // Chat variant - cyan bar with username
       return (
-        <box flexDirection="column" marginTop={1}>
+        <box
+          flexDirection="column"
+          marginTop={1}
+          backgroundColor={selectedBg}
+          onMouseDown={onSelect}
+        >
           <box flexDirection="row">
             <text fg={colors.secondary}>{"│ "}</text>
             <text fg={colors.text}>{content}</text>
@@ -77,10 +89,17 @@ export const MessageRenderer = memo(function MessageRenderer({
         </box>
       );
     }
-    // Operator variant - simple prompt style
     return (
-      <box flexDirection="row" gap={1} marginTop={1}>
-        <text fg={colors.primary}>{">"}</text>
+      <box
+        flexDirection="row"
+        gap={1}
+        marginTop={1}
+        backgroundColor={selectedBg}
+        onMouseDown={onSelect}
+      >
+        <text fg={isSelected ? colors.info : colors.primary}>
+          {isSelected ? "▌" : ">"}
+        </text>
         <text fg={colors.text}>{content}</text>
       </box>
     );
@@ -89,7 +108,15 @@ export const MessageRenderer = memo(function MessageRenderer({
   // System messages
   if (message.role === "system") {
     return (
-      <box marginTop={1} marginLeft={2}>
+      <box
+        marginTop={1}
+        marginLeft={2}
+        backgroundColor={selectedBg}
+        onMouseDown={onSelect}
+      >
+        <text fg={isSelected ? colors.info : colors.textMuted}>
+          {isSelected ? "▌ " : ""}
+        </text>
         <text fg={colors.textMuted}>{content}</text>
       </box>
     );
@@ -97,9 +124,13 @@ export const MessageRenderer = memo(function MessageRenderer({
 
   // Assistant messages
   if (variant === "chat") {
-    // Chat variant - plain text, no bar
     return (
-      <box flexDirection="column" marginTop={1}>
+      <box
+        flexDirection="column"
+        marginTop={1}
+        backgroundColor={selectedBg}
+        onMouseDown={onSelect}
+      >
         <box flexDirection="column" marginLeft={0}>
           <text fg={colors.text} content={displayContent} />
           {isStreaming && !content.trim() && (
@@ -112,9 +143,16 @@ export const MessageRenderer = memo(function MessageRenderer({
 
   // Operator variant - green left bar (Claude Code style)
   return (
-    <box flexDirection="column" marginTop={1}>
+    <box
+      flexDirection="column"
+      marginTop={1}
+      backgroundColor={selectedBg}
+      onMouseDown={onSelect}
+    >
       <box flexDirection="row">
-        <text fg={colors.primary}>{"| "}</text>
+        <text fg={isSelected ? colors.info : colors.primary}>
+          {isSelected ? "▌ " : "| "}
+        </text>
         <box flexDirection="column" flexShrink={1}>
           <text fg={colors.text} content={displayContent} />
           {isStreaming && !content.trim() && (

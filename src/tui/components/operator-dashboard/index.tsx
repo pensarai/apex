@@ -62,7 +62,13 @@ import {
   buildOperatorSystemPrompt,
   resolveInputFocused,
   accumulateTokenUsage,
+  selectPrevCopyable,
+  selectNextCopyable,
+  lastAssistantIndex,
 } from "./logic";
+import { copyToClipboard } from "../../utils/clipboard";
+import { getMessageContent } from "../shared/message-utils";
+import { useToast } from "../../context/toast";
 import { QueuedMessages } from "./queued-messages";
 import { navigateUp, navigateDown, selectionAfterRemove } from "./queue";
 import { existsSync, readFileSync } from "fs";
@@ -174,6 +180,8 @@ export default function OperatorDashboard({
   // Display options
   const [verboseMode, setVerboseMode] = useState(false);
   const [expandedLogs, setExpandedLogs] = useState(false);
+  const [selectedMessageIndex, setSelectedMessageIndex] = useState(-1);
+  const { toast } = useToast();
   const tokenUsageRef = useRef(tokenUsage);
 
   useEffect(() => {
@@ -652,6 +660,7 @@ export default function OperatorDashboard({
       setThinking(true);
       setIsExecuting(true);
       setError(null);
+      setSelectedMessageIndex(-1);
       textRef.current = "";
 
       const controller = new AbortController();
@@ -1190,8 +1199,13 @@ export default function OperatorDashboard({
       case "ctrl-c-clear":
         key.preventDefault?.();
         setInputValue("");
+        setSelectedMessageIndex(-1);
         return;
       case "escape":
+        if (selectedMessageIndex >= 0) {
+          setSelectedMessageIndex(-1);
+          return;
+        }
         route.navigate({ type: "base", path: "home" });
         return;
       case "toggle-verbose":
@@ -1208,6 +1222,32 @@ export default function OperatorDashboard({
         return;
       case "auto-approve":
         handleAutoApprove();
+        return;
+      case "copy-message": {
+        key.preventDefault?.();
+        const idx =
+          selectedMessageIndex >= 0
+            ? selectedMessageIndex
+            : lastAssistantIndex(messages);
+        if (idx >= 0 && idx < messages.length) {
+          const text = getMessageContent(messages[idx]);
+          if (text && copyToClipboard(text)) {
+            toast("Copied to clipboard");
+          } else {
+            toast("Nothing to copy", "warn");
+          }
+        } else {
+          toast("No message to copy", "warn");
+        }
+        return;
+      }
+      case "select-prev-message":
+        key.preventDefault?.();
+        setSelectedMessageIndex((prev) => selectPrevCopyable(prev, messages));
+        return;
+      case "select-next-message":
+        key.preventDefault?.();
+        setSelectedMessageIndex((prev) => selectNextCopyable(prev, messages));
         return;
     }
   });
@@ -1300,6 +1340,10 @@ export default function OperatorDashboard({
         expandedLogs={expandedLogs}
         pendingApprovals={pendingApprovals}
         lastApprovedAction={lastApprovedAction}
+        selectedMessageIndex={selectedMessageIndex}
+        onSelectMessage={(idx) =>
+          setSelectedMessageIndex((prev) => (prev === idx ? -1 : idx))
+        }
       />
 
       {/* Queued follow-up messages */}

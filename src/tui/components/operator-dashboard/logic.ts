@@ -92,7 +92,10 @@ export type KeyboardAction =
   | { type: "toggle-expanded-logs" }
   | { type: "toggle-approval" }
   | { type: "approve" }
-  | { type: "auto-approve" };
+  | { type: "auto-approve" }
+  | { type: "copy-message" }
+  | { type: "select-prev-message" }
+  | { type: "select-next-message" };
 
 export function resolveKeyboardShortcut(
   key: KeyInfo,
@@ -146,7 +149,72 @@ export function resolveKeyboardShortcut(
     return { type: "auto-approve" };
   }
 
+  // Ctrl+Y — copy selected (or last assistant) message
+  if (key.ctrl && key.name === "y") return { type: "copy-message" };
+
+  // Ctrl+Up / Ctrl+Down — navigate copyable messages
+  if (key.ctrl && key.name === "up") return { type: "select-prev-message" };
+  if (key.ctrl && key.name === "down") return { type: "select-next-message" };
+
   return { type: "skip" };
+}
+
+// ---------------------------------------------------------------------------
+// Message selection helpers for copy
+// ---------------------------------------------------------------------------
+
+import type { DisplayMessage } from "../agent-display";
+
+/**
+ * Indices of messages eligible for copy (user, assistant, system — not tool).
+ */
+export function getCopyableIndices(messages: DisplayMessage[]): number[] {
+  return messages.reduce<number[]>((acc, m, i) => {
+    if (m.role !== "tool") acc.push(i);
+    return acc;
+  }, []);
+}
+
+/**
+ * Move selection to the previous copyable message.
+ * If nothing is selected, selects the last copyable message.
+ */
+export function selectPrevCopyable(
+  current: number,
+  messages: DisplayMessage[],
+): number {
+  const indices = getCopyableIndices(messages);
+  if (indices.length === 0) return -1;
+  if (current < 0) return indices[indices.length - 1];
+  const pos = indices.indexOf(current);
+  if (pos <= 0) return indices[0];
+  return indices[pos - 1];
+}
+
+/**
+ * Move selection to the next copyable message.
+ * Returns -1 (deselect) when past the last message.
+ */
+export function selectNextCopyable(
+  current: number,
+  messages: DisplayMessage[],
+): number {
+  const indices = getCopyableIndices(messages);
+  if (indices.length === 0) return -1;
+  if (current < 0) return -1;
+  const pos = indices.indexOf(current);
+  if (pos < 0 || pos >= indices.length - 1) return -1;
+  return indices[pos + 1];
+}
+
+/**
+ * Find the index of the last assistant message in the list.
+ */
+export function lastAssistantIndex(messages: DisplayMessage[]): number {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === "assistant") return i;
+  }
+  return -1;
 }
 
 // ---------------------------------------------------------------------------
