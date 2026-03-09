@@ -51,6 +51,9 @@ export default function ThemePicker({ onClose }: ThemePickerProps) {
   }, [availableThemes, selectedIndex, onClose]);
 
   useKeyboard((evt) => {
+    // Modal dialog — consume all keystrokes to prevent leaking to components underneath
+    evt.preventDefault();
+
     if (evt.name === "escape") {
       handleClose();
       return;

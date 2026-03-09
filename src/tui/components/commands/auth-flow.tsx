@@ -475,6 +475,9 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
   // ── Keyboard handler ──────────────────────────────────────────────
 
   useKeyboard((key) => {
+    // Modal dialog — consume all keystrokes to prevent leaking to components underneath
+    key.preventDefault();
+
     if (key.name === "escape") {
       cleanup();
       goHome();
