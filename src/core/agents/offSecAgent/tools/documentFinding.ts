@@ -20,6 +20,12 @@ export const documentVulnerabilityInputSchema = z.object({
     .describe("Relative path to the POC script (e.g., pocs/poc_sqli.sh)"),
   remediation: z.string().describe("Steps to fix the issue"),
   references: z.string().optional().describe("CVE, CWE, or related references"),
+  vulnerabilityClass: z
+    .string()
+    .optional()
+    .describe(
+      "The class of vulnerability (e.g., sqli, xss, command-injection, idor, ssrf, path-traversal, crypto, cve)",
+    ),
   toolCallDescription: z
     .string()
     .describe(
@@ -114,6 +120,7 @@ FINDING STRUCTURE:
                 evidence: evidenceForPrompt,
                 endpoint: input.endpoint,
                 remediation: input.remediation,
+                vulnerabilityClass: input.vulnerabilityClass,
               },
               agentMessages: [],
             },
@@ -157,6 +164,7 @@ FINDING STRUCTURE:
           sessionId: session.id,
           target: session.targets[0],
           ...(evidenceFilePath && { evidenceFile: evidenceFilePath }),
+          cwes: cvssResult.cwes,
           cvss: {
             score: cvssResult.score,
             severity: cvssResult.severity,
@@ -198,6 +206,12 @@ FINDING STRUCTURE:
 
 **Reasoning:** ${cvssResult.reasoning}`;
 
+          const cweSection = cvssResult.cwes?.length
+            ? `## CWE Classification
+
+${cvssResult.cwes.map((cwe) => `- **${cwe.id}** — ${cwe.reasoning}`).join("\n")}`
+            : "";
+
           const evidenceSection = evidenceFilePath
             ? `## Evidence
 
@@ -232,7 +246,7 @@ ${finding.impact}
 
 ${cvssSection}
 
-${evidenceSection}
+${cweSection ? `${cweSection}\n\n` : ""}${evidenceSection}
 
 ## POC
 
@@ -253,7 +267,10 @@ ${finding.references ? `## References\n\n${finding.references}` : ""}
 
           // Append to summary
           const summaryPath = join(session.rootPath, "findings-summary.md");
-          const summaryEntry = `- [${finding.severity}] (CVSS ${cvssResult.score}) ${finding.title} - \`findings/${mdFilename}\`\n`;
+          const cweTag = cvssResult.cwes?.length
+            ? ` (${cvssResult.cwes.map((c) => c.id).join(", ")})`
+            : "";
+          const summaryEntry = `- [${finding.severity}] (CVSS ${cvssResult.score})${cweTag} ${finding.title} - \`findings/${mdFilename}\`\n`;
 
           try {
             appendFileSync(summaryPath, summaryEntry);
