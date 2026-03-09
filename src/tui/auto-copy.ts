@@ -28,6 +28,7 @@ export function setupAutoCopy(
 
   // App-wide: auto-copy on select — when user finishes selecting text
   // anywhere in the application, copy to clipboard and clear selection.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   renderer.on("selection", (selection: any) => {
     if (selection && !selection.isDragging) {
       const text = selection.getSelectedText();
