@@ -7,7 +7,11 @@ import {
   useMemo,
 } from "react";
 import { useKeyboard } from "@opentui/react";
-import type { TextareaRenderable, RGBA } from "@opentui/core";
+import type {
+  TextareaRenderable,
+  RGBA,
+  KeyBinding as TextareaKeyBinding,
+} from "@opentui/core";
 import { useTheme } from "../../theme";
 import { useInput } from "../../context/input";
 import { useFocus } from "../../context/focus";
@@ -26,21 +30,18 @@ export interface AutocompleteOption {
 }
 
 /**
- * Textarea keybindings for chat-style input.
+ * Chat-style keybindings: Enter submits, Shift+Enter / Ctrl+J inserts newline.
+ * Overrides @opentui defaults (return=newline, Cmd+return=submit).
  *
- * Terminal key semantics:
- * - Enter sends \r (carriage return) → @opentui parses as "return"
- * - Shift+Enter / Ctrl+J send \n (linefeed) → @opentui parses as "linefeed"
- * - Kitty keyboard protocol reports Shift+Enter as shift+return explicitly
- *
- * We override @opentui's textarea defaults (return=newline, Cmd+return=submit)
- * to make Enter submit and Shift+Enter / Ctrl+J insert newlines.
+ * Both "return" (\r) and "linefeed" (\n) need shift variants because
+ * @opentui matches modifiers exactly (Kitty protocol reports shift explicitly).
  */
-const chatKeyBindings = [
+const chatKeyBindings: TextareaKeyBinding[] = [
   { name: "return", action: "submit" },
   { name: "linefeed", action: "newline" },
   { name: "return", shift: true, action: "newline" },
-] as const;
+  { name: "linefeed", shift: true, action: "newline" },
+];
 
 export interface PromptInputRef {
   focus: () => void;
