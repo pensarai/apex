@@ -25,23 +25,22 @@ export interface AutocompleteOption {
   description?: string;
 }
 
-// Key binding type for textarea actions
-type TextareaAction = "submit" | "newline";
-interface KeyBinding {
-  name: string;
-  ctrl?: boolean;
-  shift?: boolean;
-  meta?: boolean;
-  action: TextareaAction;
-}
-
-// Enter (\r) submits; Shift+Enter (\n / linefeed) inserts a newline.
-// Terminals that support the Kitty keyboard protocol report shift
-// directly, so Shift+Return also maps to newline as a fallback.
-const keyBindings: KeyBinding[] = [
-  { name: "Enter", action: "submit" },
-  { name: "Enter", shift: true, action: "newline" },
-];
+/**
+ * Textarea keybindings for chat-style input.
+ *
+ * Terminal key semantics:
+ * - Enter sends \r (carriage return) → @opentui parses as "return"
+ * - Shift+Enter / Ctrl+J send \n (linefeed) → @opentui parses as "linefeed"
+ * - Kitty keyboard protocol reports Shift+Enter as shift+return explicitly
+ *
+ * We override @opentui's textarea defaults (return=newline, Cmd+return=submit)
+ * to make Enter submit and Shift+Enter / Ctrl+J insert newlines.
+ */
+const chatKeyBindings = [
+  { name: "return", action: "submit" },
+  { name: "linefeed", action: "newline" },
+  { name: "return", shift: true, action: "newline" },
+] as const;
 
 export interface PromptInputRef {
   focus: () => void;
@@ -346,27 +345,7 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
             backgroundColor={backgroundColor}
             focusedBackgroundColor={focusedBackgroundColor}
             cursorColor={cursorColor ?? colors.textMuted}
-            // keyBindings={keyBindings}
-            keyBindings={[
-              {
-                action: "submit",
-                name: "return",
-              },
-              {
-                action: "newline",
-                name: "linefeed",
-              },
-              {
-                action: "newline",
-                shift: true,
-                name: "return",
-              },
-              {
-                action: "newline",
-                shift: true,
-                name: "linefeed",
-              },
-            ]}
+            keyBindings={chatKeyBindings}
             onContentChange={handleContentChange}
             onSubmit={handleSubmit}
           />
