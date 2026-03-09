@@ -4,7 +4,7 @@ import { join } from "path";
 import { writeFileSync, mkdirSync, existsSync } from "fs";
 import type { ToolContext } from "./types";
 
-const MAX_INLINE = 50_000;
+const MAX_INLINE = 10_000;
 
 const DEFAULT_TIMEOUT_SECONDS = 30;
 
