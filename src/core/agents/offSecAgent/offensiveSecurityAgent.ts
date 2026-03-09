@@ -230,6 +230,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       activeTools,
       stopWhen,
       toolChoice: "auto",
+      prepareStep: input.prepareStep,
       onStepFinish: (event) => {
         try {
           const allMessages = [

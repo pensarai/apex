@@ -74,7 +74,7 @@ function maybeSaveBody(
   }
 
   return {
-    text: `${body.substring(0, MAX_INLINE_BODY)}...\n\n(truncated — full response saved to ${filePath}). Use read_file or grep to analyze.`,
+    text: `${body.substring(0, MAX_INLINE_BODY)}...\n\n(truncated — full response saved to ${filePath}). Use execute_command with grep/tail/head to extract specific data.`,
     file: filePath,
   };
 }

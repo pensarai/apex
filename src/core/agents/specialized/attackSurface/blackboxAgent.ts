@@ -14,8 +14,10 @@ import type { SessionInfo } from "../../../session";
 // ---------------------------------------------------------------------------
 
 /** At least one of `target` or `cwd` must be provided. */
-export type AttackSurfaceAgentInput = SpecializedAgentInput &
-  (
+export type AttackSurfaceAgentInput = SpecializedAgentInput & {
+  /** Maximum number of agent steps before forcing termination. Defaults to 10,000 (effectively unlimited). */
+  maxSteps?: number;
+} & (
     | {
         /** The target to analyze (domain, IP, URL, network range, or org name) */
         target: string;
@@ -82,6 +84,7 @@ export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSur
 
     const resultsPath = join(session.rootPath, "attack-surface-results.json");
     const assetsPath = join(session.rootPath, "assets");
+    const maxSteps = opts.maxSteps;
 
     super({
       system: detectOSAndEnhancePrompt(ATTACK_SURFACE_SYSTEM_PROMPT),
@@ -93,6 +96,23 @@ export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSur
       onStepFinish,
       abortSignal,
       attackSurfaceRegistry,
+
+      // When a step limit is set, force the agent to call
+      // create_attack_surface_report before the hard cutoff.
+      prepareStep:
+        maxSteps != null
+          ? ({ stepNumber }) => {
+              if (stepNumber >= maxSteps - 2) {
+                return {
+                  toolChoice: {
+                    type: "tool" as const,
+                    toolName: "create_attack_surface_report",
+                  },
+                };
+              }
+              return undefined;
+            }
+          : undefined,
 
       activeTools: [
         // Core recon tools
@@ -117,7 +137,7 @@ export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSur
 
       stopWhen: [
         hasToolCall("create_attack_surface_report"),
-        stepCountIs(10_000),
+        stepCountIs(opts.maxSteps ?? 10_000),
       ],
       toolChoice: "auto",
 

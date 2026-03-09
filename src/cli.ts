@@ -74,6 +74,9 @@ function showHelp() {
   console.log(
     "  --mode <mode>      Pentest mode: exfil (pivoting & flag extraction)",
   );
+  console.log(
+    "  --recon-steps <n>  Max steps for attack surface recon (default: unlimited)",
+  );
   console.log("  --model <model>    AI model (default: claude-sonnet-4-5)");
   console.log();
   console.log("targeted-pentest options:");
@@ -107,6 +110,8 @@ async function runPentest() {
   const target = getArgRequired("--target");
   const cwd = getArg("--cwd");
   const mode = getArg("--mode");
+  const reconStepsRaw = getArg("--recon-steps");
+  const reconSteps = reconStepsRaw ? parseInt(reconStepsRaw, 10) : undefined;
   const model = (getArg("--model") ?? "claude-sonnet-4-5") as AIModel;
   const { exfilMode, warning: modeWarning } = resolvePentestMode(mode);
 
@@ -120,6 +125,7 @@ async function runPentest() {
   console.log(`Target:  ${target}`);
   if (cwd) console.log(`Cwd:     ${cwd} (whitebox)`);
   if (exfilMode) console.log(`Mode:    exfil`);
+  if (reconSteps != null) console.log(`Recon:   ${reconSteps} steps`);
   console.log(`Model:   ${model}`);
   console.log();
 
@@ -142,6 +148,7 @@ async function runPentest() {
     await runPentestAgent({
       target,
       ...(cwd ? { cwd } : {}),
+      reconSteps,
       session,
       model,
       authConfig: buildAuthConfig(pensarConfig),

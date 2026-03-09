@@ -22,6 +22,8 @@ export interface BenchmarkSuiteConfig {
   outputDir: string;
   mode: "local" | "daytona";
   timeoutMinutes: number;
+  /** Max steps for the attack surface recon phase. When omitted, unlimited. */
+  reconSteps?: number;
   daytonaBatchSize: number;
   cleanupTempDirs: boolean;
 }

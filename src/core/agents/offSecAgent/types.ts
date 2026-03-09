@@ -100,6 +100,18 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
   /** Strategy for selecting which tool to call */
   toolChoice?: ToolChoice<ToolSet>;
 
+  /**
+   * Called before each agent step. Can return per-step overrides
+   * (e.g. `{ toolChoice }` to force a specific tool near a deadline).
+   */
+  prepareStep?: (options: {
+    stepNumber: number;
+    messages: ModelMessage[];
+  }) =>
+    | { toolChoice?: ToolChoice<ToolSet> }
+    | undefined
+    | void;
+
   /** Callback fired after each agent step completes */
   onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
 

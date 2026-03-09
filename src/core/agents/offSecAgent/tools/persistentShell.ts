@@ -109,6 +109,8 @@ export class PersistentShell {
       let stdoutTruncated = false;
       let resolved = false;
       let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
+      // Declared here so safeResolve can remove it; assigned after definition.
+      let onClose: (() => void) | null = null;
 
       this.pendingStdout = () => stdout;
       this.pendingStderr = () => stderr;
@@ -123,6 +125,7 @@ export class PersistentShell {
         if (abortCleanup) abortCleanup();
         proc.stdout!.removeListener("data", onStdout);
         proc.stderr!.removeListener("data", onStderr);
+        if (onClose) proc.removeListener("close", onClose);
         resolve(result);
       };
 
@@ -201,7 +204,7 @@ export class PersistentShell {
       proc.stdout!.on("data", onStdout);
       proc.stderr!.on("data", onStderr);
 
-      const onClose = () => {
+      onClose = () => {
         safeResolve({
           stdout: stdout || "(no output)",
           stderr: stderr || "",

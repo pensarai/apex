@@ -258,6 +258,17 @@ export interface StreamResponseOpts {
   authConfig?: AIAuthConfig;
   onFinish?: StreamTextOnFinishCallback<ToolSet>;
   /**
+   * Called before each agent step. Can return overrides for that step
+   * (e.g. `{ toolChoice }` to force a specific tool).
+   */
+  prepareStep?: (options: {
+    stepNumber: number;
+    messages: ModelMessage[];
+  }) =>
+    | { toolChoice?: ToolChoice<ToolSet> }
+    | undefined
+    | void;
+  /**
    * Called when the context window overflows and the conversation is
    * summarized. Callers should use this to discard stale message history
    * so that subsequent persistence writes only include the summary +
@@ -308,10 +319,10 @@ export function streamResponse(
       toolChoice,
       tools,
       maxRetries: 3,
-      prepareStep: (opts) => {
+      prepareStep: (stepOpts) => {
         // Update the container with the latest messages
-        messagesContainer.current = opts.messages;
-        return undefined;
+        messagesContainer.current = stepOpts.messages;
+        return opts.prepareStep?.(stepOpts) ?? undefined;
       },
       onStepFinish,
       abortSignal,

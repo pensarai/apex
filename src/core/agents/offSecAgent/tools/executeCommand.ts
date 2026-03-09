@@ -6,7 +6,7 @@ import type { ToolContext } from "./types";
 
 const MAX_INLINE = 50_000;
 
-const DEFAULT_TIMEOUT_SECONDS = 120;
+const DEFAULT_TIMEOUT_SECONDS = 30;
 
 export const executeCommandInputSchema = z.object({
   command: z.string().describe("The shell command to execute"),

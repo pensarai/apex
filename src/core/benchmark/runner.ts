@@ -304,6 +304,7 @@ export async function runSingleBenchmark(
     try {
       pentestResult = await runPentestWorkflow({
         target: targetUrl,
+        reconSteps: config.reconSteps,
         model: config.model,
         session,
         abortSignal: controller.signal,
