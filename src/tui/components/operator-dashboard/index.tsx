@@ -117,8 +117,12 @@ export default function OperatorDashboard({
   const { refocusPrompt } = useFocus();
 
   const autocompleteOptions = useMemo(() => {
-    const skillSlugs = new Set(skills.map((s) => `/${slugify(s.name)}`));
-    return filterOperatorAutocomplete(allAutocompleteOptions, skillSlugs);
+    const commandOptions = filterOperatorAutocomplete(allAutocompleteOptions);
+    const skillOptions = skills.map((s) => {
+      const slug = `/${slugify(s.name)}`;
+      return { value: slug, label: slug };
+    });
+    return [...commandOptions, ...skillOptions];
   }, [allAutocompleteOptions, skills]);
 
   // Session state

@@ -7,28 +7,20 @@ import { BASE_SYSTEM_PROMPT } from "../../../core/agents/offSecAgent/prompt";
 // Autocomplete option filtering for operator mode
 // ---------------------------------------------------------------------------
 
+const OPERATOR_ALLOWED_COMMANDS = new Set([
+  "/models",
+  "/auth",
+  "/themes",
+  "/new",
+  "/operator",
+  "/pentest",
+  "/skills",
+]);
+
 export function filterOperatorAutocomplete(
   allOptions: AutocompleteOption[],
-  skillSlugs: Set<string>,
 ): AutocompleteOption[] {
-  const allowedCommands = new Set([
-    "/models",
-    "/auth",
-    "/themes",
-    "/new",
-    "/operator",
-    "/pentest",
-    "/skills",
-  ]);
-  return allOptions
-    .filter(
-      (opt) => allowedCommands.has(opt.value) || skillSlugs.has(opt.value),
-    )
-    .map((opt) =>
-      skillSlugs.has(opt.value)
-        ? { value: opt.value, label: opt.label }
-        : opt,
-    );
+  return allOptions.filter((opt) => OPERATOR_ALLOWED_COMMANDS.has(opt.value));
 }
 
 // ---------------------------------------------------------------------------

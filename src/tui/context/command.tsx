@@ -188,7 +188,7 @@ export function CommandProvider({
       return a.value.localeCompare(b.value);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [router, registry, registryVersion]);
+  }, [router]);
 
   const executeCommand = useCallback(
     async (input: string): Promise<boolean> => {

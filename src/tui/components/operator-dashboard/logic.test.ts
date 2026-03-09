@@ -25,11 +25,7 @@ const allOptions: AutocompleteOption[] = [
   { value: "/help", label: "/help", description: "Show help" },
   { value: "/models", label: "/models", description: "Switch model" },
   { value: "/skills", label: "/skills", description: "View skills" },
-  { value: "/sql-injection", label: "/sql-injection", description: "Skill" },
-  { value: "/xss-test", label: "/xss-test", description: "Skill" },
 ];
-
-const skillSlugs = new Set(["/sql-injection", "/xss-test"]);
 
 // ---------------------------------------------------------------------------
 // filterOperatorAutocomplete
@@ -37,41 +33,32 @@ const skillSlugs = new Set(["/sql-injection", "/xss-test"]);
 
 describe("filterOperatorAutocomplete", () => {
   it("includes allowed commands (/models, /skills)", () => {
-    const result = filterOperatorAutocomplete(allOptions, new Set());
+    const result = filterOperatorAutocomplete(allOptions);
     const values = result.map((o) => o.value);
     expect(values).toContain("/models");
     expect(values).toContain("/skills");
   });
 
-  it("includes skill slugs", () => {
-    const result = filterOperatorAutocomplete(allOptions, skillSlugs);
-    const values = result.map((o) => o.value);
-    expect(values).toContain("/sql-injection");
-    expect(values).toContain("/xss-test");
-  });
-
-  it("excludes commands that are neither allowed nor skills", () => {
-    const result = filterOperatorAutocomplete(allOptions, skillSlugs);
+  it("excludes commands that are not in the allowed set", () => {
+    const result = filterOperatorAutocomplete(allOptions);
     const values = result.map((o) => o.value);
     expect(values).not.toContain("/scan");
     expect(values).not.toContain("/help");
   });
 
-  it("returns only allowed commands when no skills exist", () => {
-    const result = filterOperatorAutocomplete(allOptions, new Set());
+  it("returns only allowed commands", () => {
+    const result = filterOperatorAutocomplete(allOptions);
     expect(result).toHaveLength(3);
   });
 
-  it("strips description from skill options", () => {
-    const result = filterOperatorAutocomplete(allOptions, skillSlugs);
-    const sqlOpt = result.find((o) => o.value === "/sql-injection");
+  it("preserves description on allowed commands", () => {
+    const result = filterOperatorAutocomplete(allOptions);
     const modelsOpt = result.find((o) => o.value === "/models");
-    expect(sqlOpt?.description).toBeUndefined();
     expect(modelsOpt?.description).toBe("Switch model");
   });
 
   it("returns empty for empty input", () => {
-    expect(filterOperatorAutocomplete([], new Set())).toEqual([]);
+    expect(filterOperatorAutocomplete([])).toEqual([]);
   });
 });
 
