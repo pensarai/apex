@@ -35,6 +35,8 @@ export interface PensarModelConfig {
    * allowing transparent token refresh for WorkOS auth.
    */
   getToken?: () => Promise<{ token: string; type: "workos" | "legacy" } | null>;
+  /** Optional explicit stream URL. If not set, discovered via /bedrock/validate. */
+  streamUrl?: string;
 }
 
 /**
@@ -86,6 +88,38 @@ export function createPensarModel(
     }
 
     return headers;
+  }
+
+  // ── Stream URL discovery ─────────────────────────────────────────────
+  let cachedStreamUrl: string | null = null;
+
+  async function getStreamUrl(): Promise<string> {
+    if (cachedStreamUrl) return cachedStreamUrl;
+
+    // Try to discover Lambda Function URL from /bedrock/validate
+    try {
+      const headers = await buildHeaders();
+      const res = await fetch(`${config.baseUrl}/bedrock/validate`, {
+        headers,
+      });
+      if (res.ok) {
+        const data = (await res.json()) as {
+          endpoints?: { stream?: string };
+        };
+        if (data.endpoints?.stream) {
+          cachedStreamUrl = data.endpoints.stream;
+          log(`  Discovered stream URL: ${cachedStreamUrl}`);
+          return cachedStreamUrl;
+        }
+      }
+    } catch {
+      // Fall through to fallback
+    }
+
+    // Fallback: buffered SSE via API Gateway
+    cachedStreamUrl = `${config.baseUrl}/bedrock/stream`;
+    log(`  Using fallback stream URL: ${cachedStreamUrl}`);
+    return cachedStreamUrl;
   }
 
   const model: LanguageModelV2 = {
@@ -201,7 +235,7 @@ export function createPensarModel(
       response?: { headers?: Record<string, string> };
     }> {
       const body = convertToBedrockFormat(bedrockModelId, options);
-      const url = `${config.baseUrl}/bedrock/stream`;
+      const url = config.streamUrl ?? (await getStreamUrl());
 
       log(`doStream → SSE streaming for ${bedrockModelId}`);
       log(`  URL: ${url}`);
