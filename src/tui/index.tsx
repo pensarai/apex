@@ -262,7 +262,11 @@ function AppContent({
       overflow="hidden"
       backgroundColor={colors.background}
     >
-      <CommandDisplay focusIndex={focusIndex} inputKey={inputKey} />
+      <CommandDisplay
+        focusIndex={focusIndex}
+        inputKey={inputKey}
+        onOpenAuthDialog={() => setShowAuthDialog(true)}
+      />
 
       <Footer cwd={cwd} showExitWarning={showExitWarning} />
 
@@ -289,9 +293,11 @@ const RouteSwitch = createSwitch<RoutePath>();
 function CommandDisplay({
   focusIndex,
   inputKey,
+  onOpenAuthDialog,
 }: {
   focusIndex: number;
   inputKey: number;
+  onOpenAuthDialog: () => void;
 }) {
   const route = useRoute();
   const config = useConfig();
@@ -372,7 +378,7 @@ function CommandDisplay({
             <ModelsDisplay />
           </RouteSwitch.Case>
           <RouteSwitch.Case when="credits">
-            <CreditsFlow onOpenAuthDialog={() => setShowAuthDialog(true)} />
+            <CreditsFlow onOpenAuthDialog={onOpenAuthDialog} />
           </RouteSwitch.Case>
           <RouteSwitch.Case when="create-skill">
             <CreateSkillWizard />
