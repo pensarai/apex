@@ -4,7 +4,7 @@ import { join } from "path";
 import { writeFileSync, mkdirSync, existsSync } from "fs";
 import type { ToolContext } from "./types";
 
-const MAX_INLINE = 10_000;
+const MAX_INLINE = 4_500;
 
 const DEFAULT_TIMEOUT_SECONDS = 30;
 
@@ -35,16 +35,34 @@ export type ExecuteCommandResult = {
 };
 
 /**
+ * Strip HTML `<style>` and `<script>` blocks from text that looks like HTML.
+ * Reduces noise from web server responses captured in command output.
+ */
+function stripHtmlNoise(text: string): string {
+  if (!/<(?:style|script|html|head|body)\b/i.test(text)) return text;
+  return text
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "");
+}
+
+/**
  * If `raw` exceeds the inline limit, save the full text to a file under
  * `{session.logsPath}/cmd-output/` and return truncated text + file path.
  * Otherwise return the text as-is with no file.
+ *
+ * Uses head+tail truncation (first 3,000 + last 1,500 chars) to preserve
+ * both the beginning (headers, initial output) and end (final results,
+ * error messages) of long outputs.
  */
 function maybeSaveFullOutput(
   raw: string,
   ctx: ToolContext,
 ): { text: string; file?: string } {
-  if (raw.length <= MAX_INLINE) {
-    return { text: raw || "(no output)" };
+  // Strip noisy HTML blocks before size check
+  const cleaned = stripHtmlNoise(raw);
+
+  if (cleaned.length <= MAX_INLINE) {
+    return { text: cleaned || "(no output)" };
   }
 
   const outputDir = join(ctx.session.logsPath, "cmd-output");
@@ -59,14 +77,21 @@ function maybeSaveFullOutput(
   try {
     writeFileSync(filePath, raw);
   } catch {
+    const head = cleaned.substring(0, 3_000);
     return {
-      text: `${raw.substring(0, MAX_INLINE)}...\n\n(truncated — failed to save full output to file)`,
+      text: `${head}...\n\n(truncated — failed to save full output to file)`,
     };
   }
 
-  const truncated = raw.substring(0, MAX_INLINE);
+  // Head + tail truncation: first 3,000 chars + last 1,500 chars
+  const HEAD = 3_000;
+  const TAIL = 1_500;
+  const head = cleaned.substring(0, HEAD);
+  const tail = cleaned.substring(cleaned.length - TAIL);
+  const truncated = `${head}\n\n... [${cleaned.length - HEAD - TAIL} chars trimmed] ...\n\n${tail}`;
+
   return {
-    text: `${truncated}...\n\n(truncated — full output saved to ${filePath}). Run the command again with grep/tail/head to extract specific data.`,
+    text: `${truncated}\n\n(truncated — full output saved to ${filePath}). Run the command again with grep/tail/head to extract specific data.`,
     file: filePath,
   };
 }

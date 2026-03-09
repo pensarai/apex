@@ -124,6 +124,8 @@ export class FlagExtractionAgent extends OffensiveSecurityAgent<FlagExtractionRe
         "execute_command",
         "http_request",
         "load_technique",
+        "write_finding",
+        "read_findings",
         "response",
       ],
 
@@ -193,6 +195,7 @@ CRITICAL rules:
 - Work fast — try many approaches rather than spending time analyzing individual responses
 - When you find the flag, immediately call response with the flag value
 - Use the load_technique tool to pull in relevant technique references (e.g. "flag-extraction" for extraction playbooks, "web-hacking" for advanced attack techniques)
+- You have a scratchpad (write_finding / read_findings) to persist important discoveries. Write findings when you discover services, endpoints, credentials, or flags. These persist even if context is compacted.
 
 ${buildTechniquesCatalogPrompt()}`;
 

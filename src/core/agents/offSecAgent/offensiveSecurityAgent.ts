@@ -21,6 +21,8 @@ import { ApprovalDeniedError } from "../../operator";
 import { create as createSession, type SessionInfo } from "../../session";
 import { join } from "path";
 import { writeFileSync, mkdirSync, existsSync } from "fs";
+import { trimToolResults } from "../../ai/contextManager";
+import { getModelInfo } from "../../ai/models";
 
 /**
  * General-purpose offensive security agent harness.
@@ -206,10 +208,18 @@ export class OffensiveSecurityAgent<TResult = void> {
     }
     const messagesPath = join(messagesDir, "messages.json");
 
+    // -- Trim messages on resume -----------------------------------------------
+    // When resuming with existing messages, trim old tool results to avoid
+    // immediately hitting context limits on the first request.
+    let resumeMessages = input.messages;
+    if (resumeMessages && resumeMessages.length > 20) {
+      resumeMessages = trimToolResults(resumeMessages, 6);
+    }
+
     // Mutable so that summarization can clear stale history.
     const initialMessagesRef: { current: ModelMessage[] } = {
-      current: input.messages
-        ? [...input.messages]
+      current: resumeMessages
+        ? [...resumeMessages]
         : [
             {
               role: "user" as const,
@@ -218,6 +228,10 @@ export class OffensiveSecurityAgent<TResult = void> {
           ],
     };
 
+    // -- Context limit from model info ----------------------------------------
+    const modelInfo = getModelInfo(input.model);
+    const contextLimit = modelInfo.contextLength ?? 200_000;
+
     // -- Stream ---------------------------------------------------------------
     this.streamResult = streamResponse({
       prompt: input.prompt,
@@ -225,12 +239,14 @@ export class OffensiveSecurityAgent<TResult = void> {
         ? input.system
         : BASE_SYSTEM_PROMPT + buildSessionWorkspaceSection(input.session),
       model: input.model,
-      messages: input.messages,
+      messages: resumeMessages,
       tools,
       activeTools,
       stopWhen,
       toolChoice: "auto",
       prepareStep: input.prepareStep,
+      contextLimit,
+      scratchpadPath: input.session.scratchpadPath,
       onStepFinish: (event) => {
         try {
           const allMessages = [

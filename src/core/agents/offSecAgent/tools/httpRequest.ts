@@ -4,7 +4,7 @@ import { join } from "path";
 import { writeFileSync, mkdirSync, existsSync } from "fs";
 import type { ToolContext } from "./types";
 
-const MAX_INLINE_BODY = 5_000;
+const MAX_INLINE_BODY = 3_000;
 
 export const httpRequestInputSchema = z.object({
   url: z.string().describe("The URL to request"),
@@ -47,14 +47,62 @@ export type HttpRequestResult = {
 };
 
 /**
+ * Strip HTML `<style>` and `<script>` blocks from text that looks like HTML.
+ */
+function stripHtmlNoise(text: string): string {
+  if (!/<(?:style|script|html|head|body)\b/i.test(text)) return text;
+  return text
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "");
+}
+
+/**
+ * For JSON responses that exceed the limit, show top-level keys with
+ * truncated values to preserve structural overview.
+ */
+function compressJson(body: string, limit: number): string | null {
+  try {
+    const parsed = JSON.parse(body);
+    if (typeof parsed !== "object" || parsed === null) return null;
+
+    const summary: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      const valStr = JSON.stringify(value);
+      if (valStr.length > 200) {
+        if (Array.isArray(value)) {
+          summary[key] = `[Array(${value.length})]`;
+        } else if (typeof value === "object" && value !== null) {
+          summary[key] = `{${Object.keys(value).join(", ")}}`;
+        } else {
+          summary[key] = valStr.substring(0, 200) + "...";
+        }
+      } else {
+        summary[key] = value;
+      }
+    }
+
+    const result = JSON.stringify(summary, null, 2);
+    return result.length <= limit ? result : result.substring(0, limit);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * If `body` exceeds the inline limit, save the full text to a file under
  * `{session.logsPath}/http-responses/` and return truncated text + file path.
+ *
+ * Strips HTML noise (<style>/<script>) before truncation. For JSON responses
+ * that exceed the limit, shows top-level keys with truncated values.
  */
 function maybeSaveBody(
   body: string,
   ctx: ToolContext,
 ): { text: string; file?: string } {
-  if (body.length <= MAX_INLINE_BODY) return { text: body };
+  // Strip noisy HTML blocks before size check
+  const cleaned = stripHtmlNoise(body);
+
+  if (cleaned.length <= MAX_INLINE_BODY) return { text: cleaned };
 
   const outputDir = join(ctx.session.logsPath, "http-responses");
   if (!existsSync(outputDir)) {
@@ -69,12 +117,16 @@ function maybeSaveBody(
     writeFileSync(filePath, body);
   } catch {
     return {
-      text: `${body.substring(0, MAX_INLINE_BODY)}...\n\n(truncated — failed to save full response to file)`,
+      text: `${cleaned.substring(0, MAX_INLINE_BODY)}...\n\n(truncated — failed to save full response to file)`,
     };
   }
 
+  // For JSON responses, try structural compression
+  const jsonSummary = compressJson(body, MAX_INLINE_BODY);
+  const truncated = jsonSummary || cleaned.substring(0, MAX_INLINE_BODY);
+
   return {
-    text: `${body.substring(0, MAX_INLINE_BODY)}...\n\n(truncated — full response saved to ${filePath}). Use execute_command with grep/tail/head to extract specific data.`,
+    text: `${truncated}...\n\n(truncated — full response saved to ${filePath}). Use execute_command with grep/tail/head to extract specific data.`,
     file: filePath,
   };
 }

@@ -331,4 +331,11 @@ Submit the final structured report. Call this ONCE at the very end with complete
 6. **End with the report.** Your final action must be \`create_attack_surface_report\`.
 7. **No follow-up requests.** The user cannot respond. Do not end with questions or suggestions.
 
-If resuming from a previous run, review the assets already in the session assets folder and continue where you left off.`;
+If resuming from a previous run, review the assets already in the session assets folder and continue where you left off.
+
+# SCRATCHPAD — PERSISTENT WORKING MEMORY
+
+You have a scratchpad (\`write_finding\` / \`read_findings\`) to persist important discoveries.
+Write findings when you discover services, endpoints, credentials, or notable assets.
+These persist even if the conversation context is compacted due to length limits.
+Use \`read_findings\` to recall previous discoveries if you lose context.`;

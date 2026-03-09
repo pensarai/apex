@@ -18,6 +18,8 @@ import {
   type TextStreamPart,
   type ToolSet,
 } from "ai";
+import { extractPentestFindings } from "./contextManager";
+import { loadScratchpadFindings } from "../agents/offSecAgent/tools/scratchpad";
 
 export type AIAuthConfig = {
   openAiAPIKey?: string;
@@ -240,6 +242,15 @@ export async function summarizeConversation(
   opts: StreamResponseOpts,
   model: LanguageModel,
 ): Promise<StreamTextResult<ToolSet, never>> {
+  // Extract structured findings BEFORE stripping tool content —
+  // this preserves discovered services, credentials, flags, etc.
+  const structuredFindings = extractPentestFindings(messages);
+
+  // Load persisted scratchpad findings if path is available
+  const scratchpadFindings = opts.scratchpadPath
+    ? loadScratchpadFindings(opts.scratchpadPath)
+    : "";
+
   // Filter and clean messages to remove tool calls/results
   // We only want conversational content for summarization
   const cleanMessages = messages
@@ -292,13 +303,31 @@ export async function summarizeConversation(
     ...slicedMessages,
     {
       role: "user",
-      content: `Summarize this conversation to pass to another agent. This was the system prompt: ${opts.system} `,
+      content: `Summarize this penetration testing session to pass to another agent. This was the system prompt: ${opts.system}
+
+IMPORTANT: Preserve the following in your summary:
+1. All discovered services, ports, and their versions
+2. Confirmed vulnerabilities with their endpoints and proof
+3. Working exploit paths and attack vectors
+4. Any credentials, tokens, or flags found
+5. What was tried and failed (to avoid repeating)
+6. Current phase/stage of testing`,
     },
   ];
 
   const { text: summary, usage: summaryUsage } = await generateText({
     model,
-    system: `You are a helpful assistant that summarizes conversations to pass to another agent. Review the conversation and system prompt at the end provided by the user.`,
+    system: `You are an expert penetration testing assistant that summarizes security testing sessions. Your summary will be passed to another agent to continue the engagement.
+
+Focus on preserving actionable intelligence:
+- Discovered services and their versions
+- Confirmed vulnerabilities with endpoints
+- Working attack vectors and exploit chains
+- Credentials, tokens, flags, and sensitive data found
+- Testing approaches that failed (to avoid repeating them)
+- Current testing phase and next steps
+
+Be concise but thorough. Every piece of operational data matters.`,
     messages: summarizedMessages,
     abortSignal: opts.abortSignal,
   });
@@ -334,13 +363,22 @@ export async function summarizeConversation(
     } as unknown as Parameters<NonNullable<typeof opts.onStepFinish>>[0]);
   }
 
+  // Build enhanced prompt with structured findings preserved
+  const findingsBlock = [structuredFindings, scratchpadFindings]
+    .filter(Boolean)
+    .join("\n\n");
+
+  const preservedSection = findingsBlock
+    ? `\n\n## Preserved Findings from Previous Context\n${findingsBlock}`
+    : "";
+
   // For very long prompts, replace with just the summary instead of appending
   const originalLength =
     typeof opts.prompt === "string" ? opts.prompt.length : 0;
   const enhancedPrompt =
     originalLength > 100000
-      ? `Context: The previous conversation contained very long content that was summarized.\n\nSummary: ${summary}\n\nOriginal task: Please respond based on this summary.`
-      : `${opts.prompt}\n\nThe previous agent has summarized the conversation to pass to you to continue the task. Here is the summary: ${summary}`;
+      ? `Context: The previous conversation contained very long content that was summarized.\n\nSummary: ${summary}${preservedSection}\n\nOriginal task: Please respond based on this summary.`
+      : `${opts.prompt}\n\nThe previous agent has summarized the conversation to pass to you to continue the task. Here is the summary: ${summary}${preservedSection}`;
 
   // Notify callers that context was reset so they can discard stale history.
   opts.onSummarized?.(summary);

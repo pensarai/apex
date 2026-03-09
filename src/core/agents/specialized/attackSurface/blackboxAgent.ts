@@ -133,6 +133,9 @@ export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSur
         "email_list_messages",
         "email_search_messages",
         "email_get_message",
+        // Scratchpad — persist findings across context compaction
+        "write_finding",
+        "read_findings",
       ],
 
       stopWhen: [

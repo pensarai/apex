@@ -21,6 +21,8 @@ import {
   getProviderModel,
   type AIAuthConfig,
 } from "./utils";
+import { trimToolResults, estimateTokens } from "./contextManager";
+import { ContextBudget } from "./contextBudget";
 
 export type AIModel = AnthropicMessagesModelId | OpenAIChatModelId | string; // For OpenRouter and Bedrock models
 
@@ -193,20 +195,54 @@ function wrapStreamWithErrorHandler(
                 } catch {
                   // Fall back to container messages if response is not available
                 }
-                if (!silent) {
-                  console.warn(
-                    `Context length error in wrapper, summarizing ${messagesContainer.current.length} messages: `,
-                    errorMessage,
-                  );
-                }
 
-                const summarizationStream = createSummarizationStream(
-                  currentMessages,
-                  opts,
-                  model,
-                );
-                for await (const chunk of summarizationStream.fullStream) {
-                  yield chunk;
+                // Try trimming old tool results first — much cheaper than
+                // full summarization and preserves recent context.
+                const contextLimit = opts.contextLimit ?? 200_000;
+                const trimmed = trimToolResults(currentMessages, 6);
+                const trimmedEstimate = estimateTokens(trimmed);
+
+                if (trimmedEstimate < contextLimit * 0.85) {
+                  if (!silent) {
+                    console.warn(
+                      `Context length error — trimmed tool results (est. ${trimmedEstimate} tokens, limit ${contextLimit}). Retrying with trimmed context.`,
+                    );
+                  }
+
+                  const retriedStream = streamResponse({
+                    ...opts,
+                    messages: trimmed,
+                  });
+
+                  const wrappedRetriedStream = wrapStreamWithErrorHandler(
+                    retriedStream,
+                    messagesContainer,
+                    opts,
+                    model,
+                    silent,
+                    rateLimitRetryCount,
+                  );
+
+                  for await (const chunk of wrappedRetriedStream.fullStream) {
+                    yield chunk;
+                  }
+                } else {
+                  // Trimming isn't enough — fall through to full summarization
+                  if (!silent) {
+                    console.warn(
+                      `Context length error in wrapper, trimming insufficient (est. ${trimmedEstimate} tokens). Summarizing ${messagesContainer.current.length} messages: `,
+                      errorMessage,
+                    );
+                  }
+
+                  const summarizationStream = createSummarizationStream(
+                    currentMessages,
+                    opts,
+                    model,
+                  );
+                  for await (const chunk of summarizationStream.fullStream) {
+                    yield chunk;
+                  }
                 }
               } else {
                 if (!silent) {
@@ -275,6 +311,16 @@ export interface StreamResponseOpts {
    * new messages (not the full pre-summarization history).
    */
   onSummarized?: (summary: string) => void;
+  /**
+   * Model context window size in tokens. When set, enables proactive
+   * trimming of old tool results before falling back to full summarization.
+   */
+  contextLimit?: number;
+  /**
+   * Path to session scratchpad for persisted findings injection
+   * into summarization prompts.
+   */
+  scratchpadPath?: string;
 }
 
 export function streamResponse(
@@ -296,6 +342,11 @@ export function streamResponse(
     onFinish,
   } = opts;
 
+  // Create context budget tracker if contextLimit is provided
+  const budget = opts.contextLimit
+    ? new ContextBudget(opts.contextLimit)
+    : undefined;
+
   // Wrap onStepFinish to fire usage callback for every step
   const onStepFinish: typeof userOnStepFinish = (step) => {
     userOnStepFinish?.(step);
@@ -303,6 +354,10 @@ export function streamResponse(
       const inp = step.usage?.inputTokens ?? 0;
       const out = step.usage?.outputTokens ?? 0;
       if (inp > 0 || out > 0) _usageCallback(model, inp, out);
+    }
+    // Track token usage for proactive context management
+    if (budget && step.usage?.inputTokens) {
+      budget.recordStep(step.usage.inputTokens);
     }
   };
   // Use a container object so the reference stays stable but the value can be updated
@@ -451,9 +506,26 @@ export function streamResponse(
       error instanceof Error ? error.message : String(error);
 
     if (isContextLengthError) {
+      // Try trimming old tool results first — much cheaper than summarization
+      const contextLimit = opts.contextLimit ?? 200_000;
+      const trimmed = trimToolResults(messagesContainer.current, 6);
+      const trimmedEstimate = estimateTokens(trimmed);
+
+      if (trimmedEstimate < contextLimit * 0.85) {
+        if (!silent) {
+          console.warn(
+            `Context length error — trimmed tool results (est. ${trimmedEstimate} tokens, limit ${contextLimit}). Retrying with trimmed context.`,
+          );
+        }
+        return streamResponse({
+          ...opts,
+          messages: trimmed,
+        });
+      }
+
       if (!silent) {
         console.warn(
-          `Context length error, summarizing ${messagesContainer.current.length} messages: `,
+          `Context length error, trimming insufficient (est. ${trimmedEstimate} tokens). Summarizing ${messagesContainer.current.length} messages: `,
           outerErrorMessage,
         );
       }

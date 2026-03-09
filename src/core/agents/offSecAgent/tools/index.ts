@@ -64,6 +64,9 @@ export { addMemory } from "./addMemory";
 export { listMemories } from "./listMemories";
 export { getMemory } from "./getMemory";
 
+// Scratchpad tools (persistent session findings)
+export { writeFinding, readFindings } from "./scratchpad";
+
 // Email tools
 export { createEmailToolset, EMAIL_TOOL_NAMES } from "./email";
 export type { EmailToolName } from "./email";
@@ -104,6 +107,7 @@ import { provideComparisonResults } from "./provideComparisonResults";
 import { addMemory } from "./addMemory";
 import { listMemories } from "./listMemories";
 import { getMemory } from "./getMemory";
+import { writeFinding, readFindings } from "./scratchpad";
 import { createEmailToolset } from "./email";
 import { emailListInboxes } from "./email/listInboxes";
 import { emailListMessages } from "./email/listMessages";
@@ -168,6 +172,10 @@ export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
     list_memories: listMemories(ctx),
     get_memory: getMemory(ctx),
 
+    // Scratchpad tools (persistent session findings — survive context compaction)
+    write_finding: writeFinding(ctx),
+    read_findings: readFindings(ctx),
+
     // Email tools (read-only inbox access)
     ...createEmailToolset(ctx),
     email_list_inboxes: emailListInboxes(ctx),
@@ -218,6 +226,9 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "add_memory",
   "list_memories",
   "get_memory",
+  // Scratchpad
+  "write_finding",
+  "read_findings",
   // Email
   "email_list_inboxes",
   "email_list_messages",
