@@ -44,6 +44,10 @@ function getAllArgs(flag: string, argv = args): string[] {
   return values;
 }
 
+function hasFlag(flag: string, argv = args): boolean {
+  return argv.includes(flag);
+}
+
 // ---------------------------------------------------------------------------
 // Help
 // ---------------------------------------------------------------------------
@@ -78,6 +82,9 @@ function showHelp() {
     "  --recon-steps <n>  Max steps for attack surface recon (default: unlimited)",
   );
   console.log("  --model <model>    AI model (default: claude-sonnet-4-5)");
+  console.log(
+    "  --verbose          Show pentest swarm sub-agent tool calls",
+  );
   console.log();
   console.log("targeted-pentest options:");
   console.log("  --target <url>          (required) Target URL / domain / IP");
@@ -113,6 +120,7 @@ async function runPentest() {
   const reconStepsRaw = getArg("--recon-steps");
   const reconSteps = reconStepsRaw ? parseInt(reconStepsRaw, 10) : undefined;
   const model = (getArg("--model") ?? "claude-sonnet-4-5") as AIModel;
+  const verbose = hasFlag("--verbose");
   const { exfilMode, warning: modeWarning } = resolvePentestMode(mode);
 
   if (modeWarning) {
@@ -127,6 +135,7 @@ async function runPentest() {
   if (exfilMode) console.log(`Mode:    exfil`);
   if (reconSteps != null) console.log(`Recon:   ${reconSteps} steps`);
   console.log(`Model:   ${model}`);
+  if (verbose) console.log(`Verbose: on`);
   console.log();
 
   const pensarConfig = await appConfig.get();
@@ -158,6 +167,33 @@ async function runPentest() {
         onToolCall: (d) => console.log(`\n→ ${d.toolName}`),
         onToolResult: (d) => console.log(`✓ ${d.toolName} completed`),
         onError: (e) => console.error("Error:", e),
+        ...(verbose
+          ? {
+              subagentCallbacks: {
+                onSubagentSpawn: ({
+                  subagentId,
+                  name,
+                }: {
+                  subagentId: string;
+                  name?: string;
+                }) =>
+                  console.log(
+                    `\n[swarm] Spawning ${subagentId}${name ? ` (${name})` : ""}`,
+                  ),
+                onSubagentComplete: ({
+                  subagentId,
+                  status,
+                }: {
+                  subagentId: string;
+                  status: string;
+                }) => console.log(`[swarm] ${subagentId} ${status}`),
+                onToolCall: (d: { subagentId?: string; toolName: string }) =>
+                  console.log(`  → [${d.subagentId}] ${d.toolName}`),
+                onToolResult: (d: { subagentId?: string; toolName: string }) =>
+                  console.log(`  ✓ [${d.subagentId}] ${d.toolName} completed`),
+              },
+            }
+          : {}),
       },
     });
 
