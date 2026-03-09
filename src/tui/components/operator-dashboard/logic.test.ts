@@ -598,6 +598,18 @@ describe("resolveKeyboardShortcut — copy actions", () => {
       ),
     ).toEqual({ type: "copy-message" });
   });
+
+  it("Ctrl+Y copies message instead of approving when waiting with pending approvals", () => {
+    expect(
+      resolveKeyboardShortcut(
+        { name: "y", ctrl: true },
+        "waiting",
+        "",
+        true,
+        false,
+      ),
+    ).toEqual({ type: "copy-message" });
+  });
 });
 
 // ---------------------------------------------------------------------------

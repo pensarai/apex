@@ -131,19 +131,21 @@ export function resolveKeyboardShortcut(
   // Shift+Tab — toggle approval
   if (key.name === "tab" && key.shift) return { type: "toggle-approval" };
 
-  // Y to approve
+  // Y to approve (exclude Ctrl+Y which is copy-message)
   if (
     status === "waiting" &&
     hasPendingApprovals &&
+    !key.ctrl &&
     (key.name === "y" || key.raw === "Y")
   ) {
     return { type: "approve" };
   }
 
-  // A to auto-approve
+  // A to auto-approve (exclude Ctrl+A for consistency)
   if (
     status === "waiting" &&
     hasPendingApprovals &&
+    !key.ctrl &&
     (key.name === "a" || key.raw === "A")
   ) {
     return { type: "auto-approve" };
