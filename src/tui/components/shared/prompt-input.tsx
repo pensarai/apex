@@ -35,7 +35,9 @@ interface KeyBinding {
   action: TextareaAction;
 }
 
-// Configure Enter to submit, Shift+Enter for newline
+// Enter (\r) submits; Shift+Enter (\n / linefeed) inserts a newline.
+// Terminals that support the Kitty keyboard protocol report shift
+// directly, so Shift+Return also maps to newline as a fallback.
 const keyBindings: KeyBinding[] = [
   { name: "Enter", action: "submit" },
   { name: "Enter", shift: true, action: "newline" },
@@ -351,7 +353,7 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
                 name: "return",
               },
               {
-                action: "submit",
+                action: "newline",
                 name: "linefeed",
               },
               {
