@@ -55,6 +55,22 @@ This tool marks the end of the authentication flow.`,
         .describe(
           'Auth headers to include in future requests (e.g. {"Authorization": "Bearer <token>"})',
         ),
+      rawCookies: z
+        .array(
+          z.object({
+            name: z.string(),
+            value: z.string(),
+            domain: z.string(),
+            path: z.string().optional(),
+            httpOnly: z.boolean().optional(),
+            secure: z.boolean().optional(),
+          }),
+        )
+        .optional()
+        .describe(
+          "Full cookie objects from browser_get_cookies (includes domain, path, httpOnly, secure). " +
+            "Pass the cookies array from browser_get_cookies for full browser state restoration in downstream agents.",
+        ),
       strategy: z
         .string()
         .optional()
@@ -87,7 +103,9 @@ This tool marks the end of the authentication flow.`,
 
       if (
         result.success &&
-        (result.exportedCookies || result.exportedHeaders)
+        (result.exportedCookies ||
+          result.exportedHeaders ||
+          (result.rawCookies && result.rawCookies.length > 0))
       ) {
         try {
           const authDir = join(ctx.session.rootPath, AUTH_DIR);
@@ -101,6 +119,7 @@ This tool marks the end of the authentication flow.`,
             authenticated: true,
             strategy: result.strategy || "unknown",
             cookies: result.exportedCookies || "",
+            rawCookies: result.rawCookies || [],
             headers: result.exportedHeaders || {},
             summary: result.summary,
             target: ctx.target || "",

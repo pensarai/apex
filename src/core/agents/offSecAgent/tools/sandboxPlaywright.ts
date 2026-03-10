@@ -31,6 +31,7 @@ import type {
   BrowserFillResult,
   BrowserEvaluateResult,
   BrowserConsoleResult,
+  BrowserAuthData,
 } from "./playwrightMcp";
 
 // ---------------------------------------------------------------------------
@@ -321,6 +322,21 @@ const fs = require('fs');
   }
 }
 
+/**
+ * Extract the hostname from a URL or bare host string.
+ */
+function deriveHostnameForSandbox(urlOrHost: string): string | undefined {
+  if (!urlOrHost) return undefined;
+  try {
+    const withScheme = urlOrHost.includes("://")
+      ? urlOrHost
+      : `https://${urlOrHost}`;
+    return new URL(withScheme).hostname;
+  } catch {
+    return undefined;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Input schemas (mirrors playwrightMcp.ts – kept local for decoupling)
 // ---------------------------------------------------------------------------
@@ -415,8 +431,15 @@ const BrowserGetCookiesInput = z.object({
  *
  * The factory lazily installs Playwright and launches Chromium in the sandbox
  * on the first tool invocation.
+ *
+ * @param ctx - Tool context (session, sandbox, target, etc.)
+ * @param authData - Pre-existing auth state (cookies/headers) to inject into
+ *   the browser context on the first navigation.
  */
-export function createSandboxBrowserTools(ctx: ToolContext) {
+export function createSandboxBrowserTools(
+  ctx: ToolContext,
+  authData?: BrowserAuthData,
+) {
   const sandbox = ctx.sandbox!;
   const evidenceDir = join(ctx.session.rootPath, "evidence");
   const targetUrl = ctx.target ?? "";
@@ -434,6 +457,70 @@ export function createSandboxBrowserTools(ctx: ToolContext) {
     return setupPromise;
   }
 
+  // -- Auth state injection for sandbox mode --------------------------------
+  let authInjected = false;
+  const hasAuthData =
+    authData &&
+    (authData.cookies ||
+      (authData.rawCookies && authData.rawCookies.length > 0) ||
+      (authData.headers && Object.keys(authData.headers).length > 0));
+
+  function buildAuthInjectionScript(): string {
+    if (!authData) return "";
+
+    const parts: string[] = [];
+
+    let cookiesToSet: Array<{
+      name: string;
+      value: string;
+      domain: string;
+      path: string;
+      httpOnly?: boolean;
+      secure?: boolean;
+    }> = [];
+
+    if (authData.rawCookies && authData.rawCookies.length > 0) {
+      cookiesToSet = authData.rawCookies.map((c) => ({
+        name: c.name,
+        value: c.value,
+        domain: c.domain,
+        path: c.path || "/",
+        httpOnly: c.httpOnly,
+        secure: c.secure,
+      }));
+    } else if (authData.cookies) {
+      const targetDomain = deriveHostnameForSandbox(
+        authData.target || targetUrl,
+      );
+      if (targetDomain) {
+        cookiesToSet = authData.cookies
+          .split(";")
+          .filter(Boolean)
+          .map((c) => {
+            const eqIdx = c.indexOf("=");
+            const name = eqIdx >= 0 ? c.slice(0, eqIdx).trim() : c.trim();
+            const value = eqIdx >= 0 ? c.slice(eqIdx + 1) : "";
+            return { name, value, domain: targetDomain, path: "/" };
+          })
+          .filter((c) => c.name.length > 0);
+      }
+    }
+
+    if (cookiesToSet.length > 0) {
+      parts.push(
+        `await context.addCookies(${JSON.stringify(cookiesToSet)});`,
+      );
+    }
+
+    if (authData.headers && Object.keys(authData.headers).length > 0) {
+      parts.push(
+        `await page.setExtraHTTPHeaders(${JSON.stringify(authData.headers)});`,
+      );
+    }
+
+    return parts.join("\n    ");
+  }
+
   // ------- browser_navigate -------------------------------------------------
 
   const browser_navigate = tool({
@@ -447,6 +534,28 @@ Target base URL: ${targetUrl}`,
     execute: async ({ url }): Promise<BrowserNavigateResult> => {
       try {
         await setup();
+
+        const needsAuthInjection = !authInjected && hasAuthData;
+
+        if (needsAuthInjection) {
+          authInjected = true;
+          const authScript = buildAuthInjectionScript();
+          // Navigate, inject auth, then re-navigate with cookies/headers
+          const result = (await runPlaywrightScript(
+            sandbox,
+            `
+    await page.goto(${JSON.stringify(url)}, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    ${authScript}
+    await page.goto(${JSON.stringify(url)}, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    require('fs').writeFileSync('${SANDBOX_URL_FILE}', page.url());
+    const title = await page.title();
+    resolve({ success: true, url: page.url(), title });
+            `,
+            90,
+          )) as BrowserNavigateResult;
+          return result;
+        }
+
         const result = (await runPlaywrightScript(
           sandbox,
           `

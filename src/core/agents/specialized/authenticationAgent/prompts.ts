@@ -104,9 +104,9 @@ If both API and browser approaches fail, use \`delegate_to_auth_subagent\` for c
 - \`strategy\`: method used ("browser", "form_post", "json_post", "basic_auth", "bearer")
 - \`authBarrier\`: if a barrier was encountered (captcha, mfa, etc.)
 
-CRITICAL: You MUST include exportedCookies and exportedHeaders when authentication succeeds.
+CRITICAL: You MUST include exportedCookies, rawCookies, and exportedHeaders when authentication succeeds.
 These are the ONLY way downstream agents receive the session credentials.
-- After browser auth: get cookies from \`browser_get_cookies\` (use the cookieHeader field) and tokens from \`browser_evaluate\`
+- After browser auth: get cookies from \`browser_get_cookies\` — pass \`cookieHeader\` as \`exportedCookies\` AND pass the full \`cookies\` array as \`rawCookies\` (this preserves domain/path/httpOnly/secure attributes so downstream agents can fully restore the browser session). Also extract tokens from \`browser_evaluate\`.
 - After API auth: use the session cookie and any auth headers from the response
 
 **Then**, call the \`response\` tool with your final summary to end the run. This is required — complete_authentication persists the data, response terminates the agent.
@@ -626,7 +626,8 @@ CRITICAL: Always call browser_snapshot BEFORE browser_fill or browser_click to g
 9. **Verify Result**: \`browser_screenshot\` to capture final state
 10. **Extract Session Cookies**: \`browser_get_cookies\` to get httpOnly session cookies
     - This returns cookies including httpOnly ones that document.cookie can't access
-    - **Save the \`cookieHeader\` field** — you will need it for \`complete_authentication\`
+    - **Save the \`cookieHeader\` field** — you will need it as \`exportedCookies\` for \`complete_authentication\`
+    - **Save the \`cookies\` array** — you will need it as \`rawCookies\` for \`complete_authentication\` (preserves domain/path/httpOnly/secure for full browser state restoration)
 11. **Extract Bearer Tokens**: \`browser_evaluate\` with script to get tokens from storage:
    \`\`\`javascript
    (() => {
@@ -641,9 +642,10 @@ CRITICAL: Always call browser_snapshot BEFORE browser_fill or browser_click to g
    \`\`\`
 12. **Persist credentials**: Call \`complete_authentication\` and include:
     - \`exportedCookies\`: the \`cookieHeader\` string from step 10
+    - \`rawCookies\`: the full \`cookies\` array from step 10 (preserves domain/path/httpOnly/secure for browser restoration)
     - \`exportedHeaders\`: e.g. \`{"Authorization": "Bearer <token>"}\` if a JWT/access token was found in step 11
     - \`strategy\`: "browser"
-    - This persists the session credentials for downstream agents
+    - This persists the session credentials for downstream agents (including browser state)
 13. **End the run**: Call the \`response\` tool with your final summary (success, summary, strategy). This terminates the agent.
 
 ### Key Rules:

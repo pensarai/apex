@@ -499,6 +499,22 @@ export class PlaywrightMcpSession {
   }
 }
 
+/**
+ * Extract the hostname from a URL or bare host string.
+ * Returns `undefined` when parsing fails.
+ */
+function deriveHostname(urlOrHost: string): string | undefined {
+  if (!urlOrHost) return undefined;
+  try {
+    const withScheme = urlOrHost.includes("://")
+      ? urlOrHost
+      : `https://${urlOrHost}`;
+    return new URL(withScheme).hostname;
+  } catch {
+    return undefined;
+  }
+}
+
 // Mode-specific descriptions
 const PENTEST_DESCRIPTIONS = {
   navigate: `Navigate the browser to a URL.
@@ -629,6 +645,28 @@ Use this to check for:
 
 export type BrowserToolMode = "pentest" | "operator" | "auth";
 
+/**
+ * Auth state to inject into a browser session so the pentest agent
+ * inherits cookies and headers from a prior auth test.
+ */
+export interface BrowserAuthData {
+  /** Cookie header string (e.g. "name1=value1; name2=value2") */
+  cookies?: string;
+  /** Full cookie objects with domain info — preferred over cookie string */
+  rawCookies?: Array<{
+    name: string;
+    value: string;
+    domain: string;
+    path?: string;
+    httpOnly?: boolean;
+    secure?: boolean;
+  }>;
+  /** Extra HTTP headers (e.g. {"Authorization": "Bearer ..."}) */
+  headers?: Record<string, string>;
+  /** Target URL — used to derive domain when rawCookies are absent */
+  target?: string;
+}
+
 // Auth mode descriptions - focused on authentication flows
 const AUTH_DESCRIPTIONS = {
   navigate: `Navigate the browser to a login page or auth endpoint.
@@ -688,6 +726,9 @@ Use this to check for:
  * @param abortSignal - Optional abort signal for cleanup
  * @param headless - Override headless mode for this session (defaults to the
  *   value set by {@link setHeadlessMode}, which itself defaults to `true`)
+ * @param authData - Pre-existing auth state (cookies/headers) to inject into
+ *   the browser context on the first navigation. Used by the pentest agent
+ *   to inherit the authenticated session from a prior auth test.
  */
 export function createBrowserTools(
   targetUrl: string,
@@ -696,6 +737,7 @@ export function createBrowserTools(
   logger?: Logger,
   abortSignal?: AbortSignal,
   headless?: boolean,
+  authData?: BrowserAuthData,
 ) {
   const session = new PlaywrightMcpSession(headless ?? defaultHeadless);
 
@@ -715,6 +757,72 @@ export function createBrowserTools(
         ? AUTH_DESCRIPTIONS
         : OPERATOR_DESCRIPTIONS;
 
+  // -- Auth state injection ---------------------------------------------------
+  // When authData is provided (from a prior auth test), we inject cookies and
+  // headers into the browser context after the first navigation so the pentest
+  // agent inherits the authenticated session.
+  let authInjected = false;
+  const hasAuthData =
+    authData &&
+    (authData.cookies ||
+      (authData.rawCookies && authData.rawCookies.length > 0) ||
+      (authData.headers && Object.keys(authData.headers).length > 0));
+
+  async function injectAuthState(): Promise<void> {
+    if (authInjected || !authData) return;
+    authInjected = true;
+
+    try {
+      // Build the cookie array for addCookies
+      let cookiesToSet: Array<{
+        name: string;
+        value: string;
+        domain: string;
+        path: string;
+        httpOnly?: boolean;
+        secure?: boolean;
+      }> = [];
+
+      if (authData.rawCookies && authData.rawCookies.length > 0) {
+        cookiesToSet = authData.rawCookies.map((c) => ({
+          name: c.name,
+          value: c.value,
+          domain: c.domain,
+          path: c.path || "/",
+          httpOnly: c.httpOnly,
+          secure: c.secure,
+        }));
+      } else if (authData.cookies) {
+        const targetDomain = deriveHostname(authData.target || targetUrl);
+        if (targetDomain) {
+          cookiesToSet = authData.cookies
+            .split(";")
+            .filter(Boolean)
+            .map((c) => {
+              const eqIdx = c.indexOf("=");
+              const name = eqIdx >= 0 ? c.slice(0, eqIdx).trim() : c.trim();
+              const value = eqIdx >= 0 ? c.slice(eqIdx + 1) : "";
+              return { name, value, domain: targetDomain, path: "/" };
+            })
+            .filter((c) => c.name.length > 0);
+        }
+      }
+
+      if (cookiesToSet.length > 0) {
+        const code = `async (page) => { await page.context().addCookies(${JSON.stringify(cookiesToSet)}); return 'cookies_set'; }`;
+        await session.callTool("browser_run_code", { code }, abortSignal);
+      }
+
+      // Set extra HTTP headers on the page
+      if (authData.headers && Object.keys(authData.headers).length > 0) {
+        const code = `async (page) => { await page.setExtraHTTPHeaders(${JSON.stringify(authData.headers)}); return 'headers_set'; }`;
+        await session.callTool("browser_run_code", { code }, abortSignal);
+      }
+    } catch (err) {
+      console.error(`Failed to inject auth state into browser: ${err}`);
+    }
+  }
+
   const browser_navigate = tool({
     description: `${descriptions.navigate}\n\nTarget base URL: ${targetUrl}`,
     inputSchema: BrowserNavigateInput,
@@ -728,6 +836,19 @@ export function createBrowserTools(
           { url },
           abortSignal,
         );
+
+        // On first navigation with auth data: inject cookies/headers, then
+        // re-navigate so the page loads with the authenticated context.
+        if (!authInjected && hasAuthData) {
+          await injectAuthState();
+          const reloadResult = await session.callTool(
+            "browser_navigate",
+            { url },
+            abortSignal,
+          );
+          return { success: true, url, result: reloadResult };
+        }
+
         return {
           success: true,
           url,

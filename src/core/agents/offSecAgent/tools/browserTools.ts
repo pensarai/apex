@@ -20,7 +20,8 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { join } from "path";
-import { createBrowserTools } from "./playwrightMcp";
+import { existsSync, readFileSync } from "fs";
+import { createBrowserTools, type BrowserAuthData } from "./playwrightMcp";
 import { createSandboxBrowserTools } from "./sandboxPlaywright";
 import type { ToolContext } from "./types";
 
@@ -54,15 +55,18 @@ export type BrowserToolName = (typeof BROWSER_TOOL_NAMES)[number];
  * credential-aware wrapper that resolves secrets from IDs at execution time.
  */
 export function createBrowserToolset(ctx: ToolContext) {
-  // Sandbox mode: use direct Playwright execution inside the sandbox
+  const authData = loadAuthData(ctx.session.rootPath);
+
   const tools = ctx.sandbox
-    ? createSandboxBrowserTools(ctx)
+    ? createSandboxBrowserTools(ctx, authData)
     : createBrowserTools(
         ctx.target ?? "",
         join(ctx.session.rootPath, "evidence"),
         "operator",
         undefined,
         ctx.abortSignal,
+        undefined,
+        authData,
       );
 
   if (!ctx.credentialManager) {
@@ -173,4 +177,33 @@ export function createBrowserToolset(ctx: ToolContext) {
     ...tools,
     browser_fill: credentialAwareFill,
   };
+}
+
+/**
+ * Read persisted auth state from `<sessionRoot>/auth/auth-data.json`.
+ * Returns `undefined` when the file is absent or the session was not
+ * authenticated.
+ */
+function loadAuthData(sessionRootPath: string): BrowserAuthData | undefined {
+  const authDataPath = join(sessionRootPath, "auth", "auth-data.json");
+  if (!existsSync(authDataPath)) return undefined;
+
+  try {
+    const raw = JSON.parse(readFileSync(authDataPath, "utf-8")) as Record<
+      string,
+      unknown
+    >;
+    if (!raw.authenticated) return undefined;
+
+    return {
+      cookies: (raw.cookies as string) || undefined,
+      rawCookies: Array.isArray(raw.rawCookies)
+        ? (raw.rawCookies as BrowserAuthData["rawCookies"])
+        : undefined,
+      headers: raw.headers as Record<string, string> | undefined,
+      target: (raw.target as string) || undefined,
+    };
+  } catch {
+    return undefined;
+  }
 }
