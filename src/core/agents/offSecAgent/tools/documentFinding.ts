@@ -82,7 +82,8 @@ FINDING STRUCTURE:
 - Impact: Business and technical consequences if exploited
 - Evidence: Commands run, responses received, proof of exploitation
 - Remediation: Specific, actionable steps to fix
-- References: CVE, CWE, OWASP, or security advisories`,
+- References: CVE, CWE, OWASP, or security advisories
+- Vulnerability Class: The class of vulnerability (e.g., sqli, xss, command-injection) — improves CWE accuracy`,
     inputSchema: documentVulnerabilityInputSchema,
     execute: async (input) => {
       try {

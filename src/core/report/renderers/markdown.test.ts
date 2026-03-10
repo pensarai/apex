@@ -202,4 +202,48 @@ describe("renderMarkdown", () => {
       "```\nPOST /login HTTP/1.1\nusername=admin'--&password=x\n\nHTTP/1.1 200 OK\n```",
     );
   });
+
+  it("renders CWE Classification section when cwes are present", () => {
+    const report = makeSampleReport({
+      findings: [
+        {
+          title: "SQL Injection in Login Form",
+          severity: "HIGH",
+          description: "The login endpoint is vulnerable to SQL injection.",
+          impact:
+            "An attacker could bypass authentication and access all user data.",
+          evidence: "POST /login HTTP/1.1\nusername=admin'--&password=x",
+          endpoint: "/login",
+          pocPath: "pocs/poc_sqli.sh",
+          remediation: "Use parameterized queries.",
+          cwes: [
+            {
+              id: "CWE-89",
+              reasoning: "SQL injection via unsanitized user input",
+            },
+            {
+              id: "CWE-564",
+              reasoning: "Hibernate-specific SQL injection variant",
+            },
+          ],
+        },
+      ],
+    });
+    const output = renderMarkdown(report);
+
+    expect(output).toContain("## CWE Classification");
+    expect(output).toContain(
+      "- **CWE-89** — SQL injection via unsanitized user input",
+    );
+    expect(output).toContain(
+      "- **CWE-564** — Hibernate-specific SQL injection variant",
+    );
+  });
+
+  it("omits CWE Classification section when cwes are absent", () => {
+    const report = makeSampleReport();
+    const output = renderMarkdown(report);
+
+    expect(output).not.toContain("## CWE Classification");
+  });
 });

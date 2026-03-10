@@ -131,7 +131,6 @@ const CVSSMetricsOutputSchema = z.object({
     ),
   cwes: z
     .array(CweEntrySchema)
-    .min(1)
     .describe(
       "CWE classifications for this vulnerability, most specific first",
     ),

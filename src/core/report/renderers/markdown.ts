@@ -57,6 +57,14 @@ function renderFinding(
     finding.evidence,
     "```",
     "",
+    ...(finding.cwes?.length
+      ? [
+          "## CWE Classification",
+          "",
+          ...finding.cwes.map((cwe) => `- **${cwe.id}** — ${cwe.reasoning}`),
+          "",
+        ]
+      : []),
     "## POC",
     "",
     `Path: \`${finding.pocPath}\``,
