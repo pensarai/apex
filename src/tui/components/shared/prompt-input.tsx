@@ -248,11 +248,14 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
         if (!result) return;
 
         if (result.saveCurrentInput) {
-          savedInputRef.current = textareaRef.current?.plainText ?? "";
+          savedInputRef.current = resolveText(
+            textareaRef.current?.plainText ?? "",
+          );
         }
         setSelectedSuggestionIndex(result.nextState.selectedSuggestionIndex);
         if (result.textToSet !== null) {
           isNavigatingHistoryRef.current = true;
+          clearPaste();
           textareaRef.current?.setText(result.textToSet);
           setInputValue(result.textToSet);
           setHistoryIndex(result.nextState.historyIndex);
@@ -279,6 +282,7 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
         setSelectedSuggestionIndex(result.nextState.selectedSuggestionIndex);
         if (result.textToSet !== null) {
           isNavigatingHistoryRef.current = true;
+          clearPaste();
           textareaRef.current?.setText(result.textToSet);
           setInputValue(result.textToSet);
           setHistoryIndex(result.nextState.historyIndex);
