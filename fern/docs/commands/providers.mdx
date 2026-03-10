@@ -85,76 +85,85 @@ Apex supports the following AI providers:
     </Callout>
   </Accordion>
 
-<Accordion title="OpenAI" icon="openai" iconType="brands">
-  **Best for**: Users already invested in the OpenAI ecosystem
+  <Accordion title="OpenAI" icon="openai" iconType="brands">
+    **Best for**: Users already invested in the OpenAI ecosystem
 
-### Get Your API Key
+    ### Get Your API Key
+    1. Visit [platform.openai.com](https://platform.openai.com/)
+    2. Navigate to API Keys
+    3. Create a new secret key
 
-1. Visit [platform.openai.com](https://platform.openai.com/)
-2. Navigate to API Keys
-3. Create a new secret key
+    ### Configure in Apex
+    1. Run `/providers`
+    2. Select "OpenAI"
+    3. Paste your API key
+    4. Press Enter to save
 
-### Configure in Apex
+  </Accordion>
 
-1. Run `/providers`
-2. Select "OpenAI"
-3. Paste your API key
-4. Press Enter to save
-   </Accordion>
+  <Accordion title="Google" icon="google" iconType="brands">
+    **Best for**: Users wanting access to Gemini models
 
-<Accordion title="Google" icon="google" iconType="brands">
-  **Best for**: Users wanting access to Gemini models
+    ### Get Your API Key
+    1. Visit [aistudio.google.com](https://aistudio.google.com/)
+    2. Sign in with your Google account
+    3. Generate an API key
 
-### Get Your API Key
+    ### Configure in Apex
+    1. Run `/providers`
+    2. Select "Google"
+    3. Paste your API key
+    4. Press Enter to save
 
-1. Visit [aistudio.google.com](https://aistudio.google.com/)
-2. Sign in with your Google account
-3. Generate an API key
+  </Accordion>
 
-### Configure in Apex
+  <Accordion title="OpenRouter" icon="route">
+    **Best for**: Access to multiple models through a single API
 
-1. Run `/providers`
-2. Select "Google"
-3. Paste your API key
-4. Press Enter to save
-   </Accordion>
+    ### Get Your API Key
+    1. Visit [openrouter.ai](https://openrouter.ai/)
+    2. Create an account
+    3. Navigate to Keys section
+    4. Generate a new API key
 
-<Accordion title="OpenRouter" icon="route">
-  **Best for**: Access to multiple models through a single API
+    ### Configure in Apex
+    1. Run `/providers`
+    2. Select "OpenRouter"
+    3. Paste your API key
+    4. Press Enter to save
 
-### Get Your API Key
+    <Callout intent="info">
+      OpenRouter provides access to models from multiple providers including
+      Anthropic, OpenAI, Google, Meta, and more through a unified API.
+    </Callout>
 
-1. Visit [openrouter.ai](https://openrouter.ai/)
-2. Create an account
-3. Navigate to Keys section
-4. Generate a new API key
+  </Accordion>
 
-### Configure in Apex
+  <Accordion title="AWS Bedrock" icon="aws" iconType="brands">
+    **Best for**: Enterprise deployments with existing AWS infrastructure
 
-1. Run `/providers`
-2. Select "OpenRouter"
-3. Paste your API key
-4. Press Enter to save
+    ### Prerequisites
+    - AWS account with Bedrock access
+    - IAM permissions for Bedrock models
+    - Model access enabled in your region
 
-  <Callout intent="info">
-    OpenRouter provides access to models from multiple providers including
-    Anthropic, OpenAI, Google, Meta, and more through a unified API.
-  </Callout>
-</Accordion>
+    ### Get Your Credentials
+    1. Log in to AWS Console
+    2. Navigate to IAM
+    3. Create or use existing access keys
+    4. Ensure Bedrock permissions are attached
 
-<Accordion title="AWS Bedrock" icon="aws" iconType="brands">
-  **Best for**: Enterprise deployments with existing AWS infrastructure ###
-  Prerequisites - AWS account with Bedrock access - IAM permissions for Bedrock
-  models - Model access enabled in your region ### Get Your Credentials 1. Log
-  in to AWS Console 2. Navigate to IAM 3. Create or use existing access keys 4.
-  Ensure Bedrock permissions are attached ### Configure in Apex 1. Run
-  `/providers` 2. Select "AWS Bedrock" 3. Enter your AWS credentials 4. Press
-  Enter to save
-  <Callout intent="warning">
-    Ensure your IAM role has permissions to invoke Bedrock models and that model
-    access is enabled in your AWS region.
-  </Callout>
-</Accordion>
+    ### Configure in Apex
+    1. Run `/providers`
+    2. Select "AWS Bedrock"
+    3. Enter your AWS credentials
+    4. Press Enter to save
+
+    <Callout intent="warning">
+      Ensure your IAM role has permissions to invoke Bedrock models and that model access is enabled in your AWS region.
+    </Callout>
+
+  </Accordion>
 
   <Accordion title="Pensar Console" icon="shield-check">
     **Best for**: Getting started quickly without managing API keys
@@ -220,15 +229,15 @@ You can also access providers from the models screen:
     4. Try regenerating the key
   </Accordion>
 
-<Accordion title="Provider not showing" icon="eye-slash">
-  **Issue**: Expected provider not in the list
+  <Accordion title="Provider not showing" icon="eye-slash">
+    **Issue**: Expected provider not in the list
 
-**Solutions**:
+    **Solutions**:
+    1. Update Apex to the latest version (`pensar upgrade`)
+    2. Restart Apex
+    3. Check if provider requires additional setup
 
-1. Update Apex to the latest version (`pensar upgrade`)
-2. Restart Apex
-3. Check if provider requires additional setup
-   </Accordion>
+  </Accordion>
 
   <Accordion title="AWS Bedrock errors" icon="aws" iconType="brands">
     **Issue**: Cannot connect to AWS Bedrock
