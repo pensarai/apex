@@ -16,7 +16,7 @@ The headless CLI complements the TUI: it exposes the same agent capabilities for
 
 ## Alternatives considered
 
-- **Web app** — rejected. Requires server infrastructure, browser, and hosted auth — none of which belong in a pentest workflow. Adds operational complexity for users in air-gapped or firewalled environments, and misaligns with the terminal-native workflow of the target audience.
+- **Web app** — already exists as Pensar Console, our cloud-hosted product. Console adds scheduling, org management, and CI/CD webhooks on top of the same agent core. The TUI is the local-first counterpart for users who need air-gapped operation, terminal-native workflows, or don't want a hosted account.
 - **Desktop app (Electron / Tauri)** — rejected. Adds a heavyweight runtime and installer, doesn't work in headless SSH or container environments, and provides no meaningful UX advantage over a TUI for a keyboard-driven security tool. Also incompatible with running on a remote Kali box or inside a CI runner.
 
 ## Consequences
