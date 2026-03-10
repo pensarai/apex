@@ -221,6 +221,7 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
         if (tabResult) {
           setSelectedSuggestionIndex(tabResult.selectedSuggestionIndex);
           if (tabResult.acceptedValue !== null) {
+            clearPaste();
             textareaRef.current?.setText(tabResult.acceptedValue);
             setInputValue(tabResult.acceptedValue);
             textareaRef.current?.gotoLineEnd();
