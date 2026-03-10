@@ -70,6 +70,9 @@ export class OffensiveSecurityAgent<TResult = void> {
   /** Persistent shell for local-mode command execution; disposed on consume() completion. */
   private readonly persistentShell?: PersistentShell;
 
+  /** Abort signal passed at construction — used by consume() to detect silent abort. */
+  private readonly abortSignal?: AbortSignal;
+
   /** The session this agent is operating within. */
   private readonly _session: SessionInfo;
 
@@ -106,6 +109,7 @@ export class OffensiveSecurityAgent<TResult = void> {
   constructor(input: OffensiveSecurityAgentInput<TResult>) {
     this._session = input.session;
     this.subagentId = input.subagentId;
+    this.abortSignal = input.abortSignal;
 
     // -- Persistent shell (local mode only) -----------------------------------
     // Shell survives command cancellation; only disposed in consume() after the
@@ -348,6 +352,13 @@ export class OffensiveSecurityAgent<TResult = void> {
     }
 
     this.persistentShell?.dispose();
+
+    // If the stream ended because the abort signal fired (AI SDK may silently
+    // end the async iterator rather than throwing), surface this as an error
+    // so callers don't treat an aborted run as a successful completion.
+    if (this.abortSignal?.aborted) {
+      throw new DOMException("Agent aborted by user", "AbortError");
+    }
 
     if (this.resolveResult) {
       return this.resolveResult(this.streamResult);

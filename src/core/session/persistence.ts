@@ -7,6 +7,7 @@
  */
 
 import {
+  appendFileSync,
   existsSync,
   mkdirSync,
   writeFileSync,
@@ -25,6 +26,27 @@ import type { ModelMessage } from "ai";
 
 const SUBAGENTS_DIR = "subagents";
 const MANIFEST_FILE = "agent-manifest.json";
+const RESUME_LOG_FILE = "swarm-resume.log";
+
+// ---------------------------------------------------------------------------
+// Resume logging — lightweight append-only log for diagnosing resume issues
+// ---------------------------------------------------------------------------
+
+/**
+ * Append a timestamped line to `{rootPath}/logs/swarm-resume.log`.
+ * Safe to call from anywhere — never throws.
+ */
+export function resumeLog(rootPath: string, message: string): void {
+  try {
+    const logsDir = join(rootPath, "logs");
+    if (!existsSync(logsDir)) mkdirSync(logsDir, { recursive: true });
+    const logPath = join(logsDir, RESUME_LOG_FILE);
+    const ts = new Date().toISOString();
+    appendFileSync(logPath, `${ts} - ${message}\n`, "utf8");
+  } catch {
+    /* never throw from logging */
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Types (previously in loader.ts — canonical home is now here)
@@ -166,10 +188,61 @@ function mapToSavedMessage(msg: ModelMessage): SavedMessage {
 }
 
 /**
+ * The AI SDK schema uses `input` (not `args`) and `output` (not `result`),
+ * which is exactly what mapToSavedMessage produces. So SavedMessages are
+ * already valid ModelMessages — just cast them.
+ */
+function savedToModelMessage(saved: SavedMessage): ModelMessage {
+  return saved as unknown as ModelMessage;
+}
+
+/**
+ * Load raw ModelMessage[] for a given agent name from its most recent
+ * subagent file. Returns an empty array if no file is found.
+ */
+export function loadSubagentMessages(
+  session: SessionInfo,
+  agentName: string,
+): ModelMessage[] {
+  const subagentsPath = join(session.rootPath, SUBAGENTS_DIR);
+  if (!existsSync(subagentsPath)) return [];
+
+  // Try stable filename first (new format)
+  const stablePath = join(subagentsPath, `${agentName}.json`);
+  if (existsSync(stablePath)) {
+    try {
+      const data = JSON.parse(
+        readFileSync(stablePath, "utf-8"),
+      ) as SavedSubagentData;
+      return data.messages.map(savedToModelMessage);
+    } catch {
+      return [];
+    }
+  }
+
+  // Fallback: scan for old timestamped files (agentName-TIMESTAMP.json)
+  const files = readdirSync(subagentsPath)
+    .filter((f) => f.startsWith(`${agentName}-`) && f.endsWith(".json"))
+    .sort()
+    .reverse();
+
+  if (files.length === 0) return [];
+
+  try {
+    const data = JSON.parse(
+      readFileSync(join(subagentsPath, files[0]), "utf-8"),
+    ) as SavedSubagentData;
+    return data.messages.map(savedToModelMessage);
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Save subagent data as a flat JSON file.
  *
- * Writes to `{session.rootPath}/{SUBAGENTS_DIR}/{name}-{timestamp}.json`.
- * loadSubagents reads back from the same directory with the same convention.
+ * Writes to `{session.rootPath}/{SUBAGENTS_DIR}/{name}.json`.
+ * One file per agent, overwritten on each save. Timestamp is inside the JSON.
  */
 export function saveSubagentData(
   session: SessionInfo,
@@ -209,11 +282,15 @@ export function saveSubagentData(
     messages: savedMessages,
   };
 
-  const ts = now.toISOString().replace(/[:.]/g, "-");
-  const filename = `${data.agentName}-${ts}.json`;
+  const filename = `${data.agentName}.json`;
   writeFileSync(
     join(subagentsDir, filename),
     JSON.stringify(savedData, null, 2),
+  );
+
+  resumeLog(
+    session.rootPath,
+    `[saveSubagentData] ${data.agentName}: status=${data.status}, toolCalls=${toolCallCount}, steps=${stepCount}, findings=${data.findingsCount ?? 0}, error=${data.error ?? "none"}, file=${filename}`,
   );
 }
 
@@ -292,20 +369,124 @@ export function buildManifestEntries(
  * Rewrite the agent manifest with final statuses.
  * Uses index-based matching (not target-based) to correctly handle
  * duplicate targets.
+ *
+ * Completed entries (preserved from a previous run) are left untouched.
  */
 export function finalizeManifest(
   session: SessionInfo,
   entries: AgentManifestEntry[],
   results: (unknown | null)[],
 ): void {
-  const finalManifest = entries.map((entry, i) => ({
-    ...entry,
-    status: (results[i] != null ? "completed" : "failed") as
-      | "completed"
-      | "failed",
-    completedAt: new Date().toISOString(),
-  }));
+  const log = (msg: string) => resumeLog(session.rootPath, msg);
+  log(
+    `[finalizeManifest] Finalizing ${entries.length} entries, ${results.length} results`,
+  );
+
+  const finalManifest = entries.map((entry, i) => {
+    const hasResult = results[i] != null;
+    // Preserve already-completed entries (skipped agents on resume)
+    if (entry.status === "completed") {
+      log(
+        `[finalizeManifest] ${entry.id}: PRESERVED completed (result=${hasResult ? "present" : "null"})`,
+      );
+      return entry;
+    }
+    const newStatus = hasResult ? "completed" : "failed";
+    log(
+      `[finalizeManifest] ${entry.id}: ${entry.status} → ${newStatus} (result=${hasResult ? "present" : "null"})`,
+    );
+    return {
+      ...entry,
+      status: newStatus as "completed" | "failed",
+      completedAt: new Date().toISOString(),
+    };
+  });
   writeAgentManifest(session, finalManifest);
+}
+
+/**
+ * Return the set of pentest agent IDs that successfully completed.
+ *
+ * Only truly completed agents are skipped on resume. Failed/aborted agents
+ * are retried so the user doesn't have to start a new session.
+ *
+ * Checks the manifest first, then does a belt-and-suspenders scan of subagent
+ * files so we catch agents that finished but whose manifest entry was lost.
+ */
+export function getCompletedAgentIds(session: SessionInfo): Set<string> {
+  const ids = new Set<string>();
+  const log = (msg: string) => resumeLog(session.rootPath, msg);
+
+  log("[getCompletedAgentIds] START");
+
+  // Manifest is the primary source
+  const manifest = readAgentManifest(session);
+  log(
+    `[getCompletedAgentIds] Manifest has ${manifest.length} entries: ${manifest.map((e) => `${e.id}=${e.status}`).join(", ") || "(empty)"}`,
+  );
+  for (const entry of manifest) {
+    // Only track pentest-agent-* IDs — discovery agents (attack-surface-agent)
+    // should never count toward the "all done" check for the swarm phase.
+    if (!entry.id.startsWith("pentest-agent-")) {
+      log(
+        `[getCompletedAgentIds] Manifest → SKIP non-pentest entry ${entry.id} (${entry.status})`,
+      );
+      continue;
+    }
+    if (entry.status === "completed") {
+      ids.add(entry.id);
+      log(
+        `[getCompletedAgentIds] Manifest → skip ${entry.id} (completed, target=${entry.target})`,
+      );
+    } else if (entry.status === "failed") {
+      log(
+        `[getCompletedAgentIds] Manifest → RETRY ${entry.id} (failed, target=${entry.target})`,
+      );
+    }
+  }
+
+  // Belt-and-suspenders: scan subagent files for completed status
+  const subagentsPath = join(session.rootPath, SUBAGENTS_DIR);
+  if (existsSync(subagentsPath)) {
+    const files = readdirSync(subagentsPath).filter((f) =>
+      f.endsWith(".json"),
+    );
+    log(
+      `[getCompletedAgentIds] Found ${files.length} subagent files in ${SUBAGENTS_DIR}/`,
+    );
+    for (const file of files) {
+      try {
+        const data = JSON.parse(
+          readFileSync(join(subagentsPath, file), "utf-8"),
+        ) as SavedSubagentData;
+        log(
+          `[getCompletedAgentIds] File ${file}: agentName=${data.agentName}, status=${data.status}, toolCalls=${data.toolCallCount ?? "?"}, steps=${data.stepCount ?? "?"}, findings=${data.findingsCount ?? "?"}`,
+        );
+        // Only track pentest-agent-* IDs from file scan too
+        if (!data.agentName.startsWith("pentest-agent-")) {
+          continue;
+        }
+        if (data.status === "completed") {
+          const wasNew = !ids.has(data.agentName);
+          ids.add(data.agentName);
+          if (wasNew) {
+            log(
+              `[getCompletedAgentIds] File scan → skip ${data.agentName} (completed) [NEW — not in manifest]`,
+            );
+          }
+        }
+      } catch {
+        log(`[getCompletedAgentIds] Failed to parse file: ${file}`);
+      }
+    }
+  } else {
+    log(`[getCompletedAgentIds] No ${SUBAGENTS_DIR}/ directory found`);
+  }
+
+  log(
+    `[getCompletedAgentIds] RESULT: skipSet = {${[...ids].join(", ")}} (${ids.size} agents)`,
+  );
+  return ids;
 }
 
 // ---------------------------------------------------------------------------
@@ -330,8 +511,8 @@ function parseSubagentFilename(filename: string): {
     return { agentType: "attack-surface", name: "Attack Surface Discovery" };
   }
 
-  // Current convention: pentest-agent-{N}-{timestamp}.json
-  const pentestMatch = filename.match(/^pentest-agent-(\d+)-/);
+  // Current convention: pentest-agent-{N}.json (also matches old timestamped format)
+  const pentestMatch = filename.match(/^pentest-agent-(\d+)/);
   if (pentestMatch) {
     return {
       agentType: "pentest",
@@ -454,7 +635,10 @@ export function convertModelMessagesToUI(
  *  5. Creates paused stubs for unmatched "running" manifest entries
  */
 export function loadSubagents(rootPath: string): UISubagent[] {
+  const log = (msg: string) => resumeLog(rootPath, msg);
   const subagentsPath = join(rootPath, SUBAGENTS_DIR);
+
+  log("[loadSubagents] START");
 
   // --- Load files ---
   const subagents: UISubagent[] = [];
@@ -463,13 +647,9 @@ export function loadSubagents(rootPath: string): UISubagent[] {
 
   if (existsSync(subagentsPath)) {
     const files = readdirSync(subagentsPath).filter((f) => f.endsWith(".json"));
+    log(`[loadSubagents] Found ${files.length} subagent files`);
 
-    // Sort files by timestamp in filename
-    files.sort((a, b) => {
-      const timeA = a.match(/\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}/)?.[0] || "";
-      const timeB = b.match(/\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}/)?.[0] || "";
-      return timeA.localeCompare(timeB);
-    });
+    files.sort();
 
     for (const file of files) {
       // Skip orchestrator summary files — not real subagents
@@ -504,9 +684,12 @@ export function loadSubagents(rootPath: string): UISubagent[] {
             break;
         }
 
-        const idx = subagents.length;
-        subagents.push({
-          id: `loaded-${file.replace(".json", "")}`,
+        log(
+          `[loadSubagents] File ${file}: agentName=${data.agentName}, fileStatus=${data.status}, resolvedStatus=${status}, msgs=${messages.length}, toolCalls=${data.toolCallCount ?? 0}, steps=${data.stepCount ?? 0}`,
+        );
+
+        const entry: UISubagent = {
+          id: data.agentName,
           name:
             data.agentName === "attack-surface-agent"
               ? "Attack Surface Discovery"
@@ -516,14 +699,28 @@ export function loadSubagents(rootPath: string): UISubagent[] {
           messages,
           createdAt: timestamp,
           status,
-        });
+        };
 
-        // Index by agentName for manifest matching
-        agentNameIndex.set(data.agentName, idx);
+        // Deduplicate: if we already have an entry for this agentName
+        // (old sessions with multiple timestamped files), replace it
+        // in-place so the array has one entry per agent.
+        const prevIdx = agentNameIndex.get(data.agentName);
+        if (prevIdx !== undefined) {
+          log(
+            `[loadSubagents] Dedup agentName=${data.agentName} — replacing idx=${prevIdx} with newer file ${file}`,
+          );
+          subagents[prevIdx] = entry;
+        } else {
+          agentNameIndex.set(data.agentName, subagents.length);
+          subagents.push(entry);
+        }
       } catch (e) {
+        log(`[loadSubagents] ERROR loading file ${file}: ${e}`);
         console.error(`Failed to load subagent file ${file}:`, e);
       }
     }
+  } else {
+    log(`[loadSubagents] No ${SUBAGENTS_DIR}/ directory`);
   }
 
   // --- Merge with manifest ---
@@ -533,9 +730,17 @@ export function loadSubagents(rootPath: string): UISubagent[] {
       const manifest: AgentManifestEntry[] = JSON.parse(
         readFileSync(manifestPath, "utf-8"),
       );
+      log(
+        `[loadSubagents] Manifest has ${manifest.length} entries: ${manifest.map((e) => `${e.id}=${e.status}`).join(", ")}`,
+      );
 
       for (const entry of manifest) {
-        if (entry.status !== "running") continue;
+        if (entry.status !== "running") {
+          log(
+            `[loadSubagents] Manifest ${entry.id}: status=${entry.status}, skipping merge (not running)`,
+          );
+          continue;
+        }
 
         const resumeInfo: ResumeInfo = {
           target: entry.target,
@@ -548,7 +753,11 @@ export function loadSubagents(rootPath: string): UISubagent[] {
         const existingIndex = agentNameIndex.get(entry.id);
 
         if (existingIndex !== undefined) {
+          const fileStatus = subagents[existingIndex].status;
           // File exists but manifest says running → interrupted after partial save
+          log(
+            `[loadSubagents] Manifest ${entry.id}: running in manifest, file has status=${fileStatus}, msgs=${subagents[existingIndex].messages.length} → overriding to "paused"`,
+          );
           subagents[existingIndex] = {
             ...subagents[existingIndex],
             status: "paused",
@@ -556,6 +765,9 @@ export function loadSubagents(rootPath: string): UISubagent[] {
           };
         } else {
           // No file for this running entry — create a paused stub
+          log(
+            `[loadSubagents] Manifest ${entry.id}: running in manifest, NO file found → creating paused stub`,
+          );
           subagents.push({
             id: entry.id,
             name: entry.name,
@@ -569,9 +781,15 @@ export function loadSubagents(rootPath: string): UISubagent[] {
         }
       }
     } catch (e) {
+      log(`[loadSubagents] ERROR loading manifest: ${e}`);
       console.error("Failed to load agent manifest:", e);
     }
+  } else {
+    log("[loadSubagents] No manifest file found");
   }
 
+  log(
+    `[loadSubagents] RESULT: ${subagents.length} subagents: ${subagents.map((s) => `${s.id}(${s.status})`).join(", ")}`,
+  );
   return subagents;
 }

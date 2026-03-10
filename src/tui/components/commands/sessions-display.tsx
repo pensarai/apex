@@ -88,7 +88,7 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
       }
       const isOperator =
         currentSelection.config?.mode === "operator" ||
-        currentSelection.hasOperatorState;
+        (!currentSelection.config?.mode && currentSelection.hasOperatorState);
       refocusPrompt();
       onClose();
       route.navigate({
@@ -147,6 +147,11 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
     if (key.name === "r" && visualOrderSessions.length > 0) {
       const currentSelection = visualOrderSessions[selectedIndex];
       if (!currentSelection) return;
+      if (!currentSelection.hasReport) {
+        setStatusMessage("No report available");
+        setTimeout(() => setStatusMessage(""), 2000);
+        return;
+      }
       openReport(currentSelection.id);
       return;
     }
@@ -243,6 +248,7 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
                     const mode = session.config?.mode || "auto";
                     const modeBadge =
                       mode === "operator" ? "[operator]" : "[auto]";
+                    const statusBadge = session.hasReport ? "✓" : "…";
                     const findingsText =
                       session.findingsCount > 0
                         ? `${session.findingsCount} finding${session.findingsCount > 1 ? "s" : ""}`
@@ -271,6 +277,15 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
                             fg={isSelected ? colors.text : colors.textMuted}
                           >
                             {session.name}
+                          </text>
+                          <text
+                            fg={
+                              session.hasReport
+                                ? colors.primary
+                                : colors.textMuted
+                            }
+                          >
+                            {statusBadge}
                           </text>
                           <text
                             fg={
