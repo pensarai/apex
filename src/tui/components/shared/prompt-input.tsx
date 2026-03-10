@@ -9,8 +9,8 @@ import {
 import { useKeyboard } from "@opentui/react";
 import type {
   TextareaRenderable,
-  RGBA,
   KeyBinding as TextareaKeyBinding,
+  RGBA,
 } from "@opentui/core";
 import { useTheme } from "../../theme";
 import { useInput } from "../../context/input";
@@ -135,6 +135,14 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
     const onSubmitRef = useRef(onSubmit);
     onSubmitRef.current = onSubmit;
 
+    // Paste extmark tracking — virtual extmarks for atomic inline placeholders
+    const pasteCountRef = useRef(0);
+    const pasteTypeIdRef = useRef<number>(-1);
+    // Own map of extmark ID → { fullText, placeholder } for paste resolution
+    const pasteDataRef = useRef<
+      Map<number, { fullText: string; placeholder: string }>
+    >(new Map());
+
     const suggestions = useMemo(
       () =>
         enableAutocomplete
@@ -164,11 +172,17 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
       reset: () => {
         setInputValue("");
         textareaRef.current?.setText("");
+        textareaRef.current?.extmarks.clear();
+        pasteCountRef.current = 0;
+        pasteDataRef.current.clear();
         setSelectedSuggestionIndex(-1);
       },
       setValue: (value: string) => {
         setInputValue(value);
         textareaRef.current?.setText(value);
+        textareaRef.current?.extmarks.clear();
+        pasteCountRef.current = 0;
+        pasteDataRef.current.clear();
       },
       getValue: () => inputValue,
       getTextareaRef: () => textareaRef.current,
@@ -201,6 +215,9 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
       // --- Ctrl+C: clear input ------------------------------------------
       if (key.ctrl && key.name === "c") {
         textareaRef.current?.setText("");
+        textareaRef.current?.extmarks.clear();
+        pasteCountRef.current = 0;
+        pasteDataRef.current.clear();
         setInputValue("");
         setHistoryIndex(-1);
         setSelectedSuggestionIndex(-1);
@@ -286,14 +303,92 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
       }
     });
 
+    // Paste handler: intercept large pastes, insert inline placeholder with virtual extmark
+    const handlePaste = (event: {
+      text: string;
+      preventDefault: () => void;
+    }) => {
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+
+      const text = event.text;
+      const lineCount = text.split("\n").length;
+
+      // Small pastes pass through normally
+      if (lineCount < 5 && text.length < 500) return;
+
+      event.preventDefault();
+
+      // Register extmark type on first use
+      if (pasteTypeIdRef.current === -1) {
+        pasteTypeIdRef.current =
+          textarea.extmarks.registerType("pasted-block");
+      }
+
+      pasteCountRef.current += 1;
+      const n = pasteCountRef.current;
+      const placeholder = `[Pasted text #${n} +${lineCount} lines]`;
+
+      const startOffset = textarea.cursorOffset;
+      textarea.insertText(placeholder);
+      const endOffset = startOffset + placeholder.length;
+
+      const extmarkId = textarea.extmarks.create({
+        start: startOffset,
+        end: endOffset,
+        virtual: true,
+        typeId: pasteTypeIdRef.current,
+      });
+      pasteDataRef.current.set(extmarkId, { fullText: text, placeholder });
+    };
+
+    // Resolve paste extmark placeholders back to their full text.
+    // Only expands if the placeholder text at the extmark range is unmodified.
+    const resolvePasteExtmarks = (plainText: string): string => {
+      const dataMap = pasteDataRef.current;
+      if (dataMap.size === 0) return plainText;
+
+      const textarea = textareaRef.current;
+      if (!textarea) return plainText;
+
+      const allExtmarks = textarea.extmarks.getAll();
+      const pasteExtmarks = allExtmarks.filter((ext) => dataMap.has(ext.id));
+
+      if (pasteExtmarks.length === 0) return plainText;
+
+      // Sort by start offset ascending, splice in full text
+      const sorted = [...pasteExtmarks].sort((a, b) => a.start - b.start);
+      let result = "";
+      let lastEnd = 0;
+      for (const ext of sorted) {
+        result += plainText.slice(lastEnd, ext.start);
+        const entry = dataMap.get(ext.id)!;
+        const currentText = plainText.slice(ext.start, ext.end);
+        // Only expand if placeholder is still intact
+        if (currentText === entry.placeholder) {
+          result += entry.fullText;
+        } else {
+          result += currentText;
+        }
+        lastEnd = ext.end;
+      }
+      result += plainText.slice(lastEnd);
+      return result;
+    };
+
     // Submit handler called by textarea's onSubmit.
     // Uses refs for all callbacks because textarea caches onSubmit at mount.
     const handleSubmit = async () => {
       const currentSuggestions = suggestionsRef.current;
       const currentSelectedIndex = selectedIndexRef.current;
 
-      const valueToSubmit = resolveSubmitValue(
+      // Resolve paste placeholders to full text before submit
+      const rawText = resolvePasteExtmarks(
         textareaRef.current?.plainText ?? "",
+      );
+
+      const valueToSubmit = resolveSubmitValue(
+        rawText,
         currentSuggestions,
         currentSelectedIndex,
       );
@@ -307,12 +402,18 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
         await onCommandExecuteRef.current?.(valueToSubmit);
         setInputValue("");
         textareaRef.current?.setText("");
+        textareaRef.current?.extmarks.clear();
+        pasteCountRef.current = 0;
+        pasteDataRef.current.clear();
         setSelectedSuggestionIndex(-1);
         setHistoryIndex(-1);
         return;
       }
 
       setHistoryIndex(-1);
+      textareaRef.current?.extmarks.clear();
+      pasteCountRef.current = 0;
+      pasteDataRef.current.clear();
       onSubmitRef.current?.(valueToSubmit);
     };
 
@@ -349,6 +450,7 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
             keyBindings={chatKeyBindings}
             onContentChange={handleContentChange}
             onSubmit={handleSubmit}
+            onPaste={handlePaste}
           />
         </box>
 
