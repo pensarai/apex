@@ -86,15 +86,22 @@ function NormalInputAreaInner({
   const { inputValue, setInputValue } = useInput();
   const promptRef = useRef<PromptInputRef>(null);
   const isExternalUpdate = useRef(false);
+  const prevValueRef = useRef(value);
 
-  // Sync external value prop to context when it changes
+  // Sync external value prop to context when the parent explicitly changes it.
+  // Only sync when the value prop itself changed between renders (not just a
+  // re-render with stale value), to avoid resetting user input during typing.
   useEffect(() => {
-    if (value !== inputValue) {
+    const prevValue = prevValueRef.current;
+    prevValueRef.current = value;
+
+    // Only sync if the parent's value prop actually changed from the previous render
+    if (value !== prevValue && value !== inputValue) {
       isExternalUpdate.current = true;
       setInputValue(value);
       promptRef.current?.setValue(value);
     }
-  }, [value]);
+  }, [value, inputValue, setInputValue]);
 
   // Sync context changes back to parent via onChange
   useEffect(() => {
@@ -105,7 +112,7 @@ function NormalInputAreaInner({
     if (inputValue !== value) {
       onChange(inputValue);
     }
-  }, [inputValue]);
+  }, [inputValue, value, onChange]);
 
   const handleSubmit = (val: string) => {
     if (val.trim()) {
