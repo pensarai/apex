@@ -9,8 +9,8 @@ import {
 import { useKeyboard } from "@opentui/react";
 import type {
   TextareaRenderable,
-  RGBA,
   KeyBinding as TextareaKeyBinding,
+  RGBA,
 } from "@opentui/core";
 import { useTheme } from "../../theme";
 import { useInput } from "../../context/input";
@@ -23,6 +23,7 @@ import {
   computeTab,
   shouldResetHistory,
 } from "./prompt-input-logic";
+import { usePasteExtmarks } from "./use-paste-extmarks";
 export interface AutocompleteOption {
   value: string;
   label: string;
@@ -139,6 +140,9 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
     const onSubmitRef = useRef(onSubmit);
     onSubmitRef.current = onSubmit;
 
+    const { handlePaste, resolveText, clearPaste } =
+      usePasteExtmarks(textareaRef);
+
     const suggestions = useMemo(
       () =>
         enableAutocomplete
@@ -168,11 +172,13 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
       reset: () => {
         setInputValue("");
         textareaRef.current?.setText("");
+        clearPaste();
         setSelectedSuggestionIndex(-1);
       },
       setValue: (value: string) => {
         setInputValue(value);
         textareaRef.current?.setText(value);
+        clearPaste();
       },
       getValue: () => inputValue,
       getTextareaRef: () => textareaRef.current,
@@ -205,6 +211,7 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
       // --- Ctrl+C: clear input ------------------------------------------
       if (key.ctrl && key.name === "c") {
         textareaRef.current?.setText("");
+        clearPaste();
         setInputValue("");
         setHistoryIndex(-1);
         setSelectedSuggestionIndex(-1);
@@ -218,6 +225,7 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
         if (tabResult) {
           setSelectedSuggestionIndex(tabResult.selectedSuggestionIndex);
           if (tabResult.acceptedValue !== null) {
+            clearPaste();
             textareaRef.current?.setText(tabResult.acceptedValue);
             setInputValue(tabResult.acceptedValue);
             textareaRef.current?.gotoLineEnd();
@@ -245,11 +253,14 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
         if (!result) return;
 
         if (result.saveCurrentInput) {
-          savedInputRef.current = textareaRef.current?.plainText ?? "";
+          savedInputRef.current = resolveText(
+            textareaRef.current?.plainText ?? "",
+          );
         }
         setSelectedSuggestionIndex(result.nextState.selectedSuggestionIndex);
         if (result.textToSet !== null) {
           isNavigatingHistoryRef.current = true;
+          clearPaste();
           textareaRef.current?.setText(result.textToSet);
           setInputValue(result.textToSet);
           setHistoryIndex(result.nextState.historyIndex);
@@ -276,6 +287,7 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
         setSelectedSuggestionIndex(result.nextState.selectedSuggestionIndex);
         if (result.textToSet !== null) {
           isNavigatingHistoryRef.current = true;
+          clearPaste();
           textareaRef.current?.setText(result.textToSet);
           setInputValue(result.textToSet);
           setHistoryIndex(result.nextState.historyIndex);
@@ -296,8 +308,11 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
       const currentSuggestions = suggestionsRef.current;
       const currentSelectedIndex = selectedIndexRef.current;
 
+      // Resolve paste placeholders to full text before submit
+      const rawText = resolveText(textareaRef.current?.plainText ?? "");
+
       const valueToSubmit = resolveSubmitValue(
-        textareaRef.current?.plainText ?? "",
+        rawText,
         currentSuggestions,
         currentSelectedIndex,
       );
@@ -311,12 +326,14 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
         await onCommandExecuteRef.current?.(valueToSubmit);
         setInputValue("");
         textareaRef.current?.setText("");
+        clearPaste();
         setSelectedSuggestionIndex(-1);
         setHistoryIndex(-1);
         return;
       }
 
       setHistoryIndex(-1);
+      clearPaste();
       onSubmitRef.current?.(valueToSubmit);
     };
 
@@ -381,6 +398,7 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
             keyBindings={chatKeyBindings}
             onContentChange={handleContentChange}
             onSubmit={handleSubmit}
+            onPaste={handlePaste}
           />
         </box>
 
