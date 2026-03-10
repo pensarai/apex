@@ -2,7 +2,7 @@
 
 ## Context
 
-Apex needs a user interface for driving autonomous pentest agents in real time. The core users — professional pentesters, security engineers, and developers shifting left — need to see live streaming output (recon discoveries, swarm agent logs, finding alerts) as it happens. We also ship a headless CLI alongside the TUI for programmatic use, CI integration, and invocation from other coding agents and skills. The question is what the primary *interactive* interface should be.
+Apex needs a user interface for driving autonomous pentest agents in real time. The core users — professional pentesters, security engineers, and developers shifting left — need to see live streaming output (recon discoveries, swarm agent logs, finding alerts) as it happens. We also ship a headless CLI alongside the TUI for programmatic use, CI integration, and invocation from other coding agents and skills. The question is what the primary _interactive_ interface should be.
 
 ## Decision
 
