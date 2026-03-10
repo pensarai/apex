@@ -42,7 +42,11 @@ export function usePasteExtmarks(
     const text = event.text;
     const lineCount = text.split("\n").length;
 
-    if (lineCount < LARGE_PASTE_MIN_LINES && text.length < LARGE_PASTE_MIN_CHARS) return;
+    if (
+      lineCount < LARGE_PASTE_MIN_LINES &&
+      text.length < LARGE_PASTE_MIN_CHARS
+    )
+      return;
 
     event.preventDefault();
 
