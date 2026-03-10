@@ -6,7 +6,7 @@ Apex needs a user interface for driving autonomous pentest agents in real time. 
 
 ## Decision
 
-We built a TUI using Ink (React for the terminal) as the primary interactive interface, shipped alongside a headless CLI for programmatic and integration use cases.
+We built a TUI using OpenTUI as the primary interactive interface, shipped alongside a headless CLI for programmatic and integration use cases.
 
 ## Rationale
 
@@ -25,4 +25,4 @@ The headless CLI complements the TUI: it exposes the same agent capabilities for
 - ✅ No hosting, auth infrastructure, or browser required
 - ✅ Headless CLI enables use from coding agents, AI skills, and CI pipelines
 - ⚠️ Harder to build rich data visualizations (charts, graphs) compared to a web UI
-- ⚠️ TUI frameworks (Ink) are less mature than web frameworks; layout edge cases require careful handling
+- ⚠️ TUI frameworks (OpenTUI) are less mature than web frameworks; layout edge cases require careful handling
