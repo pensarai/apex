@@ -1,4 +1,12 @@
 import { z } from "zod";
+import {
+  writeFileSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  existsSync,
+} from "fs";
+import { join } from "path";
 import { CodeAgent } from "../agents/specialized/codeAgent/agent";
 import {
   EndpointSchema,
@@ -13,6 +21,8 @@ import type { SessionInfo } from "../session";
 import type { ConsumeCallbacks } from "../agents/offSecAgent/types";
 import { runWithBoundedConcurrency } from "../utils/concurrency";
 import { scoreEndpoints } from "./riskScoring";
+import { execFileSync } from "child_process";
+import { createHash } from "crypto";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -136,6 +146,16 @@ export interface WhiteboxAttackSurfaceWorkflowInput {
       totalTokens?: number;
     };
   }) => void;
+}
+
+// ---------------------------------------------------------------------------
+// Incremental input type
+// ---------------------------------------------------------------------------
+
+export interface IncrementalWhiteboxInput extends WhiteboxAttackSurfaceWorkflowInput {
+  previousCommitSha: string;
+  currentCommitSha: string;
+  existingResult: WhiteboxAttackSurfaceResult;
 }
 
 // ---------------------------------------------------------------------------
@@ -527,4 +547,410 @@ Find ALL API endpoints defined in this application.
 
 Be thorough — trace through all route registrations, middleware chains, and controller files.
 When finished, call the \`response\` tool with your structured findings.`;
+}
+
+// ---------------------------------------------------------------------------
+// Incremental whitebox attack surface workflow
+// ---------------------------------------------------------------------------
+
+/**
+ * Incremental whitebox attack surface workflow for commit-triggered recon.
+ *
+ * Instead of scanning the entire codebase:
+ * 1. Run `git diff` between the two commits and write the output to a file.
+ * 2. Serialize existing assets into the session's assets directory.
+ * 3. Spawn a CodeAgent to analyze the diff and update assets in-place.
+ * 4. Re-score only changed/new endpoints.
+ * 5. Assemble the final result from the updated assets directory.
+ */
+export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
+  input: IncrementalWhiteboxInput,
+): Promise<WhiteboxAttackSurfaceResult> {
+  const {
+    codebasePath,
+    previousCommitSha,
+    currentCommitSha,
+    existingResult,
+    model,
+    session,
+    authConfig,
+    abortSignal,
+    callbacks,
+    attackSurfaceRegistry,
+    onStepFinish,
+  } = input;
+
+  // =========================================================================
+  // Phase 1: Generate diff file
+  // =========================================================================
+
+  const diffPath = join(session.rootPath, "diff-output.txt");
+  try {
+    const diff = execFileSync(
+      "git",
+      ["diff", `${previousCommitSha}..${currentCommitSha}`],
+      { cwd: codebasePath, maxBuffer: 50 * 1024 * 1024, encoding: "utf-8" },
+    );
+    writeFileSync(diffPath, diff, "utf-8");
+  } catch (error) {
+    console.error(
+      "Failed to generate git diff, falling back to full recon:",
+      error,
+    );
+    return runWhiteboxAttackSurfaceWorkflow(input);
+  }
+
+  // =========================================================================
+  // Phase 2: Serialize existing assets to session's assets directory
+  // =========================================================================
+
+  const assetsPath = join(session.rootPath, "assets");
+  mkdirSync(assetsPath, { recursive: true });
+
+  const preloadedFiles = new Set<string>();
+
+  for (const app of existingResult.apps) {
+    for (const ep of [...app.pages, ...app.apiEndpoints]) {
+      const rawKey = `${app.name}__${ep.method}__${ep.path}`.toLowerCase();
+      const sanitized = rawKey.replace(/[^a-z0-9-_.]/g, "_");
+      const hash = createHash("sha256")
+        .update(rawKey)
+        .digest("hex")
+        .slice(0, 8);
+      const filename = `endpoint_${sanitized}_${hash}.json`;
+
+      if (preloadedFiles.has(filename)) {
+        console.warn(
+          `Incremental recon: duplicate filename "${filename}" for endpoint ${ep.method} ${ep.path} in app ${app.name} — previous file will be overwritten`,
+        );
+      }
+
+      const { riskScore: _staleScore, ...epWithoutScore } = ep;
+      const assetData = {
+        appName: app.name,
+        appFramework: app.framework,
+        appLocation: app.location,
+        endpointType: app.apiEndpoints.includes(ep) ? "api" : "page",
+        ...epWithoutScore,
+      };
+      writeFileSync(
+        join(assetsPath, filename),
+        JSON.stringify(assetData, null, 2),
+        "utf-8",
+      );
+      preloadedFiles.add(filename);
+    }
+  }
+
+  console.log(
+    `Incremental recon: wrote ${preloadedFiles.size} existing endpoint assets to ${assetsPath}`,
+  );
+
+  // =========================================================================
+  // Phase 3: Agent analyzes diff and updates asset files
+  // =========================================================================
+
+  const IncrementalResultSchema = z.object({
+    repoType: z.string(),
+    packageManager: z.string(),
+    changedApps: z
+      .array(z.string())
+      .describe("Names of applications that were affected by the diff"),
+    addedEndpoints: z.number().describe("Count of new endpoints added"),
+    modifiedEndpoints: z
+      .number()
+      .describe("Count of existing endpoints modified"),
+    removedEndpoints: z.number().describe("Count of endpoints removed"),
+    summary: z.string().describe("Brief summary of what changed"),
+  });
+
+  type IncrementalResult = z.infer<typeof IncrementalResultSchema>;
+
+  const objective = buildIncrementalObjective(
+    codebasePath,
+    diffPath,
+    assetsPath,
+    existingResult,
+  );
+
+  const agent = new CodeAgent<IncrementalResult>({
+    codebasePath,
+    objective,
+    system: WHITEBOX_CODE_AGENT_SYSTEM_PROMPT,
+    model,
+    session,
+    authConfig,
+    abortSignal,
+    attackSurfaceRegistry,
+    callbacks,
+    onStepFinish: (event) => onStepFinish?.(event),
+    responseSchema: IncrementalResultSchema,
+  });
+
+  const agentResult = await agent.consume({
+    onTextDelta: (d) => callbacks?.onTextDelta?.(d),
+    onToolCallStreaming: (d) => callbacks?.onToolCallStreaming?.(d),
+    onToolCallDelta: (d) => callbacks?.onToolCallDelta?.(d),
+    onToolCall: (d) => callbacks?.onToolCall?.(d),
+    onToolResult: (d) => callbacks?.onToolResult?.(d),
+    onError: (e) => callbacks?.onError?.(e),
+    subagentCallbacks: callbacks?.subagentCallbacks,
+  });
+
+  console.log(
+    `Incremental agent finished: ${agentResult?.summary ?? "no summary"}`,
+  );
+
+  // =========================================================================
+  // Phase 4: Read final assets directory and reconstruct result
+  // =========================================================================
+
+  const finalAssetFiles = existsSync(assetsPath)
+    ? readdirSync(assetsPath).filter((f) => f.endsWith(".json"))
+    : [];
+
+  const appMap = new Map<
+    string,
+    {
+      framework: string;
+      description: string;
+      location: string;
+      pages: Endpoint[];
+      apiEndpoints: Endpoint[];
+    }
+  >();
+
+  for (const existingApp of existingResult.apps) {
+    appMap.set(existingApp.name, {
+      framework: existingApp.framework,
+      description: existingApp.description,
+      location: existingApp.location,
+      pages: [],
+      apiEndpoints: [],
+    });
+  }
+
+  for (const file of finalAssetFiles) {
+    try {
+      const raw = readFileSync(join(assetsPath, file), "utf-8");
+      const data = JSON.parse(raw);
+
+      const appName = data.appName as string;
+      const endpointType = data.endpointType as string;
+
+      if (!appMap.has(appName)) {
+        appMap.set(appName, {
+          framework: data.appFramework ?? "unknown",
+          description: data.appDescription ?? "",
+          location: data.appLocation ?? "",
+          pages: [],
+          apiEndpoints: [],
+        });
+      }
+
+      const app = appMap.get(appName)!;
+
+      const parsed = EndpointSchema.safeParse({
+        method: data.method,
+        path: data.path,
+        handler: data.handler,
+        file: data.file,
+        line: data.line,
+        authRequired: data.authRequired,
+        description: data.description,
+        pentestObjectives: data.pentestObjectives ?? [],
+        riskScore: data.riskScore,
+      });
+
+      if (parsed.success) {
+        if (endpointType === "api") {
+          app.apiEndpoints.push(parsed.data);
+        } else {
+          app.pages.push(parsed.data);
+        }
+      }
+    } catch {
+      console.warn(`Skipping unreadable asset file: ${file}`);
+    }
+  }
+
+  // =========================================================================
+  // Phase 5: Re-score changed/new endpoints
+  // =========================================================================
+
+  const changedEndpointsForScoring: Array<Endpoint & { appName: string }> = [];
+
+  const existingEndpointMap = new Map<string, Endpoint>();
+  for (const existingApp of existingResult.apps) {
+    for (const ep of [...existingApp.pages, ...existingApp.apiEndpoints]) {
+      existingEndpointMap.set(`${ep.method}:${ep.file}:${ep.path}`, ep);
+    }
+  }
+
+  for (const [appName, app] of appMap) {
+    for (const ep of [...app.pages, ...app.apiEndpoints]) {
+      const key = `${ep.method}:${ep.file}:${ep.path}`;
+      const existing = existingEndpointMap.get(key);
+
+      const isNew = !existing;
+      const hasNoScore = existing && !existing.riskScore;
+      const isModified =
+        existing &&
+        (existing.handler !== ep.handler ||
+          existing.authRequired !== ep.authRequired ||
+          existing.description !== ep.description ||
+          existing.line !== ep.line ||
+          JSON.stringify(existing.pentestObjectives) !==
+            JSON.stringify(ep.pentestObjectives));
+
+      if (isNew || hasNoScore || isModified) {
+        changedEndpointsForScoring.push({ ...ep, appName });
+      } else if (existing?.riskScore) {
+        ep.riskScore = existing.riskScore;
+      }
+    }
+  }
+
+  let riskScores = new Map<string, RiskScore>();
+
+  if (changedEndpointsForScoring.length > 0) {
+    try {
+      riskScores = await scoreEndpoints({
+        codebasePath,
+        endpoints: changedEndpointsForScoring,
+        model,
+        session,
+        authConfig,
+        abortSignal,
+        callbacks,
+      });
+      console.log(
+        `Incremental risk scoring complete: ${riskScores.size}/${changedEndpointsForScoring.length} scored`,
+      );
+    } catch (error) {
+      console.error("Risk scoring failed during incremental recon:", error);
+    }
+  }
+
+  // =========================================================================
+  // Phase 6: Final assembly with risk scores
+  // =========================================================================
+
+  function attachRiskScore(ep: Endpoint): Endpoint {
+    const key = `${ep.method}:${ep.file}:${ep.path}`;
+    const score = riskScores.get(key);
+    return score ? { ...ep, riskScore: score } : ep;
+  }
+
+  const apps: App[] = [...appMap.entries()].map(([name, data]) => ({
+    name,
+    framework: data.framework,
+    description: data.description,
+    location: data.location,
+    pages: data.pages.map(attachRiskScore),
+    apiEndpoints: data.apiEndpoints.map(attachRiskScore),
+  }));
+
+  const totalPages = apps.reduce((sum, a) => sum + a.pages.length, 0);
+  const totalApiEndpoints = apps.reduce(
+    (sum, a) => sum + a.apiEndpoints.length,
+    0,
+  );
+  const totalPentestObjectives = apps.reduce(
+    (sum, a) =>
+      sum +
+      [...a.pages, ...a.apiEndpoints].reduce(
+        (s, ep) => s + ep.pentestObjectives.length,
+        0,
+      ),
+    0,
+  );
+
+  return {
+    repoType: existingResult.repoType,
+    packageManager: existingResult.packageManager,
+    apps,
+    summary: {
+      totalApps: apps.length,
+      totalPages,
+      totalApiEndpoints,
+      totalPentestObjectives,
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Incremental objective builder
+// ---------------------------------------------------------------------------
+
+function buildIncrementalObjective(
+  codebasePath: string,
+  diffPath: string,
+  assetsPath: string,
+  existingResult: WhiteboxAttackSurfaceResult,
+): string {
+  const appsSummary = existingResult.apps
+    .map((app) => {
+      const epCount = app.pages.length + app.apiEndpoints.length;
+      return `  - **${app.name}** (${app.framework}) at \`${app.location}\` — ${epCount} endpoints`;
+    })
+    .join("\n");
+
+  return `# Incremental Attack Surface Update
+
+## Context
+You are updating the attack surface map for a repository after a new commit. Rather than analyzing the entire codebase, you will analyze only the **changed files** and update the existing endpoint assets accordingly.
+
+## Codebase
+- **Path:** ${codebasePath}
+- **Diff file:** ${diffPath} (contains \`git diff\` output between the previous and current commit)
+- **Existing assets directory:** ${assetsPath} (contains one JSON file per endpoint)
+
+## Existing Applications
+${appsSummary}
+
+## Task
+
+### Step 1: Read and understand the diff
+Read the diff file at \`${diffPath}\`. If it's very large, read it in chunks. Identify which files were added, modified, or deleted.
+
+### Step 2: Determine impact on the attack surface
+For each changed file, determine if it affects any endpoints:
+- **New route/endpoint definitions** → create new asset files
+- **Modified route handlers** → update existing asset files (read the current asset, modify the relevant fields, and write it back)
+- **Deleted route files or endpoint definitions** → delete the corresponding asset files
+- **Non-route changes** (e.g. utility functions, configs, tests) → skip
+
+### Step 3: Update asset files
+For each affected endpoint, use \`execute_command\` to write updated JSON files to the assets directory, or delete files for removed endpoints.
+
+Each asset JSON file has this structure:
+\`\`\`json
+{
+  "appName": "app-name",
+  "appFramework": "Express",
+  "appLocation": "src/api",
+  "endpointType": "api" | "page",
+  "method": "GET",
+  "path": "/api/users/:id",
+  "handler": "getUser",
+  "file": "src/api/routes/users.ts",
+  "line": 42,
+  "authRequired": true,
+  "description": "Retrieves a user by ID",
+  "pentestObjectives": ["Test for IDOR by accessing other users' data"]
+}
+\`\`\`
+
+**Rules for updating:**
+- **Adding** a new endpoint: Create a new file with a unique name in the assets directory (e.g. \`endpoint_{appname}__{method}__{sanitized_path}_{short_hash}.json\`). The name must not collide with any existing file.
+- **Modifying** an existing endpoint: Read the existing file, update the changed fields, and write it back
+- **Removing** an endpoint: Delete the file from the assets directory
+- If a change affects only internal logic (no route/path/method/auth changes), you may skip the update
+- Be precise — only modify endpoints that are actually affected by the code changes
+
+### Step 4: Report
+When finished, call the \`response\` tool with a summary of your changes.
+
+**IMPORTANT:** Be conservative. Only add/modify/remove endpoints that are clearly affected by the diff. Do not re-analyze the entire codebase.`;
 }

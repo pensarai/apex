@@ -93,8 +93,9 @@ export async function generateSessionName(opts: {
   userMessage?: string;
   model: AIModel;
   authConfig?: AIAuthConfig;
+  abortSignal?: AbortSignal;
 }): Promise<string | null> {
-  const { targets, userMessage, model, authConfig } = opts;
+  const { targets, userMessage, model, authConfig, abortSignal } = opts;
 
   const contextParts: string[] = [];
   if (targets.length > 0) {
@@ -121,6 +122,7 @@ export async function generateSessionName(opts: {
       maxTokens: 50,
       temperature: 0.7,
       authConfig,
+      abortSignal,
     });
 
     if (!result?.name) return null;

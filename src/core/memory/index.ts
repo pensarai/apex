@@ -84,6 +84,60 @@ export async function addMemory(input: {
 }
 
 /**
+ * Create or overwrite a memory with a pre-determined ID.
+ * Used for idempotent syncing from external sources (e.g., project knowledge).
+ */
+export async function addMemoryWithId(input: {
+  id: string;
+  title: string;
+  content: string;
+  category?: MemoryCategory;
+  tags?: string[];
+}): Promise<Memory> {
+  validateId(input.id);
+  const category: MemoryCategory = input.category ?? "general";
+  const now = new Date().toISOString();
+
+  // Preserve createdAt if this is an update
+  let createdAt = now;
+  try {
+    const existing = await Storage.read<Memory>(storageKey(category, input.id));
+    createdAt = existing.createdAt;
+  } catch {
+    // New memory — use current timestamp
+  }
+
+  const memory: Memory = {
+    id: input.id,
+    category,
+    title: input.title,
+    content: input.content,
+    tags: input.tags ?? [],
+    createdAt,
+    updatedAt: now,
+  };
+
+  await Storage.write(storageKey(category, input.id), memory);
+  return memory;
+}
+
+/**
+ * Delete a single memory by category + id.
+ * Returns true if deleted, false if not found.
+ */
+export async function deleteMemory(
+  category: MemoryCategory,
+  id: string,
+): Promise<boolean> {
+  validateId(id);
+  // Check existence first — Storage.remove silently succeeds on missing files
+  const existing = await getMemory(category, id);
+  if (!existing) return false;
+  await Storage.remove(storageKey(category, id));
+  return true;
+}
+
+/**
  * Retrieve a single memory by category + id.
  * Returns `null` when the entry does not exist.
  */

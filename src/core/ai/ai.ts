@@ -368,6 +368,7 @@ export function streamResponse(
                 "IMPORTANT: For enum fields like 'severity' or 'riskLevel', use ONLY the exact values from the enum (e.g., 'HIGH', 'CRITICAL', 'MEDIUM', 'LOW').",
                 "Do not add prefixes, suffixes, or formatting characters like '>', '-', '!', etc.",
               ].join("\n"),
+              abortSignal,
             });
 
           // Report tool repair token usage if onStepFinish callback is provided
@@ -469,6 +470,7 @@ export interface GenerateObjectOpts<T extends z.ZodType> {
   maxTokens?: number;
   temperature?: number;
   authConfig?: AIAuthConfig;
+  abortSignal?: AbortSignal;
   onTokenUsage?: (inputTokens: number, outputTokens: number) => void;
 }
 
@@ -485,6 +487,7 @@ export async function generateObjectResponse<T extends z.ZodType>(
     maxTokens,
     temperature,
     authConfig,
+    abortSignal,
     onTokenUsage,
   } = opts;
 
@@ -504,6 +507,7 @@ export async function generateObjectResponse<T extends z.ZodType>(
         maxOutputTokens: maxTokens,
         temperature,
         maxRetries: 0,
+        abortSignal,
       });
 
       if (onTokenUsage && usage) {
