@@ -1,13 +1,13 @@
 import { SpinnerDots } from "./sprites";
 import { useState, memo } from "react";
 import type { Message } from "../../core/messages/types";
-import { useTerminalDimensions } from "@opentui/react";
 import {
   markdownToStyledText,
   getStableMessageKey,
   getArgsPreview,
 } from "./shared";
 import { useTheme } from "../theme";
+import { useDimensions } from "../context/dimensions";
 
 export type Subagent = {
   id: string;
@@ -215,7 +215,7 @@ const AgentMessage = memo(function AgentMessage({
   message: DisplayMessage;
 }) {
   const { colors } = useTheme();
-  const dimensions = useTerminalDimensions();
+  const dimensions = useDimensions();
   let content = "";
 
   if (typeof message.content === "string") {

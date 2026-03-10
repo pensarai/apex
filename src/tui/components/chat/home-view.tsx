@@ -8,7 +8,7 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { useTerminalDimensions } from "@opentui/react";
+import { useDimensions } from "../../context/dimensions";
 import { PetriAnimation } from "./petri-animation";
 import { useCommand } from "../../context/command";
 import { useInput } from "../../context/input";
@@ -30,7 +30,7 @@ interface HomeViewProps {
 
 export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
   const { colors } = useTheme();
-  const dimensions = useTerminalDimensions();
+  const dimensions = useDimensions();
   const config = useConfig();
   const route = useRoute();
 

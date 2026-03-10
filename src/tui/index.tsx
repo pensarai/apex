@@ -59,6 +59,7 @@ import {
 } from "./console-theme";
 import { createClipboardManager } from "./clipboard";
 import { setupAutoCopy } from "./auto-copy";
+import { TerminalDimensionsProvider } from "./context/dimensions";
 
 interface AppProps {
   appConfig: Config;
@@ -489,11 +490,6 @@ async function main() {
     consoleOptions: buildConsoleOptions(themeColors),
   });
 
-  // Many components (AgentDisplay, Pentest, DialogProvider, Toast, etc.)
-  // legitimately listen for resize events via useTerminalDimensions().
-  // During a pentest swarm this easily exceeds the default 10 listener limit.
-  renderer.setMaxListeners(50);
-
   const { copyToClipboard } = createClipboardManager(renderer);
   setupAutoCopy(renderer, copyToClipboard);
 
@@ -521,12 +517,14 @@ async function main() {
   createRoot(renderer).render(
     <ThemeProvider initialTheme={themeName} initialMode={mode}>
       <ConsoleThemeSync />
-      <ToastProvider>
-        <ErrorBoundary>
-          <App appConfig={appConfig} />
-        </ErrorBoundary>
-        <ToastContainer />
-      </ToastProvider>
+      <TerminalDimensionsProvider>
+        <ToastProvider>
+          <ErrorBoundary>
+            <App appConfig={appConfig} />
+          </ErrorBoundary>
+          <ToastContainer />
+        </ToastProvider>
+      </TerminalDimensionsProvider>
     </ThemeProvider>,
   );
 }

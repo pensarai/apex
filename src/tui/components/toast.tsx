@@ -1,5 +1,5 @@
-import { useTerminalDimensions } from "@opentui/react";
 import type { RGBA } from "@opentui/core";
+import { useDimensions } from "../context/dimensions";
 import { useTheme } from "../theme";
 import { type ToastVariant, useToast } from "../context/toast";
 
@@ -54,7 +54,7 @@ function ToastItem({
 
 export function ToastContainer() {
   const { toasts, dismiss } = useToast();
-  const dims = useTerminalDimensions();
+  const dims = useDimensions();
 
   if (toasts.length === 0) return null;
 
