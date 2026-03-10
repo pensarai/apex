@@ -1,0 +1,168 @@
+---
+title: "/operator"
+description: "Start an interactive operator session for guided penetration testing"
+---
+
+## Overview
+
+The `/operator` command starts an interactive operator session where you work alongside the AI agent in real time. Unlike `/pentest` which runs autonomously, operator mode gives you step-by-step control over the testing process — you can approve actions, steer the agent's focus, and intervene at any point.
+
+## Usage
+
+```bash
+/operator
+```
+
+With flags:
+
+```bash
+/operator --target https://example.com --mode auto
+```
+
+**Alias**: `/o`
+
+## How It Works
+
+<Steps>
+  <Step title="Configure Target">
+    Provide the target URL and optional authentication details.
+  </Step>
+  <Step title="Choose Mode">
+    Select how much autonomy the agent has: plan, manual, or auto.
+  </Step>
+  <Step title="Interactive Session">
+    The AI agent proposes actions and you approve, reject, or redirect in real
+    time.
+  </Step>
+</Steps>
+
+<img
+  src="../assets/operator-home.png"
+  alt="Operator session — interactive prompt"
+  style={{ borderRadius: "8px", marginTop: "16px" }}
+/>
+
+## Operator Modes
+
+| Mode       | Description                                                                 |
+| ---------- | --------------------------------------------------------------------------- |
+| **Plan**   | The agent creates a testing plan for your review before executing anything  |
+| **Manual** | The agent proposes each action individually and waits for your approval     |
+| **Auto**   | The agent executes actions automatically, but you can intervene at any time |
+
+<Callout intent="info">
+  **Manual mode** is the default and recommended for learning or when testing
+  sensitive targets. **Auto mode** is closer to `/pentest` but keeps you in the
+  loop with the ability to pause and redirect.
+</Callout>
+
+## Command Flags
+
+| Flag                  | Description                                       |
+| --------------------- | ------------------------------------------------- |
+| `--target <url>`      | Target URL to test                                |
+| `--name <name>`       | Session name                                      |
+| `--mode <mode>`       | Operator mode: plan, manual, or auto              |
+| `--autopilot`         | Disable approval gates (auto-approve all actions) |
+| `--model <model>`     | AI model to use                                   |
+| `--auth-url <url>`    | Login page URL                                    |
+| `--auth-user <user>`  | Auth username                                     |
+| `--auth-pass <pass>`  | Auth password                                     |
+| `--auth-instructions` | Custom auth instructions                          |
+| `--hosts <h1,h2,...>` | Allowed hosts (comma-separated)                   |
+| `--ports <p1,p2,...>` | Allowed ports (comma-separated)                   |
+| `--strict`            | Enable strict scope mode                          |
+| `--headers <mode>`    | Headers mode: none, default, or custom            |
+| `--header <Name:Val>` | Custom header (repeatable)                        |
+
+## When to Use /operator vs /pentest
+
+<CardGroup cols={2}>
+  <Card title="/pentest" icon="play">
+    **Autonomous mode** — set a target and let the AI agent swarm run
+    independently. Best for comprehensive, hands-off testing.
+  </Card>
+  <Card title="/operator" icon="terminal">
+    **Interactive mode** — guide the AI agent step by step. Best for targeted
+    investigations, learning, or sensitive environments.
+  </Card>
+</CardGroup>
+
+| Scenario                         | Recommended |
+| -------------------------------- | ----------- |
+| Full security audit              | `/pentest`  |
+| Investigating a specific feature | `/operator` |
+| First time testing a target      | `/operator` |
+| CI/CD automated scanning         | `/pentest`  |
+| Sensitive production environment | `/operator` |
+| Broad vulnerability discovery    | `/pentest`  |
+
+## Example Workflow
+
+```bash
+# Start Apex
+pensar
+
+# Launch operator session
+/operator
+
+# Or with flags for quick start
+/operator --target https://api.example.com --mode manual
+
+# In the session:
+# - The agent proposes reconnaissance actions
+# - You approve or redirect
+# - Review findings as they come in
+# - Steer toward specific areas of interest
+```
+
+<img
+  src="../assets/operator-approval.png"
+  alt="Operator session — agent action approval"
+  style={{ borderRadius: "8px", marginTop: "16px" }}
+/>
+
+## Operator Skills
+
+You can extend operator mode with custom skills using `/create-skill`. Skills are reusable instruction sets that teach the agent specialized testing techniques or workflows for your specific environment.
+
+## Best Practices
+
+<Callout intent="success">
+  **Tips for Operator Mode**: 1. **Start with plan mode** to review the agent's
+  testing strategy before execution 2. **Use manual mode** for sensitive targets
+  where you want full control 3. **Switch to auto mode** once you're comfortable
+  with the agent's approach 4. **Create skills** for repetitive testing patterns
+  in your environment
+</Callout>
+
+<Callout intent="warning">
+  **Security Reminder**: Only test systems you own or have explicit
+  authorization to test. Unauthorized testing is illegal.
+</Callout>
+
+## After Starting
+
+Once you start an operator session:
+
+- The AI agent begins analysis based on your chosen mode
+- You interact in real time, approving or steering actions
+- Findings are reported as they're discovered
+- The session is automatically saved and can be resumed via `/sessions`
+
+## Related Commands
+
+<CardGroup cols={2}>
+  <Card title="/pentest" icon="play" href="/apex/commands/pentest">
+    Run an autonomous pentest instead
+  </Card>
+  <Card title="/sessions" icon="clock-rotate-left" href="/apex/commands/help">
+    Browse and resume previous sessions
+  </Card>
+  <Card title="/models" icon="microchip" href="/apex/commands/models">
+    Select AI model before starting
+  </Card>
+  <Card title="/providers" icon="plug" href="/apex/commands/providers">
+    Configure AI provider API keys
+  </Card>
+</CardGroup>

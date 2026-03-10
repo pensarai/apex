@@ -85,6 +85,9 @@ interface PromptInputProps {
 
   // Visual customization
   showPromptIndicator?: boolean;
+
+  // Whether autocomplete suggestions appear above or below the input
+  autocompletePlacement?: "above" | "below";
 }
 
 export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
@@ -109,6 +112,7 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
       commandHistory = [],
       disableHistoryNavigation = false,
       showPromptIndicator = false,
+      autocompletePlacement = "below",
     },
     ref,
   ) {
@@ -325,8 +329,36 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
       }
     };
 
+    const suggestionsBox = suggestions.length > 0 && (
+      <box
+        flexDirection="column"
+        {...(autocompletePlacement === "above"
+          ? { marginBottom: 1 }
+          : { marginTop: 1 })}
+      >
+        {suggestions.map((suggestion, index) => {
+          const isSelected = index === selectedSuggestionIndex;
+          return (
+            <box key={suggestion.value} flexDirection="row" gap={1}>
+              <text fg={isSelected ? colors.primary : colors.textMuted}>
+                {isSelected ? " ▸" : "  "}
+              </text>
+              <text fg={isSelected ? colors.text : colors.textMuted}>
+                {suggestion.label}
+              </text>
+              {suggestion.description && (
+                <text fg={colors.textMuted}> {suggestion.description}</text>
+              )}
+            </box>
+          );
+        })}
+      </box>
+    );
+
     return (
       <box flexDirection="column">
+        {autocompletePlacement === "above" && suggestionsBox}
+
         {/* Input row with optional prompt indicator */}
         <box flexDirection="row">
           {showPromptIndicator && (
@@ -352,27 +384,7 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
           />
         </box>
 
-        {/* Autocomplete suggestions */}
-        {suggestions.length > 0 && (
-          <box flexDirection="column" marginTop={1}>
-            {suggestions.map((suggestion, index) => {
-              const isSelected = index === selectedSuggestionIndex;
-              return (
-                <box key={suggestion.value} flexDirection="row" gap={1}>
-                  <text fg={isSelected ? colors.primary : colors.textMuted}>
-                    {isSelected ? " ▸" : "  "}
-                  </text>
-                  <text fg={isSelected ? colors.text : colors.textMuted}>
-                    {suggestion.label}
-                  </text>
-                  {suggestion.description && (
-                    <text fg={colors.textMuted}> {suggestion.description}</text>
-                  )}
-                </box>
-              );
-            })}
-          </box>
-        )}
+        {autocompletePlacement === "below" && suggestionsBox}
       </box>
     );
   },

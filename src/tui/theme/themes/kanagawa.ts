@@ -51,7 +51,7 @@ export const kanagawa: ThemeDefinition = {
     },
     backgroundOverlay: {
       dark: RGBA.fromInts(0, 0, 0, 200),
-      light: RGBA.fromInts(255, 255, 255, 200),
+      light: RGBA.fromInts(0, 0, 0, 180),
     },
     backgroundSelected: {
       dark: RGBA.fromHex("#2d4f67"), // waveBlue2 (wave)

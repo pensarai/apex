@@ -1,5 +1,5 @@
 import type { CommandDefinition } from "./command-router";
-import type { Route } from "./context/route";
+import type { Route, WebCommandOptions } from "./context/route";
 import {
   parseWebFlags,
   hasEnoughFlagsToSkipWizard,
@@ -15,6 +15,9 @@ export interface AppCommandContext {
   route: Route;
   navigate: (route: Route) => void;
   openSessionsDialog?: () => void;
+  openThemeDialog?: () => void;
+  openAuthDialog?: () => void;
+  openPentestDialog?: (flags?: WebCommandOptions) => void;
 }
 
 /**
@@ -113,12 +116,8 @@ export const commands: CommandConfig[] = [
         });
         return;
       }
-      // Navigate to WebWizard (swarm wizard) for target input
-      ctx.navigate({
-        type: "base",
-        path: "web",
-        options: { auto: true, ...flags },
-      });
+      // Open WebWizard dialog for target input
+      ctx.openPentestDialog?.({ auto: true, ...flags });
     },
   },
   {
@@ -186,6 +185,7 @@ export const commands: CommandConfig[] = [
       const params = buildOperatorSessionConfig(flags);
       ctx.navigate({
         type: "operator",
+        nonce: Date.now(),
         initialConfig: {
           requireApproval: flags.requireApproval ?? true,
           target: flags.target,
@@ -247,6 +247,14 @@ export const commands: CommandConfig[] = [
     },
   },
   {
+    name: "new",
+    description: "Start a new operator session",
+    category: "Session",
+    handler: async (args, ctx) => {
+      ctx.navigate({ type: "operator", nonce: Date.now() });
+    },
+  },
+  {
     name: "chat",
     aliases: ["c"],
     description: "Open the Chat TUI interface",
@@ -303,7 +311,7 @@ export const commands: CommandConfig[] = [
       }
 
       // /theme — open picker
-      ctx.navigate({ type: "base", path: "theme" });
+      ctx.openThemeDialog?.();
     },
   },
   {
@@ -337,10 +345,7 @@ export const commands: CommandConfig[] = [
     description: "Connect to Pensar Console for managed inference",
     category: "General",
     handler: async (args, ctx) => {
-      ctx.navigate({
-        type: "base",
-        path: "auth",
-      });
+      ctx.openAuthDialog?.();
     },
   },
 

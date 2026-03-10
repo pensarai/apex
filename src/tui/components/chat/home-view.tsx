@@ -15,6 +15,7 @@ import { useInput } from "../../context/input";
 import { useFocus } from "../../context/focus";
 import { useConfig } from "../../context/config";
 import { useRoute } from "../../context/route";
+import { useDialog } from "../../context/dialog";
 import { PromptInput } from "../shared/prompt-input";
 import { useTheme } from "../../theme";
 import { slugify } from "../../../core/skills";
@@ -37,6 +38,7 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
     useCommand();
   const { setInputValue } = useInput();
   const { promptRef } = useFocus();
+  const { externalDialogOpen, stack } = useDialog();
 
   const [hintMessage, setHintMessage] = useState<string | null>(null);
   const [commandHistory, setCommandHistory] = useState<string[]>(
@@ -178,7 +180,7 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
         {/* Input with built-in autocomplete */}
         <PromptInput
           ref={promptRef}
-          focused
+          focused={!externalDialogOpen && stack.length === 0}
           width={inputWidth - 4}
           minHeight={1}
           maxHeight={4}

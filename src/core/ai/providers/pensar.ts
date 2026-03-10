@@ -45,8 +45,9 @@ export interface PensarModelConfig {
  * Supports both legacy API key auth and WorkOS JWT auth.
  * When workspaceId is provided, sends X-Workspace-Id header for WorkOS auth.
  *
- * doStream() posts to /bedrock/stream and parses SSE events for real
- * token-by-token streaming. Falls back to wrapping doGenerate() on error.
+ * doStream() discovers the Lambda Function URL via /bedrock/validate for
+ * true SSE streaming. Falls back to /bedrock/invoke with stream: true
+ * (buffered SSE) in dev, or wraps doGenerate() on error.
  */
 export function createPensarModel(
   bedrockModelId: string,
@@ -86,6 +87,38 @@ export function createPensarModel(
     }
 
     return headers;
+  }
+
+  // ── Stream URL discovery ─────────────────────────────────────────────
+  let cachedStreamUrl: string | null = null;
+
+  async function getStreamUrl(): Promise<string> {
+    if (cachedStreamUrl) return cachedStreamUrl;
+
+    // Try to discover Lambda Function URL from /bedrock/validate
+    try {
+      const headers = await buildHeaders();
+      const res = await fetch(`${config.baseUrl}/bedrock/validate`, {
+        headers,
+      });
+      if (res.ok) {
+        const data = (await res.json()) as {
+          endpoints?: { stream?: string };
+        };
+        if (data.endpoints?.stream) {
+          cachedStreamUrl = data.endpoints.stream;
+          log(`  Discovered stream URL: ${cachedStreamUrl}`);
+          return cachedStreamUrl;
+        }
+      }
+    } catch {
+      // Fall through to fallback
+    }
+
+    // Fallback: buffered SSE via /bedrock/invoke with stream: true
+    cachedStreamUrl = `${config.baseUrl}/bedrock/invoke`;
+    log(`  Using fallback stream URL: ${cachedStreamUrl}`);
+    return cachedStreamUrl;
   }
 
   const model: LanguageModelV2 = {
@@ -201,7 +234,7 @@ export function createPensarModel(
       response?: { headers?: Record<string, string> };
     }> {
       const body = convertToBedrockFormat(bedrockModelId, options);
-      const url = `${config.baseUrl}/bedrock/stream`;
+      const url = await getStreamUrl();
 
       log(`doStream → SSE streaming for ${bedrockModelId}`);
       log(`  URL: ${url}`);
@@ -217,6 +250,7 @@ export function createPensarModel(
           body: JSON.stringify({
             modelId: bedrockModelId,
             body,
+            stream: true,
           }),
         });
       } catch (err) {
