@@ -1,5 +1,5 @@
 import type { CommandDefinition } from "./command-router";
-import type { Route } from "./context/route";
+import type { Route, WebCommandOptions } from "./context/route";
 import {
   parseWebFlags,
   hasEnoughFlagsToSkipWizard,
@@ -17,7 +17,7 @@ export interface AppCommandContext {
   openSessionsDialog?: () => void;
   openThemeDialog?: () => void;
   openAuthDialog?: () => void;
-  openPentestDialog?: (flags?: Record<string, any>) => void;
+  openPentestDialog?: (flags?: WebCommandOptions) => void;
 }
 
 /**

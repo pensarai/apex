@@ -15,7 +15,12 @@ import { config } from "../core/config";
 import { createCliRenderer } from "@opentui/core";
 import { ConfigProvider, useConfig } from "./context/config";
 import { createSwitch } from "./components/switch";
-import { type RoutePath, RouteProvider, useRoute } from "./context/route";
+import {
+  type RoutePath,
+  type WebCommandOptions,
+  RouteProvider,
+  useRoute,
+} from "./context/route";
 import { ResponsibleUseDisclosure } from "./components/responsible-use-disclosure";
 import { hasAnyProviderConfigured } from "../core/providers";
 import { SessionProvider } from "./context/session";
@@ -70,7 +75,9 @@ function App({ appConfig }: AppProps) {
   const [showThemeDialog, setShowThemeDialog] = useState(false);
   const [showAuthDialog, setShowAuthDialog] = useState(false);
   const [showPentestDialog, setShowPentestDialog] = useState(false);
-  const [pendingPentestFlags, setPendingPentestFlags] = useState<Record<string, any> | undefined>(undefined);
+  const [pendingPentestFlags, setPendingPentestFlags] = useState<
+    WebCommandOptions | undefined
+  >(undefined);
 
   const navigableItems = ["command-input"];
 
@@ -168,8 +175,8 @@ function AppContent({
   setShowAuthDialog: (show: boolean) => void;
   showPentestDialog: boolean;
   setShowPentestDialog: (show: boolean) => void;
-  pendingPentestFlags: Record<string, any> | undefined;
-  setPendingPentestFlags: (flags: Record<string, any> | undefined) => void;
+  pendingPentestFlags: WebCommandOptions | undefined;
+  setPendingPentestFlags: (flags: WebCommandOptions | undefined) => void;
   cwd: string;
   setCtrlCPressTime: (time: number | null) => void;
   showExitWarning: boolean;
@@ -278,7 +285,10 @@ function AppContent({
     refocusPrompt();
   };
 
-  const handleStartPentest = (targets: string[], sessionConfig: SessionConfig) => {
+  const handleStartPentest = (
+    targets: string[],
+    sessionConfig: SessionConfig,
+  ) => {
     setShowPentestDialog(false);
     setPendingPentestFlags(undefined);
     setTimeout(() => {
