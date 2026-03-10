@@ -22,6 +22,12 @@ The models interface displays all available models from your configured provider
   up additional AI providers, or `/auth` to connect via Pensar Console.
 </Callout>
 
+<img
+  src="../assets/models.png"
+  alt="Model selection screen — models grouped by provider"
+  style={{ borderRadius: "8px", marginTop: "16px" }}
+/>
+
 ## Interface
 
 When you open `/models`, you'll see:
@@ -90,36 +96,38 @@ Benefits:
 - Single API for multiple providers
 - Pay-per-use pricing
 - Access to latest models from Anthropic, OpenAI, Google, Meta, and more
-  </Accordion>
 
-  <Accordion title="AWS Bedrock" icon="aws" iconType="brands">
-    Enterprise-grade AI through AWS infrastructure.
-    
-    Available models:
-    - Claude models via Bedrock
-    - Amazon Nova models
-    - Meta Llama models
-    - And more...
+      </Accordion>
 
-    <Callout intent="info">
-      Requires AWS credentials and Bedrock model access in your region.
-    </Callout>
+      <Accordion title="AWS Bedrock" icon="aws" iconType="brands">
+      Enterprise-grade AI through AWS infrastructure.
 
-  </Accordion>
+      Available models:
+      - Claude models via Bedrock
+      - Amazon Nova models
+      - Meta Llama models
+      - And more...
 
-  <Accordion title="Pensar Console" icon="shield-check">
-    Managed inference through Pensar Console — no API key required.
+        <Callout intent="info">
+          Requires AWS credentials and Bedrock model access in your region.
+        </Callout>
 
-    Available models:
-    - Claude Sonnet 4.5 / Opus 4.5
-    - Claude Sonnet 4.0 / Opus 4.0
-    - Claude Haiku 4.5
-    - And more...
+      </Accordion>
 
-    Connect via `/auth` in Apex.
+      <Accordion title="Pensar Console" icon="shield-check">
+      Managed inference through Pensar Console — no API key required.
 
-  </Accordion>
-</AccordionGroup>
+        Available models:
+        - Claude Sonnet 4.5 / Opus 4.5
+        - Claude Sonnet 4.0 / Opus 4.0
+        - Claude Haiku 4.5
+        - And more...
+
+        Connect via `/auth` in Apex.
+
+      </Accordion>
+
+  </AccordionGroup>
 
 ## Setting Up Providers
 

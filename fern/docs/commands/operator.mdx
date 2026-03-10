@@ -31,9 +31,16 @@ With flags:
     Select how much autonomy the agent has: plan, manual, or auto.
   </Step>
   <Step title="Interactive Session">
-    The AI agent proposes actions and you approve, reject, or redirect in real time.
+    The AI agent proposes actions and you approve, reject, or redirect in real
+    time.
   </Step>
 </Steps>
+
+<img
+  src="../assets/operator-home.png"
+  alt="Operator session — interactive prompt"
+  style={{ borderRadius: "8px", marginTop: "16px" }}
+/>
 
 ## Operator Modes
 
@@ -51,22 +58,22 @@ With flags:
 
 ## Command Flags
 
-| Flag                   | Description                                      |
-| ---------------------- | ------------------------------------------------ |
-| `--target <url>`       | Target URL to test                               |
-| `--name <name>`        | Session name                                     |
-| `--mode <mode>`        | Operator mode: plan, manual, or auto             |
-| `--autopilot`          | Disable approval gates (auto-approve all actions)|
-| `--model <model>`      | AI model to use                                  |
-| `--auth-url <url>`     | Login page URL                                   |
-| `--auth-user <user>`   | Auth username                                    |
-| `--auth-pass <pass>`   | Auth password                                    |
-| `--auth-instructions`  | Custom auth instructions                         |
-| `--hosts <h1,h2,...>`  | Allowed hosts (comma-separated)                  |
-| `--ports <p1,p2,...>`  | Allowed ports (comma-separated)                  |
-| `--strict`             | Enable strict scope mode                         |
-| `--headers <mode>`     | Headers mode: none, default, or custom           |
-| `--header <Name:Val>`  | Custom header (repeatable)                       |
+| Flag                  | Description                                       |
+| --------------------- | ------------------------------------------------- |
+| `--target <url>`      | Target URL to test                                |
+| `--name <name>`       | Session name                                      |
+| `--mode <mode>`       | Operator mode: plan, manual, or auto              |
+| `--autopilot`         | Disable approval gates (auto-approve all actions) |
+| `--model <model>`     | AI model to use                                   |
+| `--auth-url <url>`    | Login page URL                                    |
+| `--auth-user <user>`  | Auth username                                     |
+| `--auth-pass <pass>`  | Auth password                                     |
+| `--auth-instructions` | Custom auth instructions                          |
+| `--hosts <h1,h2,...>` | Allowed hosts (comma-separated)                   |
+| `--ports <p1,p2,...>` | Allowed ports (comma-separated)                   |
+| `--strict`            | Enable strict scope mode                          |
+| `--headers <mode>`    | Headers mode: none, default, or custom            |
+| `--header <Name:Val>` | Custom header (repeatable)                        |
 
 ## When to Use /operator vs /pentest
 
@@ -81,14 +88,14 @@ With flags:
   </Card>
 </CardGroup>
 
-| Scenario                              | Recommended     |
-| ------------------------------------- | --------------- |
-| Full security audit                   | `/pentest`      |
-| Investigating a specific feature      | `/operator`     |
-| First time testing a target           | `/operator`     |
-| CI/CD automated scanning              | `/pentest`      |
-| Sensitive production environment      | `/operator`     |
-| Broad vulnerability discovery         | `/pentest`      |
+| Scenario                         | Recommended |
+| -------------------------------- | ----------- |
+| Full security audit              | `/pentest`  |
+| Investigating a specific feature | `/operator` |
+| First time testing a target      | `/operator` |
+| CI/CD automated scanning         | `/pentest`  |
+| Sensitive production environment | `/operator` |
+| Broad vulnerability discovery    | `/pentest`  |
 
 ## Example Workflow
 
@@ -109,6 +116,12 @@ pensar
 # - Steer toward specific areas of interest
 ```
 
+<img
+  src="../assets/operator-approval.png"
+  alt="Operator session — agent action approval"
+  style={{ borderRadius: "8px", marginTop: "16px" }}
+/>
+
 ## Operator Skills
 
 You can extend operator mode with custom skills using `/create-skill`. Skills are reusable instruction sets that teach the agent specialized testing techniques or workflows for your specific environment.
@@ -116,11 +129,11 @@ You can extend operator mode with custom skills using `/create-skill`. Skills ar
 ## Best Practices
 
 <Callout intent="success">
-  **Tips for Operator Mode**:
-  1. **Start with plan mode** to review the agent's testing strategy before execution
-  2. **Use manual mode** for sensitive targets where you want full control
-  3. **Switch to auto mode** once you're comfortable with the agent's approach
-  4. **Create skills** for repetitive testing patterns in your environment
+  **Tips for Operator Mode**: 1. **Start with plan mode** to review the agent's
+  testing strategy before execution 2. **Use manual mode** for sensitive targets
+  where you want full control 3. **Switch to auto mode** once you're comfortable
+  with the agent's approach 4. **Create skills** for repetitive testing patterns
+  in your environment
 </Callout>
 
 <Callout intent="warning">
