@@ -289,6 +289,14 @@ function runScript(
     let killed = false;
     let resolved = false;
 
+    // Wire up abort signal — clean up in safeResolve to cover all exit paths
+    let abortCleanup: (() => void) | undefined;
+    if (abortSignal) {
+      const handler = () => killProcess();
+      abortSignal.addEventListener("abort", handler, { once: true });
+      abortCleanup = () => abortSignal.removeEventListener("abort", handler);
+    }
+
     const safeResolve = (result: {
       stdout: string;
       stderr: string;
@@ -296,6 +304,8 @@ function runScript(
     }) => {
       if (!resolved) {
         resolved = true;
+        clearTimeout(timeoutTimer);
+        abortCleanup?.();
         resolve(result);
       }
     };
@@ -339,21 +349,11 @@ function runScript(
     });
 
     child.on("close", (code) => {
-      clearTimeout(timeoutTimer);
       safeResolve({ stdout, stderr, exitCode: code ?? 1 });
     });
 
     child.on("error", (err) => {
-      clearTimeout(timeoutTimer);
       safeResolve({ stdout, stderr, exitCode: 1 });
     });
-
-    if (abortSignal) {
-      const handler = () => killProcess();
-      abortSignal.addEventListener("abort", handler, { once: true });
-      child.on("close", () =>
-        abortSignal.removeEventListener("abort", handler),
-      );
-    }
   });
 }
