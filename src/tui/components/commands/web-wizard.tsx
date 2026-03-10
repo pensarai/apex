@@ -294,10 +294,9 @@ export default function WebWizard({
 
   // Keyboard handling
   useKeyboard((key) => {
-    key.preventDefault();
-
     // ESC - Go back or close
     if (key.name === "escape") {
+      key.preventDefault();
       if (currentStep === "creating") {
         // Can't cancel while creating
         return;
@@ -325,6 +324,7 @@ export default function WebWizard({
       const maxTargetField = state.sourceCodeAccess ? 2 : 1; // 0=target, 1=toggle, 2=cwd (if enabled)
       // Tab navigation
       if (key.name === "tab") {
+        key.preventDefault();
         if (key.shift) {
           setTargetFocusedField((prev) => Math.max(0, prev - 1));
         } else {
@@ -341,6 +341,7 @@ export default function WebWizard({
         targetFocusedField === 1 &&
         (key.name === "up" || key.name === "down")
       ) {
+        key.preventDefault();
         setState((prev) => ({
           ...prev,
           sourceCodeAccess: !prev.sourceCodeAccess,
@@ -349,6 +350,7 @@ export default function WebWizard({
       }
       // Enter to start if target is filled
       if (key.name === "return" && state.target.trim()) {
+        key.preventDefault();
         createSessionAndNavigate();
         return;
       }
@@ -359,6 +361,7 @@ export default function WebWizard({
     if (currentStep === "configure") {
       // Enter to create session
       if (key.name === "return") {
+        key.preventDefault();
         // Check if we should add an item instead of starting
         if (focusedSection === 1 && focusedField === 0 && hostInput.trim()) {
           setState((prev) => ({
@@ -409,6 +412,7 @@ export default function WebWizard({
 
       // Tab navigation between sections and fields
       if (key.name === "tab") {
+        key.preventDefault();
         if (key.shift) {
           if (focusedField > 0) {
             setFocusedField(focusedField - 1);
@@ -430,6 +434,7 @@ export default function WebWizard({
 
       // Arrow keys for toggles
       if (key.name === "up" || key.name === "down") {
+        key.preventDefault();
         if (focusedSection === 1 && focusedField === 2) {
           setState((prev) => ({
             ...prev,
@@ -491,6 +496,7 @@ export default function WebWizard({
       if (focusedSection === 3) {
         // Backspace - remove last char from search
         if (key.name === "backspace") {
+          key.preventDefault();
           setModelSearchQuery((prev) => prev.slice(0, -1));
           return;
         }
@@ -501,6 +507,7 @@ export default function WebWizard({
         }
         // Left/Right - toggle provider expansion
         if (key.name === "left" || key.name === "right") {
+          key.preventDefault();
           // Find which provider the current model belongs to
           const currentProvider = model.provider;
           if (key.name === "left") {
@@ -516,6 +523,7 @@ export default function WebWizard({
         }
         // Tab in model section - toggle next provider expansion
         if (key.name === "tab" && !key.shift) {
+          key.preventDefault();
           const availableProviders = providerOrder.filter(
             (p) => groupedModels[p]?.length > 0,
           );
@@ -541,6 +549,7 @@ export default function WebWizard({
           key.sequence.length === 1 &&
           /[a-zA-Z0-9\-_.]/.test(key.sequence)
         ) {
+          key.preventDefault();
           setModelSearchQuery((prev) => prev + key.sequence);
           // Auto-expand all providers when searching
           if (!modelSearchQuery) {
@@ -598,7 +607,7 @@ export default function WebWizard({
   if (currentStep === "target") {
     return (
       <Dialog size="large" onClose={onClose}>
-      <box width="100%" flexDirection="column" gap={2} paddingLeft={4}>
+      <box width="100%" flexDirection="column" gap={2} paddingLeft={4} paddingBottom={1}>
         <text fg={colors.text}>Configure Web App Pentest</text>
         <text fg={colors.textMuted}>{modeDescription}</text>
         <text fg={colors.textMuted}>
@@ -672,7 +681,7 @@ export default function WebWizard({
   // Render configure step
   return (
     <Dialog size="large" onClose={onClose}>
-    <box width="100%" flexDirection="column" gap={2} paddingLeft={4}>
+    <box width="100%" flexDirection="column" gap={2} paddingLeft={4} paddingBottom={1}>
       <box flexDirection="column">
         <text fg={colors.text}>Configure Web App Pentest - {modeLabel}</text>
         <text fg={colors.textMuted}>Target: {state.target}</text>
