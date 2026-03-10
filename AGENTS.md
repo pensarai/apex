@@ -6,6 +6,8 @@
 
 Pensar Apex is an AI-powered penetration testing CLI tool with a terminal UI (TUI). Single-package TypeScript project using Bun as the runtime and package manager.
 
+For the rationale behind every major product and architecture decision (why TUI, why `/pentest` vs `/operator`, why the swarm/sub-agent architecture, etc.), see **[docs/decisions/](./docs/decisions/index.md)**. When proposing new features or making architectural decisions, consult these records to ensure changes align with the product direction.
+
 ### Key commands
 
 | Task               | Command                |

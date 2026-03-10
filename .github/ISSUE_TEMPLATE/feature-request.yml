@@ -18,3 +18,11 @@ body:
       description: What do you want to change or add? What are the benefits of implementing this? Try to be detailed so we can understand your request better.
     validations:
       required: true
+
+  - type: textarea
+    attributes:
+      label: Why should we build this?
+      description: |
+        Explain the motivation behind this request. How does it align with Apex's goal of making continuous automated pentesting routine? Who benefits and in what scenario? The more you can connect it to a real use case (professional pentest engagement, security team self-testing, developer CI workflow, etc.) the better we can evaluate priority.
+    validations:
+      required: true
