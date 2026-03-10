@@ -10,11 +10,17 @@ import HITLWizard from "./components/commands/operator-wizard";
 import WebWizard from "./components/commands/web-wizard";
 import ProviderManager from "./components/commands/provider-manager";
 import type { Config } from "../core/config/config";
+import type { SessionConfig } from "../core/session";
 import { config } from "../core/config";
 import { createCliRenderer } from "@opentui/core";
 import { ConfigProvider, useConfig } from "./context/config";
 import { createSwitch } from "./components/switch";
-import { type RoutePath, RouteProvider, useRoute } from "./context/route";
+import {
+  type RoutePath,
+  type WebCommandOptions,
+  RouteProvider,
+  useRoute,
+} from "./context/route";
 import { ResponsibleUseDisclosure } from "./components/responsible-use-disclosure";
 import { hasAnyProviderConfigured } from "../core/providers";
 import { SessionProvider } from "./context/session";
@@ -68,6 +74,10 @@ function App({ appConfig }: AppProps) {
   const [showShortcutsDialog, setShowShortcutsDialog] = useState(false);
   const [showThemeDialog, setShowThemeDialog] = useState(false);
   const [showAuthDialog, setShowAuthDialog] = useState(false);
+  const [showPentestDialog, setShowPentestDialog] = useState(false);
+  const [pendingPentestFlags, setPendingPentestFlags] = useState<
+    WebCommandOptions | undefined
+  >(undefined);
 
   const navigableItems = ["command-input"];
 
@@ -83,6 +93,10 @@ function App({ appConfig }: AppProps) {
                     onOpenSessionsDialog={() => setShowSessionsDialog(true)}
                     onOpenThemeDialog={() => setShowThemeDialog(true)}
                     onOpenAuthDialog={() => setShowAuthDialog(true)}
+                    onOpenPentestDialog={(flags) => {
+                      setPendingPentestFlags(flags);
+                      setShowPentestDialog(true);
+                    }}
                   >
                     <KeybindingProvider
                       deps={{
@@ -106,6 +120,10 @@ function App({ appConfig }: AppProps) {
                         setShowThemeDialog={setShowThemeDialog}
                         showAuthDialog={showAuthDialog}
                         setShowAuthDialog={setShowAuthDialog}
+                        showPentestDialog={showPentestDialog}
+                        setShowPentestDialog={setShowPentestDialog}
+                        pendingPentestFlags={pendingPentestFlags}
+                        setPendingPentestFlags={setPendingPentestFlags}
                         cwd={cwd}
                         setCtrlCPressTime={setCtrlCPressTime}
                         showExitWarning={showExitWarning}
@@ -135,6 +153,10 @@ function AppContent({
   setShowThemeDialog,
   showAuthDialog,
   setShowAuthDialog,
+  showPentestDialog,
+  setShowPentestDialog,
+  pendingPentestFlags,
+  setPendingPentestFlags,
   cwd,
   setCtrlCPressTime,
   showExitWarning,
@@ -151,6 +173,10 @@ function AppContent({
   setShowThemeDialog: (show: boolean) => void;
   showAuthDialog: boolean;
   setShowAuthDialog: (show: boolean) => void;
+  showPentestDialog: boolean;
+  setShowPentestDialog: (show: boolean) => void;
+  pendingPentestFlags: WebCommandOptions | undefined;
+  setPendingPentestFlags: (flags: WebCommandOptions | undefined) => void;
   cwd: string;
   setCtrlCPressTime: (time: number | null) => void;
   showExitWarning: boolean;
@@ -197,13 +223,13 @@ function AppContent({
     }
   }, [config.data.responsibleUseAccepted, route.data]);
 
-  // Track external dialog state for theme/auth dialogs so operator input
+  // Track external dialog state for theme/auth/pentest dialogs so operator input
   // unfocuses while a dialog overlay is open
   useEffect(() => {
-    if (showThemeDialog || showAuthDialog) {
+    if (showThemeDialog || showAuthDialog || showPentestDialog) {
       setExternalDialogOpen(true);
     }
-  }, [showThemeDialog, showAuthDialog]);
+  }, [showThemeDialog, showAuthDialog, showPentestDialog]);
 
   // Auto-clear the exit warning after 1 second
   useEffect(() => {
@@ -249,6 +275,28 @@ function AppContent({
     refocusPrompt();
   };
 
+  const handleClosePentestDialog = () => {
+    setShowPentestDialog(false);
+    setPendingPentestFlags(undefined);
+    setTimeout(() => {
+      setExternalDialogOpen(false);
+    }, 0);
+    setInputKey((prev) => prev + 1);
+    refocusPrompt();
+  };
+
+  const handleStartPentest = (
+    targets: string[],
+    sessionConfig: SessionConfig,
+  ) => {
+    setShowPentestDialog(false);
+    setPendingPentestFlags(undefined);
+    setTimeout(() => {
+      setExternalDialogOpen(false);
+    }, 0);
+    route.navigate({ type: "pentest", targets, sessionConfig });
+  };
+
   // Check if we're on the home route
   const isHomeRoute = route.data.type === "base" && route.data.path === "home";
 
@@ -284,6 +332,26 @@ function AppContent({
       {showThemeDialog && <ThemePicker onClose={handleCloseThemeDialog} />}
 
       {showAuthDialog && <AuthFlow onClose={handleCloseAuthDialog} />}
+
+      {showPentestDialog && (
+        <WebWizard
+          onClose={handleClosePentestDialog}
+          onStartPentest={handleStartPentest}
+          initialTarget={pendingPentestFlags?.target}
+          autoMode={pendingPentestFlags?.auto}
+          initialName={pendingPentestFlags?.name}
+          initialAuthUrl={pendingPentestFlags?.authUrl}
+          initialAuthUser={pendingPentestFlags?.authUser}
+          initialAuthPass={pendingPentestFlags?.authPass}
+          initialAuthInstructions={pendingPentestFlags?.authInstructions}
+          initialHosts={pendingPentestFlags?.hosts}
+          initialPorts={pendingPentestFlags?.ports}
+          initialStrict={pendingPentestFlags?.strict}
+          initialHeadersMode={pendingPentestFlags?.headersMode}
+          initialCustomHeaders={pendingPentestFlags?.customHeaders}
+          initialModel={pendingPentestFlags?.model}
+        />
+      )}
     </box>
   );
 }
@@ -345,23 +413,6 @@ function CommandDisplay({
               initialTarget={route.data.options?.target}
               initialName={route.data.options?.name}
               initialRequireApproval={route.data.options?.requireApproval}
-              initialModel={route.data.options?.model}
-            />
-          </RouteSwitch.Case>
-          <RouteSwitch.Case when="web">
-            <WebWizard
-              initialTarget={route.data.options?.target}
-              autoMode={route.data.options?.auto}
-              initialName={route.data.options?.name}
-              initialAuthUrl={route.data.options?.authUrl}
-              initialAuthUser={route.data.options?.authUser}
-              initialAuthPass={route.data.options?.authPass}
-              initialAuthInstructions={route.data.options?.authInstructions}
-              initialHosts={route.data.options?.hosts}
-              initialPorts={route.data.options?.ports}
-              initialStrict={route.data.options?.strict}
-              initialHeadersMode={route.data.options?.headersMode}
-              initialCustomHeaders={route.data.options?.customHeaders}
               initialModel={route.data.options?.model}
             />
           </RouteSwitch.Case>

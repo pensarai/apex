@@ -1,5 +1,5 @@
 import type { CommandDefinition } from "./command-router";
-import type { Route } from "./context/route";
+import type { Route, WebCommandOptions } from "./context/route";
 import {
   parseWebFlags,
   hasEnoughFlagsToSkipWizard,
@@ -17,6 +17,7 @@ export interface AppCommandContext {
   openSessionsDialog?: () => void;
   openThemeDialog?: () => void;
   openAuthDialog?: () => void;
+  openPentestDialog?: (flags?: WebCommandOptions) => void;
 }
 
 /**
@@ -115,12 +116,8 @@ export const commands: CommandConfig[] = [
         });
         return;
       }
-      // Navigate to WebWizard (swarm wizard) for target input
-      ctx.navigate({
-        type: "base",
-        path: "web",
-        options: { auto: true, ...flags },
-      });
+      // Open WebWizard dialog for target input
+      ctx.openPentestDialog?.({ auto: true, ...flags });
     },
   },
   {

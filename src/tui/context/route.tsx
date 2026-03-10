@@ -12,7 +12,6 @@ export type RoutePath =
   | "help"
   | "pentest"
   | "thorough"
-  | "web"
   | "operator"
   | "chat"
   | "dns"
