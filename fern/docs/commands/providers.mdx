@@ -25,12 +25,18 @@ Apex supports the following AI providers:
   <Card title="OpenAI" icon="openai" iconType="brands">
     GPT-4 and other OpenAI models.
   </Card>
+  <Card title="Google" icon="google" iconType="brands">
+    Gemini models via Google's Generative AI API.
+  </Card>
   <Card title="OpenRouter" icon="route">
     Access multiple AI models through one API. Great for flexibility and model
     comparison.
   </Card>
   <Card title="AWS Bedrock" icon="aws" iconType="brands">
     Amazon Bedrock AI models for enterprise deployments.
+  </Card>
+  <Card title="Pensar Console" icon="shield-check">
+    Managed inference — connect via `/auth` instead, no API key needed.
   </Card>
 </CardGroup>
 
@@ -79,48 +85,100 @@ Apex supports the following AI providers:
     </Callout>
   </Accordion>
 
-<Accordion title="OpenAI" icon="openai" iconType="brands">
-  **Best for**: Users already invested in the OpenAI ecosystem ### Get Your API
-  Key 1. Visit [platform.openai.com](https://platform.openai.com/) 2. Navigate
-  to API Keys 3. Create a new secret key ### Configure in Apex 1. Run
-  `/providers` 2. Select "OpenAI" 3. Paste your API key 4. Press Enter to save
-</Accordion>
+  <Accordion title="OpenAI" icon="openai" iconType="brands">
+    **Best for**: Users already invested in the OpenAI ecosystem
 
-<Accordion title="OpenRouter" icon="route">
-  **Best for**: Access to multiple models through a single API ### Get Your API
-  Key 1. Visit [openrouter.ai](https://openrouter.ai/) 2. Create an account 3.
-  Navigate to Keys section 4. Generate a new API key ### Configure in Apex 1.
-  Run `/providers` 2. Select "OpenRouter" 3. Paste your API key 4. Press Enter
-  to save
-  <Callout intent="info">
-    OpenRouter provides access to models from multiple providers including
-    Anthropic, OpenAI, Meta, and more through a unified API.
-  </Callout>
-</Accordion>
+    ### Get Your API Key
+    1. Visit [platform.openai.com](https://platform.openai.com/)
+    2. Navigate to API Keys
+    3. Create a new secret key
+
+    ### Configure in Apex
+    1. Run `/providers`
+    2. Select "OpenAI"
+    3. Paste your API key
+    4. Press Enter to save
+
+  </Accordion>
+
+  <Accordion title="Google" icon="google" iconType="brands">
+    **Best for**: Users wanting access to Gemini models
+
+    ### Get Your API Key
+    1. Visit [aistudio.google.com](https://aistudio.google.com/)
+    2. Sign in with your Google account
+    3. Generate an API key
+
+    ### Configure in Apex
+    1. Run `/providers`
+    2. Select "Google"
+    3. Paste your API key
+    4. Press Enter to save
+
+  </Accordion>
+
+  <Accordion title="OpenRouter" icon="route">
+    **Best for**: Access to multiple models through a single API
+
+    ### Get Your API Key
+    1. Visit [openrouter.ai](https://openrouter.ai/)
+    2. Create an account
+    3. Navigate to Keys section
+    4. Generate a new API key
+
+    ### Configure in Apex
+    1. Run `/providers`
+    2. Select "OpenRouter"
+    3. Paste your API key
+    4. Press Enter to save
+
+    <Callout intent="info">
+      OpenRouter provides access to models from multiple providers including
+      Anthropic, OpenAI, Google, Meta, and more through a unified API.
+    </Callout>
+
+  </Accordion>
 
   <Accordion title="AWS Bedrock" icon="aws" iconType="brands">
     **Best for**: Enterprise deployments with existing AWS infrastructure
-    
+
     ### Prerequisites
     - AWS account with Bedrock access
     - IAM permissions for Bedrock models
     - Model access enabled in your region
-    
+
     ### Get Your Credentials
     1. Log in to AWS Console
     2. Navigate to IAM
     3. Create or use existing access keys
     4. Ensure Bedrock permissions are attached
-    
+
     ### Configure in Apex
     1. Run `/providers`
     2. Select "AWS Bedrock"
     3. Enter your AWS credentials
     4. Press Enter to save
-    
+
     <Callout intent="warning">
       Ensure your IAM role has permissions to invoke Bedrock models and that model access is enabled in your AWS region.
     </Callout>
+
+  </Accordion>
+
+  <Accordion title="Pensar Console" icon="shield-check">
+    **Best for**: Getting started quickly without managing API keys
+
+    Pensar Console provides managed inference so you don't need to bring your own API key.
+
+    ### Connect
+    1. Run `/auth` in Apex (not `/providers`)
+    2. Follow the authentication flow to link your Pensar Console account
+    3. Your models will appear automatically in `/models`
+
+    <Callout intent="info">
+      Visit [console.pensar.dev](https://console.pensar.dev) to create an account and manage credits.
+    </Callout>
+
   </Accordion>
 </AccordionGroup>
 
@@ -142,7 +200,7 @@ Once you've configured a provider:
 
 1. You'll be automatically redirected to the `/models` command
 2. Select a model from your configured provider
-3. Start testing with `/init`
+3. Start testing with `/pentest`
 
 ## Quick Access
 
@@ -171,11 +229,15 @@ You can also access providers from the models screen:
     4. Try regenerating the key
   </Accordion>
 
-<Accordion title="Provider not showing" icon="eye-slash">
-  **Issue**: Expected provider not in the list **Solutions**: 1. Update Apex to
-  the latest version 2. Restart Apex 3. Check if provider requires additional
-  setup
-</Accordion>
+  <Accordion title="Provider not showing" icon="eye-slash">
+    **Issue**: Expected provider not in the list
+
+    **Solutions**:
+    1. Update Apex to the latest version (`pensar upgrade`)
+    2. Restart Apex
+    3. Check if provider requires additional setup
+
+  </Accordion>
 
   <Accordion title="AWS Bedrock errors" icon="aws" iconType="brands">
     **Issue**: Cannot connect to AWS Bedrock
@@ -194,7 +256,7 @@ You can also access providers from the models screen:
   <Card title="/models" icon="microchip" href="/apex/commands/models">
     Select AI model after configuring provider
   </Card>
-  <Card title="/init" icon="play" href="/apex/commands/init">
+  <Card title="/pentest" icon="play" href="/apex/commands/pentest">
     Start a penetration test
   </Card>
   <Card title="/help" icon="circle-question" href="/apex/commands/help">
