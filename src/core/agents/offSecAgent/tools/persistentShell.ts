@@ -24,8 +24,16 @@ export class PersistentShell {
   private disposed = false;
   private readonly cwd?: string;
 
+  /**
+   * When true, the shell must be respawned before the next command.
+   * Set after timeout/abort leaves the shell in an inconsistent state.
+   */
+  private needsRespawn = false;
+
   /** Allows cancelCurrentCommand() to force-resolve the running execute(). */
-  private pendingCancel: ((result: ShellExecuteResult) => void) | null = null;
+  private pendingCancel:
+    | ((result: ShellExecuteResult, markDirty?: boolean) => void)
+    | null = null;
   /** Snapshot accessors set by execute(), read by cancelCurrentCommand(). */
   private pendingStdout: (() => string) | null = null;
   private pendingStderr: (() => string) | null = null;
@@ -70,6 +78,28 @@ export class PersistentShell {
   }
 
   private ensureAlive(): void {
+    if (this.needsRespawn && this.proc) {
+      // Kill the old shell that's in an inconsistent state
+      const pid = this.proc.pid;
+      try {
+        this.proc.stdin?.end();
+        this.proc.kill("SIGKILL");
+      } catch {
+        // ignore
+      }
+      // Also kill the process group if detached
+      if (pid && process.platform !== "win32") {
+        try {
+          process.kill(-pid, "SIGKILL");
+        } catch {
+          // group may already be gone
+        }
+      }
+      this.proc = null;
+      this.alive = false;
+      this.needsRespawn = false;
+    }
+
     if (!this.alive || !this.proc) {
       this.spawn();
     }
@@ -109,51 +139,10 @@ export class PersistentShell {
       let stdoutTruncated = false;
       let resolved = false;
       let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
+      let abortCleanup: (() => void) | undefined;
 
       this.pendingStdout = () => stdout;
       this.pendingStderr = () => stderr;
-
-      const safeResolve = (result: ShellExecuteResult) => {
-        if (resolved) return;
-        resolved = true;
-        this.pendingCancel = null;
-        this.pendingStdout = null;
-        this.pendingStderr = null;
-        if (timeoutTimer) clearTimeout(timeoutTimer);
-        if (abortCleanup) abortCleanup();
-        proc.stdout!.removeListener("data", onStdout);
-        proc.stderr!.removeListener("data", onStderr);
-        resolve(result);
-      };
-
-      this.pendingCancel = safeResolve;
-
-      // Wire abort signal to cancel running command
-      let abortCleanup: (() => void) | undefined;
-      if (abortSignal) {
-        const onAbort = () => {
-          if (resolved) return;
-          const pid = proc.pid;
-          if (pid && process.platform !== "win32") {
-            try {
-              spawnSync("pkill", ["-TERM", "-P", pid.toString()], {
-                stdio: "ignore",
-              });
-            } catch {
-              // pkill may not be available or no processes matched
-            }
-          }
-          setTimeout(() => {
-            safeResolve({
-              stdout: stdout || "(no output)",
-              stderr: stderr ? stderr + "\n(aborted)" : "(aborted)",
-              exitCode: 130,
-            });
-          }, 500);
-        };
-        abortSignal.addEventListener("abort", onAbort, { once: true });
-        abortCleanup = () => abortSignal.removeEventListener("abort", onAbort);
-      }
 
       const onStdout = (data: Buffer) => {
         const chunk = data.toString();
@@ -198,9 +187,6 @@ export class PersistentShell {
         }
       };
 
-      proc.stdout!.on("data", onStdout);
-      proc.stderr!.on("data", onStderr);
-
       const onClose = () => {
         safeResolve({
           stdout: stdout || "(no output)",
@@ -208,6 +194,57 @@ export class PersistentShell {
           exitCode: 1,
         });
       };
+
+      const safeResolve = (result: ShellExecuteResult, markDirty = false) => {
+        if (resolved) return;
+        resolved = true;
+        this.pendingCancel = null;
+        this.pendingStdout = null;
+        this.pendingStderr = null;
+        if (markDirty) {
+          this.needsRespawn = true;
+        }
+        if (timeoutTimer) clearTimeout(timeoutTimer);
+        if (abortCleanup) abortCleanup();
+        proc.stdout!.removeListener("data", onStdout);
+        proc.stderr!.removeListener("data", onStderr);
+        proc.removeListener("close", onClose);
+        resolve(result);
+      };
+
+      this.pendingCancel = safeResolve;
+
+      // Wire abort signal to cancel running command
+      if (abortSignal) {
+        const onAbort = () => {
+          if (resolved) return;
+          const pid = proc.pid;
+          if (pid && process.platform !== "win32") {
+            try {
+              spawnSync("pkill", ["-TERM", "-P", pid.toString()], {
+                stdio: "ignore",
+              });
+            } catch {
+              // pkill may not be available or no processes matched
+            }
+          }
+          setTimeout(() => {
+            safeResolve(
+              {
+                stdout: stdout || "(no output)",
+                stderr: stderr ? stderr + "\n(aborted)" : "(aborted)",
+                exitCode: 130,
+              },
+              true,
+            );
+          }, 500);
+        };
+        abortSignal.addEventListener("abort", onAbort, { once: true });
+        abortCleanup = () => abortSignal.removeEventListener("abort", onAbort);
+      }
+
+      proc.stdout!.on("data", onStdout);
+      proc.stderr!.on("data", onStderr);
       proc.once("close", onClose);
 
       if (timeoutSeconds != null && timeoutSeconds > 0) {
@@ -227,11 +264,14 @@ export class PersistentShell {
             }
           }
           setTimeout(() => {
-            safeResolve({
-              stdout: stdout || "(no output)",
-              stderr: stderr || "",
-              exitCode: 124,
-            });
+            safeResolve(
+              {
+                stdout: stdout || "(no output)",
+                stderr: stderr || "",
+                exitCode: 124,
+              },
+              true,
+            );
           }, 1_000);
         }, timeoutSeconds * 1_000);
       }
@@ -286,15 +326,19 @@ export class PersistentShell {
       }
     }
 
-    // Give the process a moment to die, then force-resolve with partial output
+    // Give the process a moment to die, then force-resolve with partial output.
+    // Mark shell as needing respawn since cancellation leaves it in an inconsistent state.
     setTimeout(() => {
-      cancel({
-        stdout: stdout || "(no output)",
-        stderr: stderr
-          ? stderr + "\n(cancelled by user)"
-          : "(cancelled by user)",
-        exitCode: 130,
-      });
+      cancel(
+        {
+          stdout: stdout || "(no output)",
+          stderr: stderr
+            ? stderr + "\n(cancelled by user)"
+            : "(cancelled by user)",
+          exitCode: 130,
+        },
+        true,
+      );
     }, 500);
 
     return true;
