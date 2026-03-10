@@ -15,7 +15,11 @@ interface CreditsInfo {
   workspace: string;
 }
 
-export default function CreditsFlow() {
+interface CreditsFlowProps {
+  onOpenAuthDialog?: () => void;
+}
+
+export default function CreditsFlow({ onOpenAuthDialog }: CreditsFlowProps) {
   const route = useRoute();
   const appConfig = useConfig();
   const [step, setStep] = useState<CreditsStep>("loading");
@@ -106,7 +110,7 @@ export default function CreditsFlow() {
 
     if (step === "no-auth") {
       if (key.name === "return") {
-        route.navigate({ type: "base", path: "auth" });
+        onOpenAuthDialog?.();
       }
     }
 

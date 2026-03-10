@@ -10,7 +10,15 @@ export function filterOperatorAutocomplete(
   allOptions: AutocompleteOption[],
   skillSlugs: Set<string>,
 ): AutocompleteOption[] {
-  const allowedCommands = new Set(["/create-skill", "/models"]);
+  const allowedCommands = new Set([
+    "/create-skill",
+    "/models",
+    "/auth",
+    "/themes",
+    "/new",
+    "/operator",
+    "/pentest",
+  ]);
   return allOptions.filter(
     (opt) => allowedCommands.has(opt.value) || skillSlugs.has(opt.value),
   );
