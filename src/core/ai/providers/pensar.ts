@@ -47,8 +47,9 @@ export interface PensarModelConfig {
  * Supports both legacy API key auth and WorkOS JWT auth.
  * When workspaceId is provided, sends X-Workspace-Id header for WorkOS auth.
  *
- * doStream() posts to /bedrock/stream and parses SSE events for real
- * token-by-token streaming. Falls back to wrapping doGenerate() on error.
+ * doStream() discovers the Lambda Function URL via /bedrock/validate for
+ * true SSE streaming. Falls back to /bedrock/invoke with stream: true
+ * (buffered SSE) in dev, or wraps doGenerate() on error.
  */
 export function createPensarModel(
   bedrockModelId: string,
@@ -116,8 +117,8 @@ export function createPensarModel(
       // Fall through to fallback
     }
 
-    // Fallback: buffered SSE via API Gateway
-    cachedStreamUrl = `${config.baseUrl}/bedrock/stream`;
+    // Fallback: buffered SSE via /bedrock/invoke with stream: true
+    cachedStreamUrl = `${config.baseUrl}/bedrock/invoke`;
     log(`  Using fallback stream URL: ${cachedStreamUrl}`);
     return cachedStreamUrl;
   }
@@ -251,6 +252,7 @@ export function createPensarModel(
           body: JSON.stringify({
             modelId: bedrockModelId,
             body,
+            stream: true,
           }),
         });
       } catch (err) {
