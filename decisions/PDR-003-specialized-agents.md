@@ -26,7 +26,7 @@ We use a three-tier hierarchy:
 
 ## Alternatives considered
 
-- **Single general-purpose agent** — rejected. Context window accumulation degrades performance over a long engagement. A single prompt cannot be simultaneously expert-level across recon, auth, exploitation, and code analysis.
+- **Single general-purpose agent** — this is exactly what powers `/operator` mode. It works well for interactive, human-steered sessions where the operator is directing the engagement. It doesn't scale to automated pipelines: context window accumulation degrades performance over a long engagement, and a single prompt cannot be simultaneously expert-level across recon, auth, exploitation, and code analysis.
 - **Fixed pipeline (no orchestration tools)** — rejected. A hardcoded pipeline can't adapt when the orchestrator needs to spawn additional agents based on what it discovers at runtime.
 
 ## Consequences
