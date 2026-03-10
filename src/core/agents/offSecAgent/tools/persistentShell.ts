@@ -123,6 +123,7 @@ export class PersistentShell {
         if (abortCleanup) abortCleanup();
         proc.stdout!.removeListener("data", onStdout);
         proc.stderr!.removeListener("data", onStderr);
+        proc.removeListener("close", onClose);
         resolve(result);
       };
 
