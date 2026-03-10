@@ -607,49 +607,435 @@ export default function WebWizard({
   if (currentStep === "target") {
     return (
       <Dialog size="large" onClose={onClose}>
-      <box width="100%" flexDirection="column" gap={2} paddingLeft={4} paddingBottom={1}>
-        <text fg={colors.text}>Configure Web App Pentest</text>
-        <text fg={colors.textMuted}>{modeDescription}</text>
-        <text fg={colors.textMuted}>
-          Model: {model.name} [{isModelUserSelected ? "user" : "default"}]
-        </text>
+        <box
+          width="100%"
+          flexDirection="column"
+          gap={2}
+          paddingLeft={4}
+          paddingBottom={1}
+        >
+          <text fg={colors.text}>Configure Web App Pentest</text>
+          <text fg={colors.textMuted}>{modeDescription}</text>
+          <text fg={colors.textMuted}>
+            Model: {model.name} [{isModelUserSelected ? "user" : "default"}]
+          </text>
 
-        {error && <text fg={colors.error}>Error: {error}</text>}
+          {error && <text fg={colors.error}>Error: {error}</text>}
 
-        <Input
-          label="Target URL"
-          description="e.g., https://example.com"
-          placeholder="https://example.com"
-          value={state.target}
-          onInput={(v) => setState((prev) => ({ ...prev, target: v }))}
-          focused={targetFocusedField === 0}
-        />
+          <Input
+            label="Target URL"
+            description="e.g., https://example.com"
+            placeholder="https://example.com"
+            value={state.target}
+            onInput={(v) => setState((prev) => ({ ...prev, target: v }))}
+            focused={targetFocusedField === 0}
+          />
 
-        <box flexDirection="column" gap={1}>
-          <box flexDirection="row" gap={1}>
-            <text
-              fg={targetFocusedField === 1 ? colors.primary : colors.textMuted}
-            >
-              Source Code Access:
-            </text>
-            <text
-              fg={state.sourceCodeAccess ? colors.primary : colors.textMuted}
-            >
-              {state.sourceCodeAccess ? "● Enabled" : "○ Disabled"}
-            </text>
-            {targetFocusedField === 1 && (
-              <text fg={colors.textMuted}>(↑/↓ to toggle)</text>
+          <box flexDirection="column" gap={1}>
+            <box flexDirection="row" gap={1}>
+              <text
+                fg={
+                  targetFocusedField === 1 ? colors.primary : colors.textMuted
+                }
+              >
+                Source Code Access:
+              </text>
+              <text
+                fg={state.sourceCodeAccess ? colors.primary : colors.textMuted}
+              >
+                {state.sourceCodeAccess ? "● Enabled" : "○ Disabled"}
+              </text>
+              {targetFocusedField === 1 && (
+                <text fg={colors.textMuted}>(↑/↓ to toggle)</text>
+              )}
+            </box>
+            {state.sourceCodeAccess && (
+              <Input
+                label="Codebase Path"
+                description="Path to the source code directory"
+                placeholder={process.cwd()}
+                value={state.cwd}
+                onInput={(v) => setState((prev) => ({ ...prev, cwd: v }))}
+                focused={targetFocusedField === 2}
+              />
             )}
           </box>
-          {state.sourceCodeAccess && (
-            <Input
-              label="Codebase Path"
-              description="Path to the source code directory"
-              placeholder={process.cwd()}
-              value={state.cwd}
-              onInput={(v) => setState((prev) => ({ ...prev, cwd: v }))}
-              focused={targetFocusedField === 2}
-            />
+
+          <box flexDirection="column" gap={0} marginTop={1}>
+            <text>
+              <span fg={colors.primary}>█ </span>
+              <span fg={colors.textMuted}>Press </span>
+              <span fg={colors.text}>[Enter]</span>
+              <span fg={colors.textMuted}> to start immediately</span>
+            </text>
+            <text>
+              <span fg={colors.primary}>█ </span>
+              <span fg={colors.textMuted}>Press </span>
+              <span fg={colors.text}>[Tab]</span>
+              <span fg={colors.textMuted}> to configure options</span>
+            </text>
+            <text>
+              <span fg={colors.primary}>█ </span>
+              <span fg={colors.textMuted}>Press </span>
+              <span fg={colors.text}>[ESC]</span>
+              <span fg={colors.textMuted}> to cancel</span>
+            </text>
+          </box>
+        </box>
+      </Dialog>
+    );
+  }
+
+  // Render configure step
+  return (
+    <Dialog size="large" onClose={onClose}>
+      <box
+        width="100%"
+        flexDirection="column"
+        gap={2}
+        paddingLeft={4}
+        paddingBottom={1}
+      >
+        <box flexDirection="column">
+          <text fg={colors.text}>Configure Web App Pentest - {modeLabel}</text>
+          <text fg={colors.textMuted}>Target: {state.target}</text>
+          <text fg={colors.textMuted}>
+            All fields are optional - configure only what you need
+          </text>
+        </box>
+
+        {/* Auth Section */}
+        <box flexDirection="column" gap={1}>
+          <text>
+            <span fg={colors.primary}>█ </span>
+            <span fg={focusedSection === 0 ? colors.text : colors.textMuted}>
+              Authentication
+            </span>
+          </text>
+          {focusedSection === 0 && (
+            <box flexDirection="column" gap={1} paddingLeft={2}>
+              <Input
+                label="Login URL"
+                placeholder="https://example.com/login"
+                value={state.auth.loginUrl}
+                onInput={(v) =>
+                  setState((prev) => ({
+                    ...prev,
+                    auth: { ...prev.auth, loginUrl: v },
+                  }))
+                }
+                onPaste={(event) => {
+                  const cleaned = String(event.text).replace(/\r?\n/g, " ");
+                  setState((prev) => ({
+                    ...prev,
+                    auth: {
+                      ...prev.auth,
+                      loginUrl: prev.auth.loginUrl + cleaned,
+                    },
+                  }));
+                }}
+                focused={focusedField === 0}
+              />
+              <Input
+                label="Username"
+                placeholder="admin"
+                value={state.auth.username}
+                onInput={(v) =>
+                  setState((prev) => ({
+                    ...prev,
+                    auth: { ...prev.auth, username: v },
+                  }))
+                }
+                onPaste={(event) => {
+                  const cleaned = String(event.text).replace(/\r?\n/g, " ");
+                  setState((prev) => ({
+                    ...prev,
+                    auth: {
+                      ...prev.auth,
+                      username: prev.auth.username + cleaned,
+                    },
+                  }));
+                }}
+                focused={focusedField === 1}
+              />
+              <Input
+                label="Password"
+                placeholder="••••••••"
+                value={state.auth.password}
+                onInput={(v) =>
+                  setState((prev) => ({
+                    ...prev,
+                    auth: { ...prev.auth, password: v },
+                  }))
+                }
+                onPaste={(event) => {
+                  const cleaned = String(event.text).replace(/\r?\n/g, " ");
+                  setState((prev) => ({
+                    ...prev,
+                    auth: {
+                      ...prev.auth,
+                      password: prev.auth.password + cleaned,
+                    },
+                  }));
+                }}
+                focused={focusedField === 2}
+              />
+              <Input
+                label="Auth Instructions"
+                placeholder="Use OAuth flow, extract bearer token..."
+                value={state.auth.instructions}
+                onInput={(v) =>
+                  setState((prev) => ({
+                    ...prev,
+                    auth: { ...prev.auth, instructions: v },
+                  }))
+                }
+                onPaste={(event) => {
+                  const cleaned = String(event.text).replace(/\r?\n/g, " ");
+                  setState((prev) => ({
+                    ...prev,
+                    auth: {
+                      ...prev.auth,
+                      instructions: prev.auth.instructions + cleaned,
+                    },
+                  }));
+                }}
+                focused={focusedField === 3}
+              />
+            </box>
+          )}
+        </box>
+
+        {/* Scope Section */}
+        <box flexDirection="column" gap={1}>
+          <text>
+            <span fg={colors.primary}>█ </span>
+            <span fg={focusedSection === 1 ? colors.text : colors.textMuted}>
+              Scope Constraints
+            </span>
+          </text>
+          {focusedSection === 1 && (
+            <box flexDirection="column" gap={1} paddingLeft={2}>
+              <Input
+                label="Add Allowed Host"
+                description="Press Enter to add"
+                placeholder="example.com"
+                value={hostInput}
+                onInput={setHostInput}
+                focused={focusedField === 0}
+              />
+              {state.scope.allowedHosts.length > 0 && (
+                <box flexDirection="column" paddingLeft={2}>
+                  {state.scope.allowedHosts.map((h, i) => (
+                    <text key={i} fg={colors.textMuted}>
+                      • {h}
+                    </text>
+                  ))}
+                </box>
+              )}
+              <Input
+                label="Add Allowed Port"
+                description="Press Enter to add"
+                placeholder="443"
+                value={portInput}
+                onInput={setPortInput}
+                focused={focusedField === 1}
+              />
+              {state.scope.allowedPorts.length > 0 && (
+                <box flexDirection="column" paddingLeft={2}>
+                  {state.scope.allowedPorts.map((p, i) => (
+                    <text key={i} fg={colors.textMuted}>
+                      • {p}
+                    </text>
+                  ))}
+                </box>
+              )}
+              <box flexDirection="row" gap={1}>
+                <text fg={focusedField === 2 ? colors.text : colors.textMuted}>
+                  Strict Scope:
+                </text>
+                <text
+                  fg={
+                    state.scope.strictScope ? colors.primary : colors.textMuted
+                  }
+                >
+                  {state.scope.strictScope ? "● Enabled" : "○ Disabled"}
+                </text>
+                {focusedField === 2 && (
+                  <text fg={colors.textMuted}>(↑/↓ to toggle)</text>
+                )}
+              </box>
+              <box flexDirection="row" gap={1}>
+                <text
+                  fg={focusedField === 3 ? colors.primary : colors.textMuted}
+                >
+                  Enumerate Subdomains:
+                </text>
+                <text
+                  fg={
+                    state.scope.enumerateSubdomains
+                      ? colors.primary
+                      : colors.textMuted
+                  }
+                >
+                  {state.scope.enumerateSubdomains ? "● Enabled" : "○ Disabled"}
+                </text>
+                {focusedField === 3 && (
+                  <text fg={colors.textMuted}>(↑/↓ to toggle)</text>
+                )}
+              </box>
+            </box>
+          )}
+        </box>
+
+        {/* Headers Section */}
+        <box flexDirection="column" gap={1}>
+          <text>
+            <span fg={colors.primary}>█ </span>
+            <span fg={focusedSection === 2 ? colors.text : colors.textMuted}>
+              Request Headers
+            </span>
+          </text>
+          {focusedSection === 2 && (
+            <box flexDirection="column" gap={1} paddingLeft={2}>
+              <box flexDirection="column">
+                <text
+                  fg={
+                    state.headers.mode === "none"
+                      ? colors.primary
+                      : colors.textMuted
+                  }
+                >
+                  {state.headers.mode === "none" ? "●" : "○"} None
+                </text>
+                <text
+                  fg={
+                    state.headers.mode === "default"
+                      ? colors.primary
+                      : colors.textMuted
+                  }
+                >
+                  {state.headers.mode === "default" ? "●" : "○"} Default
+                  (User-Agent: pensar-apex)
+                </text>
+                <text
+                  fg={
+                    state.headers.mode === "custom"
+                      ? colors.primary
+                      : colors.textMuted
+                  }
+                >
+                  {state.headers.mode === "custom" ? "●" : "○"} Custom
+                </text>
+              </box>
+              {focusedField === 0 && (
+                <text fg={colors.textMuted}>Use ↑/↓ to select</text>
+              )}
+
+              {state.headers.mode === "custom" && (
+                <box flexDirection="column" gap={1}>
+                  <Input
+                    label="Header Name"
+                    placeholder="X-Custom-Header"
+                    value={headerNameInput}
+                    onInput={setHeaderNameInput}
+                    focused={focusedField === 1}
+                  />
+                  <Input
+                    label="Header Value"
+                    placeholder="value"
+                    value={headerValueInput}
+                    onInput={setHeaderValueInput}
+                    focused={focusedField === 2}
+                  />
+                  {Object.keys(state.headers.customHeaders).length > 0 && (
+                    <box flexDirection="column">
+                      {Object.entries(state.headers.customHeaders).map(
+                        ([k, v]) => (
+                          <text key={k} fg={colors.textMuted}>
+                            • {k}: {v}
+                          </text>
+                        ),
+                      )}
+                    </box>
+                  )}
+                </box>
+              )}
+            </box>
+          )}
+        </box>
+
+        {/* Model Section */}
+        <box flexDirection="column" gap={1}>
+          <text>
+            <span fg={colors.primary}>█ </span>
+            <span fg={focusedSection === 3 ? colors.text : colors.textMuted}>
+              AI Model
+            </span>
+            <span fg={colors.textMuted}> ({model.name})</span>
+            <span fg={colors.textMuted}>
+              {" "}
+              [{isModelUserSelected ? "user" : "default"}]
+            </span>
+          </text>
+          {focusedSection === 3 && (
+            <box flexDirection="column" gap={0} paddingLeft={2}>
+              {/* Search input */}
+              {modelSearchQuery && (
+                <text fg={colors.text}>Search: {modelSearchQuery}_</text>
+              )}
+              {!modelSearchQuery && (
+                <text fg={colors.textMuted}>Type to search models...</text>
+              )}
+
+              {/* Provider groups */}
+              {providerOrder.map((provider) => {
+                const models = groupedModels[provider];
+                if (!models || models.length === 0) return null;
+
+                const isExpanded = expandedProviders.has(provider);
+                const providerName = providerNames[provider] || provider;
+
+                return (
+                  <box key={provider} flexDirection="column" gap={0}>
+                    {/* Provider header */}
+                    <text fg={isExpanded ? colors.text : colors.textMuted}>
+                      {isExpanded ? "▾" : "▸"} {providerName} ({models.length})
+                    </text>
+
+                    {/* Models list (when expanded) */}
+                    {isExpanded && (
+                      <box flexDirection="column" gap={0} paddingLeft={2}>
+                        {models.map((m) => {
+                          const isSelected = m.id === model.id;
+                          const isDefault =
+                            m.id === "claude-haiku-4-5" ||
+                            m.id === "gpt-4o-mini";
+                          return (
+                            <text
+                              key={m.id}
+                              fg={
+                                isSelected ? colors.primary : colors.textMuted
+                              }
+                            >
+                              {isSelected ? "●" : "○"} {m.name}
+                              {isDefault && !isModelUserSelected && isSelected
+                                ? " [default]"
+                                : ""}
+                            </text>
+                          );
+                        })}
+                      </box>
+                    )}
+                  </box>
+                );
+              })}
+
+              {/* Help text */}
+              <text fg={colors.textMuted}>
+                ↑/↓ select • Type to search • ←/→ collapse/expand
+              </text>
+            </box>
           )}
         </box>
 
@@ -658,387 +1044,22 @@ export default function WebWizard({
             <span fg={colors.primary}>█ </span>
             <span fg={colors.textMuted}>Press </span>
             <span fg={colors.text}>[Enter]</span>
-            <span fg={colors.textMuted}> to start immediately</span>
+            <span fg={colors.textMuted}> to start pentest ({modeLabel})</span>
           </text>
           <text>
             <span fg={colors.primary}>█ </span>
             <span fg={colors.textMuted}>Press </span>
             <span fg={colors.text}>[Tab]</span>
-            <span fg={colors.textMuted}> to configure options</span>
+            <span fg={colors.textMuted}> to navigate fields</span>
           </text>
           <text>
             <span fg={colors.primary}>█ </span>
             <span fg={colors.textMuted}>Press </span>
             <span fg={colors.text}>[ESC]</span>
-            <span fg={colors.textMuted}> to cancel</span>
+            <span fg={colors.textMuted}> to go back</span>
           </text>
         </box>
       </box>
-      </Dialog>
-    );
-  }
-
-  // Render configure step
-  return (
-    <Dialog size="large" onClose={onClose}>
-    <box width="100%" flexDirection="column" gap={2} paddingLeft={4} paddingBottom={1}>
-      <box flexDirection="column">
-        <text fg={colors.text}>Configure Web App Pentest - {modeLabel}</text>
-        <text fg={colors.textMuted}>Target: {state.target}</text>
-        <text fg={colors.textMuted}>
-          All fields are optional - configure only what you need
-        </text>
-      </box>
-
-      {/* Auth Section */}
-      <box flexDirection="column" gap={1}>
-        <text>
-          <span fg={colors.primary}>█ </span>
-          <span fg={focusedSection === 0 ? colors.text : colors.textMuted}>
-            Authentication
-          </span>
-        </text>
-        {focusedSection === 0 && (
-          <box flexDirection="column" gap={1} paddingLeft={2}>
-            <Input
-              label="Login URL"
-              placeholder="https://example.com/login"
-              value={state.auth.loginUrl}
-              onInput={(v) =>
-                setState((prev) => ({
-                  ...prev,
-                  auth: { ...prev.auth, loginUrl: v },
-                }))
-              }
-              onPaste={(event) => {
-                const cleaned = String(event.text).replace(/\r?\n/g, " ");
-                setState((prev) => ({
-                  ...prev,
-                  auth: {
-                    ...prev.auth,
-                    loginUrl: prev.auth.loginUrl + cleaned,
-                  },
-                }));
-              }}
-              focused={focusedField === 0}
-            />
-            <Input
-              label="Username"
-              placeholder="admin"
-              value={state.auth.username}
-              onInput={(v) =>
-                setState((prev) => ({
-                  ...prev,
-                  auth: { ...prev.auth, username: v },
-                }))
-              }
-              onPaste={(event) => {
-                const cleaned = String(event.text).replace(/\r?\n/g, " ");
-                setState((prev) => ({
-                  ...prev,
-                  auth: {
-                    ...prev.auth,
-                    username: prev.auth.username + cleaned,
-                  },
-                }));
-              }}
-              focused={focusedField === 1}
-            />
-            <Input
-              label="Password"
-              placeholder="••••••••"
-              value={state.auth.password}
-              onInput={(v) =>
-                setState((prev) => ({
-                  ...prev,
-                  auth: { ...prev.auth, password: v },
-                }))
-              }
-              onPaste={(event) => {
-                const cleaned = String(event.text).replace(/\r?\n/g, " ");
-                setState((prev) => ({
-                  ...prev,
-                  auth: {
-                    ...prev.auth,
-                    password: prev.auth.password + cleaned,
-                  },
-                }));
-              }}
-              focused={focusedField === 2}
-            />
-            <Input
-              label="Auth Instructions"
-              placeholder="Use OAuth flow, extract bearer token..."
-              value={state.auth.instructions}
-              onInput={(v) =>
-                setState((prev) => ({
-                  ...prev,
-                  auth: { ...prev.auth, instructions: v },
-                }))
-              }
-              onPaste={(event) => {
-                const cleaned = String(event.text).replace(/\r?\n/g, " ");
-                setState((prev) => ({
-                  ...prev,
-                  auth: {
-                    ...prev.auth,
-                    instructions: prev.auth.instructions + cleaned,
-                  },
-                }));
-              }}
-              focused={focusedField === 3}
-            />
-          </box>
-        )}
-      </box>
-
-      {/* Scope Section */}
-      <box flexDirection="column" gap={1}>
-        <text>
-          <span fg={colors.primary}>█ </span>
-          <span fg={focusedSection === 1 ? colors.text : colors.textMuted}>
-            Scope Constraints
-          </span>
-        </text>
-        {focusedSection === 1 && (
-          <box flexDirection="column" gap={1} paddingLeft={2}>
-            <Input
-              label="Add Allowed Host"
-              description="Press Enter to add"
-              placeholder="example.com"
-              value={hostInput}
-              onInput={setHostInput}
-              focused={focusedField === 0}
-            />
-            {state.scope.allowedHosts.length > 0 && (
-              <box flexDirection="column" paddingLeft={2}>
-                {state.scope.allowedHosts.map((h, i) => (
-                  <text key={i} fg={colors.textMuted}>
-                    • {h}
-                  </text>
-                ))}
-              </box>
-            )}
-            <Input
-              label="Add Allowed Port"
-              description="Press Enter to add"
-              placeholder="443"
-              value={portInput}
-              onInput={setPortInput}
-              focused={focusedField === 1}
-            />
-            {state.scope.allowedPorts.length > 0 && (
-              <box flexDirection="column" paddingLeft={2}>
-                {state.scope.allowedPorts.map((p, i) => (
-                  <text key={i} fg={colors.textMuted}>
-                    • {p}
-                  </text>
-                ))}
-              </box>
-            )}
-            <box flexDirection="row" gap={1}>
-              <text fg={focusedField === 2 ? colors.text : colors.textMuted}>
-                Strict Scope:
-              </text>
-              <text
-                fg={state.scope.strictScope ? colors.primary : colors.textMuted}
-              >
-                {state.scope.strictScope ? "● Enabled" : "○ Disabled"}
-              </text>
-              {focusedField === 2 && (
-                <text fg={colors.textMuted}>(↑/↓ to toggle)</text>
-              )}
-            </box>
-            <box flexDirection="row" gap={1}>
-              <text fg={focusedField === 3 ? colors.primary : colors.textMuted}>
-                Enumerate Subdomains:
-              </text>
-              <text
-                fg={
-                  state.scope.enumerateSubdomains
-                    ? colors.primary
-                    : colors.textMuted
-                }
-              >
-                {state.scope.enumerateSubdomains ? "● Enabled" : "○ Disabled"}
-              </text>
-              {focusedField === 3 && (
-                <text fg={colors.textMuted}>(↑/↓ to toggle)</text>
-              )}
-            </box>
-          </box>
-        )}
-      </box>
-
-      {/* Headers Section */}
-      <box flexDirection="column" gap={1}>
-        <text>
-          <span fg={colors.primary}>█ </span>
-          <span fg={focusedSection === 2 ? colors.text : colors.textMuted}>
-            Request Headers
-          </span>
-        </text>
-        {focusedSection === 2 && (
-          <box flexDirection="column" gap={1} paddingLeft={2}>
-            <box flexDirection="column">
-              <text
-                fg={
-                  state.headers.mode === "none"
-                    ? colors.primary
-                    : colors.textMuted
-                }
-              >
-                {state.headers.mode === "none" ? "●" : "○"} None
-              </text>
-              <text
-                fg={
-                  state.headers.mode === "default"
-                    ? colors.primary
-                    : colors.textMuted
-                }
-              >
-                {state.headers.mode === "default" ? "●" : "○"} Default
-                (User-Agent: pensar-apex)
-              </text>
-              <text
-                fg={
-                  state.headers.mode === "custom"
-                    ? colors.primary
-                    : colors.textMuted
-                }
-              >
-                {state.headers.mode === "custom" ? "●" : "○"} Custom
-              </text>
-            </box>
-            {focusedField === 0 && (
-              <text fg={colors.textMuted}>Use ↑/↓ to select</text>
-            )}
-
-            {state.headers.mode === "custom" && (
-              <box flexDirection="column" gap={1}>
-                <Input
-                  label="Header Name"
-                  placeholder="X-Custom-Header"
-                  value={headerNameInput}
-                  onInput={setHeaderNameInput}
-                  focused={focusedField === 1}
-                />
-                <Input
-                  label="Header Value"
-                  placeholder="value"
-                  value={headerValueInput}
-                  onInput={setHeaderValueInput}
-                  focused={focusedField === 2}
-                />
-                {Object.keys(state.headers.customHeaders).length > 0 && (
-                  <box flexDirection="column">
-                    {Object.entries(state.headers.customHeaders).map(
-                      ([k, v]) => (
-                        <text key={k} fg={colors.textMuted}>
-                          • {k}: {v}
-                        </text>
-                      ),
-                    )}
-                  </box>
-                )}
-              </box>
-            )}
-          </box>
-        )}
-      </box>
-
-      {/* Model Section */}
-      <box flexDirection="column" gap={1}>
-        <text>
-          <span fg={colors.primary}>█ </span>
-          <span fg={focusedSection === 3 ? colors.text : colors.textMuted}>
-            AI Model
-          </span>
-          <span fg={colors.textMuted}> ({model.name})</span>
-          <span fg={colors.textMuted}>
-            {" "}
-            [{isModelUserSelected ? "user" : "default"}]
-          </span>
-        </text>
-        {focusedSection === 3 && (
-          <box flexDirection="column" gap={0} paddingLeft={2}>
-            {/* Search input */}
-            {modelSearchQuery && (
-              <text fg={colors.text}>Search: {modelSearchQuery}_</text>
-            )}
-            {!modelSearchQuery && (
-              <text fg={colors.textMuted}>Type to search models...</text>
-            )}
-
-            {/* Provider groups */}
-            {providerOrder.map((provider) => {
-              const models = groupedModels[provider];
-              if (!models || models.length === 0) return null;
-
-              const isExpanded = expandedProviders.has(provider);
-              const providerName = providerNames[provider] || provider;
-
-              return (
-                <box key={provider} flexDirection="column" gap={0}>
-                  {/* Provider header */}
-                  <text fg={isExpanded ? colors.text : colors.textMuted}>
-                    {isExpanded ? "▾" : "▸"} {providerName} ({models.length})
-                  </text>
-
-                  {/* Models list (when expanded) */}
-                  {isExpanded && (
-                    <box flexDirection="column" gap={0} paddingLeft={2}>
-                      {models.map((m) => {
-                        const isSelected = m.id === model.id;
-                        const isDefault =
-                          m.id === "claude-haiku-4-5" || m.id === "gpt-4o-mini";
-                        return (
-                          <text
-                            key={m.id}
-                            fg={isSelected ? colors.primary : colors.textMuted}
-                          >
-                            {isSelected ? "●" : "○"} {m.name}
-                            {isDefault && !isModelUserSelected && isSelected
-                              ? " [default]"
-                              : ""}
-                          </text>
-                        );
-                      })}
-                    </box>
-                  )}
-                </box>
-              );
-            })}
-
-            {/* Help text */}
-            <text fg={colors.textMuted}>
-              ↑/↓ select • Type to search • ←/→ collapse/expand
-            </text>
-          </box>
-        )}
-      </box>
-
-      <box flexDirection="column" gap={0} marginTop={1}>
-        <text>
-          <span fg={colors.primary}>█ </span>
-          <span fg={colors.textMuted}>Press </span>
-          <span fg={colors.text}>[Enter]</span>
-          <span fg={colors.textMuted}> to start pentest ({modeLabel})</span>
-        </text>
-        <text>
-          <span fg={colors.primary}>█ </span>
-          <span fg={colors.textMuted}>Press </span>
-          <span fg={colors.text}>[Tab]</span>
-          <span fg={colors.textMuted}> to navigate fields</span>
-        </text>
-        <text>
-          <span fg={colors.primary}>█ </span>
-          <span fg={colors.textMuted}>Press </span>
-          <span fg={colors.text}>[ESC]</span>
-          <span fg={colors.textMuted}> to go back</span>
-        </text>
-      </box>
-    </box>
     </Dialog>
   );
 }
