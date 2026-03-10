@@ -64,30 +64,33 @@ When you open `/models`, you'll see:
 <Accordion title="OpenAI" icon="openai" iconType="brands">
   Support for GPT and o-series models from OpenAI.
 
-  Available models include:
-  - GPT-4.1 / GPT-4.1 mini
-  - GPT-4o / GPT-4o mini
-  - o3 / o3-mini / o4-mini
-  - And more...
-</Accordion>
+Available models include:
+
+- GPT-4.1 / GPT-4.1 mini
+- GPT-4o / GPT-4o mini
+- o3 / o3-mini / o4-mini
+- And more...
+  </Accordion>
 
 <Accordion title="Google" icon="google" iconType="brands">
   Gemini models via Google's Generative AI API.
 
-  Available models include:
-  - Gemini 2.5 Pro / Flash
-  - Gemini 2.0 Flash
-  - And more...
-</Accordion>
+Available models include:
+
+- Gemini 2.5 Pro / Flash
+- Gemini 2.0 Flash
+- And more...
+  </Accordion>
 
 <Accordion title="OpenRouter" icon="route">
   Access to models from multiple providers through a unified API.
 
-  Benefits:
-  - Single API for multiple providers
-  - Pay-per-use pricing
-  - Access to latest models from Anthropic, OpenAI, Google, Meta, and more
-</Accordion>
+Benefits:
+
+- Single API for multiple providers
+- Pay-per-use pricing
+- Access to latest models from Anthropic, OpenAI, Google, Meta, and more
+  </Accordion>
 
   <Accordion title="AWS Bedrock" icon="aws" iconType="brands">
     Enterprise-grade AI through AWS infrastructure.
@@ -174,12 +177,12 @@ Click "Connect provider" or press `Ctrl+P` to open the provider management inter
 
 ### When to Use Each Model
 
-| Use Case                   | Recommended Model              |
-| -------------------------- | ------------------------------ |
+| Use Case                   | Recommended Model             |
+| -------------------------- | ----------------------------- |
 | Production security audits | Claude Sonnet 4.5 or Opus 4.5 |
-| Quick development testing  | Claude Haiku 4.5               |
-| Enterprise with AWS        | Claude via Bedrock             |
-| Budget-conscious testing   | Haiku or GPT-4o mini           |
+| Quick development testing  | Claude Haiku 4.5              |
+| Enterprise with AWS        | Claude via Bedrock            |
+| Budget-conscious testing   | Haiku or GPT-4o mini          |
 
 ## Troubleshooting
 
@@ -196,12 +199,13 @@ Click "Connect provider" or press `Ctrl+P` to open the provider management inter
 <Accordion title="Provider not showing models" icon="server">
   **Issue**: Configured provider doesn't show any models
 
-  **Solution**:
-  1. Verify your API key is valid
-  2. Check your account has credits/access
-  3. For AWS Bedrock, ensure model access is enabled
-  4. Try reconfiguring the provider in `/providers`
-</Accordion>
+**Solution**:
+
+1. Verify your API key is valid
+2. Check your account has credits/access
+3. For AWS Bedrock, ensure model access is enabled
+4. Try reconfiguring the provider in `/providers`
+   </Accordion>
 
   <Accordion title="Model selection not saving" icon="floppy-disk">
     **Issue**: Selected model doesn't persist
