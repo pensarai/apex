@@ -66,14 +66,22 @@ export class PersistentShell {
 
     this.alive = true;
 
-    this.proc.on("close", () => {
-      this.alive = false;
-      this.proc = null;
+    // Capture reference to this specific process so handlers don't clobber
+    // state if a new process is spawned before this one's events fire
+    const proc = this.proc;
+
+    proc.on("close", () => {
+      if (this.proc === proc) {
+        this.alive = false;
+        this.proc = null;
+      }
     });
 
-    this.proc.on("error", () => {
-      this.alive = false;
-      this.proc = null;
+    proc.on("error", () => {
+      if (this.proc === proc) {
+        this.alive = false;
+        this.proc = null;
+      }
     });
   }
 
