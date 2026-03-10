@@ -35,8 +35,6 @@ export interface PensarModelConfig {
    * allowing transparent token refresh for WorkOS auth.
    */
   getToken?: () => Promise<{ token: string; type: "workos" | "legacy" } | null>;
-  /** Optional explicit stream URL. If not set, discovered via /bedrock/validate. */
-  streamUrl?: string;
 }
 
 /**
@@ -236,7 +234,7 @@ export function createPensarModel(
       response?: { headers?: Record<string, string> };
     }> {
       const body = convertToBedrockFormat(bedrockModelId, options);
-      const url = config.streamUrl ?? (await getStreamUrl());
+      const url = await getStreamUrl();
 
       log(`doStream → SSE streaming for ${bedrockModelId}`);
       log(`  URL: ${url}`);
