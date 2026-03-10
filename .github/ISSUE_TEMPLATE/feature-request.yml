@@ -7,9 +7,11 @@ body:
   - type: checkboxes
     id: verified
     attributes:
-      label: Feature hasn't been suggested before.
+      label: Pre-submission checklist
       options:
-        - label: I have verified this feature I'm about to request hasn't been suggested before.
+        - label: I have verified this feature hasn't been suggested before.
+          required: true
+        - label: I have reviewed the [decisions index](https://github.com/pensarai/apex/blob/canary/decisions/index.md) and this request aligns with (or intentionally challenges) an existing product decision.
           required: true
 
   - type: textarea
