@@ -54,14 +54,16 @@ navigation:
             path: ./docs/getting-started.mdx
       - section: Commands
         contents:
-          - page: /help
-            path: ./docs/commands/help.mdx
           - page: /pentest
             path: ./docs/commands/pentest.mdx
+          - page: /operator
+            path: ./docs/commands/operator.mdx
           - page: /models
             path: ./docs/commands/models.mdx
           - page: /providers
             path: ./docs/commands/providers.mdx
+          - page: /help
+            path: ./docs/commands/help.mdx
   - tab: console
     layout:
 
