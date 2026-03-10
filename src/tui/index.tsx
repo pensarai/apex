@@ -489,6 +489,11 @@ async function main() {
     consoleOptions: buildConsoleOptions(themeColors),
   });
 
+  // Many components (AgentDisplay, Pentest, DialogProvider, Toast, etc.)
+  // legitimately listen for resize events via useTerminalDimensions().
+  // During a pentest swarm this easily exceeds the default 10 listener limit.
+  renderer.setMaxListeners(50);
+
   const { copyToClipboard } = createClipboardManager(renderer);
   setupAutoCopy(renderer, copyToClipboard);
 
