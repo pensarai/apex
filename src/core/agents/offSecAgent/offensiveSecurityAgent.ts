@@ -353,9 +353,6 @@ export class OffensiveSecurityAgent<TResult = void> {
 
     this.persistentShell?.dispose();
 
-    // If the stream ended because the abort signal fired (AI SDK may silently
-    // end the async iterator rather than throwing), surface this as an error
-    // so callers don't treat an aborted run as a successful completion.
     if (this.abortSignal?.aborted) {
       throw new DOMException("Agent aborted by user", "AbortError");
     }

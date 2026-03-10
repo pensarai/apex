@@ -199,9 +199,6 @@ export async function loadSessionState(
     }
   }
 
-  // Determine if session is complete — the report file is the single source
-  // of truth. With the abort guard in the workflow, the report is only written
-  // when the pentest completes successfully.
   const isComplete = hasReportFile;
 
   return {
