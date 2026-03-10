@@ -1,28 +1,28 @@
-# PDR-001: Terminal UI over web app or headless CLI
+# PDR-001: Terminal UI as the primary interactive interface
 
 ## Context
 
-Apex needs a user interface for driving autonomous pentest agents in real time. The core users — professional pentesters, security engineers, and developers shifting left — need to see live streaming output (recon discoveries, swarm agent logs, finding alerts) as it happens. We had three realistic options: web app, headless CLI, or terminal UI (TUI).
+Apex needs a user interface for driving autonomous pentest agents in real time. The core users — professional pentesters, security engineers, and developers shifting left — need to see live streaming output (recon discoveries, swarm agent logs, finding alerts) as it happens. We also ship a headless CLI alongside the TUI for programmatic use, CI integration, and invocation from other coding agents and skills. The question is what the primary *interactive* interface should be.
 
 ## Decision
 
-We built a TUI using Ink (React for the terminal).
+We built a TUI using Ink (React for the terminal) as the primary interactive interface, shipped alongside a headless CLI for programmatic and integration use cases.
 
 ## Rationale
 
-Security practitioners live in the terminal. It is their native environment: Kali VMs, SSH jump hosts, Docker containers, CI pipelines. A web app would require hosting, a browser, and an authenticated account — none of which belong in a pentest workflow. A headless CLI alone cannot surface the rich, live, multi-panel output that makes an autonomous multi-agent run interpretable in real time; without visibility into what's happening, users can't make informed decisions about when to intervene.
+Security practitioners live in the terminal. It is their native environment: Kali VMs, SSH jump hosts, Docker containers, CI pipelines. The TUI surfaces rich, live, multi-panel output — recon discoveries, swarm agent logs, approval gates, finding alerts — that makes an autonomous multi-agent run interpretable and steerable in real time. Without that visibility, users can't make informed decisions about when to intervene.
 
-The TUI is the right middle ground: rich, live, interactive output with zero browser or server overhead. It runs fully locally, works air-gapped, and composes naturally with other CLI tooling.
+The headless CLI complements the TUI: it exposes the same agent capabilities for scripting, CI pipelines, and use as a tool from other coding agents and AI skills, without requiring a terminal renderer.
 
 ## Alternatives considered
 
-- **Web app** — rejected. Requires server infrastructure, browser, hosted auth. Adds operational complexity for users whose environments may be air-gapped or firewalled. Also misaligns with the terminal-native workflow of the target audience.
-- **Headless CLI** — rejected as the sole interface. A CLI is useful for scripting and CI but provides no visibility into live agent activity. Without real-time output, users cannot steer or monitor a long-running engagement.
+- **Web app** — rejected. Requires server infrastructure, browser, and hosted auth — none of which belong in a pentest workflow. Adds operational complexity for users in air-gapped or firewalled environments, and misaligns with the terminal-native workflow of the target audience.
+- **Desktop app (Electron / Tauri)** — rejected. Adds a heavyweight runtime and installer, doesn't work in headless SSH or container environments, and provides no meaningful UX advantage over a TUI for a keyboard-driven security tool. Also incompatible with running on a remote Kali box or inside a CI runner.
 
 ## Consequences
 
 - ✅ Works air-gapped, on Kali, in Docker containers, in CI
 - ✅ No hosting, auth infrastructure, or browser required
-- ✅ Naturally composable with other terminal tooling
+- ✅ Headless CLI enables use from coding agents, AI skills, and CI pipelines
 - ⚠️ Harder to build rich data visualizations (charts, graphs) compared to a web UI
 - ⚠️ TUI frameworks (Ink) are less mature than web frameworks; layout edge cases require careful handling
