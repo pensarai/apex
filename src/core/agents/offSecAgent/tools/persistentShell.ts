@@ -86,25 +86,31 @@ export class PersistentShell {
   }
 
   private ensureAlive(): void {
-    if (this.needsRespawn && this.proc) {
-      // Kill the old shell that's in an inconsistent state
-      const pid = this.proc.pid;
-      try {
-        this.proc.stdin?.end();
-        this.proc.kill("SIGKILL");
-      } catch {
-        // ignore
-      }
-      // Also kill the process group if detached
-      if (pid && process.platform !== "win32") {
+    if (this.needsRespawn) {
+      if (this.proc) {
+        // Kill the old shell that's in an inconsistent state
+        const pid = this.proc.pid;
         try {
-          process.kill(-pid, "SIGKILL");
+          this.proc.stdin?.end();
+          this.proc.kill("SIGKILL");
         } catch {
-          // group may already be gone
+          // ignore
         }
+        // Also kill the process group if detached
+        if (pid && process.platform !== "win32") {
+          try {
+            process.kill(-pid, "SIGKILL");
+          } catch {
+            // group may already be gone
+          }
+        }
+        this.proc = null;
+        this.alive = false;
       }
-      this.proc = null;
-      this.alive = false;
+      // Clear the flag regardless of whether proc was still alive; if the
+      // process already exited on its own (proc === null), there is nothing to
+      // kill but needsRespawn must still be cleared so the freshly-spawned
+      // shell on the next call isn't incorrectly killed.
       this.needsRespawn = false;
     }
 
