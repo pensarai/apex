@@ -19,14 +19,14 @@ The models interface displays all available models from your configured provider
 
 <Callout intent="info">
   Only models from **configured providers** are shown. Use `/providers` to set
-  up additional AI providers.
+  up additional AI providers, or `/auth` to connect via Pensar Console.
 </Callout>
 
 ## Interface
 
 When you open `/models`, you'll see:
 
-- **Provider sections**: Models grouped by provider (Anthropic, OpenAI, etc.)
+- **Provider sections**: Models grouped by provider (Anthropic, OpenAI, Google, etc.)
 - **Model list**: Available models under each provider
 - **Selection indicator**: Current model highlighted with a bullet (●)
 - **Show more/less**: Expand to see all models if a provider has many
@@ -47,9 +47,12 @@ When you open `/models`, you'll see:
     **Best performance** for penetration testing tasks.
     
     Available models include:
-    - Claude 3.5 Sonnet (Recommended)
+    - Claude Sonnet 4.5 (Recommended)
+    - Claude Opus 4.5
+    - Claude Sonnet 4.0
+    - Claude Haiku 4.5
+    - Claude 3.7 Sonnet
     - Claude 3.5 Haiku
-    - Claude 3 Opus
     - And more...
 
     <Callout intent="success">
@@ -59,13 +62,31 @@ When you open `/models`, you'll see:
   </Accordion>
 
 <Accordion title="OpenAI" icon="openai" iconType="brands">
-  Support for GPT models from OpenAI. Available models include: - GPT-4 Turbo -
-  GPT-4 - GPT-4o - And more...
+  Support for GPT and o-series models from OpenAI.
+
+  Available models include:
+  - GPT-4.1 / GPT-4.1 mini
+  - GPT-4o / GPT-4o mini
+  - o3 / o3-mini / o4-mini
+  - And more...
+</Accordion>
+
+<Accordion title="Google" icon="google" iconType="brands">
+  Gemini models via Google's Generative AI API.
+
+  Available models include:
+  - Gemini 2.5 Pro / Flash
+  - Gemini 2.0 Flash
+  - And more...
 </Accordion>
 
 <Accordion title="OpenRouter" icon="route">
-  Access to multiple AI models through a unified API. Benefits: - Single API for
-  multiple providers - Pay-per-use pricing - Access to latest models
+  Access to models from multiple providers through a unified API.
+
+  Benefits:
+  - Single API for multiple providers
+  - Pay-per-use pricing
+  - Access to latest models from Anthropic, OpenAI, Google, Meta, and more
 </Accordion>
 
   <Accordion title="AWS Bedrock" icon="aws" iconType="brands">
@@ -73,11 +94,26 @@ When you open `/models`, you'll see:
     
     Available models:
     - Claude models via Bedrock
-    - Other Bedrock-supported models
+    - Amazon Nova models
+    - Meta Llama models
+    - And more...
 
     <Callout intent="info">
       Requires AWS credentials and Bedrock model access in your region.
     </Callout>
+
+  </Accordion>
+
+  <Accordion title="Pensar Console" icon="shield-check">
+    Managed inference through Pensar Console — no API key required.
+
+    Available models:
+    - Claude Sonnet 4.5 / Opus 4.5
+    - Claude Sonnet 4.0 / Opus 4.0
+    - Claude Haiku 4.5
+    - And more...
+
+    Connect via `/auth` in Apex.
 
   </Accordion>
 </AccordionGroup>
@@ -109,19 +145,19 @@ Click "Connect provider" or press `Ctrl+P` to open the provider management inter
 ## Model Comparison
 
 <CardGroup cols={2}>
-  <Card title="Claude 3.5 Sonnet" icon="trophy">
+  <Card title="Claude Sonnet 4.5" icon="trophy">
     **Recommended** - Best for: All penetration testing - Speed: Fast -
     Capability: Excellent - Cost: Moderate
   </Card>
-  <Card title="Claude 3 Opus" icon="star">
+  <Card title="Claude Opus 4.5" icon="star">
     **Maximum Capability** - Best for: Complex, thorough tests - Speed: Moderate
     - Capability: Maximum - Cost: Higher
   </Card>
-  <Card title="GPT-4 Turbo" icon="bolt">
+  <Card title="GPT-4.1" icon="bolt">
     **Alternative Option** - Best for: OpenAI users - Speed: Fast - Capability:
     Very Good - Cost: Moderate
   </Card>
-  <Card title="Claude 3.5 Haiku" icon="feather">
+  <Card title="Claude Haiku 4.5" icon="feather">
     **Budget Option** - Best for: Quick tests, development - Speed: Very Fast -
     Capability: Good - Cost: Lower
   </Card>
@@ -138,12 +174,12 @@ Click "Connect provider" or press `Ctrl+P` to open the provider management inter
 
 ### When to Use Each Model
 
-| Use Case                   | Recommended Model         |
-| -------------------------- | ------------------------- |
-| Production security audits | Claude 3.5 Sonnet or Opus |
-| Quick development testing  | Claude 3.5 Haiku          |
-| Enterprise with AWS        | Claude via Bedrock        |
-| Budget-conscious testing   | Haiku or GPT-4o mini      |
+| Use Case                   | Recommended Model              |
+| -------------------------- | ------------------------------ |
+| Production security audits | Claude Sonnet 4.5 or Opus 4.5 |
+| Quick development testing  | Claude Haiku 4.5               |
+| Enterprise with AWS        | Claude via Bedrock             |
+| Budget-conscious testing   | Haiku or GPT-4o mini           |
 
 ## Troubleshooting
 
@@ -158,10 +194,13 @@ Click "Connect provider" or press `Ctrl+P` to open the provider management inter
   </Accordion>
 
 <Accordion title="Provider not showing models" icon="server">
-  **Issue**: Configured provider doesn't show any models **Solution**: 1. Verify
-  your API key is valid 2. Check your account has credits/access 3. For AWS
-  Bedrock, ensure model access is enabled 4. Try reconfiguring the provider in
-  `/providers`
+  **Issue**: Configured provider doesn't show any models
+
+  **Solution**:
+  1. Verify your API key is valid
+  2. Check your account has credits/access
+  3. For AWS Bedrock, ensure model access is enabled
+  4. Try reconfiguring the provider in `/providers`
 </Accordion>
 
   <Accordion title="Model selection not saving" icon="floppy-disk">
@@ -180,7 +219,7 @@ Click "Connect provider" or press `Ctrl+P` to open the provider management inter
   <Card title="/providers" icon="plug" href="/apex/commands/providers">
     Configure AI provider API keys
   </Card>
-  <Card title="/init" icon="play" href="/apex/commands/init">
+  <Card title="/pentest" icon="play" href="/apex/commands/pentest">
     Start testing with your selected model
   </Card>
   <Card title="/help" icon="circle-question" href="/apex/commands/help">

@@ -56,8 +56,8 @@ navigation:
         contents:
           - page: /help
             path: ./docs/commands/help.mdx
-          - page: /init
-            path: ./docs/commands/init.mdx
+          - page: /pentest
+            path: ./docs/commands/pentest.mdx
           - page: /models
             path: ./docs/commands/models.mdx
           - page: /providers
@@ -85,7 +85,7 @@ colors:
 logo:
   dark: docs/assets/logo/dark.svg
   light: docs/assets/logo/light.svg
-  height: 40
+  height: 20
   href: https://console.pensar.dev
 
 favicon: docs/assets/favicon.svg

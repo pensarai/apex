@@ -5,13 +5,13 @@ description: "AI-powered penetration testing CLI tool for comprehensive security
 
 ## What is Pensar Apex?
 
-**Pensar Apex** is an AI-powered penetration testing CLI tool that enables you to use an AI agent to perform comprehensive black box security testing. Built with a powerful terminal user interface, Apex brings autonomous penetration testing capabilities directly to your command line.
+**Pensar Apex** is an AI-powered penetration testing CLI tool that enables you to use an AI agent to perform comprehensive blackbox and whitebox security testing. Built with a powerful terminal user interface, Apex brings autonomous penetration testing capabilities directly to your command line.
 
 ## How It Works
 
 <Steps>
   <Step title="Install Apex">
-    Install Apex globally using your preferred package manager:
+    Install Apex globally using your preferred method:
 
     <Tabs>
       <Tab title="macOS/Linux">
@@ -44,14 +44,13 @@ description: "AI-powered penetration testing CLI tool for comprehensive security
     terminal.
   </Step>
   <Step title="Configure AI Provider">
-    Use the `/providers` command to connect your AI provider (Anthropic, OpenAI, OpenRouter, or AWS Bedrock) and configure your API key.
+    Use the `/providers` command to connect your AI provider (Anthropic, OpenAI, Google, OpenRouter, or AWS Bedrock), or `/auth` to connect via Pensar Console.
   </Step>
   <Step title="Select Model">
     Use the `/models` command to select which AI model to use for testing.
   </Step>
   <Step title="Start Testing">
-    Use the `/init` command to configure your target and launch an autonomous AI agent
-    that will test your application.
+    Use `/pentest` to launch an autonomous penetration testing swarm, or `/operator` to start an interactive session where you guide the AI step by step.
   </Step>
   <Step title="Review Results">
     Watch in real-time as the AI agent discovers vulnerabilities, executes
@@ -71,11 +70,11 @@ description: "AI-powered penetration testing CLI tool for comprehensive security
     command-line experience.
   </Card>
   <Card title="Multiple AI Providers" icon="microchip">
-    Support for Anthropic, OpenAI, OpenRouter, and AWS Bedrock. Anthropic models
-    provide the best performance.
+    Support for Anthropic, OpenAI, Google, OpenRouter, AWS Bedrock, and Pensar Console.
+    Anthropic models provide the best performance.
   </Card>
   <Card title="Session Management" icon="clock-rotate-left">
-    Sessions are automatically saved to continue work across multiple runs.
+    Sessions are automatically saved and can be browsed with `/sessions`.
   </Card>
   <Card title="Comprehensive Testing" icon="shield-check">
     Automated reconnaissance, vulnerability detection, and exploitation testing
@@ -98,13 +97,13 @@ To begin testing with Apex, you'll typically follow this workflow:
   <Step title="Select Model">
     Run `/models` to choose your preferred AI model
   </Step>
-  <Step title="Initialize Test">
-    Run `/init` to configure target, authentication, scope, and start testing
+  <Step title="Start a Pentest">
+    Run `/pentest` to configure your target and launch an autonomous penetration test
   </Step>
 </Steps>
 
 <Callout intent="info">
-  The `/init` command guides you through a wizard to configure your target URL,
+  The `/pentest` command guides you through a wizard to configure your target URL,
   optional authentication credentials, scope constraints, and custom headers
   before starting the penetration test.
 </Callout>
@@ -115,8 +114,10 @@ Apex supports multiple AI providers to give you flexibility in your testing setu
 
 - **Anthropic** (Recommended) - Best performance and results
 - **OpenAI** - GPT-4 and other OpenAI models
+- **Google** - Gemini models via the Generative AI API
 - **OpenRouter** - Access multiple models through one API
 - **AWS Bedrock** - Enterprise-grade AI through AWS
+- **Pensar Console** - Managed inference with no API key required
 
 <Callout intent="warning">
   **Anthropic models are recommended** for optimal penetration testing
