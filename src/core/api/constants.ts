@@ -1,4 +1,4 @@
-export const PENSAR_API_BASE_URL = "https://api.console.pensar.dev";
+export const PENSAR_API_BASE_URL = "https://api.pensar.dev";
 export const PENSAR_CONSOLE_BASE_URL = "https://console.pensar.dev";
 
 export function getPensarApiUrl(): string {
