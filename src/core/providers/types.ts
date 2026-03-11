@@ -5,6 +5,7 @@ export type ProviderType =
   | "bedrock"
   | "openrouter"
   | "inception"
+  | "baseten"
   | "pensar"
   | "local";
 
@@ -56,6 +57,12 @@ export const AVAILABLE_PROVIDERS: Provider[] = [
     id: "bedrock",
     name: "AWS Bedrock",
     description: "Amazon Bedrock AI models",
+    requiresAPIKey: true,
+  },
+  {
+    id: "baseten",
+    name: "Baseten",
+    description: "Baseten dedicated model endpoints",
     requiresAPIKey: true,
   },
   {

@@ -5,6 +5,7 @@ import { createAmazonBedrock } from "@ai-sdk/amazon-bedrock";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { createBaseten } from "@ai-sdk/baseten";
 import { getModelInfo } from "./models";
 import { createPensarModel } from "./providers/pensar";
 import { getPensarApiUrl } from "../api/constants";
@@ -27,6 +28,7 @@ export type AIAuthConfig = {
   googleAPIKey?: string;
   openRouterAPIKey?: string;
   inceptionAPIKey?: string;
+  basetenAPIKey?: string;
   pensarAPIKey?: string;
   pensarApiUrl?: string;
   // WorkOS CLI auth
@@ -56,6 +58,7 @@ export function buildAuthConfig(cfg: {
   googleAPIKey?: string | null;
   openRouterAPIKey?: string | null;
   inceptionAPIKey?: string | null;
+  basetenAPIKey?: string | null;
   pensarAPIKey?: string | null;
   pensarApiUrl?: string | null;
   accessToken?: string | null;
@@ -70,6 +73,7 @@ export function buildAuthConfig(cfg: {
     googleAPIKey: cfg.googleAPIKey ?? undefined,
     openRouterAPIKey: cfg.openRouterAPIKey ?? undefined,
     inceptionAPIKey: cfg.inceptionAPIKey ?? undefined,
+    basetenAPIKey: cfg.basetenAPIKey ?? undefined,
     pensarAPIKey: cfg.pensarAPIKey ?? undefined,
     pensarApiUrl: cfg.pensarApiUrl ?? undefined,
     accessToken: cfg.accessToken ?? undefined,
@@ -135,6 +139,23 @@ export function getProviderModel(
         baseURL: "https://api.inceptionlabs.ai/v1",
       });
       providerModel = inception("mercury-2");
+      break;
+    }
+
+    case "baseten": {
+      const basetenApiKey =
+        authConfig?.basetenAPIKey || process.env.BASETEN_API_KEY;
+      if (!basetenApiKey) {
+        throw new Error(
+          "Baseten API key not configured. Set BASETEN_API_KEY or configure via /provider.",
+        );
+      }
+      const baseten = createBaseten({
+        apiKey: basetenApiKey,
+        modelURL:
+          "https://model-3m54dgzw.api.baseten.co/environments/production/predict",
+      });
+      providerModel = baseten();
       break;
     }
 

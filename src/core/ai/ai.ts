@@ -45,6 +45,7 @@ export type AIModelProvider =
   | "google"
   | "openrouter"
   | "bedrock"
+  | "baseten"
   | "pensar"
   | "inception"
   | "local";

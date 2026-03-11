@@ -35,6 +35,8 @@ export function isProviderConfigured(
       return !!config.inceptionAPIKey;
     case "bedrock":
       return !!config.bedrockAPIKey;
+    case "baseten":
+      return !!config.basetenAPIKey;
     case "local":
       return !!(
         config.localModelUrl ||
@@ -56,6 +58,7 @@ export function hasAnyProviderConfigured(config: Config): boolean {
     !!config.openRouterAPIKey ||
     !!config.inceptionAPIKey ||
     !!config.bedrockAPIKey ||
+    !!config.basetenAPIKey ||
     !!config.localModelUrl ||
     !!config.localModelName ||
     !!process.env.LOCAL_MODEL_URL ||
