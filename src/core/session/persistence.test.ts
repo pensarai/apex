@@ -55,21 +55,21 @@ function makeMsg(role: string, content: unknown): ModelMessage {
   return { role, content } as ModelMessage;
 }
 
-function makeToolCallPart(toolName: string, args: Record<string, unknown>) {
+function makeToolCallPart(toolName: string, input: Record<string, unknown>) {
   return {
     type: "tool-call",
     toolCallId: `tc-${toolName}`,
     toolName,
-    args,
+    input,
   };
 }
 
-function makeToolResultPart(toolName: string, result: unknown) {
+function makeToolResultPart(toolName: string, output: unknown) {
   return {
     type: "tool-result",
     toolCallId: `tc-${toolName}`,
     toolName,
-    result,
+    output,
   };
 }
 
@@ -78,7 +78,7 @@ function makeToolResultPart(toolName: string, result: unknown) {
 // ---------------------------------------------------------------------------
 
 describe("saveSubagentData + loadSubagents roundtrip", () => {
-  it("roundtrips tool-call args→input and tool-result result→output", () => {
+  it("roundtrips tool-call and tool-result content parts", () => {
     const session = makeSession();
     saveSubagentData(session, {
       agentName: "pentest-agent-1",
@@ -514,7 +514,7 @@ describe("convertModelMessagesToUI", () => {
           type: "tool-call",
           toolCallId: "tc-1",
           toolName: "execute_command",
-          args: { cmd: "nmap localhost" },
+          input: { cmd: "nmap localhost" },
         },
       ]),
       makeMsg("tool", [
@@ -522,7 +522,7 @@ describe("convertModelMessagesToUI", () => {
           type: "tool-result",
           toolCallId: "tc-1",
           toolName: "execute_command",
-          result: "PORT 80/tcp open",
+          output: "PORT 80/tcp open",
         },
       ]),
       makeMsg("assistant", "Found port 80 open."),
@@ -530,25 +530,20 @@ describe("convertModelMessagesToUI", () => {
 
     const uiMsgs = convertModelMessagesToUI(modelMessages);
 
-    // Should have: user msg, assistant text, tool call, assistant text
     expect(uiMsgs.length).toBe(4);
 
-    // User message
     expect(uiMsgs[0].role).toBe("user");
     expect(uiMsgs[0].content).toBe("run a scan");
 
-    // Assistant text
     expect(uiMsgs[1].role).toBe("assistant");
     expect(uiMsgs[1].content).toBe("I'll run a command");
 
-    // Tool call with paired result
     expect(uiMsgs[2].role).toBe("tool");
     expect(uiMsgs[2].toolName).toBe("execute_command");
     expect(uiMsgs[2].args).toEqual({ cmd: "nmap localhost" });
     expect(uiMsgs[2].result).toBe("PORT 80/tcp open");
     expect(uiMsgs[2].status).toBe("completed");
 
-    // Final assistant text
     expect(uiMsgs[3].role).toBe("assistant");
     expect(uiMsgs[3].content).toBe("Found port 80 open.");
   });

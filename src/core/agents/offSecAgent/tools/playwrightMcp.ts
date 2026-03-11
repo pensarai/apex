@@ -699,9 +699,10 @@ export function createBrowserTools(
 ) {
   const session = new PlaywrightMcpSession(headless ?? defaultHeadless);
 
-  abortSignal?.addEventListener("abort", () => {
-    session.disconnect().catch(() => {});
-  });
+  if (abortSignal) {
+    const onAbort = () => session.disconnect().catch(() => {});
+    abortSignal.addEventListener("abort", onAbort, { once: true });
+  }
 
   // Ensure evidence directory exists
   if (!existsSync(evidenceDir)) {

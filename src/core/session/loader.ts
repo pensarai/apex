@@ -16,8 +16,6 @@ import { REPORT_FILENAME_MD } from "../report";
 
 // Re-export types that consumers import from this module
 export type {
-  MessageContentPart,
-  SavedMessage,
   SavedSubagentData,
   UIMessage,
   ResumeInfo,
@@ -57,7 +55,7 @@ export interface LoadedSessionState {
 /**
  * Load attack surface results
  */
-function loadAttackSurfaceResults(
+export function loadAttackSurfaceResults(
   rootPath: string,
 ): AttackSurfaceResults | null {
   const resultsPath = join(rootPath, "attack-surface-results.json");
@@ -199,18 +197,7 @@ export async function loadSessionState(
     }
   }
 
-  // Determine if session is complete
-  const pentestSubagents = subagents.filter((s) => s.type === "pentest");
-  const allPentestDone =
-    pentestSubagents.length > 0 &&
-    pentestSubagents.every(
-      (s) => s.status === "completed" || s.status === "failed",
-    );
-
-  const isComplete =
-    hasReportFile ||
-    (attackSurfaceResults?.summary?.analysisComplete === true &&
-      allPentestDone);
+  const isComplete = hasReportFile;
 
   return {
     session,

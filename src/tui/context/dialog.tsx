@@ -1,8 +1,5 @@
-import {
-  useKeyboard,
-  useRenderer,
-  useTerminalDimensions,
-} from "@opentui/react";
+import { useKeyboard, useRenderer } from "@opentui/react";
+import { useDimensions } from "./dimensions";
 import {
   createContext,
   useContext,
@@ -21,7 +18,7 @@ interface DialogProps {
 }
 
 export function Dialog({ size = "medium", onClose, children }: DialogProps) {
-  const dimensions = useTerminalDimensions();
+  const dimensions = useDimensions();
   const renderer = useRenderer();
   const { colors: themeColors } = useTheme();
 

@@ -86,6 +86,26 @@ search with flags or a more specific directory if results are truncated.`,
 
         let stdout = "";
         let stderr = "";
+        let resolved = false;
+
+        // Wire up abort signal — clean up in safeResolve to cover all exit paths
+        let abortCleanup: (() => void) | undefined;
+        if (ctx.abortSignal) {
+          const abortHandler = () => child.kill("SIGTERM");
+          ctx.abortSignal.addEventListener("abort", abortHandler, {
+            once: true,
+          });
+          abortCleanup = () =>
+            ctx.abortSignal!.removeEventListener("abort", abortHandler);
+        }
+
+        const safeResolve = (result: GrepResult) => {
+          if (resolved) return;
+          resolved = true;
+          clearTimeout(timeout);
+          abortCleanup?.();
+          resolve(result);
+        };
 
         const timeout = setTimeout(() => {
           child.kill("SIGTERM");
@@ -100,8 +120,6 @@ search with flags or a more specific directory if results are truncated.`,
         });
 
         child.on("close", (code) => {
-          clearTimeout(timeout);
-
           // grep exits 1 when no matches — that's not an error
           const noMatch = code === 1 && stderr === "";
           const matchCount = stdout ? stdout.trimEnd().split("\n").length : 0;
@@ -111,7 +129,7 @@ search with flags or a more specific directory if results are truncated.`,
             ? `${stdout.substring(0, 50_000)}\n\n(truncated — narrow your search)`
             : stdout || "(no matches)";
 
-          resolve({
+          safeResolve({
             success: code === 0 || noMatch,
             error: noMatch || code === 0 ? "" : stderr || `Exit code: ${code}`,
             output,
@@ -121,8 +139,7 @@ search with flags or a more specific directory if results are truncated.`,
         });
 
         child.on("error", (err) => {
-          clearTimeout(timeout);
-          resolve({
+          safeResolve({
             success: false,
             error: err.message,
             output: "",
@@ -130,17 +147,6 @@ search with flags or a more specific directory if results are truncated.`,
             command,
           });
         });
-
-        // Wire up abort signal
-        if (ctx.abortSignal) {
-          const abortHandler = () => child.kill("SIGTERM");
-          ctx.abortSignal.addEventListener("abort", abortHandler, {
-            once: true,
-          });
-          child.on("close", () => {
-            ctx.abortSignal!.removeEventListener("abort", abortHandler);
-          });
-        }
       });
     },
   });

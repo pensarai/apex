@@ -7,7 +7,8 @@
  */
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import { useKeyboard, useTerminalDimensions } from "@opentui/react";
+import { useKeyboard } from "@opentui/react";
+import { useDimensions } from "../../context/dimensions";
 import { ScrollBoxRenderable } from "@opentui/core";
 import { scrollToIndex } from "../../utils/scroll";
 import {
@@ -35,7 +36,7 @@ export default function ToolsPanel({
   onToolsetChange,
 }: ToolsPanelProps) {
   const { colors } = useTheme();
-  const dimensions = useTerminalDimensions();
+  const dimensions = useDimensions();
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [categoryFilter, setCategoryFilter] = useState<ToolCategory | null>(
     null,

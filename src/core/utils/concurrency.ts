@@ -7,6 +7,7 @@ export async function runWithBoundedConcurrency<T, R>(
   items: T[],
   concurrency: number,
   fn: (item: T, index: number) => Promise<R>,
+  abortSignal?: AbortSignal,
 ): Promise<(R | null)[]> {
   const results: (R | null)[] = new Array(items.length).fill(null);
   let nextIdx = 0;
@@ -21,12 +22,21 @@ export async function runWithBoundedConcurrency<T, R>(
     let active = 0;
 
     function next() {
-      if (completed === items.length) {
+      // Resolve when all launched tasks complete and either all items
+      // have been launched or the signal was aborted.
+      if (
+        completed >= nextIdx &&
+        (nextIdx === items.length || abortSignal?.aborted)
+      ) {
         resolve();
         return;
       }
 
-      while (active < concurrency && nextIdx < items.length) {
+      while (
+        active < concurrency &&
+        nextIdx < items.length &&
+        !abortSignal?.aborted
+      ) {
         const idx = nextIdx++;
         active++;
 
