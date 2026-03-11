@@ -12,6 +12,7 @@ import { z } from "zod";
 import { generateObjectResponse, type AIModel } from "../../../ai";
 import { type AIAuthConfig } from "../../../ai/utils";
 import { calculateCVSS4Score, type CVSS4Metrics } from "../../../../lib/cvss";
+import { CweEntrySchema, type CweEntry } from "../../../../lib/cwe/types";
 
 // =============================================================================
 // Types
@@ -45,6 +46,8 @@ export interface CVSSScorerResult {
   scoreType: string;
   /** AI's reasoning for metric choices */
   reasoning: string;
+  /** CWE classifications assigned to this vulnerability */
+  cwes: CweEntry[];
 }
 
 // =============================================================================
@@ -125,6 +128,11 @@ const CVSSMetricsOutputSchema = z.object({
     .string()
     .describe(
       "Brief explanation (2-3 sentences) of the key factors that influenced the metric choices",
+    ),
+  cwes: z
+    .array(CweEntrySchema)
+    .describe(
+      "CWE classifications for this vulnerability, most specific first",
     ),
 });
 
@@ -220,7 +228,40 @@ const CVSS_SCORER_SYSTEM_PROMPT = `You are a CVSS 4.0 scoring specialist. Your t
 6. Assess impact on both the vulnerable system AND potential subsequent systems
 7. Since a POC exists and confirmed the vulnerability, E should typically be 'A'
 
-Always provide brief reasoning explaining your key decisions.`;
+Always provide brief reasoning explaining your key decisions.
+
+## CWE Assignment Guidelines
+
+In addition to CVSS metrics, assign one or more CWE identifiers to the finding. For each CWE, provide a brief reasoning explaining why it applies.
+
+### Common CWE Mappings
+
+| Vulnerability Class | Primary CWE | Related CWEs |
+|---------------------|------------|--------------|
+| SQL Injection | CWE-89 | CWE-564 (Hibernate), CWE-943 (NoSQL) |
+| Cross-Site Scripting (XSS) | CWE-79 | CWE-80 (Basic XSS), CWE-87 (Alt XSS) |
+| Command/OS Injection | CWE-78 | CWE-77 (Command Injection) |
+| Code Injection / RCE | CWE-94 | CWE-95 (Eval Injection), CWE-96 (Static Code Injection) |
+| IDOR / Access Control | CWE-639 | CWE-284 (Improper Access Control), CWE-862 (Missing AuthZ) |
+| SSRF | CWE-918 | — |
+| Path Traversal / LFI | CWE-22 | CWE-23 (Relative Path), CWE-36 (Absolute Path) |
+| XXE | CWE-611 | CWE-776 (Recursive Entity) |
+| SSTI | CWE-1336 | CWE-94 (Code Injection) |
+| CSRF | CWE-352 | — |
+| Deserialization | CWE-502 | — |
+| Open Redirect | CWE-601 | — |
+| Information Disclosure | CWE-200 | CWE-209 (Error Messages), CWE-532 (Log Files) |
+| Authentication Bypass | CWE-287 | CWE-306 (Missing Auth) |
+| Cryptographic Issues | CWE-327 | CWE-328 (Weak Hash), CWE-330 (Insufficient Randomness) |
+
+### CWE Assignment Rules
+
+1. Assign the **most specific applicable CWE(s)** — prefer CWE-89 (SQL Injection) over CWE-74 (generic Injection).
+2. Use the standard \`CWE-<number>\` format (e.g., CWE-89, not "CWE 89" or "89").
+3. Assign **1-3 CWEs** per finding. Multiple CWEs are appropriate when the vulnerability spans categories (e.g., an IDOR that also leaks PII: CWE-639 + CWE-200).
+4. Order CWEs by relevance — the primary weakness first.
+5. When the vulnerability class is provided, use it as a strong hint but verify against the evidence.
+6. For each CWE, provide a specific reasoning explaining why it applies to *this* finding — not a generic definition of the CWE.`;
 
 // =============================================================================
 // Main Function
@@ -263,6 +304,7 @@ export async function scoreFindingWithCVSS(
     metrics: cvssResult.metrics,
     scoreType: cvssResult.scoreType,
     reasoning: assessment.reasoning,
+    cwes: assessment.cwes,
   };
 }
 
