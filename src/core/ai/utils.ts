@@ -153,7 +153,7 @@ export function getProviderModel(
       const baseten = createBaseten({
         apiKey: basetenApiKey,
         modelURL:
-          "https://model-3m54dgzw.api.baseten.co/environments/production/predict",
+          "https://model-3m54dgzw.api.baseten.co/environments/production/sync/v1",
       });
       providerModel = baseten();
       break;
