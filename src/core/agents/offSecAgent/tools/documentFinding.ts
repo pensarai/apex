@@ -20,6 +20,12 @@ export const documentVulnerabilityInputSchema = z.object({
     .describe("Relative path to the POC script (e.g., pocs/poc_sqli.sh)"),
   remediation: z.string().describe("Steps to fix the issue"),
   references: z.string().optional().describe("CVE, CWE, or related references"),
+  vulnerabilityClass: z
+    .string()
+    .optional()
+    .describe(
+      "The class of vulnerability (e.g., sqli, xss, command-injection, idor, ssrf, path-traversal, crypto, cve)",
+    ),
   toolCallDescription: z
     .string()
     .describe(
@@ -54,6 +60,7 @@ const FALLBACK_CVSS: CVSSScorerResult = {
   },
   scoreType: "CVSS-BT",
   reasoning: "CVSS scoring unavailable — using conservative MEDIUM default.",
+  cwes: [],
 };
 
 export function documentVulnerability(ctx: ToolContext) {
@@ -75,7 +82,8 @@ FINDING STRUCTURE:
 - Impact: Business and technical consequences if exploited
 - Evidence: Commands run, responses received, proof of exploitation
 - Remediation: Specific, actionable steps to fix
-- References: CVE, CWE, OWASP, or security advisories`,
+- References: CVE, CWE, OWASP, or security advisories
+- Vulnerability Class: The class of vulnerability (e.g., sqli, xss, command-injection) — improves CWE accuracy`,
     inputSchema: documentVulnerabilityInputSchema,
     execute: async (input) => {
       try {
@@ -113,6 +121,7 @@ FINDING STRUCTURE:
                 evidence: evidenceForPrompt,
                 endpoint: input.endpoint,
                 remediation: input.remediation,
+                vulnerabilityClass: input.vulnerabilityClass,
               },
               agentMessages: [],
             },
@@ -156,6 +165,7 @@ FINDING STRUCTURE:
           sessionId: session.id,
           target: session.targets[0],
           ...(evidenceFilePath && { evidenceFile: evidenceFilePath }),
+          cwes: cvssResult.cwes,
           cvss: {
             score: cvssResult.score,
             severity: cvssResult.severity,
@@ -197,6 +207,12 @@ FINDING STRUCTURE:
 
 **Reasoning:** ${cvssResult.reasoning}`;
 
+          const cweSection = cvssResult.cwes?.length
+            ? `## CWE Classification
+
+${cvssResult.cwes.map((cwe) => `- **${cwe.id}** — ${cwe.reasoning}`).join("\n")}`
+            : "";
+
           const evidenceSection = evidenceFilePath
             ? `## Evidence
 
@@ -231,7 +247,7 @@ ${finding.impact}
 
 ${cvssSection}
 
-${evidenceSection}
+${cweSection ? `${cweSection}\n\n` : ""}${evidenceSection}
 
 ## POC
 
@@ -252,7 +268,10 @@ ${finding.references ? `## References\n\n${finding.references}` : ""}
 
           // Append to summary
           const summaryPath = join(session.rootPath, "findings-summary.md");
-          const summaryEntry = `- [${finding.severity}] (CVSS ${cvssResult.score}) ${finding.title} - \`findings/${mdFilename}\`\n`;
+          const cweTag = cvssResult.cwes?.length
+            ? ` (${cvssResult.cwes.map((c) => c.id).join(", ")})`
+            : "";
+          const summaryEntry = `- [${finding.severity}] (CVSS ${cvssResult.score})${cweTag} ${finding.title} - \`findings/${mdFilename}\`\n`;
 
           try {
             appendFileSync(summaryPath, summaryEntry);

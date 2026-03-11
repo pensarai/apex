@@ -50,6 +50,13 @@ const sqlInjectionProducts = makeFinding({
     "The /api/products endpoint's search query parameter is vulnerable to SQL injection.",
   remediation: "Use parameterized queries.",
   references: "CWE-89, OWASP A03:2021",
+  cwes: [
+    {
+      id: "CWE-89",
+      reasoning:
+        "Classic SQL injection via unsanitized user input in the search query parameter.",
+    },
+  ],
 });
 
 const sqlInjectionProductsId = makeFinding({
@@ -109,6 +116,13 @@ const reflectedXss = makeFinding({
   endpoint: "https://target.com/search",
   description: "Reflected cross-site scripting in the search parameter.",
   remediation: "Sanitize user input and encode output.",
+  cwes: [
+    {
+      id: "CWE-79",
+      reasoning:
+        "Reflected XSS via unsanitized search parameter injected into the response.",
+    },
+  ],
 });
 
 const storedXss = makeFinding({
@@ -127,6 +141,13 @@ const sentryExposure = makeFinding({
   description: "Sentry error tracking public key is exposed in meta tags.",
   remediation: "Consider using CSP to restrict Sentry event submission.",
   references: "CWE-200",
+  cwes: [
+    {
+      id: "CWE-200",
+      reasoning:
+        "Sentry public key exposed in HTML meta tags constitutes information disclosure.",
+    },
+  ],
 });
 
 // ---------------------------------------------------------------------------

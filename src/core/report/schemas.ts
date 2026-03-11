@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CweEntrySchema } from "../../lib/cwe/types";
 
 export const PentestReportFindingSchema = z.object({
   title: z.string(),
@@ -10,6 +11,7 @@ export const PentestReportFindingSchema = z.object({
   pocPath: z.string(),
   remediation: z.string(),
   references: z.string().optional(),
+  cwes: z.array(CweEntrySchema).optional(),
 });
 
 export const PentestReportSchema = z.object({
