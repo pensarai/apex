@@ -26,7 +26,6 @@ export type AIAuthConfig = {
   openRouterAPIKey?: string;
   inceptionAPIKey?: string;
   pensarAPIKey?: string;
-  pensarApiUrl?: string;
   // WorkOS CLI auth
   accessToken?: string;
   refreshToken?: string;
@@ -55,7 +54,6 @@ export function buildAuthConfig(cfg: {
   openRouterAPIKey?: string | null;
   inceptionAPIKey?: string | null;
   pensarAPIKey?: string | null;
-  pensarApiUrl?: string | null;
   accessToken?: string | null;
   refreshToken?: string | null;
   workspaceId?: string | null;
@@ -69,7 +67,6 @@ export function buildAuthConfig(cfg: {
     openRouterAPIKey: cfg.openRouterAPIKey ?? undefined,
     inceptionAPIKey: cfg.inceptionAPIKey ?? undefined,
     pensarAPIKey: cfg.pensarAPIKey ?? undefined,
-    pensarApiUrl: cfg.pensarApiUrl ?? undefined,
     accessToken: cfg.accessToken ?? undefined,
     refreshToken: cfg.refreshToken ?? undefined,
     workspaceId: cfg.workspaceId ?? undefined,
@@ -177,7 +174,7 @@ export function getProviderModel(
         );
       }
 
-      const pensarApiUrl = authConfig?.pensarApiUrl || getPensarApiUrl();
+      const pensarApiUrl = getPensarApiUrl();
       const bedrockModelId = model.startsWith("pensar:")
         ? model.slice(7)
         : model;
@@ -207,7 +204,6 @@ export function getProviderModel(
             accessToken: freshConfig.accessToken,
             refreshToken: freshConfig.refreshToken,
             pensarAPIKey: freshConfig.pensarAPIKey,
-            pensarApiUrl: freshConfig.pensarApiUrl,
           });
         };
       }
