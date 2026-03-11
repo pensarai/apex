@@ -1,20 +1,30 @@
 name: Feature Request
 description: Suggest an idea, feature, or enhancement
 labels: [enhancement]
-title: "[FEATURE]:"
+title: "Feature:"
 
 body:
   - type: checkboxes
     id: verified
     attributes:
-      label: Feature hasn't been suggested before.
+      label: Pre-submission checklist
       options:
-        - label: I have verified this feature I'm about to request hasn't been suggested before.
+        - label: I have verified this feature hasn't been suggested before.
+          required: true
+        - label: I have reviewed the [decisions index](https://github.com/pensarai/apex/blob/canary/decisions/index.md) and this request aligns with (or intentionally challenges) an existing product decision.
           required: true
 
   - type: textarea
     attributes:
       label: Describe the enhancement you want to request
       description: What do you want to change or add? What are the benefits of implementing this? Try to be detailed so we can understand your request better.
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Why should we build this?
+      description: |
+        Explain the motivation behind this request. How does it align with Apex's goal of making continuous automated pentesting routine? Who benefits and in what scenario? The more you can connect it to a real use case (professional pentest engagement, security team self-testing, developer CI workflow, etc.) the better we can evaluate priority.
     validations:
       required: true
