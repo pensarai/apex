@@ -17,7 +17,7 @@ import { join } from "path";
 import type { SessionInfo } from "./index";
 export type { SessionInfo };
 import type { AuthenticationInfo } from "./types";
-import type { ModelMessage, TextPart, ToolCallPart, ToolResultPart } from "ai";
+import type { ModelMessage } from "ai";
 
 // ---------------------------------------------------------------------------
 // Shared path constants — used by both writer and reader
@@ -29,8 +29,6 @@ const MANIFEST_FILE = "agent-manifest.json";
 // ---------------------------------------------------------------------------
 // Types (previously in loader.ts — canonical home is now here)
 // ---------------------------------------------------------------------------
-
-type ContentPart = TextPart | ToolCallPart | ToolResultPart;
 
 /**
  * Saved subagent data format
@@ -349,7 +347,7 @@ function convertMessagesToUI(
   const toolResults = new Map<string, unknown>();
   for (const msg of messages) {
     if (Array.isArray(msg.content)) {
-      for (const part of msg.content as ContentPart[]) {
+      for (const part of msg.content) {
         if (part.type === "tool-result" && part.toolCallId) {
           toolResults.set(part.toolCallId, part.output);
         }
@@ -368,7 +366,7 @@ function convertMessagesToUI(
         createdAt,
       });
     } else if (Array.isArray(msg.content)) {
-      for (const part of msg.content as ContentPart[]) {
+      for (const part of msg.content) {
         if (part.type === "text" && part.text) {
           uiMessages.push({
             role: "assistant",
