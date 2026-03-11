@@ -150,12 +150,15 @@ export function getProviderModel(
           "Baseten API key not configured. Set BASETEN_API_KEY or configure via /provider.",
         );
       }
+      const basetenModelId = model.startsWith("baseten:")
+        ? model.slice(8)
+        : model;
       const baseten = createBaseten({
         apiKey: basetenApiKey,
         modelURL:
           "https://model-3m54dgzw.api.baseten.co/environments/production/sync/v1",
       });
-      providerModel = baseten();
+      providerModel = baseten(basetenModelId);
       break;
     }
 
