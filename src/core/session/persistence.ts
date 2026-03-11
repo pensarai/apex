@@ -17,7 +17,12 @@ import { join } from "path";
 import type { SessionInfo } from "./index";
 export type { SessionInfo };
 import type { AuthenticationInfo } from "./types";
-import type { ModelMessage } from "ai";
+import type {
+  ModelMessage,
+  TextPart,
+  ToolCallPart,
+  ToolResultPart,
+} from "ai";
 
 // ---------------------------------------------------------------------------
 // Shared path constants — used by both writer and reader
@@ -30,15 +35,7 @@ const MANIFEST_FILE = "agent-manifest.json";
 // Types (previously in loader.ts — canonical home is now here)
 // ---------------------------------------------------------------------------
 
-/** Shape of a content part when inspecting persisted ModelMessage arrays. */
-interface ContentPart {
-  type: "text" | "tool-call" | "tool-result";
-  text?: string;
-  toolCallId?: string;
-  toolName?: string;
-  input?: Record<string, unknown>;
-  output?: unknown;
-}
+type ContentPart = TextPart | ToolCallPart | ToolResultPart;
 
 /**
  * Saved subagent data format
@@ -384,9 +381,10 @@ function convertMessagesToUI(
             createdAt,
           });
         } else if (part.type === "tool-call") {
+          const input = part.input as Record<string, unknown> | undefined;
           const toolDescription =
-            typeof part.input?.toolCallDescription === "string"
-              ? part.input.toolCallDescription
+            typeof input?.toolCallDescription === "string"
+              ? input.toolCallDescription
               : part.toolName || "tool";
           const result = part.toolCallId
             ? toolResults.get(part.toolCallId)
@@ -397,7 +395,7 @@ function convertMessagesToUI(
             createdAt,
             toolCallId: part.toolCallId,
             toolName: part.toolName,
-            args: part.input,
+            args: input,
             result: result,
             status: "completed",
           });
