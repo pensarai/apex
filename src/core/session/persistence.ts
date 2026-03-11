@@ -64,7 +64,7 @@ export interface SavedSubagentData {
   findingsCount?: number;
   status?: string;
   error?: string;
-  messages: SavedMessage[];
+  messages: ModelMessage[];
 }
 
 /**
@@ -121,107 +121,27 @@ export interface SubagentSaveInput {
   messages: ModelMessage[];
 }
 
-/**
- * Map an AI SDK message to the SavedMessage format.
- *
- * The AI SDK uses `args` for tool call parameters and `result` for tool
- * results, while the saved format uses `input` and `output` respectively.
- */
-function mapToSavedMessage(msg: ModelMessage): SavedMessage {
-  const m = msg as { role: string; content: unknown };
-
-  if (typeof m.content === "string") {
-    return { role: m.role as SavedMessage["role"], content: m.content };
-  }
-
-  if (Array.isArray(m.content)) {
-    const mapped: MessageContentPart[] = m.content.map(
-      (part: Record<string, unknown>) => {
-        if (part.type === "tool-call") {
-          return {
-            type: "tool-call" as const,
-            toolCallId: part.toolCallId as string,
-            toolName: part.toolName as string,
-            input: (part.args ?? part.input) as Record<string, unknown>,
-          };
-        }
-        if (part.type === "tool-result") {
-          return {
-            type: "tool-result" as const,
-            toolCallId: part.toolCallId as string,
-            toolName: part.toolName as string,
-            output: (part.result ?? part.output) as unknown,
-          };
-        }
-        return {
-          type: "text" as const,
-          text: (part.text as string) ?? "",
-        };
-      },
-    );
-    return { role: m.role as SavedMessage["role"], content: mapped };
-  }
-
-  return { role: m.role as SavedMessage["role"], content: String(m.content) };
-}
-
-/**
- * The AI SDK schema uses `input` (not `args`) and `output` (not `result`),
- * which is exactly what mapToSavedMessage produces. So SavedMessages are
- * already valid ModelMessages — just cast them.
- */
-function savedToModelMessage(saved: SavedMessage): ModelMessage {
-  return saved as unknown as ModelMessage;
-}
-
-/**
- * Load raw ModelMessage[] for a given agent name from its most recent
- * subagent file. Returns an empty array if no file is found.
- */
 export function loadSubagentMessages(
   session: SessionInfo,
   agentName: string,
 ): ModelMessage[] {
-  const subagentsPath = join(session.rootPath, SUBAGENTS_DIR);
-  if (!existsSync(subagentsPath)) return [];
-
-  // Try stable filename first (new format)
-  const stablePath = join(subagentsPath, `${agentName}.json`);
-  if (existsSync(stablePath)) {
-    try {
-      const data = JSON.parse(
-        readFileSync(stablePath, "utf-8"),
-      ) as SavedSubagentData;
-      return data.messages.map(savedToModelMessage);
-    } catch {
-      return [];
-    }
-  }
-
-  // Fallback: scan for old timestamped files (agentName-TIMESTAMP.json)
-  const files = readdirSync(subagentsPath)
-    .filter((f) => f.startsWith(`${agentName}-`) && f.endsWith(".json"))
-    .sort()
-    .reverse();
-
-  if (files.length === 0) return [];
-
+  const filePath = join(
+    session.rootPath,
+    SUBAGENTS_DIR,
+    `${agentName}.json`,
+  );
+  if (!existsSync(filePath)) return [];
   try {
     const data = JSON.parse(
-      readFileSync(join(subagentsPath, files[0]), "utf-8"),
+      readFileSync(filePath, "utf-8"),
     ) as SavedSubagentData;
-    return data.messages.map(savedToModelMessage);
+    return data.messages;
   } catch {
     return [];
   }
 }
 
-/**
- * Save subagent data as a flat JSON file.
- *
- * Writes to `{session.rootPath}/{SUBAGENTS_DIR}/{name}.json`.
- * One file per agent, overwritten on each save. Timestamp is inside the JSON.
- */
+/** Writes to `{session.rootPath}/{SUBAGENTS_DIR}/{name}.json`. */
 export function saveSubagentData(
   session: SessionInfo,
   data: SubagentSaveInput,
@@ -231,7 +151,6 @@ export function saveSubagentData(
 
   let toolCallCount = 0;
   let stepCount = 0;
-  const savedMessages: SavedMessage[] = [];
 
   for (const msg of data.messages) {
     if (msg.role === "assistant") {
@@ -242,13 +161,11 @@ export function saveSubagentData(
         }
       }
     }
-    savedMessages.push(mapToSavedMessage(msg));
   }
 
-  const now = new Date();
   const savedData: SavedSubagentData = {
     agentName: data.agentName,
-    timestamp: now.toISOString(),
+    timestamp: new Date().toISOString(),
     target: data.target,
     objective: data.objective,
     vulnerabilityClass: data.vulnerabilityClass,
@@ -257,12 +174,11 @@ export function saveSubagentData(
     findingsCount: data.findingsCount ?? 0,
     status: data.status,
     error: data.error,
-    messages: savedMessages,
+    messages: data.messages,
   };
 
-  const filename = `${data.agentName}.json`;
   writeFileSync(
-    join(subagentsDir, filename),
+    join(subagentsDir, `${data.agentName}.json`),
     JSON.stringify(savedData, null, 2),
   );
 }
@@ -342,8 +258,6 @@ export function buildManifestEntries(
  * Rewrite the agent manifest with final statuses.
  * Uses index-based matching (not target-based) to correctly handle
  * duplicate targets.
- *
- * Completed entries (preserved from a previous run) are left untouched.
  */
 export function finalizeManifest(
   session: SessionInfo,
@@ -364,49 +278,33 @@ export function finalizeManifest(
 }
 
 /**
- * Return the set of pentest agent IDs that successfully completed.
- *
- * Only truly completed agents are skipped on resume. Failed/aborted agents
- * are retried so the user doesn't have to start a new session.
- *
- * Checks the manifest first, then does a belt-and-suspenders scan of subagent
- * files so we catch agents that finished but whose manifest entry was lost.
+ * Atomically update a single agent's status in the manifest.
+ * Safe under Node.js concurrency — readFileSync + writeFileSync
+ * runs synchronously without event loop interleaving.
  */
-export function getCompletedAgentIds(session: SessionInfo): Set<string> {
-  const ids = new Set<string>();
-
+export function updateManifestEntryStatus(
+  session: SessionInfo,
+  agentId: string,
+  status: "completed" | "failed",
+): void {
   const manifest = readAgentManifest(session);
-  for (const entry of manifest) {
-    if (!entry.id.startsWith("pentest-agent-")) continue;
-    if (entry.status === "completed") {
-      ids.add(entry.id);
-    }
-  }
+  const updated = manifest.map((e) =>
+    e.id === agentId
+      ? { ...e, status, completedAt: new Date().toISOString() }
+      : e,
+  );
+  writeAgentManifest(session, updated);
+}
 
-  // Belt-and-suspenders: scan subagent files for completed agents
-  // not reflected in the manifest
-  const subagentsPath = join(session.rootPath, SUBAGENTS_DIR);
-  if (existsSync(subagentsPath)) {
-    for (const file of readdirSync(subagentsPath).filter((f) =>
-      f.endsWith(".json"),
-    )) {
-      try {
-        const data = JSON.parse(
-          readFileSync(join(subagentsPath, file), "utf-8"),
-        ) as SavedSubagentData;
-        if (
-          data.agentName.startsWith("pentest-agent-") &&
-          data.status === "completed"
-        ) {
-          ids.add(data.agentName);
-        }
-      } catch {
-        // skip unparseable files
-      }
-    }
-  }
-
-  return ids;
+export function getCompletedAgentIds(session: SessionInfo): Set<string> {
+  const manifest = readAgentManifest(session);
+  return new Set(
+    manifest
+      .filter(
+        (e) => e.id.startsWith("pentest-agent-") && e.status === "completed",
+      )
+      .map((e) => e.id),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -431,7 +329,6 @@ function parseSubagentFilename(filename: string): {
     return { agentType: "attack-surface", name: "Attack Surface Discovery" };
   }
 
-  // Current convention: pentest-agent-{N}.json (also matches old timestamped format)
   const pentestMatch = filename.match(/^pentest-agent-(\d+)/);
   if (pentestMatch) {
     return {
@@ -461,24 +358,20 @@ function parseSubagentFilename(filename: string): {
 }
 
 /**
- * Convert saved messages to UI-compatible format.
- *
- * Two-pass algorithm:
- *  1. Collect tool results by toolCallId so we can pair them with calls.
- *  2. Emit UIMessage[] with tool-call messages enriched with their results.
+ * Two-pass: collect tool results by toolCallId, then emit UIMessage[]
+ * with tool-call messages enriched with their results.
  */
 function convertMessagesToUI(
-  messages: SavedMessage[],
+  messages: ModelMessage[],
   baseTime: Date,
 ): UIMessage[] {
   const uiMessages: UIMessage[] = [];
   let messageIndex = 0;
 
-  // First pass: collect tool results by toolCallId
   const toolResults = new Map<string, unknown>();
   for (const msg of messages) {
     if (Array.isArray(msg.content)) {
-      for (const part of msg.content) {
+      for (const part of msg.content as MessageContentPart[]) {
         if (part.type === "tool-result" && part.toolCallId) {
           toolResults.set(part.toolCallId, part.output);
         }
@@ -497,7 +390,7 @@ function convertMessagesToUI(
         createdAt,
       });
     } else if (Array.isArray(msg.content)) {
-      for (const part of msg.content) {
+      for (const part of msg.content as MessageContentPart[]) {
         if (part.type === "text" && part.text) {
           uiMessages.push({
             role: "assistant",
@@ -523,7 +416,6 @@ function convertMessagesToUI(
             status: "completed",
           });
         }
-        // tool-result parts are already collected in the first pass
       }
     }
   }
@@ -531,17 +423,10 @@ function convertMessagesToUI(
   return uiMessages;
 }
 
-/**
- * Convert raw AI SDK model messages to UI-compatible display format.
- *
- * Used when restoring operator state on resume: the persisted state stores
- * only model messages, and this function derives the display messages.
- */
 export function convertModelMessagesToUI(
   messages: ModelMessage[],
 ): UIMessage[] {
-  const saved = messages.map((m) => mapToSavedMessage(m));
-  return convertMessagesToUI(saved, new Date());
+  return convertMessagesToUI(messages, new Date());
 }
 
 /**
@@ -600,7 +485,8 @@ export function loadSubagents(rootPath: string): UISubagent[] {
             break;
         }
 
-        const entry: UISubagent = {
+        agentNameIndex.set(data.agentName, subagents.length);
+        subagents.push({
           id: data.agentName,
           name:
             data.agentName === "attack-surface-agent"
@@ -611,17 +497,7 @@ export function loadSubagents(rootPath: string): UISubagent[] {
           messages,
           createdAt: timestamp,
           status,
-        };
-
-        // Deduplicate: if we already have an entry for this agentName
-        // (old sessions with multiple timestamped files), keep the latest.
-        const prevIdx = agentNameIndex.get(data.agentName);
-        if (prevIdx !== undefined) {
-          subagents[prevIdx] = entry;
-        } else {
-          agentNameIndex.set(data.agentName, subagents.length);
-          subagents.push(entry);
-        }
+        });
       } catch (e) {
         console.error(`Failed to load subagent file ${file}:`, e);
       }

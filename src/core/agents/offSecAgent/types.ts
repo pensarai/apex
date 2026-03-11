@@ -222,9 +222,6 @@ export interface SpecializedAgentInput {
   /** Optional per-provider API key overrides */
   authConfig?: AIAuthConfig;
 
-  /** Existing conversation history for resumption after abort */
-  messages?: Array<ModelMessage>;
-
   /** Callback fired after each agent step */
   onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
 

@@ -70,7 +70,6 @@ export class OffensiveSecurityAgent<TResult = void> {
   /** Persistent shell for local-mode command execution; disposed on consume() completion. */
   private readonly persistentShell?: PersistentShell;
 
-  /** Abort signal passed at construction — used by consume() to detect silent abort. */
   private readonly abortSignal?: AbortSignal;
 
   /** The session this agent is operating within. */

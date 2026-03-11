@@ -8,6 +8,7 @@ import { loadAttackSurfaceResults } from "./types";
 import { OffensiveSecurityAgent } from "../../offSecAgent/offensiveSecurityAgent";
 import type { SpecializedAgentInput } from "../../offSecAgent/types";
 import type { SessionInfo } from "../../../session";
+import type { ModelMessage } from "ai";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -26,7 +27,10 @@ export type AttackSurfaceAgentInput = SpecializedAgentInput &
         /** Working directory for source-code based analysis */
         cwd: string;
       }
-  );
+  ) & {
+    /** Existing conversation history for resumption */
+    messages?: ModelMessage[];
+  };
 
 /** The typed result returned by `AttackSurfaceAgent.consume()`. */
 export interface AttackSurfaceResult {
