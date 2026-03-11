@@ -1,12 +1,17 @@
 import { useState, useRef, useEffect } from "react";
 import { useKeyboard } from "@opentui/react";
 import { config } from "../../../core/config";
-import { useRoute } from "../../context/route";
 import { useConfig } from "../../context/config";
 import {
   getPensarApiUrl,
   getPensarConsoleUrl,
 } from "../../../core/api/constants";
+import { Dialog } from "../../context/dialog";
+import { useTheme } from "../../theme";
+
+interface AuthFlowProps {
+  onClose: () => void;
+}
 
 type AuthStep =
   | "start"
@@ -58,8 +63,8 @@ interface SelectWorkspaceResponse {
   billingUrl?: string;
 }
 
-export default function AuthFlow() {
-  const route = useRoute();
+export default function AuthFlow({ onClose }: AuthFlowProps) {
+  const { colors } = useTheme();
   const appConfig = useConfig();
 
   // Determine if already connected (WorkOS token or legacy API key)
@@ -90,7 +95,7 @@ export default function AuthFlow() {
     : null;
 
   const goHome = () => {
-    route.navigate({ type: "base", path: "home" });
+    onClose();
   };
 
   const cleanup = () => {
@@ -128,14 +133,22 @@ export default function AuthFlow() {
     cancelledRef.current = false;
 
     const apiUrl = getPensarApiUrl(appConfig.data);
+    console.error(`[auth] apiUrl=${apiUrl}`);
 
     // Try new WorkOS flow first, fall back to legacy device auth
     try {
+      console.error(`[auth] fetching ${apiUrl}/api/cli/config`);
       const configResponse = await fetch(`${apiUrl}/api/cli/config`);
+      console.error(
+        `[auth] config response: ${configResponse.status} ${configResponse.statusText}`,
+      );
       if (configResponse.ok) {
         const cliConfig = (await configResponse.json()) as {
           workosClientId: string;
         };
+        console.error(
+          `[auth] got workosClientId=${cliConfig.workosClientId.slice(0, 12)}...`,
+        );
 
         // New WorkOS device authorization flow
         const response = await fetch(
@@ -147,8 +160,13 @@ export default function AuthFlow() {
           },
         );
 
+        console.error(`[auth] device authorize response: ${response.status}`);
+
         if (response.ok) {
           const data = (await response.json()) as WorkOSDeviceResponse;
+          console.error(
+            `[auth] device code obtained, polling interval=${data.interval}s, expires=${data.expires_in}s`,
+          );
           setAuthMode("workos");
           setDeviceInfo(data);
           openUrl(data.verification_uri_complete);
@@ -163,8 +181,8 @@ export default function AuthFlow() {
           return;
         }
       }
-    } catch {
-      // New endpoint not available — fall through to legacy
+    } catch (e) {
+      console.error(`[auth] WorkOS flow failed, falling back to legacy:`, e);
     }
 
     // Legacy device auth flow (backward compat)
@@ -218,6 +236,7 @@ export default function AuthFlow() {
       }
 
       try {
+        console.error(`[auth] polling WorkOS authenticate...`);
         const response = await fetch(
           "https://api.workos.com/user_management/authenticate",
           {
@@ -233,13 +252,16 @@ export default function AuthFlow() {
 
         if (cancelledRef.current) return;
 
+        console.error(`[auth] poll response: ${response.status}`);
+
         if (response.status === 400) {
-          // Authorization pending — poll again
           pollingRef.current = setTimeout(poll, interval * 1000);
           return;
         }
 
         if (!response.ok) {
+          const body = await response.text();
+          console.error(`[auth] auth failed: ${response.status} ${body}`);
           throw new Error("Authentication failed");
         }
 
@@ -248,18 +270,21 @@ export default function AuthFlow() {
           refresh_token: string;
         };
 
-        // Save tokens and sync React state
+        console.error(
+          `[auth] got tokens, access_token=${data.access_token.length} chars`,
+        );
+
         await config.update({
           accessToken: data.access_token,
           refreshToken: data.refresh_token,
         });
         await appConfig.reload();
 
-        // Fetch user's workspaces
+        console.error(`[auth] tokens saved, fetching workspaces...`);
         await fetchWorkspaces(apiUrl, data.access_token);
       } catch (err) {
         if (cancelledRef.current) return;
-        // Network error — retry
+        console.error(`[auth] poll error, retrying:`, err);
         pollingRef.current = setTimeout(poll, interval * 1000);
       }
     };
@@ -352,15 +377,26 @@ export default function AuthFlow() {
 
   const fetchWorkspaces = async (apiUrl: string, accessToken: string) => {
     try {
-      const response = await fetch(`${apiUrl}/api/cli/workspaces`, {
+      const url = `${apiUrl}/api/cli/workspaces`;
+      console.error(
+        `[auth] fetchWorkspaces: ${url} (token=${accessToken.length} chars)`,
+      );
+      const response = await fetch(url, {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
 
+      console.error(
+        `[auth] workspaces response: ${response.status} ${response.statusText}`,
+      );
+
       if (!response.ok) {
-        throw new Error("Failed to fetch workspaces");
+        const body = await response.text();
+        console.error(`[auth] workspaces error body: ${body}`);
+        throw new Error(`Failed to fetch workspaces (${response.status})`);
       }
 
       const data = (await response.json()) as { workspaces: WorkspaceInfo[] };
+      console.error(`[auth] got ${data.workspaces.length} workspace(s)`);
 
       if (data.workspaces.length === 0) {
         setError("No workspaces found. Create one at console.pensar.dev");
@@ -369,7 +405,6 @@ export default function AuthFlow() {
       }
 
       if (data.workspaces.length === 1) {
-        // Auto-select single workspace
         await selectWorkspace(apiUrl, accessToken, data.workspaces[0]);
         return;
       }
@@ -378,6 +413,7 @@ export default function AuthFlow() {
       setSelectedIndex(0);
       setStep("select-workspace");
     } catch (err) {
+      console.error(`[auth] fetchWorkspaces error:`, err);
       setError(
         err instanceof Error ? err.message : "Failed to fetch workspaces",
       );
@@ -396,6 +432,9 @@ export default function AuthFlow() {
     setStep("checking-billing");
 
     try {
+      console.error(
+        `[auth] selectWorkspace: ${workspace.id} (${workspace.name})`,
+      );
       const response = await fetch(`${apiUrl}/api/cli/select-workspace`, {
         method: "POST",
         headers: {
@@ -405,7 +444,11 @@ export default function AuthFlow() {
         body: JSON.stringify({ workspaceId: workspace.id }),
       });
 
+      console.error(`[auth] select-workspace response: ${response.status}`);
+
       if (!response.ok) {
+        const body = await response.text();
+        console.error(`[auth] select-workspace error: ${body}`);
         throw new Error("Failed to select workspace");
       }
 
@@ -472,6 +515,9 @@ export default function AuthFlow() {
   // ── Keyboard handler ──────────────────────────────────────────────
 
   useKeyboard((key) => {
+    // Modal dialog — consume all keystrokes to prevent leaking to components underneath
+    key.preventDefault();
+
     if (key.name === "escape") {
       cleanup();
       goHome();
@@ -522,190 +568,196 @@ export default function AuthFlow() {
   // ── Render ────────────────────────────────────────────────────────
 
   return (
-    <box
-      flexDirection="column"
-      width="100%"
-      maxWidth={80}
-      alignItems="flex-start"
-      padding={1}
-    >
-      {/* Header */}
-      <box marginBottom={1}>
-        <text fg="green">Pensar Console — Managed Inference</text>
-      </box>
-
-      <box marginBottom={1}>
-        <text fg="gray">
-          Connect to Pensar Console for usage-based AI inference.{"\n"}
-          No API keys needed — just a Pensar account with credits.
-        </text>
-      </box>
-
-      {/* Step: Start */}
-      {step === "start" && (
-        <box flexDirection="column" gap={1}>
-          <box>
-            <text fg="white">
-              Press <span fg="green">[ENTER]</span> to authorize via your
-              browser.
-            </text>
-          </box>
-          <box marginTop={1}>
-            <text fg="gray">
-              <span fg="green">[ENTER]</span> Connect ·{" "}
-              <span fg="green">[ESC]</span> Cancel
-            </text>
-          </box>
+    <Dialog size="large" onClose={goHome}>
+      <box
+        flexDirection="column"
+        width="100%"
+        alignItems="flex-start"
+        padding={1}
+      >
+        {/* Header */}
+        <box marginBottom={1}>
+          <text fg={colors.primary}>Pensar Console — Managed Inference</text>
         </box>
-      )}
 
-      {/* Step: Requesting */}
-      {step === "requesting" && (
-        <box>
-          <text fg="yellow">Starting authorization...</text>
-        </box>
-      )}
-
-      {/* Step: Polling */}
-      {step === "polling" && (deviceInfo || legacyDeviceInfo) && (
-        <box flexDirection="column" gap={1}>
-          <box>
-            <text fg="yellow">Waiting for browser authorization...</text>
-          </box>
-          <box marginTop={1}>
-            <text fg="white">
-              Your code:{" "}
-              <span fg="green">
-                {deviceInfo?.user_code || legacyDeviceInfo?.userCode}
-              </span>
-            </text>
-          </box>
-          <box marginTop={1}>
-            <text fg="gray">
-              If the browser didn't open, visit:{"\n"}
-              {deviceInfo?.verification_uri_complete ||
-                legacyDeviceInfo?.verificationUriComplete}
-            </text>
-          </box>
-          <box marginTop={1}>
-            <text fg="gray">
-              <span fg="green">[ESC]</span> Cancel
-            </text>
-          </box>
-        </box>
-      )}
-
-      {/* Step: Select Workspace */}
-      {step === "select-workspace" && (
-        <box flexDirection="column" gap={1}>
-          <box>
-            <text fg="white">Select a workspace:</text>
-          </box>
-          <box flexDirection="column" marginTop={1}>
-            {workspaces.map((ws, i) => (
-              <box key={ws.id}>
-                <text fg={i === selectedIndex ? "green" : "gray"}>
-                  {i === selectedIndex ? "▸ " : "  "}
-                  {ws.name}{" "}
-                  <span fg="gray">
-                    ({ws.slug}) — ${ws.balance.toFixed(2)}
-                  </span>
-                </text>
-              </box>
-            ))}
-          </box>
-          <box marginTop={1}>
-            <text fg="gray">
-              <span fg="green">[↑/↓]</span> Navigate ·{" "}
-              <span fg="green">[ENTER]</span> Select ·{" "}
-              <span fg="green">[ESC]</span> Cancel
-            </text>
-          </box>
-        </box>
-      )}
-
-      {/* Step: Checking Billing */}
-      {step === "checking-billing" && (
-        <box>
-          <text fg="yellow">
-            Checking billing for {selectedWorkspace?.name}...
+        <box marginBottom={1}>
+          <text fg={colors.textMuted}>
+            Connect to Pensar Console for usage-based AI inference.{"\n"}
+            No API keys needed — just a Pensar account with credits.
           </text>
         </box>
-      )}
 
-      {/* Step: Success */}
-      {step === "success" && (
-        <box flexDirection="column" gap={1}>
-          <box>
-            <text fg="green">Connected to Pensar Console</text>
-          </box>
-          {(selectedWorkspace || connectedWorkspace) && (
-            <box flexDirection="column">
-              <text fg="white">
-                Workspace: {selectedWorkspace?.name || connectedWorkspace?.name}
+        {/* Step: Start */}
+        {step === "start" && (
+          <box flexDirection="column" gap={1}>
+            <box>
+              <text fg={colors.text}>
+                Press <span fg={colors.primary}>[ENTER]</span> to authorize via
+                your browser.
               </text>
-              {balance !== null && (
-                <text fg="white">
-                  Credits:{" "}
-                  <span fg={hasLowBalance ? "yellow" : "white"}>
-                    ${balance.toFixed(2)}
-                  </span>
-                </text>
-              )}
             </box>
-          )}
-          {(hasLowBalance || billingUrl) && (
             <box marginTop={1}>
-              <text fg="yellow">
-                {billingUrl
-                  ? "Your workspace needs credits to use Apex CLI."
-                  : "Your credit balance is very low. We recommend at least $30 to run"}
-                {"\n"}
-                {billingUrl
-                  ? "Press ENTER to open billing and add credits."
-                  : "pentests without interruptions. Press ENTER to open billing."}
+              <text fg={colors.textMuted}>
+                <span fg={colors.primary}>[ENTER]</span> Connect ·{" "}
+                <span fg={colors.primary}>[ESC]</span> Cancel
               </text>
             </box>
-          )}
-          {!selectedWorkspace &&
-            !connectedWorkspace &&
-            appConfig.data.pensarAPIKey && (
-              <box>
-                <text fg="gray">
-                  Already connected (legacy key saved in config)
+          </box>
+        )}
+
+        {/* Step: Requesting */}
+        {step === "requesting" && (
+          <box>
+            <text fg={colors.warning}>Starting authorization...</text>
+          </box>
+        )}
+
+        {/* Step: Polling */}
+        {step === "polling" && (deviceInfo || legacyDeviceInfo) && (
+          <box flexDirection="column" gap={1}>
+            <box>
+              <text fg={colors.warning}>
+                Waiting for browser authorization...
+              </text>
+            </box>
+            <box marginTop={1}>
+              <text fg={colors.text}>
+                Your code:{" "}
+                <span fg={colors.primary}>
+                  {deviceInfo?.user_code || legacyDeviceInfo?.userCode}
+                </span>
+              </text>
+            </box>
+            <box marginTop={1}>
+              <text fg={colors.textMuted}>
+                If the browser didn't open, visit:{"\n"}
+                {deviceInfo?.verification_uri_complete ||
+                  legacyDeviceInfo?.verificationUriComplete}
+              </text>
+            </box>
+            <box marginTop={1}>
+              <text fg={colors.textMuted}>
+                <span fg={colors.primary}>[ESC]</span> Cancel
+              </text>
+            </box>
+          </box>
+        )}
+
+        {/* Step: Select Workspace */}
+        {step === "select-workspace" && (
+          <box flexDirection="column" gap={1}>
+            <box>
+              <text fg={colors.text}>Select a workspace:</text>
+            </box>
+            <box flexDirection="column" marginTop={1}>
+              {workspaces.map((ws, i) => (
+                <box key={ws.id}>
+                  <text
+                    fg={i === selectedIndex ? colors.primary : colors.textMuted}
+                  >
+                    {i === selectedIndex ? "▸ " : "  "}
+                    {ws.name}{" "}
+                    <span fg={colors.textMuted}>
+                      ({ws.slug}) — ${ws.balance.toFixed(2)}
+                    </span>
+                  </text>
+                </box>
+              ))}
+            </box>
+            <box marginTop={1}>
+              <text fg={colors.textMuted}>
+                <span fg={colors.primary}>[↑/↓]</span> Navigate ·{" "}
+                <span fg={colors.primary}>[ENTER]</span> Select ·{" "}
+                <span fg={colors.primary}>[ESC]</span> Cancel
+              </text>
+            </box>
+          </box>
+        )}
+
+        {/* Step: Checking Billing */}
+        {step === "checking-billing" && (
+          <box>
+            <text fg={colors.warning}>
+              Checking billing for {selectedWorkspace?.name}...
+            </text>
+          </box>
+        )}
+
+        {/* Step: Success */}
+        {step === "success" && (
+          <box flexDirection="column" gap={1}>
+            <box>
+              <text fg={colors.success}>Connected to Pensar Console</text>
+            </box>
+            {(selectedWorkspace || connectedWorkspace) && (
+              <box flexDirection="column">
+                <text fg={colors.text}>
+                  Workspace:{" "}
+                  {selectedWorkspace?.name || connectedWorkspace?.name}
+                </text>
+                {balance !== null && (
+                  <text fg={colors.text}>
+                    Credits:{" "}
+                    <span fg={hasLowBalance ? colors.warning : colors.text}>
+                      ${balance.toFixed(2)}
+                    </span>
+                  </text>
+                )}
+              </box>
+            )}
+            {(hasLowBalance || billingUrl) && (
+              <box marginTop={1}>
+                <text fg={colors.warning}>
+                  {billingUrl
+                    ? "Your workspace needs credits to use Apex CLI."
+                    : "Your credit balance is very low. We recommend at least $30 to run"}
+                  {"\n"}
+                  {billingUrl
+                    ? "Press ENTER to open billing and add credits."
+                    : "pentests without interruptions. Press ENTER to open billing."}
                 </text>
               </box>
             )}
-          <box marginTop={1}>
-            <text fg="gray">
-              Pensar models are now available in the model selector.
-            </text>
+            {!selectedWorkspace &&
+              !connectedWorkspace &&
+              appConfig.data.pensarAPIKey && (
+                <box>
+                  <text fg={colors.textMuted}>
+                    Already connected (legacy key saved in config)
+                  </text>
+                </box>
+              )}
+            <box marginTop={1}>
+              <text fg={colors.textMuted}>
+                Pensar models are now available in the model selector.
+              </text>
+            </box>
+            <box marginTop={1}>
+              <text fg={colors.textMuted}>
+                <span fg={colors.primary}>[ENTER]</span>{" "}
+                {hasLowBalance || billingUrl ? "Open billing" : "Done"} ·{" "}
+                <span fg={colors.error}>[D]</span> Disconnect ·{" "}
+                <span fg={colors.primary}>[ESC]</span> Back
+              </text>
+            </box>
           </box>
-          <box marginTop={1}>
-            <text fg="gray">
-              <span fg="green">[ENTER]</span>{" "}
-              {hasLowBalance || billingUrl ? "Open billing" : "Done"} ·{" "}
-              <span fg="red">[D]</span> Disconnect ·{" "}
-              <span fg="green">[ESC]</span> Back
-            </text>
-          </box>
-        </box>
-      )}
+        )}
 
-      {/* Step: Error */}
-      {step === "error" && (
-        <box flexDirection="column" gap={1}>
-          <box>
-            <text fg="red">{error}</text>
+        {/* Step: Error */}
+        {step === "error" && (
+          <box flexDirection="column" gap={1}>
+            <box>
+              <text fg={colors.error}>{error}</text>
+            </box>
+            <box marginTop={1}>
+              <text fg={colors.textMuted}>
+                <span fg={colors.primary}>[ENTER]</span> Try again ·{" "}
+                <span fg={colors.primary}>[ESC]</span> Cancel
+              </text>
+            </box>
           </box>
-          <box marginTop={1}>
-            <text fg="gray">
-              <span fg="green">[ENTER]</span> Try again ·{" "}
-              <span fg="green">[ESC]</span> Cancel
-            </text>
-          </box>
-        </box>
-      )}
-    </box>
+        )}
+      </box>
+    </Dialog>
   );
 }

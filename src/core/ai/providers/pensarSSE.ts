@@ -19,25 +19,44 @@ export async function* parseSSE(
   let buffer = "";
   let currentEvent = "message";
   let currentData: string[] = [];
+  let totalBytes = 0;
+  let chunkCount = 0;
+  let eventCount = 0;
 
   try {
     while (true) {
       const { done, value } = await reader.read();
-      if (done) break;
+      if (done) {
+        console.error(
+          `[parseSSE] stream done: ${chunkCount} chunks, ${totalBytes} bytes, ${eventCount} events yielded, remaining buffer=${buffer.length} chars`,
+        );
+        if (buffer.length > 0) {
+          console.error(`[parseSSE] remaining buffer: ${buffer.slice(0, 500)}`);
+        }
+        break;
+      }
 
-      buffer += decoder.decode(value, { stream: true });
+      chunkCount++;
+      totalBytes += value.byteLength;
+      const decoded = decoder.decode(value, { stream: true });
+
+      if (chunkCount <= 3) {
+        console.error(
+          `[parseSSE] chunk #${chunkCount}: ${value.byteLength} bytes, preview: ${decoded.slice(0, 200)}`,
+        );
+      }
+
+      buffer += decoded;
 
       const lines = buffer.split("\n");
-      // Keep the last (potentially incomplete) line in the buffer
       buffer = lines.pop() ?? "";
 
       for (let line of lines) {
-        // Trim carriage return if present (handles both \r\n and \n line endings)
         line = line.replace(/\r$/, "");
 
         if (line === "") {
-          // Blank line = end of SSE message
           if (currentData.length > 0) {
+            eventCount++;
             yield { event: currentEvent, data: currentData.join("\n") };
           }
           currentEvent = "message";
@@ -47,13 +66,19 @@ export async function* parseSSE(
         } else if (line.startsWith("data:")) {
           currentData.push(line.slice(5).trim());
         }
-        // Ignore id:, retry:, and comment lines (: prefix)
       }
     }
 
-    // Flush remaining data if stream ended without trailing blank line
     if (currentData.length > 0) {
+      eventCount++;
+      console.error(`[parseSSE] flushing final event: ${currentEvent}`);
       yield { event: currentEvent, data: currentData.join("\n") };
+    }
+
+    if (eventCount === 0) {
+      console.error(
+        `[parseSSE] WARNING: stream ended with 0 events! totalBytes=${totalBytes}, chunks=${chunkCount}`,
+      );
     }
   } finally {
     reader.releaseLock();

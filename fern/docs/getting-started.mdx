@@ -5,46 +5,16 @@ description: "Install and configure Pensar Apex for AI-powered penetration testi
 
 ## Prerequisites
 
-Before installing Apex, you'll need to install the required dependencies:
-
-### Install Bun
-
-Bun is a fast JavaScript runtime required by Apex. Install it using one of the following methods:
-
-<CodeBlock title="macOS, Linux, and WSL">
-  ```bash curl -fsSL https://bun.sh/install | bash ```
-</CodeBlock>
-
-<CodeBlock title="Windows (PowerShell)">
-  ```powershell powershell -c "irm bun.sh/install.ps1 | iex" ```
-</CodeBlock>
+- **API Key** for your chosen AI provider (Anthropic recommended)
 
 <Callout intent="info">
-  After installation, restart your terminal to ensure `bun` is available in your
-  PATH.
+  After installing, run `pensar doctor` to check for optional dependencies (like
+  nmap) and install them automatically.
 </Callout>
-
-### Install nmap
-
-nmap is required for network scanning functionality:
-
-<CodeBlock title="macOS">```bash brew install nmap ```</CodeBlock>
-
-<CodeBlock title="Debian/Ubuntu">
-  ```bash sudo apt-get update && sudo apt-get install -y nmap ```
-</CodeBlock>
-
-<CodeBlock title="Fedora/RHEL">```bash sudo dnf install -y nmap ```</CodeBlock>
-
-<CodeBlock title="Windows">
-  Download the installer from
-  [nmap.org/download.html](https://nmap.org/download.html) and ensure `nmap` is
-  in your PATH.
-</CodeBlock>
 
 ## Installation
 
-Once the prerequisites are installed, install Apex globally using your preferred package manager:
+Install Apex using your preferred method:
 
 <Tabs>
   <Tab title="macOS/Linux">
@@ -76,13 +46,20 @@ Before running Apex, you need to configure your AI provider API key. Apex suppor
     Get your API key from [console.anthropic.com](https://console.anthropic.com/).
 
     <Callout intent="success">
-      Anthropic models (especially Claude Sonnet) provide the best performance for penetration testing tasks.
+      Anthropic models (especially Claude Sonnet 4.5) provide the best performance for penetration testing tasks.
     </Callout>
 
   </Accordion>
 
   <Accordion title="OpenAI" icon="openai" iconType="brands">
     Get your API key from [platform.openai.com](https://platform.openai.com/).
+
+  </Accordion>
+
+  <Accordion title="Google" icon="google" iconType="brands">
+    Get your API key from [aistudio.google.com](https://aistudio.google.com/).
+
+    Google provides access to Gemini models through the Generative AI API.
 
   </Accordion>
 
@@ -99,11 +76,22 @@ Before running Apex, you need to configure your AI provider API key. Apex suppor
     Ensure you have access to Anthropic Claude models in AWS Bedrock.
 
   </Accordion>
+
+  <Accordion title="Pensar Console (Managed)" icon="shield-check">
+    Use the `/auth` command inside Apex to connect to [Pensar Console](https://console.pensar.dev) for managed inference — no API key required.
+
+  </Accordion>
 </AccordionGroup>
+
+<img
+  src="./assets/providers.png"
+  alt="Provider selection screen"
+  style={{ borderRadius: "8px", marginTop: "16px" }}
+/>
 
 <Callout intent="info">
   **Tip:** You'll configure your API key directly in Apex using the `/providers`
-  command - no environment variables needed!
+  command — no environment variables needed!
 </Callout>
 
 ## Running Apex
@@ -118,9 +106,20 @@ This will start the interactive terminal interface where you can access all Apex
 
 <img
   src="./assets/apex-screenshot.png"
-  alt="Apex Terminal Interface"
+  alt="Apex Home Screen"
   style={{ borderRadius: "8px", marginTop: "16px" }}
 />
+
+## CLI Commands
+
+Apex also supports headless CLI commands for CI/CD and scripting:
+
+```bash
+pensar pentest --target <url>               # Run a full pentest orchestration
+pensar targeted-pentest --target <url>      # Run a targeted pentest
+pensar upgrade                              # Update to the latest version
+pensar doctor                               # Check & install optional dependencies
+```
 
 ## Using Kali Linux Container (Optional)
 
@@ -151,28 +150,30 @@ Now that Apex is installed, here's how to get started:
 
 <Steps>
   <Step title="Configure AI Provider">
-    Run `/providers` to set up your AI provider API key
+    Run `/providers` to set up your AI provider API key, or `/auth` to connect
+    via Pensar Console
   </Step>
   <Step title="Select Model">
     Run `/models` to choose which AI model to use
   </Step>
   <Step title="Start Testing">
-    Run `/init` to configure and launch your first penetration test
+    Run `/pentest` to launch an autonomous penetration test, or `/operator` for
+    an interactive session
   </Step>
 </Steps>
 
 <CardGroup cols={2}>
+  <Card title="/pentest" icon="play">
+    Launch an autonomous penetration testing swarm against your target.
+  </Card>
+  <Card title="/operator" icon="terminal">
+    Start an interactive operator session with step-by-step control.
+  </Card>
   <Card title="/providers" icon="plug">
     Connect your AI provider and configure API keys.
   </Card>
   <Card title="/models" icon="microchip">
     Select which AI model to use for testing.
-  </Card>
-  <Card title="/init" icon="play">
-    Start a new penetration testing session.
-  </Card>
-  <Card title="/help" icon="circle-question">
-    View all available commands and their descriptions.
   </Card>
 </CardGroup>
 
@@ -188,7 +189,7 @@ Now that Apex is installed, here's how to get started:
   <Card title="Model Selection" icon="microchip" href="/apex/commands/models">
     Choose the right AI model for your needs.
   </Card>
-  <Card title="Start Testing" icon="play" href="/apex/commands/init">
+  <Card title="Start Testing" icon="play" href="/apex/commands/pentest">
     Launch your first penetration test.
   </Card>
 </CardGroup>

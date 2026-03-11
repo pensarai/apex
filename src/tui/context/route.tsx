@@ -12,7 +12,6 @@ export type RoutePath =
   | "help"
   | "pentest"
   | "thorough"
-  | "web"
   | "operator"
   | "chat"
   | "dns"
@@ -67,6 +66,8 @@ export type Route =
         requireApproval?: boolean;
         target?: string;
       };
+      /** Opaque value used to force a fresh remount (e.g. Date.now()) */
+      nonce?: number;
     };
 
 type RouteContext = {

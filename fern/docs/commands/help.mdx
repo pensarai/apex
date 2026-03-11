@@ -17,17 +17,35 @@ The `/help` command displays a list of all available commands in Apex along with
 
 When you run `/help`, you'll see a dialog showing:
 
-- **Command List**: All available commands with their names
+- **Command List**: All available commands with their names and aliases
 - **Descriptions**: Brief explanation of what each command does
+- **Categories**: Commands grouped by Pentesting, General, and Skills
 
 ## Available Commands
+
+### Pentesting
+
+<CardGroup cols={2}>
+  <Card title="/pentest" icon="play">
+    Start an autonomous pentest swarm against your target. Aliases: `/p`,
+    `/web`, `/w`
+  </Card>
+  <Card title="/operator" icon="terminal">
+    Start an interactive operator session with step-by-step control. Alias: `/o`
+  </Card>
+  <Card title="/sessions" icon="clock-rotate-left">
+    Browse and resume previous sessions. Alias: `/s`
+  </Card>
+</CardGroup>
+
+### General
 
 <CardGroup cols={2}>
   <Card title="/help" icon="circle-question">
     Display this help information with all available commands
   </Card>
-  <Card title="/init" icon="play">
-    Start a new penetration testing session with the configuration wizard
+  <Card title="/config" icon="gear">
+    Show configuration dialog
   </Card>
   <Card title="/models" icon="microchip">
     View and select AI models from configured providers
@@ -35,16 +53,44 @@ When you run `/help`, you'll see a dialog showing:
   <Card title="/providers" icon="plug">
     Manage AI providers and configure API keys
   </Card>
+  <Card title="/auth" icon="shield-check">
+    Connect to Pensar Console for managed inference
+  </Card>
+  <Card title="/credits" icon="credit-card">
+    Buy credits or check your balance
+  </Card>
+  <Card title="/themes" icon="palette">
+    Manage application themes. Alias: `/theme`
+  </Card>
+  <Card title="/exit" icon="right-from-bracket">
+    Exit the application. Aliases: `/quit`, `/q`
+  </Card>
+</CardGroup>
+
+### Skills
+
+<CardGroup cols={2}>
+  <Card title="/create-skill" icon="wand-magic-sparkles">
+    Create a new operator skill
+  </Card>
 </CardGroup>
 
 ## Command Details
 
-| Command      | Description                                                      |
-| ------------ | ---------------------------------------------------------------- |
-| `/help`      | Show help dialog with all available commands                     |
-| `/init`      | Start a new pentest session with target and configuration wizard |
-| `/models`    | View and select AI models grouped by provider                    |
-| `/providers` | Connect and configure AI provider API keys                       |
+| Command         | Aliases            | Description                                     |
+| --------------- | ------------------ | ----------------------------------------------- |
+| `/pentest`      | `/p`, `/web`, `/w` | Start autonomous pentest swarm                  |
+| `/operator`     | `/o`               | Start interactive operator session              |
+| `/sessions`     | `/s`               | Browse previous sessions                        |
+| `/help`         |                    | Show help dialog                                |
+| `/config`       |                    | Show config dialog                              |
+| `/models`       |                    | Show available AI models                        |
+| `/providers`    |                    | Manage AI providers and API keys                |
+| `/auth`         |                    | Connect to Pensar Console for managed inference |
+| `/credits`      | `/buy`             | Buy credits / check balance                     |
+| `/themes`       | `/theme`           | Manage application themes                       |
+| `/create-skill` |                    | Create a new operator skill                     |
+| `/exit`         | `/quit`, `/q`      | Exit the application                            |
 
 ## Getting Started Flow
 
@@ -52,15 +98,28 @@ For new users, here's the recommended order of commands:
 
 <Steps>
   <Step title="Configure Provider">
-    Run `/providers` to set up your AI provider API key (Anthropic recommended)
+    Run `/providers` to set up your AI provider API key (Anthropic recommended),
+    or `/auth` to connect via Pensar Console
   </Step>
   <Step title="Select Model">
     Run `/models` to choose which AI model to use for testing
   </Step>
   <Step title="Start Testing">
-    Run `/init` to configure and launch a penetration test
+    Run `/pentest` to launch an autonomous pentest, or `/operator` for an
+    interactive session
   </Step>
 </Steps>
+
+## Keyboard Shortcuts
+
+| Key      | Action                  |
+| -------- | ----------------------- |
+| `Ctrl+C` | Clear input / Exit      |
+| `Ctrl+K` | Toggle console          |
+| `Ctrl+S` | Show sessions           |
+| `Escape` | Return to home          |
+| `Tab`    | Next item               |
+| `?`      | Show keyboard shortcuts |
 
 ## Tips
 
@@ -77,7 +136,7 @@ For new users, here's the recommended order of commands:
 ## Related Commands
 
 <CardGroup cols={2}>
-  <Card title="/init" icon="play" href="/apex/commands/init">
+  <Card title="/pentest" icon="play" href="/apex/commands/pentest">
     Start a penetration test
   </Card>
   <Card title="/models" icon="microchip" href="/apex/commands/models">

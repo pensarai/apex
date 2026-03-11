@@ -14,7 +14,7 @@ import {
   type AppCommandContext,
 } from "../command-registry";
 import type { AutocompleteOption } from "../components/shared/prompt-input";
-import { useRoute } from "./route";
+import { useRoute, type WebCommandOptions } from "./route";
 import { loadSkills, slugify, type Skill } from "../../core/skills";
 
 interface CommandContextValue {
@@ -46,11 +46,17 @@ export function useCommand(): CommandContextValue {
 interface CommandProviderProps {
   children: ReactNode;
   onOpenSessionsDialog?: () => void;
+  onOpenThemeDialog?: () => void;
+  onOpenAuthDialog?: () => void;
+  onOpenPentestDialog?: (flags?: WebCommandOptions) => void;
 }
 
 export function CommandProvider({
   children,
   onOpenSessionsDialog,
+  onOpenThemeDialog,
+  onOpenAuthDialog,
+  onOpenPentestDialog,
 }: CommandProviderProps) {
   const route = useRoute();
   const [skills, setSkills] = useState<Skill[]>([]);
@@ -60,9 +66,18 @@ export function CommandProvider({
       route: route.data,
       navigate: route.navigate,
       openSessionsDialog: onOpenSessionsDialog,
+      openThemeDialog: onOpenThemeDialog,
+      openAuthDialog: onOpenAuthDialog,
+      openPentestDialog: onOpenPentestDialog,
     };
     return ctx;
-  }, [route, onOpenSessionsDialog]);
+  }, [
+    route,
+    onOpenSessionsDialog,
+    onOpenThemeDialog,
+    onOpenAuthDialog,
+    onOpenPentestDialog,
+  ]);
 
   const refreshSkills = useCallback(async () => {
     const loaded = await loadSkills();
