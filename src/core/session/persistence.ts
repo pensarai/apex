@@ -30,24 +30,14 @@ const MANIFEST_FILE = "agent-manifest.json";
 // Types (previously in loader.ts — canonical home is now here)
 // ---------------------------------------------------------------------------
 
-/**
- * Message content part from AI SDK format
- */
-export interface MessageContentPart {
+/** Shape of a content part when inspecting persisted ModelMessage arrays. */
+interface ContentPart {
   type: "text" | "tool-call" | "tool-result";
   text?: string;
   toolCallId?: string;
   toolName?: string;
   input?: Record<string, unknown>;
   output?: unknown;
-}
-
-/**
- * Raw message format from saved subagent files
- */
-export interface SavedMessage {
-  role: "assistant" | "tool" | "user";
-  content: MessageContentPart[] | string;
 }
 
 /**
@@ -367,7 +357,7 @@ function convertMessagesToUI(
   const toolResults = new Map<string, unknown>();
   for (const msg of messages) {
     if (Array.isArray(msg.content)) {
-      for (const part of msg.content as MessageContentPart[]) {
+      for (const part of msg.content as ContentPart[]) {
         if (part.type === "tool-result" && part.toolCallId) {
           toolResults.set(part.toolCallId, part.output);
         }
@@ -386,7 +376,7 @@ function convertMessagesToUI(
         createdAt,
       });
     } else if (Array.isArray(msg.content)) {
-      for (const part of msg.content as MessageContentPart[]) {
+      for (const part of msg.content as ContentPart[]) {
         if (part.type === "text" && part.text) {
           uiMessages.push({
             role: "assistant",

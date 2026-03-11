@@ -16,8 +16,6 @@ import { REPORT_FILENAME_MD } from "../report";
 
 // Re-export types that consumers import from this module
 export type {
-  MessageContentPart,
-  SavedMessage,
   SavedSubagentData,
   UIMessage,
   ResumeInfo,
