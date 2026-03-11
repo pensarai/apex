@@ -7,21 +7,22 @@ import type {
   LanguageModelV2StreamPart,
   LanguageModelV2Usage,
 } from "@ai-sdk/provider";
-import {
-  convertToBedrockFormat,
-  parseBedrockResponse,
-} from "./pensarFormatters";
+import { convertToBedrockFormat } from "./pensarFormatters";
 import { parseSSE } from "./pensarSSE";
 
 const DEBUG =
   process.env.PENSAR_DEBUG === "1" || process.env.PENSAR_DEBUG === "true";
 
 function log(...args: unknown[]) {
-  if (DEBUG) console.log("[pensar]", ...args);
+  if (DEBUG) console.error("[pensar:debug]", ...args);
+}
+
+function logInfo(...args: unknown[]) {
+  console.error("[pensar]", ...args);
 }
 
 function logError(...args: unknown[]) {
-  console.error("[pensar]", ...args);
+  console.error("[pensar:error]", ...args);
 }
 
 export interface PensarModelConfig {
@@ -39,21 +40,22 @@ export interface PensarModelConfig {
 
 /**
  * Creates a LanguageModelV2-compatible model that proxies requests through
- * the Pensar Console Bedrock proxy. This allows Apex CLI users to use
- * Pensar-managed inference with usage-based billing.
+ * the Pensar Gateway. This allows Apex CLI users to use Pensar-managed
+ * inference with usage-based billing.
  *
  * Supports both legacy API key auth and WorkOS JWT auth.
  * When workspaceId is provided, sends X-Workspace-Id header for WorkOS auth.
  *
- * doStream() discovers the Lambda Function URL via /bedrock/validate for
- * true SSE streaming. Falls back to /bedrock/invoke with stream: true
- * (buffered SSE) in dev, or wraps doGenerate() on error.
+ * Both doGenerate() and doStream() use the same /gateway/invoke endpoint.
+ * Streaming is true SSE via the Pensar Gateway. Falls back to wrapping
+ * doGenerate() in a synthetic stream on network errors.
  */
 export function createPensarModel(
   bedrockModelId: string,
   config: PensarModelConfig,
 ): LanguageModelV2 {
   const modelId = `pensar:${bedrockModelId}`;
+  logInfo(`createPensarModel: model=${bedrockModelId}, baseUrl=${config.baseUrl}`);
 
   /**
    * Build request headers, resolving the token via getToken() if available.
@@ -66,59 +68,30 @@ export function createPensarModel(
     if (config.getToken) {
       const result = await config.getToken();
       if (!result) {
+        logError("buildHeaders: getToken() returned null — auth failed");
         throw new Error(
           "Pensar authentication failed. Run /auth to reconnect.",
         );
       }
-      headers.Authorization = `Bearer ${result.token}`;
+      headers.Authorization = `Bearer ${result.token.slice(0, 12)}…`;
+      log(`  auth: ${result.type} token (${result.token.length} chars)`);
 
-      // WorkOS tokens need workspace ID header
       if (result.type === "workos" && config.workspaceId) {
         headers["X-Workspace-Id"] = config.workspaceId;
       }
+
+      // Restore the full token after logging the truncated version
+      headers.Authorization = `Bearer ${result.token}`;
     } else {
       headers.Authorization = `Bearer ${config.apiKey}`;
+      log(`  auth: apiKey (${config.apiKey.length} chars)`);
 
-      // If workspaceId is set and key doesn't look like a legacy key,
-      // include the workspace header
       if (config.workspaceId && !config.apiKey.startsWith("sk-")) {
         headers["X-Workspace-Id"] = config.workspaceId;
       }
     }
 
     return headers;
-  }
-
-  // ── Stream URL discovery ─────────────────────────────────────────────
-  let cachedStreamUrl: string | null = null;
-
-  async function getStreamUrl(): Promise<string> {
-    if (cachedStreamUrl) return cachedStreamUrl;
-
-    // Try to discover Lambda Function URL from /bedrock/validate
-    try {
-      const headers = await buildHeaders();
-      const res = await fetch(`${config.baseUrl}/bedrock/validate`, {
-        headers,
-      });
-      if (res.ok) {
-        const data = (await res.json()) as {
-          endpoints?: { stream?: string };
-        };
-        if (data.endpoints?.stream) {
-          cachedStreamUrl = data.endpoints.stream;
-          log(`  Discovered stream URL: ${cachedStreamUrl}`);
-          return cachedStreamUrl;
-        }
-      }
-    } catch {
-      // Fall through to fallback
-    }
-
-    // Fallback: buffered SSE via /bedrock/invoke with stream: true
-    cachedStreamUrl = `${config.baseUrl}/bedrock/invoke`;
-    log(`  Using fallback stream URL: ${cachedStreamUrl}`);
-    return cachedStreamUrl;
   }
 
   const model: LanguageModelV2 = {
@@ -136,94 +109,81 @@ export function createPensarModel(
       response?: { headers?: Record<string, string>; body?: unknown };
       warnings: Array<LanguageModelV2CallWarning>;
     }> {
-      const body = convertToBedrockFormat(bedrockModelId, options);
-      const url = `${config.baseUrl}/bedrock/invoke`;
-
-      log(`doGenerate → ${bedrockModelId}`);
-      log(`  URL: ${url}`);
-      log(
-        `  messages: ${(body.messages as unknown[])?.length ?? 0}, tools: ${(body.tools as unknown[])?.length ?? 0}`,
-      );
-
+      logInfo(`doGenerate → streaming and collecting for ${bedrockModelId}`);
       const startTime = Date.now();
-      const headers = await buildHeaders();
 
-      const response = await fetch(url, {
-        method: "POST",
-        headers,
-        signal: options.abortSignal,
-        body: JSON.stringify({
-          modelId: bedrockModelId,
-          body,
-          stream: false,
-        }),
-      });
-
-      log(`  response: ${response.status} (${Date.now() - startTime}ms)`);
-
-      if (!response.ok) {
-        const errorBody = await response.text();
-        let errorMessage: string;
-        try {
-          const parsed = JSON.parse(errorBody);
-          errorMessage = parsed.error || parsed.message || errorBody;
-        } catch {
-          errorMessage = errorBody;
-        }
-
-        logError(`  FAILED ${response.status}: ${errorMessage}`);
-
-        if (response.status === 402) {
-          throw new Error(
-            `Insufficient Pensar credits: ${errorMessage}. ` +
-              `Top up at https://console.pensar.dev`,
-          );
-        }
-
-        throw new Error(
-          `Pensar API error (${response.status}): ${errorMessage}`,
-        );
-      }
-
-      const result = (await response.json()) as {
-        response: Record<string, unknown>;
-        usage?: {
-          inputTokens: number;
-          outputTokens: number;
-          totalCost: number;
-        };
-      };
-
-      const usageFromProxy = result.usage ?? {
+      const { stream } = await model.doStream(options);
+      const content: LanguageModelV2Content[] = [];
+      let finishReason: LanguageModelV2FinishReason = "unknown";
+      let usage: LanguageModelV2Usage = {
         inputTokens: 0,
         outputTokens: 0,
+        totalTokens: 0,
       };
 
-      const parsed = parseBedrockResponse(bedrockModelId, result.response, {
-        inputTokens: usageFromProxy.inputTokens,
-        outputTokens: usageFromProxy.outputTokens,
-      });
+      const textParts: Record<string, string> = {};
+      const toolInputParts: Record<
+        string,
+        { toolName: string; input: string }
+      > = {};
 
-      log(
-        `  finish: ${parsed.finishReason}, content: ${parsed.content.length} parts`,
-      );
-      log(
-        `  usage: ${parsed.usage.inputTokens}in / ${parsed.usage.outputTokens}out`,
-      );
-      if (result.usage?.totalCost != null) {
-        log(`  cost: $${result.usage.totalCost.toFixed(6)}`);
+      const reader = stream.getReader();
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          switch (value.type) {
+            case "text-start":
+              textParts[value.id] = "";
+              break;
+            case "text-delta":
+              textParts[value.id] =
+                (textParts[value.id] ?? "") + value.delta;
+              break;
+            case "text-end":
+              content.push({
+                type: "text",
+                text: textParts[value.id] ?? "",
+              });
+              break;
+            case "tool-input-start":
+              toolInputParts[value.id] = {
+                toolName: value.toolName,
+                input: "",
+              };
+              break;
+            case "tool-input-delta":
+              if (toolInputParts[value.id]) {
+                toolInputParts[value.id].input += value.delta;
+              }
+              break;
+            case "tool-call":
+              content.push({
+                type: "tool-call",
+                toolCallId: value.toolCallId,
+                toolName: value.toolName,
+                input: value.input,
+              });
+              break;
+            case "finish":
+              finishReason = value.finishReason;
+              usage = value.usage;
+              break;
+          }
+        }
+      } finally {
+        reader.releaseLock();
       }
 
+      logInfo(
+        `  doGenerate complete: ${finishReason}, ${content.length} parts, ${usage.inputTokens}in/${usage.outputTokens}out (${Date.now() - startTime}ms)`,
+      );
+
       return {
-        content: parsed.content,
-        finishReason: parsed.finishReason,
-        usage: parsed.usage,
-        request: {
-          body,
-        },
-        response: {
-          body: result,
-        },
+        content,
+        finishReason,
+        usage,
         warnings: [],
       };
     },
@@ -234,12 +194,16 @@ export function createPensarModel(
       response?: { headers?: Record<string, string> };
     }> {
       const body = convertToBedrockFormat(bedrockModelId, options);
-      const url = await getStreamUrl();
+      const url = `${config.baseUrl}/gateway/invoke`;
 
-      log(`doStream → SSE streaming for ${bedrockModelId}`);
-      log(`  URL: ${url}`);
+      logInfo(`doStream → ${bedrockModelId} (${url})`);
+      log(
+        `  messages: ${(body.messages as unknown[])?.length ?? 0}, tools: ${(body.tools as unknown[])?.length ?? 0}`,
+      );
 
+      const startTime = Date.now();
       const headers = await buildHeaders();
+      log(`  headers: ${Object.keys(headers).join(", ")}`);
 
       let response: Response;
       try {
@@ -250,14 +214,19 @@ export function createPensarModel(
           body: JSON.stringify({
             modelId: bedrockModelId,
             body,
-            stream: true,
           }),
         });
       } catch (err) {
-        // Network error — fall back to non-streaming
-        logError(`  SSE fetch failed, falling back to doGenerate:`, err);
+        logError(`  SSE fetch failed (${Date.now() - startTime}ms), falling back to doGenerate:`, err);
         return doStreamFallback(model, options);
       }
+
+      const contentType = response.headers.get("content-type") ?? "unknown";
+      const transferEncoding =
+        response.headers.get("transfer-encoding") ?? "none";
+      logInfo(
+        `  response: ${response.status} (${Date.now() - startTime}ms) content-type=${contentType} transfer-encoding=${transferEncoding}`,
+      );
 
       if (!response.ok) {
         const errorBody = await response.text();
@@ -282,9 +251,13 @@ export function createPensarModel(
       }
 
       if (!response.body) {
-        logError(`  SSE response has no body, falling back to doGenerate`);
+        logError(
+          `  SSE response has no body (${Date.now() - startTime}ms), falling back to doGenerate`,
+        );
         return doStreamFallback(model, options);
       }
+
+      logInfo(`  SSE stream opened, reading events...`);
 
       const sseStream = response.body;
 
@@ -300,18 +273,24 @@ export function createPensarModel(
           let activeToolName: string | null = null;
           let activeToolInput = "";
 
+          let eventCount = 0;
           try {
             for await (const sse of parseSSE(sseStream)) {
+              eventCount++;
               let parsed: Record<string, unknown>;
               try {
                 parsed = JSON.parse(sse.data);
               } catch {
+                log(`  SSE event #${eventCount}: unparseable data, skipping`);
                 continue;
               }
+
+              log(`  SSE event #${eventCount}: ${sse.event} (type=${parsed.type})`);
 
               if (sse.event === "error") {
                 const msg =
                   (parsed.error as string) ?? "Unknown streaming error";
+                logError(`  SSE error event: ${msg}`);
                 controller.error(new Error(msg));
                 return;
               }
@@ -441,8 +420,8 @@ export function createPensarModel(
               }
             }
 
-            log(
-              `  stream done: ${finishReason}, ${inputTokens}in/${outputTokens}out`,
+            logInfo(
+              `  stream complete: ${finishReason}, ${inputTokens}in/${outputTokens}out (${Date.now() - startTime}ms)`,
             );
 
             controller.enqueue({
@@ -456,6 +435,7 @@ export function createPensarModel(
             });
             controller.close();
           } catch (err) {
+            logError(`  stream error:`, err);
             controller.error(err);
           }
         },
@@ -503,6 +483,7 @@ async function doStreamFallback(
   request?: { body?: unknown };
   response?: { headers?: Record<string, string> };
 }> {
+  logInfo(`  doStreamFallback → using non-streaming doGenerate`);
   const generateResult = await model.doGenerate(options);
 
   const parts: LanguageModelV2StreamPart[] = [];

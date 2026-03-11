@@ -133,14 +133,22 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
     cancelledRef.current = false;
 
     const apiUrl = getPensarApiUrl(appConfig.data);
+    console.error(`[auth] apiUrl=${apiUrl}`);
 
     // Try new WorkOS flow first, fall back to legacy device auth
     try {
+      console.error(`[auth] fetching ${apiUrl}/api/cli/config`);
       const configResponse = await fetch(`${apiUrl}/api/cli/config`);
+      console.error(
+        `[auth] config response: ${configResponse.status} ${configResponse.statusText}`,
+      );
       if (configResponse.ok) {
         const cliConfig = (await configResponse.json()) as {
           workosClientId: string;
         };
+        console.error(
+          `[auth] got workosClientId=${cliConfig.workosClientId.slice(0, 12)}...`,
+        );
 
         // New WorkOS device authorization flow
         const response = await fetch(
@@ -152,8 +160,15 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
           },
         );
 
+        console.error(
+          `[auth] device authorize response: ${response.status}`,
+        );
+
         if (response.ok) {
           const data = (await response.json()) as WorkOSDeviceResponse;
+          console.error(
+            `[auth] device code obtained, polling interval=${data.interval}s, expires=${data.expires_in}s`,
+          );
           setAuthMode("workos");
           setDeviceInfo(data);
           openUrl(data.verification_uri_complete);
@@ -168,8 +183,8 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
           return;
         }
       }
-    } catch {
-      // New endpoint not available — fall through to legacy
+    } catch (e) {
+      console.error(`[auth] WorkOS flow failed, falling back to legacy:`, e);
     }
 
     // Legacy device auth flow (backward compat)
@@ -223,6 +238,7 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
       }
 
       try {
+        console.error(`[auth] polling WorkOS authenticate...`);
         const response = await fetch(
           "https://api.workos.com/user_management/authenticate",
           {
@@ -238,13 +254,16 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
 
         if (cancelledRef.current) return;
 
+        console.error(`[auth] poll response: ${response.status}`);
+
         if (response.status === 400) {
-          // Authorization pending — poll again
           pollingRef.current = setTimeout(poll, interval * 1000);
           return;
         }
 
         if (!response.ok) {
+          const body = await response.text();
+          console.error(`[auth] auth failed: ${response.status} ${body}`);
           throw new Error("Authentication failed");
         }
 
@@ -253,18 +272,21 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
           refresh_token: string;
         };
 
-        // Save tokens and sync React state
+        console.error(
+          `[auth] got tokens, access_token=${data.access_token.length} chars`,
+        );
+
         await config.update({
           accessToken: data.access_token,
           refreshToken: data.refresh_token,
         });
         await appConfig.reload();
 
-        // Fetch user's workspaces
+        console.error(`[auth] tokens saved, fetching workspaces...`);
         await fetchWorkspaces(apiUrl, data.access_token);
       } catch (err) {
         if (cancelledRef.current) return;
-        // Network error — retry
+        console.error(`[auth] poll error, retrying:`, err);
         pollingRef.current = setTimeout(poll, interval * 1000);
       }
     };
@@ -357,15 +379,28 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
 
   const fetchWorkspaces = async (apiUrl: string, accessToken: string) => {
     try {
-      const response = await fetch(`${apiUrl}/api/cli/workspaces`, {
+      const url = `${apiUrl}/api/cli/workspaces`;
+      console.error(
+        `[auth] fetchWorkspaces: ${url} (token=${accessToken.length} chars)`,
+      );
+      const response = await fetch(url, {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
 
+      console.error(
+        `[auth] workspaces response: ${response.status} ${response.statusText}`,
+      );
+
       if (!response.ok) {
-        throw new Error("Failed to fetch workspaces");
+        const body = await response.text();
+        console.error(`[auth] workspaces error body: ${body}`);
+        throw new Error(`Failed to fetch workspaces (${response.status})`);
       }
 
       const data = (await response.json()) as { workspaces: WorkspaceInfo[] };
+      console.error(
+        `[auth] got ${data.workspaces.length} workspace(s)`,
+      );
 
       if (data.workspaces.length === 0) {
         setError("No workspaces found. Create one at console.pensar.dev");
@@ -374,7 +409,6 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
       }
 
       if (data.workspaces.length === 1) {
-        // Auto-select single workspace
         await selectWorkspace(apiUrl, accessToken, data.workspaces[0]);
         return;
       }
@@ -383,6 +417,7 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
       setSelectedIndex(0);
       setStep("select-workspace");
     } catch (err) {
+      console.error(`[auth] fetchWorkspaces error:`, err);
       setError(
         err instanceof Error ? err.message : "Failed to fetch workspaces",
       );
@@ -401,6 +436,9 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
     setStep("checking-billing");
 
     try {
+      console.error(
+        `[auth] selectWorkspace: ${workspace.id} (${workspace.name})`,
+      );
       const response = await fetch(`${apiUrl}/api/cli/select-workspace`, {
         method: "POST",
         headers: {
@@ -410,7 +448,13 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
         body: JSON.stringify({ workspaceId: workspace.id }),
       });
 
+      console.error(
+        `[auth] select-workspace response: ${response.status}`,
+      );
+
       if (!response.ok) {
+        const body = await response.text();
+        console.error(`[auth] select-workspace error: ${body}`);
         throw new Error("Failed to select workspace");
       }
 
