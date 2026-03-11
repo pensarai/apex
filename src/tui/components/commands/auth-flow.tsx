@@ -160,9 +160,7 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
           },
         );
 
-        console.error(
-          `[auth] device authorize response: ${response.status}`,
-        );
+        console.error(`[auth] device authorize response: ${response.status}`);
 
         if (response.ok) {
           const data = (await response.json()) as WorkOSDeviceResponse;
@@ -398,9 +396,7 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
       }
 
       const data = (await response.json()) as { workspaces: WorkspaceInfo[] };
-      console.error(
-        `[auth] got ${data.workspaces.length} workspace(s)`,
-      );
+      console.error(`[auth] got ${data.workspaces.length} workspace(s)`);
 
       if (data.workspaces.length === 0) {
         setError("No workspaces found. Create one at console.pensar.dev");
@@ -448,9 +444,7 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
         body: JSON.stringify({ workspaceId: workspace.id }),
       });
 
-      console.error(
-        `[auth] select-workspace response: ${response.status}`,
-      );
+      console.error(`[auth] select-workspace response: ${response.status}`);
 
       if (!response.ok) {
         const body = await response.text();

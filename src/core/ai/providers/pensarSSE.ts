@@ -31,9 +31,7 @@ export async function* parseSSE(
           `[parseSSE] stream done: ${chunkCount} chunks, ${totalBytes} bytes, ${eventCount} events yielded, remaining buffer=${buffer.length} chars`,
         );
         if (buffer.length > 0) {
-          console.error(
-            `[parseSSE] remaining buffer: ${buffer.slice(0, 500)}`,
-          );
+          console.error(`[parseSSE] remaining buffer: ${buffer.slice(0, 500)}`);
         }
         break;
       }
@@ -73,9 +71,7 @@ export async function* parseSSE(
 
     if (currentData.length > 0) {
       eventCount++;
-      console.error(
-        `[parseSSE] flushing final event: ${currentEvent}`,
-      );
+      console.error(`[parseSSE] flushing final event: ${currentEvent}`);
       yield { event: currentEvent, data: currentData.join("\n") };
     }
 

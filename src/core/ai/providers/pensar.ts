@@ -55,7 +55,9 @@ export function createPensarModel(
   config: PensarModelConfig,
 ): LanguageModelV2 {
   const modelId = `pensar:${bedrockModelId}`;
-  logInfo(`createPensarModel: model=${bedrockModelId}, baseUrl=${config.baseUrl}`);
+  logInfo(
+    `createPensarModel: model=${bedrockModelId}, baseUrl=${config.baseUrl}`,
+  );
 
   /**
    * Build request headers, resolving the token via getToken() if available.
@@ -138,8 +140,7 @@ export function createPensarModel(
               textParts[value.id] = "";
               break;
             case "text-delta":
-              textParts[value.id] =
-                (textParts[value.id] ?? "") + value.delta;
+              textParts[value.id] = (textParts[value.id] ?? "") + value.delta;
               break;
             case "text-end":
               content.push({
@@ -254,9 +255,7 @@ export function createPensarModel(
       }
 
       if (!response.body) {
-        logError(
-          `  SSE response has no body (${Date.now() - startTime}ms)`,
-        );
+        logError(`  SSE response has no body (${Date.now() - startTime}ms)`);
         throw new Error("Pensar Gateway returned an empty response body");
       }
 
@@ -288,7 +287,9 @@ export function createPensarModel(
                 continue;
               }
 
-              log(`  SSE event #${eventCount}: ${sse.event} (type=${parsed.type})`);
+              log(
+                `  SSE event #${eventCount}: ${sse.event} (type=${parsed.type})`,
+              );
 
               if (sse.event === "error") {
                 const msg =
@@ -473,4 +474,3 @@ function mapStopReason(reason: string): LanguageModelV2FinishReason {
       return "unknown";
   }
 }
-
