@@ -1,8 +1,5 @@
-import {
-  useKeyboard,
-  useTerminalDimensions,
-  useRenderer,
-} from "@opentui/react";
+import { useKeyboard, useRenderer } from "@opentui/react";
+import { useDimensions } from "../context/dimensions";
 import type { JSX } from "react";
 import { useTheme } from "../theme";
 
@@ -26,7 +23,7 @@ export default function AlertDialog({
   size = "medium",
 }: AlertDialogProps) {
   const { colors } = useTheme();
-  const dimensions = useTerminalDimensions();
+  const dimensions = useDimensions();
   const renderer = useRenderer();
 
   useKeyboard((key) => {

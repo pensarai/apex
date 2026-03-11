@@ -7,7 +7,7 @@
 
 import { useState, useEffect, useRef, useMemo } from "react";
 import { RGBA } from "@opentui/core";
-import { useTerminalDimensions } from "@opentui/react";
+import { useDimensions } from "../../context/dimensions";
 import { WaveSimulation } from "./lib/wave-simulation";
 import { useTheme } from "../../theme";
 
@@ -88,7 +88,7 @@ export function PetriAnimation({
   height = 0.4,
   width = "100%",
 }: PetriAnimationProps) {
-  const dimensions = useTerminalDimensions();
+  const dimensions = useDimensions();
   const tick = useGlobalTick();
   const { colors } = useTheme();
   const simulationRef = useRef<WaveSimulation | null>(null);

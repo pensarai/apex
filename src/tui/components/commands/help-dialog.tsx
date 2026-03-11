@@ -7,7 +7,8 @@
  */
 
 import { useState, useEffect, useRef, useMemo } from "react";
-import { useKeyboard, useTerminalDimensions } from "@opentui/react";
+import { useKeyboard } from "@opentui/react";
+import { useDimensions } from "../../context/dimensions";
 import { ScrollBoxRenderable } from "@opentui/core";
 import { scrollToIndex } from "../../utils/scroll";
 import { useCommand } from "../../context/command";
@@ -19,7 +20,7 @@ export default function HelpDialog() {
   const { colors } = useTheme();
   const { commands } = useCommand();
   const route = useRoute();
-  const dimensions = useTerminalDimensions();
+  const dimensions = useDimensions();
 
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [showDetail, setShowDetail] = useState(false);

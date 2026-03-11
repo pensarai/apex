@@ -7,7 +7,8 @@
  */
 
 import { useState, useCallback, useRef } from "react";
-import { useKeyboard, useTerminalDimensions } from "@opentui/react";
+import { useKeyboard } from "@opentui/react";
+import { useDimensions } from "../../context/dimensions";
 import { useTheme } from "../../theme";
 import { config } from "../../../core/config";
 import { Dialog } from "../../context/dialog";
@@ -17,7 +18,7 @@ interface ThemePickerProps {
 }
 
 export default function ThemePicker({ onClose }: ThemePickerProps) {
-  const dimensions = useTerminalDimensions();
+  const dimensions = useDimensions();
   const {
     colors,
     theme,
