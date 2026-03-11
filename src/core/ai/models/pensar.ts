@@ -2,6 +2,12 @@ import type { ModelInfo } from "../ai";
 
 export const PENSAR_MODELS: ModelInfo[] = [
   {
+    id: "pensar:anthropic.claude-opus-4-6-v1",
+    name: "Claude Opus 4.6 (Pensar)",
+    provider: "pensar",
+    contextLength: 200000,
+  },
+  {
     id: "pensar:anthropic.claude-sonnet-4-5-20250929-v1:0",
     name: "Claude Sonnet 4.5 (Pensar)",
     provider: "pensar",
