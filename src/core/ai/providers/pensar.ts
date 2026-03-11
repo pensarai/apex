@@ -47,8 +47,8 @@ export interface PensarModelConfig {
  * When workspaceId is provided, sends X-Workspace-Id header for WorkOS auth.
  *
  * Both doGenerate() and doStream() use the same /gateway/invoke endpoint.
- * Streaming is true SSE via the Pensar Gateway. Falls back to wrapping
- * doGenerate() in a synthetic stream on network errors.
+ * doGenerate() delegates to doStream() and collects the full result.
+ * Streaming is true SSE via the Pensar Gateway.
  */
 export function createPensarModel(
   bedrockModelId: string,
@@ -217,8 +217,11 @@ export function createPensarModel(
           }),
         });
       } catch (err) {
-        logError(`  SSE fetch failed (${Date.now() - startTime}ms), falling back to doGenerate:`, err);
-        return doStreamFallback(model, options);
+        logError(`  SSE fetch failed (${Date.now() - startTime}ms):`, err);
+        throw new Error(
+          `Pensar Gateway request failed: ${err instanceof Error ? err.message : String(err)}`,
+          { cause: err },
+        );
       }
 
       const contentType = response.headers.get("content-type") ?? "unknown";
@@ -252,9 +255,9 @@ export function createPensarModel(
 
       if (!response.body) {
         logError(
-          `  SSE response has no body (${Date.now() - startTime}ms), falling back to doGenerate`,
+          `  SSE response has no body (${Date.now() - startTime}ms)`,
         );
-        return doStreamFallback(model, options);
+        throw new Error("Pensar Gateway returned an empty response body");
       }
 
       logInfo(`  SSE stream opened, reading events...`);
@@ -471,59 +474,3 @@ function mapStopReason(reason: string): LanguageModelV2FinishReason {
   }
 }
 
-/**
- * Non-streaming fallback: call doGenerate and wrap in a ReadableStream.
- * Used when streaming fails or is not available.
- */
-async function doStreamFallback(
-  model: LanguageModelV2,
-  options: LanguageModelV2CallOptions,
-): Promise<{
-  stream: ReadableStream<LanguageModelV2StreamPart>;
-  request?: { body?: unknown };
-  response?: { headers?: Record<string, string> };
-}> {
-  logInfo(`  doStreamFallback → using non-streaming doGenerate`);
-  const generateResult = await model.doGenerate(options);
-
-  const parts: LanguageModelV2StreamPart[] = [];
-
-  parts.push({ type: "stream-start", warnings: generateResult.warnings });
-
-  for (const item of generateResult.content) {
-    if (item.type === "text") {
-      const id = `text-${Date.now()}`;
-      parts.push({ type: "text-start", id });
-      parts.push({ type: "text-delta", id, delta: item.text });
-      parts.push({ type: "text-end", id });
-    } else if (item.type === "tool-call") {
-      const id = item.toolCallId;
-      parts.push({ type: "tool-input-start", id, toolName: item.toolName });
-      parts.push({ type: "tool-input-delta", id, delta: item.input });
-      parts.push({ type: "tool-input-end", id });
-      parts.push({
-        type: "tool-call",
-        toolCallId: id,
-        toolName: item.toolName,
-        input: item.input,
-      });
-    }
-  }
-
-  parts.push({
-    type: "finish",
-    finishReason: generateResult.finishReason,
-    usage: generateResult.usage,
-  });
-
-  const stream = new ReadableStream<LanguageModelV2StreamPart>({
-    start(controller) {
-      for (const part of parts) {
-        controller.enqueue(part);
-      }
-      controller.close();
-    },
-  });
-
-  return { stream, request: { body: generateResult.request?.body } };
-}
