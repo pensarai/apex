@@ -125,11 +125,7 @@ export function loadSubagentMessages(
   session: SessionInfo,
   agentName: string,
 ): ModelMessage[] {
-  const filePath = join(
-    session.rootPath,
-    SUBAGENTS_DIR,
-    `${agentName}.json`,
-  );
+  const filePath = join(session.rootPath, SUBAGENTS_DIR, `${agentName}.json`);
   if (!existsSync(filePath)) return [];
   try {
     const data = JSON.parse(
