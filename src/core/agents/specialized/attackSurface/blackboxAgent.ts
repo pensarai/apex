@@ -7,7 +7,6 @@ import type { AttackSurfaceAnalysisResults, PentestTarget } from "./types";
 import { loadAttackSurfaceResults } from "./types";
 import { OffensiveSecurityAgent } from "../../offSecAgent/offensiveSecurityAgent";
 import type { SpecializedAgentInput } from "../../offSecAgent/types";
-import type { ModelMessage } from "ai";
 import type { SessionInfo } from "../../../session";
 
 // ---------------------------------------------------------------------------
@@ -15,10 +14,8 @@ import type { SessionInfo } from "../../../session";
 // ---------------------------------------------------------------------------
 
 /** At least one of `target` or `cwd` must be provided. */
-export type AttackSurfaceAgentInput = SpecializedAgentInput & {
-  /** Prior conversation history for resuming an interrupted run */
-  messages?: ModelMessage[];
-} & (
+export type AttackSurfaceAgentInput = SpecializedAgentInput &
+  (
     | {
         /** The target to analyze (domain, IP, URL, network range, or org name) */
         target: string;
