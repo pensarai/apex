@@ -73,7 +73,7 @@ export default function CreditsFlow({ onOpenAuthDialog }: CreditsFlowProps) {
       if (tokenResult.type === "workos" && appConfig.data.workspaceId) {
         headers["X-Workspace-Id"] = appConfig.data.workspaceId;
       }
-      const response = await fetch(`${apiUrl}/bedrock/validate`, {
+      const response = await fetch(`${apiUrl}/gateway/validate`, {
         method: "GET",
         headers,
       });
