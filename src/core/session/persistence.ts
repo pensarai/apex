@@ -17,12 +17,7 @@ import { join } from "path";
 import type { SessionInfo } from "./index";
 export type { SessionInfo };
 import type { AuthenticationInfo } from "./types";
-import type {
-  ModelMessage,
-  TextPart,
-  ToolCallPart,
-  ToolResultPart,
-} from "ai";
+import type { ModelMessage, TextPart, ToolCallPart, ToolResultPart } from "ai";
 
 // ---------------------------------------------------------------------------
 // Shared path constants — used by both writer and reader
