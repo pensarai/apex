@@ -89,7 +89,6 @@ export async function ensureValidToken(cfg: {
   accessToken?: string | null;
   refreshToken?: string | null;
   pensarAPIKey?: string | null;
-  pensarApiUrl?: string | null;
 }): Promise<{ token: string; type: "workos" | "legacy" } | null> {
   // If we have a WorkOS access token, prefer it
   if (cfg.accessToken) {
@@ -100,7 +99,7 @@ export async function ensureValidToken(cfg: {
     // Try to refresh
     if (cfg.refreshToken) {
       // Fetch client ID from the CLI config endpoint
-      const clientId = await fetchWorkOSClientId(cfg);
+      const clientId = await fetchWorkOSClientId();
       if (clientId) {
         const newToken = await refreshAccessToken(clientId, cfg.refreshToken);
         if (newToken) {
@@ -126,14 +125,12 @@ export async function ensureValidToken(cfg: {
  */
 let cachedClientId: string | null = null;
 
-async function fetchWorkOSClientId(cfg: {
-  pensarApiUrl?: string | null;
-}): Promise<string | null> {
+async function fetchWorkOSClientId(): Promise<string | null> {
   if (cachedClientId) return cachedClientId;
 
   try {
     const { getPensarApiUrl } = await import("./constants");
-    const apiUrl = getPensarApiUrl(cfg);
+    const apiUrl = getPensarApiUrl();
     const response = await fetch(`${apiUrl}/api/cli/config`);
 
     if (!response.ok) return null;

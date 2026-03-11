@@ -54,7 +54,6 @@ export default function CreditsFlow({ onOpenAuthDialog }: CreditsFlowProps) {
       accessToken: appConfig.data.accessToken,
       refreshToken: appConfig.data.refreshToken,
       pensarAPIKey: appConfig.data.pensarAPIKey,
-      pensarApiUrl: appConfig.data.pensarApiUrl,
     });
     if (!tokenResult) {
       setStep("no-auth");
@@ -65,7 +64,7 @@ export default function CreditsFlow({ onOpenAuthDialog }: CreditsFlowProps) {
     setError(null);
 
     try {
-      const apiUrl = getPensarApiUrl(appConfig.data);
+      const apiUrl = getPensarApiUrl();
       const headers: Record<string, string> = {
         Authorization: `Bearer ${tokenResult.token}`,
       };

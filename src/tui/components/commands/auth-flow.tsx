@@ -132,7 +132,7 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
     setError(null);
     cancelledRef.current = false;
 
-    const apiUrl = getPensarApiUrl(appConfig.data);
+    const apiUrl = getPensarApiUrl();
     console.error(`[auth] apiUrl=${apiUrl}`);
 
     // Try new WorkOS flow first, fall back to legacy device auth
@@ -539,7 +539,7 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
       }
       if (key.name === "return" && workspaces[selectedIndex]) {
         const currentConfig = appConfig.data;
-        const apiUrl = getPensarApiUrl(currentConfig);
+        const apiUrl = getPensarApiUrl();
         const accessToken = currentConfig.accessToken!;
         selectWorkspace(apiUrl, accessToken, workspaces[selectedIndex]);
       }
