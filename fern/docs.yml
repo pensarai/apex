@@ -62,6 +62,10 @@ navigation:
             path: ./docs/commands/models.mdx
           - page: /providers
             path: ./docs/commands/providers.mdx
+          - page: /auth
+            path: ./docs/commands/auth.mdx
+          - page: /credits
+            path: ./docs/commands/credits.mdx
           - page: /help
             path: ./docs/commands/help.mdx
   - tab: console
