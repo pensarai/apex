@@ -18,6 +18,7 @@ type AuthStep =
   | "requesting"
   | "polling"
   | "select-workspace"
+  | "creating-workspace"
   | "checking-billing"
   | "success"
   | "error";
@@ -87,6 +88,7 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
   const [billingUrl, setBillingUrl] = useState<string | null>(null);
   const [balance, setBalance] = useState<number | null>(null);
   const pollingRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const workspacePollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cancelledRef = useRef(false);
 
   // For existing connections, populate workspace info from config
@@ -103,6 +105,10 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
     if (pollingRef.current) {
       clearTimeout(pollingRef.current);
       pollingRef.current = null;
+    }
+    if (workspacePollRef.current) {
+      clearTimeout(workspacePollRef.current);
+      workspacePollRef.current = null;
     }
   };
 
@@ -368,8 +374,11 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
       const data = (await response.json()) as { workspaces: WorkspaceInfo[] };
 
       if (data.workspaces.length === 0) {
-        setError("No workspaces found. Create one at console.pensar.dev");
-        setStep("error");
+        // No workspaces — open browser to create one and poll until it exists
+        const consoleUrl = getPensarConsoleUrl();
+        openUrl(`${consoleUrl}/credits`);
+        setStep("creating-workspace");
+        pollForWorkspaceCreation(apiUrl, accessToken);
         return;
       }
 
@@ -388,6 +397,56 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
       );
       setStep("error");
     }
+  };
+
+  // ── Step 3b: Poll for workspace creation ─────────────────────────
+
+  const pollForWorkspaceCreation = (apiUrl: string, accessToken: string) => {
+    const POLL_INTERVAL = 3000;
+    const TIMEOUT = 5 * 60 * 1000;
+    const deadline = Date.now() + TIMEOUT;
+
+    const poll = async () => {
+      if (cancelledRef.current) return;
+
+      if (Date.now() > deadline) {
+        setError("Workspace creation timed out. Please try again.");
+        setStep("error");
+        return;
+      }
+
+      try {
+        const response = await fetch(`${apiUrl}/api/cli/workspaces`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+
+        if (!response.ok) {
+          workspacePollRef.current = setTimeout(poll, POLL_INTERVAL);
+          return;
+        }
+
+        const data = (await response.json()) as {
+          workspaces: WorkspaceInfo[];
+        };
+
+        if (data.workspaces.length > 0) {
+          if (data.workspaces.length === 1) {
+            await selectWorkspace(apiUrl, accessToken, data.workspaces[0]);
+          } else {
+            setWorkspaces(data.workspaces);
+            setSelectedIndex(0);
+            setStep("select-workspace");
+          }
+          return;
+        }
+
+        workspacePollRef.current = setTimeout(poll, POLL_INTERVAL);
+      } catch {
+        workspacePollRef.current = setTimeout(poll, POLL_INTERVAL);
+      }
+    };
+
+    workspacePollRef.current = setTimeout(poll, POLL_INTERVAL);
   };
 
   // ── Step 4: Select workspace and check billing ────────────────────
@@ -630,6 +689,38 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
               <text fg={colors.textMuted}>
                 <span fg={colors.primary}>[↑/↓]</span> Navigate ·{" "}
                 <span fg={colors.primary}>[ENTER]</span> Select ·{" "}
+                <span fg={colors.primary}>[ESC]</span> Cancel
+              </text>
+            </box>
+          </box>
+        )}
+
+        {/* Step: Creating Workspace */}
+        {step === "creating-workspace" && (
+          <box flexDirection="column" gap={1}>
+            <box>
+              <text fg={colors.warning}>
+                No workspaces found. Opening browser to create one...
+              </text>
+            </box>
+            <box marginTop={1}>
+              <text fg={colors.text}>
+                Create a workspace and add credits in your browser.
+              </text>
+            </box>
+            <box marginTop={1}>
+              <text fg={colors.textMuted}>
+                Waiting for workspace creation...
+              </text>
+            </box>
+            <box marginTop={1}>
+              <text fg={colors.textMuted}>
+                If the browser didn't open, visit:{"\n"}
+                {getPensarConsoleUrl()}/credits
+              </text>
+            </box>
+            <box marginTop={1}>
+              <text fg={colors.textMuted}>
                 <span fg={colors.primary}>[ESC]</span> Cancel
               </text>
             </box>
