@@ -6,6 +6,7 @@ import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createBaseten } from "@ai-sdk/baseten";
+import { BASETEN_MODEL_URLS } from "./models/baseten";
 import { getModelInfo } from "./models";
 import { createPensarModel } from "./providers/pensar";
 import { getPensarApiUrl } from "../api/constants";
@@ -153,10 +154,13 @@ export function getProviderModel(
       const basetenModelId = model.startsWith("baseten:")
         ? model.slice(8)
         : model;
+      const modelURL = BASETEN_MODEL_URLS[basetenModelId];
+      if (!modelURL) {
+        throw new Error(`Unknown Baseten model: ${basetenModelId}`);
+      }
       const baseten = createBaseten({
         apiKey: basetenApiKey,
-        modelURL:
-          "https://model-3m54dgzw.api.baseten.co/environments/production/sync/v1",
+        modelURL,
       });
       providerModel = baseten(basetenModelId);
       break;
