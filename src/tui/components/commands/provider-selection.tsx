@@ -6,15 +6,18 @@ import {
   AVAILABLE_PROVIDERS,
   getConfiguredProviders,
   type ProviderType,
+  type Provider,
 } from "../../../core/providers";
 import { useTheme } from "../../theme";
 
 interface ProviderSelectionProps {
+  providers?: Provider[];
   onProviderSelected: (providerId: ProviderType) => void;
   onClose: () => void;
 }
 
 export default function ProviderSelection({
+  providers,
   onProviderSelected,
   onClose,
 }: ProviderSelectionProps) {
@@ -23,34 +26,31 @@ export default function ProviderSelection({
   const _config = useConfig();
   const [highlightedIndex, setHighlightedIndex] = useState(0);
 
+  const providerList = providers ?? AVAILABLE_PROVIDERS;
   const configuredProviders = getConfiguredProviders(_config.data);
 
   useKeyboard((key) => {
-    // Escape - Close provider selection
     if (key.name === "escape") {
       onClose();
       return;
     }
 
-    // Arrow Up - Previous provider
     if (key.name === "up") {
       setHighlightedIndex((prev) =>
-        prev > 0 ? prev - 1 : AVAILABLE_PROVIDERS.length - 1,
+        prev > 0 ? prev - 1 : providerList.length - 1,
       );
       return;
     }
 
-    // Arrow Down - Next provider
     if (key.name === "down") {
       setHighlightedIndex((prev) =>
-        prev < AVAILABLE_PROVIDERS.length - 1 ? prev + 1 : 0,
+        prev < providerList.length - 1 ? prev + 1 : 0,
       );
       return;
     }
 
-    // Enter - Select provider
     if (key.name === "return") {
-      const selected = AVAILABLE_PROVIDERS[highlightedIndex];
+      const selected = providerList[highlightedIndex];
       if (selected) {
         onProviderSelected(selected.id);
       }
@@ -118,7 +118,7 @@ export default function ProviderSelection({
             Popular providers
           </text>
 
-          {AVAILABLE_PROVIDERS.map((provider, index) => {
+          {providerList.map((provider, index) => {
             const isHighlighted = index === highlightedIndex;
             const configured = configuredProviders.find(
               (p) => p.id === provider.id,
