@@ -13,7 +13,9 @@ import { getPensarApiUrl } from "../api/constants";
 import { ensureValidToken } from "../api/tokenRefresh";
 import { config } from "../config";
 import {
+  extractReasoningMiddleware,
   generateText,
+  wrapLanguageModel,
   type LanguageModel,
   type ModelMessage,
   type StreamTextResult,
@@ -162,7 +164,15 @@ export function getProviderModel(
         apiKey: basetenApiKey,
         modelURL,
       });
-      providerModel = baseten(basetenModelId);
+      // Qwen models emit <think>...</think> reasoning tags that must be
+      // extracted from the text stream so they don't corrupt tool-call parsing.
+      providerModel = wrapLanguageModel({
+        model: baseten(basetenModelId),
+        middleware: extractReasoningMiddleware({
+          tagName: "think",
+          startWithReasoning: true,
+        }),
+      });
       break;
     }
 
