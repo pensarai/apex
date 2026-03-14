@@ -376,7 +376,7 @@ function CommandDisplay({
     await config.update({ responsibleUseAccepted: true });
     route.navigate({
       type: "base",
-      path: "home",
+      path: "providers",
     });
   };
 
