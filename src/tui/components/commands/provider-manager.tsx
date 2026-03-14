@@ -144,16 +144,12 @@ function OnboardingChoice({
 
   useKeyboard((key) => {
     if (key.name === "up") {
-      setHighlightedIndex((prev) =>
-        prev > 0 ? prev - 1 : choices.length - 1,
-      );
+      setHighlightedIndex((prev) => (prev > 0 ? prev - 1 : choices.length - 1));
       return;
     }
 
     if (key.name === "down") {
-      setHighlightedIndex((prev) =>
-        prev < choices.length - 1 ? prev + 1 : 0,
-      );
+      setHighlightedIndex((prev) => (prev < choices.length - 1 ? prev + 1 : 0));
       return;
     }
 
