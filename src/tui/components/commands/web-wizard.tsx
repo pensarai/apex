@@ -336,32 +336,29 @@ export default function WebWizard({
         setTargetFocusedField((prev) => Math.max(0, prev - 1));
         return;
       }
-      // Down arrow - toggle source code access or navigate to next field
+      // Down arrow - navigate to next field
       if (key.name === "down") {
         key.preventDefault();
-        if (targetFocusedField === 1) {
-          // Toggle source code access when on that field
-          setState((prev) => ({
-            ...prev,
-            sourceCodeAccess: !prev.sourceCodeAccess,
-          }));
-        } else if (targetFocusedField < maxTargetField) {
+        if (targetFocusedField < maxTargetField) {
           setTargetFocusedField((prev) => prev + 1);
         }
         return;
       }
-      // Up arrow - toggle source code access or navigate to previous field
+      // Up arrow - navigate to previous field
       if (key.name === "up") {
         key.preventDefault();
-        if (targetFocusedField === 1) {
-          // Toggle source code access when on that field
-          setState((prev) => ({
-            ...prev,
-            sourceCodeAccess: !prev.sourceCodeAccess,
-          }));
-        } else if (targetFocusedField > 0) {
+        if (targetFocusedField > 0) {
           setTargetFocusedField((prev) => prev - 1);
         }
+        return;
+      }
+      // Space - toggle source code access when on that field
+      if (key.sequence === " " && targetFocusedField === 1) {
+        key.preventDefault();
+        setState((prev) => ({
+          ...prev,
+          sourceCodeAccess: !prev.sourceCodeAccess,
+        }));
         return;
       }
       // Enter to start if target is filled
@@ -662,7 +659,7 @@ export default function WebWizard({
                 {state.sourceCodeAccess ? "● Enabled" : "○ Disabled"}
               </text>
               {targetFocusedField === 1 && (
-                <text fg={colors.textMuted}>(↑/↓ to toggle)</text>
+                <text fg={colors.textMuted}>(Space to toggle)</text>
               )}
             </box>
             {state.sourceCodeAccess && (
