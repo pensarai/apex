@@ -141,7 +141,13 @@ export function AgentProvider({ children }: AgentProviderProps) {
 
   const resetTokenUsage = useCallback(() => {
     setHasExecuted(false);
-    setTokenUsage({ inputTokens: 0, outputTokens: 0, totalTokens: 0, cachedTokens: 0, cacheWriteTokens: 0 });
+    setTokenUsage({
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+      cachedTokens: 0,
+      cacheWriteTokens: 0,
+    });
   }, []);
 
   const contextValue = useMemo(

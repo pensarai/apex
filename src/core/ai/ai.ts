@@ -319,11 +319,14 @@ export function streamResponse(
   let effectiveMessages: ModelMessage[] | undefined = messages;
 
   if (useAnthropicCaching && system) {
-    const baseMessages: ModelMessage[] =
-      messages ?? [{ role: "user" as const, content: prompt }];
+    const baseMessages: ModelMessage[] = messages ?? [
+      { role: "user" as const, content: prompt },
+    ];
     effectiveMessages = withCachedSystemPrompt(system, baseMessages);
     effectiveSystem = undefined;
   }
+
+  let rateLimitRetryCount = 0;
 
   try {
     // Create the appropriate provider instance
@@ -367,12 +370,14 @@ export function streamResponse(
             const meta = stepResult.providerMetadata?.anthropic as
               | Record<string, unknown>
               | undefined;
-            const cacheRead =
-              (meta?.cacheReadInputTokens as number) ?? 0;
+            const cacheRead = (meta?.cacheReadInputTokens as number) ?? 0;
             const cacheCreation =
               (meta?.cacheCreationInputTokens as number) ?? 0;
             if (cacheRead > 0 || cacheCreation > 0) {
-              onCacheMetrics({ cacheReadInputTokens: cacheRead, cacheCreationInputTokens: cacheCreation });
+              onCacheMetrics({
+                cacheReadInputTokens: cacheRead,
+                cacheCreationInputTokens: cacheCreation,
+              });
             }
             onStepFinish?.(stepResult);
           }
