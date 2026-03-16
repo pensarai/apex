@@ -6,6 +6,17 @@ import {
   getPensarApiUrl,
   getPensarConsoleUrl,
 } from "../../../core/api/constants";
+import {
+  isConnected,
+  disconnect,
+  startDeviceFlow,
+  pollWorkOSToken,
+  pollLegacyToken,
+  fetchWorkspaces,
+  pollForWorkspaceCreation,
+  selectWorkspace as selectWorkspaceApi,
+} from "../../../core/auth";
+import type { DeviceFlowInfo, WorkspaceInfo } from "../../../core/auth";
 import { Dialog } from "../../context/dialog";
 import { useTheme } from "../../theme";
 
@@ -18,80 +29,36 @@ type AuthStep =
   | "requesting"
   | "polling"
   | "select-workspace"
+  | "creating-workspace"
   | "checking-billing"
   | "success"
   | "error";
-
-interface WorkOSDeviceResponse {
-  device_code: string;
-  user_code: string;
-  verification_uri: string;
-  verification_uri_complete: string;
-  expires_in: number;
-  interval: number;
-}
-
-// Legacy device auth types (fallback when new backend isn't deployed yet)
-interface LegacyDeviceCodeResponse {
-  deviceCode: string;
-  userCode: string;
-  verificationUri: string;
-  verificationUriComplete: string;
-  expiresIn: number;
-  interval: number;
-}
-
-interface LegacyTokenResponse {
-  status: "pending" | "complete" | "expired" | "not_found";
-  apiKey?: string;
-  workspace?: { id: string; name: string; slug: string };
-  credits?: { balance: number };
-}
-
-interface WorkspaceInfo {
-  id: string;
-  name: string;
-  slug: string;
-  balance: number;
-  hasPaymentMethod: boolean;
-}
-
-interface SelectWorkspaceResponse {
-  confirmed: boolean;
-  workspace: { id: string; name: string; slug: string };
-  billing: { balance: number; hasPaymentMethod: boolean; ready: boolean };
-  billingUrl?: string;
-}
 
 export default function AuthFlow({ onClose }: AuthFlowProps) {
   const { colors } = useTheme();
   const appConfig = useConfig();
 
-  // Determine if already connected (WorkOS token or legacy API key)
-  const isConnected = !!(
-    appConfig.data.accessToken || appConfig.data.pensarAPIKey
-  );
+  const alreadyConnected = isConnected(appConfig.data);
 
-  const [step, setStep] = useState<AuthStep>(isConnected ? "success" : "start");
-  const [error, setError] = useState<string | null>(null);
-  const [authMode, setAuthMode] = useState<"workos" | "legacy" | null>(null);
-  const [deviceInfo, setDeviceInfo] = useState<WorkOSDeviceResponse | null>(
-    null,
+  const [step, setStep] = useState<AuthStep>(
+    alreadyConnected ? "success" : "start",
   );
-  const [legacyDeviceInfo, setLegacyDeviceInfo] =
-    useState<LegacyDeviceCodeResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [flowInfo, setFlowInfo] = useState<DeviceFlowInfo | null>(null);
   const [workspaces, setWorkspaces] = useState<WorkspaceInfo[]>([]);
   const [selectedWorkspace, setSelectedWorkspace] =
     useState<WorkspaceInfo | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [billingUrl, setBillingUrl] = useState<string | null>(null);
   const [balance, setBalance] = useState<number | null>(null);
-  const pollingRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const cancelledRef = useRef(false);
 
-  // For existing connections, populate workspace info from config
+  const abortRef = useRef<AbortController | null>(null);
+
   const connectedWorkspace = appConfig.data.workspaceSlug
-    ? { name: appConfig.data.workspaceSlug, slug: appConfig.data.workspaceSlug }
+    ? {
+        name: appConfig.data.workspaceSlug,
+        slug: appConfig.data.workspaceSlug,
+      }
     : null;
 
   const goHome = () => {
@@ -99,11 +66,8 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
   };
 
   const cleanup = () => {
-    cancelledRef.current = true;
-    if (pollingRef.current) {
-      clearTimeout(pollingRef.current);
-      pollingRef.current = null;
-    }
+    abortRef.current?.abort();
+    abortRef.current = null;
   };
 
   useEffect(() => {
@@ -125,89 +89,40 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
     }
   };
 
-  // ── Step 1: Fetch WorkOS client config and start device flow ──────
+  // ── Step 1: Start device-authorization flow ─────────────────────────
 
-  const startDeviceFlow = async () => {
+  const startFlow = async () => {
     setStep("requesting");
     setError(null);
-    cancelledRef.current = false;
+
+    cleanup();
+    const ac = new AbortController();
+    abortRef.current = ac;
 
     const apiUrl = getPensarApiUrl();
-    console.error(`[auth] apiUrl=${apiUrl}`);
 
-    // Try new WorkOS flow first, fall back to legacy device auth
     try {
-      console.error(`[auth] fetching ${apiUrl}/api/cli/config`);
-      const configResponse = await fetch(`${apiUrl}/api/cli/config`);
-      console.error(
-        `[auth] config response: ${configResponse.status} ${configResponse.statusText}`,
-      );
-      if (configResponse.ok) {
-        const cliConfig = (await configResponse.json()) as {
-          workosClientId: string;
-        };
-        console.error(
-          `[auth] got workosClientId=${cliConfig.workosClientId.slice(0, 12)}...`,
-        );
+      const info = await startDeviceFlow(apiUrl);
+      if (ac.signal.aborted) return;
 
-        // New WorkOS device authorization flow
-        const response = await fetch(
-          "https://api.workos.com/user_management/authorize/device",
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ client_id: cliConfig.workosClientId }),
-          },
-        );
+      setFlowInfo(info);
 
-        console.error(`[auth] device authorize response: ${response.status}`);
-
-        if (response.ok) {
-          const data = (await response.json()) as WorkOSDeviceResponse;
-          console.error(
-            `[auth] device code obtained, polling interval=${data.interval}s, expires=${data.expires_in}s`,
-          );
-          setAuthMode("workos");
-          setDeviceInfo(data);
-          openUrl(data.verification_uri_complete);
-          setStep("polling");
-          pollForToken(
-            apiUrl,
-            cliConfig.workosClientId,
-            data.device_code,
-            data.interval,
-            data.expires_in,
-          );
-          return;
-        }
-      }
-    } catch (e) {
-      console.error(`[auth] WorkOS flow failed, falling back to legacy:`, e);
-    }
-
-    // Legacy device auth flow (backward compat)
-    try {
-      const response = await fetch(`${apiUrl}/auth/device/code`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to start device authorization");
+      if (info.mode === "workos") {
+        openUrl(info.deviceInfo.verification_uri_complete);
+      } else {
+        openUrl(info.deviceInfo.verificationUriComplete);
       }
 
-      const data = (await response.json()) as LegacyDeviceCodeResponse;
-      setAuthMode("legacy");
-      setLegacyDeviceInfo(data);
-      openUrl(data.verificationUriComplete);
       setStep("polling");
-      pollForLegacyToken(
-        apiUrl,
-        data.deviceCode,
-        data.interval,
-        data.expiresIn,
-      );
+
+      // Start polling in the background
+      if (info.mode === "workos") {
+        handleWorkOSPoll(apiUrl, info, ac);
+      } else {
+        handleLegacyPoll(apiUrl, info, ac);
+      }
     } catch (err) {
+      if (ac.signal.aborted) return;
       setError(
         err instanceof Error ? err.message : "Failed to start authorization",
       );
@@ -215,205 +130,116 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
     }
   };
 
-  // ── Step 2: Poll WorkOS for token ─────────────────────────────────
+  // ── Step 2a: WorkOS token polling ───────────────────────────────────
 
-  const pollForToken = (
+  const handleWorkOSPoll = async (
     apiUrl: string,
-    clientId: string,
-    deviceCode: string,
-    interval: number,
-    expiresIn: number,
+    info: Extract<DeviceFlowInfo, { mode: "workos" }>,
+    ac: AbortController,
   ) => {
-    const deadline = Date.now() + expiresIn * 1000;
-
-    const poll = async () => {
-      if (cancelledRef.current) return;
-
-      if (Date.now() > deadline) {
-        setError("Authorization timed out. Please try again.");
-        setStep("error");
-        return;
-      }
-
-      try {
-        console.error(`[auth] polling WorkOS authenticate...`);
-        const response = await fetch(
-          "https://api.workos.com/user_management/authenticate",
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              client_id: clientId,
-              grant_type: "urn:ietf:params:oauth:grant-type:device_code",
-              device_code: deviceCode,
-            }),
-          },
-        );
-
-        if (cancelledRef.current) return;
-
-        console.error(`[auth] poll response: ${response.status}`);
-
-        if (response.status === 400) {
-          pollingRef.current = setTimeout(poll, interval * 1000);
-          return;
-        }
-
-        if (!response.ok) {
-          const body = await response.text();
-          console.error(`[auth] auth failed: ${response.status} ${body}`);
-          throw new Error("Authentication failed");
-        }
-
-        const data = (await response.json()) as {
-          access_token: string;
-          refresh_token: string;
-        };
-
-        console.error(
-          `[auth] got tokens, access_token=${data.access_token.length} chars`,
-        );
-
-        await config.update({
-          accessToken: data.access_token,
-          refreshToken: data.refresh_token,
-        });
-        await appConfig.reload();
-
-        console.error(`[auth] tokens saved, fetching workspaces...`);
-        await fetchWorkspaces(apiUrl, data.access_token);
-      } catch (err) {
-        if (cancelledRef.current) return;
-        console.error(`[auth] poll error, retrying:`, err);
-        pollingRef.current = setTimeout(poll, interval * 1000);
-      }
-    };
-
-    pollingRef.current = setTimeout(poll, interval * 1000);
-  };
-
-  // ── Legacy token polling (fallback for old backend) ────────────────
-
-  const pollForLegacyToken = (
-    apiUrl: string,
-    deviceCode: string,
-    interval: number,
-    expiresIn: number,
-  ) => {
-    const deadline = Date.now() + expiresIn * 1000;
-
-    const poll = async () => {
-      if (cancelledRef.current) return;
-
-      if (Date.now() > deadline) {
-        setError("Authorization timed out. Please try again.");
-        setStep("error");
-        return;
-      }
-
-      try {
-        const response = await fetch(`${apiUrl}/auth/device/token`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ deviceCode }),
-        });
-
-        if (!response.ok) {
-          throw new Error("Failed to check authorization status");
-        }
-
-        const data = (await response.json()) as LegacyTokenResponse;
-
-        if (cancelledRef.current) return;
-
-        if (data.status === "complete" && data.apiKey) {
-          // Save legacy API key
-          await config.update({ pensarAPIKey: data.apiKey });
-          if (data.workspace) {
-            await config.update({
-              workspaceId: data.workspace.id,
-              workspaceSlug: data.workspace.slug,
-            });
-          }
-          appConfig.reload();
-
-          setSelectedWorkspace(
-            data.workspace
-              ? {
-                  ...data.workspace,
-                  balance: data.credits?.balance ?? 0,
-                  hasPaymentMethod: true,
-                }
-              : null,
-          );
-          setBalance(data.credits?.balance ?? null);
-          setStep("success");
-          return;
-        }
-
-        if (data.status === "expired") {
-          setError("Authorization expired. Please try again.");
-          setStep("error");
-          return;
-        }
-
-        if (data.status === "not_found") {
-          setError("Invalid authorization session. Please try again.");
-          setStep("error");
-          return;
-        }
-
-        pollingRef.current = setTimeout(poll, interval * 1000);
-      } catch (err) {
-        if (cancelledRef.current) return;
-        pollingRef.current = setTimeout(poll, interval * 1000);
-      }
-    };
-
-    pollingRef.current = setTimeout(poll, interval * 1000);
-  };
-
-  // ── Step 3: Fetch workspaces ──────────────────────────────────────
-
-  const fetchWorkspaces = async (apiUrl: string, accessToken: string) => {
     try {
-      const url = `${apiUrl}/api/cli/workspaces`;
-      console.error(
-        `[auth] fetchWorkspaces: ${url} (token=${accessToken.length} chars)`,
-      );
-      const response = await fetch(url, {
-        headers: { Authorization: `Bearer ${accessToken}` },
+      const tokens = await pollWorkOSToken({
+        clientId: info.clientId,
+        deviceCode: info.deviceInfo.device_code,
+        interval: info.deviceInfo.interval,
+        expiresIn: info.deviceInfo.expires_in,
+        signal: ac.signal,
       });
 
-      console.error(
-        `[auth] workspaces response: ${response.status} ${response.statusText}`,
+      if (ac.signal.aborted) return;
+
+      await config.update({
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+      });
+      await appConfig.reload();
+
+      await handleFetchWorkspaces(apiUrl, tokens.accessToken, ac);
+    } catch (err) {
+      if (ac.signal.aborted) return;
+      setError(err instanceof Error ? err.message : "Authentication failed");
+      setStep("error");
+    }
+  };
+
+  // ── Step 2b: Legacy token polling ───────────────────────────────────
+
+  const handleLegacyPoll = async (
+    apiUrl: string,
+    info: Extract<DeviceFlowInfo, { mode: "legacy" }>,
+    ac: AbortController,
+  ) => {
+    try {
+      const data = await pollLegacyToken({
+        apiUrl,
+        deviceCode: info.deviceInfo.deviceCode,
+        interval: info.deviceInfo.interval,
+        expiresIn: info.deviceInfo.expiresIn,
+        signal: ac.signal,
+      });
+
+      if (ac.signal.aborted) return;
+
+      await config.update({
+        pensarAPIKey: data.apiKey!,
+        gatewaySigningKey: data.signingKey ?? null,
+      });
+
+      if (data.workspace) {
+        await config.update({
+          workspaceId: data.workspace.id,
+          workspaceSlug: data.workspace.slug,
+        });
+      }
+      appConfig.reload();
+
+      setSelectedWorkspace(
+        data.workspace
+          ? {
+              ...data.workspace,
+              balance: data.credits?.balance ?? 0,
+              hasPaymentMethod: true,
+            }
+          : null,
       );
+      setBalance(data.credits?.balance ?? null);
+      setStep("success");
+    } catch (err) {
+      if (ac.signal.aborted) return;
+      setError(err instanceof Error ? err.message : "Authentication failed");
+      setStep("error");
+    }
+  };
 
-      if (!response.ok) {
-        const body = await response.text();
-        console.error(`[auth] workspaces error body: ${body}`);
-        throw new Error(`Failed to fetch workspaces (${response.status})`);
-      }
+  // ── Step 3: Fetch workspaces ────────────────────────────────────────
 
-      const data = (await response.json()) as { workspaces: WorkspaceInfo[] };
-      console.error(`[auth] got ${data.workspaces.length} workspace(s)`);
+  const handleFetchWorkspaces = async (
+    apiUrl: string,
+    accessToken: string,
+    ac: AbortController,
+  ) => {
+    try {
+      const ws = await fetchWorkspaces(apiUrl, accessToken);
+      if (ac.signal.aborted) return;
 
-      if (data.workspaces.length === 0) {
-        setError("No workspaces found. Create one at console.pensar.dev");
-        setStep("error");
+      if (ws.length === 0) {
+        const consoleUrl = getPensarConsoleUrl();
+        openUrl(`${consoleUrl}/credits`);
+        setStep("creating-workspace");
+        handleWorkspaceCreationPoll(apiUrl, accessToken, ac);
         return;
       }
 
-      if (data.workspaces.length === 1) {
-        await selectWorkspace(apiUrl, accessToken, data.workspaces[0]);
+      if (ws.length === 1) {
+        await handleSelectWorkspace(apiUrl, accessToken, ws[0]!, ac);
         return;
       }
 
-      setWorkspaces(data.workspaces);
+      setWorkspaces(ws);
       setSelectedIndex(0);
       setStep("select-workspace");
     } catch (err) {
-      console.error(`[auth] fetchWorkspaces error:`, err);
+      if (ac.signal.aborted) return;
       setError(
         err instanceof Error ? err.message : "Failed to fetch workspaces",
       );
@@ -421,55 +247,64 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
     }
   };
 
-  // ── Step 4: Select workspace and check billing ────────────────────
+  // ── Step 3b: Poll for workspace creation ────────────────────────────
 
-  const selectWorkspace = async (
+  const handleWorkspaceCreationPoll = async (
+    apiUrl: string,
+    accessToken: string,
+    ac: AbortController,
+  ) => {
+    try {
+      const ws = await pollForWorkspaceCreation(apiUrl, accessToken, ac.signal);
+      if (ac.signal.aborted) return;
+
+      if (ws.length === 1) {
+        await handleSelectWorkspace(apiUrl, accessToken, ws[0]!, ac);
+      } else {
+        setWorkspaces(ws);
+        setSelectedIndex(0);
+        setStep("select-workspace");
+      }
+    } catch (err) {
+      if (ac.signal.aborted) return;
+      setError(
+        err instanceof Error ? err.message : "Workspace creation timed out",
+      );
+      setStep("error");
+    }
+  };
+
+  // ── Step 4: Select workspace and check billing ──────────────────────
+
+  const handleSelectWorkspace = async (
     apiUrl: string,
     accessToken: string,
     workspace: WorkspaceInfo,
+    ac: AbortController,
   ) => {
     setSelectedWorkspace(workspace);
     setStep("checking-billing");
 
     try {
-      console.error(
-        `[auth] selectWorkspace: ${workspace.id} (${workspace.name})`,
-      );
-      const response = await fetch(`${apiUrl}/api/cli/select-workspace`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({ workspaceId: workspace.id }),
-      });
+      const data = await selectWorkspaceApi(apiUrl, accessToken, workspace.id);
+      if (ac.signal.aborted) return;
 
-      console.error(`[auth] select-workspace response: ${response.status}`);
-
-      if (!response.ok) {
-        const body = await response.text();
-        console.error(`[auth] select-workspace error: ${body}`);
-        throw new Error("Failed to select workspace");
-      }
-
-      const data = (await response.json()) as SelectWorkspaceResponse;
-
-      // Save workspace to config
       await config.update({
         workspaceId: workspace.id,
         workspaceSlug: workspace.slug,
+        gatewaySigningKey: data.signingKey ?? null,
       });
       appConfig.reload();
 
       setBalance(data.billing.balance);
 
       if (!data.confirmed && data.billingUrl) {
-        // Billing not ready — show URL and let user fix it
         setBillingUrl(data.billingUrl);
       }
 
       setStep("success");
     } catch (err) {
+      if (ac.signal.aborted) return;
       setError(
         err instanceof Error ? err.message : "Failed to select workspace",
       );
@@ -477,23 +312,15 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
     }
   };
 
-  // ── Disconnect ────────────────────────────────────────────────────
+  // ── Disconnect ──────────────────────────────────────────────────────
 
   const handleDisconnect = async () => {
-    await config.update({
-      pensarAPIKey: null,
-      accessToken: null,
-      refreshToken: null,
-      workspaceId: null,
-      workspaceSlug: null,
-    });
+    await disconnect();
     appConfig.reload();
-    setAuthMode(null);
+    setFlowInfo(null);
     setSelectedWorkspace(null);
     setBalance(null);
     setBillingUrl(null);
-    setDeviceInfo(null);
-    setLegacyDeviceInfo(null);
     setStep("start");
   };
 
@@ -512,10 +339,24 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
     goHome();
   };
 
-  // ── Keyboard handler ──────────────────────────────────────────────
+  // Derive display values from flowInfo
+  const userCode =
+    flowInfo?.mode === "workos"
+      ? flowInfo.deviceInfo.user_code
+      : flowInfo?.mode === "legacy"
+        ? flowInfo.deviceInfo.userCode
+        : null;
+
+  const verificationUrl =
+    flowInfo?.mode === "workos"
+      ? flowInfo.deviceInfo.verification_uri_complete
+      : flowInfo?.mode === "legacy"
+        ? flowInfo.deviceInfo.verificationUriComplete
+        : null;
+
+  // ── Keyboard handler ────────────────────────────────────────────────
 
   useKeyboard((key) => {
-    // Modal dialog — consume all keystrokes to prevent leaking to components underneath
     key.preventDefault();
 
     if (key.name === "escape") {
@@ -526,7 +367,7 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
 
     if (step === "start") {
       if (key.name === "return") {
-        startDeviceFlow();
+        startFlow();
       }
     }
 
@@ -541,13 +382,19 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
         const currentConfig = appConfig.data;
         const apiUrl = getPensarApiUrl();
         const accessToken = currentConfig.accessToken!;
-        selectWorkspace(apiUrl, accessToken, workspaces[selectedIndex]);
+        const ac = abortRef.current ?? new AbortController();
+        handleSelectWorkspace(
+          apiUrl,
+          accessToken,
+          workspaces[selectedIndex]!,
+          ac,
+        );
       }
     }
 
     if (step === "error") {
       if (key.name === "return") {
-        startDeviceFlow();
+        startFlow();
       }
     }
 
@@ -565,7 +412,7 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
     }
   });
 
-  // ── Render ────────────────────────────────────────────────────────
+  // ── Render ──────────────────────────────────────────────────────────
 
   return (
     <Dialog size="large" onClose={goHome}>
@@ -613,7 +460,7 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
         )}
 
         {/* Step: Polling */}
-        {step === "polling" && (deviceInfo || legacyDeviceInfo) && (
+        {step === "polling" && flowInfo && (
           <box flexDirection="column" gap={1}>
             <box>
               <text fg={colors.warning}>
@@ -622,17 +469,13 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
             </box>
             <box marginTop={1}>
               <text fg={colors.text}>
-                Your code:{" "}
-                <span fg={colors.primary}>
-                  {deviceInfo?.user_code || legacyDeviceInfo?.userCode}
-                </span>
+                Your code: <span fg={colors.primary}>{userCode}</span>
               </text>
             </box>
             <box marginTop={1}>
               <text fg={colors.textMuted}>
                 If the browser didn't open, visit:{"\n"}
-                {deviceInfo?.verification_uri_complete ||
-                  legacyDeviceInfo?.verificationUriComplete}
+                {verificationUrl}
               </text>
             </box>
             <box marginTop={1}>
@@ -668,6 +511,38 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
               <text fg={colors.textMuted}>
                 <span fg={colors.primary}>[↑/↓]</span> Navigate ·{" "}
                 <span fg={colors.primary}>[ENTER]</span> Select ·{" "}
+                <span fg={colors.primary}>[ESC]</span> Cancel
+              </text>
+            </box>
+          </box>
+        )}
+
+        {/* Step: Creating Workspace */}
+        {step === "creating-workspace" && (
+          <box flexDirection="column" gap={1}>
+            <box>
+              <text fg={colors.warning}>
+                No workspaces found. Opening browser to create one...
+              </text>
+            </box>
+            <box marginTop={1}>
+              <text fg={colors.text}>
+                Create a workspace and add credits in your browser.
+              </text>
+            </box>
+            <box marginTop={1}>
+              <text fg={colors.textMuted}>
+                Waiting for workspace creation...
+              </text>
+            </box>
+            <box marginTop={1}>
+              <text fg={colors.textMuted}>
+                If the browser didn't open, visit:{"\n"}
+                {getPensarConsoleUrl()}/credits
+              </text>
+            </box>
+            <box marginTop={1}>
+              <text fg={colors.textMuted}>
                 <span fg={colors.primary}>[ESC]</span> Cancel
               </text>
             </box>

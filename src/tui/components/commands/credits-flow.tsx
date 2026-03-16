@@ -6,7 +6,8 @@ import {
   getPensarApiUrl,
   getPensarConsoleUrl,
 } from "../../../core/api/constants";
-import { ensureValidToken } from "../../../core/api/tokenRefresh";
+import { ensureValidToken } from "../../../core/auth";
+import { config } from "../../../core/config";
 
 type CreditsStep = "loading" | "no-auth" | "display" | "browser-opened";
 
@@ -84,7 +85,12 @@ export default function CreditsFlow({ onOpenAuthDialog }: CreditsFlowProps) {
       const result = (await response.json()) as {
         workspace: { name: string };
         credits: { balance: number };
+        signingKey?: string;
       };
+
+      if (result.signingKey) {
+        await config.update({ gatewaySigningKey: result.signingKey });
+      }
 
       setCredits({
         balance: result.credits.balance,

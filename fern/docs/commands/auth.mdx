@@ -1,0 +1,160 @@
+---
+title: "/auth"
+description: "Connect Apex to Pensar Console for managed inference and billing"
+---
+
+## Overview
+
+The `/auth` command connects your Apex CLI to [Pensar Console](https://console.pensar.dev) for **managed inference**. Once connected, Apex uses Pensar-hosted AI models — no API key configuration required. Inference costs are tracked and deducted from your workspace's credit balance.
+
+## Usage
+
+```bash
+/auth
+```
+
+## How It Works
+
+The `/auth` command uses a **device authorization flow** — similar to how you link a streaming device to your account. Apex displays a code, you verify it in your browser, and the CLI is automatically authenticated.
+
+<Steps>
+  <Step title="Start Auth Flow">
+    Run `/auth` in Apex and press Enter to begin. Apex requests a device code from the Pensar authentication service.
+  </Step>
+  <Step title="Verify in Browser">
+    A browser window opens automatically to the verification URL. If it doesn't open, copy the URL displayed in the terminal and open it manually. Enter the **user code** shown in Apex to confirm the connection.
+
+    {/* TODO: screenshot of the polling step with user code */}
+  </Step>
+  <Step title="Select Workspace">
+    If your account belongs to multiple workspaces, Apex presents a list showing each workspace name and current credit balance. Use the arrow keys to select a workspace and press Enter.
+
+    {/* TODO: screenshot of workspace selection */}
+  </Step>
+  <Step title="Billing Check">
+    Apex verifies that the selected workspace has billing configured and sufficient credits. If billing isn't set up or the balance is low, you'll see a prompt with a link to the Console billing page.
+  </Step>
+  <Step title="Connected">
+    On success, Apex displays your connected workspace and credit balance. You can now use Pensar-hosted models for pentesting without configuring any API keys.
+
+    {/* TODO: screenshot of success state */}
+  </Step>
+</Steps>
+
+## Pensar Console
+
+[Pensar Console](https://console.pensar.dev) is the web platform where you manage workspaces, projects, billing, and more. When you authenticate Apex with `/auth`, you're linking it to a Console workspace.
+
+If you don't have an account yet, the verification URL will guide you through sign-up and workspace creation.
+
+### What You Can Do in Console
+
+<CardGroup cols={2}>
+  <Card title="Manage Billing" icon="credit-card">
+    Purchase credits, configure auto-reload, add payment methods, and view invoices from **Settings > Billing**.
+  </Card>
+  <Card title="Monitor Usage" icon="chart-line">
+    Track Apex inference spend per user and per API key from **Settings > Usage**.
+  </Card>
+  <Card title="Manage Workspaces" icon="users">
+    Create workspaces, invite team members, and control access roles.
+  </Card>
+  <Card title="Run Pentests" icon="shield-check">
+    Launch whitebox and blackbox pentests from the Console UI with full reporting.
+  </Card>
+</CardGroup>
+
+For full billing documentation, see the [Console Billing & Usage](/console/features/billing) guide.
+
+## Billing
+
+Apex inference through the Pensar gateway uses a **pre-paid credits** model. Credits are purchased in your Console workspace and deducted per inference request.
+
+### Key Billing Concepts
+
+| Concept | Description |
+|---|---|
+| **Credits** | Pre-paid balance (in USD) shared across your workspace |
+| **Category** | Apex inference is billed under the "Apex Inference" category, separate from CI pentest usage |
+| **Per-identity tracking** | Each request is attributed to the authenticated user, visible in Console's Usage page |
+| **Pre-flight checks** | Requests are rejected with a `402` error if credits are insufficient |
+| **Auto-reload** | Optional automatic top-up when balance drops below a threshold |
+
+### Setting Up Billing
+
+If Apex reports that billing isn't configured or your balance is low during `/auth`:
+
+<Steps>
+  <Step title="Open Billing Page">
+    Press the key shown in Apex to open the billing page in your browser, or navigate to **Settings > Billing** in Console manually.
+  </Step>
+  <Step title="Add Payment Method">
+    Add a credit or debit card via the inline form on the Billing page.
+  </Step>
+  <Step title="Purchase Credits">
+    Buy credits via a one-time purchase ($10 / $30 / $50 / $100 or custom) or set up a monthly subscription.
+  </Step>
+  <Step title="Enable Apex Inference">
+    On the **Settings > Usage** page, ensure the "Apex Inference" toggle is enabled. This is turned on automatically when you add your first payment method.
+  </Step>
+</Steps>
+
+For detailed billing documentation including auto-reload, invoices, and usage tracking, see [Console Billing & Usage](/console/features/billing).
+
+## Disconnecting
+
+When connected, press `[D]` on the `/auth` screen to disconnect. This clears the stored authentication tokens from your local Apex configuration. You can reconnect at any time by running `/auth` again.
+
+## Configuration
+
+Authentication state is stored in your local Apex configuration at `~/.pensar/`. The following values are managed by the `/auth` flow:
+
+| Config Key | Description |
+|---|---|
+| `accessToken` | Short-lived access token for API requests |
+| `refreshToken` | Long-lived token used to refresh the access token |
+| `workspaceId` | Selected workspace ID |
+| `workspaceSlug` | Selected workspace slug |
+
+Tokens are automatically refreshed when they expire. You do not need to re-run `/auth` unless you want to switch workspaces or have explicitly disconnected.
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Browser doesn't open automatically">
+    Copy the verification URL displayed in the terminal and open it in your browser manually. The URL and user code remain valid for several minutes.
+  </Accordion>
+
+  <Accordion title="'Billing not ready' after connecting">
+    Navigate to **Settings > Billing** in Console and add a payment method. Then purchase credits and ensure the Apex Inference category is enabled on the Usage page. See [Console Billing & Usage](/console/features/billing) for step-by-step instructions.
+  </Accordion>
+
+  <Accordion title="'Insufficient credits' errors during pentesting">
+    Your workspace balance is too low. Purchase additional credits from **Settings > Billing** in Console, or enable auto-reload to prevent future interruptions. See [Console Billing & Usage](/console/features/billing#auto-reload).
+  </Accordion>
+
+  <Accordion title="Want to switch workspaces">
+    Press `[D]` to disconnect, then run `/auth` again. You'll be prompted to select a workspace during the new auth flow.
+  </Accordion>
+
+  <Accordion title="Auth flow times out">
+    Device codes expire after a few minutes. Run `/auth` again to restart the flow with a fresh code.
+  </Accordion>
+</AccordionGroup>
+
+## Related Commands
+
+<CardGroup cols={2}>
+  <Card title="/credits" icon="credit-card" href="/apex/commands/credits">
+    Check your credit balance or open the purchase page.
+  </Card>
+  <Card title="/providers" icon="plug" href="/apex/commands/providers">
+    Configure API keys for direct provider access (alternative to managed inference).
+  </Card>
+  <Card title="/models" icon="microchip" href="/apex/commands/models">
+    Select which AI model to use for testing.
+  </Card>
+  <Card title="/pentest" icon="play" href="/apex/commands/pentest">
+    Launch a penetration test after connecting.
+  </Card>
+</CardGroup>

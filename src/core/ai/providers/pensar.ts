@@ -9,6 +9,7 @@ import type {
 } from "@ai-sdk/provider";
 import { convertToBedrockFormat } from "./pensarFormatters";
 import { parseSSE } from "./pensarSSE";
+import { signGatewayRequest } from "./pensarSigning";
 
 const DEBUG =
   process.env.PENSAR_DEBUG === "1" || process.env.PENSAR_DEBUG === "true";
@@ -30,6 +31,11 @@ export interface PensarModelConfig {
   baseUrl: string;
   /** Workspace ID for WorkOS-authenticated requests. */
   workspaceId?: string;
+  /**
+   * Server-issued HMAC signing key for request authentication.
+   * When present, every inference request is signed with this key.
+   */
+  signingKey?: string;
   /**
    * Optional callback to get a fresh token before each request.
    * If provided, this is called instead of using `apiKey` directly,
@@ -203,7 +209,23 @@ export function createPensarModel(
       );
 
       const startTime = Date.now();
+      const serializedBody = JSON.stringify({
+        modelId: bedrockModelId,
+        body,
+      });
       const headers = await buildHeaders();
+
+      if (config.signingKey) {
+        const sig = signGatewayRequest(
+          config.signingKey,
+          bedrockModelId,
+          serializedBody,
+        );
+        headers["X-Pensar-Signature"] = sig.signature;
+        headers["X-Pensar-Timestamp"] = sig.timestamp;
+        headers["X-Pensar-Nonce"] = sig.nonce;
+      }
+
       log(`  headers: ${Object.keys(headers).join(", ")}`);
 
       let response: Response;
@@ -212,10 +234,7 @@ export function createPensarModel(
           method: "POST",
           headers,
           signal: options.abortSignal,
-          body: JSON.stringify({
-            modelId: bedrockModelId,
-            body,
-          }),
+          body: serializedBody,
         });
       } catch (err) {
         logError(`  SSE fetch failed (${Date.now() - startTime}ms):`, err);

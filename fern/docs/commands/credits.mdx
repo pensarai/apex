@@ -1,0 +1,85 @@
+---
+title: "/credits"
+description: "Check your credit balance and purchase credits for Pensar managed inference"
+---
+
+## Overview
+
+The `/credits` command displays your current workspace credit balance and provides a quick way to open the Console billing page to purchase more credits.
+
+## Usage
+
+```bash
+/credits
+```
+
+Alias: `/buy`
+
+## Prerequisites
+
+You must be connected to Pensar Console via the [`/auth`](/apex/commands/auth) command before using `/credits`. If you're not authenticated, Apex will prompt you to connect first.
+
+## What You'll See
+
+When you run `/credits`, Apex:
+
+1. Validates your authentication token
+2. Fetches your current workspace credit balance from the Pensar gateway
+3. Displays the balance along with your connected workspace name
+
+{/* TODO: screenshot of the credits display */}
+
+## Purchasing Credits
+
+From the `/credits` screen, press the indicated key to open the Console credits page in your browser. This takes you directly to the purchase flow where you can:
+
+- **Buy credits instantly** — choose from $10, $30, $50, $100, or enter a custom amount
+- **Start a monthly subscription** — receive credits automatically each billing cycle
+- **Configure auto-reload** — automatically top up when your balance drops below a threshold
+
+For full details on credit purchases, auto-reload, and billing management, see the [Console Billing & Usage](/console/features/billing) documentation.
+
+## How Credits Work
+
+Credits are a **pre-paid balance** (denominated in USD) stored at the workspace level in Pensar Console. When Apex uses Pensar managed inference, each AI request deducts from this balance based on the model used and tokens consumed.
+
+| Detail | Value |
+|---|---|
+| **Billing category** | Apex Inference |
+| **Pricing** | Base model cost + 15% Pensar markup |
+| **Tracking** | Per-user — your requests are attributed to your authenticated identity |
+| **Pre-flight check** | Requests are rejected if credits are insufficient |
+
+<Callout intent="info">
+  Credits are shared across all billing categories in your workspace (Apex Inference and Continuous Pentesting). Monitor usage per category from **Settings > Usage** in Console.
+</Callout>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="'Not authenticated' error">
+    Run [`/auth`](/apex/commands/auth) first to connect Apex to your Console workspace.
+  </Accordion>
+
+  <Accordion title="Balance shows $0.00">
+    Open the Console billing page to purchase credits. You can also enable auto-reload to prevent your balance from reaching zero. See [Console Billing & Usage](/console/features/billing).
+  </Accordion>
+
+  <Accordion title="Browser doesn't open">
+    Copy the URL displayed in the terminal and open it manually in your browser.
+  </Accordion>
+</AccordionGroup>
+
+## Related Commands
+
+<CardGroup cols={2}>
+  <Card title="/auth" icon="shield-check" href="/apex/commands/auth">
+    Connect to Pensar Console for managed inference.
+  </Card>
+  <Card title="/providers" icon="plug" href="/apex/commands/providers">
+    Configure direct API key access as an alternative to managed inference.
+  </Card>
+  <Card title="/pentest" icon="play" href="/apex/commands/pentest">
+    Launch a penetration test.
+  </Card>
+</CardGroup>

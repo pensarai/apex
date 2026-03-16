@@ -8,7 +8,7 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { getModelInfo } from "./models";
 import { createPensarModel } from "./providers/pensar";
 import { getPensarApiUrl } from "../api/constants";
-import { ensureValidToken } from "../api/tokenRefresh";
+import { ensureValidToken } from "../auth";
 import { config } from "../config";
 import {
   generateText,
@@ -30,6 +30,8 @@ export type AIAuthConfig = {
   accessToken?: string;
   refreshToken?: string;
   workspaceId?: string;
+  // Gateway request signing
+  gatewaySigningKey?: string;
   bedrock?: {
     apiKey?: string;
     accessKeyId?: string;
@@ -57,6 +59,7 @@ export function buildAuthConfig(cfg: {
   accessToken?: string | null;
   refreshToken?: string | null;
   workspaceId?: string | null;
+  gatewaySigningKey?: string | null;
   bedrockAPIKey?: string | null;
   localModelUrl?: string | null;
 }): AIAuthConfig {
@@ -70,6 +73,7 @@ export function buildAuthConfig(cfg: {
     accessToken: cfg.accessToken ?? undefined,
     refreshToken: cfg.refreshToken ?? undefined,
     workspaceId: cfg.workspaceId ?? undefined,
+    gatewaySigningKey: cfg.gatewaySigningKey ?? undefined,
     bedrock: cfg.bedrockAPIKey ? { apiKey: cfg.bedrockAPIKey } : undefined,
     local: cfg.localModelUrl ? { baseURL: cfg.localModelUrl } : undefined,
   };
@@ -192,6 +196,7 @@ export function getProviderModel(
         apiKey: pensarApiKey || authConfig?.accessToken || "",
         baseUrl: pensarApiUrl,
         workspaceId: authConfig?.workspaceId,
+        signingKey: authConfig?.gatewaySigningKey,
       };
 
       // If WorkOS tokens are available, use token refresh callback.
