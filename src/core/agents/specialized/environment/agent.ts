@@ -74,6 +74,9 @@ export class EnvironmentAgent extends OffensiveSecurityAgent<EnvironmentResult> 
         "update_file",
         "execute_command",
         "response",
+        // Web search tools — look up tool installation, environment configuration docs
+        "web_search",
+        "get_page",
       ],
 
       responseSchema: EnvironmentResultSchema,

@@ -114,6 +114,9 @@ export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSur
         "email_list_messages",
         "email_search_messages",
         "email_get_message",
+        // Web search tools — research target technologies, find known vulnerabilities
+        "web_search",
+        "get_page",
       ],
 
       stopWhen: [
