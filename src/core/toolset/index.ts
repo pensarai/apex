@@ -353,6 +353,24 @@ export const ALL_TOOLS: ToolDefinition[] = [
     category: "utility",
     defaultEnabled: true,
   },
+  {
+    id: "web_search",
+    name: "Web Search",
+    description: "Search the web",
+    detail:
+      "Search the web for real-time information about CVEs, security advisories, exploit techniques, and vulnerability details. Requires a Pensar account.",
+    category: "reconnaissance",
+    defaultEnabled: true,
+  },
+  {
+    id: "get_page",
+    name: "Get Page",
+    description: "Fetch page content",
+    detail:
+      "Fetch and extract readable content from a web page. Use after web_search to read full details from found URLs. Requires a Pensar account.",
+    category: "reconnaissance",
+    defaultEnabled: true,
+  },
 ];
 
 // ============================================================================

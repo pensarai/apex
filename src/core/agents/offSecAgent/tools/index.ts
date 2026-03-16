@@ -64,6 +64,10 @@ export { getMemory } from "./getMemory";
 export { createEmailToolset, EMAIL_TOOL_NAMES } from "./email";
 export type { EmailToolName } from "./email";
 
+// Web search tools (requires Pensar account)
+export { webSearch } from "./webSearch";
+export { getPage } from "./getPage";
+
 // ---------------------------------------------------------------------------
 // Tool registry
 // ---------------------------------------------------------------------------
@@ -103,6 +107,8 @@ import { emailListInboxes } from "./email/listInboxes";
 import { emailListMessages } from "./email/listMessages";
 import { emailSearchMessages } from "./email/searchMessages";
 import { emailGetMessage } from "./email/getMessage";
+import { webSearch } from "./webSearch";
+import { getPage } from "./getPage";
 
 /**
  * Create the full toolset for the OffensiveSecurityAgent.
@@ -164,6 +170,10 @@ export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
     email_list_messages: emailListMessages(ctx),
     email_search_messages: emailSearchMessages(ctx),
     email_get_message: emailGetMessage(ctx),
+
+    // Web search tools (requires Pensar account)
+    web_search: webSearch(ctx),
+    get_page: getPage(ctx),
   } as const;
 }
 
@@ -213,6 +223,9 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "email_search_messages",
   "email_get_attachments",
   "email_mark_read",
+  // Web search (requires Pensar account)
+  "web_search",
+  "get_page",
 ];
 
 /** Email tool names — auto-appended to activeTools by the base class when inboxes are configured. */
