@@ -34,6 +34,8 @@ export interface Config {
   refreshToken?: string | null;
   workspaceId?: string | null;
   workspaceSlug?: string | null;
+  // Gateway request signing key (server-issued)
+  gatewaySigningKey?: string | null;
 }
 
 export async function init() {

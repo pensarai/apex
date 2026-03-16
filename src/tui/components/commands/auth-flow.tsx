@@ -47,6 +47,7 @@ interface LegacyTokenResponse {
   apiKey?: string;
   workspace?: { id: string; name: string; slug: string };
   credits?: { balance: number };
+  signingKey?: string;
 }
 
 interface WorkspaceInfo {
@@ -62,6 +63,7 @@ interface SelectWorkspaceResponse {
   workspace: { id: string; name: string; slug: string };
   billing: { balance: number; hasPaymentMethod: boolean; ready: boolean };
   billingUrl?: string;
+  signingKey?: string;
 }
 
 export default function AuthFlow({ onClose }: AuthFlowProps) {
@@ -333,8 +335,11 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
         if (cancelledRef.current) return;
 
         if (data.status === "complete" && data.apiKey) {
-          // Save legacy API key
-          await config.update({ pensarAPIKey: data.apiKey });
+          // Save legacy API key and signing key
+          await config.update({
+            pensarAPIKey: data.apiKey,
+            gatewaySigningKey: data.signingKey ?? null,
+          });
           if (data.workspace) {
             await config.update({
               workspaceId: data.workspace.id,
@@ -513,10 +518,11 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
 
       const data = (await response.json()) as SelectWorkspaceResponse;
 
-      // Save workspace to config
+      // Save workspace and signing key to config
       await config.update({
         workspaceId: workspace.id,
         workspaceSlug: workspace.slug,
+        gatewaySigningKey: data.signingKey ?? null,
       });
       appConfig.reload();
 
@@ -545,6 +551,7 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
       refreshToken: null,
       workspaceId: null,
       workspaceSlug: null,
+      gatewaySigningKey: null,
     });
     appConfig.reload();
     setAuthMode(null);
