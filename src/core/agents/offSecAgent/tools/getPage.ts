@@ -2,7 +2,7 @@ import { tool } from "ai";
 import { z } from "zod";
 import { config } from "../../../config";
 import { ensureValidToken } from "../../../api/tokenRefresh";
-import { getPensarConsoleUrl } from "../../../api/constants";
+import { getPensarApiUrl } from "../../../api/constants";
 import type { ToolContext } from "./types";
 
 const MAX_CONTENT_LENGTH = 50_000;
@@ -66,8 +66,8 @@ BEST PRACTICES:
           };
         }
 
-        const consoleUrl = getPensarConsoleUrl();
-        const response = await fetch(`${consoleUrl}/api/agents/get_page`, {
+        const apiUrl = getPensarApiUrl();
+        const response = await fetch(`${apiUrl}/api/agents/get_page`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
