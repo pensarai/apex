@@ -8,7 +8,7 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { getModelInfo } from "./models";
 import { createPensarModel } from "./providers/pensar";
 import { getPensarApiUrl } from "../api/constants";
-import { ensureValidToken } from "../api/tokenRefresh";
+import { ensureValidToken } from "../auth";
 import { config } from "../config";
 import {
   generateText,

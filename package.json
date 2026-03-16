@@ -20,7 +20,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "bun build src/tui/index.tsx --outdir build --target node --format esm --external sharp",
+    "build": "bun build src/tui/index.tsx --outdir build --target node --format esm --external sharp && bun build src/cli/auth.ts --outdir build --target node --format esm",
     "generate:ascii": "bun run scripts/generate-ascii-art.ts",
     "generate:models": "bun run scripts/generate-models.ts",
     "build:binary": "bun run generate:ascii && bun build src/cli.ts --compile --outfile pensar",

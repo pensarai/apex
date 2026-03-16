@@ -60,8 +60,13 @@ function showHelp() {
     "  pensar targeted-pentest [options]   Run a targeted pentest on a single target",
   );
   console.log(
+    "  pensar auth                         Connect to Pensar Console",
+  );
+  console.log(
     "  pensar upgrade                      Update pensar to the latest version",
-    "  pensar doctor                      Check dependencies and install missing tools",
+  );
+  console.log(
+    "  pensar doctor                       Check dependencies and install missing tools",
   );
   console.log("  pensar help                         Show this help message");
   console.log("  pensar version                      Show version number");
@@ -237,6 +242,9 @@ if (command === "version" || command === "--version" || command === "-v") {
   await runPentest();
 } else if (command === "targeted-pentest") {
   await runTargetedPentest();
+} else if (command === "auth") {
+  process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
+  await import("./cli/auth");
 } else if (command === "doctor") {
   const { runDoctor } = await import("./core/doctor");
   await runDoctor();
