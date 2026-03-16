@@ -133,6 +133,15 @@ async function executeLocalPoc(
       } catch {
         // ignore cleanup errors
       }
+    } else {
+      writePocOutputSidecar(
+        pocsPath,
+        filename,
+        stdout,
+        stderr,
+        exitCode,
+        poc.description,
+      );
     }
 
     return {
@@ -215,6 +224,15 @@ async function executeSandboxPoc(
       } catch {
         // ignore
       }
+    } else {
+      writePocOutputSidecar(
+        localPocsPath,
+        filename,
+        result.stdout || "",
+        result.stderr || "",
+        result.exitCode,
+        poc.description,
+      );
     }
 
     return {
@@ -244,6 +262,36 @@ async function executeSandboxPoc(
 // ---------------------------------------------------------------------------
 // Shared helpers
 // ---------------------------------------------------------------------------
+
+function writePocOutputSidecar(
+  pocsPath: string,
+  filename: string,
+  stdout: string,
+  stderr: string,
+  exitCode: number,
+  description: string,
+): void {
+  try {
+    const outputPath = join(pocsPath, `${filename}.output.json`);
+    writeFileSync(
+      outputPath,
+      JSON.stringify(
+        {
+          stdout,
+          stderr,
+          exitCode,
+          executedAt: new Date().toISOString(),
+          pocFile: filename,
+          description,
+        },
+        null,
+        2,
+      ),
+    );
+  } catch {
+    // Non-critical: don't fail the POC on output write errors
+  }
+}
 
 function preparePoc(
   poc: CreatePocInput,

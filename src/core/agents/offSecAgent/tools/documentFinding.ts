@@ -1,7 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { join } from "path";
-import { writeFileSync, appendFileSync } from "fs";
+import { writeFileSync, appendFileSync, readFileSync } from "fs";
 import type { ToolContext } from "./types";
 import {
   scoreFindingWithCVSS,
@@ -159,12 +159,34 @@ FINDING STRUCTURE:
           }
         }
 
+        // Read POC execution output if available
+        let pocOutput: {
+          stdout: string;
+          stderr: string;
+          exitCode: number;
+          executedAt: string;
+        } | null = null;
+
+        if (input.pocPath) {
+          try {
+            const pocBasename = input.pocPath.replace(/^pocs\//, "");
+            const outputPath = join(
+              session.pocsPath,
+              `${pocBasename}.output.json`,
+            );
+            pocOutput = JSON.parse(readFileSync(outputPath, "utf-8"));
+          } catch {
+            // Non-critical: file may not exist or be malformed
+          }
+        }
+
         const findingWithMeta = {
           ...finding,
           timestamp,
           sessionId: session.id,
           target: session.targets[0],
           ...(evidenceFilePath && { evidenceFile: evidenceFilePath }),
+          ...(pocOutput && { pocOutput }),
           cwes: cvssResult.cwes,
           cvss: {
             score: cvssResult.score,
