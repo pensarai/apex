@@ -22,6 +22,7 @@ export type RoutePath =
   | "theme"
   | "auth"
   | "credits"
+  | "usage"
   | "create-skill";
 
 export interface WebCommandOptions {

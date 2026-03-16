@@ -363,6 +363,18 @@ export const commands: CommandConfig[] = [
   },
 
   {
+    name: "usage",
+    description: "View CI usage analytics and historical graphs",
+    category: "General",
+    handler: async (args, ctx) => {
+      ctx.navigate({
+        type: "base",
+        path: "usage",
+      });
+    },
+  },
+
+  {
     name: "create-skill",
     description: "Create a new operator skill",
     category: "Skills",

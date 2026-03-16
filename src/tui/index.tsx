@@ -38,6 +38,7 @@ import HelpDialog from "./components/commands/help-dialog";
 import ModelsDisplay from "./components/commands/models-display";
 import AuthFlow from "./components/commands/auth-flow";
 import CreditsFlow from "./components/commands/credits-flow";
+import CiUsage from "./components/usage/ci-usage";
 import { KeybindingProvider } from "./context/keybinding";
 import Pentest from "./components/pentest/pentest";
 import OperatorDashboard from "./components/operator-dashboard";
@@ -431,6 +432,9 @@ function CommandDisplay({
           </RouteSwitch.Case>
           <RouteSwitch.Case when="credits">
             <CreditsFlow onOpenAuthDialog={onOpenAuthDialog} />
+          </RouteSwitch.Case>
+          <RouteSwitch.Case when="usage">
+            <CiUsage onOpenAuthDialog={onOpenAuthDialog} />
           </RouteSwitch.Case>
           <RouteSwitch.Case when="create-skill">
             <CreateSkillWizard />
