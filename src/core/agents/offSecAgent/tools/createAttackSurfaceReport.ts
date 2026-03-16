@@ -20,31 +20,54 @@ Call this at the END of your analysis with:
 - ALL targets for deep testing with objectives. Do not prioritize any targets, optimize for breadth of testing.
 - Key findings`,
     inputSchema: z.object({
-      summary: z
-        .object({
-          totalAssets: z.number(),
-          totalDomains: z.number(),
-          analysisComplete: z.boolean(),
-        })
-        .describe("Summary statistics"),
-      discoveredAssets: z
-        .array(z.string())
-        .describe(
-          "List of discovered assets with descriptions. Format: 'example.com - Web server (nginx) - Ports 80,443'",
-        ),
-      targets: z
-        .array(
-          z.object({
-            target: z.string().describe("Target URL, IP, or domain"),
-            objective: z.string().describe("Pentest objective for this target"),
-            rationale: z
-              .string()
-              .describe("Why this target needs deep testing"),
-          }),
-        )
-        .describe("ALL targets for deep penetration testing"),
+      summary: z.preprocess(
+        (val) =>
+          typeof val === "string" ? JSON.parse(val) : val,
+        z
+          .object({
+            totalAssets: z.number(),
+            totalDomains: z.number(),
+            analysisComplete: z.boolean(),
+          })
+          .describe("Summary statistics"),
+      ),
+      discoveredAssets: z.preprocess(
+        (val) =>
+          typeof val === "string" ? JSON.parse(val) : val,
+        z
+          .array(z.string())
+          .describe(
+            "List of discovered assets with descriptions. Format: 'example.com - Web server (nginx) - Ports 80,443'",
+          ),
+      ),
+      targets: z.preprocess(
+        (val) =>
+          typeof val === "string" ? JSON.parse(val) : val,
+        z
+          .array(
+            z.object({
+              target: z.string().describe("Target URL, IP, or domain"),
+              objective: z
+                .string()
+                .describe("Pentest objective for this target"),
+              rationale: z
+                .string()
+                .describe("Why this target needs deep testing"),
+            }),
+          )
+          .describe("ALL targets for deep penetration testing"),
+      ),
       keyFindings: z.preprocess(
-        (val) => (Array.isArray(val) ? val : [val]),
+        (val) => {
+          if (typeof val === "string") {
+            try {
+              val = JSON.parse(val);
+            } catch {
+              /* keep as-is */
+            }
+          }
+          return Array.isArray(val) ? val : [val];
+        },
         z
           .array(z.string())
           .describe(

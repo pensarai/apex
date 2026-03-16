@@ -49,31 +49,37 @@ This tool marks the end of the authentication flow.`,
         .describe(
           "Cookie header string from authentication (e.g. from browser_get_cookies cookieHeader field or Set-Cookie response). Format: 'name1=value1; name2=value2'",
         ),
-      exportedHeaders: z
-        .record(z.string(), z.string())
-        .optional()
-        .describe(
-          'Auth headers to include in future requests (e.g. {"Authorization": "Bearer <token>"})',
-        ),
+      exportedHeaders: z.preprocess(
+        (val) => (typeof val === "string" ? JSON.parse(val) : val),
+        z
+          .record(z.string(), z.string())
+          .optional()
+          .describe(
+            'Auth headers to include in future requests (e.g. {"Authorization": "Bearer <token>"})',
+          ),
+      ),
       strategy: z
         .string()
         .optional()
         .describe(
           "Authentication strategy used (browser, form_post, json_post, basic_auth, bearer, api_key)",
         ),
-      authBarrier: z
-        .object({
-          type: z.enum([
-            "captcha",
-            "mfa",
-            "oauth_consent",
-            "rate_limit",
-            "unknown",
-          ]),
-          details: z.string(),
-        })
-        .optional()
-        .describe("Auth barrier if one was encountered"),
+      authBarrier: z.preprocess(
+        (val) => (typeof val === "string" ? JSON.parse(val) : val),
+        z
+          .object({
+            type: z.enum([
+              "captcha",
+              "mfa",
+              "oauth_consent",
+              "rate_limit",
+              "unknown",
+            ]),
+            details: z.string(),
+          })
+          .optional()
+          .describe("Auth barrier if one was encountered"),
+      ),
       toolCallDescription: z
         .string()
         .describe("A concise description of what this tool call is doing"),

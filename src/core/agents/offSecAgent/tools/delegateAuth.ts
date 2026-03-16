@@ -125,51 +125,66 @@ When to use delegate_to_auth_subagent vs authenticate_session:
         .string()
         .optional()
         .describe("API key if available (ignored if credentialId is set)"),
-      tokens: z
-        .object({
-          bearerToken: z
-            .string()
-            .optional()
-            .describe("Bearer/JWT token to verify"),
-          cookies: z.string().optional().describe("Cookie string to verify"),
-          sessionToken: z
-            .string()
-            .optional()
-            .describe("Session ID or token value"),
-          customHeaders: z
-            .record(z.string(), z.string())
-            .optional()
-            .describe(
-              "Custom headers to verify (e.g., X-API-Key, X-Auth-Token)",
+      tokens: z.preprocess(
+        (val) => (typeof val === "string" ? JSON.parse(val) : val),
+        z
+          .object({
+            bearerToken: z
+              .string()
+              .optional()
+              .describe("Bearer/JWT token to verify"),
+            cookies: z
+              .string()
+              .optional()
+              .describe("Cookie string to verify"),
+            sessionToken: z
+              .string()
+              .optional()
+              .describe("Session ID or token value"),
+            customHeaders: z.preprocess(
+              (val) => (typeof val === "string" ? JSON.parse(val) : val),
+              z
+                .record(z.string(), z.string())
+                .optional()
+                .describe(
+                  "Custom headers to verify (e.g., X-API-Key, X-Auth-Token)",
+                ),
             ),
-        })
-        .optional()
-        .describe(
-          "Pre-existing tokens to verify (skips login flow, just validates these work)",
-        ),
-      authHints: z
-        .object({
-          authScheme: z
-            .string()
-            .optional()
-            .describe("Detected auth scheme (form, json, oauth, etc.)"),
-          csrfRequired: z
-            .boolean()
-            .optional()
-            .describe("Whether CSRF protection was detected"),
-          browserRequired: z
-            .boolean()
-            .optional()
-            .describe("Whether browser automation is needed"),
-          protectedEndpoints: z
-            .array(z.string())
-            .optional()
-            .describe(
-              "Protected endpoints discovered during recon that require auth",
+          })
+          .optional()
+          .describe(
+            "Pre-existing tokens to verify (skips login flow, just validates these work)",
+          ),
+      ),
+      authHints: z.preprocess(
+        (val) => (typeof val === "string" ? JSON.parse(val) : val),
+        z
+          .object({
+            authScheme: z
+              .string()
+              .optional()
+              .describe("Detected auth scheme (form, json, oauth, etc.)"),
+            csrfRequired: z
+              .boolean()
+              .optional()
+              .describe("Whether CSRF protection was detected"),
+            browserRequired: z
+              .boolean()
+              .optional()
+              .describe("Whether browser automation is needed"),
+            protectedEndpoints: z.preprocess(
+              (val) => (typeof val === "string" ? JSON.parse(val) : val),
+              z
+                .array(z.string())
+                .optional()
+                .describe(
+                  "Protected endpoints discovered during recon that require auth",
+                ),
             ),
-        })
-        .optional()
-        .describe("Hints about the auth flow from discovery"),
+          })
+          .optional()
+          .describe("Hints about the auth flow from discovery"),
+      ),
       reason: z.string().describe("Why you are delegating to auth subagent"),
       toolCallDescription: z
         .string()

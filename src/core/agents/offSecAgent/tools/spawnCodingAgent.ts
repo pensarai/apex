@@ -27,25 +27,31 @@ Each task needs:
 
 Returns an array of results with the text output from each agent.`,
     inputSchema: z.object({
-      tasks: z
-        .array(
-          z.object({
-            name: z
-              .string()
-              .describe(
-                "Short human-readable label for this agent shown in the UI (e.g. 'parseurl module', 'auth middleware')",
-              ),
-            codebasePath: z
-              .string()
-              .describe("Root directory for this agent to work in"),
-            objective: z
-              .string()
-              .describe(
-                "Detailed description of what this agent should accomplish",
-              ),
-          }),
-        )
-        .describe("Array of tasks to fan out to coding sub-agents"),
+      tasks: z.preprocess(
+        (val) => (typeof val === "string" ? JSON.parse(val) : val),
+        z
+          .array(
+            z.preprocess(
+              (val) => (typeof val === "string" ? JSON.parse(val) : val),
+              z.object({
+                name: z
+                  .string()
+                  .describe(
+                    "Short human-readable label for this agent shown in the UI (e.g. 'parseurl module', 'auth middleware')",
+                  ),
+                codebasePath: z
+                  .string()
+                  .describe("Root directory for this agent to work in"),
+                objective: z
+                  .string()
+                  .describe(
+                    "Detailed description of what this agent should accomplish",
+                  ),
+              }),
+            ),
+          )
+          .describe("Array of tasks to fan out to coding sub-agents"),
+      ),
       toolCallDescription: z
         .string()
         .describe(

@@ -18,43 +18,62 @@ This is the REQUIRED output tool — you MUST call this with your analysis.
 
 Results will be saved to: comparison-results.json in the session directory.`,
     inputSchema: z.object({
-      matched: z
-        .array(
-          z.object({
-            location: z.string().describe("Location of the matched finding"),
-            expectedTitle: z.string().describe("Title of the expected finding"),
-            actualTitle: z.string().describe("Title of the actual finding"),
-            matchReason: z
-              .string()
-              .describe("Explanation for why these findings match"),
-          }),
-        )
-        .describe("Findings that were successfully matched"),
-      missed: z
-        .array(
-          z.object({
-            title: z.string().describe("Title of the missed finding"),
-            severity: z.string().describe("Severity level"),
-            reason: z
-              .string()
-              .describe("Explanation for why this finding was missed"),
-          }),
-        )
-        .describe("Expected findings that were not found"),
-      extra: z
-        .array(
-          z.object({
-            title: z.string().describe("Title of the extra finding"),
-            severity: z.string().describe("Severity level"),
-            location: z.string().describe("Location of the extra finding"),
-            assessment: z
-              .string()
-              .describe(
-                "Assessment of whether this is a false positive or new discovery",
-              ),
-          }),
-        )
-        .describe("Actual findings that don't match any expected findings"),
+      matched: z.preprocess(
+        (val) => (typeof val === "string" ? JSON.parse(val) : val),
+        z
+          .array(
+            z.object({
+              location: z
+                .string()
+                .describe("Location of the matched finding"),
+              expectedTitle: z
+                .string()
+                .describe("Title of the expected finding"),
+              actualTitle: z
+                .string()
+                .describe("Title of the actual finding"),
+              matchReason: z
+                .string()
+                .describe("Explanation for why these findings match"),
+            }),
+          )
+          .describe("Findings that were successfully matched"),
+      ),
+      missed: z.preprocess(
+        (val) => (typeof val === "string" ? JSON.parse(val) : val),
+        z
+          .array(
+            z.object({
+              title: z.string().describe("Title of the missed finding"),
+              severity: z.string().describe("Severity level"),
+              reason: z
+                .string()
+                .describe("Explanation for why this finding was missed"),
+            }),
+          )
+          .describe("Expected findings that were not found"),
+      ),
+      extra: z.preprocess(
+        (val) => (typeof val === "string" ? JSON.parse(val) : val),
+        z
+          .array(
+            z.object({
+              title: z.string().describe("Title of the extra finding"),
+              severity: z.string().describe("Severity level"),
+              location: z
+                .string()
+                .describe("Location of the extra finding"),
+              assessment: z
+                .string()
+                .describe(
+                  "Assessment of whether this is a false positive or new discovery",
+                ),
+            }),
+          )
+          .describe(
+            "Actual findings that don't match any expected findings",
+          ),
+      ),
       toolCallDescription: z
         .string()
         .describe("Concise description of this tool call")

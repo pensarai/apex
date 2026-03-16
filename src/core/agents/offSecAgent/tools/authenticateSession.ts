@@ -65,10 +65,13 @@ or provide username/password directly.`,
         .string()
         .default("password")
         .describe("Name of password field"),
-      additionalFields: z
-        .record(z.string(), z.string())
-        .optional()
-        .describe("Additional form fields (e.g., csrf tokens)"),
+      additionalFields: z.preprocess(
+        (val) => (typeof val === "string" ? JSON.parse(val) : val),
+        z
+          .record(z.string(), z.string())
+          .optional()
+          .describe("Additional form fields (e.g., csrf tokens)"),
+      ),
       toolCallDescription: z
         .string()
         .describe(
