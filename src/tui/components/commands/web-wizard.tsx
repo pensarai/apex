@@ -222,6 +222,7 @@ export default function WebWizard({
 
   // Error state
   const [error, setError] = useState<string | null>(null);
+  const [targetError, setTargetError] = useState<string | null>(null);
 
   // Create session and navigate to session route
   async function createSessionAndNavigate() {
@@ -326,7 +327,10 @@ export default function WebWizard({
       if (key.name === "tab" && !key.shift) {
         key.preventDefault();
         if (state.target.trim()) {
+          setTargetError(null);
           setCurrentStep("configure");
+        } else {
+          setTargetError("Target URL is required");
         }
         return;
       }
@@ -640,9 +644,13 @@ export default function WebWizard({
             description="e.g., https://example.com"
             placeholder="https://example.com"
             value={state.target}
-            onInput={(v) => setState((prev) => ({ ...prev, target: v }))}
+            onInput={(v) => {
+              setTargetError(null);
+              setState((prev) => ({ ...prev, target: v }));
+            }}
             focused={targetFocusedField === 0}
           />
+          {targetError && <text fg={colors.error}>{targetError}</text>}
 
           <box flexDirection="column" gap={1}>
             <box flexDirection="row" gap={1}>
