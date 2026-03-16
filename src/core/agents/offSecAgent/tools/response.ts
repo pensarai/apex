@@ -17,7 +17,10 @@ export function createResponseTool(
   return tool({
     description: `Submit your final structured response. Call this ONCE when you have completed your task and assembled all results. This ends your run — make sure all data is included.`,
     inputSchema: z.object({
-      response: responseSchema,
+      response: z.preprocess(
+        (val) => (typeof val === "string" ? JSON.parse(val) : val),
+        responseSchema,
+      ),
     }),
     execute: async ({ response }) => {
       onResult(response);
