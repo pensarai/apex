@@ -11,6 +11,27 @@ export interface SSEEvent {
   data: string;
 }
 
+function isConnectionError(error: unknown): boolean {
+  if (error instanceof Error) {
+    const message = error.message.toLowerCase();
+    const name = error.name.toLowerCase();
+    const patterns = [
+      "network",
+      "connection",
+      "abort",
+      "socket",
+      "econnreset",
+      "epipe",
+      "etimedout",
+      "enetunreach",
+    ];
+    return patterns.some(
+      (pattern) => message.includes(pattern) || name.includes(pattern),
+    );
+  }
+  return false;
+}
+
 export async function* parseSSE(
   stream: ReadableStream<Uint8Array>,
 ): AsyncGenerator<SSEEvent> {
@@ -22,11 +43,34 @@ export async function* parseSSE(
   let totalBytes = 0;
   let chunkCount = 0;
   let eventCount = 0;
+  let receivedMessageStop = false;
 
   try {
     while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
+      let done: boolean;
+      let value: Uint8Array | undefined;
+
+      try {
+        const readResult = await reader.read();
+        done = readResult.done;
+        value = readResult.value;
+      } catch (readError) {
+        console.error(
+          `[parseSSE] read error after ${chunkCount} chunks, ${totalBytes} bytes, ${eventCount} events:`,
+          readError,
+        );
+
+        if (isConnectionError(readError)) {
+          throw new Error(
+            `Connection closed unexpectedly during streaming (received ${eventCount} events, ${totalBytes} bytes). ` +
+              `This may be a temporary network issue.`,
+            { cause: readError },
+          );
+        }
+        throw readError;
+      }
+
+      if (done || !value) {
         console.error(
           `[parseSSE] stream done: ${chunkCount} chunks, ${totalBytes} bytes, ${eventCount} events yielded, remaining buffer=${buffer.length} chars`,
         );
@@ -57,7 +101,21 @@ export async function* parseSSE(
         if (line === "") {
           if (currentData.length > 0) {
             eventCount++;
-            yield { event: currentEvent, data: currentData.join("\n") };
+            const eventToYield = {
+              event: currentEvent,
+              data: currentData.join("\n"),
+            };
+
+            try {
+              const parsed = JSON.parse(eventToYield.data);
+              if (parsed.type === "message_stop") {
+                receivedMessageStop = true;
+              }
+            } catch {
+              // Ignore parse errors, just pass through
+            }
+
+            yield eventToYield;
           }
           currentEvent = "message";
           currentData = [];
@@ -78,6 +136,10 @@ export async function* parseSSE(
     if (eventCount === 0) {
       console.error(
         `[parseSSE] WARNING: stream ended with 0 events! totalBytes=${totalBytes}, chunks=${chunkCount}`,
+      );
+    } else if (!receivedMessageStop && eventCount > 0) {
+      console.error(
+        `[parseSSE] WARNING: stream ended without message_stop event (${eventCount} events received)`,
       );
     }
   } finally {

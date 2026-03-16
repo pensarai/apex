@@ -14,6 +14,33 @@ import { signGatewayRequest } from "./pensarSigning";
 const DEBUG =
   process.env.PENSAR_DEBUG === "1" || process.env.PENSAR_DEBUG === "true";
 
+const MAX_RETRIES = 3;
+const INITIAL_RETRY_DELAY_MS = 1000;
+const MAX_RETRY_DELAY_MS = 10000;
+
+const RETRYABLE_STATUS_CODES = new Set([
+  408, // Request Timeout
+  409, // Conflict (often connection closed unexpectedly)
+  429, // Too Many Requests
+  500, // Internal Server Error
+  502, // Bad Gateway
+  503, // Service Unavailable
+  504, // Gateway Timeout
+]);
+
+const RETRYABLE_ERROR_PATTERNS = [
+  "ECONNRESET",
+  "ECONNREFUSED",
+  "ETIMEDOUT",
+  "EPIPE",
+  "ENETUNREACH",
+  "EAI_AGAIN",
+  "socket hang up",
+  "connection closed",
+  "network error",
+  "fetch failed",
+];
+
 function log(...args: unknown[]) {
   if (DEBUG) console.error("[pensar:debug]", ...args);
 }
@@ -24,6 +51,33 @@ function logInfo(...args: unknown[]) {
 
 function logError(...args: unknown[]) {
   console.error("[pensar:error]", ...args);
+}
+
+function isRetryableError(error: unknown): boolean {
+  if (error instanceof Error) {
+    const message = error.message.toLowerCase();
+    const name = error.name.toLowerCase();
+    return RETRYABLE_ERROR_PATTERNS.some(
+      (pattern) =>
+        message.includes(pattern.toLowerCase()) ||
+        name.includes(pattern.toLowerCase()),
+    );
+  }
+  return false;
+}
+
+function isRetryableStatusCode(status: number): boolean {
+  return RETRYABLE_STATUS_CODES.has(status);
+}
+
+async function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getRetryDelay(attempt: number): number {
+  const delay = INITIAL_RETRY_DELAY_MS * Math.pow(2, attempt);
+  const jitter = Math.random() * 0.3 * delay;
+  return Math.min(delay + jitter, MAX_RETRY_DELAY_MS);
 }
 
 export interface PensarModelConfig {
@@ -213,63 +267,131 @@ export function createPensarModel(
         modelId: bedrockModelId,
         body,
       });
-      const headers = await buildHeaders();
 
-      if (config.signingKey) {
-        const sig = signGatewayRequest(
-          config.signingKey,
-          bedrockModelId,
-          serializedBody,
-        );
-        headers["X-Pensar-Signature"] = sig.signature;
-        headers["X-Pensar-Timestamp"] = sig.timestamp;
-        headers["X-Pensar-Nonce"] = sig.nonce;
-      }
+      let response: Response | null = null;
+      let lastError: Error | null = null;
 
-      log(`  headers: ${Object.keys(headers).join(", ")}`);
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        const headers = await buildHeaders();
 
-      let response: Response;
-      try {
-        response = await fetch(url, {
-          method: "POST",
-          headers,
-          signal: options.abortSignal,
-          body: serializedBody,
-        });
-      } catch (err) {
-        logError(`  SSE fetch failed (${Date.now() - startTime}ms):`, err);
-        throw new Error(
-          `Pensar Gateway request failed: ${err instanceof Error ? err.message : String(err)}`,
-          { cause: err },
-        );
-      }
-
-      const contentType = response.headers.get("content-type") ?? "unknown";
-      const transferEncoding =
-        response.headers.get("transfer-encoding") ?? "none";
-      logInfo(
-        `  response: ${response.status} (${Date.now() - startTime}ms) content-type=${contentType} transfer-encoding=${transferEncoding}`,
-      );
-
-      if (!response.ok) {
-        const errorBody = await response.text();
-        let errorMessage: string;
-        try {
-          const parsed = JSON.parse(errorBody);
-          errorMessage = parsed.error || parsed.message || errorBody;
-        } catch {
-          errorMessage = errorBody;
+        if (config.signingKey) {
+          const sig = signGatewayRequest(
+            config.signingKey,
+            bedrockModelId,
+            serializedBody,
+          );
+          headers["X-Pensar-Signature"] = sig.signature;
+          headers["X-Pensar-Timestamp"] = sig.timestamp;
+          headers["X-Pensar-Nonce"] = sig.nonce;
         }
-        logError(`  SSE FAILED ${response.status}: ${errorMessage}`);
 
-        if (response.status === 402) {
+        if (attempt > 0) {
+          logInfo(`  retry attempt ${attempt}/${MAX_RETRIES}...`);
+        }
+        log(`  headers: ${Object.keys(headers).join(", ")}`);
+
+        try {
+          response = await fetch(url, {
+            method: "POST",
+            headers,
+            signal: options.abortSignal,
+            body: serializedBody,
+          });
+
+          const contentType = response.headers.get("content-type") ?? "unknown";
+          const transferEncoding =
+            response.headers.get("transfer-encoding") ?? "none";
+          logInfo(
+            `  response: ${response.status} (${Date.now() - startTime}ms) content-type=${contentType} transfer-encoding=${transferEncoding}`,
+          );
+
+          if (response.ok) {
+            break;
+          }
+
+          const errorBody = await response.text();
+          let errorMessage: string;
+          try {
+            const parsed = JSON.parse(errorBody);
+            errorMessage = parsed.error || parsed.message || errorBody;
+          } catch {
+            errorMessage = errorBody;
+          }
+
+          if (response.status === 402) {
+            throw new Error(
+              `Insufficient Pensar credits: ${errorMessage}. ` +
+                `Top up at https://console.pensar.dev`,
+            );
+          }
+
+          if (response.status === 401 || response.status === 403) {
+            throw new Error(
+              `Pensar authentication error (${response.status}): ${errorMessage}`,
+            );
+          }
+
+          lastError = new Error(
+            `Pensar streaming error (${response.status}): ${errorMessage}`,
+          );
+
+          if (
+            isRetryableStatusCode(response.status) &&
+            attempt < MAX_RETRIES
+          ) {
+            const delay = getRetryDelay(attempt);
+            logInfo(
+              `  retryable error ${response.status}, waiting ${Math.round(delay)}ms before retry...`,
+            );
+            await sleep(delay);
+            continue;
+          }
+
+          logError(`  SSE FAILED ${response.status}: ${errorMessage}`);
+          throw lastError;
+        } catch (err) {
+          if (
+            err instanceof Error &&
+            (err.message.includes("Insufficient Pensar credits") ||
+              err.message.includes("authentication error"))
+          ) {
+            throw err;
+          }
+
+          lastError =
+            err instanceof Error
+              ? err
+              : new Error(`Pensar Gateway request failed: ${String(err)}`, {
+                  cause: err,
+                });
+
+          if (options.abortSignal?.aborted) {
+            logError(`  request aborted by user`);
+            throw lastError;
+          }
+
+          if (isRetryableError(err) && attempt < MAX_RETRIES) {
+            const delay = getRetryDelay(attempt);
+            logInfo(
+              `  connection error: ${lastError.message}, waiting ${Math.round(delay)}ms before retry...`,
+            );
+            await sleep(delay);
+            continue;
+          }
+
+          logError(`  SSE fetch failed (${Date.now() - startTime}ms):`, err);
           throw new Error(
-            `Insufficient Pensar credits: ${errorMessage}. ` +
-              `Top up at https://console.pensar.dev`,
+            `Pensar Gateway request failed after ${attempt + 1} attempt(s): ${lastError.message}. ` +
+              `This may be a temporary network issue. Please try again.`,
+            { cause: err },
           );
         }
-        throw new Error(
-          `Pensar streaming error (${response.status}): ${errorMessage}`,
+      }
+
+      if (!response || !response.ok) {
+        throw (
+          lastError ??
+          new Error("Pensar Gateway request failed after all retries")
         );
       }
 
@@ -458,8 +580,27 @@ export function createPensarModel(
             });
             controller.close();
           } catch (err) {
+            const errorMessage =
+              err instanceof Error ? err.message : String(err);
             logError(`  stream error:`, err);
-            controller.error(err);
+
+            if (
+              errorMessage.toLowerCase().includes("connection") ||
+              errorMessage.toLowerCase().includes("network") ||
+              errorMessage.toLowerCase().includes("aborted") ||
+              errorMessage.toLowerCase().includes("socket") ||
+              errorMessage.includes("ECONNRESET") ||
+              errorMessage.includes("EPIPE")
+            ) {
+              controller.error(
+                new Error(
+                  `Connection interrupted during inference streaming: ${errorMessage}. ` +
+                    `This is typically a temporary network issue. Please try again.`,
+                ),
+              );
+            } else {
+              controller.error(err);
+            }
           }
         },
       });
