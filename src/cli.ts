@@ -119,6 +119,10 @@ async function runPentest() {
   const mode = getArg("--mode");
   const reconStepsRaw = getArg("--recon-steps");
   const reconSteps = reconStepsRaw ? parseInt(reconStepsRaw, 10) : undefined;
+  const forceResponseRaw = getArg("--force-response-after-steps");
+  const forceResponseAfterSteps = forceResponseRaw
+    ? parseInt(forceResponseRaw, 10)
+    : undefined;
   const model = (getArg("--model") ?? "claude-sonnet-4-5") as AIModel;
   const verbose = hasFlag("--verbose");
   const { exfilMode, warning: modeWarning } = resolvePentestMode(mode);
@@ -158,6 +162,7 @@ async function runPentest() {
       target,
       ...(cwd ? { cwd } : {}),
       reconSteps,
+      forceResponseAfterSteps,
       session,
       model,
       authConfig: buildAuthConfig(pensarConfig),
