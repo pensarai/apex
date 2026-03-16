@@ -103,9 +103,9 @@ COMMON SEARCH PATTERNS:
             "Content-Type": "application/json",
             Authorization: `Bearer ${tokenResult.token}`,
             "X-Workspace-Id": cfg.workspaceId,
-            "X-Timestamp": timestamp,
-            "X-Nonce": nonce,
-            "X-Signature": signature,
+            "X-Pensar-Timestamp": timestamp,
+            "X-Pensar-Nonce": nonce,
+            "X-Pensar-Signature": signature,
           },
           body,
         });
