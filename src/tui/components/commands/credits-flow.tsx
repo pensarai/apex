@@ -6,7 +6,7 @@ import {
   getPensarApiUrl,
   getPensarConsoleUrl,
 } from "../../../core/api/constants";
-import { ensureValidToken } from "../../../core/api/tokenRefresh";
+import { ensureValidToken } from "../../../core/auth";
 import { config } from "../../../core/config";
 
 type CreditsStep = "loading" | "no-auth" | "display" | "browser-opened";
