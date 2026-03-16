@@ -268,6 +268,12 @@ export function createPensarModel(
               `Top up at https://console.pensar.dev`,
           );
         }
+        if (response.status === 409) {
+          throw new Error(
+            `Pensar streaming error (409): Gateway conflict - ${errorMessage}. ` +
+              `This is usually a transient error and will be retried automatically.`,
+          );
+        }
         throw new Error(
           `Pensar streaming error (${response.status}): ${errorMessage}`,
         );

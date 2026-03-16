@@ -103,6 +103,28 @@ function checkIfRateLimitError(error: unknown): boolean {
   );
 }
 
+/**
+ * Checks if an error is a retryable gateway error (e.g., 409 from Pensar Gateway).
+ * 409 errors can occur when the Lambda function is killed or times out during
+ * inference, which is a transient condition that may succeed on retry.
+ */
+function checkIfRetryableGatewayError(error: unknown): boolean {
+  const errObj =
+    typeof error === "object" && error !== null
+      ? (error as Record<string, unknown>)
+      : {};
+
+  const errorMessage = (
+    typeof errObj.message === "string" ? errObj.message : ""
+  ).toLowerCase();
+
+  return (
+    errorMessage.includes("pensar streaming error (409)") ||
+    errorMessage.includes("gateway") ||
+    errorMessage.includes("(409)")
+  );
+}
+
 const MAX_RATE_LIMIT_RETRIES = 20;
 
 // Helper function to wrap a stream with error handling for async errors
@@ -143,18 +165,24 @@ function wrapStreamWithErrorHandler(
               // as-is; the prompt must be reduced via summarization.
               const isCtxError = checkIfContextLengthError(error);
 
-              // Handle rate limit errors with exponential backoff retry
+              // Handle rate limit errors and retryable gateway errors with exponential backoff retry
+              const isRetryableError =
+                checkIfRateLimitError(error) ||
+                checkIfRetryableGatewayError(error);
               if (
                 !isCtxError &&
-                checkIfRateLimitError(error) &&
+                isRetryableError &&
                 rateLimitRetryCount < MAX_RATE_LIMIT_RETRIES
               ) {
                 const nextRetryCount = rateLimitRetryCount + 1;
                 const delayMs = Math.min(1000 * nextRetryCount, 30000);
 
                 if (!silent) {
+                  const errorType = checkIfRateLimitError(error)
+                    ? "Rate limit"
+                    : "Transient gateway";
                   console.warn(
-                    `Rate limit error (attempt ${nextRetryCount}/${MAX_RATE_LIMIT_RETRIES}), waiting ${delayMs}ms: ${errorMessage}`,
+                    `${errorType} error (attempt ${nextRetryCount}/${MAX_RATE_LIMIT_RETRIES}), waiting ${delayMs}ms: ${errorMessage}`,
                   );
                 }
 
@@ -531,10 +559,9 @@ export async function generateObjectResponse<T extends z.ZodType>(
         );
       }
 
-      if (
-        checkIfRateLimitError(error) &&
-        attempt < MAX_OBJECT_RATE_LIMIT_RETRIES
-      ) {
+      const isRetryableError =
+        checkIfRateLimitError(error) || checkIfRetryableGatewayError(error);
+      if (isRetryableError && attempt < MAX_OBJECT_RATE_LIMIT_RETRIES) {
         const delayMs = Math.min(1000 * 2 ** attempt, 60_000);
         await new Promise((resolve) => setTimeout(resolve, delayMs));
         continue;
