@@ -50,9 +50,18 @@ Credits are a **pre-paid balance** (denominated in USD) stored at the workspace 
 | **Tracking** | Per-user — your requests are attributed to your authenticated identity |
 | **Pre-flight check** | Requests are rejected if credits are insufficient |
 
-<Callout intent="info">
-  Credits are shared across all billing categories in your workspace (Apex Inference and Continuous Pentesting). Monitor usage per category from **Settings > Usage** in Console.
-</Callout>
+### Billing Categories
+
+Credits are shared across all billing categories in your workspace. Monitor usage per category from **Settings > Usage** in Console.
+
+<CardGroup cols={2}>
+  <Card title="Apex Inference" icon="bolt" href="https://docs.pensar.dev/apex">
+    Usage-based billing for Pensar gateway inference via the Apex CLI. Tokens consumed through the Pensar gateway are deducted from your credit balance.
+  </Card>
+  <Card title="Continuous Pentesting" icon="rotate" href="/console/features/billing">
+    Usage-based billing for pentests triggered via the CI/CD pipeline. When enabled, AI inference tokens consumed during CI pentests are deducted from your credit balance.
+  </Card>
+</CardGroup>
 
 ## Troubleshooting
 
