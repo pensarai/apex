@@ -319,33 +319,49 @@ export default function WebWizard({
     // Don't allow navigation while creating
     if (currentStep === "creating") return;
 
-    // Target step: Enter to start, Tab to navigate/configure
+    // Target step: Enter to start, Tab to configure options
     if (currentStep === "target") {
       const maxTargetField = state.sourceCodeAccess ? 2 : 1; // 0=target, 1=toggle, 2=cwd (if enabled)
-      // Tab navigation
-      if (key.name === "tab") {
+      // Tab - go directly to configure step when target is filled
+      if (key.name === "tab" && !key.shift) {
         key.preventDefault();
-        if (key.shift) {
-          setTargetFocusedField((prev) => Math.max(0, prev - 1));
-        } else {
-          if (targetFocusedField === maxTargetField && state.target.trim()) {
-            setCurrentStep("configure");
-          } else {
-            setTargetFocusedField((prev) => Math.min(maxTargetField, prev + 1));
-          }
+        if (state.target.trim()) {
+          setCurrentStep("configure");
         }
         return;
       }
-      // Up/Down to toggle source code access when focused
-      if (
-        targetFocusedField === 1 &&
-        (key.name === "up" || key.name === "down")
-      ) {
+      // Shift+Tab - navigate backwards through fields
+      if (key.name === "tab" && key.shift) {
         key.preventDefault();
-        setState((prev) => ({
-          ...prev,
-          sourceCodeAccess: !prev.sourceCodeAccess,
-        }));
+        setTargetFocusedField((prev) => Math.max(0, prev - 1));
+        return;
+      }
+      // Down arrow - toggle source code access or navigate to next field
+      if (key.name === "down") {
+        key.preventDefault();
+        if (targetFocusedField === 1) {
+          // Toggle source code access when on that field
+          setState((prev) => ({
+            ...prev,
+            sourceCodeAccess: !prev.sourceCodeAccess,
+          }));
+        } else if (targetFocusedField < maxTargetField) {
+          setTargetFocusedField((prev) => prev + 1);
+        }
+        return;
+      }
+      // Up arrow - toggle source code access or navigate to previous field
+      if (key.name === "up") {
+        key.preventDefault();
+        if (targetFocusedField === 1) {
+          // Toggle source code access when on that field
+          setState((prev) => ({
+            ...prev,
+            sourceCodeAccess: !prev.sourceCodeAccess,
+          }));
+        } else if (targetFocusedField > 0) {
+          setTargetFocusedField((prev) => prev - 1);
+        }
         return;
       }
       // Enter to start if target is filled
