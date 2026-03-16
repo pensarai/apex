@@ -17,14 +17,26 @@ export const httpRequestInputSchema = z.object({
     .describe(
       'HTTP headers as a JSON-encoded object string, e.g. \'{"Content-Type": "application/json", "Authorization": "Bearer token"}\'',
     ),
-  body: z.string().optional().describe("Request body (for POST, PUT, PATCH)"),
-  followRedirects: z
-    .boolean()
-    .default(false)
-    .describe(
-      "Whether to follow HTTP redirects (3xx). Defaults to false so you can see redirect responses with Location and Set-Cookie headers.",
-    ),
-  timeout: z.number().default(10000),
+  body: z.preprocess(
+    (val) => (typeof val === "object" && val !== null ? JSON.stringify(val) : val),
+    z.string().optional().describe("Request body (for POST, PUT, PATCH)"),
+  ),
+  followRedirects: z.preprocess(
+    (val) =>
+      typeof val === "string"
+        ? val.toLowerCase() === "true"
+        : val,
+    z
+      .boolean()
+      .default(false)
+      .describe(
+        "Whether to follow HTTP redirects (3xx). Defaults to false so you can see redirect responses with Location and Set-Cookie headers.",
+      ),
+  ),
+  timeout: z.preprocess(
+    (val) => (typeof val === "string" ? Number(val) : val),
+    z.number().default(10000),
+  ),
   toolCallDescription: z
     .string()
     .describe(

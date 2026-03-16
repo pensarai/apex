@@ -11,10 +11,16 @@ export const listFilesInputSchema = z.object({
     .describe(
       "Absolute or relative path to the directory to list (defaults to current working directory)",
     ),
-  recursive: z
-    .boolean()
-    .optional()
-    .describe("If true, list files recursively (default: false)"),
+  recursive: z.preprocess(
+    (val) =>
+      typeof val === "string"
+        ? val.toLowerCase() === "true"
+        : val,
+    z
+      .boolean()
+      .optional()
+      .describe("If true, list files recursively (default: false)"),
+  ),
   toolCallDescription: z
     .string()
     .describe(

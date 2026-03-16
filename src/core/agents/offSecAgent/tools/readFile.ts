@@ -6,14 +6,20 @@ import type { ToolContext } from "./types";
 
 export const readFileInputSchema = z.object({
   path: z.string().describe("Absolute or relative path to the file to read"),
-  startLine: z
-    .number()
-    .optional()
-    .describe("1-based line number to start reading from (inclusive)"),
-  endLine: z
-    .number()
-    .optional()
-    .describe("1-based line number to stop reading at (inclusive)"),
+  startLine: z.preprocess(
+    (val) => (typeof val === "string" ? Number(val) : val),
+    z
+      .number()
+      .optional()
+      .describe("1-based line number to start reading from (inclusive)"),
+  ),
+  endLine: z.preprocess(
+    (val) => (typeof val === "string" ? Number(val) : val),
+    z
+      .number()
+      .optional()
+      .describe("1-based line number to stop reading at (inclusive)"),
+  ),
   toolCallDescription: z
     .string()
     .describe(

@@ -29,14 +29,17 @@ export const createPocInputSchema = z.object({
   pocType: z.enum(["bash", "python", "javascript"]).describe("Script language"),
   pocContent: z.string().describe("The full POC script content"),
   description: z.string().describe("What this POC demonstrates"),
-  timeoutSeconds: z
-    .number()
-    .min(10)
-    .max(300)
-    .optional()
-    .describe(
-      "Execution timeout in seconds (default: 60, max: 300). Increase for POCs that chain multiple requests or involve slow network operations like SSRF pivoting.",
-    ),
+  timeoutSeconds: z.preprocess(
+    (val) => (typeof val === "string" ? Number(val) : val),
+    z
+      .number()
+      .min(10)
+      .max(300)
+      .optional()
+      .describe(
+        "Execution timeout in seconds (default: 60, max: 300). Increase for POCs that chain multiple requests or involve slow network operations like SSRF pivoting.",
+      ),
+  ),
   toolCallDescription: z
     .string()
     .describe(

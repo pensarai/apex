@@ -10,12 +10,15 @@ const DEFAULT_TIMEOUT_SECONDS = 30;
 
 export const executeCommandInputSchema = z.object({
   command: z.string().describe("The shell command to execute"),
-  timeout: z
-    .number()
-    .optional()
-    .describe(
-      `Timeout in seconds (default: ${DEFAULT_TIMEOUT_SECONDS}). For long-running scans, set a higher value.`,
-    ),
+  timeout: z.preprocess(
+    (val) => (typeof val === "string" ? Number(val) : val),
+    z
+      .number()
+      .optional()
+      .describe(
+        `Timeout in seconds (default: ${DEFAULT_TIMEOUT_SECONDS}). For long-running scans, set a higher value.`,
+      ),
+  ),
   toolCallDescription: z
     .string()
     .describe(
