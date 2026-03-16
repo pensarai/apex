@@ -1,7 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { config } from "../../../config";
-import { ensureValidToken } from "../../../api/tokenRefresh";
+import { ensureValidToken, signGatewayRequest } from "../../../auth";
 import { getPensarApiUrl } from "../../../api/constants";
 import type { ToolContext } from "./types";
 
@@ -71,14 +71,43 @@ COMMON SEARCH PATTERNS:
           };
         }
 
+        if (!cfg.workspaceId) {
+          return {
+            success: false,
+            results: [],
+            error:
+              "Web search requires a workspace. Please sign in to your Pensar account.",
+          };
+        }
+
+        if (!cfg.gatewaySigningKey) {
+          return {
+            success: false,
+            results: [],
+            error:
+              "Web search requires authentication. Please sign in again to your Pensar account.",
+          };
+        }
+
         const apiUrl = getPensarApiUrl();
-        const response = await fetch(`${apiUrl}/api/agents/web_search`, {
+        const body = JSON.stringify({ query });
+        const { signature, timestamp, nonce } = signGatewayRequest(
+          cfg.gatewaySigningKey,
+          "web_search",
+          body,
+        );
+
+        const response = await fetch(`${apiUrl}/agents/web_search`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${tokenResult.token}`,
+            "X-Workspace-Id": cfg.workspaceId,
+            "X-Timestamp": timestamp,
+            "X-Nonce": nonce,
+            "X-Signature": signature,
           },
-          body: JSON.stringify({ query }),
+          body,
         });
 
         if (!response.ok) {

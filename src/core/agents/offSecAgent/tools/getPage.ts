@@ -1,11 +1,9 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { config } from "../../../config";
-import { ensureValidToken } from "../../../api/tokenRefresh";
-import { getPensarApiUrl } from "../../../api/constants";
 import type { ToolContext } from "./types";
 
 const MAX_CONTENT_LENGTH = 50_000;
+const REQUEST_TIMEOUT = 30_000;
 
 export const getPageInputSchema = z.object({
   url: z
@@ -29,7 +27,48 @@ export interface GetPageResponse {
   error?: string;
 }
 
-export function getPage(_ctx: ToolContext) {
+function extractTitle(html: string): string | undefined {
+  const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+  return titleMatch?.[1]?.trim();
+}
+
+function extractTextContent(html: string): string {
+  let text = html;
+
+  // Remove script and style tags with their content
+  text = text.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "");
+  text = text.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "");
+  text = text.replace(/<noscript[^>]*>[\s\S]*?<\/noscript>/gi, "");
+
+  // Remove HTML comments
+  text = text.replace(/<!--[\s\S]*?-->/g, "");
+
+  // Remove all HTML tags
+  text = text.replace(/<[^>]+>/g, " ");
+
+  // Decode common HTML entities
+  text = text
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'");
+
+  // Normalize whitespace
+  text = text.replace(/\s+/g, " ").trim();
+
+  // Split into lines and remove empty ones
+  const lines = text
+    .split(/[.\n]/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+
+  return lines.join("\n");
+}
+
+export function getPage(ctx: ToolContext) {
   return tool({
     description: `Fetch and extract readable content from a web page. Returns the page title and main text content.
 
@@ -39,8 +78,6 @@ USAGE GUIDANCE:
 - Read documentation, API references, and technical guides
 - Extract exploit code, payloads, and proof-of-concept details from security blogs
 
-IMPORTANT: This tool requires a Pensar account. If you're not signed in, you'll receive an error message with instructions to sign in.
-
 BEST PRACTICES:
 - First use web_search to find relevant URLs, then use get_page to read the full content
 - Prefer authoritative sources (NVD, vendor advisories, security researcher blogs)
@@ -49,75 +86,53 @@ BEST PRACTICES:
     inputSchema: getPageInputSchema,
     execute: async ({ url }): Promise<GetPageResponse> => {
       try {
-        const cfg = await config.get();
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
 
-        const tokenResult = await ensureValidToken({
-          accessToken: cfg.accessToken,
-          refreshToken: cfg.refreshToken,
-          pensarAPIKey: cfg.pensarAPIKey,
-        });
+        const combinedSignal = ctx.abortSignal
+          ? AbortSignal.any([ctx.abortSignal, controller.signal])
+          : controller.signal;
 
-        if (!tokenResult) {
-          return {
-            success: false,
-            url,
-            error:
-              "Page fetching requires a Pensar account. Please sign in to your Pensar account to use this feature. You can sign in via the TUI settings or by running 'pensar auth login'.",
-          };
-        }
-
-        const apiUrl = getPensarApiUrl();
-        const response = await fetch(`${apiUrl}/api/agents/get_page`, {
-          method: "POST",
+        const response = await fetch(url, {
+          method: "GET",
           headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${tokenResult.token}`,
+            "User-Agent":
+              "Mozilla/5.0 (compatible; PensarBot/1.0; +https://pensar.dev)",
+            Accept:
+              "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
           },
-          body: JSON.stringify({ url }),
+          signal: combinedSignal,
+          redirect: "follow",
         });
+
+        clearTimeout(timeoutId);
 
         if (!response.ok) {
-          if (response.status === 401) {
-            return {
-              success: false,
-              url,
-              error:
-                "Authentication failed. Please sign in again to your Pensar account.",
-            };
-          }
-
-          if (response.status === 429) {
-            return {
-              success: false,
-              url,
-              error:
-                "Rate limit exceeded. Please wait a moment before fetching pages again.",
-            };
-          }
-
-          const errorText = await response.text().catch(() => "Unknown error");
           return {
             success: false,
             url,
-            error: `Failed to fetch page: ${response.status} ${response.statusText}. ${errorText}`,
+            error: `Failed to fetch page: ${response.status} ${response.statusText}`,
           };
         }
 
-        const data = (await response.json()) as {
-          title?: string;
-          content?: string;
-          error?: string;
-        };
-
-        if (data.error) {
+        const contentType = response.headers.get("content-type") || "";
+        if (
+          !contentType.includes("text/html") &&
+          !contentType.includes("text/plain") &&
+          !contentType.includes("application/xhtml")
+        ) {
           return {
             success: false,
             url,
-            error: data.error,
+            error: `Unsupported content type: ${contentType}. This tool only supports HTML and text pages.`,
           };
         }
 
-        let content = data.content || "";
+        const html = await response.text();
+        const title = extractTitle(html);
+        let content = extractTextContent(html);
+
         if (content.length > MAX_CONTENT_LENGTH) {
           content =
             content.substring(0, MAX_CONTENT_LENGTH) +
@@ -127,10 +142,20 @@ BEST PRACTICES:
         return {
           success: true,
           url,
-          title: data.title,
+          title,
           content,
         };
       } catch (error: unknown) {
+        if (error instanceof Error && error.name === "AbortError") {
+          return {
+            success: false,
+            url,
+            error: ctx.abortSignal?.aborted
+              ? "Request aborted by user"
+              : `Request timeout after ${REQUEST_TIMEOUT / 1000}s`,
+          };
+        }
+
         const errorMsg = error instanceof Error ? error.message : String(error);
         return {
           success: false,
