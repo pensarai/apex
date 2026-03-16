@@ -148,6 +148,9 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
         "email_list_messages",
         "email_search_messages",
         "email_get_message",
+        // Web search tools — look up auth bypass techniques, default credentials
+        "web_search",
+        "get_page",
       ],
 
       stopWhen: hasToolCall("complete_authentication"),
