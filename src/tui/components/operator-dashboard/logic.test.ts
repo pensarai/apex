@@ -322,10 +322,22 @@ describe("resolveKeyboardShortcut", () => {
     ).toEqual({ type: "toggle-expanded-logs" });
   });
 
-  it("Shift+Tab returns toggle-approval", () => {
+  it("Shift+Tab returns toggle-mode", () => {
     expect(
       resolveKeyboardShortcut(
         { name: "tab", shift: true },
+        idle,
+        "",
+        false,
+        false,
+      ),
+    ).toEqual({ type: "toggle-mode" });
+  });
+
+  it("Option+Shift+Tab returns toggle-approval", () => {
+    expect(
+      resolveKeyboardShortcut(
+        { name: "tab", shift: true, meta: true },
         idle,
         "",
         false,
@@ -460,6 +472,22 @@ describe("buildOperatorSystemPrompt", () => {
     const prompt = buildOperatorSystemPrompt(target, state);
     expect(prompt).toContain("# Command Execution");
     expect(prompt).toContain("# Tool Reference");
+  });
+
+  it("includes plan mode note when agentMode is plan", () => {
+    const prompt = buildOperatorSystemPrompt(target, state, "plan");
+    expect(prompt).toContain("Agent mode: PLAN");
+    expect(prompt).toContain("read-only tools only");
+  });
+
+  it("does not include plan mode note when agentMode is default", () => {
+    const prompt = buildOperatorSystemPrompt(target, state, "default");
+    expect(prompt).not.toContain("Agent mode: PLAN");
+  });
+
+  it("does not include plan mode note when agentMode is omitted", () => {
+    const prompt = buildOperatorSystemPrompt(target, state);
+    expect(prompt).not.toContain("Agent mode: PLAN");
   });
 });
 

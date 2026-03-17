@@ -12,7 +12,11 @@ import type {
   CreateAgentInput,
   ConsumeCallbacks,
 } from "./types";
-import { createAllTools, EMAIL_TOOL_NAMES_ACTIVE } from "./tools";
+import {
+  createAllTools,
+  EMAIL_TOOL_NAMES_ACTIVE,
+  PLAN_MODE_TOOL_NAMES,
+} from "./tools";
 import { createResponseTool, RESPONSE_TOOL_NAME } from "./tools/response";
 import { PersistentShell } from "./tools/persistentShell";
 import { BASE_SYSTEM_PROMPT, buildSessionWorkspaceSection } from "./prompt";
@@ -198,9 +202,15 @@ export class OffensiveSecurityAgent<TResult = void> {
       (input.session.config?.emailIntegration?.inboxes?.length ?? 0) > 0;
 
     const emailToolSet = new Set<string>(EMAIL_TOOL_NAMES_ACTIVE);
-    const activeTools = hasEmail
+    let activeTools = hasEmail
       ? (input.activeTools as string[])
       : (input.activeTools as string[]).filter((t) => !emailToolSet.has(t));
+
+    // -- Plan mode: restrict to read-only tools -----------------------------
+    if (input.mode === "plan") {
+      const planSet = new Set<string>(PLAN_MODE_TOOL_NAMES);
+      activeTools = activeTools.filter((t) => planSet.has(t));
+    }
 
     // -- Messages persistence -------------------------------------------------
     const messagesDir = input.messagesDir ?? input.session.rootPath;

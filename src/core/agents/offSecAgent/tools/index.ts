@@ -228,5 +228,54 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "get_page",
 ];
 
+/**
+ * Tool names available in plan mode (read-only / non-mutating).
+ *
+ * Excludes: create_file, update_file, create_poc, document_vulnerability,
+ * document_asset. These are the mutation tools that should not be available
+ * when the operator is in plan (read-only) mode.
+ */
+export const PLAN_MODE_TOOL_NAMES: ToolName[] = [
+  // Browser automation (read-only navigation and inspection)
+  "browser_navigate",
+  "browser_snapshot",
+  "browser_screenshot",
+  "browser_click",
+  "browser_fill",
+  "browser_evaluate",
+  "browser_console",
+  "browser_get_cookies",
+  // Core pentest (read-only)
+  "execute_command",
+  "http_request",
+  // Filesystem / search (read-only)
+  "read_file",
+  "list_files",
+  "grep",
+  // Attack surface / recon
+  "authenticate_session",
+  "delegate_to_auth_subagent",
+  "create_attack_surface_report",
+  "complete_authentication",
+  "run_attack_surface",
+  "spawn_pentest_swarm",
+  "spawn_coding_agent",
+  "provide_comparison_results",
+  // Memory
+  "add_memory",
+  "list_memories",
+  "get_memory",
+  // Email
+  "email_list_inboxes",
+  "email_list_messages",
+  "email_get_message",
+  "email_search_messages",
+  "email_get_attachments",
+  "email_mark_read",
+  // Web search
+  "web_search",
+  "get_page",
+];
+
 /** Email tool names — auto-appended to activeTools by the base class when inboxes are configured. */
 export { EMAIL_TOOL_NAMES as EMAIL_TOOL_NAMES_ACTIVE } from "./email";
