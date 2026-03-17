@@ -6,6 +6,7 @@ import {
   computeDownArrow,
   computeTab,
   shouldResetHistory,
+  computeVisibleWindow,
   type NavState,
 } from "./prompt-input-logic";
 import type { AutocompleteOption } from "./prompt-input";
@@ -420,5 +421,136 @@ describe("navigation sequences", () => {
     expect(result.nextState.selectedSuggestionIndex).toBe(-1);
     expect(result.nextState.historyIndex).toBe(0);
     expect(result.textToSet).toBe("third cmd");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeVisibleWindow
+// ---------------------------------------------------------------------------
+
+describe("computeVisibleWindow", () => {
+  const makeSuggestions = (count: number): AutocompleteOption[] => {
+    return Array.from({ length: count }, (_, i) => ({
+      value: `/cmd${i}`,
+      label: `/cmd${i}`,
+      description: `Command ${i}`,
+    }));
+  };
+
+  it("returns empty window for empty suggestions", () => {
+    const result = computeVisibleWindow([], 0, 5);
+    expect(result).toEqual({
+      start: 0,
+      end: 0,
+      visibleSuggestions: [],
+      hasMore: false,
+      hasMoreBelow: false,
+    });
+  });
+
+  it("shows all suggestions when count <= maxVisible", () => {
+    const suggestions = makeSuggestions(3);
+    const result = computeVisibleWindow(suggestions, 0, 5);
+    expect(result.start).toBe(0);
+    expect(result.end).toBe(3);
+    expect(result.visibleSuggestions).toHaveLength(3);
+    expect(result.hasMore).toBe(false);
+    expect(result.hasMoreBelow).toBe(false);
+  });
+
+  it("shows windowed view when count > maxVisible", () => {
+    const suggestions = makeSuggestions(10);
+    const result = computeVisibleWindow(suggestions, 0, 5);
+    expect(result.visibleSuggestions).toHaveLength(5);
+    expect(result.start).toBe(0);
+    expect(result.end).toBe(5);
+    expect(result.hasMore).toBe(false);
+    expect(result.hasMoreBelow).toBe(true);
+  });
+
+  it("centers window around selected index", () => {
+    const suggestions = makeSuggestions(10);
+    const result = computeVisibleWindow(suggestions, 5, 5);
+    // With maxVisible=5, centering on index 5 should show indices 3-7
+    expect(result.start).toBe(3);
+    expect(result.end).toBe(8);
+    expect(result.visibleSuggestions).toHaveLength(5);
+    expect(result.hasMore).toBe(true);
+    expect(result.hasMoreBelow).toBe(true);
+  });
+
+  it("adjusts window to start when selected is near beginning", () => {
+    const suggestions = makeSuggestions(10);
+    const result = computeVisibleWindow(suggestions, 1, 5);
+    // Should show 0-4 (can't center around 1 without going negative)
+    expect(result.start).toBe(0);
+    expect(result.end).toBe(5);
+    expect(result.hasMore).toBe(false);
+    expect(result.hasMoreBelow).toBe(true);
+  });
+
+  it("adjusts window to end when selected is near bottom", () => {
+    const suggestions = makeSuggestions(10);
+    const result = computeVisibleWindow(suggestions, 8, 5);
+    // Should show 5-9 (last 5 items)
+    expect(result.start).toBe(5);
+    expect(result.end).toBe(10);
+    expect(result.hasMore).toBe(true);
+    expect(result.hasMoreBelow).toBe(false);
+  });
+
+  it("handles selectedIndex of -1 (no selection)", () => {
+    const suggestions = makeSuggestions(10);
+    const result = computeVisibleWindow(suggestions, -1, 5);
+    // Should show first 5 items when no selection
+    expect(result.start).toBe(0);
+    expect(result.end).toBe(5);
+    expect(result.visibleSuggestions).toHaveLength(5);
+  });
+
+  it("correctly identifies scroll indicators", () => {
+    const suggestions = makeSuggestions(15);
+    
+    // At the top
+    const top = computeVisibleWindow(suggestions, 0, 5);
+    expect(top.hasMore).toBe(false);
+    expect(top.hasMoreBelow).toBe(true);
+    
+    // In the middle
+    const middle = computeVisibleWindow(suggestions, 7, 5);
+    expect(middle.hasMore).toBe(true);
+    expect(middle.hasMoreBelow).toBe(true);
+    
+    // At the bottom
+    const bottom = computeVisibleWindow(suggestions, 14, 5);
+    expect(bottom.hasMore).toBe(true);
+    expect(bottom.hasMoreBelow).toBe(false);
+  });
+
+  it("returns correct visible suggestions slice", () => {
+    const suggestions = makeSuggestions(10);
+    const result = computeVisibleWindow(suggestions, 5, 5);
+    // Should return indices 3-7
+    expect(result.visibleSuggestions[0]?.value).toBe("/cmd3");
+    expect(result.visibleSuggestions[4]?.value).toBe("/cmd7");
+  });
+
+  it("handles maxVisible of 1", () => {
+    const suggestions = makeSuggestions(10);
+    const result = computeVisibleWindow(suggestions, 5, 1);
+    expect(result.start).toBe(5);
+    expect(result.end).toBe(6);
+    expect(result.visibleSuggestions).toHaveLength(1);
+    expect(result.visibleSuggestions[0]?.value).toBe("/cmd5");
+  });
+
+  it("handles maxVisible larger than suggestions", () => {
+    const suggestions = makeSuggestions(3);
+    const result = computeVisibleWindow(suggestions, 1, 10);
+    expect(result.start).toBe(0);
+    expect(result.end).toBe(3);
+    expect(result.visibleSuggestions).toHaveLength(3);
+    expect(result.hasMore).toBe(false);
+    expect(result.hasMoreBelow).toBe(false);
   });
 });
