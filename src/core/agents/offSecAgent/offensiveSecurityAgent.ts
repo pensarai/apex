@@ -33,37 +33,42 @@ function persistMessagesSnapshot(
   writeFileSync(messagesPath, JSON.stringify(messages, null, 2));
 }
 
+type AssistantMessage = Extract<ModelMessage, { role: "assistant" }>;
+type AssistantPart = Exclude<AssistantMessage["content"], string>[number];
+type ToolMessage = Extract<ModelMessage, { role: "tool" }>;
+type ToolPart = ToolMessage["content"][number];
+
 function ensureAssistantParts(
   messages: ModelMessage[],
-): Array<Record<string, unknown>> {
+): AssistantPart[] {
   const last = messages[messages.length - 1];
 
   if (!last || last.role !== "assistant") {
+    const nextContent: AssistantPart[] = [];
     const next = {
       role: "assistant" as const,
-      content: [] as Array<Record<string, unknown>>,
-    } as ModelMessage;
+      content: nextContent,
+    } as AssistantMessage;
     messages.push(next);
-    return next.content as Array<Record<string, unknown>>;
+    return nextContent;
   }
 
   if (typeof last.content === "string") {
+    const content = last.content;
     const parts =
-      last.content.length > 0
-        ? ([{ type: "text", text: last.content }] as Array<
-            Record<string, unknown>
-          >)
+      content.length > 0
+        ? ([{ type: "text", text: content }] as AssistantPart[])
         : [];
-    last.content = parts;
+    (last as AssistantMessage as { content: AssistantPart[] }).content = parts;
     return parts;
   }
 
   if (Array.isArray(last.content)) {
-    return last.content as Array<Record<string, unknown>>;
+    return (last as AssistantMessage).content as AssistantPart[];
   }
 
-  last.content = [];
-  return last.content as Array<Record<string, unknown>>;
+  (last as AssistantMessage).content = [];
+  return (last as AssistantMessage).content as AssistantPart[];
 }
 
 function appendAssistantText(messages: ModelMessage[], text: string): void {
@@ -80,7 +85,7 @@ function appendAssistantText(messages: ModelMessage[], text: string): void {
     return;
   }
 
-  parts.push({ type: "text", text });
+  parts.push({ type: "text", text } as AssistantPart);
 }
 
 function upsertAssistantToolCall(
@@ -91,7 +96,10 @@ function upsertAssistantToolCall(
 ): void {
   const parts = ensureAssistantParts(messages);
   const existing = parts.find(
-    (part) => part.type === "tool-call" && part.toolCallId === toolCallId,
+    (
+      part,
+    ): part is Extract<AssistantPart, { type: "tool-call"; toolCallId: string }> =>
+      part.type === "tool-call" && part.toolCallId === toolCallId,
   );
 
   if (existing) {
@@ -103,9 +111,12 @@ function upsertAssistantToolCall(
   }
 
   parts.push(
-    input === undefined
-      ? { type: "tool-call", toolCallId, toolName }
-      : { type: "tool-call", toolCallId, toolName, input },
+    {
+      type: "tool-call",
+      toolCallId,
+      toolName,
+      input: input ?? {},
+    } as AssistantPart,
   );
 }
 
@@ -113,16 +124,18 @@ function appendToolResult(
   messages: ModelMessage[],
   toolCallId: string,
   toolName: string,
-  output?: unknown,
+  output: unknown,
 ): void {
+  const part = {
+    type: "tool-result",
+    toolCallId,
+    toolName,
+    output,
+  } as ToolPart;
   messages.push({
     role: "tool",
-    content: [
-      output === undefined
-        ? { type: "tool-result", toolCallId, toolName }
-        : { type: "tool-result", toolCallId, toolName, output },
-    ],
-  } as ModelMessage);
+    content: [part],
+  } as ToolMessage);
 }
 
 /**
