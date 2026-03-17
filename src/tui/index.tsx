@@ -60,6 +60,7 @@ import {
 import { createClipboardManager } from "./clipboard";
 import { setupAutoCopy } from "./auto-copy";
 import { TerminalDimensionsProvider } from "./context/dimensions";
+import { TerminalFocusHandler } from "./components/terminal-focus-handler";
 
 interface AppProps {
   appConfig: Config;
@@ -87,6 +88,7 @@ function App({ appConfig }: AppProps) {
       <SessionProvider>
         <RouteProvider>
           <FocusProvider>
+            <TerminalFocusHandler />
             <InputProvider>
               <DialogProvider>
                 <AgentProvider>
