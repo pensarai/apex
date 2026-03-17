@@ -12,8 +12,13 @@ interface InputComponentProps extends InputProps {
 const Input = forwardRef<InputRenderable, InputComponentProps>(
   function Input(opts, ref) {
     const { colors } = useTheme();
-    const { label, focused = true, description, keyBindings, ...inputProps } =
-      opts;
+    const {
+      label,
+      focused = true,
+      description,
+      keyBindings,
+      ...inputProps
+    } = opts;
 
     return (
       <box
