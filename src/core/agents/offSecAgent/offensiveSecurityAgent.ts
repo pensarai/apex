@@ -24,7 +24,8 @@ import type { ApprovalGate } from "../../operator";
 import { ApprovalDeniedError } from "../../operator";
 import { create as createSession, type SessionInfo } from "../../session";
 import { join } from "path";
-import { writeFileSync, mkdirSync, existsSync } from "fs";
+import { mkdirSync, existsSync } from "fs";
+import { writeFile } from "fs/promises";
 
 /**
  * General-purpose offensive security agent harness.
@@ -244,15 +245,15 @@ export class OffensiveSecurityAgent<TResult = void> {
       stopWhen,
       toolChoice: "auto",
       onStepFinish: (event) => {
-        try {
-          const allMessages = [
-            ...initialMessagesRef.current,
-            ...event.response.messages,
-          ];
-          writeFileSync(messagesPath, JSON.stringify(allMessages, null, 2));
-        } catch {
-          // Best-effort persistence — don't break the agent loop
-        }
+        const allMessages = [
+          ...initialMessagesRef.current,
+          ...event.response.messages,
+        ];
+        writeFile(messagesPath, JSON.stringify(allMessages, null, 2)).catch(
+          () => {
+            // Best-effort persistence — don't break the agent loop
+          }
+        );
         input.onStepFinish?.(event);
       },
       onSummarized: () => {
