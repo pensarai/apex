@@ -55,6 +55,22 @@ COMMON SEARCH PATTERNS:
     execute: async ({ query }): Promise<WebSearchResponse> => {
       try {
         const cfg = await config.get();
+        const apiUrl = getPensarApiUrl();
+        const body = JSON.stringify({ query });
+
+        // API key mode: authenticate directly without token exchange or signing
+        if (cfg.pensarAPIKey && !cfg.accessToken) {
+          const response = await fetch(`${apiUrl}/agents/web_search`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-api-key": cfg.pensarAPIKey,
+            },
+            body,
+          });
+
+          return handleSearchResponse(response);
+        }
 
         const tokenResult = await ensureValidToken({
           accessToken: cfg.accessToken,
@@ -89,8 +105,6 @@ COMMON SEARCH PATTERNS:
           };
         }
 
-        const apiUrl = getPensarApiUrl();
-        const body = JSON.stringify({ query });
         const { signature, timestamp, nonce } = signGatewayRequest(
           cfg.gatewaySigningKey,
           "web_search",
@@ -110,50 +124,7 @@ COMMON SEARCH PATTERNS:
           body,
         });
 
-        if (!response.ok) {
-          if (response.status === 401) {
-            return {
-              success: false,
-              results: [],
-              error:
-                "Authentication failed. Please sign in again to your Pensar account.",
-            };
-          }
-
-          if (response.status === 429) {
-            return {
-              success: false,
-              results: [],
-              error:
-                "Rate limit exceeded. Please wait a moment before searching again.",
-            };
-          }
-
-          const errorText = await response.text().catch(() => "Unknown error");
-          return {
-            success: false,
-            results: [],
-            error: `Web search failed: ${response.status} ${response.statusText}. ${errorText}`,
-          };
-        }
-
-        const data = (await response.json()) as {
-          results?: WebSearchResult[];
-          error?: string;
-        };
-
-        if (data.error) {
-          return {
-            success: false,
-            results: [],
-            error: data.error,
-          };
-        }
-
-        return {
-          success: true,
-          results: data.results || [],
-        };
+        return handleSearchResponse(response);
       } catch (error: unknown) {
         const errorMsg = error instanceof Error ? error.message : String(error);
         return {
@@ -164,4 +135,53 @@ COMMON SEARCH PATTERNS:
       }
     },
   });
+}
+
+async function handleSearchResponse(
+  response: Response,
+): Promise<WebSearchResponse> {
+  if (!response.ok) {
+    if (response.status === 401) {
+      return {
+        success: false,
+        results: [],
+        error:
+          "Authentication failed. Please sign in again to your Pensar account.",
+      };
+    }
+
+    if (response.status === 429) {
+      return {
+        success: false,
+        results: [],
+        error:
+          "Rate limit exceeded. Please wait a moment before searching again.",
+      };
+    }
+
+    const errorText = await response.text().catch(() => "Unknown error");
+    return {
+      success: false,
+      results: [],
+      error: `Web search failed: ${response.status} ${response.statusText}. ${errorText}`,
+    };
+  }
+
+  const data = (await response.json()) as {
+    results?: WebSearchResult[];
+    error?: string;
+  };
+
+  if (data.error) {
+    return {
+      success: false,
+      results: [],
+      error: data.error,
+    };
+  }
+
+  return {
+    success: true,
+    results: data.results || [],
+  };
 }
