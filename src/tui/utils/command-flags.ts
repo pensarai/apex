@@ -250,6 +250,14 @@ export function parseWebFlags(args: string[]): WebCommandFlags {
   // Model option
   if (raw.model) flags.model = String(raw.model);
 
+  // Auto-extract port from target URL if not explicitly provided via --ports
+  if (flags.target && !flags.ports) {
+    const parsed = parseTargetUrl(flags.target);
+    if (parsed?.port) {
+      flags.ports = [parsed.port];
+    }
+  }
+
   return flags;
 }
 
