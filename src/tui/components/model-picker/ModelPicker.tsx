@@ -136,7 +136,9 @@ export function ModelPicker({
       );
 
       if (preservedProviders.size > 0) {
-        return setsAreEqual(prev, preservedProviders) ? prev : preservedProviders;
+        return setsAreEqual(prev, preservedProviders)
+          ? prev
+          : preservedProviders;
       }
 
       const fallbackProvider = availableProviders.has(selectedModel.provider)
@@ -520,7 +522,9 @@ export function ModelPicker({
                     return (
                       <PickerRow>
                         <text
-                          fg={isModelFocused ? colors.primary : colors.textMuted}
+                          fg={
+                            isModelFocused ? colors.primary : colors.textMuted
+                          }
                         >
                           {`  Model: ${localModelName || "(press Enter to set)"}`}
                         </text>
@@ -576,8 +580,8 @@ export function ModelPicker({
                       : colors.textMuted
                 }
               >
-                {isProviderFocused ? "❯" : isExpanded ? "▾" : "▸"} {providerName}{" "}
-                ({models.length})
+                {isProviderFocused ? "❯" : isExpanded ? "▾" : "▸"}{" "}
+                {providerName} ({models.length})
               </text>
             </PickerRow>
 
@@ -603,9 +607,7 @@ export function ModelPicker({
                     m.id === "claude-haiku-4-5" || m.id === "gpt-4o-mini";
                   return (
                     <PickerRow key={m.id}>
-                      <text
-                        fg={isFocused ? colors.primary : colors.textMuted}
-                      >
+                      <text fg={isFocused ? colors.primary : colors.textMuted}>
                         {isSelected ? "●" : "○"} {m.name}
                         {isDefault && !isModelUserSelected && isSelected
                           ? " [default]"
