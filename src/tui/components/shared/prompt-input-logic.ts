@@ -225,3 +225,78 @@ export function shouldResetHistory(
 ): boolean {
   return historyIndex !== -1 && !isNavigatingHistory;
 }
+
+// ---------------------------------------------------------------------------
+// Windowed suggestions — limit visible suggestions for small terminals
+// ---------------------------------------------------------------------------
+
+export interface WindowedSuggestions {
+  /** Start index of the visible window in the full suggestions array */
+  start: number;
+  /** End index (exclusive) of the visible window */
+  end: number;
+  /** Subset of suggestions to display */
+  visibleSuggestions: AutocompleteOption[];
+  /** Whether there are more suggestions above the visible window */
+  hasMore: boolean;
+  /** Whether there are more suggestions below the visible window */
+  hasMoreBelow: boolean;
+}
+
+/**
+ * Compute a windowed view of suggestions centered around the selected index.
+ * This prevents visual overflow on small terminals while maintaining the full
+ * suggestion list for navigation.
+ *
+ * @param suggestions Full list of filtered suggestions
+ * @param selectedIndex Currently selected suggestion index (-1 if none)
+ * @param maxVisible Maximum number of suggestions to show at once
+ * @returns Windowed view with start/end indices and visible suggestions
+ */
+export function computeVisibleWindow(
+  suggestions: AutocompleteOption[],
+  selectedIndex: number,
+  maxVisible: number,
+): WindowedSuggestions {
+  if (suggestions.length === 0) {
+    return {
+      start: 0,
+      end: 0,
+      visibleSuggestions: [],
+      hasMore: false,
+      hasMoreBelow: false,
+    };
+  }
+
+  // If we have fewer suggestions than maxVisible, show all
+  if (suggestions.length <= maxVisible) {
+    return {
+      start: 0,
+      end: suggestions.length,
+      visibleSuggestions: suggestions,
+      hasMore: false,
+      hasMoreBelow: false,
+    };
+  }
+
+  // Compute window centered on selected index
+  const safeSelectedIndex = Math.max(0, selectedIndex);
+  
+  // Try to center the selected item in the window
+  let start = Math.max(0, safeSelectedIndex - Math.floor(maxVisible / 2));
+  let end = start + maxVisible;
+
+  // Adjust if window extends past the end
+  if (end > suggestions.length) {
+    end = suggestions.length;
+    start = Math.max(0, end - maxVisible);
+  }
+
+  return {
+    start,
+    end,
+    visibleSuggestions: suggestions.slice(start, end),
+    hasMore: start > 0,
+    hasMoreBelow: end < suggestions.length,
+  };
+}
