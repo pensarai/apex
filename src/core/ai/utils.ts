@@ -7,7 +7,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { getModelInfo } from "./models";
 import { createPensarModel } from "./providers/pensar";
-import { getPensarApiUrl } from "../api/constants";
+import { getPensarGatewayUrl } from "../api/constants";
 import { ensureValidToken } from "../auth";
 import { config } from "../config";
 import {
@@ -32,6 +32,8 @@ export type AIAuthConfig = {
   workspaceId?: string;
   // Gateway request signing
   gatewaySigningKey?: string;
+  // Gateway URL for inference (bypasses CloudFront timeout)
+  gatewayUrl?: string;
   bedrock?: {
     apiKey?: string;
     accessKeyId?: string;
@@ -60,6 +62,7 @@ export function buildAuthConfig(cfg: {
   refreshToken?: string | null;
   workspaceId?: string | null;
   gatewaySigningKey?: string | null;
+  gatewayUrl?: string | null;
   bedrockAPIKey?: string | null;
   localModelUrl?: string | null;
 }): AIAuthConfig {
@@ -74,6 +77,7 @@ export function buildAuthConfig(cfg: {
     refreshToken: cfg.refreshToken ?? undefined,
     workspaceId: cfg.workspaceId ?? undefined,
     gatewaySigningKey: cfg.gatewaySigningKey ?? undefined,
+    gatewayUrl: cfg.gatewayUrl ?? undefined,
     bedrock: cfg.bedrockAPIKey ? { apiKey: cfg.bedrockAPIKey } : undefined,
     local: cfg.localModelUrl ? { baseURL: cfg.localModelUrl } : undefined,
   };
@@ -178,7 +182,7 @@ export function getProviderModel(
         );
       }
 
-      const pensarApiUrl = getPensarApiUrl();
+      const gatewayUrl = authConfig?.gatewayUrl || getPensarGatewayUrl();
       const bedrockModelId = model.startsWith("pensar:")
         ? model.slice(7)
         : model;
@@ -187,14 +191,14 @@ export function getProviderModel(
         process.env.PENSAR_DEBUG === "true"
       ) {
         console.log(
-          `[pensar] getProviderModel: ${model} → bedrock:${bedrockModelId} via ${pensarApiUrl}`,
+          `[pensar] getProviderModel: ${model} → bedrock:${bedrockModelId} via ${gatewayUrl}`,
         );
       }
 
       // Build config with token refresh support for WorkOS auth
       const modelConfig: Parameters<typeof createPensarModel>[1] = {
         apiKey: pensarApiKey || authConfig?.accessToken || "",
-        baseUrl: pensarApiUrl,
+        baseUrl: gatewayUrl,
         workspaceId: authConfig?.workspaceId,
         signingKey: authConfig?.gatewaySigningKey,
       };
