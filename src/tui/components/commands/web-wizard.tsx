@@ -427,21 +427,18 @@ export default function WebWizard({
         return;
       }
 
-      // Tab navigation between sections and fields
+      // Tab navigation between sections only
       if (key.name === "tab") {
         key.preventDefault();
         if (key.shift) {
-          if (focusedField > 0) {
-            setFocusedField(focusedField - 1);
-          } else if (focusedSection > 0) {
+          // Move to previous section
+          if (focusedSection > 0) {
             setFocusedSection(focusedSection - 1);
-            setFocusedField(getMaxFieldsForSection(focusedSection - 1) - 1);
+            setFocusedField(0);
           }
         } else {
-          const maxFields = getMaxFieldsForSection(focusedSection);
-          if (focusedField < maxFields - 1) {
-            setFocusedField(focusedField + 1);
-          } else if (focusedSection < 3) {
+          // Move to next section
+          if (focusedSection < 3) {
             setFocusedSection(focusedSection + 1);
             setFocusedField(0);
           }
@@ -449,9 +446,11 @@ export default function WebWizard({
         return;
       }
 
-      // Arrow keys for toggles
+      // Arrow keys for field navigation and toggles
       if (key.name === "up" || key.name === "down") {
         key.preventDefault();
+
+        // Special toggle behaviors for specific fields
         if (focusedSection === 1 && focusedField === 2) {
           setState((prev) => ({
             ...prev,
@@ -507,6 +506,20 @@ export default function WebWizard({
           }
           return;
         }
+
+        // General field navigation within current section
+        const maxFields = getMaxFieldsForSection(focusedSection);
+        if (key.name === "down") {
+          if (focusedField < maxFields - 1) {
+            setFocusedField(focusedField + 1);
+          }
+        } else {
+          // up
+          if (focusedField > 0) {
+            setFocusedField(focusedField - 1);
+          }
+        }
+        return;
       }
 
       // Model section: handle typing for search, backspace, escape
@@ -1078,8 +1091,14 @@ export default function WebWizard({
           <text>
             <span fg={colors.primary}>█ </span>
             <span fg={colors.textMuted}>Press </span>
-            <span fg={colors.text}>[Tab]</span>
+            <span fg={colors.text}>[↑/↓]</span>
             <span fg={colors.textMuted}> to navigate fields</span>
+          </text>
+          <text>
+            <span fg={colors.primary}>█ </span>
+            <span fg={colors.textMuted}>Press </span>
+            <span fg={colors.text}>[Tab]</span>
+            <span fg={colors.textMuted}> to navigate sections</span>
           </text>
           <text>
             <span fg={colors.primary}>█ </span>
