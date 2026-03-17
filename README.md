@@ -18,14 +18,6 @@
 
 ## Installation
 
-### Prerequisites
-
-- **API Key** for your chosen AI provider
-
-After installing, run `pensar doctor` to check for optional dependencies (like nmap) and install them.
-
-### Install Apex
-
 #### macOS / Linux (Quick Install)
 
 ```bash
