@@ -45,7 +45,10 @@ function findBinaryPath(): string | null {
   // For compiled binaries, process.execPath IS the pensar binary itself.
   // This is more reliable than `which` when multiple installations coexist.
   const execName =
-    process.execPath.split("/").pop()?.replace(/\.exe$/, "") ?? "";
+    process.execPath
+      .split("/")
+      .pop()
+      ?.replace(/\.exe$/, "") ?? "";
   const isCompiledBinary =
     execName !== "bun" && execName !== "node" && execName !== "bun-debug";
   if (isCompiledBinary && require("fs").existsSync(process.execPath)) {
@@ -193,15 +196,14 @@ async function uninstall(force: boolean): Promise<void> {
   const method = detectInstallMethod();
   const pensarDir = getPensarDir();
 
-  console.log("Pensar Uninstall");
-  console.log();
+  console.log(`Pensar Uninstall
 
-  console.log(`  Install method:  ${method}`);
-  console.log(`  Binary removal:  ${getUninstallDescription(method)}`);
-  console.log(`  Data directory:  ${pensarDir}`);
-  console.log();
-  console.log("  Preserved data:  sessions, memories, skills");
-  console.log();
+  Install method:  ${method}
+  Binary removal:  ${getUninstallDescription(method)}
+  Data directory:  ${pensarDir}
+
+  Preserved data:  sessions, memories, skills
+`);
 
   if (!force) {
     const answer = await prompt("Proceed with uninstall? (y/N): ");
@@ -257,27 +259,22 @@ async function uninstall(force: boolean): Promise<void> {
   }
 
   if (method === "binary") {
-    console.log();
     console.log(
-      "  Note: You may want to remove the PATH export from your shell config",
-    );
-    console.log(
-      "  (~/.bashrc, ~/.zshrc, etc.) if it was added during install.",
+      "\n  Note: You may want to remove the PATH export from your shell config\n  (~/.bashrc, ~/.zshrc, etc.) if it was added during install.",
     );
   }
 }
 
 function showHelp(): void {
-  console.log("Pensar Uninstall — Remove Pensar from your system\n");
-  console.log("Usage:");
-  console.log(
-    "  pensar uninstall             Uninstall Pensar (keeps sessions, memories, skills)",
-  );
-  console.log("  pensar uninstall --force     Skip confirmation prompt");
-  console.log();
-  console.log("Options:");
-  console.log("  --force, -f          Skip confirmation prompt");
-  console.log("  -h, --help           Show this help message");
+  console.log(`Pensar Uninstall — Remove Pensar from your system
+
+Usage:
+  pensar uninstall             Uninstall Pensar (keeps sessions, memories, skills)
+  pensar uninstall --force     Skip confirmation prompt
+
+Options:
+  --force, -f          Skip confirmation prompt
+  -h, --help           Show this help message`);
 }
 
 async function main(): Promise<void> {

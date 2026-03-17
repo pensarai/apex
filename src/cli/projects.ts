@@ -11,12 +11,13 @@
 import { listProjects } from "../core/api/issues";
 
 function showHelp(): void {
-  console.log("pensar projects — List workspace projects\n");
-  console.log("Usage:");
-  console.log("  pensar projects              List all projects");
-  console.log();
-  console.log("Options:");
-  console.log("  -h, --help                   Show this help message");
+  console.log(`pensar projects — List workspace projects
+
+Usage:
+  pensar projects              List all projects
+
+Options:
+  -h, --help                   Show this help message`);
 }
 
 async function main(): Promise<void> {

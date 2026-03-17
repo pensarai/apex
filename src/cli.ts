@@ -49,69 +49,39 @@ function getAllArgs(flag: string, argv = args): string[] {
 // ---------------------------------------------------------------------------
 
 function showHelp() {
-  console.log("Pensar - AI-Powered Penetration Testing CLI");
-  console.log();
-  console.log("Usage:");
-  console.log("  pensar                             Launch the TUI");
-  console.log(
-    "  pensar pentest [options]            Run a full pentest orchestration",
-  );
-  console.log(
-    "  pensar targeted-pentest [options]   Run a targeted pentest on a single target",
-  );
-  console.log(
-    "  pensar auth                         Connect to Pensar Console",
-  );
-  console.log(
-    "  pensar uninstall                    Uninstall Pensar (keeps sessions, memories, skills)",
-  );
-  console.log(
-    "  pensar projects                     List workspace projects",
-  );
-  console.log(
-    "  pensar pentests                     List and manage pentests",
-  );
-  console.log(
-    "  pensar issues                       List and manage security issues",
-  );
-  console.log(
-    "  pensar fixes                        View security fixes",
-  );
-  console.log(
-    "  pensar logs                         View agent execution logs",
-  );
-  console.log(
-    "  pensar upgrade                      Update pensar to the latest version",
-  );
-  console.log(
-    "  pensar doctor                       Check dependencies and install missing tools",
-  );
-  console.log("  pensar help                         Show this help message");
-  console.log("  pensar version                      Show version number");
-  console.log();
-  console.log("pentest options:");
-  console.log("  --target <url>     (required) Target URL / domain / IP");
-  console.log(
-    "  --cwd <path>       Source code path — enables whitebox attack surface",
-  );
-  console.log(
-    "  --mode <mode>      Pentest mode: exfil (pivoting & flag extraction)",
-  );
-  console.log("  --model <model>    AI model (default: claude-sonnet-4-5)");
-  console.log();
-  console.log("targeted-pentest options:");
-  console.log("  --target <url>          (required) Target URL / domain / IP");
-  console.log(
-    "  --objective <text>      (required, repeatable) Testing objective",
-  );
-  console.log(
-    "  --model <model>         AI model (default: claude-sonnet-4-5)",
-  );
-  console.log();
-  console.log("Global options:");
-  console.log("  -h, --help         Show this help message");
-  console.log("  -v, --version      Show version number");
-  console.log();
+  console.log(`Pensar - AI-Powered Penetration Testing CLI
+
+Usage:
+  pensar                             Launch the TUI
+  pensar pentest [options]            Run a full pentest orchestration
+  pensar targeted-pentest [options]   Run a targeted pentest on a single target
+  pensar auth                         Connect to Pensar Console
+  pensar uninstall                    Uninstall Pensar (keeps sessions, memories, skills)
+  pensar projects                     List workspace projects
+  pensar pentests                     List and manage pentests
+  pensar issues                       List and manage security issues
+  pensar fixes                        View security fixes
+  pensar logs                         View agent execution logs
+  pensar upgrade                      Update pensar to the latest version
+  pensar doctor                       Check dependencies and install missing tools
+  pensar help                         Show this help message
+  pensar version                      Show version number
+
+pentest options:
+  --target <url>     (required) Target URL / domain / IP
+  --cwd <path>       Source code path — enables whitebox attack surface
+  --mode <mode>      Pentest mode: exfil (pivoting & flag extraction)
+  --model <model>    AI model (default: claude-sonnet-4-5)
+
+targeted-pentest options:
+  --target <url>          (required) Target URL / domain / IP
+  --objective <text>      (required, repeatable) Testing objective
+  --model <model>         AI model (default: claude-sonnet-4-5)
+
+Global options:
+  -h, --help         Show this help message
+  -v, --version      Show version number
+`);
 }
 
 // ---------------------------------------------------------------------------
@@ -142,14 +112,13 @@ async function runPentest() {
     console.warn(modeWarning);
   }
 
-  console.log("=".repeat(60));
-  console.log("PENTEST ORCHESTRATION");
-  console.log("=".repeat(60));
-  console.log(`Target:  ${target}`);
-  if (cwd) console.log(`Cwd:     ${cwd} (whitebox)`);
-  if (exfilMode) console.log(`Mode:    exfil`);
-  console.log(`Model:   ${model}`);
-  console.log();
+  const sep = "=".repeat(60);
+  console.log(`${sep}
+PENTEST ORCHESTRATION
+${sep}
+Target:  ${target}${cwd ? `\nCwd:     ${cwd} (whitebox)` : ""}${exfilMode ? "\nMode:    exfil" : ""}
+Model:   ${model}
+`);
 
   const session = await sessions.create({
     name: cwd ? "Whitebox Pentest" : "Blackbox Pentest",
@@ -175,14 +144,13 @@ async function runPentest() {
       },
     });
 
-  console.log();
-  console.log("=".repeat(60));
-  console.log("RESULTS");
-  console.log("=".repeat(60));
-  console.log(`Findings:  ${findings.length}`);
-  console.log(`Path:      ${findingsPath}`);
-  console.log(`POCs:      ${pocsPath}`);
-  if (reportPath) console.log(`Report:    ${reportPath}`);
+  console.log(`
+${sep}
+RESULTS
+${sep}
+Findings:  ${findings.length}
+Path:      ${findingsPath}
+POCs:      ${pocsPath}${reportPath ? `\nReport:    ${reportPath}` : ""}`);
 }
 
 async function runTargetedPentest() {
@@ -209,14 +177,18 @@ async function runTargetedPentest() {
     process.exit(1);
   }
 
-  console.log("=".repeat(60));
-  console.log("TARGETED PENTEST");
-  console.log("=".repeat(60));
-  console.log(`Target:  ${target}`);
-  console.log(`Model:   ${model}`);
-  console.log("Objectives:");
-  objectives.forEach((o, i) => console.log(`  ${i + 1}. ${o}`));
-  console.log();
+  const sep = "=".repeat(60);
+  const objectivesList = objectives
+    .map((o, i) => `  ${i + 1}. ${o}`)
+    .join("\n");
+  console.log(`${sep}
+TARGETED PENTEST
+${sep}
+Target:  ${target}
+Model:   ${model}
+Objectives:
+${objectivesList}
+`);
 
   const session = await sessions.create({
     name: "Targeted Pentest",
@@ -231,23 +203,21 @@ async function runTargetedPentest() {
     authConfig: buildAuthConfig(pensarConfig),
   });
 
-  console.log();
-  console.log("=".repeat(60));
-  console.log("RESULTS");
-  console.log("=".repeat(60));
-  console.log(`Findings:  ${findings.length}`);
-  console.log(`Path:      ${findingsPath}`);
-  console.log(`POCs:      ${pocsPath}`);
+  console.log(`
+${sep}
+RESULTS
+${sep}
+Findings:  ${findings.length}
+Path:      ${findingsPath}
+POCs:      ${pocsPath}`);
 }
 
 async function runUpgrade() {
   const currentVersion = getCurrentVersion();
-  console.log(`Current version: v${currentVersion}`);
-  console.log("Checking for updates...");
+  console.log(`Current version: v${currentVersion}\nChecking for updates...`);
 
   const result = await upgrade({ interactive: true });
-  console.log();
-  console.log(result.message);
+  console.log(`\n${result.message}`);
 
   process.exit(result.success ? 0 : 1);
 }
@@ -291,6 +261,13 @@ if (command === "version" || command === "--version" || command === "-v") {
   const { runDoctor } = await import("./core/doctor");
   await runDoctor();
 } else if (args.length === 0) {
+  if (process.env.PENSAR_NO_TUI === "1") {
+    console.error(
+      "TUI mode requires Bun. Install Bun (https://bun.sh) or use a standalone binary release for interactive mode.",
+    );
+    console.error("All other commands work with Node — run 'pensar --help'.");
+    process.exit(1);
+  }
   await import("./tui/index.tsx");
 } else {
   console.error(`Error: Unknown command '${command}'`);
