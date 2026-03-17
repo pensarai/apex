@@ -18,7 +18,7 @@ export function ResponsibleUseDisclosure({
     <box flexDirection="column" gap={1}>
       <text fg={colors.warning}>IMPORTANT: Read Before Use</text>
       <text fg={colors.text}>
-        This penetration testing tool is designedfor AUTHORIZED security testing
+        This penetration testing tool is designed for AUTHORIZED security testing
         only.
       </text>
       <box flexDirection="column" marginBottom={1}>
@@ -41,7 +41,7 @@ export function ResponsibleUseDisclosure({
       </box>
       <box flexDirection="column">
         <text fg={colors.error}>
-          Unauthorized access to computer systems is illegaland may result in
+          Unauthorized access to computer systems is illegal and may result in
           criminal prosecution.
         </text>
       </box>
