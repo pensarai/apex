@@ -73,6 +73,26 @@ if (command === "benchmark") {
   process.argv = [process.argv[0], uninstallPath, ...args.slice(1)];
 
   await import(uninstallPath);
+} else if (command === "projects") {
+  const p = join(__dirname, "..", "build", "projects.js");
+  process.argv = [process.argv[0], p, ...args.slice(1)];
+  await import(p);
+} else if (command === "pentests") {
+  const p = join(__dirname, "..", "build", "pentests.js");
+  process.argv = [process.argv[0], p, ...args.slice(1)];
+  await import(p);
+} else if (command === "issues") {
+  const p = join(__dirname, "..", "build", "issues.js");
+  process.argv = [process.argv[0], p, ...args.slice(1)];
+  await import(p);
+} else if (command === "fixes") {
+  const p = join(__dirname, "..", "build", "fixes.js");
+  process.argv = [process.argv[0], p, ...args.slice(1)];
+  await import(p);
+} else if (command === "logs") {
+  const p = join(__dirname, "..", "build", "logs.js");
+  process.argv = [process.argv[0], p, ...args.slice(1)];
+  await import(p);
 } else if (command === "upgrade" || command === "update") {
   const currentVersion = getCurrentVersion();
   console.log(`Current version: v${currentVersion}`);
@@ -108,6 +128,21 @@ if (command === "benchmark") {
   );
   console.log(
     "  pensar auth         Connect to Pensar Console for managed inference"
+  );
+  console.log(
+    "  pensar projects     List workspace projects"
+  );
+  console.log(
+    "  pensar pentests     List and manage pentests"
+  );
+  console.log(
+    "  pensar issues       List and manage security issues"
+  );
+  console.log(
+    "  pensar fixes        View security fixes"
+  );
+  console.log(
+    "  pensar logs         View agent execution logs"
   );
   console.log();
   console.log("Options:");
@@ -226,6 +261,14 @@ if (command === "benchmark") {
   console.log("  pensar auth");
   console.log("  pensar auth status");
   console.log("  pensar auth logout");
+  console.log();
+  console.log("Console API:");
+  console.log("  pensar projects");
+  console.log("  pensar pentests <projectId>");
+  console.log("  pensar issues <projectId>");
+  console.log("  pensar issues get <issueId>");
+  console.log("  pensar fixes <issueId>");
+  console.log("  pensar logs <issueId>");
 } else if (args.length === 0) {
   // No command specified, run the TUI
   const appPath = join(__dirname, "..", "build", "index.js");

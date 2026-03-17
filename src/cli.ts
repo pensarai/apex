@@ -66,6 +66,21 @@ function showHelp() {
     "  pensar uninstall                    Uninstall Pensar (keeps sessions, memories, skills)",
   );
   console.log(
+    "  pensar projects                     List workspace projects",
+  );
+  console.log(
+    "  pensar pentests                     List and manage pentests",
+  );
+  console.log(
+    "  pensar issues                       List and manage security issues",
+  );
+  console.log(
+    "  pensar fixes                        View security fixes",
+  );
+  console.log(
+    "  pensar logs                         View agent execution logs",
+  );
+  console.log(
     "  pensar upgrade                      Update pensar to the latest version",
   );
   console.log(
@@ -251,6 +266,21 @@ if (command === "version" || command === "--version" || command === "-v") {
 } else if (command === "uninstall") {
   process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
   await import("./cli/uninstall");
+} else if (command === "projects") {
+  process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
+  await import("./cli/projects");
+} else if (command === "pentests") {
+  process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
+  await import("./cli/pentests");
+} else if (command === "issues") {
+  process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
+  await import("./cli/issues");
+} else if (command === "fixes") {
+  process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
+  await import("./cli/fixes");
+} else if (command === "logs") {
+  process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
+  await import("./cli/logs");
 } else if (command === "doctor") {
   const { runDoctor } = await import("./core/doctor");
   await runDoctor();
