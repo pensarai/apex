@@ -446,11 +446,10 @@ export default function WebWizard({
         return;
       }
 
-      // Arrow keys for field navigation and toggles
-      if (key.name === "up" || key.name === "down") {
+      // Space key for toggling specific fields
+      if (key.sequence === " ") {
         key.preventDefault();
-
-        // Special toggle behaviors for specific fields
+        // Toggle strictScope
         if (focusedSection === 1 && focusedField === 2) {
           setState((prev) => ({
             ...prev,
@@ -458,6 +457,7 @@ export default function WebWizard({
           }));
           return;
         }
+        // Toggle enumerateSubdomains
         if (focusedSection === 1 && focusedField === 3) {
           setState((prev) => ({
             ...prev,
@@ -468,6 +468,7 @@ export default function WebWizard({
           }));
           return;
         }
+        // Cycle header mode
         if (focusedSection === 2 && focusedField === 0) {
           const modes: Array<"none" | "default" | "custom"> = [
             "none",
@@ -475,16 +476,19 @@ export default function WebWizard({
             "custom",
           ];
           const currentIndex = modes.indexOf(state.headers.mode);
-          const newIndex =
-            key.name === "up"
-              ? (currentIndex - 1 + modes.length) % modes.length
-              : (currentIndex + 1) % modes.length;
+          const newIndex = (currentIndex + 1) % modes.length;
           setState((prev) => ({
             ...prev,
             headers: { ...prev.headers, mode: modes[newIndex]! },
           }));
           return;
         }
+      }
+
+      // Arrow keys for field navigation and model selection
+      if (key.name === "up" || key.name === "down") {
+        key.preventDefault();
+
         // Model selection - navigate through visible models
         if (focusedSection === 3 && visibleModels.length > 0) {
           const currentVisibleIndex = visibleModels.findIndex(
@@ -904,7 +908,7 @@ export default function WebWizard({
                   {state.scope.strictScope ? "● Enabled" : "○ Disabled"}
                 </text>
                 {focusedField === 2 && (
-                  <text fg={colors.textMuted}>(↑/↓ to toggle)</text>
+                  <text fg={colors.textMuted}>(Space to toggle)</text>
                 )}
               </box>
               <box flexDirection="row" gap={1}>
@@ -923,7 +927,7 @@ export default function WebWizard({
                   {state.scope.enumerateSubdomains ? "● Enabled" : "○ Disabled"}
                 </text>
                 {focusedField === 3 && (
-                  <text fg={colors.textMuted}>(↑/↓ to toggle)</text>
+                  <text fg={colors.textMuted}>(Space to toggle)</text>
                 )}
               </box>
             </box>
@@ -971,7 +975,7 @@ export default function WebWizard({
                 </text>
               </box>
               {focusedField === 0 && (
-                <text fg={colors.textMuted}>Use ↑/↓ to select</text>
+                <text fg={colors.textMuted}>Use Space to cycle</text>
               )}
 
               {state.headers.mode === "custom" && (

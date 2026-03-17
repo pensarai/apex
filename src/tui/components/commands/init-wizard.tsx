@@ -234,9 +234,9 @@ export default function InitWizard() {
         return;
       }
 
-      // Arrow keys for field navigation and toggles
-      if (key.name === "up" || key.name === "down") {
-        // Special toggle behaviors for specific fields
+      // Space key for toggling specific fields
+      if (key.sequence === " ") {
+        // Toggle strictScope
         if (focusedSection === 1 && focusedField === 2) {
           setState((prev) => ({
             ...prev,
@@ -244,6 +244,7 @@ export default function InitWizard() {
           }));
           return;
         }
+        // Cycle header mode
         if (focusedSection === 2 && focusedField === 0) {
           const modes: Array<"none" | "default" | "custom"> = [
             "none",
@@ -251,18 +252,17 @@ export default function InitWizard() {
             "custom",
           ];
           const currentIndex = modes.indexOf(state.headers.mode);
-          const newIndex =
-            key.name === "up"
-              ? (currentIndex - 1 + modes.length) % modes.length
-              : (currentIndex + 1) % modes.length;
+          const newIndex = (currentIndex + 1) % modes.length;
           setState((prev) => ({
             ...prev,
             headers: { ...prev.headers, mode: modes[newIndex]! },
           }));
           return;
         }
+      }
 
-        // General field navigation within current section
+      // Arrow keys for field navigation only
+      if (key.name === "up" || key.name === "down") {
         const maxFields = getMaxFieldsForSection(focusedSection);
         if (key.name === "down") {
           if (focusedField < maxFields - 1) {
@@ -477,7 +477,7 @@ export default function InitWizard() {
                 {state.scope.strictScope ? "● Enabled" : "○ Disabled"}
               </text>
               {focusedField === 2 && (
-                <text fg={colors.textMuted}>(↑/↓ to toggle)</text>
+                <text fg={colors.textMuted}>(Space to toggle)</text>
               )}
             </box>
           </box>
@@ -525,7 +525,7 @@ export default function InitWizard() {
               </text>
             </box>
             {focusedField === 0 && (
-              <text fg={colors.textMuted}>Use ↑/↓ to select</text>
+              <text fg={colors.textMuted}>Use Space to cycle</text>
             )}
 
             {state.headers.mode === "custom" && (
