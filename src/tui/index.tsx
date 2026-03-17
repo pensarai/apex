@@ -60,6 +60,8 @@ import {
 import { createClipboardManager } from "./clipboard";
 import { setupAutoCopy } from "./auto-copy";
 import { TerminalDimensionsProvider } from "./context/dimensions";
+import { TerminalFocusHandler } from "./components/terminal-focus-handler";
+import { cleanupTerminalFocusMode } from "./terminal-focus";
 
 interface AppProps {
   appConfig: Config;
@@ -87,6 +89,7 @@ function App({ appConfig }: AppProps) {
       <SessionProvider>
         <RouteProvider>
           <FocusProvider>
+            <TerminalFocusHandler />
             <InputProvider>
               <DialogProvider>
                 <AgentProvider>
@@ -494,6 +497,7 @@ async function main() {
   setupAutoCopy(renderer, copyToClipboard);
 
   const cleanup = () => {
+    cleanupTerminalFocusMode();
     renderer.destroy();
     process.exit(0);
   };
@@ -501,6 +505,7 @@ async function main() {
   process.on("SIGTERM", cleanup);
 
   process.on("uncaughtException", (err) => {
+    cleanupTerminalFocusMode();
     renderer.destroy();
     console.error("Uncaught exception:", err);
     writeErrorLog(err, "UNCAUGHT");
@@ -508,6 +513,7 @@ async function main() {
   });
 
   process.on("unhandledRejection", (reason) => {
+    cleanupTerminalFocusMode();
     renderer.destroy();
     console.error("Unhandled rejection:", reason);
     writeErrorLog(reason, "UNHANDLED_REJECTION");

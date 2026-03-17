@@ -250,14 +250,39 @@ async function status(): Promise<void> {
     return;
   }
 
-  console.log("✓ Connected to Pensar Console");
-  if (appConfig.workspaceSlug) {
-    console.log(`  Workspace: ${appConfig.workspaceSlug}`);
+  // If using an API key without stored workspace info, resolve it from the server
+  if (!appConfig.accessToken && appConfig.pensarAPIKey && !appConfig.workspaceSlug) {
+    try {
+      const apiUrl = getPensarApiUrl();
+      const res = await fetch(`${apiUrl}/auth/validate`, {
+        headers: { Authorization: `Bearer ${appConfig.pensarAPIKey}` },
+      });
+      if (res.ok) {
+        const data = (await res.json()) as {
+          workspace?: { id: string; name: string; slug: string };
+        };
+        if (data.workspace) {
+          await config.update({
+            workspaceId: data.workspace.id,
+            workspaceSlug: data.workspace.slug,
+          });
+          appConfig.workspaceId = data.workspace.id;
+          appConfig.workspaceSlug = data.workspace.slug;
+        }
+      }
+    } catch {
+      // Non-fatal — we'll just show "not set"
+    }
   }
+
+  console.log("✓ Connected to Pensar Console");
+  console.log(
+    `  Workspace: ${appConfig.workspaceSlug ?? "not set"}`,
+  );
   if (appConfig.accessToken) {
-    console.log("  Auth: WorkOS (modern)");
+    console.log("  Auth: WorkOS");
   } else {
-    console.log("  Auth: API key (legacy)");
+    console.log("  Auth: API key");
   }
 }
 
