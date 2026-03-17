@@ -20,6 +20,12 @@ export interface TerminalFocusOptions {
 }
 
 /**
+ * Track whether bracketed focus mode is currently enabled.
+ * This is used to ensure we only disable it if we enabled it.
+ */
+let bracketedFocusModeEnabled = false;
+
+/**
  * Set up terminal focus event handling.
  * Returns a cleanup function that removes all listeners.
  */
@@ -39,13 +45,15 @@ export function setupTerminalFocusHandling(
   const enableBracketedFocus = () => {
     if (process.stdout.isTTY) {
       process.stdout.write("\x1b[?1004h");
+      bracketedFocusModeEnabled = true;
       log("Enabled bracketed focus mode");
     }
   };
 
   const disableBracketedFocus = () => {
-    if (process.stdout.isTTY) {
+    if (process.stdout.isTTY && bracketedFocusModeEnabled) {
       process.stdout.write("\x1b[?1004l");
+      bracketedFocusModeEnabled = false;
       log("Disabled bracketed focus mode");
     }
   };
@@ -151,4 +159,16 @@ export function setupTerminalFocusHandling(
   setupListeners();
 
   return cleanup;
+}
+
+/**
+ * Global cleanup function to disable bracketed focus mode.
+ * This MUST be called before process.exit() to prevent leaving the terminal
+ * in focus reporting mode, which causes garbage characters in the user's shell.
+ */
+export function cleanupTerminalFocusMode(): void {
+  if (process.stdout.isTTY && bracketedFocusModeEnabled) {
+    process.stdout.write("\x1b[?1004l");
+    bracketedFocusModeEnabled = false;
+  }
 }
