@@ -200,8 +200,8 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
   responseSchema?: z.ZodSchema;
 
   /**
-   * Skills registry for skill activation tools.
-   * When provided, use_skill / list_skills / deactivate_skill are available.
+   * Skills registry for on-demand skill loading.
+   * When provided, read_skill is available.
    */
   skillsRegistry?: SkillsRegistry;
 

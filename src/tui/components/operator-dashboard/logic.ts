@@ -1,6 +1,5 @@
 import type { AutocompleteOption } from "../shared/prompt-input";
 import type { OperatorSessionState } from "../../../core/operator";
-import type { SkillsRegistry } from "../../../core/skills/registry";
 import { BASE_SYSTEM_PROMPT } from "../../../core/agents/offSecAgent/prompt";
 
 // ---------------------------------------------------------------------------
@@ -201,6 +200,7 @@ export function buildOperatorSystemPrompt(
       ? "\nAgent mode: PLAN — read-only tools only, no mutations allowed"
       : "";
 
+
   let prompt = `${BASE_SYSTEM_PROMPT}
 
 # Operator Mode
@@ -213,12 +213,6 @@ Command approval: ${operatorState.requireApproval ? "enabled — the operator wi
 
   if (skillsCatalog) {
     prompt += `\n\n# Skills\n\n${skillsCatalog}`;
-  }
-
-  if (activeSkillInstructions?.length) {
-    for (const skill of activeSkillInstructions) {
-      prompt += `\n\n# Active Skill: ${skill.name}\n\n${skill.instructions}`;
-    }
   }
 
   return prompt;
@@ -259,55 +253,3 @@ export function accumulateTokenUsage(
   };
 }
 
-// ---------------------------------------------------------------------------
-// Inline skill reference extraction
-// ---------------------------------------------------------------------------
-
-export interface InlineSkillResult {
-  /** The prompt with /skill-slug references removed */
-  prompt: string;
-  /** Slugs that were found and activated */
-  activatedSlugs: string[];
-}
-
-/**
- * Extract inline /skill-slug references from a prompt, activate them,
- * and return the cleaned prompt.
- *
- * Matches word-boundary `/slug` patterns (e.g. "scan this /vulnerability-analysis").
- * Only activates slugs that exist and are enabled in the registry.
- */
-export function extractInlineSkills(
-  prompt: string,
-  registry: SkillsRegistry,
-): InlineSkillResult {
-  const activatedSlugs: string[] = [];
-
-  // Match /slug patterns that aren't at the very start (those are handled as commands)
-  // Pattern: whitespace or start-of-string followed by /word-chars
-  const cleaned = prompt.replace(
-    /(?<=\s)\/([a-z0-9][-a-z0-9]*)/gi,
-    (_match, slug: string) => {
-      const normalized = slug.toLowerCase();
-      const entry = registry.get(normalized);
-      if (entry?.enabled) {
-        try {
-          registry.activate(normalized);
-          activatedSlugs.push(normalized);
-        } catch {
-          // Already active or other issue — still strip it
-          if (registry.isActive(normalized)) {
-            activatedSlugs.push(normalized);
-          }
-        }
-        return ""; // Remove the /slug from the prompt
-      }
-      return _match; // Not a known skill, leave it
-    },
-  );
-
-  return {
-    prompt: cleaned.replace(/\s{2,}/g, " ").trim(),
-    activatedSlugs,
-  };
-}

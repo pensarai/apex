@@ -30,24 +30,6 @@ describe("scanSkillRoots", () => {
     cleanup.length = 0;
   });
 
-  it("discovers legacy flat-file skills", async () => {
-    const filePath = path.join(SKILLS_DIR, `${TEST_PREFIX}legacy.md`);
-    await fs.writeFile(
-      filePath,
-      `---\nname: Legacy Skill\ndescription: A legacy skill\n---\n\nLegacy content.`,
-    );
-    cleanup.push(filePath);
-
-    const entries = await scanSkillRoots();
-    const found = entries.find((e) => e.slug === `${TEST_PREFIX}legacy`);
-
-    expect(found).toBeDefined();
-    expect(found!.source).toBe("legacy");
-    expect(found!.manifest.name).toBe("Legacy Skill");
-    expect(found!.instructions).toBe("Legacy content.");
-    expect(found!.scripts).toEqual([]);
-  });
-
   it("discovers directory-based skills with SKILL.md", async () => {
     const dirPath = path.join(SKILLS_DIR, `${TEST_PREFIX}dir-skill`);
     await fs.mkdir(dirPath, { recursive: true });
@@ -61,10 +43,9 @@ describe("scanSkillRoots", () => {
     const found = entries.find((e) => e.slug === `${TEST_PREFIX}dir-skill`);
 
     expect(found).toBeDefined();
-    expect(found!.source).toBe("directory");
+    expect(found!.source).toBe("user");
     expect(found!.manifest.name).toBe("Dir Skill");
     expect(found!.manifest.tags).toEqual(["web"]);
-    expect(found!.instructions).toBe("Directory skill content.");
     expect(found!.dirPath).toBe(dirPath);
   });
 
@@ -87,34 +68,7 @@ describe("scanSkillRoots", () => {
     expect(found!.scripts[0].name).toBe("run.sh");
   });
 
-  it("directory-based skills shadow legacy flat files with same slug", async () => {
-    // Create legacy flat file
-    const legacyPath = path.join(SKILLS_DIR, `${TEST_PREFIX}shadow-test.md`);
-    await fs.writeFile(
-      legacyPath,
-      `---\nname: Shadow Test\ndescription: Legacy version\n---\n\nLegacy.`,
-    );
-    cleanup.push(legacyPath);
-
-    // Create directory-based skill with same slug
-    const dirPath = path.join(SKILLS_DIR, `${TEST_PREFIX}shadow-test`);
-    await fs.mkdir(dirPath, { recursive: true });
-    await fs.writeFile(
-      path.join(dirPath, "SKILL.md"),
-      `---\nname: Shadow Test\ndescription: Directory version\n---\n\nDirectory.`,
-    );
-    cleanup.push(dirPath);
-
-    const entries = await scanSkillRoots();
-    const found = entries.find((e) => e.slug === `${TEST_PREFIX}shadow-test`);
-
-    expect(found).toBeDefined();
-    // Directory-based should shadow legacy
-    expect(found!.source).toBe("directory");
-    expect(found!.manifest.description).toBe("Directory version");
-  });
-
-  it("scans project-level skills directories", async () => {
+  it("scans project-level skills directories with source 'project'", async () => {
     const tmpDir = path.join(
       os.tmpdir(),
       `${TEST_PREFIX}project-${Date.now()}`,
@@ -131,8 +85,40 @@ describe("scanSkillRoots", () => {
     const found = entries.find((e) => e.slug === `${TEST_PREFIX}proj`);
 
     expect(found).toBeDefined();
-    expect(found!.source).toBe("directory");
+    expect(found!.source).toBe("project");
     expect(found!.manifest.name).toBe("Project Skill");
+  });
+
+  it("project skills take priority over user skills with same slug (first-wins)", async () => {
+    // Create user-level skill
+    const userDirPath = path.join(SKILLS_DIR, `${TEST_PREFIX}dedup`);
+    await fs.mkdir(userDirPath, { recursive: true });
+    await fs.writeFile(
+      path.join(userDirPath, "SKILL.md"),
+      `---\nname: Dedup Skill\ndescription: User version\n---\n\nUser content.`,
+    );
+    cleanup.push(userDirPath);
+
+    // Create project-level skill with same slug
+    const tmpDir = path.join(
+      os.tmpdir(),
+      `${TEST_PREFIX}dedup-project-${Date.now()}`,
+    );
+    const projectSkillsDir = path.join(tmpDir, ".skills", `${TEST_PREFIX}dedup`);
+    await fs.mkdir(projectSkillsDir, { recursive: true });
+    await fs.writeFile(
+      path.join(projectSkillsDir, "SKILL.md"),
+      `---\nname: Dedup Skill\ndescription: Project version\n---\n\nProject content.`,
+    );
+    cleanup.push(tmpDir);
+
+    const entries = await scanSkillRoots({ projectRoot: tmpDir });
+    const found = entries.find((e) => e.slug === `${TEST_PREFIX}dedup`);
+
+    expect(found).toBeDefined();
+    // Project should win since it's scanned first (first-write-wins)
+    expect(found!.source).toBe("project");
+    expect(found!.manifest.description).toBe("Project version");
   });
 
   it("returns empty array when no skills exist", async () => {

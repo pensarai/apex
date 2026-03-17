@@ -105,31 +105,3 @@ export function parseSkillMd(raw: string): {
   return { manifest, instructions: parts.body };
 }
 
-/**
- * Parse a legacy flat-file skill (.md with simple key: value frontmatter).
- */
-export function parseLegacySkillMd(raw: string): {
-  name: string;
-  description: string;
-  content: string;
-} {
-  const parts = splitFrontmatter(raw);
-  if (!parts) {
-    return { name: "", description: "", content: raw };
-  }
-
-  const meta: Record<string, string> = {};
-  for (const line of parts.block.split("\n")) {
-    const colonIdx = line.indexOf(":");
-    if (colonIdx === -1) continue;
-    const key = line.slice(0, colonIdx).trim();
-    const value = line.slice(colonIdx + 1).trim();
-    meta[key] = value;
-  }
-
-  return {
-    name: meta.name ?? "",
-    description: meta.description ?? "",
-    content: parts.body,
-  };
-}

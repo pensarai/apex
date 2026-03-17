@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseSkillMd, parseLegacySkillMd } from "./parser";
+import { parseSkillMd } from "./parser";
 
 describe("parseSkillMd", () => {
   it("parses a valid SKILL.md with full manifest", () => {
@@ -116,36 +116,5 @@ body`;
     const { manifest } = parseSkillMd(raw);
     // 123 is parsed as a number by yaml, so it should be filtered
     expect(manifest.tags).toEqual(["web"]);
-  });
-});
-
-describe("parseLegacySkillMd", () => {
-  it("parses a legacy skill with frontmatter", () => {
-    const raw = `---
-name: SQL Injection Test
-description: A test skill for SQL injection
----
-
-Run the SQL injection tests.`;
-
-    const { name, description, content } = parseLegacySkillMd(raw);
-    expect(name).toBe("SQL Injection Test");
-    expect(description).toBe("A test skill for SQL injection");
-    expect(content).toBe("Run the SQL injection tests.");
-  });
-
-  it("returns empty metadata when no frontmatter", () => {
-    const raw = "Just plain content.";
-    const { name, description, content } = parseLegacySkillMd(raw);
-    expect(name).toBe("");
-    expect(description).toBe("");
-    expect(content).toBe("Just plain content.");
-  });
-
-  it("returns empty metadata when frontmatter is unclosed", () => {
-    const raw = "---\nname: test\nno closing";
-    const { name, description, content } = parseLegacySkillMd(raw);
-    expect(name).toBe("");
-    expect(content).toBe(raw);
   });
 });

@@ -45,7 +45,6 @@ import {
   extractStreamableContent,
 } from "../shared/message-utils";
 import type { OperatorMode, PendingApproval } from "../../../core/operator";
-import { slugify } from "../../../core/skills";
 import {
   ApprovalGate,
   createInitialOperatorState,
@@ -67,7 +66,6 @@ import {
   buildOperatorSystemPrompt,
   resolveInputFocused,
   accumulateTokenUsage,
-  extractInlineSkills,
 } from "./logic";
 import { QueuedMessages } from "./queued-messages";
 import { navigateUp, navigateDown, selectionAfterRemove } from "./queue";
@@ -104,8 +102,8 @@ export default function OperatorDashboard({
     autocompleteOptions: allAutocompleteOptions,
     executeCommand,
     resolveSkillContent,
-    skills,
     skillsRegistry,
+    skillsVersion,
   } = useCommand();
   const {
     stack,
@@ -118,16 +116,16 @@ export default function OperatorDashboard({
 
   const autocompleteOptions = useMemo(() => {
     const commandOptions = filterOperatorAutocomplete(allAutocompleteOptions);
-    const skillOptions = skills.map((s) => {
-      const slug = `/${slugify(s.name)}`;
+    const skillOptions = skillsRegistry.list().map((s) => {
+      const slug = `/${s.slug}`;
       return {
         value: slug,
         label: slug,
-        description: s.description || "Skill",
+        description: s.manifest.description || "Skill",
       };
     });
     return [...commandOptions, ...skillOptions];
-  }, [allAutocompleteOptions, skills]);
+  }, [allAutocompleteOptions, skillsRegistry, skillsVersion]);
 
   // Session state
   const [session, setSession] = useState<SessionInfo | null>(null);
@@ -258,19 +256,10 @@ export default function OperatorDashboard({
                 currentStage:
                   (savedState.currentStage as OperatorSessionState["currentStage"]) ||
                   prev.currentStage,
-                activeSkills: savedState.activeSkills,
               }));
               approvalGateRef.current.updateConfig({
                 requireApproval: savedState.requireApproval ?? true,
               });
-
-              // Re-activate skills from persisted state
-              if (
-                Array.isArray(savedState.activeSkills) &&
-                savedState.activeSkills.length > 0
-              ) {
-                skillsRegistry.restoreActive(savedState.activeSkills);
-              }
 
               if (
                 Array.isArray(savedState.messages) &&
@@ -703,16 +692,10 @@ export default function OperatorDashboard({
       const controller = new AbortController();
       abortControllerRef.current = controller;
 
-      // Extract inline /skill-slug references from the prompt (e.g. "scan this /vulnerability-analysis")
-      const { prompt: cleanedPrompt } = extractInlineSkills(
-        prompt,
-        skillsRegistry,
-      );
-
-      // Add user message (with cleaned prompt — /slug tokens stripped)
+      // Add user message
       setMessages((prev) => [
         ...prev,
-        { role: "user", content: cleanedPrompt, createdAt: new Date() },
+        { role: "user", content: prompt, createdAt: new Date() },
       ]);
 
       // Build messages array — append user turn to conversation history.
@@ -844,21 +827,10 @@ export default function OperatorDashboard({
         },
       } satisfies ConsumeCallbacks;
 
-      // Build catalog and active skill instructions for the system prompt
-      const activeSkills = skillsRegistry.getActive();
-      const skillsOpts = {
-        skillsCatalog: skillsRegistry.buildCatalog() || undefined,
-        activeSkillInstructions:
-          activeSkills.length > 0
-            ? activeSkills.map((s) => ({
-                name: s.manifest.name,
-                instructions: s.instructions,
-              }))
-            : undefined,
-      };
+      const skillsCatalog = skillsRegistry.buildCatalog() || undefined;
 
       const commonInput = {
-        prompt: cleanedPrompt,
+        prompt,
         model: model.id,
         messages: nextMessages,
         stopWhen: [stepCountIs(10000)],
@@ -1000,13 +972,6 @@ export default function OperatorDashboard({
           setThinking(false);
           setIsExecuting(false);
           abortControllerRef.current = null;
-
-          // Sync active skills to operator state for persistence across runs
-          const activeSlugs = skillsRegistry.getActive().map((s) => s.slug);
-          setOperatorState((prev) => ({
-            ...prev,
-            activeSkills: activeSlugs,
-          }));
         }
       }
     },

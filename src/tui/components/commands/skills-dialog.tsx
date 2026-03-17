@@ -6,31 +6,24 @@
  * Matches the /models page layout.
  */
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { useCommand } from "../../context/command";
 import { useRoute } from "../../context/route";
 import { useTheme } from "../../theme";
-import type { SkillEntry } from "../../../core/skills/types";
+import type { SkillEntry, SkillSource } from "../../../core/skills/types";
 
 /** Rough token estimate: ~4 chars per token */
 function estimateTokens(text: string): number {
   return Math.round(text.length / 4);
 }
 
-function classifySkill(s: SkillEntry): "agents" | "pensar" | "project" {
-  if (s.filePath.includes("/.agents/skills/")) return "agents";
-  if (s.filePath.includes("/.pensar/skills/")) return "pensar";
-  return "project";
-}
-
-const GROUP_LABELS: Record<string, string> = {
-  agents: "User skills (~/.agents/skills)",
-  pensar: "Legacy skills (~/.pensar/skills)",
+const GROUP_LABELS: Record<SkillSource, string> = {
   project: "Project skills",
+  user: "User skills",
 };
 
-const GROUP_ORDER = ["agents", "pensar", "project"] as const;
+const GROUP_ORDER: SkillSource[] = ["project", "user"];
 
 export default function SkillsDialog() {
   const { colors } = useTheme();
@@ -51,16 +44,37 @@ export default function SkillsDialog() {
     return null;
   });
 
-  const allSkills = useMemo(
-    () => skillsRegistry.listEnabled(),
-    [skillsRegistry],
+  // Load instructions on demand for the detail view
+  const [detailInstructions, setDetailInstructions] = useState<string | null>(
+    null,
   );
+
+  useEffect(() => {
+    if (!detailSkill) {
+      setDetailInstructions(null);
+      return;
+    }
+    let cancelled = false;
+    skillsRegistry
+      .readSkillContent(detailSkill.slug)
+      .then(({ content }) => {
+        if (!cancelled) setDetailInstructions(content);
+      })
+      .catch(() => {
+        if (!cancelled) setDetailInstructions("(failed to load instructions)");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [detailSkill, skillsRegistry]);
+
+  const allSkills = useMemo(() => skillsRegistry.list(), [skillsRegistry]);
 
   // Build grouped structure with flat index for keyboard nav
   const { groups, flatList } = useMemo(() => {
     const grouped: Record<string, SkillEntry[]> = {};
     for (const skill of allSkills) {
-      const key = classifySkill(skill);
+      const key = skill.source;
       (grouped[key] ??= []).push(skill);
     }
 
@@ -124,9 +138,12 @@ export default function SkillsDialog() {
   // ---------- Detail view ----------
   if (detailSkill) {
     const m = detailSkill.manifest;
-    const instrTokens = estimateTokens(detailSkill.instructions);
+    const instrText = detailInstructions ?? "";
+    const instrTokens = estimateTokens(instrText);
     const descTokens = estimateTokens(m.description);
-    const instrLines = detailSkill.instructions.split("\n");
+    const instrLines = instrText
+      ? instrText.split("\n")
+      : ["Loading instructions..."];
 
     return (
       <box
@@ -143,7 +160,7 @@ export default function SkillsDialog() {
           {m.version && <span fg={colors.textMuted}> v{m.version}</span>}
           <span fg={colors.textMuted}>
             {" "}
-            · ~{instrTokens + descTokens} tokens
+            · {detailInstructions !== null ? `~${instrTokens + descTokens} tokens` : "loading..."}
           </span>
         </text>
 

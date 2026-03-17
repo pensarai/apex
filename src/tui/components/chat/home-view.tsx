@@ -89,7 +89,7 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
         trimmed.replace(/^\/+/, "").split(/\s+/)[0]?.toLowerCase() ?? "";
 
       const entry = skillsRegistry.get(slug);
-      if (entry?.enabled) {
+      if (entry) {
         // Navigate to skills detail page to show skill info
         route.navigate({
           type: "base",

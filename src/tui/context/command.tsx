@@ -17,7 +17,6 @@ import type { AutocompleteOption } from "../components/shared/prompt-input";
 import { useRoute, type WebCommandOptions } from "./route";
 import {
   createSkillsRegistry,
-  type Skill,
   type SkillsRegistry,
 } from "../../core/skills";
 
@@ -26,17 +25,17 @@ interface CommandContextValue {
   autocompleteOptions: AutocompleteOption[];
   executeCommand: (input: string) => Promise<boolean>;
   commands: typeof commands;
-  /** Available operator skills loaded from ~/.pensar/skills/ */
-  skills: Skill[];
   /** Reload skills from disk (e.g. after creating a new one) */
   refreshSkills: () => Promise<void>;
   /**
    * Resolve a slash-command input to skill content.
-   * Returns the skill's prompt content if the input matches a skill, else null.
+   * Returns the skill's description if the input matches a skill, else null.
    */
   resolveSkillContent: (input: string) => string | null;
-  /** skills.sh-compatible registry (includes both legacy and directory-based skills) */
+  /** Skills registry */
   skillsRegistry: SkillsRegistry;
+  /** Incremented on each registry refresh — use as a memo dependency to react to skill changes */
+  skillsVersion: number;
 }
 
 const CommandContext = createContext<CommandContextValue | null>(null);
@@ -108,21 +107,13 @@ export function CommandProvider({
     return router;
   }, []);
 
-  // Derive legacy Skill[] from the registry (single source of truth)
-  const skills = useMemo(
-    () => registry.toLegacySkills(),
-    [registry, registryVersion],
-  );
 
   const resolveSkillContent = useCallback(
     (input: string): string | null => {
       const trimmed = input.trim().replace(/^\/+/, "").toLowerCase();
-      // Activation is intentional here: slash-command invocation implies the
-      // operator wants the skill active so its instructions enter the system prompt.
       const entry = registry.get(trimmed);
-      if (entry?.enabled) {
-        registry.activate(trimmed);
-        return entry.instructions;
+      if (entry) {
+        return entry.manifest.description;
       }
       return null;
     },
@@ -201,23 +192,21 @@ export function CommandProvider({
       autocompleteOptions,
       executeCommand,
       commands,
-      skills,
       refreshSkills,
       resolveSkillContent,
       skillsRegistry: registry,
+      skillsVersion: registryVersion,
     }),
     [
       router,
       autocompleteOptions,
       executeCommand,
-      skills,
       refreshSkills,
       resolveSkillContent,
       registry,
+      registryVersion,
     ],
   );
-  // Note: `skills` is derived from `registry` via `registryVersion`, so it
-  // naturally updates when the registry refreshes. No duplicate disk scans.
 
   return (
     <CommandContext.Provider value={value}>{children}</CommandContext.Provider>

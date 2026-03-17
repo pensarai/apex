@@ -75,8 +75,8 @@ export type ToolContext = {
   onCommandOutput?: (data: string) => void;
 
   /**
-   * Skills registry for skill activation/deactivation tools.
-   * When present, use_skill / list_skills / deactivate_skill are available.
+   * Skills registry for on-demand skill loading.
+   * When present, read_skill is available.
    */
   skillsRegistry?: SkillsRegistry;
 };

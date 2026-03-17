@@ -69,9 +69,7 @@ export { webSearch } from "./webSearch";
 export { getPage } from "./getPage";
 
 // Skill tools
-export { useSkill } from "./useSkill";
-export { listSkills } from "./listSkills";
-export { deactivateSkill } from "./deactivateSkill";
+export { readSkill } from "./readSkill";
 
 // ---------------------------------------------------------------------------
 // Tool registry
@@ -184,13 +182,7 @@ export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
     get_page: getPage(ctx),
 
     // Skill tools (conditional — only when registry is provided)
-    ...(ctx.skillsRegistry
-      ? {
-          use_skill: useSkill(ctx),
-          list_skills: listSkills(ctx),
-          deactivate_skill: deactivateSkill(ctx),
-        }
-      : {}),
+    ...(ctx.skillsRegistry ? { read_skill: readSkill(ctx) } : {}),
   } as const;
 }
 
@@ -295,11 +287,7 @@ export const PLAN_MODE_TOOL_NAMES: ToolName[] = [
 ];
 
 /** Skill tool names — conditionally included when a skills registry is provided. */
-export const SKILL_TOOL_NAMES = [
-  "use_skill",
-  "list_skills",
-  "deactivate_skill",
-] as const;
+export const SKILL_TOOL_NAMES = ["read_skill"] as const;
 
 /** Email tool names — auto-appended to activeTools by the base class when inboxes are configured. */
 export { EMAIL_TOOL_NAMES as EMAIL_TOOL_NAMES_ACTIVE } from "./email";
