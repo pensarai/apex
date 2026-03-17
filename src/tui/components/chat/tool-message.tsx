@@ -11,7 +11,7 @@
 import { memo, useState } from "react";
 import { useTheme } from "../../theme";
 import { AsciiSpinner } from "../shared/ascii-spinner";
-import { getToolSummary } from "../shared/tool-registry";
+import { getToolDisplayLabel } from "../shared/tool-registry";
 import {
   getResultSummary,
   type ResultSummary,
@@ -61,8 +61,9 @@ export const ToolMessage = memo(function ToolMessage({
   const isError = message.status === "error";
   const { toolName, args, result, logs } = message;
 
-  // Get tool summary from registry
-  const summary = getToolSummary(toolName, args);
+  const summary = getToolDisplayLabel(toolName, args, {
+    preferDescription: isPending,
+  });
 
   // Get result summary for completed tools
   const resultDisplay: ResultSummary | null =

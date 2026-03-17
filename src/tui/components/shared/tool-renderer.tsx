@@ -9,7 +9,7 @@
 import { memo, useState } from "react";
 import { useTheme } from "../../theme";
 import { AsciiSpinner } from "./ascii-spinner";
-import { getToolSummary } from "./tool-registry";
+import { getToolDisplayLabel } from "./tool-registry";
 import { getResultSummary, type ResultSummary } from "./result-registry";
 import { isToolMessage } from "./type-guards";
 import type { DisplayMessage, SubagentLogEntry } from "../agent-display";
@@ -56,8 +56,9 @@ export const ToolRenderer = memo(function ToolRenderer({
   const isError = message.status === "error";
   const { toolName, args, result, logs, subagentLogs } = message;
 
-  // Get tool summary from registry
-  const summary = getToolSummary(toolName, args);
+  const summary = getToolDisplayLabel(toolName, args, {
+    preferDescription: isPending,
+  });
 
   // Get result summary for completed tools
   const resultDisplay: ResultSummary | null =
