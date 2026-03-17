@@ -245,15 +245,18 @@ export class OffensiveSecurityAgent<TResult = void> {
       stopWhen,
       toolChoice: "auto",
       onStepFinish: (event) => {
-        const allMessages = [
-          ...initialMessagesRef.current,
-          ...event.response.messages,
-        ];
-        writeFile(messagesPath, JSON.stringify(allMessages, null, 2)).catch(
-          () => {
+        try {
+          const allMessages = [
+            ...initialMessagesRef.current,
+            ...event.response.messages,
+          ];
+          const json = JSON.stringify(allMessages, null, 2);
+          writeFile(messagesPath, json).catch(() => {
             // Best-effort persistence — don't break the agent loop
-          }
-        );
+          });
+        } catch {
+          // Best-effort persistence — don't break the agent loop
+        }
         input.onStepFinish?.(event);
       },
       onSummarized: () => {
