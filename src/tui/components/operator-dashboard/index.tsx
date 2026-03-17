@@ -32,6 +32,7 @@ import { useConfig } from "../../context/config";
 import { useCommand } from "../../context/command";
 import { useDialog } from "../../context/dialog";
 import { useFocus } from "../../context/focus";
+import { useToast } from "../../context/toast";
 import { MessageList } from "../chat/message-list";
 import { InputArea } from "../chat/input-area";
 import { useTheme } from "../../theme";
@@ -86,6 +87,7 @@ export default function OperatorDashboard({
   const { colors } = useTheme();
   const route = useRoute();
   const config = useConfig();
+  const { toast } = useToast();
   const {
     model,
     setModel,
@@ -937,6 +939,19 @@ export default function OperatorDashboard({
           setThinking(false);
           setIsExecuting(false);
           abortControllerRef.current = null;
+
+          // Add session directory info when agent completes successfully
+          const currentSession = sessionRef.current;
+          if (currentSession && !abortControllerRef.current) {
+            setMessages((prev) => [
+              ...prev,
+              {
+                role: "system" as const,
+                content: `Session directory: ${currentSession.rootPath}`,
+                createdAt: new Date(),
+              },
+            ]);
+          }
         }
       }
     },
@@ -1338,6 +1353,11 @@ export default function OperatorDashboard({
       case "toggle-mode":
         toggleMode();
         return;
+      case "show-directory":
+        if (session) {
+          toast(`Session directory: ${session.rootPath}`, "default", 5000);
+        }
+        return;
       case "approve":
         handleApprove();
         return;
@@ -1445,25 +1465,6 @@ export default function OperatorDashboard({
         messages={queuedMessages}
         selectedIndex={selectedQueueIndex}
       />
-
-      {/* Session info banner - shown when agent is idle */}
-      {status === "idle" && session && (
-        <box
-          width="100%"
-          paddingLeft={2}
-          paddingRight={2}
-          paddingTop={1}
-          paddingBottom={1}
-          flexShrink={0}
-          borderColor={colors.textMuted}
-          border={["top"]}
-        >
-          <box flexDirection="row" gap={1}>
-            <text fg={colors.textMuted}>Session directory:</text>
-            <text fg={colors.primary}>{session.rootPath}</text>
-          </box>
-        </box>
-      )}
 
       {/* Input area */}
       <InputArea

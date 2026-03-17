@@ -101,7 +101,8 @@ export type KeyboardAction =
   | { type: "toggle-approval" }
   | { type: "toggle-mode" }
   | { type: "approve" }
-  | { type: "auto-approve" };
+  | { type: "auto-approve" }
+  | { type: "show-directory" };
 
 export function resolveKeyboardShortcut(
   key: KeyInfo,
@@ -133,6 +134,10 @@ export function resolveKeyboardShortcut(
 
   // Ctrl+L — toggle expanded logs
   if (key.ctrl && key.name === "l") return { type: "toggle-expanded-logs" };
+
+  // Cmd+Shift+D — show session directory
+  if (key.meta && key.shift && key.name === "d")
+    return { type: "show-directory" };
 
   // Option+Shift+Tab — toggle approval
   if (key.name === "tab" && key.shift && key.meta)
