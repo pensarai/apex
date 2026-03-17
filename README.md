@@ -42,7 +42,7 @@ brew install apex
 #### Windows (PowerShell)
 
 ```powershell
-irm https://pensarai.com/apex.ps1 | iex
+irm https://www.pensarai.com/apex.ps1 | iex
 ```
 
 #### npm
