@@ -1212,7 +1212,9 @@ export default function OperatorDashboard({
         ...updated,
         {
           role: "system" as const,
-          content: "Agent stopped by user.",
+          content: session
+            ? `Agent stopped by user.\n\nSession directory: ${session.rootPath}`
+            : "Agent stopped by user.",
           createdAt: new Date(),
         },
       ];
@@ -1443,6 +1445,25 @@ export default function OperatorDashboard({
         messages={queuedMessages}
         selectedIndex={selectedQueueIndex}
       />
+
+      {/* Session info banner - shown when agent is idle */}
+      {status === "idle" && session && (
+        <box
+          width="100%"
+          paddingLeft={2}
+          paddingRight={2}
+          paddingTop={1}
+          paddingBottom={1}
+          flexShrink={0}
+          borderColor={colors.textMuted}
+          border={["top"]}
+        >
+          <box flexDirection="row" gap={1}>
+            <text fg={colors.textMuted}>Session directory:</text>
+            <text fg={colors.primary}>{session.rootPath}</text>
+          </box>
+        </box>
+      )}
 
       {/* Input area */}
       <InputArea
