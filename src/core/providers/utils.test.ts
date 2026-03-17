@@ -43,7 +43,7 @@ describe("getDefaultModelForConfig", () => {
     const model = getDefaultModelForConfig(config);
     expect(model).not.toBeNull();
     expect(model!.provider).toBe("anthropic");
-    expect(model!.id).toBe("claude-opus-4-1");
+    expect(model!.id).toBe("claude-opus-4-6");
   });
 
   it("returns OpenAI model when only OpenAI is configured", () => {
@@ -51,7 +51,15 @@ describe("getDefaultModelForConfig", () => {
     const model = getDefaultModelForConfig(config);
     expect(model).not.toBeNull();
     expect(model!.provider).toBe("openai");
-    expect(model!.id).toBe("gpt-4o");
+    expect(model!.id).toBe("gpt-5.2-pro");
+  });
+
+  it("returns Google best model when only Google is configured", () => {
+    const config = makeConfig({ googleAPIKey: "goog-123" });
+    const model = getDefaultModelForConfig(config);
+    expect(model).not.toBeNull();
+    expect(model!.provider).toBe("google");
+    expect(model!.id).toBe("gemini-3.1-pro-preview");
   });
 
   it("returns Google model when only Google is configured", () => {

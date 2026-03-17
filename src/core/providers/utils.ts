@@ -18,9 +18,9 @@ const PROVIDER_PREFERENCE_ORDER: ProviderType[] = [
 
 const PREFERRED_MODEL_BY_PROVIDER: Record<string, string> = {
   pensar: "pensar:anthropic.claude-opus-4-1-20250805-v1:0",
-  anthropic: "claude-opus-4-1",
-  openai: "gpt-4o",
-  google: "gemini-2.5-flash",
+  anthropic: "claude-opus-4-6",
+  openai: "gpt-5.2-pro",
+  google: "gemini-3.1-pro-preview",
   openrouter: "anthropic/claude-opus-4.6",
 };
 
