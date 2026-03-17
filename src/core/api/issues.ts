@@ -184,11 +184,11 @@ export async function listProjects(): Promise<ProjectSummary[]> {
 }
 
 export async function listScans(projectId: string): Promise<ScanSummary[]> {
-  return apiRequest<ScanSummary[]>("GET", `/projects/${projectId}/scans`);
+  return apiRequest<ScanSummary[]>("GET", `/projects/${projectId}/pentests`);
 }
 
 export async function getScan(scanId: string): Promise<ScanDetail> {
-  return apiRequest<ScanDetail>("GET", `/scans/${scanId}`);
+  return apiRequest<ScanDetail>("GET", `/pentests/${scanId}`);
 }
 
 export async function dispatchPentest(
@@ -197,7 +197,7 @@ export async function dispatchPentest(
 ): Promise<DispatchPentestResult> {
   return apiRequest<DispatchPentestResult>(
     "POST",
-    `/projects/${projectId}/scans`,
+    `/projects/${projectId}/pentests`,
     opts,
   );
 }
