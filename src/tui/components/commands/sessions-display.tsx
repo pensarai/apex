@@ -1,14 +1,16 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useKeyboard } from "@opentui/react";
 import { useRoute } from "../../context/route";
 import { useFocus } from "../../context/focus";
 import { sessions } from "../../../core/session";
-import { openSessionReport } from "../../utils/open-report";
+import { openSessionReport, readSessionReport } from "../../utils/open-report";
+import ReportViewerDialog from "../report-viewer-dialog";
 import { Dialog } from "../../context/dialog";
 import { ScrollBoxRenderable } from "@opentui/core";
 import { scrollToIndex } from "../../utils/scroll";
 import { useTheme } from "../../theme";
 import { useSessionsList } from "../../hooks/use-sessions-list";
+import { useToast } from "../../context/toast";
 
 interface SessionsDisplayProps {
   onClose: () => void;
@@ -18,7 +20,12 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
   const { colors } = useTheme();
   const { refocusPrompt } = useFocus();
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [statusMessage, setStatusMessage] = useState<string>("");
+  const { toast } = useToast();
+  const [showReportViewer, setShowReportViewer] = useState(false);
+  const [reportContent, setReportContent] = useState<string | null>(null);
+  const [reportSessionPath, setReportSessionPath] = useState<string | null>(
+    null,
+  );
 
   const route = useRoute();
 
@@ -32,14 +39,25 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
     deleteSession: hookDeleteSession,
   } = useSessionsList();
 
-  async function openReport(sessionId: string) {
+  const viewReport = useCallback(async (sessionId: string) => {
     const session = await sessions.get(sessionId);
-    const err = openSessionReport(session.rootPath);
-    if (err) {
-      setStatusMessage(err);
-      setTimeout(() => setStatusMessage(""), 2000);
+    const content = readSessionReport(session.rootPath);
+    if (!content) {
+      toast("Report not found", "error");
+      return;
     }
-  }
+    setReportContent(content);
+    setReportSessionPath(session.rootPath);
+    setShowReportViewer(true);
+  }, []);
+
+  const openReportExternal = useCallback(async () => {
+    if (!reportSessionPath) return;
+    const err = await openSessionReport(reportSessionPath);
+    if (err) {
+      toast(err, "error");
+    }
+  }, [reportSessionPath]);
 
   // Clamp selectedIndex when list changes
   useEffect(() => {
@@ -56,17 +74,18 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
   async function deleteSession(sessionId: string) {
     try {
       await hookDeleteSession(sessionId);
-      setStatusMessage("Session deleted");
-      setTimeout(() => setStatusMessage(""), 2000);
+      toast("Session deleted");
       // selectedIndex clamping handled by the useEffect above after re-render
     } catch (error) {
       console.error("Error deleting session:", error);
-      setStatusMessage("Error deleting session");
-      setTimeout(() => setStatusMessage(""), 2000);
+      toast("Error deleting session", "error");
     }
   }
 
   useKeyboard(async (key) => {
+    // Don't handle keys when report viewer is open
+    if (showReportViewer) return;
+
     // Escape - Close sessions display
     if (key.name === "escape") {
       refocusPrompt();
@@ -82,8 +101,7 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
       try {
         await sessions.get(currentSelection.id);
       } catch {
-        setStatusMessage("Session not found");
-        setTimeout(() => setStatusMessage(""), 2000);
+        toast("Session not found", "error");
         return;
       }
       const isOperator =
@@ -111,8 +129,7 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
       try {
         await sessions.get(currentSelection.id);
       } catch {
-        setStatusMessage("Session not found");
-        setTimeout(() => setStatusMessage(""), 2000);
+        toast("Session not found", "error");
         return;
       }
       refocusPrompt();
@@ -143,16 +160,15 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
       return;
     }
 
-    // R - Open report
+    // R - View report in dialog
     if (key.name === "r" && visualOrderSessions.length > 0) {
       const currentSelection = visualOrderSessions[selectedIndex];
       if (!currentSelection) return;
       if (!currentSelection.hasReport) {
-        setStatusMessage("No report available");
-        setTimeout(() => setStatusMessage(""), 2000);
+        toast("No report available", "warn");
         return;
       }
-      openReport(currentSelection.id);
+      viewReport(currentSelection.id);
       return;
     }
 
@@ -171,6 +187,17 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
   };
 
   if (loading) return null;
+
+  if (showReportViewer && reportContent && reportSessionPath) {
+    return (
+      <ReportViewerDialog
+        content={reportContent}
+        reportPath={reportSessionPath}
+        onClose={() => setShowReportViewer(false)}
+        onOpenExternal={openReportExternal}
+      />
+    );
+  }
 
   return (
     <Dialog size="large" onClose={handleClose}>
@@ -321,8 +348,6 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
             </text>
           </box>
         )}
-
-        {statusMessage && <text fg={colors.primary}>{statusMessage}</text>}
       </box>
     </Dialog>
   );
