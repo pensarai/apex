@@ -70,9 +70,20 @@ export default function HelpDialog() {
 
   // Keyboard handling
   useKeyboard((evt) => {
+    // Handle escape key - either go back from detail view or close dialog
+    if (evt.name === "escape") {
+      evt.preventDefault();
+      if (showDetail) {
+        setShowDetail(false);
+      } else {
+        handleClose();
+      }
+      return;
+    }
+
     // Handle detail view
     if (showDetail) {
-      if (evt.name === "escape" || evt.name === "return") {
+      if (evt.name === "return") {
         evt.preventDefault();
         setShowDetail(false);
       }
@@ -80,11 +91,6 @@ export default function HelpDialog() {
     }
 
     switch (evt.name) {
-      case "escape":
-        evt.preventDefault();
-        handleClose();
-        break;
-
       case "up":
       case "k":
         evt.preventDefault();
