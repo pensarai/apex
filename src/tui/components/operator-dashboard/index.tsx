@@ -29,6 +29,7 @@ import { useRoute } from "../../context/route";
 import { useConfig } from "../../context/config";
 import { useCommand } from "../../context/command";
 import { useDialog } from "../../context/dialog";
+import { useFocus } from "../../context/focus";
 import { MessageList } from "../chat/message-list";
 import { InputArea } from "../chat/input-area";
 import { useTheme } from "../../theme";
@@ -107,6 +108,7 @@ export default function OperatorDashboard({
     clear: clearDialog,
     setSize: setDialogSize,
   } = useDialog();
+  const { refocusPrompt } = useFocus();
 
   const autocompleteOptions = useMemo(() => {
     const skillSlugs = new Set(skills.map((s) => `/${slugify(s.name)}`));
@@ -290,6 +292,13 @@ export default function OperatorDashboard({
   useEffect(() => {
     return () => setSessionCwd(null);
   }, [setSessionCwd]);
+
+  // Auto-focus the input when the operator dashboard finishes loading
+  useEffect(() => {
+    if (!loading) {
+      refocusPrompt();
+    }
+  }, [loading, refocusPrompt]);
 
   useEffect(() => {
     if (!session) return;
