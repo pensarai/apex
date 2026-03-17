@@ -42,6 +42,16 @@ function prompt(question: string): Promise<string> {
 }
 
 function findBinaryPath(): string | null {
+  // For compiled binaries, process.execPath IS the pensar binary itself.
+  // This is more reliable than `which` when multiple installations coexist.
+  const execName =
+    process.execPath.split("/").pop()?.replace(/\.exe$/, "") ?? "";
+  const isCompiledBinary =
+    execName !== "bun" && execName !== "node" && execName !== "bun-debug";
+  if (isCompiledBinary && require("fs").existsSync(process.execPath)) {
+    return process.execPath;
+  }
+
   const result = spawnSync("which", ["pensar"], {
     encoding: "utf-8",
     timeout: 5000,

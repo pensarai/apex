@@ -177,7 +177,7 @@ describe("detectInstallMethod", () => {
     expect(detectInstallMethod()).toBe("npm");
   });
 
-  it("detects npm via spawnSync fallback when path heuristics miss", async () => {
+  it("detects npm via spawnSync fallback when running under interpreter", async () => {
     Object.defineProperty(process, "execPath", {
       value: "/usr/local/bin/node",
       writable: true,
@@ -203,7 +203,7 @@ describe("detectInstallMethod", () => {
     );
   });
 
-  it("returns binary when all heuristics fail", async () => {
+  it("returns binary when all heuristics fail under interpreter", async () => {
     Object.defineProperty(process, "execPath", {
       value: "/usr/local/bin/node",
       writable: true,
@@ -220,6 +220,38 @@ describe("detectInstallMethod", () => {
       output: [],
       signal: null,
     });
+
+    expect(detectInstallMethod()).toBe("binary");
+  });
+
+  it("returns binary for compiled binary even when npm global package exists", async () => {
+    Object.defineProperty(process, "execPath", {
+      value: "/home/user/.local/bin/pensar",
+      writable: true,
+    });
+    process.argv[1] = "upgrade";
+
+    const { spawnSync } = await import("child_process");
+    const mockedSpawnSync = vi.mocked(spawnSync);
+    mockedSpawnSync.mockReturnValue({
+      status: 0,
+      stdout: "└── @pensar/apex@0.1.0",
+      stderr: "",
+      pid: 0,
+      output: [],
+      signal: null,
+    });
+
+    expect(detectInstallMethod()).toBe("binary");
+    expect(mockedSpawnSync).not.toHaveBeenCalled();
+  });
+
+  it("returns binary for compiled binary without npm fallback", () => {
+    Object.defineProperty(process, "execPath", {
+      value: "/usr/local/bin/pensar",
+      writable: true,
+    });
+    process.argv[1] = "uninstall";
 
     expect(detectInstallMethod()).toBe("binary");
   });
