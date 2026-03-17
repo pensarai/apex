@@ -197,7 +197,8 @@ export function ConfigView({ config, onBack, onStart }: ConfigViewProps) {
           }
           paddingLeft={1}
           paddingRight={1}
-          maxHeight={8}
+          height={8}
+          overflow="hidden"
         >
           <ModelPicker
             config={config}
