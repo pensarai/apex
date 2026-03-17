@@ -448,9 +448,9 @@ export default function WebWizard({
 
       // Space key for toggling specific fields
       if (key.sequence === " ") {
-        key.preventDefault();
         // Toggle strictScope
         if (focusedSection === 1 && focusedField === 2) {
+          key.preventDefault();
           setState((prev) => ({
             ...prev,
             scope: { ...prev.scope, strictScope: !prev.scope.strictScope },
@@ -459,6 +459,7 @@ export default function WebWizard({
         }
         // Toggle enumerateSubdomains
         if (focusedSection === 1 && focusedField === 3) {
+          key.preventDefault();
           setState((prev) => ({
             ...prev,
             scope: {
@@ -470,6 +471,7 @@ export default function WebWizard({
         }
         // Cycle header mode
         if (focusedSection === 2 && focusedField === 0) {
+          key.preventDefault();
           const modes: Array<"none" | "default" | "custom"> = [
             "none",
             "default",
