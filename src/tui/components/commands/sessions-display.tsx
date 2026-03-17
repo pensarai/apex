@@ -5,6 +5,7 @@ import { useFocus } from "../../context/focus";
 import { sessions } from "../../../core/session";
 import { openSessionReport, readSessionReport } from "../../utils/open-report";
 import ReportViewerDialog from "../report-viewer-dialog";
+import { REPORT_FILENAME_MD } from "../../../core/report";
 import { Dialog } from "../../context/dialog";
 import { ScrollBoxRenderable } from "@opentui/core";
 import { scrollToIndex } from "../../utils/scroll";
@@ -192,7 +193,7 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
     return (
       <ReportViewerDialog
         content={reportContent}
-        reportPath={reportSessionPath}
+        reportPath={`${reportSessionPath}/${REPORT_FILENAME_MD}`}
         onClose={() => setShowReportViewer(false)}
         onOpenExternal={openReportExternal}
       />

@@ -62,7 +62,7 @@ export default function ReportViewerDialog({
   });
 
   const panelWidth = Math.min(120, dimensions.width - 4);
-  const panelHeight = Math.min(dimensions.height - 4, dimensions.height);
+  const panelHeight = dimensions.height - 4;
 
   return (
     <box
