@@ -178,13 +178,18 @@ async function handleWorkspaces(
   apiUrl: string,
   accessToken: string,
 ): Promise<void> {
-  let workspaces = await fetchWorkspaces(apiUrl, accessToken);
+  const wsResult = await fetchWorkspaces(apiUrl, accessToken);
+  let workspaces = wsResult.workspaces;
+
+  // Use dynamic consoleUrl from server if provided
+  const consoleUrl = wsResult.consoleUrl ?? getPensarConsoleUrl();
 
   if (workspaces.length === 0) {
-    const consoleUrl = getPensarConsoleUrl();
     console.log("\nNo workspaces found. Opening browser to create one...");
-    console.log(`If the browser didn't open, visit: ${consoleUrl}/credits\n`);
-    openUrl(`${consoleUrl}/credits`);
+    console.log(
+      `If the browser didn't open, visit: ${consoleUrl}/create-workspace?redirect=/credits\n`,
+    );
+    openUrl(`${consoleUrl}/create-workspace?redirect=/credits`);
     console.log("Waiting for workspace creation...");
     workspaces = await pollForWorkspaceCreation(apiUrl, accessToken);
   }
