@@ -48,7 +48,7 @@ Parent directories are created automatically if they don't exist.`,
       );
       const resolved = isAbsolute(filePath)
         ? filePath
-        : resolve(ctx.session.rootPath, filePath);
+        : resolve(ctx.agentCwd, filePath);
       console.error(`[create_file] resolved: ${resolved}`);
       if (ctx.sandbox) {
         return executeSandboxCreate(ctx, resolved, content, overwrite);

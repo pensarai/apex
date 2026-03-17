@@ -45,7 +45,7 @@ Output lines are prefixed with their line number for easy reference.`,
     execute: async ({ path, startLine, endLine }): Promise<ReadFileResult> => {
       const resolved = isAbsolute(path)
         ? path
-        : resolve(ctx.session.rootPath, path);
+        : resolve(ctx.agentCwd, path);
       try {
         const raw = await fsReadFile(resolved, "utf-8");
         const allLines = raw.split("\n");

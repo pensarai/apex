@@ -19,7 +19,11 @@ import {
 } from "./tools";
 import { createResponseTool, RESPONSE_TOOL_NAME } from "./tools/response";
 import { PersistentShell } from "./tools/persistentShell";
-import { BASE_SYSTEM_PROMPT, buildSessionWorkspaceSection } from "./prompt";
+import {
+  BASE_SYSTEM_PROMPT,
+  buildBaseSystemPrompt,
+  buildSessionWorkspaceSection,
+} from "./prompt";
 import type { ApprovalGate } from "../../operator";
 import { ApprovalDeniedError } from "../../operator";
 import { create as createSession, type SessionInfo } from "../../session";
@@ -260,8 +264,10 @@ export class OffensiveSecurityAgent<TResult = void> {
     this.streamResult = streamResponse({
       prompt: input.prompt,
       system:
-        (input.system ?? BASE_SYSTEM_PROMPT) +
-        buildSessionWorkspaceSection(input.session),
+        (input.system ??
+          buildBaseSystemPrompt({
+            sandboxMode: agentCwd === input.session.rootPath,
+          })) + buildSessionWorkspaceSection(input.session, agentCwd),
       model: input.model,
       messages: input.messages,
       tools,
