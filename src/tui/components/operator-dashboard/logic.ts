@@ -136,7 +136,7 @@ export function resolveKeyboardShortcut(
   if (key.ctrl && key.name === "l") return { type: "toggle-expanded-logs" };
 
   // Cmd+Shift+D — show session directory
-  if (key.meta && key.shift && key.name === "e")
+  if (key.meta && key.shift && key.name === "d")
     return { type: "show-directory" };
 
   // Option+Shift+Tab — toggle approval
