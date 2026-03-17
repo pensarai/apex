@@ -492,7 +492,11 @@ export function ModelPicker({
               const isUrlEditing = editingLocalField === "url";
               if (isUrlEditing) {
                 elements.push(
-                  <PickerRow key="local-url" id="local-input-url" paddingLeft={2}>
+                  <PickerRow
+                    key="local-url"
+                    id="local-input-url"
+                    paddingLeft={2}
+                  >
                     <text fg={colors.primary}> URL: </text>
                     <input
                       focused={true}
@@ -515,10 +519,12 @@ export function ModelPicker({
                 );
               } else {
                 elements.push(
-                  <PickerRow key="local-url" id="local-input-url" paddingLeft={2}>
-                    <text
-                      fg={isUrlFocused ? colors.primary : colors.textMuted}
-                    >
+                  <PickerRow
+                    key="local-url"
+                    id="local-input-url"
+                    paddingLeft={2}
+                  >
+                    <text fg={isUrlFocused ? colors.primary : colors.textMuted}>
                       {`  URL: ${localUrl || "(press Enter to set)"}`}
                     </text>
                   </PickerRow>,
@@ -579,14 +585,8 @@ export function ModelPicker({
                   const isSelected = m.id === selectedModel.id;
                   const isMFocused = isModelFocused(m.id);
                   elements.push(
-                    <PickerRow
-                      key={m.id}
-                      id={`model-${m.id}`}
-                      paddingLeft={2}
-                    >
-                      <text
-                        fg={isMFocused ? colors.primary : colors.textMuted}
-                      >
+                    <PickerRow key={m.id} id={`model-${m.id}`} paddingLeft={2}>
+                      <text fg={isMFocused ? colors.primary : colors.textMuted}>
                         {isSelected ? "●" : "○"} {m.name}
                       </text>
                     </PickerRow>,
@@ -629,11 +629,7 @@ export function ModelPicker({
               const isDefault =
                 m.id === "claude-haiku-4-5" || m.id === "gpt-4o-mini";
               elements.push(
-                <PickerRow
-                  key={m.id}
-                  id={`model-${m.id}`}
-                  paddingLeft={2}
-                >
+                <PickerRow key={m.id} id={`model-${m.id}`} paddingLeft={2}>
                   <text fg={isMFocused ? colors.primary : colors.textMuted}>
                     {isSelected ? "●" : "○"} {m.name}
                     {isDefault && !isModelUserSelected && isSelected
