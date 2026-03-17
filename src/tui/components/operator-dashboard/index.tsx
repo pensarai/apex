@@ -66,7 +66,7 @@ import {
 } from "./logic";
 import { QueuedMessages } from "./queued-messages";
 import { navigateUp, navigateDown, selectionAfterRemove } from "./queue";
-import { existsSync, readFileSync } from "fs";
+import { existsSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 
 /**
@@ -117,6 +117,11 @@ export default function OperatorDashboard({
 
   // Session state
   const [session, setSession] = useState<SessionInfo | null>(null);
+  // Ref mirror so handleAbort always sees the latest session even before
+  // React re-renders (critical for first-message abort where setSession
+  // hasn't been applied yet).
+  const sessionRef = useRef<SessionInfo | null>(null);
+  sessionRef.current = session;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   // Captures an AI-generated name that arrives before the session is stored in state
@@ -136,6 +141,11 @@ export default function OperatorDashboard({
 
   // Messages — same pattern as pentest component
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
+  // Mirror of `messages` as a ref so handleAbort can read the current display
+  // messages synchronously (React state isn't accessible inside event handlers
+  // without a ref).
+  const displayMessagesRef = useRef<DisplayMessage[]>([]);
+  displayMessagesRef.current = messages;
   const textRef = useRef("");
   // AI SDK conversation history for multi-turn continuity
   const conversationRef = useRef<ModelMessage[]>([]);
@@ -680,6 +690,20 @@ export default function OperatorDashboard({
       ];
       conversationRef.current = nextMessages;
 
+      // Persist the user message to disk immediately so that it is present in
+      // messages.json even if the agent is aborted before its first
+      // onStepFinish (which is the normal persistence path).  Without this,
+      // handleAbort reads back the stale file and overwrites conversationRef,
+      // losing the latest user turn.
+      if (sessionRef.current) {
+        try {
+          const mp = join(sessionRef.current.rootPath, "messages.json");
+          writeFileSync(mp, JSON.stringify(nextMessages, null, 2));
+        } catch {
+          // Best-effort — the agent's onStepFinish will persist later.
+        }
+      }
+
       const onStepFinish = (event: {
         usage?: { inputTokens?: number; outputTokens?: number };
       }) => {
@@ -709,17 +733,21 @@ export default function OperatorDashboard({
 
       const callbacks = {
         onTextDelta: (d) => {
+          if (gen !== generationRef.current) return;
           setThinking(false);
           appendText(d.text);
         },
         onToolCallStreaming: (d) => {
+          if (gen !== generationRef.current) return;
           setThinking(false);
           addStreamingToolCall(d.toolCallId, d.toolName);
         },
         onToolCallDelta: (d) => {
+          if (gen !== generationRef.current) return;
           appendToolCallDelta(d.toolCallId, d.argsTextDelta);
         },
         onToolCall: (d) => {
+          if (gen !== generationRef.current) return;
           setThinking(false);
           commandCancelledRef.current = false;
           addToolCall(
@@ -729,6 +757,7 @@ export default function OperatorDashboard({
           );
         },
         onToolResult: (d) => {
+          if (gen !== generationRef.current) return;
           flushCommandOutput();
           if (cmdFlushTimerRef.current) {
             clearInterval(cmdFlushTimerRef.current);
@@ -793,8 +822,12 @@ export default function OperatorDashboard({
         commandCancelHandle: cancelHandleRef.current,
         onStepFinish,
         callbacks,
-        onSessionReady: (s: { rootPath: string }) => {
+        onSessionReady: (s: SessionInfo) => {
           setSessionCwd(s.rootPath);
+          // Update the ref immediately so handleAbort can access the session
+          // even before React processes the state update.
+          sessionRef.current = s;
+          setSession((prev) => prev ?? s);
         },
       };
 
@@ -1062,17 +1095,25 @@ export default function OperatorDashboard({
     queuedMessagesRef.current = [];
     setSelectedQueueIndex(-1);
 
+    // Deny pending approvals BEFORE resetting status.  denyAll() triggers
+    // synchronous "approval-resolved" events whose handler calls
+    // setStatus("running").  By calling denyAll() first, our setStatus("idle")
+    // below is the last write in the React batch and wins.
+    approvalGateRef.current.denyAll();
+
     setStatus("idle");
     setThinking(false);
     setIsExecuting(false);
 
-    approvalGateRef.current.denyAll();
-
     // Read back persisted messages so the next run has full context.
     // Only keep a recent subset to avoid blowing the context window.
-    if (session) {
+    // Use sessionRef (not the `session` state) so we see the session even
+    // when it was just created via onSessionReady but React hasn't
+    // re-rendered yet (e.g. aborting on the very first message).
+    const activeSession = sessionRef.current;
+    if (activeSession) {
       try {
-        const messagesPath = join(session.rootPath, "messages.json");
+        const messagesPath = join(activeSession.rootPath, "messages.json");
         if (existsSync(messagesPath)) {
           const raw = JSON.parse(readFileSync(messagesPath, "utf-8"));
           if (Array.isArray(raw) && raw.length > 0) {
@@ -1080,6 +1121,71 @@ export default function OperatorDashboard({
               raw as ModelMessage[],
             );
           }
+        }
+
+        // If the conversation now ends with a user message it means the agent
+        // was aborted before completing its first inference step (onStepFinish
+        // never fired, so no assistant turn was persisted).  Reconstruct the
+        // partial assistant response — including any in-flight tool calls — so
+        // the context survives abort and session resume.
+        const last =
+          conversationRef.current[conversationRef.current.length - 1];
+        if (last?.role === "user") {
+          const partial = textRef.current.trim();
+
+          // Collect pending/streaming tool calls from the UI messages.
+          const pendingTools = displayMessagesRef.current.filter(
+            (m) =>
+              isToolMessage(m) &&
+              (m.status === "pending" || m.status === "streaming"),
+          );
+
+          // Build assistant content parts: text + tool-call entries.
+          const assistantContent: Array<Record<string, unknown>> = [
+            {
+              type: "text" as const,
+              text: partial || "[Response interrupted by user.]",
+            },
+          ];
+          for (const t of pendingTools) {
+            assistantContent.push({
+              type: "tool-call" as const,
+              toolCallId: t.toolCallId,
+              toolName: t.toolName,
+              input: t.args ?? {},
+            });
+          }
+
+          conversationRef.current = [
+            ...conversationRef.current,
+            {
+              role: "assistant" as const,
+              content: assistantContent,
+            } as ModelMessage,
+          ];
+
+          // For each tool call, add a tool-result so the conversation stays
+          // valid (every tool-call must be paired with a tool-result).
+          if (pendingTools.length > 0) {
+            conversationRef.current = [
+              ...conversationRef.current,
+              {
+                role: "tool" as const,
+                content: pendingTools.map((t) => ({
+                  type: "tool-result" as const,
+                  toolCallId: t.toolCallId,
+                  toolName: t.toolName ?? "unknown",
+                  output: "Cancelled by user.",
+                })),
+              } as unknown as ModelMessage,
+            ];
+          }
+
+          // Persist so session resume also sees the corrected state.
+          writeFileSync(
+            join(activeSession.rootPath, "messages.json"),
+            JSON.stringify(conversationRef.current, null, 2),
+          );
         }
       } catch {
         // Best-effort — keep whatever conversationRef already has
@@ -1101,7 +1207,7 @@ export default function OperatorDashboard({
         },
       ];
     });
-  }, [session, setThinking, setIsExecuting]);
+  }, [setThinking, setIsExecuting]);
 
   // Toggle approval requirement at runtime
   const toggleApproval = useCallback(() => {
