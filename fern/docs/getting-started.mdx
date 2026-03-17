@@ -24,7 +24,7 @@ Install Apex using your preferred method:
     ```bash brew tap pensarai/tap brew install apex ```
   </Tab>
   <Tab title="Windows">
-    ```powershell irm https://pensarai.com/apex.ps1 | iex ```
+    ```powershell irm https://www.pensarai.com/apex.ps1 | iex ```
   </Tab>
   <Tab title="npm">
     ```bash npm install -g @pensar/apex ``` Requires
@@ -117,8 +117,13 @@ Apex also supports headless CLI commands for CI/CD and scripting:
 ```bash
 pensar pentest --target <url>               # Run a full pentest orchestration
 pensar targeted-pentest --target <url>      # Run a targeted pentest
+pensar auth login                           # Connect to Pensar Console from the CLI
+pensar auth status                          # Show current auth connection status
+pensar auth logout                          # Disconnect from Pensar Console
 pensar upgrade                              # Update to the latest version
 pensar doctor                               # Check & install optional dependencies
+pensar uninstall                            # Fully remove Pensar (interactive)
+pensar uninstall --force                    # Fully remove Pensar (no confirmation)
 ```
 
 ## Using Kali Linux Container (Optional)
