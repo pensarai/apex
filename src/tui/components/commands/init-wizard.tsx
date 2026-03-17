@@ -5,6 +5,10 @@ import { useRoute } from "../../context/route";
 import type { SessionConfig } from "../../../core/session";
 import { SpinnerDots } from "../sprites";
 import { useTheme } from "../../theme";
+import {
+  getAutoPopulatedHosts,
+  getAutoPopulatedPorts,
+} from "../../../util/url";
 
 // Simplified wizard step types
 type WizardStep = "target" | "configure" | "creating";
@@ -67,6 +71,32 @@ export default function InitWizard() {
 
   // Error state
   const [error, setError] = useState<string | null>(null);
+
+  // Helper to auto-populate hosts/ports from target when transitioning to configure step
+  function autoPopulateScopeFromTarget() {
+    if (!state.target.trim()) return;
+
+    const currentHosts = state.scope.allowedHosts;
+    const currentPorts = state.scope.allowedPorts.map((p) => parseInt(p, 10));
+
+    const autoHosts = getAutoPopulatedHosts(state.target, currentHosts);
+    const autoPorts = getAutoPopulatedPorts(state.target, currentPorts);
+
+    // Only update if we actually added something new
+    if (
+      autoHosts.length !== currentHosts.length ||
+      autoPorts.length !== currentPorts.length
+    ) {
+      setState((prev) => ({
+        ...prev,
+        scope: {
+          ...prev.scope,
+          allowedHosts: autoHosts,
+          allowedPorts: autoPorts.map(String),
+        },
+      }));
+    }
+  }
 
   // Create session and navigate to session route
   async function createSessionAndNavigate() {
@@ -152,6 +182,7 @@ export default function InitWizard() {
     if (currentStep === "target") {
       if (key.name === "tab") {
         if (!key.shift && targetFocusedField === 0 && state.target.trim()) {
+          autoPopulateScopeFromTarget();
           setCurrentStep("configure");
         }
         return;
