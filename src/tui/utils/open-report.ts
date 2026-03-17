@@ -4,26 +4,45 @@ import { REPORT_FILENAME_MD } from "../../core/report";
 
 /**
  * Open the pentest report for a session in the user's default viewer.
+ * Awaits the spawned process and checks its exit code so failures
+ * (e.g. no default .md handler on Linux) are reported cleanly.
+ *
  * Returns an error message string, or "" on success.
  */
-export function openSessionReport(sessionRootPath: string): string {
+export async function openSessionReport(
+  sessionRootPath: string,
+): Promise<string> {
   const reportPath = join(sessionRootPath, REPORT_FILENAME_MD);
 
   if (!existsSync(reportPath)) {
-    return "Report not found";
+    return `Report not found at: ${reportPath}`;
   }
 
   try {
     const platform = process.platform;
+    let cmd: string[];
+
     if (platform === "darwin") {
-      Bun.spawn(["open", reportPath]);
+      cmd = ["open", reportPath];
     } else if (platform === "win32") {
-      Bun.spawn(["cmd", "/c", "start", reportPath]);
+      cmd = ["cmd", "/c", "start", "", reportPath];
     } else {
-      Bun.spawn(["xdg-open", reportPath]);
+      cmd = ["xdg-open", reportPath];
     }
+
+    const proc = Bun.spawn(cmd, {
+      stdout: "ignore",
+      stderr: "pipe",
+    });
+
+    const exitCode = await proc.exited;
+
+    if (exitCode !== 0) {
+      return `No default application found to open .md files. Report saved to: ${reportPath}`;
+    }
+
     return "";
   } catch {
-    return "Error opening report";
+    return `Could not open report. Report saved to: ${reportPath}`;
   }
 }

@@ -34,10 +34,10 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
 
   async function openReport(sessionId: string) {
     const session = await sessions.get(sessionId);
-    const err = openSessionReport(session.rootPath);
+    const err = await openSessionReport(session.rootPath);
     if (err) {
       setStatusMessage(err);
-      setTimeout(() => setStatusMessage(""), 2000);
+      setTimeout(() => setStatusMessage(""), 5000);
     }
   }
 
