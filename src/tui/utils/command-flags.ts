@@ -140,6 +140,9 @@ export interface WebCommandFlags {
 
   // Model option
   model?: string;
+
+  // Internal flag to track if hosts was explicitly provided (not auto-populated)
+  _hostsExplicitlyProvided?: boolean;
 }
 
 /**
@@ -206,6 +209,7 @@ export function parseWebFlags(args: string[]): WebCommandFlags {
       .split(",")
       .map((h) => h.trim())
       .filter(Boolean);
+    flags._hostsExplicitlyProvided = true;
   }
   if (raw.ports) {
     flags.ports = String(raw.ports)
@@ -276,7 +280,7 @@ export function hasEnoughFlagsToSkipWizard(flags: WebCommandFlags): boolean {
       flags.requireApproval !== undefined ||
       flags.authUrl ||
       flags.authUser ||
-      flags.hosts ||
+      flags._hostsExplicitlyProvided ||
       flags.strict ||
       flags.headersMode ||
       flags.model
