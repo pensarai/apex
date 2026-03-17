@@ -122,7 +122,7 @@ export function ModelPicker({
   }, [config]);
 
   useEffect(() => {
-    const availableProviders = new Set(
+    const availableProviders = new Set<string>(
       availableModels.map((model) => model.provider),
     );
 
