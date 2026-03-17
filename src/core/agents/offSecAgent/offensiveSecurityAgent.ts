@@ -38,9 +38,7 @@ type AssistantPart = Exclude<AssistantMessage["content"], string>[number];
 type ToolMessage = Extract<ModelMessage, { role: "tool" }>;
 type ToolPart = ToolMessage["content"][number];
 
-function ensureAssistantParts(
-  messages: ModelMessage[],
-): AssistantPart[] {
+function ensureAssistantParts(messages: ModelMessage[]): AssistantPart[] {
   const last = messages[messages.length - 1];
 
   if (!last || last.role !== "assistant") {
@@ -98,8 +96,10 @@ function upsertAssistantToolCall(
   const existing = parts.find(
     (
       part,
-    ): part is Extract<AssistantPart, { type: "tool-call"; toolCallId: string }> =>
-      part.type === "tool-call" && part.toolCallId === toolCallId,
+    ): part is Extract<
+      AssistantPart,
+      { type: "tool-call"; toolCallId: string }
+    > => part.type === "tool-call" && part.toolCallId === toolCallId,
   );
 
   if (existing) {
@@ -110,14 +110,12 @@ function upsertAssistantToolCall(
     return;
   }
 
-  parts.push(
-    {
-      type: "tool-call",
-      toolCallId,
-      toolName,
-      input: input ?? {},
-    } as AssistantPart,
-  );
+  parts.push({
+    type: "tool-call",
+    toolCallId,
+    toolName,
+    input: input ?? {},
+  } as AssistantPart);
 }
 
 function appendToolResult(
@@ -346,7 +344,10 @@ export class OffensiveSecurityAgent<TResult = void> {
     this.persistedMessagesRef = {
       current: cloneModelMessages(initialMessagesRef.current),
     };
-    persistMessagesSnapshot(this.messagesPath, this.persistedMessagesRef.current);
+    persistMessagesSnapshot(
+      this.messagesPath,
+      this.persistedMessagesRef.current,
+    );
 
     // -- Stream ---------------------------------------------------------------
     this.streamResult = streamResponse({
@@ -367,7 +368,10 @@ export class OffensiveSecurityAgent<TResult = void> {
             ...event.response.messages,
           ];
           this.persistedMessagesRef.current = cloneModelMessages(allMessages);
-          persistMessagesSnapshot(messagesPath, this.persistedMessagesRef.current);
+          persistMessagesSnapshot(
+            messagesPath,
+            this.persistedMessagesRef.current,
+          );
         } catch {
           // Best-effort persistence — don't break the agent loop
         }
@@ -443,7 +447,10 @@ export class OffensiveSecurityAgent<TResult = void> {
           onTextDelta?.(chunk);
           subagentCallbacks?.onTextDelta?.({ ...chunk, subagentId: sid });
           appendAssistantText(this.persistedMessagesRef.current, chunk.text);
-          persistMessagesSnapshot(this.messagesPath, this.persistedMessagesRef.current);
+          persistMessagesSnapshot(
+            this.messagesPath,
+            this.persistedMessagesRef.current,
+          );
           break;
         case "tool-input-start": {
           const delta = { toolCallId: chunk.id, toolName: chunk.toolName };
@@ -481,7 +488,10 @@ export class OffensiveSecurityAgent<TResult = void> {
             chunk.toolName,
             chunk.input,
           );
-          persistMessagesSnapshot(this.messagesPath, this.persistedMessagesRef.current);
+          persistMessagesSnapshot(
+            this.messagesPath,
+            this.persistedMessagesRef.current,
+          );
           break;
         case "tool-result":
           onToolResult?.(chunk);
@@ -492,7 +502,10 @@ export class OffensiveSecurityAgent<TResult = void> {
             chunk.toolName,
             chunk.output,
           );
-          persistMessagesSnapshot(this.messagesPath, this.persistedMessagesRef.current);
+          persistMessagesSnapshot(
+            this.messagesPath,
+            this.persistedMessagesRef.current,
+          );
           break;
         case "error":
           if (onError) {

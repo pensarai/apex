@@ -53,33 +53,35 @@ describe("OffensiveSecurityAgent canceled-run persistence", () => {
     tempDirs.push(rootPath);
 
     const controller = new AbortController();
-    streamResponseMock.mockImplementationOnce((opts: { abortSignal?: AbortSignal }) => ({
-      fullStream: (async function* () {
-        yield { type: "text-delta", text: "Investigating target..." };
-        yield {
-          type: "tool-call",
-          toolCallId: "tool-1",
-          toolName: "execute_command",
-          input: { command: "pwd" },
-        };
-        yield {
-          type: "tool-result",
-          toolCallId: "tool-1",
-          toolName: "execute_command",
-          output: { stdout: "/tmp/session\n" },
-        };
-        await new Promise<void>((resolve) => {
-          if (opts.abortSignal?.aborted) {
-            resolve();
-            return;
-          }
-          opts.abortSignal?.addEventListener("abort", () => resolve(), {
-            once: true,
+    streamResponseMock.mockImplementationOnce(
+      (opts: { abortSignal?: AbortSignal }) => ({
+        fullStream: (async function* () {
+          yield { type: "text-delta", text: "Investigating target..." };
+          yield {
+            type: "tool-call",
+            toolCallId: "tool-1",
+            toolName: "execute_command",
+            input: { command: "pwd" },
+          };
+          yield {
+            type: "tool-result",
+            toolCallId: "tool-1",
+            toolName: "execute_command",
+            output: { stdout: "/tmp/session\n" },
+          };
+          await new Promise<void>((resolve) => {
+            if (opts.abortSignal?.aborted) {
+              resolve();
+              return;
+            }
+            opts.abortSignal?.addEventListener("abort", () => resolve(), {
+              once: true,
+            });
           });
-        });
-      })(),
-      response: Promise.resolve({ messages: [] as ModelMessage[] }),
-    }));
+        })(),
+        response: Promise.resolve({ messages: [] as ModelMessage[] }),
+      }),
+    );
 
     const agent = new OffensiveSecurityAgent({
       prompt: "Enumerate the target",
