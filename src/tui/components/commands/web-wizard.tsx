@@ -648,6 +648,14 @@ export default function WebWizard({
               setTargetError(null);
               setState((prev) => ({ ...prev, target: v }));
             }}
+            onSubmit={() => {
+              if (state.target.trim()) {
+                setTargetError(null);
+                setCurrentStep("configure");
+              } else {
+                setTargetError("Target URL is required");
+              }
+            }}
             focused={targetFocusedField === 0}
           />
           {targetError && <text fg={colors.error}>{targetError}</text>}
