@@ -252,7 +252,7 @@ export class OffensiveSecurityAgent<TResult = void> {
         writeFile(messagesPath, JSON.stringify(allMessages, null, 2)).catch(
           () => {
             // Best-effort persistence — don't break the agent loop
-          }
+          },
         );
         input.onStepFinish?.(event);
       },
