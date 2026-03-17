@@ -222,6 +222,7 @@ export default function WebWizard({
 
   // Error state
   const [error, setError] = useState<string | null>(null);
+  const [targetError, setTargetError] = useState<string | null>(null);
 
   // Create session and navigate to session route
   async function createSessionAndNavigate() {
@@ -319,28 +320,44 @@ export default function WebWizard({
     // Don't allow navigation while creating
     if (currentStep === "creating") return;
 
-    // Target step: Enter to start, Tab to navigate/configure
+    // Target step: Enter to start, Tab to configure options
     if (currentStep === "target") {
       const maxTargetField = state.sourceCodeAccess ? 2 : 1; // 0=target, 1=toggle, 2=cwd (if enabled)
-      // Tab navigation
-      if (key.name === "tab") {
+      // Tab - go directly to configure step when target is filled
+      if (key.name === "tab" && !key.shift) {
         key.preventDefault();
-        if (key.shift) {
-          setTargetFocusedField((prev) => Math.max(0, prev - 1));
+        if (state.target.trim()) {
+          setTargetError(null);
+          setCurrentStep("configure");
         } else {
-          if (targetFocusedField === maxTargetField && state.target.trim()) {
-            setCurrentStep("configure");
-          } else {
-            setTargetFocusedField((prev) => Math.min(maxTargetField, prev + 1));
-          }
+          setTargetError("Target URL is required");
         }
         return;
       }
-      // Up/Down to toggle source code access when focused
-      if (
-        targetFocusedField === 1 &&
-        (key.name === "up" || key.name === "down")
-      ) {
+      // Shift+Tab - navigate backwards through fields
+      if (key.name === "tab" && key.shift) {
+        key.preventDefault();
+        setTargetFocusedField((prev) => Math.max(0, prev - 1));
+        return;
+      }
+      // Down arrow - navigate to next field
+      if (key.name === "down") {
+        key.preventDefault();
+        if (targetFocusedField < maxTargetField) {
+          setTargetFocusedField((prev) => prev + 1);
+        }
+        return;
+      }
+      // Up arrow - navigate to previous field
+      if (key.name === "up") {
+        key.preventDefault();
+        if (targetFocusedField > 0) {
+          setTargetFocusedField((prev) => prev - 1);
+        }
+        return;
+      }
+      // Space - toggle source code access when on that field
+      if (key.sequence === " " && targetFocusedField === 1) {
         key.preventDefault();
         setState((prev) => ({
           ...prev,
@@ -627,9 +644,21 @@ export default function WebWizard({
             description="e.g., https://example.com"
             placeholder="https://example.com"
             value={state.target}
-            onInput={(v) => setState((prev) => ({ ...prev, target: v }))}
+            onInput={(v) => {
+              setTargetError(null);
+              setState((prev) => ({ ...prev, target: v }));
+            }}
+            onSubmit={() => {
+              if (state.target.trim()) {
+                setTargetError(null);
+                setCurrentStep("configure");
+              } else {
+                setTargetError("Target URL is required");
+              }
+            }}
             focused={targetFocusedField === 0}
           />
+          {targetError && <text fg={colors.error}>{targetError}</text>}
 
           <box flexDirection="column" gap={1}>
             <box flexDirection="row" gap={1}>
@@ -646,7 +675,7 @@ export default function WebWizard({
                 {state.sourceCodeAccess ? "● Enabled" : "○ Disabled"}
               </text>
               {targetFocusedField === 1 && (
-                <text fg={colors.textMuted}>(↑/↓ to toggle)</text>
+                <text fg={colors.textMuted}>(Space to toggle)</text>
               )}
             </box>
             {state.sourceCodeAccess && (

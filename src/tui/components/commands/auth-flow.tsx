@@ -183,6 +183,7 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
       await config.update({
         pensarAPIKey: data.apiKey!,
         gatewaySigningKey: data.signingKey ?? null,
+        gatewayUrl: data.gatewayUrl ?? null,
       });
 
       if (data.workspace) {
@@ -293,6 +294,7 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
         workspaceId: workspace.id,
         workspaceSlug: workspace.slug,
         gatewaySigningKey: data.signingKey ?? null,
+        gatewayUrl: data.gatewayUrl ?? null,
       });
       appConfig.reload();
 

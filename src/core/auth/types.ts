@@ -37,6 +37,7 @@ export interface LegacyTokenResponse {
   workspace?: { id: string; name: string; slug: string };
   credits?: { balance: number };
   signingKey?: string;
+  gatewayUrl?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -57,6 +58,7 @@ export interface SelectWorkspaceResponse {
   billing: { balance: number; hasPaymentMethod: boolean; ready: boolean };
   billingUrl?: string;
   signingKey?: string;
+  gatewayUrl?: string;
 }
 
 // ---------------------------------------------------------------------------
