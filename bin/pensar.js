@@ -66,6 +66,13 @@ if (command === "benchmark") {
 
   // Import and run auth
   await import(authPath);
+} else if (command === "uninstall") {
+  // Run uninstall CLI
+  const uninstallPath = join(__dirname, "..", "build", "uninstall.js");
+
+  process.argv = [process.argv[0], uninstallPath, ...args.slice(1)];
+
+  await import(uninstallPath);
 } else if (command === "upgrade" || command === "update") {
   const currentVersion = getCurrentVersion();
   console.log(`Current version: v${currentVersion}`);
@@ -89,6 +96,7 @@ if (command === "benchmark") {
   console.log();
   console.log("Usage:");
   console.log("  pensar              Launch the TUI (Terminal User Interface)");
+  console.log("  pensar uninstall    Uninstall Pensar (keeps sessions, memories, skills)");
   console.log("  pensar upgrade      Update pensar to the latest version");
   console.log("  pensar help         Show this help message");
   console.log("  pensar version      Show version number");
@@ -180,6 +188,14 @@ if (command === "benchmark") {
   console.log("  pensar auth login        Login to Pensar Console");
   console.log("  pensar auth logout       Disconnect from Pensar Console");
   console.log("  pensar auth status       Show connection status");
+  console.log();
+  console.log("Uninstall Usage:");
+  console.log(
+    "  pensar uninstall             Fully uninstall Pensar"
+  );
+  console.log(
+    "  pensar uninstall --force     Skip confirmation prompt"
+  );
   console.log();
   console.log("Header Modes (for quicktest, pentest, swarm):");
   console.log("  none                     No custom headers added to requests");
