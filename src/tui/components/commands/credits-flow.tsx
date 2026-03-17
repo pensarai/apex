@@ -86,10 +86,14 @@ export default function CreditsFlow({ onOpenAuthDialog }: CreditsFlowProps) {
         workspace: { name: string };
         credits: { balance: number };
         signingKey?: string;
+        gatewayUrl?: string;
       };
 
-      if (result.signingKey) {
-        await config.update({ gatewaySigningKey: result.signingKey });
+      if (result.signingKey || result.gatewayUrl) {
+        await config.update({
+          gatewaySigningKey: result.signingKey ?? undefined,
+          gatewayUrl: result.gatewayUrl ?? undefined,
+        });
       }
 
       setCredits({

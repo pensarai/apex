@@ -36,6 +36,8 @@ export interface Config {
   workspaceSlug?: string | null;
   // Gateway request signing key (server-issued)
   gatewaySigningKey?: string | null;
+  // Gateway URL for inference (server-issued, bypasses CloudFront timeout)
+  gatewayUrl?: string | null;
 }
 
 export async function init() {
