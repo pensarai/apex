@@ -89,7 +89,9 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
     }
   };
 
-  // ── Step 1: Start device-authorization flow ─────────────────────────
+  const consoleUrlRef = useRef<string>(getPensarConsoleUrl());
+
+  // ── Step 1: Fetch WorkOS client config and start device flow ──────
 
   const startFlow = async () => {
     setStep("requesting");
@@ -102,6 +104,22 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
     const apiUrl = getPensarApiUrl();
 
     try {
+      // Optionally fetch CLI config to get dynamic consoleUrl
+      try {
+        const configResponse = await fetch(`${apiUrl}/api/cli/config`);
+        if (configResponse.ok) {
+          const cliConfig = (await configResponse.json()) as {
+            workosClientId: string;
+            consoleUrl?: string;
+          };
+          if (cliConfig.consoleUrl) {
+            consoleUrlRef.current = cliConfig.consoleUrl;
+          }
+        }
+      } catch {
+        // Config fetch is optional, continue with default consoleUrl
+      }
+
       const info = await startDeviceFlow(apiUrl);
       if (ac.signal.aborted) return;
 
@@ -220,12 +238,19 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
     ac: AbortController,
   ) => {
     try {
-      const ws = await fetchWorkspaces(apiUrl, accessToken);
+      const wsResult = await fetchWorkspaces(apiUrl, accessToken);
       if (ac.signal.aborted) return;
 
+      // Update consoleUrl if returned by the server
+      if (wsResult.consoleUrl) {
+        consoleUrlRef.current = wsResult.consoleUrl;
+      }
+
+      const ws = wsResult.workspaces;
+
       if (ws.length === 0) {
-        const consoleUrl = getPensarConsoleUrl();
-        openUrl(`${consoleUrl}/credits`);
+        const consoleUrl = consoleUrlRef.current;
+        openUrl(`${consoleUrl}/create-workspace?redirect=/credits`);
         setStep("creating-workspace");
         handleWorkspaceCreationPoll(apiUrl, accessToken, ac);
         return;
@@ -331,10 +356,10 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
   const effectiveBillingUrl =
     billingUrl ||
     (selectedWorkspace?.slug
-      ? `${getPensarConsoleUrl()}/${selectedWorkspace.slug}/settings/billing`
+      ? `${consoleUrlRef.current}/${selectedWorkspace.slug}/settings/billing`
       : connectedWorkspace?.slug
-        ? `${getPensarConsoleUrl()}/${connectedWorkspace.slug}/settings/billing`
-        : `${getPensarConsoleUrl()}/credits`);
+        ? `${consoleUrlRef.current}/${connectedWorkspace.slug}/settings/billing`
+        : `${consoleUrlRef.current}/credits`);
 
   const openBillingPage = () => {
     openUrl(effectiveBillingUrl);
@@ -529,7 +554,7 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
             </box>
             <box marginTop={1}>
               <text fg={colors.text}>
-                Create a workspace and add credits in your browser.
+                Create a workspace in your browser to get started.
               </text>
             </box>
             <box marginTop={1}>
@@ -540,7 +565,7 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
             <box marginTop={1}>
               <text fg={colors.textMuted}>
                 If the browser didn't open, visit:{"\n"}
-                {getPensarConsoleUrl()}/credits
+                {consoleUrlRef.current}/create-workspace
               </text>
             </box>
             <box marginTop={1}>

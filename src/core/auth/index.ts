@@ -3,6 +3,7 @@ export type {
   LegacyDeviceCodeResponse,
   LegacyTokenResponse,
   WorkspaceInfo,
+  FetchWorkspacesResponse,
   SelectWorkspaceResponse,
   DeviceFlowInfo,
   ValidToken,

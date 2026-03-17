@@ -1,4 +1,8 @@
-import type { WorkspaceInfo, SelectWorkspaceResponse } from "./types";
+import type {
+  WorkspaceInfo,
+  FetchWorkspacesResponse,
+  SelectWorkspaceResponse,
+} from "./types";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -6,11 +10,12 @@ function sleep(ms: number): Promise<void> {
 
 /**
  * Fetch the list of workspaces visible to the authenticated user.
+ * Also returns the optional consoleUrl if provided by the server.
  */
 export async function fetchWorkspaces(
   apiUrl: string,
   accessToken: string,
-): Promise<WorkspaceInfo[]> {
+): Promise<FetchWorkspacesResponse> {
   const response = await fetch(`${apiUrl}/api/cli/workspaces`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
@@ -19,8 +24,14 @@ export async function fetchWorkspaces(
     throw new Error(`Failed to fetch workspaces (${response.status})`);
   }
 
-  const data = (await response.json()) as { workspaces: WorkspaceInfo[] };
-  return data.workspaces;
+  const data = (await response.json()) as {
+    workspaces: WorkspaceInfo[];
+    consoleUrl?: string;
+  };
+  return {
+    workspaces: data.workspaces,
+    consoleUrl: data.consoleUrl,
+  };
 }
 
 /**
