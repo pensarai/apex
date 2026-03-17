@@ -1,34 +1,23 @@
-/**
- * Terminal Focus Handler Component
- *
- * Sets up terminal focus event handling to ensure cursor visibility
- * and input focus are maintained when alt-tabbing or switching applications.
- */
-
 import { useEffect } from "react";
-import { useFocus } from "../context/focus";
 import { useRenderer } from "@opentui/react";
-import { setupTerminalFocusHandling } from "../terminal-focus";
+import { useFocus } from "../context/focus";
 
 /**
- * Component that sets up terminal focus handling.
- * Must be rendered inside FocusProvider to access refocusPrompt.
+ * Re-focuses the prompt input when the terminal window regains focus (e.g. after alt-tab).
+ * OpenTUI already handles cursor restoration via restoreTerminalModes on focus-in;
+ * this component only needs to re-focus the prompt so keyboard input works again.
  */
 export function TerminalFocusHandler() {
-  const { refocusPrompt } = useFocus();
   const renderer = useRenderer();
+  const { refocusPrompt } = useFocus();
 
   useEffect(() => {
-    // Set up terminal focus handling with a callback to re-focus the prompt
-    const cleanup = setupTerminalFocusHandling(renderer, {
-      onTerminalFocus: refocusPrompt,
-      debug: false, // Set to true for debugging
-    });
-
-    // Clean up on unmount
-    return cleanup;
+    const handleFocus = () => refocusPrompt();
+    renderer.on("focus", handleFocus);
+    return () => {
+      renderer.off("focus", handleFocus);
+    };
   }, [renderer, refocusPrompt]);
 
-  // This component doesn't render anything
   return null;
 }

@@ -3,8 +3,6 @@ import { useRoute } from "../context/route";
 import { useFocus } from "../context/focus";
 import { useInput } from "../context/input";
 import { useDialog } from "../context/dialog";
-import { cleanupTerminalFocusMode } from "../terminal-focus";
-
 export interface KeybindingEntry {
   combo: string;
   description: string;
@@ -58,7 +56,6 @@ export function createKeybindings(
         const lastPress = ctrlCPressTime;
 
         if (lastPress && now - lastPress < 1000) {
-          cleanupTerminalFocusMode();
           renderer.destroy();
           process.exit(0);
         } else {
