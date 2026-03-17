@@ -232,8 +232,11 @@ export const ALL_TOOL_NAMES: ToolName[] = [
  * Tool names available in plan mode (read-only / non-mutating).
  *
  * Excludes: create_file, update_file, create_poc, document_vulnerability,
- * document_asset. These are the mutation tools that should not be available
- * when the operator is in plan (read-only) mode.
+ * document_asset, spawn_pentest_swarm, spawn_coding_agent. These are the
+ * mutation tools that should not be available when the operator is in plan
+ * (read-only) mode. The spawning tools are excluded because the sub-agents
+ * they create have hardcoded mutation tools (document_vulnerability,
+ * create_poc, document_asset) that don't inherit the parent's mode.
  */
 export const PLAN_MODE_TOOL_NAMES: ToolName[] = [
   // Browser automation (read-only navigation and inspection)
@@ -258,8 +261,6 @@ export const PLAN_MODE_TOOL_NAMES: ToolName[] = [
   "create_attack_surface_report",
   "complete_authentication",
   "run_attack_surface",
-  "spawn_pentest_swarm",
-  "spawn_coding_agent",
   "provide_comparison_results",
   // Memory
   "add_memory",
