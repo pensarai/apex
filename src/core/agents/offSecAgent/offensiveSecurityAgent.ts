@@ -232,6 +232,24 @@ export class OffensiveSecurityAgent<TResult = void> {
           ],
     };
 
+    // Debounced persistence: avoid blocking the event loop with
+    // JSON.stringify on every step when many agents run concurrently.
+    const PERSIST_INTERVAL_MS = 15_000;
+    let persistTimer: ReturnType<typeof setTimeout> | null = null;
+    let latestMessages: ModelMessage[] | null = null;
+
+    const schedulePersist = () => {
+      if (persistTimer) return;
+      persistTimer = setTimeout(() => {
+        persistTimer = null;
+        if (latestMessages) {
+          const toWrite = latestMessages;
+          latestMessages = null;
+          writeFile(messagesPath, JSON.stringify(toWrite)).catch(() => {});
+        }
+      }, PERSIST_INTERVAL_MS);
+    };
+
     // -- Stream ---------------------------------------------------------------
     this.streamResult = streamResponse({
       prompt: input.prompt,
@@ -245,15 +263,11 @@ export class OffensiveSecurityAgent<TResult = void> {
       stopWhen,
       toolChoice: "auto",
       onStepFinish: (event) => {
-        const allMessages = [
+        latestMessages = [
           ...initialMessagesRef.current,
           ...event.response.messages,
         ];
-        writeFile(messagesPath, JSON.stringify(allMessages, null, 2)).catch(
-          () => {
-            // Best-effort persistence — don't break the agent loop
-          },
-        );
+        schedulePersist();
         input.onStepFinish?.(event);
       },
       onSummarized: () => {
@@ -261,7 +275,21 @@ export class OffensiveSecurityAgent<TResult = void> {
         // subsequent onStepFinish writes only persist post-summary messages.
         initialMessagesRef.current = [];
       },
-      onFinish: input.onFinish,
+      onFinish: async (event) => {
+        // Flush any pending persistence before finishing
+        if (persistTimer) {
+          clearTimeout(persistTimer);
+          persistTimer = null;
+        }
+        const finalMessages = latestMessages ?? [
+          ...initialMessagesRef.current,
+          ...event.response.messages,
+        ];
+        await writeFile(messagesPath, JSON.stringify(finalMessages)).catch(
+          () => {},
+        );
+        await input.onFinish?.(event);
+      },
       abortSignal: input.abortSignal,
       authConfig: input.authConfig,
       silent: true,
