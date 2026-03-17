@@ -110,12 +110,17 @@ async function runPentest() {
   const { runPentestAgent } = await import("./core/api/blackboxPentest");
   const { sessions } = await import("./core/session");
   const { config: appConfig } = await import("./core/config");
+  const { getDefaultModelForConfig } = await import("./core/providers/utils");
   type AIModel = import("./core/ai").AIModel;
 
   const target = getArgRequired("--target");
   const cwd = getArg("--cwd");
   const mode = getArg("--mode");
-  const model = (getArg("--model") ?? "claude-sonnet-4-5") as AIModel;
+
+  const pensarConfig = await appConfig.get();
+  const dynamicDefault =
+    getDefaultModelForConfig(pensarConfig)?.id ?? "claude-sonnet-4-5";
+  const model = (getArg("--model") ?? dynamicDefault) as AIModel;
   const { exfilMode, warning: modeWarning } = resolvePentestMode(mode);
 
   if (modeWarning) {
@@ -130,8 +135,6 @@ async function runPentest() {
   if (exfilMode) console.log(`Mode:    exfil`);
   console.log(`Model:   ${model}`);
   console.log();
-
-  const pensarConfig = await appConfig.get();
 
   const session = await sessions.create({
     name: cwd ? "Whitebox Pentest" : "Blackbox Pentest",
@@ -175,11 +178,16 @@ async function runTargetedPentest() {
     await import("./core/api/targetedPentest");
   const { sessions } = await import("./core/session");
   const { config: appConfig } = await import("./core/config");
+  const { getDefaultModelForConfig } = await import("./core/providers/utils");
   type AIModel = import("./core/ai").AIModel;
 
   const target = getArgRequired("--target");
   const objectives = getAllArgs("--objective");
-  const model = (getArg("--model") ?? "claude-sonnet-4-5") as AIModel;
+
+  const pensarConfig = await appConfig.get();
+  const dynamicDefault =
+    getDefaultModelForConfig(pensarConfig)?.id ?? "claude-sonnet-4-5";
+  const model = (getArg("--model") ?? dynamicDefault) as AIModel;
 
   if (objectives.length === 0) {
     console.error("Error: at least one --objective is required");
@@ -194,8 +202,6 @@ async function runTargetedPentest() {
   console.log("Objectives:");
   objectives.forEach((o, i) => console.log(`  ${i + 1}. ${o}`));
   console.log();
-
-  const pensarConfig = await appConfig.get();
 
   const session = await sessions.create({
     name: "Targeted Pentest",
