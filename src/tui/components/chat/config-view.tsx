@@ -9,7 +9,10 @@ import { useState, useCallback, useEffect } from "react";
 import { useKeyboard } from "@opentui/react";
 import { ModelPicker } from "../model-picker/ModelPicker";
 import type { ModelInfo } from "../../../core/ai";
-import { getAvailableModels } from "../../../core/providers/utils";
+import {
+  getAvailableModels,
+  getDefaultModelForConfig,
+} from "../../../core/providers/utils";
 import type { Config } from "../../../core/config/config";
 import { useTheme } from "../../theme";
 
@@ -32,24 +35,28 @@ export function ConfigView({ config, onBack, onStart }: ConfigViewProps) {
   // Form state
   const [targetUrl, setTargetUrl] = useState("https://");
   const [strictScope, setStrictScope] = useState(true);
-  const [selectedModel, setSelectedModel] = useState<ModelInfo>({
-    id: "claude-sonnet-4-20250514",
-    name: "Claude Sonnet 4",
-    provider: "anthropic",
+  const [selectedModel, setSelectedModel] = useState<ModelInfo>(() => {
+    if (config) {
+      const dynamicDefault = getDefaultModelForConfig(config);
+      if (dynamicDefault) return dynamicDefault;
+    }
+    return {
+      id: "claude-sonnet-4-20250514",
+      name: "Claude Sonnet 4",
+      provider: "anthropic",
+    };
   });
   const [isModelUserSelected, setIsModelUserSelected] = useState(false);
 
   // Focus state
   const [focusedField, setFocusedField] = useState<FocusedField>("url");
 
-  // Load available models and set default
+  // Re-evaluate default when config changes (e.g. after provider setup)
   useEffect(() => {
-    if (config) {
+    if (config && !isModelUserSelected) {
       const models = getAvailableModels(config);
-      if (models.length > 0 && !isModelUserSelected) {
-        // Default to first anthropic model or first available
-        const defaultModel =
-          models.find((m) => m.provider === "anthropic") || models[0];
+      if (models.length > 0) {
+        const defaultModel = getDefaultModelForConfig(config) ?? models[0];
         setSelectedModel(defaultModel);
       }
     }
