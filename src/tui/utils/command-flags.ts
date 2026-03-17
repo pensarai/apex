@@ -8,6 +8,7 @@
 import type { SessionConfig } from "../../core/session";
 import type { OperatorMode } from "../../core/operator";
 import { createToolsetState } from "../../core/toolset";
+import { parseTargetUrl } from "../../util/url";
 
 // ============================================================================
 // General Flag Parsing
@@ -212,6 +213,15 @@ export function parseWebFlags(args: string[]): WebCommandFlags {
       .map((p) => parseInt(p.trim(), 10))
       .filter((p) => !isNaN(p));
   }
+  
+  // Auto-extract port from target URL if not explicitly provided via --ports
+  if (flags.target && !flags.ports) {
+    const parsed = parseTargetUrl(flags.target);
+    if (parsed?.port) {
+      flags.ports = [parsed.port];
+    }
+  }
+  
   if (raw.strict) flags.strict = true;
 
   // Headers options
