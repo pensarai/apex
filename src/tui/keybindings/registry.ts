@@ -82,12 +82,13 @@ export function createKeybindings(
         }
 
         const isHome = route.data.type === "base" && route.data.path === "home";
+        const isHelp = route.data.type === "base" && route.data.path === "help";
         const isOperator =
           route.data.type === "base" && route.data.path === "operator";
         const isSession =
           route.data.type === "pentest" || route.data.type === "operator";
 
-        if (!isHome && !isOperator && !isSession) {
+        if (!isHome && !isHelp && !isOperator && !isSession) {
           route.navigate({
             type: "base",
             path: "home",
