@@ -63,6 +63,9 @@ function showHelp() {
     "  pensar auth                         Connect to Pensar Console",
   );
   console.log(
+    "  pensar uninstall                    Uninstall Pensar (keeps sessions, memories, skills)",
+  );
+  console.log(
     "  pensar upgrade                      Update pensar to the latest version",
   );
   console.log(
@@ -245,6 +248,9 @@ if (command === "version" || command === "--version" || command === "-v") {
 } else if (command === "auth") {
   process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
   await import("./cli/auth");
+} else if (command === "uninstall") {
+  process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
+  await import("./cli/uninstall");
 } else if (command === "doctor") {
   const { runDoctor } = await import("./core/doctor");
   await runDoctor();
