@@ -3,13 +3,16 @@ import {
   useEffect,
   useMemo,
   useCallback,
+  useRef,
   type ReactNode,
 } from "react";
 import { useKeyboard } from "@opentui/react";
+import { ScrollBoxRenderable } from "@opentui/core";
 import type { ModelInfo } from "../../../core/ai";
 import { getAvailableModels } from "../../../core/providers/utils";
 import type { Config } from "../../../core/config/config";
 import { useTheme } from "../../theme";
+import { scrollToChild } from "../../utils/scroll";
 
 const providerNames: Record<string, string> = {
   anthropic: "Claude",
@@ -37,6 +40,7 @@ function setsAreEqual(a: Set<string>, b: Set<string>) {
 
 function PickerRow({
   children,
+  id,
   paddingLeft,
   paddingRight,
   backgroundColor,
@@ -44,6 +48,7 @@ function PickerRow({
   gap = 0,
 }: {
   children: ReactNode;
+  id?: string;
   paddingLeft?: number;
   paddingRight?: number;
   backgroundColor?: string;
@@ -52,6 +57,7 @@ function PickerRow({
 }) {
   return (
     <box
+      id={id}
       width="100%"
       overflow="hidden"
       flexDirection={flexDirection}
@@ -71,6 +77,12 @@ type NavigationItem =
   | { type: "local-input"; field: LocalInputField };
 
 type LocalInputField = "url" | "model";
+
+function getNavItemId(item: NavigationItem): string {
+  if (item.type === "provider") return `provider-${item.provider}`;
+  if (item.type === "model") return `model-${item.model.id}`;
+  return `local-input-${item.field}`;
+}
 
 export interface ModelPickerProps {
   config: Config | null;
@@ -92,6 +104,7 @@ export function ModelPicker({
   isModelUserSelected = false,
 }: ModelPickerProps) {
   const { colors } = useTheme();
+  const scrollBoxRef = useRef<ScrollBoxRenderable | null>(null);
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedProviders, setExpandedProviders] = useState<Set<string>>(
@@ -223,6 +236,13 @@ export function ModelPicker({
       Math.min(prev, Math.max(0, navigationItems.length - 1)),
     );
   }, [navigationItems.length]);
+
+  // Scroll to keep focused item visible
+  useEffect(() => {
+    const item = navigationItems[focusedIndex];
+    if (!item) return;
+    scrollToChild(scrollBoxRef.current, getNavItemId(item));
+  }, [focusedIndex, navigationItems]);
 
   const commitLocalConfig = useCallback(
     (url: string, modelName: string) => {
@@ -377,8 +397,37 @@ export function ModelPicker({
     handleKeyboard(key);
   });
 
+  // Helper to check if a navigation item at focusedIndex matches a provider
+  const isProviderFocused = (provider: string) =>
+    navigationItems[focusedIndex]?.type === "provider" &&
+    (navigationItems[focusedIndex] as { type: "provider"; provider: string })
+      .provider === provider;
+
+  // Helper to check if a model is focused
+  const isModelFocused = (modelId: string) =>
+    navigationItems[focusedIndex]?.type === "model" &&
+    (navigationItems[focusedIndex] as { type: "model"; model: ModelInfo }).model
+      .id === modelId;
+
+  // Helper to check if a local input field is focused
+  const isLocalFieldFocused = (field: LocalInputField) =>
+    navigationItems[focusedIndex]?.type === "local-input" &&
+    (
+      navigationItems[focusedIndex] as {
+        type: "local-input";
+        field: LocalInputField;
+      }
+    ).field === field;
+
   return (
-    <box flexDirection="column" gap={0} width="100%" overflow="hidden">
+    <box
+      flexDirection="column"
+      gap={0}
+      width="100%"
+      flexGrow={1}
+      flexShrink={1}
+      overflow="hidden"
+    >
       {/* Search indicator */}
       {searchQuery ? (
         <PickerRow>
@@ -390,237 +439,215 @@ export function ModelPicker({
         </PickerRow>
       )}
 
-      {/* Provider groups */}
-      {providerOrder.map((provider) => {
-        const isExpanded = expandedProviders.has(provider);
-        const providerName = providerNames[provider] || provider;
-        const isProviderFocused =
-          navigationItems[focusedIndex]?.type === "provider" &&
-          (
-            navigationItems[focusedIndex] as {
-              type: "provider";
-              provider: string;
-            }
-          ).provider === provider;
+      {/* Scrollable provider/model list */}
+      <scrollbox
+        ref={scrollBoxRef}
+        style={{
+          rootOptions: {
+            flexGrow: 1,
+            flexShrink: 1,
+            width: "100%",
+            overflow: "hidden",
+          },
+          contentOptions: {
+            flexDirection: "column",
+          },
+          scrollbarOptions: {
+            visible: false,
+          },
+        }}
+        stickyScroll={false}
+      >
+        {providerOrder.flatMap((provider) => {
+          const isExpanded = expandedProviders.has(provider);
+          const providerName = providerNames[provider] || provider;
+          const isFocused = isProviderFocused(provider);
 
-        if (provider === "local") {
-          const localModels = groupedModels["local"];
-          const modelCount = localModels?.length ?? 0;
-          return (
-            <box
-              key="local"
-              flexDirection="column"
-              gap={0}
-              width="100%"
-              overflow="hidden"
-            >
-              <PickerRow>
+          if (provider === "local") {
+            const localModels = groupedModels["local"];
+            const modelCount = localModels?.length ?? 0;
+            const elements: ReactNode[] = [];
+
+            // Local provider header
+            elements.push(
+              <PickerRow key="local" id="provider-local">
                 <text
                   fg={
-                    isProviderFocused
+                    isFocused
                       ? colors.primary
                       : isExpanded
                         ? colors.text
                         : colors.textMuted
                   }
                 >
-                  {isProviderFocused ? "❯" : isExpanded ? "▾" : "▸"}{" "}
-                  {providerName}
+                  {isFocused ? "❯" : isExpanded ? "▾" : "▸"} {providerName}
                   {modelCount > 0 ? ` (${modelCount})` : ""}
                 </text>
-              </PickerRow>
+              </PickerRow>,
+            );
 
-              {isExpanded && (
-                <box
-                  flexDirection="column"
-                  gap={0}
-                  paddingLeft={2}
-                  width="100%"
-                  overflow="hidden"
-                >
-                  {/* URL input */}
-                  {(() => {
-                    const isUrlFocused =
-                      navigationItems[focusedIndex]?.type === "local-input" &&
-                      (
-                        navigationItems[focusedIndex] as {
-                          type: "local-input";
-                          field: LocalInputField;
-                        }
-                      ).field === "url";
-                    const isUrlEditing = editingLocalField === "url";
-                    if (isUrlEditing) {
-                      return (
-                        <PickerRow>
-                          <text fg={colors.primary}> URL: </text>
-                          <input
-                            focused={true}
-                            value={localUrl}
-                            backgroundColor="transparent"
-                            cursorColor={colors.textMuted}
-                            onInput={(v) =>
-                              setLocalUrl(typeof v === "string" ? v : "")
-                            }
-                            onPaste={(event) => {
-                              const cleaned = String(event.text).replace(
-                                /\r?\n/g,
-                                "",
-                              );
-                              setLocalUrl((prev) => `${prev}${cleaned}`);
-                            }}
-                            onSubmit={finishEditing}
-                          />
-                        </PickerRow>
-                      );
-                    }
-                    return (
-                      <PickerRow>
-                        <text
-                          fg={isUrlFocused ? colors.primary : colors.textMuted}
-                        >
-                          {`  URL: ${localUrl || "(press Enter to set)"}`}
-                        </text>
-                      </PickerRow>
-                    );
-                  })()}
+            if (isExpanded) {
+              // URL input
+              const isUrlFocused = isLocalFieldFocused("url");
+              const isUrlEditing = editingLocalField === "url";
+              if (isUrlEditing) {
+                elements.push(
+                  <PickerRow key="local-url" id="local-input-url" paddingLeft={2}>
+                    <text fg={colors.primary}> URL: </text>
+                    <input
+                      focused={true}
+                      value={localUrl}
+                      backgroundColor="transparent"
+                      cursorColor={colors.textMuted}
+                      onInput={(v) =>
+                        setLocalUrl(typeof v === "string" ? v : "")
+                      }
+                      onPaste={(event) => {
+                        const cleaned = String(event.text).replace(
+                          /\r?\n/g,
+                          "",
+                        );
+                        setLocalUrl((prev) => `${prev}${cleaned}`);
+                      }}
+                      onSubmit={finishEditing}
+                    />
+                  </PickerRow>,
+                );
+              } else {
+                elements.push(
+                  <PickerRow key="local-url" id="local-input-url" paddingLeft={2}>
+                    <text
+                      fg={isUrlFocused ? colors.primary : colors.textMuted}
+                    >
+                      {`  URL: ${localUrl || "(press Enter to set)"}`}
+                    </text>
+                  </PickerRow>,
+                );
+              }
 
-                  {/* Model name input */}
-                  {(() => {
-                    const isModelFocused =
-                      navigationItems[focusedIndex]?.type === "local-input" &&
-                      (
-                        navigationItems[focusedIndex] as {
-                          type: "local-input";
-                          field: LocalInputField;
-                        }
-                      ).field === "model";
-                    const isModelEditing = editingLocalField === "model";
-                    if (isModelEditing) {
-                      return (
-                        <PickerRow>
-                          <text fg={colors.primary}> Model: </text>
-                          <input
-                            focused={true}
-                            value={localModelName}
-                            backgroundColor="transparent"
-                            cursorColor={colors.textMuted}
-                            onInput={(v) =>
-                              setLocalModelName(typeof v === "string" ? v : "")
-                            }
-                            onPaste={(event) => {
-                              const cleaned = String(event.text).replace(
-                                /\r?\n/g,
-                                "",
-                              );
-                              setLocalModelName((prev) => `${prev}${cleaned}`);
-                            }}
-                            onSubmit={finishEditing}
-                          />
-                        </PickerRow>
-                      );
-                    }
-                    return (
-                      <PickerRow>
-                        <text
-                          fg={
-                            isModelFocused ? colors.primary : colors.textMuted
-                          }
-                        >
-                          {`  Model: ${localModelName || "(press Enter to set)"}`}
-                        </text>
-                      </PickerRow>
-                    );
-                  })()}
+              // Model name input
+              const isModelFieldFocused = isLocalFieldFocused("model");
+              const isModelEditing = editingLocalField === "model";
+              if (isModelEditing) {
+                elements.push(
+                  <PickerRow
+                    key="local-model"
+                    id="local-input-model"
+                    paddingLeft={2}
+                  >
+                    <text fg={colors.primary}> Model: </text>
+                    <input
+                      focused={true}
+                      value={localModelName}
+                      backgroundColor="transparent"
+                      cursorColor={colors.textMuted}
+                      onInput={(v) =>
+                        setLocalModelName(typeof v === "string" ? v : "")
+                      }
+                      onPaste={(event) => {
+                        const cleaned = String(event.text).replace(
+                          /\r?\n/g,
+                          "",
+                        );
+                        setLocalModelName((prev) => `${prev}${cleaned}`);
+                      }}
+                      onSubmit={finishEditing}
+                    />
+                  </PickerRow>,
+                );
+              } else {
+                elements.push(
+                  <PickerRow
+                    key="local-model"
+                    id="local-input-model"
+                    paddingLeft={2}
+                  >
+                    <text
+                      fg={
+                        isModelFieldFocused ? colors.primary : colors.textMuted
+                      }
+                    >
+                      {`  Model: ${localModelName || "(press Enter to set)"}`}
+                    </text>
+                  </PickerRow>,
+                );
+              }
 
-                  {/* Local models (after config is set) */}
-                  {localModels?.map((m) => {
-                    const isSelected = m.id === selectedModel.id;
-                    const isFocused =
-                      navigationItems[focusedIndex]?.type === "model" &&
-                      (
-                        navigationItems[focusedIndex] as {
-                          type: "model";
-                          model: ModelInfo;
-                        }
-                      ).model.id === m.id;
-                    return (
-                      <PickerRow key={m.id}>
-                        <text
-                          fg={isFocused ? colors.primary : colors.textMuted}
-                        >
-                          {isSelected ? "●" : "○"} {m.name}
-                        </text>
-                      </PickerRow>
-                    );
-                  })}
-                </box>
-              )}
-            </box>
-          );
-        }
+              // Local models
+              if (localModels) {
+                for (const m of localModels) {
+                  const isSelected = m.id === selectedModel.id;
+                  const isMFocused = isModelFocused(m.id);
+                  elements.push(
+                    <PickerRow
+                      key={m.id}
+                      id={`model-${m.id}`}
+                      paddingLeft={2}
+                    >
+                      <text
+                        fg={isMFocused ? colors.primary : colors.textMuted}
+                      >
+                        {isSelected ? "●" : "○"} {m.name}
+                      </text>
+                    </PickerRow>,
+                  );
+                }
+              }
+            }
 
-        const models = groupedModels[provider];
-        if (!models || models.length === 0) return null;
+            return elements;
+          }
 
-        return (
-          <box
-            key={provider}
-            flexDirection="column"
-            gap={0}
-            width="100%"
-            overflow="hidden"
-          >
-            <PickerRow>
+          const models = groupedModels[provider];
+          if (!models || models.length === 0) return [];
+
+          const elements: ReactNode[] = [];
+
+          // Provider header
+          elements.push(
+            <PickerRow key={provider} id={`provider-${provider}`}>
               <text
                 fg={
-                  isProviderFocused
+                  isFocused
                     ? colors.primary
                     : isExpanded
                       ? colors.text
                       : colors.textMuted
                 }
               >
-                {isProviderFocused ? "❯" : isExpanded ? "▾" : "▸"}{" "}
-                {providerName} ({models.length})
+                {isFocused ? "❯" : isExpanded ? "▾" : "▸"} {providerName} (
+                {models.length})
               </text>
-            </PickerRow>
+            </PickerRow>,
+          );
 
-            {isExpanded && (
-              <box
-                flexDirection="column"
-                gap={0}
-                paddingLeft={2}
-                width="100%"
-                overflow="hidden"
-              >
-                {models.map((m) => {
-                  const isSelected = m.id === selectedModel.id;
-                  const isFocused =
-                    navigationItems[focusedIndex]?.type === "model" &&
-                    (
-                      navigationItems[focusedIndex] as {
-                        type: "model";
-                        model: ModelInfo;
-                      }
-                    ).model.id === m.id;
-                  const isDefault =
-                    m.id === "claude-haiku-4-5" || m.id === "gpt-4o-mini";
-                  return (
-                    <PickerRow key={m.id}>
-                      <text fg={isFocused ? colors.primary : colors.textMuted}>
-                        {isSelected ? "●" : "○"} {m.name}
-                        {isDefault && !isModelUserSelected && isSelected
-                          ? " [default]"
-                          : ""}
-                      </text>
-                    </PickerRow>
-                  );
-                })}
-              </box>
-            )}
-          </box>
-        );
-      })}
+          // Model rows
+          if (isExpanded) {
+            for (const m of models) {
+              const isSelected = m.id === selectedModel.id;
+              const isMFocused = isModelFocused(m.id);
+              const isDefault =
+                m.id === "claude-haiku-4-5" || m.id === "gpt-4o-mini";
+              elements.push(
+                <PickerRow
+                  key={m.id}
+                  id={`model-${m.id}`}
+                  paddingLeft={2}
+                >
+                  <text fg={isMFocused ? colors.primary : colors.textMuted}>
+                    {isSelected ? "●" : "○"} {m.name}
+                    {isDefault && !isModelUserSelected && isSelected
+                      ? " [default]"
+                      : ""}
+                  </text>
+                </PickerRow>,
+              );
+            }
+          }
+
+          return elements;
+        })}
+      </scrollbox>
 
       {/* Help text */}
       <PickerRow>

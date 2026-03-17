@@ -74,6 +74,8 @@ export default function ModelsDisplay() {
         paddingLeft={2}
         paddingRight={2}
         marginTop={1}
+        flexGrow={1}
+        flexShrink={1}
         overflow="hidden"
       >
         <ModelPicker
