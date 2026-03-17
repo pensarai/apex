@@ -22,6 +22,109 @@ import { create as createSession, type SessionInfo } from "../../session";
 import { join } from "path";
 import { writeFileSync, mkdirSync, existsSync } from "fs";
 
+function cloneModelMessages(messages: ModelMessage[]): ModelMessage[] {
+  return JSON.parse(JSON.stringify(messages)) as ModelMessage[];
+}
+
+function persistMessagesSnapshot(
+  messagesPath: string,
+  messages: ModelMessage[],
+): void {
+  writeFileSync(messagesPath, JSON.stringify(messages, null, 2));
+}
+
+function ensureAssistantParts(
+  messages: ModelMessage[],
+): Array<Record<string, unknown>> {
+  const last = messages[messages.length - 1];
+
+  if (!last || last.role !== "assistant") {
+    const next = {
+      role: "assistant" as const,
+      content: [] as Array<Record<string, unknown>>,
+    } as ModelMessage;
+    messages.push(next);
+    return next.content as Array<Record<string, unknown>>;
+  }
+
+  if (typeof last.content === "string") {
+    const parts =
+      last.content.length > 0
+        ? ([{ type: "text", text: last.content }] as Array<
+            Record<string, unknown>
+          >)
+        : [];
+    last.content = parts;
+    return parts;
+  }
+
+  if (Array.isArray(last.content)) {
+    return last.content as Array<Record<string, unknown>>;
+  }
+
+  last.content = [];
+  return last.content as Array<Record<string, unknown>>;
+}
+
+function appendAssistantText(messages: ModelMessage[], text: string): void {
+  const last = messages[messages.length - 1];
+  if (last?.role === "assistant" && typeof last.content === "string") {
+    last.content += text;
+    return;
+  }
+
+  const parts = ensureAssistantParts(messages);
+  const lastPart = parts[parts.length - 1];
+  if (lastPart?.type === "text" && typeof lastPart.text === "string") {
+    lastPart.text += text;
+    return;
+  }
+
+  parts.push({ type: "text", text });
+}
+
+function upsertAssistantToolCall(
+  messages: ModelMessage[],
+  toolCallId: string,
+  toolName: string,
+  input?: unknown,
+): void {
+  const parts = ensureAssistantParts(messages);
+  const existing = parts.find(
+    (part) => part.type === "tool-call" && part.toolCallId === toolCallId,
+  );
+
+  if (existing) {
+    existing.toolName = toolName;
+    if (input !== undefined) {
+      existing.input = input;
+    }
+    return;
+  }
+
+  parts.push(
+    input === undefined
+      ? { type: "tool-call", toolCallId, toolName }
+      : { type: "tool-call", toolCallId, toolName, input },
+  );
+}
+
+function appendToolResult(
+  messages: ModelMessage[],
+  toolCallId: string,
+  toolName: string,
+  output?: unknown,
+): void {
+  messages.push({
+    role: "tool",
+    content: [
+      output === undefined
+        ? { type: "tool-result", toolCallId, toolName }
+        : { type: "tool-result", toolCallId, toolName, output },
+    ],
+  } as ModelMessage);
+}
+
 /**
  * General-purpose offensive security agent harness.
  *
@@ -74,6 +177,12 @@ export class OffensiveSecurityAgent<TResult = void> {
 
   /** The session this agent is operating within. */
   private readonly _session: SessionInfo;
+
+  /** Path to the persisted operator/session transcript. */
+  private readonly messagesPath: string;
+
+  /** Best-effort live snapshot used to persist canceled runs. */
+  private readonly persistedMessagesRef: { current: ModelMessage[] };
 
   /**
    * Async factory that creates a session when one is not provided,
@@ -208,6 +317,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       mkdirSync(messagesDir, { recursive: true });
     }
     const messagesPath = join(messagesDir, "messages.json");
+    this.messagesPath = messagesPath;
 
     // Mutable so that summarization can clear stale history.
     const initialMessagesRef: { current: ModelMessage[] } = {
@@ -220,6 +330,10 @@ export class OffensiveSecurityAgent<TResult = void> {
             },
           ],
     };
+    this.persistedMessagesRef = {
+      current: cloneModelMessages(initialMessagesRef.current),
+    };
+    persistMessagesSnapshot(this.messagesPath, this.persistedMessagesRef.current);
 
     // -- Stream ---------------------------------------------------------------
     this.streamResult = streamResponse({
@@ -239,7 +353,8 @@ export class OffensiveSecurityAgent<TResult = void> {
             ...initialMessagesRef.current,
             ...event.response.messages,
           ];
-          writeFileSync(messagesPath, JSON.stringify(allMessages, null, 2));
+          this.persistedMessagesRef.current = cloneModelMessages(allMessages);
+          persistMessagesSnapshot(messagesPath, this.persistedMessagesRef.current);
         } catch {
           // Best-effort persistence — don't break the agent loop
         }
@@ -314,6 +429,8 @@ export class OffensiveSecurityAgent<TResult = void> {
         case "text-delta":
           onTextDelta?.(chunk);
           subagentCallbacks?.onTextDelta?.({ ...chunk, subagentId: sid });
+          appendAssistantText(this.persistedMessagesRef.current, chunk.text);
+          persistMessagesSnapshot(this.messagesPath, this.persistedMessagesRef.current);
           break;
         case "tool-input-start": {
           const delta = { toolCallId: chunk.id, toolName: chunk.toolName };
@@ -322,6 +439,15 @@ export class OffensiveSecurityAgent<TResult = void> {
             ...delta,
             subagentId: sid,
           });
+          upsertAssistantToolCall(
+            this.persistedMessagesRef.current,
+            chunk.id,
+            chunk.toolName,
+          );
+          persistMessagesSnapshot(
+            this.messagesPath,
+            this.persistedMessagesRef.current,
+          );
           break;
         }
         case "tool-input-delta": {
@@ -336,10 +462,24 @@ export class OffensiveSecurityAgent<TResult = void> {
         case "tool-call":
           onToolCall?.(chunk);
           subagentCallbacks?.onToolCall?.({ ...chunk, subagentId: sid });
+          upsertAssistantToolCall(
+            this.persistedMessagesRef.current,
+            chunk.toolCallId,
+            chunk.toolName,
+            chunk.input,
+          );
+          persistMessagesSnapshot(this.messagesPath, this.persistedMessagesRef.current);
           break;
         case "tool-result":
           onToolResult?.(chunk);
           subagentCallbacks?.onToolResult?.({ ...chunk, subagentId: sid });
+          appendToolResult(
+            this.persistedMessagesRef.current,
+            chunk.toolCallId,
+            chunk.toolName,
+            chunk.output,
+          );
+          persistMessagesSnapshot(this.messagesPath, this.persistedMessagesRef.current);
           break;
         case "error":
           if (onError) {

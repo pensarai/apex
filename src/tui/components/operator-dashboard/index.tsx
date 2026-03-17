@@ -59,6 +59,7 @@ import {
   routeCommand,
   resolveKeyboardShortcut,
   resolveAbortAction,
+  resolveActiveSession,
   buildOperatorSystemPrompt,
   resolveInputFocused,
   accumulateTokenUsage,
@@ -115,6 +116,7 @@ export default function OperatorDashboard({
 
   // Session state
   const [session, setSession] = useState<SessionInfo | null>(null);
+  const sessionRef = useRef<SessionInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   // Captures an AI-generated name that arrives before the session is stored in state
@@ -216,6 +218,7 @@ export default function OperatorDashboard({
         if (sessionId) {
           const s = await sessions.get(sessionId);
           setSession(s);
+          sessionRef.current = s;
           setSessionCwd(s.rootPath);
 
           const hasState = sessions.hasOperatorState(s);
@@ -286,6 +289,10 @@ export default function OperatorDashboard({
     }
     loadSession();
   }, [sessionId]);
+
+  useEffect(() => {
+    sessionRef.current = session;
+  }, [session]);
 
   useEffect(() => {
     return () => setSessionCwd(null);
@@ -686,10 +693,11 @@ export default function OperatorDashboard({
           event.usage?.inputTokens ?? 0,
           event.usage?.outputTokens ?? 0,
         );
-        if (session) {
+        const currentSession = sessionRef.current;
+        if (currentSession) {
           try {
             writeExecutionMetrics({
-              sessionRootPath: session.rootPath,
+              sessionRootPath: currentSession.rootPath,
               tokenUsage: nextUsage,
             });
           } catch {
@@ -771,6 +779,7 @@ export default function OperatorDashboard({
         },
       } satisfies ConsumeCallbacks;
 
+      const currentSession = resolveActiveSession(session, sessionRef.current);
       const commonInput = {
         prompt,
         model: model.id,
@@ -785,6 +794,8 @@ export default function OperatorDashboard({
         onStepFinish,
         callbacks,
         onSessionReady: (s: { rootPath: string }) => {
+          sessionRef.current = s as SessionInfo;
+          setSession((prev) => prev ?? (s as SessionInfo));
           setSessionCwd(s.rootPath);
         },
       };
@@ -792,14 +803,14 @@ export default function OperatorDashboard({
       try {
         let agentResult;
 
-        if (session) {
+        if (currentSession) {
           agentResult = await runOffensiveSecurityAgent({
             ...commonInput,
             system: buildOperatorSystemPrompt(
               initialConfig?.target,
               operatorState,
             ),
-            session,
+            session: currentSession,
           });
         } else {
           // First call — let the agent factory create the session
@@ -822,7 +833,12 @@ export default function OperatorDashboard({
             sessionConfig,
             onNameGenerated: (name: string) => {
               pendingNameRef.current = name;
-              setSession((prev) => (prev ? { ...prev, name } : prev));
+              setSession((prev) => {
+                if (!prev) return prev;
+                const updated = { ...prev, name };
+                sessionRef.current = updated;
+                return updated;
+              });
             },
           });
           // Apply any AI-generated name that arrived while the stream was running
@@ -831,6 +847,7 @@ export default function OperatorDashboard({
             created.name = pendingNameRef.current;
             pendingNameRef.current = null;
           }
+          sessionRef.current = created;
           setSession(created);
           setSessionCwd(created.rootPath);
         }
@@ -890,7 +907,6 @@ export default function OperatorDashboard({
       }
     },
     [
-      session,
       model.id,
       config.data,
       operatorState,
@@ -1061,9 +1077,10 @@ export default function OperatorDashboard({
 
     // Read back persisted messages so the next run has full context.
     // Only keep a recent subset to avoid blowing the context window.
-    if (session) {
+    const currentSession = sessionRef.current;
+    if (currentSession) {
       try {
-        const messagesPath = join(session.rootPath, "messages.json");
+        const messagesPath = join(currentSession.rootPath, "messages.json");
         if (existsSync(messagesPath)) {
           const raw = JSON.parse(readFileSync(messagesPath, "utf-8"));
           if (Array.isArray(raw) && raw.length > 0) {
@@ -1092,7 +1109,7 @@ export default function OperatorDashboard({
         },
       ];
     });
-  }, [session, setThinking, setIsExecuting]);
+  }, [setThinking, setIsExecuting]);
 
   // Toggle approval requirement at runtime
   const toggleApproval = useCallback(() => {

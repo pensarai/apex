@@ -69,6 +69,10 @@ describe("OffensiveSecurityAgent canceled-run persistence", () => {
           output: { stdout: "/tmp/session\n" },
         };
         await new Promise<void>((resolve) => {
+          if (opts.abortSignal?.aborted) {
+            resolve();
+            return;
+          }
           opts.abortSignal?.addEventListener("abort", () => resolve(), {
             once: true,
           });

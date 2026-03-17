@@ -5,6 +5,7 @@ import {
   routeCommand,
   resolveKeyboardShortcut,
   resolveAbortAction,
+  resolveActiveSession,
   buildOperatorSystemPrompt,
   resolveInputFocused,
   accumulateTokenUsage,
@@ -12,6 +13,7 @@ import {
 } from "./logic";
 import type { AutocompleteOption } from "../shared/prompt-input";
 import type { OperatorSessionState } from "../../../core/operator";
+import type { SessionInfo } from "../../../core/session";
 
 // ---------------------------------------------------------------------------
 // Shared fixtures
@@ -409,6 +411,29 @@ describe("resolveAbortAction", () => {
   it("returns kill-agent when cancel returns false (no command running)", () => {
     const result = resolveAbortAction(false, () => false);
     expect(result).toEqual({ type: "kill-agent" });
+  });
+});
+
+describe("resolveActiveSession", () => {
+  const readySession = {
+    id: "ses_ready",
+    name: "Ready Session",
+    version: "0.0.0",
+    targets: ["https://example.com"],
+    time: { created: 1, updated: 1 },
+    rootPath: "/tmp/ready",
+    logsPath: "/tmp/ready/logs",
+    findingsPath: "/tmp/ready/findings",
+    scratchpadPath: "/tmp/ready/scratchpad",
+    pocsPath: "/tmp/ready/pocs",
+  } as SessionInfo;
+
+  it("reuses the session that became ready during the previous run", () => {
+    expect(resolveActiveSession(null, readySession)).toBe(readySession);
+  });
+
+  it("falls back to the state-backed session when no ready session exists", () => {
+    expect(resolveActiveSession(readySession, null)).toBe(readySession);
   });
 });
 

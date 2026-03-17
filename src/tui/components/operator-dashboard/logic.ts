@@ -1,5 +1,6 @@
 import type { AutocompleteOption } from "../shared/prompt-input";
 import type { OperatorSessionState } from "../../../core/operator";
+import type { SessionInfo } from "../../../core/session";
 import { BASE_SYSTEM_PROMPT } from "../../../core/agents/offSecAgent/prompt";
 
 // ---------------------------------------------------------------------------
@@ -171,6 +172,13 @@ export function resolveAbortAction(
     return { type: "cancel-command" };
   }
   return { type: "kill-agent" };
+}
+
+export function resolveActiveSession(
+  stateSession: SessionInfo | null,
+  readySession: SessionInfo | null,
+): SessionInfo | null {
+  return readySession ?? stateSession;
 }
 
 // ---------------------------------------------------------------------------
