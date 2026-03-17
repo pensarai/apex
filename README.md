@@ -43,27 +43,6 @@ irm https://www.pensarai.com/apex.ps1 | iex
 npm install -g @pensar/apex
 ```
 
-### Configuration
-
-Set your AI provider API key as an environment variable:
-
-```bash
-export ANTHROPIC_API_KEY="your-api-key-here"
-# or for other providers:
-export OPENAI_API_KEY="your-api-key-here"
-export OPENROUTER_API_KEY="your-api-key-here"
-
-# AWS Bedrock (bearer token auth):
-export BEDROCK_API_KEY="your-bearer-token"
-export AWS_REGION="us-east-1"
-
-# AWS Bedrock (IAM credentials):
-export AWS_ACCESS_KEY_ID="..."
-export AWS_SECRET_ACCESS_KEY="..."
-export AWS_SESSION_TOKEN="..."  # optional, for temporary credentials
-export AWS_REGION="us-east-1"
-```
-
 ## Usage
 
 Run Apex:
