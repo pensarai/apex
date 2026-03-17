@@ -43,6 +43,28 @@ irm https://www.pensarai.com/apex.ps1 | iex
 npm install -g @pensar/apex
 ```
 
+### Troubleshooting Homebrew Installation
+
+If you encounter an error like:
+```
+Error: Formulae found in multiple taps:
+  * pensarai/apex/apex
+  * pensarai/tap/apex
+```
+
+This means you have both the old and new Homebrew taps installed. To fix this:
+
+```bash
+# Remove the old deprecated tap
+brew untap pensarai/apex
+
+# Ensure the current tap is registered
+brew tap pensarai/tap
+
+# Now install or upgrade apex
+brew install apex
+```
+
 ## Usage
 
 Run Apex:
