@@ -9,31 +9,13 @@ import {
 } from "react";
 import { type ModelInfo } from "../../core/ai";
 import { AVAILABLE_MODELS } from "../../core/ai/models";
+import { update as updateConfig } from "../../core/config/config";
 import {
-  get as getConfig,
-  update as updateConfig,
-} from "../../core/config/config";
-import { getAvailableModels } from "../../core/providers/utils";
+  getAvailableModels,
+  getDefaultModelForConfig,
+} from "../../core/providers/utils";
 import { writeErrorLog } from "../../core/logger";
-
-// Preferred defaults by provider (fast + cheap models)
-const PREFERRED_DEFAULTS: Record<string, string> = {
-  pensar: "pensar:anthropic.claude-haiku-4-5-20251001-v1:0",
-  anthropic: "claude-haiku-4-5",
-  openai: "gpt-4o-mini",
-  google: "gemini-2.5-flash",
-};
-
-// Provider preference order when multiple are available
-// Pensar first: if connected to Pensar Console, prefer managed inference
-const PROVIDER_PREFERENCE = [
-  "pensar",
-  "anthropic",
-  "openai",
-  "google",
-  "openrouter",
-  "bedrock",
-];
+import { useConfig } from "./config";
 
 interface TokenUsage {
   inputTokens: number;
@@ -78,7 +60,11 @@ interface AgentProviderProps {
 }
 
 export function AgentProvider({ children }: AgentProviderProps) {
-  const [model, setModelInternal] = useState<ModelInfo>(AVAILABLE_MODELS[0]!);
+  const appConfig = useConfig();
+
+  const [model, setModelInternal] = useState<ModelInfo>(() => {
+    return getDefaultModelForConfig(appConfig.data) ?? AVAILABLE_MODELS[0]!;
+  });
   const [isModelUserSelected, setIsModelUserSelected] =
     useState<boolean>(false);
   const [tokenUsage, setTokenUsage] = useState<TokenUsage>({
@@ -104,68 +90,31 @@ export function AgentProvider({ children }: AgentProviderProps) {
     }
   }, []);
 
-  // Smart default model selection:
-  // 1. Use user's saved model preference if it still exists
-  // 2. Prefer Pensar Haiku 4.5 if connected to Pensar Console
-  // 3. Fall back to Claude Haiku 4.5 if Anthropic is configured
-  // 4. Fall back to GPT-4o Mini if OpenAI is configured
-  // 5. Otherwise use first available model
+  // Re-evaluate the default model whenever config changes (e.g. after
+  // provider setup) unless the user has explicitly picked a model.
   useEffect(() => {
-    getConfig()
-      .then((config) => {
-        const available = getAvailableModels(config);
-        if (available.length === 0) return;
+    if (isModelUserSelected) return;
 
-        // Priority 1: Check if user has a saved model preference
-        if (config.selectedModelId) {
-          const savedModel = available.find(
-            (m) => m.id === config.selectedModelId,
-          );
-          if (savedModel) {
-            setModelInternal(savedModel);
-            setIsModelUserSelected(true);
-            return;
-          }
-        }
+    const cfg = appConfig.data;
+    const available = getAvailableModels(cfg);
+    if (available.length === 0) return;
 
-        // Priority 2: Use auto-default logic
-        // Group available models by provider
-        const byProvider = new Map<string, ModelInfo[]>();
-        for (const m of available) {
-          const list = byProvider.get(m.provider) || [];
-          list.push(m);
-          byProvider.set(m.provider, list);
-        }
+    // Honour a previously saved preference
+    if (cfg.selectedModelId) {
+      const savedModel = available.find((m) => m.id === cfg.selectedModelId);
+      if (savedModel) {
+        setModelInternal(savedModel);
+        setIsModelUserSelected(true);
+        return;
+      }
+    }
 
-        // Find best default based on provider preference
-        let selectedModel: ModelInfo | null = null;
-        for (const provider of PROVIDER_PREFERENCE) {
-          const models = byProvider.get(provider);
-          if (!models || models.length === 0) continue;
-
-          // Try to find the preferred model for this provider
-          const preferredId = PREFERRED_DEFAULTS[provider];
-          if (preferredId) {
-            const preferred = models.find((m) => m.id === preferredId);
-            if (preferred) {
-              selectedModel = preferred;
-              break;
-            }
-          }
-          // Fall back to first model from this provider
-          selectedModel = models[0]!;
-          break;
-        }
-
-        if (selectedModel) {
-          setModelInternal(selectedModel);
-          // Don't mark as user-selected since this is auto-default
-        }
-      })
-      .catch((err) => {
-        writeErrorLog(err, "AGENT_CONTEXT");
-      });
-  }, []);
+    // Dynamic default based on configured providers
+    const defaultModel = getDefaultModelForConfig(cfg);
+    if (defaultModel) {
+      setModelInternal(defaultModel);
+    }
+  }, [appConfig.data, isModelUserSelected]);
 
   const addTokenUsage = useCallback((input: number, output: number) => {
     setHasExecuted(true);
