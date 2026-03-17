@@ -115,12 +115,16 @@ export class OffensiveSecurityAgent<TResult = void> {
     this.subagentId = input.subagentId;
     this.abortSignal = input.abortSignal;
 
+    // -- Resolve agent working directory ----------------------------------------
+    const agentCwd =
+      input.session.config?.agentCwd ?? input.session.rootPath;
+
     // -- Persistent shell (local mode only) -----------------------------------
     // Shell survives command cancellation; only disposed in consume() after the
     // stream ends, or when the agent is fully killed.
     if (!input.sandbox) {
       this.persistentShell = new PersistentShell({
-        cwd: input.session.rootPath,
+        cwd: agentCwd,
       });
       if (input.commandCancelHandle) {
         const shell = this.persistentShell;
@@ -137,6 +141,7 @@ export class OffensiveSecurityAgent<TResult = void> {
 
     const builtinTools = createAllTools({
       session: input.session,
+      agentCwd,
       target: input.target,
       abortSignal: input.abortSignal,
       model: input.model,
