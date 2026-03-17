@@ -36,7 +36,14 @@ export default function ModelsDisplay() {
   });
 
   return (
-    <box flexDirection="column" width="100%" paddingLeft={4} paddingTop={2}>
+    <box
+      flexDirection="column"
+      width="100%"
+      height="100%"
+      paddingLeft={4}
+      paddingTop={2}
+      overflow="hidden"
+    >
       {/* Header */}
       <text>
         <span fg={colors.primary}>█ </span>
@@ -49,7 +56,13 @@ export default function ModelsDisplay() {
       </text>
 
       {/* Model Picker */}
-      <box flexDirection="column" paddingLeft={2} marginTop={1}>
+      <box
+        flexDirection="column"
+        width="100%"
+        paddingLeft={2}
+        marginTop={1}
+        overflow="hidden"
+      >
         <ModelPicker
           config={config.data}
           selectedModel={model}

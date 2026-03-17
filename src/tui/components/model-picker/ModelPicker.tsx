@@ -1,4 +1,10 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import {
+  useState,
+  useEffect,
+  useMemo,
+  useCallback,
+  type ReactNode,
+} from "react";
 import { useKeyboard } from "@opentui/react";
 import type { ModelInfo } from "../../../core/ai";
 import { getAvailableModels } from "../../../core/providers/utils";
@@ -24,6 +30,40 @@ const providerOrder = [
   "bedrock",
   "local",
 ];
+
+function setsAreEqual(a: Set<string>, b: Set<string>) {
+  return a.size === b.size && [...a].every((value) => b.has(value));
+}
+
+function PickerRow({
+  children,
+  paddingLeft,
+  paddingRight,
+  backgroundColor,
+  flexDirection = "row",
+  gap = 0,
+}: {
+  children: ReactNode;
+  paddingLeft?: number;
+  paddingRight?: number;
+  backgroundColor?: string;
+  flexDirection?: "row" | "column";
+  gap?: number;
+}) {
+  return (
+    <box
+      width="100%"
+      overflow="hidden"
+      flexDirection={flexDirection}
+      paddingLeft={paddingLeft}
+      paddingRight={paddingRight}
+      backgroundColor={backgroundColor}
+      gap={gap}
+    >
+      {children}
+    </box>
+  );
+}
 
 type NavigationItem =
   | { type: "provider"; provider: string }
@@ -73,19 +113,45 @@ export function ModelPicker({
 
   // Load models when config changes
   useEffect(() => {
-    if (config) {
-      const models = getAvailableModels(config);
-      setAvailableModels(models);
-      // Auto-expand provider of current model
-      if (models.length > 0) {
-        const currentModel =
-          models.find((m) => m.id === selectedModel.id) || models[0];
-        if (currentModel) {
-          setExpandedProviders(new Set([currentModel.provider]));
-        }
-      }
+    if (!config) {
+      setAvailableModels([]);
+      return;
     }
-  }, [config, selectedModel.id]);
+
+    setAvailableModels(getAvailableModels(config));
+  }, [config]);
+
+  useEffect(() => {
+    const availableProviders = new Set(
+      availableModels.map((model) => model.provider),
+    );
+
+    setExpandedProviders((prev) => {
+      if (availableProviders.size === 0) {
+        return prev.size === 0 ? prev : new Set();
+      }
+
+      const preservedProviders = new Set(
+        [...prev].filter((provider) => availableProviders.has(provider)),
+      );
+
+      if (preservedProviders.size > 0) {
+        return setsAreEqual(prev, preservedProviders) ? prev : preservedProviders;
+      }
+
+      const fallbackProvider = availableProviders.has(selectedModel.provider)
+        ? selectedModel.provider
+        : availableModels[0]?.provider;
+
+      if (!fallbackProvider) {
+        return prev.size === 0 ? prev : new Set();
+      }
+
+      return prev.size === 1 && prev.has(fallbackProvider)
+        ? prev
+        : new Set([fallbackProvider]);
+    });
+  }, [availableModels, selectedModel.provider]);
 
   // Group models by provider and filter by search
   const groupedModels = useMemo(() => {
@@ -310,12 +376,16 @@ export function ModelPicker({
   });
 
   return (
-    <box flexDirection="column" gap={0}>
+    <box flexDirection="column" gap={0} width="100%" overflow="hidden">
       {/* Search indicator */}
       {searchQuery ? (
-        <text fg={colors.text}>Search: {searchQuery}_</text>
+        <PickerRow>
+          <text fg={colors.text}>Search: {searchQuery}</text>
+        </PickerRow>
       ) : (
-        <text fg={colors.textMuted}>Type to search models...</text>
+        <PickerRow>
+          <text fg={colors.textMuted}>Type to search models...</text>
+        </PickerRow>
       )}
 
       {/* Provider groups */}
@@ -335,23 +405,37 @@ export function ModelPicker({
           const localModels = groupedModels["local"];
           const modelCount = localModels?.length ?? 0;
           return (
-            <box key="local" flexDirection="column" gap={0}>
-              <text
-                fg={
-                  isProviderFocused
-                    ? colors.primary
-                    : isExpanded
-                      ? colors.text
-                      : colors.textMuted
-                }
-              >
-                {isProviderFocused ? "❯" : isExpanded ? "▾" : "▸"}{" "}
-                {providerName}
-                {modelCount > 0 ? ` (${modelCount})` : ""}
-              </text>
+            <box
+              key="local"
+              flexDirection="column"
+              gap={0}
+              width="100%"
+              overflow="hidden"
+            >
+              <PickerRow>
+                <text
+                  fg={
+                    isProviderFocused
+                      ? colors.primary
+                      : isExpanded
+                        ? colors.text
+                        : colors.textMuted
+                  }
+                >
+                  {isProviderFocused ? "❯" : isExpanded ? "▾" : "▸"}{" "}
+                  {providerName}
+                  {modelCount > 0 ? ` (${modelCount})` : ""}
+                </text>
+              </PickerRow>
 
               {isExpanded && (
-                <box flexDirection="column" gap={0} paddingLeft={2}>
+                <box
+                  flexDirection="column"
+                  gap={0}
+                  paddingLeft={2}
+                  width="100%"
+                  overflow="hidden"
+                >
                   {/* URL input */}
                   {(() => {
                     const isUrlFocused =
@@ -365,7 +449,7 @@ export function ModelPicker({
                     const isUrlEditing = editingLocalField === "url";
                     if (isUrlEditing) {
                       return (
-                        <box flexDirection="row">
+                        <PickerRow>
                           <text fg={colors.primary}> URL: </text>
                           <input
                             focused={true}
@@ -384,15 +468,17 @@ export function ModelPicker({
                             }}
                             onSubmit={finishEditing}
                           />
-                        </box>
+                        </PickerRow>
                       );
                     }
                     return (
-                      <text
-                        fg={isUrlFocused ? colors.primary : colors.textMuted}
-                      >
-                        {`  URL: ${localUrl || "(press Enter to set)"}`}
-                      </text>
+                      <PickerRow>
+                        <text
+                          fg={isUrlFocused ? colors.primary : colors.textMuted}
+                        >
+                          {`  URL: ${localUrl || "(press Enter to set)"}`}
+                        </text>
+                      </PickerRow>
                     );
                   })()}
 
@@ -409,7 +495,7 @@ export function ModelPicker({
                     const isModelEditing = editingLocalField === "model";
                     if (isModelEditing) {
                       return (
-                        <box flexDirection="row">
+                        <PickerRow>
                           <text fg={colors.primary}> Model: </text>
                           <input
                             focused={true}
@@ -428,15 +514,17 @@ export function ModelPicker({
                             }}
                             onSubmit={finishEditing}
                           />
-                        </box>
+                        </PickerRow>
                       );
                     }
                     return (
-                      <text
-                        fg={isModelFocused ? colors.primary : colors.textMuted}
-                      >
-                        {`  Model: ${localModelName || "(press Enter to set)"}`}
-                      </text>
+                      <PickerRow>
+                        <text
+                          fg={isModelFocused ? colors.primary : colors.textMuted}
+                        >
+                          {`  Model: ${localModelName || "(press Enter to set)"}`}
+                        </text>
+                      </PickerRow>
                     );
                   })()}
 
@@ -452,12 +540,13 @@ export function ModelPicker({
                         }
                       ).model.id === m.id;
                     return (
-                      <text
-                        key={m.id}
-                        fg={isFocused ? colors.primary : colors.textMuted}
-                      >
-                        {isSelected ? "●" : "○"} {m.name}
-                      </text>
+                      <PickerRow key={m.id}>
+                        <text
+                          fg={isFocused ? colors.primary : colors.textMuted}
+                        >
+                          {isSelected ? "●" : "○"} {m.name}
+                        </text>
+                      </PickerRow>
                     );
                   })}
                 </box>
@@ -470,22 +559,36 @@ export function ModelPicker({
         if (!models || models.length === 0) return null;
 
         return (
-          <box key={provider} flexDirection="column" gap={0}>
-            <text
-              fg={
-                isProviderFocused
-                  ? colors.primary
-                  : isExpanded
-                    ? colors.text
-                    : colors.textMuted
-              }
-            >
-              {isProviderFocused ? "❯" : isExpanded ? "▾" : "▸"} {providerName}{" "}
-              ({models.length})
-            </text>
+          <box
+            key={provider}
+            flexDirection="column"
+            gap={0}
+            width="100%"
+            overflow="hidden"
+          >
+            <PickerRow>
+              <text
+                fg={
+                  isProviderFocused
+                    ? colors.primary
+                    : isExpanded
+                      ? colors.text
+                      : colors.textMuted
+                }
+              >
+                {isProviderFocused ? "❯" : isExpanded ? "▾" : "▸"} {providerName}{" "}
+                ({models.length})
+              </text>
+            </PickerRow>
 
             {isExpanded && (
-              <box flexDirection="column" gap={0} paddingLeft={2}>
+              <box
+                flexDirection="column"
+                gap={0}
+                paddingLeft={2}
+                width="100%"
+                overflow="hidden"
+              >
                 {models.map((m) => {
                   const isSelected = m.id === selectedModel.id;
                   const isFocused =
@@ -499,15 +602,16 @@ export function ModelPicker({
                   const isDefault =
                     m.id === "claude-haiku-4-5" || m.id === "gpt-4o-mini";
                   return (
-                    <text
-                      key={m.id}
-                      fg={isFocused ? colors.primary : colors.textMuted}
-                    >
-                      {isSelected ? "●" : "○"} {m.name}
-                      {isDefault && !isModelUserSelected && isSelected
-                        ? " [default]"
-                        : ""}
-                    </text>
+                    <PickerRow key={m.id}>
+                      <text
+                        fg={isFocused ? colors.primary : colors.textMuted}
+                      >
+                        {isSelected ? "●" : "○"} {m.name}
+                        {isDefault && !isModelUserSelected && isSelected
+                          ? " [default]"
+                          : ""}
+                      </text>
+                    </PickerRow>
                   );
                 })}
               </box>
@@ -517,11 +621,13 @@ export function ModelPicker({
       })}
 
       {/* Help text */}
-      <text fg={colors.textMuted}>
-        {editingLocalField
-          ? "Type or paste | Enter/Esc to confirm"
-          : "↑/↓ navigate | ←/→ collapse/expand | Type to search"}
-      </text>
+      <PickerRow>
+        <text fg={colors.textMuted}>
+          {editingLocalField
+            ? "Type or paste | Enter/Esc to confirm"
+            : "↑/↓ navigate | ←/→ collapse/expand | Type to search"}
+        </text>
+      </PickerRow>
     </box>
   );
 }
