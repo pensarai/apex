@@ -68,6 +68,6 @@ export const AVAILABLE_PROVIDERS: Provider[] = [
     id: "pensar",
     name: "Pensar",
     description: "Managed inference via Pensar Console (usage-based billing)",
-    requiresAPIKey: true,
+    requiresAPIKey: false,
   },
 ];

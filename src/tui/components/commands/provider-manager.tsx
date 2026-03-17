@@ -29,7 +29,11 @@ export default function ProviderManager() {
 
   const handleProviderSelected = (providerId: ProviderType) => {
     setSelectedProvider(providerId);
-    setFlowState("inputting");
+    if (providerId === "pensar") {
+      setFlowState("auth");
+    } else {
+      setFlowState("inputting");
+    }
   };
 
   const handleAPIKeySubmit = async (apiKey: string) => {
