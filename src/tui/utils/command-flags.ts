@@ -213,15 +213,21 @@ export function parseWebFlags(args: string[]): WebCommandFlags {
       .map((p) => parseInt(p.trim(), 10))
       .filter((p) => !isNaN(p));
   }
-  
-  // Auto-extract port from target URL if not explicitly provided via --ports
-  if (flags.target && !flags.ports) {
+
+  // Keep skipped-wizard CLI scope aligned with wizard auto-population.
+  if (flags.target) {
     const parsed = parseTargetUrl(flags.target);
-    if (parsed?.port) {
-      flags.ports = [parsed.port];
+    if (parsed) {
+      if (!flags.hosts?.includes(parsed.hostname)) {
+        flags.hosts = [...(flags.hosts || []), parsed.hostname];
+      }
+
+      if (parsed.port && !flags.ports?.includes(parsed.port)) {
+        flags.ports = [...(flags.ports || []), parsed.port];
+      }
     }
   }
-  
+
   if (raw.strict) flags.strict = true;
 
   // Headers options
@@ -249,14 +255,6 @@ export function parseWebFlags(args: string[]): WebCommandFlags {
 
   // Model option
   if (raw.model) flags.model = String(raw.model);
-
-  // Auto-extract port from target URL if not explicitly provided via --ports
-  if (flags.target && !flags.ports) {
-    const parsed = parseTargetUrl(flags.target);
-    if (parsed?.port) {
-      flags.ports = [parsed.port];
-    }
-  }
 
   return flags;
 }
