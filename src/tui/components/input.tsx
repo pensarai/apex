@@ -1,17 +1,19 @@
 import { forwardRef } from "react";
 import type { InputProps } from "@opentui/react";
-import type { InputRenderable } from "@opentui/core";
+import type { InputRenderable, KeyBinding } from "@opentui/core";
 import { useTheme } from "../theme";
 
 interface InputComponentProps extends InputProps {
   label: string;
   description?: string;
+  keyBindings?: KeyBinding[];
 }
 
 const Input = forwardRef<InputRenderable, InputComponentProps>(
   function Input(opts, ref) {
     const { colors } = useTheme();
-    const { label, focused = true, description, ...inputProps } = opts;
+    const { label, focused = true, description, keyBindings, ...inputProps } =
+      opts;
 
     return (
       <box
@@ -33,6 +35,7 @@ const Input = forwardRef<InputRenderable, InputComponentProps>(
           cursorColor={colors.textMuted}
           textColor={colors.text}
           focusedTextColor={colors.text}
+          keyBindings={keyBindings}
           {...inputProps}
         />
       </box>

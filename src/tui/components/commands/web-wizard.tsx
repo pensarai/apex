@@ -657,6 +657,7 @@ export default function WebWizard({
               }
             }}
             focused={targetFocusedField === 0}
+            keyBindings={[{ name: "tab", action: "submit" }]}
           />
           {targetError && <text fg={colors.error}>{targetError}</text>}
 
