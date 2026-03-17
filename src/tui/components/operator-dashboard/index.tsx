@@ -18,7 +18,9 @@ import { runOffensiveSecurityAgent } from "../../../core/api/offesecAgent";
 import { buildAuthConfig } from "../../../core/ai/utils";
 import {
   ALL_TOOL_NAMES,
+  PLAN_MODE_TOOL_NAMES,
   type ConsumeCallbacks,
+  type AgentMode,
 } from "../../../core/agents/offSecAgent";
 import {
   convertModelMessagesToUI,
@@ -176,6 +178,8 @@ export default function OperatorDashboard({
   // Display options
   const [verboseMode, setVerboseMode] = useState(false);
   const [expandedLogs, setExpandedLogs] = useState(false);
+  // Agent mode: "default" uses all tools, "plan" restricts to read-only tools
+  const [agentMode, setAgentMode] = useState<AgentMode>("default");
   const tokenUsageRef = useRef(tokenUsage);
 
   useEffect(() => {
@@ -786,7 +790,10 @@ export default function OperatorDashboard({
         messages: nextMessages,
         stopWhen: [stepCountIs(10000)],
         target: initialConfig?.target,
-        activeTools: [...ALL_TOOL_NAMES] as string[],
+        activeTools: [
+          ...(agentMode === "plan" ? PLAN_MODE_TOOL_NAMES : ALL_TOOL_NAMES),
+        ] as string[],
+        mode: agentMode,
         abortSignal: controller.signal,
         authConfig: buildAuthConfig(config.data),
         approvalGate: approvalGateRef.current,
@@ -807,6 +814,7 @@ export default function OperatorDashboard({
             system: buildOperatorSystemPrompt(
               initialConfig?.target,
               operatorState,
+              agentMode,
             ),
             session,
           });
@@ -827,6 +835,7 @@ export default function OperatorDashboard({
             system: buildOperatorSystemPrompt(
               initialConfig?.target,
               operatorState,
+              agentMode,
             ),
             sessionConfig,
             onNameGenerated: (name: string) => {
@@ -903,6 +912,7 @@ export default function OperatorDashboard({
       model.id,
       config.data,
       operatorState,
+      agentMode,
       addTokenUsage,
       appendText,
       addStreamingToolCall,
@@ -1112,6 +1122,11 @@ export default function OperatorDashboard({
     });
   }, []);
 
+  // Toggle between default and plan mode
+  const toggleMode = useCallback(() => {
+    setAgentMode((prev) => (prev === "default" ? "plan" : "default"));
+  }, []);
+
   // Keyboard shortcuts
   useKeyboard((key) => {
     // Queue navigation: handle before general shortcuts
@@ -1212,6 +1227,9 @@ export default function OperatorDashboard({
       case "toggle-approval":
         toggleApproval();
         return;
+      case "toggle-mode":
+        toggleMode();
+        return;
       case "approve":
         handleApprove();
         return;
@@ -1283,6 +1301,9 @@ export default function OperatorDashboard({
           )}
         </box>
         <box flexDirection="row" gap={2}>
+          <text fg={agentMode === "plan" ? colors.warning : colors.primary}>
+            {agentMode === "plan" ? "PLAN" : "DEFAULT"}
+          </text>
           <text
             fg={operatorState.requireApproval ? colors.warning : colors.primary}
           >
@@ -1336,7 +1357,7 @@ export default function OperatorDashboard({
         }
         status={status === "waiting" ? "running" : status}
         mode="operator"
-        operatorMode={operatorState.mode}
+        operatorMode={agentMode === "plan" ? "plan" : operatorState.mode}
         verboseMode={verboseMode}
         expandedLogs={expandedLogs}
         pendingApproval={currentPending}

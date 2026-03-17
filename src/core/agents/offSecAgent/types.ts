@@ -57,6 +57,9 @@ export type Finding = z.infer<typeof ApexFindingObject>;
  *
  * @typeParam TResult - The type returned by `consume()`. Defaults to `void`.
  */
+/** Agent operating mode that controls which tools are available. */
+export type AgentMode = "default" | "plan";
+
 export type OffensiveSecurityAgentInput<TResult = void> = {
   /** System prompt defining agent persona and behavior. Defaults to BASE_SYSTEM_PROMPT when omitted. */
   system?: string;
@@ -66,6 +69,21 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
 
   /** AI model identifier */
   model: AIModel;
+
+  /**
+   * Operating mode that controls which tools are available.
+   *
+   * - `"default"` — all tools in `activeTools` are available (default)
+   * - `"plan"` — only read-only / non-mutating tools are available
+   *
+   * When set to `"plan"`, the agent's `activeTools` are intersected with
+   * {@link PLAN_MODE_TOOL_NAMES} so that mutation tools (create_file,
+   * update_file, create_poc, document_vulnerability, document_asset)
+   * are excluded.
+   *
+   * @default "default"
+   */
+  mode?: AgentMode;
 
   /** Session providing paths for findings, POCs, logs, etc. */
   session: SessionInfo;

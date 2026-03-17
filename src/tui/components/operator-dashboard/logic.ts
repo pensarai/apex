@@ -99,6 +99,7 @@ export type KeyboardAction =
   | { type: "toggle-verbose" }
   | { type: "toggle-expanded-logs" }
   | { type: "toggle-approval" }
+  | { type: "toggle-mode" }
   | { type: "approve" }
   | { type: "auto-approve" };
 
@@ -133,8 +134,12 @@ export function resolveKeyboardShortcut(
   // Ctrl+L — toggle expanded logs
   if (key.ctrl && key.name === "l") return { type: "toggle-expanded-logs" };
 
-  // Shift+Tab — toggle approval
-  if (key.name === "tab" && key.shift) return { type: "toggle-approval" };
+  // Option+Shift+Tab — toggle approval
+  if (key.name === "tab" && key.shift && key.meta)
+    return { type: "toggle-approval" };
+
+  // Shift+Tab — toggle plan/default mode
+  if (key.name === "tab" && key.shift) return { type: "toggle-mode" };
 
   // Y to approve
   if (
@@ -180,7 +185,13 @@ export function resolveAbortAction(
 export function buildOperatorSystemPrompt(
   target: string | undefined,
   operatorState: OperatorSessionState,
+  agentMode?: "default" | "plan",
 ): string {
+  const modeNote =
+    agentMode === "plan"
+      ? "\nAgent mode: PLAN — read-only tools only, no mutations allowed"
+      : "";
+
   return `${BASE_SYSTEM_PROMPT}
 
 # Operator Mode
@@ -189,7 +200,7 @@ You are operating in interactive operator mode. The human operator will guide yo
 
 Target: ${target || "unknown"}
 Stage: ${operatorState.currentStage}
-Command approval: ${operatorState.requireApproval ? "enabled — the operator will approve each tool call" : "disabled — tool calls execute automatically"}`;
+Command approval: ${operatorState.requireApproval ? "enabled — the operator will approve each tool call" : "disabled — tool calls execute automatically"}${modeNote}`;
 }
 
 // ---------------------------------------------------------------------------
