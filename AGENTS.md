@@ -36,9 +36,11 @@ See `package.json` `scripts` for the full list.
 - `src/core/agents/` — Agent implementations (auth, attack surface, pentest, offensive security)
 - `src/core/ai/` — AI SDK wrappers and streaming utilities
 - `src/core/api/` — Public API surface for running agents
+- `src/core/auth/` — Centralized Pensar Console authentication (device flow, tokens, HMAC signing, workspaces)
 - `src/core/credentials/` — Credential management
 - `src/core/findings/` — Vulnerability findings registry
 - `src/core/session/` — Session management
+- `src/cli/` — Headless CLI commands (auth, uninstall)
 - `src/tests/` — Integration tests (many require live services)
 - `src/tui/` — Terminal UI components
 

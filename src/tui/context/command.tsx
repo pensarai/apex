@@ -146,7 +146,35 @@ export function CommandProvider({
       });
     }
 
-    return options;
+    // Sort commands with priority order first, then others alphabetically
+    const priorityOrder = [
+      "/pentest",
+      "/operator",
+      "/auth",
+      "/models",
+      "/sessions",
+      "/themes",
+      "/help",
+    ];
+
+    return options.sort((a, b) => {
+      const aIndex = priorityOrder.indexOf(a.value);
+      const bIndex = priorityOrder.indexOf(b.value);
+
+      // Both in priority list - sort by priority order
+      if (aIndex !== -1 && bIndex !== -1) {
+        return aIndex - bIndex;
+      }
+
+      // Only a is in priority list - a comes first
+      if (aIndex !== -1) return -1;
+
+      // Only b is in priority list - b comes first
+      if (bIndex !== -1) return 1;
+
+      // Neither in priority list - sort alphabetically
+      return a.value.localeCompare(b.value);
+    });
   }, [router, skills]);
 
   const executeCommand = useCallback(

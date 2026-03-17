@@ -28,7 +28,7 @@ With flags:
     Provide the target URL and optional authentication details.
   </Step>
   <Step title="Choose Mode">
-    Select how much autonomy the agent has: plan, manual, or auto.
+    The agent starts in Default mode with all tools available. Press `Shift+Tab` to toggle Plan mode (read-only tools only). Toggle approval on/off with `Option+Shift+Tab`.
   </Step>
   <Step title="Interactive Session">
     The AI agent proposes actions and you approve, reject, or redirect in real
@@ -44,17 +44,25 @@ With flags:
 
 ## Operator Modes
 
-| Mode       | Description                                                                 |
-| ---------- | --------------------------------------------------------------------------- |
-| **Plan**   | The agent creates a testing plan for your review before executing anything  |
-| **Manual** | The agent proposes each action individually and waits for your approval     |
-| **Auto**   | The agent executes actions automatically, but you can intervene at any time |
+| Mode        | Description                                                                 |
+| ----------- | --------------------------------------------------------------------------- |
+| **Default** | All tools are available; the agent can read, write, and mutate targets      |
+| **Plan**    | Read-only tools only — mutation tools (create_file, update_file, create_poc, document_vulnerability, document_asset) are excluded so the agent can only observe and plan |
+
+You can toggle between Default and Plan mode at any time during a session using `Shift+Tab`. The current mode is shown in the operator dashboard header.
 
 <Callout intent="info">
-  **Manual mode** is the default and recommended for learning or when testing
-  sensitive targets. **Auto mode** is closer to `/pentest` but keeps you in the
-  loop with the ability to pause and redirect.
+  **Plan mode** is useful for reviewing the agent's strategy before allowing any mutations. Start in Plan mode to understand the agent's approach, then switch to Default mode when you're ready for it to take action.
 </Callout>
+
+### Approval Control
+
+In addition to operating mode, you can toggle whether tool calls require your approval:
+
+- **Approval on** — the agent pauses before each tool call and waits for you to approve (`Y`) or auto-approve (`A`)
+- **Approval off** — tool calls execute automatically
+
+Toggle approval with `Option+Shift+Tab` (or `Alt+Shift+Tab` on Linux/Windows).
 
 ## Command Flags
 
@@ -74,6 +82,19 @@ With flags:
 | `--strict`            | Enable strict scope mode                          |
 | `--headers <mode>`    | Headers mode: none, default, or custom            |
 | `--header <Name:Val>` | Custom header (repeatable)                        |
+
+## Keyboard Shortcuts
+
+| Key                | Action                                  |
+| ------------------ | --------------------------------------- |
+| `Shift+Tab`        | Toggle between Default and Plan mode    |
+| `Option+Shift+Tab` | Toggle approval on/off                  |
+| `Ctrl+V`           | Toggle verbose output                   |
+| `Ctrl+L`           | Toggle expanded logs                    |
+| `Ctrl+C`           | Abort running agent / clear input       |
+| `Y`                | Approve pending tool call               |
+| `A`                | Auto-approve all remaining tool calls   |
+| `Escape`           | Exit operator session (when idle)       |
 
 ## When to Use /operator vs /pentest
 
@@ -129,11 +150,11 @@ You can extend operator mode with custom skills using `/create-skill`. Skills ar
 ## Best Practices
 
 <Callout intent="success">
-  **Tips for Operator Mode**: 1. **Start with plan mode** to review the agent's
-  testing strategy before execution 2. **Use manual mode** for sensitive targets
-  where you want full control 3. **Switch to auto mode** once you're comfortable
-  with the agent's approach 4. **Create skills** for repetitive testing patterns
-  in your environment
+  **Tips for Operator Mode**: 1. **Start in Plan mode** (`Shift+Tab`) to review the agent's
+  strategy with read-only tools before allowing mutations 2. **Enable approval**
+  (`Option+Shift+Tab`) for sensitive targets where you want to approve each action 3.
+  **Switch to Default mode** once you're comfortable with the agent's approach 4.
+  **Create skills** for repetitive testing patterns in your environment
 </Callout>
 
 <Callout intent="warning">

@@ -22,6 +22,7 @@ import {
   computeDownArrow,
   computeTab,
   shouldResetHistory,
+  computeVisibleWindow,
 } from "./prompt-input-logic";
 import { usePasteExtmarks } from "./use-paste-extmarks";
 export interface AutocompleteOption {
@@ -73,6 +74,7 @@ interface PromptInputProps {
   enableAutocomplete?: boolean;
   autocompleteOptions?: AutocompleteOption[];
   maxSuggestions?: number;
+  maxVisibleSuggestions?: number;
 
   // Command execution
   enableCommands?: boolean;
@@ -108,6 +110,7 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
       enableAutocomplete = false,
       autocompleteOptions = [],
       maxSuggestions = 10,
+      maxVisibleSuggestions = 6,
       enableCommands = false,
       onCommandExecute,
       commandHistory = [],
@@ -346,6 +349,17 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
       }
     };
 
+    // Compute windowed view of suggestions
+    const windowedView = useMemo(
+      () =>
+        computeVisibleWindow(
+          suggestions,
+          selectedSuggestionIndex,
+          maxVisibleSuggestions,
+        ),
+      [suggestions, selectedSuggestionIndex, maxVisibleSuggestions],
+    );
+
     const suggestionsBox = suggestions.length > 0 && (
       <box
         flexDirection="column"
@@ -353,8 +367,20 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
           ? { marginBottom: 1 }
           : { marginTop: 1 })}
       >
-        {suggestions.map((suggestion, index) => {
-          const isSelected = index === selectedSuggestionIndex;
+        {/* Scroll indicator for more suggestions above */}
+        {windowedView.hasMore && (
+          <box flexDirection="row" gap={1}>
+            <text fg={colors.textMuted}>  ↑</text>
+            <text fg={colors.textMuted}>
+              {windowedView.start} more above...
+            </text>
+          </box>
+        )}
+
+        {/* Visible suggestions window */}
+        {windowedView.visibleSuggestions.map((suggestion, windowIndex) => {
+          const actualIndex = windowedView.start + windowIndex;
+          const isSelected = actualIndex === selectedSuggestionIndex;
           return (
             <box key={suggestion.value} flexDirection="row" gap={1}>
               <text fg={isSelected ? colors.primary : colors.textMuted}>
@@ -369,6 +395,16 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
             </box>
           );
         })}
+
+        {/* Scroll indicator for more suggestions below */}
+        {windowedView.hasMoreBelow && (
+          <box flexDirection="row" gap={1}>
+            <text fg={colors.textMuted}>  ↓</text>
+            <text fg={colors.textMuted}>
+              {suggestions.length - windowedView.end} more below...
+            </text>
+          </box>
+        )}
       </box>
     );
 

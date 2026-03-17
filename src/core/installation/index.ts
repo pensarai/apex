@@ -66,6 +66,18 @@ export function detectInstallMethod(): InstallMethod {
     return "npm";
   }
 
+  // Determine if we're running as a compiled binary vs via an interpreter.
+  // Compiled Bun binaries have process.execPath pointing to the binary itself
+  // (e.g. ~/.local/bin/pensar), while interpreted scripts have it pointing to
+  // the runtime (e.g. ~/.bun/bin/bun or /usr/local/bin/node).
+  const execName = execPath.split("/").pop()?.replace(/\.exe$/, "") ?? "";
+  const isInterpreter =
+    execName === "bun" || execName === "node" || execName === "bun-debug";
+
+  if (!isInterpreter) {
+    return "binary";
+  }
+
   const npmCheck = spawnSync(
     "npm",
     ["list", "-g", "@pensar/apex", "--depth=0"],

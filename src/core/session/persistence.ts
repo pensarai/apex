@@ -58,7 +58,7 @@ export interface UIMessage {
   toolName?: string;
   args?: Record<string, unknown>;
   result?: unknown;
-  status?: "pending" | "completed";
+  status?: "pending" | "completed" | "error";
 }
 
 /**
@@ -382,6 +382,9 @@ function convertMessagesToUI(
           const result = part.toolCallId
             ? toolResults.get(part.toolCallId)
             : undefined;
+          const cancelled =
+            typeof result === "string" &&
+            result.toLowerCase().includes("cancelled");
           uiMessages.push({
             role: "tool",
             content: toolDescription,
@@ -390,7 +393,7 @@ function convertMessagesToUI(
             toolName: part.toolName,
             args: input,
             result: result,
-            status: "completed",
+            status: cancelled ? "error" : "completed",
           });
         }
       }
