@@ -52,6 +52,11 @@ export interface WorkspaceInfo {
   hasPaymentMethod: boolean;
 }
 
+export interface FetchWorkspacesResponse {
+  workspaces: WorkspaceInfo[];
+  consoleUrl?: string;
+}
+
 export interface SelectWorkspaceResponse {
   confirmed: boolean;
   workspace: { id: string; name: string; slug: string };
