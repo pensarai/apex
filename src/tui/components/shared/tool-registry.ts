@@ -117,6 +117,27 @@ export function getToolSummary(
 }
 
 /**
+ * Get the label shown in the live tool header.
+ *
+ * Pending shell commands should prefer the model-provided human description
+ * over partial command text while the tool call is still streaming/executing.
+ */
+export function getToolDisplayLabel(
+  toolName: string,
+  args: Record<string, unknown>,
+  options: { preferDescription?: boolean } = {},
+): string {
+  if (options.preferDescription && toolName === "execute_command") {
+    const description = args.toolCallDescription;
+    if (typeof description === "string" && description.trim().length > 0) {
+      return description.trim();
+    }
+  }
+
+  return getToolSummary(toolName, args);
+}
+
+/**
  * Register a custom tool summary function.
  * Allows extensions to add their own tool displays.
  *

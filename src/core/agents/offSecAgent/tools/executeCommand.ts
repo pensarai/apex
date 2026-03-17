@@ -7,17 +7,18 @@ import type { ToolContext } from "./types";
 const MAX_INLINE = 50_000;
 
 export const executeCommandInputSchema = z.object({
+  // not actually sure if placing this above the other keys/zod values ensures that the model generates it first...
+  toolCallDescription: z
+    .string()
+    .describe(
+      "A concise, human-readable description of what this tool call is doing (e.g., 'Scanning for open ports on target')",
+    ),
   command: z.string().describe("The shell command to execute"),
   timeout: z
     .number()
     .optional()
     .describe(
       "Timeout in seconds. If omitted, the command runs until completion or abort.",
-    ),
-  toolCallDescription: z
-    .string()
-    .describe(
-      "A concise, human-readable description of what this tool call is doing (e.g., 'Scanning for open ports on target')",
     ),
 });
 
