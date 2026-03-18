@@ -427,6 +427,9 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
           ac,
         );
       }
+      if (key.raw === "d" || key.raw === "D") {
+        handleDisconnect();
+      }
     }
 
     if (step === "error") {
@@ -548,6 +551,7 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
               <text fg={colors.textMuted}>
                 <span fg={colors.primary}>[↑/↓]</span> Navigate ·{" "}
                 <span fg={colors.primary}>[ENTER]</span> Select ·{" "}
+                <span fg={colors.error}>[D]</span> Disconnect ·{" "}
                 <span fg={colors.primary}>[ESC]</span> Cancel
               </text>
             </box>
