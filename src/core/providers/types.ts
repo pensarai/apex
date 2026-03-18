@@ -23,6 +23,12 @@ export interface ConfiguredProvider extends Provider {
 
 export const AVAILABLE_PROVIDERS: Provider[] = [
   {
+    id: "pensar",
+    name: "Pensar",
+    description: "Managed inference via Pensar Console (usage-based billing)",
+    requiresAPIKey: false,
+  },
+  {
     id: "anthropic",
     name: "Anthropic",
     description: "Claude Pro/Max or API key",
@@ -62,12 +68,6 @@ export const AVAILABLE_PROVIDERS: Provider[] = [
     id: "local",
     name: "Local LLM",
     description: "OpenAI-compatible local model (vLLM, LM Studio, Ollama)",
-    requiresAPIKey: false,
-  },
-  {
-    id: "pensar",
-    name: "Pensar",
-    description: "Managed inference via Pensar Console (usage-based billing)",
     requiresAPIKey: false,
   },
 ];
