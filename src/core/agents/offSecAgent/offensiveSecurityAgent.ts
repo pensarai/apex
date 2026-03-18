@@ -439,16 +439,21 @@ function wrapToolsWithApprovalGate(
           args.toolCallId ??
           `tc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
+        console.error(`[approval-gate] ${name} (${toolCallId}): checking`);
         try {
           await gate.check(name, String(toolCallId), args);
         } catch (err) {
           if (err instanceof ApprovalDeniedError) {
+            console.error(`[approval-gate] ${name} (${toolCallId}): denied`);
             return { blocked: true, reason: "Denied by operator" };
           }
           throw err;
         }
+        console.error(`[approval-gate] ${name} (${toolCallId}): approved, executing`);
 
-        return originalExecute(args, options);
+        const result = await originalExecute(args, options);
+        console.error(`[approval-gate] ${name} (${toolCallId}): execute finished`);
+        return result;
       },
     };
   }

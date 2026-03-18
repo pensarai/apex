@@ -13,6 +13,7 @@ import {
   sessions,
   type SessionInfo,
   type SessionConfig,
+  normalizeMessages,
 } from "../../../core/session";
 import { runOffensiveSecurityAgent } from "../../../core/api/offesecAgent";
 import { buildAuthConfig } from "../../../core/ai/utils";
@@ -259,7 +260,9 @@ export default function OperatorDashboard({
 
                 // Only pass a recent subset to the AI to avoid immediately
                 // blowing the context window and triggering summarization.
-                conversationRef.current = sessions.getResumeMessages(modelMsgs);
+                conversationRef.current = normalizeMessages(
+                  sessions.getResumeMessages(modelMsgs),
+                );
 
                 const uiMsgs = convertModelMessagesToUI(modelMsgs);
                 setMessages(
@@ -688,10 +691,12 @@ export default function OperatorDashboard({
 
       // Build messages array — append user turn to conversation history.
       // Update conversationRef eagerly so the user turn survives an abort.
-      const nextMessages: ModelMessage[] = [
+      // Snapshot the previous state so we can roll back on API failure.
+      const prevMessages = conversationRef.current;
+      const nextMessages: ModelMessage[] = normalizeMessages([
         ...conversationRef.current,
         { role: "user", content: prompt },
-      ];
+      ]);
       conversationRef.current = nextMessages;
 
       // Persist the user message to disk immediately so that it is present in
@@ -897,8 +902,8 @@ export default function OperatorDashboard({
             if (existsSync(mp)) {
               const raw = JSON.parse(readFileSync(mp, "utf-8"));
               if (Array.isArray(raw) && raw.length > 0) {
-                conversationRef.current = sessions.getResumeMessages(
-                  raw as ModelMessage[],
+                conversationRef.current = normalizeMessages(
+                  sessions.getResumeMessages(raw as ModelMessage[]),
                 );
               }
             }
@@ -907,10 +912,10 @@ export default function OperatorDashboard({
             try {
               const response = await agentResult.streamResult.response;
               if (response.messages) {
-                conversationRef.current = [
+                conversationRef.current = normalizeMessages([
                   ...nextMessages,
                   ...response.messages,
-                ] as ModelMessage[];
+                ] as ModelMessage[]);
               }
             } catch {
               // conversation stays as-is
@@ -920,6 +925,24 @@ export default function OperatorDashboard({
       } catch (e) {
         if (gen !== generationRef.current) return;
         if ((e as Error).name !== "AbortError") {
+          // Roll back the eagerly-appended user message so the conversation
+          // state stays clean.  Without this, a schema validation failure
+          // (e.g. from the AI SDK) leaves the user message in place and
+          // subsequent retries stack consecutive user messages, permanently
+          // breaking the session.
+          conversationRef.current = prevMessages;
+          if (sessionRef.current) {
+            try {
+              const mp = join(sessionRef.current.rootPath, "messages.json");
+              writeFileSync(
+                mp,
+                JSON.stringify(prevMessages, null, 2),
+              );
+            } catch {
+              // Best-effort rollback
+            }
+          }
+
           const errorMsg = e instanceof Error ? e.message : "Agent failed";
           setError(errorMsg);
           setMessages((prev) => [
@@ -1127,8 +1150,8 @@ export default function OperatorDashboard({
         if (existsSync(messagesPath)) {
           const raw = JSON.parse(readFileSync(messagesPath, "utf-8"));
           if (Array.isArray(raw) && raw.length > 0) {
-            conversationRef.current = sessions.getResumeMessages(
-              raw as ModelMessage[],
+            conversationRef.current = normalizeMessages(
+              sessions.getResumeMessages(raw as ModelMessage[]),
             );
           }
         }
@@ -1185,7 +1208,10 @@ export default function OperatorDashboard({
                   type: "tool-result" as const,
                   toolCallId: t.toolCallId,
                   toolName: t.toolName ?? "unknown",
-                  output: "Cancelled by user.",
+                  output: {
+                    type: "text" as const,
+                    value: "Cancelled by user.",
+                  },
                 })),
               } as unknown as ModelMessage,
             ];

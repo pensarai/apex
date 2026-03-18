@@ -1,31 +1,49 @@
 import type {
-  LanguageModelV2CallOptions,
-  LanguageModelV2Content,
-  LanguageModelV2FinishReason,
-  LanguageModelV2TextPart,
-  LanguageModelV2ToolCallPart,
-  LanguageModelV2ToolResultPart,
+  LanguageModelV3CallOptions,
+  LanguageModelV3Content,
+  LanguageModelV3FinishReason,
+  LanguageModelV3TextPart,
+  LanguageModelV3ToolCallPart,
+  LanguageModelV3ToolResultPart,
 } from "@ai-sdk/provider";
 
-/**
- * Converts Vercel AI SDK LanguageModelV2CallOptions into a Bedrock-compatible
- * request body. Currently supports Anthropic Claude models (the primary models
- * available through Pensar). Other model families can be added incrementally.
- */
 export function convertToBedrockFormat(
   modelId: string,
-  options: LanguageModelV2CallOptions,
+  options: LanguageModelV3CallOptions,
 ): Record<string, unknown> {
   if (modelId.includes("anthropic.claude")) {
-    return convertToAnthropicFormat(options);
+    return convertToAnthropicFormat(modelId, options);
   }
 
   // Fallback: attempt Anthropic format for unknown models
-  return convertToAnthropicFormat(options);
+  return convertToAnthropicFormat(modelId, options);
+}
+
+function getDefaultMaxOutputTokens(modelId: string): number {
+  if (modelId.includes("claude-opus-4-6") || modelId.includes("claude-sonnet-4-6")) {
+    return 128_000;
+  }
+  if (modelId.includes("claude-sonnet-4-5") || modelId.includes("claude-opus-4-5") || modelId.includes("claude-haiku-4-5")) {
+    return 64_000;
+  }
+  if (modelId.includes("claude-opus-4-1")) {
+    return 32_000;
+  }
+  if (modelId.includes("claude-sonnet-4-") || modelId.includes("claude-3-7-sonnet")) {
+    return 64_000;
+  }
+  if (modelId.includes("claude-opus-4-")) {
+    return 32_000;
+  }
+  if (modelId.includes("claude-3-5-haiku")) {
+    return 8_192;
+  }
+  return 4_096;
 }
 
 function convertToAnthropicFormat(
-  options: LanguageModelV2CallOptions,
+  modelId: string,
+  options: LanguageModelV3CallOptions,
 ): Record<string, unknown> {
   const messages: Array<{
     role: string;
@@ -39,8 +57,8 @@ function convertToAnthropicFormat(
       if (part.role === "system") {
         systemPrompt = part.content;
       } else if (part.role === "user") {
-        const content = (part.content as Array<LanguageModelV2TextPart>)
-          .map((c: LanguageModelV2TextPart) => {
+        const content = (part.content as Array<LanguageModelV3TextPart>)
+          .map((c: LanguageModelV3TextPart) => {
             if (c.type === "text") return c.text;
             if (c.type === "file") return "[file]";
             return "";
@@ -49,7 +67,7 @@ function convertToAnthropicFormat(
         messages.push({ role: "user", content });
       } else if (part.role === "assistant") {
         const assistantContent = part.content as Array<
-          LanguageModelV2TextPart | LanguageModelV2ToolCallPart
+          LanguageModelV3TextPart | LanguageModelV3ToolCallPart
         >;
         const hasToolCalls = assistantContent.some(
           (c) => c.type === "tool-call",
@@ -83,14 +101,17 @@ function convertToAnthropicFormat(
       } else if (part.role === "tool") {
         // Tool results get appended as user messages in Anthropic format
         const toolResults = (
-          part.content as Array<LanguageModelV2ToolResultPart>
-        ).map((c: LanguageModelV2ToolResultPart) => {
-          // V2 uses `output` with typed objects instead of `result`
+          part.content as Array<LanguageModelV3ToolResultPart>
+        ).map((c: LanguageModelV3ToolResultPart) => {
           let resultContent: string;
-          if (c.output.type === "text" || c.output.type === "error-text") {
+          if (c.output.type === "text") {
             resultContent = c.output.value;
-          } else {
+          } else if (c.output.type === "json") {
             resultContent = JSON.stringify(c.output.value);
+          } else if (c.output.type === "execution-denied") {
+            resultContent = c.output.reason ?? "Tool execution denied";
+          } else {
+            resultContent = JSON.stringify(c.output);
           }
           return {
             type: "tool_result",
@@ -116,7 +137,7 @@ function convertToAnthropicFormat(
   const body: Record<string, unknown> = {
     anthropic_version: "bedrock-2023-05-31",
     messages,
-    max_tokens: options.maxOutputTokens ?? 4096,
+    max_tokens: options.maxOutputTokens ?? getDefaultMaxOutputTokens(modelId),
   };
 
   if (systemPrompt) {
@@ -169,28 +190,31 @@ function convertToAnthropicFormat(
   return body;
 }
 
-/**
- * Parses a Bedrock Anthropic response into the V2 content array format
- * expected by LanguageModelV2.doGenerate().
- */
 export function parseBedrockResponse(
   modelId: string,
   response: Record<string, unknown>,
   usage: { inputTokens: number; outputTokens: number },
 ): {
-  content: LanguageModelV2Content[];
-  finishReason: LanguageModelV2FinishReason;
+  content: LanguageModelV3Content[];
+  finishReason: LanguageModelV3FinishReason;
   usage: {
-    inputTokens: number | undefined;
-    outputTokens: number | undefined;
-    totalTokens: number | undefined;
+    inputTokens: {
+      total: number | undefined;
+      noCache: undefined;
+      cacheRead: undefined;
+      cacheWrite: undefined;
+    };
+    outputTokens: {
+      total: number | undefined;
+      text: undefined;
+      reasoning: undefined;
+    };
   };
 } {
   if (modelId.includes("anthropic.claude")) {
     return parseAnthropicResponse(response, usage);
   }
 
-  // Fallback: attempt Anthropic parsing
   return parseAnthropicResponse(response, usage);
 }
 
@@ -198,18 +222,26 @@ function parseAnthropicResponse(
   response: Record<string, unknown>,
   usage: { inputTokens: number; outputTokens: number },
 ): {
-  content: LanguageModelV2Content[];
-  finishReason: LanguageModelV2FinishReason;
+  content: LanguageModelV3Content[];
+  finishReason: LanguageModelV3FinishReason;
   usage: {
-    inputTokens: number | undefined;
-    outputTokens: number | undefined;
-    totalTokens: number | undefined;
+    inputTokens: {
+      total: number | undefined;
+      noCache: undefined;
+      cacheRead: undefined;
+      cacheWrite: undefined;
+    };
+    outputTokens: {
+      total: number | undefined;
+      text: undefined;
+      reasoning: undefined;
+    };
   };
 } {
   const rawContent = response.content as
     | Array<Record<string, unknown>>
     | undefined;
-  const content: LanguageModelV2Content[] = [];
+  const content: LanguageModelV3Content[] = [];
 
   if (rawContent) {
     for (const block of rawContent) {
@@ -232,35 +264,44 @@ function parseAnthropicResponse(
     }
   }
 
-  // Map Anthropic stop_reason to AI SDK finish reason
   const stopReason = response.stop_reason as string | undefined;
-  let finishReason: LanguageModelV2FinishReason = "unknown";
-  switch (stopReason) {
-    case "end_turn":
-      finishReason = "stop";
-      break;
-    case "tool_use":
-      finishReason = "tool-calls";
-      break;
-    case "max_tokens":
-      finishReason = "length";
-      break;
-    case "stop_sequence":
-      finishReason = "stop";
-      break;
-  }
+  const finishReason: LanguageModelV3FinishReason = {
+    unified: mapStopReasonV3(stopReason),
+    raw: stopReason,
+  };
 
-  // Prefer response-level usage if available
   const respUsage = response.usage as
     | { input_tokens?: number; output_tokens?: number }
     | undefined;
   const finalUsage = {
-    inputTokens: respUsage?.input_tokens ?? usage.inputTokens,
-    outputTokens: respUsage?.output_tokens ?? usage.outputTokens,
-    totalTokens:
-      (respUsage?.input_tokens ?? usage.inputTokens) +
-      (respUsage?.output_tokens ?? usage.outputTokens),
+    inputTokens: {
+      total: respUsage?.input_tokens ?? usage.inputTokens,
+      noCache: undefined as undefined,
+      cacheRead: undefined as undefined,
+      cacheWrite: undefined as undefined,
+    },
+    outputTokens: {
+      total: respUsage?.output_tokens ?? usage.outputTokens,
+      text: undefined as undefined,
+      reasoning: undefined as undefined,
+    },
   };
 
   return { content, finishReason, usage: finalUsage };
+}
+
+function mapStopReasonV3(
+  reason: string | undefined,
+): LanguageModelV3FinishReason["unified"] {
+  switch (reason) {
+    case "end_turn":
+    case "stop_sequence":
+      return "stop";
+    case "max_tokens":
+      return "length";
+    case "tool_use":
+      return "tool-calls";
+    default:
+      return "other";
+  }
 }

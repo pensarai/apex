@@ -1,11 +1,11 @@
 import type {
-  LanguageModelV2,
-  LanguageModelV2CallOptions,
-  LanguageModelV2CallWarning,
-  LanguageModelV2Content,
-  LanguageModelV2FinishReason,
-  LanguageModelV2StreamPart,
-  LanguageModelV2Usage,
+  LanguageModelV3,
+  LanguageModelV3CallOptions,
+  LanguageModelV3Content,
+  LanguageModelV3FinishReason,
+  LanguageModelV3StreamPart,
+  LanguageModelV3Usage,
+  SharedV3Warning,
 } from "@ai-sdk/provider";
 import { convertToBedrockFormat } from "./pensarFormatters";
 import { parseSSE } from "./pensarSSE";
@@ -59,7 +59,7 @@ export interface PensarModelConfig {
 export function createPensarModel(
   bedrockModelId: string,
   config: PensarModelConfig,
-): LanguageModelV2 {
+): LanguageModelV3 {
   const modelId = `pensar:${bedrockModelId}`;
   logInfo(
     `createPensarModel: model=${bedrockModelId}, baseUrl=${config.baseUrl}`,
@@ -102,31 +102,33 @@ export function createPensarModel(
     return headers;
   }
 
-  const model: LanguageModelV2 = {
-    specificationVersion: "v2",
+  const model: LanguageModelV3 = {
+    specificationVersion: "v3",
     provider: "pensar",
     modelId,
     supportedUrls: {},
 
-    async doGenerate(options: LanguageModelV2CallOptions): Promise<{
-      content: Array<LanguageModelV2Content>;
-      finishReason: LanguageModelV2FinishReason;
-      usage: LanguageModelV2Usage;
+    async doGenerate(options: LanguageModelV3CallOptions): Promise<{
+      content: Array<LanguageModelV3Content>;
+      finishReason: LanguageModelV3FinishReason;
+      usage: LanguageModelV3Usage;
       providerMetadata?: undefined;
       request?: { body?: unknown };
       response?: { headers?: Record<string, string>; body?: unknown };
-      warnings: Array<LanguageModelV2CallWarning>;
+      warnings: Array<SharedV3Warning>;
     }> {
       logInfo(`doGenerate → streaming and collecting for ${bedrockModelId}`);
       const startTime = Date.now();
 
       const { stream } = await model.doStream(options);
-      const content: LanguageModelV2Content[] = [];
-      let finishReason: LanguageModelV2FinishReason = "unknown";
-      let usage: LanguageModelV2Usage = {
-        inputTokens: 0,
-        outputTokens: 0,
-        totalTokens: 0,
+      const content: LanguageModelV3Content[] = [];
+      let finishReason: LanguageModelV3FinishReason = {
+        unified: "other",
+        raw: undefined,
+      };
+      let usage: LanguageModelV3Usage = {
+        inputTokens: { total: 0, noCache: undefined, cacheRead: undefined, cacheWrite: undefined },
+        outputTokens: { total: 0, text: undefined, reasoning: undefined },
       };
 
       const textParts: Record<string, string> = {};
@@ -184,7 +186,7 @@ export function createPensarModel(
       }
 
       logInfo(
-        `  doGenerate complete: ${finishReason}, ${content.length} parts, ${usage.inputTokens}in/${usage.outputTokens}out (${Date.now() - startTime}ms)`,
+        `  doGenerate complete: ${finishReason.unified}, ${content.length} parts, ${usage.inputTokens.total ?? 0}in/${usage.outputTokens.total ?? 0}out (${Date.now() - startTime}ms)`,
       );
 
       return {
@@ -195,8 +197,8 @@ export function createPensarModel(
       };
     },
 
-    async doStream(options: LanguageModelV2CallOptions): Promise<{
-      stream: ReadableStream<LanguageModelV2StreamPart>;
+    async doStream(options: LanguageModelV3CallOptions): Promise<{
+      stream: ReadableStream<LanguageModelV3StreamPart>;
       request?: { body?: unknown };
       response?: { headers?: Record<string, string> };
     }> {
@@ -282,11 +284,13 @@ export function createPensarModel(
 
       const sseStream = response.body;
 
-      const stream = new ReadableStream<LanguageModelV2StreamPart>({
+      const abortSignal = options.abortSignal;
+      const stream = new ReadableStream<LanguageModelV3StreamPart>({
         async start(controller) {
           let inputTokens = 0;
           let outputTokens = 0;
-          let finishReason: LanguageModelV2FinishReason = "unknown";
+          let finishReasonUnified: LanguageModelV3FinishReason["unified"] = "other";
+          let finishReasonRaw: string | undefined;
           let startEmitted = false;
           // Track active content blocks for proper id mapping
           let activeTextId: string | null = null;
@@ -294,9 +298,27 @@ export function createPensarModel(
           let activeToolName: string | null = null;
           let activeToolInput = "";
 
+          if (abortSignal) {
+            abortSignal.addEventListener("abort", () => {
+              logError(
+                `  abort signal fired during stream (reason=${abortSignal.reason}), activeToolId=${activeToolId}, activeToolName=${activeToolName}, inputLen=${activeToolInput.length}`,
+              );
+              logError(
+                `  abort stack: ${new Error("abort-trace").stack}`,
+              );
+            }, { once: true });
+          }
+
           let eventCount = 0;
+          let lastEventTime = Date.now();
           try {
             for await (const sse of parseSSE(sseStream)) {
+              const now = Date.now();
+              const gap = now - lastEventTime;
+              if (gap > 5000) {
+                logInfo(`  SSE gap: ${gap}ms between events (event #${eventCount + 1})`);
+              }
+              lastEventTime = now;
               eventCount++;
               let parsed: Record<string, unknown>;
               try {
@@ -402,6 +424,9 @@ export function createPensarModel(
                     controller.enqueue({ type: "text-end", id: activeTextId });
                     activeTextId = null;
                   } else if (activeToolId && activeToolName) {
+                    logInfo(
+                      `  tool-call complete: ${activeToolName} (${activeToolId}), inputLen=${activeToolInput.length}`,
+                    );
                     controller.enqueue({
                       type: "tool-input-end",
                       id: activeToolId,
@@ -425,7 +450,8 @@ export function createPensarModel(
                     | undefined;
                   const stopReason = delta?.stop_reason as string | undefined;
                   if (stopReason) {
-                    finishReason = mapStopReason(stopReason);
+                    finishReasonUnified = mapStopReason(stopReason);
+                    finishReasonRaw = stopReason;
                   }
                   const usage = parsed.usage as
                     | Record<string, number>
@@ -444,20 +470,25 @@ export function createPensarModel(
             }
 
             logInfo(
-              `  stream complete: ${finishReason}, ${inputTokens}in/${outputTokens}out (${Date.now() - startTime}ms)`,
+              `  stream complete: ${finishReasonUnified}, ${inputTokens}in/${outputTokens}out (${Date.now() - startTime}ms)`,
             );
 
             controller.enqueue({
               type: "finish",
-              finishReason,
+              finishReason: {
+                unified: finishReasonUnified,
+                raw: finishReasonRaw,
+              },
               usage: {
-                inputTokens,
-                outputTokens,
-                totalTokens: inputTokens + outputTokens,
+                inputTokens: { total: inputTokens, noCache: undefined, cacheRead: undefined, cacheWrite: undefined },
+                outputTokens: { total: outputTokens, text: undefined, reasoning: undefined },
               },
             });
             controller.close();
           } catch (err) {
+            logError(
+              `  stream error: events=${eventCount}, activeToolId=${activeToolId}, activeToolName=${activeToolName}, toolInputLen=${activeToolInput.length}, timeSinceLastEvent=${Date.now() - lastEventTime}ms`,
+            );
             logError(`  stream error:`, err);
             controller.error(err);
           }
@@ -476,10 +507,7 @@ export function createPensarModel(
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
-/**
- * Map Anthropic stop_reason strings to LanguageModelV2FinishReason.
- */
-function mapStopReason(reason: string): LanguageModelV2FinishReason {
+function mapStopReason(reason: string): LanguageModelV3FinishReason["unified"] {
   switch (reason) {
     case "end_turn":
       return "stop";
@@ -490,6 +518,6 @@ function mapStopReason(reason: string): LanguageModelV2FinishReason {
     case "stop_sequence":
       return "stop";
     default:
-      return "unknown";
+      return "other";
   }
 }

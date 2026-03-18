@@ -5,7 +5,7 @@
  * Handles HTTP status, errors, collections, browser results, etc.
  */
 
-import type { StyledText } from "@opentui/core";
+import { RGBA, StyledText, type TextChunk } from "@opentui/core";
 import { highlightCode } from "./syntax-highlight";
 
 export interface ResultSummary {
@@ -124,7 +124,9 @@ export function getResultSummary(
           const obj = result as Record<string, unknown>;
           if (obj.success === false) {
             return {
-              text: String(obj.error || "Search failed").split("\n")[0].slice(0, 120),
+              text: String(obj.error || "Search failed")
+                .split("\n")[0]
+                .slice(0, 120),
               isError: true,
             };
           }
@@ -134,20 +136,16 @@ export function getResultSummary(
           if (results.length === 0) {
             return { text: "No results", isError: false };
           }
-          const preview = results
-            .slice(0, 5)
-            .map((r) => {
-              const title = String(r.title || "").slice(0, 60);
-              const snippet = String(r.snippet || "").slice(0, 80);
-              return `${title}\n  ${snippet}`;
-            })
-            .join("\n");
-          const suffix =
-            results.length > 5 ? `\n… (${results.length} results)` : "";
+          const shown = results.slice(0, 5);
+          const styledChunks = buildWebSearchStyledText(
+            shown,
+            results.length > 5 ? results.length : undefined,
+          );
           return {
             text: `${results.length} result${results.length !== 1 ? "s" : ""}`,
             isError: false,
-            fullText: preview + suffix,
+            label: `${results.length} result${results.length !== 1 ? "s" : ""}`,
+            styledText: styledChunks,
           };
         }
         break;
@@ -713,6 +711,52 @@ export function getResultSummary(
   }
 
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// Web search styled text helpers
+// ---------------------------------------------------------------------------
+
+const WS_COLORS = {
+  globe: RGBA.fromInts(106, 115, 125, 255), // gray
+  domain: RGBA.fromInts(86, 182, 194, 255), // cyan
+  title: RGBA.fromInts(97, 175, 239, 255), // blue
+  snippet: RGBA.fromInts(140, 148, 160, 255), // muted
+} as const;
+
+function chunk(text: string, fg?: RGBA): TextChunk {
+  return { __isChunk: true, text, fg, attributes: 0 };
+}
+
+function extractDomain(url: string): string {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, "");
+    return host;
+  } catch {
+    return url.split("/")[2]?.replace(/^www\./, "") || url.slice(0, 30);
+  }
+}
+
+function buildWebSearchStyledText(
+  results: Array<Record<string, unknown>>,
+  totalCount?: number,
+): StyledText {
+  const chunks: TextChunk[] = [];
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    const domain = extractDomain(String(r.url || ""));
+    const title = String(r.title || "").slice(0, 70);
+
+    if (i > 0) chunks.push(chunk("\n"));
+    chunks.push(chunk("🌐 ", WS_COLORS.globe));
+    chunks.push(chunk(domain, WS_COLORS.domain));
+    chunks.push(chunk(" — ", WS_COLORS.globe));
+    chunks.push(chunk(title, WS_COLORS.title));
+  }
+  if (totalCount && totalCount > results.length) {
+    chunks.push(chunk(`\n… (${totalCount} total)`, WS_COLORS.snippet));
+  }
+  return new StyledText(chunks);
 }
 
 /**
