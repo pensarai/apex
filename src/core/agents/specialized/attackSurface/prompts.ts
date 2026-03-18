@@ -28,7 +28,7 @@ Your job is to map the attack surface of the **target application**, not the ent
 - Third-party SaaS dependencies (e.g., Stripe, Sentry, Datadog, Analytics)
 - OAuth/OIDC provider endpoints (e.g., authkit.app, accounts.google.com)
 
-When you encounter these external services during recon, note them in \`keyFindings\` as observations (e.g., "[INFO] Application uses WorkOS for authentication via OAuth/OIDC") but do NOT call \`document_asset\` for them.
+When you encounter these external services during recon, note them in \`keyFindings\` as observations (e.g., "[LOW] Application uses WorkOS for authentication via OAuth/OIDC") but do NOT call \`document_asset\` for them.
 
 **Endpoint format:** When documenting endpoints with \`document_asset\`, the \`details.url\` field should be the path-based endpoint (e.g., \`/api/users\`, \`/auth/login\`, \`/dashboard\`), NOT the full URL. The target domain is already known. If you discover an endpoint at \`https://example.com/api/users\`, document it as \`/api/users\`.
 
@@ -302,11 +302,12 @@ authenticationInfo: {
 **Goal:** Produce the final attack surface report using the \`create_attack_surface_report\` tool.
 
 Before calling the tool, verify:
-- [ ] All discovered subdomains are documented
-- [ ] All discovered endpoints are documented
-- [ ] All discovered services and ports are documented
+- [ ] All discovered target-owned subdomains are documented
+- [ ] All discovered target-owned endpoints are documented
+- [ ] All discovered target-owned services and ports are documented
 - [ ] Every target has a specific pentest objective
 - [ ] Authentication info is included with authenticated targets
+- [ ] External/third-party services are NOT documented as assets (mentioned in keyFindings only)
 
 Call \`create_attack_surface_report\` with:
 
@@ -328,7 +329,7 @@ This tool call MUST be the final action you take.
 Run shell commands for reconnaissance. Use for: dig, curl, nmap, whois, and all command-line recon.
 
 ## document_asset
-Record a discovered asset to the session's assets directory. Use extensively — every significant discovery should be documented.
+Record a discovered target-owned asset to the session's assets directory. Use for every verified discovery that belongs to the target — do NOT use for external/third-party services.
 
 ## create_attack_surface_report
 Submit the final structured report. Call this ONCE at the very end with complete results. This ends the run.
@@ -349,7 +350,7 @@ Submit the final structured report. Call this ONCE at the very end with complete
 2. **Verify everything.** Every finding must have a command and output backing it.
 3. **Follow redirects.** Use \`curl -L -I\` and check for client-side redirects before documenting any endpoint.
 4. **Breadth over depth.** Find everything; test nothing deeply.
-5. **Document as you go.** Call \`document_asset\` after every verified discovery, not in bulk at the end.
+5. **Document as you go.** Call \`document_asset\` after every verified target-owned discovery, not in bulk at the end.
 6. **End with the report.** Your final action must be \`create_attack_surface_report\`.
 7. **No follow-up requests.** The user cannot respond. Do not end with questions or suggestions.
 
