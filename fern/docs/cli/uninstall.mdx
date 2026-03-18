@@ -1,0 +1,92 @@
+---
+title: "pensar uninstall"
+description: "Fully remove Pensar Apex from your system"
+---
+
+## Overview
+
+The `pensar uninstall` command removes Pensar Apex from your system. It detects how Apex was installed (npm, Homebrew, or standalone binary) and performs the appropriate removal. Your sessions, memories, and skills are preserved by default.
+
+## Usage
+
+```bash
+pensar uninstall             # Interactive uninstall with confirmation
+pensar uninstall --force     # Skip confirmation prompt
+```
+
+## Options
+
+| Flag             | Description                    |
+| ---------------- | ------------------------------ |
+| `--force`, `-f`  | Skip the confirmation prompt   |
+| `-h`, `--help`   | Show help message              |
+
+## What Gets Removed
+
+### Binary/Package
+
+Depending on your installation method:
+
+| Method   | Removal Command                      |
+| -------- | ------------------------------------ |
+| npm      | `npm uninstall -g @pensar/apex`      |
+| Homebrew | `brew uninstall pensarai/tap/apex`   |
+| Binary   | Removes the binary file directly     |
+
+### Data Directory (`~/.pensar/`)
+
+Configuration files, auth tokens, and cached data are removed from `~/.pensar/`.
+
+## What Gets Preserved
+
+The following directories under `~/.pensar/` are **preserved** during uninstall:
+
+| Directory    | Contents                         |
+| ------------ | -------------------------------- |
+| `sessions/`  | Pentest and operator session data |
+| `memories/`  | Agent memory and context         |
+| `skills/`    | Custom operator skills           |
+
+To remove all data including preserved directories:
+
+```bash
+rm -rf ~/.pensar
+```
+
+## Example
+
+```
+Pensar Uninstall
+
+  Install method:  npm
+  Binary removal:  npm uninstall -g @pensar/apex
+  Data directory:  /home/user/.pensar
+
+  Preserved data:  sessions, memories, skills
+
+Proceed with uninstall? (y/N): y
+
+Cleaning data directory...
+  Removed config.json
+  Preserved sessions/
+  Preserved memories/
+  Preserved skills/
+
+Removing pensar...
+  Removed npm package @pensar/apex
+
+✓ Pensar has been uninstalled.
+  Preserved data remains at /home/user/.pensar/ (sessions, memories, skills)
+  To remove all data: rm -rf ~/.pensar
+```
+
+## Related Commands
+
+<CardGroup cols={2}>
+  <Card title="pensar upgrade" icon="arrow-up" href="/apex/cli/upgrade">
+    Update instead of uninstalling
+  </Card>
+  <Card title="pensar doctor" icon="stethoscope" href="/apex/cli/doctor">
+    Diagnose issues before deciding to uninstall
+  </Card>
+</CardGroup>

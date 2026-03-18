@@ -1,0 +1,79 @@
+---
+title: "pensar logs"
+description: "View and search agent execution logs via the Pensar Console API"
+---
+
+## Overview
+
+The `pensar logs` command provides access to agent execution logs for a given issue. You can list logs with filters or search for specific content within the log entries.
+
+## Usage
+
+```bash
+pensar logs <issueId> [filters]                 # List agent logs
+pensar logs search <issueId> <query> [options]  # Search agent logs
+```
+
+## Prerequisites
+
+You must be connected to Pensar Console via [`pensar auth login`](/apex/cli/auth) before using this command.
+
+## Subcommands
+
+### List Logs
+
+```bash
+pensar logs <issueId> [filters]
+```
+
+Lists agent execution logs for an issue. Returns a JSON array.
+
+| Filter            | Description                                                            |
+| ----------------- | ---------------------------------------------------------------------- |
+| `--level <level>` | Filter by: `debug`, `info`, `warn`, `error`                           |
+| `--role <role>`   | Filter by: `assistant`, `user`, `system`, `tool-call`, `tool-result`   |
+| `--limit <n>`     | Max entries to return (default: 100, max: 500)                         |
+
+### Search Logs
+
+```bash
+pensar logs search <issueId> <query> [options]
+```
+
+Searches log entries for a given query string.
+
+| Option              | Description                                                          |
+| ------------------- | -------------------------------------------------------------------- |
+| `--level <level>`   | Filter by: `debug`, `info`, `warn`, `error`                         |
+| `--role <role>`     | Filter by: `assistant`, `user`, `system`, `tool-call`, `tool-result` |
+| `--context <n>`     | Number of context lines around matches (default: 3)                  |
+
+## Examples
+
+```bash
+# List all logs for an issue
+pensar logs issue_ghi789
+
+# List only error-level logs
+pensar logs issue_ghi789 --level error
+
+# List tool call logs with a limit
+pensar logs issue_ghi789 --role tool-call --limit 50
+
+# Search logs for a specific term
+pensar logs search issue_ghi789 "SQL injection"
+
+# Search with filters
+pensar logs search issue_ghi789 "timeout" --level warn --context 5
+```
+
+## Related Commands
+
+<CardGroup cols={2}>
+  <Card title="pensar issues" icon="bug" href="/apex/cli/issues">
+    View the issues these logs relate to
+  </Card>
+  <Card title="pensar fixes" icon="wrench" href="/apex/cli/fixes">
+    View suggested fixes for issues
+  </Card>
+</CardGroup>
