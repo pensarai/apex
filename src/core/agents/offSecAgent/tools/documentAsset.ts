@@ -115,6 +115,12 @@ Each asset creates a JSON file in the assets directory for tracking and analysis
         .string()
         .optional()
         .describe("Additional notes or observations about the asset"),
+      pentestObjectives: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "Specific pentest objectives for this asset — what a pentest agent should test (e.g., 'Test for IDOR in /api/orders/{id}')",
+        ),
       toolCallDescription: z
         .string()
         .describe(
