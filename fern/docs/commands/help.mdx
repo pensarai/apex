@@ -134,6 +134,22 @@ For new users, here's the recommended order of commands:
 | `Y`                | Approve pending tool call             |
 | `A`                | Auto-approve all remaining tool calls |
 
+## Command Suggestions
+
+When typing a `/` command, Apex displays a windowed suggestions dropdown with up to 6 visible entries at a time. Commands are sorted by priority — `/pentest`, `/operator`, `/auth`, `/models`, `/sessions`, `/themes`, `/help` appear first, followed by the rest alphabetically. Scroll indicators (`↑`/`↓`) appear when more suggestions exist outside the visible window.
+
+## CLI API Commands
+
+In addition to the TUI commands above, Apex provides headless CLI commands for interacting with the Pensar Console REST API. These require an active Pensar Console connection (`pensar auth login`).
+
+| Command | Description |
+| --- | --- |
+| `pensar projects` | List workspace projects |
+| `pensar pentests <projectId>` | List, get, or dispatch pentests |
+| `pensar issues <projectId>` | List, get, or update security issues |
+| `pensar fixes <issueId>` | List or get security fixes |
+| `pensar logs <issueId>` | List or search agent execution logs |
+
 ## Tips
 
 <Callout intent="info">

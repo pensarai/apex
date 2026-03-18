@@ -23,6 +23,8 @@ pensar auth status     # Show current connection status
 pensar auth logout     # Disconnect from Pensar Console
 ```
 
+`pensar auth status` displays your auth type (WorkOS or API key) and current workspace. When using API key auth, the command resolves your workspace from the server if it isn't already stored locally.
+
 ## How It Works
 
 Both the TUI `/auth` command and the CLI `pensar auth` command use a **device authorization flow** — similar to how you link a streaming device to your account. Apex displays a code, you verify it in your browser, and the CLI is automatically authenticated.
