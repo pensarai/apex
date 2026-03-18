@@ -1,6 +1,10 @@
 <h1 align="center">Pensar Apex</h1>
 
-<p align="center">AI-powered penetration testing tool that enables you to use an AI agent to perform comprehensive blackbox and whitebox pentesting - directly in your terminal.
+<p align="center">AI-powered penetration testing using an AI agent to perform comprehensive blackbox and whitebox pentesting - directly in your terminal.
+</p>
+
+<p align="center">
+Want to run from the cloud or integrate it with your CI/CD? See <a href="https://docs.pensar.dev/console">Pensar Console</a>.
 </p>
 
 <p align="center">
@@ -12,9 +16,57 @@
   <a href="https://discord.gg/pensar"><img src="https://img.shields.io/badge/Discord-Join%20Us-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
 </p>
 
-<p align="center">
+<!-- <p align="center">
   <img src="screenshot.png" alt="Pensar Apex Screenshot" width="800">
-</p>
+</p> -->
+
+
+## Use Cases
+
+Apex enables both developers and security professionals to run autonomous and assisted penetration testing directly from the terminal.
+
+
+### Developers: Run a Pentest in Minutes
+
+Apex makes it easy for developers to run a real penetration test without needing deep offensive security expertise.
+
+Using the autonomous `/pentest` mode, Apex will perform reconnaissance, attack surface discovery, vulnerability testing, and exploitation attempts automatically.
+
+This allows teams to quickly identify security issues before they reach production.
+
+```bash
+/pentest
+```
+
+Examples:
+- Test a staging environment before deploying
+- Scan a newly launched domain or API
+- Run quick security checks during development
+- Identify exposed services or misconfigurations
+
+This is the **fastest way to get real pentesting coverage without becoming a security expert.**
+
+---
+
+### Security Engineers: Advanced Operator Workflows
+
+Security professionals can use Apex as an **agentic offensive security harness** that orchestrates tools and reasoning workflows.
+
+The `/operator` mode allows engineers to work interactively with the Offensive Security Agent, guiding investigations and chaining tools dynamically.
+
+
+```bash
+/operator
+```
+
+Examples:
+- Deep investigation of suspicious endpoints
+- Manual exploitation of discovered vulnerabilities
+- Tool orchestration across recon and exploitation phases
+- Validation and reproduction of vulnerabilities
+- Open-source security research / testing
+
+This turns Apex into a **terminal-native AI pentesting partner** rather than just a scanner.
 
 ## Installation
 
@@ -45,17 +97,13 @@ npm install -g @pensar/apex
 
 ## Usage
 
-Run Apex:
+Open the Apex TUI:
 
 ```bash
 pensar
 ```
 
-## AI Provider Support
-
-Apex supports **OpenAI**, **Anthropic**, **AWS Bedrock**, and **vLLM** (local models). **Anthropic models provide the best performance** and are recommended for optimal results.
-
-## Kali Linux Container (Recommended)
+## Kali Linux Container (Optional)
 
 For **best performance**, run Apex in the included Kali Linux container with preconfigured pentest tools:
 
@@ -71,20 +119,6 @@ Inside the container, run:
 ```bash
 pensar
 ```
-
-**Note:** On Linux hosts, consider using `network_mode: host` in `docker-compose.yml` for comprehensive network scanning.
-
-## vLLM Local Model Support
-
-To use a local vLLM server:
-
-1. Set the vLLM endpoint:
-
-```bash
-export LOCAL_MODEL_URL="http://localhost:8000/v1"
-```
-
-2. In the Apex Models screen, enter your model name in the "Custom local model (vLLM)" input.
 
 ---
 
