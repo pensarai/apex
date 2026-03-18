@@ -37,7 +37,11 @@ const TOOL_SUMMARY_MAP: Record<string, ToolSummaryFn> = {
   create_poc: (args) => `poc ${args.pocName || ""}`,
   Edit: (args) => `edit ${args.file_path || args.path || ""}`,
   Grep: (args) => `grep ${args.pattern || ""}`,
+  grep: (args) => `grep ${args.pattern || ""}`,
   Glob: (args) => `glob ${args.pattern || ""}`,
+
+  // Web search
+  web_search: (args) => `search "${args.query || ""}"`,
 
   // Browser tools
   browser_navigate: (args) => `browser ${args.url || ""}`,

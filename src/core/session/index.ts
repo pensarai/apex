@@ -704,6 +704,55 @@ export function getResumeMessages(
   return messages.slice(cutIndex);
 }
 
+/**
+ * Sanitize a model-message array so it conforms to the alternating-role
+ * invariant required by most LLM APIs.
+ *
+ * Specifically this:
+ *  1. Merges consecutive `user` messages into a single message (joins with
+ *     newlines) so the conversation never has back-to-back user turns.
+ *  2. Leaves assistant / tool message ordering untouched — those are already
+ *     validated by the abort-recovery logic.
+ *
+ * This is intentionally a best-effort safety-net.  The primary fix is to
+ * prevent consecutive user messages from being created in the first place
+ * (see `runAgent` in the operator dashboard).
+ */
+export function normalizeMessages(messages: ModelMessage[]): ModelMessage[] {
+  if (messages.length <= 1) return messages;
+
+  const result: ModelMessage[] = [];
+
+  for (const msg of messages) {
+    const prev = result[result.length - 1];
+
+    if (
+      prev &&
+      prev.role === "user" &&
+      msg.role === "user" &&
+      typeof prev.content === "string" &&
+      typeof msg.content === "string"
+    ) {
+      // Merge consecutive user messages
+      result[result.length - 1] = {
+        ...prev,
+        content: `${prev.content}\n\n${msg.content}`,
+      };
+    } else if (
+      prev &&
+      prev.role === "user" &&
+      msg.role === "user"
+    ) {
+      // One or both have structured content — replace with the latest
+      result[result.length - 1] = msg;
+    } else {
+      result.push(msg);
+    }
+  }
+
+  return result;
+}
+
 // ============================================================================
 // Runtime Operator Settings Update
 // ============================================================================
