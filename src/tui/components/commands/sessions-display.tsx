@@ -241,7 +241,7 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
           >
             <scrollbox
               ref={scroll}
-              scrollbarOptions={{ visible: false }}
+              scrollbarOptions={{ visible: true }}
               style={{
                 rootOptions: {
                   maxHeight: 10,
