@@ -127,7 +127,12 @@ export function createPensarModel(
         raw: undefined,
       };
       let usage: LanguageModelV3Usage = {
-        inputTokens: { total: 0, noCache: undefined, cacheRead: undefined, cacheWrite: undefined },
+        inputTokens: {
+          total: 0,
+          noCache: undefined,
+          cacheRead: undefined,
+          cacheWrite: undefined,
+        },
         outputTokens: { total: 0, text: undefined, reasoning: undefined },
       };
 
@@ -289,7 +294,8 @@ export function createPensarModel(
         async start(controller) {
           let inputTokens = 0;
           let outputTokens = 0;
-          let finishReasonUnified: LanguageModelV3FinishReason["unified"] = "other";
+          let finishReasonUnified: LanguageModelV3FinishReason["unified"] =
+            "other";
           let finishReasonRaw: string | undefined;
           let startEmitted = false;
           // Track active content blocks for proper id mapping
@@ -299,14 +305,16 @@ export function createPensarModel(
           let activeToolInput = "";
 
           if (abortSignal) {
-            abortSignal.addEventListener("abort", () => {
-              logError(
-                `  abort signal fired during stream (reason=${abortSignal.reason}), activeToolId=${activeToolId}, activeToolName=${activeToolName}, inputLen=${activeToolInput.length}`,
-              );
-              logError(
-                `  abort stack: ${new Error("abort-trace").stack}`,
-              );
-            }, { once: true });
+            abortSignal.addEventListener(
+              "abort",
+              () => {
+                logError(
+                  `  abort signal fired during stream (reason=${abortSignal.reason}), activeToolId=${activeToolId}, activeToolName=${activeToolName}, inputLen=${activeToolInput.length}`,
+                );
+                logError(`  abort stack: ${new Error("abort-trace").stack}`);
+              },
+              { once: true },
+            );
           }
 
           let eventCount = 0;
@@ -316,7 +324,9 @@ export function createPensarModel(
               const now = Date.now();
               const gap = now - lastEventTime;
               if (gap > 5000) {
-                logInfo(`  SSE gap: ${gap}ms between events (event #${eventCount + 1})`);
+                logInfo(
+                  `  SSE gap: ${gap}ms between events (event #${eventCount + 1})`,
+                );
               }
               lastEventTime = now;
               eventCount++;
@@ -480,8 +490,17 @@ export function createPensarModel(
                 raw: finishReasonRaw,
               },
               usage: {
-                inputTokens: { total: inputTokens, noCache: undefined, cacheRead: undefined, cacheWrite: undefined },
-                outputTokens: { total: outputTokens, text: undefined, reasoning: undefined },
+                inputTokens: {
+                  total: inputTokens,
+                  noCache: undefined,
+                  cacheRead: undefined,
+                  cacheWrite: undefined,
+                },
+                outputTokens: {
+                  total: outputTokens,
+                  text: undefined,
+                  reasoning: undefined,
+                },
               },
             });
             controller.close();

@@ -370,7 +370,7 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
         {/* Scroll indicator for more suggestions above */}
         {windowedView.hasMore && (
           <box flexDirection="row" gap={1}>
-            <text fg={colors.textMuted}>  ↑</text>
+            <text fg={colors.textMuted}> ↑</text>
             <text fg={colors.textMuted}>
               {windowedView.start} more above...
             </text>
@@ -399,7 +399,7 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
         {/* Scroll indicator for more suggestions below */}
         {windowedView.hasMoreBelow && (
           <box flexDirection="row" gap={1}>
-            <text fg={colors.textMuted}>  ↓</text>
+            <text fg={colors.textMuted}> ↓</text>
             <text fg={colors.textMuted}>
               {suggestions.length - windowedView.end} more below...
             </text>

@@ -9,11 +9,7 @@
  *   pensar issues update <issueId> [opts]         Update an issue
  */
 
-import {
-  listIssues,
-  getIssue,
-  updateIssue,
-} from "../core/api/issues";
+import { listIssues, getIssue, updateIssue } from "../core/api/issues";
 
 function getFlag(flag: string, argv: string[]): string | undefined {
   const idx = argv.indexOf(flag);
@@ -21,27 +17,28 @@ function getFlag(flag: string, argv: string[]): string | undefined {
 }
 
 function showHelp(): void {
-  console.log("pensar issues — Manage security issues via the Pensar API\n");
-  console.log("Usage:");
-  console.log("  pensar issues <projectId> [filters]            List issues for a project");
-  console.log("  pensar issues get <issueId>                    Get issue details");
-  console.log("  pensar issues update <issueId> [options]       Update an issue");
-  console.log();
-  console.log("List filters:");
-  console.log("  --status <status>     Filter: open, closed, false-positive, in-review");
-  console.log("  --severity <sev>      Filter: critical, high, medium, low");
-  console.log("  --scan <scanId>       Filter by scan ID");
-  console.log("  --branch <branch>     Filter by branch");
-  console.log();
-  console.log("Update options:");
-  console.log("  --status <status>         New status");
-  console.log("  --closed-reason <reason>  Reason for closing");
-  console.log("  --closed-comments <text>  Additional comments");
-  console.log("  --false-positive          Flag as false positive");
-  console.log("  --fp-reason <reason>      Reason for false positive flag");
-  console.log();
-  console.log("Options:");
-  console.log("  -h, --help                Show this help message");
+  console.log(`pensar issues — Manage security issues via the Pensar API
+
+Usage:
+  pensar issues <projectId> [filters]            List issues for a project
+  pensar issues get <issueId>                    Get issue details
+  pensar issues update <issueId> [options]       Update an issue
+
+List filters:
+  --status <status>     Filter: open, closed, false-positive, in-review
+  --severity <sev>      Filter: critical, high, medium, low
+  --scan <scanId>       Filter by scan ID
+  --branch <branch>     Filter by branch
+
+Update options:
+  --status <status>         New status
+  --closed-reason <reason>  Reason for closing
+  --closed-comments <text>  Additional comments
+  --false-positive          Flag as false positive
+  --fp-reason <reason>      Reason for false positive flag
+
+Options:
+  -h, --help                Show this help message`);
 }
 
 async function main(): Promise<void> {
@@ -67,7 +64,9 @@ async function main(): Promise<void> {
       const issueId = args[1];
       if (!issueId) {
         console.error("Error: issue ID is required");
-        console.error("Usage: pensar issues update <issueId> [--status <status>] ...");
+        console.error(
+          "Usage: pensar issues update <issueId> [--status <status>] ...",
+        );
         process.exit(1);
       }
       const status = getFlag("--status", args) as

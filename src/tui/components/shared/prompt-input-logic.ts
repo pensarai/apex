@@ -281,7 +281,7 @@ export function computeVisibleWindow(
 
   // Compute window centered on selected index
   const safeSelectedIndex = Math.max(0, selectedIndex);
-  
+
   // Try to center the selected item in the window
   let start = Math.max(0, safeSelectedIndex - Math.floor(maxVisible / 2));
   let end = start + maxVisible;

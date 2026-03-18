@@ -20,11 +20,9 @@ Want to run from the cloud or integrate it with your CI/CD? See <a href="https:/
   <img src="screenshot.png" alt="Pensar Apex Screenshot" width="800">
 </p> -->
 
-
 ## Use Cases
 
 Apex enables both developers and security professionals to run autonomous and assisted penetration testing directly from the terminal.
-
 
 ### Developers: Run a Pentest in Minutes
 
@@ -39,6 +37,7 @@ This allows teams to quickly identify security issues before they reach producti
 ```
 
 Examples:
+
 - Test a staging environment before deploying
 - Scan a newly launched domain or API
 - Run quick security checks during development
@@ -54,12 +53,12 @@ Security professionals can use Apex as an **agentic offensive security harness**
 
 The `/operator` mode allows engineers to work interactively with the Offensive Security Agent, guiding investigations and chaining tools dynamically.
 
-
 ```bash
 /operator
 ```
 
 Examples:
+
 - Deep investigation of suspicious endpoints
 - Manual exploitation of discovered vulnerabilities
 - Tool orchestration across recon and exploitation phases

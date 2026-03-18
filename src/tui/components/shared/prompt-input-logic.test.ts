@@ -510,17 +510,17 @@ describe("computeVisibleWindow", () => {
 
   it("correctly identifies scroll indicators", () => {
     const suggestions = makeSuggestions(15);
-    
+
     // At the top
     const top = computeVisibleWindow(suggestions, 0, 5);
     expect(top.hasMore).toBe(false);
     expect(top.hasMoreBelow).toBe(true);
-    
+
     // In the middle
     const middle = computeVisibleWindow(suggestions, 7, 5);
     expect(middle.hasMore).toBe(true);
     expect(middle.hasMoreBelow).toBe(true);
-    
+
     // At the bottom
     const bottom = computeVisibleWindow(suggestions, 14, 5);
     expect(bottom.hasMore).toBe(true);

@@ -18,8 +18,8 @@ export function ResponsibleUseDisclosure({
     <box flexDirection="column" gap={1}>
       <text fg={colors.warning}>IMPORTANT: Read Before Use</text>
       <text fg={colors.text}>
-        This penetration testing tool is designed for AUTHORIZED security testing
-        only.
+        This penetration testing tool is designed for AUTHORIZED security
+        testing only.
       </text>
       <box flexDirection="column" marginBottom={1}>
         <text fg={colors.error}>

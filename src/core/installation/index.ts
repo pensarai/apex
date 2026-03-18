@@ -70,7 +70,11 @@ export function detectInstallMethod(): InstallMethod {
   // Compiled Bun binaries have process.execPath pointing to the binary itself
   // (e.g. ~/.local/bin/pensar), while interpreted scripts have it pointing to
   // the runtime (e.g. ~/.bun/bin/bun or /usr/local/bin/node).
-  const execName = execPath.split("/").pop()?.replace(/\.exe$/, "") ?? "";
+  const execName =
+    execPath
+      .split("/")
+      .pop()
+      ?.replace(/\.exe$/, "") ?? "";
   const isInterpreter =
     execName === "bun" || execName === "node" || execName === "bun-debug";
 

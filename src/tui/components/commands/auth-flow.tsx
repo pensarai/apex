@@ -40,7 +40,8 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
 
   const alreadyConnected = isConnected(appConfig.data);
   const hasWorkspace = !!appConfig.data.workspaceId;
-  const needsWorkspace = alreadyConnected && !hasWorkspace && !!appConfig.data.accessToken;
+  const needsWorkspace =
+    alreadyConnected && !hasWorkspace && !!appConfig.data.accessToken;
 
   const [step, setStep] = useState<AuthStep>(
     needsWorkspace ? "requesting" : alreadyConnected ? "success" : "start",
