@@ -934,10 +934,7 @@ export default function OperatorDashboard({
           if (sessionRef.current) {
             try {
               const mp = join(sessionRef.current.rootPath, "messages.json");
-              writeFileSync(
-                mp,
-                JSON.stringify(prevMessages, null, 2),
-              );
+              writeFileSync(mp, JSON.stringify(prevMessages, null, 2));
             } catch {
               // Best-effort rollback
             }
@@ -1437,7 +1434,7 @@ export default function OperatorDashboard({
             {agentMode === "plan" ? "PLAN" : "DEFAULT"}
           </text>
           <text
-            fg={operatorState.requireApproval ? colors.warning : colors.primary}
+            fg={operatorState.requireApproval ? colors.success : colors.warning}
           >
             {operatorState.requireApproval ? "APPROVAL ON" : "APPROVAL OFF"}
           </text>
@@ -1489,9 +1486,7 @@ export default function OperatorDashboard({
         }
         status={status === "waiting" ? "running" : status}
         mode="operator"
-        operatorMode={agentMode === "plan" ? "plan" : operatorState.mode}
-        verboseMode={verboseMode}
-        expandedLogs={expandedLogs}
+        operatorMode={agentMode}
         pendingApproval={currentPending}
         onApprove={handleApprove}
         onAutoApprove={handleAutoApprove}

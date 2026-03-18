@@ -12,7 +12,8 @@ import { useKeyboard } from "@opentui/react";
 import { useTheme } from "../../theme";
 import { PromptInput, type PromptInputRef } from "../shared/prompt-input";
 import { InputProvider, useInput } from "../../context/input";
-import type { PendingApproval, OperatorMode } from "../../../core/operator";
+import type { PendingApproval } from "../../../core/operator";
+import type { AgentMode } from "../../../core/agents/offSecAgent";
 
 export interface InputAreaProps {
   /** Current input value */
@@ -29,12 +30,8 @@ export interface InputAreaProps {
   status: "idle" | "running" | "waiting" | "done";
   /** Display mode */
   mode?: "chat" | "operator";
-  /** Operator mode (plan/manual/auto) */
-  operatorMode?: OperatorMode;
-  /** Verbose mode toggle */
-  verboseMode?: boolean;
-  /** Expanded logs toggle */
-  expandedLogs?: boolean;
+  /** Agent mode (default/plan) */
+  operatorMode?: AgentMode;
   /** Pending approval (transforms input area) */
   pendingApproval?: PendingApproval;
   /** Handler for approval */
@@ -72,8 +69,6 @@ function NormalInputAreaInner({
   status,
   mode = "operator",
   operatorMode,
-  verboseMode = false,
-  expandedLogs = false,
   enableAutocomplete = false,
   autocompleteOptions = [],
   enableCommands = false,
@@ -162,19 +157,18 @@ function NormalInputAreaInner({
           gap={2}
           marginTop={1}
           backgroundColor="transparent"
+          alignItems="center"
+          overflow="hidden"
         >
-          {operatorMode === "plan" && <text fg={colors.warning}>{"PLAN"}</text>}
-          {operatorMode === "auto" && <text fg={colors.primary}>{"AUTO"}</text>}
-          {operatorMode === "manual" && (
-            <text fg={colors.textMuted}>{"MANUAL"}</text>
-          )}
+          <text
+            fg="#000000"
+            bg={operatorMode === "plan" ? colors.warning : colors.success}
+          >
+            {` ${operatorMode === "plan" ? "PLAN" : "DEFAULT"} `}
+          </text>
           <text fg={colors.textMuted}>/ commands</text>
-          <text fg={verboseMode ? colors.primary : colors.textMuted}>
-            {verboseMode ? "verbose:on" : "verbose"}
-          </text>
-          <text fg={expandedLogs ? colors.primary : colors.textMuted}>
-            {expandedLogs ? "logs:full" : "logs"}
-          </text>
+          <text fg={colors.textMuted}>⇧Tab mode</text>
+          <text fg={colors.textMuted}>⌥⇧Tab approval</text>
           <text fg={colors.textMuted}>
             ^C {value.trim() ? "clear" : "stop"}
           </text>
