@@ -27,7 +27,12 @@ export default function Footer({
   const { colors } = useTheme();
   const { model, isExecuting, sessionCwd } = useAgent();
   const effectiveCwd = sessionCwd || cwd;
-  const displayCwd = "~" + effectiveCwd.split(os.homedir()).pop() || "";
+  const relativeCwd = effectiveCwd.split(os.homedir()).pop() || "";
+  const segments = relativeCwd.split("/").filter(Boolean);
+  const displayCwd =
+    segments.length <= 2
+      ? "~/" + segments.join("/")
+      : "…/" + segments.slice(-2).join("/");
   const session = useSession();
   const route = useRoute();
   const { isInputEmpty } = useInput();
@@ -45,9 +50,11 @@ export default function Footer({
       justifyContent="space-between"
       width="100%"
       maxWidth="100%"
+      height={1}
       flexShrink={0}
+      overflow="hidden"
     >
-      <box flexDirection="row" gap={1}>
+      <box flexDirection="row" gap={1} flexShrink={1} overflow="hidden">
         <text fg={colors.textMuted}>{displayCwd}</text>
         <box border={["right"]} borderColor={colors.primary} />
         <text fg={colors.textMuted}>
@@ -61,11 +68,11 @@ export default function Footer({
         )}
       </box>
       {showExitWarning ? (
-        <box flexDirection="row" gap={1}>
+        <box flexDirection="row" gap={1} flexShrink={0}>
           <text fg={colors.warning}>⚠ Press Ctrl+C again to exit</text>
         </box>
       ) : (
-        <box flexDirection="row" gap={2}>
+        <box flexDirection="row" gap={2} flexShrink={0}>
           {hotkeys.map((hotkey, index) => (
             <box key={index} flexDirection="row" gap={1}>
               <text fg={colors.primary}>[{hotkey.key}]</text>
