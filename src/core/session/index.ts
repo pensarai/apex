@@ -739,11 +739,7 @@ export function normalizeMessages(messages: ModelMessage[]): ModelMessage[] {
         ...prev,
         content: `${prev.content}\n\n${msg.content}`,
       };
-    } else if (
-      prev &&
-      prev.role === "user" &&
-      msg.role === "user"
-    ) {
+    } else if (prev && prev.role === "user" && msg.role === "user") {
       // One or both have structured content — replace with the latest
       result[result.length - 1] = msg;
     } else {
@@ -768,10 +764,7 @@ function fixToolOutputs(messages: ModelMessage[]): ModelMessage[] {
     let partChanged = false;
     const fixedContent = (msg.content as Array<Record<string, unknown>>).map(
       (part) => {
-        if (
-          part.type === "tool-result" &&
-          typeof part.output === "string"
-        ) {
+        if (part.type === "tool-result" && typeof part.output === "string") {
           partChanged = true;
           return { ...part, output: { type: "text", value: part.output } };
         }

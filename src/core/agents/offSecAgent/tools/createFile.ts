@@ -80,7 +80,9 @@ async function executeLocalCreate(
     const dir = dirname(filePath);
     console.error(`[create_file:local] mkdir ${dir}`);
     await mkdir(dir, { recursive: true });
-    console.error(`[create_file:local] mkdir done, writing ${content.length} bytes`);
+    console.error(
+      `[create_file:local] mkdir done, writing ${content.length} bytes`,
+    );
     await writeFile(filePath, content, "utf-8");
     console.error(`[create_file:local] writeFile done`);
 
