@@ -110,7 +110,6 @@ export const DocumentAssetSchema = z.object({
     .describe("Additional notes or observations about the asset"),
   pentestObjectives: z
     .array(z.string())
-    .optional()
     .describe(
       "Specific pentest objectives for this asset (e.g., 'Test for IDOR in /api/orders/{id}')",
     ),
