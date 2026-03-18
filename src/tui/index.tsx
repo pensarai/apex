@@ -220,10 +220,11 @@ function AppContent({
     } else if (
       config.data.responsibleUseAccepted &&
       !hasAnyProviderConfigured(config.data) &&
+      route.data.path !== "auth" &&
       route.data.path !== "providers" &&
       route.data.path !== "disclosure"
     ) {
-      route.navigate({ type: "base", path: "providers" });
+      route.navigate({ type: "base", path: "auth" });
     }
   }, [config.data.responsibleUseAccepted, route.data]);
 
@@ -379,7 +380,7 @@ function CommandDisplay({
     await config.update({ responsibleUseAccepted: true });
     route.navigate({
       type: "base",
-      path: "providers",
+      path: "auth",
     });
   };
 
@@ -422,6 +423,17 @@ function CommandDisplay({
           </RouteSwitch.Case>
           <RouteSwitch.Case when="models">
             <ModelsDisplay />
+          </RouteSwitch.Case>
+          <RouteSwitch.Case when="auth">
+            <AuthFlow
+              onClose={() => {
+                if (hasAnyProviderConfigured(config.data)) {
+                  route.navigate({ type: "base", path: "home" });
+                } else {
+                  route.navigate({ type: "base", path: "providers" });
+                }
+              }}
+            />
           </RouteSwitch.Case>
           <RouteSwitch.Case when="providers">
             <ProviderManager />
