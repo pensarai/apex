@@ -16,23 +16,24 @@ function getFlag(flag: string, argv: string[]): string | undefined {
 }
 
 function showHelp(): void {
-  console.log("pensar logs — View agent execution logs via the Pensar API\n");
-  console.log("Usage:");
-  console.log("  pensar logs <issueId> [filters]                 List agent logs");
-  console.log("  pensar logs search <issueId> <query> [options]  Search agent logs");
-  console.log();
-  console.log("List filters:");
-  console.log("  --level <level>       Filter: debug, info, warn, error");
-  console.log("  --role <role>         Filter: assistant, user, system, tool-call, tool-result");
-  console.log("  --limit <n>           Max entries (default: 100, max: 500)");
-  console.log();
-  console.log("Search options:");
-  console.log("  --level <level>       Filter: debug, info, warn, error");
-  console.log("  --role <role>         Filter: assistant, user, system, tool-call, tool-result");
-  console.log("  --context <n>         Context lines around matches (default: 3)");
-  console.log();
-  console.log("Options:");
-  console.log("  -h, --help            Show this help message");
+  console.log(`pensar logs — View agent execution logs via the Pensar API
+
+Usage:
+  pensar logs <issueId> [filters]                 List agent logs
+  pensar logs search <issueId> <query> [options]  Search agent logs
+
+List filters:
+  --level <level>       Filter: debug, info, warn, error
+  --role <role>         Filter: assistant, user, system, tool-call, tool-result
+  --limit <n>           Max entries (default: 100, max: 500)
+
+Search options:
+  --level <level>       Filter: debug, info, warn, error
+  --role <role>         Filter: assistant, user, system, tool-call, tool-result
+  --context <n>         Context lines around matches (default: 3)
+
+Options:
+  -h, --help            Show this help message`);
 }
 
 async function main(): Promise<void> {
@@ -50,7 +51,9 @@ async function main(): Promise<void> {
       const query = args[2];
       if (!issueId || !query) {
         console.error("Error: issue ID and query are required");
-        console.error("Usage: pensar logs search <issueId> <query> [--level <level>] [--role <role>] [--context <n>]");
+        console.error(
+          "Usage: pensar logs search <issueId> <query> [--level <level>] [--role <role>] [--context <n>]",
+        );
         process.exit(1);
       }
       const level = getFlag("--level", args) as

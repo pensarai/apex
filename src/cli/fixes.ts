@@ -11,13 +11,14 @@
 import { listFixes, getFix } from "../core/api/issues";
 
 function showHelp(): void {
-  console.log("pensar fixes — View security fixes via the Pensar API\n");
-  console.log("Usage:");
-  console.log("  pensar fixes <issueId>         List fixes for an issue");
-  console.log("  pensar fixes get <fixId>       Get fix details (includes diff)");
-  console.log();
-  console.log("Options:");
-  console.log("  -h, --help                     Show this help message");
+  console.log(`pensar fixes — View security fixes via the Pensar API
+
+Usage:
+  pensar fixes <issueId>         List fixes for an issue
+  pensar fixes get <fixId>       Get fix details (includes diff)
+
+Options:
+  -h, --help                     Show this help message`);
 }
 
 async function main(): Promise<void> {

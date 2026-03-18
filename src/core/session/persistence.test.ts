@@ -702,9 +702,7 @@ describe("normalizeMessages", () => {
     expect(result[0].role).toBe("user");
     expect(result[1].role).toBe("assistant");
     expect(result[2].role).toBe("user");
-    expect((result[2] as { content: string }).content).toBe(
-      "retry1\n\nretry2",
-    );
+    expect((result[2] as { content: string }).content).toBe("retry1\n\nretry2");
     expect(result[3].role).toBe("assistant");
   });
 
@@ -730,7 +728,12 @@ describe("normalizeMessages", () => {
         },
       ]),
       makeMsg("tool", [
-        { type: "tool-result", toolCallId: "tc-1", toolName: "cmd", result: "ok" },
+        {
+          type: "tool-result",
+          toolCallId: "tc-1",
+          toolName: "cmd",
+          result: "ok",
+        },
       ]),
       makeMsg("user", "next"),
     ];
@@ -783,9 +786,11 @@ describe("normalizeMessages", () => {
       ]),
     ];
     const result = normalizeMessages(msgs);
-    const parts = (result.find((m) => m.role === "tool") as {
-      content: Array<Record<string, unknown>>;
-    }).content;
+    const parts = (
+      result.find((m) => m.role === "tool") as {
+        content: Array<Record<string, unknown>>;
+      }
+    ).content;
     expect(parts[0].output).toEqual({ type: "json", value: { ok: true } });
   });
 });

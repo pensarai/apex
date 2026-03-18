@@ -449,10 +449,14 @@ function wrapToolsWithApprovalGate(
           }
           throw err;
         }
-        console.error(`[approval-gate] ${name} (${toolCallId}): approved, executing`);
+        console.error(
+          `[approval-gate] ${name} (${toolCallId}): approved, executing`,
+        );
 
         const result = await originalExecute(args, options);
-        console.error(`[approval-gate] ${name} (${toolCallId}): execute finished`);
+        console.error(
+          `[approval-gate] ${name} (${toolCallId}): execute finished`,
+        );
         return result;
       },
     };

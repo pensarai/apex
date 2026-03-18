@@ -71,7 +71,7 @@ export function setupTerminalFocusHandling(
     log("Terminal gained focus");
     showCursor();
     renderer.requestRender();
-    
+
     // Re-focus the input after a short delay to ensure the terminal is ready
     if (onTerminalFocus) {
       setTimeout(() => {
@@ -93,7 +93,7 @@ export function setupTerminalFocusHandling(
     log("Received SIGCONT (terminal resumed)");
     showCursor();
     renderer.requestRender();
-    
+
     if (onTerminalFocus) {
       setTimeout(() => {
         onTerminalFocus();
@@ -106,12 +106,12 @@ export function setupTerminalFocusHandling(
   let stdinListenerActive = false;
   const handleStdinData = (data: Buffer) => {
     const str = data.toString();
-    
+
     // Focus in event: \x1b[I
     if (str.includes("\x1b[I")) {
       handleFocusIn();
     }
-    
+
     // Focus out event: \x1b[O
     if (str.includes("\x1b[O")) {
       handleFocusOut();
@@ -122,13 +122,13 @@ export function setupTerminalFocusHandling(
   const setupListeners = () => {
     // Enable bracketed focus mode
     enableBracketedFocus();
-    
+
     // Show cursor initially
     showCursor();
-    
+
     // Listen for SIGCONT (resume after suspend)
     process.on("SIGCONT", handleSigCont);
-    
+
     // Listen for bracketed focus events on stdin
     // Note: We need to be careful not to interfere with OpenTUI's stdin handling
     // We only listen for specific escape sequences
@@ -142,13 +142,13 @@ export function setupTerminalFocusHandling(
   // Clean up function
   const cleanup = () => {
     log("Cleaning up terminal focus handling");
-    
+
     // Disable bracketed focus mode
     disableBracketedFocus();
-    
+
     // Remove listeners
     process.off("SIGCONT", handleSigCont);
-    
+
     if (stdinListenerActive) {
       process.stdin.off("data", handleStdinData);
       stdinListenerActive = false;

@@ -20,16 +20,26 @@ export function convertToBedrockFormat(
 }
 
 function getDefaultMaxOutputTokens(modelId: string): number {
-  if (modelId.includes("claude-opus-4-6") || modelId.includes("claude-sonnet-4-6")) {
+  if (
+    modelId.includes("claude-opus-4-6") ||
+    modelId.includes("claude-sonnet-4-6")
+  ) {
     return 128_000;
   }
-  if (modelId.includes("claude-sonnet-4-5") || modelId.includes("claude-opus-4-5") || modelId.includes("claude-haiku-4-5")) {
+  if (
+    modelId.includes("claude-sonnet-4-5") ||
+    modelId.includes("claude-opus-4-5") ||
+    modelId.includes("claude-haiku-4-5")
+  ) {
     return 64_000;
   }
   if (modelId.includes("claude-opus-4-1")) {
     return 32_000;
   }
-  if (modelId.includes("claude-sonnet-4-") || modelId.includes("claude-3-7-sonnet")) {
+  if (
+    modelId.includes("claude-sonnet-4-") ||
+    modelId.includes("claude-3-7-sonnet")
+  ) {
     return 64_000;
   }
   if (modelId.includes("claude-opus-4-")) {

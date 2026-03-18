@@ -34,14 +34,18 @@ import * as readline from "readline";
 
 function openUrl(url: string): void {
   try {
+    const { spawn } =
+      require("child_process") as typeof import("child_process");
     const platform = process.platform;
+    let cmd: ReturnType<typeof spawn>;
     if (platform === "darwin") {
-      Bun.spawn(["open", url]);
+      cmd = spawn("open", [url]);
     } else if (platform === "win32") {
-      Bun.spawn(["cmd", "/c", "start", url]);
+      cmd = spawn("cmd", ["/c", "start", url]);
     } else {
-      Bun.spawn(["xdg-open", url]);
+      cmd = spawn("xdg-open", [url]);
     }
+    cmd.on("error", () => {}); // fire-and-forget — user sees the URL as fallback
   } catch {
     // Browser open failed — user will see the fallback URL
   }
@@ -99,8 +103,9 @@ async function login(): Promise<void> {
     }
   }
 
-  console.log("\nPensar Console — Managed Inference");
-  console.log("Connect for usage-based AI inference. No API keys needed.\n");
+  console.log(
+    "\nPensar Console — Managed Inference\nConnect for usage-based AI inference. No API keys needed.\n",
+  );
 
   const apiUrl = getPensarApiUrl();
   const flowInfo = await startDeviceFlow(apiUrl);
@@ -110,12 +115,9 @@ async function login(): Promise<void> {
 
     openUrl(deviceInfo.verification_uri_complete);
 
-    console.log("A browser window should have opened.");
     console.log(
-      `If not, open this URL:\n  ${deviceInfo.verification_uri_complete}\n`,
+      `A browser window should have opened.\nIf not, open this URL:\n  ${deviceInfo.verification_uri_complete}\n\nYour code: ${deviceInfo.user_code}\n\nWaiting for browser authorization...`,
     );
-    console.log(`Your code: ${deviceInfo.user_code}\n`);
-    console.log("Waiting for browser authorization...");
 
     const tokens = await pollWorkOSToken({
       clientId,
@@ -136,12 +138,9 @@ async function login(): Promise<void> {
 
     openUrl(deviceInfo.verificationUriComplete);
 
-    console.log("A browser window should have opened.");
     console.log(
-      `If not, open this URL:\n  ${deviceInfo.verificationUriComplete}\n`,
+      `A browser window should have opened.\nIf not, open this URL:\n  ${deviceInfo.verificationUriComplete}\n\nYour code: ${deviceInfo.userCode}\n\nWaiting for browser authorization...`,
     );
-    console.log(`Your code: ${deviceInfo.userCode}\n`);
-    console.log("Waiting for browser authorization...");
 
     const data = await pollLegacyToken({
       apiUrl,
@@ -185,9 +184,8 @@ async function handleWorkspaces(
   const consoleUrl = wsResult.consoleUrl ?? getPensarConsoleUrl();
 
   if (workspaces.length === 0) {
-    console.log("\nNo workspaces found. Opening browser to create one...");
     console.log(
-      `If the browser didn't open, visit: ${consoleUrl}/create-workspace?redirect=/credits\n`,
+      `\nNo workspaces found. Opening browser to create one...\nIf the browser didn't open, visit: ${consoleUrl}/create-workspace?redirect=/credits\n`,
     );
     openUrl(`${consoleUrl}/create-workspace?redirect=/credits`);
     console.log("Waiting for workspace creation...");
@@ -209,9 +207,9 @@ async function handleWorkspaces(
     gatewaySigningKey: result.signingKey ?? null,
   });
 
-  console.log("\n✓ Connected to Pensar Console");
-  console.log(`  Workspace: ${workspace.name} (${workspace.slug})`);
-  console.log(`  Credits: $${result.billing.balance.toFixed(2)}`);
+  console.log(
+    `\n✓ Connected to Pensar Console\n  Workspace: ${workspace.name} (${workspace.slug})\n  Credits: $${result.billing.balance.toFixed(2)}`,
+  );
 
   if (!result.confirmed && result.billingUrl) {
     console.log(
@@ -245,13 +243,18 @@ async function status(): Promise<void> {
   const appConfig = await config.get();
 
   if (!isConnected(appConfig)) {
-    console.log("Not connected to Pensar Console.");
-    console.log("\nRun `pensar auth login` to connect.");
+    console.log(
+      "Not connected to Pensar Console.\n\nRun `pensar auth login` to connect.",
+    );
     return;
   }
 
   // If using an API key without stored workspace info, resolve it from the server
-  if (!appConfig.accessToken && appConfig.pensarAPIKey && !appConfig.workspaceSlug) {
+  if (
+    !appConfig.accessToken &&
+    appConfig.pensarAPIKey &&
+    !appConfig.workspaceSlug
+  ) {
     try {
       const apiUrl = getPensarApiUrl();
       const res = await fetch(`${apiUrl}/auth/validate`, {
@@ -275,29 +278,23 @@ async function status(): Promise<void> {
     }
   }
 
-  console.log("✓ Connected to Pensar Console");
+  const authMethod = appConfig.accessToken ? "WorkOS" : "API key";
   console.log(
-    `  Workspace: ${appConfig.workspaceSlug ?? "not set"}`,
+    `✓ Connected to Pensar Console\n  Workspace: ${appConfig.workspaceSlug ?? "not set"}\n  Auth: ${authMethod}`,
   );
-  if (appConfig.accessToken) {
-    console.log("  Auth: WorkOS");
-  } else {
-    console.log("  Auth: API key");
-  }
 }
 
 function showHelp(): void {
-  console.log("Pensar Auth — Connect to Pensar Console\n");
-  console.log("Usage:");
-  console.log(
-    "  pensar auth              Login to Pensar Console (or show status if connected)",
-  );
-  console.log("  pensar auth login        Login to Pensar Console");
-  console.log("  pensar auth logout       Disconnect from Pensar Console");
-  console.log("  pensar auth status       Show connection status");
-  console.log();
-  console.log("Options:");
-  console.log("  -h, --help               Show this help message");
+  console.log(`Pensar Auth — Connect to Pensar Console
+
+Usage:
+  pensar auth              Login to Pensar Console (or show status if connected)
+  pensar auth login        Login to Pensar Console
+  pensar auth logout       Disconnect from Pensar Console
+  pensar auth status       Show connection status
+
+Options:
+  -h, --help               Show this help message`);
 }
 
 // ---------------------------------------------------------------------------
