@@ -17,9 +17,7 @@ describe("getDefaultModelForConfig", () => {
     const model = getDefaultModelForConfig(config);
     expect(model).not.toBeNull();
     expect(model!.provider).toBe("pensar");
-    expect(model!.id).toBe(
-      "pensar:anthropic.claude-opus-4-1-20250805-v1:0",
-    );
+    expect(model!.id).toBe("pensar:anthropic.claude-opus-4-6-v1");
   });
 
   it("returns a Pensar model when Pensar is configured via pensarAPIKey", () => {
