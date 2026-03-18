@@ -255,19 +255,6 @@ export const commands: CommandConfig[] = [
     },
   },
   {
-    name: "chat",
-    aliases: ["c"],
-    description: "Open the Chat TUI interface",
-    category: "General",
-    hidden: true,
-    handler: async (args, ctx) => {
-      ctx.navigate({
-        type: "base",
-        path: "home",
-      });
-    },
-  },
-  {
     name: "themes",
     aliases: ["theme"],
     description: "Manage application themes",

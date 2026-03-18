@@ -151,10 +151,10 @@ export function CommandProvider({
       "/pentest",
       "/operator",
       "/auth",
+      "/credits",
       "/models",
+      "/providers",
       "/sessions",
-      "/themes",
-      "/help",
     ];
 
     return options.sort((a, b) => {

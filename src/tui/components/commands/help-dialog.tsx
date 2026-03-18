@@ -39,9 +39,41 @@ export default function HelpDialog() {
     return grouped;
   }, [commands]);
 
-  // Flat list of commands for navigation
+  // Flat list of commands for navigation - filtered and sorted
   const flatCommands = useMemo(() => {
-    return commands;
+    // Filter out hidden commands
+    const visible = commands.filter((cmd) => !cmd.hidden);
+
+    // Priority order for important commands
+    const priorityOrder = [
+      "pentest",
+      "operator",
+      "auth",
+      "credits",
+      "models",
+      "providers",
+      "sessions",
+    ];
+
+    // Sort with priority commands first, then alphabetically
+    return visible.sort((a, b) => {
+      const aIndex = priorityOrder.indexOf(a.name);
+      const bIndex = priorityOrder.indexOf(b.name);
+
+      // Both in priority list - sort by priority order
+      if (aIndex !== -1 && bIndex !== -1) {
+        return aIndex - bIndex;
+      }
+
+      // Only a is in priority list - a comes first
+      if (aIndex !== -1) return -1;
+
+      // Only b is in priority list - b comes first
+      if (bIndex !== -1) return 1;
+
+      // Neither in priority list - sort alphabetically
+      return a.name.localeCompare(b.name);
+    });
   }, [commands]);
 
   // Ensure selected index is within bounds
