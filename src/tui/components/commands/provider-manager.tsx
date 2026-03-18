@@ -84,7 +84,11 @@ export default function ProviderManager() {
   };
 
   const handleAuthClose = () => {
-    route.navigate({ type: "base", path: "home" });
+    if (isOnboarding) {
+      setFlowState("choosing");
+    } else {
+      route.navigate({ type: "base", path: "home" });
+    }
   };
 
   const otherProviders = AVAILABLE_PROVIDERS.filter((p) => p.id !== "pensar");

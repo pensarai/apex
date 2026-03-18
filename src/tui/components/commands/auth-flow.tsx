@@ -39,9 +39,11 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
   const appConfig = useConfig();
 
   const alreadyConnected = isConnected(appConfig.data);
+  const hasWorkspace = !!appConfig.data.workspaceId;
+  const needsWorkspace = alreadyConnected && !hasWorkspace && !!appConfig.data.accessToken;
 
   const [step, setStep] = useState<AuthStep>(
-    alreadyConnected ? "success" : "start",
+    needsWorkspace ? "requesting" : alreadyConnected ? "success" : "start",
   );
   const [error, setError] = useState<string | null>(null);
   const [flowInfo, setFlowInfo] = useState<DeviceFlowInfo | null>(null);
@@ -338,6 +340,14 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
       setStep("error");
     }
   };
+
+  useEffect(() => {
+    if (!needsWorkspace) return;
+    const ac = new AbortController();
+    abortRef.current = ac;
+    const apiUrl = getPensarApiUrl();
+    handleFetchWorkspaces(apiUrl, appConfig.data.accessToken!, ac);
+  }, []);
 
   // ── Disconnect ──────────────────────────────────────────────────────
 
