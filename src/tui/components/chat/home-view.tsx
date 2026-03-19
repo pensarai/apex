@@ -128,6 +128,7 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
   const inputMarginTop = height >= 25 ? 2 : height >= 15 ? 1 : 0;
 
   // Content visibility: hide decorative elements first
+  const showCommands = height >= 22;
   const showHelpText = height >= 18;
   const inputPadding = height >= 20 ? 1 : 0;
   const inputWidth = Math.min(80, dimensions.width - 10);
@@ -162,25 +163,27 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
       </box>
 
       {/* Command Quick Reference */}
-      <box flexDirection="column" marginTop={menuMarginTop} flexShrink={0}>
-        {[
-          { cmd: "/pentest", desc: "autonomous pentest" },
-          { cmd: "/operator", desc: "interactive operator" },
-          { cmd: "/auth", desc: "login to Pensar" },
-          { cmd: "/models", desc: "select AI model" },
-          { cmd: "/providers", desc: "manage API keys" },
-        ].map(({ cmd, desc }) => (
-          <box key={cmd} flexDirection="row">
-            <box width={24} justifyContent="flex-end">
-              <text fg={colors.primary}>{cmd}</text>
+      {showCommands && (
+        <box flexDirection="column" marginTop={menuMarginTop} flexShrink={0}>
+          {[
+            { cmd: "/pentest", desc: "autonomous pentest" },
+            { cmd: "/operator", desc: "interactive operator" },
+            { cmd: "/auth", desc: "login to Pensar" },
+            { cmd: "/models", desc: "select AI model" },
+            { cmd: "/providers", desc: "manage API keys" },
+          ].map(({ cmd, desc }) => (
+            <box key={cmd} flexDirection="row">
+              <box width={24} justifyContent="flex-end">
+                <text fg={colors.primary}>{cmd}</text>
+              </box>
+              <box width={4} />
+              <box>
+                <text fg={colors.textMuted}>{desc}</text>
+              </box>
             </box>
-            <box width={4} />
-            <box>
-              <text fg={colors.textMuted}>{desc}</text>
-            </box>
-          </box>
-        ))}
-      </box>
+          ))}
+        </box>
+      )}
 
       {/* Centered Input Area */}
       <box
