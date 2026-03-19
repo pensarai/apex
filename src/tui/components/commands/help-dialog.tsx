@@ -154,9 +154,10 @@ export default function HelpDialog() {
           borderColor={colors.primary}
           borderStyle="single"
           flexDirection="column"
+          overflow="hidden"
         >
           {/* Detail Header */}
-          <box width="100%" padding={1} flexDirection="row">
+          <box width="100%" padding={1} flexDirection="row" flexShrink={0}>
             <text fg={colors.primary}>/{selectedCommand.name}</text>
             <text
               fg={colors.textMuted}
@@ -164,12 +165,18 @@ export default function HelpDialog() {
           </box>
 
           {/* Separator */}
-          <box width="100%" height={1}>
+          <box width="100%" height={1} flexShrink={0}>
             <text fg={colors.border}>{"─".repeat(panelWidth - 2)}</text>
           </box>
 
           {/* Detail Content */}
-          <box width="100%" padding={2} flexDirection="column" flexGrow={1}>
+          <box
+            width="100%"
+            padding={2}
+            flexDirection="column"
+            flexGrow={1}
+            overflow="hidden"
+          >
             {/* Description */}
             <text fg={colors.text}>
               {selectedCommand.description || "No description available"}
@@ -205,12 +212,12 @@ export default function HelpDialog() {
           </box>
 
           {/* Separator */}
-          <box width="100%" height={1}>
+          <box width="100%" height={1} flexShrink={0}>
             <text fg={colors.border}>{"─".repeat(panelWidth - 2)}</text>
           </box>
 
           {/* Detail Footer */}
-          <box width="100%" padding={1} flexDirection="row">
+          <box width="100%" padding={1} flexDirection="row" flexShrink={0}>
             <text fg={colors.textMuted}>[enter/esc] back</text>
           </box>
         </box>
@@ -237,9 +244,10 @@ export default function HelpDialog() {
         borderColor={colors.border}
         borderStyle="single"
         flexDirection="column"
+        overflow="hidden"
       >
         {/* Header */}
-        <box width="100%" padding={1} flexDirection="row">
+        <box width="100%" padding={1} flexDirection="row" flexShrink={0}>
           <text fg={colors.primary}>
             {"Help - Available Commands".padEnd(panelWidth - 20)}
           </text>
@@ -247,12 +255,18 @@ export default function HelpDialog() {
         </box>
 
         {/* Separator */}
-        <box width="100%" height={1}>
+        <box width="100%" height={1} flexShrink={0}>
           <text fg={colors.border}>{"─".repeat(panelWidth - 2)}</text>
         </box>
 
         {/* Column Headers */}
-        <box width="100%" paddingLeft={2} paddingRight={2} flexDirection="row">
+        <box
+          width="100%"
+          paddingLeft={2}
+          paddingRight={2}
+          flexDirection="row"
+          flexShrink={0}
+        >
           <text fg={colors.textMuted}>
             {"Command".padEnd(18)}
             {"Category".padEnd(14)}
@@ -294,6 +308,7 @@ export default function HelpDialog() {
                 }
                 flexDirection="row"
                 paddingLeft={1}
+                overflow="hidden"
               >
                 <text fg={isSelected ? colors.primary : colors.text}>
                   {name}
@@ -309,12 +324,12 @@ export default function HelpDialog() {
         </scrollbox>
 
         {/* Separator */}
-        <box width="100%" height={1}>
+        <box width="100%" height={1} flexShrink={0}>
           <text fg={colors.border}>{"─".repeat(panelWidth - 2)}</text>
         </box>
 
         {/* Footer */}
-        <box width="100%" padding={1} flexDirection="row">
+        <box width="100%" padding={1} flexDirection="row" flexShrink={0}>
           <text fg={colors.textMuted}>
             [j/k] navigate [enter/v] details [esc] close
           </text>
