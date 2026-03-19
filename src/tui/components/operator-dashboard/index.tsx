@@ -1093,23 +1093,34 @@ export default function OperatorDashboard({
         case "show-models":
           showModelPicker();
           return;
-        case "run-skill":
+        case "run-skill": {
           if (action.autopilot) {
             approvalGateRef.current.updateConfig({ requireApproval: false });
             setOperatorState((prev) => ({ ...prev, requireApproval: false }));
           }
-          // Skill is already activated in the registry (system prompt).
-          // Send a brief message so the agent acknowledges and asks for a target.
-          handleSubmit(
-            `I'd like to use the ${action.slug} skill. What do you need from me to get started?`,
-          );
+          // Load the skill's full instructions and send them to the agent
+          // so it can act on the skill directly without an extra tool call.
+          try {
+            const { content } = await skillsRegistry.readSkillContent(
+              action.slug,
+            );
+            handleSubmit(
+              `<skill name="${action.slug}">\n${content}\n</skill>`,
+            );
+          } catch {
+            // Fallback: tell the agent to load the skill via tool
+            handleSubmit(
+              `Use the read_skill tool to load the "${action.slug}" skill and follow its instructions.`,
+            );
+          }
           return;
+        }
         case "execute-command":
           await executeCommand(action.command);
           return;
       }
     },
-    [resolveSkillContent, handleSubmit, executeCommand, showModelPicker],
+    [resolveSkillContent, skillsRegistry, handleSubmit, executeCommand, showModelPicker],
   );
 
   const handleAbort = useCallback(() => {
