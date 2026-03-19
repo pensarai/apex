@@ -25,7 +25,7 @@ Want to run from the cloud or integrate it with your CI/CD? See <a href="https:/
 
 Apex is an autonomous penetration testing agent that runs directly in your terminal.
 
-It doesn't wrap existing scanners or chain shell scripts. Apex deploys a **swarm of specialized AI agents** — each with domain expertise in reconnaissance, authentication analysis, exploitation, and code review — that coordinate a real penetration test against your application. Each agent follows a structured methodology: plan, verify, prepare, test, exploit, and document. Every finding comes with CVSS 4.0 scoring, CWE classification, evidence, and a validated proof-of-concept.
+It doesn't wrap existing scanners or chain shell scripts. Apex deploys a **swarm of specialized AI agents** — each with domain expertise in reconnaissance, authentication analysis, exploitation, and code review — that coordinate a real penetration test against your application. Every finding comes with CVSS 4.0 scoring, CWE classification, evidence, and a validated proof-of-concept.
 
 The result is a pentest that runs like `npm test` — but thinks like a red team.
 
