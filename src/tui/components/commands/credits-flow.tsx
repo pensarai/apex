@@ -3,6 +3,7 @@ import { useKeyboard } from "@opentui/react";
 import { useRoute } from "../../context/route";
 import { getPensarConsoleUrl } from "../../../core/api/constants";
 import { validateGateway } from "../../../core/auth";
+import { Dialog } from "../../context/dialog";
 
 type CreditsStep = "loading" | "no-auth" | "display" | "browser-opened";
 
@@ -110,117 +111,119 @@ export default function CreditsFlow({
   });
 
   return (
-    <box
-      flexDirection="column"
-      width="100%"
-      maxWidth={80}
-      alignItems="flex-start"
-      padding={1}
-    >
-      {/* Header */}
-      <box marginBottom={1}>
-        <text fg="green">Credits</text>
-      </box>
-
-      {/* Loading */}
-      {step === "loading" && (
-        <box>
-          <text fg="yellow">Fetching balance...</text>
+    <Dialog size="large" onClose={goHome}>
+      <box
+        flexDirection="column"
+        width="100%"
+        maxWidth={80}
+        alignItems="flex-start"
+        padding={1}
+      >
+        {/* Header */}
+        <box marginBottom={1}>
+          <text fg="green">Credits</text>
         </box>
-      )}
 
-      {/* No Auth */}
-      {step === "no-auth" && (
-        <box flexDirection="column" gap={1}>
+        {/* Loading */}
+        {step === "loading" && (
           <box>
-            <text fg="yellow">Not connected to Pensar Console.</text>
+            <text fg="yellow">Fetching balance...</text>
           </box>
-          <box>
-            <text fg="gray">
-              Run <span fg="green">/auth</span> first to connect your account.
-            </text>
-          </box>
-          <box marginTop={1}>
-            <text fg="gray">
-              <span fg="green">[ENTER]</span> Run /auth ·{" "}
-              <span fg="green">[ESC]</span> Back
-            </text>
-          </box>
-        </box>
-      )}
+        )}
 
-      {/* Display Balance */}
-      {step === "display" && (
-        <box flexDirection="column" gap={1}>
-          {error ? (
+        {/* No Auth */}
+        {step === "no-auth" && (
+          <box flexDirection="column" gap={1}>
             <box>
-              <text fg="red">Error: {error}</text>
+              <text fg="yellow">Not connected to Pensar Console.</text>
             </box>
-          ) : credits ? (
-            <>
+            <box>
+              <text fg="gray">
+                Run <span fg="green">/auth</span> first to connect your account.
+              </text>
+            </box>
+            <box marginTop={1}>
+              <text fg="gray">
+                <span fg="green">[ENTER]</span> Run /auth ·{" "}
+                <span fg="green">[ESC]</span> Back
+              </text>
+            </box>
+          </box>
+        )}
+
+        {/* Display Balance */}
+        {step === "display" && (
+          <box flexDirection="column" gap={1}>
+            {error ? (
               <box>
-                <text fg="white">Workspace: {credits.workspace}</text>
+                <text fg="red">Error: {error}</text>
               </box>
-              <box>
-                <text fg="white">
-                  Balance:{" "}
-                  <span fg={credits.balance < 5 ? "yellow" : "green"}>
-                    ${credits.balance.toFixed(2)}
-                  </span>
-                </text>
-              </box>
-              {credits.balance < 5 && (
-                <box marginTop={1}>
-                  <text fg="yellow">
-                    Low balance. We recommend at least $30 for uninterrupted
-                    pentest runs.
+            ) : credits ? (
+              <>
+                <box>
+                  <text fg="white">Workspace: {credits.workspace}</text>
+                </box>
+                <box>
+                  <text fg="white">
+                    Balance:{" "}
+                    <span fg={credits.balance < 5 ? "yellow" : "green"}>
+                      ${credits.balance.toFixed(2)}
+                    </span>
                   </text>
                 </box>
-              )}
-            </>
-          ) : null}
+                {credits.balance < 5 && (
+                  <box marginTop={1}>
+                    <text fg="yellow">
+                      Low balance. We recommend at least $30 for uninterrupted
+                      pentest runs.
+                    </text>
+                  </box>
+                )}
+              </>
+            ) : null}
 
-          <box marginTop={1}>
-            <text fg="gray">
-              Press <span fg="green">[ENTER]</span> to buy credits in your
-              browser.
-            </text>
+            <box marginTop={1}>
+              <text fg="gray">
+                Press <span fg="green">[ENTER]</span> to buy credits in your
+                browser.
+              </text>
+            </box>
+            <box>
+              <text fg="gray">Or visit: {creditsUrl}</text>
+            </box>
+            <box marginTop={1}>
+              <text fg="gray">
+                <span fg="green">[ENTER]</span> Open browser ·{" "}
+                <span fg="green">[R]</span> Refresh ·{" "}
+                <span fg="green">[ESC]</span> Back
+              </text>
+            </box>
           </box>
-          <box>
-            <text fg="gray">Or visit: {creditsUrl}</text>
-          </box>
-          <box marginTop={1}>
-            <text fg="gray">
-              <span fg="green">[ENTER]</span> Open browser ·{" "}
-              <span fg="green">[R]</span> Refresh ·{" "}
-              <span fg="green">[ESC]</span> Back
-            </text>
-          </box>
-        </box>
-      )}
+        )}
 
-      {/* Browser Opened */}
-      {step === "browser-opened" && (
-        <box flexDirection="column" gap={1}>
-          <box>
-            <text fg="green">
-              Browser opened. Purchase credits on the Pensar Console.
-            </text>
+        {/* Browser Opened */}
+        {step === "browser-opened" && (
+          <box flexDirection="column" gap={1}>
+            <box>
+              <text fg="green">
+                Browser opened. Purchase credits on the Pensar Console.
+              </text>
+            </box>
+            <box marginTop={1}>
+              <text fg="gray">
+                Press <span fg="green">[ENTER]</span> to refresh your balance
+                after purchasing.
+              </text>
+            </box>
+            <box marginTop={1}>
+              <text fg="gray">
+                <span fg="green">[ENTER]</span> Refresh balance ·{" "}
+                <span fg="green">[ESC]</span> Back
+              </text>
+            </box>
           </box>
-          <box marginTop={1}>
-            <text fg="gray">
-              Press <span fg="green">[ENTER]</span> to refresh your balance
-              after purchasing.
-            </text>
-          </box>
-          <box marginTop={1}>
-            <text fg="gray">
-              <span fg="green">[ENTER]</span> Refresh balance ·{" "}
-              <span fg="green">[ESC]</span> Back
-            </text>
-          </box>
-        </box>
-      )}
-    </box>
+        )}
+      </box>
+    </Dialog>
   );
 }
