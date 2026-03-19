@@ -5,6 +5,7 @@ import {
   useContext,
   useState,
   useCallback,
+  useEffect,
   useRef,
   type ReactNode,
 } from "react";
@@ -21,6 +22,9 @@ export function Dialog({ size = "medium", onClose, children }: DialogProps) {
   const dimensions = useDimensions();
   const renderer = useRenderer();
   const { colors: themeColors } = useTheme();
+  const { registerDialog } = useDialog();
+
+  useEffect(() => registerDialog(), [registerDialog]);
 
   return (
     <box
@@ -70,6 +74,8 @@ interface DialogContextValue {
   setSize: (size: "medium" | "large") => void;
   externalDialogOpen: boolean;
   setExternalDialogOpen: (open: boolean) => void;
+  registerDialog: () => () => void;
+  directDialogCount: number;
 }
 
 const DialogContext = createContext<DialogContextValue | null>(null);
@@ -78,6 +84,12 @@ export function DialogProvider({ children }: { children: ReactNode }) {
   const [stack, setStack] = useState<DialogStackItem[]>([]);
   const [size, setSize] = useState<"medium" | "large">("medium");
   const [externalDialogOpen, setExternalDialogOpen] = useState(false);
+  const [directDialogCount, setDirectDialogCount] = useState(0);
+
+  const registerDialog = useCallback(() => {
+    setDirectDialogCount((c) => c + 1);
+    return () => setDirectDialogCount((c) => c - 1);
+  }, []);
   const renderer = useRenderer();
   const focusRef = useRef<Renderable | null>(null);
 
@@ -142,6 +154,8 @@ export function DialogProvider({ children }: { children: ReactNode }) {
     setSize,
     externalDialogOpen,
     setExternalDialogOpen,
+    registerDialog,
+    directDialogCount,
   };
 
   return (

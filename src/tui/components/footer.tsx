@@ -4,6 +4,7 @@ import { ProgressBar, SpinnerDots } from "./sprites";
 import { useSession } from "../context/session";
 import { useRoute } from "../context/route";
 import { useInput } from "../context/input";
+import { useDialog } from "../context/dialog";
 import { useTheme } from "../theme";
 
 interface FooterProps {
@@ -64,6 +65,8 @@ export default function Footer({
       </box>
     );
   }
+
+  if (dialogOpen) return null;
 
   const hotkeys = isExecuting
     ? [{ key: "Ctrl+C", label: "Stop Execution" }]
