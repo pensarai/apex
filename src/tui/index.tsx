@@ -371,6 +371,7 @@ function AppContent({
         focusIndex={focusIndex}
         inputKey={inputKey}
         onOpenAuthDialog={() => setShowAuthDialog(true)}
+        onOpenModelDialog={() => setShowModelDialog(true)}
       />
 
       <Footer cwd={cwd} showExitWarning={showExitWarning} />
@@ -439,10 +440,12 @@ function CommandDisplay({
   focusIndex,
   inputKey,
   onOpenAuthDialog,
+  onOpenModelDialog,
 }: {
   focusIndex: number;
   inputKey: number;
   onOpenAuthDialog: () => void;
+  onOpenModelDialog: () => void;
 }) {
   const route = useRoute();
   const config = useConfig();
@@ -502,9 +505,7 @@ function CommandDisplay({
             />
           </RouteSwitch.Case>
           <RouteSwitch.Case when="providers">
-            <ProviderManager
-              onOpenModelDialog={() => setShowModelDialog(true)}
-            />
+            <ProviderManager onOpenModelDialog={onOpenModelDialog} />
           </RouteSwitch.Case>
           <RouteSwitch.Case when="help">
             <HelpDialog />
