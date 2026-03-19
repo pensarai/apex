@@ -273,6 +273,9 @@ function AppContent({
   useEffect(() => {
     if (anyExternalDialog) {
       setExternalDialogOpen(true);
+    } else {
+      const timer = setTimeout(() => setExternalDialogOpen(false), 0);
+      return () => clearTimeout(timer);
     }
   }, [anyExternalDialog]);
 
@@ -295,63 +298,42 @@ function AppContent({
 
   const handleCloseShortcutsDialog = () => {
     setShowShortcutsDialog(false);
-    setTimeout(() => {
-      setExternalDialogOpen(false);
-    }, 0);
     setInputKey((prev) => prev + 1);
     refocusPrompt();
   };
 
   const handleCloseThemeDialog = () => {
     setShowThemeDialog(false);
-    setTimeout(() => {
-      setExternalDialogOpen(false);
-    }, 0);
     setInputKey((prev) => prev + 1);
     refocusPrompt();
   };
 
   const handleCloseModelDialog = () => {
     setShowModelDialog(false);
-    setTimeout(() => {
-      setExternalDialogOpen(false);
-    }, 0);
     setInputKey((prev) => prev + 1);
     refocusPrompt();
   };
 
   const handleCloseProvidersDialog = () => {
     setShowProvidersDialog(false);
-    setTimeout(() => {
-      setExternalDialogOpen(false);
-    }, 0);
     setInputKey((prev) => prev + 1);
     refocusPrompt();
   };
 
   const handleCloseConfigDialog = () => {
     setShowConfigDialog(false);
-    setTimeout(() => {
-      setExternalDialogOpen(false);
-    }, 0);
     setInputKey((prev) => prev + 1);
     refocusPrompt();
   };
 
   const handleCloseCreditsDialog = () => {
     setShowCreditsDialog(false);
-    setTimeout(() => {
-      setExternalDialogOpen(false);
-    }, 0);
     setInputKey((prev) => prev + 1);
     refocusPrompt();
   };
 
   const handleCloseAuthDialog = () => {
     setShowAuthDialog(false);
-    setTimeout(() => {
-      setExternalDialogOpen(false);
-    }, 0);
     setInputKey((prev) => prev + 1);
     refocusPrompt();
   };
@@ -359,9 +341,6 @@ function AppContent({
   const handleClosePentestDialog = () => {
     setShowPentestDialog(false);
     setPendingPentestFlags(undefined);
-    setTimeout(() => {
-      setExternalDialogOpen(false);
-    }, 0);
     setInputKey((prev) => prev + 1);
     refocusPrompt();
   };
@@ -372,9 +351,6 @@ function AppContent({
   ) => {
     setShowPentestDialog(false);
     setPendingPentestFlags(undefined);
-    setTimeout(() => {
-      setExternalDialogOpen(false);
-    }, 0);
     route.navigate({ type: "pentest", targets, sessionConfig });
   };
 
