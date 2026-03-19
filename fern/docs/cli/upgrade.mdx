@@ -1,0 +1,44 @@
+---
+title: "pensar upgrade"
+description: "Update Pensar Apex to the latest version"
+---
+
+## Overview
+
+The `pensar upgrade` command checks for and installs the latest version of Pensar Apex. It detects your installation method (npm, Homebrew, or standalone binary) and performs the appropriate update.
+
+## Usage
+
+```bash
+pensar upgrade
+```
+
+**Alias**: `pensar update`
+
+## How It Works
+
+1. Displays your current installed version
+2. Checks the latest available version from the release server
+3. If an update is available, downloads and installs it using the appropriate method for your installation type
+4. Reports the result
+
+## Example
+
+```bash
+$ pensar upgrade
+Current version: v0.0.112
+Checking for updates...
+
+Updated to v0.0.113
+```
+
+## Related Commands
+
+<CardGroup cols={2}>
+  <Card title="pensar doctor" icon="stethoscope" href="/apex/cli/doctor">
+    Check dependencies and system health
+  </Card>
+  <Card title="pensar version" icon="tag" href="/apex/cli/version">
+    Show your current version
+  </Card>
+</CardGroup>
