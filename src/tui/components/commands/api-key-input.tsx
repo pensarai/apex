@@ -3,6 +3,7 @@ import { useState } from "react";
 import Input from "../input";
 import { type ProviderType, verifyApiKey } from "../../../core/providers";
 import { useTheme } from "../../theme";
+import { Dialog } from "../../context/dialog";
 
 type VerifyState = "idle" | "verifying" | "error";
 
@@ -69,42 +70,21 @@ export default function APIKeyInput({
   };
 
   return (
-    <box
-      position="absolute"
-      top={0}
-      left={0}
-      zIndex={1001}
-      width="100%"
-      height="100%"
-      justifyContent="center"
-      alignItems="center"
-      backgroundColor={colors.backgroundOverlay}
-    >
-      <box
-        width={70}
-        border={true}
-        borderColor={colors.primary}
-        backgroundColor={colors.backgroundPanel}
-        flexDirection="column"
-        padding={2}
-      >
+    <Dialog size="large" onClose={onCancel}>
+      <box flexDirection="column" padding={1} width="100%">
         {/* Header */}
-        <box
-          flexDirection="row"
-          justifyContent="space-between"
-          marginBottom={2}
-        >
+        <box flexDirection="row" justifyContent="space-between" width="100%">
           <text fg={colors.primary}>Connect {providerName}</text>
-          <text fg={colors.textMuted}>esc</text>
+          <text fg={colors.textMuted}>esc to cancel</text>
         </box>
 
         {/* Instructions */}
-        <box marginBottom={2}>
+        <box marginTop={1} marginBottom={1}>
           <text fg={colors.textMuted}>{getProviderInstructions(provider)}</text>
         </box>
 
         {/* Input */}
-        <box marginBottom={2}>
+        <box marginBottom={1}>
           <Input
             label="API Key"
             description="Your API key will be stored locally in ~/.pensar/config.json"
@@ -134,14 +114,11 @@ export default function APIKeyInput({
           </box>
         )}
 
-        {/* Footer help text */}
+        {/* Footer */}
         <box marginTop={1}>
-          <text fg={colors.textMuted}>
-            <span fg={colors.primary}>[ENTER]</span> Save ·{" "}
-            <span fg={colors.primary}>[ESC]</span> Cancel
-          </text>
+          <text fg={colors.textMuted}>[enter] save [esc] cancel</text>
         </box>
       </box>
-    </box>
+    </Dialog>
   );
 }

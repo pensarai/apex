@@ -4,6 +4,7 @@ import { useRoute } from "../../context/route";
 import { getPensarConsoleUrl } from "../../../core/api/constants";
 import { validateGateway } from "../../../core/auth";
 import { Dialog } from "../../context/dialog";
+import { useTheme } from "../../theme";
 
 type CreditsStep = "loading" | "no-auth" | "display" | "browser-opened";
 
@@ -22,6 +23,7 @@ export default function CreditsFlow({
   onOpenAuthDialog,
 }: CreditsFlowProps) {
   const route = useRoute();
+  const { colors } = useTheme();
   const [step, setStep] = useState<CreditsStep>("loading");
   const [credits, setCredits] = useState<CreditsInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -121,13 +123,13 @@ export default function CreditsFlow({
       >
         {/* Header */}
         <box marginBottom={1}>
-          <text fg="green">Credits</text>
+          <text fg={colors.primary}>Credits</text>
         </box>
 
         {/* Loading */}
         {step === "loading" && (
           <box>
-            <text fg="yellow">Fetching balance...</text>
+            <text fg={colors.warning}>Fetching balance...</text>
           </box>
         )}
 
@@ -135,17 +137,18 @@ export default function CreditsFlow({
         {step === "no-auth" && (
           <box flexDirection="column" gap={1}>
             <box>
-              <text fg="yellow">Not connected to Pensar Console.</text>
+              <text fg={colors.warning}>Not connected to Pensar Console.</text>
             </box>
             <box>
-              <text fg="gray">
-                Run <span fg="green">/auth</span> first to connect your account.
+              <text fg={colors.textMuted}>
+                Run <span fg={colors.primary}>/auth</span> first to connect your
+                account.
               </text>
             </box>
             <box marginTop={1}>
-              <text fg="gray">
-                <span fg="green">[ENTER]</span> Run /auth ·{" "}
-                <span fg="green">[ESC]</span> Back
+              <text fg={colors.textMuted}>
+                <span fg={colors.primary}>[ENTER]</span> Run /auth ·{" "}
+                <span fg={colors.primary}>[ESC]</span> Back
               </text>
             </box>
           </box>
@@ -156,24 +159,29 @@ export default function CreditsFlow({
           <box flexDirection="column" gap={1}>
             {error ? (
               <box>
-                <text fg="red">Error: {error}</text>
+                <text fg={colors.error}>Error: {error}</text>
               </box>
             ) : credits ? (
               <>
                 <box>
-                  <text fg="white">Workspace: {credits.workspace}</text>
+                  <text>
+                    <span fg={colors.textMuted}>Workspace: </span>
+                    <span fg={colors.text}>{credits.workspace}</span>
+                  </text>
                 </box>
                 <box>
-                  <text fg="white">
-                    Balance:{" "}
-                    <span fg={credits.balance < 5 ? "yellow" : "green"}>
+                  <text>
+                    <span fg={colors.textMuted}>Balance: </span>
+                    <span
+                      fg={credits.balance < 5 ? colors.warning : colors.success}
+                    >
                       ${credits.balance.toFixed(2)}
                     </span>
                   </text>
                 </box>
                 {credits.balance < 5 && (
                   <box marginTop={1}>
-                    <text fg="yellow">
+                    <text fg={colors.warning}>
                       Low balance. We recommend at least $30 for uninterrupted
                       pentest runs.
                     </text>
@@ -183,19 +191,13 @@ export default function CreditsFlow({
             ) : null}
 
             <box marginTop={1}>
-              <text fg="gray">
-                Press <span fg="green">[ENTER]</span> to buy credits in your
-                browser.
-              </text>
-            </box>
-            <box>
-              <text fg="gray">Or visit: {creditsUrl}</text>
+              <text fg={colors.textMuted}>Buy credits at: {creditsUrl}</text>
             </box>
             <box marginTop={1}>
-              <text fg="gray">
-                <span fg="green">[ENTER]</span> Open browser ·{" "}
-                <span fg="green">[R]</span> Refresh ·{" "}
-                <span fg="green">[ESC]</span> Back
+              <text fg={colors.textMuted}>
+                <span fg={colors.primary}>[ENTER]</span> Open in browser ·{" "}
+                <span fg={colors.primary}>[R]</span> Refresh ·{" "}
+                <span fg={colors.primary}>[ESC]</span> Back
               </text>
             </box>
           </box>
@@ -205,20 +207,20 @@ export default function CreditsFlow({
         {step === "browser-opened" && (
           <box flexDirection="column" gap={1}>
             <box>
-              <text fg="green">
+              <text fg={colors.success}>
                 Browser opened. Purchase credits on the Pensar Console.
               </text>
             </box>
             <box marginTop={1}>
-              <text fg="gray">
-                Press <span fg="green">[ENTER]</span> to refresh your balance
-                after purchasing.
+              <text fg={colors.textMuted}>
+                Press <span fg={colors.primary}>[ENTER]</span> to refresh your
+                balance after purchasing.
               </text>
             </box>
             <box marginTop={1}>
-              <text fg="gray">
-                <span fg="green">[ENTER]</span> Refresh balance ·{" "}
-                <span fg="green">[ESC]</span> Back
+              <text fg={colors.textMuted}>
+                <span fg={colors.primary}>[ENTER]</span> Refresh balance ·{" "}
+                <span fg={colors.primary}>[ESC]</span> Back
               </text>
             </box>
           </box>
