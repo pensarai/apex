@@ -31,3 +31,6 @@ export {
 } from "./workspaces";
 
 export { isConnected, disconnect } from "./connection";
+
+export { validateGateway } from "./gateway";
+export type { GatewayValidateResult } from "./gateway";
