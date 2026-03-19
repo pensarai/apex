@@ -71,7 +71,22 @@ export default function ProviderSelection({
         </box>
 
         {/* Provider List */}
-        <box flexDirection="column" marginTop={1} gap={1}>
+        <scrollbox
+          style={{
+            rootOptions: {
+              flexGrow: 1,
+              flexShrink: 1,
+              width: "100%",
+              marginTop: 1,
+            },
+            contentOptions: {
+              flexDirection: "column",
+              gap: 1,
+            },
+          }}
+          stickyScroll={false}
+          focused={true}
+        >
           {providerList.map((provider, index) => {
             const isHighlighted = index === highlightedIndex;
             const configured = configuredProviders.find(
@@ -103,7 +118,7 @@ export default function ProviderSelection({
               </box>
             );
           })}
-        </box>
+        </scrollbox>
 
         {/* Footer */}
         <box marginTop={1}>
