@@ -4,7 +4,6 @@ import { ProgressBar, SpinnerDots } from "./sprites";
 import { useSession } from "../context/session";
 import { useRoute } from "../context/route";
 import { useInput } from "../context/input";
-import { useDialog } from "../context/dialog";
 import { useTheme } from "../theme";
 
 interface FooterProps {
@@ -72,10 +71,6 @@ export default function Footer({
         { key: "Ctrl+C", label: "Clear/Exit" },
         ...(isInputEmpty ? [{ key: "?", label: "Shortcuts" }] : []),
       ];
-
-  if (dialogOpen) {
-    return <box width="100%" height={1} flexShrink={0} />;
-  }
 
   return (
     <box
