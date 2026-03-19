@@ -101,8 +101,7 @@ export type KeyboardAction =
   | { type: "escape" }
   | { type: "toggle-verbose" }
   | { type: "toggle-expanded-logs" }
-  | { type: "toggle-approval" }
-  | { type: "toggle-mode" }
+  | { type: "cycle-mode" }
   | { type: "approve" }
   | { type: "auto-approve" };
 
@@ -137,12 +136,8 @@ export function resolveKeyboardShortcut(
   // Ctrl+L — toggle expanded logs
   if (key.ctrl && key.name === "l") return { type: "toggle-expanded-logs" };
 
-  // Option+Shift+Tab — toggle approval
-  if (key.name === "tab" && key.shift && key.meta)
-    return { type: "toggle-approval" };
-
-  // Shift+Tab — toggle plan/default mode
-  if (key.name === "tab" && key.shift) return { type: "toggle-mode" };
+  // Shift+Tab — cycle operator mode (approvals-on → approvals-off → plan)
+  if (key.name === "tab" && key.shift) return { type: "cycle-mode" };
 
   // Y to approve
   if (
@@ -190,6 +185,7 @@ export function buildOperatorSystemPrompt(
   operatorState: OperatorSessionState,
   agentMode?: "default" | "plan",
   opts?: {
+    requireApproval?: boolean;
     skillsCatalog?: string;
     activeSkillInstructions?: Array<{ name: string; instructions: string }>;
   },
@@ -200,6 +196,9 @@ export function buildOperatorSystemPrompt(
       ? "\nAgent mode: PLAN — read-only tools only, no mutations allowed"
       : "";
 
+  const approvalEnabled =
+    opts?.requireApproval ?? operatorState.requireApproval;
+
   let prompt = `${BASE_SYSTEM_PROMPT}
 
 # Operator Mode
@@ -208,7 +207,7 @@ You are operating in interactive operator mode. The human operator will guide yo
 
 Target: ${target || "unknown"}
 Stage: ${operatorState.currentStage}
-Command approval: ${operatorState.requireApproval ? "enabled — the operator will approve each tool call" : "disabled — tool calls execute automatically"}${modeNote}`;
+Command approval: ${approvalEnabled ? "enabled — the operator will approve each tool call" : "disabled — tool calls execute automatically"}${modeNote}`;
 
   if (skillsCatalog) {
     prompt += `\n\n# Skills\n\n${skillsCatalog}`;

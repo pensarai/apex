@@ -48,6 +48,8 @@ import type { OperatorMode, PendingApproval } from "../../../core/operator";
 import {
   ApprovalGate,
   createInitialOperatorState,
+  OPERATOR_MODES,
+  OPERATOR_MODE_CYCLE,
   type OperatorSessionState,
 } from "../../../core/operator";
 import {
@@ -81,7 +83,7 @@ export default function OperatorDashboard({
 }: {
   sessionId?: string;
   initialMessage?: string;
-  initialConfig?: { requireApproval?: boolean; target?: string };
+  initialConfig?: { requireApproval?: boolean; target?: string; operatorMode?: OperatorMode };
 }) {
   const { colors } = useTheme();
   const route = useRoute();
@@ -179,7 +181,9 @@ export default function OperatorDashboard({
 
   // Approval gate — created once and updated when config changes
   const approvalGateRef = useRef<ApprovalGate>(
-    new ApprovalGate({ requireApproval: true }),
+    new ApprovalGate({
+      requireApproval: (initialConfig?.operatorMode ?? "manual") === "manual",
+    }),
   );
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>(
     [],
@@ -191,8 +195,12 @@ export default function OperatorDashboard({
   // Display options
   const [verboseMode, setVerboseMode] = useState(false);
   const [expandedLogs, setExpandedLogs] = useState(false);
-  // Agent mode: "default" uses all tools, "plan" restricts to read-only tools
-  const [agentMode, setAgentMode] = useState<AgentMode>("default");
+  // Unified operator mode: combines tool availability + approval gating
+  const [operatorMode, setOperatorMode] = useState<OperatorMode>(
+    initialConfig?.operatorMode ?? "manual",
+  );
+  const agentMode: AgentMode = operatorMode === "plan" ? "plan" : "default";
+  const requireApproval = operatorMode === "manual";
   const tokenUsageRef = useRef(tokenUsage);
 
   useEffect(() => {
@@ -651,9 +659,9 @@ export default function OperatorDashboard({
   }, []);
 
   const handleAutoApprove = useCallback(() => {
-    // Disable approval for the rest of the session
+    // Switch to approvals-off mode
+    setOperatorMode("auto");
     approvalGateRef.current.updateConfig({ requireApproval: false });
-    setOperatorState((prev) => ({ ...prev, requireApproval: false }));
 
     // Approve all currently pending
     const pending = approvalGateRef.current.getPendingApprovals();
@@ -859,19 +867,20 @@ export default function OperatorDashboard({
               initialConfig?.target,
               operatorState,
               agentMode,
-              { skillsCatalog },
+              { requireApproval, skillsCatalog },
             ),
             session,
           });
         } else {
           // First call — let the agent factory create the session
-          const requireApproval = initialConfig?.requireApproval ?? true;
+          const initialRequireApproval =
+            initialConfig?.requireApproval ?? true;
           const sessionConfig: SessionConfig = {
             sessionType: "web-app",
             mode: "operator",
             operatorSettings: {
               initialMode: "auto",
-              requireApproval,
+              requireApproval: initialRequireApproval,
               enableSuggestions: true,
             },
           };
@@ -881,7 +890,7 @@ export default function OperatorDashboard({
               initialConfig?.target,
               operatorState,
               agentMode,
-              { skillsCatalog },
+              { requireApproval, skillsCatalog },
             ),
             sessionConfig,
             onNameGenerated: (name: string) => {
@@ -1237,18 +1246,17 @@ export default function OperatorDashboard({
     });
   }, [setThinking, setIsExecuting]);
 
-  // Toggle approval requirement at runtime
-  const toggleApproval = useCallback(() => {
-    setOperatorState((prev) => {
-      const newVal = !prev.requireApproval;
-      approvalGateRef.current.updateConfig({ requireApproval: newVal });
-      return { ...prev, requireApproval: newVal };
+  // Cycle through operator modes: approvals-on → approvals-off → plan
+  const cycleMode = useCallback(() => {
+    setOperatorMode((prev) => {
+      const idx = OPERATOR_MODE_CYCLE.indexOf(prev);
+      const next =
+        OPERATOR_MODE_CYCLE[(idx + 1) % OPERATOR_MODE_CYCLE.length];
+      approvalGateRef.current.updateConfig({
+        requireApproval: next === "manual",
+      });
+      return next;
     });
-  }, []);
-
-  // Toggle between default and plan mode
-  const toggleMode = useCallback(() => {
-    setAgentMode((prev) => (prev === "default" ? "plan" : "default"));
   }, []);
 
   // Keyboard shortcuts
@@ -1348,11 +1356,8 @@ export default function OperatorDashboard({
       case "toggle-expanded-logs":
         setExpandedLogs((e) => !e);
         return;
-      case "toggle-approval":
-        toggleApproval();
-        return;
-      case "toggle-mode":
-        toggleMode();
+      case "cycle-mode":
+        cycleMode();
         return;
       case "approve":
         handleApprove();
@@ -1424,17 +1429,6 @@ export default function OperatorDashboard({
             </>
           )}
         </box>
-        <box flexDirection="row" gap={2}>
-          <text fg={agentMode === "plan" ? colors.warning : colors.primary}>
-            {agentMode === "plan" ? "PLAN" : "DEFAULT"}
-          </text>
-          <text
-            fg={operatorState.requireApproval ? colors.success : colors.warning}
-          >
-            {operatorState.requireApproval ? "APPROVAL ON" : "APPROVAL OFF"}
-          </text>
-          <text fg={colors.textMuted}>{model.name}</text>
-        </box>
       </box>
 
       {/* Error banner */}
@@ -1481,7 +1475,7 @@ export default function OperatorDashboard({
         }
         status={status === "waiting" ? "running" : status}
         mode="operator"
-        operatorMode={agentMode}
+        operatorMode={operatorMode}
         pendingApproval={currentPending}
         onApprove={handleApprove}
         onAutoApprove={handleAutoApprove}
