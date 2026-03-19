@@ -98,6 +98,7 @@ const EmailInboxConfigObject = z.discriminatedUnion("provider", [
     refreshToken: z.string(),
     clientId: z.string().optional(),
     clientSecret: z.string().optional(),
+    tokenExpiry: z.number().optional(),
   }),
   z.object({
     provider: z.literal("outlook"),
@@ -108,6 +109,7 @@ const EmailInboxConfigObject = z.discriminatedUnion("provider", [
     refreshToken: z.string(),
     clientId: z.string().optional(),
     clientSecret: z.string().optional(),
+    tokenExpiry: z.number().optional(),
   }),
   z.object({
     provider: z.literal("imap"),
