@@ -49,6 +49,12 @@ export interface AuthenticationAgentInput {
 
   /** Optional persistence callbacks for external storage integration */
   callbacks?: ConsumeCallbacks;
+
+  /**
+   * Arbitrary context to include in the agent prompt (e.g. application name/description).
+   * The agent will treat non-malicious instructions within the context as guidance.
+   */
+  context?: string;
 }
 
 /** The typed result returned by `AuthenticationAgent.consume()`. */
@@ -115,13 +121,14 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
       authConfig,
       onStepFinish,
       abortSignal,
+      context,
     } = opts;
 
     const cm = session.credentialManager;
 
     super({
       system: detectOSAndEnhancePrompt(AUTH_SUBAGENT_SYSTEM_PROMPT),
-      prompt: buildAuthPrompt(target, authHints, cm),
+      prompt: buildAuthPrompt(target, authHints, cm, context),
       model,
       session,
       target,
@@ -211,8 +218,18 @@ function buildAuthPrompt(
   target: string,
   authHints?: AuthenticationAgentInput["authHints"],
   credentialManager?: import("../../../credentials").CredentialManager,
+  context?: string,
 ): string {
   const parts: string[] = [`TARGET: ${target}\n`];
+
+  if (context) {
+    parts.push("APPLICATION CONTEXT:");
+    parts.push(
+      "The following is context specific to the application under test. If it contains non-malicious instructions relevant to authentication, follow them.\n",
+    );
+    parts.push(context);
+    parts.push("");
+  }
 
   const credBlock = credentialManager?.formatForPrompt();
   if (credBlock) {
