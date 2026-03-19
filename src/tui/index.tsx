@@ -35,6 +35,7 @@ import { writeErrorLog } from "../core/logger";
 import { checkForUpdate } from "../core/installation";
 import ShortcutsDialog from "./components/commands/shortcuts-dialog";
 import HelpDialog from "./components/commands/help-dialog";
+import ModelsDisplay from "./components/commands/models-display";
 import { ModelPickerDialog } from "./components/model-picker";
 import AuthFlow from "./components/commands/auth-flow";
 import CreditsFlow from "./components/commands/credits-flow";
@@ -540,16 +541,11 @@ function CommandDisplay({
           <RouteSwitch.Case when="providers">
             <ProviderManager onOpenModelDialog={onOpenModelDialog} />
           </RouteSwitch.Case>
-<<<<<<< HEAD
-          <RouteSwitch.Case when="help">
-            <HelpDialog />
-=======
           <RouteSwitch.Case when="models">
             <ModelsDisplay />
           </RouteSwitch.Case>
           <RouteSwitch.Case when="credits">
             <CreditsFlow onOpenAuthDialog={onOpenAuthDialog} />
->>>>>>> ed763f61 (fix: render help dialog as overlay and dim footer when dialogs are open)
           </RouteSwitch.Case>
           <RouteSwitch.Case when="skills">
             <SkillsDialog />
