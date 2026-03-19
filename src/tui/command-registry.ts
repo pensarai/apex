@@ -208,6 +208,7 @@ export const commands: CommandConfig[] = [
     name: "config",
     description: "Show config dialog",
     category: "General",
+    hidden: true,
     handler: async (args, ctx) => {
       ctx.navigate({
         type: "base",

@@ -1,13 +1,8 @@
 import { useState, useEffect } from "react";
 import { useKeyboard } from "@opentui/react";
 import { useRoute } from "../../context/route";
-import { useConfig } from "../../context/config";
-import {
-  getPensarApiUrl,
-  getPensarConsoleUrl,
-} from "../../../core/api/constants";
-import { ensureValidToken } from "../../../core/auth";
-import { config } from "../../../core/config";
+import { getPensarConsoleUrl } from "../../../core/api/constants";
+import { validateGateway } from "../../../core/auth";
 
 type CreditsStep = "loading" | "no-auth" | "display" | "browser-opened";
 
@@ -22,7 +17,6 @@ interface CreditsFlowProps {
 
 export default function CreditsFlow({ onOpenAuthDialog }: CreditsFlowProps) {
   const route = useRoute();
-  const appConfig = useConfig();
   const [step, setStep] = useState<CreditsStep>("loading");
   const [credits, setCredits] = useState<CreditsInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -51,49 +45,15 @@ export default function CreditsFlow({ onOpenAuthDialog }: CreditsFlowProps) {
   };
 
   const fetchBalance = async () => {
-    const tokenResult = await ensureValidToken({
-      accessToken: appConfig.data.accessToken,
-      refreshToken: appConfig.data.refreshToken,
-      pensarAPIKey: appConfig.data.pensarAPIKey,
-    });
-    if (!tokenResult) {
-      setStep("no-auth");
-      return;
-    }
-
     setStep("loading");
     setError(null);
 
     try {
-      const apiUrl = getPensarApiUrl();
-      const headers: Record<string, string> = {
-        Authorization: `Bearer ${tokenResult.token}`,
-      };
-      // WorkOS auth requires X-Workspace-Id header
-      if (tokenResult.type === "workos" && appConfig.data.workspaceId) {
-        headers["X-Workspace-Id"] = appConfig.data.workspaceId;
-      }
-      const response = await fetch(`${apiUrl}/gateway/validate`, {
-        method: "GET",
-        headers,
-      });
+      const result = await validateGateway();
 
-      if (!response.ok) {
-        throw new Error("Failed to fetch balance");
-      }
-
-      const result = (await response.json()) as {
-        workspace: { name: string };
-        credits: { balance: number };
-        signingKey?: string;
-        gatewayUrl?: string;
-      };
-
-      if (result.signingKey || result.gatewayUrl) {
-        await config.update({
-          gatewaySigningKey: result.signingKey ?? undefined,
-          gatewayUrl: result.gatewayUrl ?? undefined,
-        });
+      if (!result) {
+        setStep("no-auth");
+        return;
       }
 
       setCredits({
