@@ -52,10 +52,14 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
 
   const launchOperator = useCallback(
     (message: string, options?: { requireApproval?: boolean }) => {
+      const requireApproval = options?.requireApproval ?? true;
       route.navigate({
         type: "operator",
         initialMessage: message,
-        initialConfig: { requireApproval: options?.requireApproval ?? true },
+        initialConfig: {
+          requireApproval,
+          operatorMode: requireApproval ? "manual" : "auto",
+        },
       });
     },
     [route],
