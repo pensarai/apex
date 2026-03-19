@@ -228,10 +228,15 @@ function AppContent({
   // Track external dialog state for theme/auth/pentest dialogs so operator input
   // unfocuses while a dialog overlay is open
   useEffect(() => {
-    if (showThemeDialog || showAuthDialog || showPentestDialog) {
+    if (
+      showSessionsDialog ||
+      showThemeDialog ||
+      showAuthDialog ||
+      showPentestDialog
+    ) {
       setExternalDialogOpen(true);
     }
-  }, [showThemeDialog, showAuthDialog, showPentestDialog]);
+  }, [showSessionsDialog, showThemeDialog, showAuthDialog, showPentestDialog]);
 
   // Auto-clear the exit warning after 1 second
   useEffect(() => {
