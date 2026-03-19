@@ -74,6 +74,9 @@ export default function ProviderManager({
       onClose();
     }
     if (onOpenModelDialog) {
+      if (!onClose) {
+        route.navigate({ type: "base", path: "home" });
+      }
       onOpenModelDialog();
     } else if (!onClose) {
       route.navigate({ type: "base", path: "home" });
