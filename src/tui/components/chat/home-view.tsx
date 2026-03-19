@@ -146,7 +146,11 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
     (showHelpText ? 2 : 0) + // help text + marginTop
     inputPadding + // bottom padding
     3; // footer bar approximate
-  const maxSuggestions = Math.max(2, height - rowsAboveInput - rowsBelowInput);
+  // Subtract 3 extra rows: 1 margin + 1 "↑ more above" + 1 "↓ more below" indicators
+  const maxSuggestions = Math.max(
+    2,
+    height - rowsAboveInput - rowsBelowInput - 3,
+  );
 
   return (
     <box
