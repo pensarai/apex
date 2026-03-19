@@ -44,6 +44,7 @@ export default function ModelPickerDialog({ onClose }: ModelPickerDialogProps) {
             selectedModel={model}
             onSelectModel={setModel}
             onConfirm={onClose}
+            onCancel={onClose}
             onConfigUpdate={config.update}
             focused={true}
             isModelUserSelected={isModelUserSelected}

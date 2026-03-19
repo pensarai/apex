@@ -89,6 +89,7 @@ export interface ModelPickerProps {
   selectedModel: ModelInfo;
   onSelectModel: (model: ModelInfo) => void;
   onConfirm?: () => void;
+  onCancel?: () => void;
   onConfigUpdate?: (update: Partial<Config>) => Promise<void>;
   focused?: boolean;
   isModelUserSelected?: boolean;
@@ -99,6 +100,7 @@ export function ModelPicker({
   selectedModel,
   onSelectModel,
   onConfirm,
+  onCancel,
   onConfigUpdate,
   focused = true,
   isModelUserSelected = false,
@@ -302,9 +304,13 @@ export function ModelPicker({
         return true;
       }
 
-      // Escape - clear search (if there is one)
-      if (key.name === "escape" && searchQuery) {
-        setSearchQuery("");
+      // Escape - clear search, or cancel/close
+      if (key.name === "escape") {
+        if (searchQuery) {
+          setSearchQuery("");
+        } else {
+          onCancel?.();
+        }
         return true;
       }
 
@@ -389,6 +395,7 @@ export function ModelPicker({
       focusedIndex,
       onSelectModel,
       onConfirm,
+      onCancel,
       searchQuery,
     ],
   );
