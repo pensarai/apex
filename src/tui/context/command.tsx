@@ -175,7 +175,6 @@ export function CommandProvider({
       // Neither in priority list - sort alphabetically
       return a.value.localeCompare(b.value);
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router, registry, registryVersion]);
 
   const executeCommand = useCallback(
