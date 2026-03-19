@@ -21,6 +21,7 @@ Want to run from the cloud or integrate it with your CI/CD? See <a href="https:/
 <!-- <p align="center">
   <img src="screenshot.png" alt="Pensar Apex Screenshot" width="800">
 </p> -->
+
 ## What is Apex?
 
 Apex is an autonomous penetration testing agent that runs directly in your terminal.
@@ -54,16 +55,17 @@ Start with `/pentest` to get coverage, then reopen the session in `/operator` to
 ## Use Cases
 
 ### Developers
+
 - Run `/pentest` before merging a PR — catch vulnerabilities as naturally as running tests
 - Get actionable findings with severity scores, evidence, and suggested fixes — no security background needed
 - Integrate into CI/CD via headless CLI commands or Pensar Console
 
 ### Security Engineers
+
 - Deploy agent-driven swarm testing across large attack surfaces
 - Use `/operator` mode for manual investigation, exploit chaining, and validation
 - Automate repetitive testing workflows with persistent memory that accumulates across engagements
 - Scale across teams and projects through Pensar Console
-
 
 ## Installation
 
@@ -91,7 +93,6 @@ npm install -g @pensar/apex
 ```powershell
 irm https://www.pensarai.com/apex.ps1 | iex
 ```
-
 
 ## Usage
 
