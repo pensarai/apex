@@ -49,6 +49,7 @@ interface CommandProviderProps {
   children: ReactNode;
   onOpenSessionsDialog?: () => void;
   onOpenThemeDialog?: () => void;
+  onOpenModelDialog?: () => void;
   onOpenAuthDialog?: () => void;
   onOpenPentestDialog?: (flags?: WebCommandOptions) => void;
 }
@@ -57,6 +58,7 @@ export function CommandProvider({
   children,
   onOpenSessionsDialog,
   onOpenThemeDialog,
+  onOpenModelDialog,
   onOpenAuthDialog,
   onOpenPentestDialog,
 }: CommandProviderProps) {
@@ -70,6 +72,7 @@ export function CommandProvider({
       navigate: route.navigate,
       openSessionsDialog: onOpenSessionsDialog,
       openThemeDialog: onOpenThemeDialog,
+      openModelDialog: onOpenModelDialog,
       openAuthDialog: onOpenAuthDialog,
       openPentestDialog: onOpenPentestDialog,
     };
@@ -78,6 +81,7 @@ export function CommandProvider({
     route,
     onOpenSessionsDialog,
     onOpenThemeDialog,
+    onOpenModelDialog,
     onOpenAuthDialog,
     onOpenPentestDialog,
   ]);

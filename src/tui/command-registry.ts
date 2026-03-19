@@ -16,6 +16,7 @@ export interface AppCommandContext {
   navigate: (route: Route) => void;
   openSessionsDialog?: () => void;
   openThemeDialog?: () => void;
+  openModelDialog?: () => void;
   openAuthDialog?: () => void;
   openPentestDialog?: (flags?: WebCommandOptions) => void;
 }
@@ -221,10 +222,7 @@ export const commands: CommandConfig[] = [
     description: "Show available AI models",
     category: "General",
     handler: async (args, ctx) => {
-      ctx.navigate({
-        type: "base",
-        path: "models",
-      });
+      ctx.openModelDialog?.();
     },
   },
   {

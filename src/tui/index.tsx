@@ -35,7 +35,7 @@ import { writeErrorLog } from "../core/logger";
 import { checkForUpdate } from "../core/installation";
 import ShortcutsDialog from "./components/commands/shortcuts-dialog";
 import HelpDialog from "./components/commands/help-dialog";
-import ModelsDisplay from "./components/commands/models-display";
+import { ModelPickerDialog } from "./components/model-picker";
 import AuthFlow from "./components/commands/auth-flow";
 import CreditsFlow from "./components/commands/credits-flow";
 import { KeybindingProvider } from "./context/keybinding";
@@ -77,6 +77,7 @@ function App({ appConfig }: AppProps) {
   const [showShortcutsDialog, setShowShortcutsDialog] = useState(false);
   const [showThemeDialog, setShowThemeDialog] = useState(false);
   const [showAuthDialog, setShowAuthDialog] = useState(false);
+  const [showModelDialog, setShowModelDialog] = useState(false);
   const [showPentestDialog, setShowPentestDialog] = useState(false);
   const [pendingPentestFlags, setPendingPentestFlags] = useState<
     WebCommandOptions | undefined
@@ -96,6 +97,7 @@ function App({ appConfig }: AppProps) {
                   <CommandProvider
                     onOpenSessionsDialog={() => setShowSessionsDialog(true)}
                     onOpenThemeDialog={() => setShowThemeDialog(true)}
+                    onOpenModelDialog={() => setShowModelDialog(true)}
                     onOpenAuthDialog={() => setShowAuthDialog(true)}
                     onOpenPentestDialog={(flags) => {
                       setPendingPentestFlags(flags);
@@ -122,6 +124,8 @@ function App({ appConfig }: AppProps) {
                         setShowShortcutsDialog={setShowShortcutsDialog}
                         showThemeDialog={showThemeDialog}
                         setShowThemeDialog={setShowThemeDialog}
+                        showModelDialog={showModelDialog}
+                        setShowModelDialog={setShowModelDialog}
                         showAuthDialog={showAuthDialog}
                         setShowAuthDialog={setShowAuthDialog}
                         showPentestDialog={showPentestDialog}
@@ -155,6 +159,8 @@ function AppContent({
   setShowShortcutsDialog,
   showThemeDialog,
   setShowThemeDialog,
+  showModelDialog,
+  setShowModelDialog,
   showAuthDialog,
   setShowAuthDialog,
   showPentestDialog,
@@ -175,6 +181,8 @@ function AppContent({
   setShowShortcutsDialog: (show: boolean) => void;
   showThemeDialog: boolean;
   setShowThemeDialog: (show: boolean) => void;
+  showModelDialog: boolean;
+  setShowModelDialog: (show: boolean) => void;
   showAuthDialog: boolean;
   setShowAuthDialog: (show: boolean) => void;
   showPentestDialog: boolean;
@@ -228,13 +236,13 @@ function AppContent({
     }
   }, [config.data.responsibleUseAccepted, route.data]);
 
-  // Track external dialog state for theme/auth/pentest dialogs so operator input
+  // Track external dialog state for theme/model/auth/pentest dialogs so operator input
   // unfocuses while a dialog overlay is open
   useEffect(() => {
-    if (showThemeDialog || showAuthDialog || showPentestDialog) {
+    if (showThemeDialog || showModelDialog || showAuthDialog || showPentestDialog) {
       setExternalDialogOpen(true);
     }
-  }, [showThemeDialog, showAuthDialog, showPentestDialog]);
+  }, [showThemeDialog, showModelDialog, showAuthDialog, showPentestDialog]);
 
   // Auto-clear the exit warning after 1 second
   useEffect(() => {
@@ -264,6 +272,15 @@ function AppContent({
 
   const handleCloseThemeDialog = () => {
     setShowThemeDialog(false);
+    setTimeout(() => {
+      setExternalDialogOpen(false);
+    }, 0);
+    setInputKey((prev) => prev + 1);
+    refocusPrompt();
+  };
+
+  const handleCloseModelDialog = () => {
+    setShowModelDialog(false);
     setTimeout(() => {
       setExternalDialogOpen(false);
     }, 0);
@@ -335,6 +352,10 @@ function AppContent({
       )}
 
       {showThemeDialog && <ThemePicker onClose={handleCloseThemeDialog} />}
+
+      {showModelDialog && (
+        <ModelPickerDialog onClose={handleCloseModelDialog} />
+      )}
 
       {showAuthDialog && <AuthFlow onClose={handleCloseAuthDialog} />}
 
@@ -421,9 +442,6 @@ function CommandDisplay({
               initialModel={route.data.options?.model}
             />
           </RouteSwitch.Case>
-          <RouteSwitch.Case when="models">
-            <ModelsDisplay />
-          </RouteSwitch.Case>
           <RouteSwitch.Case when="auth">
             <AuthFlow
               onClose={() => {
@@ -440,9 +458,6 @@ function CommandDisplay({
           </RouteSwitch.Case>
           <RouteSwitch.Case when="help">
             <HelpDialog />
-          </RouteSwitch.Case>
-          <RouteSwitch.Case when="models">
-            <ModelsDisplay />
           </RouteSwitch.Case>
           <RouteSwitch.Case when="credits">
             <CreditsFlow onOpenAuthDialog={onOpenAuthDialog} />
