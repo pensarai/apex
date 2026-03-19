@@ -3,7 +3,6 @@ import { useRoute } from "../context/route";
 import { useFocus } from "../context/focus";
 import { useInput } from "../context/input";
 import { useDialog } from "../context/dialog";
-import { cleanupTerminalFocusMode } from "../terminal-focus";
 
 export interface KeybindingEntry {
   combo: string;
@@ -58,7 +57,6 @@ export function createKeybindings(
         const lastPress = ctrlCPressTime;
 
         if (lastPress && now - lastPress < 1000) {
-          cleanupTerminalFocusMode();
           renderer.destroy();
           process.exit(0);
         } else {
@@ -104,6 +102,8 @@ export function createKeybindings(
       description: "Show sessions",
       fn: async () => {
         if (route.data.type === "base" && route.data.path === "home") {
+          promptRef.current?.blur();
+          setExternalDialogOpen(true);
           setShowSessionsDialog(true);
         }
       },

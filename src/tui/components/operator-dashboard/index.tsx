@@ -1488,7 +1488,6 @@ export default function OperatorDashboard({
         messages={messages}
         isRunning={status === "running" || status === "waiting"}
         variant="operator"
-        focused={true}
         verbose={verboseMode}
         expandedLogs={expandedLogs}
         pendingApprovals={pendingApprovals}

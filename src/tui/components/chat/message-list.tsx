@@ -58,8 +58,6 @@ export interface MessageListProps {
   username?: string;
   /** Empty state message */
   emptyMessage?: string;
-  /** Whether scroll is focused */
-  focused?: boolean;
   /** Verbose mode for tool display */
   verbose?: boolean;
   /** Expanded logs for tool display */
@@ -82,7 +80,6 @@ export function MessageList({
   variant = "operator",
   username = "user",
   emptyMessage,
-  focused = true,
   verbose = false,
   expandedLogs = false,
   pendingApprovals = [],
@@ -113,7 +110,7 @@ export function MessageList({
       }}
       stickyScroll={true}
       stickyStart="bottom"
-      focused={focused}
+      focusable={false}
     >
       {/* Empty state - Operator mode */}
       {!hasMessages && variant === "operator" && (

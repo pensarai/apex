@@ -232,6 +232,34 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
       return () => registerPromptRef(null);
     }, [registerPromptRef]);
 
+    // Keep the textarea focused whenever the `focused` prop is true.
+    // - On mount: explicitly focus (OpenTUI may not auto-focus on initial render)
+    // - On blur: re-focus if the blur was unexpected (e.g. clicking empty space)
+    const focusedRef = useRef(focused);
+    focusedRef.current = focused;
+    useEffect(() => {
+      const ta = textareaRef.current;
+      if (!ta) return;
+
+      // Focus on mount
+      if (focusedRef.current) ta.focus();
+
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      const handleBlur = () => {
+        // Defer re-focus so React can process any state updates (e.g.
+        // setExternalDialogOpen) that intentionally set focused={false}.
+        // Re-check focusedRef inside the timeout, not just when scheduling.
+        timer = setTimeout(() => {
+          if (focusedRef.current) ta.focus();
+        }, 0);
+      };
+      ta.on("blurred", handleBlur);
+      return () => {
+        if (timer) clearTimeout(timer);
+        ta.off("blurred", handleBlur);
+      };
+    }, []);
+
     // Slash command highlighting — creates a SyntaxStyle and applies
     // character-range highlights for known /slug patterns in the input text.
     const slashStyleRef = useRef<{
