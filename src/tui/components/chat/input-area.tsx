@@ -7,7 +7,7 @@
  * - Mode and status awareness
  */
 
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useKeyboard } from "@opentui/react";
 import { useTheme } from "../../theme";
 import { PromptInput, type PromptInputRef } from "../shared/prompt-input";
