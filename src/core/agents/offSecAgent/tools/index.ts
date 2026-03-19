@@ -68,6 +68,9 @@ export type { EmailToolName } from "./email";
 export { webSearch } from "./webSearch";
 export { getPage } from "./getPage";
 
+// Skill tools
+export { readSkill } from "./readSkill";
+
 // ---------------------------------------------------------------------------
 // Tool registry
 // ---------------------------------------------------------------------------
@@ -109,6 +112,7 @@ import { emailSearchMessages } from "./email/searchMessages";
 import { emailGetMessage } from "./email/getMessage";
 import { webSearch } from "./webSearch";
 import { getPage } from "./getPage";
+import { readSkill } from "./readSkill";
 
 /**
  * Create the full toolset for the OffensiveSecurityAgent.
@@ -174,6 +178,9 @@ export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
     // Web search tools (requires Pensar account)
     web_search: webSearch(ctx),
     get_page: getPage(ctx),
+
+    // Skill tools (conditional — only when registry is provided)
+    ...(ctx.skillsRegistry ? { read_skill: readSkill(ctx) } : {}),
   } as const;
 }
 
@@ -276,6 +283,9 @@ export const PLAN_MODE_TOOL_NAMES: ToolName[] = [
   "web_search",
   "get_page",
 ];
+
+/** Skill tool names — conditionally included when a skills registry is provided. */
+export const SKILL_TOOL_NAMES = ["read_skill"] as const;
 
 /** Email tool names — auto-appended to activeTools by the base class when inboxes are configured. */
 export { EMAIL_TOOL_NAMES as EMAIL_TOOL_NAMES_ACTIVE } from "./email";

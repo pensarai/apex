@@ -7,22 +7,26 @@ import {
   useMemo,
 } from "react";
 import { useKeyboard } from "@opentui/react";
-import type {
-  TextareaRenderable,
-  KeyBinding as TextareaKeyBinding,
-  RGBA,
+import {
+  SyntaxStyle,
+  type TextareaRenderable,
+  type RGBA,
+  type KeyBinding as TextareaKeyBinding,
 } from "@opentui/core";
 import { useTheme } from "../../theme";
 import { useInput } from "../../context/input";
 import { useFocus } from "../../context/focus";
 import {
-  filterSuggestions,
+  filterInlineSuggestions,
+  detectInlineSlash,
+  computeInlineCompletion,
   resolveSubmitValue,
   computeUpArrow,
   computeDownArrow,
   computeTab,
   shouldResetHistory,
   computeVisibleWindow,
+  type InlineSlashContext,
 } from "./prompt-input-logic";
 import { usePasteExtmarks } from "./use-paste-extmarks";
 export interface AutocompleteOption {
@@ -44,6 +48,12 @@ const chatKeyBindings: TextareaKeyBinding[] = [
   { name: "return", shift: true, action: "newline" },
   { name: "linefeed", shift: true, action: "newline" },
 ];
+
+// Highlight ref ID for slash command highlighting (stable across renders)
+const SLASH_HL_REF = 99;
+
+// Regex for finding /slug patterns in text (reused per content change)
+const SLASH_PATTERN = /(?:^|(?<=\s))\/[a-zA-Z0-9][-a-zA-Z0-9]*/gm;
 
 export interface PromptInputRef {
   focus: () => void;
@@ -91,6 +101,9 @@ interface PromptInputProps {
 
   // Whether autocomplete suggestions appear above or below the input
   autocompletePlacement?: "above" | "below";
+
+  // Slash command highlighting — colors /slug patterns in the input
+  highlightSlashCommands?: boolean;
 }
 
 export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
@@ -117,6 +130,7 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
       disableHistoryNavigation = false,
       showPromptIndicator = false,
       autocompletePlacement = "below",
+      highlightSlashCommands = false,
     },
     ref,
   ) {
@@ -146,13 +160,30 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
     const { handlePaste, resolveText, clearPaste } =
       usePasteExtmarks(textareaRef);
 
-    const suggestions = useMemo(
-      () =>
-        enableAutocomplete
-          ? filterSuggestions(inputValue, autocompleteOptions, maxSuggestions)
-          : [],
-      [enableAutocomplete, autocompleteOptions, inputValue, maxSuggestions],
+    // Inline slash detection state — drives autocomplete filtering
+    const [inlineSlashToken, setInlineSlashToken] = useState<string | null>(
+      null,
     );
+    const inlineSlashContextRef = useRef<InlineSlashContext | null>(null);
+
+    const suggestions = useMemo(() => {
+      if (!enableAutocomplete) return [];
+      // Inline slash detection drives suggestions for both start-of-line
+      // and mid-text /tokens
+      if (inlineSlashToken) {
+        return filterInlineSuggestions(
+          inlineSlashToken,
+          autocompleteOptions,
+          maxSuggestions,
+        );
+      }
+      return [];
+    }, [
+      enableAutocomplete,
+      autocompleteOptions,
+      inlineSlashToken,
+      maxSuggestions,
+    ]);
 
     // Keep refs in sync
     useEffect(() => {
@@ -201,6 +232,60 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
       return () => registerPromptRef(null);
     }, [registerPromptRef]);
 
+    // Slash command highlighting — creates a SyntaxStyle and applies
+    // character-range highlights for known /slug patterns in the input text.
+    const slashStyleRef = useRef<{
+      style: SyntaxStyle;
+      styleId: number;
+    } | null>(null);
+
+    // Build set of known slugs from autocomplete options for highlight matching
+    const knownSlugs = useMemo(() => {
+      const slugs = new Set<string>();
+      if (highlightSlashCommands) {
+        for (const opt of autocompleteOptions) {
+          if (opt.value.startsWith("/")) slugs.add(opt.value.toLowerCase());
+        }
+      }
+      return slugs;
+    }, [highlightSlashCommands, autocompleteOptions]);
+
+    useEffect(() => {
+      if (!highlightSlashCommands) return;
+      const style = SyntaxStyle.create();
+      const styleId = style.registerStyle("slash-cmd", {
+        fg: colors.secondary,
+      });
+      slashStyleRef.current = { style, styleId };
+      if (textareaRef.current) {
+        textareaRef.current.syntaxStyle = style;
+      }
+      return () => {
+        slashStyleRef.current = null;
+        style.destroy();
+      };
+    }, [highlightSlashCommands, colors.secondary]);
+
+    const applySlashHighlights = (text: string) => {
+      const ta = textareaRef.current;
+      const styleCtx = slashStyleRef.current;
+      if (!ta || !styleCtx) return;
+      ta.removeHighlightsByRef(SLASH_HL_REF);
+      if (knownSlugs.size === 0) return;
+      SLASH_PATTERN.lastIndex = 0;
+      let match: RegExpExecArray | null;
+      while ((match = SLASH_PATTERN.exec(text)) !== null) {
+        if (knownSlugs.has(match[0].toLowerCase())) {
+          ta.addHighlightByCharRange({
+            start: match.index,
+            end: match.index + match[0].length,
+            styleId: styleCtx.styleId,
+            hlRef: SLASH_HL_REF,
+          });
+        }
+      }
+    };
+
     // Handle keyboard navigation for suggestions and command history.
     //
     // Priority: up/down navigate command history. When the user reaches
@@ -229,9 +314,25 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
           setSelectedSuggestionIndex(tabResult.selectedSuggestionIndex);
           if (tabResult.acceptedValue !== null) {
             clearPaste();
-            textareaRef.current?.setText(tabResult.acceptedValue);
-            setInputValue(tabResult.acceptedValue);
-            textareaRef.current?.gotoLineEnd();
+            const slashCtx = inlineSlashContextRef.current;
+            if (slashCtx) {
+              const text = textareaRef.current?.plainText ?? "";
+              const { newText, cursorOffset } = computeInlineCompletion(
+                text,
+                slashCtx,
+                tabResult.acceptedValue,
+              );
+              textareaRef.current?.setText(newText);
+              setInputValue(newText);
+              const ta = textareaRef.current;
+              setTimeout(() => {
+                if (ta) ta.cursorOffset = cursorOffset;
+              }, 0);
+            } else {
+              textareaRef.current?.setText(tabResult.acceptedValue);
+              setInputValue(tabResult.acceptedValue);
+              textareaRef.current?.gotoLineEnd();
+            }
           }
         }
         return;
@@ -310,15 +411,20 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
     const handleSubmit = async () => {
       const currentSuggestions = suggestionsRef.current;
       const currentSelectedIndex = selectedIndexRef.current;
-
       // Resolve paste placeholders to full text before submit
       const rawText = resolveText(textareaRef.current?.plainText ?? "");
 
-      const valueToSubmit = resolveSubmitValue(
-        rawText,
-        currentSuggestions,
-        currentSelectedIndex,
-      );
+      // For inline slash (mid-text), Enter submits raw text — Tab is for
+      // completion. For start-of-line commands, keep the current behavior
+      // where Enter accepts the selected suggestion.
+      const isInlineSlash =
+        inlineSlashContextRef.current != null &&
+        inlineSlashContextRef.current.start > 0;
+
+      const valueToSubmit = isInlineSlash
+        ? rawText.trim()
+        : resolveSubmitValue(rawText, currentSuggestions, currentSelectedIndex);
+
       if (currentSuggestions.length > 0 && currentSelectedIndex >= 0) {
         setSelectedSuggestionIndex(-1);
       }
@@ -343,7 +449,16 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
     // Content change syncs to context and resets history browsing
     const handleContentChange = () => {
       const text = textareaRef.current?.plainText ?? "";
+      const cursorOffset = textareaRef.current?.cursorOffset ?? text.length;
       setInputValue(text);
+
+      // Detect inline /token at cursor for autocomplete
+      const slashCtx = detectInlineSlash(text, cursorOffset);
+      inlineSlashContextRef.current = slashCtx;
+      setInlineSlashToken(slashCtx?.token ?? null);
+
+      applySlashHighlights(text);
+
       if (shouldResetHistory(historyIndex, isNavigatingHistoryRef.current)) {
         setHistoryIndex(-1);
       }
