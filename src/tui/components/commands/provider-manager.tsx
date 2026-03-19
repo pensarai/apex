@@ -18,10 +18,12 @@ type FlowState = "choosing" | "selecting" | "inputting" | "auth";
 
 interface ProviderManagerProps {
   onClose?: () => void;
+  onOpenModelDialog?: () => void;
 }
 
 export default function ProviderManager({
   onClose,
+  onOpenModelDialog,
 }: ProviderManagerProps = {}) {
   const route = useRoute();
   const _config = useConfig();
@@ -70,7 +72,10 @@ export default function ProviderManager({
 
     if (onClose) {
       onClose();
-    } else {
+    }
+    if (onOpenModelDialog) {
+      onOpenModelDialog();
+    } else if (!onClose) {
       route.navigate({ type: "base", path: "home" });
     }
   };

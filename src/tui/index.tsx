@@ -393,7 +393,10 @@ function AppContent({
       )}
 
       {showProvidersDialog && (
-        <ProviderManager onClose={handleCloseProvidersDialog} />
+        <ProviderManager
+          onClose={handleCloseProvidersDialog}
+          onOpenModelDialog={() => setShowModelDialog(true)}
+        />
       )}
 
       {showConfigDialog && <ConfigDialog onClose={handleCloseConfigDialog} />}
@@ -499,7 +502,9 @@ function CommandDisplay({
             />
           </RouteSwitch.Case>
           <RouteSwitch.Case when="providers">
-            <ProviderManager />
+            <ProviderManager
+              onOpenModelDialog={() => setShowModelDialog(true)}
+            />
           </RouteSwitch.Case>
           <RouteSwitch.Case when="help">
             <HelpDialog />
