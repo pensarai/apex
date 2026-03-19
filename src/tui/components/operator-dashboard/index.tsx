@@ -671,6 +671,11 @@ export default function OperatorDashboard({
   const handleAutoApprove = useCallback(() => {
     // Switch to approvals-off mode
     setOperatorMode("auto");
+    setOperatorState((prev) => ({
+      ...prev,
+      mode: "auto",
+      requireApproval: false,
+    }));
     approvalGateRef.current.updateConfig({ requireApproval: false });
 
     // Approve all currently pending
@@ -888,7 +893,7 @@ export default function OperatorDashboard({
             sessionType: "web-app",
             mode: "operator",
             operatorSettings: {
-              initialMode: "auto",
+              initialMode: operatorMode,
               requireApproval: initialRequireApproval,
               enableSuggestions: true,
             },
@@ -1265,6 +1270,11 @@ export default function OperatorDashboard({
       approvalGateRef.current.updateConfig({
         requireApproval: next === "manual",
       });
+      setOperatorState((s) => ({
+        ...s,
+        mode: next,
+        requireApproval: next === "manual",
+      }));
       return next;
     });
   }, []);
