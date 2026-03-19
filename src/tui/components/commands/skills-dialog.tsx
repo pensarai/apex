@@ -160,7 +160,10 @@ export default function SkillsDialog() {
           {m.version && <span fg={colors.textMuted}> v{m.version}</span>}
           <span fg={colors.textMuted}>
             {" "}
-            · {detailInstructions !== null ? `~${instrTokens + descTokens} tokens` : "loading..."}
+            ·{" "}
+            {detailInstructions !== null
+              ? `~${instrTokens + descTokens} tokens`
+              : "loading..."}
           </span>
         </text>
 

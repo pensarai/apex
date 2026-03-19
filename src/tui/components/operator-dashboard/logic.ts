@@ -200,7 +200,6 @@ export function buildOperatorSystemPrompt(
       ? "\nAgent mode: PLAN — read-only tools only, no mutations allowed"
       : "";
 
-
   let prompt = `${BASE_SYSTEM_PROMPT}
 
 # Operator Mode
@@ -258,4 +257,3 @@ export function accumulateTokenUsage(
     totalTokens: current.totalTokens + stepInputTokens + stepOutputTokens,
   };
 }
-

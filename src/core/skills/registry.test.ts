@@ -105,9 +105,9 @@ describe("SkillsRegistry", () => {
 
     it("throws for unknown slug", async () => {
       await registry.load({ projectRoot: tmpRoot });
-      await expect(
-        registry.readSkillContent("no-such-skill"),
-      ).rejects.toThrow("not found");
+      await expect(registry.readSkillContent("no-such-skill")).rejects.toThrow(
+        "not found",
+      );
     });
   });
 

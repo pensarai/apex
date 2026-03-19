@@ -1104,9 +1104,7 @@ export default function OperatorDashboard({
             const { content } = await skillsRegistry.readSkillContent(
               action.slug,
             );
-            handleSubmit(
-              `<skill name="${action.slug}">\n${content}\n</skill>`,
-            );
+            handleSubmit(`<skill name="${action.slug}">\n${content}\n</skill>`);
           } catch {
             // Fallback: tell the agent to load the skill via tool
             handleSubmit(
@@ -1120,7 +1118,13 @@ export default function OperatorDashboard({
           return;
       }
     },
-    [resolveSkillContent, skillsRegistry, handleSubmit, executeCommand, showModelPicker],
+    [
+      resolveSkillContent,
+      skillsRegistry,
+      handleSubmit,
+      executeCommand,
+      showModelPicker,
+    ],
   );
 
   const handleAbort = useCallback(() => {

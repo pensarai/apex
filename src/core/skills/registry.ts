@@ -47,7 +47,9 @@ export class SkillsRegistry {
    * Read a skill's full instructions from disk on demand.
    * Used by the `read_skill` tool at runtime.
    */
-  async readSkillContent(slug: string): Promise<{ name: string; content: string }> {
+  async readSkillContent(
+    slug: string,
+  ): Promise<{ name: string; content: string }> {
     const entry = this.skills.get(slug);
     if (!entry) throw new Error(`Skill "${slug}" not found`);
     const raw = await fs.readFile(entry.filePath, "utf-8");

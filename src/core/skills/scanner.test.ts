@@ -104,7 +104,11 @@ describe("scanSkillRoots", () => {
       os.tmpdir(),
       `${TEST_PREFIX}dedup-project-${Date.now()}`,
     );
-    const projectSkillsDir = path.join(tmpDir, ".skills", `${TEST_PREFIX}dedup`);
+    const projectSkillsDir = path.join(
+      tmpDir,
+      ".skills",
+      `${TEST_PREFIX}dedup`,
+    );
     await fs.mkdir(projectSkillsDir, { recursive: true });
     await fs.writeFile(
       path.join(projectSkillsDir, "SKILL.md"),

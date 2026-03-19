@@ -15,10 +15,7 @@ import {
 } from "../command-registry";
 import type { AutocompleteOption } from "../components/shared/prompt-input";
 import { useRoute, type WebCommandOptions } from "./route";
-import {
-  createSkillsRegistry,
-  type SkillsRegistry,
-} from "../../core/skills";
+import { createSkillsRegistry, type SkillsRegistry } from "../../core/skills";
 
 interface CommandContextValue {
   router: CommandRouter<AppCommandContext>;
@@ -106,7 +103,6 @@ export function CommandProvider({
 
     return router;
   }, []);
-
 
   const resolveSkillContent = useCallback(
     (input: string): string | null => {

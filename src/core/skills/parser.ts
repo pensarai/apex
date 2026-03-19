@@ -104,4 +104,3 @@ export function parseSkillMd(raw: string): {
 
   return { manifest, instructions: parts.body };
 }
-
