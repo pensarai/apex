@@ -405,7 +405,10 @@ function AppContent({
       {showCreditsDialog && (
         <CreditsFlow
           onClose={handleCloseCreditsDialog}
-          onOpenAuthDialog={() => setShowAuthDialog(true)}
+          onOpenAuthDialog={() => {
+            setShowCreditsDialog(false);
+            setShowAuthDialog(true);
+          }}
         />
       )}
 
