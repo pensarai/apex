@@ -261,6 +261,7 @@ export default function OperatorDashboard({
               approvalGateRef.current.updateConfig({
                 requireApproval: savedState.requireApproval ?? true,
               });
+              setOperatorMode((savedState.mode as OperatorMode) || "manual");
 
               if (
                 Array.isArray(savedState.messages) &&
@@ -298,14 +299,17 @@ export default function OperatorDashboard({
             );
             setOperatorState(initialState);
             approvalGateRef.current.updateConfig({ requireApproval });
+            setOperatorMode((settings.initialMode as OperatorMode) || "manual");
           }
         } else {
           // New session — just set up operator config; the agent creates the
           // session on the first runAgent call.
           const requireApproval = initialConfig?.requireApproval ?? true;
-          const state = createInitialOperatorState("auto", requireApproval);
+          const newMode = initialConfig?.operatorMode ?? "manual";
+          const state = createInitialOperatorState(newMode, requireApproval);
           setOperatorState(state);
           approvalGateRef.current.updateConfig({ requireApproval });
+          setOperatorMode(newMode);
         }
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to load session");
