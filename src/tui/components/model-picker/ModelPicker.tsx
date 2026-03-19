@@ -401,8 +401,10 @@ export function ModelPicker({
   );
 
   useKeyboard((key) => {
-    // Modal dialog — consume all keystrokes to prevent leaking to components underneath
-    key.preventDefault();
+    if (focused) {
+      // Modal dialog — consume all keystrokes to prevent leaking to components underneath
+      key.preventDefault();
+    }
     handleKeyboard(key);
   });
 
