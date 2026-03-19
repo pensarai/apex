@@ -263,10 +263,13 @@ For each asset, include:
 - Technology stack (only what you have evidence for)
 - Authentication requirements
 - Risk level (LOW / MEDIUM / HIGH / CRITICAL)
+- \`pentestObjectives\` — specific pentest objectives (see 5b below)
 
-## 5b. Identify pentest objectives
+## 5b. Include pentest objectives with every asset
 
-For each asset, determine what a pentest agent should test. Map asset types to specific vulnerability classes:
+**Every \`document_asset\` call MUST include a \`pentestObjectives\` array.** These objectives are passed directly to pentest agents downstream — they define exactly what each agent will test. An asset without objectives will not be pentested.
+
+Map asset types to specific vulnerability classes:
 
 | Asset Type | Test For |
 |---|---|
@@ -281,8 +284,8 @@ For each asset, determine what a pentest agent should test. Map asset types to s
 | Encrypted session tokens | Cipher mode attacks, padding oracle, session forgery |
 
 Write objectives that are **specific**, not vague:
-- Good: "Test for IDOR in /api/orders/{id} — verify whether user A can access user B's orders by manipulating the order ID"
-- Bad: "Test for vulnerabilities"
+- Good: \`pentestObjectives: ["Test for IDOR in /api/orders/{id} — verify whether user A can access user B's orders by manipulating the order ID"]\`
+- Bad: \`pentestObjectives: ["Test for vulnerabilities"]\`
 
 ## 5c. Include authentication info with every target
 

@@ -139,7 +139,7 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
     Authorization: `Bearer ${validToken.token}`,
   };
 
-  if (validToken.type === "workos" && cfg.workspaceId) {
+  if (cfg.workspaceId) {
     headers["X-Workspace-Id"] = cfg.workspaceId;
   }
 

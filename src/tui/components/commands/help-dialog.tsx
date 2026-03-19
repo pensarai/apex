@@ -26,10 +26,15 @@ export default function HelpDialog() {
   const [showDetail, setShowDetail] = useState(false);
   const scrollboxRef = useRef<ScrollBoxRenderable | null>(null);
 
+  const visibleCommands = useMemo(
+    () => commands.filter((cmd) => !cmd.hidden),
+    [commands],
+  );
+
   // Group commands by category
   const commandsByCategory = useMemo(() => {
     const grouped: Record<string, CommandConfig[]> = {};
-    for (const cmd of commands) {
+    for (const cmd of visibleCommands) {
       const category = cmd.category || "Other";
       if (!grouped[category]) {
         grouped[category] = [];
@@ -37,12 +42,12 @@ export default function HelpDialog() {
       grouped[category].push(cmd);
     }
     return grouped;
-  }, [commands]);
+  }, [visibleCommands]);
 
   // Flat list of commands for navigation
   const flatCommands = useMemo(() => {
-    return commands;
-  }, [commands]);
+    return visibleCommands;
+  }, [visibleCommands]);
 
   // Ensure selected index is within bounds
   useEffect(() => {
