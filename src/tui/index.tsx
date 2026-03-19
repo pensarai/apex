@@ -225,8 +225,8 @@ function AppContent({
     }
   }, [config.data.responsibleUseAccepted, route.data]);
 
-  // Track external dialog state for theme/auth/pentest dialogs so operator input
-  // unfocuses while a dialog overlay is open
+  // Track external dialog state so the prompt input unfocuses while a dialog
+  // overlay is open (prevents the blur guard from stealing focus)
   useEffect(() => {
     if (
       showSessionsDialog ||

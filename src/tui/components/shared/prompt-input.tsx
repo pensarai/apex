@@ -246,12 +246,14 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
 
       let timer: ReturnType<typeof setTimeout> | null = null;
       const handleBlur = () => {
-        // Defer re-focus so React can process any state updates (e.g.
+        // Defer re-focus so React can process state updates (e.g.
         // setExternalDialogOpen) that intentionally set focused={false}.
-        // Re-check focusedRef inside the timeout, not just when scheduling.
+        // A small delay is needed because dialog opens trigger a two-render
+        // cycle (first render sets showDialog, useEffect then sets
+        // externalDialogOpen, second render updates focused prop).
         timer = setTimeout(() => {
           if (focusedRef.current) ta.focus();
-        }, 0);
+        }, 50);
       };
       ta.on("blurred", handleBlur);
       return () => {
