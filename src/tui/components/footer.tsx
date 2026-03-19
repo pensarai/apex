@@ -73,6 +73,10 @@ export default function Footer({
         ...(isInputEmpty ? [{ key: "?", label: "Shortcuts" }] : []),
       ];
 
+  if (dialogOpen) {
+    return <box width="100%" height={1} flexShrink={0} />;
+  }
+
   return (
     <box
       flexDirection="row"
@@ -82,7 +86,6 @@ export default function Footer({
       height={1}
       flexShrink={0}
       overflow="hidden"
-      backgroundColor={dialogOpen ? colors.backgroundOverlay : undefined}
     >
       <box flexDirection="row" gap={1} flexShrink={1} overflow="hidden">
         <text fg={colors.textMuted}>{displayCwd}</text>
