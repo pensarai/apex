@@ -239,7 +239,12 @@ function AppContent({
   // Track external dialog state for theme/model/auth/pentest dialogs so operator input
   // unfocuses while a dialog overlay is open
   useEffect(() => {
-    if (showThemeDialog || showModelDialog || showAuthDialog || showPentestDialog) {
+    if (
+      showThemeDialog ||
+      showModelDialog ||
+      showAuthDialog ||
+      showPentestDialog
+    ) {
       setExternalDialogOpen(true);
     }
   }, [showThemeDialog, showModelDialog, showAuthDialog, showPentestDialog]);

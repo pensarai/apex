@@ -51,9 +51,7 @@ export default function ModelPickerDialog({ onClose }: ModelPickerDialogProps) {
           />
         </box>
         <box marginTop={1} paddingLeft={1}>
-          <text fg={colors.textMuted}>
-            [Enter] confirm • [ESC] close
-          </text>
+          <text fg={colors.textMuted}>[Enter] confirm • [ESC] close</text>
         </box>
       </box>
     </Dialog>
