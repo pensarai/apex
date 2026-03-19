@@ -982,6 +982,7 @@ export default function OperatorDashboard({
       model.id,
       config.data,
       operatorState,
+      operatorMode,
       agentMode,
       addTokenUsage,
       appendText,
