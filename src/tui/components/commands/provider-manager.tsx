@@ -63,7 +63,7 @@ export default function ProviderManager() {
 
     route.navigate({
       type: "base",
-      path: "models",
+      path: "home",
     });
   };
 
