@@ -34,7 +34,8 @@ description: "AI-powered penetration testing CLI tool for comprehensive security
         ```bash
         npm install -g @pensar/apex
         ```
-        Requires [Node.js](https://nodejs.org)
+        Requires [Node.js](https://nodejs.org) (v18+). CLI commands work under
+        Node.js; the TUI requires [Bun](https://bun.sh).
       </Tab>
     </Tabs>
 
@@ -114,7 +115,7 @@ To begin testing with Apex, you'll typically follow this workflow:
 Apex supports multiple AI providers to give you flexibility in your testing setup:
 
 - **Anthropic** (Recommended) - Best performance and results
-- **OpenAI** - GPT-4 and other OpenAI models
+- **OpenAI** - GPT-5.4, GPT-5, and other OpenAI models
 - **Google** - Gemini models via the Generative AI API
 - **OpenRouter** - Access multiple models through one API
 - **AWS Bedrock** - Enterprise-grade AI through AWS

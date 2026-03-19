@@ -42,7 +42,7 @@ Both the TUI `/auth` command and the CLI `pensar auth` command use a **device au
     {/* TODO: screenshot of workspace selection */}
   </Step>
   <Step title="Billing Check">
-    Apex verifies that the selected workspace has billing configured and sufficient credits. If billing isn't set up or the balance is low, you'll see a prompt with a link to the Console billing page.
+    Apex verifies that the selected workspace has billing configured and sufficient credits. If billing setup is incomplete (no payment method), Apex shows a "billing setup not ready" message. If the balance is low, you'll see a low-balance warning. In both cases a link to the Console billing page is provided.
   </Step>
   <Step title="Connected">
     On success, Apex displays your connected workspace and credit balance. You can now use Pensar-hosted models for pentesting without configuring any API keys.
@@ -137,8 +137,8 @@ Tokens are automatically refreshed when they expire. You do not need to re-run `
     Copy the verification URL displayed in the terminal and open it in your browser manually. The URL and user code remain valid for several minutes.
   </Accordion>
 
-  <Accordion title="'Billing not ready' after connecting">
-    Navigate to **Settings > Billing** in Console and add a payment method. Then purchase credits and ensure the Apex Inference category is enabled on the Usage page. See [Console Billing & Usage](/console/features/billing) for step-by-step instructions.
+  <Accordion title="'Billing setup not ready' after connecting">
+    This means your workspace doesn't have a payment method configured yet. Navigate to **Settings > Billing** in Console and add a payment method. Then purchase credits and ensure the Apex Inference category is enabled on the Usage page. See [Console Billing & Usage](/console/features/billing) for step-by-step instructions.
   </Accordion>
 
   <Accordion title="'Insufficient credits' errors during pentesting">
