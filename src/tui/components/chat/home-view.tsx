@@ -20,7 +20,6 @@ import { PromptInput } from "../shared/prompt-input";
 import { OperatorModeBar, providerDisplayName } from "./input-area";
 import { useTheme } from "../../theme";
 import { useAgent } from "../../context/agent";
-import { slugify } from "../../../core/skills";
 import * as History from "../../../core/history";
 
 type ViewType = "home" | "config" | "chat";

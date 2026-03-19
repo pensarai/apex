@@ -888,13 +888,12 @@ export default function OperatorDashboard({
           });
         } else {
           // First call — let the agent factory create the session
-          const initialRequireApproval = initialConfig?.requireApproval ?? true;
           const sessionConfig: SessionConfig = {
             sessionType: "web-app",
             mode: "operator",
             operatorSettings: {
               initialMode: operatorMode,
-              requireApproval: initialRequireApproval,
+              requireApproval,
               enableSuggestions: true,
             },
           };
