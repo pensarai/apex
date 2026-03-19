@@ -89,7 +89,9 @@ export function CommandProvider({
 
   // Load skills + registry on mount and whenever we return to home
   useEffect(() => {
-    refreshSkills();
+    registry.load({ projectRoot: process.cwd() }).then(() => {
+      setRegistryVersion((v) => v + 1);
+    });
   }, [route.data]);
 
   // Create router with context - initialized once
