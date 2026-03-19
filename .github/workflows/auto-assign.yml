@@ -24,8 +24,8 @@ jobs:
               'jorgeraad',
             ];
 
-            const author = context.payload.pull_request.user.login;
-            const eligible = team.filter((m) => m !== author);
+            const author = context.payload.pull_request.user.login.toLowerCase();
+            const eligible = team.filter((m) => m.toLowerCase() !== author);
             if (eligible.length === 0) return;
 
             const { data: recentPRs } = await github.rest.pulls.list({
