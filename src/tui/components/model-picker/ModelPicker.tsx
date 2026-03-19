@@ -308,10 +308,13 @@ export function ModelPicker({
       if (key.name === "escape") {
         if (searchQuery) {
           setSearchQuery("");
-        } else {
-          onCancel?.();
+          return true;
         }
-        return true;
+        if (onCancel) {
+          onCancel();
+          return true;
+        }
+        return false;
       }
 
       // Enter - confirm model selection, toggle provider, or start editing local input
@@ -401,11 +404,13 @@ export function ModelPicker({
   );
 
   useKeyboard((key) => {
-    if (focused) {
-      // Modal dialog — consume all keystrokes to prevent leaking to components underneath
+    const handled = handleKeyboard(key);
+    if (handled) {
+      // Only consume keystrokes that the picker actually handled,
+      // so unhandled keys (e.g. ESC without onCancel, Tab) fall through
+      // to parent components like ConfigView.
       key.preventDefault();
     }
-    handleKeyboard(key);
   });
 
   // Helper to check if a navigation item at focusedIndex matches a provider
