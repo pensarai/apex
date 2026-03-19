@@ -66,8 +66,6 @@ export default function Footer({
     );
   }
 
-  if (dialogOpen) return null;
-
   const hotkeys = isExecuting
     ? [{ key: "Ctrl+C", label: "Stop Execution" }]
     : [
@@ -84,6 +82,7 @@ export default function Footer({
       height={1}
       flexShrink={0}
       overflow="hidden"
+      backgroundColor={dialogOpen ? colors.backgroundOverlay : undefined}
     >
       <box flexDirection="row" gap={1} flexShrink={1} overflow="hidden">
         <text fg={colors.textMuted}>{displayCwd}</text>

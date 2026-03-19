@@ -10,14 +10,16 @@ import { useKeyboard } from "@opentui/react";
 import { ScrollBoxRenderable } from "@opentui/core";
 import { scrollToIndex } from "../../utils/scroll";
 import { useCommand } from "../../context/command";
-import { useRoute } from "../../context/route";
 import { Dialog } from "../../context/dialog";
 import { useTheme } from "../../theme";
 
-export default function HelpDialog() {
+interface HelpDialogProps {
+  onClose: () => void;
+}
+
+export default function HelpDialog({ onClose }: HelpDialogProps) {
   const { colors } = useTheme();
   const { commands } = useCommand();
-  const route = useRoute();
 
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [showDetail, setShowDetail] = useState(false);
@@ -43,17 +45,13 @@ export default function HelpDialog() {
     );
   }, [selectedIndex, flatCommands]);
 
-  const handleClose = () => {
-    route.navigate({ type: "base", path: "home" });
-  };
-
   useKeyboard((evt) => {
     if (evt.name === "escape") {
       evt.preventDefault();
       if (showDetail) {
         setShowDetail(false);
       } else {
-        handleClose();
+        onClose();
       }
       return;
     }
@@ -99,7 +97,7 @@ export default function HelpDialog() {
       selectedCommand.options && selectedCommand.options.length > 0;
 
     return (
-      <Dialog size="large" onClose={handleClose}>
+      <Dialog size="large" onClose={onClose}>
         <box flexDirection="column" padding={2} gap={1} width="100%">
           {/* Header */}
           <box flexDirection="row" justifyContent="space-between" width="100%">
@@ -149,7 +147,7 @@ export default function HelpDialog() {
 
   // List view
   return (
-    <Dialog size="large" onClose={handleClose}>
+    <Dialog size="large" onClose={onClose}>
       <box flexDirection="column" padding={2} gap={1} width="100%">
         {/* Header */}
         <box flexDirection="row" justifyContent="space-between" width="100%">
