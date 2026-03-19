@@ -36,8 +36,7 @@ export default function Footer({
   const session = useSession();
   const route = useRoute();
   const { isInputEmpty } = useInput();
-  const isPentest =
-    route.data.type === "pentest" && !route.data.openAsOperator;
+  const isPentest = route.data.type === "pentest" && !route.data.openAsOperator;
 
   // Pentest footer: minimal — just navigation hints
   if (isPentest) {

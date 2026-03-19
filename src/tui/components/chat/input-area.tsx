@@ -13,10 +13,7 @@ import { useTheme } from "../../theme";
 import { PromptInput, type PromptInputRef } from "../shared/prompt-input";
 import { InputProvider, useInput } from "../../context/input";
 import type { PendingApproval } from "../../../core/operator";
-import {
-  type OperatorMode,
-  OPERATOR_MODES,
-} from "../../../core/operator";
+import { type OperatorMode, OPERATOR_MODES } from "../../../core/operator";
 import { useAgent } from "../../context/agent";
 import { useDimensions } from "../../context/dimensions";
 
@@ -30,7 +27,8 @@ const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
   inception: "Inception",
   local: "Local",
 };
-export const providerDisplayName = (p: string) => PROVIDER_DISPLAY_NAMES[p] ?? p;
+export const providerDisplayName = (p: string) =>
+  PROVIDER_DISPLAY_NAMES[p] ?? p;
 
 export interface InputAreaProps {
   /** Current input value */
@@ -128,7 +126,10 @@ export function OperatorModeBar({
   const canCycleLong =
     showMode && showCycleHint && base + g + cycleLong.length <= w;
   const canCycleShort =
-    showMode && showCycleHint && !canCycleLong && base + g + cycleShort.length <= w;
+    showMode &&
+    showCycleHint &&
+    !canCycleLong &&
+    base + g + cycleShort.length <= w;
   const cycleLen = canCycleLong
     ? cycleLong.length
     : canCycleShort
@@ -162,13 +163,9 @@ export function OperatorModeBar({
             {modeText}
           </text>
         )}
-        {cycleDisplay && (
-          <text fg={colors.textMuted}>{cycleDisplay}</text>
-        )}
+        {cycleDisplay && <text fg={colors.textMuted}>{cycleDisplay}</text>}
         <text fg={colors.text}>{modelName}</text>
-        {canProvider && (
-          <text fg={colors.textMuted}>{providerName}</text>
-        )}
+        {canProvider && <text fg={colors.textMuted}>{providerName}</text>}
       </box>
       {canRight && rightContent}
     </box>

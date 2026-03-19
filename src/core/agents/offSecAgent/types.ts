@@ -61,7 +61,6 @@ export type Finding = z.infer<typeof ApexFindingObject>;
 /** Agent operating mode that controls which tools are available. */
 export type AgentMode = "default" | "plan";
 
-
 export type OffensiveSecurityAgentInput<TResult = void> = {
   /** System prompt defining agent persona and behavior. Defaults to BASE_SYSTEM_PROMPT when omitted. */
   system?: string;
