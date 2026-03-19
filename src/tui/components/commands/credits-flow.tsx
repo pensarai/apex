@@ -12,10 +12,14 @@ interface CreditsInfo {
 }
 
 interface CreditsFlowProps {
+  onClose?: () => void;
   onOpenAuthDialog?: () => void;
 }
 
-export default function CreditsFlow({ onOpenAuthDialog }: CreditsFlowProps) {
+export default function CreditsFlow({
+  onClose,
+  onOpenAuthDialog,
+}: CreditsFlowProps) {
   const route = useRoute();
   const [step, setStep] = useState<CreditsStep>("loading");
   const [credits, setCredits] = useState<CreditsInfo | null>(null);
@@ -24,7 +28,11 @@ export default function CreditsFlow({ onOpenAuthDialog }: CreditsFlowProps) {
   const creditsUrl = `${getPensarConsoleUrl()}/credits`;
 
   const goHome = () => {
-    route.navigate({ type: "base", path: "home" });
+    if (onClose) {
+      onClose();
+    } else {
+      route.navigate({ type: "base", path: "home" });
+    }
   };
 
   const openBrowser = () => {
@@ -72,6 +80,8 @@ export default function CreditsFlow({ onOpenAuthDialog }: CreditsFlowProps) {
   }, []);
 
   useKeyboard((key) => {
+    key.preventDefault();
+
     if (key.name === "escape") {
       goHome();
       return;

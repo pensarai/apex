@@ -25,6 +25,8 @@ export default function APIKeyInput({
   const [errorMessage, setErrorMessage] = useState("");
 
   useKeyboard((key) => {
+    key.preventDefault();
+
     if (key.name === "escape") {
       if (verifyState === "verifying") return;
       onCancel();

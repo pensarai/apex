@@ -15,7 +15,13 @@ import { useTheme } from "../../theme";
 
 type FlowState = "choosing" | "selecting" | "inputting" | "auth";
 
-export default function ProviderManager() {
+interface ProviderManagerProps {
+  onClose?: () => void;
+}
+
+export default function ProviderManager({
+  onClose,
+}: ProviderManagerProps = {}) {
   const route = useRoute();
   const _config = useConfig();
 
@@ -61,10 +67,11 @@ export default function ProviderManager() {
     await config.update(configUpdate);
     await _config.reload();
 
-    route.navigate({
-      type: "base",
-      path: "home",
-    });
+    if (onClose) {
+      onClose();
+    } else {
+      route.navigate({ type: "base", path: "home" });
+    }
   };
 
   const handleAPIKeyCancel = () => {
@@ -77,17 +84,18 @@ export default function ProviderManager() {
   };
 
   const handleClose = () => {
-    route.navigate({
-      type: "base",
-      path: "home",
-    });
+    if (onClose) {
+      onClose();
+    } else {
+      route.navigate({ type: "base", path: "home" });
+    }
   };
 
   const handleAuthClose = () => {
     if (isOnboarding) {
       setFlowState("choosing");
     } else {
-      route.navigate({ type: "base", path: "home" });
+      handleClose();
     }
   };
 
@@ -151,6 +159,8 @@ function OnboardingChoice({
   ];
 
   useKeyboard((key) => {
+    key.preventDefault();
+
     if (key.name === "up") {
       setHighlightedIndex((prev) => (prev > 0 ? prev - 1 : choices.length - 1));
       return;

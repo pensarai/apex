@@ -78,6 +78,9 @@ function App({ appConfig }: AppProps) {
   const [showThemeDialog, setShowThemeDialog] = useState(false);
   const [showAuthDialog, setShowAuthDialog] = useState(false);
   const [showModelDialog, setShowModelDialog] = useState(false);
+  const [showProvidersDialog, setShowProvidersDialog] = useState(false);
+  const [showConfigDialog, setShowConfigDialog] = useState(false);
+  const [showCreditsDialog, setShowCreditsDialog] = useState(false);
   const [showPentestDialog, setShowPentestDialog] = useState(false);
   const [pendingPentestFlags, setPendingPentestFlags] = useState<
     WebCommandOptions | undefined
@@ -98,6 +101,9 @@ function App({ appConfig }: AppProps) {
                     onOpenSessionsDialog={() => setShowSessionsDialog(true)}
                     onOpenThemeDialog={() => setShowThemeDialog(true)}
                     onOpenModelDialog={() => setShowModelDialog(true)}
+                    onOpenProvidersDialog={() => setShowProvidersDialog(true)}
+                    onOpenConfigDialog={() => setShowConfigDialog(true)}
+                    onOpenCreditsDialog={() => setShowCreditsDialog(true)}
                     onOpenAuthDialog={() => setShowAuthDialog(true)}
                     onOpenPentestDialog={(flags) => {
                       setPendingPentestFlags(flags);
@@ -126,6 +132,12 @@ function App({ appConfig }: AppProps) {
                         setShowThemeDialog={setShowThemeDialog}
                         showModelDialog={showModelDialog}
                         setShowModelDialog={setShowModelDialog}
+                        showProvidersDialog={showProvidersDialog}
+                        setShowProvidersDialog={setShowProvidersDialog}
+                        showConfigDialog={showConfigDialog}
+                        setShowConfigDialog={setShowConfigDialog}
+                        showCreditsDialog={showCreditsDialog}
+                        setShowCreditsDialog={setShowCreditsDialog}
                         showAuthDialog={showAuthDialog}
                         setShowAuthDialog={setShowAuthDialog}
                         showPentestDialog={showPentestDialog}
@@ -161,6 +173,12 @@ function AppContent({
   setShowThemeDialog,
   showModelDialog,
   setShowModelDialog,
+  showProvidersDialog,
+  setShowProvidersDialog,
+  showConfigDialog,
+  setShowConfigDialog,
+  showCreditsDialog,
+  setShowCreditsDialog,
   showAuthDialog,
   setShowAuthDialog,
   showPentestDialog,
@@ -183,6 +201,12 @@ function AppContent({
   setShowThemeDialog: (show: boolean) => void;
   showModelDialog: boolean;
   setShowModelDialog: (show: boolean) => void;
+  showProvidersDialog: boolean;
+  setShowProvidersDialog: (show: boolean) => void;
+  showConfigDialog: boolean;
+  setShowConfigDialog: (show: boolean) => void;
+  showCreditsDialog: boolean;
+  setShowCreditsDialog: (show: boolean) => void;
   showAuthDialog: boolean;
   setShowAuthDialog: (show: boolean) => void;
   showPentestDialog: boolean;
@@ -236,18 +260,21 @@ function AppContent({
     }
   }, [config.data.responsibleUseAccepted, route.data]);
 
-  // Track external dialog state for theme/model/auth/pentest dialogs so operator input
-  // unfocuses while a dialog overlay is open
+  // Track external dialog state so operator input unfocuses while a dialog overlay is open
+  const anyExternalDialog =
+    showThemeDialog ||
+    showModelDialog ||
+    showProvidersDialog ||
+    showConfigDialog ||
+    showCreditsDialog ||
+    showAuthDialog ||
+    showPentestDialog;
+
   useEffect(() => {
-    if (
-      showThemeDialog ||
-      showModelDialog ||
-      showAuthDialog ||
-      showPentestDialog
-    ) {
+    if (anyExternalDialog) {
       setExternalDialogOpen(true);
     }
-  }, [showThemeDialog, showModelDialog, showAuthDialog, showPentestDialog]);
+  }, [anyExternalDialog]);
 
   // Auto-clear the exit warning after 1 second
   useEffect(() => {
@@ -286,6 +313,33 @@ function AppContent({
 
   const handleCloseModelDialog = () => {
     setShowModelDialog(false);
+    setTimeout(() => {
+      setExternalDialogOpen(false);
+    }, 0);
+    setInputKey((prev) => prev + 1);
+    refocusPrompt();
+  };
+
+  const handleCloseProvidersDialog = () => {
+    setShowProvidersDialog(false);
+    setTimeout(() => {
+      setExternalDialogOpen(false);
+    }, 0);
+    setInputKey((prev) => prev + 1);
+    refocusPrompt();
+  };
+
+  const handleCloseConfigDialog = () => {
+    setShowConfigDialog(false);
+    setTimeout(() => {
+      setExternalDialogOpen(false);
+    }, 0);
+    setInputKey((prev) => prev + 1);
+    refocusPrompt();
+  };
+
+  const handleCloseCreditsDialog = () => {
+    setShowCreditsDialog(false);
     setTimeout(() => {
       setExternalDialogOpen(false);
     }, 0);
@@ -362,6 +416,19 @@ function AppContent({
         <ModelPickerDialog onClose={handleCloseModelDialog} />
       )}
 
+      {showProvidersDialog && (
+        <ProviderManager onClose={handleCloseProvidersDialog} />
+      )}
+
+      {showConfigDialog && <ConfigDialog onClose={handleCloseConfigDialog} />}
+
+      {showCreditsDialog && (
+        <CreditsFlow
+          onClose={handleCloseCreditsDialog}
+          onOpenAuthDialog={() => setShowAuthDialog(true)}
+        />
+      )}
+
       {showAuthDialog && <AuthFlow onClose={handleCloseAuthDialog} />}
 
       {showPentestDialog && (
@@ -436,9 +503,6 @@ function CommandDisplay({
           <RouteSwitch.Case when="home">
             <ChatApp />
           </RouteSwitch.Case>
-          <RouteSwitch.Case when="config">
-            <ConfigDialog />
-          </RouteSwitch.Case>
           <RouteSwitch.Case when="operator">
             <HITLWizard
               initialTarget={route.data.options?.target}
@@ -463,9 +527,6 @@ function CommandDisplay({
           </RouteSwitch.Case>
           <RouteSwitch.Case when="help">
             <HelpDialog />
-          </RouteSwitch.Case>
-          <RouteSwitch.Case when="credits">
-            <CreditsFlow onOpenAuthDialog={onOpenAuthDialog} />
           </RouteSwitch.Case>
           <RouteSwitch.Case when="skills">
             <SkillsDialog />

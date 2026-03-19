@@ -30,6 +30,8 @@ export default function ProviderSelection({
   const configuredProviders = getConfiguredProviders(_config.data);
 
   useKeyboard((key) => {
+    key.preventDefault();
+
     if (key.name === "escape") {
       onClose();
       return;
