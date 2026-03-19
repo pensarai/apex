@@ -52,22 +52,56 @@ navigation:
             path: ./docs/intro.mdx
           - page: Getting Started
             path: ./docs/getting-started.mdx
-      - section: Commands
+      - section: TUI Slash Commands
         contents:
           - page: /pentest
             path: ./docs/commands/pentest.mdx
           - page: /operator
             path: ./docs/commands/operator.mdx
+          - page: /auth
+            path: ./docs/commands/auth.mdx
           - page: /models
             path: ./docs/commands/models.mdx
           - page: /providers
             path: ./docs/commands/providers.mdx
-          - page: /auth
-            path: ./docs/commands/auth.mdx
+          - page: /sessions
+            path: ./docs/commands/sessions.mdx
+          - page: /themes
+            path: ./docs/commands/themes.mdx
           - page: /credits
             path: ./docs/commands/credits.mdx
+          - page: /config
+            path: ./docs/commands/config.mdx
+          - page: /create-skill
+            path: ./docs/commands/create-skill.mdx
           - page: /help
             path: ./docs/commands/help.mdx
+      - section: CLI Commands
+        contents:
+          - page: pensar pentest
+            path: ./docs/cli/pentest.mdx
+          - page: pensar targeted-pentest
+            path: ./docs/cli/targeted-pentest.mdx
+          - page: pensar auth
+            path: ./docs/cli/auth.mdx
+          - page: pensar projects
+            path: ./docs/cli/projects.mdx
+          - page: pensar pentests
+            path: ./docs/cli/pentests.mdx
+          - page: pensar issues
+            path: ./docs/cli/issues.mdx
+          - page: pensar fixes
+            path: ./docs/cli/fixes.mdx
+          - page: pensar logs
+            path: ./docs/cli/logs.mdx
+          - page: pensar upgrade
+            path: ./docs/cli/upgrade.mdx
+          - page: pensar doctor
+            path: ./docs/cli/doctor.mdx
+          - page: pensar uninstall
+            path: ./docs/cli/uninstall.mdx
+          - page: pensar version
+            path: ./docs/cli/version.mdx
   - tab: console
     layout:
 
