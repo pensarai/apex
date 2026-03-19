@@ -123,7 +123,7 @@ export function ChatApp({
   }, []);
 
   return (
-    <box flexDirection="column" width="100%" height="100%" flexGrow={1}>
+    <box flexDirection="column" width="100%" height="100%" flexGrow={1} overflow="hidden">
       {currentView === "home" && (
         <HomeView
           onNavigate={handleNavigate}
