@@ -112,9 +112,7 @@ import { emailSearchMessages } from "./email/searchMessages";
 import { emailGetMessage } from "./email/getMessage";
 import { webSearch } from "./webSearch";
 import { getPage } from "./getPage";
-import { useSkill } from "./useSkill";
-import { listSkills } from "./listSkills";
-import { deactivateSkill } from "./deactivateSkill";
+import { readSkill } from "./readSkill";
 
 /**
  * Create the full toolset for the OffensiveSecurityAgent.

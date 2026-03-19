@@ -215,6 +215,12 @@ Command approval: ${operatorState.requireApproval ? "enabled — the operator wi
     prompt += `\n\n# Skills\n\n${skillsCatalog}`;
   }
 
+  if (activeSkillInstructions && activeSkillInstructions.length > 0) {
+    for (const skill of activeSkillInstructions) {
+      prompt += `\n\n# Active Skill: ${skill.name}\n\n${skill.instructions}`;
+    }
+  }
+
   return prompt;
 }
 

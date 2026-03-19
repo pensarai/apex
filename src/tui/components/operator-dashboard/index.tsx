@@ -704,7 +704,7 @@ export default function OperatorDashboard({
       const prevMessages = conversationRef.current;
       const nextMessages: ModelMessage[] = normalizeMessages([
         ...conversationRef.current,
-        { role: "user", content: cleanedPrompt },
+        { role: "user", content: prompt },
       ]);
       conversationRef.current = nextMessages;
 
@@ -866,7 +866,7 @@ export default function OperatorDashboard({
               initialConfig?.target,
               operatorState,
               agentMode,
-              skillsOpts,
+              { skillsCatalog },
             ),
             session,
           });
@@ -888,7 +888,7 @@ export default function OperatorDashboard({
               initialConfig?.target,
               operatorState,
               agentMode,
-              skillsOpts,
+              { skillsCatalog },
             ),
             sessionConfig,
             onNameGenerated: (name: string) => {

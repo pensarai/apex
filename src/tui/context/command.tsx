@@ -137,9 +137,8 @@ export function CommandProvider({
       });
     }
 
-<<<<<<< HEAD
     // Append skills from registry (already deduplicated by slug)
-    for (const entry of registry.listEnabled()) {
+    for (const entry of registry.list()) {
       options.push({
         value: `/${entry.slug}`,
         label: `/${entry.slug}`,

@@ -4,32 +4,22 @@ import path from "path";
 import fs from "fs/promises";
 import { SkillsRegistry } from "./registry";
 
-const SKILLS_DIR = path.join(os.homedir(), ".pensar", "skills");
 const TEST_PREFIX = "zzregtest-";
 
 describe("SkillsRegistry", () => {
   let registry: SkillsRegistry;
-  const cleanup: string[] = [];
+  let tmpRoot: string;
+  let skillsDir: string;
 
   beforeEach(async () => {
+    tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), "skills-reg-test-"));
+    skillsDir = path.join(tmpRoot, ".skills");
+    await fs.mkdir(skillsDir, { recursive: true });
     registry = new SkillsRegistry();
-    await fs.mkdir(SKILLS_DIR, { recursive: true });
   });
 
   afterEach(async () => {
-    for (const p of cleanup) {
-      try {
-        const stat = await fs.stat(p);
-        if (stat.isDirectory()) {
-          await fs.rm(p, { recursive: true });
-        } else {
-          await fs.unlink(p);
-        }
-      } catch {
-        // ignore
-      }
-    }
-    cleanup.length = 0;
+    await fs.rm(tmpRoot, { recursive: true, force: true });
   });
 
   async function createDirSkill(
@@ -38,7 +28,7 @@ describe("SkillsRegistry", () => {
     desc: string,
     tags?: string[],
   ) {
-    const dirPath = path.join(SKILLS_DIR, slug);
+    const dirPath = path.join(skillsDir, slug);
     await fs.mkdir(dirPath, { recursive: true });
     const tagsYaml = tags
       ? `\ntags:\n${tags.map((t) => `  - ${t}`).join("\n")}`
@@ -47,14 +37,13 @@ describe("SkillsRegistry", () => {
       path.join(dirPath, "SKILL.md"),
       `---\nname: ${name}\ndescription: ${desc}${tagsYaml}\n---\n\nInstructions for ${name}.`,
     );
-    cleanup.push(dirPath);
   }
 
   describe("load and list", () => {
     it("loads skills from disk", async () => {
       await createDirSkill(`${TEST_PREFIX}load-b`, "Load B", "Skill B");
 
-      await registry.load();
+      await registry.load({ projectRoot: tmpRoot });
 
       const all = registry.list();
       const slugs = all.map((e) => e.slug);
@@ -64,7 +53,7 @@ describe("SkillsRegistry", () => {
     it("list returns all discovered skills", async () => {
       await createDirSkill(`${TEST_PREFIX}a`, "A", "Skill A");
       await createDirSkill(`${TEST_PREFIX}b`, "B", "Skill B");
-      await registry.load();
+      await registry.load({ projectRoot: tmpRoot });
 
       const all = registry.list();
       const slugs = all.map((e) => e.slug);
@@ -86,7 +75,7 @@ describe("SkillsRegistry", () => {
         "A cataloged skill",
         ["web", "api"],
       );
-      await registry.load();
+      await registry.load({ projectRoot: tmpRoot });
 
       const catalog = registry.buildCatalog();
       expect(catalog).toContain("<available_skills>");
@@ -105,7 +94,7 @@ describe("SkillsRegistry", () => {
         "Readable",
         "A readable skill",
       );
-      await registry.load();
+      await registry.load({ projectRoot: tmpRoot });
 
       const { name, content } = await registry.readSkillContent(
         `${TEST_PREFIX}read`,
@@ -115,7 +104,7 @@ describe("SkillsRegistry", () => {
     });
 
     it("throws for unknown slug", async () => {
-      await registry.load();
+      await registry.load({ projectRoot: tmpRoot });
       await expect(
         registry.readSkillContent("no-such-skill"),
       ).rejects.toThrow("not found");
@@ -124,7 +113,7 @@ describe("SkillsRegistry", () => {
 
   describe("refresh", () => {
     it("picks up new skills on refresh", async () => {
-      await registry.load();
+      await registry.load({ projectRoot: tmpRoot });
       const before = registry.get(`${TEST_PREFIX}refresh`);
       expect(before).toBeUndefined();
 

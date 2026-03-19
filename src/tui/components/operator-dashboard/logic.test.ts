@@ -483,7 +483,7 @@ describe("buildOperatorSystemPrompt", () => {
 
   it("appends skills catalog when provided", () => {
     const catalog =
-      "# Available Skills\n\n- **sqli** (web) — SQL injection testing";
+      "<available_skills>\n\n- **sqli** (web) — SQL injection testing\n\n</available_skills>";
     const prompt = buildOperatorSystemPrompt(target, state, undefined, {
       skillsCatalog: catalog,
     });
@@ -494,7 +494,7 @@ describe("buildOperatorSystemPrompt", () => {
 
   it("does not include skills catalog section when catalog is undefined", () => {
     const prompt = buildOperatorSystemPrompt(target, state);
-    expect(prompt).not.toContain("# Skills");
+    expect(prompt).not.toContain("<available_skills>");
   });
 
   it("appends active skill instructions", () => {
