@@ -133,6 +133,21 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
   const inputPadding = height >= 20 ? 1 : 0;
   const inputWidth = Math.min(80, dimensions.width - 10);
 
+  // Estimate rows consumed above the input to size the autocomplete dropdown
+  const rowsAboveInput =
+    animationHeight +
+    titleMarginTop +
+    2 + // title + subtitle
+    (showCommands ? menuMarginTop + 5 : 0) +
+    inputMarginTop +
+    inputPadding + // top padding
+    1; // input row itself
+  const rowsBelowInput =
+    (showHelpText ? 2 : 0) + // help text + marginTop
+    inputPadding + // bottom padding
+    3; // footer bar approximate
+  const maxSuggestions = Math.max(2, height - rowsAboveInput - rowsBelowInput);
+
   return (
     <box
       flexDirection="column"
@@ -210,6 +225,7 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
           focusedBackgroundColor="transparent"
           enableAutocomplete={true}
           autocompleteOptions={autocompleteOptions}
+          maxVisibleSuggestions={maxSuggestions}
           enableCommands={true}
           onCommandExecute={handleCommandExecute}
           commandHistory={commandHistory}
