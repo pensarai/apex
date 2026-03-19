@@ -133,7 +133,13 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
   const inputWidth = Math.min(80, dimensions.width - 10);
 
   return (
-    <box flexDirection="column" width="100%" height="100%" alignItems="center" overflow="hidden">
+    <box
+      flexDirection="column"
+      width="100%"
+      height="100%"
+      alignItems="center"
+      overflow="hidden"
+    >
       {/* Petri Animation */}
       {animationHeight > 0 && (
         <box height={animationHeight} width="100%">
@@ -142,7 +148,12 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
       )}
 
       {/* Title - centered */}
-      <box flexDirection="column" alignItems="center" marginTop={titleMarginTop} flexShrink={0}>
+      <box
+        flexDirection="column"
+        alignItems="center"
+        marginTop={titleMarginTop}
+        flexShrink={0}
+      >
         <text fg={colors.text}>
           Apex{" "}
           <span fg={colors.textMuted}>({config.data.version || "local"})</span>

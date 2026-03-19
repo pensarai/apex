@@ -1424,7 +1424,13 @@ export default function OperatorDashboard({
     pendingApprovals.length > 0 ? pendingApprovals[0] : undefined;
 
   return (
-    <box flexDirection="column" width="100%" height="100%" flexGrow={1} overflow="hidden">
+    <box
+      flexDirection="column"
+      width="100%"
+      height="100%"
+      flexGrow={1}
+      overflow="hidden"
+    >
       {/* Header bar */}
       <box
         flexDirection="row"

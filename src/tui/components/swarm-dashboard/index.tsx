@@ -244,9 +244,21 @@ export default function SwarmDashboard({
 
   // Overview view
   return (
-    <box flexDirection="column" width="100%" height="100%" flexGrow={1} overflow="hidden">
+    <box
+      flexDirection="column"
+      width="100%"
+      height="100%"
+      flexGrow={1}
+      overflow="hidden"
+    >
       {/* Main content area */}
-      <box flexDirection="row" flexGrow={1} gap={2} padding={1} overflow="hidden">
+      <box
+        flexDirection="row"
+        flexGrow={1}
+        gap={2}
+        padding={1}
+        overflow="hidden"
+      >
         {/* Left: Discovery panel */}
         <DiscoveryPanel
           agent={discoveryAgent}
@@ -799,7 +811,13 @@ function AgentDetailView({ agent, onBack, onResume }: AgentDetailViewProps) {
   }[agent.status];
 
   return (
-    <box flexDirection="column" width="100%" height="100%" flexGrow={1} overflow="hidden">
+    <box
+      flexDirection="column"
+      width="100%"
+      height="100%"
+      flexGrow={1}
+      overflow="hidden"
+    >
       {/* Header */}
       <box
         width="100%"
