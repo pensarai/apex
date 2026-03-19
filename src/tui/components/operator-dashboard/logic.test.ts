@@ -21,51 +21,42 @@ const allOptions: AutocompleteOption[] = [
   { value: "/scan", label: "/scan", description: "Run a scan" },
   { value: "/pentest", label: "/pentest", description: "Run a pentest" },
   { value: "/help", label: "/help", description: "Show help" },
-  {
-    value: "/create-skill",
-    label: "/create-skill",
-    description: "Create skill",
-  },
   { value: "/models", label: "/models", description: "Switch model" },
-  { value: "/sql-injection", label: "/sql-injection", description: "Skill" },
-  { value: "/xss-test", label: "/xss-test", description: "Skill" },
+  { value: "/skills", label: "/skills", description: "View skills" },
 ];
-
-const skillSlugs = new Set(["/sql-injection", "/xss-test"]);
 
 // ---------------------------------------------------------------------------
 // filterOperatorAutocomplete
 // ---------------------------------------------------------------------------
 
 describe("filterOperatorAutocomplete", () => {
-  it("includes allowed commands (/create-skill, /models)", () => {
-    const result = filterOperatorAutocomplete(allOptions, new Set());
+  it("includes allowed commands (/models, /skills)", () => {
+    const result = filterOperatorAutocomplete(allOptions);
     const values = result.map((o) => o.value);
-    expect(values).toContain("/create-skill");
     expect(values).toContain("/models");
+    expect(values).toContain("/skills");
   });
 
-  it("includes skill slugs", () => {
-    const result = filterOperatorAutocomplete(allOptions, skillSlugs);
-    const values = result.map((o) => o.value);
-    expect(values).toContain("/sql-injection");
-    expect(values).toContain("/xss-test");
-  });
-
-  it("excludes commands that are neither allowed nor skills", () => {
-    const result = filterOperatorAutocomplete(allOptions, skillSlugs);
+  it("excludes commands that are not in the allowed set", () => {
+    const result = filterOperatorAutocomplete(allOptions);
     const values = result.map((o) => o.value);
     expect(values).not.toContain("/scan");
     expect(values).not.toContain("/help");
   });
 
-  it("returns only allowed commands when no skills exist", () => {
-    const result = filterOperatorAutocomplete(allOptions, new Set());
+  it("returns only allowed commands", () => {
+    const result = filterOperatorAutocomplete(allOptions);
     expect(result).toHaveLength(3);
   });
 
+  it("preserves description on allowed commands", () => {
+    const result = filterOperatorAutocomplete(allOptions);
+    const modelsOpt = result.find((o) => o.value === "/models");
+    expect(modelsOpt?.description).toBe("Switch model");
+  });
+
   it("returns empty for empty input", () => {
-    expect(filterOperatorAutocomplete([], new Set())).toEqual([]);
+    expect(filterOperatorAutocomplete([])).toEqual([]);
   });
 });
 
@@ -134,13 +125,13 @@ describe("routeCommand", () => {
     expect(routeCommand("/MODELS", noSkill)).toEqual({ type: "show-models" });
   });
 
-  it("routes a skill command to run-skill", () => {
+  it("routes a skill command to run-skill with slug", () => {
     const resolveSkill = (cmd: string) =>
       cmd === "/sql-injection" ? "Perform SQL injection testing" : null;
     const result = routeCommand("/sql-injection", resolveSkill);
     expect(result).toEqual({
       type: "run-skill",
-      content: "Perform SQL injection testing",
+      slug: "sql-injection",
       autopilot: false,
     });
   });
@@ -151,7 +142,7 @@ describe("routeCommand", () => {
     const result = routeCommand("/sql-injection --autopilot", resolveSkill);
     expect(result).toEqual({
       type: "run-skill",
-      content: "SQL injection",
+      slug: "sql-injection",
       autopilot: true,
     });
   });
@@ -488,6 +479,43 @@ describe("buildOperatorSystemPrompt", () => {
   it("does not include plan mode note when agentMode is omitted", () => {
     const prompt = buildOperatorSystemPrompt(target, state);
     expect(prompt).not.toContain("Agent mode: PLAN");
+  });
+
+  it("appends skills catalog when provided", () => {
+    const catalog =
+      "<available_skills>\n\n- **sqli** (web) — SQL injection testing\n\n</available_skills>";
+    const prompt = buildOperatorSystemPrompt(target, state, undefined, {
+      skillsCatalog: catalog,
+    });
+    expect(prompt).toContain("# Skills");
+    expect(prompt).toContain("<available_skills>");
+    expect(prompt).toContain("sqli");
+  });
+
+  it("does not include skills catalog section when catalog is undefined", () => {
+    const prompt = buildOperatorSystemPrompt(target, state);
+    expect(prompt).not.toContain("<available_skills>");
+  });
+
+  it("appends active skill instructions", () => {
+    const activeSkills = [
+      { name: "SQL Injection", instructions: "Step 1: Find params..." },
+      { name: "XSS", instructions: "Step 1: Inject payload..." },
+    ];
+    const prompt = buildOperatorSystemPrompt(target, state, undefined, {
+      activeSkillInstructions: activeSkills,
+    });
+    expect(prompt).toContain("# Active Skill: SQL Injection");
+    expect(prompt).toContain("Step 1: Find params...");
+    expect(prompt).toContain("# Active Skill: XSS");
+    expect(prompt).toContain("Step 1: Inject payload...");
+  });
+
+  it("does not include active skills section when array is empty", () => {
+    const prompt = buildOperatorSystemPrompt(target, state, undefined, {
+      activeSkillInstructions: [],
+    });
+    expect(prompt).not.toContain("# Active Skill:");
   });
 });
 

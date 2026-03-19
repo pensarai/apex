@@ -18,7 +18,6 @@ import { useRoute } from "../../context/route";
 import { useDialog } from "../../context/dialog";
 import { PromptInput } from "../shared/prompt-input";
 import { useTheme } from "../../theme";
-import { slugify } from "../../../core/skills";
 import * as History from "../../../core/history";
 
 type ViewType = "home" | "config" | "chat";
@@ -34,8 +33,7 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
   const config = useConfig();
   const route = useRoute();
 
-  const { executeCommand, autocompleteOptions, resolveSkillContent, skills } =
-    useCommand();
+  const { executeCommand, autocompleteOptions, skillsRegistry } = useCommand();
   const { setInputValue } = useInput();
   const { promptRef } = useFocus();
   const { externalDialogOpen, stack } = useDialog();
@@ -87,25 +85,23 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
       const trimmed = command.trim();
       pushHistory(trimmed);
 
-      const parts = trimmed.replace(/^\/+/, "").split(/\s+/);
-      const slug = parts[0]?.toLowerCase() ?? "";
-      const args = parts.slice(1);
-      const autopilot = args.includes("--autopilot");
+      const slug =
+        trimmed.replace(/^\/+/, "").split(/\s+/)[0]?.toLowerCase() ?? "";
 
-      const skillContent = resolveSkillContent(`/${slug}`);
-      if (skillContent) {
-        launchOperator(skillContent, { requireApproval: !autopilot });
+      const entry = skillsRegistry.get(slug);
+      if (entry) {
+        // Navigate to skills detail page to show skill info
+        route.navigate({
+          type: "base",
+          path: "skills",
+          options: { skillSlug: slug },
+        });
         return;
       }
       await executeCommand(command);
     },
-    [resolveSkillContent, launchOperator, executeCommand, pushHistory],
+    [skillsRegistry, route, executeCommand, pushHistory],
   );
-
-  const skillItems = skills.slice(0, 5).map((s) => ({
-    cmd: `/${slugify(s.name)}`,
-    desc: s.description || "skill",
-  }));
 
   // Calculate layout dimensions
   const animationHeight = Math.max(6, Math.floor(dimensions.height * 0.2));
@@ -146,26 +142,6 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
             </box>
           </box>
         ))}
-        {skillItems.length > 0 && (
-          <>
-            <box marginTop={1}>
-              <box width={24} justifyContent="flex-end">
-                <text fg={colors.textMuted}>Skills</text>
-              </box>
-            </box>
-            {skillItems.map(({ cmd, desc }) => (
-              <box key={cmd} flexDirection="row">
-                <box width={24} justifyContent="flex-end">
-                  <text fg={colors.accent}>{cmd}</text>
-                </box>
-                <box width={4} />
-                <box>
-                  <text fg={colors.textMuted}>{desc}</text>
-                </box>
-              </box>
-            ))}
-          </>
-        )}
       </box>
 
       {/* Centered Input Area */}

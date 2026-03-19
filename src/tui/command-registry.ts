@@ -364,17 +364,16 @@ export const commands: CommandConfig[] = [
   },
 
   {
-    name: "create-skill",
-    description: "Create a new operator skill",
+    name: "skills",
+    description: "View installed skills",
     category: "Skills",
     handler: async (args, ctx) => {
       ctx.navigate({
         type: "base",
-        path: "create-skill",
+        path: "skills",
       });
     },
   },
-
   // Add more commands here...
   // Example:
   // {

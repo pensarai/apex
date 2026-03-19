@@ -4,24 +4,6 @@ import type { AutocompleteOption } from "./prompt-input";
 // Autocomplete filtering
 // ---------------------------------------------------------------------------
 
-export function filterSuggestions(
-  inputValue: string,
-  options: AutocompleteOption[],
-  maxSuggestions: number,
-): AutocompleteOption[] {
-  if (!options.length || !inputValue) return [];
-  const input = inputValue.toLowerCase().trim();
-  if (!input.startsWith("/")) return [];
-
-  return options
-    .filter(
-      (opt) =>
-        opt.value.toLowerCase().includes(input) ||
-        opt.label.toLowerCase().includes(input),
-    )
-    .slice(0, maxSuggestions);
-}
-
 // ---------------------------------------------------------------------------
 // Submit value resolution
 // ---------------------------------------------------------------------------
@@ -213,6 +195,76 @@ export function computeTab(
     }
   }
   return { selectedSuggestionIndex: 0, acceptedValue: null };
+}
+
+// ---------------------------------------------------------------------------
+// Inline slash detection (for mid-text autocomplete)
+// ---------------------------------------------------------------------------
+
+export interface InlineSlashContext {
+  /** The partial /token text (e.g. "/v" or "/") */
+  token: string;
+  /** Character offset where the / starts */
+  start: number;
+  /** Character offset at the cursor (end of the partial token) */
+  end: number;
+}
+
+/**
+ * Detect a /slug token at the cursor position.
+ * Returns null when the cursor is not immediately after a /partial-slug.
+ */
+export function detectInlineSlash(
+  text: string,
+  cursorOffset: number,
+): InlineSlashContext | null {
+  if (cursorOffset <= 0 || cursorOffset > text.length) return null;
+
+  // Walk backwards from cursor through slug chars
+  let i = cursorOffset - 1;
+  while (i >= 0 && /[a-zA-Z0-9-]/.test(text[i]!)) i--;
+
+  // Must land on a /
+  if (i < 0 || text[i] !== "/") return null;
+
+  // The / must be at the start of text or preceded by whitespace
+  if (i > 0 && !/\s/.test(text[i - 1]!)) return null;
+
+  return { token: text.slice(i, cursorOffset), start: i, end: cursorOffset };
+}
+
+/**
+ * Filter autocomplete options against a partial /token.
+ * Returns [] for exact matches (already completed — no suggestions needed).
+ */
+export function filterInlineSuggestions(
+  token: string,
+  options: AutocompleteOption[],
+  maxSuggestions: number,
+): AutocompleteOption[] {
+  if (!options.length || !token.startsWith("/")) return [];
+  const lower = token.toLowerCase();
+
+  // Don't show suggestions when the token exactly matches an option
+  if (options.some((opt) => opt.value.toLowerCase() === lower)) return [];
+
+  return options
+    .filter((opt) => opt.value.toLowerCase().startsWith(lower))
+    .slice(0, maxSuggestions);
+}
+
+/**
+ * Compute the new text and cursor position after accepting an inline completion.
+ */
+export function computeInlineCompletion(
+  text: string,
+  ctx: InlineSlashContext,
+  acceptedValue: string,
+): { newText: string; cursorOffset: number } {
+  const before = text.slice(0, ctx.start);
+  const after = text.slice(ctx.end);
+  const newText = before + acceptedValue + after;
+  return { newText, cursorOffset: before.length + acceptedValue.length };
 }
 
 // ---------------------------------------------------------------------------

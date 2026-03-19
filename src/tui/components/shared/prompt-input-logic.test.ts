@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  filterSuggestions,
+  filterInlineSuggestions,
+  detectInlineSlash,
+  computeInlineCompletion,
   resolveSubmitValue,
   computeUpArrow,
   computeDownArrow,
@@ -24,66 +26,6 @@ const options: AutocompleteOption[] = [
 ];
 
 const history = ["first cmd", "second cmd", "third cmd"];
-
-// ---------------------------------------------------------------------------
-// filterSuggestions
-// ---------------------------------------------------------------------------
-
-describe("filterSuggestions", () => {
-  it("returns empty for empty input", () => {
-    expect(filterSuggestions("", options, 10)).toEqual([]);
-  });
-
-  it("returns empty for input without leading /", () => {
-    expect(filterSuggestions("scan", options, 10)).toEqual([]);
-  });
-
-  it("returns all options matching /", () => {
-    const result = filterSuggestions("/", options, 10);
-    expect(result).toHaveLength(5);
-  });
-
-  it("filters by value substring", () => {
-    const result = filterSuggestions("/sc", options, 10);
-    expect(result).toHaveLength(1);
-    expect(result[0]!.value).toBe("/scan");
-  });
-
-  it("filters by label substring", () => {
-    const result = filterSuggestions("/pen", options, 10);
-    expect(result).toHaveLength(1);
-    expect(result[0]!.value).toBe("/pentest");
-  });
-
-  it("is case-insensitive", () => {
-    const result = filterSuggestions("/HELP", options, 10);
-    expect(result).toHaveLength(1);
-    expect(result[0]!.value).toBe("/help");
-  });
-
-  it("respects maxSuggestions", () => {
-    const result = filterSuggestions("/s", options, 2);
-    expect(result).toHaveLength(2);
-  });
-
-  it("matches multiple options with shared substring", () => {
-    const result = filterSuggestions("/se", options, 10);
-    expect(result.map((s) => s.value)).toEqual(["/session", "/settings"]);
-  });
-
-  it("returns empty for no matches", () => {
-    expect(filterSuggestions("/zzz", options, 10)).toEqual([]);
-  });
-
-  it("returns empty for empty options array", () => {
-    expect(filterSuggestions("/scan", [], 10)).toEqual([]);
-  });
-
-  it("trims whitespace from input", () => {
-    const result = filterSuggestions("  /scan  ", options, 10);
-    expect(result).toHaveLength(1);
-  });
-});
 
 // ---------------------------------------------------------------------------
 // resolveSubmitValue
@@ -424,7 +366,6 @@ describe("navigation sequences", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // computeVisibleWindow
 // ---------------------------------------------------------------------------
 
@@ -552,5 +493,155 @@ describe("computeVisibleWindow", () => {
     expect(result.visibleSuggestions).toHaveLength(3);
     expect(result.hasMore).toBe(false);
     expect(result.hasMoreBelow).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// detectInlineSlash
+// ---------------------------------------------------------------------------
+
+describe("detectInlineSlash", () => {
+  it("detects / at start of text", () => {
+    expect(detectInlineSlash("/", 1)).toEqual({
+      token: "/",
+      start: 0,
+      end: 1,
+    });
+  });
+
+  it("detects partial slug at start of text", () => {
+    expect(detectInlineSlash("/sc", 3)).toEqual({
+      token: "/sc",
+      start: 0,
+      end: 3,
+    });
+  });
+
+  it("detects inline / after space", () => {
+    expect(detectInlineSlash("scan this /", 11)).toEqual({
+      token: "/",
+      start: 10,
+      end: 11,
+    });
+  });
+
+  it("detects inline partial slug", () => {
+    expect(detectInlineSlash("scan this /vuln", 15)).toEqual({
+      token: "/vuln",
+      start: 10,
+      end: 15,
+    });
+  });
+
+  it("returns null when cursor is after a space following /", () => {
+    // "scan / " with cursor at 7 (after the space)
+    expect(detectInlineSlash("scan / ", 7)).toBeNull();
+  });
+
+  it("returns null when / is not preceded by whitespace", () => {
+    expect(detectInlineSlash("http://foo", 10)).toBeNull();
+  });
+
+  it("returns null for empty text", () => {
+    expect(detectInlineSlash("", 0)).toBeNull();
+  });
+
+  it("returns null when cursor is at 0", () => {
+    expect(detectInlineSlash("/foo", 0)).toBeNull();
+  });
+
+  it("detects slug with hyphens", () => {
+    expect(detectInlineSlash("run /my-cool-skill", 18)).toEqual({
+      token: "/my-cool-skill",
+      start: 4,
+      end: 18,
+    });
+  });
+
+  it("returns null when cursor is in the middle of regular text", () => {
+    expect(detectInlineSlash("no slash here", 5)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// filterInlineSuggestions
+// ---------------------------------------------------------------------------
+
+describe("filterInlineSuggestions", () => {
+  it("returns all options for just /", () => {
+    const result = filterInlineSuggestions("/", options, 10);
+    expect(result.length).toBe(options.length);
+  });
+
+  it("filters by prefix", () => {
+    const result = filterInlineSuggestions("/s", options, 10);
+    expect(result.every((o) => o.value.startsWith("/s"))).toBe(true);
+    expect(result.length).toBe(3); // /scan, /session, /settings
+  });
+
+  it("returns empty for exact match (already completed)", () => {
+    expect(filterInlineSuggestions("/scan", options, 10)).toEqual([]);
+  });
+
+  it("returns empty for no match", () => {
+    expect(filterInlineSuggestions("/zzz", options, 10)).toEqual([]);
+  });
+
+  it("respects maxSuggestions", () => {
+    expect(filterInlineSuggestions("/", options, 2).length).toBe(2);
+  });
+
+  it("returns empty for non-slash token", () => {
+    expect(filterInlineSuggestions("scan", options, 10)).toEqual([]);
+  });
+
+  it("returns empty for empty options", () => {
+    expect(filterInlineSuggestions("/s", [], 10)).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeInlineCompletion
+// ---------------------------------------------------------------------------
+
+describe("computeInlineCompletion", () => {
+  it("replaces inline partial with completed value", () => {
+    const result = computeInlineCompletion(
+      "scan this /v",
+      { token: "/v", start: 10, end: 12 },
+      "/vulnerability-analysis",
+    );
+    expect(result.newText).toBe("scan this /vulnerability-analysis");
+    expect(result.cursorOffset).toBe(33);
+  });
+
+  it("replaces start-of-line partial", () => {
+    const result = computeInlineCompletion(
+      "/sc",
+      { token: "/sc", start: 0, end: 3 },
+      "/scan",
+    );
+    expect(result.newText).toBe("/scan");
+    expect(result.cursorOffset).toBe(5);
+  });
+
+  it("preserves text after the token", () => {
+    const result = computeInlineCompletion(
+      "run /s more text",
+      { token: "/s", start: 4, end: 6 },
+      "/scan",
+    );
+    expect(result.newText).toBe("run /scan more text");
+    expect(result.cursorOffset).toBe(9);
+  });
+
+  it("handles token at end of text", () => {
+    const result = computeInlineCompletion(
+      "test /h",
+      { token: "/h", start: 5, end: 7 },
+      "/help",
+    );
+    expect(result.newText).toBe("test /help");
+    expect(result.cursorOffset).toBe(10);
   });
 });

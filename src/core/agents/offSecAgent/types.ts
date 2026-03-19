@@ -15,6 +15,7 @@ import type { AttackSurfaceRegistry } from "../../findings/attackSurfaceRegistry
 import type { FindingsRegistry } from "../../findings/registry";
 import type { SessionInfo, SessionConfig } from "../../session";
 import type { ApprovalGate } from "../../operator";
+import type { SkillsRegistry } from "../../skills/registry";
 import type { ToolName } from "./tools";
 import type { UnifiedSandbox } from "./tools/sandbox";
 import { z } from "zod";
@@ -197,6 +198,12 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    * `activeTools` to get typed structured output from `consume()`.
    */
   responseSchema?: z.ZodSchema;
+
+  /**
+   * Skills registry for on-demand skill loading.
+   * When provided, read_skill is available.
+   */
+  skillsRegistry?: SkillsRegistry;
 
   /**
    * When provided, each tool call is gated through the approval gate.

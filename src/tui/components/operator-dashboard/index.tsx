@@ -20,6 +20,7 @@ import { buildAuthConfig } from "../../../core/ai/utils";
 import {
   ALL_TOOL_NAMES,
   PLAN_MODE_TOOL_NAMES,
+  SKILL_TOOL_NAMES,
   type ConsumeCallbacks,
   type AgentMode,
 } from "../../../core/agents/offSecAgent";
@@ -44,7 +45,6 @@ import {
   extractStreamableContent,
 } from "../shared/message-utils";
 import type { OperatorMode, PendingApproval } from "../../../core/operator";
-import { slugify } from "../../../core/skills";
 import {
   ApprovalGate,
   createInitialOperatorState,
@@ -102,7 +102,8 @@ export default function OperatorDashboard({
     autocompleteOptions: allAutocompleteOptions,
     executeCommand,
     resolveSkillContent,
-    skills,
+    skillsRegistry,
+    skillsVersion,
   } = useCommand();
   const {
     stack,
@@ -114,9 +115,17 @@ export default function OperatorDashboard({
   const { refocusPrompt } = useFocus();
 
   const autocompleteOptions = useMemo(() => {
-    const skillSlugs = new Set(skills.map((s) => `/${slugify(s.name)}`));
-    return filterOperatorAutocomplete(allAutocompleteOptions, skillSlugs);
-  }, [allAutocompleteOptions, skills]);
+    const commandOptions = filterOperatorAutocomplete(allAutocompleteOptions);
+    const skillOptions = skillsRegistry.list().map((s) => {
+      const slug = `/${s.slug}`;
+      return {
+        value: slug,
+        label: slug,
+        description: s.manifest.description || "Skill",
+      };
+    });
+    return [...commandOptions, ...skillOptions];
+  }, [allAutocompleteOptions, skillsRegistry, skillsVersion]);
 
   // Session state
   const [session, setSession] = useState<SessionInfo | null>(null);
@@ -818,6 +827,8 @@ export default function OperatorDashboard({
         },
       } satisfies ConsumeCallbacks;
 
+      const skillsCatalog = skillsRegistry.buildCatalog() || undefined;
+
       const commonInput = {
         prompt,
         model: model.id,
@@ -826,12 +837,14 @@ export default function OperatorDashboard({
         target: initialConfig?.target,
         activeTools: [
           ...(agentMode === "plan" ? PLAN_MODE_TOOL_NAMES : ALL_TOOL_NAMES),
+          ...SKILL_TOOL_NAMES,
         ] as string[],
         mode: agentMode,
         abortSignal: controller.signal,
         authConfig: buildAuthConfig(config.data),
         approvalGate: approvalGateRef.current,
         commandCancelHandle: cancelHandleRef.current,
+        skillsRegistry,
         onStepFinish,
         callbacks,
         onSessionReady: (s: SessionInfo) => {
@@ -853,6 +866,7 @@ export default function OperatorDashboard({
               initialConfig?.target,
               operatorState,
               agentMode,
+              { skillsCatalog },
             ),
             session,
           });
@@ -874,6 +888,7 @@ export default function OperatorDashboard({
               initialConfig?.target,
               operatorState,
               agentMode,
+              { skillsCatalog },
             ),
             sessionConfig,
             onNameGenerated: (name: string) => {
@@ -1078,19 +1093,38 @@ export default function OperatorDashboard({
         case "show-models":
           showModelPicker();
           return;
-        case "run-skill":
+        case "run-skill": {
           if (action.autopilot) {
             approvalGateRef.current.updateConfig({ requireApproval: false });
             setOperatorState((prev) => ({ ...prev, requireApproval: false }));
           }
-          handleSubmit(action.content);
+          // Load the skill's full instructions and send them to the agent
+          // so it can act on the skill directly without an extra tool call.
+          try {
+            const { content } = await skillsRegistry.readSkillContent(
+              action.slug,
+            );
+            handleSubmit(`<skill name="${action.slug}">\n${content}\n</skill>`);
+          } catch {
+            // Fallback: tell the agent to load the skill via tool
+            handleSubmit(
+              `Use the read_skill tool to load the "${action.slug}" skill and follow its instructions.`,
+            );
+          }
           return;
+        }
         case "execute-command":
           await executeCommand(action.command);
           return;
       }
     },
-    [resolveSkillContent, handleSubmit, executeCommand, showModelPicker],
+    [
+      resolveSkillContent,
+      skillsRegistry,
+      handleSubmit,
+      executeCommand,
+      showModelPicker,
+    ],
   );
 
   const handleAbort = useCallback(() => {
@@ -1495,6 +1529,7 @@ export default function OperatorDashboard({
         autocompletePlacement="above"
         enableCommands={true}
         onCommandExecute={handleCommandExecute}
+        highlightSlashCommands={true}
         disableHistoryNavigation={
           status === "running" && queuedMessages.length > 0
         }
