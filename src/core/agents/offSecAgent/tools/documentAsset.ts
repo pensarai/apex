@@ -93,11 +93,7 @@ Each asset creates a JSON file in the assets directory for tracking and analysis
               .optional()
               .describe(
                 "HTTP method(s) supported by this endpoint (e.g., 'GET', 'POST', or ['GET', 'POST', 'DELETE']). " +
-<<<<<<< HEAD
                   "Use 'PAGE' for web pages/views.",
-=======
-                  "Use this for endpoint-type assets to list ALL methods the endpoint accepts.",
->>>>>>> cf06d411 (feat: add optional method field to document_asset tool schema)
               ),
             ip: z.string().optional().describe("IP address if known"),
             ports: z.array(z.number()).optional().describe("Open ports"),
@@ -134,9 +130,7 @@ Each asset creates a JSON file in the assets directory for tracking and analysis
             line: z
               .number()
               .optional()
-              .describe(
-                "Line number in the source file (whitebox analysis)",
-              ),
+              .describe("Line number in the source file (whitebox analysis)"),
             handler: z
               .string()
               .optional()
