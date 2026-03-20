@@ -1,45 +1,110 @@
 ---
-title: "/create-skill"
-description: "Create a new reusable operator skill"
+title: "/skills"
+description: "Browse installed operator skills"
 ---
 
 ## Overview
 
-The `/create-skill` command opens a guided flow for creating a new operator skill. Skills are reusable instruction sets that teach the AI agent specialized testing techniques or workflows tailored to your environment.
+The `/skills` command opens a browsable list of all installed operator skills, grouped by source (project-level and user-level). Skills are reusable instruction sets defined as `SKILL.md` files that teach the AI agent specialized testing techniques or workflows tailored to your environment.
 
 ## Usage
 
 ```bash
-/create-skill
+/skills
 ```
 
 ## What Are Skills?
 
-Skills are YAML-based configuration files stored in `~/.pensar/skills/`. Each skill defines:
+Skills are markdown-based configuration files that follow the `SKILL.md` convention. Each skill contains:
 
-- **Name** — a human-readable name for the skill
-- **Description** — what the skill does
-- **Instructions** — detailed instructions the AI agent follows when the skill is invoked
+- **YAML frontmatter** — metadata including name, description, version, tags, triggers, inputs, and outputs
+- **Instructions body** — detailed instructions the AI agent follows when the skill is invoked
 
-Once created, skills appear as dynamic slash commands in the TUI. For example, a skill named "SQL Injection Test" becomes available as `/sql-injection-test`.
+Skills can optionally include a `scripts/` subdirectory containing shell scripts that the agent can execute as part of the skill workflow.
 
-## How It Works
+### Skill Sources
 
-<Steps>
-  <Step title="Launch Skill Creator">
-    Run `/create-skill` to open the skill creation interface.
-  </Step>
-  <Step title="Define the Skill">
-    Provide a name, description, and detailed instructions for the AI agent.
-  </Step>
-  <Step title="Save">
-    The skill is saved to `~/.pensar/skills/` and immediately available as a slash command.
-  </Step>
-</Steps>
+Skills are discovered from two locations:
 
-## Using Skills
+| Source      | Location                    | Description                                              |
+| ----------- | --------------------------- | -------------------------------------------------------- |
+| **Project** | Project root directory      | Skills specific to the project under test                |
+| **User**    | `~/.pensar/skills/`         | Global skills available across all projects              |
 
-After creating a skill, invoke it from the operator prompt:
+## SKILL.md Format
+
+Each skill is defined by a `SKILL.md` file with YAML frontmatter:
+
+```markdown
+---
+name: SQL Injection Test
+description: Advanced SQL injection testing methodology
+version: "1.0.0"
+tags:
+  - web
+  - sqli
+triggers:
+  - sql
+  - injection
+inputs:
+  - name: target_url
+    description: The URL to test
+    required: true
+outputs:
+  - name: findings
+    description: Discovered SQL injection points
+---
+
+# SQL Injection Methodology
+
+Step 1: Identify input parameters...
+```
+
+### Frontmatter Fields
+
+| Field           | Required | Description                                          |
+| --------------- | -------- | ---------------------------------------------------- |
+| `name`          | Yes      | Human-readable name for the skill                    |
+| `description`   | Yes      | What the skill does                                  |
+| `version`       | No       | Semantic version string                              |
+| `tags`          | No       | Categorization tags                                  |
+| `triggers`      | No       | Keywords that can activate the skill                 |
+| `inputs`        | No       | Expected input parameters (name, description, required) |
+| `outputs`       | No       | Expected output artifacts (name, description)        |
+
+## Skills Browser
+
+When you open `/skills`, you'll see:
+
+- **Skill count** — total number of installed skills
+- **Grouped list** — skills organized by source (Project skills, User skills)
+- **Token estimates** — approximate token count for each skill's description
+- **Detail view** — press Enter on any skill to see its full instructions, metadata, tags, and associated scripts
+
+## Keyboard Navigation
+
+| Key       | Action                                |
+| --------- | ------------------------------------- |
+| `↑/↓`     | Navigate between skills               |
+| `j/k`     | Navigate between skills (vim-style)   |
+| `[Enter]` | Open detail view for selected skill   |
+| `[ESC]`   | Close detail view / return to home    |
+
+## Shell Scripts
+
+Skills can include executable shell scripts in a `scripts/` subdirectory alongside the `SKILL.md` file. These scripts are discovered automatically and shown in the skill's detail view. The agent can execute them as part of the skill workflow using the `read_skill` tool.
+
+```
+my-skill/
+├── SKILL.md
+└── scripts/
+    ├── scan.sh
+    └── exploit.sh
+```
+
+## Using Skills in Operator Mode
+
+After viewing a skill, invoke it from the operator prompt by typing its slug as a slash command:
 
 ```bash
 /your-skill-name
@@ -48,7 +113,7 @@ After creating a skill, invoke it from the operator prompt:
 The AI agent will follow the instructions defined in the skill, applying them to the current session context.
 
 <Callout intent="info">
-  Skills only work in operator sessions (`/operator`). They are not available in autonomous pentest mode (`/pentest`).
+  Skills are available in operator sessions (`/operator`). The skill's instructions and any associated scripts are provided to the agent as context.
 </Callout>
 
 ## Related Commands

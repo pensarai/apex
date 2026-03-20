@@ -72,7 +72,7 @@ navigation:
             path: ./docs/commands/credits.mdx
           - page: /config
             path: ./docs/commands/config.mdx
-          - page: /create-skill
+          - page: /skills
             path: ./docs/commands/create-skill.mdx
           - page: /help
             path: ./docs/commands/help.mdx

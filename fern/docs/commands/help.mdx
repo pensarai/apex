@@ -70,8 +70,8 @@ When you run `/help`, you'll see a dialog showing:
 ### Skills
 
 <CardGroup cols={2}>
-  <Card title="/create-skill" icon="wand-magic-sparkles">
-    Create a new operator skill
+  <Card title="/skills" icon="wand-magic-sparkles">
+    Browse installed operator skills
   </Card>
 </CardGroup>
 
@@ -89,7 +89,7 @@ When you run `/help`, you'll see a dialog showing:
 | `/auth`         |                    | Connect to Pensar Console for managed inference |
 | `/credits`      | `/buy`             | Buy credits / check balance                     |
 | `/themes`       | `/theme`           | Manage application themes                       |
-| `/create-skill` |                    | Create a new operator skill                     |
+| `/skills`       |                    | Browse installed operator skills                |
 | `/exit`         | `/quit`, `/q`      | Exit the application                            |
 
 ## Getting Started Flow
@@ -125,14 +125,13 @@ For new users, here's the recommended order of commands:
 
 ### Operator Mode
 
-| Key                | Action                                |
-| ------------------ | ------------------------------------- |
-| `Shift+Tab`        | Toggle Default / Plan mode            |
-| `Option+Shift+Tab` | Toggle approval on/off                |
-| `Ctrl+V`           | Toggle verbose output                 |
-| `Ctrl+L`           | Toggle expanded logs                  |
-| `Y`                | Approve pending tool call             |
-| `A`                | Auto-approve all remaining tool calls |
+| Key                | Action                                                          |
+| ------------------ | --------------------------------------------------------------- |
+| `Shift+Tab`        | Cycle operator mode (Approvals On → Approvals Off → Plan)       |
+| `Ctrl+V`           | Toggle verbose output                                           |
+| `Ctrl+L`           | Toggle expanded logs                                            |
+| `Y`                | Approve pending tool call (in Approvals On mode)                |
+| `A`                | Auto-approve all remaining tool calls (in Approvals On mode)    |
 
 ## Command Suggestions
 

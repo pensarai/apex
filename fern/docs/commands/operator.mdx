@@ -28,7 +28,7 @@ With flags:
     Provide the target URL and optional authentication details.
   </Step>
   <Step title="Choose Mode">
-    The agent starts in Default mode with all tools available. Press `Shift+Tab` to toggle Plan mode (read-only tools only). Toggle approval on/off with `Option+Shift+Tab`.
+    The agent starts in Approvals On mode. Press `Shift+Tab` to cycle through the three operator modes: Approvals On → Approvals Off → Plan.
   </Step>
   <Step title="Interactive Session">
     The AI agent proposes actions and you approve, reject, or redirect in real
@@ -44,25 +44,19 @@ With flags:
 
 ## Operator Modes
 
-| Mode        | Description                                                                 |
-| ----------- | --------------------------------------------------------------------------- |
-| **Default** | All tools are available; the agent can read, write, and mutate targets      |
-| **Plan**    | Read-only tools only — mutation tools (create_file, update_file, create_poc, document_vulnerability, document_asset) are excluded so the agent can only observe and plan |
+Operator mode has three mutually exclusive modes that you cycle through with `Shift+Tab`. The current mode is shown in the operator dashboard header.
 
-You can toggle between Default and Plan mode at any time during a session using `Shift+Tab`. The current mode is shown in the operator dashboard header.
+| Mode                | Description                                                                 |
+| ------------------- | --------------------------------------------------------------------------- |
+| **Approvals On**    | All tools available; the agent pauses before each tool call and waits for you to approve (`Y`) or auto-approve (`A`) |
+| **Approvals Off**   | All tools available; tool calls execute automatically without approval gates |
+| **Plan**            | Read-only tools only — mutation tools (create_file, update_file, create_poc, document_vulnerability, document_asset) are excluded so the agent can only observe and plan |
+
+The modes cycle in order: **Approvals On → Approvals Off → Plan → Approvals On**.
 
 <Callout intent="info">
-  **Plan mode** is useful for reviewing the agent's strategy before allowing any mutations. Start in Plan mode to understand the agent's approach, then switch to Default mode when you're ready for it to take action.
+  **Plan mode** is useful for reviewing the agent's strategy before allowing any mutations. Start in Plan mode to understand the agent's approach, then switch to Approvals On when you're ready for it to take action.
 </Callout>
-
-### Approval Control
-
-In addition to operating mode, you can toggle whether tool calls require your approval:
-
-- **Approval on** — the agent pauses before each tool call and waits for you to approve (`Y`) or auto-approve (`A`)
-- **Approval off** — tool calls execute automatically
-
-Toggle approval with `Option+Shift+Tab` (or `Alt+Shift+Tab` on Linux/Windows).
 
 ## Command Flags
 
@@ -85,16 +79,15 @@ Toggle approval with `Option+Shift+Tab` (or `Alt+Shift+Tab` on Linux/Windows).
 
 ## Keyboard Shortcuts
 
-| Key                | Action                                  |
-| ------------------ | --------------------------------------- |
-| `Shift+Tab`        | Toggle between Default and Plan mode    |
-| `Option+Shift+Tab` | Toggle approval on/off                  |
-| `Ctrl+V`           | Toggle verbose output                   |
-| `Ctrl+L`           | Toggle expanded logs                    |
-| `Ctrl+C`           | Abort running agent / clear input       |
-| `Y`                | Approve pending tool call               |
-| `A`                | Auto-approve all remaining tool calls   |
-| `Escape`           | Exit operator session (when idle)       |
+| Key                | Action                                                          |
+| ------------------ | --------------------------------------------------------------- |
+| `Shift+Tab`        | Cycle operator mode (Approvals On → Approvals Off → Plan)       |
+| `Ctrl+V`           | Toggle verbose output                                           |
+| `Ctrl+L`           | Toggle expanded logs                                            |
+| `Ctrl+C`           | Abort running agent / clear input                               |
+| `Y`                | Approve pending tool call (in Approvals On mode)                |
+| `A`                | Auto-approve all remaining tool calls (in Approvals On mode)    |
+| `Escape`           | Exit operator session (when idle)                               |
 
 ## When to Use /operator vs /pentest
 
@@ -145,15 +138,15 @@ pensar
 
 ## Operator Skills
 
-You can extend operator mode with custom skills using `/create-skill`. Skills are reusable instruction sets that teach the agent specialized testing techniques or workflows for your specific environment.
+You can extend operator mode with custom skills. Skills are reusable instruction sets (SKILL.md files) that teach the agent specialized testing techniques or workflows for your specific environment. Use `/skills` to browse installed skills.
 
 ## Best Practices
 
 <Callout intent="success">
-  **Tips for Operator Mode**: 1. **Start in Plan mode** (`Shift+Tab`) to review the agent's
-  strategy with read-only tools before allowing mutations 2. **Enable approval**
-  (`Option+Shift+Tab`) for sensitive targets where you want to approve each action 3.
-  **Switch to Default mode** once you're comfortable with the agent's approach 4.
+  **Tips for Operator Mode**: 1. **Start in Plan mode** (press `Shift+Tab` twice) to review the agent's
+  strategy with read-only tools before allowing mutations 2. **Switch to Approvals On mode**
+  for sensitive targets where you want to approve each action 3.
+  **Use Approvals Off mode** once you're comfortable with the agent's approach 4.
   **Create skills** for repetitive testing patterns in your environment
 </Callout>
 
