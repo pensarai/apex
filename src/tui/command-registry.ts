@@ -23,6 +23,7 @@ export interface AppCommandContext {
   openHelpDialog?: () => void;
   openAuthDialog?: () => void;
   openPentestDialog?: (flags?: WebCommandOptions) => void;
+  openSkillsDialog?: (slug?: string) => void;
 }
 
 /**
@@ -358,10 +359,7 @@ export const commands: CommandConfig[] = [
     description: "View installed skills",
     category: "Skills",
     handler: async (args, ctx) => {
-      ctx.navigate({
-        type: "base",
-        path: "skills",
-      });
+      ctx.openSkillsDialog?.(args[0]);
     },
   },
   // Add more commands here...
