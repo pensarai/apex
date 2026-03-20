@@ -7,6 +7,7 @@
 
 import { RGBA, StyledText, type TextChunk } from "@opentui/core";
 import { highlightCode } from "./syntax-highlight";
+import type { ColorMode } from "../../theme/types";
 
 export interface ResultSummary {
   text: string;
@@ -25,12 +26,14 @@ export interface ResultSummary {
  * @param result - The raw tool result
  * @param toolName - Optional tool name for tool-specific summaries
  * @param args - Optional tool args (used by file tools to show content previews)
+ * @param mode - Color mode for syntax highlighting ("dark" or "light")
  * @returns Summary object with text and error flag, or null if no summary available
  */
 export function getResultSummary(
   result: unknown,
   toolName?: string,
   args?: Record<string, unknown>,
+  mode: ColorMode = "dark",
 ): ResultSummary | null {
   if (result === null || result === undefined) {
     return null;
@@ -65,7 +68,7 @@ export function getResultSummary(
               isError: false,
               label: `${totalLines} lines`,
               styledText:
-                highlightCode(preview + suffix, filePath) ?? undefined,
+                highlightCode(preview + suffix, filePath, mode) ?? undefined,
               fullText:
                 content.length > 400 ? content.slice(0, 2000) : undefined,
             };
@@ -140,6 +143,7 @@ export function getResultSummary(
           const styledChunks = buildWebSearchStyledText(
             shown,
             results.length > 5 ? results.length : undefined,
+            mode,
           );
           return {
             text: `${results.length} result${results.length !== 1 ? "s" : ""}`,
@@ -194,7 +198,7 @@ export function getResultSummary(
               text: preview + suffix,
               isError: false,
               styledText:
-                highlightCode(preview + suffix, filePath) ?? undefined,
+                highlightCode(preview + suffix, filePath, mode) ?? undefined,
               fullText:
                 content.length > 400 ? content.slice(0, 2000) : undefined,
             };
@@ -226,7 +230,8 @@ export function getResultSummary(
               text: `${n} replacement${n !== 1 ? "s" : ""}\n${codePreview}`,
               isError: false,
               label: `${n} replacement${n !== 1 ? "s" : ""}`,
-              styledText: highlightCode(codePreview, filePath) ?? undefined,
+              styledText:
+                highlightCode(codePreview, filePath, mode) ?? undefined,
               fullText:
                 newContent.length > 400 ? newContent.slice(0, 2000) : undefined,
             };
@@ -717,12 +722,23 @@ export function getResultSummary(
 // Web search styled text helpers
 // ---------------------------------------------------------------------------
 
-const WS_COLORS = {
-  globe: RGBA.fromInts(106, 115, 125, 255), // gray
-  domain: RGBA.fromInts(86, 182, 194, 255), // cyan
-  title: RGBA.fromInts(97, 175, 239, 255), // blue
-  snippet: RGBA.fromInts(140, 148, 160, 255), // muted
-} as const;
+const WS_COLORS: Record<
+  ColorMode,
+  { globe: RGBA; domain: RGBA; title: RGBA; snippet: RGBA }
+> = {
+  dark: {
+    globe: RGBA.fromInts(106, 115, 125, 255), // gray
+    domain: RGBA.fromInts(86, 182, 194, 255), // cyan
+    title: RGBA.fromInts(97, 175, 239, 255), // blue
+    snippet: RGBA.fromInts(140, 148, 160, 255), // muted
+  },
+  light: {
+    globe: RGBA.fromInts(106, 115, 125, 255), // gray
+    domain: RGBA.fromInts(28, 120, 134, 255), // darker cyan
+    title: RGBA.fromInts(30, 100, 200, 255), // darker blue
+    snippet: RGBA.fromInts(100, 108, 120, 255), // darker muted
+  },
+};
 
 function chunk(text: string, fg?: RGBA): TextChunk {
   return { __isChunk: true, text, fg, attributes: 0 };
@@ -740,7 +756,9 @@ function extractDomain(url: string): string {
 function buildWebSearchStyledText(
   results: Array<Record<string, unknown>>,
   totalCount?: number,
+  mode: ColorMode = "dark",
 ): StyledText {
+  const wsColors = WS_COLORS[mode];
   const chunks: TextChunk[] = [];
   for (let i = 0; i < results.length; i++) {
     const r = results[i];
@@ -748,13 +766,13 @@ function buildWebSearchStyledText(
     const title = String(r.title || "").slice(0, 70);
 
     if (i > 0) chunks.push(chunk("\n"));
-    chunks.push(chunk("🌐 ", WS_COLORS.globe));
-    chunks.push(chunk(domain, WS_COLORS.domain));
-    chunks.push(chunk(" — ", WS_COLORS.globe));
-    chunks.push(chunk(title, WS_COLORS.title));
+    chunks.push(chunk("🌐 ", wsColors.globe));
+    chunks.push(chunk(domain, wsColors.domain));
+    chunks.push(chunk(" — ", wsColors.globe));
+    chunks.push(chunk(title, wsColors.title));
   }
   if (totalCount && totalCount > results.length) {
-    chunks.push(chunk(`\n… (${totalCount} total)`, WS_COLORS.snippet));
+    chunks.push(chunk(`\n… (${totalCount} total)`, wsColors.snippet));
   }
   return new StyledText(chunks);
 }

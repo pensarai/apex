@@ -8,12 +8,29 @@
 import { RGBA, StyledText, type TextChunk } from "@opentui/core";
 import hljs from "highlight.js";
 import { extname } from "path";
+import type { ColorMode } from "../../theme/types";
 
 // ---------------------------------------------------------------------------
-// Color palette — dark-theme-friendly terminal colors
+// Color palettes — dark and light mode variants
 // ---------------------------------------------------------------------------
 
-const C = {
+interface SyntaxPalette {
+  keyword: RGBA;
+  string: RGBA;
+  comment: RGBA;
+  number: RGBA;
+  function: RGBA;
+  title: RGBA;
+  attr: RGBA;
+  tag: RGBA;
+  type: RGBA;
+  literal: RGBA;
+  regexp: RGBA;
+  meta: RGBA;
+  punctuation: RGBA;
+}
+
+const DARK_PALETTE: SyntaxPalette = {
   keyword: RGBA.fromInts(198, 120, 221, 255), // purple
   string: RGBA.fromInts(152, 195, 121, 255), // green
   comment: RGBA.fromInts(106, 115, 125, 255), // gray
@@ -27,38 +44,61 @@ const C = {
   regexp: RGBA.fromInts(152, 195, 121, 255), // green
   meta: RGBA.fromInts(106, 115, 125, 255), // gray
   punctuation: RGBA.fromInts(171, 178, 191, 255), // light gray
-} as const;
+};
 
-const CLASS_COLOR_MAP: Record<string, RGBA> = {
-  "hljs-keyword": C.keyword,
-  "hljs-built_in": C.keyword,
-  "hljs-type": C.type,
-  "hljs-literal": C.literal,
-  "hljs-number": C.number,
-  "hljs-string": C.string,
-  "hljs-regexp": C.regexp,
-  "hljs-template-variable": C.string,
-  "hljs-subst": C.string,
-  "hljs-comment": C.comment,
-  "hljs-doctag": C.comment,
-  "hljs-function": C.function,
-  "hljs-title": C.title,
-  "hljs-title.class_": C.type,
-  "hljs-title.function_": C.function,
-  "hljs-params": C.attr,
-  "hljs-attr": C.attr,
-  "hljs-attribute": C.attr,
-  "hljs-property": C.attr,
-  "hljs-variable": C.tag,
-  "hljs-tag": C.tag,
-  "hljs-name": C.tag,
-  "hljs-selector-tag": C.tag,
-  "hljs-selector-class": C.attr,
-  "hljs-selector-id": C.attr,
-  "hljs-meta": C.meta,
-  "hljs-meta keyword": C.keyword,
-  "hljs-symbol": C.literal,
-  "hljs-punctuation": C.punctuation,
+const LIGHT_PALETTE: SyntaxPalette = {
+  keyword: RGBA.fromInts(137, 63, 168, 255), // darker purple
+  string: RGBA.fromInts(56, 124, 56, 255), // darker green
+  comment: RGBA.fromInts(106, 115, 125, 255), // gray (works on both)
+  number: RGBA.fromInts(152, 104, 40, 255), // darker orange
+  function: RGBA.fromInts(30, 100, 200, 255), // darker blue
+  title: RGBA.fromInts(30, 100, 200, 255), // darker blue
+  attr: RGBA.fromInts(150, 120, 30, 255), // darker yellow
+  tag: RGBA.fromInts(180, 50, 55, 255), // darker red
+  type: RGBA.fromInts(28, 120, 134, 255), // darker cyan
+  literal: RGBA.fromInts(152, 104, 40, 255), // darker orange
+  regexp: RGBA.fromInts(56, 124, 56, 255), // darker green
+  meta: RGBA.fromInts(106, 115, 125, 255), // gray
+  punctuation: RGBA.fromInts(80, 85, 95, 255), // dark gray
+};
+
+function buildClassColorMap(p: SyntaxPalette): Record<string, RGBA> {
+  return {
+    "hljs-keyword": p.keyword,
+    "hljs-built_in": p.keyword,
+    "hljs-type": p.type,
+    "hljs-literal": p.literal,
+    "hljs-number": p.number,
+    "hljs-string": p.string,
+    "hljs-regexp": p.regexp,
+    "hljs-template-variable": p.string,
+    "hljs-subst": p.string,
+    "hljs-comment": p.comment,
+    "hljs-doctag": p.comment,
+    "hljs-function": p.function,
+    "hljs-title": p.title,
+    "hljs-title.class_": p.type,
+    "hljs-title.function_": p.function,
+    "hljs-params": p.attr,
+    "hljs-attr": p.attr,
+    "hljs-attribute": p.attr,
+    "hljs-property": p.attr,
+    "hljs-variable": p.tag,
+    "hljs-tag": p.tag,
+    "hljs-name": p.tag,
+    "hljs-selector-tag": p.tag,
+    "hljs-selector-class": p.attr,
+    "hljs-selector-id": p.attr,
+    "hljs-meta": p.meta,
+    "hljs-meta keyword": p.keyword,
+    "hljs-symbol": p.literal,
+    "hljs-punctuation": p.punctuation,
+  };
+}
+
+const CLASS_COLOR_MAPS: Record<ColorMode, Record<string, RGBA>> = {
+  dark: buildClassColorMap(DARK_PALETTE),
+  light: buildClassColorMap(LIGHT_PALETTE),
 };
 
 // ---------------------------------------------------------------------------
@@ -159,7 +199,10 @@ function decodeEntities(s: string): string {
  * The HTML is simple: flat or shallowly nested `<span class="hljs-*">` tags.
  * We track a color stack so nested spans inherit/override correctly.
  */
-function parseHljsHtml(html: string): TextChunk[] {
+function parseHljsHtml(
+  html: string,
+  classColorMap: Record<string, RGBA>,
+): TextChunk[] {
   const chunks: TextChunk[] = [];
   const colorStack: (RGBA | undefined)[] = [undefined];
 
@@ -172,14 +215,14 @@ function parseHljsHtml(html: string): TextChunk[] {
       const classes = m[1].split(/\s+/);
       let color: RGBA | undefined;
       for (const cls of classes) {
-        if (CLASS_COLOR_MAP[cls]) {
-          color = CLASS_COLOR_MAP[cls];
+        if (classColorMap[cls]) {
+          color = classColorMap[cls];
           break;
         }
       }
       // Also try combined class (e.g. "hljs-title function_")
       if (!color && classes.length > 1) {
-        color = CLASS_COLOR_MAP[classes.join(" ")];
+        color = classColorMap[classes.join(" ")];
       }
       colorStack.push(color ?? colorStack[colorStack.length - 1]);
     } else if (m[0] === "</span>") {
@@ -211,11 +254,13 @@ function parseHljsHtml(html: string): TextChunk[] {
  *
  * @param code - Source code to highlight
  * @param filePath - Optional file path to infer language from extension
+ * @param mode - Color mode ("dark" or "light"), defaults to "dark"
  * @returns StyledText with per-token colors, or null if highlighting fails
  */
 export function highlightCode(
   code: string,
   filePath?: string,
+  mode: ColorMode = "dark",
 ): StyledText | null {
   if (!code.trim()) return null;
 
@@ -229,7 +274,7 @@ export function highlightCode(
 
     if (!result.value) return null;
 
-    const chunks = parseHljsHtml(result.value);
+    const chunks = parseHljsHtml(result.value, CLASS_COLOR_MAPS[mode]);
     if (chunks.length === 0) return null;
 
     return new StyledText(chunks);

@@ -13,6 +13,7 @@ import APIKeyInput from "./api-key-input";
 import AuthFlow from "./auth-flow";
 import { useTheme } from "../../theme";
 import { Dialog } from "../../context/dialog";
+import { DialogControls } from "../shared/dialog-controls";
 
 type FlowState = "choosing" | "selecting" | "inputting" | "auth";
 
@@ -136,7 +137,9 @@ export default function ProviderManager({
             onCancel={handleAPIKeyCancel}
           />
         )}
-      {flowState === "auth" && <AuthFlow onClose={handleAuthClose} />}
+      {flowState === "auth" && (
+        <AuthFlow onClose={handleAuthClose} hideEsc={isOnboarding} />
+      )}
     </>
   );
 }
@@ -184,7 +187,7 @@ function OnboardingChoice({
   });
 
   return (
-    <Dialog size="large" onClose={() => {}}>
+    <Dialog size="large" onClose={() => {}} hideEsc>
       <box flexDirection="column" padding={1} width="100%">
         {/* Header */}
         <box>
@@ -227,7 +230,12 @@ function OnboardingChoice({
 
         {/* Footer */}
         <box marginTop={1}>
-          <text fg={colors.textMuted}>[↑↓] browse [enter] select</text>
+          <DialogControls
+            controls={[
+              { key: "Enter", label: "Select", variant: "primary" },
+              { key: "↑/↓", label: "Browse" },
+            ]}
+          />
         </box>
       </box>
     </Dialog>

@@ -5,10 +5,17 @@ import { useRoute } from "../../context/route";
 import { useConfig } from "../../context/config";
 import { ModelPicker } from "../model-picker";
 import { useTheme } from "../../theme";
+import { DialogControls } from "../shared/dialog-controls";
 
-function ClippedLine({ children }: { children: ReactNode }) {
+function ClippedLine({
+  children,
+  flexShrink,
+}: {
+  children: ReactNode;
+  flexShrink?: number;
+}) {
   return (
-    <box width="100%" overflow="hidden">
+    <box width="100%" overflow="hidden" flexShrink={flexShrink}>
       {children}
     </box>
   );
@@ -55,7 +62,7 @@ export default function ModelsDisplay() {
       overflow="hidden"
     >
       {/* Header */}
-      <ClippedLine>
+      <ClippedLine flexShrink={0}>
         <text>
           <span fg={colors.primary}>█ </span>
           <span fg={colors.text}>Select AI Model</span>
@@ -90,31 +97,14 @@ export default function ModelsDisplay() {
       </box>
 
       {/* Footer */}
-      <box flexDirection="column" marginTop={2} flexShrink={0}>
-        <ClippedLine>
-          <text>
-            <span fg={colors.primary}>█ </span>
-            <span fg={colors.textMuted}>Press </span>
-            <span fg={colors.text}>[Enter]</span>
-            <span fg={colors.textMuted}> to confirm</span>
-          </text>
-        </ClippedLine>
-        <ClippedLine>
-          <text>
-            <span fg={colors.primary}>█ </span>
-            <span fg={colors.textMuted}>Press </span>
-            <span fg={colors.text}>[ESC]</span>
-            <span fg={colors.textMuted}> to go back</span>
-          </text>
-        </ClippedLine>
-        <ClippedLine>
-          <text>
-            <span fg={colors.primary}>█ </span>
-            <span fg={colors.textMuted}>Press </span>
-            <span fg={colors.text}>[Ctrl+P]</span>
-            <span fg={colors.textMuted}> to connect provider</span>
-          </text>
-        </ClippedLine>
+      <box marginTop={1}>
+        <DialogControls
+          controls={[
+            { key: "Enter", label: "Confirm", variant: "primary" },
+            { key: "Ctrl+P", label: "Connect Provider" },
+            { key: "Esc", label: "Go Back" },
+          ]}
+        />
       </box>
     </box>
   );

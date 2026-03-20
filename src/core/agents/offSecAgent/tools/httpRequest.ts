@@ -98,7 +98,7 @@ export function httpRequest(ctx: ToolContext) {
 
 USAGE GUIDANCE:
 - Always check response headers for security misconfigurations
-- Look for: X-Frame-Options, X-XSS-Protection, CSP, HSTS, X-Content-Type-Options
+- Look for: X-Frame-Options, CSP, HSTS, X-Content-Type-Options, Permissions-Policy, Cross-Origin-Embedder-Policy, Cross-Origin-Opener-Policy
 - Analyze cookies for HttpOnly, Secure, SameSite flags
 - Check for verbose error messages that leak information
 - Test for common web vulnerabilities (SQL injection, XSS, IDOR)

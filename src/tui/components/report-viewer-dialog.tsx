@@ -1,8 +1,15 @@
-import { useRef, useMemo } from "react";
+import { useRef, useMemo, useCallback } from "react";
 import { useKeyboard } from "@opentui/react";
 import { useDimensions } from "../context/dimensions";
-import { ScrollBoxRenderable, SyntaxStyle } from "@opentui/core";
+import {
+  Renderable,
+  ScrollBoxRenderable,
+  SyntaxStyle,
+  type CodeRenderable,
+} from "@opentui/core";
+import type { Token } from "marked";
 import { useTheme } from "../theme";
+import { DialogControls } from "./shared/dialog-controls";
 
 interface ReportViewerDialogProps {
   content: string;
@@ -39,6 +46,26 @@ export default function ReportViewerDialog({
         "punctuation.special": { fg: colors.border },
       }),
     [colors],
+  );
+
+  // Override code block rendering to set theme-aware fg color.
+  // Without this, CodeRenderable defaults to white text (opentui default),
+  // which is invisible on light backgrounds.
+  const renderNode = useCallback(
+    (
+      token: Token,
+      ctx: { defaultRender: () => Renderable | null },
+    ): Renderable | undefined | null => {
+      if (token.type === "code") {
+        const renderable = ctx.defaultRender();
+        if (renderable) {
+          (renderable as CodeRenderable).fg = colors.markdownCode;
+        }
+        return renderable;
+      }
+      return undefined;
+    },
+    [colors.markdownCode],
   );
 
   const lineCount = useMemo(() => content.split("\n").length, [content]);
@@ -129,6 +156,7 @@ export default function ReportViewerDialog({
             content={content}
             syntaxStyle={syntaxStyle}
             conceal={true}
+            renderNode={renderNode}
           />
         </scrollbox>
 
@@ -144,16 +172,19 @@ export default function ReportViewerDialog({
           flexDirection="row"
           justifyContent="space-between"
         >
-          <text fg={colors.textMuted}>
-            <span fg={colors.primary}>[↑/↓]</span> Scroll{" "}
-            {onOpenExternal && (
-              <>
-                <span fg={colors.primary}>[E]</span>
-                {" Open in Editor "}
-              </>
-            )}
-            <span fg={colors.primary}>[Esc]</span> Close
-          </text>
+          <DialogControls
+            controls={[
+              ...(onOpenExternal
+                ? [
+                    {
+                      key: "E",
+                      label: "Open in Editor",
+                      variant: "primary" as const,
+                    },
+                  ]
+                : []),
+            ]}
+          />
           <text fg={colors.textMuted}>{lineCount} lines</text>
         </box>
       </box>

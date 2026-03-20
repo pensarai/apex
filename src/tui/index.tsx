@@ -4,7 +4,6 @@ import Footer from "./components/footer";
 import { CommandProvider } from "./context/command";
 import { AgentProvider } from "./context/agent";
 import SessionsDisplay from "./components/commands/sessions-display";
-import ConfigDialog from "./components/commands/config-dialog";
 import ChatApp from "./components/chat";
 import HITLWizard from "./components/commands/operator-wizard";
 import WebWizard from "./components/commands/web-wizard";
@@ -80,10 +79,13 @@ function App({ appConfig }: AppProps) {
   const [showAuthDialog, setShowAuthDialog] = useState(false);
   const [showModelDialog, setShowModelDialog] = useState(false);
   const [showProvidersDialog, setShowProvidersDialog] = useState(false);
-  const [showConfigDialog, setShowConfigDialog] = useState(false);
   const [showCreditsDialog, setShowCreditsDialog] = useState(false);
   const [showHelpDialog, setShowHelpDialog] = useState(false);
   const [showPentestDialog, setShowPentestDialog] = useState(false);
+  const [showSkillsDialog, setShowSkillsDialog] = useState(false);
+  const [pendingSkillSlug, setPendingSkillSlug] = useState<string | undefined>(
+    undefined,
+  );
   const [pendingPentestFlags, setPendingPentestFlags] = useState<
     WebCommandOptions | undefined
   >(undefined);
@@ -104,13 +106,16 @@ function App({ appConfig }: AppProps) {
                     onOpenThemeDialog={() => setShowThemeDialog(true)}
                     onOpenModelDialog={() => setShowModelDialog(true)}
                     onOpenProvidersDialog={() => setShowProvidersDialog(true)}
-                    onOpenConfigDialog={() => setShowConfigDialog(true)}
                     onOpenCreditsDialog={() => setShowCreditsDialog(true)}
                     onOpenHelpDialog={() => setShowHelpDialog(true)}
                     onOpenAuthDialog={() => setShowAuthDialog(true)}
                     onOpenPentestDialog={(flags) => {
                       setPendingPentestFlags(flags);
                       setShowPentestDialog(true);
+                    }}
+                    onOpenSkillsDialog={(slug) => {
+                      setPendingSkillSlug(slug);
+                      setShowSkillsDialog(true);
                     }}
                   >
                     <KeybindingProvider
@@ -137,8 +142,6 @@ function App({ appConfig }: AppProps) {
                         setShowModelDialog={setShowModelDialog}
                         showProvidersDialog={showProvidersDialog}
                         setShowProvidersDialog={setShowProvidersDialog}
-                        showConfigDialog={showConfigDialog}
-                        setShowConfigDialog={setShowConfigDialog}
                         showCreditsDialog={showCreditsDialog}
                         setShowCreditsDialog={setShowCreditsDialog}
                         showHelpDialog={showHelpDialog}
@@ -147,6 +150,10 @@ function App({ appConfig }: AppProps) {
                         setShowAuthDialog={setShowAuthDialog}
                         showPentestDialog={showPentestDialog}
                         setShowPentestDialog={setShowPentestDialog}
+                        showSkillsDialog={showSkillsDialog}
+                        setShowSkillsDialog={setShowSkillsDialog}
+                        pendingSkillSlug={pendingSkillSlug}
+                        setPendingSkillSlug={setPendingSkillSlug}
                         pendingPentestFlags={pendingPentestFlags}
                         setPendingPentestFlags={setPendingPentestFlags}
                         cwd={cwd}
@@ -180,8 +187,6 @@ function AppContent({
   setShowModelDialog,
   showProvidersDialog,
   setShowProvidersDialog,
-  showConfigDialog,
-  setShowConfigDialog,
   showCreditsDialog,
   setShowCreditsDialog,
   showHelpDialog,
@@ -190,6 +195,10 @@ function AppContent({
   setShowAuthDialog,
   showPentestDialog,
   setShowPentestDialog,
+  showSkillsDialog,
+  setShowSkillsDialog,
+  pendingSkillSlug,
+  setPendingSkillSlug,
   pendingPentestFlags,
   setPendingPentestFlags,
   cwd,
@@ -210,8 +219,6 @@ function AppContent({
   setShowModelDialog: (show: boolean) => void;
   showProvidersDialog: boolean;
   setShowProvidersDialog: (show: boolean) => void;
-  showConfigDialog: boolean;
-  setShowConfigDialog: (show: boolean) => void;
   showCreditsDialog: boolean;
   setShowCreditsDialog: (show: boolean) => void;
   showHelpDialog: boolean;
@@ -220,6 +227,10 @@ function AppContent({
   setShowAuthDialog: (show: boolean) => void;
   showPentestDialog: boolean;
   setShowPentestDialog: (show: boolean) => void;
+  showSkillsDialog: boolean;
+  setShowSkillsDialog: (show: boolean) => void;
+  pendingSkillSlug: string | undefined;
+  setPendingSkillSlug: (slug: string | undefined) => void;
   pendingPentestFlags: WebCommandOptions | undefined;
   setPendingPentestFlags: (flags: WebCommandOptions | undefined) => void;
   cwd: string;
@@ -275,11 +286,11 @@ function AppContent({
     showThemeDialog ||
     showModelDialog ||
     showProvidersDialog ||
-    showConfigDialog ||
     showCreditsDialog ||
     showHelpDialog ||
     showAuthDialog ||
-    showPentestDialog;
+    showPentestDialog ||
+    showSkillsDialog;
 
   useEffect(() => {
     if (anyExternalDialog) {
@@ -331,12 +342,6 @@ function AppContent({
     refocusPrompt();
   };
 
-  const handleCloseConfigDialog = () => {
-    setShowConfigDialog(false);
-    setInputKey((prev) => prev + 1);
-    refocusPrompt();
-  };
-
   const handleCloseCreditsDialog = () => {
     setShowCreditsDialog(false);
     setInputKey((prev) => prev + 1);
@@ -361,6 +366,13 @@ function AppContent({
       setInputKey((prev) => prev + 1);
       refocusPrompt();
     }
+  };
+
+  const handleCloseSkillsDialog = () => {
+    setShowSkillsDialog(false);
+    setPendingSkillSlug(undefined);
+    setInputKey((prev) => prev + 1);
+    refocusPrompt();
   };
 
   const handleClosePentestDialog = () => {
@@ -428,8 +440,6 @@ function AppContent({
         />
       )}
 
-      {showConfigDialog && <ConfigDialog onClose={handleCloseConfigDialog} />}
-
       {showCreditsDialog && (
         <CreditsFlow
           onClose={handleCloseCreditsDialog}
@@ -442,6 +452,13 @@ function AppContent({
       )}
 
       {showHelpDialog && <HelpDialog onClose={handleCloseHelpDialog} />}
+
+      {showSkillsDialog && (
+        <SkillsDialog
+          onClose={handleCloseSkillsDialog}
+          initialSlug={pendingSkillSlug}
+        />
+      )}
 
       {showAuthDialog && <AuthFlow onClose={handleCloseAuthDialog} />}
 
@@ -529,6 +546,7 @@ function CommandDisplay({
           </RouteSwitch.Case>
           <RouteSwitch.Case when="auth">
             <AuthFlow
+              hideEsc
               onClose={() => {
                 if (hasAnyProviderConfigured(config.data)) {
                   route.navigate({ type: "base", path: "home" });
@@ -546,9 +564,6 @@ function CommandDisplay({
           </RouteSwitch.Case>
           <RouteSwitch.Case when="credits">
             <CreditsFlow onOpenAuthDialog={onOpenAuthDialog} />
-          </RouteSwitch.Case>
-          <RouteSwitch.Case when="skills">
-            <SkillsDialog />
           </RouteSwitch.Case>
         </RouteSwitch>
       </box>
