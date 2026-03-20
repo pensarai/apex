@@ -137,8 +137,7 @@ export default function WebWizard({
       }
 
       if (models.length > 0) {
-        const currentModel =
-          models.find((m) => m.id === model.id) || models[0];
+        const currentModel = models.find((m) => m.id === model.id) || models[0];
         if (currentModel) {
           setExpandedProviders(new Set([currentModel.provider]));
         }
@@ -292,9 +291,7 @@ export default function WebWizard({
 
   // Clamp focused index when items change
   useEffect(() => {
-    setFocusedIndex((prev) =>
-      Math.min(prev, Math.max(0, navItems.length - 1)),
-    );
+    setFocusedIndex((prev) => Math.min(prev, Math.max(0, navItems.length - 1)));
   }, [navItems.length]);
 
   // Scroll to focused item
@@ -637,9 +634,7 @@ export default function WebWizard({
       }
       if (focusedItem?.type === "model") {
         key.preventDefault();
-        const modelInfo = availableModels.find(
-          (m) => m.id === focusedItem.key,
-        );
+        const modelInfo = availableModels.find((m) => m.id === focusedItem.key);
         if (modelInfo && key.name === "left") {
           setExpandedProviders((prev) => {
             const next = new Set(prev);
@@ -846,11 +841,7 @@ export default function WebWizard({
                         : colors.textMuted
                   }
                 >
-                  {isFocused("section-auth")
-                    ? "❯"
-                    : authExpanded
-                      ? "▾"
-                      : "▸"}{" "}
+                  {isFocused("section-auth") ? "❯" : authExpanded ? "▾" : "▸"}{" "}
                   Authentication
                 </text>
               </box>
@@ -938,11 +929,7 @@ export default function WebWizard({
                       focused={isFocused("field-password")}
                     />
                   </box>
-                  <box
-                    id="field-instructions"
-                    paddingLeft={8}
-                    paddingRight={2}
-                  >
+                  <box id="field-instructions" paddingLeft={8} paddingRight={2}>
                     <Input
                       label="Auth Instructions"
                       placeholder="Use OAuth flow, extract bearer token..."
@@ -983,11 +970,7 @@ export default function WebWizard({
                         : colors.textMuted
                   }
                 >
-                  {isFocused("section-scope")
-                    ? "❯"
-                    : scopeExpanded
-                      ? "▾"
-                      : "▸"}{" "}
+                  {isFocused("section-scope") ? "❯" : scopeExpanded ? "▾" : "▸"}{" "}
                   Scope Constraints
                 </text>
               </box>
