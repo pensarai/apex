@@ -49,6 +49,11 @@ interface CommandProviderProps {
   children: ReactNode;
   onOpenSessionsDialog?: () => void;
   onOpenThemeDialog?: () => void;
+  onOpenModelDialog?: () => void;
+  onOpenProvidersDialog?: () => void;
+  onOpenConfigDialog?: () => void;
+  onOpenCreditsDialog?: () => void;
+  onOpenHelpDialog?: () => void;
   onOpenAuthDialog?: () => void;
   onOpenPentestDialog?: (flags?: WebCommandOptions) => void;
 }
@@ -57,6 +62,11 @@ export function CommandProvider({
   children,
   onOpenSessionsDialog,
   onOpenThemeDialog,
+  onOpenModelDialog,
+  onOpenProvidersDialog,
+  onOpenConfigDialog,
+  onOpenCreditsDialog,
+  onOpenHelpDialog,
   onOpenAuthDialog,
   onOpenPentestDialog,
 }: CommandProviderProps) {
@@ -70,6 +80,11 @@ export function CommandProvider({
       navigate: route.navigate,
       openSessionsDialog: onOpenSessionsDialog,
       openThemeDialog: onOpenThemeDialog,
+      openModelDialog: onOpenModelDialog,
+      openProvidersDialog: onOpenProvidersDialog,
+      openConfigDialog: onOpenConfigDialog,
+      openCreditsDialog: onOpenCreditsDialog,
+      openHelpDialog: onOpenHelpDialog,
       openAuthDialog: onOpenAuthDialog,
       openPentestDialog: onOpenPentestDialog,
     };
@@ -78,6 +93,11 @@ export function CommandProvider({
     route,
     onOpenSessionsDialog,
     onOpenThemeDialog,
+    onOpenModelDialog,
+    onOpenProvidersDialog,
+    onOpenConfigDialog,
+    onOpenCreditsDialog,
+    onOpenHelpDialog,
     onOpenAuthDialog,
     onOpenPentestDialog,
   ]);

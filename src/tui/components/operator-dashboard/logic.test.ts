@@ -313,7 +313,7 @@ describe("resolveKeyboardShortcut", () => {
     ).toEqual({ type: "toggle-expanded-logs" });
   });
 
-  it("Shift+Tab returns toggle-mode", () => {
+  it("Shift+Tab returns cycle-mode", () => {
     expect(
       resolveKeyboardShortcut(
         { name: "tab", shift: true },
@@ -322,10 +322,10 @@ describe("resolveKeyboardShortcut", () => {
         false,
         false,
       ),
-    ).toEqual({ type: "toggle-mode" });
+    ).toEqual({ type: "cycle-mode" });
   });
 
-  it("Option+Shift+Tab returns toggle-approval", () => {
+  it("Option+Shift+Tab also returns cycle-mode", () => {
     expect(
       resolveKeyboardShortcut(
         { name: "tab", shift: true, meta: true },
@@ -334,7 +334,7 @@ describe("resolveKeyboardShortcut", () => {
         false,
         false,
       ),
-    ).toEqual({ type: "toggle-approval" });
+    ).toEqual({ type: "cycle-mode" });
   });
 
   describe("Approval shortcuts", () => {
