@@ -93,8 +93,8 @@ Each directory entry is suffixed with "/" for easy identification.`,
       const dir = directory
         ? isAbsolute(directory)
           ? directory
-          : resolve(ctx.session.rootPath, directory)
-        : ctx.session.rootPath;
+          : resolve(ctx.agentCwd, directory)
+        : ctx.agentCwd;
 
       try {
         const info = await stat(dir);

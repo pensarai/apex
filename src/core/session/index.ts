@@ -151,11 +151,13 @@ const SessionConfigObject = z.object({
   /** Whether to enumerate subdomains during attack surface discovery (default: false) */
   enumerateSubdomains: z.boolean().optional(),
   /** Local codebase path for whitebox analysis (source code access) */
-  cwd: z.string().optional(),
+  codebasePath: z.string().optional(),
   /** Email inboxes available to the agent for monitoring/reading email */
   emailIntegration: EmailIntegrationConfigObject.optional(),
   /** Enable exfiltration mode — allows internal pivoting and flag extraction through confirmed vulnerabilities */
   exfilMode: z.boolean().optional(),
+  /** Agent working directory — resolved to process.cwd() by default, undefined in sandbox mode */
+  agentCwd: z.string().optional(),
 });
 
 export type SessionConfig = z.infer<typeof SessionConfigObject>;
