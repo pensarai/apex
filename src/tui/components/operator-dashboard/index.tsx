@@ -883,7 +883,11 @@ export default function OperatorDashboard({
               initialConfig?.target,
               operatorState,
               agentMode,
-              { requireApproval, skillsCatalog },
+              {
+                requireApproval,
+                sandboxMode: !!initialConfig?.sandbox,
+                skillsCatalog,
+              },
             ),
             session,
           });
@@ -905,7 +909,11 @@ export default function OperatorDashboard({
               initialConfig?.target,
               operatorState,
               agentMode,
-              { requireApproval, skillsCatalog },
+              {
+                requireApproval,
+                sandboxMode: !!initialConfig?.sandbox,
+                skillsCatalog,
+              },
             ),
             sessionConfig,
             onNameGenerated: (name: string) => {
