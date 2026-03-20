@@ -1,6 +1,16 @@
 import type { AutocompleteOption } from "../shared/prompt-input";
 import type { OperatorSessionState } from "../../../core/operator";
 import { buildBaseSystemPrompt } from "../../../core/agents/offSecAgent/prompt";
+import type { ConsumeCallbacks } from "../../../core/agents/offSecAgent/types";
+import type { AIModel } from "../../../core/ai/ai";
+import type { AIAuthConfig } from "../../../core/ai/utils";
+import type { SessionInfo } from "../../../core/session";
+import type {
+  SchemaBackedCommand,
+  CommandOutput,
+} from "../../../core/commands/types";
+import { CodeAgent } from "../../../core/agents/specialized/codeAgent/agent";
+import { threatModelCommand } from "../../../core/commands/threatModel";
 
 // ---------------------------------------------------------------------------
 // Autocomplete option filtering for operator mode
@@ -14,6 +24,8 @@ const OPERATOR_ALLOWED_COMMANDS = new Set([
   "/operator",
   "/pentest",
   "/skills",
+  "/threat-model",
+  "/tm",
 ]);
 
 export function filterOperatorAutocomplete(
@@ -53,7 +65,25 @@ export function resolveSubmit(
 export type CommandAction =
   | { type: "show-models" }
   | { type: "run-skill"; slug: string; autopilot: boolean }
+  | { type: "run-schema-command"; command: SchemaBackedCommand<unknown>; args: string }
   | { type: "execute-command"; command: string };
+
+// ---------------------------------------------------------------------------
+// Schema-Backed Command registry
+// ---------------------------------------------------------------------------
+
+/** All registered schema-backed commands, keyed by name and aliases. */
+const schemaCommandRegistry = new Map<string, SchemaBackedCommand<unknown>>();
+
+function registerSchemaCommand(cmd: SchemaBackedCommand<unknown>): void {
+  schemaCommandRegistry.set(cmd.name, cmd);
+  for (const alias of cmd.aliases ?? []) {
+    schemaCommandRegistry.set(alias, cmd);
+  }
+}
+
+// Register commands
+registerSchemaCommand(threatModelCommand as SchemaBackedCommand<unknown>);
 
 export function routeCommand(
   command: string,
@@ -63,6 +93,14 @@ export function routeCommand(
 
   if (commandLower === "models" || commandLower === "model") {
     return { type: "show-models" };
+  }
+
+  // Check schema-backed commands before skills
+  const parts = commandLower.split(/\s+/);
+  const schemaCmd = schemaCommandRegistry.get(parts[0]);
+  if (schemaCmd) {
+    const args = command.trim().replace(/^\/+\S+\s*/, "");
+    return { type: "run-schema-command", command: schemaCmd, args };
   }
 
   if (commandLower === "skills") {
@@ -79,6 +117,66 @@ export function routeCommand(
   }
 
   return { type: "execute-command", command };
+}
+
+// ---------------------------------------------------------------------------
+// Schema-Backed Command execution
+// ---------------------------------------------------------------------------
+
+export interface ExecuteSchemaCommandInput {
+  command: SchemaBackedCommand<unknown>;
+  cwd: string;
+  model: AIModel;
+  session: SessionInfo;
+  authConfig?: AIAuthConfig;
+  abortSignal?: AbortSignal;
+  callbacks?: ConsumeCallbacks;
+  applicationIdentity?: string;
+}
+
+/**
+ * Execute a Schema-Backed Command by creating a CodeAgent with the command's
+ * system prompt, response schema, and tools, then streaming output via the
+ * provided callbacks.
+ *
+ * After the agent finishes, calls `command.onResult()` to persist / transform
+ * the structured result, and returns the {@link CommandOutput}.
+ */
+export async function executeSchemaBackedCommand(
+  input: ExecuteSchemaCommandInput,
+): Promise<CommandOutput> {
+  const {
+    command,
+    cwd,
+    model,
+    session,
+    authConfig,
+    abortSignal,
+    callbacks,
+    applicationIdentity,
+  } = input;
+
+  const userPrompt = command.buildPrompt({ cwd, session, applicationIdentity });
+
+  const agent = new CodeAgent({
+    codebasePath: cwd,
+    objective: userPrompt,
+    system: command.system,
+    responseSchema: command.responseSchema,
+    model,
+    session,
+    authConfig,
+    abortSignal,
+    callbacks,
+  });
+
+  const agentResult = await agent.consume(callbacks);
+
+  const modelStr = typeof model === "string" ? model : String(model);
+  const ctx = { session, cwd, model: modelStr };
+
+  const output = await command.onResult(agentResult, ctx);
+  return output;
 }
 
 // ---------------------------------------------------------------------------

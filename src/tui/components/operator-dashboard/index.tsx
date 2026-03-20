@@ -66,6 +66,7 @@ import {
   buildOperatorSystemPrompt,
   resolveInputFocused,
   accumulateTokenUsage,
+  executeSchemaBackedCommand,
 } from "./logic";
 import { QueuedMessages } from "./queued-messages";
 import { navigateUp, navigateDown, selectionAfterRemove } from "./queue";
@@ -1108,6 +1109,112 @@ export default function OperatorDashboard({
           }
           return;
         }
+        case "run-schema-command": {
+          if (!session) {
+            setError("No active session — run a command first to create one.");
+            return;
+          }
+
+          const gen = ++generationRef.current;
+          setStatus("running");
+          setThinking(true);
+          setIsExecuting(true);
+          setError(null);
+          textRef.current = "";
+
+          const controller = new AbortController();
+          abortControllerRef.current = controller;
+
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: "user",
+              content: `/${action.command.name}${action.args ? ` ${action.args}` : ""}`,
+              createdAt: new Date(),
+            },
+          ]);
+
+          const schemaCallbacks = {
+            onTextDelta: (d: { text: string }) => {
+              setThinking(false);
+              appendText(d.text);
+            },
+            onToolCallStreaming: (d: { toolCallId: string; toolName: string }) => {
+              setThinking(false);
+              addStreamingToolCall(d.toolCallId, d.toolName);
+            },
+            onToolCallDelta: (d: { toolCallId: string; argsTextDelta: string }) => {
+              appendToolCallDelta(d.toolCallId, d.argsTextDelta);
+            },
+            onToolCall: (d: { toolCallId: string; toolName: string; input?: unknown }) => {
+              setThinking(false);
+              addToolCall(
+                d.toolCallId,
+                d.toolName,
+                d.input as Record<string, unknown> | undefined,
+              );
+            },
+            onToolResult: (d: { toolCallId: string; toolName: string; output?: unknown }) => {
+              flushCommandOutput();
+              if (cmdFlushTimerRef.current) {
+                clearInterval(cmdFlushTimerRef.current);
+                cmdFlushTimerRef.current = null;
+              }
+              setThinking(true);
+              updateToolResult(d.toolCallId, d.toolName, d.output);
+            },
+            onCommandOutput,
+            onError: (e: unknown) => {
+              console.error("Schema command error:", e);
+              setError(e instanceof Error ? e.message : "Unknown error");
+            },
+          } satisfies ConsumeCallbacks;
+
+          try {
+            const output = await executeSchemaBackedCommand({
+              command: action.command,
+              cwd: session.rootPath,
+              model: model.id,
+              session,
+              authConfig: buildAuthConfig(config.data),
+              abortSignal: controller.signal,
+              callbacks: schemaCallbacks,
+            });
+
+            if (gen === generationRef.current) {
+              setMessages((prev) => [
+                ...prev,
+                {
+                  role: "assistant",
+                  content: output.summary,
+                  createdAt: new Date(),
+                },
+              ]);
+            }
+          } catch (e) {
+            if (gen !== generationRef.current) return;
+            if ((e as Error).name !== "AbortError") {
+              const errorMsg = e instanceof Error ? e.message : "Schema command failed";
+              setError(errorMsg);
+              setMessages((prev) => [
+                ...prev,
+                {
+                  role: "system",
+                  content: `Error: ${errorMsg}`,
+                  createdAt: new Date(),
+                },
+              ]);
+            }
+          } finally {
+            if (gen === generationRef.current) {
+              setStatus("idle");
+              setThinking(false);
+              setIsExecuting(false);
+              abortControllerRef.current = null;
+            }
+          }
+          return;
+        }
         case "execute-command":
           await executeCommand(action.command);
           return;
@@ -1119,6 +1226,18 @@ export default function OperatorDashboard({
       handleSubmit,
       executeCommand,
       showModelPicker,
+      session,
+      model.id,
+      config.data,
+      appendText,
+      addStreamingToolCall,
+      appendToolCallDelta,
+      addToolCall,
+      updateToolResult,
+      flushCommandOutput,
+      onCommandOutput,
+      setThinking,
+      setIsExecuting,
     ],
   );
 

@@ -55,6 +55,7 @@ Usage:
   pensar                             Launch the TUI
   pensar pentest [options]            Run a full pentest orchestration
   pensar targeted-pentest [options]   Run a targeted pentest on a single target
+  pensar threat-model [options]       Run a threat model analysis on a codebase
   pensar auth                         Connect to Pensar Console
   pensar uninstall                    Uninstall Pensar (keeps sessions, memories, skills)
   pensar projects                     List workspace projects
@@ -76,6 +77,10 @@ pentest options:
 targeted-pentest options:
   --target <url>          (required) Target URL / domain / IP
   --objective <text>      (required, repeatable) Testing objective
+  --model <model>         AI model (default: claude-sonnet-4-5)
+
+threat-model options:
+  --cwd <path>            (required) Path to the codebase
   --model <model>         AI model (default: claude-sonnet-4-5)
 
 Global options:
@@ -212,6 +217,58 @@ Path:      ${findingsPath}
 POCs:      ${pocsPath}`);
 }
 
+async function runThreatModel() {
+  const { config } = await import("dotenv");
+  config();
+
+  const { runThreatModelAgent } = await import("./core/api/threatModel");
+  const { sessions } = await import("./core/session");
+  const { config: appConfig } = await import("./core/config");
+  type AIModel = import("./core/ai").AIModel;
+
+  const cwd = getArgRequired("--cwd");
+  const model = (getArg("--model") ?? "claude-sonnet-4-5") as AIModel;
+
+  console.log("=".repeat(60));
+  console.log("THREAT MODEL");
+  console.log("=".repeat(60));
+  console.log(`Cwd:     ${cwd}`);
+  console.log(`Model:   ${model}`);
+  console.log();
+
+  const pensarConfig = await appConfig.get();
+
+  const session = await sessions.create({
+    name: "Threat Model",
+    targets: [],
+    config: { codebasePath: cwd },
+  });
+
+  const result = await runThreatModelAgent({
+    cwd,
+    session,
+    model,
+    authConfig: buildAuthConfig(pensarConfig),
+    callbacks: {
+      onTextDelta: (d) => process.stdout.write(d.text),
+      onToolCall: (d) => console.log(`\n→ ${d.toolName}`),
+      onToolResult: (d) => console.log(`✓ ${d.toolName} completed`),
+      onError: (e) => console.error("Error:", e),
+    },
+  });
+
+  console.log();
+  console.log("=".repeat(60));
+  console.log("RESULTS");
+  console.log("=".repeat(60));
+  console.log(`Attack Paths:  ${result.summary.totalAttackPaths}`);
+  console.log(
+    `  Critical: ${result.summary.bySeverity.critical}  High: ${result.summary.bySeverity.high}  Medium: ${result.summary.bySeverity.medium}  Low: ${result.summary.bySeverity.low}`,
+  );
+  console.log(`JSON:      ${result.files.jsonPath}`);
+  console.log(`Markdown:  ${result.files.markdownPath}`);
+}
+
 async function runUpgrade() {
   const currentVersion = getCurrentVersion();
   console.log(`Current version: v${currentVersion}\nChecking for updates...`);
@@ -257,6 +314,8 @@ if (command === "version" || command === "--version" || command === "-v") {
 } else if (command === "logs") {
   process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
   await import("./cli/logs");
+} else if (command === "threat-model") {
+  await runThreatModel();
 } else if (command === "doctor") {
   const { runDoctor } = await import("./core/doctor");
   await runDoctor();
