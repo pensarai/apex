@@ -4,11 +4,11 @@ import { useDimensions } from "../context/dimensions";
 import {
   Renderable,
   ScrollBoxRenderable,
-  SyntaxStyle,
   type CodeRenderable,
 } from "@opentui/core";
 import type { Token } from "marked";
 import { useTheme } from "../theme";
+import { createMarkdownSyntaxStyle } from "./shared/markdown";
 
 interface ReportViewerDialogProps {
   content: string;
@@ -28,22 +28,7 @@ export default function ReportViewerDialog({
   const scrollRef = useRef<ScrollBoxRenderable>(null);
 
   const syntaxStyle = useMemo(
-    () =>
-      SyntaxStyle.fromStyles({
-        default: { fg: colors.text },
-        "markup.heading": { fg: colors.markdownHeading, bold: true },
-        "markup.strong": { fg: colors.markdownStrong, bold: true },
-        "markup.italic": { fg: colors.markdownEmph, italic: true },
-        "markup.raw": { fg: colors.markdownCode },
-        "markup.raw.block": { fg: colors.markdownCode },
-        "markup.link": { fg: colors.markdownLink },
-        "markup.link.url": { fg: colors.markdownLink, dim: true },
-        "markup.link.label": { fg: colors.markdownLink, underline: true },
-        "markup.strikethrough": { fg: colors.textMuted, dim: true },
-        "markup.list": { fg: colors.primary },
-        "markup.quote": { fg: colors.textMuted, italic: true },
-        "punctuation.special": { fg: colors.border },
-      }),
+    () => createMarkdownSyntaxStyle(colors),
     [colors],
   );
 
