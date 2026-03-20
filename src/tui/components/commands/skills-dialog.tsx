@@ -31,7 +31,10 @@ interface SkillsDialogProps {
   initialSlug?: string;
 }
 
-export default function SkillsDialog({ onClose, initialSlug }: SkillsDialogProps) {
+export default function SkillsDialog({
+  onClose,
+  initialSlug,
+}: SkillsDialogProps) {
   const { colors } = useTheme();
   const { skillsRegistry } = useCommand();
   const dimensions = useDimensions();
@@ -251,9 +254,7 @@ export default function SkillsDialog({ onClose, initialSlug }: SkillsDialogProps
 
           {/* Footer */}
           <box width="100%" flexDirection="row">
-            <text fg={colors.textMuted}>
-              [↑↓] scroll [esc] back
-            </text>
+            <text fg={colors.textMuted}>[↑↓] scroll [esc] back</text>
           </box>
         </box>
       </Dialog>
@@ -261,7 +262,6 @@ export default function SkillsDialog({ onClose, initialSlug }: SkillsDialogProps
   }
 
   // ---------- List view ----------
-  let flatIdx = 0;
 
   // Calculate visible window for scrolling
   const listHeight = Math.max(1, dimensions.height - 12);
@@ -274,7 +274,10 @@ export default function SkillsDialog({ onClose, initialSlug }: SkillsDialogProps
   );
 
   // Build visible items with group headers
-  const visibleItems: Array<{ type: "header"; label: string } | { type: "skill"; skill: SkillEntry; index: number }> = [];
+  const visibleItems: Array<
+    | { type: "header"; label: string }
+    | { type: "skill"; skill: SkillEntry; index: number }
+  > = [];
   let runningIdx = 0;
   for (const group of groups) {
     const groupStart = runningIdx;
@@ -284,7 +287,10 @@ export default function SkillsDialog({ onClose, initialSlug }: SkillsDialogProps
       visibleItems.push({ type: "header", label: group.label });
     }
     for (const skill of group.skills) {
-      if (runningIdx >= scrollOffset && runningIdx < scrollOffset + listHeight) {
+      if (
+        runningIdx >= scrollOffset &&
+        runningIdx < scrollOffset + listHeight
+      ) {
         visibleItems.push({ type: "skill", skill, index: runningIdx });
       }
       runningIdx++;
@@ -327,16 +333,15 @@ export default function SkillsDialog({ onClose, initialSlug }: SkillsDialogProps
                   {item.skill.slug}
                 </text>
                 <text fg={colors.textMuted}>
-                  {" "}· ~{estimateTokens(item.skill.manifest.description)} tokens
+                  {" "}
+                  · ~{estimateTokens(item.skill.manifest.description)} tokens
                 </text>
               </box>
             );
           })}
 
           {allSkills.length === 0 && (
-            <text fg={colors.textMuted}>
-              No skills installed.
-            </text>
+            <text fg={colors.textMuted}>No skills installed.</text>
           )}
         </box>
 
