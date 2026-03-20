@@ -21,7 +21,6 @@ export function Dialog({ size = "medium", onClose, children }: DialogProps) {
   const dimensions = useDimensions();
   const renderer = useRenderer();
   const { colors: themeColors } = useTheme();
-
   return (
     <box
       onMouseUp={async () => {

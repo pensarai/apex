@@ -445,15 +445,17 @@ export function ModelPicker({
       overflow="hidden"
     >
       {/* Search indicator */}
-      {searchQuery ? (
-        <PickerRow>
-          <text fg={colors.text}>Search: {searchQuery}</text>
-        </PickerRow>
-      ) : (
-        <PickerRow>
-          <text fg={colors.textMuted}>Type to search models...</text>
-        </PickerRow>
-      )}
+      <box flexShrink={0}>
+        {searchQuery ? (
+          <PickerRow>
+            <text fg={colors.text}>Search: {searchQuery}</text>
+          </PickerRow>
+        ) : (
+          <PickerRow>
+            <text fg={colors.textMuted}>Type to search models...</text>
+          </PickerRow>
+        )}
+      </box>
 
       {/* Scrollable provider/model list */}
       <scrollbox
@@ -662,13 +664,15 @@ export function ModelPicker({
       </scrollbox>
 
       {/* Help text */}
-      <PickerRow>
-        <text fg={colors.textMuted}>
-          {editingLocalField
-            ? "Type or paste | Enter/Esc to confirm"
-            : "↑/↓ navigate | ←/→ collapse/expand | Type to search"}
-        </text>
-      </PickerRow>
+      <box flexShrink={0}>
+        <PickerRow>
+          <text fg={colors.textMuted}>
+            {editingLocalField
+              ? "Type or paste | Enter/Esc to confirm"
+              : "↑/↓ navigate | ←/→ collapse/expand | Type to search"}
+          </text>
+        </PickerRow>
+      </box>
     </box>
   );
 }

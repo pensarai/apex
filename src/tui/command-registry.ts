@@ -20,6 +20,7 @@ export interface AppCommandContext {
   openProvidersDialog?: () => void;
   openConfigDialog?: () => void;
   openCreditsDialog?: () => void;
+  openHelpDialog?: () => void;
   openAuthDialog?: () => void;
   openPentestDialog?: (flags?: WebCommandOptions) => void;
 }
@@ -202,10 +203,7 @@ export const commands: CommandConfig[] = [
     description: "Show help dialog",
     category: "General",
     handler: async (args, ctx) => {
-      ctx.navigate({
-        type: "base",
-        path: "help",
-      });
+      ctx.openHelpDialog?.();
     },
   },
   {

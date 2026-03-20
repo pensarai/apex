@@ -90,7 +90,7 @@ export default function ModelsDisplay() {
       </box>
 
       {/* Footer */}
-      <box flexDirection="column" marginTop={2}>
+      <box flexDirection="column" marginTop={2} flexShrink={0}>
         <ClippedLine>
           <text>
             <span fg={colors.primary}>█ </span>

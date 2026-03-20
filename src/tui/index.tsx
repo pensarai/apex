@@ -35,6 +35,7 @@ import { writeErrorLog } from "../core/logger";
 import { checkForUpdate } from "../core/installation";
 import ShortcutsDialog from "./components/commands/shortcuts-dialog";
 import HelpDialog from "./components/commands/help-dialog";
+import ModelsDisplay from "./components/commands/models-display";
 import { ModelPickerDialog } from "./components/model-picker";
 import AuthFlow from "./components/commands/auth-flow";
 import CreditsFlow from "./components/commands/credits-flow";
@@ -81,6 +82,7 @@ function App({ appConfig }: AppProps) {
   const [showProvidersDialog, setShowProvidersDialog] = useState(false);
   const [showConfigDialog, setShowConfigDialog] = useState(false);
   const [showCreditsDialog, setShowCreditsDialog] = useState(false);
+  const [showHelpDialog, setShowHelpDialog] = useState(false);
   const [showPentestDialog, setShowPentestDialog] = useState(false);
   const [pendingPentestFlags, setPendingPentestFlags] = useState<
     WebCommandOptions | undefined
@@ -104,6 +106,7 @@ function App({ appConfig }: AppProps) {
                     onOpenProvidersDialog={() => setShowProvidersDialog(true)}
                     onOpenConfigDialog={() => setShowConfigDialog(true)}
                     onOpenCreditsDialog={() => setShowCreditsDialog(true)}
+                    onOpenHelpDialog={() => setShowHelpDialog(true)}
                     onOpenAuthDialog={() => setShowAuthDialog(true)}
                     onOpenPentestDialog={(flags) => {
                       setPendingPentestFlags(flags);
@@ -138,6 +141,8 @@ function App({ appConfig }: AppProps) {
                         setShowConfigDialog={setShowConfigDialog}
                         showCreditsDialog={showCreditsDialog}
                         setShowCreditsDialog={setShowCreditsDialog}
+                        showHelpDialog={showHelpDialog}
+                        setShowHelpDialog={setShowHelpDialog}
                         showAuthDialog={showAuthDialog}
                         setShowAuthDialog={setShowAuthDialog}
                         showPentestDialog={showPentestDialog}
@@ -179,6 +184,8 @@ function AppContent({
   setShowConfigDialog,
   showCreditsDialog,
   setShowCreditsDialog,
+  showHelpDialog,
+  setShowHelpDialog,
   showAuthDialog,
   setShowAuthDialog,
   showPentestDialog,
@@ -207,6 +214,8 @@ function AppContent({
   setShowConfigDialog: (show: boolean) => void;
   showCreditsDialog: boolean;
   setShowCreditsDialog: (show: boolean) => void;
+  showHelpDialog: boolean;
+  setShowHelpDialog: (show: boolean) => void;
   showAuthDialog: boolean;
   setShowAuthDialog: (show: boolean) => void;
   showPentestDialog: boolean;
@@ -268,6 +277,7 @@ function AppContent({
     showProvidersDialog ||
     showConfigDialog ||
     showCreditsDialog ||
+    showHelpDialog ||
     showAuthDialog ||
     showPentestDialog;
 
@@ -329,6 +339,15 @@ function AppContent({
 
   const handleCloseCreditsDialog = () => {
     setShowCreditsDialog(false);
+    setInputKey((prev) => prev + 1);
+    refocusPrompt();
+  };
+
+  const handleCloseHelpDialog = () => {
+    setShowHelpDialog(false);
+    setTimeout(() => {
+      setExternalDialogOpen(false);
+    }, 0);
     setInputKey((prev) => prev + 1);
     refocusPrompt();
   };
@@ -421,6 +440,8 @@ function AppContent({
           }}
         />
       )}
+
+      {showHelpDialog && <HelpDialog onClose={handleCloseHelpDialog} />}
 
       {showAuthDialog && <AuthFlow onClose={handleCloseAuthDialog} />}
 
@@ -520,8 +541,11 @@ function CommandDisplay({
           <RouteSwitch.Case when="providers">
             <ProviderManager onOpenModelDialog={onOpenModelDialog} />
           </RouteSwitch.Case>
-          <RouteSwitch.Case when="help">
-            <HelpDialog />
+          <RouteSwitch.Case when="models">
+            <ModelsDisplay />
+          </RouteSwitch.Case>
+          <RouteSwitch.Case when="credits">
+            <CreditsFlow onOpenAuthDialog={onOpenAuthDialog} />
           </RouteSwitch.Case>
           <RouteSwitch.Case when="skills">
             <SkillsDialog />
