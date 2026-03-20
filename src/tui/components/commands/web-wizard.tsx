@@ -703,14 +703,7 @@ export default function WebWizard({
   // Render single-page scrollable form
   return (
     <Dialog size="large" onClose={onClose}>
-      <box
-        width="100%"
-        height="100%"
-        flexDirection="column"
-        flexGrow={1}
-        flexShrink={1}
-        overflow="hidden"
-      >
+      <box width="100%" flexDirection="column" flexShrink={1} overflow="hidden">
         {/* Header (pinned) */}
         <box
           flexDirection="column"
@@ -767,7 +760,6 @@ export default function WebWizard({
             paddingLeft={4}
             flexDirection="row"
             gap={1}
-            paddingBottom={1}
           >
             <text
               fg={
@@ -803,12 +795,7 @@ export default function WebWizard({
           )}
 
           {/* Advanced section header */}
-          <box
-            id="section-advanced"
-            paddingLeft={4}
-            paddingTop={1}
-            paddingBottom={1}
-          >
+          <box id="section-advanced" paddingLeft={4} paddingTop={1}>
             <text
               fg={
                 isFocused("section-advanced")
