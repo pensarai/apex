@@ -5,7 +5,7 @@
  */
 
 // Markdown utilities
-export { createMarkdownSyntaxStyle, markdownToStyledText } from "./markdown";
+export { markdownToStyledText } from "./markdown";
 
 // Message utilities
 export {

@@ -7,11 +7,11 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { useKeyboard } from "@opentui/react";
+import { SyntaxStyle } from "@opentui/core";
 import { useCommand } from "../../context/command";
 import { useDimensions } from "../../context/dimensions";
 import { useTheme } from "../../theme";
 import { Dialog } from "../../context/dialog";
-import { createMarkdownSyntaxStyle } from "../shared/markdown";
 import type { SkillEntry, SkillSource } from "../../../core/skills/types";
 
 /** Rough token estimate: ~4 chars per token */
@@ -136,7 +136,22 @@ export default function SkillsDialog({
   const panelWidth = Math.min(76, dimensions.width - 4);
 
   const syntaxStyle = useMemo(
-    () => createMarkdownSyntaxStyle(colors),
+    () =>
+      SyntaxStyle.fromStyles({
+        default: { fg: colors.text },
+        "markup.heading": { fg: colors.markdownHeading, bold: true },
+        "markup.strong": { fg: colors.markdownStrong, bold: true },
+        "markup.italic": { fg: colors.markdownEmph, italic: true },
+        "markup.raw": { fg: colors.markdownCode },
+        "markup.raw.block": { fg: colors.markdownCode },
+        "markup.link": { fg: colors.markdownLink },
+        "markup.link.url": { fg: colors.markdownLink, dim: true },
+        "markup.link.label": { fg: colors.markdownLink, underline: true },
+        "markup.strikethrough": { fg: colors.textMuted, dim: true },
+        "markup.list": { fg: colors.primary },
+        "markup.quote": { fg: colors.textMuted, italic: true },
+        "punctuation.special": { fg: colors.border },
+      }),
     [colors],
   );
 
