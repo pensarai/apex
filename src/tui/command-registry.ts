@@ -3,7 +3,6 @@ import type { Route, WebCommandOptions } from "./context/route";
 import {
   parseWebFlags,
   hasEnoughFlagsToSkipWizard,
-  buildOperatorSessionConfig,
   buildSwarmSessionConfig,
 } from "./utils/command-flags";
 import { getAllThemeNames } from "./theme";
@@ -185,16 +184,20 @@ export const commands: CommandConfig[] = [
         description: "Custom header (repeatable)",
       },
       { name: "--model", valueHint: "<model>", description: "AI model to use" },
+      {
+        name: "--sandbox",
+        description: "Use isolated session directory as working directory",
+      },
     ],
     handler: async (args, ctx) => {
       const flags = parseWebFlags(args);
-      const params = buildOperatorSessionConfig(flags);
       ctx.navigate({
         type: "operator",
         nonce: Date.now(),
         initialConfig: {
           requireApproval: flags.requireApproval ?? true,
           target: flags.target,
+          sandbox: flags.sandbox,
         },
       });
     },

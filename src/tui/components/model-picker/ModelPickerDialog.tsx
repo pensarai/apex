@@ -23,14 +23,16 @@ export default function ModelPickerDialog({ onClose }: ModelPickerDialogProps) {
   return (
     <Dialog size="large" onClose={onClose}>
       <box flexDirection="column" width="100%" paddingLeft={2} paddingTop={1}>
-        <text>
-          <span fg={colors.primary}>Select AI Model</span>
-          <span fg={colors.textMuted}> ({model.name})</span>
-          <span fg={colors.textMuted}>
-            {" "}
-            [{isModelUserSelected ? "user" : "default"}]
-          </span>
-        </text>
+        <box flexShrink={0} width="100%" overflow="hidden">
+          <text>
+            <span fg={colors.primary}>Select AI Model</span>
+            <span fg={colors.textMuted}> ({model.name})</span>
+            <span fg={colors.textMuted}>
+              {" "}
+              [{isModelUserSelected ? "user" : "default"}]
+            </span>
+          </text>
+        </box>
         <box
           flexDirection="column"
           paddingLeft={1}
@@ -50,7 +52,7 @@ export default function ModelPickerDialog({ onClose }: ModelPickerDialogProps) {
             isModelUserSelected={isModelUserSelected}
           />
         </box>
-        <box marginTop={1} paddingLeft={1}>
+        <box marginTop={1} paddingLeft={1} flexShrink={0}>
           <text fg={colors.textMuted}>[Enter] confirm • [ESC] close</text>
         </box>
       </box>
