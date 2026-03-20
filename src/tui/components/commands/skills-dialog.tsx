@@ -13,6 +13,7 @@ import { useTheme } from "../../theme";
 import { useToast } from "../../context/toast";
 import { Dialog } from "../../context/dialog";
 import { MarkdownViewer } from "../shared/markdown-viewer";
+import { DialogControls } from "../shared/dialog-controls";
 import { openFileInDefaultApp } from "../../utils/open-file";
 import type { SkillEntry, SkillSource } from "../../../core/skills/types";
 
@@ -193,11 +194,15 @@ export default function SkillsDialog({
             </box>
           }
           footerLeft={
-            <text fg={colors.textMuted}>
-              <span fg={colors.primary}>[↑/↓]</span> Scroll{" "}
-              <span fg={colors.primary}>[E]</span> Open in Editor{" "}
-              <span fg={colors.primary}>[Esc]</span> Back
-            </text>
+            <DialogControls
+              controls={[
+                {
+                  key: "E",
+                  label: "Open in Editor",
+                  variant: "primary" as const,
+                },
+              ]}
+            />
           }
         />
       </Dialog>
@@ -295,9 +300,9 @@ export default function SkillsDialog({
 
         {/* Footer */}
         <box width="100%" flexDirection="row">
-          <text fg={colors.textMuted}>
-            [↑↓] browse [enter] details [esc] close
-          </text>
+          <DialogControls
+            controls={[{ key: "Enter", label: "Details", variant: "primary" }]}
+          />
         </box>
       </box>
     </Dialog>

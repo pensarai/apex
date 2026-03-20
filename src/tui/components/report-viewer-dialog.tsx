@@ -3,6 +3,7 @@ import { useKeyboard } from "@opentui/react";
 import { useDimensions } from "../context/dimensions";
 import { useTheme } from "../theme";
 import { MarkdownViewer } from "./shared/markdown-viewer";
+import { DialogControls } from "./shared/dialog-controls";
 
 interface ReportViewerDialogProps {
   content: string;
@@ -67,16 +68,19 @@ export default function ReportViewerDialog({
           headerLeft={<text fg={colors.primary}>Pentest Report</text>}
           headerRight={<text fg={colors.textMuted}>{reportPath}</text>}
           footerLeft={
-            <text fg={colors.textMuted}>
-              <span fg={colors.primary}>[↑/↓]</span> Scroll{" "}
-              {onOpenExternal && (
-                <>
-                  <span fg={colors.primary}>[E]</span>
-                  {" Open in Editor "}
-                </>
-              )}
-              <span fg={colors.primary}>[Esc]</span> Close
-            </text>
+            <DialogControls
+              controls={[
+                ...(onOpenExternal
+                  ? [
+                      {
+                        key: "E",
+                        label: "Open in Editor",
+                        variant: "primary" as const,
+                      },
+                    ]
+                  : []),
+              ]}
+            />
           }
           footerRight={<text fg={colors.textMuted}>{lineCount} lines</text>}
         />
