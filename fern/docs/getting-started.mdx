@@ -120,6 +120,11 @@ pensar targeted-pentest --target <url>      # Run a targeted pentest
 pensar auth login                           # Connect to Pensar Console from the CLI
 pensar auth status                          # Show current auth connection status
 pensar auth logout                          # Disconnect from Pensar Console
+pensar projects                             # List workspace projects
+pensar pentests <projectId>                 # List/get/dispatch pentests
+pensar issues <projectId>                   # List/get/update security issues
+pensar fixes <issueId>                      # List/get security fixes
+pensar logs <issueId>                       # List/search agent execution logs
 pensar upgrade                              # Update to the latest version
 pensar doctor                               # Check & install optional dependencies
 pensar uninstall                            # Fully remove Pensar (interactive)
@@ -154,9 +159,8 @@ For **best performance** and maximum compatibility with security tools, we recom
 Now that Apex is installed, here's how to get started:
 
 <Steps>
-  <Step title="Configure AI Provider">
-    Run `/providers` to set up your AI provider API key, or `/auth` to connect
-    via Pensar Console
+  <Step title="Login to Pensar">
+    Run `/auth` to login to Pensar.
   </Step>
   <Step title="Select Model">
     Run `/models` to choose which AI model to use

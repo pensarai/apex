@@ -84,7 +84,7 @@ export function createPensarModel(
       headers.Authorization = `Bearer ${result.token.slice(0, 12)}…`;
       log(`  auth: ${result.type} token (${result.token.length} chars)`);
 
-      if (result.type === "workos" && config.workspaceId) {
+      if (config.workspaceId) {
         headers["X-Workspace-Id"] = config.workspaceId;
       }
 

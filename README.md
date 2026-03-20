@@ -1,6 +1,8 @@
 <h1 align="center">Pensar Apex</h1>
 
-<p align="center">AI-powered penetration testing using an AI agent to perform comprehensive blackbox and whitebox pentesting - directly in your terminal.
+<p align="center">
+AI-powered penetration testing using autonomous agents — directly in your terminal. Run blackbox and whitebox pentests that explore, reason, and surface real vulnerabilities.
+
 </p>
 
 <p align="center">
@@ -20,53 +22,6 @@ Want to run from the cloud or integrate it with your CI/CD? See <a href="https:/
   <img src="screenshot.png" alt="Pensar Apex Screenshot" width="800">
 </p> -->
 
-## Use Cases
-
-Apex enables both developers and security professionals to run autonomous and assisted penetration testing directly from the terminal.
-
-### Developers: Run a Pentest in Minutes
-
-Apex makes it easy for developers to run a real penetration test without needing deep offensive security expertise.
-
-Using the autonomous `/pentest` mode, Apex will perform reconnaissance, attack surface discovery, vulnerability testing, and exploitation attempts automatically.
-
-This allows teams to quickly identify security issues before they reach production.
-
-```bash
-/pentest
-```
-
-Examples:
-
-- Test a staging environment before deploying
-- Scan a newly launched domain or API
-- Run quick security checks during development
-- Identify exposed services or misconfigurations
-
-This is the **fastest way to get real pentesting coverage without becoming a security expert.**
-
----
-
-### Security Engineers: Advanced Operator Workflows
-
-Security professionals can use Apex as an **agentic offensive security harness** that orchestrates tools and reasoning workflows.
-
-The `/operator` mode allows engineers to work interactively with the Offensive Security Agent, guiding investigations and chaining tools dynamically.
-
-```bash
-/operator
-```
-
-Examples:
-
-- Deep investigation of suspicious endpoints
-- Manual exploitation of discovered vulnerabilities
-- Tool orchestration across recon and exploitation phases
-- Validation and reproduction of vulnerabilities
-- Open-source security research / testing
-
-This turns Apex into a **terminal-native AI pentesting partner** rather than just a scanner.
-
 ## Installation
 
 #### macOS / Linux (Quick Install)
@@ -82,16 +37,16 @@ brew tap pensarai/tap
 brew install apex
 ```
 
-#### Windows (PowerShell)
-
-```powershell
-irm https://www.pensarai.com/apex.ps1 | iex
-```
-
 #### npm
 
 ```bash
 npm install -g @pensar/apex
+```
+
+#### Windows (PowerShell)
+
+```powershell
+irm https://www.pensarai.com/apex.ps1 | iex
 ```
 
 ## Usage
@@ -121,7 +76,24 @@ pensar
 
 ---
 
+## Use Cases
+
+### Developers
+
+- Run `/pentest` before merging a PR — catch vulnerabilities as naturally as running tests
+- Get actionable findings with severity scores, evidence, and suggested fixes — no security background needed
+- Integrate into CI/CD via headless CLI commands or Pensar Console
+
+### Security Engineers
+
+- Deploy agent-driven swarm testing across large attack surfaces
+- Use `/operator` mode for manual investigation, exploit chaining, and validation
+- Automate repetitive testing workflows with persistent memory that accumulates across engagements
+- Scale across teams and projects through Pensar Console
+
+---
+
 ### ⚠️ Responsible Use
 
-This repository contains tools for **authorized security testing** only.  
+This repository contains tools for **authorized security testing** only.
 Before use, please read and agree to the [Responsible Use Disclosure](./RESPONSIBLE_USE.md).

@@ -22,12 +22,13 @@ export type RoutePath =
   | "theme"
   | "auth"
   | "credits"
-  | "create-skill";
+  | "skills";
 
 export interface WebCommandOptions {
   auto?: boolean;
   target?: string;
   name?: string;
+  skillSlug?: string;
   swarm?: boolean;
   mode?: "plan" | "manual" | "auto";
   requireApproval?: boolean;
@@ -65,6 +66,7 @@ export type Route =
       initialConfig?: {
         requireApproval?: boolean;
         target?: string;
+        operatorMode?: import("../../core/operator").OperatorMode;
       };
       /** Opaque value used to force a fresh remount (e.g. Date.now()) */
       nonce?: number;

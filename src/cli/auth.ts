@@ -211,9 +211,12 @@ async function handleWorkspaces(
     `\n✓ Connected to Pensar Console\n  Workspace: ${workspace.name} (${workspace.slug})\n  Credits: $${result.billing.balance.toFixed(2)}`,
   );
 
-  if (!result.confirmed && result.billingUrl) {
+  const needsBillingSetup =
+    !result.billing.ready && result.billing.balance <= 0 && !!result.billingUrl;
+
+  if (needsBillingSetup && result.billingUrl) {
     console.log(
-      `\n⚠ Your workspace needs credits. Add them at:\n  ${result.billingUrl}`,
+      `\n⚠ Your workspace billing setup is not ready yet. Finish setup at:\n  ${result.billingUrl}`,
     );
   } else if (result.billing.balance < 1) {
     const billingUrl = `${getPensarConsoleUrl()}/${workspace.slug}/settings/billing`;

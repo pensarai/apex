@@ -149,6 +149,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       credentialManager,
       persistentShell: this.persistentShell,
       onCommandOutput: input.callbacks?.onCommandOutput,
+      skillsRegistry: input.skillsRegistry,
     });
 
     let tools: ToolSet = input.extraTools
@@ -262,13 +263,13 @@ export class OffensiveSecurityAgent<TResult = void> {
       activeTools,
       stopWhen,
       toolChoice: "auto",
-      onStepFinish: (event) => {
+      onStepFinish: async (event) => {
         latestMessages = [
           ...initialMessagesRef.current,
           ...event.response.messages,
         ];
         schedulePersist();
-        input.onStepFinish?.(event);
+        await input.onStepFinish?.(event);
       },
       onSummarized: () => {
         // Context was reset by summarization — discard the old history so

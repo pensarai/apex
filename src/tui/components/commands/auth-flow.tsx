@@ -54,6 +54,11 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [billingUrl, setBillingUrl] = useState<string | null>(null);
   const [balance, setBalance] = useState<number | null>(null);
+  const [billingStatus, setBillingStatus] = useState<{
+    confirmed: boolean;
+    ready: boolean;
+    hasPaymentMethod: boolean;
+  } | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
 
@@ -225,6 +230,7 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
           : null,
       );
       setBalance(data.credits?.balance ?? null);
+      setBillingStatus(null);
       setStep("success");
     } catch (err) {
       if (ac.signal.aborted) return;
@@ -327,6 +333,11 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
       appConfig.reload();
 
       setBalance(data.billing.balance);
+      setBillingStatus({
+        confirmed: data.confirmed,
+        ready: data.billing.ready,
+        hasPaymentMethod: data.billing.hasPaymentMethod,
+      });
 
       if (!data.confirmed && data.billingUrl) {
         setBillingUrl(data.billingUrl);
@@ -359,10 +370,14 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
     setSelectedWorkspace(null);
     setBalance(null);
     setBillingUrl(null);
+    setBillingStatus(null);
     setStep("start");
   };
 
   const hasLowBalance = balance !== null && balance < 1;
+  const needsBillingSetup =
+    billingStatus !== null && !billingStatus.ready && (balance ?? 0) <= 0;
+  const showBillingWarning = hasLowBalance || needsBillingSetup;
 
   const effectiveBillingUrl =
     billingUrl ||
@@ -441,7 +456,7 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
 
     if (step === "success") {
       if (key.name === "return") {
-        if (hasLowBalance || billingUrl) {
+        if (showBillingWarning) {
           openBillingPage();
         } else {
           goHome();
@@ -622,15 +637,15 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
                 )}
               </box>
             )}
-            {(hasLowBalance || billingUrl) && (
+            {showBillingWarning && (
               <box marginTop={1}>
                 <text fg={colors.warning}>
-                  {billingUrl
-                    ? "Your workspace needs credits to use Apex CLI."
+                  {needsBillingSetup
+                    ? "Your workspace billing setup is not ready yet."
                     : "Your credit balance is very low. We recommend at least $30 to run"}
                   {"\n"}
-                  {billingUrl
-                    ? "Press ENTER to open billing and add credits."
+                  {needsBillingSetup
+                    ? "Press ENTER to open billing and finish setup."
                     : "pentests without interruptions. Press ENTER to open billing."}
                 </text>
               </box>
@@ -652,7 +667,7 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
             <box marginTop={1}>
               <text fg={colors.textMuted}>
                 <span fg={colors.primary}>[ENTER]</span>{" "}
-                {hasLowBalance || billingUrl ? "Open billing" : "Done"} ·{" "}
+                {showBillingWarning ? "Open billing" : "Done"} ·{" "}
                 <span fg={colors.error}>[D]</span> Disconnect ·{" "}
                 <span fg={colors.primary}>[ESC]</span> Back
               </text>

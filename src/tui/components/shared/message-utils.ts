@@ -4,23 +4,17 @@
  * Utilities for working with display messages in the TUI.
  */
 
-import { createHash } from "crypto";
 import type { DisplayMessage } from "../agent-display";
 import { isToolMessage } from "./type-guards";
-
-/**
- * Generate a short content hash for stable message keys.
- * Uses first 8 characters of SHA-256 hash.
- */
-function hashContent(content: string): string {
-  return createHash("sha256").update(content).digest("hex").slice(0, 8);
-}
 
 /**
  * Generate a stable unique key for a message.
  *
  * Uses toolCallId for tool messages (most stable),
- * otherwise uses a combination of role, timestamp, and content hash.
+ * otherwise uses role + timestamp. Content hash is intentionally
+ * omitted so that streaming updates (which mutate content in-place)
+ * don't change the key and cause React to remount the element,
+ * which would reset the parent scrollbox's scroll position.
  *
  * @param item - The display message
  * @param contextId - Optional context ID to prevent collisions across nested displays
@@ -35,13 +29,9 @@ export function getStableMessageKey(
     return `${contextId}-tool-${item.toolCallId}`;
   }
 
-  // Other messages use role + timestamp + content hash
-  const content =
-    typeof item.content === "string"
-      ? item.content
-      : JSON.stringify(item.content);
-  const contentHash = hashContent(content);
-  return `${contextId}-${item.role}-${item.createdAt.getTime()}-${contentHash}`;
+  // Use role + timestamp only — content is intentionally excluded so that
+  // streaming text deltas don't produce a new key on every frame.
+  return `${contextId}-${item.role}-${item.createdAt.getTime()}`;
 }
 
 /**

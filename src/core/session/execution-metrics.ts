@@ -12,6 +12,8 @@ export interface TokenUsageTotals {
 export interface ExecutionMetrics {
   tokenUsage: TokenUsageTotals;
   runtime?: string;
+  /** Accumulated wall-clock seconds the pentest has been actively running. */
+  elapsedSeconds?: number;
   updatedAt: string;
 }
 
@@ -19,6 +21,7 @@ interface WriteExecutionMetricsInput {
   sessionRootPath: string;
   tokenUsage?: Partial<TokenUsageTotals>;
   runtime?: string;
+  elapsedSeconds?: number;
 }
 
 function toNonNegativeInteger(value: unknown): number {
@@ -59,12 +62,14 @@ export function readExecutionMetrics(
     const parsed = JSON.parse(readFileSync(path, "utf-8")) as Partial<{
       tokenUsage: Partial<TokenUsageTotals>;
       runtime: string;
+      elapsedSeconds: number;
       updatedAt: string;
     }>;
 
     return {
       tokenUsage: normalizeTokenUsage(parsed.tokenUsage),
       runtime: typeof parsed.runtime === "string" ? parsed.runtime : undefined,
+      elapsedSeconds: toNonNegativeInteger(parsed.elapsedSeconds) || undefined,
       updatedAt:
         typeof parsed.updatedAt === "string"
           ? parsed.updatedAt
@@ -110,6 +115,7 @@ export function writeExecutionMetrics(
   const next: ExecutionMetrics = {
     tokenUsage: nextTokenUsage,
     runtime: input.runtime ?? existing?.runtime,
+    elapsedSeconds: input.elapsedSeconds ?? existing?.elapsedSeconds,
     updatedAt: new Date().toISOString(),
   };
 

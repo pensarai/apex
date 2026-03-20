@@ -16,6 +16,11 @@ export interface AppCommandContext {
   navigate: (route: Route) => void;
   openSessionsDialog?: () => void;
   openThemeDialog?: () => void;
+  openModelDialog?: () => void;
+  openProvidersDialog?: () => void;
+  openConfigDialog?: () => void;
+  openCreditsDialog?: () => void;
+  openHelpDialog?: () => void;
   openAuthDialog?: () => void;
   openPentestDialog?: (flags?: WebCommandOptions) => void;
 }
@@ -198,21 +203,16 @@ export const commands: CommandConfig[] = [
     description: "Show help dialog",
     category: "General",
     handler: async (args, ctx) => {
-      ctx.navigate({
-        type: "base",
-        path: "help",
-      });
+      ctx.openHelpDialog?.();
     },
   },
   {
     name: "config",
     description: "Show config dialog",
     category: "General",
+    hidden: true,
     handler: async (args, ctx) => {
-      ctx.navigate({
-        type: "base",
-        path: "config",
-      });
+      ctx.openConfigDialog?.();
     },
   },
   {
@@ -220,10 +220,7 @@ export const commands: CommandConfig[] = [
     description: "Show available AI models",
     category: "General",
     handler: async (args, ctx) => {
-      ctx.navigate({
-        type: "base",
-        path: "models",
-      });
+      ctx.openModelDialog?.();
     },
   },
   {
@@ -231,10 +228,7 @@ export const commands: CommandConfig[] = [
     description: "Manage AI providers and API keys",
     category: "General",
     handler: async (args, ctx) => {
-      ctx.navigate({
-        type: "base",
-        path: "providers",
-      });
+      ctx.openProvidersDialog?.();
     },
   },
   {
@@ -342,25 +336,21 @@ export const commands: CommandConfig[] = [
     description: "Buy credits / check balance",
     category: "General",
     handler: async (args, ctx) => {
-      ctx.navigate({
-        type: "base",
-        path: "credits",
-      });
+      ctx.openCreditsDialog?.();
     },
   },
 
   {
-    name: "create-skill",
-    description: "Create a new operator skill",
+    name: "skills",
+    description: "View installed skills",
     category: "Skills",
     handler: async (args, ctx) => {
       ctx.navigate({
         type: "base",
-        path: "create-skill",
+        path: "skills",
       });
     },
   },
-
   // Add more commands here...
   // Example:
   // {

@@ -20,6 +20,7 @@ import { buildAuthConfig } from "../../../core/ai/utils";
 import {
   ALL_TOOL_NAMES,
   PLAN_MODE_TOOL_NAMES,
+  SKILL_TOOL_NAMES,
   type ConsumeCallbacks,
   type AgentMode,
 } from "../../../core/agents/offSecAgent";
@@ -44,17 +45,16 @@ import {
   extractStreamableContent,
 } from "../shared/message-utils";
 import type { OperatorMode, PendingApproval } from "../../../core/operator";
-import { slugify } from "../../../core/skills";
 import {
   ApprovalGate,
   createInitialOperatorState,
+  OPERATOR_MODE_CYCLE,
   type OperatorSessionState,
 } from "../../../core/operator";
 import {
   readExecutionMetrics,
   writeExecutionMetrics,
 } from "../../../core/session/execution-metrics";
-import { ModelPicker } from "../model-picker";
 import { stepCountIs, type ModelMessage } from "ai";
 import {
   type DashboardStatus,
@@ -82,7 +82,11 @@ export default function OperatorDashboard({
 }: {
   sessionId?: string;
   initialMessage?: string;
-  initialConfig?: { requireApproval?: boolean; target?: string };
+  initialConfig?: {
+    requireApproval?: boolean;
+    target?: string;
+    operatorMode?: OperatorMode;
+  };
 }) {
   const { colors } = useTheme();
   const route = useRoute();
@@ -102,21 +106,24 @@ export default function OperatorDashboard({
     autocompleteOptions: allAutocompleteOptions,
     executeCommand,
     resolveSkillContent,
-    skills,
+    skillsRegistry,
+    skillsVersion,
   } = useCommand();
-  const {
-    stack,
-    externalDialogOpen,
-    replace: showDialog,
-    clear: clearDialog,
-    setSize: setDialogSize,
-  } = useDialog();
+  const { stack, externalDialogOpen } = useDialog();
   const { refocusPrompt } = useFocus();
 
   const autocompleteOptions = useMemo(() => {
-    const skillSlugs = new Set(skills.map((s) => `/${slugify(s.name)}`));
-    return filterOperatorAutocomplete(allAutocompleteOptions, skillSlugs);
-  }, [allAutocompleteOptions, skills]);
+    const commandOptions = filterOperatorAutocomplete(allAutocompleteOptions);
+    const skillOptions = skillsRegistry.list().map((s) => {
+      const slug = `/${s.slug}`;
+      return {
+        value: slug,
+        label: slug,
+        description: s.manifest.description || "Skill",
+      };
+    });
+    return [...commandOptions, ...skillOptions];
+  }, [allAutocompleteOptions, skillsRegistry, skillsVersion]);
 
   // Session state
   const [session, setSession] = useState<SessionInfo | null>(null);
@@ -177,7 +184,9 @@ export default function OperatorDashboard({
 
   // Approval gate — created once and updated when config changes
   const approvalGateRef = useRef<ApprovalGate>(
-    new ApprovalGate({ requireApproval: true }),
+    new ApprovalGate({
+      requireApproval: (initialConfig?.operatorMode ?? "manual") === "manual",
+    }),
   );
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>(
     [],
@@ -189,8 +198,12 @@ export default function OperatorDashboard({
   // Display options
   const [verboseMode, setVerboseMode] = useState(false);
   const [expandedLogs, setExpandedLogs] = useState(false);
-  // Agent mode: "default" uses all tools, "plan" restricts to read-only tools
-  const [agentMode, setAgentMode] = useState<AgentMode>("default");
+  // Unified operator mode: combines tool availability + approval gating
+  const [operatorMode, setOperatorMode] = useState<OperatorMode>(
+    initialConfig?.operatorMode ?? "manual",
+  );
+  const agentMode: AgentMode = operatorMode === "plan" ? "plan" : "default";
+  const requireApproval = operatorMode === "manual";
   const tokenUsageRef = useRef(tokenUsage);
 
   useEffect(() => {
@@ -239,17 +252,19 @@ export default function OperatorDashboard({
           if (hasState) {
             const savedState = await sessions.loadOperatorState(sessionId);
             if (savedState) {
+              const restoredMode =
+                (savedState.mode as OperatorMode) || "manual";
+              setOperatorMode(restoredMode);
               setOperatorState((prev) => ({
                 ...prev,
-                mode: (savedState.mode as OperatorMode) || prev.mode,
-                requireApproval:
-                  savedState.requireApproval ?? prev.requireApproval,
+                mode: restoredMode,
+                requireApproval: restoredMode === "manual",
                 currentStage:
                   (savedState.currentStage as OperatorSessionState["currentStage"]) ||
                   prev.currentStage,
               }));
               approvalGateRef.current.updateConfig({
-                requireApproval: savedState.requireApproval ?? true,
+                requireApproval: restoredMode === "manual",
               });
 
               if (
@@ -281,9 +296,12 @@ export default function OperatorDashboard({
             }
           } else if (s.config?.operatorSettings) {
             const settings = s.config.operatorSettings;
-            const requireApproval = settings.requireApproval ?? true;
+            const settingsMode =
+              (settings.initialMode as OperatorMode) || "manual";
+            setOperatorMode(settingsMode);
+            const requireApproval = settingsMode === "manual";
             const initialState = createInitialOperatorState(
-              (settings.initialMode as OperatorMode) || "manual",
+              settingsMode,
               requireApproval,
             );
             setOperatorState(initialState);
@@ -292,8 +310,10 @@ export default function OperatorDashboard({
         } else {
           // New session — just set up operator config; the agent creates the
           // session on the first runAgent call.
-          const requireApproval = initialConfig?.requireApproval ?? true;
-          const state = createInitialOperatorState("auto", requireApproval);
+          const newMode = initialConfig?.operatorMode ?? "manual";
+          setOperatorMode(newMode);
+          const requireApproval = newMode === "manual";
+          const state = createInitialOperatorState(newMode, requireApproval);
           setOperatorState(state);
           approvalGateRef.current.updateConfig({ requireApproval });
         }
@@ -649,9 +669,14 @@ export default function OperatorDashboard({
   }, []);
 
   const handleAutoApprove = useCallback(() => {
-    // Disable approval for the rest of the session
+    // Switch to approvals-off mode
+    setOperatorMode("auto");
+    setOperatorState((prev) => ({
+      ...prev,
+      mode: "auto",
+      requireApproval: false,
+    }));
     approvalGateRef.current.updateConfig({ requireApproval: false });
-    setOperatorState((prev) => ({ ...prev, requireApproval: false }));
 
     // Approve all currently pending
     const pending = approvalGateRef.current.getPendingApprovals();
@@ -818,6 +843,8 @@ export default function OperatorDashboard({
         },
       } satisfies ConsumeCallbacks;
 
+      const skillsCatalog = skillsRegistry.buildCatalog() || undefined;
+
       const commonInput = {
         prompt,
         model: model.id,
@@ -826,12 +853,14 @@ export default function OperatorDashboard({
         target: initialConfig?.target,
         activeTools: [
           ...(agentMode === "plan" ? PLAN_MODE_TOOL_NAMES : ALL_TOOL_NAMES),
+          ...SKILL_TOOL_NAMES,
         ] as string[],
         mode: agentMode,
         abortSignal: controller.signal,
         authConfig: buildAuthConfig(config.data),
         approvalGate: approvalGateRef.current,
         commandCancelHandle: cancelHandleRef.current,
+        skillsRegistry,
         onStepFinish,
         callbacks,
         onSessionReady: (s: SessionInfo) => {
@@ -853,17 +882,17 @@ export default function OperatorDashboard({
               initialConfig?.target,
               operatorState,
               agentMode,
+              { requireApproval, skillsCatalog },
             ),
             session,
           });
         } else {
           // First call — let the agent factory create the session
-          const requireApproval = initialConfig?.requireApproval ?? true;
           const sessionConfig: SessionConfig = {
             sessionType: "web-app",
             mode: "operator",
             operatorSettings: {
-              initialMode: "auto",
+              initialMode: operatorMode,
               requireApproval,
               enableSuggestions: true,
             },
@@ -874,6 +903,7 @@ export default function OperatorDashboard({
               initialConfig?.target,
               operatorState,
               agentMode,
+              { requireApproval, skillsCatalog },
             ),
             sessionConfig,
             onNameGenerated: (name: string) => {
@@ -965,6 +995,7 @@ export default function OperatorDashboard({
       model.id,
       config.data,
       operatorState,
+      operatorMode,
       agentMode,
       addTokenUsage,
       appendText,
@@ -1035,40 +1066,8 @@ export default function OperatorDashboard({
   }, [status]);
 
   const showModelPicker = useCallback(() => {
-    setDialogSize("large");
-    showDialog(
-      <box flexDirection="column" width="100%" paddingLeft={4} paddingTop={1}>
-        <text>
-          <span fg={colors.primary}>█ </span>
-          <span fg={colors.text}>Select AI Model</span>
-          <span fg={colors.textMuted}> ({model.name})</span>
-        </text>
-        <box flexDirection="column" paddingLeft={2} marginTop={1}>
-          <ModelPicker
-            config={config.data}
-            selectedModel={model}
-            onSelectModel={setModel}
-            onConfirm={clearDialog}
-            onConfigUpdate={config.update}
-            focused={true}
-            isModelUserSelected={isModelUserSelected}
-          />
-        </box>
-        <box marginTop={1} paddingLeft={2}>
-          <text fg={colors.textMuted}>[Enter] confirm • [ESC] close</text>
-        </box>
-      </box>,
-    );
-  }, [
-    colors,
-    model,
-    setModel,
-    isModelUserSelected,
-    config,
-    showDialog,
-    clearDialog,
-    setDialogSize,
-  ]);
+    executeCommand("/models");
+  }, [executeCommand]);
 
   const handleCommandExecute = useCallback(
     async (command: string) => {
@@ -1078,19 +1077,39 @@ export default function OperatorDashboard({
         case "show-models":
           showModelPicker();
           return;
-        case "run-skill":
+        case "run-skill": {
           if (action.autopilot) {
+            setOperatorMode("auto");
             approvalGateRef.current.updateConfig({ requireApproval: false });
             setOperatorState((prev) => ({ ...prev, requireApproval: false }));
           }
-          handleSubmit(action.content);
+          // Load the skill's full instructions and send them to the agent
+          // so it can act on the skill directly without an extra tool call.
+          try {
+            const { content } = await skillsRegistry.readSkillContent(
+              action.slug,
+            );
+            handleSubmit(`<skill name="${action.slug}">\n${content}\n</skill>`);
+          } catch {
+            // Fallback: tell the agent to load the skill via tool
+            handleSubmit(
+              `Use the read_skill tool to load the "${action.slug}" skill and follow its instructions.`,
+            );
+          }
           return;
+        }
         case "execute-command":
           await executeCommand(action.command);
           return;
       }
     },
-    [resolveSkillContent, handleSubmit, executeCommand, showModelPicker],
+    [
+      resolveSkillContent,
+      skillsRegistry,
+      handleSubmit,
+      executeCommand,
+      showModelPicker,
+    ],
   );
 
   const handleAbort = useCallback(() => {
@@ -1242,18 +1261,21 @@ export default function OperatorDashboard({
     });
   }, [setThinking, setIsExecuting]);
 
-  // Toggle approval requirement at runtime
-  const toggleApproval = useCallback(() => {
-    setOperatorState((prev) => {
-      const newVal = !prev.requireApproval;
-      approvalGateRef.current.updateConfig({ requireApproval: newVal });
-      return { ...prev, requireApproval: newVal };
+  // Cycle through operator modes: approvals-on → approvals-off → plan
+  const cycleMode = useCallback(() => {
+    setOperatorMode((prev) => {
+      const idx = OPERATOR_MODE_CYCLE.indexOf(prev);
+      const next = OPERATOR_MODE_CYCLE[(idx + 1) % OPERATOR_MODE_CYCLE.length];
+      approvalGateRef.current.updateConfig({
+        requireApproval: next === "manual",
+      });
+      setOperatorState((s) => ({
+        ...s,
+        mode: next,
+        requireApproval: next === "manual",
+      }));
+      return next;
     });
-  }, []);
-
-  // Toggle between default and plan mode
-  const toggleMode = useCallback(() => {
-    setAgentMode((prev) => (prev === "default" ? "plan" : "default"));
   }, []);
 
   // Keyboard shortcuts
@@ -1353,11 +1375,8 @@ export default function OperatorDashboard({
       case "toggle-expanded-logs":
         setExpandedLogs((e) => !e);
         return;
-      case "toggle-approval":
-        toggleApproval();
-        return;
-      case "toggle-mode":
-        toggleMode();
+      case "cycle-mode":
+        cycleMode();
         return;
       case "approve":
         handleApprove();
@@ -1405,7 +1424,13 @@ export default function OperatorDashboard({
     pendingApprovals.length > 0 ? pendingApprovals[0] : undefined;
 
   return (
-    <box flexDirection="column" width="100%" height="100%" flexGrow={1}>
+    <box
+      flexDirection="column"
+      width="100%"
+      height="100%"
+      flexGrow={1}
+      overflow="hidden"
+    >
       {/* Header bar */}
       <box
         flexDirection="row"
@@ -1428,17 +1453,6 @@ export default function OperatorDashboard({
               </text>
             </>
           )}
-        </box>
-        <box flexDirection="row" gap={2}>
-          <text fg={agentMode === "plan" ? colors.warning : colors.primary}>
-            {agentMode === "plan" ? "PLAN" : "DEFAULT"}
-          </text>
-          <text
-            fg={operatorState.requireApproval ? colors.success : colors.warning}
-          >
-            {operatorState.requireApproval ? "APPROVAL ON" : "APPROVAL OFF"}
-          </text>
-          <text fg={colors.textMuted}>{model.name}</text>
         </box>
       </box>
 
@@ -1486,7 +1500,7 @@ export default function OperatorDashboard({
         }
         status={status === "waiting" ? "running" : status}
         mode="operator"
-        operatorMode={agentMode}
+        operatorMode={operatorMode}
         pendingApproval={currentPending}
         onApprove={handleApprove}
         onAutoApprove={handleAutoApprove}
@@ -1495,6 +1509,7 @@ export default function OperatorDashboard({
         autocompletePlacement="above"
         enableCommands={true}
         onCommandExecute={handleCommandExecute}
+        highlightSlashCommands={true}
         disableHistoryNavigation={
           status === "running" && queuedMessages.length > 0
         }

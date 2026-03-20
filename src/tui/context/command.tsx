@@ -15,22 +15,24 @@ import {
 } from "../command-registry";
 import type { AutocompleteOption } from "../components/shared/prompt-input";
 import { useRoute, type WebCommandOptions } from "./route";
-import { loadSkills, slugify, type Skill } from "../../core/skills";
+import { createSkillsRegistry, type SkillsRegistry } from "../../core/skills";
 
 interface CommandContextValue {
   router: CommandRouter<AppCommandContext>;
   autocompleteOptions: AutocompleteOption[];
   executeCommand: (input: string) => Promise<boolean>;
   commands: typeof commands;
-  /** Available operator skills loaded from ~/.pensar/skills/ */
-  skills: Skill[];
   /** Reload skills from disk (e.g. after creating a new one) */
   refreshSkills: () => Promise<void>;
   /**
    * Resolve a slash-command input to skill content.
-   * Returns the skill's prompt content if the input matches a skill, else null.
+   * Returns the skill's description if the input matches a skill, else null.
    */
   resolveSkillContent: (input: string) => string | null;
+  /** Skills registry */
+  skillsRegistry: SkillsRegistry;
+  /** Incremented on each registry refresh — use as a memo dependency to react to skill changes */
+  skillsVersion: number;
 }
 
 const CommandContext = createContext<CommandContextValue | null>(null);
@@ -47,6 +49,11 @@ interface CommandProviderProps {
   children: ReactNode;
   onOpenSessionsDialog?: () => void;
   onOpenThemeDialog?: () => void;
+  onOpenModelDialog?: () => void;
+  onOpenProvidersDialog?: () => void;
+  onOpenConfigDialog?: () => void;
+  onOpenCreditsDialog?: () => void;
+  onOpenHelpDialog?: () => void;
   onOpenAuthDialog?: () => void;
   onOpenPentestDialog?: (flags?: WebCommandOptions) => void;
 }
@@ -55,11 +62,17 @@ export function CommandProvider({
   children,
   onOpenSessionsDialog,
   onOpenThemeDialog,
+  onOpenModelDialog,
+  onOpenProvidersDialog,
+  onOpenConfigDialog,
+  onOpenCreditsDialog,
+  onOpenHelpDialog,
   onOpenAuthDialog,
   onOpenPentestDialog,
 }: CommandProviderProps) {
   const route = useRoute();
-  const [skills, setSkills] = useState<Skill[]>([]);
+  const [registry] = useState(() => createSkillsRegistry());
+  const [registryVersion, setRegistryVersion] = useState(0);
 
   const ctx = useMemo(() => {
     const ctx: AppCommandContext = {
@@ -67,6 +80,11 @@ export function CommandProvider({
       navigate: route.navigate,
       openSessionsDialog: onOpenSessionsDialog,
       openThemeDialog: onOpenThemeDialog,
+      openModelDialog: onOpenModelDialog,
+      openProvidersDialog: onOpenProvidersDialog,
+      openConfigDialog: onOpenConfigDialog,
+      openCreditsDialog: onOpenCreditsDialog,
+      openHelpDialog: onOpenHelpDialog,
       openAuthDialog: onOpenAuthDialog,
       openPentestDialog: onOpenPentestDialog,
     };
@@ -75,18 +93,25 @@ export function CommandProvider({
     route,
     onOpenSessionsDialog,
     onOpenThemeDialog,
+    onOpenModelDialog,
+    onOpenProvidersDialog,
+    onOpenConfigDialog,
+    onOpenCreditsDialog,
+    onOpenHelpDialog,
     onOpenAuthDialog,
     onOpenPentestDialog,
   ]);
 
   const refreshSkills = useCallback(async () => {
-    const loaded = await loadSkills();
-    setSkills(loaded);
-  }, []);
+    await registry.refresh();
+    setRegistryVersion((v) => v + 1);
+  }, [registry]);
 
-  // Load skills on mount and whenever we return to home
+  // Load skills + registry on mount and whenever we return to home
   useEffect(() => {
-    refreshSkills();
+    registry.load({ projectRoot: process.cwd() }).then(() => {
+      setRegistryVersion((v) => v + 1);
+    });
   }, [route.data]);
 
   // Create router with context - initialized once
@@ -101,22 +126,16 @@ export function CommandProvider({
     return router;
   }, []);
 
-  // Build a slug-to-content map for fast skill resolution
-  const skillSlugMap = useMemo(() => {
-    const map = new Map<string, Skill>();
-    for (const skill of skills) {
-      map.set(slugify(skill.name), skill);
-    }
-    return map;
-  }, [skills]);
-
   const resolveSkillContent = useCallback(
     (input: string): string | null => {
       const trimmed = input.trim().replace(/^\/+/, "").toLowerCase();
-      const skill = skillSlugMap.get(trimmed);
-      return skill?.content ?? null;
+      const entry = registry.get(trimmed);
+      if (entry) {
+        return entry.manifest.description;
+      }
+      return null;
     },
-    [skillSlugMap],
+    [registry, registryVersion],
   );
 
   // Generate autocomplete options from router commands + skills
@@ -136,13 +155,12 @@ export function CommandProvider({
       });
     }
 
-    // Append skill-based slash commands
-    for (const skill of skills) {
-      const slug = slugify(skill.name);
+    // Append skills from registry (already deduplicated by slug)
+    for (const entry of registry.list()) {
       options.push({
-        value: `/${slug}`,
-        label: `/${slug}`,
-        description: skill.description || "Skill",
+        value: `/${entry.slug}`,
+        label: `/${entry.slug}`,
+        description: entry.manifest.description || "Skill",
       });
     }
 
@@ -175,7 +193,7 @@ export function CommandProvider({
       // Neither in priority list - sort alphabetically
       return a.value.localeCompare(b.value);
     });
-  }, [router, skills]);
+  }, [router, registry, registryVersion]);
 
   const executeCommand = useCallback(
     async (input: string): Promise<boolean> => {
@@ -190,17 +208,19 @@ export function CommandProvider({
       autocompleteOptions,
       executeCommand,
       commands,
-      skills,
       refreshSkills,
       resolveSkillContent,
+      skillsRegistry: registry,
+      skillsVersion: registryVersion,
     }),
     [
       router,
       autocompleteOptions,
       executeCommand,
-      skills,
       refreshSkills,
       resolveSkillContent,
+      registry,
+      registryVersion,
     ],
   );
 
