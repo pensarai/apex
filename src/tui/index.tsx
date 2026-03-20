@@ -35,7 +35,7 @@ import { writeErrorLog } from "../core/logger";
 import { checkForUpdate } from "../core/installation";
 import ShortcutsDialog from "./components/commands/shortcuts-dialog";
 import HelpDialog from "./components/commands/help-dialog";
-import ModelsDisplay from "./components/commands/models-display";
+import { ModelPickerDialog } from "./components/model-picker";
 import AuthFlow from "./components/commands/auth-flow";
 import CreditsFlow from "./components/commands/credits-flow";
 import { KeybindingProvider } from "./context/keybinding";
@@ -77,6 +77,10 @@ function App({ appConfig }: AppProps) {
   const [showShortcutsDialog, setShowShortcutsDialog] = useState(false);
   const [showThemeDialog, setShowThemeDialog] = useState(false);
   const [showAuthDialog, setShowAuthDialog] = useState(false);
+  const [showModelDialog, setShowModelDialog] = useState(false);
+  const [showProvidersDialog, setShowProvidersDialog] = useState(false);
+  const [showConfigDialog, setShowConfigDialog] = useState(false);
+  const [showCreditsDialog, setShowCreditsDialog] = useState(false);
   const [showPentestDialog, setShowPentestDialog] = useState(false);
   const [pendingPentestFlags, setPendingPentestFlags] = useState<
     WebCommandOptions | undefined
@@ -96,6 +100,10 @@ function App({ appConfig }: AppProps) {
                   <CommandProvider
                     onOpenSessionsDialog={() => setShowSessionsDialog(true)}
                     onOpenThemeDialog={() => setShowThemeDialog(true)}
+                    onOpenModelDialog={() => setShowModelDialog(true)}
+                    onOpenProvidersDialog={() => setShowProvidersDialog(true)}
+                    onOpenConfigDialog={() => setShowConfigDialog(true)}
+                    onOpenCreditsDialog={() => setShowCreditsDialog(true)}
                     onOpenAuthDialog={() => setShowAuthDialog(true)}
                     onOpenPentestDialog={(flags) => {
                       setPendingPentestFlags(flags);
@@ -122,6 +130,14 @@ function App({ appConfig }: AppProps) {
                         setShowShortcutsDialog={setShowShortcutsDialog}
                         showThemeDialog={showThemeDialog}
                         setShowThemeDialog={setShowThemeDialog}
+                        showModelDialog={showModelDialog}
+                        setShowModelDialog={setShowModelDialog}
+                        showProvidersDialog={showProvidersDialog}
+                        setShowProvidersDialog={setShowProvidersDialog}
+                        showConfigDialog={showConfigDialog}
+                        setShowConfigDialog={setShowConfigDialog}
+                        showCreditsDialog={showCreditsDialog}
+                        setShowCreditsDialog={setShowCreditsDialog}
                         showAuthDialog={showAuthDialog}
                         setShowAuthDialog={setShowAuthDialog}
                         showPentestDialog={showPentestDialog}
@@ -155,6 +171,14 @@ function AppContent({
   setShowShortcutsDialog,
   showThemeDialog,
   setShowThemeDialog,
+  showModelDialog,
+  setShowModelDialog,
+  showProvidersDialog,
+  setShowProvidersDialog,
+  showConfigDialog,
+  setShowConfigDialog,
+  showCreditsDialog,
+  setShowCreditsDialog,
   showAuthDialog,
   setShowAuthDialog,
   showPentestDialog,
@@ -175,6 +199,14 @@ function AppContent({
   setShowShortcutsDialog: (show: boolean) => void;
   showThemeDialog: boolean;
   setShowThemeDialog: (show: boolean) => void;
+  showModelDialog: boolean;
+  setShowModelDialog: (show: boolean) => void;
+  showProvidersDialog: boolean;
+  setShowProvidersDialog: (show: boolean) => void;
+  showConfigDialog: boolean;
+  setShowConfigDialog: (show: boolean) => void;
+  showCreditsDialog: boolean;
+  setShowCreditsDialog: (show: boolean) => void;
   showAuthDialog: boolean;
   setShowAuthDialog: (show: boolean) => void;
   showPentestDialog: boolean;
@@ -195,6 +227,7 @@ function AppContent({
 
   const { refocusPrompt } = useFocus();
   const { setExternalDialogOpen } = useDialog();
+  const [returnToCredits, setReturnToCredits] = useState(false);
 
   useEffect(() => {
     checkForUpdate().then(
@@ -228,13 +261,24 @@ function AppContent({
     }
   }, [config.data.responsibleUseAccepted, route.data]);
 
-  // Track external dialog state for theme/auth/pentest dialogs so operator input
-  // unfocuses while a dialog overlay is open
+  // Track external dialog state so operator input unfocuses while a dialog overlay is open
+  const anyExternalDialog =
+    showThemeDialog ||
+    showModelDialog ||
+    showProvidersDialog ||
+    showConfigDialog ||
+    showCreditsDialog ||
+    showAuthDialog ||
+    showPentestDialog;
+
   useEffect(() => {
-    if (showThemeDialog || showAuthDialog || showPentestDialog) {
+    if (anyExternalDialog) {
       setExternalDialogOpen(true);
+    } else {
+      const timer = setTimeout(() => setExternalDialogOpen(false), 0);
+      return () => clearTimeout(timer);
     }
-  }, [showThemeDialog, showAuthDialog, showPentestDialog]);
+  }, [anyExternalDialog]);
 
   // Auto-clear the exit warning after 1 second
   useEffect(() => {
@@ -255,37 +299,54 @@ function AppContent({
 
   const handleCloseShortcutsDialog = () => {
     setShowShortcutsDialog(false);
-    setTimeout(() => {
-      setExternalDialogOpen(false);
-    }, 0);
     setInputKey((prev) => prev + 1);
     refocusPrompt();
   };
 
   const handleCloseThemeDialog = () => {
     setShowThemeDialog(false);
-    setTimeout(() => {
-      setExternalDialogOpen(false);
-    }, 0);
+    setInputKey((prev) => prev + 1);
+    refocusPrompt();
+  };
+
+  const handleCloseModelDialog = () => {
+    setShowModelDialog(false);
+    setInputKey((prev) => prev + 1);
+    refocusPrompt();
+  };
+
+  const handleCloseProvidersDialog = () => {
+    setShowProvidersDialog(false);
+    setInputKey((prev) => prev + 1);
+    refocusPrompt();
+  };
+
+  const handleCloseConfigDialog = () => {
+    setShowConfigDialog(false);
+    setInputKey((prev) => prev + 1);
+    refocusPrompt();
+  };
+
+  const handleCloseCreditsDialog = () => {
+    setShowCreditsDialog(false);
     setInputKey((prev) => prev + 1);
     refocusPrompt();
   };
 
   const handleCloseAuthDialog = () => {
     setShowAuthDialog(false);
-    setTimeout(() => {
-      setExternalDialogOpen(false);
-    }, 0);
-    setInputKey((prev) => prev + 1);
-    refocusPrompt();
+    if (returnToCredits) {
+      setReturnToCredits(false);
+      setShowCreditsDialog(true);
+    } else {
+      setInputKey((prev) => prev + 1);
+      refocusPrompt();
+    }
   };
 
   const handleClosePentestDialog = () => {
     setShowPentestDialog(false);
     setPendingPentestFlags(undefined);
-    setTimeout(() => {
-      setExternalDialogOpen(false);
-    }, 0);
     setInputKey((prev) => prev + 1);
     refocusPrompt();
   };
@@ -296,9 +357,6 @@ function AppContent({
   ) => {
     setShowPentestDialog(false);
     setPendingPentestFlags(undefined);
-    setTimeout(() => {
-      setExternalDialogOpen(false);
-    }, 0);
     route.navigate({ type: "pentest", targets, sessionConfig });
   };
 
@@ -319,6 +377,7 @@ function AppContent({
         focusIndex={focusIndex}
         inputKey={inputKey}
         onOpenAuthDialog={() => setShowAuthDialog(true)}
+        onOpenModelDialog={() => setShowModelDialog(true)}
       />
 
       <Footer cwd={cwd} showExitWarning={showExitWarning} />
@@ -335,6 +394,33 @@ function AppContent({
       )}
 
       {showThemeDialog && <ThemePicker onClose={handleCloseThemeDialog} />}
+
+      {showModelDialog && (
+        <ModelPickerDialog onClose={handleCloseModelDialog} />
+      )}
+
+      {showProvidersDialog && (
+        <ProviderManager
+          onClose={handleCloseProvidersDialog}
+          onOpenModelDialog={() => {
+            setShowProvidersDialog(false);
+            setShowModelDialog(true);
+          }}
+        />
+      )}
+
+      {showConfigDialog && <ConfigDialog onClose={handleCloseConfigDialog} />}
+
+      {showCreditsDialog && (
+        <CreditsFlow
+          onClose={handleCloseCreditsDialog}
+          onOpenAuthDialog={() => {
+            setShowCreditsDialog(false);
+            setReturnToCredits(true);
+            setShowAuthDialog(true);
+          }}
+        />
+      )}
 
       {showAuthDialog && <AuthFlow onClose={handleCloseAuthDialog} />}
 
@@ -367,10 +453,12 @@ function CommandDisplay({
   focusIndex,
   inputKey,
   onOpenAuthDialog,
+  onOpenModelDialog,
 }: {
   focusIndex: number;
   inputKey: number;
   onOpenAuthDialog: () => void;
+  onOpenModelDialog: () => void;
 }) {
   const route = useRoute();
   const config = useConfig();
@@ -410,9 +498,6 @@ function CommandDisplay({
           <RouteSwitch.Case when="home">
             <ChatApp />
           </RouteSwitch.Case>
-          <RouteSwitch.Case when="config">
-            <ConfigDialog />
-          </RouteSwitch.Case>
           <RouteSwitch.Case when="operator">
             <HITLWizard
               initialTarget={route.data.options?.target}
@@ -420,9 +505,6 @@ function CommandDisplay({
               initialRequireApproval={route.data.options?.requireApproval}
               initialModel={route.data.options?.model}
             />
-          </RouteSwitch.Case>
-          <RouteSwitch.Case when="models">
-            <ModelsDisplay />
           </RouteSwitch.Case>
           <RouteSwitch.Case when="auth">
             <AuthFlow
@@ -436,16 +518,10 @@ function CommandDisplay({
             />
           </RouteSwitch.Case>
           <RouteSwitch.Case when="providers">
-            <ProviderManager />
+            <ProviderManager onOpenModelDialog={onOpenModelDialog} />
           </RouteSwitch.Case>
           <RouteSwitch.Case when="help">
             <HelpDialog />
-          </RouteSwitch.Case>
-          <RouteSwitch.Case when="models">
-            <ModelsDisplay />
-          </RouteSwitch.Case>
-          <RouteSwitch.Case when="credits">
-            <CreditsFlow onOpenAuthDialog={onOpenAuthDialog} />
           </RouteSwitch.Case>
           <RouteSwitch.Case when="skills">
             <SkillsDialog />

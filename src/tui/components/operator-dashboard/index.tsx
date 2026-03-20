@@ -54,7 +54,6 @@ import {
   readExecutionMetrics,
   writeExecutionMetrics,
 } from "../../../core/session/execution-metrics";
-import { ModelPicker } from "../model-picker";
 import { stepCountIs, type ModelMessage } from "ai";
 import {
   type DashboardStatus,
@@ -105,13 +104,7 @@ export default function OperatorDashboard({
     skillsRegistry,
     skillsVersion,
   } = useCommand();
-  const {
-    stack,
-    externalDialogOpen,
-    replace: showDialog,
-    clear: clearDialog,
-    setSize: setDialogSize,
-  } = useDialog();
+  const { stack, externalDialogOpen } = useDialog();
   const { refocusPrompt } = useFocus();
 
   const autocompleteOptions = useMemo(() => {
@@ -1050,40 +1043,8 @@ export default function OperatorDashboard({
   }, [status]);
 
   const showModelPicker = useCallback(() => {
-    setDialogSize("large");
-    showDialog(
-      <box flexDirection="column" width="100%" paddingLeft={4} paddingTop={1}>
-        <text>
-          <span fg={colors.primary}>█ </span>
-          <span fg={colors.text}>Select AI Model</span>
-          <span fg={colors.textMuted}> ({model.name})</span>
-        </text>
-        <box flexDirection="column" paddingLeft={2} marginTop={1}>
-          <ModelPicker
-            config={config.data}
-            selectedModel={model}
-            onSelectModel={setModel}
-            onConfirm={clearDialog}
-            onConfigUpdate={config.update}
-            focused={true}
-            isModelUserSelected={isModelUserSelected}
-          />
-        </box>
-        <box marginTop={1} paddingLeft={2}>
-          <text fg={colors.textMuted}>[Enter] confirm • [ESC] close</text>
-        </box>
-      </box>,
-    );
-  }, [
-    colors,
-    model,
-    setModel,
-    isModelUserSelected,
-    config,
-    showDialog,
-    clearDialog,
-    setDialogSize,
-  ]);
+    executeCommand("/models");
+  }, [executeCommand]);
 
   const handleCommandExecute = useCallback(
     async (command: string) => {
