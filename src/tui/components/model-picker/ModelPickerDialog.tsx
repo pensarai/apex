@@ -55,9 +55,9 @@ export default function ModelPickerDialog({ onClose }: ModelPickerDialogProps) {
         <box marginTop={1} paddingLeft={1} flexShrink={0}>
           <DialogControls
             controls={[
+              { key: "Enter", label: "Confirm", variant: "primary" },
               { key: "↑/↓", label: "Navigate" },
               { key: "←/→", label: "Collapse/Expand" },
-              { key: "Enter", label: "Confirm", variant: "primary" },
             ]}
           />
         </box>

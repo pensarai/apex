@@ -317,9 +317,9 @@ export default function HITLWizard(props: HITLWizardProps) {
       <box flexDirection="column" gap={0} marginTop={2}>
         <DialogControls
           controls={[
+            { key: "Enter", label: "Select", variant: "primary" },
             { key: "↑/↓", label: "Navigate" },
             { key: "←/→", label: "Change Value" },
-            { key: "Enter", label: "Select", variant: "primary" },
             { key: "Esc", label: "Back" },
           ]}
         />

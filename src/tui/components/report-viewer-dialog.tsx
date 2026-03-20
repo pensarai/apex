@@ -174,7 +174,6 @@ export default function ReportViewerDialog({
         >
           <DialogControls
             controls={[
-              { key: "↑/↓", label: "Scroll" },
               ...(onOpenExternal
                 ? [
                     {
@@ -184,6 +183,7 @@ export default function ReportViewerDialog({
                     },
                   ]
                 : []),
+              { key: "↑/↓", label: "Scroll" },
               { key: "Esc", label: "Close" },
             ]}
           />

@@ -342,8 +342,8 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
         {visualOrderSessions.length > 0 && (
           <DialogControls
             controls={[
-              { key: "↑/↓", label: "Navigate" },
               { key: "Enter", label: "Open", variant: "primary" },
+              { key: "↑/↓", label: "Navigate" },
               { key: "O", label: "Operator" },
               { key: "R", label: "Report" },
               { key: "Ctrl+D", label: "Delete", variant: "danger" },

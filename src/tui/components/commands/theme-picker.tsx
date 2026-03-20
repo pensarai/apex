@@ -158,8 +158,8 @@ export default function ThemePicker({ onClose }: ThemePickerProps) {
         <box width="100%" flexDirection="row">
           <DialogControls
             controls={[
-              { key: "↑/↓", label: "Browse" },
               { key: "Enter", label: "Select", variant: "primary" },
+              { key: "↑/↓", label: "Browse" },
               { key: "M", label: "Toggle Mode" },
               { key: "Esc", label: "Cancel" },
             ]}

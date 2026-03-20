@@ -23,8 +23,8 @@
  *
  * ## Ordering convention (enforced by caller)
  *
- * 1. Navigation (↑/↓, Tab)
- * 2. Primary action (Enter)
+ * 1. Primary action (Enter) — always first
+ * 2. Navigation (↑/↓, Tab, ←/→)
  * 3. Secondary actions (letter keys)
  * 4. Danger actions (D, Ctrl+D)
  * 5. Dismiss (Esc) — always last

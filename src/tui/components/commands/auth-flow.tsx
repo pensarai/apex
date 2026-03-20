@@ -567,8 +567,8 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
             <box marginTop={1}>
               <DialogControls
                 controls={[
-                  { key: "↑/↓", label: "Navigate" },
                   { key: "Enter", label: "Select", variant: "primary" },
+                  { key: "↑/↓", label: "Navigate" },
                   { key: "D", label: "Disconnect", variant: "danger" },
                   { key: "Esc", label: "Cancel" },
                 ]}
