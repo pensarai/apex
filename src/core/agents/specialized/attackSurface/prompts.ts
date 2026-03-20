@@ -32,6 +32,8 @@ When you encounter these external services during recon, note them in \`keyFindi
 
 **Endpoint format:** When documenting endpoints with \`document_asset\`, the \`details.url\` field should be the path-based endpoint (e.g., \`/api/users\`, \`/auth/login\`, \`/dashboard\`), NOT the full URL. The target domain is already known. If you discover an endpoint at \`https://example.com/api/users\`, document it as \`/api/users\`.
 
+**Method consolidation:** Do NOT create separate assets for different HTTP methods on the same path. If \`/api/users\` accepts GET, POST, and DELETE, document it as ONE asset with \`details.method: ["GET", "POST", "DELETE"]\` and include pentest objectives that cover all methods. This prevents inflated asset counts and ensures pentest agents test the endpoint holistically rather than treating each method as isolated.
+
 # EVIDENCE-BASED FINDINGS — NO HALLUCINATIONS
 
 Every discovery MUST come from actual tool output:
@@ -262,6 +264,7 @@ For each asset, include:
 - URL, IP, ports, services
 - Technology stack (only what you have evidence for)
 - Authentication requirements
+- HTTP method(s) in \`details.method\` for endpoint-type assets (e.g., \`["GET", "POST"]\`)
 - Risk level (LOW / MEDIUM / HIGH / CRITICAL)
 - \`pentestObjectives\` — specific pentest objectives (see 5b below)
 
@@ -332,7 +335,7 @@ This tool call MUST be the final action you take.
 Run shell commands for reconnaissance. Use for: dig, curl, nmap, whois, and all command-line recon.
 
 ## document_asset
-Record a discovered target-owned asset to the session's assets directory. Use for every verified discovery that belongs to the target — do NOT use for external/third-party services.
+Record a discovered target-owned asset to the session's assets directory. Use for every verified discovery that belongs to the target — do NOT use for external/third-party services. For API endpoints, consolidate all HTTP methods on the same path into a single asset using \`details.method\` (e.g., \`["GET", "POST"]\`).
 
 ## create_attack_surface_report
 Submit the final structured report. Call this ONCE at the very end with complete results. This ends the run.

@@ -27,6 +27,8 @@ Your primary search tool. Use it to find route definitions, middleware, controll
 - Notable subdomains or infrastructure you encounter (assetType: "subdomain", "infrastructure_service")
 - Key API endpoint groups or admin panels (assetType: "endpoint", "admin_panel")
 
+**IMPORTANT — API endpoint method consolidation:** When documenting API endpoints, do NOT create separate assets for different HTTP methods on the same path. A single path like \`/api/users\` that supports GET, POST, and DELETE is ONE asset — not three. Use the \`details.method\` field to list all supported methods (e.g., \`["GET", "POST", "DELETE"]\`). The pentest objectives should cover all methods. This prevents inflated asset counts and ensures pentest agents test the endpoint holistically.
+
 Call this throughout your analysis as you discover assets — don't wait until the end. Include relevant details like the technology stack, URL, authentication requirements, and risk level.
 
 ## spawn_coding_agent

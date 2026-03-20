@@ -21,6 +21,14 @@ export type {
  */
 export const AssetDetailsSchema = z.object({
   url: z.string().optional().describe("URL if applicable"),
+  method: z
+    .union([z.string(), z.array(z.string())])
+    .optional()
+    .describe(
+      "HTTP method(s) supported by this endpoint (e.g., 'GET', 'POST', or ['GET', 'POST', 'DELETE']). " +
+        "Use this for endpoint-type assets to list ALL methods the endpoint accepts. " +
+        "Multiple methods on the same path should be documented as a single asset with all methods listed here.",
+    ),
   ip: z.string().optional().describe("IP address if known"),
   ports: z.array(z.number()).optional().describe("Open ports"),
   services: z
