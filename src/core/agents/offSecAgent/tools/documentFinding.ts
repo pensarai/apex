@@ -5,6 +5,7 @@ import { writeFileSync, appendFileSync, readFileSync } from "fs";
 import type { ToolContext } from "./types";
 import {
   scoreFindingWithCVSS,
+  type CVSSScorerInput,
   type CVSSScorerResult,
 } from "../../specialized/cvssScorer";
 import type { Finding } from "../types";
@@ -111,7 +112,7 @@ FINDING STRUCTURE:
         let cvssResult: CVSSScorerResult;
         let cvssWarning: string | undefined;
 
-        const cvssInput: Parameters<typeof scoreFindingWithCVSS>[0] = {
+        const cvssInput: CVSSScorerInput = {
           finding: {
             title: input.title,
             description: input.description,
@@ -124,30 +125,25 @@ FINDING STRUCTURE:
           agentMessages: [],
         };
 
-        try {
-          cvssResult = await scoreFindingWithCVSS(
-            cvssInput,
-            ctx.model!,
-            ctx.authConfig,
-            ctx.abortSignal,
-          );
-        } catch {
-          // Retry once after a short delay before falling back.
+        const MAX_CVSS_ATTEMPTS = 2;
+        for (let attempt = 0; ; attempt++) {
           try {
-            await new Promise((r) => setTimeout(r, 2_000));
             cvssResult = await scoreFindingWithCVSS(
               cvssInput,
               ctx.model!,
               ctx.authConfig,
               ctx.abortSignal,
             );
-          } catch (retryError: unknown) {
-            const msg =
-              retryError instanceof Error
-                ? retryError.message
-                : String(retryError);
-            cvssWarning = `CVSS scoring failed after retry (${msg}), using estimated MEDIUM severity.`;
-            cvssResult = FALLBACK_CVSS;
+            break;
+          } catch (err: unknown) {
+            if (attempt >= MAX_CVSS_ATTEMPTS - 1 || ctx.abortSignal?.aborted) {
+              const msg =
+                err instanceof Error ? err.message : String(err);
+              cvssWarning = `CVSS scoring failed after ${attempt + 1} attempt(s) (${msg}), using estimated MEDIUM severity.`;
+              cvssResult = FALLBACK_CVSS;
+              break;
+            }
+            await new Promise((r) => setTimeout(r, 2_000));
           }
         }
 
@@ -204,7 +200,7 @@ FINDING STRUCTURE:
           ...(pocOutput && { pocOutput }),
           cwes: cvssResult.cwes,
           cvss: {
-            scored: !cvssWarning,
+            scored: cvssWarning === undefined,
             score: cvssResult.score,
             severity: cvssResult.severity,
             vectorString: cvssWarning ? "" : cvssResult.vectorString,
