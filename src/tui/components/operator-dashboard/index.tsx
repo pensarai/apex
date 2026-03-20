@@ -86,6 +86,7 @@ export default function OperatorDashboard({
     requireApproval?: boolean;
     target?: string;
     operatorMode?: OperatorMode;
+    sandbox?: boolean;
   };
 }) {
   const { colors } = useTheme();
@@ -882,7 +883,11 @@ export default function OperatorDashboard({
               initialConfig?.target,
               operatorState,
               agentMode,
-              { requireApproval, skillsCatalog },
+              {
+                requireApproval,
+                sandboxMode: !!initialConfig?.sandbox,
+                skillsCatalog,
+              },
             ),
             session,
           });
@@ -896,6 +901,7 @@ export default function OperatorDashboard({
               requireApproval,
               enableSuggestions: true,
             },
+            agentCwd: initialConfig?.sandbox ? undefined : process.cwd(),
           };
           agentResult = await runOffensiveSecurityAgent({
             ...commonInput,
@@ -903,7 +909,11 @@ export default function OperatorDashboard({
               initialConfig?.target,
               operatorState,
               agentMode,
-              { requireApproval, skillsCatalog },
+              {
+                requireApproval,
+                sandboxMode: !!initialConfig?.sandbox,
+                skillsCatalog,
+              },
             ),
             sessionConfig,
             onNameGenerated: (name: string) => {
