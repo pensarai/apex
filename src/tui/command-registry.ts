@@ -183,6 +183,7 @@ export const commands: CommandConfig[] = [
         description: "Custom header (repeatable)",
       },
       { name: "--model", valueHint: "<model>", description: "AI model to use" },
+      { name: "--sandbox", description: "Use isolated session directory as working directory" },
     ],
     handler: async (args, ctx) => {
       const flags = parseWebFlags(args);
