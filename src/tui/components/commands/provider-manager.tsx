@@ -70,15 +70,12 @@ export default function ProviderManager({
     await config.update(configUpdate);
     await _config.reload();
 
-    if (onClose) {
-      onClose();
-    }
     if (onOpenModelDialog) {
-      if (!onClose) {
-        route.navigate({ type: "base", path: "home" });
-      }
+      // Transition directly to model dialog — skip prompt cleanup
       onOpenModelDialog();
-    } else if (!onClose) {
+    } else if (onClose) {
+      onClose();
+    } else {
       route.navigate({ type: "base", path: "home" });
     }
   };

@@ -82,6 +82,7 @@ function App({ appConfig }: AppProps) {
   const [showConfigDialog, setShowConfigDialog] = useState(false);
   const [showCreditsDialog, setShowCreditsDialog] = useState(false);
   const [showPentestDialog, setShowPentestDialog] = useState(false);
+  const [returnToCredits, setReturnToCredits] = useState(false);
   const [pendingPentestFlags, setPendingPentestFlags] = useState<
     WebCommandOptions | undefined
   >(undefined);
@@ -334,8 +335,13 @@ function AppContent({
 
   const handleCloseAuthDialog = () => {
     setShowAuthDialog(false);
-    setInputKey((prev) => prev + 1);
-    refocusPrompt();
+    if (returnToCredits) {
+      setReturnToCredits(false);
+      setShowCreditsDialog(true);
+    } else {
+      setInputKey((prev) => prev + 1);
+      refocusPrompt();
+    }
   };
 
   const handleClosePentestDialog = () => {
@@ -396,7 +402,10 @@ function AppContent({
       {showProvidersDialog && (
         <ProviderManager
           onClose={handleCloseProvidersDialog}
-          onOpenModelDialog={() => setShowModelDialog(true)}
+          onOpenModelDialog={() => {
+            setShowProvidersDialog(false);
+            setShowModelDialog(true);
+          }}
         />
       )}
 
@@ -407,6 +416,7 @@ function AppContent({
           onClose={handleCloseCreditsDialog}
           onOpenAuthDialog={() => {
             setShowCreditsDialog(false);
+            setReturnToCredits(true);
             setShowAuthDialog(true);
           }}
         />
