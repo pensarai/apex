@@ -76,7 +76,9 @@ export default function AlertDialog({
             justifyContent="flex-end"
             marginBottom={1}
           >
-            <text fg={colors.textMuted}>Esc to close</text>
+            <text fg={colors.textMuted}>
+              <span fg={colors.textMuted}>[Esc]</span> Close
+            </text>
           </box>
         )}
         {title ? (

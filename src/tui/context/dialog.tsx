@@ -66,7 +66,9 @@ export function Dialog({
             paddingRight={2}
             flexShrink={0}
           >
-            <text fg={themeColors.textMuted}>Esc to close</text>
+            <text fg={themeColors.textMuted}>
+              <span fg={themeColors.textMuted}>[Esc]</span> Close
+            </text>
           </box>
         )}
         {children}
