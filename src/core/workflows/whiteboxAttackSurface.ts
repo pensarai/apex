@@ -73,11 +73,13 @@ Document these types of assets:
 - **endpoint**: Notable endpoint groups — auth endpoints, file upload handlers, payment flows, admin routes
 - **development_asset**: Dev/staging environments, CI/CD pipelines, internal tools
 
+**IMPORTANT — API endpoint method consolidation:** When documenting API endpoints, do NOT create separate assets for different HTTP methods on the same path. A single path like \`/api/users\` that supports GET, POST, and DELETE is ONE asset — not three. Use the \`details.method\` field to list all supported methods (e.g., \`["GET", "POST", "DELETE"]\`). The pentest objectives should cover testing scenarios relevant to each method. This prevents inflated asset counts and ensures pentest agents test the endpoint holistically.
+
 For each asset, include:
 - **assetName**: A unique descriptive name (e.g., "user-api", "admin-dashboard", "payment-service")
 - **assetType**: One of the types above
 - **description**: What it is, what it does, why it matters for security
-- **details**: Include \`technology\` (stack), \`endpoints\` (key routes), \`authentication\` (auth type), and \`url\` if known
+- **details**: Include \`technology\` (stack), \`endpoints\` (key routes), \`authentication\` (auth type), \`method\` (HTTP methods for endpoint assets), and \`url\` if known
 - **riskLevel**: CRITICAL for auth/payment/admin, HIGH for user data, MEDIUM for general functionality, LOW for static/public
 
 ## response
@@ -544,6 +546,8 @@ Find ALL API endpoints defined in this application.
   - "Test for privilege escalation by calling admin-only endpoint as regular user"
   - "Test for mass assignment by sending extra fields in the POST body"
   - "Test for rate limiting on the login endpoint"
+
+**IMPORTANT — Method consolidation for document_asset:** When using the \`document_asset\` tool, do NOT create separate assets for different HTTP methods on the same route path. For example, if \`/api/users\` supports GET, POST, and DELETE, document it as ONE asset with \`details.method: ["GET", "POST", "DELETE"]\` and include pentest objectives covering all methods. However, when reporting endpoints via the \`response\` tool, you may still list each method+path combination individually for completeness — the consolidation rule applies specifically to \`document_asset\` calls.
 
 Be thorough — trace through all route registrations, middleware chains, and controller files.
 When finished, call the \`response\` tool with your structured findings.`;
