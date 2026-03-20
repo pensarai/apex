@@ -96,17 +96,13 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
 
       const entry = skillsRegistry.get(slug);
       if (entry) {
-        // Navigate to skills detail page to show skill info
-        route.navigate({
-          type: "base",
-          path: "skills",
-          options: { skillSlug: slug },
-        });
+        // Open skills dialog with this skill's detail view
+        await executeCommand(`/skills ${slug}`);
         return;
       }
       await executeCommand(command);
     },
-    [skillsRegistry, route, executeCommand, pushHistory],
+    [skillsRegistry, executeCommand, pushHistory],
   );
 
   // Responsive layout calculations
