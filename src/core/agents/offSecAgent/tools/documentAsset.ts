@@ -28,6 +28,8 @@ Use this tool to document:
 - Cloud resources (S3 buckets, CDN, cloud storage)
 - Development assets (dev/staging/test environments, CI/CD, repos)
 
+**API endpoint consolidation:** When documenting API endpoints, do NOT create separate assets for each HTTP method on the same path. Instead, document each unique path as a single asset and list all supported methods in \`details.method\` (e.g., \`["GET", "POST", "DELETE"]\`). For example, \`GET /api/users\` and \`POST /api/users\` should be ONE asset named \`/api/users\` with \`details.method: ["GET", "POST"]\`.
+
 Each asset creates a JSON file in the assets directory for tracking and analysis.`,
     inputSchema: z.object({
       assetName: z
@@ -67,6 +69,13 @@ Each asset creates a JSON file in the assets directory for tracking and analysis
           },
           z.object({
             url: z.string().optional().describe("URL if applicable"),
+            method: z
+              .union([z.string(), z.array(z.string())])
+              .optional()
+              .describe(
+                "HTTP method(s) supported by this endpoint (e.g., 'GET', 'POST', or ['GET', 'POST', 'DELETE']). " +
+                  "Use this for endpoint-type assets to list ALL methods the endpoint accepts.",
+              ),
             ip: z.string().optional().describe("IP address if known"),
             ports: z.array(z.number()).optional().describe("Open ports"),
             services: z
