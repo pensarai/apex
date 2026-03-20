@@ -4,7 +4,6 @@ import Footer from "./components/footer";
 import { CommandProvider } from "./context/command";
 import { AgentProvider } from "./context/agent";
 import SessionsDisplay from "./components/commands/sessions-display";
-import ConfigDialog from "./components/commands/config-dialog";
 import ChatApp from "./components/chat";
 import HITLWizard from "./components/commands/operator-wizard";
 import WebWizard from "./components/commands/web-wizard";
@@ -80,7 +79,6 @@ function App({ appConfig }: AppProps) {
   const [showAuthDialog, setShowAuthDialog] = useState(false);
   const [showModelDialog, setShowModelDialog] = useState(false);
   const [showProvidersDialog, setShowProvidersDialog] = useState(false);
-  const [showConfigDialog, setShowConfigDialog] = useState(false);
   const [showCreditsDialog, setShowCreditsDialog] = useState(false);
   const [showHelpDialog, setShowHelpDialog] = useState(false);
   const [showPentestDialog, setShowPentestDialog] = useState(false);
@@ -104,7 +102,6 @@ function App({ appConfig }: AppProps) {
                     onOpenThemeDialog={() => setShowThemeDialog(true)}
                     onOpenModelDialog={() => setShowModelDialog(true)}
                     onOpenProvidersDialog={() => setShowProvidersDialog(true)}
-                    onOpenConfigDialog={() => setShowConfigDialog(true)}
                     onOpenCreditsDialog={() => setShowCreditsDialog(true)}
                     onOpenHelpDialog={() => setShowHelpDialog(true)}
                     onOpenAuthDialog={() => setShowAuthDialog(true)}
@@ -137,8 +134,6 @@ function App({ appConfig }: AppProps) {
                         setShowModelDialog={setShowModelDialog}
                         showProvidersDialog={showProvidersDialog}
                         setShowProvidersDialog={setShowProvidersDialog}
-                        showConfigDialog={showConfigDialog}
-                        setShowConfigDialog={setShowConfigDialog}
                         showCreditsDialog={showCreditsDialog}
                         setShowCreditsDialog={setShowCreditsDialog}
                         showHelpDialog={showHelpDialog}
@@ -180,8 +175,6 @@ function AppContent({
   setShowModelDialog,
   showProvidersDialog,
   setShowProvidersDialog,
-  showConfigDialog,
-  setShowConfigDialog,
   showCreditsDialog,
   setShowCreditsDialog,
   showHelpDialog,
@@ -210,8 +203,6 @@ function AppContent({
   setShowModelDialog: (show: boolean) => void;
   showProvidersDialog: boolean;
   setShowProvidersDialog: (show: boolean) => void;
-  showConfigDialog: boolean;
-  setShowConfigDialog: (show: boolean) => void;
   showCreditsDialog: boolean;
   setShowCreditsDialog: (show: boolean) => void;
   showHelpDialog: boolean;
@@ -275,7 +266,6 @@ function AppContent({
     showThemeDialog ||
     showModelDialog ||
     showProvidersDialog ||
-    showConfigDialog ||
     showCreditsDialog ||
     showHelpDialog ||
     showAuthDialog ||
@@ -327,12 +317,6 @@ function AppContent({
 
   const handleCloseProvidersDialog = () => {
     setShowProvidersDialog(false);
-    setInputKey((prev) => prev + 1);
-    refocusPrompt();
-  };
-
-  const handleCloseConfigDialog = () => {
-    setShowConfigDialog(false);
     setInputKey((prev) => prev + 1);
     refocusPrompt();
   };
@@ -427,8 +411,6 @@ function AppContent({
           }}
         />
       )}
-
-      {showConfigDialog && <ConfigDialog onClose={handleCloseConfigDialog} />}
 
       {showCreditsDialog && (
         <CreditsFlow
