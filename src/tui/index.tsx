@@ -82,7 +82,6 @@ function App({ appConfig }: AppProps) {
   const [showConfigDialog, setShowConfigDialog] = useState(false);
   const [showCreditsDialog, setShowCreditsDialog] = useState(false);
   const [showPentestDialog, setShowPentestDialog] = useState(false);
-  const [returnToCredits, setReturnToCredits] = useState(false);
   const [pendingPentestFlags, setPendingPentestFlags] = useState<
     WebCommandOptions | undefined
   >(undefined);
@@ -228,6 +227,7 @@ function AppContent({
 
   const { refocusPrompt } = useFocus();
   const { setExternalDialogOpen } = useDialog();
+  const [returnToCredits, setReturnToCredits] = useState(false);
 
   useEffect(() => {
     checkForUpdate().then(
