@@ -19,10 +19,7 @@ import {
 } from "./tools";
 import { createResponseTool, RESPONSE_TOOL_NAME } from "./tools/response";
 import { PersistentShell } from "./tools/persistentShell";
-import {
-  buildBaseSystemPrompt,
-  buildSessionWorkspaceSection,
-} from "./prompt";
+import { buildBaseSystemPrompt, buildSessionWorkspaceSection } from "./prompt";
 import type { ApprovalGate } from "../../operator";
 import { ApprovalDeniedError } from "../../operator";
 import { create as createSession, type SessionInfo } from "../../session";
