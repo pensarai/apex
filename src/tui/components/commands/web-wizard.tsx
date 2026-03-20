@@ -730,13 +730,14 @@ export default function WebWizard({
               overflow: "hidden",
             },
             contentOptions: { flexDirection: "column" },
-            scrollbarOptions: { visible: false },
+            scrollbarOptions: { visible: true },
           }}
           stickyScroll={false}
         >
           {/* Target URL */}
           <box id="field-target" paddingLeft={4} paddingRight={2}>
             <Input
+              compact
               label="Target URL"
               description="e.g., https://example.com"
               placeholder="https://example.com"
@@ -784,6 +785,7 @@ export default function WebWizard({
           {state.sourceCodeAccess && (
             <box id="field-cwd" paddingLeft={4} paddingRight={2}>
               <Input
+                compact
                 label="Codebase Path"
                 description="Path to the source code directory"
                 placeholder={process.cwd()}
@@ -837,6 +839,7 @@ export default function WebWizard({
                 <>
                   <box id="field-loginUrl" paddingLeft={8} paddingRight={2}>
                     <Input
+                      compact
                       label="Login URL"
                       placeholder="https://example.com/login"
                       value={state.auth.loginUrl}
@@ -864,6 +867,7 @@ export default function WebWizard({
                   </box>
                   <box id="field-username" paddingLeft={8} paddingRight={2}>
                     <Input
+                      compact
                       label="Username"
                       placeholder="admin"
                       value={state.auth.username}
@@ -891,6 +895,7 @@ export default function WebWizard({
                   </box>
                   <box id="field-password" paddingLeft={8} paddingRight={2}>
                     <Input
+                      compact
                       label="Password"
                       placeholder="••••••••"
                       value={state.auth.password}
@@ -918,6 +923,7 @@ export default function WebWizard({
                   </box>
                   <box id="field-instructions" paddingLeft={8} paddingRight={2}>
                     <Input
+                      compact
                       label="Auth Instructions"
                       placeholder="Use OAuth flow, extract bearer token..."
                       value={state.auth.instructions}
@@ -966,6 +972,7 @@ export default function WebWizard({
                 <>
                   <box id="field-host" paddingLeft={8} paddingRight={2}>
                     <Input
+                      compact
                       label="Add Allowed Host"
                       description="Press Enter to add"
                       placeholder="example.com"
@@ -985,6 +992,7 @@ export default function WebWizard({
                   )}
                   <box id="field-port" paddingLeft={8} paddingRight={2}>
                     <Input
+                      compact
                       label="Add Allowed Port"
                       description="Press Enter to add"
                       placeholder="443"
@@ -1133,6 +1141,7 @@ export default function WebWizard({
                         paddingRight={2}
                       >
                         <Input
+                          compact
                           label="Header Name"
                           placeholder="X-Custom-Header"
                           value={headerNameInput}
@@ -1146,6 +1155,7 @@ export default function WebWizard({
                         paddingRight={2}
                       >
                         <Input
+                          compact
                           label="Header Value"
                           description="Press Enter to add header"
                           placeholder="value"

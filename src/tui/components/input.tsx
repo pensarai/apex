@@ -6,20 +6,26 @@ import { useTheme } from "../theme";
 interface InputComponentProps extends InputProps {
   label: string;
   description?: string;
+  compact?: boolean;
 }
 
 const Input = forwardRef<InputRenderable, InputComponentProps>(
   function Input(opts, ref) {
     const { colors } = useTheme();
-    const { label, focused = true, description, ...inputProps } = opts;
+    const {
+      label,
+      focused = true,
+      description,
+      compact = false,
+      ...inputProps
+    } = opts;
 
     return (
       <box
         width="100%"
         backgroundColor="transparent"
         flexDirection="column"
-        paddingBottom={1}
-        // paddingTop={1}
+        paddingBottom={compact ? 0 : 1}
         border={["left"]}
         borderColor={colors.primary}
       >
