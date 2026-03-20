@@ -6,7 +6,7 @@ import {
   useRef,
   useMemo,
 } from "react";
-import { useKeyboard } from "@opentui/react";
+import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import {
   SyntaxStyle,
   type TextareaRenderable,
@@ -137,6 +137,7 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
     const { colors } = useTheme();
     const { inputValue, setInputValue } = useInput();
     const { registerPromptRef } = useFocus();
+    const { width: termWidth } = useTerminalDimensions();
     const textareaRef = useRef<TextareaRenderable | null>(null);
     const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(-1);
 
@@ -475,6 +476,15 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
       [suggestions, selectedSuggestionIndex, maxVisibleSuggestions],
     );
 
+    // Fixed-width label column for grid-like alignment
+    const maxLabelWidth = useMemo(
+      () => suggestions.reduce((max, s) => Math.max(max, s.label.length), 0),
+      [suggestions],
+    );
+
+    // Available width for description: total - indicator(2) - gap(1) - label - gap(1) - leading space(1)
+    const descriptionWidth = Math.max(10, termWidth - 2 - 1 - maxLabelWidth - 2);
+
     const suggestionsBox = suggestions.length > 0 && (
       <box
         flexDirection="column"
@@ -496,16 +506,22 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
         {windowedView.visibleSuggestions.map((suggestion, windowIndex) => {
           const actualIndex = windowedView.start + windowIndex;
           const isSelected = actualIndex === selectedSuggestionIndex;
+          const paddedLabel = suggestion.label.padEnd(maxLabelWidth);
+          const desc = suggestion.description
+            ? suggestion.description.length > descriptionWidth
+              ? suggestion.description.slice(0, descriptionWidth - 1) + "\u2026"
+              : suggestion.description
+            : "";
           return (
             <box key={suggestion.value} flexDirection="row" gap={1}>
               <text fg={isSelected ? colors.primary : colors.textMuted}>
-                {isSelected ? " ▸" : "  "}
+                {isSelected ? " \u25B8" : "  "}
               </text>
               <text fg={isSelected ? colors.text : colors.textMuted}>
-                {suggestion.label}
+                {paddedLabel}
               </text>
-              {suggestion.description && (
-                <text fg={colors.textMuted}> {suggestion.description}</text>
+              {desc && (
+                <text fg={colors.textMuted}> {desc}</text>
               )}
             </box>
           );
