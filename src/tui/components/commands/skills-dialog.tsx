@@ -7,6 +7,7 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { useKeyboard } from "@opentui/react";
+import { SyntaxStyle } from "@opentui/core";
 import { useCommand } from "../../context/command";
 import { useDimensions } from "../../context/dimensions";
 import { useTheme } from "../../theme";
@@ -91,15 +92,17 @@ export default function SkillsDialog({ onClose, initialSlug }: SkillsDialogProps
   }, [allSkills]);
 
   useKeyboard((evt) => {
-    evt.preventDefault();
-
-    // Detail view — escape/enter goes back to list
+    // Detail view — only intercept escape to go back; let scrollbox handle scroll keys
     if (detailSkill) {
-      if (evt.name === "escape" || evt.name === "return") {
+      if (evt.name === "escape") {
+        evt.preventDefault();
         setDetailSkill(null);
       }
       return;
     }
+
+    // List view — consume all keys
+    evt.preventDefault();
 
     switch (evt.name) {
       case "escape":
@@ -108,18 +111,15 @@ export default function SkillsDialog({ onClose, initialSlug }: SkillsDialogProps
 
       case "up":
       case "k":
-        evt.preventDefault();
         setSelectedIndex((prev) => (prev > 0 ? prev - 1 : flatList.length - 1));
         break;
 
       case "down":
       case "j":
-        evt.preventDefault();
         setSelectedIndex((prev) => (prev < flatList.length - 1 ? prev + 1 : 0));
         break;
 
       case "return":
-        evt.preventDefault();
         if (flatList[selectedIndex]) {
           setDetailSkill(flatList[selectedIndex]);
         }
@@ -132,15 +132,32 @@ export default function SkillsDialog({ onClose, initialSlug }: SkillsDialogProps
 
   const panelWidth = Math.min(76, dimensions.width - 4);
 
+  const syntaxStyle = useMemo(
+    () =>
+      SyntaxStyle.fromStyles({
+        default: { fg: colors.text },
+        "markup.heading": { fg: colors.markdownHeading, bold: true },
+        "markup.strong": { fg: colors.markdownStrong, bold: true },
+        "markup.italic": { fg: colors.markdownEmph, italic: true },
+        "markup.raw": { fg: colors.markdownCode },
+        "markup.raw.block": { fg: colors.markdownCode },
+        "markup.link": { fg: colors.markdownLink },
+        "markup.link.url": { fg: colors.markdownLink, dim: true },
+        "markup.link.label": { fg: colors.markdownLink, underline: true },
+        "markup.strikethrough": { fg: colors.textMuted, dim: true },
+        "markup.list": { fg: colors.primary },
+        "markup.quote": { fg: colors.textMuted, italic: true },
+        "punctuation.special": { fg: colors.border },
+      }),
+    [colors],
+  );
+
   // ---------- Detail view ----------
   if (detailSkill) {
     const m = detailSkill.manifest;
     const instrText = detailInstructions ?? "";
     const instrTokens = estimateTokens(instrText);
     const descTokens = estimateTokens(m.description);
-    const instrLines = instrText
-      ? instrText.split("\n")
-      : ["Loading instructions..."];
 
     return (
       <Dialog size="large" onClose={() => setDetailSkill(null)}>
@@ -190,29 +207,41 @@ export default function SkillsDialog({ onClose, initialSlug }: SkillsDialogProps
             <text fg={colors.border}>{"─".repeat(panelWidth - 2)}</text>
           </box>
 
-          {/* Scrollable instructions */}
+          {/* Scrollable markdown instructions */}
           <scrollbox
             style={{
               rootOptions: {
                 flexGrow: 1,
                 flexShrink: 1,
                 width: "100%",
-                marginTop: 0,
+                overflow: "hidden",
               },
               contentOptions: {
-                paddingLeft: 1,
-                paddingRight: 1,
+                paddingLeft: 2,
+                paddingRight: 2,
+                paddingTop: 1,
+                paddingBottom: 1,
                 flexDirection: "column",
+              },
+              scrollbarOptions: {
+                trackOptions: {
+                  foregroundColor: colors.primary,
+                  backgroundColor: colors.backgroundElement,
+                },
               },
             }}
             stickyScroll={false}
             focused={true}
           >
-            {instrLines.map((line, i) => (
-              <text key={i} fg={colors.text}>
-                {line || " "}
-              </text>
-            ))}
+            {detailInstructions !== null ? (
+              <markdown
+                content={instrText}
+                syntaxStyle={syntaxStyle}
+                conceal={true}
+              />
+            ) : (
+              <text fg={colors.textMuted}>Loading instructions...</text>
+            )}
           </scrollbox>
 
           {/* Separator */}
