@@ -5,8 +5,14 @@
  * Callers wrap it in <Dialog>, a custom overlay, or any other container.
  */
 
-import { useRef, useMemo, type ReactNode } from "react";
-import { ScrollBoxRenderable, SyntaxStyle } from "@opentui/core";
+import { useRef, useMemo, useCallback, type ReactNode } from "react";
+import {
+  Renderable,
+  ScrollBoxRenderable,
+  SyntaxStyle,
+  type CodeRenderable,
+} from "@opentui/core";
+import type { Token } from "marked";
 import { useTheme } from "../../theme";
 
 interface MarkdownViewerProps {
@@ -68,6 +74,26 @@ export function MarkdownViewer({
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const syntaxStyle = useMarkdownSyntaxStyle();
   const separatorLine = "─".repeat(Math.max(0, width - 2));
+
+  // Override code block rendering to set theme-aware fg color.
+  // Without this, CodeRenderable defaults to white text (opentui default),
+  // which is invisible on light backgrounds.
+  const renderNode = useCallback(
+    (
+      token: Token,
+      ctx: { defaultRender: () => Renderable | null },
+    ): Renderable | undefined | null => {
+      if (token.type === "code") {
+        const renderable = ctx.defaultRender();
+        if (renderable) {
+          (renderable as CodeRenderable).fg = colors.markdownCode;
+        }
+        return renderable;
+      }
+      return undefined;
+    },
+    [colors.markdownCode],
+  );
 
   return (
     <box flexDirection="column" width="100%">
@@ -131,6 +157,7 @@ export function MarkdownViewer({
             content={content}
             syntaxStyle={syntaxStyle}
             conceal={true}
+            renderNode={renderNode}
           />
         )}
       </scrollbox>
