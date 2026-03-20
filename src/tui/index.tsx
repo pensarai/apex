@@ -546,6 +546,7 @@ function CommandDisplay({
           </RouteSwitch.Case>
           <RouteSwitch.Case when="auth">
             <AuthFlow
+              hideEsc
               onClose={() => {
                 if (hasAnyProviderConfigured(config.data)) {
                   route.navigate({ type: "base", path: "home" });
