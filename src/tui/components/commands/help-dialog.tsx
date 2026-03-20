@@ -11,6 +11,7 @@ import { ScrollBoxRenderable } from "@opentui/core";
 import { scrollToIndex } from "../../utils/scroll";
 import { useCommand } from "../../context/command";
 import { Dialog } from "../../context/dialog";
+import type { CommandConfig } from "../../command-registry";
 import { useTheme } from "../../theme";
 
 interface HelpDialogProps {
