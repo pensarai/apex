@@ -230,7 +230,8 @@ export function getResultSummary(
               text: `${n} replacement${n !== 1 ? "s" : ""}\n${codePreview}`,
               isError: false,
               label: `${n} replacement${n !== 1 ? "s" : ""}`,
-              styledText: highlightCode(codePreview, filePath, mode) ?? undefined,
+              styledText:
+                highlightCode(codePreview, filePath, mode) ?? undefined,
               fullText:
                 newContent.length > 400 ? newContent.slice(0, 2000) : undefined,
             };
@@ -721,7 +722,10 @@ export function getResultSummary(
 // Web search styled text helpers
 // ---------------------------------------------------------------------------
 
-const WS_COLORS: Record<ColorMode, { globe: RGBA; domain: RGBA; title: RGBA; snippet: RGBA }> = {
+const WS_COLORS: Record<
+  ColorMode,
+  { globe: RGBA; domain: RGBA; title: RGBA; snippet: RGBA }
+> = {
   dark: {
     globe: RGBA.fromInts(106, 115, 125, 255), // gray
     domain: RGBA.fromInts(86, 182, 194, 255), // cyan
