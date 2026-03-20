@@ -28,10 +28,10 @@ export default function AlertDialog({
 
   useKeyboard((key) => {
     if (!open) return;
+    key.preventDefault();
     // Escape closes dialog
     if (key.name === "escape" && !disableEscape) {
       onClose();
-      key.preventDefault();
     }
   });
 

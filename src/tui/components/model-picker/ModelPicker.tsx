@@ -89,6 +89,7 @@ export interface ModelPickerProps {
   selectedModel: ModelInfo;
   onSelectModel: (model: ModelInfo) => void;
   onConfirm?: () => void;
+  onCancel?: () => void;
   onConfigUpdate?: (update: Partial<Config>) => Promise<void>;
   focused?: boolean;
   isModelUserSelected?: boolean;
@@ -99,6 +100,7 @@ export function ModelPicker({
   selectedModel,
   onSelectModel,
   onConfirm,
+  onCancel,
   onConfigUpdate,
   focused = true,
   isModelUserSelected = false,
@@ -302,10 +304,17 @@ export function ModelPicker({
         return true;
       }
 
-      // Escape - clear search (if there is one)
-      if (key.name === "escape" && searchQuery) {
-        setSearchQuery("");
-        return true;
+      // Escape - clear search, or cancel/close
+      if (key.name === "escape") {
+        if (searchQuery) {
+          setSearchQuery("");
+          return true;
+        }
+        if (onCancel) {
+          onCancel();
+          return true;
+        }
+        return false;
       }
 
       // Enter - confirm model selection, toggle provider, or start editing local input
@@ -389,12 +398,19 @@ export function ModelPicker({
       focusedIndex,
       onSelectModel,
       onConfirm,
+      onCancel,
       searchQuery,
     ],
   );
 
   useKeyboard((key) => {
-    handleKeyboard(key);
+    const handled = handleKeyboard(key);
+    if (handled) {
+      // Only consume keystrokes that the picker actually handled,
+      // so unhandled keys (e.g. ESC without onCancel, Tab) fall through
+      // to parent components like ConfigView.
+      key.preventDefault();
+    }
   });
 
   // Helper to check if a navigation item at focusedIndex matches a provider
