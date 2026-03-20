@@ -23,6 +23,7 @@ import { useTheme } from "../../theme";
 
 interface AuthFlowProps {
   onClose: () => void;
+  hideEsc?: boolean;
 }
 
 type AuthStep =
@@ -35,7 +36,7 @@ type AuthStep =
   | "success"
   | "error";
 
-export default function AuthFlow({ onClose }: AuthFlowProps) {
+export default function AuthFlow({ onClose, hideEsc }: AuthFlowProps) {
   const { colors } = useTheme();
   const appConfig = useConfig();
 
@@ -472,7 +473,7 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
   // ── Render ──────────────────────────────────────────────────────────
 
   return (
-    <Dialog size="large" onClose={goHome}>
+    <Dialog size="large" onClose={goHome} hideEsc={hideEsc}>
       <box
         flexDirection="column"
         width="100%"
