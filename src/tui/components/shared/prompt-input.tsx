@@ -482,8 +482,11 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
       [suggestions],
     );
 
+    // Use the component's width prop (when numeric) since the suggestions box
+    // renders inside a width-constrained parent, not at full terminal width.
+    const effectiveWidth = typeof width === "number" ? width : termWidth;
     // Description column width: total - indicator(3) - label - gap(1)
-    const descColumnWidth = Math.max(10, termWidth - 3 - maxLabelWidth - 1);
+    const descColumnWidth = Math.max(10, effectiveWidth - 3 - maxLabelWidth - 1);
     // Allow up to 2 lines of description text
     const maxDescChars = descColumnWidth * 2;
 
