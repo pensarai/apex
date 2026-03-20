@@ -139,6 +139,9 @@ export interface WebCommandFlags {
 
   // Model option
   model?: string;
+
+  // Sandbox option
+  sandbox?: boolean;
 }
 
 /**
@@ -164,6 +167,7 @@ const webFlagSchema: FlagSchema = {
   model: { type: "string" },
   // Legacy --auto flag maps to --swarm
   auto: { type: "boolean" },
+  sandbox: { type: "boolean" },
 };
 
 /**
@@ -239,6 +243,9 @@ export function parseWebFlags(args: string[]): WebCommandFlags {
 
   // Model option
   if (raw.model) flags.model = String(raw.model);
+
+  // Sandbox option
+  if (raw.sandbox) flags.sandbox = true;
 
   return flags;
 }
@@ -319,6 +326,8 @@ export function buildOperatorSessionConfig(
       headers: flags.headersMode === "custom" ? flags.customHeaders : undefined,
     };
   }
+
+  sessionConfig.agentCwd = flags.sandbox ? undefined : process.cwd();
 
   return {
     targets: flags.target ? [flags.target] : [],

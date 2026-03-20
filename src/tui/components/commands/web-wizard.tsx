@@ -272,7 +272,7 @@ export default function WebWizard({
 
       // Source code access (whitebox mode)
       if (state.sourceCodeAccess && state.cwd.trim()) {
-        sessionConfig.cwd = state.cwd.trim();
+        sessionConfig.codebasePath = state.cwd.trim();
       }
 
       // Headers config

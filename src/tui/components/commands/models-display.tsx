@@ -6,9 +6,15 @@ import { useConfig } from "../../context/config";
 import { ModelPicker } from "../model-picker";
 import { useTheme } from "../../theme";
 
-function ClippedLine({ children }: { children: ReactNode }) {
+function ClippedLine({
+  children,
+  flexShrink,
+}: {
+  children: ReactNode;
+  flexShrink?: number;
+}) {
   return (
-    <box width="100%" overflow="hidden">
+    <box width="100%" overflow="hidden" flexShrink={flexShrink}>
       {children}
     </box>
   );
@@ -55,7 +61,7 @@ export default function ModelsDisplay() {
       overflow="hidden"
     >
       {/* Header */}
-      <ClippedLine>
+      <ClippedLine flexShrink={0}>
         <text>
           <span fg={colors.primary}>█ </span>
           <span fg={colors.text}>Select AI Model</span>

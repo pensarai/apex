@@ -13,6 +13,7 @@ type WizardStep = "config" | "creating";
 interface WizardState {
   target: string;
   requireApproval: boolean;
+  sandbox: boolean;
 }
 
 interface HITLWizardProps {
@@ -48,9 +49,10 @@ export default function HITLWizard(props: HITLWizardProps) {
   const [state, setState] = useState<WizardState>(() => ({
     target: initialTarget || "",
     requireApproval: initialRequireApproval ?? true,
+    sandbox: false,
   }));
 
-  const [focusedField, setFocusedField] = useState(0); // 0=approval, 1=model, 2=submit
+  const [focusedField, setFocusedField] = useState(0); // 0=approval, 1=model, 2=sandbox, 3=submit
   const [error, setError] = useState<string | null>(null);
 
   // Model picker state
@@ -116,6 +118,7 @@ export default function HITLWizard(props: HITLWizardProps) {
       initialConfig: {
         requireApproval: state.requireApproval,
         target: state.target.trim() || undefined,
+        sandbox: state.sandbox || undefined,
       },
     });
   }
@@ -123,8 +126,9 @@ export default function HITLWizard(props: HITLWizardProps) {
   // Config step fields:
   // 0: Require approval toggle
   // 1: Model selection
-  // 2: Submit button
-  const maxField = 2;
+  // 2: Sandbox toggle
+  // 3: Submit button
+  const maxField = 3;
 
   useKeyboard((key) => {
     if (key.name === "escape") {
@@ -176,6 +180,15 @@ export default function HITLWizard(props: HITLWizardProps) {
           if (newModel) setModel(newModel);
           return;
         }
+
+        // Sandbox toggle (field 2)
+        if (focusedField === 2) {
+          setState((prev) => ({
+            ...prev,
+            sandbox: !prev.sandbox,
+          }));
+          return;
+        }
       }
 
       if (key.name === "return") {
@@ -188,8 +201,17 @@ export default function HITLWizard(props: HITLWizardProps) {
           return;
         }
 
-        // Submit button (field 2)
+        // Sandbox toggle (field 2)
         if (focusedField === 2) {
+          setState((prev) => ({
+            ...prev,
+            sandbox: !prev.sandbox,
+          }));
+          return;
+        }
+
+        // Submit button (field 3)
+        if (focusedField === 3) {
           createSessionAndNavigate();
         }
         return;
@@ -255,19 +277,38 @@ export default function HITLWizard(props: HITLWizardProps) {
         {focusedField === 1 && <text fg={colors.textMuted}>(←/→)</text>}
       </box>
 
-      {/* Submit Button - Field 2 */}
-      <box flexDirection="row" gap={1} marginTop={1}>
+      {/* Sandbox Toggle - Field 2 */}
+      <box flexDirection="row" gap={1}>
         <text fg={focusedField === 2 ? colors.primary : colors.textMuted}>
           {focusedField === 2 ? "▸" : " "}
         </text>
-        <text fg={focusedField === 2 ? colors.primary : colors.textMuted}>
-          {focusedField === 2 ? "[" : " "}
-        </text>
         <text fg={focusedField === 2 ? colors.text : colors.textMuted}>
+          Sandbox mode:
+        </text>
+        <text fg={state.sandbox ? colors.warning : colors.primary}>
+          {state.sandbox ? "Enabled" : "Disabled"}
+        </text>
+        <text fg={colors.textMuted}>
+          {state.sandbox
+            ? "- agent operates in an isolated session directory"
+            : "- agent operates in your current directory"}
+        </text>
+        {focusedField === 2 && <text fg={colors.textMuted}>(Enter/←/→)</text>}
+      </box>
+
+      {/* Submit Button - Field 3 */}
+      <box flexDirection="row" gap={1} marginTop={1}>
+        <text fg={focusedField === 3 ? colors.primary : colors.textMuted}>
+          {focusedField === 3 ? "▸" : " "}
+        </text>
+        <text fg={focusedField === 3 ? colors.primary : colors.textMuted}>
+          {focusedField === 3 ? "[" : " "}
+        </text>
+        <text fg={focusedField === 3 ? colors.text : colors.textMuted}>
           Start Session
         </text>
-        <text fg={focusedField === 2 ? colors.primary : colors.textMuted}>
-          {focusedField === 2 ? "]" : " "}
+        <text fg={focusedField === 3 ? colors.primary : colors.textMuted}>
+          {focusedField === 3 ? "]" : " "}
         </text>
       </box>
 
