@@ -29,6 +29,47 @@ import {
   type InlineSlashContext,
 } from "./prompt-input-logic";
 import { usePasteExtmarks } from "./use-paste-extmarks";
+/** Word-wrap text and return at most `maxLines` lines, adding ellipsis if truncated. */
+function truncateToLines(
+  text: string,
+  lineWidth: number,
+  maxLines: number,
+): string {
+  if (lineWidth <= 0 || maxLines <= 0) return "";
+  const words = text.split(" ");
+  const lines: string[] = [];
+  let current = "";
+  let i = 0;
+
+  while (i < words.length && lines.length < maxLines) {
+    const word = words[i];
+    if (!current) {
+      current = word.length > lineWidth ? word.slice(0, lineWidth) : word;
+      i++;
+    } else if ((current + " " + word).length <= lineWidth) {
+      current += " " + word;
+      i++;
+    } else {
+      lines.push(current);
+      current = "";
+    }
+  }
+  if (current && lines.length < maxLines) {
+    lines.push(current);
+  }
+
+  // Add ellipsis if there's remaining text
+  if (i < words.length) {
+    const last = lines[lines.length - 1];
+    lines[lines.length - 1] =
+      last.length < lineWidth
+        ? last + "\u2026"
+        : last.slice(0, lineWidth - 1) + "\u2026";
+  }
+
+  return lines.join(" ");
+}
+
 export interface AutocompleteOption {
   value: string;
   label: string;
@@ -487,8 +528,6 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
     const effectiveWidth = typeof width === "number" ? width : termWidth;
     // Description column width: total - indicator(3) - label - gap(1)
     const descColumnWidth = Math.max(10, effectiveWidth - 3 - maxLabelWidth - 1);
-    // Allow up to 2 lines of description text
-    const maxDescChars = descColumnWidth * 2;
 
     const suggestionsBox = suggestions.length > 0 && (
       <box
@@ -512,9 +551,7 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
           const actualIndex = windowedView.start + windowIndex;
           const isSelected = actualIndex === selectedSuggestionIndex;
           const desc = suggestion.description
-            ? suggestion.description.length > maxDescChars
-              ? suggestion.description.slice(0, maxDescChars - 1) + "\u2026"
-              : suggestion.description
+            ? truncateToLines(suggestion.description, descColumnWidth, 2)
             : "";
           return (
             <box key={suggestion.value} flexDirection="row" gap={1}>
