@@ -39,12 +39,12 @@ Want to run from the cloud or integrate it with your CI/CD? See <a href="https:/
 
 ## Installation
 
-| Method | Command |
-|--------|---------|
+| Method                          | Command                                              |
+| ------------------------------- | ---------------------------------------------------- |
 | **Quick Install** (macOS/Linux) | `curl -fsSL https://pensarai.com/install.sh \| bash` |
-| **Homebrew** | `brew tap pensarai/tap && brew install apex` |
-| **npm** | `npm install -g @pensar/apex` |
-| **Windows** (PowerShell) | `irm https://www.pensarai.com/apex.ps1 \| iex` |
+| **Homebrew**                    | `brew tap pensarai/tap && brew install apex`         |
+| **npm**                         | `npm install -g @pensar/apex`                        |
+| **Windows** (PowerShell)        | `irm https://www.pensarai.com/apex.ps1 \| iex`       |
 
 ## Usage
 
