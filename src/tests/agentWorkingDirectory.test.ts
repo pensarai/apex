@@ -15,7 +15,11 @@ import {
 
 describe("parseWebFlags", () => {
   it("parses --sandbox as a boolean flag", () => {
-    const flags = parseWebFlags(["--target", "https://example.com", "--sandbox"]);
+    const flags = parseWebFlags([
+      "--target",
+      "https://example.com",
+      "--sandbox",
+    ]);
     expect(flags.sandbox).toBe(true);
   });
 
@@ -26,9 +30,11 @@ describe("parseWebFlags", () => {
 
   it("parses --sandbox alongside other flags", () => {
     const flags = parseWebFlags([
-      "--target", "https://example.com",
+      "--target",
+      "https://example.com",
       "--sandbox",
-      "--mode", "auto",
+      "--mode",
+      "auto",
       "--no-approval",
     ]);
     expect(flags.sandbox).toBe(true);
@@ -89,7 +95,9 @@ describe("buildSessionWorkspaceSection", () => {
       mockSession.rootPath,
     );
     expect(result).toContain("Session Workspace");
-    expect(result).toContain("Your shell is already set to the session directory");
+    expect(result).toContain(
+      "Your shell is already set to the session directory",
+    );
     expect(result).toContain(mockSession.rootPath);
     expect(result).not.toContain("Working Directory");
   });

@@ -20,7 +20,6 @@ import {
 import { createResponseTool, RESPONSE_TOOL_NAME } from "./tools/response";
 import { PersistentShell } from "./tools/persistentShell";
 import {
-  BASE_SYSTEM_PROMPT,
   buildBaseSystemPrompt,
   buildSessionWorkspaceSection,
 } from "./prompt";
@@ -120,8 +119,7 @@ export class OffensiveSecurityAgent<TResult = void> {
     this.abortSignal = input.abortSignal;
 
     // -- Resolve agent working directory ----------------------------------------
-    const agentCwd =
-      input.session.config?.agentCwd ?? input.session.rootPath;
+    const agentCwd = input.session.config?.agentCwd ?? input.session.rootPath;
 
     // -- Persistent shell (local mode only) -----------------------------------
     // Shell survives command cancellation; only disposed in consume() after the
