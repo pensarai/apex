@@ -7,13 +7,28 @@
  * - Mode and status awareness
  */
 
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useKeyboard } from "@opentui/react";
 import { useTheme } from "../../theme";
 import { PromptInput, type PromptInputRef } from "../shared/prompt-input";
 import { InputProvider, useInput } from "../../context/input";
 import type { PendingApproval } from "../../../core/operator";
-import type { AgentMode } from "../../../core/agents/offSecAgent";
+import { type OperatorMode, OPERATOR_MODES } from "../../../core/operator";
+import { useAgent } from "../../context/agent";
+import { useDimensions } from "../../context/dimensions";
+
+const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
+  anthropic: "Anthropic",
+  openai: "OpenAI",
+  google: "Google",
+  openrouter: "OpenRouter",
+  bedrock: "Bedrock",
+  pensar: "Pensar",
+  inception: "Inception",
+  local: "Local",
+};
+export const providerDisplayName = (p: string) =>
+  PROVIDER_DISPLAY_NAMES[p] ?? p;
 
 export interface InputAreaProps {
   /** Current input value */
@@ -30,8 +45,8 @@ export interface InputAreaProps {
   status: "idle" | "running" | "waiting" | "done";
   /** Display mode */
   mode?: "chat" | "operator";
-  /** Agent mode (default/plan) */
-  operatorMode?: AgentMode;
+  /** Operator mode (approvals-on/approvals-off/plan) */
+  operatorMode?: OperatorMode;
   /** Pending approval (transforms input area) */
   pendingApproval?: PendingApproval;
   /** Handler for approval */
@@ -56,6 +71,105 @@ export interface InputAreaProps {
   autocompletePlacement?: "above" | "below";
   /** Highlight /slash-command patterns in the input text */
   highlightSlashCommands?: boolean;
+}
+
+/**
+ * Responsive operator mode bar.
+ *
+ * Collapse order (widest → narrowest):
+ *   mode  (shift+tab to cycle)  model  provider  [rightContent]
+ *   mode  (shift+tab)           model  provider  [rightContent]
+ *   mode  (shift+tab)           model  provider
+ *   mode  (shift+tab)           model
+ *   mode                        model
+ */
+export function OperatorModeBar({
+  operatorMode,
+  modelName,
+  providerName,
+  showMode = true,
+  showCycleHint = true,
+  maxWidth,
+  rightContent,
+  rightContentWidth = 0,
+}: {
+  operatorMode: OperatorMode;
+  modelName: string;
+  providerName: string;
+  /** Show the mode badge. Set false to show only model/provider. */
+  showMode?: boolean;
+  showCycleHint?: boolean;
+  maxWidth?: number;
+  rightContent?: React.ReactNode;
+  /** Character width of rightContent for collapse calculations. */
+  rightContentWidth?: number;
+}) {
+  const { colors } = useTheme();
+  const { width: termWidth } = useDimensions();
+  const w = maxWidth ?? termWidth - 4;
+
+  const modeConfig = OPERATOR_MODES[operatorMode];
+  const modeText = `${modeConfig.icon} ${modeConfig.label}`;
+  const cycleLong = "(shift+tab to cycle)";
+  const cycleShort = "(shift+tab)";
+  const g = 2; // gap between items
+
+  const mL = showMode ? modeText.length : 0;
+  const moL = modelName.length;
+  const pL = providerName.length;
+  const rL = rightContentWidth;
+
+  // Always present: model (+ mode if shown)
+  const base = showMode ? mL + g + moL : moL;
+
+  // Build up from base, checking what fits
+  const canCycleLong =
+    showMode && showCycleHint && base + g + cycleLong.length <= w;
+  const canCycleShort =
+    showMode &&
+    showCycleHint &&
+    !canCycleLong &&
+    base + g + cycleShort.length <= w;
+  const cycleLen = canCycleLong
+    ? cycleLong.length
+    : canCycleShort
+      ? cycleShort.length
+      : 0;
+  const withCycle = cycleLen > 0 ? base + g + cycleLen : base;
+
+  const canProvider = withCycle + g + pL <= w;
+  const withProvider = canProvider ? withCycle + g + pL : withCycle;
+
+  const canRight = rL > 0 && withProvider + g + rL <= w;
+
+  const cycleDisplay = canCycleLong
+    ? cycleLong
+    : canCycleShort
+      ? cycleShort
+      : null;
+
+  return (
+    <box
+      flexDirection="row"
+      justifyContent={canRight ? "space-between" : "flex-start"}
+      marginTop={1}
+      backgroundColor="transparent"
+      alignItems="center"
+      overflow="hidden"
+    >
+      <box flexDirection="row" gap={2} alignItems="center">
+        {showMode && (
+          <text fg={colors[modeConfig.colorKey as keyof typeof colors]}>
+            {modeText}
+          </text>
+        )}
+        {cycleDisplay && <text fg={colors.textMuted}>{cycleDisplay}</text>}
+        <text fg={colors.text}>{modelName}</text>
+        {canProvider && <text fg={colors.textMuted}>{providerName}</text>}
+      </box>
+      {canRight && rightContent}
+    </box>
+  );
 }
 
 /**
@@ -84,6 +198,7 @@ function NormalInputAreaInner({
   "pendingApproval" | "onApprove" | "onAutoApprove" | "lastDeclineNote"
 >) {
   const { colors, theme, mode: colorMode } = useTheme();
+  const { model } = useAgent();
   const { inputValue, setInputValue } = useInput();
   const promptRef = useRef<PromptInputRef>(null);
   const isExternalUpdate = useRef(false);
@@ -154,30 +269,13 @@ function NormalInputAreaInner({
         />
       </box>
 
-      {/* Shortcuts row for operator mode */}
-      {mode === "operator" && (
-        <box
-          flexDirection="row"
-          gap={2}
-          marginTop={1}
-          backgroundColor="transparent"
-          alignItems="center"
-          overflow="hidden"
-        >
-          <text
-            fg="#000000"
-            bg={operatorMode === "plan" ? colors.warning : colors.success}
-          >
-            {` ${operatorMode === "plan" ? "PLAN" : "DEFAULT"} `}
-          </text>
-          <text fg={colors.textMuted}>/ commands</text>
-          <text fg={colors.textMuted}>⇧Tab mode</text>
-          <text fg={colors.textMuted}>⌥⇧Tab approval</text>
-          <text fg={colors.textMuted}>
-            ^C {value.trim() ? "clear" : "stop"}
-          </text>
-          <text fg={colors.textMuted}>ESC quit</text>
-        </box>
+      {/* Mode + model for operator mode */}
+      {mode === "operator" && operatorMode && (
+        <OperatorModeBar
+          operatorMode={operatorMode}
+          modelName={model.name}
+          providerName={providerDisplayName(model.provider)}
+        />
       )}
 
       {/* Shortcuts row for chat mode */}

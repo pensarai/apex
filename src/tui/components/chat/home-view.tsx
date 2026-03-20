@@ -17,7 +17,9 @@ import { useConfig } from "../../context/config";
 import { useRoute } from "../../context/route";
 import { useDialog } from "../../context/dialog";
 import { PromptInput } from "../shared/prompt-input";
+import { OperatorModeBar, providerDisplayName } from "./input-area";
 import { useTheme } from "../../theme";
+import { useAgent } from "../../context/agent";
 import * as History from "../../../core/history";
 
 type ViewType = "home" | "config" | "chat";
@@ -29,6 +31,7 @@ interface HomeViewProps {
 
 export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
   const { colors } = useTheme();
+  const { model } = useAgent();
   const dimensions = useDimensions();
   const config = useConfig();
   const route = useRoute();
@@ -42,17 +45,20 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
   const [commandHistory, setCommandHistory] = useState<string[]>(
     History.getEntries,
   );
-
   useEffect(() => {
     History.load().then(setCommandHistory);
   }, []);
 
   const launchOperator = useCallback(
     (message: string, options?: { requireApproval?: boolean }) => {
+      const requireApproval = options?.requireApproval ?? true;
       route.navigate({
         type: "operator",
         initialMessage: message,
-        initialConfig: { requireApproval: options?.requireApproval ?? true },
+        initialConfig: {
+          requireApproval,
+          operatorMode: requireApproval ? "manual" : "auto",
+        },
       });
     },
     [route],
@@ -181,22 +187,19 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
           </box>
         )}
 
-        {/* Help text */}
-        <box marginTop={1}>
-          <text fg={colors.textMuted}>
-            <span fg={colors.text}>[enter]</span>
-            <span> open operator</span>
-            <span> • </span>
-            <span fg={colors.text}>/</span>
-            <span> commands</span>
-            <span> • </span>
-            <span fg={colors.text}>[↓][↑]</span>
-            <span> navigate</span>
-            <span> • </span>
-            <span fg={colors.text}>[tab]</span>
-            <span> complete</span>
-          </text>
-        </box>
+        <OperatorModeBar
+          operatorMode="manual"
+          modelName={model.name}
+          providerName={providerDisplayName(model.provider)}
+          showMode={false}
+          maxWidth={inputWidth - 4}
+          rightContent={
+            <text fg={colors.textMuted}>
+              <span fg={colors.text}>[/]</span> commands
+            </text>
+          }
+          rightContentWidth={"[/] commands".length}
+        />
       </box>
     </box>
   );

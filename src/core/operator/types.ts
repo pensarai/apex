@@ -57,20 +57,43 @@ export type OperatorMode = "plan" | "manual" | "auto";
 
 export const OPERATOR_MODES: Record<
   OperatorMode,
-  { name: string; description: string; color: string }
+  {
+    name: string;
+    description: string;
+    color: string;
+    icon: string;
+    label: string;
+    colorKey: string;
+  }
 > = {
   plan: {
     name: "Plan",
     description: "Read-only - agent proposes but cannot execute",
     color: "yellow",
+    icon: "\u23F8",
+    label: "Plan",
+    colorKey: "secondary",
   },
-  manual: { name: "Manual", description: "Approve each action", color: "blue" },
+  manual: {
+    name: "Manual",
+    description: "Approve each action",
+    color: "blue",
+    icon: "\u25B6",
+    label: "Approvals On",
+    colorKey: "primary",
+  },
   auto: {
     name: "Auto",
     description: "Auto-approve within tier",
     color: "green",
+    icon: "\u25B6\u25B6",
+    label: "Approvals Off",
+    colorKey: "error",
   },
 };
+
+/** Cycle order for ⇧Tab rotation through operator modes. */
+export const OPERATOR_MODE_CYCLE: OperatorMode[] = ["manual", "auto", "plan"];
 
 /** Operator workflow stages */
 export type OperatorStage =

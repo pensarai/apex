@@ -66,6 +66,7 @@ export type Route =
       initialConfig?: {
         requireApproval?: boolean;
         target?: string;
+        operatorMode?: import("../../core/operator").OperatorMode;
       };
       /** Opaque value used to force a fresh remount (e.g. Date.now()) */
       nonce?: number;
