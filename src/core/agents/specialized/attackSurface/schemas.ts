@@ -27,7 +27,8 @@ export const AssetDetailsSchema = z.object({
     .describe(
       "HTTP method(s) supported by this endpoint (e.g., 'GET', 'POST', or ['GET', 'POST', 'DELETE']). " +
         "Use this for endpoint-type assets to list ALL methods the endpoint accepts. " +
-        "Multiple methods on the same path should be documented as a single asset with all methods listed here.",
+        "Multiple methods on the same path should be documented as a single asset with all methods listed here. " +
+        "Use 'PAGE' for web pages/views.",
     ),
   ip: z.string().optional().describe("IP address if known"),
   ports: z.array(z.number()).optional().describe("Open ports"),
@@ -51,6 +52,22 @@ export const AssetDetailsSchema = z.object({
     .union([z.string(), z.number()])
     .optional()
     .describe("Status (active, inactive, redirect, error) or HTTP status code"),
+  file: z
+    .string()
+    .optional()
+    .describe("Source file where this asset is defined (whitebox analysis)"),
+  line: z
+    .number()
+    .optional()
+    .describe("Line number in the source file (whitebox analysis)"),
+  handler: z
+    .string()
+    .optional()
+    .describe("Handler function or component name (whitebox analysis)"),
+  authRequired: z
+    .boolean()
+    .optional()
+    .describe("Whether authentication appears to be required"),
 });
 
 /**
@@ -77,6 +94,14 @@ export const RiskLevelEnum = z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]);
  * Schema for document_asset tool input
  */
 export const DocumentAssetSchema = z.object({
+  appName: z
+    .string()
+    .optional()
+    .describe(
+      "Application name for organizing assets into app-specific folders. " +
+        "When provided, the asset is stored under assets/<appName>/ instead of the flat assets/ directory. " +
+        "Used by whitebox analysis to group endpoints by the application they belong to.",
+    ),
   assetName: z
     .string()
     .describe(

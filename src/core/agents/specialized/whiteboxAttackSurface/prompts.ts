@@ -22,17 +22,21 @@ Read config files, entry points, route definitions, etc.
 Your primary search tool. Use it to find route definitions, middleware, controllers, etc.
 
 ## document_asset
-**Use this to document every significant asset you discover.** Each call persists a JSON record to the session's assets directory. Document:
+**This is your primary output tool for endpoints and assets.** Each call persists a JSON record to the session's assets directory. Document:
 - Each application/service you identify (assetType: "web_application" or "api")
 - Notable subdomains or infrastructure you encounter (assetType: "subdomain", "infrastructure_service")
-- Key API endpoint groups or admin panels (assetType: "endpoint", "admin_panel")
+- Individual endpoints and pages (assetType: "endpoint")
 
-**IMPORTANT — API endpoint method consolidation:** When documenting API endpoints, do NOT create separate assets for different HTTP methods on the same path. A single path like \`/api/users\` that supports GET, POST, and DELETE is ONE asset — not three. Use the \`details.method\` field to list all supported methods (e.g., \`["GET", "POST", "DELETE"]\`). The pentest objectives should cover all methods. This prevents inflated asset counts and ensures pentest agents test the endpoint holistically.
+**CRITICAL — endpoint documentation rules:**
+- **ONE asset per unique route path.** Do NOT create separate assets for different HTTP methods on the same path. If \`/api/users\` supports GET, POST, and DELETE, that is ONE asset with \`details.method: ["GET", "POST", "DELETE"]\`.
+- **Use \`details.method: "PAGE"\`** for web pages and views.
+- **Always set \`appName\`** to group endpoints under the correct application.
+- **Always set \`details.url\`** to the route path, \`details.file\` to the source file, \`details.handler\` to the function name, and \`details.authRequired\` to indicate auth requirements.
 
-Call this throughout your analysis as you discover assets — don't wait until the end. Include relevant details like the technology stack, URL, authentication requirements, and risk level.
+Call this throughout your analysis as you discover assets — don't wait until the end.
 
 ## spawn_coding_agent
-**This is your key tool for scaling out analysis.** Spawn coding sub-agents to analyze individual apps in parallel for higher fidelity. Each sub-agent has full filesystem access (read_file, list_files, grep, execute_command).
+**This is your key tool for scaling out analysis.** Spawn coding sub-agents to analyze individual apps in parallel for higher fidelity. Each sub-agent has full filesystem access (read_file, list_files, grep, execute_command) and the document_asset tool.
 
 ## submit_results
 Call this LAST with your complete structured results. This ends your run.
@@ -53,36 +57,17 @@ Call this LAST with your complete structured results. This ends your run.
 For each app you identified, spawn a coding agent with a detailed objective. The objective should instruct the agent to:
 
 1. **Identify the framework** — read the app's config/entry point to determine the web framework
-2. **Find ALL web pages** — search for page/view/route definitions:
-   - React/Next.js: pages/ or app/ directory, route components
-   - Express: res.render(), res.sendFile(), static file serving
-   - Django: urls.py patterns pointing to template views
-   - Rails: routes.rb entries pointing to controller actions that render views
-   - Vue/Nuxt: pages/ directory, router definitions
-   - etc.
-3. **Find ALL API endpoints** — search for route/endpoint definitions:
-   - Express: app.get(), app.post(), router.get(), router.post(), etc.
-   - Next.js: app/api/ or pages/api/ route handlers
-   - Django: urls.py patterns pointing to API views, DRF viewsets/routers
-   - FastAPI: @app.get(), @app.post() decorators
-   - Rails: routes.rb API namespaces, controller actions
-   - Spring: @GetMapping, @PostMapping, @RequestMapping
-   - etc.
-4. **For each endpoint, determine**:
-   - HTTP method and route path
-   - Handler function/component name
-   - File location and line number
-   - Whether auth appears to be required (middleware, decorators, guards)
-   - Brief description of what it does
-5. **For each endpoint, generate pentest objectives** — specific, actionable testing goals like:
-   - "Test for SQL injection in the 'search' query parameter"
-   - "Test for IDOR by accessing /api/orders/{id} with other users' order IDs"
-   - "Test for XSS in the user profile name field"
-   - "Test for privilege escalation by accessing admin-only endpoint as regular user"
-   - "Test for CSRF on the password change endpoint"
-   - "Test for path traversal in the file download parameter"
+2. **Find ALL web pages** — search for page/view/route definitions and document each with \`document_asset\` using \`details.method: "PAGE"\`
+3. **Find ALL API endpoints** — search for route/endpoint definitions and document each unique path with \`document_asset\`, listing ALL HTTP methods in \`details.method\`
+4. **For each endpoint, include** in the document_asset call:
+   - Route path in \`details.url\`
+   - ALL HTTP methods in \`details.method\` (consolidated — one asset per path)
+   - Handler function in \`details.handler\`
+   - Source file in \`details.file\` and line number in \`details.line\`
+   - Auth requirement in \`details.authRequired\`
+   - Specific pentest objectives in \`pentestObjectives\`
 
-**IMPORTANT:** Tell each coding agent to output its findings in a STRUCTURED FORMAT that you can parse. Instruct it to use clear delimiters or a consistent format for each endpoint (method, path, handler, file, line, auth, description, pentest objectives).
+**IMPORTANT:** Tell each coding agent to set \`appName\` on every \`document_asset\` call so endpoints are organized by application.
 
 ## Phase 3: COLLECT AND SUBMIT (do this yourself)
 1. Parse the output from all coding agents
