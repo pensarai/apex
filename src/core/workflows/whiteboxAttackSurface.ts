@@ -131,9 +131,7 @@ const DiscoverySummarySchema = z.object({
   endpointsDocumented: z
     .number()
     .describe("Number of endpoints documented via document_asset"),
-  summary: z
-    .string()
-    .describe("Brief summary of what was found"),
+  summary: z.string().describe("Brief summary of what was found"),
 });
 
 type DiscoverySummary = z.infer<typeof DiscoverySummarySchema>;
@@ -373,8 +371,11 @@ export async function runWhiteboxAttackSurfaceWorkflow(
   // Phase 3: Read assets directory to build endpoint data
   // =========================================================================
 
-  const { apps: parsedApps, repoType, packageManager } =
-    readAppsFromAssetsDirectory(assetsPath, appsResult);
+  const {
+    apps: parsedApps,
+    repoType,
+    packageManager,
+  } = readAppsFromAssetsDirectory(assetsPath, appsResult);
 
   // =========================================================================
   // Phase 4: Risk scoring — score all endpoints in parallel
@@ -498,7 +499,9 @@ function readAppsFromAssetsDirectory(
 
     if (existsSync(appJsonPath)) {
       try {
-        metadata = JSON.parse(readFileSync(appJsonPath, "utf-8")) as AppMetadata;
+        metadata = JSON.parse(
+          readFileSync(appJsonPath, "utf-8"),
+        ) as AppMetadata;
       } catch {
         console.warn(`Skipping app folder with unreadable app.json: ${entry}`);
         continue;
@@ -549,9 +552,7 @@ function readAppsFromAssetsDirectory(
  * Convert a {@link DocumentedAssetRecord} (from document_asset) to an
  * {@link Endpoint} (for the whitebox result schema).
  */
-function assetRecordToEndpoint(
-  record: DocumentedAssetRecord,
-): Endpoint | null {
+function assetRecordToEndpoint(record: DocumentedAssetRecord): Endpoint | null {
   const details = record.details ?? {};
   const rawMethod = details.method;
   const method = Array.isArray(rawMethod)
@@ -723,6 +724,8 @@ For each **unique route path**, call \`document_asset\` with:
   - "Test for privilege escalation by calling admin-only endpoint as regular user"
 
 **CRITICAL: ONE asset per route path.** If \`/api/products\` has GET (list) and POST (create), document it as ONE asset with \`details.method: ["GET", "POST"]\`. Do NOT create two separate assets.
+
+**IMPORTANT — Method consolidation for document_asset:** When using the \`document_asset\` tool, do NOT create separate assets for different HTTP methods on the same route path. For example, if \`/api/users\` supports GET, POST, and DELETE, document it as ONE asset with \`details.method: ["GET", "POST", "DELETE"]\` and include pentest objectives covering all methods. However, when reporting endpoints via the \`response\` tool, you may still list each method+path combination individually for completeness — the consolidation rule applies specifically to \`document_asset\` calls.
 
 Be thorough — trace through all route registrations, middleware chains, and controller files.
 When finished, call \`response\` with a summary of how many endpoints you documented.`;
