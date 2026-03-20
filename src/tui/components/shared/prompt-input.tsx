@@ -482,8 +482,8 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
       [suggestions],
     );
 
-    // Available width for description: total - indicator(2) - gap(1) - label - gap(1) - leading space(1)
-    const descriptionWidth = Math.max(10, termWidth - 2 - 1 - maxLabelWidth - 2);
+    // Available width for description: total - indicator(3) - label - space(1)
+    const descriptionWidth = Math.max(10, termWidth - 3 - maxLabelWidth - 1);
 
     const suggestionsBox = suggestions.length > 0 && (
       <box
@@ -513,16 +513,18 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
               : suggestion.description
             : "";
           return (
-            <box key={suggestion.value} flexDirection="row" gap={1}>
-              <text fg={isSelected ? colors.primary : colors.textMuted}>
-                {isSelected ? " \u25B8" : "  "}
+            <box key={suggestion.value}>
+              <text>
+                <span fg={isSelected ? colors.primary : colors.textMuted}>
+                  {isSelected ? " \u25B8 " : "   "}
+                </span>
+                <span fg={isSelected ? colors.text : colors.textMuted}>
+                  {paddedLabel}
+                </span>
+                {desc && (
+                  <span fg={colors.textMuted}> {desc}</span>
+                )}
               </text>
-              <text fg={isSelected ? colors.text : colors.textMuted}>
-                {paddedLabel}
-              </text>
-              {desc && (
-                <text fg={colors.textMuted}> {desc}</text>
-              )}
             </box>
           );
         })}
