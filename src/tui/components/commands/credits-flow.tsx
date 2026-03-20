@@ -150,7 +150,6 @@ export default function CreditsFlow({
               <DialogControls
                 controls={[
                   { key: "Enter", label: "Run /auth", variant: "primary" },
-                  { key: "Esc", label: "Back" },
                 ]}
               />
             </box>
@@ -205,7 +204,6 @@ export default function CreditsFlow({
                     variant: "primary",
                   },
                   { key: "R", label: "Refresh" },
-                  { key: "Esc", label: "Back" },
                 ]}
               />
             </box>
@@ -234,7 +232,6 @@ export default function CreditsFlow({
                     label: "Refresh Balance",
                     variant: "primary",
                   },
-                  { key: "Esc", label: "Back" },
                 ]}
               />
             </box>

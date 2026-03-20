@@ -504,7 +504,6 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
               <DialogControls
                 controls={[
                   { key: "Enter", label: "Connect", variant: "primary" },
-                  { key: "Esc", label: "Cancel" },
                 ]}
               />
             </box>
@@ -537,9 +536,6 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
                 {verificationUrl}
               </text>
             </box>
-            <box marginTop={1}>
-              <DialogControls controls={[{ key: "Esc", label: "Cancel" }]} />
-            </box>
           </box>
         )}
 
@@ -568,9 +564,7 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
               <DialogControls
                 controls={[
                   { key: "Enter", label: "Select", variant: "primary" },
-                  { key: "↑/↓", label: "Navigate" },
                   { key: "D", label: "Disconnect", variant: "danger" },
-                  { key: "Esc", label: "Cancel" },
                 ]}
               />
             </box>
@@ -600,9 +594,6 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
                 If the browser didn't open, visit:{"\n"}
                 {consoleUrlRef.current}/create-workspace
               </text>
-            </box>
-            <box marginTop={1}>
-              <DialogControls controls={[{ key: "Esc", label: "Cancel" }]} />
             </box>
           </box>
         )}
@@ -674,7 +665,6 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
                     variant: "primary",
                   },
                   { key: "D", label: "Disconnect", variant: "danger" },
-                  { key: "Esc", label: "Back" },
                 ]}
               />
             </box>
@@ -691,7 +681,6 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
               <DialogControls
                 controls={[
                   { key: "Enter", label: "Try Again", variant: "primary" },
-                  { key: "Esc", label: "Cancel" },
                 ]}
               />
             </box>

@@ -316,12 +316,7 @@ export default function HITLWizard(props: HITLWizardProps) {
       {/* Help text */}
       <box flexDirection="column" gap={0} marginTop={2}>
         <DialogControls
-          controls={[
-            { key: "Enter", label: "Select", variant: "primary" },
-            { key: "↑/↓", label: "Navigate" },
-            { key: "←/→", label: "Change Value" },
-            { key: "Esc", label: "Back" },
-          ]}
+          controls={[{ key: "Enter", label: "Select", variant: "primary" }]}
         />
       </box>
     </box>

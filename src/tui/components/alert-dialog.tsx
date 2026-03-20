@@ -2,7 +2,6 @@ import { useKeyboard, useRenderer } from "@opentui/react";
 import { useDimensions } from "../context/dimensions";
 import type { JSX } from "react";
 import { useTheme } from "../theme";
-import { DialogControls } from "./shared/dialog-controls";
 
 export interface AlertDialogProps {
   title?: string;
@@ -70,6 +69,16 @@ export default function AlertDialog({
         padding={1}
         paddingTop={1}
       >
+        {!disableEscape && (
+          <box
+            width="100%"
+            flexDirection="row"
+            justifyContent="flex-end"
+            marginBottom={1}
+          >
+            <text fg={colors.textMuted}>Esc to close</text>
+          </box>
+        )}
         {title ? (
           <box marginBottom={1}>
             <text fg={colors.primary}>{title}</text>
@@ -78,11 +87,6 @@ export default function AlertDialog({
         <box flexDirection="column">
           {message ? <text fg={colors.text}>{message}</text> : children}
         </box>
-        {!disableEscape ? (
-          <box marginTop={1}>
-            <DialogControls controls={[{ key: "Esc", label: "Close" }]} />
-          </box>
-        ) : null}
       </box>
     </box>
   );

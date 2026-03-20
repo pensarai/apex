@@ -321,7 +321,6 @@ export default function InitWizard() {
             controls={[
               { key: "Enter", label: "Start Immediately", variant: "primary" },
               { key: "Tab", label: "Configure Options" },
-              { key: "Esc", label: "Cancel" },
             ]}
           />
         </box>
@@ -544,7 +543,6 @@ export default function InitWizard() {
           controls={[
             { key: "Enter", label: "Start Pentest", variant: "primary" },
             { key: "Tab", label: "Navigate Fields" },
-            { key: "Esc", label: "Go Back" },
           ]}
         />
       </box>

@@ -113,10 +113,7 @@ export default function APIKeyInput({
 
         {/* Footer */}
         <DialogControls
-          controls={[
-            { key: "Enter", label: "Save", variant: "primary" },
-            { key: "Esc", label: "Cancel" },
-          ]}
+          controls={[{ key: "Enter", label: "Save", variant: "primary" }]}
         />
       </box>
     </Dialog>

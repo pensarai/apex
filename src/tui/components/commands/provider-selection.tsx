@@ -120,11 +120,7 @@ export default function ProviderSelection({
 
         {/* Footer */}
         <DialogControls
-          controls={[
-            { key: "Enter", label: "Select", variant: "primary" },
-            { key: "↑/↓", label: "Browse" },
-            { key: "Esc", label: "Close" },
-          ]}
+          controls={[{ key: "Enter", label: "Select", variant: "primary" }]}
         />
       </box>
     </Dialog>

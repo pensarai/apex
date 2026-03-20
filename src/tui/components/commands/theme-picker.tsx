@@ -159,9 +159,7 @@ export default function ThemePicker({ onClose }: ThemePickerProps) {
           <DialogControls
             controls={[
               { key: "Enter", label: "Select", variant: "primary" },
-              { key: "↑/↓", label: "Browse" },
               { key: "M", label: "Toggle Mode" },
-              { key: "Esc", label: "Cancel" },
             ]}
           />
         </box>

@@ -14,10 +14,17 @@ import { useTheme } from "../theme";
 interface DialogProps {
   size?: "medium" | "large";
   onClose: () => void;
+  /** Hide the top-right "Esc" dismiss indicator */
+  hideEsc?: boolean;
   children?: ReactNode;
 }
 
-export function Dialog({ size = "medium", onClose, children }: DialogProps) {
+export function Dialog({
+  size = "medium",
+  onClose,
+  hideEsc = false,
+  children,
+}: DialogProps) {
   const dimensions = useDimensions();
   const renderer = useRenderer();
   const { colors: themeColors } = useTheme();
@@ -48,8 +55,20 @@ export function Dialog({ size = "medium", onClose, children }: DialogProps) {
         maxHeight={dimensions.height - 4}
         overflow="hidden"
         backgroundColor={themeColors.backgroundElement}
+        flexDirection="column"
         paddingTop={1}
       >
+        {!hideEsc && (
+          <box
+            width="100%"
+            flexDirection="row"
+            justifyContent="flex-end"
+            paddingRight={2}
+            flexShrink={0}
+          >
+            <text fg={themeColors.textMuted}>Esc to close</text>
+          </box>
+        )}
         {children}
       </box>
     </box>

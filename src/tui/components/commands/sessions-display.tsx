@@ -343,11 +343,9 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
           <DialogControls
             controls={[
               { key: "Enter", label: "Open", variant: "primary" },
-              { key: "↑/↓", label: "Navigate" },
               { key: "O", label: "Operator" },
               { key: "R", label: "Report" },
               { key: "Ctrl+D", label: "Delete", variant: "danger" },
-              { key: "Esc", label: "Close" },
             ]}
           />
         )}

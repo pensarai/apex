@@ -183,8 +183,6 @@ export default function ReportViewerDialog({
                     },
                   ]
                 : []),
-              { key: "↑/↓", label: "Scroll" },
-              { key: "Esc", label: "Close" },
             ]}
           />
           <text fg={colors.textMuted}>{lineCount} lines</text>
