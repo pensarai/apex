@@ -6,6 +6,7 @@
 
 // Markdown utilities
 export { markdownToStyledText } from "./markdown";
+export { MarkdownViewer } from "./markdown-viewer";
 
 // Message utilities
 export {

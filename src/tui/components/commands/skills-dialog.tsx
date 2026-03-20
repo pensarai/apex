@@ -7,11 +7,13 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { useKeyboard } from "@opentui/react";
-import { SyntaxStyle } from "@opentui/core";
 import { useCommand } from "../../context/command";
 import { useDimensions } from "../../context/dimensions";
 import { useTheme } from "../../theme";
+import { useToast } from "../../context/toast";
 import { Dialog } from "../../context/dialog";
+import { MarkdownViewer } from "../shared/markdown-viewer";
+import { openFileInDefaultApp } from "../../utils/open-file";
 import type { SkillEntry, SkillSource } from "../../../core/skills/types";
 
 /** Rough token estimate: ~4 chars per token */
@@ -37,6 +39,7 @@ export default function SkillsDialog({
 }: SkillsDialogProps) {
   const { colors } = useTheme();
   const { skillsRegistry } = useCommand();
+  const { toast } = useToast();
   const dimensions = useDimensions();
 
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -95,11 +98,17 @@ export default function SkillsDialog({
   }, [allSkills]);
 
   useKeyboard((evt) => {
-    // Detail view — only intercept escape to go back; let scrollbox handle scroll keys
+    // Detail view — intercept escape and [E]; let scrollbox handle scroll keys
     if (detailSkill) {
       if (evt.name === "escape") {
         evt.preventDefault();
         setDetailSkill(null);
+      }
+      if ((evt.name === "e" || evt.name === "E") && !evt.ctrl && !evt.meta) {
+        evt.preventDefault();
+        openFileInDefaultApp(detailSkill.filePath).then((err) => {
+          if (err) toast(err, "error");
+        });
       }
       return;
     }
@@ -135,26 +144,6 @@ export default function SkillsDialog({
 
   const panelWidth = Math.min(76, dimensions.width - 4);
 
-  const syntaxStyle = useMemo(
-    () =>
-      SyntaxStyle.fromStyles({
-        default: { fg: colors.text },
-        "markup.heading": { fg: colors.markdownHeading, bold: true },
-        "markup.strong": { fg: colors.markdownStrong, bold: true },
-        "markup.italic": { fg: colors.markdownEmph, italic: true },
-        "markup.raw": { fg: colors.markdownCode },
-        "markup.raw.block": { fg: colors.markdownCode },
-        "markup.link": { fg: colors.markdownLink },
-        "markup.link.url": { fg: colors.markdownLink, dim: true },
-        "markup.link.label": { fg: colors.markdownLink, underline: true },
-        "markup.strikethrough": { fg: colors.textMuted, dim: true },
-        "markup.list": { fg: colors.primary },
-        "markup.quote": { fg: colors.textMuted, italic: true },
-        "punctuation.special": { fg: colors.border },
-      }),
-    [colors],
-  );
-
   // ---------- Detail view ----------
   if (detailSkill) {
     const m = detailSkill.manifest;
@@ -164,99 +153,53 @@ export default function SkillsDialog({
 
     return (
       <Dialog size="large" onClose={() => setDetailSkill(null)}>
-        <box flexDirection="column" width="100%" padding={1}>
-          {/* Header */}
-          <box width="100%" flexDirection="row" justifyContent="space-between">
+        <MarkdownViewer
+          content={instrText}
+          loading={detailInstructions === null}
+          width={panelWidth}
+          headerLeft={
             <text>
               <span fg={colors.primary}>{detailSkill.slug}</span>
               {m.version && <span fg={colors.textMuted}> v{m.version}</span>}
             </text>
+          }
+          headerRight={
             <text fg={colors.textMuted}>
               {detailInstructions !== null
                 ? `~${instrTokens + descTokens} tokens`
                 : "loading..."}
             </text>
-          </box>
-
-          {/* Separator */}
-          <box width="100%" height={1}>
-            <text fg={colors.border}>{"─".repeat(panelWidth - 2)}</text>
-          </box>
-
-          {/* Metadata */}
-          <box flexDirection="column">
-            {m.tags && m.tags.length > 0 && (
+          }
+          beforeContent={
+            <box flexDirection="column" paddingLeft={1}>
+              {m.tags && m.tags.length > 0 && (
+                <text>
+                  <span fg={colors.textMuted}>Tags: </span>
+                  <span fg={colors.text}>{m.tags.join(", ")}</span>
+                </text>
+              )}
               <text>
-                <span fg={colors.textMuted}>Tags: </span>
-                <span fg={colors.text}>{m.tags.join(", ")}</span>
+                <span fg={colors.textMuted}>Source: </span>
+                <span fg={colors.text}>{detailSkill.filePath}</span>
               </text>
-            )}
-            <text>
-              <span fg={colors.textMuted}>Source: </span>
-              <span fg={colors.text}>{detailSkill.filePath}</span>
+              {detailSkill.scripts.length > 0 && (
+                <text>
+                  <span fg={colors.textMuted}>Scripts: </span>
+                  <span fg={colors.text}>
+                    {detailSkill.scripts.map((s) => s.name).join(", ")}
+                  </span>
+                </text>
+              )}
+            </box>
+          }
+          footerLeft={
+            <text fg={colors.textMuted}>
+              <span fg={colors.primary}>[↑/↓]</span> Scroll{" "}
+              <span fg={colors.primary}>[E]</span> Open in Editor{" "}
+              <span fg={colors.primary}>[Esc]</span> Back
             </text>
-            {detailSkill.scripts.length > 0 && (
-              <text>
-                <span fg={colors.textMuted}>Scripts: </span>
-                <span fg={colors.text}>
-                  {detailSkill.scripts.map((s) => s.name).join(", ")}
-                </span>
-              </text>
-            )}
-          </box>
-
-          {/* Separator */}
-          <box width="100%" height={1} marginTop={1}>
-            <text fg={colors.border}>{"─".repeat(panelWidth - 2)}</text>
-          </box>
-
-          {/* Scrollable markdown instructions */}
-          <scrollbox
-            style={{
-              rootOptions: {
-                flexGrow: 1,
-                flexShrink: 1,
-                width: "100%",
-                overflow: "hidden",
-              },
-              contentOptions: {
-                paddingLeft: 2,
-                paddingRight: 2,
-                paddingTop: 1,
-                paddingBottom: 1,
-                flexDirection: "column",
-              },
-              scrollbarOptions: {
-                trackOptions: {
-                  foregroundColor: colors.primary,
-                  backgroundColor: colors.backgroundElement,
-                },
-              },
-            }}
-            stickyScroll={false}
-            focused={true}
-          >
-            {detailInstructions !== null ? (
-              <markdown
-                content={instrText}
-                syntaxStyle={syntaxStyle}
-                conceal={true}
-              />
-            ) : (
-              <text fg={colors.textMuted}>Loading instructions...</text>
-            )}
-          </scrollbox>
-
-          {/* Separator */}
-          <box width="100%" height={1}>
-            <text fg={colors.border}>{"─".repeat(panelWidth - 2)}</text>
-          </box>
-
-          {/* Footer */}
-          <box width="100%" flexDirection="row">
-            <text fg={colors.textMuted}>[↑↓] scroll [esc] back</text>
-          </box>
-        </box>
+          }
+        />
       </Dialog>
     );
   }
