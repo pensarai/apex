@@ -98,11 +98,13 @@ export default function ModelsDisplay() {
 
       {/* Footer */}
       <box marginTop={1}>
-        <DialogControls controls={[
-          { key: "Enter", label: "Confirm", variant: "primary" },
-          { key: "Ctrl+P", label: "Connect Provider" },
-          { key: "Esc", label: "Go Back" },
-        ]} />
+        <DialogControls
+          controls={[
+            { key: "Enter", label: "Confirm", variant: "primary" },
+            { key: "Ctrl+P", label: "Connect Provider" },
+            { key: "Esc", label: "Go Back" },
+          ]}
+        />
       </box>
     </box>
   );

@@ -340,14 +340,16 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
 
         {/* Actions Footer */}
         {visualOrderSessions.length > 0 && (
-          <DialogControls controls={[
-            { key: "↑/↓", label: "Navigate" },
-            { key: "Enter", label: "Open", variant: "primary" },
-            { key: "O", label: "Operator" },
-            { key: "R", label: "Report" },
-            { key: "Ctrl+D", label: "Delete", variant: "danger" },
-            { key: "Esc", label: "Close" },
-          ]} />
+          <DialogControls
+            controls={[
+              { key: "↑/↓", label: "Navigate" },
+              { key: "Enter", label: "Open", variant: "primary" },
+              { key: "O", label: "Operator" },
+              { key: "R", label: "Report" },
+              { key: "Ctrl+D", label: "Delete", variant: "danger" },
+              { key: "Esc", label: "Close" },
+            ]}
+          />
         )}
       </box>
     </Dialog>

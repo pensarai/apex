@@ -317,11 +317,13 @@ export default function InitWizard() {
         />
 
         <box marginTop={1}>
-          <DialogControls controls={[
-            { key: "Enter", label: "Start Immediately", variant: "primary" },
-            { key: "Tab", label: "Configure Options" },
-            { key: "Esc", label: "Cancel" },
-          ]} />
+          <DialogControls
+            controls={[
+              { key: "Enter", label: "Start Immediately", variant: "primary" },
+              { key: "Tab", label: "Configure Options" },
+              { key: "Esc", label: "Cancel" },
+            ]}
+          />
         </box>
       </box>
     );
@@ -538,11 +540,13 @@ export default function InitWizard() {
       </box>
 
       <box marginTop={1}>
-        <DialogControls controls={[
-          { key: "Enter", label: "Start Pentest", variant: "primary" },
-          { key: "Tab", label: "Navigate Fields" },
-          { key: "Esc", label: "Go Back" },
-        ]} />
+        <DialogControls
+          controls={[
+            { key: "Enter", label: "Start Pentest", variant: "primary" },
+            { key: "Tab", label: "Navigate Fields" },
+            { key: "Esc", label: "Go Back" },
+          ]}
+        />
       </box>
     </box>
   );

@@ -172,11 +172,21 @@ export default function ReportViewerDialog({
           flexDirection="row"
           justifyContent="space-between"
         >
-          <DialogControls controls={[
-            { key: "↑/↓", label: "Scroll" },
-            ...(onOpenExternal ? [{ key: "E", label: "Open in Editor", variant: "primary" as const }] : []),
-            { key: "Esc", label: "Close" },
-          ]} />
+          <DialogControls
+            controls={[
+              { key: "↑/↓", label: "Scroll" },
+              ...(onOpenExternal
+                ? [
+                    {
+                      key: "E",
+                      label: "Open in Editor",
+                      variant: "primary" as const,
+                    },
+                  ]
+                : []),
+              { key: "Esc", label: "Close" },
+            ]}
+          />
           <text fg={colors.textMuted}>{lineCount} lines</text>
         </box>
       </box>

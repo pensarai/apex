@@ -501,10 +501,12 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
               </text>
             </box>
             <box marginTop={1}>
-              <DialogControls controls={[
-                { key: "Enter", label: "Connect", variant: "primary" },
-                { key: "Esc", label: "Cancel" },
-              ]} />
+              <DialogControls
+                controls={[
+                  { key: "Enter", label: "Connect", variant: "primary" },
+                  { key: "Esc", label: "Cancel" },
+                ]}
+              />
             </box>
           </box>
         )}
@@ -536,9 +538,7 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
               </text>
             </box>
             <box marginTop={1}>
-              <DialogControls controls={[
-                { key: "Esc", label: "Cancel" },
-              ]} />
+              <DialogControls controls={[{ key: "Esc", label: "Cancel" }]} />
             </box>
           </box>
         )}
@@ -565,12 +565,14 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
               ))}
             </box>
             <box marginTop={1}>
-              <DialogControls controls={[
-                { key: "↑/↓", label: "Navigate" },
-                { key: "Enter", label: "Select", variant: "primary" },
-                { key: "D", label: "Disconnect", variant: "danger" },
-                { key: "Esc", label: "Cancel" },
-              ]} />
+              <DialogControls
+                controls={[
+                  { key: "↑/↓", label: "Navigate" },
+                  { key: "Enter", label: "Select", variant: "primary" },
+                  { key: "D", label: "Disconnect", variant: "danger" },
+                  { key: "Esc", label: "Cancel" },
+                ]}
+              />
             </box>
           </box>
         )}
@@ -600,9 +602,7 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
               </text>
             </box>
             <box marginTop={1}>
-              <DialogControls controls={[
-                { key: "Esc", label: "Cancel" },
-              ]} />
+              <DialogControls controls={[{ key: "Esc", label: "Cancel" }]} />
             </box>
           </box>
         )}
@@ -666,11 +666,17 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
               </text>
             </box>
             <box marginTop={1}>
-              <DialogControls controls={[
-                { key: "Enter", label: showBillingWarning ? "Open Billing" : "Done", variant: "primary" },
-                { key: "D", label: "Disconnect", variant: "danger" },
-                { key: "Esc", label: "Back" },
-              ]} />
+              <DialogControls
+                controls={[
+                  {
+                    key: "Enter",
+                    label: showBillingWarning ? "Open Billing" : "Done",
+                    variant: "primary",
+                  },
+                  { key: "D", label: "Disconnect", variant: "danger" },
+                  { key: "Esc", label: "Back" },
+                ]}
+              />
             </box>
           </box>
         )}
@@ -682,10 +688,12 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
               <text fg={colors.error}>{error}</text>
             </box>
             <box marginTop={1}>
-              <DialogControls controls={[
-                { key: "Enter", label: "Try Again", variant: "primary" },
-                { key: "Esc", label: "Cancel" },
-              ]} />
+              <DialogControls
+                controls={[
+                  { key: "Enter", label: "Try Again", variant: "primary" },
+                  { key: "Esc", label: "Cancel" },
+                ]}
+              />
             </box>
           </box>
         )}

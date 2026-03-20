@@ -348,9 +348,11 @@ export default function SkillsDialog({
 
         {/* Footer */}
         <box width="100%" flexDirection="row">
-          <DialogControls controls={[
-            { key: "Enter", label: "Details", variant: "primary" },
-          ]} />
+          <DialogControls
+            controls={[
+              { key: "Enter", label: "Details", variant: "primary" },
+            ]}
+          />
         </box>
       </box>
     </Dialog>

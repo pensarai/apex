@@ -692,11 +692,17 @@ export default function WebWizard({
           </box>
 
           <box marginTop={1}>
-            <DialogControls controls={[
-              { key: "Enter", label: "Start Immediately", variant: "primary" },
-              { key: "Tab", label: "Configure Options" },
-              { key: "Esc", label: "Cancel" },
-            ]} />
+            <DialogControls
+              controls={[
+                {
+                  key: "Enter",
+                  label: "Start Immediately",
+                  variant: "primary",
+                },
+                { key: "Tab", label: "Configure Options" },
+                { key: "Esc", label: "Cancel" },
+              ]}
+            />
           </box>
         </box>
       </Dialog>
@@ -1057,11 +1063,17 @@ export default function WebWizard({
         </box>
 
         <box marginTop={1}>
-          <DialogControls controls={[
-            { key: "Enter", label: `Start Pentest (${modeLabel})`, variant: "primary" },
-            { key: "Tab", label: "Navigate Fields" },
-            { key: "Esc", label: "Go Back" },
-          ]} />
+          <DialogControls
+            controls={[
+              {
+                key: "Enter",
+                label: `Start Pentest (${modeLabel})`,
+                variant: "primary",
+              },
+              { key: "Tab", label: "Navigate Fields" },
+              { key: "Esc", label: "Go Back" },
+            ]}
+          />
         </box>
       </box>
     </Dialog>

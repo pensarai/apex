@@ -119,11 +119,13 @@ export default function ProviderSelection({
         </scrollbox>
 
         {/* Footer */}
-        <DialogControls controls={[
-          { key: "↑/↓", label: "Browse" },
-          { key: "Enter", label: "Select", variant: "primary" },
-          { key: "Esc", label: "Close" },
-        ]} />
+        <DialogControls
+          controls={[
+            { key: "↑/↓", label: "Browse" },
+            { key: "Enter", label: "Select", variant: "primary" },
+            { key: "Esc", label: "Close" },
+          ]}
+        />
       </box>
     </Dialog>
   );

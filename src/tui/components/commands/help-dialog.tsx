@@ -172,9 +172,11 @@ export default function HelpDialog({ onClose }: HelpDialogProps) {
 
           {/* Footer hint */}
           <box marginTop={1}>
-            <DialogControls controls={[
-              { key: "Enter/Esc", label: "Back", variant: "primary" },
-            ]} />
+            <DialogControls
+              controls={[
+                { key: "Enter/Esc", label: "Back", variant: "primary" },
+              ]}
+            />
           </box>
         </box>
       </Dialog>
@@ -241,11 +243,13 @@ export default function HelpDialog({ onClose }: HelpDialogProps) {
         </scrollbox>
 
         {/* Footer */}
-        <DialogControls controls={[
-          { key: "↑/↓", label: "Navigate" },
-          { key: "Enter", label: "Details", variant: "primary" },
-          { key: "Esc", label: "Close" },
-        ]} />
+        <DialogControls
+          controls={[
+            { key: "↑/↓", label: "Navigate" },
+            { key: "Enter", label: "Details", variant: "primary" },
+            { key: "Esc", label: "Close" },
+          ]}
+        />
       </box>
     </Dialog>
   );

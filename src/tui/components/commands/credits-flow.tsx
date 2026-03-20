@@ -147,10 +147,12 @@ export default function CreditsFlow({
               </text>
             </box>
             <box marginTop={1}>
-              <DialogControls controls={[
-                { key: "Enter", label: "Run /auth", variant: "primary" },
-                { key: "Esc", label: "Back" },
-              ]} />
+              <DialogControls
+                controls={[
+                  { key: "Enter", label: "Run /auth", variant: "primary" },
+                  { key: "Esc", label: "Back" },
+                ]}
+              />
             </box>
           </box>
         )}
@@ -195,11 +197,17 @@ export default function CreditsFlow({
               <text fg={colors.textMuted}>Buy credits at: {creditsUrl}</text>
             </box>
             <box marginTop={1}>
-              <DialogControls controls={[
-                { key: "Enter", label: "Open in Browser", variant: "primary" },
-                { key: "R", label: "Refresh" },
-                { key: "Esc", label: "Back" },
-              ]} />
+              <DialogControls
+                controls={[
+                  {
+                    key: "Enter",
+                    label: "Open in Browser",
+                    variant: "primary",
+                  },
+                  { key: "R", label: "Refresh" },
+                  { key: "Esc", label: "Back" },
+                ]}
+              />
             </box>
           </box>
         )}
@@ -219,10 +227,16 @@ export default function CreditsFlow({
               </text>
             </box>
             <box marginTop={1}>
-              <DialogControls controls={[
-                { key: "Enter", label: "Refresh Balance", variant: "primary" },
-                { key: "Esc", label: "Back" },
-              ]} />
+              <DialogControls
+                controls={[
+                  {
+                    key: "Enter",
+                    label: "Refresh Balance",
+                    variant: "primary",
+                  },
+                  { key: "Esc", label: "Back" },
+                ]}
+              />
             </box>
           </box>
         )}
