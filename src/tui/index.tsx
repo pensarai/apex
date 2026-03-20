@@ -82,6 +82,10 @@ function App({ appConfig }: AppProps) {
   const [showCreditsDialog, setShowCreditsDialog] = useState(false);
   const [showHelpDialog, setShowHelpDialog] = useState(false);
   const [showPentestDialog, setShowPentestDialog] = useState(false);
+  const [showSkillsDialog, setShowSkillsDialog] = useState(false);
+  const [pendingSkillSlug, setPendingSkillSlug] = useState<string | undefined>(
+    undefined,
+  );
   const [pendingPentestFlags, setPendingPentestFlags] = useState<
     WebCommandOptions | undefined
   >(undefined);
@@ -108,6 +112,10 @@ function App({ appConfig }: AppProps) {
                     onOpenPentestDialog={(flags) => {
                       setPendingPentestFlags(flags);
                       setShowPentestDialog(true);
+                    }}
+                    onOpenSkillsDialog={(slug) => {
+                      setPendingSkillSlug(slug);
+                      setShowSkillsDialog(true);
                     }}
                   >
                     <KeybindingProvider
@@ -142,6 +150,10 @@ function App({ appConfig }: AppProps) {
                         setShowAuthDialog={setShowAuthDialog}
                         showPentestDialog={showPentestDialog}
                         setShowPentestDialog={setShowPentestDialog}
+                        showSkillsDialog={showSkillsDialog}
+                        setShowSkillsDialog={setShowSkillsDialog}
+                        pendingSkillSlug={pendingSkillSlug}
+                        setPendingSkillSlug={setPendingSkillSlug}
                         pendingPentestFlags={pendingPentestFlags}
                         setPendingPentestFlags={setPendingPentestFlags}
                         cwd={cwd}
@@ -183,6 +195,10 @@ function AppContent({
   setShowAuthDialog,
   showPentestDialog,
   setShowPentestDialog,
+  showSkillsDialog,
+  setShowSkillsDialog,
+  pendingSkillSlug,
+  setPendingSkillSlug,
   pendingPentestFlags,
   setPendingPentestFlags,
   cwd,
@@ -211,6 +227,10 @@ function AppContent({
   setShowAuthDialog: (show: boolean) => void;
   showPentestDialog: boolean;
   setShowPentestDialog: (show: boolean) => void;
+  showSkillsDialog: boolean;
+  setShowSkillsDialog: (show: boolean) => void;
+  pendingSkillSlug: string | undefined;
+  setPendingSkillSlug: (slug: string | undefined) => void;
   pendingPentestFlags: WebCommandOptions | undefined;
   setPendingPentestFlags: (flags: WebCommandOptions | undefined) => void;
   cwd: string;
@@ -269,7 +289,8 @@ function AppContent({
     showCreditsDialog ||
     showHelpDialog ||
     showAuthDialog ||
-    showPentestDialog;
+    showPentestDialog ||
+    showSkillsDialog;
 
   useEffect(() => {
     if (anyExternalDialog) {
@@ -345,6 +366,13 @@ function AppContent({
       setInputKey((prev) => prev + 1);
       refocusPrompt();
     }
+  };
+
+  const handleCloseSkillsDialog = () => {
+    setShowSkillsDialog(false);
+    setPendingSkillSlug(undefined);
+    setInputKey((prev) => prev + 1);
+    refocusPrompt();
   };
 
   const handleClosePentestDialog = () => {
@@ -424,6 +452,13 @@ function AppContent({
       )}
 
       {showHelpDialog && <HelpDialog onClose={handleCloseHelpDialog} />}
+
+      {showSkillsDialog && (
+        <SkillsDialog
+          onClose={handleCloseSkillsDialog}
+          initialSlug={pendingSkillSlug}
+        />
+      )}
 
       {showAuthDialog && <AuthFlow onClose={handleCloseAuthDialog} />}
 
@@ -528,9 +563,6 @@ function CommandDisplay({
           </RouteSwitch.Case>
           <RouteSwitch.Case when="credits">
             <CreditsFlow onOpenAuthDialog={onOpenAuthDialog} />
-          </RouteSwitch.Case>
-          <RouteSwitch.Case when="skills">
-            <SkillsDialog />
           </RouteSwitch.Case>
         </RouteSwitch>
       </box>
