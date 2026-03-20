@@ -53,6 +53,7 @@ interface CommandProviderProps {
   onOpenProvidersDialog?: () => void;
   onOpenConfigDialog?: () => void;
   onOpenCreditsDialog?: () => void;
+  onOpenHelpDialog?: () => void;
   onOpenAuthDialog?: () => void;
   onOpenPentestDialog?: (flags?: WebCommandOptions) => void;
 }
@@ -65,6 +66,7 @@ export function CommandProvider({
   onOpenProvidersDialog,
   onOpenConfigDialog,
   onOpenCreditsDialog,
+  onOpenHelpDialog,
   onOpenAuthDialog,
   onOpenPentestDialog,
 }: CommandProviderProps) {
@@ -82,6 +84,7 @@ export function CommandProvider({
       openProvidersDialog: onOpenProvidersDialog,
       openConfigDialog: onOpenConfigDialog,
       openCreditsDialog: onOpenCreditsDialog,
+      openHelpDialog: onOpenHelpDialog,
       openAuthDialog: onOpenAuthDialog,
       openPentestDialog: onOpenPentestDialog,
     };
@@ -94,6 +97,7 @@ export function CommandProvider({
     onOpenProvidersDialog,
     onOpenConfigDialog,
     onOpenCreditsDialog,
+    onOpenHelpDialog,
     onOpenAuthDialog,
     onOpenPentestDialog,
   ]);

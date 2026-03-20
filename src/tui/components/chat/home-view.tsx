@@ -109,19 +109,71 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
     [skillsRegistry, route, executeCommand, pushHistory],
   );
 
-  // Calculate layout dimensions
-  const animationHeight = Math.max(6, Math.floor(dimensions.height * 0.2));
+  // Responsive layout calculations
+  const height = dimensions.height;
+
+  // Animation: scale down on small terminals, hide below 15 rows
+  const animationHeight =
+    height < 15
+      ? 0
+      : height < 20
+        ? 2
+        : height < 30
+          ? Math.max(3, Math.floor(height * 0.15))
+          : Math.max(6, Math.floor(height * 0.2));
+
+  // Margins: reduce spacing on small terminals
+  const titleMarginTop = height >= 20 ? 1 : 0;
+  const menuMarginTop = height >= 25 ? 2 : height >= 15 ? 1 : 0;
+  const inputMarginTop = height >= 25 ? 2 : height >= 15 ? 1 : 0;
+
+  // Content visibility: hide decorative elements first
+  const showCommands = height >= 22;
+  const showHelpText = height >= 18;
+  const inputPadding = height >= 20 ? 1 : 0;
   const inputWidth = Math.min(80, dimensions.width - 10);
 
+  // Estimate rows consumed above the input to size the autocomplete dropdown
+  const rowsAboveInput =
+    animationHeight +
+    titleMarginTop +
+    2 + // title + subtitle
+    (showCommands ? menuMarginTop + 5 : 0) +
+    inputMarginTop +
+    inputPadding + // top padding
+    1; // input row itself
+  const rowsBelowInput =
+    (showHelpText ? 2 : 0) + // help text + marginTop
+    inputPadding + // bottom padding
+    3; // footer bar approximate
+  // Subtract 3 extra rows: 1 margin + 1 "↑ more above" + 1 "↓ more below" indicators
+  const maxSuggestions = Math.max(
+    2,
+    height - rowsAboveInput - rowsBelowInput - 3,
+  );
+
   return (
-    <box flexDirection="column" width="100%" height="100%" alignItems="center">
+    <box
+      flexDirection="column"
+      width="100%"
+      height="100%"
+      alignItems="center"
+      overflow="hidden"
+    >
       {/* Petri Animation */}
-      <box height={animationHeight} width="100%">
-        <PetriAnimation height={animationHeight} />
-      </box>
+      {animationHeight > 0 && (
+        <box height={animationHeight} width="100%">
+          <PetriAnimation height={animationHeight} />
+        </box>
+      )}
 
       {/* Title - centered */}
-      <box flexDirection="column" alignItems="center" marginTop={1}>
+      <box
+        flexDirection="column"
+        alignItems="center"
+        marginTop={titleMarginTop}
+        flexShrink={0}
+      >
         <text fg={colors.text}>
           Apex{" "}
           <span fg={colors.textMuted}>({config.data.version || "local"})</span>
@@ -130,40 +182,43 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
       </box>
 
       {/* Command Quick Reference */}
-      <box flexDirection="column" marginTop={2}>
-        {[
-          { cmd: "/pentest", desc: "autonomous pentest" },
-          { cmd: "/operator", desc: "interactive operator" },
-          { cmd: "/auth", desc: "login to Pensar" },
-          { cmd: "/models", desc: "select AI model" },
-          { cmd: "/providers", desc: "manage API keys" },
-        ].map(({ cmd, desc }) => (
-          <box key={cmd} flexDirection="row">
-            <box width={24} justifyContent="flex-end">
-              <text fg={colors.primary}>{cmd}</text>
+      {showCommands && (
+        <box flexDirection="column" marginTop={menuMarginTop} flexShrink={0}>
+          {[
+            { cmd: "/pentest", desc: "autonomous pentest" },
+            { cmd: "/operator", desc: "interactive operator" },
+            { cmd: "/auth", desc: "login to Pensar" },
+            { cmd: "/models", desc: "select AI model" },
+            { cmd: "/providers", desc: "manage API keys" },
+          ].map(({ cmd, desc }) => (
+            <box key={cmd} flexDirection="row">
+              <box width={24} justifyContent="flex-end">
+                <text fg={colors.primary}>{cmd}</text>
+              </box>
+              <box width={4} />
+              <box>
+                <text fg={colors.textMuted}>{desc}</text>
+              </box>
             </box>
-            <box width={4} />
-            <box>
-              <text fg={colors.textMuted}>{desc}</text>
-            </box>
-          </box>
-        ))}
-      </box>
+          ))}
+        </box>
+      )}
 
       {/* Centered Input Area */}
       <box
         flexDirection="column"
         width={inputWidth}
-        marginTop={2}
-        padding={1}
+        marginTop={inputMarginTop}
+        padding={inputPadding}
         border={["left", "right"]}
         borderColor={colors.primary}
+        flexShrink={0}
       >
         {/* Input with built-in autocomplete */}
         <PromptInput
           ref={promptRef}
           focused={!externalDialogOpen && stack.length === 0}
-          width={inputWidth - 4}
+          width={inputWidth - 2 - inputPadding * 2}
           minHeight={1}
           maxHeight={4}
           onSubmit={handleSubmit}
@@ -174,6 +229,7 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
           focusedBackgroundColor="transparent"
           enableAutocomplete={true}
           autocompleteOptions={autocompleteOptions}
+          maxVisibleSuggestions={maxSuggestions}
           enableCommands={true}
           onCommandExecute={handleCommandExecute}
           commandHistory={commandHistory}
@@ -192,7 +248,7 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
           modelName={model.name}
           providerName={providerDisplayName(model.provider)}
           showMode={false}
-          maxWidth={inputWidth - 4}
+          maxWidth={inputWidth - 2 - inputPadding * 2}
           rightContent={
             <text fg={colors.textMuted}>
               <span fg={colors.text}>[/]</span> commands

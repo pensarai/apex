@@ -136,6 +136,7 @@ export function ConfigView({ config, onBack, onStart }: ConfigViewProps) {
       paddingLeft={4}
       paddingRight={4}
       gap={1}
+      overflow="hidden"
     >
       {/* Header */}
       <box flexDirection="row" justifyContent="space-between">

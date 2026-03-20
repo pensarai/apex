@@ -244,9 +244,21 @@ export default function SwarmDashboard({
 
   // Overview view
   return (
-    <box flexDirection="column" width="100%" height="100%" flexGrow={1}>
+    <box
+      flexDirection="column"
+      width="100%"
+      height="100%"
+      flexGrow={1}
+      overflow="hidden"
+    >
       {/* Main content area */}
-      <box flexDirection="row" flexGrow={1} gap={2} padding={1}>
+      <box
+        flexDirection="row"
+        flexGrow={1}
+        gap={2}
+        padding={1}
+        overflow="hidden"
+      >
         {/* Left: Discovery panel */}
         <DiscoveryPanel
           agent={discoveryAgent}
@@ -799,7 +811,13 @@ function AgentDetailView({ agent, onBack, onResume }: AgentDetailViewProps) {
   }[agent.status];
 
   return (
-    <box flexDirection="column" width="100%" height="100%" flexGrow={1}>
+    <box
+      flexDirection="column"
+      width="100%"
+      height="100%"
+      flexGrow={1}
+      overflow="hidden"
+    >
       {/* Header */}
       <box
         width="100%"
@@ -808,6 +826,7 @@ function AgentDetailView({ agent, onBack, onResume }: AgentDetailViewProps) {
         flexDirection="row"
         justifyContent="space-between"
         padding={1}
+        flexShrink={0}
       >
         <box flexDirection="row" gap={1}>
           <text fg={colors.textMuted}></text>
@@ -840,6 +859,7 @@ function AgentDetailView({ agent, onBack, onResume }: AgentDetailViewProps) {
         border={["top"]}
         borderColor={colors.primary}
         padding={1}
+        flexShrink={0}
       >
         <text>
           <span fg={colors.textMuted}>{agent.messages.length} messages</span>
