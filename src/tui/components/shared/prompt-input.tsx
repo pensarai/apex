@@ -527,7 +527,10 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
     // renders inside a width-constrained parent, not at full terminal width.
     const effectiveWidth = typeof width === "number" ? width : termWidth;
     // Description column width: total - indicator(3) - label - gap(1)
-    const descColumnWidth = Math.max(10, effectiveWidth - 3 - maxLabelWidth - 1);
+    const descColumnWidth = Math.max(
+      10,
+      effectiveWidth - 3 - maxLabelWidth - 1,
+    );
 
     const suggestionsBox = suggestions.length > 0 && (
       <box
@@ -565,9 +568,7 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
                   </span>
                 </text>
               </box>
-              {desc && (
-                <text fg={colors.textMuted}>{desc}</text>
-              )}
+              {desc && <text fg={colors.textMuted}>{desc}</text>}
             </box>
           );
         })}
