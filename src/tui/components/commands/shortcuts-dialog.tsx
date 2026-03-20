@@ -3,6 +3,7 @@ import { useFocus } from "../../context/focus";
 import { Dialog } from "../../context/dialog";
 import { keybindings } from "../../keybindings-registry";
 import { useTheme } from "../../theme";
+import { DialogControls } from "../shared/dialog-controls";
 
 interface ShortcutsDialogProps {
   open: boolean;
@@ -35,9 +36,8 @@ export default function ShortcutsDialog({
     <Dialog size="large" onClose={handleClose}>
       <box flexDirection="column" padding={2} gap={2} width="100%">
         {/* Header */}
-        <box flexDirection="row" justifyContent="space-between" width="100%">
+        <box width="100%">
           <text fg={colors.text}>Keyboard Shortcuts</text>
-          <text fg={colors.textMuted}>esc to close</text>
         </box>
 
         {/* Shortcuts List */}
@@ -51,6 +51,7 @@ export default function ShortcutsDialog({
             </box>
           ))}
         </box>
+        <DialogControls controls={[{ key: "Esc", label: "Close" }]} />
       </box>
     </Dialog>
   );

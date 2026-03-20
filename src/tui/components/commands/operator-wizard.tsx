@@ -7,6 +7,7 @@ import { SpinnerDots } from "../sprites";
 import type { ModelInfo } from "../../../core/ai";
 import { getAvailableModels } from "../../../core/providers/utils";
 import { useTheme } from "../../theme";
+import { DialogControls } from "../shared/dialog-controls";
 
 type WizardStep = "config" | "creating";
 
@@ -314,9 +315,12 @@ export default function HITLWizard(props: HITLWizardProps) {
 
       {/* Help text */}
       <box flexDirection="column" gap={0} marginTop={2}>
-        <text fg={colors.textMuted}>
-          ↑/↓ navigate | ←/→ change value | Enter select | ESC back
-        </text>
+        <DialogControls controls={[
+          { key: "↑/↓", label: "Navigate" },
+          { key: "←/→", label: "Change Value" },
+          { key: "Enter", label: "Select", variant: "primary" },
+          { key: "Esc", label: "Back" },
+        ]} />
       </box>
     </box>
   );

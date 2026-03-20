@@ -4,6 +4,7 @@ import Input from "../input";
 import { type ProviderType, verifyApiKey } from "../../../core/providers";
 import { useTheme } from "../../theme";
 import { Dialog } from "../../context/dialog";
+import { DialogControls } from "../shared/dialog-controls";
 
 type VerifyState = "idle" | "verifying" | "error";
 
@@ -72,10 +73,7 @@ export default function APIKeyInput({
     <Dialog size="large" onClose={onCancel}>
       <box flexDirection="column" padding={1} width="100%">
         {/* Header */}
-        <box flexDirection="row" justifyContent="space-between" width="100%">
-          <text fg={colors.primary}>Connect {providerName}</text>
-          <text fg={colors.textMuted}>esc to cancel</text>
-        </box>
+        <text fg={colors.primary}>Connect {providerName}</text>
 
         {/* Instructions */}
         <box marginTop={1} marginBottom={1}>
@@ -114,9 +112,10 @@ export default function APIKeyInput({
         )}
 
         {/* Footer */}
-        <box marginTop={1}>
-          <text fg={colors.textMuted}>[enter] save [esc] cancel</text>
-        </box>
+        <DialogControls controls={[
+          { key: "Enter", label: "Save", variant: "primary" },
+          { key: "Esc", label: "Cancel" },
+        ]} />
       </box>
     </Dialog>
   );

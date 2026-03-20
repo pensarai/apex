@@ -9,6 +9,7 @@ import { type ModelInfo } from "../../../core/ai";
 import { getAvailableModels } from "../../../core/providers/utils";
 import { useTheme } from "../../theme";
 import { Dialog } from "../../context/dialog";
+import { DialogControls } from "../shared/dialog-controls";
 
 // Wizard step types
 type WizardStep = "target" | "configure" | "creating";
@@ -690,25 +691,12 @@ export default function WebWizard({
             )}
           </box>
 
-          <box flexDirection="column" gap={0} marginTop={1}>
-            <text>
-              <span fg={colors.primary}>█ </span>
-              <span fg={colors.textMuted}>Press </span>
-              <span fg={colors.text}>[Enter]</span>
-              <span fg={colors.textMuted}> to start immediately</span>
-            </text>
-            <text>
-              <span fg={colors.primary}>█ </span>
-              <span fg={colors.textMuted}>Press </span>
-              <span fg={colors.text}>[Tab]</span>
-              <span fg={colors.textMuted}> to configure options</span>
-            </text>
-            <text>
-              <span fg={colors.primary}>█ </span>
-              <span fg={colors.textMuted}>Press </span>
-              <span fg={colors.text}>[ESC]</span>
-              <span fg={colors.textMuted}> to cancel</span>
-            </text>
+          <box marginTop={1}>
+            <DialogControls controls={[
+              { key: "Enter", label: "Start Immediately", variant: "primary" },
+              { key: "Tab", label: "Configure Options" },
+              { key: "Esc", label: "Cancel" },
+            ]} />
           </box>
         </box>
       </Dialog>
@@ -1068,25 +1056,12 @@ export default function WebWizard({
           )}
         </box>
 
-        <box flexDirection="column" gap={0} marginTop={1}>
-          <text>
-            <span fg={colors.primary}>█ </span>
-            <span fg={colors.textMuted}>Press </span>
-            <span fg={colors.text}>[Enter]</span>
-            <span fg={colors.textMuted}> to start pentest ({modeLabel})</span>
-          </text>
-          <text>
-            <span fg={colors.primary}>█ </span>
-            <span fg={colors.textMuted}>Press </span>
-            <span fg={colors.text}>[Tab]</span>
-            <span fg={colors.textMuted}> to navigate fields</span>
-          </text>
-          <text>
-            <span fg={colors.primary}>█ </span>
-            <span fg={colors.textMuted}>Press </span>
-            <span fg={colors.text}>[ESC]</span>
-            <span fg={colors.textMuted}> to go back</span>
-          </text>
+        <box marginTop={1}>
+          <DialogControls controls={[
+            { key: "Enter", label: `Start Pentest (${modeLabel})`, variant: "primary" },
+            { key: "Tab", label: "Navigate Fields" },
+            { key: "Esc", label: "Go Back" },
+          ]} />
         </box>
       </box>
     </Dialog>

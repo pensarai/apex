@@ -18,6 +18,7 @@ import {
 } from "../../../core/auth";
 import type { DeviceFlowInfo, WorkspaceInfo } from "../../../core/auth";
 import { Dialog } from "../../context/dialog";
+import { DialogControls } from "../shared/dialog-controls";
 import { useTheme } from "../../theme";
 
 interface AuthFlowProps {
@@ -500,10 +501,10 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
               </text>
             </box>
             <box marginTop={1}>
-              <text fg={colors.textMuted}>
-                <span fg={colors.primary}>[ENTER]</span> Connect ·{" "}
-                <span fg={colors.primary}>[ESC]</span> Cancel
-              </text>
+              <DialogControls controls={[
+                { key: "Enter", label: "Connect", variant: "primary" },
+                { key: "Esc", label: "Cancel" },
+              ]} />
             </box>
           </box>
         )}
@@ -535,9 +536,9 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
               </text>
             </box>
             <box marginTop={1}>
-              <text fg={colors.textMuted}>
-                <span fg={colors.primary}>[ESC]</span> Cancel
-              </text>
+              <DialogControls controls={[
+                { key: "Esc", label: "Cancel" },
+              ]} />
             </box>
           </box>
         )}
@@ -564,12 +565,12 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
               ))}
             </box>
             <box marginTop={1}>
-              <text fg={colors.textMuted}>
-                <span fg={colors.primary}>[↑/↓]</span> Navigate ·{" "}
-                <span fg={colors.primary}>[ENTER]</span> Select ·{" "}
-                <span fg={colors.error}>[D]</span> Disconnect ·{" "}
-                <span fg={colors.primary}>[ESC]</span> Cancel
-              </text>
+              <DialogControls controls={[
+                { key: "↑/↓", label: "Navigate" },
+                { key: "Enter", label: "Select", variant: "primary" },
+                { key: "D", label: "Disconnect", variant: "danger" },
+                { key: "Esc", label: "Cancel" },
+              ]} />
             </box>
           </box>
         )}
@@ -599,9 +600,9 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
               </text>
             </box>
             <box marginTop={1}>
-              <text fg={colors.textMuted}>
-                <span fg={colors.primary}>[ESC]</span> Cancel
-              </text>
+              <DialogControls controls={[
+                { key: "Esc", label: "Cancel" },
+              ]} />
             </box>
           </box>
         )}
@@ -665,12 +666,11 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
               </text>
             </box>
             <box marginTop={1}>
-              <text fg={colors.textMuted}>
-                <span fg={colors.primary}>[ENTER]</span>{" "}
-                {showBillingWarning ? "Open billing" : "Done"} ·{" "}
-                <span fg={colors.error}>[D]</span> Disconnect ·{" "}
-                <span fg={colors.primary}>[ESC]</span> Back
-              </text>
+              <DialogControls controls={[
+                { key: "Enter", label: showBillingWarning ? "Open Billing" : "Done", variant: "primary" },
+                { key: "D", label: "Disconnect", variant: "danger" },
+                { key: "Esc", label: "Back" },
+              ]} />
             </box>
           </box>
         )}
@@ -682,10 +682,10 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
               <text fg={colors.error}>{error}</text>
             </box>
             <box marginTop={1}>
-              <text fg={colors.textMuted}>
-                <span fg={colors.primary}>[ENTER]</span> Try again ·{" "}
-                <span fg={colors.primary}>[ESC]</span> Cancel
-              </text>
+              <DialogControls controls={[
+                { key: "Enter", label: "Try Again", variant: "primary" },
+                { key: "Esc", label: "Cancel" },
+              ]} />
             </box>
           </box>
         )}

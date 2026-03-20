@@ -10,6 +10,7 @@ import {
 } from "../../../core/providers";
 import { useTheme } from "../../theme";
 import { Dialog } from "../../context/dialog";
+import { DialogControls } from "../shared/dialog-controls";
 
 interface ProviderSelectionProps {
   providers?: Provider[];
@@ -65,10 +66,7 @@ export default function ProviderSelection({
     <Dialog size="large" onClose={onClose}>
       <box flexDirection="column" padding={1} width="100%">
         {/* Header */}
-        <box flexDirection="row" justifyContent="space-between" width="100%">
-          <text fg={colors.primary}>Select provider</text>
-          <text fg={colors.textMuted}>esc to close</text>
-        </box>
+        <text fg={colors.primary}>Select provider</text>
 
         {/* Provider List */}
         <scrollbox
@@ -121,11 +119,11 @@ export default function ProviderSelection({
         </scrollbox>
 
         {/* Footer */}
-        <box marginTop={1}>
-          <text fg={colors.textMuted}>
-            [↑↓] browse [enter] select [esc] close
-          </text>
-        </box>
+        <DialogControls controls={[
+          { key: "↑/↓", label: "Browse" },
+          { key: "Enter", label: "Select", variant: "primary" },
+          { key: "Esc", label: "Close" },
+        ]} />
       </box>
     </Dialog>
   );

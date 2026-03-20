@@ -13,6 +13,7 @@ import { useDimensions } from "../../context/dimensions";
 import { useTheme } from "../../theme";
 import { Dialog } from "../../context/dialog";
 import type { SkillEntry, SkillSource } from "../../../core/skills/types";
+import { DialogControls } from "../shared/dialog-controls";
 
 /** Rough token estimate: ~4 chars per token */
 function estimateTokens(text: string): number {
@@ -251,11 +252,6 @@ export default function SkillsDialog({
           <box width="100%" height={1}>
             <text fg={colors.border}>{"─".repeat(panelWidth - 2)}</text>
           </box>
-
-          {/* Footer */}
-          <box width="100%" flexDirection="row">
-            <text fg={colors.textMuted}>[↑↓] scroll [esc] back</text>
-          </box>
         </box>
       </Dialog>
     );
@@ -352,9 +348,9 @@ export default function SkillsDialog({
 
         {/* Footer */}
         <box width="100%" flexDirection="row">
-          <text fg={colors.textMuted}>
-            [↑↓] browse [enter] details [esc] close
-          </text>
+          <DialogControls controls={[
+            { key: "Enter", label: "Details", variant: "primary" },
+          ]} />
         </box>
       </box>
     </Dialog>

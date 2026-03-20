@@ -12,6 +12,7 @@ import { scrollToIndex } from "../../utils/scroll";
 import { useTheme } from "../../theme";
 import { useSessionsList } from "../../hooks/use-sessions-list";
 import { useToast } from "../../context/toast";
+import { DialogControls } from "../shared/dialog-controls";
 
 interface SessionsDisplayProps {
   onClose: () => void;
@@ -204,9 +205,8 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
     <Dialog size="large" onClose={handleClose}>
       <box flexDirection="column" padding={2} gap={2} width="100%">
         {/* Header */}
-        <box flexDirection="row" justifyContent="space-between" width="100%">
+        <box flexDirection="row" width="100%">
           <text fg={colors.text}>Sessions</text>
-          <text fg={colors.textMuted}>esc to close</text>
         </box>
 
         {/* Search Input */}
@@ -340,14 +340,14 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
 
         {/* Actions Footer */}
         {visualOrderSessions.length > 0 && (
-          <box flexDirection="row" gap={2}>
-            <text fg={colors.textMuted}>
-              <span fg={colors.primary}>[Enter]</span> Open ·{" "}
-              <span fg={colors.primary}>[O]</span> Operator ·{" "}
-              <span fg={colors.primary}>[R]</span> Report ·{" "}
-              <span fg={colors.primary}>[Ctrl+D]</span> Delete
-            </text>
-          </box>
+          <DialogControls controls={[
+            { key: "↑/↓", label: "Navigate" },
+            { key: "Enter", label: "Open", variant: "primary" },
+            { key: "O", label: "Operator" },
+            { key: "R", label: "Report" },
+            { key: "Ctrl+D", label: "Delete", variant: "danger" },
+            { key: "Esc", label: "Close" },
+          ]} />
         )}
       </box>
     </Dialog>
