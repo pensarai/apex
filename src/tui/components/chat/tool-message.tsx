@@ -46,7 +46,7 @@ export const ToolMessage = memo(function ToolMessage({
   verbose = false,
   expandedLogs = false,
 }: ToolMessageProps) {
-  const { colors } = useTheme();
+  const { colors, mode } = useTheme();
   const [showArgs, setShowArgs] = useState(false);
   const [showOutput, setShowOutput] = useState(false);
 
@@ -67,7 +67,9 @@ export const ToolMessage = memo(function ToolMessage({
 
   // Get result summary for completed tools
   const resultDisplay: ResultSummary | null =
-    isCompleted || isError ? getResultSummary(result, toolName, args) : null;
+    isCompleted || isError
+      ? getResultSummary(result, toolName, args, mode)
+      : null;
 
   // Get tool icon
   const icon = TOOL_ICONS[toolName] || TOOL_ICONS.default;
