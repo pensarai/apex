@@ -55,6 +55,7 @@ interface CommandProviderProps {
   onOpenHelpDialog?: () => void;
   onOpenAuthDialog?: () => void;
   onOpenPentestDialog?: (flags?: WebCommandOptions) => void;
+  onOpenSkillsDialog?: (slug?: string) => void;
 }
 
 export function CommandProvider({
@@ -67,6 +68,7 @@ export function CommandProvider({
   onOpenHelpDialog,
   onOpenAuthDialog,
   onOpenPentestDialog,
+  onOpenSkillsDialog,
 }: CommandProviderProps) {
   const route = useRoute();
   const [registry] = useState(() => createSkillsRegistry());
@@ -84,6 +86,7 @@ export function CommandProvider({
       openHelpDialog: onOpenHelpDialog,
       openAuthDialog: onOpenAuthDialog,
       openPentestDialog: onOpenPentestDialog,
+      openSkillsDialog: onOpenSkillsDialog,
     };
     return ctx;
   }, [
@@ -96,6 +99,7 @@ export function CommandProvider({
     onOpenHelpDialog,
     onOpenAuthDialog,
     onOpenPentestDialog,
+    onOpenSkillsDialog,
   ]);
 
   const refreshSkills = useCallback(async () => {
