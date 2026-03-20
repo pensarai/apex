@@ -482,8 +482,10 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
       [suggestions],
     );
 
-    // Available width for description: total - indicator(3) - label - space(1)
-    const descriptionWidth = Math.max(10, termWidth - 3 - maxLabelWidth - 1);
+    // Description column width: total - indicator(3) - label - gap(1)
+    const descColumnWidth = Math.max(10, termWidth - 3 - maxLabelWidth - 1);
+    // Allow up to 2 lines of description text
+    const maxDescChars = descColumnWidth * 2;
 
     const suggestionsBox = suggestions.length > 0 && (
       <box
@@ -506,25 +508,26 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
         {windowedView.visibleSuggestions.map((suggestion, windowIndex) => {
           const actualIndex = windowedView.start + windowIndex;
           const isSelected = actualIndex === selectedSuggestionIndex;
-          const paddedLabel = suggestion.label.padEnd(maxLabelWidth);
           const desc = suggestion.description
-            ? suggestion.description.length > descriptionWidth
-              ? suggestion.description.slice(0, descriptionWidth - 1) + "\u2026"
+            ? suggestion.description.length > maxDescChars
+              ? suggestion.description.slice(0, maxDescChars - 1) + "\u2026"
               : suggestion.description
             : "";
           return (
-            <box key={suggestion.value}>
-              <text>
-                <span fg={isSelected ? colors.primary : colors.textMuted}>
-                  {isSelected ? " \u25B8 " : "   "}
-                </span>
-                <span fg={isSelected ? colors.text : colors.textMuted}>
-                  {paddedLabel}
-                </span>
-                {desc && (
-                  <span fg={colors.textMuted}> {desc}</span>
-                )}
-              </text>
+            <box key={suggestion.value} flexDirection="row" gap={1}>
+              <box width={3 + maxLabelWidth} flexShrink={0}>
+                <text>
+                  <span fg={isSelected ? colors.primary : colors.textMuted}>
+                    {isSelected ? " \u25B8 " : "   "}
+                  </span>
+                  <span fg={isSelected ? colors.text : colors.textMuted}>
+                    {suggestion.label}
+                  </span>
+                </text>
+              </box>
+              {desc && (
+                <text fg={colors.textMuted}>{desc}</text>
+              )}
             </box>
           );
         })}
