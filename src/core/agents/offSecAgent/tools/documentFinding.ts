@@ -111,29 +111,44 @@ FINDING STRUCTURE:
         let cvssResult: CVSSScorerResult;
         let cvssWarning: string | undefined;
 
+        const cvssInput: Parameters<typeof scoreFindingWithCVSS>[0] = {
+          finding: {
+            title: input.title,
+            description: input.description,
+            impact: input.impact,
+            evidence: evidenceForPrompt,
+            endpoint: input.endpoint,
+            remediation: input.remediation,
+            vulnerabilityClass: input.vulnerabilityClass,
+          },
+          agentMessages: [],
+        };
+
         try {
           cvssResult = await scoreFindingWithCVSS(
-            {
-              finding: {
-                title: input.title,
-                description: input.description,
-                impact: input.impact,
-                evidence: evidenceForPrompt,
-                endpoint: input.endpoint,
-                remediation: input.remediation,
-                vulnerabilityClass: input.vulnerabilityClass,
-              },
-              agentMessages: [],
-            },
+            cvssInput,
             ctx.model!,
             ctx.authConfig,
             ctx.abortSignal,
           );
-        } catch (cvssError: unknown) {
-          const msg =
-            cvssError instanceof Error ? cvssError.message : String(cvssError);
-          cvssWarning = `CVSS scoring failed (${msg}), using fallback severity.`;
-          cvssResult = FALLBACK_CVSS;
+        } catch {
+          // Retry once after a short delay before falling back.
+          try {
+            await new Promise((r) => setTimeout(r, 2_000));
+            cvssResult = await scoreFindingWithCVSS(
+              cvssInput,
+              ctx.model!,
+              ctx.authConfig,
+              ctx.abortSignal,
+            );
+          } catch (retryError: unknown) {
+            const msg =
+              retryError instanceof Error
+                ? retryError.message
+                : String(retryError);
+            cvssWarning = `CVSS scoring failed after retry (${msg}), using estimated MEDIUM severity.`;
+            cvssResult = FALLBACK_CVSS;
+          }
         }
 
         const severity =
@@ -189,9 +204,10 @@ FINDING STRUCTURE:
           ...(pocOutput && { pocOutput }),
           cwes: cvssResult.cwes,
           cvss: {
+            scored: !cvssWarning,
             score: cvssResult.score,
             severity: cvssResult.severity,
-            vectorString: cvssResult.vectorString,
+            vectorString: cvssWarning ? "" : cvssResult.vectorString,
             metrics: cvssResult.metrics,
             scoreType: cvssResult.scoreType,
             reasoning: cvssResult.reasoning,
@@ -249,15 +265,21 @@ ${input.evidence.substring(0, 5_000)}
 ${finding.evidence}
 \`\`\``;
 
+          const headerLines = [
+            `**Severity:** ${cvssWarning ? `${finding.severity} (estimated)` : finding.severity}`,
+            `**CVSS 4.0 Score:** ${cvssWarning ? "N/A" : `${cvssResult.score} (${cvssResult.severity})`}`,
+            ...(cvssWarning
+              ? []
+              : [`**Vector:** \`${cvssResult.vectorString}\``]),
+            `**Target:** ${session.targets[0]}`,
+            `**Endpoint:** ${finding.endpoint}`,
+            `**Date:** ${timestamp}`,
+            `**Session:** ${session.id}`,
+          ];
+
           const markdown = `# ${finding.title}
 
-**Severity:** ${finding.severity}  
-**CVSS 4.0 Score:** ${cvssResult.score} (${cvssResult.severity})  
-**Vector:** \`${cvssResult.vectorString}\`  
-**Target:** ${session.targets[0]}  
-**Endpoint:** ${finding.endpoint}  
-**Date:** ${timestamp}  
-**Session:** ${session.id}
+${headerLines.join("  \n")}
 
 ## Description
 
@@ -293,7 +315,10 @@ ${finding.references ? `## References\n\n${finding.references}` : ""}
           const cweTag = cvssResult.cwes?.length
             ? ` (${cvssResult.cwes.map((c) => c.id).join(", ")})`
             : "";
-          const summaryEntry = `- [${finding.severity}] (CVSS ${cvssResult.score})${cweTag} ${finding.title} - \`findings/${mdFilename}\`\n`;
+          const cvssTag = cvssWarning
+            ? "(estimated)"
+            : `(CVSS ${cvssResult.score})`;
+          const summaryEntry = `- [${finding.severity}] ${cvssTag}${cweTag} ${finding.title} - \`findings/${mdFilename}\`\n`;
 
           try {
             appendFileSync(summaryPath, summaryEntry);
