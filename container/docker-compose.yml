@@ -20,5 +20,5 @@ services:
     volumes:
       - ../:/home/pentest/app
       - ./workspace:/home/pentest/workspace
-      - .env:/home/pentest/.env:ro   # monta el .env del host como read-only
+      - .env:/home/pentest/.env:ro   # mount the .env file as read-only
     working_dir: /home/pentest/app
