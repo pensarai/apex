@@ -11,10 +11,6 @@ import { useTheme } from "../../theme";
 import { Dialog } from "../../context/dialog";
 import { DialogControls } from "../shared/dialog-controls";
 import {
-  resolveFlagValue,
-  resolveThreatModelPrompt,
-} from "../../utils/command-flags";
-import {
   getAutoPopulatedHosts,
   getAutoPopulatedPorts,
 } from "../../../util/url";
@@ -78,7 +74,7 @@ interface WebWizardProps {
   initialModel?: string;
   /** Operator-provided guidance for the pentest agent */
   initialPrompt?: string;
-  /** Threat model content or @filepath reference */
+  /** Pre-resolved threat model content (already wrapped by parseWebFlags) */
   initialThreatModel?: string;
 }
 
@@ -361,12 +357,15 @@ export default function WebWizard({
       }
 
       // Operator guidance — combine threat model and prompt
+      // Values are used as-is: if they came from CLI flags (initialPrompt/initialThreatModel),
+      // they were already resolved by parseWebFlags. If the user typed them in the wizard,
+      // they're plain text (the @file convention is for the CLI, not the wizard UI).
       const promptParts: string[] = [];
       if (state.threatModel.trim()) {
-        promptParts.push(resolveThreatModelPrompt(state.threatModel.trim()));
+        promptParts.push(state.threatModel.trim());
       }
       if (state.prompt.trim()) {
-        promptParts.push(resolveFlagValue(state.prompt.trim()));
+        promptParts.push(state.prompt.trim());
       }
       if (promptParts.length > 0) {
         sessionConfig.prompt = promptParts.join("\n\n");
