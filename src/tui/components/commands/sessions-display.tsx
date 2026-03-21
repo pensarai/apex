@@ -12,7 +12,7 @@ import { scrollToIndex } from "../../utils/scroll";
 import { useTheme } from "../../theme";
 import { useSessionsList } from "../../hooks/use-sessions-list";
 import { useToast } from "../../context/toast";
-import { DialogControls } from "../shared/dialog-controls";
+import DialogLayout from "../dialog-layout";
 
 interface SessionsDisplayProps {
   onClose: () => void;
@@ -201,14 +201,21 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
     );
   }
 
+  const footerActions = visualOrderSessions.length > 0
+    ? [
+        { key: "Enter", label: "open", variant: "primary" as const },
+        { key: "O", label: "operator" },
+        { key: "R", label: "report" },
+        { key: "Ctrl+D", label: "delete", variant: "danger" as const },
+      ]
+    : [];
+
   return (
     <Dialog size="large" onClose={handleClose}>
-      <box flexDirection="column" padding={2} gap={2} width="100%">
-        {/* Header */}
-        <box flexDirection="row" width="100%">
-          <text fg={colors.text}>Sessions</text>
-        </box>
-
+      <DialogLayout
+        title="Sessions"
+        footerActions={footerActions}
+      >
         {/* Search Input */}
         <box
           width="100%"
@@ -238,6 +245,7 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
             flexGrow={1}
             maxHeight={10}
             overflow="hidden"
+            marginTop={1}
           >
             <scrollbox
               ref={scroll}
@@ -337,19 +345,7 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
             </scrollbox>
           </box>
         )}
-
-        {/* Actions Footer */}
-        {visualOrderSessions.length > 0 && (
-          <DialogControls
-            controls={[
-              { key: "Enter", label: "Open", variant: "primary" },
-              { key: "O", label: "Operator" },
-              { key: "R", label: "Report" },
-              { key: "Ctrl+D", label: "Delete", variant: "danger" },
-            ]}
-          />
-        )}
-      </box>
+      </DialogLayout>
     </Dialog>
   );
 }

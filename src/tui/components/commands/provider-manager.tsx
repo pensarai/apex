@@ -13,7 +13,7 @@ import APIKeyInput from "./api-key-input";
 import AuthFlow from "./auth-flow";
 import { useTheme } from "../../theme";
 import { Dialog } from "../../context/dialog";
-import { DialogControls } from "../shared/dialog-controls";
+import DialogLayout from "../dialog-layout";
 
 type FlowState = "choosing" | "selecting" | "inputting" | "auth";
 
@@ -188,13 +188,14 @@ function OnboardingChoice({
 
   return (
     <Dialog size="large" onClose={() => {}} hideEsc>
-      <box flexDirection="column" padding={1} width="100%">
-        {/* Header */}
+      <DialogLayout
+        title="Get Started"
+        escLabel={null}
+        footerActions={[
+          { key: "Enter", label: "select", variant: "primary" },
+        ]}
+      >
         <box>
-          <text fg={colors.primary}>Get Started</text>
-        </box>
-
-        <box marginTop={1}>
           <text fg={colors.textMuted}>
             Choose how to connect an AI provider.
           </text>
@@ -227,17 +228,7 @@ function OnboardingChoice({
             );
           })}
         </box>
-
-        {/* Footer */}
-        <box marginTop={1}>
-          <DialogControls
-            controls={[
-              { key: "Enter", label: "Select", variant: "primary" },
-              { key: "↑/↓", label: "Browse" },
-            ]}
-          />
-        </box>
-      </box>
+      </DialogLayout>
     </Dialog>
   );
 }

@@ -10,7 +10,7 @@ import {
 } from "../../../core/providers";
 import { useTheme } from "../../theme";
 import { Dialog } from "../../context/dialog";
-import { DialogControls } from "../shared/dialog-controls";
+import DialogLayout from "../dialog-layout";
 
 interface ProviderSelectionProps {
   providers?: Provider[];
@@ -64,27 +64,14 @@ export default function ProviderSelection({
 
   return (
     <Dialog size="large" onClose={onClose}>
-      <box flexDirection="column" padding={1} width="100%">
-        {/* Header */}
-        <text fg={colors.primary}>Select provider</text>
-
+      <DialogLayout
+        title="Select provider"
+        footerActions={[
+          { key: "Enter", label: "select", variant: "primary" },
+        ]}
+      >
         {/* Provider List */}
-        <scrollbox
-          style={{
-            rootOptions: {
-              flexGrow: 1,
-              flexShrink: 1,
-              width: "100%",
-              marginTop: 1,
-            },
-            contentOptions: {
-              flexDirection: "column",
-              gap: 1,
-            },
-          }}
-          stickyScroll={false}
-          focused={true}
-        >
+        <box flexDirection="column" gap={1}>
           {providerList.map((provider, index) => {
             const isHighlighted = index === highlightedIndex;
             const configured = configuredProviders.find(
@@ -116,13 +103,8 @@ export default function ProviderSelection({
               </box>
             );
           })}
-        </scrollbox>
-
-        {/* Footer */}
-        <DialogControls
-          controls={[{ key: "Enter", label: "Select", variant: "primary" }]}
-        />
-      </box>
+        </box>
+      </DialogLayout>
     </Dialog>
   );
 }

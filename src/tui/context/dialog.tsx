@@ -12,12 +12,18 @@ import { type Renderable } from "@opentui/core";
 import { useTheme } from "../theme";
 
 interface DialogProps {
-  size?: "medium" | "large";
+  size?: "medium" | "large" | "xlarge";
   onClose: () => void;
-  /** Hide the top-right "Esc" dismiss indicator */
+  /** Hide the escape dismiss hint and prevent click-outside close */
   hideEsc?: boolean;
   children?: ReactNode;
 }
+
+const DIALOG_WIDTHS: Record<string, number> = {
+  medium: 60,
+  large: 80,
+  xlarge: 120,
+};
 
 export function Dialog({
   size = "medium",
@@ -50,27 +56,14 @@ export function Dialog({
           if (renderer.getSelection()) return;
           e.stopPropagation();
         }}
-        width={size === "large" ? 80 : 60}
+        width={DIALOG_WIDTHS[size] ?? 60}
         maxWidth={dimensions.width - 2}
         maxHeight={dimensions.height - 4}
         overflow="hidden"
         backgroundColor={themeColors.backgroundElement}
         flexDirection="column"
-        paddingTop={1}
+        flexGrow={0}
       >
-        {!hideEsc && (
-          <box
-            width="100%"
-            flexDirection="row"
-            justifyContent="flex-end"
-            paddingRight={2}
-            flexShrink={0}
-          >
-            <text fg={themeColors.textMuted}>
-              <span fg={themeColors.textMuted}>[Esc]</span> Close
-            </text>
-          </box>
-        )}
         {children}
       </box>
     </box>
@@ -86,8 +79,8 @@ interface DialogContextValue {
   clear: () => void;
   replace: (element: ReactNode, onClose?: () => void) => void;
   stack: DialogStackItem[];
-  size: "medium" | "large";
-  setSize: (size: "medium" | "large") => void;
+  size: "medium" | "large" | "xlarge";
+  setSize: (size: "medium" | "large" | "xlarge") => void;
   externalDialogOpen: boolean;
   setExternalDialogOpen: (open: boolean) => void;
 }
@@ -96,7 +89,7 @@ const DialogContext = createContext<DialogContextValue | null>(null);
 
 export function DialogProvider({ children }: { children: ReactNode }) {
   const [stack, setStack] = useState<DialogStackItem[]>([]);
-  const [size, setSize] = useState<"medium" | "large">("medium");
+  const [size, setSize] = useState<"medium" | "large" | "xlarge">("medium");
   const [externalDialogOpen, setExternalDialogOpen] = useState(false);
   const renderer = useRenderer();
   const focusRef = useRef<Renderable | null>(null);
