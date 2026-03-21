@@ -36,7 +36,13 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
   const config = useConfig();
   const route = useRoute();
 
-  const { executeCommand, autocompleteOptions, skillsRegistry } = useCommand();
+  const {
+    executeCommand,
+    autocompleteOptions,
+    commandOptionMap,
+    commandNames,
+    skillsRegistry,
+  } = useCommand();
   const { setInputValue } = useInput();
   const { promptRef } = useFocus();
   const { externalDialogOpen, stack } = useDialog();
@@ -225,6 +231,8 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
           focusedBackgroundColor="transparent"
           enableAutocomplete={true}
           autocompleteOptions={autocompleteOptions}
+          commandOptionMap={commandOptionMap}
+          commandNames={commandNames}
           maxVisibleSuggestions={maxSuggestions}
           enableCommands={true}
           onCommandExecute={handleCommandExecute}
