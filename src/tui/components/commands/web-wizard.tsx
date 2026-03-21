@@ -235,6 +235,9 @@ export default function WebWizard({
   // UI state — single flat field index
   const [focusedField, setFocusedField] = useState(0);
   const [advancedExpanded, setAdvancedExpanded] = useState(false);
+  // Track whether the threat model value was pre-wrapped by CLI flag parsing
+  const [threatModelPreWrapped, setThreatModelPreWrapped] =
+    useState(!!initialThreatModel);
   const [hostInput, setHostInput] = useState("");
   const [portInput, setPortInput] = useState("");
   const [headerNameInput, setHeaderNameInput] = useState("");
@@ -372,11 +375,7 @@ export default function WebWizard({
       // Threat model values from CLI flags are already wrapped by parseWebFlags.
       // User-typed values need wrapping with the usage preamble.
       const resolvedTm = state.threatModel.trim()
-        ? state.threatModel
-            .trim()
-            .includes(
-              "## Threat Model\n\nThe following threat model was generated",
-            )
+        ? threatModelPreWrapped
           ? state.threatModel.trim()
           : wrapThreatModelContent(state.threatModel.trim())
         : undefined;
@@ -473,10 +472,7 @@ export default function WebWizard({
     }
 
     // Left/Right — toggle source code access
-    if (
-      (key.name === "left" || key.name === "right") &&
-      focusedField === 1
-    ) {
+    if ((key.name === "left" || key.name === "right") && focusedField === 1) {
       key.preventDefault();
       setState((prev) => ({
         ...prev,
@@ -569,17 +565,20 @@ export default function WebWizard({
         return;
       }
 
+      // Special case: auto-expand advanced when pressing down on the toggle
+      if (
+        focusedField === advancedToggleIndex &&
+        delta > 0 &&
+        !advancedExpanded
+      ) {
+        setAdvancedExpanded(true);
+        setFocusedField(advancedToggleIndex + 1);
+        return;
+      }
+
       // Default: navigate between fields
       const next = focusedField + delta;
       if (next >= 0 && next < totalFields) {
-        // Auto-expand advanced when moving past the toggle
-        if (
-          focusedField === advancedToggleIndex &&
-          delta > 0 &&
-          !advancedExpanded
-        ) {
-          setAdvancedExpanded(true);
-        }
         setFocusedField(next);
       }
       return;
@@ -743,7 +742,7 @@ export default function WebWizard({
                   : colors.textMuted
               }
             >
-              {advancedExpanded ? "\u25BE" : "\u25B8"} Advanced
+              {advancedExpanded ? "▾" : "▸"} Advanced
             </text>
             {focusedField === advancedToggleIndex && (
               <text fg={colors.textMuted}>(Space to toggle)</text>
@@ -778,10 +777,12 @@ export default function WebWizard({
                   description="Threat model content or paste from file"
                   placeholder="Paste threat model content here..."
                   value={state.threatModel}
-                  onInput={(v) =>
-                    setState((prev) => ({ ...prev, threatModel: v }))
-                  }
+                  onInput={(v) => {
+                    setThreatModelPreWrapped(false);
+                    setState((prev) => ({ ...prev, threatModel: v }));
+                  }}
                   onPaste={(event) => {
+                    setThreatModelPreWrapped(false);
                     const cleaned = String(event.text).replace(/\r?\n/g, " ");
                     setState((prev) => ({
                       ...prev,
@@ -958,9 +959,7 @@ export default function WebWizard({
                         : colors.textMuted
                     }
                   >
-                    {state.scope.strictScope
-                      ? "\u25CF Enabled"
-                      : "\u25CB Disabled"}
+                    {state.scope.strictScope ? "● Enabled" : "○ Disabled"}
                   </text>
                   {focusedField === scopeStrictIndex && (
                     <text fg={colors.textMuted}>(Space to toggle)</text>
@@ -988,8 +987,8 @@ export default function WebWizard({
                     }
                   >
                     {state.scope.enumerateSubdomains
-                      ? "\u25CF Enabled"
-                      : "\u25CB Disabled"}
+                      ? "● Enabled"
+                      : "○ Disabled"}
                   </text>
                   {focusedField === scopeSubdomainIndex && (
                     <text fg={colors.textMuted}>(Space to toggle)</text>
@@ -1013,7 +1012,7 @@ export default function WebWizard({
                         : colors.textMuted
                     }
                   >
-                    {state.headers.mode === "none" ? "\u25CF" : "\u25CB"} None
+                    {state.headers.mode === "none" ? "●" : "○"} None
                   </text>
                   <text
                     fg={
@@ -1022,8 +1021,8 @@ export default function WebWizard({
                         : colors.textMuted
                     }
                   >
-                    {state.headers.mode === "default" ? "\u25CF" : "\u25CB"}{" "}
-                    Default (User-Agent: pensar-apex)
+                    {state.headers.mode === "default" ? "●" : "○"} Default
+                    (User-Agent: pensar-apex)
                   </text>
                   <text
                     fg={
@@ -1032,8 +1031,7 @@ export default function WebWizard({
                         : colors.textMuted
                     }
                   >
-                    {state.headers.mode === "custom" ? "\u25CF" : "\u25CB"}{" "}
-                    Custom
+                    {state.headers.mode === "custom" ? "●" : "○"} Custom
                   </text>
                 </box>
                 {focusedField === headersModeIndex && (
@@ -1111,8 +1109,8 @@ export default function WebWizard({
                   return (
                     <box key={provider} flexDirection="column" gap={0}>
                       <text fg={isExpanded ? colors.text : colors.textMuted}>
-                        {isExpanded ? "\u25BE" : "\u25B8"} {providerName} (
-                        {models.length})
+                        {isExpanded ? "▾" : "▸"} {providerName} ({models.length}
+                        )
                       </text>
 
                       {isExpanded && (
@@ -1129,7 +1127,7 @@ export default function WebWizard({
                                   isSelected ? colors.primary : colors.textMuted
                                 }
                               >
-                                {isSelected ? "\u25CF" : "\u25CB"} {m.name}
+                                {isSelected ? "●" : "○"} {m.name}
                                 {isDefault && !isModelUserSelected && isSelected
                                   ? " [default]"
                                   : ""}
