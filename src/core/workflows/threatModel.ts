@@ -7,6 +7,7 @@ import { buildBaseSystemPrompt } from "../agents/offSecAgent/prompt";
 import { runOffensiveSecurityAgent } from "../api/offesecAgent";
 import { sessions } from "../session";
 import { createSkillsRegistry } from "../skills";
+import { buildThreatModelPrompt } from "../skills/builtins/threatModel";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -58,12 +59,11 @@ export async function runThreatModelWorkflow(
   const { content } = await registry.readSkillContent("threat-model");
 
   // Build the prompt with runtime context
-  const runtimeContext = [
-    `IMPORTANT: You MUST write the output to exactly this path: ${input.outputPath}`,
-    `Use create_file with path="${input.outputPath}" and overwrite=true.`,
-    `Working directory (codebase root): ${input.codebasePath}`,
-  ].join("\n");
-  const prompt = `<skill name="threat-model">\n${runtimeContext}\n\n${content}\n</skill>`;
+  const prompt = buildThreatModelPrompt({
+    outputPath: input.outputPath,
+    codebasePath: input.codebasePath,
+    skillContent: content,
+  });
 
   // Create or reuse session
   const session =

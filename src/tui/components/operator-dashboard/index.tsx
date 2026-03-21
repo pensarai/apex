@@ -71,6 +71,7 @@ import { QueuedMessages } from "./queued-messages";
 import { navigateUp, navigateDown, selectionAfterRemove } from "./queue";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { isAbsolute, join, resolve } from "path";
+import { buildThreatModelPrompt } from "../../../core/skills/builtins/threatModel";
 
 /**
  * Operator Dashboard - interactive chat interface with the offensive security agent
@@ -1087,12 +1088,11 @@ export default function OperatorDashboard({
             ? outputPath
             : resolve(process.cwd(), outputPath);
 
-          const runtimeContext = [
-            `IMPORTANT: You MUST write the output to exactly this path: ${resolvedPath}`,
-            `Use create_file with path="${resolvedPath}" and overwrite=true.`,
-            `Working directory (codebase root): ${process.cwd()}`,
-          ].join("\n");
-          fullContent = `<skill name="${slug}">\n${runtimeContext}\n\n${content}\n</skill>`;
+          fullContent = buildThreatModelPrompt({
+            outputPath: resolvedPath,
+            codebasePath: process.cwd(),
+            skillContent: content,
+          });
         } else {
           fullContent = `<skill name="${slug}">\n${content}\n</skill>`;
         }

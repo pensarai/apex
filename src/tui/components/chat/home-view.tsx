@@ -36,7 +36,7 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
   const config = useConfig();
   const route = useRoute();
 
-  const { executeCommand, autocompleteOptions, skillsRegistry } = useCommand();
+  const { executeCommand, autocompleteOptions } = useCommand();
   const { setInputValue } = useInput();
   const { promptRef } = useFocus();
   const { externalDialogOpen, stack } = useDialog();
@@ -90,28 +90,9 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
     async (command: string) => {
       const trimmed = command.trim();
       pushHistory(trimmed);
-
-      const slug =
-        trimmed.replace(/^\/+/, "").split(/\s+/)[0]?.toLowerCase() ?? "";
-
-      const entry = skillsRegistry.get(slug);
-      if (entry) {
-        // Navigate to operator session with the skill pre-loaded
-        route.navigate({
-          type: "operator",
-          nonce: Date.now(),
-          initialConfig: {
-            requireApproval: true,
-          },
-          initialSkill: {
-            slug,
-          },
-        });
-        return;
-      }
       await executeCommand(command);
     },
-    [skillsRegistry, executeCommand, pushHistory],
+    [executeCommand, pushHistory],
   );
 
   // Responsive layout calculations

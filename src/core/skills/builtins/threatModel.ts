@@ -1,5 +1,22 @@
 import type { BuiltInSkill } from "../types";
 
+/**
+ * Build the full prompt sent to the agent for threat model generation.
+ * Used by the workflow, CLI, and TUI to ensure identical prompts.
+ */
+export function buildThreatModelPrompt(opts: {
+  outputPath: string;
+  codebasePath: string;
+  skillContent: string;
+}): string {
+  const runtimeContext = [
+    `IMPORTANT: You MUST write the output to exactly this path: ${opts.outputPath}`,
+    `Use create_file with path="${opts.outputPath}" and overwrite=true.`,
+    `Working directory (codebase root): ${opts.codebasePath}`,
+  ].join("\n");
+  return `<skill name="threat-model">\n${runtimeContext}\n\n${opts.skillContent}\n</skill>`;
+}
+
 export const threatModelSkill: BuiltInSkill = {
   slug: "threat-model",
   manifest: {
