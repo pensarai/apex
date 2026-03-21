@@ -40,11 +40,17 @@ function truncateToLines(
   const lines: string[] = [];
   let current = "";
   let i = 0;
+  let wordSliced = false;
 
   while (i < words.length && lines.length < maxLines) {
     const word = words[i];
     if (!current) {
-      current = word.length > lineWidth ? word.slice(0, lineWidth) : word;
+      if (word.length > lineWidth) {
+        current = word.slice(0, lineWidth);
+        wordSliced = true;
+      } else {
+        current = word;
+      }
       i++;
     } else if ((current + " " + word).length <= lineWidth) {
       current += " " + word;
@@ -58,8 +64,8 @@ function truncateToLines(
     lines.push(current);
   }
 
-  // Add ellipsis if there's remaining text
-  if (i < words.length) {
+  // Add ellipsis if there's remaining text or a word was sliced to fit
+  if (i < words.length || wordSliced) {
     const last = lines[lines.length - 1];
     lines[lines.length - 1] =
       last.length < lineWidth
@@ -67,7 +73,7 @@ function truncateToLines(
         : last.slice(0, lineWidth - 1) + "\u2026";
   }
 
-  return lines.join(" ");
+  return lines.join("\n");
 }
 
 export interface AutocompleteOption {
@@ -525,7 +531,10 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
 
     // Use the component's width prop (when numeric) since the suggestions box
     // renders inside a width-constrained parent, not at full terminal width.
-    const effectiveWidth = typeof width === "number" ? width : termWidth;
+    // When width is non-numeric (e.g. "100%"), approximate by subtracting
+    // typical parent chrome (padding + indicator + gap ≈ 6 chars).
+    const effectiveWidth =
+      typeof width === "number" ? width : Math.max(20, termWidth - 6);
     // Description column width: total - indicator(3) - label - gap(1)
     const descColumnWidth = Math.max(
       10,
