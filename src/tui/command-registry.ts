@@ -118,6 +118,16 @@ export const commands: CommandConfig[] = [
         description: "Custom header (repeatable)",
       },
       { name: "--model", valueHint: "<model>", description: "AI model to use" },
+      {
+        name: "--prompt",
+        valueHint: "<text|@file>",
+        description: "Guidance for the pentest agent",
+      },
+      {
+        name: "--threat-model",
+        valueHint: "<text|@file>",
+        description: "Threat model to guide the pentest (inline or @filepath)",
+      },
     ],
     handler: async (args, ctx) => {
       const flags = parseWebFlags(args);
