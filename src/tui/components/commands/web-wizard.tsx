@@ -15,6 +15,10 @@ import {
   getAutoPopulatedPorts,
 } from "../../../util/url";
 import type { InputRenderable } from "@opentui/core";
+import {
+  resolveFlagValue,
+  resolveThreatModelPrompt,
+} from "../../utils/command-flags";
 
 // Wizard step types
 type WizardStep = "target" | "configure" | "creating";
@@ -40,6 +44,8 @@ interface WizardState {
     mode: "none" | "default" | "custom";
     customHeaders: Record<string, string>;
   };
+  prompt: string;
+  threatModel: string;
 }
 
 // Props for the WebWizard
@@ -74,9 +80,9 @@ interface WebWizardProps {
   initialCustomHeaders?: Record<string, string>;
   /** Pre-filled model ID */
   initialModel?: string;
-  /** Operator-provided guidance for the pentest agent (already resolved) */
+  /** Operator-provided guidance for the pentest agent */
   initialPrompt?: string;
-  /** Resolved threat model content with usage preamble (already resolved) */
+  /** Threat model content or @filepath reference */
   initialThreatModel?: string;
 }
 
@@ -228,6 +234,8 @@ export default function WebWizard({
         mode: initialHeadersMode || "default",
         customHeaders: initialCustomHeaders || {},
       },
+      prompt: initialPrompt || "",
+      threatModel: initialThreatModel || "",
     };
   });
 
@@ -348,8 +356,12 @@ export default function WebWizard({
 
       // Operator guidance — combine threat model and prompt
       const promptParts: string[] = [];
-      if (initialThreatModel) promptParts.push(initialThreatModel);
-      if (initialPrompt) promptParts.push(initialPrompt);
+      if (state.threatModel.trim()) {
+        promptParts.push(resolveThreatModelPrompt(state.threatModel.trim()));
+      }
+      if (state.prompt.trim()) {
+        promptParts.push(resolveFlagValue(state.prompt.trim()));
+      }
       if (promptParts.length > 0) {
         sessionConfig.prompt = promptParts.join("\n\n");
       }
@@ -515,7 +527,7 @@ export default function WebWizard({
           const maxFields = getMaxFieldsForSection(focusedSection);
           if (focusedField < maxFields - 1) {
             setFocusedField(focusedField + 1);
-          } else if (focusedSection < 3) {
+          } else if (focusedSection < 4) {
             setFocusedSection(focusedSection + 1);
             setFocusedField(0);
           }
@@ -561,7 +573,7 @@ export default function WebWizard({
           return;
         }
         // Model selection - navigate through visible models
-        if (focusedSection === 3 && visibleModels.length > 0) {
+        if (focusedSection === 4 && visibleModels.length > 0) {
           const currentVisibleIndex = visibleModels.findIndex(
             (m) => m.id === model.id,
           );
@@ -584,7 +596,7 @@ export default function WebWizard({
       }
 
       // Model section: handle typing for search, backspace, escape
-      if (focusedSection === 3) {
+      if (focusedSection === 4) {
         // Backspace - remove last char from search
         if (key.name === "backspace") {
           key.preventDefault();
@@ -661,6 +673,8 @@ export default function WebWizard({
       case 2:
         return state.headers.mode === "custom" ? 3 : 1; // Headers
       case 3:
+        return 2; // Guidance (prompt, threat-model)
+      case 4:
         return 1; // Model
       default:
         return 1;
@@ -1053,11 +1067,60 @@ export default function WebWizard({
           )}
         </box>
 
-        {/* Model Section */}
+        {/* Guidance Section */}
         <box flexDirection="column" gap={1} marginTop={1}>
           <text>
             <span fg={colors.primary}>{"▸"} </span>
             <span fg={focusedSection === 3 ? colors.text : colors.textMuted}>
+              Guidance
+            </span>
+            {(state.prompt || state.threatModel) && (
+              <span fg={colors.textMuted}> (configured)</span>
+            )}
+          </text>
+          {focusedSection === 3 && (
+            <box flexDirection="column" gap={1} paddingLeft={2}>
+              <Input
+                label="Prompt"
+                description="Guidance for the pentest agent (text or @filepath)"
+                placeholder="Focus on authentication bypass..."
+                value={state.prompt}
+                onInput={(v) => setState((prev) => ({ ...prev, prompt: v }))}
+                onPaste={(event) => {
+                  const cleaned = String(event.text).replace(/\r?\n/g, " ");
+                  setState((prev) => ({
+                    ...prev,
+                    prompt: prev.prompt + cleaned,
+                  }));
+                }}
+                focused={focusedField === 0}
+              />
+              <Input
+                label="Threat Model"
+                description="Threat model file or text (text or @filepath)"
+                placeholder="@./threat-model.md"
+                value={state.threatModel}
+                onInput={(v) =>
+                  setState((prev) => ({ ...prev, threatModel: v }))
+                }
+                onPaste={(event) => {
+                  const cleaned = String(event.text).replace(/\r?\n/g, " ");
+                  setState((prev) => ({
+                    ...prev,
+                    threatModel: prev.threatModel + cleaned,
+                  }));
+                }}
+                focused={focusedField === 1}
+              />
+            </box>
+          )}
+        </box>
+
+        {/* Model Section */}
+        <box flexDirection="column" gap={1}>
+          <text>
+            <span fg={colors.primary}>█ </span>
+            <span fg={focusedSection === 4 ? colors.text : colors.textMuted}>
               AI Model
             </span>
             <span fg={colors.textMuted}> ({model.name})</span>
@@ -1066,7 +1129,7 @@ export default function WebWizard({
               [{isModelUserSelected ? "user" : "default"}]
             </span>
           </text>
-          {focusedSection === 3 && (
+          {focusedSection === 4 && (
             <box flexDirection="column" gap={0} paddingLeft={2}>
               {/* Search input */}
               {modelSearchQuery && (
