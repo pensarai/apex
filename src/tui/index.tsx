@@ -512,6 +512,8 @@ function AppContent({
           initialHeadersMode={pendingPentestFlags?.headersMode}
           initialCustomHeaders={pendingPentestFlags?.customHeaders}
           initialModel={pendingPentestFlags?.model}
+          initialPrompt={pendingPentestFlags?.prompt}
+          initialThreatModel={pendingPentestFlags?.threatModel}
         />
       )}
     </box>

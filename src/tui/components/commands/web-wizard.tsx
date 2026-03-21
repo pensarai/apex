@@ -74,6 +74,10 @@ interface WebWizardProps {
   initialCustomHeaders?: Record<string, string>;
   /** Pre-filled model ID */
   initialModel?: string;
+  /** Operator-provided guidance for the pentest agent (already resolved) */
+  initialPrompt?: string;
+  /** Resolved threat model content with usage preamble (already resolved) */
+  initialThreatModel?: string;
 }
 
 export default function WebWizard({
@@ -92,6 +96,8 @@ export default function WebWizard({
   initialHeadersMode,
   initialCustomHeaders,
   initialModel,
+  initialPrompt,
+  initialThreatModel,
 }: WebWizardProps) {
   const { colors } = useTheme();
   const config = useConfig();
@@ -338,6 +344,14 @@ export default function WebWizard({
               ? state.headers.customHeaders
               : undefined,
         };
+      }
+
+      // Operator guidance — combine threat model and prompt
+      const promptParts: string[] = [];
+      if (initialThreatModel) promptParts.push(initialThreatModel);
+      if (initialPrompt) promptParts.push(initialPrompt);
+      if (promptParts.length > 0) {
+        sessionConfig.prompt = promptParts.join("\n\n");
       }
 
       onStartPentest([state.target], sessionConfig);
