@@ -372,7 +372,11 @@ export default function WebWizard({
       // Threat model values from CLI flags are already wrapped by parseWebFlags.
       // User-typed values need wrapping with the usage preamble.
       const resolvedTm = state.threatModel.trim()
-        ? state.threatModel.trim().includes("<threat-model>")
+        ? state.threatModel
+            .trim()
+            .includes(
+              "## Threat Model\n\nThe following threat model was generated",
+            )
           ? state.threatModel.trim()
           : wrapThreatModelContent(state.threatModel.trim())
         : undefined;
@@ -468,7 +472,7 @@ export default function WebWizard({
       return;
     }
 
-    // Space — toggle source code access or advanced
+    // Space — toggle/cycle values
     if (key.sequence === " ") {
       if (focusedField === 1) {
         key.preventDefault();
@@ -504,100 +508,67 @@ export default function WebWizard({
         }));
         return;
       }
+      // Headers mode cycle
+      if (focusedField === headersModeIndex && advancedExpanded) {
+        key.preventDefault();
+        const modes = ["none", "default", "custom"] as const;
+        const idx = modes.indexOf(state.headers.mode);
+        const newIdx = (idx + 1) % modes.length;
+        setState((prev) => ({
+          ...prev,
+          headers: { ...prev.headers, mode: modes[newIdx] },
+        }));
+        return;
+      }
     }
 
-    // Up/Down arrows — navigate fields or control toggle/cycle/picker fields
+    // Up/Down — navigate between fields (default behavior)
     if (key.name === "up" || key.name === "down") {
       key.preventDefault();
       const delta = key.name === "down" ? 1 : -1;
 
-      // Source code access toggle
-      if (focusedField === 1) {
-        setState((prev) => ({
-          ...prev,
-          sourceCodeAccess: !prev.sourceCodeAccess,
-        }));
-        return;
-      }
-      // Strict scope toggle
-      if (focusedField === scopeStrictIndex && advancedExpanded) {
-        setState((prev) => ({
-          ...prev,
-          scope: { ...prev.scope, strictScope: !prev.scope.strictScope },
-        }));
-        return;
-      }
-      // Enumerate subdomains toggle
-      if (focusedField === scopeSubdomainIndex && advancedExpanded) {
-        setState((prev) => ({
-          ...prev,
-          scope: {
-            ...prev.scope,
-            enumerateSubdomains: !prev.scope.enumerateSubdomains,
-          },
-        }));
-        return;
-      }
-      // Headers mode cycle
-      if (focusedField === headersModeIndex && advancedExpanded) {
-        const modes: Array<"none" | "default" | "custom"> = [
-          "none",
-          "default",
-          "custom",
-        ];
-        const currentIndex = modes.indexOf(state.headers.mode);
-        const newIndex =
-          key.name === "up"
-            ? (currentIndex - 1 + modes.length) % modes.length
-            : (currentIndex + 1) % modes.length;
-        setState((prev) => ({
-          ...prev,
-          headers: { ...prev.headers, mode: modes[newIndex]! },
-        }));
-        return;
-      }
-      // Model selection
+      // Model picker: up/down navigates models, not fields
       if (
         focusedField === modelPickerIndex &&
         advancedExpanded &&
         visibleModels.length > 0
       ) {
-        const currentVisibleIndex = visibleModels.findIndex(
-          (m) => m.id === model.id,
-        );
-        const newVisibleIndex =
-          key.name === "up"
-            ? Math.max(0, currentVisibleIndex - 1)
-            : Math.min(visibleModels.length - 1, currentVisibleIndex + 1);
-        const newModel = visibleModels[newVisibleIndex];
+        const currentIdx = visibleModels.findIndex((m) => m.id === model.id);
+        // Allow escaping the model picker by pressing up at top or down at bottom
+        if (key.name === "up" && currentIdx <= 0) {
+          setFocusedField(focusedField - 1);
+          return;
+        }
+        if (key.name === "down" && currentIdx >= visibleModels.length - 1) {
+          // At last model, can't go further — stay here
+          return;
+        }
+        // Navigate within models
+        const newIdx = key.name === "up" ? currentIdx - 1 : currentIdx + 1;
+        const newModel = visibleModels[newIdx];
         if (newModel) {
           setModel(newModel);
-          const newGlobalIndex = availableModels.findIndex(
+          const globalIdx = availableModels.findIndex(
             (m) => m.id === newModel.id,
           );
-          if (newGlobalIndex >= 0) {
-            setSelectedModelIndex(newGlobalIndex);
-          }
-        }
-        return;
-      }
-      // Advanced toggle: down expands and enters, up moves to previous field
-      if (focusedField === advancedToggleIndex) {
-        if (key.name === "down" && !advancedExpanded) {
-          setAdvancedExpanded(true);
-          setFocusedField(advancedToggleIndex + 1);
-        } else {
-          setFocusedField((prev) =>
-            Math.max(0, Math.min(totalFields - 1, prev + delta)),
-          );
+          if (globalIdx >= 0) setSelectedModelIndex(globalIdx);
         }
         return;
       }
 
       // Default: navigate between fields
-      setFocusedField((prev) =>
-        Math.max(0, Math.min(totalFields - 1, prev + delta)),
-      );
+      const next = focusedField + delta;
+      if (next >= 0 && next < totalFields) {
+        // Auto-expand advanced when moving past the toggle
+        if (
+          focusedField === advancedToggleIndex &&
+          delta > 0 &&
+          !advancedExpanded
+        ) {
+          setAdvancedExpanded(true);
+        }
+        setFocusedField(next);
+      }
       return;
     }
 
@@ -733,9 +704,7 @@ export default function WebWizard({
                 {state.sourceCodeAccess ? "\u25CF Enabled" : "\u25CB Disabled"}
               </text>
               {focusedField === 1 && (
-                <text fg={colors.textMuted}>
-                  ({"↑"}/{"↓"} to toggle)
-                </text>
+                <text fg={colors.textMuted}>(Space to toggle)</text>
               )}
             </box>
             {state.sourceCodeAccess && (
@@ -774,7 +743,7 @@ export default function WebWizard({
               <box id={`field-${promptFieldIndex}`}>
                 <Input
                   label="Prompt"
-                  description="Guidance for the pentest agent (text or @filepath)"
+                  description="Guidance for the pentest agent"
                   placeholder="Focus on authentication bypass..."
                   value={state.prompt}
                   onInput={(v) => setState((prev) => ({ ...prev, prompt: v }))}
@@ -793,8 +762,8 @@ export default function WebWizard({
               <box id={`field-${threatModelFieldIndex}`}>
                 <Input
                   label="Threat Model"
-                  description="Threat model file or text (text or @filepath)"
-                  placeholder="@./threat-model.md"
+                  description="Threat model content or paste from file"
+                  placeholder="Paste threat model content here..."
                   value={state.threatModel}
                   onInput={(v) =>
                     setState((prev) => ({ ...prev, threatModel: v }))
@@ -981,7 +950,7 @@ export default function WebWizard({
                       : "\u25CB Disabled"}
                   </text>
                   {focusedField === scopeStrictIndex && (
-                    <text fg={colors.textMuted}>(↑/↓ to toggle)</text>
+                    <text fg={colors.textMuted}>(Space to toggle)</text>
                   )}
                 </box>
                 <box
@@ -1010,7 +979,7 @@ export default function WebWizard({
                       : "\u25CB Disabled"}
                   </text>
                   {focusedField === scopeSubdomainIndex && (
-                    <text fg={colors.textMuted}>(↑/↓ to toggle)</text>
+                    <text fg={colors.textMuted}>(Space to toggle)</text>
                   )}
                 </box>
               </box>
@@ -1055,7 +1024,7 @@ export default function WebWizard({
                   </text>
                 </box>
                 {focusedField === headersModeIndex && (
-                  <text fg={colors.textMuted}>Use ↑/↓ to select</text>
+                  <text fg={colors.textMuted}>Space to cycle</text>
                 )}
 
                 {state.headers.mode === "custom" && (
@@ -1162,8 +1131,7 @@ export default function WebWizard({
 
                 {focusedField === modelPickerIndex && (
                   <text fg={colors.textMuted}>
-                    ↑/↓ select • Type to search •
-                    ←/→ collapse/expand
+                    ↑/↓ select • Type to search • ←/→ collapse/expand
                   </text>
                 )}
               </box>
