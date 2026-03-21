@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 
 /** Where a skill was discovered from */
-export type SkillSource = "project" | "user";
+export type SkillSource = "project" | "user" | "builtin";
 
 /** Parsed SKILL.md frontmatter */
 export interface SkillManifest {
@@ -35,4 +35,11 @@ export interface SkillEntry {
   /** Scripts from the `scripts/` subdirectory */
   scripts: SkillScript[];
   lastModified?: number;
+}
+
+/** A code-defined skill bundled with the application */
+export interface BuiltInSkill {
+  slug: string;
+  manifest: SkillManifest;
+  instructions: string;
 }

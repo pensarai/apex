@@ -3,6 +3,8 @@ import os from "os";
 import path from "path";
 import fs from "fs/promises";
 import { SkillsRegistry } from "./registry";
+import { BUILTIN_SKILLS } from "./builtins";
+import type { BuiltInSkill } from "./types";
 
 const TEST_PREFIX = "zzregtest-";
 
@@ -122,6 +124,79 @@ describe("SkillsRegistry", () => {
 
       const after = registry.get(`${TEST_PREFIX}refresh`);
       expect(after).toBeDefined();
+    });
+  });
+
+  describe("built-in skills", () => {
+    const testBuiltin: BuiltInSkill = {
+      slug: `${TEST_PREFIX}builtin-test`,
+      manifest: {
+        name: "Built-in Test Skill",
+        description: "A test built-in skill",
+        tags: ["test"],
+      },
+      instructions: "These are the built-in instructions.",
+    };
+
+    beforeEach(() => {
+      BUILTIN_SKILLS.push(testBuiltin);
+    });
+
+    afterEach(() => {
+      const idx = BUILTIN_SKILLS.indexOf(testBuiltin);
+      if (idx !== -1) BUILTIN_SKILLS.splice(idx, 1);
+    });
+
+    it("appears in list() and get()", async () => {
+      await registry.load({ projectRoot: tmpRoot });
+
+      const all = registry.list();
+      const slugs = all.map((e) => e.slug);
+      expect(slugs).toContain(testBuiltin.slug);
+
+      const entry = registry.get(testBuiltin.slug);
+      expect(entry).toBeDefined();
+      expect(entry!.source).toBe("builtin");
+      expect(entry!.manifest.name).toBe("Built-in Test Skill");
+      expect(entry!.manifest.description).toBe("A test built-in skill");
+    });
+
+    it("readSkillContent returns in-memory content", async () => {
+      await registry.load({ projectRoot: tmpRoot });
+
+      const { name, content } = await registry.readSkillContent(
+        testBuiltin.slug,
+      );
+      expect(name).toBe("Built-in Test Skill");
+      expect(content).toBe("These are the built-in instructions.");
+    });
+
+    it("takes precedence over file-based skill with the same slug", async () => {
+      // Create a file-based skill with the same slug as the built-in
+      await createDirSkill(
+        testBuiltin.slug,
+        "File-based Version",
+        "This should be shadowed",
+      );
+
+      await registry.load({ projectRoot: tmpRoot });
+
+      const entry = registry.get(testBuiltin.slug);
+      expect(entry).toBeDefined();
+      expect(entry!.source).toBe("builtin");
+      expect(entry!.manifest.name).toBe("Built-in Test Skill");
+
+      const { content } = await registry.readSkillContent(testBuiltin.slug);
+      expect(content).toBe("These are the built-in instructions.");
+    });
+
+    it("appears in buildCatalog()", async () => {
+      await registry.load({ projectRoot: tmpRoot });
+
+      const catalog = registry.buildCatalog();
+      expect(catalog).toContain(testBuiltin.slug);
+      expect(catalog).toContain("A test built-in skill");
+      expect(catalog).toContain("(test)");
     });
   });
 });

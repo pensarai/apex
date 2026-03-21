@@ -2,6 +2,7 @@ import fs from "fs/promises";
 import type { SkillEntry } from "./types";
 import { scanSkillRoots } from "./scanner";
 import { parseSkillMd } from "./parser";
+import { BUILTIN_SKILLS } from "./builtins";
 
 /**
  * Central registry for all discovered skills.
@@ -23,11 +24,27 @@ export class SkillsRegistry {
   }
 
   async refresh(): Promise<void> {
-    const entries = await scanSkillRoots({ projectRoot: this.projectRoot });
     const newMap = new Map<string, SkillEntry>();
-    for (const entry of entries) {
-      newMap.set(entry.slug, entry);
+
+    // 1. Load built-in skills first — they take precedence on slug collision
+    for (const builtin of BUILTIN_SKILLS) {
+      newMap.set(builtin.slug, {
+        slug: builtin.slug,
+        source: "builtin",
+        filePath: "",
+        manifest: builtin.manifest,
+        scripts: [],
+      });
     }
+
+    // 2. Scan filesystem skills — first-write-wins guard in scanner + here
+    const entries = await scanSkillRoots({ projectRoot: this.projectRoot });
+    for (const entry of entries) {
+      if (!newMap.has(entry.slug)) {
+        newMap.set(entry.slug, entry);
+      }
+    }
+
     this.skills = newMap;
   }
 
@@ -52,6 +69,13 @@ export class SkillsRegistry {
   ): Promise<{ name: string; content: string }> {
     const entry = this.skills.get(slug);
     if (!entry) throw new Error(`Skill "${slug}" not found`);
+
+    if (entry.source === "builtin") {
+      const builtin = BUILTIN_SKILLS.find((b) => b.slug === slug);
+      if (!builtin) throw new Error(`Built-in skill "${slug}" not found`);
+      return { name: builtin.manifest.name, content: builtin.instructions };
+    }
+
     const raw = await fs.readFile(entry.filePath, "utf-8");
     const { instructions } = parseSkillMd(raw);
     return { name: entry.manifest.name, content: instructions };
