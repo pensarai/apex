@@ -8,3 +8,9 @@ export {
   type PentestWorkflowInput,
   type PentestWorkflowResult,
 } from "./pentest";
+
+export {
+  runThreatModelWorkflow,
+  type ThreatModelWorkflowInput,
+  type ThreatModelWorkflowResult,
+} from "./threatModel";

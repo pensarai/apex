@@ -221,15 +221,9 @@ async function runThreatModel() {
   const { config } = await import("dotenv");
   config();
 
-  const { runOffensiveSecurityAgent } = await import("./core/api/offesecAgent");
-  const { sessions } = await import("./core/session");
+  const { runThreatModelWorkflow } = await import("./core/api/threatModel");
   const { config: appConfig } = await import("./core/config");
   const { getDefaultModelForConfig } = await import("./core/providers/utils");
-  const { createSkillsRegistry } = await import("./core/skills");
-  const { buildBaseSystemPrompt } =
-    await import("./core/agents/offSecAgent/prompt");
-  const { ALL_TOOL_NAMES, SKILL_TOOL_NAMES } =
-    await import("./core/agents/offSecAgent");
   const path = await import("path");
   type AIModel = import("./core/ai").AIModel;
 
@@ -252,39 +246,11 @@ Output:   ${resolvedPath}
 Model:    ${model}
 `);
 
-  // Load skill content
-  const registry = createSkillsRegistry();
-  await registry.load({ projectRoot: process.cwd() });
-  const { content } = await registry.readSkillContent("threat-model");
-
-  const runtimeContext = [
-    `IMPORTANT: You MUST write the output to exactly this path: ${resolvedPath}`,
-    `Use create_file with path="${resolvedPath}" and overwrite=true.`,
-    `Working directory (codebase root): ${process.cwd()}`,
-  ].join("\n");
-  const prompt = `<skill name="threat-model">\n${runtimeContext}\n\n${content}\n</skill>`;
-
-  const session = await sessions.create({
-    name: "Threat Model",
-    targets: [process.cwd()],
-    config: { mode: "operator" },
-  });
-
-  const system = `${buildBaseSystemPrompt({ sandboxMode: false })}
-
-# Threat Model Mode
-
-You are generating an application-centric threat model from source code analysis.
-Working directory: ${process.cwd()}`;
-
-  await runOffensiveSecurityAgent({
-    system,
-    prompt,
+  await runThreatModelWorkflow({
+    codebasePath: process.cwd(),
+    outputPath: resolvedPath,
     model,
-    session,
-    activeTools: [...ALL_TOOL_NAMES, ...SKILL_TOOL_NAMES] as string[],
     authConfig: buildAuthConfig(pensarConfig),
-    skillsRegistry: registry,
     callbacks: {
       onTextDelta: (d) => process.stdout.write(d.text),
       onToolCall: (d) => console.log(`\n  → ${d.toolName}`),
