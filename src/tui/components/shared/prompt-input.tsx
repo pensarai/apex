@@ -322,6 +322,52 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
       }
     };
 
+    // Accept the currently selected autocomplete suggestion.
+    // Shared by both Tab and Enter key handlers.
+    const acceptSelectedSuggestion = (
+      currentSuggestions: AutocompleteOption[],
+      currentSelectedIndex: number,
+    ): boolean => {
+      const tabResult = computeTab(currentSuggestions, currentSelectedIndex);
+      if (!tabResult) return false;
+
+      setSelectedSuggestionIndex(tabResult.selectedSuggestionIndex);
+      if (tabResult.acceptedValue === null) return true;
+
+      clearPaste();
+      const slashCtx = inlineSlashContextRef.current;
+      const optCtx = inlineOptionContextRef.current;
+      const completionCtx =
+        slashCtx ??
+        (optCtx
+          ? { token: optCtx.token, start: optCtx.start, end: optCtx.end }
+          : null);
+      if (completionCtx) {
+        const text = textareaRef.current?.plainText ?? "";
+        // Append trailing space after option completions for UX
+        const completedValue =
+          optCtx && !slashCtx
+            ? tabResult.acceptedValue + " "
+            : tabResult.acceptedValue;
+        const { newText, cursorOffset } = computeInlineCompletion(
+          text,
+          completionCtx,
+          completedValue,
+        );
+        textareaRef.current?.setText(newText);
+        setInputValue(newText);
+        const ta = textareaRef.current;
+        setTimeout(() => {
+          if (ta) ta.cursorOffset = cursorOffset;
+        }, 0);
+      } else {
+        textareaRef.current?.setText(tabResult.acceptedValue);
+        setInputValue(tabResult.acceptedValue);
+        textareaRef.current?.gotoLineEnd();
+      }
+      return true;
+    };
+
     // Handle keyboard navigation for suggestions and command history.
     //
     // Priority: up/down navigate command history. When the user reaches
@@ -345,43 +391,7 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
       // --- Tab: accept the highlighted autocomplete suggestion -----------
       if (suggestions.length > 0 && key.name === "tab") {
         key.preventDefault?.();
-        const tabResult = computeTab(suggestions, selectedIndexRef.current);
-        if (tabResult) {
-          setSelectedSuggestionIndex(tabResult.selectedSuggestionIndex);
-          if (tabResult.acceptedValue !== null) {
-            clearPaste();
-            const slashCtx = inlineSlashContextRef.current;
-            const optCtx = inlineOptionContextRef.current;
-            const completionCtx =
-              slashCtx ??
-              (optCtx
-                ? { token: optCtx.token, start: optCtx.start, end: optCtx.end }
-                : null);
-            if (completionCtx) {
-              const text = textareaRef.current?.plainText ?? "";
-              // Append trailing space after option completions for UX
-              const completedValue =
-                optCtx && !slashCtx
-                  ? tabResult.acceptedValue + " "
-                  : tabResult.acceptedValue;
-              const { newText, cursorOffset } = computeInlineCompletion(
-                text,
-                completionCtx,
-                completedValue,
-              );
-              textareaRef.current?.setText(newText);
-              setInputValue(newText);
-              const ta = textareaRef.current;
-              setTimeout(() => {
-                if (ta) ta.cursorOffset = cursorOffset;
-              }, 0);
-            } else {
-              textareaRef.current?.setText(tabResult.acceptedValue);
-              setInputValue(tabResult.acceptedValue);
-              textareaRef.current?.gotoLineEnd();
-            }
-          }
-        }
+        acceptSelectedSuggestion(suggestions, selectedIndexRef.current);
         return;
       }
 
@@ -462,39 +472,9 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
       // When autocomplete suggestions are visible with a selection,
       // Enter accepts the suggestion (same as Tab) instead of submitting.
       if (currentSuggestions.length > 0 && currentSelectedIndex >= 0) {
-        const tabResult = computeTab(currentSuggestions, currentSelectedIndex);
-        if (tabResult?.acceptedValue !== null && tabResult) {
-          clearPaste();
-          const slashCtx = inlineSlashContextRef.current;
-          const optCtx = inlineOptionContextRef.current;
-          const completionCtx =
-            slashCtx ??
-            (optCtx
-              ? { token: optCtx.token, start: optCtx.start, end: optCtx.end }
-              : null);
-          if (completionCtx) {
-            const text = textareaRef.current?.plainText ?? "";
-            const completedValue =
-              optCtx && !slashCtx
-                ? tabResult.acceptedValue + " "
-                : tabResult.acceptedValue;
-            const { newText, cursorOffset } = computeInlineCompletion(
-              text,
-              completionCtx,
-              completedValue,
-            );
-            textareaRef.current?.setText(newText);
-            setInputValue(newText);
-            const ta = textareaRef.current;
-            setTimeout(() => {
-              if (ta) ta.cursorOffset = cursorOffset;
-            }, 0);
-          } else {
-            textareaRef.current?.setText(tabResult.acceptedValue);
-            setInputValue(tabResult.acceptedValue);
-            textareaRef.current?.gotoLineEnd();
-          }
-          setSelectedSuggestionIndex(-1);
+        if (
+          acceptSelectedSuggestion(currentSuggestions, currentSelectedIndex)
+        ) {
           return;
         }
       }

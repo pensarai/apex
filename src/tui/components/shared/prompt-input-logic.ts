@@ -1,26 +1,6 @@
 import type { AutocompleteOption } from "./prompt-input";
 
 // ---------------------------------------------------------------------------
-// Autocomplete filtering
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// Submit value resolution
-// ---------------------------------------------------------------------------
-
-export function resolveSubmitValue(
-  rawText: string,
-  suggestions: AutocompleteOption[],
-  selectedIndex: number,
-): string {
-  if (suggestions.length > 0 && selectedIndex >= 0) {
-    const selected = suggestions[selectedIndex];
-    if (selected) return selected.value;
-  }
-  return rawText.trim();
-}
-
-// ---------------------------------------------------------------------------
 // Keyboard navigation state helpers
 //
 // Each function returns the next state (or null when the key should be

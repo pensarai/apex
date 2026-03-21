@@ -5,7 +5,6 @@ import {
   detectInlineSlash,
   detectInlineOption,
   computeInlineCompletion,
-  resolveSubmitValue,
   computeUpArrow,
   computeDownArrow,
   computeTab,
@@ -28,32 +27,6 @@ const options: AutocompleteOption[] = [
 ];
 
 const history = ["first cmd", "second cmd", "third cmd"];
-
-// ---------------------------------------------------------------------------
-// resolveSubmitValue
-// ---------------------------------------------------------------------------
-
-describe("resolveSubmitValue", () => {
-  it("returns selected suggestion value when valid index", () => {
-    expect(resolveSubmitValue("typed text", options, 1)).toBe("/pentest");
-  });
-
-  it("returns trimmed raw text when no suggestions", () => {
-    expect(resolveSubmitValue("  hello  ", [], -1)).toBe("hello");
-  });
-
-  it("returns trimmed raw text when selectedIndex is -1", () => {
-    expect(resolveSubmitValue("  hello  ", options, -1)).toBe("hello");
-  });
-
-  it("returns trimmed raw text when selectedIndex is out of bounds", () => {
-    expect(resolveSubmitValue("hello", options, 999)).toBe("hello");
-  });
-
-  it("returns empty string for whitespace-only raw text with no selection", () => {
-    expect(resolveSubmitValue("   ", [], -1)).toBe("");
-  });
-});
 
 // ---------------------------------------------------------------------------
 // computeUpArrow
