@@ -36,7 +36,7 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
   const config = useConfig();
   const route = useRoute();
 
-  const { executeCommand, autocompleteOptions } = useCommand();
+  const { executeCommand, autocompleteOptions, skillsRegistry } = useCommand();
   const { setInputValue } = useInput();
   const { promptRef } = useFocus();
   const { externalDialogOpen, stack } = useDialog();
@@ -90,9 +90,24 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
     async (command: string) => {
       const trimmed = command.trim();
       pushHistory(trimmed);
-      await executeCommand(command);
+
+      // Try the command registry first (handles arg parsing for registered commands)
+      const handled = await executeCommand(command);
+      if (handled) return;
+
+      // Fallback: if the slug matches a skill, launch operator with that skill
+      const slug =
+        trimmed.replace(/^\/+/, "").split(/\s+/)[0]?.toLowerCase() ?? "";
+      if (skillsRegistry.get(slug)) {
+        route.navigate({
+          type: "operator",
+          nonce: Date.now(),
+          initialConfig: { requireApproval: true },
+          initialSkill: { slug },
+        });
+      }
     },
-    [executeCommand, pushHistory],
+    [executeCommand, pushHistory, skillsRegistry, route],
   );
 
   // Responsive layout calculations

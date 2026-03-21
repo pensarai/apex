@@ -156,8 +156,10 @@ export function CommandProvider({
       });
     }
 
-    // Append skills from registry (already deduplicated by slug)
+    // Append skills from registry, skipping any that already have a command entry
+    const commandNames = new Set(routerCommands.map((c) => c.name));
     for (const entry of registry.list()) {
+      if (commandNames.has(entry.slug)) continue;
       options.push({
         value: `/${entry.slug}`,
         label: `/${entry.slug}`,
