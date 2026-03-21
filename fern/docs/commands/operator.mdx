@@ -84,6 +84,19 @@ Toggle approval with `Option+Shift+Tab` (or `Alt+Shift+Tab` on Linux/Windows).
 | `--header <Name:Val>` | Custom header (repeatable)                        |
 | `--sandbox`           | Use isolated session directory as working directory instead of current directory |
 
+## Sandbox Mode
+
+By default, the operator agent works in your current working directory (CWD mode). The `--sandbox` flag changes this behavior so the agent operates in an isolated session directory instead.
+
+| Mode        | Working Directory            | Use Case                                        |
+| ----------- | ---------------------------- | ----------------------------------------------- |
+| **CWD**     | Your current project folder  | Testing against your local codebase or project  |
+| **Sandbox** | Isolated `~/.pensar/sessions/` directory | Preventing the agent from modifying your project files |
+
+In sandbox mode, all filesystem tools (read, create, update, list, grep) resolve relative paths against the isolated session directory. The agent's shell also starts in this directory.
+
+You can also toggle sandbox mode in the operator wizard UI during session setup.
+
 ## Keyboard Shortcuts
 
 | Key                | Action                                  |
@@ -146,7 +159,7 @@ pensar
 
 ## Operator Skills
 
-You can extend operator mode with custom skills using `/create-skill`. Skills are reusable instruction sets that teach the agent specialized testing techniques or workflows for your specific environment.
+You can extend operator mode with custom skills. Use `/skills` to browse installed skills and view their details. Skills are reusable instruction sets (SKILL.md files) that teach the agent specialized testing techniques or workflows for your specific environment. Skills are loaded from both project-level and user-level sources.
 
 ## Best Practices
 

@@ -1,0 +1,77 @@
+---
+title: "/skills"
+description: "Browse and manage installed operator skills"
+---
+
+## Overview
+
+The `/skills` command opens a dialog overlay displaying all installed skills grouped by source (project and user). You can browse skills, view their details and instructions, and see estimated token counts.
+
+## Usage
+
+```bash
+/skills
+```
+
+Open a specific skill's detail view directly:
+
+```bash
+/skills <slug>
+```
+
+## What Are Skills?
+
+Skills are SKILL.md-based configuration files that teach the AI agent specialized testing techniques or workflows tailored to your environment. Each skill defines:
+
+- **Name** — a human-readable name for the skill
+- **Description** — what the skill does
+- **Instructions** — detailed Markdown instructions the AI agent follows when the skill is invoked
+- **Shell scripts** — optional shell commands that run as part of the skill
+
+Skills are loaded from two sources:
+
+| Source      | Location                          | Description                          |
+| ----------- | --------------------------------- | ------------------------------------ |
+| **Project** | `SKILL.md` files in your project  | Shared with your team via version control |
+| **User**    | `~/.pensar/skills/`               | Personal skills, available globally  |
+
+## Skills Dialog
+
+When you run `/skills`, a dialog overlay appears showing:
+
+- **Grouped skill list** — skills organized by source (Project skills, User skills)
+- **Token estimates** — approximate token cost for each skill's instructions
+- **Detail view** — press Enter on a skill to see its full instructions rendered as styled Markdown
+
+### Keyboard Navigation
+
+| Key       | Action                              |
+| --------- | ----------------------------------- |
+| `↑/↓`     | Navigate through skill list         |
+| `[Enter]` | Open detail view for selected skill |
+| `[Esc]`   | Close detail view / close dialog    |
+
+## Using Skills
+
+After viewing a skill, invoke it from the operator prompt as a dynamic slash command:
+
+```bash
+/your-skill-name
+```
+
+The AI agent will follow the instructions defined in the skill, applying them to the current session context.
+
+<Callout intent="info">
+  Skills only work in operator sessions (`/operator`). They are not available in autonomous pentest mode (`/pentest`).
+</Callout>
+
+## Related Commands
+
+<CardGroup cols={2}>
+  <Card title="/operator" icon="terminal" href="/apex/commands/operator">
+    Start an operator session to use skills
+  </Card>
+  <Card title="/help" icon="circle-question" href="/apex/commands/help">
+    View all available commands including dynamic skills
+  </Card>
+</CardGroup>
