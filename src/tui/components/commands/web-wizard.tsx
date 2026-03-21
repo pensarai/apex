@@ -472,6 +472,19 @@ export default function WebWizard({
       return;
     }
 
+    // Left/Right — toggle source code access
+    if (
+      (key.name === "left" || key.name === "right") &&
+      focusedField === 1
+    ) {
+      key.preventDefault();
+      setState((prev) => ({
+        ...prev,
+        sourceCodeAccess: key.name === "right",
+      }));
+      return;
+    }
+
     // Space — toggle/cycle values
     if (key.sequence === " ") {
       if (focusedField === 1) {
@@ -701,10 +714,10 @@ export default function WebWizard({
               <text
                 fg={state.sourceCodeAccess ? colors.primary : colors.textMuted}
               >
-                {state.sourceCodeAccess ? "\u25CF Enabled" : "\u25CB Disabled"}
+                {state.sourceCodeAccess ? "● Enabled" : "○ Disabled"}
               </text>
               {focusedField === 1 && (
-                <text fg={colors.textMuted}>(Space to toggle)</text>
+                <text fg={colors.textMuted}>(←/→ to toggle)</text>
               )}
             </box>
             {state.sourceCodeAccess && (
