@@ -504,6 +504,22 @@ export default function WebWizard({
         }));
         return;
       }
+      // Headers mode cycle
+      if (focusedField === headersModeIndex && advancedExpanded) {
+        key.preventDefault();
+        const modes: Array<"none" | "default" | "custom"> = [
+          "none",
+          "default",
+          "custom",
+        ];
+        const currentIndex = modes.indexOf(state.headers.mode);
+        const newIndex = (currentIndex + 1) % modes.length;
+        setState((prev) => ({
+          ...prev,
+          headers: { ...prev.headers, mode: modes[newIndex]! },
+        }));
+        return;
+      }
     }
 
     // Up/Down arrows — navigate fields or control toggle/cycle/picker fields
@@ -511,51 +527,6 @@ export default function WebWizard({
       key.preventDefault();
       const delta = key.name === "down" ? 1 : -1;
 
-      // Source code access toggle
-      if (focusedField === 1) {
-        setState((prev) => ({
-          ...prev,
-          sourceCodeAccess: !prev.sourceCodeAccess,
-        }));
-        return;
-      }
-      // Strict scope toggle
-      if (focusedField === scopeStrictIndex && advancedExpanded) {
-        setState((prev) => ({
-          ...prev,
-          scope: { ...prev.scope, strictScope: !prev.scope.strictScope },
-        }));
-        return;
-      }
-      // Enumerate subdomains toggle
-      if (focusedField === scopeSubdomainIndex && advancedExpanded) {
-        setState((prev) => ({
-          ...prev,
-          scope: {
-            ...prev.scope,
-            enumerateSubdomains: !prev.scope.enumerateSubdomains,
-          },
-        }));
-        return;
-      }
-      // Headers mode cycle
-      if (focusedField === headersModeIndex && advancedExpanded) {
-        const modes: Array<"none" | "default" | "custom"> = [
-          "none",
-          "default",
-          "custom",
-        ];
-        const currentIndex = modes.indexOf(state.headers.mode);
-        const newIndex =
-          key.name === "up"
-            ? (currentIndex - 1 + modes.length) % modes.length
-            : (currentIndex + 1) % modes.length;
-        setState((prev) => ({
-          ...prev,
-          headers: { ...prev.headers, mode: modes[newIndex]! },
-        }));
-        return;
-      }
       // Model selection
       if (
         focusedField === modelPickerIndex &&
@@ -733,9 +704,7 @@ export default function WebWizard({
                 {state.sourceCodeAccess ? "\u25CF Enabled" : "\u25CB Disabled"}
               </text>
               {focusedField === 1 && (
-                <text fg={colors.textMuted}>
-                  ({"\u2191"}/{"\u2193"} to toggle)
-                </text>
+                <text fg={colors.textMuted}>(Space to toggle)</text>
               )}
             </box>
             {state.sourceCodeAccess && (
@@ -981,7 +950,7 @@ export default function WebWizard({
                       : "\u25CB Disabled"}
                   </text>
                   {focusedField === scopeStrictIndex && (
-                    <text fg={colors.textMuted}>(\u2191/\u2193 to toggle)</text>
+                    <text fg={colors.textMuted}>(Space to toggle)</text>
                   )}
                 </box>
                 <box
@@ -1010,7 +979,7 @@ export default function WebWizard({
                       : "\u25CB Disabled"}
                   </text>
                   {focusedField === scopeSubdomainIndex && (
-                    <text fg={colors.textMuted}>(\u2191/\u2193 to toggle)</text>
+                    <text fg={colors.textMuted}>(Space to toggle)</text>
                   )}
                 </box>
               </box>
@@ -1055,7 +1024,7 @@ export default function WebWizard({
                   </text>
                 </box>
                 {focusedField === headersModeIndex && (
-                  <text fg={colors.textMuted}>Use \u2191/\u2193 to select</text>
+                  <text fg={colors.textMuted}>Space to cycle</text>
                 )}
 
                 {state.headers.mode === "custom" && (
