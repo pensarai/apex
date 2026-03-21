@@ -124,6 +124,7 @@ export class OffensiveSecurityAgent<TResult = void> {
     if (!input.sandbox) {
       this.persistentShell = new PersistentShell({
         cwd: agentCwd,
+        env: input.environmentVariables,
       });
       if (input.commandCancelHandle) {
         const shell = this.persistentShell;
