@@ -1080,18 +1080,22 @@ export default function OperatorDashboard({
       try {
         const { content } = await skillsRegistry.readSkillContent(slug);
 
-        // Resolve output path for runtime context
-        const outputPath = args?.output || "threat-model.md";
-        const resolvedPath = isAbsolute(outputPath)
-          ? outputPath
-          : resolve(process.cwd(), outputPath);
+        let fullContent: string;
+        if (slug === "threat-model") {
+          const outputPath = args?.output || "threat-model.md";
+          const resolvedPath = isAbsolute(outputPath)
+            ? outputPath
+            : resolve(process.cwd(), outputPath);
 
-        const runtimeContext = [
-          `IMPORTANT: You MUST write the output to exactly this path: ${resolvedPath}`,
-          `Use create_file with path="${resolvedPath}" and overwrite=true.`,
-          `Working directory (codebase root): ${process.cwd()}`,
-        ].join("\n");
-        const fullContent = `<skill name="${slug}">\n${runtimeContext}\n\n${content}\n</skill>`;
+          const runtimeContext = [
+            `IMPORTANT: You MUST write the output to exactly this path: ${resolvedPath}`,
+            `Use create_file with path="${resolvedPath}" and overwrite=true.`,
+            `Working directory (codebase root): ${process.cwd()}`,
+          ].join("\n");
+          fullContent = `<skill name="${slug}">\n${runtimeContext}\n\n${content}\n</skill>`;
+        } else {
+          fullContent = `<skill name="${slug}">\n${content}\n</skill>`;
+        }
 
         runAgentRef.current(fullContent);
       } catch {
