@@ -10,7 +10,13 @@ import { useKeyboard } from "@opentui/react";
 import { ScrollBoxRenderable } from "@opentui/core";
 import { scrollToIndex } from "../../utils/scroll";
 import { useCommand } from "../../context/command";
+import {
+  type CommandCategory,
+  type CommandConfig,
+  categories,
+} from "../../command-registry";
 import { Dialog } from "../../context/dialog";
+import { DialogControls } from "../shared/dialog-controls";
 import { useTheme } from "../../theme";
 
 interface HelpDialogProps {
@@ -25,9 +31,38 @@ export default function HelpDialog({ onClose }: HelpDialogProps) {
   const [showDetail, setShowDetail] = useState(false);
   const scrollboxRef = useRef<ScrollBoxRenderable | null>(null);
 
+  // Group visible commands by category, preserving array order within each group
+  const groupedCommands = useMemo(() => {
+    const visible = commands.filter((cmd) => !cmd.hidden);
+    const groups: { category: CommandCategory; commands: CommandConfig[] }[] =
+      [];
+    const byCategory = new Map<CommandCategory, CommandConfig[]>();
+
+    for (const cmd of visible) {
+      const cat: CommandCategory = cmd.category || "General";
+      if (!byCategory.has(cat)) byCategory.set(cat, []);
+      byCategory.get(cat)!.push(cmd);
+    }
+
+    for (const cat of categories) {
+      const cmds = byCategory.get(cat);
+      if (cmds?.length) groups.push({ category: cat, commands: cmds });
+    }
+
+    // Any categories not in categories go at the end
+    for (const [cat, cmds] of byCategory) {
+      if (!categories.includes(cat)) {
+        groups.push({ category: cat, commands: cmds });
+      }
+    }
+
+    return groups;
+  }, [commands]);
+
+  // Flat list for keyboard navigation (commands only, no headers)
   const flatCommands = useMemo(
-    () => commands.filter((cmd) => !cmd.hidden),
-    [commands],
+    () => groupedCommands.flatMap((g) => g.commands),
+    [groupedCommands],
   );
 
   useEffect(() => {
@@ -100,9 +135,8 @@ export default function HelpDialog({ onClose }: HelpDialogProps) {
       <Dialog size="large" onClose={onClose}>
         <box flexDirection="column" padding={2} gap={1} width="100%">
           {/* Header */}
-          <box flexDirection="row" justifyContent="space-between" width="100%">
+          <box width="100%">
             <text fg={colors.primary}>/{selectedCommand.name}</text>
-            <text fg={colors.textMuted}>esc to close</text>
           </box>
 
           {/* Description */}
@@ -135,11 +169,6 @@ export default function HelpDialog({ onClose }: HelpDialogProps) {
               ))}
             </box>
           )}
-
-          {/* Footer hint */}
-          <box marginTop={1}>
-            <text fg={colors.textMuted}>[enter/esc] back</text>
-          </box>
         </box>
       </Dialog>
     );
@@ -150,12 +179,11 @@ export default function HelpDialog({ onClose }: HelpDialogProps) {
     <Dialog size="large" onClose={onClose}>
       <box flexDirection="column" padding={2} gap={1} width="100%">
         {/* Header */}
-        <box flexDirection="row" justifyContent="space-between" width="100%">
+        <box width="100%">
           <text fg={colors.text}>Commands</text>
-          <text fg={colors.textMuted}>esc to close</text>
         </box>
 
-        {/* Commands list */}
+        {/* Commands list grouped by category */}
         <scrollbox
           ref={scrollboxRef}
           style={{
@@ -165,35 +193,50 @@ export default function HelpDialog({ onClose }: HelpDialogProps) {
           stickyScroll={false}
           focused={true}
         >
-          {flatCommands.map((cmd, idx) => {
-            const isSelected = idx === selectedIndex;
-            return (
-              <box
-                key={cmd.name}
-                id={cmd.name}
-                width="100%"
-                flexDirection="row"
-                gap={2}
-                backgroundColor={
-                  isSelected ? colors.backgroundSelected : undefined
-                }
-                overflow="hidden"
-              >
-                <text fg={isSelected ? colors.primary : colors.text} width={18}>
-                  /{cmd.name}
-                </text>
-                <text fg={isSelected ? colors.text : colors.textMuted}>
-                  {cmd.description || ""}
-                </text>
+          {groupedCommands.map((group, groupIdx) => (
+            <box key={group.category} flexDirection="column">
+              {/* Category header */}
+              <box paddingTop={groupIdx > 0 ? 1 : 0}>
+                <text fg={colors.textMuted}>{group.category}</text>
               </box>
-            );
-          })}
+
+              {/* Commands in this category */}
+              {group.commands.map((cmd) => {
+                const flatIdx = flatCommands.indexOf(cmd);
+                const isSelected = flatIdx === selectedIndex;
+                return (
+                  <box
+                    key={cmd.name}
+                    id={cmd.name}
+                    width="100%"
+                    flexDirection="row"
+                    gap={2}
+                    paddingLeft={2}
+                    backgroundColor={
+                      isSelected ? colors.backgroundSelected : undefined
+                    }
+                    overflow="hidden"
+                  >
+                    <text
+                      fg={isSelected ? colors.primary : colors.text}
+                      width={18}
+                    >
+                      /{cmd.name}
+                    </text>
+                    <text fg={isSelected ? colors.text : colors.textMuted}>
+                      {cmd.description || ""}
+                    </text>
+                  </box>
+                );
+              })}
+            </box>
+          ))}
         </scrollbox>
 
         {/* Footer */}
-        <text fg={colors.textMuted}>
-          [↑/↓] navigate [enter] details [esc] close
-        </text>
+        <DialogControls
+          controls={[{ key: "Enter", label: "Details", variant: "primary" }]}
+        />
       </box>
     </Dialog>
   );

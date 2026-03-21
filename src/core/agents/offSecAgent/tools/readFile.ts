@@ -43,9 +43,7 @@ the end. If only endLine is given, reads from the beginning to that line.
 Output lines are prefixed with their line number for easy reference.`,
     inputSchema: readFileInputSchema,
     execute: async ({ path, startLine, endLine }): Promise<ReadFileResult> => {
-      const resolved = isAbsolute(path)
-        ? path
-        : resolve(ctx.session.rootPath, path);
+      const resolved = isAbsolute(path) ? path : resolve(ctx.agentCwd, path);
       try {
         const raw = await fsReadFile(resolved, "utf-8");
         const allLines = raw.split("\n");
