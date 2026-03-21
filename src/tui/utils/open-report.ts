@@ -1,9 +1,7 @@
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { REPORT_FILENAME_MD } from "../../core/report";
-
-const NO_EDITOR_MSG =
-  "No app found for .md files — set a default markdown editor";
+import { openFileInDefaultApp } from "./open-file";
 
 /**
  * Open the pentest report for a session in the user's default viewer.
@@ -18,35 +16,7 @@ export async function openSessionReport(
     return "Report not found";
   }
 
-  try {
-    const platform = process.platform;
-    let proc: ReturnType<typeof Bun.spawn>;
-
-    if (platform === "darwin") {
-      proc = Bun.spawn(["open", reportPath], {
-        stderr: "pipe",
-        stdout: "pipe",
-      });
-    } else if (platform === "win32") {
-      proc = Bun.spawn(["cmd", "/c", "start", "", reportPath], {
-        stderr: "pipe",
-        stdout: "pipe",
-      });
-    } else {
-      proc = Bun.spawn(["xdg-open", reportPath], {
-        stderr: "pipe",
-        stdout: "pipe",
-      });
-    }
-
-    const exitCode = await proc.exited;
-    if (exitCode !== 0) {
-      return NO_EDITOR_MSG;
-    }
-    return "";
-  } catch {
-    return NO_EDITOR_MSG;
-  }
+  return openFileInDefaultApp(reportPath);
 }
 
 /**
