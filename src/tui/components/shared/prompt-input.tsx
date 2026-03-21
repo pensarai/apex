@@ -18,15 +18,17 @@ import { useInput } from "../../context/input";
 import { useFocus } from "../../context/focus";
 import {
   filterInlineSuggestions,
+  filterInlineOptionSuggestions,
   detectInlineSlash,
+  detectInlineOption,
   computeInlineCompletion,
-  resolveSubmitValue,
   computeUpArrow,
   computeDownArrow,
   computeTab,
   shouldResetHistory,
   computeVisibleWindow,
   type InlineSlashContext,
+  type InlineOptionContext,
 } from "./prompt-input-logic";
 import { usePasteExtmarks } from "./use-paste-extmarks";
 export interface AutocompleteOption {
@@ -104,6 +106,10 @@ interface PromptInputProps {
 
   // Slash command highlighting — colors /slug patterns in the input
   highlightSlashCommands?: boolean;
+
+  // Option autocomplete — shows --flag suggestions after a known /command
+  commandOptionMap?: Map<string, AutocompleteOption[]>;
+  commandNames?: Set<string>;
 }
 
 export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
@@ -131,6 +137,8 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
       showPromptIndicator = false,
       autocompletePlacement = "below",
       highlightSlashCommands = false,
+      commandOptionMap,
+      commandNames,
     },
     ref,
   ) {
@@ -166,6 +174,14 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
     );
     const inlineSlashContextRef = useRef<InlineSlashContext | null>(null);
 
+    // Inline option detection state — drives --flag autocomplete
+    const [inlineOptionToken, setInlineOptionToken] = useState<string | null>(
+      null,
+    );
+    const inlineOptionContextRef = useRef<InlineOptionContext | null>(null);
+    // Cache full text for option dedup filtering (avoids extra reads in memo)
+    const fullTextRef = useRef("");
+
     const suggestions = useMemo(() => {
       if (!enableAutocomplete) return [];
       // Inline slash detection drives suggestions for both start-of-line
@@ -177,11 +193,31 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
           maxSuggestions,
         );
       }
+      // Inline option detection for --flags after a /command
+      if (
+        inlineOptionToken &&
+        inlineOptionContextRef.current &&
+        commandOptionMap
+      ) {
+        const cmdOpts = commandOptionMap.get(
+          inlineOptionContextRef.current.commandName,
+        );
+        if (cmdOpts) {
+          return filterInlineOptionSuggestions(
+            inlineOptionToken,
+            cmdOpts,
+            fullTextRef.current,
+            maxSuggestions,
+          );
+        }
+      }
       return [];
     }, [
       enableAutocomplete,
       autocompleteOptions,
       inlineSlashToken,
+      inlineOptionToken,
+      commandOptionMap,
       maxSuggestions,
     ]);
 
@@ -315,12 +351,23 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
           if (tabResult.acceptedValue !== null) {
             clearPaste();
             const slashCtx = inlineSlashContextRef.current;
-            if (slashCtx) {
+            const optCtx = inlineOptionContextRef.current;
+            const completionCtx =
+              slashCtx ??
+              (optCtx
+                ? { token: optCtx.token, start: optCtx.start, end: optCtx.end }
+                : null);
+            if (completionCtx) {
               const text = textareaRef.current?.plainText ?? "";
+              // Append trailing space after option completions for UX
+              const completedValue =
+                optCtx && !slashCtx
+                  ? tabResult.acceptedValue + " "
+                  : tabResult.acceptedValue;
               const { newText, cursorOffset } = computeInlineCompletion(
                 text,
-                slashCtx,
-                tabResult.acceptedValue,
+                completionCtx,
+                completedValue,
               );
               textareaRef.current?.setText(newText);
               setInputValue(newText);
@@ -411,23 +458,50 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
     const handleSubmit = async () => {
       const currentSuggestions = suggestionsRef.current;
       const currentSelectedIndex = selectedIndexRef.current;
+
+      // When autocomplete suggestions are visible with a selection,
+      // Enter accepts the suggestion (same as Tab) instead of submitting.
+      if (currentSuggestions.length > 0 && currentSelectedIndex >= 0) {
+        const tabResult = computeTab(currentSuggestions, currentSelectedIndex);
+        if (tabResult?.acceptedValue !== null && tabResult) {
+          clearPaste();
+          const slashCtx = inlineSlashContextRef.current;
+          const optCtx = inlineOptionContextRef.current;
+          const completionCtx =
+            slashCtx ??
+            (optCtx
+              ? { token: optCtx.token, start: optCtx.start, end: optCtx.end }
+              : null);
+          if (completionCtx) {
+            const text = textareaRef.current?.plainText ?? "";
+            const completedValue =
+              optCtx && !slashCtx
+                ? tabResult.acceptedValue + " "
+                : tabResult.acceptedValue;
+            const { newText, cursorOffset } = computeInlineCompletion(
+              text,
+              completionCtx,
+              completedValue,
+            );
+            textareaRef.current?.setText(newText);
+            setInputValue(newText);
+            const ta = textareaRef.current;
+            setTimeout(() => {
+              if (ta) ta.cursorOffset = cursorOffset;
+            }, 0);
+          } else {
+            textareaRef.current?.setText(tabResult.acceptedValue);
+            setInputValue(tabResult.acceptedValue);
+            textareaRef.current?.gotoLineEnd();
+          }
+          setSelectedSuggestionIndex(-1);
+          return;
+        }
+      }
+
       // Resolve paste placeholders to full text before submit
       const rawText = resolveText(textareaRef.current?.plainText ?? "");
-
-      // For inline slash (mid-text), Enter submits raw text — Tab is for
-      // completion. For start-of-line commands, keep the current behavior
-      // where Enter accepts the selected suggestion.
-      const isInlineSlash =
-        inlineSlashContextRef.current != null &&
-        inlineSlashContextRef.current.start > 0;
-
-      const valueToSubmit = isInlineSlash
-        ? rawText.trim()
-        : resolveSubmitValue(rawText, currentSuggestions, currentSelectedIndex);
-
-      if (currentSuggestions.length > 0 && currentSelectedIndex >= 0) {
-        setSelectedSuggestionIndex(-1);
-      }
+      const valueToSubmit = rawText.trim();
 
       if (!valueToSubmit) return;
 
@@ -451,11 +525,28 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
       const text = textareaRef.current?.plainText ?? "";
       const cursorOffset = textareaRef.current?.cursorOffset ?? text.length;
       setInputValue(text);
+      fullTextRef.current = text;
 
       // Detect inline /token at cursor for autocomplete
       const slashCtx = detectInlineSlash(text, cursorOffset);
-      inlineSlashContextRef.current = slashCtx;
-      setInlineSlashToken(slashCtx?.token ?? null);
+      if (slashCtx) {
+        inlineSlashContextRef.current = slashCtx;
+        inlineOptionContextRef.current = null;
+        setInlineSlashToken(slashCtx.token);
+        setInlineOptionToken(null);
+      } else if (commandNames?.size) {
+        // No slash context — try option detection for --flags
+        const optCtx = detectInlineOption(text, cursorOffset, commandNames);
+        inlineOptionContextRef.current = optCtx;
+        inlineSlashContextRef.current = null;
+        setInlineSlashToken(null);
+        setInlineOptionToken(optCtx?.token ?? null);
+      } else {
+        inlineSlashContextRef.current = null;
+        inlineOptionContextRef.current = null;
+        setInlineSlashToken(null);
+        setInlineOptionToken(null);
+      }
 
       applySlashHighlights(text);
 

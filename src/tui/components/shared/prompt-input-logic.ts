@@ -268,6 +268,92 @@ export function computeInlineCompletion(
 }
 
 // ---------------------------------------------------------------------------
+// Inline option detection (for --flag autocomplete after a /command)
+// ---------------------------------------------------------------------------
+
+export interface InlineOptionContext {
+  /** The resolved command name (e.g., "pentest") */
+  commandName: string;
+  /** The partial --token text (e.g., "--tar" or "--") */
+  token: string;
+  /** Character offset where the "--" starts */
+  start: number;
+  /** Character offset at the cursor */
+  end: number;
+}
+
+/**
+ * Detect a --flag token at the cursor position, only when the input starts
+ * with a known /command. Returns null when no option is being typed.
+ */
+export function detectInlineOption(
+  text: string,
+  cursorOffset: number,
+  knownCommands: Set<string>,
+): InlineOptionContext | null {
+  if (cursorOffset <= 0 || cursorOffset > text.length) return null;
+
+  // Walk backwards from cursor through valid option characters (including -)
+  let i = cursorOffset - 1;
+  while (i >= 0 && /[a-zA-Z0-9-]/.test(text[i]!)) i--;
+
+  // i is now just before the token start. The token must begin with "--"
+  const tokenStart = i + 1;
+  const token = text.slice(tokenStart, cursorOffset);
+  if (!token.startsWith("--")) return null;
+
+  // The "--" must be preceded by whitespace
+  if (tokenStart > 0 && !/\s/.test(text[tokenStart - 1]!)) return null;
+
+  // Extract the leading /command from the text
+  const cmdMatch = text.match(/^\/([a-zA-Z0-9][-a-zA-Z0-9]*)/);
+  if (!cmdMatch) return null;
+
+  const commandName = cmdMatch[1]!;
+  if (!knownCommands.has(commandName)) return null;
+
+  return {
+    commandName,
+    token,
+    start: tokenStart,
+    end: cursorOffset,
+  };
+}
+
+/**
+ * Filter command option suggestions against a partial --token.
+ * Excludes options already present in the full input text.
+ */
+export function filterInlineOptionSuggestions(
+  token: string,
+  options: AutocompleteOption[],
+  fullText: string,
+  maxSuggestions: number,
+): AutocompleteOption[] {
+  if (!options.length || !token.startsWith("--")) return [];
+  const lower = token.toLowerCase();
+
+  // Don't show suggestions for exact matches
+  if (options.some((opt) => opt.value.toLowerCase() === lower)) return [];
+
+  // Find all --flags already used in the input
+  const usedFlags = new Set<string>();
+  const flagPattern = /--[a-zA-Z][-a-zA-Z0-9]*/g;
+  let match: RegExpExecArray | null;
+  while ((match = flagPattern.exec(fullText)) !== null) {
+    usedFlags.add(match[0].toLowerCase());
+  }
+
+  return options
+    .filter((opt) => {
+      const optLower = opt.value.toLowerCase();
+      if (usedFlags.has(optLower) && optLower !== lower) return false;
+      return optLower.startsWith(lower);
+    })
+    .slice(0, maxSuggestions);
+}
+
+// ---------------------------------------------------------------------------
 // Content change — should we reset history browsing?
 // ---------------------------------------------------------------------------
 
