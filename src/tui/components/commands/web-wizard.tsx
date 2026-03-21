@@ -14,6 +14,7 @@ import {
   getAutoPopulatedHosts,
   getAutoPopulatedPorts,
 } from "../../../util/url";
+import { wrapThreatModelContent } from "../../../core/utils/prompt";
 
 // Wizard state interface
 interface WizardState {
@@ -362,7 +363,12 @@ export default function WebWizard({
       // they're plain text (the @file convention is for the CLI, not the wizard UI).
       const promptParts: string[] = [];
       if (state.threatModel.trim()) {
-        promptParts.push(state.threatModel.trim());
+        const tm = state.threatModel.trim();
+        // If already wrapped (from CLI --threat-model flag), use as-is.
+        // Otherwise, wrap with the usage preamble so the agent gets guidance.
+        promptParts.push(
+          tm.includes("<threat-model>") ? tm : wrapThreatModelContent(tm),
+        );
       }
       if (state.prompt.trim()) {
         promptParts.push(state.prompt.trim());
