@@ -123,7 +123,9 @@ export default function CreditsFlow({
       { key: "R", label: "refresh" },
     ];
   } else if (step === "browser-opened") {
-    footerActions = [{ key: "Enter", label: "refresh balance", variant: "primary" }];
+    footerActions = [
+      { key: "Enter", label: "refresh balance", variant: "primary" },
+    ];
   }
 
   return (

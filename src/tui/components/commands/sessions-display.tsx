@@ -201,21 +201,19 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
     );
   }
 
-  const footerActions = visualOrderSessions.length > 0
-    ? [
-        { key: "Enter", label: "open", variant: "primary" as const },
-        { key: "O", label: "operator" },
-        { key: "R", label: "report" },
-        { key: "Ctrl+D", label: "delete", variant: "danger" as const },
-      ]
-    : [];
+  const footerActions =
+    visualOrderSessions.length > 0
+      ? [
+          { key: "Enter", label: "open", variant: "primary" as const },
+          { key: "O", label: "operator" },
+          { key: "R", label: "report" },
+          { key: "Ctrl+D", label: "delete", variant: "danger" as const },
+        ]
+      : [];
 
   return (
     <Dialog size="large" onClose={handleClose}>
-      <DialogLayout
-        title="Sessions"
-        footerActions={footerActions}
-      >
+      <DialogLayout title="Sessions" footerActions={footerActions}>
         {/* Search Input */}
         <box
           width="100%"

@@ -36,9 +36,7 @@ export default function ModelPickerDialog({ onClose }: ModelPickerDialogProps) {
     <Dialog size="large" onClose={onClose}>
       <DialogLayout
         title={title}
-        footerActions={[
-          { key: "Enter", label: "confirm", variant: "primary" },
-        ]}
+        footerActions={[{ key: "Enter", label: "confirm", variant: "primary" }]}
       >
         <box
           flexDirection="column"

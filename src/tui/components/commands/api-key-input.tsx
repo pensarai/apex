@@ -74,9 +74,7 @@ export default function APIKeyInput({
       <DialogLayout
         title={`Connect ${providerName}`}
         escLabel="cancel"
-        footerActions={[
-          { key: "Enter", label: "save", variant: "primary" },
-        ]}
+        footerActions={[{ key: "Enter", label: "save", variant: "primary" }]}
       >
         {/* Instructions */}
         <box marginBottom={1}>

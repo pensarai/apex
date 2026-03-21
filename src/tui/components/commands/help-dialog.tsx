@@ -133,10 +133,7 @@ export default function HelpDialog({ onClose }: HelpDialogProps) {
 
     return (
       <Dialog size="large" onClose={onClose}>
-        <DialogLayout
-          title={`/${selectedCommand.name}`}
-          escLabel="back"
-        >
+        <DialogLayout title={`/${selectedCommand.name}`} escLabel="back">
           {/* Description */}
           <text fg={colors.text}>
             {selectedCommand.description || "No description available"}
@@ -177,9 +174,7 @@ export default function HelpDialog({ onClose }: HelpDialogProps) {
     <Dialog size="large" onClose={onClose}>
       <DialogLayout
         title="Commands"
-        footerActions={[
-          { key: "Enter", label: "details", variant: "primary" },
-        ]}
+        footerActions={[{ key: "Enter", label: "details", variant: "primary" }]}
       >
         {/* Commands list grouped by category */}
         <scrollbox

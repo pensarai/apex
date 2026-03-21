@@ -66,9 +66,7 @@ export default function ProviderSelection({
     <Dialog size="large" onClose={onClose}>
       <DialogLayout
         title="Select provider"
-        footerActions={[
-          { key: "Enter", label: "select", variant: "primary" },
-        ]}
+        footerActions={[{ key: "Enter", label: "select", variant: "primary" }]}
       >
         {/* Provider List */}
         <box flexDirection="column" gap={1}>
