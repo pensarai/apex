@@ -17,11 +17,11 @@ export interface AppCommandContext {
   openThemeDialog?: () => void;
   openModelDialog?: () => void;
   openProvidersDialog?: () => void;
-  openConfigDialog?: () => void;
   openCreditsDialog?: () => void;
   openHelpDialog?: () => void;
   openAuthDialog?: () => void;
   openPentestDialog?: (flags?: WebCommandOptions) => void;
+  openSkillsDialog?: (slug?: string) => void;
 }
 
 /**
@@ -34,23 +34,36 @@ export interface CommandOption {
 }
 
 /**
+ * Command category type and display order.
+ */
+export type CommandCategory = "Pentesting" | "Configuration" | "General";
+
+export const categories: CommandCategory[] = [
+  "Pentesting",
+  "Configuration",
+  "General",
+];
+
+/**
  * Command configuration object - easy to map over and export
  */
 export interface CommandConfig {
   name: string;
   aliases?: string[];
   description?: string;
-  category?: string;
+  category?: CommandCategory;
   options?: CommandOption[];
-  /** If true, command works but doesn't appear in the autocomplete menu */
+  /** If true, command works but doesn't appear in the autocomplete menu or help dialog */
   hidden?: boolean;
   handler: (args: string[], ctx: AppCommandContext) => void | Promise<void>;
 }
 
 /**
- * All available commands in a simple, mappable array
+ * All available commands.
+ * Array order = display order in autocomplete dropdown and help dialog.
  */
 export const commands: CommandConfig[] = [
+  // — Pentesting —
   {
     name: "pentest",
     aliases: ["p", "web", "w"],
@@ -202,39 +215,6 @@ export const commands: CommandConfig[] = [
     },
   },
   {
-    name: "help",
-    description: "Show help dialog",
-    category: "General",
-    handler: async (args, ctx) => {
-      ctx.openHelpDialog?.();
-    },
-  },
-  {
-    name: "config",
-    description: "Show config dialog",
-    category: "General",
-    hidden: true,
-    handler: async (args, ctx) => {
-      ctx.openConfigDialog?.();
-    },
-  },
-  {
-    name: "models",
-    description: "Show available AI models",
-    category: "General",
-    handler: async (args, ctx) => {
-      ctx.openModelDialog?.();
-    },
-  },
-  {
-    name: "providers",
-    description: "Manage AI providers and API keys",
-    category: "General",
-    handler: async (args, ctx) => {
-      ctx.openProvidersDialog?.();
-    },
-  },
-  {
     name: "sessions",
     aliases: ["s"],
     description: "Browse previous sessions",
@@ -246,29 +226,51 @@ export const commands: CommandConfig[] = [
   {
     name: "new",
     description: "Start a new operator session",
-    category: "Session",
+    category: "Pentesting",
     handler: async (args, ctx) => {
       ctx.navigate({ type: "operator", nonce: Date.now() });
     },
   },
+
+  // — Configuration —
   {
-    name: "chat",
-    aliases: ["c"],
-    description: "Open the Chat TUI interface",
-    category: "General",
-    hidden: true,
+    name: "auth",
+    description: "Connect to Pensar Console for managed inference",
+    category: "Configuration",
     handler: async (args, ctx) => {
-      ctx.navigate({
-        type: "base",
-        path: "home",
-      });
+      ctx.openAuthDialog?.();
+    },
+  },
+  {
+    name: "credits",
+    aliases: ["buy"],
+    description: "Buy credits / check balance",
+    category: "Configuration",
+    handler: async (args, ctx) => {
+      ctx.openCreditsDialog?.();
+    },
+  },
+  {
+    name: "models",
+    description: "Show available AI models",
+    category: "Configuration",
+    handler: async (args, ctx) => {
+      ctx.openModelDialog?.();
+    },
+  },
+  {
+    name: "providers",
+    description: "Manage AI providers and API keys",
+    category: "Configuration",
+    handler: async (args, ctx) => {
+      ctx.openProvidersDialog?.();
     },
   },
   {
     name: "themes",
     aliases: ["theme"],
     description: "Manage application themes",
-    category: "General",
+    category: "Configuration",
     options: [
       {
         name: "<name>",
@@ -311,11 +313,40 @@ export const commands: CommandConfig[] = [
       ctx.openThemeDialog?.();
     },
   },
+
+  // — General —
+  {
+    name: "skills",
+    description: "View installed skills",
+    category: "General",
+    handler: async (args, ctx) => {
+      ctx.openSkillsDialog?.(args[0]);
+    },
+  },
+  {
+    name: "help",
+    description: "Show help dialog",
+    category: "General",
+    handler: async (args, ctx) => {
+      ctx.openHelpDialog?.();
+    },
+  },
+  {
+    name: "exit",
+    aliases: ["quit", "q"],
+    description: "Exit the application",
+    category: "General",
+    handler: async () => {
+      process.kill(process.pid, "SIGINT");
+    },
+  },
+
+  // — Hidden (functional but not shown in autocomplete/help) —
   {
     name: "tools",
     aliases: ["t"],
     description: "View and manage active tools (session only)",
-    category: "Session",
+    category: "General",
     hidden: true,
     handler: async (args, ctx) => {
       // This command is handled by the session view when in a session
@@ -327,57 +358,6 @@ export const commands: CommandConfig[] = [
       // The session view will detect this command via route options
     },
   },
-
-  {
-    name: "exit",
-    aliases: ["quit", "q"],
-    description: "Exit the application",
-    category: "General",
-    handler: async () => {
-      process.kill(process.pid, "SIGINT");
-    },
-  },
-  {
-    name: "auth",
-    description: "Connect to Pensar Console for managed inference",
-    category: "General",
-    handler: async (args, ctx) => {
-      ctx.openAuthDialog?.();
-    },
-  },
-
-  {
-    name: "credits",
-    aliases: ["buy"],
-    description: "Buy credits / check balance",
-    category: "General",
-    handler: async (args, ctx) => {
-      ctx.openCreditsDialog?.();
-    },
-  },
-
-  {
-    name: "skills",
-    description: "View installed skills",
-    category: "Skills",
-    handler: async (args, ctx) => {
-      ctx.navigate({
-        type: "base",
-        path: "skills",
-      });
-    },
-  },
-  // Add more commands here...
-  // Example:
-  // {
-  //   name: "clear",
-  //   aliases: ["cls"],
-  //   description: "Clear the screen",
-  //   category: "General",
-  //   handler: async (args, ctx) => {
-  //     ctx.clearScreen?.();
-  //   },
-  // },
 ];
 
 /**
