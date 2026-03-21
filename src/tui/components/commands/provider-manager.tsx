@@ -191,7 +191,10 @@ function OnboardingChoice({
       <DialogLayout
         title="Get Started"
         escLabel={null}
-        footerActions={[{ key: "Enter", label: "select", variant: "primary" }]}
+        footerActions={[
+          { key: "↑/↓", label: "browse" },
+          { key: "Enter", label: "select", variant: "primary" },
+        ]}
       >
         <box>
           <text fg={colors.textMuted}>
