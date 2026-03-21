@@ -69,7 +69,21 @@ export default function ProviderSelection({
         footerActions={[{ key: "Enter", label: "select", variant: "primary" }]}
       >
         {/* Provider List */}
-        <box flexDirection="column" gap={1}>
+        <scrollbox
+          style={{
+            rootOptions: {
+              flexShrink: 1,
+              width: "100%",
+              maxHeight: providerList.length * 2,
+            },
+            contentOptions: {
+              flexDirection: "column",
+              gap: 1,
+            },
+          }}
+          stickyScroll={false}
+          focused={true}
+        >
           {providerList.map((provider, index) => {
             const isHighlighted = index === highlightedIndex;
             const configured = configuredProviders.find(
@@ -101,7 +115,7 @@ export default function ProviderSelection({
               </box>
             );
           })}
-        </box>
+        </scrollbox>
       </DialogLayout>
     </Dialog>
   );

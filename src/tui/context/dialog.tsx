@@ -37,6 +37,7 @@ export function Dialog({
   return (
     <box
       onMouseUp={async () => {
+        if (hideEsc) return;
         if (renderer.getSelection()) return;
         onClose?.();
       }}
