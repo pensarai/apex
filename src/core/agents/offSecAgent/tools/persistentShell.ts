@@ -23,6 +23,7 @@ export class PersistentShell {
   private alive = false;
   private disposed = false;
   private readonly cwd?: string;
+  private readonly extraEnv?: Record<string, string>;
 
   /** Allows cancelCurrentCommand() to force-resolve the running execute(). */
   private pendingCancel: ((result: ShellExecuteResult) => void) | null = null;
@@ -30,8 +31,9 @@ export class PersistentShell {
   private pendingStdout: (() => string) | null = null;
   private pendingStderr: (() => string) | null = null;
 
-  constructor(opts?: { cwd?: string }) {
+  constructor(opts?: { cwd?: string; env?: Record<string, string> }) {
     this.cwd = opts?.cwd;
+    this.extraEnv = opts?.env;
   }
 
   private spawn(): void {
@@ -48,6 +50,7 @@ export class PersistentShell {
       detached: process.platform !== "win32",
       env: {
         ...process.env,
+        ...this.extraEnv,
         PS1: "",
         // Hint to CLI tools that we're non-interactive
         CI: "true",
