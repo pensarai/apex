@@ -8,8 +8,12 @@ describe("THREAT_MODEL_INSTRUCTIONS", () => {
   });
 
   it("contains all eight analysis phases", () => {
-    expect(THREAT_MODEL_INSTRUCTIONS).toContain("Phase 1: Application Identity");
-    expect(THREAT_MODEL_INSTRUCTIONS).toContain("Phase 2: Features & Capabilities");
+    expect(THREAT_MODEL_INSTRUCTIONS).toContain(
+      "Phase 1: Application Identity",
+    );
+    expect(THREAT_MODEL_INSTRUCTIONS).toContain(
+      "Phase 2: Features & Capabilities",
+    );
     expect(THREAT_MODEL_INSTRUCTIONS).toContain("Phase 3: Trust Boundaries");
     expect(THREAT_MODEL_INSTRUCTIONS).toContain("Phase 4: Attacker Profiles");
     expect(THREAT_MODEL_INSTRUCTIONS).toContain("Phase 5: Deployment Model");
