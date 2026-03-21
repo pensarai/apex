@@ -504,22 +504,6 @@ export default function WebWizard({
         }));
         return;
       }
-      // Headers mode cycle
-      if (focusedField === headersModeIndex && advancedExpanded) {
-        key.preventDefault();
-        const modes: Array<"none" | "default" | "custom"> = [
-          "none",
-          "default",
-          "custom",
-        ];
-        const currentIndex = modes.indexOf(state.headers.mode);
-        const newIndex = (currentIndex + 1) % modes.length;
-        setState((prev) => ({
-          ...prev,
-          headers: { ...prev.headers, mode: modes[newIndex]! },
-        }));
-        return;
-      }
     }
 
     // Up/Down arrows — navigate fields or control toggle/cycle/picker fields
@@ -527,6 +511,51 @@ export default function WebWizard({
       key.preventDefault();
       const delta = key.name === "down" ? 1 : -1;
 
+      // Source code access toggle
+      if (focusedField === 1) {
+        setState((prev) => ({
+          ...prev,
+          sourceCodeAccess: !prev.sourceCodeAccess,
+        }));
+        return;
+      }
+      // Strict scope toggle
+      if (focusedField === scopeStrictIndex && advancedExpanded) {
+        setState((prev) => ({
+          ...prev,
+          scope: { ...prev.scope, strictScope: !prev.scope.strictScope },
+        }));
+        return;
+      }
+      // Enumerate subdomains toggle
+      if (focusedField === scopeSubdomainIndex && advancedExpanded) {
+        setState((prev) => ({
+          ...prev,
+          scope: {
+            ...prev.scope,
+            enumerateSubdomains: !prev.scope.enumerateSubdomains,
+          },
+        }));
+        return;
+      }
+      // Headers mode cycle
+      if (focusedField === headersModeIndex && advancedExpanded) {
+        const modes: Array<"none" | "default" | "custom"> = [
+          "none",
+          "default",
+          "custom",
+        ];
+        const currentIndex = modes.indexOf(state.headers.mode);
+        const newIndex =
+          key.name === "up"
+            ? (currentIndex - 1 + modes.length) % modes.length
+            : (currentIndex + 1) % modes.length;
+        setState((prev) => ({
+          ...prev,
+          headers: { ...prev.headers, mode: modes[newIndex]! },
+        }));
+        return;
+      }
       // Model selection
       if (
         focusedField === modelPickerIndex &&
@@ -704,7 +733,9 @@ export default function WebWizard({
                 {state.sourceCodeAccess ? "\u25CF Enabled" : "\u25CB Disabled"}
               </text>
               {focusedField === 1 && (
-                <text fg={colors.textMuted}>(Space to toggle)</text>
+                <text fg={colors.textMuted}>
+                  ({"↑"}/{"↓"} to toggle)
+                </text>
               )}
             </box>
             {state.sourceCodeAccess && (
@@ -833,7 +864,7 @@ export default function WebWizard({
                 <box id={`field-${authPasswordIndex}`}>
                   <Input
                     label="Password"
-                    placeholder="\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"
+                    placeholder="••••••••"
                     value={state.auth.password}
                     onInput={(v) =>
                       setState((prev) => ({
@@ -900,7 +931,7 @@ export default function WebWizard({
                   <box flexDirection="column" paddingLeft={2}>
                     {state.scope.allowedHosts.map((h, i) => (
                       <text key={i} fg={colors.textMuted}>
-                        \u2022 {h}
+                        • {h}
                       </text>
                     ))}
                   </box>
@@ -919,7 +950,7 @@ export default function WebWizard({
                   <box flexDirection="column" paddingLeft={2}>
                     {state.scope.allowedPorts.map((p, i) => (
                       <text key={i} fg={colors.textMuted}>
-                        \u2022 {p}
+                        • {p}
                       </text>
                     ))}
                   </box>
@@ -950,7 +981,7 @@ export default function WebWizard({
                       : "\u25CB Disabled"}
                   </text>
                   {focusedField === scopeStrictIndex && (
-                    <text fg={colors.textMuted}>(Space to toggle)</text>
+                    <text fg={colors.textMuted}>(↑/↓ to toggle)</text>
                   )}
                 </box>
                 <box
@@ -979,7 +1010,7 @@ export default function WebWizard({
                       : "\u25CB Disabled"}
                   </text>
                   {focusedField === scopeSubdomainIndex && (
-                    <text fg={colors.textMuted}>(Space to toggle)</text>
+                    <text fg={colors.textMuted}>(↑/↓ to toggle)</text>
                   )}
                 </box>
               </box>
@@ -1024,7 +1055,7 @@ export default function WebWizard({
                   </text>
                 </box>
                 {focusedField === headersModeIndex && (
-                  <text fg={colors.textMuted}>Space to cycle</text>
+                  <text fg={colors.textMuted}>Use ↑/↓ to select</text>
                 )}
 
                 {state.headers.mode === "custom" && (
@@ -1052,7 +1083,7 @@ export default function WebWizard({
                         {Object.entries(state.headers.customHeaders).map(
                           ([k, v]) => (
                             <text key={k} fg={colors.textMuted}>
-                              \u2022 {k}: {v}
+                              • {k}: {v}
                             </text>
                           ),
                         )}
@@ -1131,8 +1162,8 @@ export default function WebWizard({
 
                 {focusedField === modelPickerIndex && (
                   <text fg={colors.textMuted}>
-                    \u2191/\u2193 select \u2022 Type to search \u2022
-                    \u2190/\u2192 collapse/expand
+                    ↑/↓ select • Type to search •
+                    ←/→ collapse/expand
                   </text>
                 )}
               </box>
@@ -1147,7 +1178,7 @@ export default function WebWizard({
                 label: `Start Pentest (${modeLabel})`,
                 variant: "primary",
               },
-              { key: "\u2191/\u2193", label: "Navigate Fields" },
+              { key: "↑/↓", label: "Navigate Fields" },
             ]}
           />
         </box>
