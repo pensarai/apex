@@ -1057,12 +1057,6 @@ export default function OperatorDashboard({
   const initialMessageSentRef = useRef(false);
   const runAgentRef = useRef(runAgent);
   runAgentRef.current = runAgent;
-  useEffect(() => {
-    if (!loading && initialMessage && !initialMessageSentRef.current) {
-      initialMessageSentRef.current = true;
-      runAgentRef.current(initialMessage);
-    }
-  }, [loading, initialMessage]);
 
   // Auto-send queued messages when agent becomes idle
   useEffect(() => {
@@ -1110,11 +1104,6 @@ export default function OperatorDashboard({
           return;
         }
         case "run-schema-command": {
-          if (!session) {
-            setError("No active session — run a command first to create one.");
-            return;
-          }
-
           const gen = ++generationRef.current;
           setStatus("running");
           setThinking(true);
@@ -1133,6 +1122,21 @@ export default function OperatorDashboard({
               createdAt: new Date(),
             },
           ]);
+
+          // Create a session if one doesn't exist yet (e.g. launched from home)
+          let activeSession = session ?? sessionRef.current;
+          if (!activeSession) {
+            activeSession = await sessions.create({
+              name: action.command.name,
+              targets: [],
+              config: {
+                mode: "operator",
+                codebasePath: process.cwd(),
+              },
+            });
+            sessionRef.current = activeSession;
+            setSession(activeSession);
+          }
 
           const schemaCallbacks = {
             onTextDelta: (d: { text: string }) => {
@@ -1173,9 +1177,9 @@ export default function OperatorDashboard({
           try {
             const output = await executeSchemaBackedCommand({
               command: action.command,
-              cwd: session.rootPath,
+              cwd: process.cwd(),
               model: model.id,
-              session,
+              session: activeSession,
               authConfig: buildAuthConfig(config.data),
               abortSignal: controller.signal,
               callbacks: schemaCallbacks,
@@ -1240,6 +1244,20 @@ export default function OperatorDashboard({
       setIsExecuting,
     ],
   );
+
+  // Auto-send initialMessage — route slash commands through handleCommandExecute
+  const handleCommandExecuteRef = useRef(handleCommandExecute);
+  handleCommandExecuteRef.current = handleCommandExecute;
+  useEffect(() => {
+    if (!loading && initialMessage && !initialMessageSentRef.current) {
+      initialMessageSentRef.current = true;
+      if (initialMessage.startsWith("/")) {
+        handleCommandExecuteRef.current(initialMessage);
+      } else {
+        runAgentRef.current(initialMessage);
+      }
+    }
+  }, [loading, initialMessage]);
 
   const handleAbort = useCallback(() => {
     if (!abortControllerRef.current) return;

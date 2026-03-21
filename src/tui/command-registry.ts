@@ -215,6 +215,23 @@ export const commands: CommandConfig[] = [
     },
   },
   {
+    name: "threat-model",
+    aliases: ["tm"],
+    description: "Generate a threat model from source code analysis",
+    category: "Pentesting",
+    options: [
+      { name: "--model", valueHint: "<model>", description: "AI model to use" },
+    ],
+    handler: async (args, ctx) => {
+      ctx.navigate({
+        type: "operator",
+        nonce: Date.now(),
+        initialMessage: `/threat-model ${args.join(" ")}`.trim(),
+        initialConfig: { requireApproval: true },
+      });
+    },
+  },
+  {
     name: "sessions",
     aliases: ["s"],
     description: "Browse previous sessions",
