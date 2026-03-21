@@ -192,8 +192,8 @@ function OnboardingChoice({
         title="Get Started"
         escLabel={null}
         footerActions={[
-          { key: "↑/↓", label: "browse" },
           { key: "Enter", label: "select", variant: "primary" },
+          { key: "↑/↓", label: "browse" },
         ]}
       >
         <box>
