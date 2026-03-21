@@ -160,6 +160,40 @@ describe("routeCommand", () => {
       command: "/unknown-cmd",
     });
   });
+
+  it("routes /threat-model to run-skill when skill is registered", () => {
+    const resolveSkill = (cmd: string) =>
+      cmd === "/threat-model"
+        ? "Generate application-centric threat model"
+        : null;
+    const result = routeCommand("/threat-model", resolveSkill);
+    expect(result).toEqual({
+      type: "run-skill",
+      slug: "threat-model",
+      autopilot: false,
+    });
+  });
+
+  it("routes /threat-model --autopilot with autopilot flag", () => {
+    const resolveSkill = (cmd: string) =>
+      cmd === "/threat-model"
+        ? "Generate application-centric threat model"
+        : null;
+    const result = routeCommand("/threat-model --autopilot", resolveSkill);
+    expect(result).toEqual({
+      type: "run-skill",
+      slug: "threat-model",
+      autopilot: true,
+    });
+  });
+
+  it("falls back to execute-command for /threat-model when skill is not registered", () => {
+    const result = routeCommand("/threat-model", noSkill);
+    expect(result).toEqual({
+      type: "execute-command",
+      command: "/threat-model",
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
