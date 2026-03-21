@@ -1,5 +1,6 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useKeyboard } from "@opentui/react";
+import { ScrollBoxRenderable } from "@opentui/core";
 import Input from "../input";
 import { useConfig } from "../../context/config";
 import { useAgent } from "../../context/agent";
@@ -16,6 +17,7 @@ import {
 } from "../../../util/url";
 import { wrapThreatModelContent } from "../../../core/utils/prompt";
 import { combinePromptParts } from "../../utils/command-flags";
+import { scrollToChild } from "../../utils/scroll";
 
 // Wizard state interface
 interface WizardState {
@@ -242,15 +244,18 @@ export default function WebWizard({
   const [error, setError] = useState<string | null>(null);
   const [targetError, setTargetError] = useState<string | null>(null);
 
+  // Scrollbox ref for scroll-to-focused
+  const scrollboxRef = useRef<ScrollBoxRenderable | null>(null);
+
   // --- Field index computation ---
   // Fields:
   //   0: Target URL
   //   1: Source Code Access toggle
   //   2: Cwd path (only when source code access enabled)
-  //   next: Prompt
-  //   next: Threat Model
   //   next: Advanced toggle
   //   --- when advanced expanded ---
+  //   next: Prompt
+  //   next: Threat Model
   //   next: Auth - Login URL
   //   next: Auth - Username
   //   next: Auth - Password
@@ -265,12 +270,12 @@ export default function WebWizard({
   //   next: Model picker
 
   const cwdFieldIndex = state.sourceCodeAccess ? 2 : -1;
-  const promptFieldIndex = state.sourceCodeAccess ? 3 : 2;
-  const threatModelFieldIndex = promptFieldIndex + 1;
-  const advancedToggleIndex = threatModelFieldIndex + 1;
+  const advancedToggleIndex = state.sourceCodeAccess ? 3 : 2;
 
   // Advanced sub-field indices (only valid when advancedExpanded)
-  const authLoginUrlIndex = advancedToggleIndex + 1;
+  const promptFieldIndex = advancedToggleIndex + 1;
+  const threatModelFieldIndex = promptFieldIndex + 1;
+  const authLoginUrlIndex = threatModelFieldIndex + 1;
   const authUsernameIndex = authLoginUrlIndex + 1;
   const authPasswordIndex = authUsernameIndex + 1;
   const authInstructionsIndex = authPasswordIndex + 1;
@@ -291,6 +296,11 @@ export default function WebWizard({
   const totalFields = advancedExpanded
     ? modelPickerIndex + 1
     : advancedToggleIndex + 1;
+
+  // Scroll to the focused field when it changes
+  useEffect(() => {
+    scrollToChild(scrollboxRef.current, `field-${focusedField}`);
+  }, [focusedField]);
 
   // Create session and navigate to session route
   async function createSessionAndNavigate() {
@@ -496,30 +506,19 @@ export default function WebWizard({
       }
     }
 
-    // Tab/Shift+Tab — navigate through flat field list
-    if (key.name === "tab") {
-      key.preventDefault();
-      if (key.shift) {
-        setFocusedField((prev) => Math.max(0, prev - 1));
-      } else {
-        setFocusedField((prev) => {
-          const next = prev + 1;
-          // If we're moving past the advanced toggle and it's collapsed, stop there
-          if (prev === advancedToggleIndex && !advancedExpanded) {
-            // Auto-expand advanced when tabbing past it
-            setAdvancedExpanded(true);
-            return next;
-          }
-          return Math.min(totalFields - 1, next);
-        });
-      }
-      return;
-    }
-
-    // Arrow keys
+    // Up/Down arrows — navigate fields or control toggle/cycle/picker fields
     if (key.name === "up" || key.name === "down") {
       key.preventDefault();
+      const delta = key.name === "down" ? 1 : -1;
 
+      // Source code access toggle
+      if (focusedField === 1) {
+        setState((prev) => ({
+          ...prev,
+          sourceCodeAccess: !prev.sourceCodeAccess,
+        }));
+        return;
+      }
       // Strict scope toggle
       if (focusedField === scopeStrictIndex && advancedExpanded) {
         setState((prev) => ({
@@ -536,14 +535,6 @@ export default function WebWizard({
             ...prev.scope,
             enumerateSubdomains: !prev.scope.enumerateSubdomains,
           },
-        }));
-        return;
-      }
-      // Source code access toggle
-      if (focusedField === 1) {
-        setState((prev) => ({
-          ...prev,
-          sourceCodeAccess: !prev.sourceCodeAccess,
         }));
         return;
       }
@@ -590,6 +581,24 @@ export default function WebWizard({
         }
         return;
       }
+      // Advanced toggle: down expands and enters, up moves to previous field
+      if (focusedField === advancedToggleIndex) {
+        if (key.name === "down" && !advancedExpanded) {
+          setAdvancedExpanded(true);
+          setFocusedField(advancedToggleIndex + 1);
+        } else {
+          setFocusedField((prev) =>
+            Math.max(0, Math.min(totalFields - 1, prev + delta)),
+          );
+        }
+        return;
+      }
+
+      // Default: navigate between fields
+      setFocusedField((prev) =>
+        Math.max(0, Math.min(totalFields - 1, prev + delta)),
+      );
+      return;
     }
 
     // Model section: handle typing for search, backspace, left/right
@@ -664,6 +673,7 @@ export default function WebWizard({
     <Dialog size="large" onClose={onClose}>
       <box flexDirection="column" width="100%" height="100%">
         <scrollbox
+          ref={scrollboxRef}
           style={{
             rootOptions: { flexGrow: 1, width: "100%" },
             contentOptions: {
@@ -688,29 +698,31 @@ export default function WebWizard({
           {error && <text fg={colors.error}>Error: {error}</text>}
 
           {/* Target URL */}
-          <Input
-            label="Target URL"
-            description="e.g., https://example.com"
-            placeholder="https://example.com"
-            value={state.target}
-            onInput={(v) => {
-              setTargetError(null);
-              setState((prev) => ({ ...prev, target: v }));
-            }}
-            onPaste={(event) => {
-              const cleaned = String(event.text).replace(/\r?\n/g, " ");
-              setTargetError(null);
-              setState((prev) => ({
-                ...prev,
-                target: prev.target + cleaned,
-              }));
-            }}
-            focused={focusedField === 0}
-          />
+          <box id={`field-${0}`}>
+            <Input
+              label="Target URL"
+              description="e.g., https://example.com"
+              placeholder="https://example.com"
+              value={state.target}
+              onInput={(v) => {
+                setTargetError(null);
+                setState((prev) => ({ ...prev, target: v }));
+              }}
+              onPaste={(event) => {
+                const cleaned = String(event.text).replace(/\r?\n/g, " ");
+                setTargetError(null);
+                setState((prev) => ({
+                  ...prev,
+                  target: prev.target + cleaned,
+                }));
+              }}
+              focused={focusedField === 0}
+            />
+          </box>
           {targetError && <text fg={colors.error}>{targetError}</text>}
 
           {/* Source Code Access */}
-          <box flexDirection="column" gap={1}>
+          <box id={`field-${1}`} flexDirection="column" gap={1}>
             <box flexDirection="row" gap={1}>
               <text fg={focusedField === 1 ? colors.primary : colors.textMuted}>
                 Source Code Access:
@@ -721,57 +733,27 @@ export default function WebWizard({
                 {state.sourceCodeAccess ? "\u25CF Enabled" : "\u25CB Disabled"}
               </text>
               {focusedField === 1 && (
-                <text fg={colors.textMuted}>(Space to toggle)</text>
+                <text fg={colors.textMuted}>
+                  ({"\u2191"}/{"\u2193"} to toggle)
+                </text>
               )}
             </box>
             {state.sourceCodeAccess && (
-              <Input
-                label="Codebase Path"
-                description="Path to the source code directory"
-                placeholder={process.cwd()}
-                value={state.cwd}
-                onInput={(v) => setState((prev) => ({ ...prev, cwd: v }))}
-                focused={focusedField === cwdFieldIndex}
-              />
+              <box id={`field-${cwdFieldIndex}`}>
+                <Input
+                  label="Codebase Path"
+                  description="Path to the source code directory"
+                  placeholder={process.cwd()}
+                  value={state.cwd}
+                  onInput={(v) => setState((prev) => ({ ...prev, cwd: v }))}
+                  focused={focusedField === cwdFieldIndex}
+                />
+              </box>
             )}
           </box>
 
-          {/* Prompt */}
-          <Input
-            label="Prompt"
-            description="Guidance for the pentest agent (text or @filepath)"
-            placeholder="Focus on authentication bypass..."
-            value={state.prompt}
-            onInput={(v) => setState((prev) => ({ ...prev, prompt: v }))}
-            onPaste={(event) => {
-              const cleaned = String(event.text).replace(/\r?\n/g, " ");
-              setState((prev) => ({
-                ...prev,
-                prompt: prev.prompt + cleaned,
-              }));
-            }}
-            focused={focusedField === promptFieldIndex}
-          />
-
-          {/* Threat Model */}
-          <Input
-            label="Threat Model"
-            description="Threat model file or text (text or @filepath)"
-            placeholder="@./threat-model.md"
-            value={state.threatModel}
-            onInput={(v) => setState((prev) => ({ ...prev, threatModel: v }))}
-            onPaste={(event) => {
-              const cleaned = String(event.text).replace(/\r?\n/g, " ");
-              setState((prev) => ({
-                ...prev,
-                threatModel: prev.threatModel + cleaned,
-              }));
-            }}
-            focused={focusedField === threatModelFieldIndex}
-          />
-
           {/* Advanced toggle */}
-          <box flexDirection="row" gap={1}>
+          <box id={`field-${advancedToggleIndex}`} flexDirection="row" gap={1}>
             <text
               fg={
                 focusedField === advancedToggleIndex
@@ -788,101 +770,154 @@ export default function WebWizard({
 
           {advancedExpanded && (
             <>
-              {/* Auth fields */}
-              <box flexDirection="column" gap={1} paddingLeft={2}>
-                <text fg={colors.textMuted}>Authentication</text>
+              {/* Prompt */}
+              <box id={`field-${promptFieldIndex}`}>
                 <Input
-                  label="Login URL"
-                  placeholder="https://example.com/login"
-                  value={state.auth.loginUrl}
-                  onInput={(v) =>
-                    setState((prev) => ({
-                      ...prev,
-                      auth: { ...prev.auth, loginUrl: v },
-                    }))
-                  }
+                  label="Prompt"
+                  description="Guidance for the pentest agent (text or @filepath)"
+                  placeholder="Focus on authentication bypass..."
+                  value={state.prompt}
+                  onInput={(v) => setState((prev) => ({ ...prev, prompt: v }))}
                   onPaste={(event) => {
                     const cleaned = String(event.text).replace(/\r?\n/g, " ");
                     setState((prev) => ({
                       ...prev,
-                      auth: {
-                        ...prev.auth,
-                        loginUrl: prev.auth.loginUrl + cleaned,
-                      },
+                      prompt: prev.prompt + cleaned,
                     }));
                   }}
-                  focused={focusedField === authLoginUrlIndex}
-                />
-                <Input
-                  label="Username"
-                  placeholder="admin"
-                  value={state.auth.username}
-                  onInput={(v) =>
-                    setState((prev) => ({
-                      ...prev,
-                      auth: { ...prev.auth, username: v },
-                    }))
-                  }
-                  onPaste={(event) => {
-                    const cleaned = String(event.text).replace(/\r?\n/g, " ");
-                    setState((prev) => ({
-                      ...prev,
-                      auth: {
-                        ...prev.auth,
-                        username: prev.auth.username + cleaned,
-                      },
-                    }));
-                  }}
-                  focused={focusedField === authUsernameIndex}
-                />
-                <Input
-                  label="Password"
-                  placeholder="\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"
-                  value={state.auth.password}
-                  onInput={(v) =>
-                    setState((prev) => ({
-                      ...prev,
-                      auth: { ...prev.auth, password: v },
-                    }))
-                  }
-                  onPaste={(event) => {
-                    const cleaned = String(event.text).replace(/\r?\n/g, " ");
-                    setState((prev) => ({
-                      ...prev,
-                      auth: {
-                        ...prev.auth,
-                        password: prev.auth.password + cleaned,
-                      },
-                    }));
-                  }}
-                  focused={focusedField === authPasswordIndex}
-                />
-                <Input
-                  label="Auth Instructions"
-                  placeholder="Use OAuth flow, extract bearer token..."
-                  value={state.auth.instructions}
-                  onInput={(v) =>
-                    setState((prev) => ({
-                      ...prev,
-                      auth: { ...prev.auth, instructions: v },
-                    }))
-                  }
-                  onPaste={(event) => {
-                    const cleaned = String(event.text).replace(/\r?\n/g, " ");
-                    setState((prev) => ({
-                      ...prev,
-                      auth: {
-                        ...prev.auth,
-                        instructions: prev.auth.instructions + cleaned,
-                      },
-                    }));
-                  }}
-                  focused={focusedField === authInstructionsIndex}
+                  focused={focusedField === promptFieldIndex}
                 />
               </box>
 
-              {/* Scope fields */}
+              {/* Threat Model */}
+              <box id={`field-${threatModelFieldIndex}`}>
+                <Input
+                  label="Threat Model"
+                  description="Threat model file or text (text or @filepath)"
+                  placeholder="@./threat-model.md"
+                  value={state.threatModel}
+                  onInput={(v) =>
+                    setState((prev) => ({ ...prev, threatModel: v }))
+                  }
+                  onPaste={(event) => {
+                    const cleaned = String(event.text).replace(/\r?\n/g, " ");
+                    setState((prev) => ({
+                      ...prev,
+                      threatModel: prev.threatModel + cleaned,
+                    }));
+                  }}
+                  focused={focusedField === threatModelFieldIndex}
+                />
+              </box>
+
+              {/* Auth fields */}
               <box flexDirection="column" gap={1} paddingLeft={2}>
+                <text fg={colors.textMuted}>Authentication</text>
+                <box id={`field-${authLoginUrlIndex}`}>
+                  <Input
+                    label="Login URL"
+                    placeholder="https://example.com/login"
+                    value={state.auth.loginUrl}
+                    onInput={(v) =>
+                      setState((prev) => ({
+                        ...prev,
+                        auth: { ...prev.auth, loginUrl: v },
+                      }))
+                    }
+                    onPaste={(event) => {
+                      const cleaned = String(event.text).replace(/\r?\n/g, " ");
+                      setState((prev) => ({
+                        ...prev,
+                        auth: {
+                          ...prev.auth,
+                          loginUrl: prev.auth.loginUrl + cleaned,
+                        },
+                      }));
+                    }}
+                    focused={focusedField === authLoginUrlIndex}
+                  />
+                </box>
+                <box id={`field-${authUsernameIndex}`}>
+                  <Input
+                    label="Username"
+                    placeholder="admin"
+                    value={state.auth.username}
+                    onInput={(v) =>
+                      setState((prev) => ({
+                        ...prev,
+                        auth: { ...prev.auth, username: v },
+                      }))
+                    }
+                    onPaste={(event) => {
+                      const cleaned = String(event.text).replace(/\r?\n/g, " ");
+                      setState((prev) => ({
+                        ...prev,
+                        auth: {
+                          ...prev.auth,
+                          username: prev.auth.username + cleaned,
+                        },
+                      }));
+                    }}
+                    focused={focusedField === authUsernameIndex}
+                  />
+                </box>
+                <box id={`field-${authPasswordIndex}`}>
+                  <Input
+                    label="Password"
+                    placeholder="\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"
+                    value={state.auth.password}
+                    onInput={(v) =>
+                      setState((prev) => ({
+                        ...prev,
+                        auth: { ...prev.auth, password: v },
+                      }))
+                    }
+                    onPaste={(event) => {
+                      const cleaned = String(event.text).replace(/\r?\n/g, " ");
+                      setState((prev) => ({
+                        ...prev,
+                        auth: {
+                          ...prev.auth,
+                          password: prev.auth.password + cleaned,
+                        },
+                      }));
+                    }}
+                    focused={focusedField === authPasswordIndex}
+                  />
+                </box>
+                <box id={`field-${authInstructionsIndex}`}>
+                  <Input
+                    label="Auth Instructions"
+                    placeholder="Use OAuth flow, extract bearer token..."
+                    value={state.auth.instructions}
+                    onInput={(v) =>
+                      setState((prev) => ({
+                        ...prev,
+                        auth: { ...prev.auth, instructions: v },
+                      }))
+                    }
+                    onPaste={(event) => {
+                      const cleaned = String(event.text).replace(/\r?\n/g, " ");
+                      setState((prev) => ({
+                        ...prev,
+                        auth: {
+                          ...prev.auth,
+                          instructions: prev.auth.instructions + cleaned,
+                        },
+                      }));
+                    }}
+                    focused={focusedField === authInstructionsIndex}
+                  />
+                </box>
+              </box>
+
+              {/* Scope fields */}
+              <box
+                id={`field-${scopeHostIndex}`}
+                flexDirection="column"
+                gap={1}
+                paddingLeft={2}
+              >
                 <text fg={colors.textMuted}>Scope Constraints</text>
                 <Input
                   label="Add Allowed Host"
@@ -901,14 +936,16 @@ export default function WebWizard({
                     ))}
                   </box>
                 )}
-                <Input
-                  label="Add Allowed Port"
-                  description="Press Enter to add"
-                  placeholder="443"
-                  value={portInput}
-                  onInput={setPortInput}
-                  focused={focusedField === scopePortIndex}
-                />
+                <box id={`field-${scopePortIndex}`}>
+                  <Input
+                    label="Add Allowed Port"
+                    description="Press Enter to add"
+                    placeholder="443"
+                    value={portInput}
+                    onInput={setPortInput}
+                    focused={focusedField === scopePortIndex}
+                  />
+                </box>
                 {state.scope.allowedPorts.length > 0 && (
                   <box flexDirection="column" paddingLeft={2}>
                     {state.scope.allowedPorts.map((p, i) => (
@@ -918,7 +955,11 @@ export default function WebWizard({
                     ))}
                   </box>
                 )}
-                <box flexDirection="row" gap={1}>
+                <box
+                  id={`field-${scopeStrictIndex}`}
+                  flexDirection="row"
+                  gap={1}
+                >
                   <text
                     fg={
                       focusedField === scopeStrictIndex
@@ -943,7 +984,11 @@ export default function WebWizard({
                     <text fg={colors.textMuted}>(\u2191/\u2193 to toggle)</text>
                   )}
                 </box>
-                <box flexDirection="row" gap={1}>
+                <box
+                  id={`field-${scopeSubdomainIndex}`}
+                  flexDirection="row"
+                  gap={1}
+                >
                   <text
                     fg={
                       focusedField === scopeSubdomainIndex
@@ -971,7 +1016,12 @@ export default function WebWizard({
               </box>
 
               {/* Headers */}
-              <box flexDirection="column" gap={1} paddingLeft={2}>
+              <box
+                id={`field-${headersModeIndex}`}
+                flexDirection="column"
+                gap={1}
+                paddingLeft={2}
+              >
                 <text fg={colors.textMuted}>Request Headers</text>
                 <box flexDirection="column">
                   <text
@@ -1010,20 +1060,24 @@ export default function WebWizard({
 
                 {state.headers.mode === "custom" && (
                   <box flexDirection="column" gap={1}>
-                    <Input
-                      label="Header Name"
-                      placeholder="X-Custom-Header"
-                      value={headerNameInput}
-                      onInput={setHeaderNameInput}
-                      focused={focusedField === headersNameIndex}
-                    />
-                    <Input
-                      label="Header Value"
-                      placeholder="value"
-                      value={headerValueInput}
-                      onInput={setHeaderValueInput}
-                      focused={focusedField === headersValueIndex}
-                    />
+                    <box id={`field-${headersNameIndex}`}>
+                      <Input
+                        label="Header Name"
+                        placeholder="X-Custom-Header"
+                        value={headerNameInput}
+                        onInput={setHeaderNameInput}
+                        focused={focusedField === headersNameIndex}
+                      />
+                    </box>
+                    <box id={`field-${headersValueIndex}`}>
+                      <Input
+                        label="Header Value"
+                        placeholder="value"
+                        value={headerValueInput}
+                        onInput={setHeaderValueInput}
+                        focused={focusedField === headersValueIndex}
+                      />
+                    </box>
                     {Object.keys(state.headers.customHeaders).length > 0 && (
                       <box flexDirection="column">
                         {Object.entries(state.headers.customHeaders).map(
@@ -1040,7 +1094,12 @@ export default function WebWizard({
               </box>
 
               {/* Model picker */}
-              <box flexDirection="column" gap={0} paddingLeft={2}>
+              <box
+                id={`field-${modelPickerIndex}`}
+                flexDirection="column"
+                gap={0}
+                paddingLeft={2}
+              >
                 <text fg={colors.textMuted}>
                   AI Model ({model.name}) [
                   {isModelUserSelected ? "user" : "default"}]
@@ -1119,7 +1178,7 @@ export default function WebWizard({
                 label: `Start Pentest (${modeLabel})`,
                 variant: "primary",
               },
-              { key: "Tab", label: "Navigate Fields" },
+              { key: "\u2191/\u2193", label: "Navigate Fields" },
             ]}
           />
         </box>
