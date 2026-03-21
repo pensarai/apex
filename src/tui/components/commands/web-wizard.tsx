@@ -665,448 +665,456 @@ export default function WebWizard({
   // Single-page wizard render
   return (
     <Dialog size="large" onClose={onClose}>
-      <scrollbox
-        style={{
-          rootOptions: { flexGrow: 1, width: "100%" },
-          contentOptions: {
-            flexDirection: "column",
-            gap: 1,
-            paddingLeft: 4,
-            paddingBottom: 1,
-          },
-        }}
-        stickyScroll={false}
-      >
-        <box flexDirection="column">
-          <text fg={colors.text}>Configure Web App Pentest - {modeLabel}</text>
-          <text fg={colors.textMuted}>{modeDescription}</text>
-          <text fg={colors.textMuted}>
-            Model: {model.name} [{isModelUserSelected ? "user" : "default"}]
-          </text>
-        </box>
-
-        {error && <text fg={colors.error}>Error: {error}</text>}
-
-        {/* Target URL */}
-        <Input
-          label="Target URL"
-          description="e.g., https://example.com"
-          placeholder="https://example.com"
-          value={state.target}
-          onInput={(v) => {
-            setTargetError(null);
-            setState((prev) => ({ ...prev, target: v }));
+      <box flexDirection="column" width="100%" height="100%">
+        <scrollbox
+          style={{
+            rootOptions: { flexGrow: 1, width: "100%" },
+            contentOptions: {
+              flexDirection: "column",
+              gap: 1,
+              paddingLeft: 4,
+              paddingBottom: 1,
+            },
           }}
-          onPaste={(event) => {
-            const cleaned = String(event.text).replace(/\r?\n/g, " ");
-            setTargetError(null);
-            setState((prev) => ({
-              ...prev,
-              target: prev.target + cleaned,
-            }));
-          }}
-          focused={focusedField === 0}
-        />
-        {targetError && <text fg={colors.error}>{targetError}</text>}
+          stickyScroll={false}
+        >
+          <box flexDirection="column">
+            <text fg={colors.text}>
+              Configure Web App Pentest - {modeLabel}
+            </text>
+            <text fg={colors.textMuted}>{modeDescription}</text>
+            <text fg={colors.textMuted}>
+              Model: {model.name} [{isModelUserSelected ? "user" : "default"}]
+            </text>
+          </box>
 
-        {/* Source Code Access */}
-        <box flexDirection="column" gap={1}>
+          {error && <text fg={colors.error}>Error: {error}</text>}
+
+          {/* Target URL */}
+          <Input
+            label="Target URL"
+            description="e.g., https://example.com"
+            placeholder="https://example.com"
+            value={state.target}
+            onInput={(v) => {
+              setTargetError(null);
+              setState((prev) => ({ ...prev, target: v }));
+            }}
+            onPaste={(event) => {
+              const cleaned = String(event.text).replace(/\r?\n/g, " ");
+              setTargetError(null);
+              setState((prev) => ({
+                ...prev,
+                target: prev.target + cleaned,
+              }));
+            }}
+            focused={focusedField === 0}
+          />
+          {targetError && <text fg={colors.error}>{targetError}</text>}
+
+          {/* Source Code Access */}
+          <box flexDirection="column" gap={1}>
+            <box flexDirection="row" gap={1}>
+              <text fg={focusedField === 1 ? colors.primary : colors.textMuted}>
+                Source Code Access:
+              </text>
+              <text
+                fg={state.sourceCodeAccess ? colors.primary : colors.textMuted}
+              >
+                {state.sourceCodeAccess ? "\u25CF Enabled" : "\u25CB Disabled"}
+              </text>
+              {focusedField === 1 && (
+                <text fg={colors.textMuted}>(Space to toggle)</text>
+              )}
+            </box>
+            {state.sourceCodeAccess && (
+              <Input
+                label="Codebase Path"
+                description="Path to the source code directory"
+                placeholder={process.cwd()}
+                value={state.cwd}
+                onInput={(v) => setState((prev) => ({ ...prev, cwd: v }))}
+                focused={focusedField === cwdFieldIndex}
+              />
+            )}
+          </box>
+
+          {/* Prompt */}
+          <Input
+            label="Prompt"
+            description="Guidance for the pentest agent (text or @filepath)"
+            placeholder="Focus on authentication bypass..."
+            value={state.prompt}
+            onInput={(v) => setState((prev) => ({ ...prev, prompt: v }))}
+            onPaste={(event) => {
+              const cleaned = String(event.text).replace(/\r?\n/g, " ");
+              setState((prev) => ({
+                ...prev,
+                prompt: prev.prompt + cleaned,
+              }));
+            }}
+            focused={focusedField === promptFieldIndex}
+          />
+
+          {/* Threat Model */}
+          <Input
+            label="Threat Model"
+            description="Threat model file or text (text or @filepath)"
+            placeholder="@./threat-model.md"
+            value={state.threatModel}
+            onInput={(v) => setState((prev) => ({ ...prev, threatModel: v }))}
+            onPaste={(event) => {
+              const cleaned = String(event.text).replace(/\r?\n/g, " ");
+              setState((prev) => ({
+                ...prev,
+                threatModel: prev.threatModel + cleaned,
+              }));
+            }}
+            focused={focusedField === threatModelFieldIndex}
+          />
+
+          {/* Advanced toggle */}
           <box flexDirection="row" gap={1}>
-            <text fg={focusedField === 1 ? colors.primary : colors.textMuted}>
-              Source Code Access:
-            </text>
             <text
-              fg={state.sourceCodeAccess ? colors.primary : colors.textMuted}
+              fg={
+                focusedField === advancedToggleIndex
+                  ? colors.primary
+                  : colors.textMuted
+              }
             >
-              {state.sourceCodeAccess ? "\u25CF Enabled" : "\u25CB Disabled"}
+              {advancedExpanded ? "\u25BE" : "\u25B8"} Advanced
             </text>
-            {focusedField === 1 && (
+            {focusedField === advancedToggleIndex && (
               <text fg={colors.textMuted}>(Space to toggle)</text>
             )}
           </box>
-          {state.sourceCodeAccess && (
-            <Input
-              label="Codebase Path"
-              description="Path to the source code directory"
-              placeholder={process.cwd()}
-              value={state.cwd}
-              onInput={(v) => setState((prev) => ({ ...prev, cwd: v }))}
-              focused={focusedField === cwdFieldIndex}
-            />
-          )}
-        </box>
 
-        {/* Prompt */}
-        <Input
-          label="Prompt"
-          description="Guidance for the pentest agent (text or @filepath)"
-          placeholder="Focus on authentication bypass..."
-          value={state.prompt}
-          onInput={(v) => setState((prev) => ({ ...prev, prompt: v }))}
-          onPaste={(event) => {
-            const cleaned = String(event.text).replace(/\r?\n/g, " ");
-            setState((prev) => ({
-              ...prev,
-              prompt: prev.prompt + cleaned,
-            }));
-          }}
-          focused={focusedField === promptFieldIndex}
-        />
-
-        {/* Threat Model */}
-        <Input
-          label="Threat Model"
-          description="Threat model file or text (text or @filepath)"
-          placeholder="@./threat-model.md"
-          value={state.threatModel}
-          onInput={(v) => setState((prev) => ({ ...prev, threatModel: v }))}
-          onPaste={(event) => {
-            const cleaned = String(event.text).replace(/\r?\n/g, " ");
-            setState((prev) => ({
-              ...prev,
-              threatModel: prev.threatModel + cleaned,
-            }));
-          }}
-          focused={focusedField === threatModelFieldIndex}
-        />
-
-        {/* Advanced toggle */}
-        <box flexDirection="row" gap={1}>
-          <text
-            fg={
-              focusedField === advancedToggleIndex
-                ? colors.primary
-                : colors.textMuted
-            }
-          >
-            {advancedExpanded ? "\u25BE" : "\u25B8"} Advanced
-          </text>
-          {focusedField === advancedToggleIndex && (
-            <text fg={colors.textMuted}>(Space to toggle)</text>
-          )}
-        </box>
-
-        {advancedExpanded && (
-          <>
-            {/* Auth fields */}
-            <box flexDirection="column" gap={1} paddingLeft={2}>
-              <text fg={colors.textMuted}>Authentication</text>
-              <Input
-                label="Login URL"
-                placeholder="https://example.com/login"
-                value={state.auth.loginUrl}
-                onInput={(v) =>
-                  setState((prev) => ({
-                    ...prev,
-                    auth: { ...prev.auth, loginUrl: v },
-                  }))
-                }
-                onPaste={(event) => {
-                  const cleaned = String(event.text).replace(/\r?\n/g, " ");
-                  setState((prev) => ({
-                    ...prev,
-                    auth: {
-                      ...prev.auth,
-                      loginUrl: prev.auth.loginUrl + cleaned,
-                    },
-                  }));
-                }}
-                focused={focusedField === authLoginUrlIndex}
-              />
-              <Input
-                label="Username"
-                placeholder="admin"
-                value={state.auth.username}
-                onInput={(v) =>
-                  setState((prev) => ({
-                    ...prev,
-                    auth: { ...prev.auth, username: v },
-                  }))
-                }
-                onPaste={(event) => {
-                  const cleaned = String(event.text).replace(/\r?\n/g, " ");
-                  setState((prev) => ({
-                    ...prev,
-                    auth: {
-                      ...prev.auth,
-                      username: prev.auth.username + cleaned,
-                    },
-                  }));
-                }}
-                focused={focusedField === authUsernameIndex}
-              />
-              <Input
-                label="Password"
-                placeholder="\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"
-                value={state.auth.password}
-                onInput={(v) =>
-                  setState((prev) => ({
-                    ...prev,
-                    auth: { ...prev.auth, password: v },
-                  }))
-                }
-                onPaste={(event) => {
-                  const cleaned = String(event.text).replace(/\r?\n/g, " ");
-                  setState((prev) => ({
-                    ...prev,
-                    auth: {
-                      ...prev.auth,
-                      password: prev.auth.password + cleaned,
-                    },
-                  }));
-                }}
-                focused={focusedField === authPasswordIndex}
-              />
-              <Input
-                label="Auth Instructions"
-                placeholder="Use OAuth flow, extract bearer token..."
-                value={state.auth.instructions}
-                onInput={(v) =>
-                  setState((prev) => ({
-                    ...prev,
-                    auth: { ...prev.auth, instructions: v },
-                  }))
-                }
-                onPaste={(event) => {
-                  const cleaned = String(event.text).replace(/\r?\n/g, " ");
-                  setState((prev) => ({
-                    ...prev,
-                    auth: {
-                      ...prev.auth,
-                      instructions: prev.auth.instructions + cleaned,
-                    },
-                  }));
-                }}
-                focused={focusedField === authInstructionsIndex}
-              />
-            </box>
-
-            {/* Scope fields */}
-            <box flexDirection="column" gap={1} paddingLeft={2}>
-              <text fg={colors.textMuted}>Scope Constraints</text>
-              <Input
-                label="Add Allowed Host"
-                description="Press Enter to add"
-                placeholder="example.com"
-                value={hostInput}
-                onInput={setHostInput}
-                focused={focusedField === scopeHostIndex}
-              />
-              {state.scope.allowedHosts.length > 0 && (
-                <box flexDirection="column" paddingLeft={2}>
-                  {state.scope.allowedHosts.map((h, i) => (
-                    <text key={i} fg={colors.textMuted}>
-                      \u2022 {h}
-                    </text>
-                  ))}
-                </box>
-              )}
-              <Input
-                label="Add Allowed Port"
-                description="Press Enter to add"
-                placeholder="443"
-                value={portInput}
-                onInput={setPortInput}
-                focused={focusedField === scopePortIndex}
-              />
-              {state.scope.allowedPorts.length > 0 && (
-                <box flexDirection="column" paddingLeft={2}>
-                  {state.scope.allowedPorts.map((p, i) => (
-                    <text key={i} fg={colors.textMuted}>
-                      \u2022 {p}
-                    </text>
-                  ))}
-                </box>
-              )}
-              <box flexDirection="row" gap={1}>
-                <text
-                  fg={
-                    focusedField === scopeStrictIndex
-                      ? colors.text
-                      : colors.textMuted
+          {advancedExpanded && (
+            <>
+              {/* Auth fields */}
+              <box flexDirection="column" gap={1} paddingLeft={2}>
+                <text fg={colors.textMuted}>Authentication</text>
+                <Input
+                  label="Login URL"
+                  placeholder="https://example.com/login"
+                  value={state.auth.loginUrl}
+                  onInput={(v) =>
+                    setState((prev) => ({
+                      ...prev,
+                      auth: { ...prev.auth, loginUrl: v },
+                    }))
                   }
-                >
-                  Strict Scope:
-                </text>
-                <text
-                  fg={
-                    state.scope.strictScope ? colors.primary : colors.textMuted
+                  onPaste={(event) => {
+                    const cleaned = String(event.text).replace(/\r?\n/g, " ");
+                    setState((prev) => ({
+                      ...prev,
+                      auth: {
+                        ...prev.auth,
+                        loginUrl: prev.auth.loginUrl + cleaned,
+                      },
+                    }));
+                  }}
+                  focused={focusedField === authLoginUrlIndex}
+                />
+                <Input
+                  label="Username"
+                  placeholder="admin"
+                  value={state.auth.username}
+                  onInput={(v) =>
+                    setState((prev) => ({
+                      ...prev,
+                      auth: { ...prev.auth, username: v },
+                    }))
                   }
-                >
-                  {state.scope.strictScope
-                    ? "\u25CF Enabled"
-                    : "\u25CB Disabled"}
-                </text>
-                {focusedField === scopeStrictIndex && (
-                  <text fg={colors.textMuted}>(\u2191/\u2193 to toggle)</text>
+                  onPaste={(event) => {
+                    const cleaned = String(event.text).replace(/\r?\n/g, " ");
+                    setState((prev) => ({
+                      ...prev,
+                      auth: {
+                        ...prev.auth,
+                        username: prev.auth.username + cleaned,
+                      },
+                    }));
+                  }}
+                  focused={focusedField === authUsernameIndex}
+                />
+                <Input
+                  label="Password"
+                  placeholder="\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"
+                  value={state.auth.password}
+                  onInput={(v) =>
+                    setState((prev) => ({
+                      ...prev,
+                      auth: { ...prev.auth, password: v },
+                    }))
+                  }
+                  onPaste={(event) => {
+                    const cleaned = String(event.text).replace(/\r?\n/g, " ");
+                    setState((prev) => ({
+                      ...prev,
+                      auth: {
+                        ...prev.auth,
+                        password: prev.auth.password + cleaned,
+                      },
+                    }));
+                  }}
+                  focused={focusedField === authPasswordIndex}
+                />
+                <Input
+                  label="Auth Instructions"
+                  placeholder="Use OAuth flow, extract bearer token..."
+                  value={state.auth.instructions}
+                  onInput={(v) =>
+                    setState((prev) => ({
+                      ...prev,
+                      auth: { ...prev.auth, instructions: v },
+                    }))
+                  }
+                  onPaste={(event) => {
+                    const cleaned = String(event.text).replace(/\r?\n/g, " ");
+                    setState((prev) => ({
+                      ...prev,
+                      auth: {
+                        ...prev.auth,
+                        instructions: prev.auth.instructions + cleaned,
+                      },
+                    }));
+                  }}
+                  focused={focusedField === authInstructionsIndex}
+                />
+              </box>
+
+              {/* Scope fields */}
+              <box flexDirection="column" gap={1} paddingLeft={2}>
+                <text fg={colors.textMuted}>Scope Constraints</text>
+                <Input
+                  label="Add Allowed Host"
+                  description="Press Enter to add"
+                  placeholder="example.com"
+                  value={hostInput}
+                  onInput={setHostInput}
+                  focused={focusedField === scopeHostIndex}
+                />
+                {state.scope.allowedHosts.length > 0 && (
+                  <box flexDirection="column" paddingLeft={2}>
+                    {state.scope.allowedHosts.map((h, i) => (
+                      <text key={i} fg={colors.textMuted}>
+                        \u2022 {h}
+                      </text>
+                    ))}
+                  </box>
                 )}
-              </box>
-              <box flexDirection="row" gap={1}>
-                <text
-                  fg={
-                    focusedField === scopeSubdomainIndex
-                      ? colors.primary
-                      : colors.textMuted
-                  }
-                >
-                  Enumerate Subdomains:
-                </text>
-                <text
-                  fg={
-                    state.scope.enumerateSubdomains
-                      ? colors.primary
-                      : colors.textMuted
-                  }
-                >
-                  {state.scope.enumerateSubdomains
-                    ? "\u25CF Enabled"
-                    : "\u25CB Disabled"}
-                </text>
-                {focusedField === scopeSubdomainIndex && (
-                  <text fg={colors.textMuted}>(\u2191/\u2193 to toggle)</text>
+                <Input
+                  label="Add Allowed Port"
+                  description="Press Enter to add"
+                  placeholder="443"
+                  value={portInput}
+                  onInput={setPortInput}
+                  focused={focusedField === scopePortIndex}
+                />
+                {state.scope.allowedPorts.length > 0 && (
+                  <box flexDirection="column" paddingLeft={2}>
+                    {state.scope.allowedPorts.map((p, i) => (
+                      <text key={i} fg={colors.textMuted}>
+                        \u2022 {p}
+                      </text>
+                    ))}
+                  </box>
                 )}
-              </box>
-            </box>
-
-            {/* Headers */}
-            <box flexDirection="column" gap={1} paddingLeft={2}>
-              <text fg={colors.textMuted}>Request Headers</text>
-              <box flexDirection="column">
-                <text
-                  fg={
-                    state.headers.mode === "none"
-                      ? colors.primary
-                      : colors.textMuted
-                  }
-                >
-                  {state.headers.mode === "none" ? "\u25CF" : "\u25CB"} None
-                </text>
-                <text
-                  fg={
-                    state.headers.mode === "default"
-                      ? colors.primary
-                      : colors.textMuted
-                  }
-                >
-                  {state.headers.mode === "default" ? "\u25CF" : "\u25CB"}{" "}
-                  Default (User-Agent: pensar-apex)
-                </text>
-                <text
-                  fg={
-                    state.headers.mode === "custom"
-                      ? colors.primary
-                      : colors.textMuted
-                  }
-                >
-                  {state.headers.mode === "custom" ? "\u25CF" : "\u25CB"} Custom
-                </text>
-              </box>
-              {focusedField === headersModeIndex && (
-                <text fg={colors.textMuted}>Use \u2191/\u2193 to select</text>
-              )}
-
-              {state.headers.mode === "custom" && (
-                <box flexDirection="column" gap={1}>
-                  <Input
-                    label="Header Name"
-                    placeholder="X-Custom-Header"
-                    value={headerNameInput}
-                    onInput={setHeaderNameInput}
-                    focused={focusedField === headersNameIndex}
-                  />
-                  <Input
-                    label="Header Value"
-                    placeholder="value"
-                    value={headerValueInput}
-                    onInput={setHeaderValueInput}
-                    focused={focusedField === headersValueIndex}
-                  />
-                  {Object.keys(state.headers.customHeaders).length > 0 && (
-                    <box flexDirection="column">
-                      {Object.entries(state.headers.customHeaders).map(
-                        ([k, v]) => (
-                          <text key={k} fg={colors.textMuted}>
-                            \u2022 {k}: {v}
-                          </text>
-                        ),
-                      )}
-                    </box>
+                <box flexDirection="row" gap={1}>
+                  <text
+                    fg={
+                      focusedField === scopeStrictIndex
+                        ? colors.text
+                        : colors.textMuted
+                    }
+                  >
+                    Strict Scope:
+                  </text>
+                  <text
+                    fg={
+                      state.scope.strictScope
+                        ? colors.primary
+                        : colors.textMuted
+                    }
+                  >
+                    {state.scope.strictScope
+                      ? "\u25CF Enabled"
+                      : "\u25CB Disabled"}
+                  </text>
+                  {focusedField === scopeStrictIndex && (
+                    <text fg={colors.textMuted}>(\u2191/\u2193 to toggle)</text>
                   )}
                 </box>
-              )}
-            </box>
-
-            {/* Model picker */}
-            <box flexDirection="column" gap={0} paddingLeft={2}>
-              <text fg={colors.textMuted}>
-                AI Model ({model.name}) [
-                {isModelUserSelected ? "user" : "default"}]
-              </text>
-
-              {focusedField === modelPickerIndex && (
-                <>
-                  {/* Search input */}
-                  {modelSearchQuery ? (
-                    <text fg={colors.text}>Search: {modelSearchQuery}_</text>
-                  ) : (
-                    <text fg={colors.textMuted}>Type to search models...</text>
+                <box flexDirection="row" gap={1}>
+                  <text
+                    fg={
+                      focusedField === scopeSubdomainIndex
+                        ? colors.primary
+                        : colors.textMuted
+                    }
+                  >
+                    Enumerate Subdomains:
+                  </text>
+                  <text
+                    fg={
+                      state.scope.enumerateSubdomains
+                        ? colors.primary
+                        : colors.textMuted
+                    }
+                  >
+                    {state.scope.enumerateSubdomains
+                      ? "\u25CF Enabled"
+                      : "\u25CB Disabled"}
+                  </text>
+                  {focusedField === scopeSubdomainIndex && (
+                    <text fg={colors.textMuted}>(\u2191/\u2193 to toggle)</text>
                   )}
-                </>
-              )}
+                </box>
+              </box>
 
-              {/* Provider groups */}
-              {providerOrder.map((provider) => {
-                const models = groupedModels[provider];
-                if (!models || models.length === 0) return null;
+              {/* Headers */}
+              <box flexDirection="column" gap={1} paddingLeft={2}>
+                <text fg={colors.textMuted}>Request Headers</text>
+                <box flexDirection="column">
+                  <text
+                    fg={
+                      state.headers.mode === "none"
+                        ? colors.primary
+                        : colors.textMuted
+                    }
+                  >
+                    {state.headers.mode === "none" ? "\u25CF" : "\u25CB"} None
+                  </text>
+                  <text
+                    fg={
+                      state.headers.mode === "default"
+                        ? colors.primary
+                        : colors.textMuted
+                    }
+                  >
+                    {state.headers.mode === "default" ? "\u25CF" : "\u25CB"}{" "}
+                    Default (User-Agent: pensar-apex)
+                  </text>
+                  <text
+                    fg={
+                      state.headers.mode === "custom"
+                        ? colors.primary
+                        : colors.textMuted
+                    }
+                  >
+                    {state.headers.mode === "custom" ? "\u25CF" : "\u25CB"}{" "}
+                    Custom
+                  </text>
+                </box>
+                {focusedField === headersModeIndex && (
+                  <text fg={colors.textMuted}>Use \u2191/\u2193 to select</text>
+                )}
 
-                const isExpanded = expandedProviders.has(provider);
-                const providerName = providerNames[provider] || provider;
-
-                return (
-                  <box key={provider} flexDirection="column" gap={0}>
-                    <text fg={isExpanded ? colors.text : colors.textMuted}>
-                      {isExpanded ? "\u25BE" : "\u25B8"} {providerName} (
-                      {models.length})
-                    </text>
-
-                    {isExpanded && (
-                      <box flexDirection="column" gap={0} paddingLeft={2}>
-                        {models.map((m) => {
-                          const isSelected = m.id === model.id;
-                          const isDefault =
-                            m.id === "claude-haiku-4-5" ||
-                            m.id === "gpt-4o-mini";
-                          return (
-                            <text
-                              key={m.id}
-                              fg={
-                                isSelected ? colors.primary : colors.textMuted
-                              }
-                            >
-                              {isSelected ? "\u25CF" : "\u25CB"} {m.name}
-                              {isDefault && !isModelUserSelected && isSelected
-                                ? " [default]"
-                                : ""}
+                {state.headers.mode === "custom" && (
+                  <box flexDirection="column" gap={1}>
+                    <Input
+                      label="Header Name"
+                      placeholder="X-Custom-Header"
+                      value={headerNameInput}
+                      onInput={setHeaderNameInput}
+                      focused={focusedField === headersNameIndex}
+                    />
+                    <Input
+                      label="Header Value"
+                      placeholder="value"
+                      value={headerValueInput}
+                      onInput={setHeaderValueInput}
+                      focused={focusedField === headersValueIndex}
+                    />
+                    {Object.keys(state.headers.customHeaders).length > 0 && (
+                      <box flexDirection="column">
+                        {Object.entries(state.headers.customHeaders).map(
+                          ([k, v]) => (
+                            <text key={k} fg={colors.textMuted}>
+                              \u2022 {k}: {v}
                             </text>
-                          );
-                        })}
+                          ),
+                        )}
                       </box>
                     )}
                   </box>
-                );
-              })}
+                )}
+              </box>
 
-              {focusedField === modelPickerIndex && (
+              {/* Model picker */}
+              <box flexDirection="column" gap={0} paddingLeft={2}>
                 <text fg={colors.textMuted}>
-                  \u2191/\u2193 select \u2022 Type to search \u2022
-                  \u2190/\u2192 collapse/expand
+                  AI Model ({model.name}) [
+                  {isModelUserSelected ? "user" : "default"}]
                 </text>
-              )}
-            </box>
-          </>
-        )}
 
-        <box marginTop={1} flexShrink={0}>
+                {focusedField === modelPickerIndex && (
+                  <>
+                    {/* Search input */}
+                    {modelSearchQuery ? (
+                      <text fg={colors.text}>Search: {modelSearchQuery}_</text>
+                    ) : (
+                      <text fg={colors.textMuted}>
+                        Type to search models...
+                      </text>
+                    )}
+                  </>
+                )}
+
+                {/* Provider groups */}
+                {providerOrder.map((provider) => {
+                  const models = groupedModels[provider];
+                  if (!models || models.length === 0) return null;
+
+                  const isExpanded = expandedProviders.has(provider);
+                  const providerName = providerNames[provider] || provider;
+
+                  return (
+                    <box key={provider} flexDirection="column" gap={0}>
+                      <text fg={isExpanded ? colors.text : colors.textMuted}>
+                        {isExpanded ? "\u25BE" : "\u25B8"} {providerName} (
+                        {models.length})
+                      </text>
+
+                      {isExpanded && (
+                        <box flexDirection="column" gap={0} paddingLeft={2}>
+                          {models.map((m) => {
+                            const isSelected = m.id === model.id;
+                            const isDefault =
+                              m.id === "claude-haiku-4-5" ||
+                              m.id === "gpt-4o-mini";
+                            return (
+                              <text
+                                key={m.id}
+                                fg={
+                                  isSelected ? colors.primary : colors.textMuted
+                                }
+                              >
+                                {isSelected ? "\u25CF" : "\u25CB"} {m.name}
+                                {isDefault && !isModelUserSelected && isSelected
+                                  ? " [default]"
+                                  : ""}
+                              </text>
+                            );
+                          })}
+                        </box>
+                      )}
+                    </box>
+                  );
+                })}
+
+                {focusedField === modelPickerIndex && (
+                  <text fg={colors.textMuted}>
+                    \u2191/\u2193 select \u2022 Type to search \u2022
+                    \u2190/\u2192 collapse/expand
+                  </text>
+                )}
+              </box>
+            </>
+          )}
+        </scrollbox>
+        <box marginTop={1} flexShrink={0} paddingLeft={4}>
           <DialogControls
             controls={[
               {
@@ -1118,7 +1126,7 @@ export default function WebWizard({
             ]}
           />
         </box>
-      </scrollbox>
+      </box>
     </Dialog>
   );
 }
