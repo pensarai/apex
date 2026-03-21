@@ -157,7 +157,13 @@ export function CommandProvider({
     }
 
     // Append skills from registry, skipping any that already have a command entry
-    const commandNames = new Set(routerCommands.map((c) => c.name));
+    const commandNames = new Set<string>();
+    for (const cmd of routerCommands) {
+      commandNames.add(cmd.name);
+      for (const alias of cmd.aliases ?? []) {
+        commandNames.add(alias);
+      }
+    }
     for (const entry of registry.list()) {
       if (commandNames.has(entry.slug)) continue;
       options.push({
