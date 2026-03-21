@@ -67,6 +67,8 @@ export type Route =
         operatorMode?: import("../../core/operator").OperatorMode;
         sandbox?: boolean;
       };
+      /** Skill to automatically submit on mount */
+      initialSkill?: { slug: string; args?: Record<string, string> };
       /** Opaque value used to force a fresh remount (e.g. Date.now()) */
       nonce?: number;
     };

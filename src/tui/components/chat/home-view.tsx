@@ -96,8 +96,17 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
 
       const entry = skillsRegistry.get(slug);
       if (entry) {
-        // Open skills dialog with this skill's detail view
-        await executeCommand(`/skills ${slug}`);
+        // Navigate to operator session with the skill pre-loaded
+        route.navigate({
+          type: "operator",
+          nonce: Date.now(),
+          initialConfig: {
+            requireApproval: true,
+          },
+          initialSkill: {
+            slug,
+          },
+        });
         return;
       }
       await executeCommand(command);

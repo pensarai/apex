@@ -70,7 +70,7 @@ import {
 import { QueuedMessages } from "./queued-messages";
 import { navigateUp, navigateDown, selectionAfterRemove } from "./queue";
 import { existsSync, readFileSync, writeFileSync } from "fs";
-import { join } from "path";
+import { isAbsolute, join, resolve } from "path";
 
 /**
  * Operator Dashboard - interactive chat interface with the offensive security agent
@@ -1062,6 +1062,46 @@ export default function OperatorDashboard({
       runAgentRef.current(initialMessage);
     }
   }, [loading, initialMessage]);
+
+  // Auto-submit initial skill once loading completes.
+  // When the dashboard mounts with route.initialSkill set (e.g. from the
+  // /threat-model command), load the skill content and send it to the agent
+  // just as if the user had typed /<skill-slug>.
+  const initialSkillSentRef = useRef(false);
+  useEffect(() => {
+    if (loading || initialSkillSentRef.current) return;
+    const routeData = route.data;
+    if (routeData.type !== "operator" || !routeData.initialSkill) return;
+
+    initialSkillSentRef.current = true;
+    const { slug, args } = routeData.initialSkill;
+
+    (async () => {
+      try {
+        const { content } = await skillsRegistry.readSkillContent(slug);
+
+        // Resolve output path for runtime context
+        const outputPath = args?.output || "threat-model.md";
+        const resolvedPath = isAbsolute(outputPath)
+          ? outputPath
+          : resolve(process.cwd(), outputPath);
+
+        const runtimeContext = [
+          `IMPORTANT: You MUST write the output to exactly this path: ${resolvedPath}`,
+          `Use create_file with path="${resolvedPath}" and overwrite=true.`,
+          `Working directory (codebase root): ${process.cwd()}`,
+        ].join("\n");
+        const fullContent = `<skill name="${slug}">\n${runtimeContext}\n\n${content}\n</skill>`;
+
+        runAgentRef.current(fullContent);
+      } catch {
+        // Fallback: tell agent to load skill via tool
+        runAgentRef.current(
+          `Use the read_skill tool to load the "${slug}" skill and follow its instructions.`,
+        );
+      }
+    })();
+  }, [loading, route.data, skillsRegistry]);
 
   // Auto-send queued messages when agent becomes idle
   useEffect(() => {

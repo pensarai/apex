@@ -215,6 +215,49 @@ export const commands: CommandConfig[] = [
     },
   },
   {
+    name: "threat-model",
+    aliases: ["tm"],
+    description: "Generate application-centric threat model",
+    category: "Pentesting",
+    options: [
+      {
+        name: "--output",
+        valueHint: "<path>",
+        description: "Output file path (default: ./threat-model.md)",
+      },
+      {
+        name: "--model",
+        valueHint: "<model>",
+        description: "AI model to use",
+      },
+    ],
+    handler: async (args, ctx) => {
+      // Parse --output flag from args
+      // Look for "--output" in args array, take the next element as value
+      // Default to "threat-model.md" if not provided
+      // Also check for "-o" as alias
+      let outputPath = "threat-model.md";
+      for (let i = 0; i < args.length; i++) {
+        if ((args[i] === "--output" || args[i] === "-o") && args[i + 1]) {
+          outputPath = args[i + 1];
+          break;
+        }
+      }
+
+      ctx.navigate({
+        type: "operator",
+        nonce: Date.now(),
+        initialConfig: {
+          requireApproval: true,
+        },
+        initialSkill: {
+          slug: "threat-model",
+          args: { output: outputPath },
+        },
+      });
+    },
+  },
+  {
     name: "sessions",
     aliases: ["s"],
     description: "Browse previous sessions",
