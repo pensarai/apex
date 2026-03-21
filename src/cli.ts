@@ -55,6 +55,7 @@ Usage:
   pensar                             Launch the TUI
   pensar pentest [options]            Run a full pentest orchestration
   pensar targeted-pentest [options]   Run a targeted pentest on a single target
+  pensar threat-model [options]       Generate application-centric threat model
   pensar auth                         Connect to Pensar Console
   pensar uninstall                    Uninstall Pensar (keeps sessions, memories, skills)
   pensar projects                     List workspace projects
@@ -77,6 +78,10 @@ targeted-pentest options:
   --target <url>          (required) Target URL / domain / IP
   --objective <text>      (required, repeatable) Testing objective
   --model <model>         AI model (default: claude-sonnet-4-5)
+
+threat-model options:
+  --output, -o <path>  Output file path (default: ./threat-model.md)
+  --model <model>      AI model (default: claude-sonnet-4-5)
 
 Global options:
   -h, --help         Show this help message
@@ -212,6 +217,87 @@ Path:      ${findingsPath}
 POCs:      ${pocsPath}`);
 }
 
+async function runThreatModel() {
+  const { config } = await import("dotenv");
+  config();
+
+  const { runOffensiveSecurityAgent } = await import("./core/api/offesecAgent");
+  const { sessions } = await import("./core/session");
+  const { config: appConfig } = await import("./core/config");
+  const { getDefaultModelForConfig } = await import("./core/providers/utils");
+  const { createSkillsRegistry } = await import("./core/skills");
+  const { buildBaseSystemPrompt } =
+    await import("./core/agents/offSecAgent/prompt");
+  const { ALL_TOOL_NAMES, SKILL_TOOL_NAMES } =
+    await import("./core/agents/offSecAgent");
+  const path = await import("path");
+  type AIModel = import("./core/ai").AIModel;
+
+  const pensarConfig = await appConfig.get();
+  const dynamicDefault =
+    getDefaultModelForConfig(pensarConfig)?.id ?? "claude-sonnet-4-5";
+  const model = (getArg("--model") ?? dynamicDefault) as AIModel;
+
+  const outputArg = getArg("--output") ?? getArg("-o") ?? "threat-model.md";
+  const resolvedPath = path.isAbsolute(outputArg)
+    ? outputArg
+    : path.resolve(process.cwd(), outputArg);
+
+  const sep = "=".repeat(60);
+  console.log(`${sep}
+THREAT MODEL GENERATION
+${sep}
+Codebase: ${process.cwd()}
+Output:   ${resolvedPath}
+Model:    ${model}
+`);
+
+  // Load skill content
+  const registry = createSkillsRegistry();
+  await registry.load({ projectRoot: process.cwd() });
+  const { content } = await registry.readSkillContent("threat-model");
+
+  const runtimeContext = [
+    `IMPORTANT: You MUST write the output to exactly this path: ${resolvedPath}`,
+    `Use create_file with path="${resolvedPath}" and overwrite=true.`,
+    `Working directory (codebase root): ${process.cwd()}`,
+  ].join("\n");
+  const prompt = `<skill name="threat-model">\n${runtimeContext}\n\n${content}\n</skill>`;
+
+  const session = await sessions.create({
+    name: "Threat Model",
+    targets: [process.cwd()],
+    config: { mode: "operator" },
+  });
+
+  const system = `${buildBaseSystemPrompt({ sandboxMode: false })}
+
+# Threat Model Mode
+
+You are generating an application-centric threat model from source code analysis.
+Working directory: ${process.cwd()}`;
+
+  await runOffensiveSecurityAgent({
+    system,
+    prompt,
+    model,
+    session,
+    activeTools: [...ALL_TOOL_NAMES, ...SKILL_TOOL_NAMES] as string[],
+    authConfig: buildAuthConfig(pensarConfig),
+    skillsRegistry: registry,
+    callbacks: {
+      onTextDelta: (d) => process.stdout.write(d.text),
+      onToolCall: (d) => console.log(`\n  → ${d.toolName}`),
+      onToolResult: (d) => console.log(`  ✓ ${d.toolName}`),
+      onError: (e) => console.error("Error:", e),
+    },
+  });
+
+  console.log(
+    `\n${sep}\nCOMPLETE\n${sep}\nThreat model written to: ${resolvedPath}`,
+  );
+}
+
 async function runUpgrade() {
   const currentVersion = getCurrentVersion();
   console.log(`Current version: v${currentVersion}\nChecking for updates...`);
@@ -257,6 +343,8 @@ if (command === "version" || command === "--version" || command === "-v") {
 } else if (command === "logs") {
   process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
   await import("./cli/logs");
+} else if (command === "threat-model") {
+  await runThreatModel();
 } else if (command === "doctor") {
   const { runDoctor } = await import("./core/doctor");
   await runDoctor();
