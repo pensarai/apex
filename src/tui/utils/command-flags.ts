@@ -13,6 +13,21 @@ import { createToolsetState } from "../../core/toolset";
 import { parseTargetUrl } from "../../util/url";
 import { wrapThreatModelContent } from "../../core/utils/prompt";
 
+/**
+ * Combine resolved threat model and prompt into a single prompt string.
+ * Threat model comes first (if present), then user prompt.
+ * Returns undefined if both are empty.
+ */
+export function combinePromptParts(
+  threatModel?: string,
+  prompt?: string,
+): string | undefined {
+  const parts: string[] = [];
+  if (threatModel) parts.push(threatModel);
+  if (prompt) parts.push(prompt);
+  return parts.length > 0 ? parts.join("\n\n") : undefined;
+}
+
 // ============================================================================
 // Value Resolution
 // ============================================================================
@@ -403,11 +418,9 @@ export function buildOperatorSessionConfig(
   sessionConfig.agentCwd = flags.sandbox ? undefined : process.cwd();
 
   // Combine threat model and prompt into a single prompt field
-  const promptParts: string[] = [];
-  if (flags.threatModel) promptParts.push(flags.threatModel);
-  if (flags.prompt) promptParts.push(flags.prompt);
-  if (promptParts.length > 0) {
-    sessionConfig.prompt = promptParts.join("\n\n");
+  const combinedPrompt = combinePromptParts(flags.threatModel, flags.prompt);
+  if (combinedPrompt) {
+    sessionConfig.prompt = combinedPrompt;
   }
 
   return {
@@ -456,11 +469,9 @@ export function buildSwarmSessionConfig(
   }
 
   // Combine threat model and prompt into a single prompt field
-  const promptParts: string[] = [];
-  if (flags.threatModel) promptParts.push(flags.threatModel);
-  if (flags.prompt) promptParts.push(flags.prompt);
-  if (promptParts.length > 0) {
-    sessionConfig.prompt = promptParts.join("\n\n");
+  const combinedPrompt = combinePromptParts(flags.threatModel, flags.prompt);
+  if (combinedPrompt) {
+    sessionConfig.prompt = combinedPrompt;
   }
 
   return {

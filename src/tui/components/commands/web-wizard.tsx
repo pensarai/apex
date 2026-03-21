@@ -15,6 +15,7 @@ import {
   getAutoPopulatedPorts,
 } from "../../../util/url";
 import { wrapThreatModelContent } from "../../../core/utils/prompt";
+import { combinePromptParts } from "../../utils/command-flags";
 
 // Wizard state interface
 interface WizardState {
@@ -357,24 +358,20 @@ export default function WebWizard({
         };
       }
 
-      // Operator guidance — combine threat model and prompt
-      // Values are used as-is: if they came from CLI flags (initialPrompt/initialThreatModel),
-      // they were already resolved by parseWebFlags. If the user typed them in the wizard,
-      // they're plain text (the @file convention is for the CLI, not the wizard UI).
-      const promptParts: string[] = [];
-      if (state.threatModel.trim()) {
-        const tm = state.threatModel.trim();
-        // If already wrapped (from CLI --threat-model flag), use as-is.
-        // Otherwise, wrap with the usage preamble so the agent gets guidance.
-        promptParts.push(
-          tm.includes("<threat-model>") ? tm : wrapThreatModelContent(tm),
-        );
-      }
-      if (state.prompt.trim()) {
-        promptParts.push(state.prompt.trim());
-      }
-      if (promptParts.length > 0) {
-        sessionConfig.prompt = promptParts.join("\n\n");
+      // Operator guidance — combine threat model and prompt.
+      // Threat model values from CLI flags are already wrapped by parseWebFlags.
+      // User-typed values need wrapping with the usage preamble.
+      const resolvedTm = state.threatModel.trim()
+        ? state.threatModel.trim().includes("<threat-model>")
+          ? state.threatModel.trim()
+          : wrapThreatModelContent(state.threatModel.trim())
+        : undefined;
+      const combinedPrompt = combinePromptParts(
+        resolvedTm,
+        state.prompt.trim() || undefined,
+      );
+      if (combinedPrompt) {
+        sessionConfig.prompt = combinedPrompt;
       }
 
       onStartPentest([state.target], sessionConfig);
