@@ -1409,11 +1409,6 @@ export default function OperatorDashboard({
       case "cycle-mode":
         cycleMode();
         return;
-      case "show-directory":
-        if (session) {
-          toast(`Session directory: ${session.rootPath}`, "default", 5000);
-        }
-        return;
       case "approve":
         handleApprove();
         return;

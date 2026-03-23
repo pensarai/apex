@@ -103,8 +103,7 @@ export type KeyboardAction =
   | { type: "toggle-expanded-logs" }
   | { type: "cycle-mode" }
   | { type: "approve" }
-  | { type: "auto-approve" }
-  | { type: "show-directory" };
+  | { type: "auto-approve" };
 
 export function resolveKeyboardShortcut(
   key: KeyInfo,
@@ -136,10 +135,6 @@ export function resolveKeyboardShortcut(
 
   // Ctrl+L — toggle expanded logs
   if (key.ctrl && key.name === "l") return { type: "toggle-expanded-logs" };
-
-  // Cmd+Shift+D — show session directory
-  if (key.meta && key.shift && key.name === "d")
-    return { type: "show-directory" };
 
   // Shift+Tab or Option+Shift+Tab — cycle operator mode (approvals-on → approvals-off → plan)
   if (key.name === "tab" && key.shift) return { type: "cycle-mode" };
