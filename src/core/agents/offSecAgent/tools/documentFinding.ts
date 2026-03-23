@@ -142,7 +142,28 @@ FINDING STRUCTURE:
               cvssResult = FALLBACK_CVSS;
               break;
             }
-            await new Promise((r) => setTimeout(r, 2_000));
+            await new Promise<void>((resolve) => {
+              const timer = setTimeout(resolve, 2_000);
+              if (ctx.abortSignal) {
+                const onAbort = () => {
+                  clearTimeout(timer);
+                  resolve();
+                };
+                if (ctx.abortSignal.aborted) {
+                  clearTimeout(timer);
+                  resolve();
+                } else {
+                  ctx.abortSignal.addEventListener("abort", onAbort, {
+                    once: true,
+                  });
+                }
+              }
+            });
+            if (ctx.abortSignal?.aborted) {
+              cvssWarning = `CVSS scoring cancelled, using estimated MEDIUM severity.`;
+              cvssResult = FALLBACK_CVSS;
+              break;
+            }
           }
         }
 
