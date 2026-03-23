@@ -1,6 +1,7 @@
 FROM kalilinux/kali-rolling:latest
 
 ENV DEBIAN_FRONTEND=noninteractive
+
 ARG USER=pentest
 ARG UID=1000
 ARG GID=1000
@@ -21,6 +22,11 @@ RUN apt-get update && apt-get dist-upgrade -y && \
       wireshark-common \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# Install Node.js LTS (required by @pensar/apex's pensar binary)
+RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && \
+    apt-get install -y nodejs && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
 # Install bun system-wide (required for @pensar/apex)
 ENV BUN_INSTALL="/usr/local"
 RUN curl -fsSL https://bun.sh/install | bash
@@ -30,24 +36,26 @@ RUN bun install -g @pensar/apex
 
 # Create non-root user for safety
 RUN groupadd -g ${GID} ${USER} || true \
- && useradd -m -u ${UID} -g ${GID} -s /bin/bash ${USER} \
- && echo "${USER} ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/${USER} \
- && chmod 0440 /etc/sudoers.d/${USER}
+    && useradd -m -u ${UID} -g ${GID} -s /bin/bash ${USER} \
+    && echo "${USER} ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/${USER} \
+    && chmod 0440 /etc/sudoers.d/${USER}
 
 WORKDIR /home/${USER}
 USER ${USER}
 ENV HOME=/home/${USER}
 
 # Load variables from ~/.env automatically for convenience inside the shell
+# Uses set -a / source instead of xargs to handle comments and empty lines
 RUN echo 'if [ -f ~/.env ]; then' >> ~/.bashrc && \
-    echo '    export $(cat ~/.env | xargs)' >> ~/.bashrc && \
+    echo '    set -a' >> ~/.bashrc && \
+    echo '    source ~/.env' >> ~/.bashrc && \
+    echo '    set +a' >> ~/.bashrc && \
     echo 'fi' >> ~/.bashrc && \
     echo 'if [ -f ~/.env ]; then' >> ~/.zshrc && \
-    echo '    export $(cat ~/.env | xargs)' >> ~/.zshrc && \
+    echo '    set -a' >> ~/.zshrc && \
+    echo '    source ~/.env' >> ~/.zshrc && \
+    echo '    set +a' >> ~/.zshrc && \
     echo 'fi' >> ~/.zshrc
-
 
 # Default entrypoint: interactive shell
 ENTRYPOINT ["/bin/bash"]
-
-
