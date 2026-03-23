@@ -8,6 +8,7 @@
 import type { SessionConfig } from "../../core/session";
 import type { OperatorMode } from "../../core/operator";
 import { createToolsetState } from "../../core/toolset";
+import { parseTargetUrl } from "../../util/url";
 
 // ============================================================================
 // General Flag Parsing
@@ -140,6 +141,8 @@ export interface WebCommandFlags {
   // Model option
   model?: string;
 
+  // Internal flag to track if hosts was explicitly provided (not auto-populated)
+  _hostsExplicitlyProvided?: boolean;
   // Sandbox option
   sandbox?: boolean;
 }
@@ -209,6 +212,7 @@ export function parseWebFlags(args: string[]): WebCommandFlags {
       .split(",")
       .map((h) => h.trim())
       .filter(Boolean);
+    flags._hostsExplicitlyProvided = true;
   }
   if (raw.ports) {
     flags.ports = String(raw.ports)
@@ -216,6 +220,21 @@ export function parseWebFlags(args: string[]): WebCommandFlags {
       .map((p) => parseInt(p.trim(), 10))
       .filter((p) => !isNaN(p));
   }
+
+  // Keep skipped-wizard CLI scope aligned with wizard auto-population.
+  if (flags.target) {
+    const parsed = parseTargetUrl(flags.target);
+    if (parsed) {
+      if (!flags.hosts?.includes(parsed.hostname)) {
+        flags.hosts = [...(flags.hosts || []), parsed.hostname];
+      }
+
+      if (parsed.port && !flags.ports?.includes(parsed.port)) {
+        flags.ports = [...(flags.ports || []), parsed.port];
+      }
+    }
+  }
+
   if (raw.strict) flags.strict = true;
 
   // Headers options
@@ -267,7 +286,7 @@ export function hasEnoughFlagsToSkipWizard(flags: WebCommandFlags): boolean {
       flags.requireApproval !== undefined ||
       flags.authUrl ||
       flags.authUser ||
-      flags.hosts ||
+      flags._hostsExplicitlyProvided ||
       flags.strict ||
       flags.headersMode ||
       flags.model

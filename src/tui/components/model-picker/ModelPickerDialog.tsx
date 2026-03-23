@@ -9,7 +9,7 @@ import { useAgent } from "../../context/agent";
 import { useConfig } from "../../context/config";
 import { useTheme } from "../../theme";
 import { Dialog } from "../../context/dialog";
-import { DialogControls } from "../shared/dialog-controls";
+import DialogLayout from "../dialog-layout";
 import { ModelPicker } from "./ModelPicker";
 
 interface ModelPickerDialogProps {
@@ -21,23 +21,26 @@ export default function ModelPickerDialog({ onClose }: ModelPickerDialogProps) {
   const config = useConfig();
   const { model, setModel, isModelUserSelected } = useAgent();
 
+  const title = (
+    <text>
+      <span fg={colors.primary}>Select AI Model</span>
+      <span fg={colors.textMuted}> ({model.name})</span>
+      <span fg={colors.textMuted}>
+        {" "}
+        [{isModelUserSelected ? "user" : "default"}]
+      </span>
+    </text>
+  );
+
   return (
     <Dialog size="large" onClose={onClose}>
-      <box flexDirection="column" width="100%" paddingLeft={2} paddingTop={1}>
-        <box flexShrink={0} width="100%" overflow="hidden">
-          <text>
-            <span fg={colors.primary}>Select AI Model</span>
-            <span fg={colors.textMuted}> ({model.name})</span>
-            <span fg={colors.textMuted}>
-              {" "}
-              [{isModelUserSelected ? "user" : "default"}]
-            </span>
-          </text>
-        </box>
+      <DialogLayout
+        title={title}
+        footerActions={[{ key: "Enter", label: "confirm", variant: "primary" }]}
+      >
         <box
           flexDirection="column"
           paddingLeft={1}
-          marginTop={1}
           flexShrink={1}
           overflow="hidden"
         >
@@ -52,12 +55,7 @@ export default function ModelPickerDialog({ onClose }: ModelPickerDialogProps) {
             isModelUserSelected={isModelUserSelected}
           />
         </box>
-        <box marginTop={1} paddingLeft={1} flexShrink={0}>
-          <DialogControls
-            controls={[{ key: "Enter", label: "Confirm", variant: "primary" }]}
-          />
-        </box>
-      </box>
+      </DialogLayout>
     </Dialog>
   );
 }
