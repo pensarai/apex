@@ -7,7 +7,7 @@
 
 import { useState, useMemo, useEffect, useRef } from "react";
 import { useKeyboard } from "@opentui/react";
-import { SyntaxStyle, ScrollBoxRenderable } from "@opentui/core";
+import { ScrollBoxRenderable } from "@opentui/core";
 import { scrollToIndex } from "../../utils/scroll";
 import { useCommand } from "../../context/command";
 import { useTheme } from "../../theme";
