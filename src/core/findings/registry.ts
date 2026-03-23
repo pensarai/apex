@@ -271,6 +271,10 @@ export class FindingsRegistry {
 
     const files = readdirSync(findingsPath).filter((f) => f.endsWith(".json"));
 
+    console.log(
+      `[FindingsRegistry.fromDirectory] path=${findingsPath}, jsonFiles=${files.length}`,
+    );
+
     for (const file of files) {
       try {
         const raw = readFileSync(join(findingsPath, file), "utf-8");
@@ -281,11 +285,24 @@ export class FindingsRegistry {
           typeof finding.endpoint === "string"
         ) {
           registry.indexFinding(finding);
+          console.log(
+            `[FindingsRegistry.fromDirectory]   indexed: "${finding.title}" endpoint="${finding.endpoint}" (file=${file})`,
+          );
+        } else {
+          console.log(
+            `[FindingsRegistry.fromDirectory]   skipped (missing title/endpoint): file=${file}`,
+          );
         }
       } catch {
-        // skip malformed files
+        console.log(
+          `[FindingsRegistry.fromDirectory]   skipped (malformed): file=${file}`,
+        );
       }
     }
+
+    console.log(
+      `[FindingsRegistry.fromDirectory] Registry initialized: ${registry.size} findings indexed`,
+    );
 
     return registry;
   }
@@ -353,19 +370,30 @@ export class FindingsRegistry {
    * **not** added to the registry.
    */
   async register(finding: Finding): Promise<DuplicateCheckResult> {
+    console.log(
+      `[FindingsRegistry.register] Checking: "${finding.title}" endpoint="${finding.endpoint}"`,
+    );
+
     // -- Fast path: Tier 1+2 inside the mutex ----------------------------
     const fastResult = await new Promise<DuplicateCheckResult | null>(
       (resolve) => {
         this.mutex = this.mutex.then(() => {
           const check = this.isDuplicate(finding);
           if (check.duplicate) {
+            console.log(
+              `[FindingsRegistry.register] DUPLICATE (${check.matchType}): "${finding.title}" matched="${check.matchedFinding?.title}"`,
+            );
             resolve(check);
           } else if (!this.model || this.findings.length === 0) {
-            // No model or nothing to compare against — accept immediately
             this.indexFinding(finding);
+            console.log(
+              `[FindingsRegistry.register] UNIQUE (Tier 1+2, no LLM needed): "${finding.title}" — registry size=${this.size}`,
+            );
             resolve({ duplicate: false });
           } else {
-            // Needs Tier 3 — release the mutex and signal the caller
+            console.log(
+              `[FindingsRegistry.register] Tier 1+2 pass — proceeding to Tier 3 LLM check for "${finding.title}"`,
+            );
             resolve(null);
           }
         });
@@ -381,10 +409,15 @@ export class FindingsRegistry {
     try {
       semanticResult = await this.semanticDedup(finding, snapshot);
     } catch {
-      // LLM unavailable / errored — degrade gracefully to Tier 1+2 only
+      console.log(
+        `[FindingsRegistry.register] Tier 3 LLM error for "${finding.title}" — falling back to Tier 1+2 only`,
+      );
     }
 
     if (semanticResult.duplicate) {
+      console.log(
+        `[FindingsRegistry.register] DUPLICATE (semantic/Tier 3): "${finding.title}" matched="${semanticResult.matchedFinding?.title}"`,
+      );
       return semanticResult;
     }
 
@@ -393,9 +426,15 @@ export class FindingsRegistry {
       this.mutex = this.mutex.then(() => {
         const recheck = this.isDuplicate(finding);
         if (recheck.duplicate) {
+          console.log(
+            `[FindingsRegistry.register] DUPLICATE (race re-check, ${recheck.matchType}): "${finding.title}" matched="${recheck.matchedFinding?.title}"`,
+          );
           resolve(recheck);
         } else {
           this.indexFinding(finding);
+          console.log(
+            `[FindingsRegistry.register] UNIQUE (all tiers passed): "${finding.title}" — registry size=${this.size}`,
+          );
           resolve({ duplicate: false });
         }
       });

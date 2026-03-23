@@ -105,6 +105,8 @@ export default function OperatorDashboard({
   } = useAgent();
   const {
     autocompleteOptions: allAutocompleteOptions,
+    commandOptionMap,
+    commandNames,
     executeCommand,
     resolveSkillContent,
     skillsRegistry,
@@ -1562,6 +1564,8 @@ export default function OperatorDashboard({
         onAutoApprove={handleAutoApprove}
         enableAutocomplete={true}
         autocompleteOptions={autocompleteOptions}
+        commandOptionMap={commandOptionMap}
+        commandNames={commandNames}
         autocompletePlacement="above"
         enableCommands={true}
         onCommandExecute={handleCommandExecute}
