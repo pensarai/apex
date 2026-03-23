@@ -109,7 +109,7 @@ FINDING STRUCTURE:
         }
 
         // -- CVSS 4.0 scoring (determines severity) ------------------------
-        let cvssResult: CVSSScorerResult;
+        let cvssResult: CVSSScorerResult = FALLBACK_CVSS;
         let cvssWarning: string | undefined;
 
         const cvssInput: CVSSScorerInput = {
@@ -126,7 +126,11 @@ FINDING STRUCTURE:
         };
 
         const MAX_CVSS_ATTEMPTS = 2;
-        for (let attempt = 0; ; attempt++) {
+        for (
+          let attempt = 0;
+          attempt < MAX_CVSS_ATTEMPTS;
+          attempt++
+        ) {
           try {
             cvssResult = await scoreFindingWithCVSS(
               cvssInput,
@@ -136,12 +140,17 @@ FINDING STRUCTURE:
             );
             break;
           } catch (err: unknown) {
-            if (attempt >= MAX_CVSS_ATTEMPTS - 1 || ctx.abortSignal?.aborted) {
-              const msg = err instanceof Error ? err.message : String(err);
+            const msg = err instanceof Error ? err.message : String(err);
+
+            if (
+              attempt >= MAX_CVSS_ATTEMPTS - 1 ||
+              ctx.abortSignal?.aborted
+            ) {
               cvssWarning = `CVSS scoring failed after ${attempt + 1} attempt(s) (${msg}), using estimated MEDIUM severity.`;
               cvssResult = FALLBACK_CVSS;
               break;
             }
+
             await new Promise<void>((resolve) => {
               const timer = setTimeout(resolve, 2_000);
               if (ctx.abortSignal) {
@@ -159,6 +168,7 @@ FINDING STRUCTURE:
                 }
               }
             });
+
             if (ctx.abortSignal?.aborted) {
               cvssWarning = `CVSS scoring cancelled, using estimated MEDIUM severity.`;
               cvssResult = FALLBACK_CVSS;
