@@ -132,9 +132,10 @@ describe("URL Parsing Utilities", () => {
     });
 
     it("should add parsed port to existing ports", () => {
-      const result = getAutoPopulatedPorts("https://example.com:9000", [
-        443, 8080,
-      ]);
+      const result = getAutoPopulatedPorts(
+        "https://example.com:9000",
+        [443, 8080],
+      );
       expect(result).toEqual([443, 8080, 9000]);
     });
 
