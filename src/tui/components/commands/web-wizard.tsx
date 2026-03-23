@@ -10,6 +10,10 @@ import { getAvailableModels } from "../../../core/providers/utils";
 import { useTheme } from "../../theme";
 import { Dialog } from "../../context/dialog";
 import DialogLayout from "../dialog-layout";
+import {
+  getAutoPopulatedHosts,
+  getAutoPopulatedPorts,
+} from "../../../util/url";
 
 // Wizard step types
 type WizardStep = "target" | "configure" | "creating";
@@ -188,27 +192,37 @@ export default function WebWizard({
 
   // Wizard state
   const [currentStep, setCurrentStep] = useState<WizardStep>(initialStep);
-  const [state, setState] = useState<WizardState>(() => ({
-    target: initialTarget || "",
-    sourceCodeAccess: false,
-    cwd: process.cwd(),
-    auth: {
-      loginUrl: initialAuthUrl || "",
-      username: initialAuthUser || "",
-      password: initialAuthPass || "",
-      instructions: initialAuthInstructions || "",
-    },
-    scope: {
-      allowedHosts: initialHosts || [],
-      allowedPorts: initialPorts?.map(String) || [],
-      strictScope: initialStrict || false,
-      enumerateSubdomains: false,
-    },
-    headers: {
-      mode: initialHeadersMode || "default",
-      customHeaders: initialCustomHeaders || {},
-    },
-  }));
+  const [state, setState] = useState<WizardState>(() => {
+    // Auto-populate hosts and ports from target URL
+    const autoHosts = initialTarget
+      ? getAutoPopulatedHosts(initialTarget, initialHosts || [])
+      : initialHosts || [];
+    const autoPorts = initialTarget
+      ? getAutoPopulatedPorts(initialTarget, initialPorts || [])
+      : initialPorts || [];
+
+    return {
+      target: initialTarget || "",
+      sourceCodeAccess: false,
+      cwd: process.cwd(),
+      auth: {
+        loginUrl: initialAuthUrl || "",
+        username: initialAuthUser || "",
+        password: initialAuthPass || "",
+        instructions: initialAuthInstructions || "",
+      },
+      scope: {
+        allowedHosts: autoHosts,
+        allowedPorts: autoPorts.map(String),
+        strictScope: initialStrict || false,
+        enumerateSubdomains: false,
+      },
+      headers: {
+        mode: initialHeadersMode || "default",
+        customHeaders: initialCustomHeaders || {},
+      },
+    };
+  });
 
   // UI state for target step
   const [targetFocusedField, setTargetFocusedField] = useState(0); // 0=target, 1=source code access, 2=cwd (if enabled)
@@ -224,6 +238,32 @@ export default function WebWizard({
   // Error state
   const [error, setError] = useState<string | null>(null);
   const [targetError, setTargetError] = useState<string | null>(null);
+
+  // Helper to auto-populate hosts/ports from target when transitioning to configure step
+  function autoPopulateScopeFromTarget() {
+    if (!state.target.trim()) return;
+
+    const currentHosts = state.scope.allowedHosts;
+    const currentPorts = state.scope.allowedPorts.map((p) => parseInt(p, 10));
+
+    const autoHosts = getAutoPopulatedHosts(state.target, currentHosts);
+    const autoPorts = getAutoPopulatedPorts(state.target, currentPorts);
+
+    // Only update if we actually added something new
+    if (
+      autoHosts.length !== currentHosts.length ||
+      autoPorts.length !== currentPorts.length
+    ) {
+      setState((prev) => ({
+        ...prev,
+        scope: {
+          ...prev.scope,
+          allowedHosts: autoHosts,
+          allowedPorts: autoPorts.map(String),
+        },
+      }));
+    }
+  }
 
   // Create session and navigate to session route
   async function createSessionAndNavigate() {
@@ -329,6 +369,7 @@ export default function WebWizard({
         key.preventDefault();
         if (state.target.trim()) {
           setTargetError(null);
+          autoPopulateScopeFromTarget();
           setCurrentStep("configure");
         } else {
           setTargetError("Target URL is required");
@@ -655,6 +696,7 @@ export default function WebWizard({
               onSubmit={() => {
                 if (state.target.trim()) {
                   setTargetError(null);
+                  autoPopulateScopeFromTarget();
                   setCurrentStep("configure");
                 } else {
                   setTargetError("Target URL is required");
