@@ -548,6 +548,48 @@ describe("convertModelMessagesToUI", () => {
     expect(uiMsgs[3].content).toBe("Found port 80 open.");
   });
 
+  it("unwraps AI SDK json-wrapped tool output (operator messages.json resume)", () => {
+    const modelMessages: ModelMessage[] = [
+      makeMsg("user", "read it"),
+      makeMsg("assistant", [
+        { type: "text", text: "Reading" },
+        {
+          type: "tool-call",
+          toolCallId: "tc-read",
+          toolName: "read_file",
+          input: { path: "README.md", toolCallDescription: "read README.md" },
+        },
+      ]),
+      makeMsg("tool", [
+        {
+          type: "tool-result",
+          toolCallId: "tc-read",
+          toolName: "read_file",
+          output: {
+            type: "json",
+            value: {
+              success: true,
+              error: "",
+              content: "     1|hello",
+              path: "README.md",
+              totalLines: 80,
+            },
+          },
+        },
+      ]),
+    ];
+
+    const uiMsgs = convertModelMessagesToUI(modelMessages);
+    const toolMsg = uiMsgs.find((m) => m.role === "tool");
+    expect(toolMsg?.result).toEqual({
+      success: true,
+      error: "",
+      content: "     1|hello",
+      path: "README.md",
+      totalLines: 80,
+    });
+  });
+
   it("returns empty array for empty input", () => {
     const uiMsgs = convertModelMessagesToUI([]);
     expect(uiMsgs).toEqual([]);

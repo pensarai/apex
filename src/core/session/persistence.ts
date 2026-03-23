@@ -334,6 +334,35 @@ function parseSubagentFilename(filename: string): {
 }
 
 /**
+ * AI SDK v6 persists tool outputs on `response.messages` (e.g. `messages.json`)
+ * as `{ type: "json", value }` or `{ type: "text", value }`. Streaming
+ * `tool-result` events use the raw `execute()` return value. Normalize here so
+ * resumed operator sessions render the same summaries as a live run.
+ */
+function unwrapAiSdkToolOutput(output: unknown): unknown {
+  if (output === null || typeof output !== "object") return output;
+  const o = output as Record<string, unknown>;
+  if (o.type === "json" && "value" in o) {
+    return o.value;
+  }
+  if (o.type === "text" && typeof o.value === "string") {
+    const v = o.value.trim();
+    if (
+      (v.startsWith("{") && v.endsWith("}")) ||
+      (v.startsWith("[") && v.endsWith("]"))
+    ) {
+      try {
+        return JSON.parse(o.value);
+      } catch {
+        return o.value;
+      }
+    }
+    return o.value;
+  }
+  return output;
+}
+
+/**
  * Two-pass: collect tool results by toolCallId, then emit UIMessage[]
  * with tool-call messages enriched with their results.
  */
@@ -349,7 +378,10 @@ function convertMessagesToUI(
     if (Array.isArray(msg.content)) {
       for (const part of msg.content) {
         if (part.type === "tool-result" && part.toolCallId) {
-          toolResults.set(part.toolCallId, part.output);
+          toolResults.set(
+            part.toolCallId,
+            unwrapAiSdkToolOutput(part.output),
+          );
         }
       }
     }
