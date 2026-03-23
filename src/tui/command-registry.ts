@@ -232,17 +232,18 @@ export const commands: CommandConfig[] = [
       },
     ],
     handler: async (args, ctx) => {
-      // Parse --output flag from args
-      // Look for "--output" in args array, take the next element as value
-      // Default to "threat-model.md" if not provided
-      // Also check for "-o" as alias
       let outputPath = "threat-model.md";
+      let model: string | undefined;
       for (let i = 0; i < args.length; i++) {
         if ((args[i] === "--output" || args[i] === "-o") && args[i + 1]) {
           outputPath = args[i + 1];
-          break;
+        } else if (args[i] === "--model" && args[i + 1]) {
+          model = args[i + 1];
         }
       }
+
+      const skillArgs: Record<string, string> = { output: outputPath };
+      if (model) skillArgs.model = model;
 
       ctx.navigate({
         type: "operator",
@@ -252,7 +253,7 @@ export const commands: CommandConfig[] = [
         },
         initialSkill: {
           slug: "threat-model",
-          args: { output: outputPath },
+          args: skillArgs,
         },
       });
     },
