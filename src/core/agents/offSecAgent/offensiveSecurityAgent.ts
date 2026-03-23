@@ -272,12 +272,12 @@ export class OffensiveSecurityAgent<TResult = void> {
       toolChoice: "auto",
       onStepFinish: async (event) => {
         latestMessages = [
-        ...initialMessagesRef.current,
-        ...event.response.messages,
-      ];
-      schedulePersist();
-      await input.onStepFinish?.(event);
-    },
+          ...initialMessagesRef.current,
+          ...event.response.messages,
+        ];
+        schedulePersist();
+        await input.onStepFinish?.(event);
+      },
       onSummarized: () => {
         // Context was reset by summarization — discard the old history so
         // subsequent onStepFinish writes only persist post-summary messages.
