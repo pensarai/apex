@@ -22,32 +22,29 @@ Want to run from the cloud or integrate it with your CI/CD? See <a href="https:/
   <img src="screenshot.png" alt="Pensar Apex Screenshot" width="800">
 </p> -->
 
+## Use Cases
+
+### Developers
+
+- Run `/pentest` before merging a PR — catch vulnerabilities as naturally as running tests
+- Get actionable findings with severity scores, evidence, and suggested fixes — no security background needed
+- Integrate into CI/CD via headless CLI commands or Pensar Console
+
+### Security Engineers
+
+- Deploy agent-driven swarm testing across large attack surfaces
+- Use `/operator` mode for manual investigation, exploit chaining, and validation
+- Automate repetitive testing workflows with persistent memory that accumulates across engagements
+- Scale across teams and projects through Pensar Console
+
 ## Installation
 
-#### macOS / Linux (Quick Install)
-
-```bash
-curl -fsSL https://pensarai.com/install.sh | bash
-```
-
-#### Homebrew
-
-```bash
-brew tap pensarai/tap
-brew install apex
-```
-
-#### npm
-
-```bash
-npm install -g @pensar/apex
-```
-
-#### Windows (PowerShell)
-
-```powershell
-irm https://www.pensarai.com/apex.ps1 | iex
-```
+| Method                          | Command                                              |
+| ------------------------------- | ---------------------------------------------------- |
+| **Quick Install** (macOS/Linux) | `curl -fsSL https://pensarai.com/install.sh \| bash` |
+| **Homebrew**                    | `brew tap pensarai/tap && brew install apex`         |
+| **npm**                         | `npm install -g @pensar/apex`                        |
+| **Windows** (PowerShell)        | `irm https://www.pensarai.com/apex.ps1 \| iex`       |
 
 ## Usage
 
@@ -73,23 +70,6 @@ Inside the container, run:
 ```bash
 pensar
 ```
-
----
-
-## Use Cases
-
-### Developers
-
-- Run `/pentest` before merging a PR — catch vulnerabilities as naturally as running tests
-- Get actionable findings with severity scores, evidence, and suggested fixes — no security background needed
-- Integrate into CI/CD via headless CLI commands or Pensar Console
-
-### Security Engineers
-
-- Deploy agent-driven swarm testing across large attack surfaces
-- Use `/operator` mode for manual investigation, exploit chaining, and validation
-- Automate repetitive testing workflows with persistent memory that accumulates across engagements
-- Scale across teams and projects through Pensar Console
 
 ---
 

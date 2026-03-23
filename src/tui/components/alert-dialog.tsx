@@ -69,6 +69,18 @@ export default function AlertDialog({
         padding={1}
         paddingTop={1}
       >
+        {!disableEscape && (
+          <box
+            width="100%"
+            flexDirection="row"
+            justifyContent="flex-end"
+            marginBottom={1}
+          >
+            <text fg={colors.textMuted}>
+              <span fg={colors.textMuted}>[Esc]</span> Close
+            </text>
+          </box>
+        )}
         {title ? (
           <box marginBottom={1}>
             <text fg={colors.primary}>{title}</text>
@@ -77,11 +89,6 @@ export default function AlertDialog({
         <box flexDirection="column">
           {message ? <text fg={colors.text}>{message}</text> : children}
         </box>
-        {!disableEscape ? (
-          <box marginTop={1}>
-            <text fg={colors.textMuted}>Press Esc to close</text>
-          </box>
-        ) : null}
       </box>
     </box>
   );

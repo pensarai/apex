@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   filterInlineSuggestions,
+  filterInlineOptionSuggestions,
   detectInlineSlash,
+  detectInlineOption,
   computeInlineCompletion,
-  resolveSubmitValue,
   computeUpArrow,
   computeDownArrow,
   computeTab,
@@ -26,32 +27,6 @@ const options: AutocompleteOption[] = [
 ];
 
 const history = ["first cmd", "second cmd", "third cmd"];
-
-// ---------------------------------------------------------------------------
-// resolveSubmitValue
-// ---------------------------------------------------------------------------
-
-describe("resolveSubmitValue", () => {
-  it("returns selected suggestion value when valid index", () => {
-    expect(resolveSubmitValue("typed text", options, 1)).toBe("/pentest");
-  });
-
-  it("returns trimmed raw text when no suggestions", () => {
-    expect(resolveSubmitValue("  hello  ", [], -1)).toBe("hello");
-  });
-
-  it("returns trimmed raw text when selectedIndex is -1", () => {
-    expect(resolveSubmitValue("  hello  ", options, -1)).toBe("hello");
-  });
-
-  it("returns trimmed raw text when selectedIndex is out of bounds", () => {
-    expect(resolveSubmitValue("hello", options, 999)).toBe("hello");
-  });
-
-  it("returns empty string for whitespace-only raw text with no selection", () => {
-    expect(resolveSubmitValue("   ", [], -1)).toBe("");
-  });
-});
 
 // ---------------------------------------------------------------------------
 // computeUpArrow
@@ -643,5 +618,165 @@ describe("computeInlineCompletion", () => {
     );
     expect(result.newText).toBe("test /help");
     expect(result.cursorOffset).toBe(10);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// detectInlineOption
+// ---------------------------------------------------------------------------
+
+const knownCommands = new Set(["pentest", "p", "operator", "o", "themes"]);
+
+describe("detectInlineOption", () => {
+  it("detects -- after a known command", () => {
+    expect(detectInlineOption("/pentest --", 11, knownCommands)).toEqual({
+      commandName: "pentest",
+      token: "--",
+      start: 9,
+      end: 11,
+    });
+  });
+
+  it("detects partial option", () => {
+    expect(detectInlineOption("/pentest --tar", 14, knownCommands)).toEqual({
+      commandName: "pentest",
+      token: "--tar",
+      start: 9,
+      end: 14,
+    });
+  });
+
+  it("detects option after existing flags", () => {
+    const text = "/pentest --target http://foo --na";
+    expect(detectInlineOption(text, text.length, knownCommands)).toEqual({
+      commandName: "pentest",
+      token: "--na",
+      start: 29,
+      end: 33,
+    });
+  });
+
+  it("works with aliases", () => {
+    expect(detectInlineOption("/p --target", 11, knownCommands)).toEqual({
+      commandName: "p",
+      token: "--target",
+      start: 3,
+      end: 11,
+    });
+  });
+
+  it("returns null for unknown command", () => {
+    expect(detectInlineOption("/unknown --tar", 14, knownCommands)).toBeNull();
+  });
+
+  it("returns null when no command prefix", () => {
+    expect(detectInlineOption("hello --tar", 11, knownCommands)).toBeNull();
+  });
+
+  it("returns null when -- is not preceded by whitespace", () => {
+    expect(detectInlineOption("/pentest x--tar", 15, knownCommands)).toBeNull();
+  });
+
+  it("returns null when cursor is at 0", () => {
+    expect(detectInlineOption("--target", 0, knownCommands)).toBeNull();
+  });
+
+  it("returns null for single dash", () => {
+    expect(detectInlineOption("/pentest -t", 11, knownCommands)).toBeNull();
+  });
+
+  it("returns null with empty known commands", () => {
+    expect(detectInlineOption("/pentest --tar", 14, new Set())).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// filterInlineOptionSuggestions
+// ---------------------------------------------------------------------------
+
+const optionSuggestions: AutocompleteOption[] = [
+  { value: "--target", label: "--target <url>", description: "Target URL" },
+  { value: "--name", label: "--name <name>", description: "Session name" },
+  { value: "--tier", label: "--tier <1-5>", description: "Permission tier" },
+  { value: "--strict", label: "--strict", description: "Strict scope mode" },
+];
+
+describe("filterInlineOptionSuggestions", () => {
+  it("returns all options for just --", () => {
+    const result = filterInlineOptionSuggestions(
+      "--",
+      optionSuggestions,
+      "/pentest --",
+      10,
+    );
+    expect(result.length).toBe(optionSuggestions.length);
+  });
+
+  it("filters by prefix", () => {
+    const result = filterInlineOptionSuggestions(
+      "--t",
+      optionSuggestions,
+      "/pentest --t",
+      10,
+    );
+    expect(result.every((o) => o.value.startsWith("--t"))).toBe(true);
+    expect(result.length).toBe(2); // --target, --tier
+  });
+
+  it("returns empty for exact match", () => {
+    expect(
+      filterInlineOptionSuggestions(
+        "--target",
+        optionSuggestions,
+        "/pentest --target",
+        10,
+      ),
+    ).toEqual([]);
+  });
+
+  it("excludes already-used options from results", () => {
+    const fullText = "/pentest --target http://foo --";
+    const result = filterInlineOptionSuggestions(
+      "--",
+      optionSuggestions,
+      fullText,
+      10,
+    );
+    expect(result.some((o) => o.value === "--target")).toBe(false);
+    expect(result.length).toBe(3); // --name, --tier, --strict
+  });
+
+  it("respects maxSuggestions", () => {
+    expect(
+      filterInlineOptionSuggestions("--", optionSuggestions, "/pentest --", 2)
+        .length,
+    ).toBe(2);
+  });
+
+  it("returns empty for non-dash token", () => {
+    expect(
+      filterInlineOptionSuggestions(
+        "target",
+        optionSuggestions,
+        "/pentest target",
+        10,
+      ),
+    ).toEqual([]);
+  });
+
+  it("returns empty for empty options", () => {
+    expect(
+      filterInlineOptionSuggestions("--t", [], "/pentest --t", 10),
+    ).toEqual([]);
+  });
+
+  it("is case-insensitive", () => {
+    const result = filterInlineOptionSuggestions(
+      "--T",
+      optionSuggestions,
+      "/pentest --T",
+      10,
+    );
+    expect(result.length).toBe(2); // --target, --tier
   });
 });

@@ -20,6 +20,10 @@ import { createSkillsRegistry, type SkillsRegistry } from "../../core/skills";
 interface CommandContextValue {
   router: CommandRouter<AppCommandContext>;
   autocompleteOptions: AutocompleteOption[];
+  /** Map from command name/alias → AutocompleteOption[] for that command's --options */
+  commandOptionMap: Map<string, AutocompleteOption[]>;
+  /** Set of all command names + aliases (for option detection) */
+  commandNames: Set<string>;
   executeCommand: (input: string) => Promise<boolean>;
   commands: typeof commands;
   /** Reload skills from disk (e.g. after creating a new one) */
@@ -51,11 +55,11 @@ interface CommandProviderProps {
   onOpenThemeDialog?: () => void;
   onOpenModelDialog?: () => void;
   onOpenProvidersDialog?: () => void;
-  onOpenConfigDialog?: () => void;
   onOpenCreditsDialog?: () => void;
   onOpenHelpDialog?: () => void;
   onOpenAuthDialog?: () => void;
   onOpenPentestDialog?: (flags?: WebCommandOptions) => void;
+  onOpenSkillsDialog?: (slug?: string) => void;
 }
 
 export function CommandProvider({
@@ -64,11 +68,11 @@ export function CommandProvider({
   onOpenThemeDialog,
   onOpenModelDialog,
   onOpenProvidersDialog,
-  onOpenConfigDialog,
   onOpenCreditsDialog,
   onOpenHelpDialog,
   onOpenAuthDialog,
   onOpenPentestDialog,
+  onOpenSkillsDialog,
 }: CommandProviderProps) {
   const route = useRoute();
   const [registry] = useState(() => createSkillsRegistry());
@@ -82,11 +86,11 @@ export function CommandProvider({
       openThemeDialog: onOpenThemeDialog,
       openModelDialog: onOpenModelDialog,
       openProvidersDialog: onOpenProvidersDialog,
-      openConfigDialog: onOpenConfigDialog,
       openCreditsDialog: onOpenCreditsDialog,
       openHelpDialog: onOpenHelpDialog,
       openAuthDialog: onOpenAuthDialog,
       openPentestDialog: onOpenPentestDialog,
+      openSkillsDialog: onOpenSkillsDialog,
     };
     return ctx;
   }, [
@@ -95,11 +99,11 @@ export function CommandProvider({
     onOpenThemeDialog,
     onOpenModelDialog,
     onOpenProvidersDialog,
-    onOpenConfigDialog,
     onOpenCreditsDialog,
     onOpenHelpDialog,
     onOpenAuthDialog,
     onOpenPentestDialog,
+    onOpenSkillsDialog,
   ]);
 
   const refreshSkills = useCallback(async () => {
@@ -138,7 +142,8 @@ export function CommandProvider({
     [registry, registryVersion],
   );
 
-  // Generate autocomplete options from router commands + skills
+  // Generate autocomplete options from router commands + skills.
+  // Order is determined by the commands array in command-registry.ts.
   const autocompleteOptions = useMemo((): AutocompleteOption[] => {
     const routerCommands = router.getAllCommands();
     const options: AutocompleteOption[] = [];
@@ -164,36 +169,40 @@ export function CommandProvider({
       });
     }
 
-    // Sort commands with priority order first, then others alphabetically
-    const priorityOrder = [
-      "/pentest",
-      "/operator",
-      "/auth",
-      "/models",
-      "/sessions",
-      "/themes",
-      "/help",
-    ];
-
-    return options.sort((a, b) => {
-      const aIndex = priorityOrder.indexOf(a.value);
-      const bIndex = priorityOrder.indexOf(b.value);
-
-      // Both in priority list - sort by priority order
-      if (aIndex !== -1 && bIndex !== -1) {
-        return aIndex - bIndex;
-      }
-
-      // Only a is in priority list - a comes first
-      if (aIndex !== -1) return -1;
-
-      // Only b is in priority list - b comes first
-      if (bIndex !== -1) return 1;
-
-      // Neither in priority list - sort alphabetically
-      return a.value.localeCompare(b.value);
-    });
+    return options;
   }, [router, registry, registryVersion]);
+
+  // Build option map: command name/alias → AutocompleteOption[] for --flags
+  const commandOptionMap = useMemo(() => {
+    const map = new Map<string, AutocompleteOption[]>();
+    for (const cmd of commands) {
+      if (!cmd.options?.length) continue;
+      const opts: AutocompleteOption[] = cmd.options
+        .filter((o) => o.name.startsWith("--"))
+        .map((o) => ({
+          value: o.name,
+          label: o.name + (o.valueHint ? ` ${o.valueHint}` : ""),
+          description: o.description,
+        }));
+      if (opts.length === 0) continue;
+      map.set(cmd.name, opts);
+      for (const alias of cmd.aliases ?? []) {
+        map.set(alias, opts);
+      }
+    }
+    return map;
+  }, []);
+
+  // Set of all command names + aliases for option detection
+  const commandNames = useMemo(() => {
+    const names = new Set<string>();
+    for (const cmd of commands) {
+      if (cmd.hidden) continue;
+      names.add(cmd.name);
+      for (const alias of cmd.aliases ?? []) names.add(alias);
+    }
+    return names;
+  }, []);
 
   const executeCommand = useCallback(
     async (input: string): Promise<boolean> => {
@@ -206,6 +215,8 @@ export function CommandProvider({
     () => ({
       router,
       autocompleteOptions,
+      commandOptionMap,
+      commandNames,
       executeCommand,
       commands,
       refreshSkills,
@@ -216,6 +227,8 @@ export function CommandProvider({
     [
       router,
       autocompleteOptions,
+      commandOptionMap,
+      commandNames,
       executeCommand,
       refreshSkills,
       resolveSkillContent,
