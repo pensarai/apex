@@ -5,15 +5,16 @@
  * Arrow keys to navigate, Enter for detail view, Escape to close.
  */
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useKeyboard } from "@opentui/react";
+import { ScrollBoxRenderable } from "@opentui/core";
+import { scrollToIndex } from "../../utils/scroll";
 import { useCommand } from "../../context/command";
-import { useDimensions } from "../../context/dimensions";
 import { useTheme } from "../../theme";
 import { useToast } from "../../context/toast";
 import { Dialog } from "../../context/dialog";
-import { MarkdownViewer } from "../shared/markdown-viewer";
-import { DialogControls } from "../shared/dialog-controls";
+import DialogLayout from "../dialog-layout";
+import { useMarkdownSyntaxStyle } from "../shared/markdown-viewer";
 import { openFileInDefaultApp } from "../../utils/open-file";
 import type { SkillEntry, SkillSource } from "../../../core/skills/types";
 
@@ -41,9 +42,9 @@ export default function SkillsDialog({
   const { colors } = useTheme();
   const { skillsRegistry } = useCommand();
   const { toast } = useToast();
-  const dimensions = useDimensions();
 
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const scrollboxRef = useRef<ScrollBoxRenderable | null>(null);
   const [detailSkill, setDetailSkill] = useState<SkillEntry | null>(() => {
     if (initialSlug) {
       const entry = skillsRegistry.get(initialSlug);
@@ -140,10 +141,18 @@ export default function SkillsDialog({
     }
   });
 
-  // Clamp index
-  const safeIndex = Math.min(selectedIndex, flatList.length - 1);
+  const safeIndex = Math.max(0, Math.min(selectedIndex, flatList.length - 1));
 
-  const panelWidth = Math.min(76, dimensions.width - 4);
+  useEffect(() => {
+    scrollToIndex(
+      scrollboxRef.current,
+      safeIndex,
+      flatList,
+      (skill) => skill.slug,
+    );
+  }, [safeIndex, flatList]);
+
+  const syntaxStyle = useMarkdownSyntaxStyle();
 
   // ---------- Detail view ----------
   if (detailSkill) {
@@ -152,159 +161,144 @@ export default function SkillsDialog({
     const instrTokens = estimateTokens(instrText);
     const descTokens = estimateTokens(m.description);
 
+    const detailTitle = (
+      <text>
+        <span fg={colors.primary}>{detailSkill.slug}</span>
+        {m.version && <span fg={colors.textMuted}> v{m.version}</span>}
+        <span fg={colors.textMuted}>
+          {" "}
+          {detailInstructions !== null
+            ? `~${instrTokens + descTokens} tokens`
+            : "loading..."}
+        </span>
+      </text>
+    );
+
     return (
       <Dialog size="large" onClose={() => setDetailSkill(null)}>
-        <MarkdownViewer
-          content={instrText}
-          loading={detailInstructions === null}
-          width={panelWidth}
-          headerLeft={
-            <text>
-              <span fg={colors.primary}>{detailSkill.slug}</span>
-              {m.version && <span fg={colors.textMuted}> v{m.version}</span>}
-            </text>
-          }
-          headerRight={
-            <text fg={colors.textMuted}>
-              {detailInstructions !== null
-                ? `~${instrTokens + descTokens} tokens`
-                : "loading..."}
-            </text>
-          }
-          beforeContent={
-            <box flexDirection="column" paddingLeft={1}>
-              {m.tags && m.tags.length > 0 && (
-                <text>
-                  <span fg={colors.textMuted}>Tags: </span>
-                  <span fg={colors.text}>{m.tags.join(", ")}</span>
-                </text>
-              )}
+        <DialogLayout
+          title={detailTitle}
+          escLabel="back"
+          footerActions={[
+            { key: "E", label: "open in editor", variant: "primary" },
+          ]}
+        >
+          {/* Metadata */}
+          <box flexDirection="column">
+            {m.tags && m.tags.length > 0 && (
               <text>
-                <span fg={colors.textMuted}>Source: </span>
-                <span fg={colors.text}>{detailSkill.filePath}</span>
+                <span fg={colors.textMuted}>Tags: </span>
+                <span fg={colors.text}>{m.tags.join(", ")}</span>
               </text>
-              {detailSkill.scripts.length > 0 && (
-                <text>
-                  <span fg={colors.textMuted}>Scripts: </span>
-                  <span fg={colors.text}>
-                    {detailSkill.scripts.map((s) => s.name).join(", ")}
-                  </span>
-                </text>
-              )}
-            </box>
-          }
-          footerLeft={
-            <DialogControls
-              controls={[
-                {
-                  key: "E",
-                  label: "Open in Editor",
-                  variant: "primary" as const,
+            )}
+            <text>
+              <span fg={colors.textMuted}>Source: </span>
+              <span fg={colors.text}>{detailSkill.filePath}</span>
+            </text>
+            {detailSkill.scripts.length > 0 && (
+              <text>
+                <span fg={colors.textMuted}>Scripts: </span>
+                <span fg={colors.text}>
+                  {detailSkill.scripts.map((s) => s.name).join(", ")}
+                </span>
+              </text>
+            )}
+          </box>
+
+          {/* Scrollable markdown instructions */}
+          <scrollbox
+            style={{
+              rootOptions: {
+                flexGrow: 1,
+                flexShrink: 1,
+                width: "100%",
+                overflow: "hidden",
+              },
+              contentOptions: {
+                paddingLeft: 2,
+                paddingRight: 2,
+                paddingTop: 1,
+                paddingBottom: 1,
+                flexDirection: "column",
+              },
+              scrollbarOptions: {
+                trackOptions: {
+                  foregroundColor: colors.primary,
+                  backgroundColor: colors.backgroundElement,
                 },
-              ]}
-            />
-          }
-        />
+              },
+            }}
+            stickyScroll={false}
+            focused={true}
+          >
+            {detailInstructions !== null ? (
+              <markdown
+                content={instrText}
+                syntaxStyle={syntaxStyle}
+                conceal={true}
+              />
+            ) : (
+              <text fg={colors.textMuted}>Loading instructions...</text>
+            )}
+          </scrollbox>
+        </DialogLayout>
       </Dialog>
     );
   }
 
   // ---------- List view ----------
 
-  // Calculate visible window for scrolling
-  const listHeight = Math.max(1, dimensions.height - 12);
-  const scrollOffset = Math.max(
-    0,
-    Math.min(
-      safeIndex - Math.floor(listHeight / 2),
-      flatList.length - listHeight,
-    ),
-  );
-
-  // Build visible items with group headers
-  const visibleItems: Array<
-    | { type: "header"; label: string }
-    | { type: "skill"; skill: SkillEntry; index: number }
-  > = [];
-  let runningIdx = 0;
-  for (const group of groups) {
-    const groupStart = runningIdx;
-    const groupEnd = runningIdx + group.skills.length;
-    // Show header if any skill from this group is in the visible window
-    if (groupEnd > scrollOffset && groupStart < scrollOffset + listHeight) {
-      visibleItems.push({ type: "header", label: group.label });
-    }
-    for (const skill of group.skills) {
-      if (
-        runningIdx >= scrollOffset &&
-        runningIdx < scrollOffset + listHeight
-      ) {
-        visibleItems.push({ type: "skill", skill, index: runningIdx });
-      }
-      runningIdx++;
-    }
-  }
-
   return (
     <Dialog size="large" onClose={onClose}>
-      <box flexDirection="column" width="100%" padding={1}>
-        {/* Header */}
-        <box width="100%" flexDirection="row" justifyContent="space-between">
-          <text fg={colors.primary}>Skills</text>
-          <text fg={colors.textMuted}>
-            {allSkills.length} skill{allSkills.length !== 1 ? "s" : ""}
-          </text>
-        </box>
-
-        {/* Separator */}
-        <box width="100%" height={1}>
-          <text fg={colors.border}>{"─".repeat(panelWidth - 2)}</text>
-        </box>
-
+      <DialogLayout
+        title="Skills"
+        footerActions={[{ key: "Enter", label: "details", variant: "primary" }]}
+      >
         {/* Skill list */}
-        <box flexDirection="column" flexGrow={1}>
-          {visibleItems.map((item, i) => {
-            if (item.type === "header") {
-              return (
-                <text key={`h-${item.label}`} fg={colors.textMuted}>
-                  {item.label}
-                </text>
-              );
-            }
-            const selected = item.index === safeIndex;
-            return (
-              <box key={item.skill.slug} flexDirection="row">
-                <text fg={selected ? colors.primary : colors.textMuted}>
-                  {selected ? "❯ " : "  "}
-                </text>
-                <text fg={selected ? colors.primary : colors.text}>
-                  {item.skill.slug}
-                </text>
-                <text fg={colors.textMuted}>
-                  {" "}
-                  · ~{estimateTokens(item.skill.manifest.description)} tokens
-                </text>
-              </box>
-            );
-          })}
+        <scrollbox
+          ref={scrollboxRef}
+          style={{
+            rootOptions: {
+              flexShrink: 1,
+              width: "100%",
+              maxHeight: Math.max(flatList.length + groups.length, 1),
+            },
+            contentOptions: {
+              flexDirection: "column",
+            },
+          }}
+          stickyScroll={false}
+          focused={true}
+        >
+          {groups.map((group) => (
+            <box key={group.label} flexDirection="column">
+              <text fg={colors.textMuted}>{group.label}</text>
+              {group.skills.map((skill) => {
+                const idx = flatList.indexOf(skill);
+                const selected = idx === safeIndex;
+                return (
+                  <box key={skill.slug} id={skill.slug} flexDirection="row">
+                    <text fg={selected ? colors.primary : colors.textMuted}>
+                      {selected ? "❯ " : "  "}
+                    </text>
+                    <text fg={selected ? colors.primary : colors.text}>
+                      {skill.slug}
+                    </text>
+                    <text fg={colors.textMuted}>
+                      {" "}
+                      · ~{estimateTokens(skill.manifest.description)} tokens
+                    </text>
+                  </box>
+                );
+              })}
+            </box>
+          ))}
 
           {allSkills.length === 0 && (
             <text fg={colors.textMuted}>No skills installed.</text>
           )}
-        </box>
-
-        {/* Separator */}
-        <box width="100%" height={1}>
-          <text fg={colors.border}>{"─".repeat(panelWidth - 2)}</text>
-        </box>
-
-        {/* Footer */}
-        <box width="100%" flexDirection="row">
-          <DialogControls
-            controls={[{ key: "Enter", label: "Details", variant: "primary" }]}
-          />
-        </box>
-      </box>
+        </scrollbox>
+      </DialogLayout>
     </Dialog>
   );
 }

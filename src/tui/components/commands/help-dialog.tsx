@@ -16,7 +16,7 @@ import {
   categories,
 } from "../../command-registry";
 import { Dialog } from "../../context/dialog";
-import { DialogControls } from "../shared/dialog-controls";
+import DialogLayout from "../dialog-layout";
 import { useTheme } from "../../theme";
 
 interface HelpDialogProps {
@@ -133,12 +133,7 @@ export default function HelpDialog({ onClose }: HelpDialogProps) {
 
     return (
       <Dialog size="large" onClose={onClose}>
-        <box flexDirection="column" padding={2} gap={1} width="100%">
-          {/* Header */}
-          <box width="100%">
-            <text fg={colors.primary}>/{selectedCommand.name}</text>
-          </box>
-
+        <DialogLayout title={`/${selectedCommand.name}`} escLabel="back">
           {/* Description */}
           <text fg={colors.text}>
             {selectedCommand.description || "No description available"}
@@ -146,7 +141,7 @@ export default function HelpDialog({ onClose }: HelpDialogProps) {
 
           {/* Aliases */}
           {selectedCommand.aliases && selectedCommand.aliases.length > 0 && (
-            <box flexDirection="row">
+            <box flexDirection="row" marginTop={1}>
               <text fg={colors.textMuted}>Aliases: </text>
               <text fg={colors.text}>
                 {selectedCommand.aliases.map((a) => `/${a}`).join(", ")}
@@ -169,7 +164,7 @@ export default function HelpDialog({ onClose }: HelpDialogProps) {
               ))}
             </box>
           )}
-        </box>
+        </DialogLayout>
       </Dialog>
     );
   }
@@ -177,12 +172,10 @@ export default function HelpDialog({ onClose }: HelpDialogProps) {
   // List view
   return (
     <Dialog size="large" onClose={onClose}>
-      <box flexDirection="column" padding={2} gap={1} width="100%">
-        {/* Header */}
-        <box width="100%">
-          <text fg={colors.text}>Commands</text>
-        </box>
-
+      <DialogLayout
+        title="Commands"
+        footerActions={[{ key: "Enter", label: "details", variant: "primary" }]}
+      >
         {/* Commands list grouped by category */}
         <scrollbox
           ref={scrollboxRef}
@@ -232,12 +225,7 @@ export default function HelpDialog({ onClose }: HelpDialogProps) {
             </box>
           ))}
         </scrollbox>
-
-        {/* Footer */}
-        <DialogControls
-          controls={[{ key: "Enter", label: "Details", variant: "primary" }]}
-        />
-      </box>
+      </DialogLayout>
     </Dialog>
   );
 }
