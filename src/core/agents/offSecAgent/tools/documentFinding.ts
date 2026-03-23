@@ -126,11 +126,7 @@ FINDING STRUCTURE:
         };
 
         const MAX_CVSS_ATTEMPTS = 2;
-        for (
-          let attempt = 0;
-          attempt < MAX_CVSS_ATTEMPTS;
-          attempt++
-        ) {
+        for (let attempt = 0; attempt < MAX_CVSS_ATTEMPTS; attempt++) {
           try {
             cvssResult = await scoreFindingWithCVSS(
               cvssInput,
@@ -142,10 +138,7 @@ FINDING STRUCTURE:
           } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : String(err);
 
-            if (
-              attempt >= MAX_CVSS_ATTEMPTS - 1 ||
-              ctx.abortSignal?.aborted
-            ) {
+            if (attempt >= MAX_CVSS_ATTEMPTS - 1 || ctx.abortSignal?.aborted) {
               cvssWarning = `CVSS scoring failed after ${attempt + 1} attempt(s) (${msg}), using estimated MEDIUM severity.`;
               cvssResult = FALLBACK_CVSS;
               break;
