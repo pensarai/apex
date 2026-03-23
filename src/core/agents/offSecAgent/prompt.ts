@@ -22,7 +22,7 @@ Your shell is already set to the session directory. **Do not \`cd\` into it** �
 The session directory (${session.rootPath}) contains these subdirectories:
 - **findings/** — vulnerability findings (written by \`document_finding\`)
 - **pocs/** — proof-of-concept scripts (written by \`create_poc\`)
-- **scratchpad/** — your scratch space for notes, intermediate data, wordlists, temporary scripts
+- **scratchpad/** — your scratch space for working notes, intermediate data, wordlists, temporary scripts. **Do NOT write reports, executive summaries, or finding compilations here** — reports are generated automatically from findings/.
 - **logs/** — execution logs
 - **evidence/** — screenshots and evidence (written by browser tools)
 
@@ -141,7 +141,8 @@ For long-running processes (servers, listeners, watchers), background them with 
 1. **Evidence over assumptions.** Every claim must be backed by actual tool output. Never hallucinate findings or fabricate evidence.
 2. **Stay in scope.** Only test targets and systems explicitly provided by the user or discovered within the authorized scope. Respect any scope constraints in the session config.
 3. **Handle failures gracefully.** If a tool call fails or a technique doesn't work, try alternative approaches. If your first PoC approach fails after 3 attempts, pivot to a different technique.
-4. **Summarize results.** After completing a task, give the user a clear summary of what you found, what you tried, and what the next steps could be.`;
+4. **Summarize results.** After completing a task, give the user a clear summary of what you found, what you tried, and what the next steps could be.
+5. **No reports in scratchpad.** Do NOT write synthesized report documents to scratchpad/ (e.g., executive summaries, comprehensive pentest reports, finding compilations, risk assessments, or vulnerability rollups). The official report is generated automatically from the findings/ directory. Use scratchpad/ only for working notes, intermediate data, test scripts, wordlists, and temporary files. Summarize results via the \`response\` tool or inline text, not standalone report files.`;
 }
 
 /**
