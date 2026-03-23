@@ -55,6 +55,12 @@ export interface AuthenticationAgentInput {
    * The agent will treat non-malicious instructions within the context as guidance.
    */
   context?: string;
+
+  /**
+   * Environment variables to inject into the agent's persistent shell.
+   * Forwarded to the underlying {@link OffensiveSecurityAgentInput}.
+   */
+  environmentVariables?: Record<string, string>;
 }
 
 /** The typed result returned by `AuthenticationAgent.consume()`. */
@@ -122,6 +128,7 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
       onStepFinish,
       abortSignal,
       context,
+      environmentVariables,
     } = opts;
 
     const cm = session.credentialManager;
@@ -135,6 +142,7 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
       authConfig,
       onStepFinish,
       abortSignal,
+      environmentVariables,
       toolChoice: "auto",
       activeTools: [
         // Auth flow tools

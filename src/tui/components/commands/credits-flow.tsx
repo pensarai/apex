@@ -4,6 +4,7 @@ import { useRoute } from "../../context/route";
 import { getPensarConsoleUrl } from "../../../core/api/constants";
 import { validateGateway } from "../../../core/auth";
 import { Dialog } from "../../context/dialog";
+import { DialogControls } from "../shared/dialog-controls";
 import { useTheme } from "../../theme";
 
 type CreditsStep = "loading" | "no-auth" | "display" | "browser-opened";
@@ -146,10 +147,11 @@ export default function CreditsFlow({
               </text>
             </box>
             <box marginTop={1}>
-              <text fg={colors.textMuted}>
-                <span fg={colors.primary}>[ENTER]</span> Run /auth ·{" "}
-                <span fg={colors.primary}>[ESC]</span> Back
-              </text>
+              <DialogControls
+                controls={[
+                  { key: "Enter", label: "Run /auth", variant: "primary" },
+                ]}
+              />
             </box>
           </box>
         )}
@@ -194,11 +196,16 @@ export default function CreditsFlow({
               <text fg={colors.textMuted}>Buy credits at: {creditsUrl}</text>
             </box>
             <box marginTop={1}>
-              <text fg={colors.textMuted}>
-                <span fg={colors.primary}>[ENTER]</span> Open in browser ·{" "}
-                <span fg={colors.primary}>[R]</span> Refresh ·{" "}
-                <span fg={colors.primary}>[ESC]</span> Back
-              </text>
+              <DialogControls
+                controls={[
+                  {
+                    key: "Enter",
+                    label: "Open in Browser",
+                    variant: "primary",
+                  },
+                  { key: "R", label: "Refresh" },
+                ]}
+              />
             </box>
           </box>
         )}
@@ -218,10 +225,15 @@ export default function CreditsFlow({
               </text>
             </box>
             <box marginTop={1}>
-              <text fg={colors.textMuted}>
-                <span fg={colors.primary}>[ENTER]</span> Refresh balance ·{" "}
-                <span fg={colors.primary}>[ESC]</span> Back
-              </text>
+              <DialogControls
+                controls={[
+                  {
+                    key: "Enter",
+                    label: "Refresh Balance",
+                    variant: "primary",
+                  },
+                ]}
+              />
             </box>
           </box>
         )}

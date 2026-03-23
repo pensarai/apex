@@ -663,16 +663,16 @@ export function ModelPicker({
         })}
       </scrollbox>
 
-      {/* Help text */}
-      <box flexShrink={0}>
-        <PickerRow>
-          <text fg={colors.textMuted}>
-            {editingLocalField
-              ? "Type or paste | Enter/Esc to confirm"
-              : "↑/↓ navigate | ←/→ collapse/expand | Type to search"}
-          </text>
-        </PickerRow>
-      </box>
+      {/* Help text for inline editing only — general controls are in ModelPickerDialog */}
+      {editingLocalField && (
+        <box flexShrink={0}>
+          <PickerRow>
+            <text fg={colors.textMuted}>
+              Type or paste | Enter/Esc to confirm
+            </text>
+          </PickerRow>
+        </box>
+      )}
     </box>
   );
 }
