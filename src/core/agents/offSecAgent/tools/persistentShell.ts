@@ -49,9 +49,9 @@ export class PersistentShell {
       // interactive programs from writing prompts to the TUI's TTY.
       detached: process.platform !== "win32",
       env: {
-        PATH: process.env.PATH,
-        HOME: process.env.HOME,
-        USER: process.env.USER,
+        PATH: process.env.PATH ?? "",
+        HOME: process.env.HOME ?? "",
+        USER: process.env.USER ?? "",
         LANG: process.env.LANG,
         TMPDIR: process.env.TMPDIR,
         ...this.extraEnv,
@@ -59,7 +59,7 @@ export class PersistentShell {
         CI: "true",
         TERM: "dumb",
         NO_COLOR: "1",
-      },
+      } as Record<string, string | undefined> as NodeJS.ProcessEnv,
     });
 
     this.alive = true;
