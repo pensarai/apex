@@ -137,8 +137,7 @@ FINDING STRUCTURE:
             break;
           } catch (err: unknown) {
             if (attempt >= MAX_CVSS_ATTEMPTS - 1 || ctx.abortSignal?.aborted) {
-              const msg =
-                err instanceof Error ? err.message : String(err);
+              const msg = err instanceof Error ? err.message : String(err);
               cvssWarning = `CVSS scoring failed after ${attempt + 1} attempt(s) (${msg}), using estimated MEDIUM severity.`;
               cvssResult = FALLBACK_CVSS;
               break;
