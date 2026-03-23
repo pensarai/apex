@@ -150,4 +150,3 @@ For long-running processes (servers, listeners, watchers), background them with 
  * Use {@link buildBaseSystemPrompt} when you need to control sandbox vs CWD mode.
  */
 export const BASE_SYSTEM_PROMPT = buildBaseSystemPrompt();
-
