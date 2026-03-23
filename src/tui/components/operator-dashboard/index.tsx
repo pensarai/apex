@@ -938,11 +938,13 @@ export default function OperatorDashboard({
           setStatus("idle");
           setThinking(false);
           setIsExecuting(false);
+
+          // Add session directory info when agent completes successfully (not aborted)
+          const currentSession = sessionRef.current;
+          const wasAborted = !abortControllerRef.current;
           abortControllerRef.current = null;
 
-          // Add session directory info when agent completes successfully
-          const currentSession = sessionRef.current;
-          if (currentSession && !abortControllerRef.current) {
+          if (currentSession && !wasAborted) {
             setMessages((prev) => [
               ...prev,
               {
@@ -1227,8 +1229,8 @@ export default function OperatorDashboard({
         ...updated,
         {
           role: "system" as const,
-          content: session
-            ? `Agent stopped by user.\n\nSession directory: ${session.rootPath}`
+          content: activeSession
+            ? `Agent stopped by user.\n\nSession directory: ${activeSession.rootPath}`
             : "Agent stopped by user.",
           createdAt: new Date(),
         },
