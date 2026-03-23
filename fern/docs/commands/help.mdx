@@ -112,6 +112,8 @@ For new users, here's the recommended order of commands:
 
 ## Keyboard Shortcuts
 
+### Global
+
 | Key      | Action                  |
 | -------- | ----------------------- |
 | `Ctrl+C` | Clear input / Exit      |
@@ -120,6 +122,25 @@ For new users, here's the recommended order of commands:
 | `Escape` | Return to home          |
 | `Tab`    | Next item               |
 | `?`      | Show keyboard shortcuts |
+
+### Operator Mode
+
+| Key                | Action                                |
+| ------------------ | ------------------------------------- |
+| `Shift+Tab`        | Toggle Default / Plan mode            |
+| `Option+Shift+Tab` | Toggle approval on/off                |
+| `Ctrl+V`           | Toggle verbose output                 |
+| `Ctrl+L`           | Toggle expanded logs                  |
+| `Y`                | Approve pending tool call             |
+| `A`                | Auto-approve all remaining tool calls |
+
+## Command Suggestions
+
+When typing a `/` command, Apex displays a windowed suggestions dropdown with up to 6 visible entries at a time. Commands are sorted by priority — `/pentest`, `/operator`, `/auth`, `/models`, `/sessions`, `/themes`, `/help` appear first, followed by the rest alphabetically. Scroll indicators (`↑`/`↓`) appear when more suggestions exist outside the visible window.
+
+## CLI Commands
+
+In addition to the TUI slash commands above, Apex provides headless CLI commands for pentesting, Console API access, and system management. See the [CLI Commands](/apex/cli/pentest) section in the sidebar for full documentation.
 
 ## Tips
 

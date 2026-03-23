@@ -6,6 +6,7 @@
 
 // Markdown utilities
 export { markdownToStyledText } from "./markdown";
+export { MarkdownViewer } from "./markdown-viewer";
 
 // Message utilities
 export {
@@ -39,6 +40,11 @@ export {
 } from "./result-registry";
 
 // Components
+export {
+  DialogControls,
+  type ControlItem,
+  type DialogControlsProps,
+} from "./dialog-controls";
 export { AsciiSpinner } from "./ascii-spinner";
 export { ToolRenderer } from "./tool-renderer";
 export { MessageRenderer } from "./message-renderer";

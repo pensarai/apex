@@ -1,13 +1,11 @@
 import { useState, useEffect } from "react";
 import { useKeyboard } from "@opentui/react";
 import { useRoute } from "../../context/route";
-import { useConfig } from "../../context/config";
-import {
-  getPensarApiUrl,
-  getPensarConsoleUrl,
-} from "../../../core/api/constants";
-import { ensureValidToken } from "../../../core/auth";
-import { config } from "../../../core/config";
+import { getPensarConsoleUrl } from "../../../core/api/constants";
+import { validateGateway } from "../../../core/auth";
+import { Dialog } from "../../context/dialog";
+import { DialogControls } from "../shared/dialog-controls";
+import { useTheme } from "../../theme";
 
 type CreditsStep = "loading" | "no-auth" | "display" | "browser-opened";
 
@@ -17,12 +15,16 @@ interface CreditsInfo {
 }
 
 interface CreditsFlowProps {
+  onClose?: () => void;
   onOpenAuthDialog?: () => void;
 }
 
-export default function CreditsFlow({ onOpenAuthDialog }: CreditsFlowProps) {
+export default function CreditsFlow({
+  onClose,
+  onOpenAuthDialog,
+}: CreditsFlowProps) {
   const route = useRoute();
-  const appConfig = useConfig();
+  const { colors } = useTheme();
   const [step, setStep] = useState<CreditsStep>("loading");
   const [credits, setCredits] = useState<CreditsInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -30,7 +32,11 @@ export default function CreditsFlow({ onOpenAuthDialog }: CreditsFlowProps) {
   const creditsUrl = `${getPensarConsoleUrl()}/credits`;
 
   const goHome = () => {
-    route.navigate({ type: "base", path: "home" });
+    if (onClose) {
+      onClose();
+    } else {
+      route.navigate({ type: "base", path: "home" });
+    }
   };
 
   const openBrowser = () => {
@@ -51,49 +57,15 @@ export default function CreditsFlow({ onOpenAuthDialog }: CreditsFlowProps) {
   };
 
   const fetchBalance = async () => {
-    const tokenResult = await ensureValidToken({
-      accessToken: appConfig.data.accessToken,
-      refreshToken: appConfig.data.refreshToken,
-      pensarAPIKey: appConfig.data.pensarAPIKey,
-    });
-    if (!tokenResult) {
-      setStep("no-auth");
-      return;
-    }
-
     setStep("loading");
     setError(null);
 
     try {
-      const apiUrl = getPensarApiUrl();
-      const headers: Record<string, string> = {
-        Authorization: `Bearer ${tokenResult.token}`,
-      };
-      // WorkOS auth requires X-Workspace-Id header
-      if (tokenResult.type === "workos" && appConfig.data.workspaceId) {
-        headers["X-Workspace-Id"] = appConfig.data.workspaceId;
-      }
-      const response = await fetch(`${apiUrl}/gateway/validate`, {
-        method: "GET",
-        headers,
-      });
+      const result = await validateGateway();
 
-      if (!response.ok) {
-        throw new Error("Failed to fetch balance");
-      }
-
-      const result = (await response.json()) as {
-        workspace: { name: string };
-        credits: { balance: number };
-        signingKey?: string;
-        gatewayUrl?: string;
-      };
-
-      if (result.signingKey || result.gatewayUrl) {
-        await config.update({
-          gatewaySigningKey: result.signingKey ?? undefined,
-          gatewayUrl: result.gatewayUrl ?? undefined,
-        });
+      if (!result) {
+        setStep("no-auth");
+        return;
       }
 
       setCredits({
@@ -112,6 +84,8 @@ export default function CreditsFlow({ onOpenAuthDialog }: CreditsFlowProps) {
   }, []);
 
   useKeyboard((key) => {
+    key.preventDefault();
+
     if (key.name === "escape") {
       goHome();
       return;
@@ -140,117 +114,130 @@ export default function CreditsFlow({ onOpenAuthDialog }: CreditsFlowProps) {
   });
 
   return (
-    <box
-      flexDirection="column"
-      width="100%"
-      maxWidth={80}
-      alignItems="flex-start"
-      padding={1}
-    >
-      {/* Header */}
-      <box marginBottom={1}>
-        <text fg="green">Credits</text>
-      </box>
-
-      {/* Loading */}
-      {step === "loading" && (
-        <box>
-          <text fg="yellow">Fetching balance...</text>
+    <Dialog size="large" onClose={goHome}>
+      <box
+        flexDirection="column"
+        width="100%"
+        maxWidth={80}
+        alignItems="flex-start"
+        padding={1}
+      >
+        {/* Header */}
+        <box marginBottom={1}>
+          <text fg={colors.primary}>Credits</text>
         </box>
-      )}
 
-      {/* No Auth */}
-      {step === "no-auth" && (
-        <box flexDirection="column" gap={1}>
+        {/* Loading */}
+        {step === "loading" && (
           <box>
-            <text fg="yellow">Not connected to Pensar Console.</text>
+            <text fg={colors.warning}>Fetching balance...</text>
           </box>
-          <box>
-            <text fg="gray">
-              Run <span fg="green">/auth</span> first to connect your account.
-            </text>
-          </box>
-          <box marginTop={1}>
-            <text fg="gray">
-              <span fg="green">[ENTER]</span> Run /auth ·{" "}
-              <span fg="green">[ESC]</span> Back
-            </text>
-          </box>
-        </box>
-      )}
+        )}
 
-      {/* Display Balance */}
-      {step === "display" && (
-        <box flexDirection="column" gap={1}>
-          {error ? (
+        {/* No Auth */}
+        {step === "no-auth" && (
+          <box flexDirection="column" gap={1}>
             <box>
-              <text fg="red">Error: {error}</text>
+              <text fg={colors.warning}>Not connected to Pensar Console.</text>
             </box>
-          ) : credits ? (
-            <>
+            <box>
+              <text fg={colors.textMuted}>
+                Run <span fg={colors.primary}>/auth</span> first to connect your
+                account.
+              </text>
+            </box>
+            <box marginTop={1}>
+              <DialogControls
+                controls={[
+                  { key: "Enter", label: "Run /auth", variant: "primary" },
+                ]}
+              />
+            </box>
+          </box>
+        )}
+
+        {/* Display Balance */}
+        {step === "display" && (
+          <box flexDirection="column" gap={1}>
+            {error ? (
               <box>
-                <text fg="white">Workspace: {credits.workspace}</text>
+                <text fg={colors.error}>Error: {error}</text>
               </box>
-              <box>
-                <text fg="white">
-                  Balance:{" "}
-                  <span fg={credits.balance < 5 ? "yellow" : "green"}>
-                    ${credits.balance.toFixed(2)}
-                  </span>
-                </text>
-              </box>
-              {credits.balance < 5 && (
-                <box marginTop={1}>
-                  <text fg="yellow">
-                    Low balance. We recommend at least $30 for uninterrupted
-                    pentest runs.
+            ) : credits ? (
+              <>
+                <box>
+                  <text>
+                    <span fg={colors.textMuted}>Workspace: </span>
+                    <span fg={colors.text}>{credits.workspace}</span>
                   </text>
                 </box>
-              )}
-            </>
-          ) : null}
+                <box>
+                  <text>
+                    <span fg={colors.textMuted}>Balance: </span>
+                    <span
+                      fg={credits.balance < 5 ? colors.warning : colors.success}
+                    >
+                      ${credits.balance.toFixed(2)}
+                    </span>
+                  </text>
+                </box>
+                {credits.balance < 5 && (
+                  <box marginTop={1}>
+                    <text fg={colors.warning}>
+                      Low balance. We recommend at least $30 for uninterrupted
+                      pentest runs.
+                    </text>
+                  </box>
+                )}
+              </>
+            ) : null}
 
-          <box marginTop={1}>
-            <text fg="gray">
-              Press <span fg="green">[ENTER]</span> to buy credits in your
-              browser.
-            </text>
+            <box marginTop={1}>
+              <text fg={colors.textMuted}>Buy credits at: {creditsUrl}</text>
+            </box>
+            <box marginTop={1}>
+              <DialogControls
+                controls={[
+                  {
+                    key: "Enter",
+                    label: "Open in Browser",
+                    variant: "primary",
+                  },
+                  { key: "R", label: "Refresh" },
+                ]}
+              />
+            </box>
           </box>
-          <box>
-            <text fg="gray">Or visit: {creditsUrl}</text>
-          </box>
-          <box marginTop={1}>
-            <text fg="gray">
-              <span fg="green">[ENTER]</span> Open browser ·{" "}
-              <span fg="green">[R]</span> Refresh ·{" "}
-              <span fg="green">[ESC]</span> Back
-            </text>
-          </box>
-        </box>
-      )}
+        )}
 
-      {/* Browser Opened */}
-      {step === "browser-opened" && (
-        <box flexDirection="column" gap={1}>
-          <box>
-            <text fg="green">
-              Browser opened. Purchase credits on the Pensar Console.
-            </text>
+        {/* Browser Opened */}
+        {step === "browser-opened" && (
+          <box flexDirection="column" gap={1}>
+            <box>
+              <text fg={colors.success}>
+                Browser opened. Purchase credits on the Pensar Console.
+              </text>
+            </box>
+            <box marginTop={1}>
+              <text fg={colors.textMuted}>
+                Press <span fg={colors.primary}>[ENTER]</span> to refresh your
+                balance after purchasing.
+              </text>
+            </box>
+            <box marginTop={1}>
+              <DialogControls
+                controls={[
+                  {
+                    key: "Enter",
+                    label: "Refresh Balance",
+                    variant: "primary",
+                  },
+                ]}
+              />
+            </box>
           </box>
-          <box marginTop={1}>
-            <text fg="gray">
-              Press <span fg="green">[ENTER]</span> to refresh your balance
-              after purchasing.
-            </text>
-          </box>
-          <box marginTop={1}>
-            <text fg="gray">
-              <span fg="green">[ENTER]</span> Refresh balance ·{" "}
-              <span fg="green">[ESC]</span> Back
-            </text>
-          </box>
-        </box>
-      )}
-    </box>
+        )}
+      </box>
+    </Dialog>
   );
 }

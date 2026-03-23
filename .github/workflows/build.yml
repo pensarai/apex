@@ -28,8 +28,43 @@ jobs:
       - name: Build
         run: bun run build
 
-      - name: Smoke test published package
+      # Simulate `npm install -g @pensar/apex` — all smoke tests below use this
+      - name: Install npm package globally
         run: |
           npm pack
           npm install -g ./pensar-apex-*.tgz
-          pensar --version
+
+      # CLI commands should work natively under Node without Bun
+      - name: "Smoke: npm package under Node"
+        run: |
+          set -euo pipefail
+          node $(which pensar) --version
+          node $(which pensar) --help
+          node $(which pensar) auth --help
+          node $(which pensar) pentests --help
+
+      # Bare `pensar` under Node with no Bun on PATH should show a helpful error
+      - name: "Smoke: npm TUI fallback when Bun unavailable"
+        run: |
+          set -euo pipefail
+          PATH=$(echo "$PATH" | tr ':' '\n' | grep -v bun | tr '\n' ':') \
+            node $(which pensar) 2>/tmp/pensar-tui.txt || true
+          grep -q "TUI mode requires Bun" /tmp/pensar-tui.txt
+
+      # Explicitly invoke under Bun — bypasses the #!/usr/bin/env node shebang
+      - name: "Smoke: npm package under Bun"
+        run: |
+          set -euo pipefail
+          bun $(which pensar) --version
+          bun $(which pensar) --help
+          bun $(which pensar) auth --help
+          bun $(which pensar) pentests --help
+
+      # Standalone binary — self-contained, no Node/Bun runtime needed
+      - name: "Smoke: compiled binary"
+        run: |
+          set -euo pipefail
+          bun run build:binary
+          ./pensar --version
+          ./pensar --help
+          ./pensar auth --help

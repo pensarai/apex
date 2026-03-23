@@ -4,6 +4,7 @@ import Input from "../input";
 import { useRoute } from "../../context/route";
 import type { SessionConfig } from "../../../core/session";
 import { SpinnerDots } from "../sprites";
+import { DialogControls } from "../shared/dialog-controls";
 import { useTheme } from "../../theme";
 
 // Simplified wizard step types
@@ -315,25 +316,13 @@ export default function InitWizard() {
           focused={targetFocusedField === 0}
         />
 
-        <box flexDirection="column" gap={0} marginTop={1}>
-          <text>
-            <span fg={colors.primary}>█ </span>
-            <span fg={colors.textMuted}>Press </span>
-            <span fg={colors.text}>[Enter]</span>
-            <span fg={colors.textMuted}> to start immediately</span>
-          </text>
-          <text>
-            <span fg={colors.primary}>█ </span>
-            <span fg={colors.textMuted}>Press </span>
-            <span fg={colors.text}>[Tab]</span>
-            <span fg={colors.textMuted}> to configure options</span>
-          </text>
-          <text>
-            <span fg={colors.primary}>█ </span>
-            <span fg={colors.textMuted}>Press </span>
-            <span fg={colors.text}>[ESC]</span>
-            <span fg={colors.textMuted}> to cancel</span>
-          </text>
+        <box marginTop={1}>
+          <DialogControls
+            controls={[
+              { key: "Enter", label: "Start Immediately", variant: "primary" },
+              { key: "Tab", label: "Configure Options" },
+            ]}
+          />
         </box>
       </box>
     );
@@ -549,25 +538,13 @@ export default function InitWizard() {
         )}
       </box>
 
-      <box flexDirection="column" gap={0} marginTop={1}>
-        <text>
-          <span fg={colors.primary}>█ </span>
-          <span fg={colors.textMuted}>Press </span>
-          <span fg={colors.text}>[Enter]</span>
-          <span fg={colors.textMuted}> to start pentest</span>
-        </text>
-        <text>
-          <span fg={colors.primary}>█ </span>
-          <span fg={colors.textMuted}>Press </span>
-          <span fg={colors.text}>[Tab]</span>
-          <span fg={colors.textMuted}> to navigate fields</span>
-        </text>
-        <text>
-          <span fg={colors.primary}>█ </span>
-          <span fg={colors.textMuted}>Press </span>
-          <span fg={colors.text}>[ESC]</span>
-          <span fg={colors.textMuted}> to go back</span>
-        </text>
+      <box marginTop={1}>
+        <DialogControls
+          controls={[
+            { key: "Enter", label: "Start Pentest", variant: "primary" },
+            { key: "Tab", label: "Navigate Fields" },
+          ]}
+        />
       </box>
     </box>
   );

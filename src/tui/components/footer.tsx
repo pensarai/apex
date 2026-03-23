@@ -25,12 +25,45 @@ export default function Footer({
   showExitWarning = false,
 }: FooterProps) {
   const { colors } = useTheme();
-  const { model, isExecuting, sessionCwd } = useAgent();
+  const { isExecuting, sessionCwd } = useAgent();
   const effectiveCwd = sessionCwd || cwd;
-  const displayCwd = "~" + effectiveCwd.split(os.homedir()).pop() || "";
+  const relativeCwd = effectiveCwd.split(os.homedir()).pop() || "";
+  const segments = relativeCwd.split("/").filter(Boolean);
+  const displayCwd =
+    segments.length <= 2
+      ? "~/" + segments.join("/")
+      : "…/" + segments.slice(-2).join("/");
   const session = useSession();
   const route = useRoute();
   const { isInputEmpty } = useInput();
+  const isPentest = route.data.type === "pentest" && !route.data.openAsOperator;
+
+  // Pentest footer: minimal — just navigation hints
+  if (isPentest) {
+    return (
+      <box
+        flexDirection="row"
+        justifyContent="space-between"
+        width="100%"
+        maxWidth="100%"
+        height={1}
+        flexShrink={0}
+        overflow="hidden"
+      >
+        <text fg={colors.textMuted}>{displayCwd}</text>
+        <box flexDirection="row" gap={2} flexShrink={0}>
+          <box flexDirection="row" gap={1}>
+            <text fg={colors.primary}>[Tab]</text>
+            <text fg={colors.textMuted}>Navigate</text>
+          </box>
+          <box flexDirection="row" gap={1}>
+            <text fg={colors.primary}>[ESC]</text>
+            <text fg={colors.textMuted}>Back</text>
+          </box>
+        </box>
+      </box>
+    );
+  }
 
   const hotkeys = isExecuting
     ? [{ key: "Ctrl+C", label: "Stop Execution" }]
@@ -45,27 +78,20 @@ export default function Footer({
       justifyContent="space-between"
       width="100%"
       maxWidth="100%"
+      height={1}
       flexShrink={0}
+      overflow="hidden"
     >
-      <box flexDirection="row" gap={1}>
+      <box flexDirection="row" gap={1} flexShrink={1} overflow="hidden">
         <text fg={colors.textMuted}>{displayCwd}</text>
-        <box border={["right"]} borderColor={colors.primary} />
-        <text fg={colors.textMuted}>
-          <span fg={colors.text}>{model.name}</span>
-        </text>
         <AgentStatus />
-        {route.data.type === "pentest" && session.active && (
-          <text fg={colors.text}>
-            Session: <span fg={colors.textMuted}>{session.active.name}</span>
-          </text>
-        )}
       </box>
       {showExitWarning ? (
-        <box flexDirection="row" gap={1}>
+        <box flexDirection="row" gap={1} flexShrink={0}>
           <text fg={colors.warning}>⚠ Press Ctrl+C again to exit</text>
         </box>
       ) : (
-        <box flexDirection="row" gap={2}>
+        <box flexDirection="row" gap={2} flexShrink={0}>
           {hotkeys.map((hotkey, index) => (
             <box key={index} flexDirection="row" gap={1}>
               <text fg={colors.primary}>[{hotkey.key}]</text>

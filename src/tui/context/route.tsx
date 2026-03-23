@@ -21,8 +21,7 @@ export type RoutePath =
   | "disclosure"
   | "theme"
   | "auth"
-  | "credits"
-  | "create-skill";
+  | "credits";
 
 export interface WebCommandOptions {
   auto?: boolean;
@@ -65,6 +64,8 @@ export type Route =
       initialConfig?: {
         requireApproval?: boolean;
         target?: string;
+        operatorMode?: import("../../core/operator").OperatorMode;
+        sandbox?: boolean;
       };
       /** Opaque value used to force a fresh remount (e.g. Date.now()) */
       nonce?: number;

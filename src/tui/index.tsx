@@ -4,7 +4,6 @@ import Footer from "./components/footer";
 import { CommandProvider } from "./context/command";
 import { AgentProvider } from "./context/agent";
 import SessionsDisplay from "./components/commands/sessions-display";
-import ConfigDialog from "./components/commands/config-dialog";
 import ChatApp from "./components/chat";
 import HITLWizard from "./components/commands/operator-wizard";
 import WebWizard from "./components/commands/web-wizard";
@@ -36,13 +35,14 @@ import { checkForUpdate } from "../core/installation";
 import ShortcutsDialog from "./components/commands/shortcuts-dialog";
 import HelpDialog from "./components/commands/help-dialog";
 import ModelsDisplay from "./components/commands/models-display";
+import { ModelPickerDialog } from "./components/model-picker";
 import AuthFlow from "./components/commands/auth-flow";
 import CreditsFlow from "./components/commands/credits-flow";
 import { KeybindingProvider } from "./context/keybinding";
 import Pentest from "./components/pentest/pentest";
 import OperatorDashboard from "./components/operator-dashboard";
 import ThemePicker from "./components/commands/theme-picker";
-import CreateSkillWizard from "./components/commands/create-skill-wizard";
+import SkillsDialog from "./components/commands/skills-dialog";
 import {
   ThemeProvider,
   useTheme,
@@ -60,6 +60,8 @@ import {
 import { createClipboardManager } from "./clipboard";
 import { setupAutoCopy } from "./auto-copy";
 import { TerminalDimensionsProvider } from "./context/dimensions";
+import { TerminalFocusHandler } from "./components/terminal-focus-handler";
+import { cleanupTerminalFocusMode } from "./terminal-focus";
 
 interface AppProps {
   appConfig: Config;
@@ -75,7 +77,15 @@ function App({ appConfig }: AppProps) {
   const [showShortcutsDialog, setShowShortcutsDialog] = useState(false);
   const [showThemeDialog, setShowThemeDialog] = useState(false);
   const [showAuthDialog, setShowAuthDialog] = useState(false);
+  const [showModelDialog, setShowModelDialog] = useState(false);
+  const [showProvidersDialog, setShowProvidersDialog] = useState(false);
+  const [showCreditsDialog, setShowCreditsDialog] = useState(false);
+  const [showHelpDialog, setShowHelpDialog] = useState(false);
   const [showPentestDialog, setShowPentestDialog] = useState(false);
+  const [showSkillsDialog, setShowSkillsDialog] = useState(false);
+  const [pendingSkillSlug, setPendingSkillSlug] = useState<string | undefined>(
+    undefined,
+  );
   const [pendingPentestFlags, setPendingPentestFlags] = useState<
     WebCommandOptions | undefined
   >(undefined);
@@ -87,16 +97,25 @@ function App({ appConfig }: AppProps) {
       <SessionProvider>
         <RouteProvider>
           <FocusProvider>
+            <TerminalFocusHandler />
             <InputProvider>
               <DialogProvider>
                 <AgentProvider>
                   <CommandProvider
                     onOpenSessionsDialog={() => setShowSessionsDialog(true)}
                     onOpenThemeDialog={() => setShowThemeDialog(true)}
+                    onOpenModelDialog={() => setShowModelDialog(true)}
+                    onOpenProvidersDialog={() => setShowProvidersDialog(true)}
+                    onOpenCreditsDialog={() => setShowCreditsDialog(true)}
+                    onOpenHelpDialog={() => setShowHelpDialog(true)}
                     onOpenAuthDialog={() => setShowAuthDialog(true)}
                     onOpenPentestDialog={(flags) => {
                       setPendingPentestFlags(flags);
                       setShowPentestDialog(true);
+                    }}
+                    onOpenSkillsDialog={(slug) => {
+                      setPendingSkillSlug(slug);
+                      setShowSkillsDialog(true);
                     }}
                   >
                     <KeybindingProvider
@@ -119,10 +138,22 @@ function App({ appConfig }: AppProps) {
                         setShowShortcutsDialog={setShowShortcutsDialog}
                         showThemeDialog={showThemeDialog}
                         setShowThemeDialog={setShowThemeDialog}
+                        showModelDialog={showModelDialog}
+                        setShowModelDialog={setShowModelDialog}
+                        showProvidersDialog={showProvidersDialog}
+                        setShowProvidersDialog={setShowProvidersDialog}
+                        showCreditsDialog={showCreditsDialog}
+                        setShowCreditsDialog={setShowCreditsDialog}
+                        showHelpDialog={showHelpDialog}
+                        setShowHelpDialog={setShowHelpDialog}
                         showAuthDialog={showAuthDialog}
                         setShowAuthDialog={setShowAuthDialog}
                         showPentestDialog={showPentestDialog}
                         setShowPentestDialog={setShowPentestDialog}
+                        showSkillsDialog={showSkillsDialog}
+                        setShowSkillsDialog={setShowSkillsDialog}
+                        pendingSkillSlug={pendingSkillSlug}
+                        setPendingSkillSlug={setPendingSkillSlug}
                         pendingPentestFlags={pendingPentestFlags}
                         setPendingPentestFlags={setPendingPentestFlags}
                         cwd={cwd}
@@ -152,10 +183,22 @@ function AppContent({
   setShowShortcutsDialog,
   showThemeDialog,
   setShowThemeDialog,
+  showModelDialog,
+  setShowModelDialog,
+  showProvidersDialog,
+  setShowProvidersDialog,
+  showCreditsDialog,
+  setShowCreditsDialog,
+  showHelpDialog,
+  setShowHelpDialog,
   showAuthDialog,
   setShowAuthDialog,
   showPentestDialog,
   setShowPentestDialog,
+  showSkillsDialog,
+  setShowSkillsDialog,
+  pendingSkillSlug,
+  setPendingSkillSlug,
   pendingPentestFlags,
   setPendingPentestFlags,
   cwd,
@@ -172,10 +215,22 @@ function AppContent({
   setShowShortcutsDialog: (show: boolean) => void;
   showThemeDialog: boolean;
   setShowThemeDialog: (show: boolean) => void;
+  showModelDialog: boolean;
+  setShowModelDialog: (show: boolean) => void;
+  showProvidersDialog: boolean;
+  setShowProvidersDialog: (show: boolean) => void;
+  showCreditsDialog: boolean;
+  setShowCreditsDialog: (show: boolean) => void;
+  showHelpDialog: boolean;
+  setShowHelpDialog: (show: boolean) => void;
   showAuthDialog: boolean;
   setShowAuthDialog: (show: boolean) => void;
   showPentestDialog: boolean;
   setShowPentestDialog: (show: boolean) => void;
+  showSkillsDialog: boolean;
+  setShowSkillsDialog: (show: boolean) => void;
+  pendingSkillSlug: string | undefined;
+  setPendingSkillSlug: (slug: string | undefined) => void;
   pendingPentestFlags: WebCommandOptions | undefined;
   setPendingPentestFlags: (flags: WebCommandOptions | undefined) => void;
   cwd: string;
@@ -192,6 +247,7 @@ function AppContent({
 
   const { refocusPrompt } = useFocus();
   const { setExternalDialogOpen } = useDialog();
+  const [returnToCredits, setReturnToCredits] = useState(false);
 
   useEffect(() => {
     checkForUpdate().then(
@@ -217,20 +273,33 @@ function AppContent({
     } else if (
       config.data.responsibleUseAccepted &&
       !hasAnyProviderConfigured(config.data) &&
+      route.data.path !== "auth" &&
       route.data.path !== "providers" &&
       route.data.path !== "disclosure"
     ) {
-      route.navigate({ type: "base", path: "providers" });
+      route.navigate({ type: "base", path: "auth" });
     }
   }, [config.data.responsibleUseAccepted, route.data]);
 
-  // Track external dialog state for theme/auth/pentest dialogs so operator input
-  // unfocuses while a dialog overlay is open
+  // Track external dialog state so operator input unfocuses while a dialog overlay is open
+  const anyExternalDialog =
+    showThemeDialog ||
+    showModelDialog ||
+    showProvidersDialog ||
+    showCreditsDialog ||
+    showHelpDialog ||
+    showAuthDialog ||
+    showPentestDialog ||
+    showSkillsDialog;
+
   useEffect(() => {
-    if (showThemeDialog || showAuthDialog || showPentestDialog) {
+    if (anyExternalDialog) {
       setExternalDialogOpen(true);
+    } else {
+      const timer = setTimeout(() => setExternalDialogOpen(false), 0);
+      return () => clearTimeout(timer);
     }
-  }, [showThemeDialog, showAuthDialog, showPentestDialog]);
+  }, [anyExternalDialog]);
 
   // Auto-clear the exit warning after 1 second
   useEffect(() => {
@@ -251,15 +320,36 @@ function AppContent({
 
   const handleCloseShortcutsDialog = () => {
     setShowShortcutsDialog(false);
-    setTimeout(() => {
-      setExternalDialogOpen(false);
-    }, 0);
     setInputKey((prev) => prev + 1);
     refocusPrompt();
   };
 
   const handleCloseThemeDialog = () => {
     setShowThemeDialog(false);
+    setInputKey((prev) => prev + 1);
+    refocusPrompt();
+  };
+
+  const handleCloseModelDialog = () => {
+    setShowModelDialog(false);
+    setInputKey((prev) => prev + 1);
+    refocusPrompt();
+  };
+
+  const handleCloseProvidersDialog = () => {
+    setShowProvidersDialog(false);
+    setInputKey((prev) => prev + 1);
+    refocusPrompt();
+  };
+
+  const handleCloseCreditsDialog = () => {
+    setShowCreditsDialog(false);
+    setInputKey((prev) => prev + 1);
+    refocusPrompt();
+  };
+
+  const handleCloseHelpDialog = () => {
+    setShowHelpDialog(false);
     setTimeout(() => {
       setExternalDialogOpen(false);
     }, 0);
@@ -269,9 +359,18 @@ function AppContent({
 
   const handleCloseAuthDialog = () => {
     setShowAuthDialog(false);
-    setTimeout(() => {
-      setExternalDialogOpen(false);
-    }, 0);
+    if (returnToCredits) {
+      setReturnToCredits(false);
+      setShowCreditsDialog(true);
+    } else {
+      setInputKey((prev) => prev + 1);
+      refocusPrompt();
+    }
+  };
+
+  const handleCloseSkillsDialog = () => {
+    setShowSkillsDialog(false);
+    setPendingSkillSlug(undefined);
     setInputKey((prev) => prev + 1);
     refocusPrompt();
   };
@@ -279,9 +378,6 @@ function AppContent({
   const handleClosePentestDialog = () => {
     setShowPentestDialog(false);
     setPendingPentestFlags(undefined);
-    setTimeout(() => {
-      setExternalDialogOpen(false);
-    }, 0);
     setInputKey((prev) => prev + 1);
     refocusPrompt();
   };
@@ -292,9 +388,6 @@ function AppContent({
   ) => {
     setShowPentestDialog(false);
     setPendingPentestFlags(undefined);
-    setTimeout(() => {
-      setExternalDialogOpen(false);
-    }, 0);
     route.navigate({ type: "pentest", targets, sessionConfig });
   };
 
@@ -315,6 +408,7 @@ function AppContent({
         focusIndex={focusIndex}
         inputKey={inputKey}
         onOpenAuthDialog={() => setShowAuthDialog(true)}
+        onOpenModelDialog={() => setShowModelDialog(true)}
       />
 
       <Footer cwd={cwd} showExitWarning={showExitWarning} />
@@ -331,6 +425,40 @@ function AppContent({
       )}
 
       {showThemeDialog && <ThemePicker onClose={handleCloseThemeDialog} />}
+
+      {showModelDialog && (
+        <ModelPickerDialog onClose={handleCloseModelDialog} />
+      )}
+
+      {showProvidersDialog && (
+        <ProviderManager
+          onClose={handleCloseProvidersDialog}
+          onOpenModelDialog={() => {
+            setShowProvidersDialog(false);
+            setShowModelDialog(true);
+          }}
+        />
+      )}
+
+      {showCreditsDialog && (
+        <CreditsFlow
+          onClose={handleCloseCreditsDialog}
+          onOpenAuthDialog={() => {
+            setShowCreditsDialog(false);
+            setReturnToCredits(true);
+            setShowAuthDialog(true);
+          }}
+        />
+      )}
+
+      {showHelpDialog && <HelpDialog onClose={handleCloseHelpDialog} />}
+
+      {showSkillsDialog && (
+        <SkillsDialog
+          onClose={handleCloseSkillsDialog}
+          initialSlug={pendingSkillSlug}
+        />
+      )}
 
       {showAuthDialog && <AuthFlow onClose={handleCloseAuthDialog} />}
 
@@ -363,10 +491,12 @@ function CommandDisplay({
   focusIndex,
   inputKey,
   onOpenAuthDialog,
+  onOpenModelDialog,
 }: {
   focusIndex: number;
   inputKey: number;
   onOpenAuthDialog: () => void;
+  onOpenModelDialog: () => void;
 }) {
   const route = useRoute();
   const config = useConfig();
@@ -376,7 +506,7 @@ function CommandDisplay({
     await config.update({ responsibleUseAccepted: true });
     route.navigate({
       type: "base",
-      path: "providers",
+      path: "auth",
     });
   };
 
@@ -406,9 +536,6 @@ function CommandDisplay({
           <RouteSwitch.Case when="home">
             <ChatApp />
           </RouteSwitch.Case>
-          <RouteSwitch.Case when="config">
-            <ConfigDialog />
-          </RouteSwitch.Case>
           <RouteSwitch.Case when="operator">
             <HITLWizard
               initialTarget={route.data.options?.target}
@@ -417,23 +544,26 @@ function CommandDisplay({
               initialModel={route.data.options?.model}
             />
           </RouteSwitch.Case>
-          <RouteSwitch.Case when="models">
-            <ModelsDisplay />
+          <RouteSwitch.Case when="auth">
+            <AuthFlow
+              hideEsc
+              onClose={() => {
+                if (hasAnyProviderConfigured(config.data)) {
+                  route.navigate({ type: "base", path: "home" });
+                } else {
+                  route.navigate({ type: "base", path: "providers" });
+                }
+              }}
+            />
           </RouteSwitch.Case>
           <RouteSwitch.Case when="providers">
-            <ProviderManager />
-          </RouteSwitch.Case>
-          <RouteSwitch.Case when="help">
-            <HelpDialog />
+            <ProviderManager onOpenModelDialog={onOpenModelDialog} />
           </RouteSwitch.Case>
           <RouteSwitch.Case when="models">
             <ModelsDisplay />
           </RouteSwitch.Case>
           <RouteSwitch.Case when="credits">
             <CreditsFlow onOpenAuthDialog={onOpenAuthDialog} />
-          </RouteSwitch.Case>
-          <RouteSwitch.Case when="create-skill">
-            <CreateSkillWizard />
           </RouteSwitch.Case>
         </RouteSwitch>
       </box>
@@ -494,6 +624,7 @@ async function main() {
   setupAutoCopy(renderer, copyToClipboard);
 
   const cleanup = () => {
+    cleanupTerminalFocusMode();
     renderer.destroy();
     process.exit(0);
   };
@@ -501,6 +632,7 @@ async function main() {
   process.on("SIGTERM", cleanup);
 
   process.on("uncaughtException", (err) => {
+    cleanupTerminalFocusMode();
     renderer.destroy();
     console.error("Uncaught exception:", err);
     writeErrorLog(err, "UNCAUGHT");
@@ -508,6 +640,7 @@ async function main() {
   });
 
   process.on("unhandledRejection", (reason) => {
+    cleanupTerminalFocusMode();
     renderer.destroy();
     console.error("Unhandled rejection:", reason);
     writeErrorLog(reason, "UNHANDLED_REJECTION");

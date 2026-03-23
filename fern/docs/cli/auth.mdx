@@ -1,0 +1,70 @@
+---
+title: "pensar auth"
+description: "Connect to Pensar Console from the command line"
+---
+
+## Overview
+
+The `pensar auth` command connects your CLI to [Pensar Console](https://console.pensar.dev) for managed inference. This is the headless equivalent of the TUI [`/auth`](/apex/commands/auth) command — it uses the same device authorization flow but runs entirely in the terminal without the TUI.
+
+## Usage
+
+```bash
+pensar auth [subcommand]
+```
+
+## Subcommands
+
+| Subcommand           | Description                                              |
+| -------------------- | -------------------------------------------------------- |
+| `pensar auth`        | Start the login flow (or show status if already connected) |
+| `pensar auth login`  | Start the login flow                                     |
+| `pensar auth logout` | Disconnect from Pensar Console                           |
+| `pensar auth status` | Show current connection status                           |
+
+## Login Flow
+
+```bash
+pensar auth login
+```
+
+1. Apex requests a device code from the Pensar authentication service
+2. A browser window opens to the verification URL
+3. Enter the user code displayed in your terminal to confirm
+4. Select a workspace (if your account has multiple)
+5. Apex stores the auth tokens locally
+
+If you're already connected, `pensar auth` will show your current status and offer to reconnect.
+
+## Checking Status
+
+```bash
+pensar auth status
+```
+
+Displays your auth type (WorkOS or API key) and current workspace. When using API key auth, the command resolves your workspace from the server if it isn't already stored locally.
+
+```
+✓ Connected to Pensar Console
+  Workspace: my-team (my-team)
+  Auth: WorkOS
+```
+
+## Logging Out
+
+```bash
+pensar auth logout
+```
+
+Clears stored authentication tokens from your local configuration. You can reconnect at any time by running `pensar auth login` again.
+
+## Related Commands
+
+<CardGroup cols={2}>
+  <Card title="/auth" icon="shield-check" href="/apex/commands/auth">
+    Connect via the TUI with the same device flow
+  </Card>
+  <Card title="pensar projects" icon="folder" href="/apex/cli/projects">
+    List workspace projects (requires auth)
+  </Card>
+</CardGroup>

@@ -36,9 +36,11 @@ See `package.json` `scripts` for the full list.
 - `src/core/agents/` — Agent implementations (auth, attack surface, pentest, offensive security)
 - `src/core/ai/` — AI SDK wrappers and streaming utilities
 - `src/core/api/` — Public API surface for running agents
+- `src/core/auth/` — Centralized Pensar Console authentication (device flow, tokens, HMAC signing, workspaces)
 - `src/core/credentials/` — Credential management
 - `src/core/findings/` — Vulnerability findings registry
 - `src/core/session/` — Session management
+- `src/cli/` — Headless CLI commands (auth, uninstall)
 - `src/tests/` — Integration tests (many require live services)
 - `src/tui/` — Terminal UI components
 
@@ -60,3 +62,11 @@ On first launch, the TUI shows a "Responsible Use Disclosure" screen that must b
 - Bun must be on `PATH`. After installing via `curl -fsSL https://bun.sh/install | bash`, add `$HOME/.bun/bin` to PATH.
 - No database or Docker required for development or running the TUI.
 - AI provider API key (e.g. `ANTHROPIC_API_KEY`) is needed for pentesting features and integration tests, but not for basic TUI operation or unit tests.
+
+### UI/UX conventions
+
+**Reuse shared components.** Before building inline UI for controls, indicators, or dialog chrome, check `src/tui/components/shared/` for existing components. If you see the same pattern implemented inline in 2+ places, extract it into a shared component rather than duplicating it — duplication is how conventions silently diverge.
+
+**Dialog shortcut controls.** Use the `DialogControls` component (`src/tui/components/shared/dialog-controls.tsx`) for keyboard hint bars at the bottom of dialogs. It supports three variants: `default` (muted — for secondary actions), `primary` (bright — for the main CTA), and `danger` (red — for irreversible actions like Delete/Disconnect). Ordering: primary action first, secondary actions next, danger actions after, Esc always last. `[Esc] Close` is rendered automatically by the `Dialog` component's top-right chrome — don't add it to the controls array. Only show non-obvious shortcuts; intuitive actions like ↑/↓ navigation don't need hints. Key capitalization: Title Case for named keys (`Enter`, `Esc`, `Tab`), uppercase for single letters (`D`, `R`, `M`), arrows as `↑/↓`.
+
+**Consistency over novelty.** When adding a new dialog or view, match the patterns of existing ones. Don't invent new shortcut formatting, separator styles, color schemes, or layouts. Open a few existing dialogs as reference before starting — small inconsistencies compound quickly across a codebase.
