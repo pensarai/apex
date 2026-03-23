@@ -1,6 +1,6 @@
 import type { AutocompleteOption } from "../shared/prompt-input";
 import type { OperatorSessionState } from "../../../core/operator";
-import { BASE_SYSTEM_PROMPT } from "../../../core/agents/offSecAgent/prompt";
+import { buildBaseSystemPrompt } from "../../../core/agents/offSecAgent/prompt";
 
 // ---------------------------------------------------------------------------
 // Autocomplete option filtering for operator mode
@@ -186,6 +186,7 @@ export function buildOperatorSystemPrompt(
   agentMode?: "default" | "plan",
   opts?: {
     requireApproval?: boolean;
+    sandboxMode?: boolean;
     skillsCatalog?: string;
     activeSkillInstructions?: Array<{ name: string; instructions: string }>;
   },
@@ -199,7 +200,7 @@ export function buildOperatorSystemPrompt(
   const approvalEnabled =
     opts?.requireApproval ?? operatorState.requireApproval;
 
-  let prompt = `${BASE_SYSTEM_PROMPT}
+  let prompt = `${buildBaseSystemPrompt({ sandboxMode: opts?.sandboxMode })}
 
 # Operator Mode
 

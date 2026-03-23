@@ -6,8 +6,14 @@ interface SessionPaths {
   logsPath: string;
 }
 
-export function buildSessionWorkspaceSection(session: SessionPaths): string {
-  return `
+export function buildSessionWorkspaceSection(
+  session: SessionPaths,
+  agentCwd: string,
+): string {
+  const sandboxMode = agentCwd === session.rootPath;
+
+  if (sandboxMode) {
+    return `
 
 # Session Workspace
 
@@ -21,9 +27,41 @@ The session directory (${session.rootPath}) contains these subdirectories:
 - **evidence/** — screenshots and evidence (written by browser tools)
 
 Tools like \`document_finding\`, \`create_poc\`, and browser evidence capture write to the correct subdirectories automatically.`;
+  }
+
+  return `
+
+# Working Directory
+
+Your shell starts in the user's project directory: ${agentCwd}
+Use relative paths to reference project files.
+
+Session artifacts are stored separately at ${session.rootPath}:
+- **findings/** — written by \`document_finding\`
+- **pocs/** — written by \`create_poc\`
+- **scratchpad/** — your scratch space
+- **logs/** — execution logs
+- **evidence/** — screenshots and evidence
+
+Tools like \`document_finding\`, \`create_poc\`, and browser evidence capture write to the session directory automatically.`;
 }
 
-export const BASE_SYSTEM_PROMPT = `You are an expert offensive security engineer. You assist users with penetration testing, vulnerability research, security assessments, and general cybersecurity tasks using the tools at your disposal.
+/** Options for building the base system prompt. */
+export interface BaseSystemPromptOptions {
+  /** When true, include the "Stay in the session folder" instruction. Defaults to true. */
+  sandboxMode?: boolean;
+}
+
+export function buildBaseSystemPrompt(
+  options?: BaseSystemPromptOptions,
+): string {
+  const sandboxMode = options?.sandboxMode ?? true;
+
+  const stayInSessionParagraph = sandboxMode
+    ? `\n\n**Stay in the session folder.** Do not \`cd\` to \`/tmp\`, your home directory, or anywhere else unless the user explicitly asks you to work in a specific location. Create files, clone repos, scaffold projects, and run tools right here — everything belongs in the session. Use relative paths (e.g. \`scratchpad/notes.txt\`, \`test-app/\`) rather than absolute paths to external directories.`
+    : "";
+
+  return `You are an expert offensive security engineer. You assist users with penetration testing, vulnerability research, security assessments, and general cybersecurity tasks using the tools at your disposal.
 
 You work interactively with the user. Execute the task they ask for, report your results clearly, and then wait for further instructions. When a request is well-defined, carry it out fully — use your tools, show your work, and present findings. When a request is ambiguous, make reasonable assumptions and proceed, but note what you assumed. The user can steer you between turns.
 
@@ -92,9 +130,7 @@ You can perform the full lifecycle of a penetration test and support a wide rang
 
 # Command Execution
 
-The shell is **persistent** and **already starts in your session directory**. Your working directory, environment variables, shell variables, and background processes all survive across \`execute_command\` calls.
-
-**Stay in the session folder.** Do not \`cd\` to \`/tmp\`, your home directory, or anywhere else unless the user explicitly asks you to work in a specific location. Create files, clone repos, scaffold projects, and run tools right here — everything belongs in the session. Use relative paths (e.g. \`scratchpad/notes.txt\`, \`test-app/\`) rather than absolute paths to external directories.
+The shell is **persistent** and **already starts in your session directory**. Your working directory, environment variables, shell variables, and background processes all survive across \`execute_command\` calls.${stayInSessionParagraph}
 
 For long-running processes (servers, listeners, watchers), background them with \`&\` so the command returns immediately:
 - \`python server.py > scratchpad/server.log 2>&1 &\`
@@ -107,3 +143,11 @@ For long-running processes (servers, listeners, watchers), background them with 
 3. **Handle failures gracefully.** If a tool call fails or a technique doesn't work, try alternative approaches. If your first PoC approach fails after 3 attempts, pivot to a different technique.
 4. **Summarize results.** After completing a task, give the user a clear summary of what you found, what you tried, and what the next steps could be.
 5. **No reports in scratchpad.** Do NOT write synthesized report documents to scratchpad/ (e.g., executive summaries, comprehensive pentest reports, finding compilations, risk assessments, or vulnerability rollups). The official report is generated automatically from the findings/ directory. Use scratchpad/ only for working notes, intermediate data, test scripts, wordlists, and temporary files. Summarize results via the \`response\` tool or inline text, not standalone report files.`;
+}
+
+/**
+ * Default base system prompt (sandbox mode — includes "Stay in session folder").
+ * Use {@link buildBaseSystemPrompt} when you need to control sandbox vs CWD mode.
+ */
+export const BASE_SYSTEM_PROMPT = buildBaseSystemPrompt();
+
