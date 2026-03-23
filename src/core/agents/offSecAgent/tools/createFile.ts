@@ -14,11 +14,6 @@ export const createFileInputSchema = z.object({
     .describe(
       "If true, overwrite the file if it already exists (default: false)",
     ),
-  toolCallDescription: z
-    .string()
-    .describe(
-      "A concise, human-readable description of what this tool call is doing (e.g., 'Creating security middleware file')",
-    ),
 });
 
 export type CreateFileInput = z.infer<typeof createFileInputSchema>;
@@ -31,12 +26,8 @@ export type CreateFileResult = {
 
 export function createFile(ctx: ToolContext) {
   return tool({
-    description: `Create a new file with the given content.
-
-By default, refuses to overwrite an existing file. Set overwrite=true to replace
-an existing file's content entirely.
-
-Parent directories are created automatically if they don't exist.`,
+    description:
+      "Create a new file. Set overwrite=true to replace existing. Parent directories created automatically.",
     inputSchema: createFileInputSchema,
     execute: async ({
       path: filePath,

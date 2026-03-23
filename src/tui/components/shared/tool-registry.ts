@@ -129,15 +129,7 @@ export function getToolSummary(
 export function getToolDisplayLabel(
   toolName: string,
   args: Record<string, unknown>,
-  options: { preferDescription?: boolean } = {},
 ): string {
-  if (options.preferDescription && toolName === "execute_command") {
-    const description = args.toolCallDescription;
-    if (typeof description === "string" && description.trim().length > 0) {
-      return description.trim();
-    }
-  }
-
   return getToolSummary(toolName, args);
 }
 

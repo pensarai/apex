@@ -64,18 +64,12 @@ export interface BrowserConsoleResult {
 // Input schemas for browser tools
 const BrowserNavigateInput = z.object({
   url: z.string().describe("Full URL to navigate to"),
-  toolCallDescription: z
-    .string()
-    .describe("Why you are navigating to this URL"),
 });
 
 const BrowserScreenshotInput = z.object({
   filename: z
     .string()
     .describe("Descriptive filename for screenshot (without extension)"),
-  toolCallDescription: z
-    .string()
-    .describe("What evidence this screenshot captures"),
 });
 
 const BrowserClickInput = z.object({
@@ -90,7 +84,6 @@ const BrowserClickInput = z.object({
     .describe(
       "Element reference from browser_snapshot (e.g., 'e5'). If provided, uses exact element reference for precise clicking.",
     ),
-  toolCallDescription: z.string().describe("Why you are clicking this element"),
 });
 
 const BrowserFillInput = z.object({
@@ -106,29 +99,15 @@ const BrowserFillInput = z.object({
       "Element reference from browser_snapshot (e.g., 'e3'). If provided, uses exact element reference for precise filling.",
     ),
   value: z.string().describe("Value to fill into the field"),
-  toolCallDescription: z
-    .string()
-    .describe("Why you are filling this field with this value"),
 });
 
-const BrowserSnapshotInput = z.object({
-  toolCallDescription: z
-    .string()
-    .describe("Why you need to get the page snapshot"),
-});
+const BrowserSnapshotInput = z.object({});
 
 const BrowserEvaluateInput = z.object({
   script: z.string().describe("JavaScript code to execute in browser"),
-  toolCallDescription: z
-    .string()
-    .describe("What you are testing with this script"),
 });
 
-const BrowserConsoleInput = z.object({
-  toolCallDescription: z
-    .string()
-    .describe("Why you need to check console messages"),
-});
+const BrowserConsoleInput = z.object({});
 
 const BrowserGetCookiesInput = z.object({
   urls: z
@@ -137,9 +116,6 @@ const BrowserGetCookiesInput = z.object({
     .describe(
       "Optional list of URLs to get cookies for. If not provided, gets all cookies.",
     ),
-  toolCallDescription: z
-    .string()
-    .describe("Why you need to extract cookies from the browser"),
 });
 
 const MCP_CONNECT_TIMEOUT_MS = 30_000;
@@ -719,10 +695,7 @@ export function createBrowserTools(
   const browser_navigate = tool({
     description: `${descriptions.navigate}\n\nTarget base URL: ${targetUrl}`,
     inputSchema: BrowserNavigateInput,
-    execute: async ({
-      url,
-      toolCallDescription,
-    }): Promise<BrowserNavigateResult> => {
+    execute: async ({ url }): Promise<BrowserNavigateResult> => {
       try {
         const result = await session.callTool(
           "browser_navigate",
@@ -745,10 +718,7 @@ export function createBrowserTools(
   const browser_screenshot = tool({
     description: descriptions.screenshot,
     inputSchema: BrowserScreenshotInput,
-    execute: async ({
-      filename,
-      toolCallDescription,
-    }): Promise<BrowserScreenshotResult> => {
+    execute: async ({ filename }): Promise<BrowserScreenshotResult> => {
       try {
         const result = await session.callTool(
           "browser_take_screenshot",
@@ -827,9 +797,11 @@ Example workflow:
 2. Find the element you need (e.g., "textbox 'Email'" with [ref=e3])
 3. Call browser_fill with ref="e3" to fill that specific element`,
     inputSchema: BrowserSnapshotInput,
-    execute: async ({
-      toolCallDescription,
-    }): Promise<{ success: boolean; snapshot?: string; error?: string }> => {
+    execute: async (): Promise<{
+      success: boolean;
+      snapshot?: string;
+      error?: string;
+    }> => {
       try {
         const result = await session.callTool(
           "browser_snapshot",
@@ -856,11 +828,7 @@ Example workflow:
       descriptions.click +
       `\n\nIMPORTANT: For reliable clicking, first call browser_snapshot to get element refs, then pass the ref parameter.`,
     inputSchema: BrowserClickInput,
-    execute: async ({
-      element,
-      ref,
-      toolCallDescription,
-    }): Promise<BrowserClickResult> => {
+    execute: async ({ element, ref }): Promise<BrowserClickResult> => {
       try {
         const args: Record<string, unknown> = { element };
         if (ref) {
@@ -885,12 +853,7 @@ Example workflow:
       descriptions.fill +
       `\n\nIMPORTANT: For reliable form filling, first call browser_snapshot to get element refs, then pass the ref parameter.`,
     inputSchema: BrowserFillInput,
-    execute: async ({
-      element,
-      ref,
-      value,
-      toolCallDescription,
-    }): Promise<BrowserFillResult> => {
+    execute: async ({ element, ref, value }): Promise<BrowserFillResult> => {
       try {
         // Note: Playwright MCP uses "browser_type" for filling fields
         const args: Record<string, unknown> = { element, text: value };
@@ -914,10 +877,7 @@ Example workflow:
   const browser_evaluate = tool({
     description: descriptions.evaluate,
     inputSchema: BrowserEvaluateInput,
-    execute: async ({
-      script,
-      toolCallDescription,
-    }): Promise<BrowserEvaluateResult> => {
+    execute: async ({ script }): Promise<BrowserEvaluateResult> => {
       try {
         const fnScript = transformScriptToFunction(script);
 
@@ -938,7 +898,7 @@ Example workflow:
   const browser_console = tool({
     description: descriptions.console,
     inputSchema: BrowserConsoleInput,
-    execute: async ({ toolCallDescription }): Promise<BrowserConsoleResult> => {
+    execute: async (): Promise<BrowserConsoleResult> => {
       try {
         const result = await session.callTool(
           "browser_console_messages",
@@ -981,7 +941,6 @@ The returned cookies can be formatted as a Cookie header for use with http_reque
     inputSchema: BrowserGetCookiesInput,
     execute: async ({
       urls,
-      toolCallDescription,
     }): Promise<{
       success: boolean;
       cookies?: Array<{

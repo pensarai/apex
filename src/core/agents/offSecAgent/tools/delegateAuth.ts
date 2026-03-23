@@ -80,30 +80,8 @@ function mergeAuthCredentials(
  */
 export function delegateAuth(ctx: ToolContext) {
   return tool({
-    description: `Delegate authentication to the specialized auth subagent.
-
-Use when:
-- Complex auth flow detected (OAuth, SAML, CSRF tokens)
-- Browser-based login required (SPA, JavaScript forms)
-- Built-in authenticate_session tool failed
-- MFA or CAPTCHA barrier detected
-- Need to verify pre-existing tokens (bearer, API key, cookies)
-- No credentials provided (will probe for open registration)
-
-The auth subagent will:
-1. Handle the authentication flow (HTTP or browser-based)
-2. Document the process for re-auth
-3. Return cookies/headers for authenticated requests
-4. Verify tokens against protected endpoints if provided
-
-IMPORTANT: Pass protectedEndpoints in authHints when you've discovered 401/403 endpoints.
-
-When to use delegate_to_auth_subagent vs authenticate_session:
-- Simple form POST without CSRF -> use authenticate_session
-- JSON API with username/password -> use authenticate_session
-- Complex flow (OAuth, CSRF, SPA, browser required) -> delegate_to_auth_subagent
-- If authenticate_session fails -> delegate_to_auth_subagent
-- Token verification needed -> delegate_to_auth_subagent`,
+    description:
+      "Delegate complex auth flows (OAuth, SAML, CSRF, SPA login) to the auth subagent. Use when authenticate_session fails or flow needs a browser. Returns cookies/headers for authenticated requests.",
     inputSchema: z.object({
       target: z.string().describe("Target URL requiring authentication"),
       credentialId: z
@@ -171,9 +149,6 @@ When to use delegate_to_auth_subagent vs authenticate_session:
         .optional()
         .describe("Hints about the auth flow from discovery"),
       reason: z.string().describe("Why you are delegating to auth subagent"),
-      toolCallDescription: z
-        .string()
-        .describe("A concise description of what this tool call is doing"),
     }),
     execute: async ({
       target,

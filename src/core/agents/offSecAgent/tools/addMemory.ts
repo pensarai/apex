@@ -24,11 +24,6 @@ export const addMemoryInputSchema = z.object({
     .array(z.string())
     .optional()
     .describe("Optional tags for categorisation and filtering"),
-  toolCallDescription: z
-    .string()
-    .describe(
-      "A concise, human-readable description of what this tool call is doing (e.g., 'Saving XSS payload pattern')",
-    ),
 });
 
 export type AddMemoryInput = z.infer<typeof addMemoryInputSchema>;
@@ -43,22 +38,8 @@ export type AddMemoryResult = {
 
 export function addMemory(_ctx: ToolContext) {
   return tool({
-    description: `Save a piece of knowledge to persistent memory.
-
-Memories are stored across sessions in ~/.pensar/memories/ and survive restarts.
-They are organised into categories:
-  - "app"       — application-specific notes (e.g. target quirks, endpoints)
-  - "framework" — framework-specific notes (e.g. Rails tricks, Django patterns)
-  - "general"   — catch-all (default when category is omitted)
-
-IMPORTANT: Before adding a new memory, always use list_memories first to check
-for existing memories that overlap with what you intend to save. If a relevant
-memory already exists, update it (delete + re-add) rather than creating a
-duplicate. This keeps the memory store clean and avoids conflicting entries.
-
-Use this to record reusable techniques, target-specific notes, credential
-patterns, useful payloads, or any information worth remembering for future
-engagements.`,
+    description:
+      "Save knowledge to persistent cross-session memory (~/.pensar/memories/). Check list_memories first to avoid duplicates. Categories: app, framework, general.",
     inputSchema: addMemoryInputSchema,
     execute: async ({
       title,

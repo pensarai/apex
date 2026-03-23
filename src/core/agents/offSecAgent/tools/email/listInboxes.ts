@@ -15,13 +15,7 @@ export function emailListInboxes(ctx: ToolContext) {
 Returns the configured email inboxes (Gmail, Outlook, or IMAP) that have
 been connected at the workspace level. Use this first to discover which
 inboxes are available, then reference them by ID in other email tools.`,
-    inputSchema: z.object({
-      toolCallDescription: z
-        .string()
-        .describe(
-          "A concise, human-readable description of what this tool call is doing",
-        ),
-    }),
+    inputSchema: z.object({}),
     execute: async () => {
       const inboxes = ctx.session.config?.emailIntegration?.inboxes ?? [];
 

@@ -15,20 +15,8 @@ import type { WhiteboxAttackSurfaceResult } from "../../specialized/whiteboxAtta
  */
 export function runAttackSurface(ctx: ToolContext) {
   return tool({
-    description: `Run the attack surface discovery agent to map the target's full attack surface.
-
-Provide exactly ONE of:
-- target: a live URL/domain/IP for blackbox analysis (probes the running service)
-- cwd: a local codebase path for whitebox analysis (reads source code directly)
-
-BLACKBOX mode launches a sub-agent that probes the live target to discover
-endpoints, authentication flows, and assets.
-
-WHITEBOX mode launches a sub-agent that analyzes source code to discover
-all apps, endpoints, pages, and generates pentest objectives from the code.
-
-Call this FIRST before spawn_pentest_swarm. The returned targets array
-should be passed directly to spawn_pentest_swarm for deep testing.`,
+    description:
+      "Run attack surface discovery. Provide target (URL/domain for blackbox) or cwd (codebase path for whitebox). Call FIRST before spawn_pentest_swarm. Returns targets array for the swarm.",
     inputSchema: z.object({
       target: z.string().describe("Live target to analyze (domain, IP, URL)"),
       cwd: z
@@ -36,11 +24,6 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
         .optional()
         .describe(
           "Local codebase path — when provided, use whitebox attack surface analysis instead of blackbox",
-        ),
-      toolCallDescription: z
-        .string()
-        .describe(
-          "A concise, human-readable description of what this tool call is doing",
         ),
     }),
     execute: async ({ target, cwd }) => {

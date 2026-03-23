@@ -19,11 +19,6 @@ export const listMemoriesInputSchema = z.object({
     .string()
     .optional()
     .describe("Optional tag to filter memories by (exact match)"),
-  toolCallDescription: z
-    .string()
-    .describe(
-      "A concise, human-readable description of what this tool call is doing (e.g., 'Listing stored recon notes')",
-    ),
 });
 
 export type ListMemoriesInput = z.infer<typeof listMemoriesInputSchema>;
@@ -37,11 +32,8 @@ export type ListMemoriesResult = {
 
 export function listMemories(_ctx: ToolContext) {
   return tool({
-    description: `List saved memories, optionally filtered by category and/or tag.
-
-Returns lightweight summaries (id, category, title, tags, createdAt) sorted by
-most recent first. Use the returned category + id with get_memory to retrieve
-full content.`,
+    description:
+      "List saved memories filtered by category/tag. Returns summaries (id, title, tags). Use get_memory for full content.",
     inputSchema: listMemoriesInputSchema,
     execute: async ({ category, tag }): Promise<ListMemoriesResult> => {
       try {

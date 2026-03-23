@@ -14,11 +14,6 @@ export const getMemoryInputSchema = z.object({
       'The memory category: "app", "framework", or "general" (returned by list_memories)',
     ),
   id: z.string().describe("The unique memory id (returned by list_memories)"),
-  toolCallDescription: z
-    .string()
-    .describe(
-      "A concise, human-readable description of what this tool call is doing (e.g., 'Retrieving SQL injection cheatsheet')",
-    ),
 });
 
 export type GetMemoryInput = z.infer<typeof getMemoryInputSchema>;
@@ -31,10 +26,8 @@ export type GetMemoryResult = {
 
 export function getMemory(_ctx: ToolContext) {
   return tool({
-    description: `Retrieve the full content of a memory by its category and id.
-
-Use list_memories first to discover available memories, then call this tool
-with the category and id from that listing to fetch full content.`,
+    description:
+      "Retrieve full content of a memory by category and id. Use list_memories first to find available memories.",
     inputSchema: getMemoryInputSchema,
     execute: async ({ category, id }): Promise<GetMemoryResult> => {
       try {

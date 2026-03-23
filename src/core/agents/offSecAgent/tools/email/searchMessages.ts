@@ -39,11 +39,6 @@ Returns message summaries matching the query.`,
         .string()
         .optional()
         .describe("Pagination token from a previous call"),
-      toolCallDescription: z
-        .string()
-        .describe(
-          "A concise, human-readable description of what this tool call is doing",
-        ),
     }),
     execute: async ({ inboxId, query, folder, maxResults, pageToken }) => {
       const inboxes = ctx.session.config?.emailIntegration?.inboxes ?? [];

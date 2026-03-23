@@ -10,16 +10,8 @@ import { extractJavascriptEndpoints } from "../../specialized/attackSurface/jsEx
  */
 export function extractJsEndpoints(_ctx: unknown) {
   return tool({
-    description: `Extract endpoint URLs from JavaScript code in a page using pattern matching.
-
-Uses regex patterns to find:
-- AJAX calls ($.ajax, $.get, $.post)
-- Fetch API calls
-- Axios requests
-- XMLHttpRequest calls
-- URL assignments
-
-Returns all discovered endpoint patterns.`,
+    description:
+      "Extract endpoint URLs from JavaScript sources in a page via regex (fetch, axios, AJAX, URL patterns). Returns discovered endpoint paths.",
     inputSchema: z.object({
       url: z.string().describe("URL of the page to analyze"),
       sessionCookie: z
@@ -30,11 +22,6 @@ Returns all discovered endpoint patterns.`,
         .boolean()
         .default(true)
         .describe("Whether to download and analyze external JS files"),
-      toolCallDescription: z
-        .string()
-        .describe(
-          "A concise, human-readable description of what this tool call is doing",
-        ),
     }),
     execute: async (params) => {
       return extractJavascriptEndpoints(params);

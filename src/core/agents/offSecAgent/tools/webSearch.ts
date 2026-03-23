@@ -11,11 +11,6 @@ export const webSearchInputSchema = z.object({
     .describe(
       "The search query to look up. Be specific and include relevant keywords for better results.",
     ),
-  toolCallDescription: z
-    .string()
-    .describe(
-      "A concise, human-readable description of what this tool call is doing (e.g., 'Searching for CVE-2024-1234 details')",
-    ),
 });
 
 export type WebSearchInput = z.infer<typeof webSearchInputSchema>;
@@ -34,23 +29,8 @@ export interface WebSearchResponse {
 
 export function webSearch(_ctx: ToolContext) {
   return tool({
-    description: `Search the web for real-time information about any topic. Returns summarized information from search results.
-
-USAGE GUIDANCE:
-- Use this tool to look up CVEs, security advisories, and vulnerability details
-- Search for exploit techniques, payloads, and bypass methods
-- Research target technologies, frameworks, and their known vulnerabilities
-- Find documentation for tools, APIs, and security testing techniques
-- Look up default credentials, common misconfigurations, and hardening guides
-
-IMPORTANT: This tool requires a Pensar account. If you're not signed in, you'll receive an error message with instructions to sign in.
-
-COMMON SEARCH PATTERNS:
-- "CVE-2024-XXXX exploit" — Find details about specific CVEs
-- "Apache Struts RCE vulnerability" — Research known vulnerabilities in specific software
-- "SSRF bypass techniques" — Find security testing techniques
-- "Spring Boot actuator default credentials" — Look up default credentials
-- "JWT token security vulnerabilities" — Research vulnerability classes`,
+    description:
+      "Search the web for real-time information. Returns titles, URLs, and snippets. Requires Pensar account.",
     inputSchema: webSearchInputSchema,
     execute: async ({ query }): Promise<WebSearchResponse> => {
       try {

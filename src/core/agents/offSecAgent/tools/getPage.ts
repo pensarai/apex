@@ -10,11 +10,6 @@ export const getPageInputSchema = z.object({
     .string()
     .url()
     .describe("The URL of the page to fetch and extract content from."),
-  toolCallDescription: z
-    .string()
-    .describe(
-      "A concise, human-readable description of what this tool call is doing (e.g., 'Fetching CVE details from NVD')",
-    ),
 });
 
 export type GetPageInput = z.infer<typeof getPageInputSchema>;
@@ -70,19 +65,8 @@ function extractTextContent(html: string): string {
 
 export function getPage(ctx: ToolContext) {
   return tool({
-    description: `Fetch and extract readable content from a web page. Returns the page title and main text content.
-
-USAGE GUIDANCE:
-- Use this tool to read full content from URLs found via web_search
-- Fetch CVE details, security advisories, and vulnerability write-ups
-- Read documentation, API references, and technical guides
-- Extract exploit code, payloads, and proof-of-concept details from security blogs
-
-BEST PRACTICES:
-- First use web_search to find relevant URLs, then use get_page to read the full content
-- Prefer authoritative sources (NVD, vendor advisories, security researcher blogs)
-- For large pages, focus on the most relevant sections
-- If content is truncated, the important information is usually near the beginning`,
+    description:
+      "Fetch a URL and extract readable text content. Returns page title and main body text.",
     inputSchema: getPageInputSchema,
     execute: async ({ url }): Promise<GetPageResponse> => {
       try {

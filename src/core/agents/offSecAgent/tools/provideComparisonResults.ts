@@ -12,11 +12,8 @@ import type { ToolContext } from "./types";
  */
 export function provideComparisonResults(ctx: ToolContext) {
   return tool({
-    description: `Provide the final comparison results with matched, missed, and extra findings.
-
-This is the REQUIRED output tool — you MUST call this with your analysis.
-
-Results will be saved to: comparison-results.json in the session directory.`,
+    description:
+      "Submit final comparison results (matched, missed, extra findings). REQUIRED output tool. Saved to comparison-results.json.",
     inputSchema: z.object({
       matched: z
         .array(
@@ -55,10 +52,6 @@ Results will be saved to: comparison-results.json in the session directory.`,
           }),
         )
         .describe("Actual findings that don't match any expected findings"),
-      toolCallDescription: z
-        .string()
-        .describe("Concise description of this tool call")
-        .optional(),
     }),
     execute: async ({ matched, missed, extra }) => {
       const truePositives = matched.length;

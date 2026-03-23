@@ -31,11 +31,6 @@ get the inbox ID, then pass it here.`,
         .string()
         .optional()
         .describe("Pagination token from a previous call"),
-      toolCallDescription: z
-        .string()
-        .describe(
-          "A concise, human-readable description of what this tool call is doing",
-        ),
     }),
     execute: async ({ inboxId, folder, maxResults, pageToken }) => {
       const inboxes = ctx.session.config?.emailIntegration?.inboxes ?? [];

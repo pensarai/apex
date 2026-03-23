@@ -297,12 +297,17 @@ export async function summarizeConversation(
     ...slicedMessages,
     {
       role: "user",
-      content: `Summarize this conversation to pass to another agent. This was the system prompt: ${opts.system} `,
+      content:
+        "Summarize this conversation for another agent to continue the task. Include: key findings, current progress, pending objectives, and any auth tokens/cookies obtained.",
     },
   ];
 
+  const auxiliaryModel = opts.auxiliaryModel
+    ? getProviderModel(opts.auxiliaryModel, opts.authConfig)
+    : model;
+
   const { text: summary, usage: summaryUsage } = await generateText({
-    model,
+    model: auxiliaryModel,
     system: `You are a helpful assistant that summarizes conversations to pass to another agent. Review the conversation and system prompt at the end provided by the user.`,
     messages: summarizedMessages,
     abortSignal: opts.abortSignal,

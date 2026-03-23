@@ -22,22 +22,8 @@ const AUTH_DATA_FILENAME = "auth-data.json";
  */
 export function completeAuthentication(ctx: ToolContext) {
   return tool({
-    description: `Signal that the authentication process is complete.
-
-Call this when you have either:
-- Successfully authenticated and obtained session credentials
-- Determined that authentication is not possible (barrier detected)
-- Exhausted all authentication strategies
-
-CRITICAL: When authentication succeeds, you MUST include the exported cookies and headers
-so downstream agents can make authenticated requests. Pass:
-- exportedCookies: The cookie string from browser_get_cookies (cookieHeader) or authenticate_session
-- exportedHeaders: Any auth headers (e.g. {"Authorization": "Bearer <token>"}) from browser_evaluate or authenticate_session
-- strategy: The method used ("browser", "form_post", "json_post", "basic_auth", "bearer", etc.)
-
-On success the credentials are persisted to the session's auth/ directory for reuse.
-
-This tool marks the end of the authentication flow.`,
+    description:
+      "Signal authentication complete. On success, MUST include exportedCookies and exportedHeaders for downstream agents. Credentials persisted to session auth/ directory.",
     inputSchema: z.object({
       success: z.boolean().describe("Whether authentication was successful"),
       summary: z
@@ -74,9 +60,6 @@ This tool marks the end of the authentication flow.`,
         })
         .optional()
         .describe("Auth barrier if one was encountered"),
-      toolCallDescription: z
-        .string()
-        .describe("A concise description of what this tool call is doing"),
     }),
     execute: async (result) => {
       console.log(

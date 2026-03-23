@@ -56,9 +56,7 @@ export const ToolRenderer = memo(function ToolRenderer({
   const isError = message.status === "error";
   const { toolName, args, result, logs, subagentLogs } = message;
 
-  const summary = getToolDisplayLabel(toolName, args, {
-    preferDescription: isPending,
-  });
+  const summary = getToolDisplayLabel(toolName, args);
 
   // Get result summary for completed tools
   const resultDisplay: ResultSummary | null =

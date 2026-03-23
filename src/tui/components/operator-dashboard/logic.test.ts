@@ -461,8 +461,8 @@ describe("buildOperatorSystemPrompt", () => {
 
   it("includes the base system prompt", () => {
     const prompt = buildOperatorSystemPrompt(target, state);
-    expect(prompt).toContain("# Command Execution");
-    expect(prompt).toContain("# Tool Reference");
+    expect(prompt).toContain("# Rules");
+    expect(prompt).toContain("Evidence over assumptions");
   });
 
   it("includes plan mode note when agentMode is plan", () => {

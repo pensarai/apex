@@ -8,11 +8,6 @@ export function readSkill(ctx: ToolContext) {
       "Load a skill's full instructions by name from the available skills catalog.",
     inputSchema: z.object({
       name: z.string().describe("Skill slug from the available skills catalog"),
-      toolCallDescription: z
-        .string()
-        .describe(
-          "A concise, human-readable description of what this tool call is doing",
-        ),
     }),
     execute: async ({ name }) => {
       if (!ctx.skillsRegistry) {

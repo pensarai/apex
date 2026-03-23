@@ -264,6 +264,18 @@ export interface StreamResponseOpts {
    * new messages (not the full pre-summarization history).
    */
   onSummarized?: (summary: string) => void;
+  /** Cheaper model for summarization and tool repair. Defaults to main model. */
+  auxiliaryModel?: AIModel;
+  /** Anthropic context management — auto-prunes old tool results when context grows large. */
+  contextManagement?: {
+    enabled: boolean;
+    /** Input token threshold to trigger pruning (default: 140,000 = 70% of 200K) */
+    triggerTokens?: number;
+    /** Number of recent tool uses to keep in full (default: 10) */
+    keepToolUses?: number;
+    /** Tool names whose results should never be pruned */
+    excludeTools?: string[];
+  };
 }
 
 export function streamResponse(
@@ -300,6 +312,9 @@ export function streamResponse(
   // Use a container object so the reference stays stable but the value can be updated
   const messagesContainer = { current: messages || [] };
   const providerModel = getProviderModel(model, authConfig);
+  const auxiliaryProviderModel = opts.auxiliaryModel
+    ? getProviderModel(opts.auxiliaryModel, authConfig)
+    : providerModel;
 
   try {
     // Create the appropriate provider instance
@@ -311,6 +326,34 @@ export function streamResponse(
       toolChoice,
       tools,
       maxRetries: 3,
+      providerOptions: {
+        anthropic: {
+          cacheControl: { type: "ephemeral" as const },
+          ...(opts.contextManagement?.enabled && {
+            contextManagement: {
+              edits: [
+                {
+                  type: "clear_tool_uses_20250919" as const,
+                  trigger: {
+                    type: "input_tokens" as const,
+                    value: opts.contextManagement.triggerTokens ?? 140_000,
+                  },
+                  keep: {
+                    type: "tool_uses" as const,
+                    value: opts.contextManagement.keepToolUses ?? 10,
+                  },
+                  excludeTools: opts.contextManagement.excludeTools ?? [
+                    "document_vulnerability",
+                    "document_asset",
+                    "create_attack_surface_report",
+                    "response",
+                  ],
+                },
+              ],
+            },
+          }),
+        },
+      },
       prepareStep: (opts) => {
         // Update the container with the latest messages
         messagesContainer.current = opts.messages;
@@ -355,7 +398,7 @@ export function streamResponse(
 
           const { output: repairedArgs, usage: repairUsage } =
             await generateText({
-              model: providerModel,
+              model: auxiliaryProviderModel,
               output: Output.object({
                 schema: tool.inputSchema, // Use the actual Zod schema from the tool
               }),

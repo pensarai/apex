@@ -12,13 +12,8 @@ import type { ToolContext } from "./types";
  */
 export function createAttackSurfaceReport(ctx: ToolContext) {
   return tool({
-    description: `Provide attack surface analysis results to the orchestrator agent.
-
-Call this at the END of your analysis with:
-- Summary statistics
-- Discovered assets (simple list)
-- ALL targets for deep testing with objectives. Do not prioritize any targets, optimize for breadth of testing.
-- Key findings`,
+    description:
+      "Submit final attack surface results to orchestrator. Call at END of analysis with summary, assets, ALL targets with objectives, and key findings.",
     inputSchema: z.object({
       summary: z
         .object({
@@ -51,11 +46,6 @@ Call this at the END of your analysis with:
             "Key findings from reconnaissance. Format: '[SEVERITY] Finding description'",
           ),
       ),
-      toolCallDescription: z
-        .string()
-        .describe(
-          "A concise, human-readable description of what this tool call is doing",
-        ),
     }),
     execute: async (results) => {
       const resultsPath = join(

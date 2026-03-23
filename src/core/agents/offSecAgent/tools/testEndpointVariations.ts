@@ -9,23 +9,14 @@ import { z } from "zod";
  */
 export function testEndpointVariations(_ctx: unknown) {
   return tool({
-    description: `Test multiple variations of an endpoint pattern with different parameters.
-
-Use this to:
-- Test an endpoint with multiple IDs to check for authorization issues
-- Test related endpoints that follow similar patterns
-- Systematically probe endpoint variations you've identified`,
+    description:
+      "Test multiple endpoint URL variations in batch. Use for IDOR checks (different IDs) or systematic pattern probing.",
     inputSchema: z.object({
       endpoints: z.array(z.string()).describe("Array of endpoint URLs to test"),
       sessionCookie: z
         .string()
         .optional()
         .describe("Session cookie if authentication required"),
-      toolCallDescription: z
-        .string()
-        .describe(
-          "A concise, human-readable description of what this tool call is doing",
-        ),
     }),
     execute: async (params) => {
       try {

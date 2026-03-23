@@ -66,27 +66,12 @@ const AUTH_ENDPOINT_PATTERNS = {
  */
 export function probeAuthEndpoints(ctx: ToolContext) {
   return tool({
-    description: `Probe common authentication endpoint patterns to discover where to authenticate.
-
-Use this when:
-- Target endpoint returns 404 or no clear auth scheme detected
-- Need to find login/token endpoints for JSON APIs
-- detect_auth_scheme didn't find form or auth headers
-
-Probes ~40 common paths with both GET and POST methods:
-- Login endpoints: /api/login, /api/auth/login, /login, etc.
-- Token endpoints: /api/token, /oauth/token, etc.
-- User endpoints: /api/me, /api/user, etc.
-- Protected resources: /api/data, /api/protected, /admin, etc.
-
-Returns discovered endpoints and recommended login approach.`,
+    description:
+      "Probe ~40 common auth endpoint paths (login, token, OAuth, etc.) with GET and POST. Use when detect_auth_scheme found nothing. Returns discovered endpoints and recommended approach.",
     inputSchema: z.object({
       baseUrl: z
         .string()
         .describe("Base URL to probe (e.g., https://example.com)"),
-      toolCallDescription: z
-        .string()
-        .describe("A concise description of what this tool call is doing"),
     }),
     execute: async ({ baseUrl }) => {
       const discoveredEndpoints: Array<{

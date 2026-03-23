@@ -151,7 +151,14 @@ function convertToAnthropicFormat(
   };
 
   if (systemPrompt) {
-    body.system = systemPrompt;
+    // Use structured system block with cache_control for prompt caching
+    body.system = [
+      {
+        type: "text",
+        text: systemPrompt,
+        cache_control: { type: "ephemeral" },
+      },
+    ];
   }
 
   if (options.temperature != null) {

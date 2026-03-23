@@ -265,6 +265,8 @@ export class OffensiveSecurityAgent<TResult = void> {
             sandboxMode: agentCwd === input.session.rootPath,
           })) + buildSessionWorkspaceSection(input.session, agentCwd),
       model: input.model,
+      auxiliaryModel: input.auxiliaryModel,
+      contextManagement: input.contextManagement,
       messages: input.messages,
       tools,
       activeTools,

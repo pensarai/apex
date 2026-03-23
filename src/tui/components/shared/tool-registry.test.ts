@@ -1,59 +1,35 @@
 import { describe, expect, it } from "vitest";
-import { tryParsePartialJson } from "./message-utils";
 import { getToolDisplayLabel, getToolSummary } from "./tool-registry";
 
 describe("getToolDisplayLabel", () => {
-  it("reproduces the raw execute_command summary fallback for description-only args", () => {
-    const parsed = tryParsePartialJson(
-      '{"toolCallDescription":"Searching repository for secrets"}',
-    );
-
-    expect(parsed).toEqual({
-      toolCallDescription: "Searching repository for secrets",
-    });
-    expect(getToolSummary("execute_command", parsed!)).toBe("$ ");
-  });
-
-  it("prefers the human description for pending execute_command calls", () => {
-    const parsed = tryParsePartialJson(
-      '{"toolCallDescription":"Searching repository for secrets","command":"rg --fi',
-    );
-
-    expect(parsed).toEqual({
-      toolCallDescription: "Searching repository for secrets",
-      command: "rg --fi",
-    });
+  it("returns command summary for execute_command", () => {
     expect(
-      getToolDisplayLabel("execute_command", parsed!, {
-        preferDescription: true,
+      getToolDisplayLabel("execute_command", {
+        command: "rg --files . | head",
       }),
-    ).toBe("Searching repository for secrets");
-  });
-
-  it("falls back to the command summary after execute_command completes", () => {
-    expect(
-      getToolDisplayLabel(
-        "execute_command",
-        {
-          toolCallDescription: "Searching repository for secrets",
-          command: "rg --files . | head",
-        },
-        { preferDescription: false },
-      ),
     ).toBe("$ rg --files . | head");
   });
 
-  it("leaves non-shell tool labels unchanged", () => {
+  it("returns empty command summary when command is missing", () => {
+    expect(getToolSummary("execute_command", {})).toBe("$ ");
+  });
+
+  it("returns method + URL for http_request", () => {
     expect(
-      getToolDisplayLabel(
-        "http_request",
-        {
-          toolCallDescription: "Fetching homepage",
-          method: "GET",
-          url: "https://example.com",
-        },
-        { preferDescription: true },
-      ),
+      getToolDisplayLabel("http_request", {
+        method: "GET",
+        url: "https://example.com",
+      }),
     ).toBe("GET https://example.com");
+  });
+
+  it("falls back to tool name for unknown tools", () => {
+    expect(getToolDisplayLabel("unknown_tool", {})).toBe("unknown_tool");
+  });
+
+  it("uses first arg value for unregistered tools with args", () => {
+    expect(
+      getToolDisplayLabel("custom_tool", { target: "https://example.com" }),
+    ).toBe("custom_tool https://example.com");
   });
 });

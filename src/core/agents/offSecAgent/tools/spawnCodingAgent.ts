@@ -15,17 +15,8 @@ const DEFAULT_CONCURRENCY = 5;
  */
 export function spawnCodingAgent(ctx: ToolContext) {
   return tool({
-    description: `Spawn one or more coding sub-agents to perform tasks on the codebase in parallel.
-
-Each task gets its own autonomous agent with filesystem access (read_file, list_files, grep, execute_command). The agents work independently and return their text output when done.
-
-Use this to fan out analysis work — e.g. analyze multiple apps, modules, or concerns in parallel for higher fidelity.
-
-Each task needs:
-- codebasePath: root directory for the agent to work in
-- objective: a detailed description of what the agent should accomplish
-
-Returns an array of results with the text output from each agent.`,
+    description:
+      "Spawn parallel coding sub-agents for codebase analysis. Each task gets an autonomous agent with filesystem tools. Returns text output from each agent.",
     inputSchema: z.object({
       tasks: z
         .array(
@@ -46,11 +37,6 @@ Returns an array of results with the text output from each agent.`,
           }),
         )
         .describe("Array of tasks to fan out to coding sub-agents"),
-      toolCallDescription: z
-        .string()
-        .describe(
-          "A concise, human-readable description of what this tool call is doing",
-        ),
     }),
     execute: async ({ tasks }) => {
       if (!ctx.model) {

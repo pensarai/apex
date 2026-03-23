@@ -27,22 +27,8 @@ export function documentAsset(ctx: ToolContext) {
   const baseAssetsPath = join(ctx.session.rootPath, "assets");
 
   return tool({
-    description: `Document a discovered asset during attack surface analysis.
-
-Assets are inventory items discovered during reconnaissance and saved to the session's assets folder.
-
-Use this tool to document:
-- Domains and subdomains
-- Web applications and APIs
-- Infrastructure services (mail, DNS, VPN, databases)
-- Cloud resources (S3 buckets, CDN, cloud storage)
-- Development assets (dev/staging/test environments, CI/CD, repos)
-
-**API endpoint consolidation:** When documenting API endpoints, do NOT create separate assets for each HTTP method on the same path. Instead, document each unique path as a single asset and list all supported methods in \`details.method\` (e.g., \`["GET", "POST", "DELETE"]\`). For example, \`GET /api/users\` and \`POST /api/users\` should be ONE asset named \`/api/users\` with \`details.method: ["GET", "POST"]\`. Use \`details.method: "PAGE"\` for web pages/views.
-
-**App-scoped assets:** When \`appName\` is provided, assets are organized into app-specific subfolders under \`assets/<appName>/\`. This groups endpoints by the application they belong to.
-
-Each asset creates a JSON file in the assets directory for tracking and analysis.`,
+    description:
+      "Record a discovered asset to the session. Consolidate same-path endpoints into one asset with multiple methods in details.method (e.g. ['GET','POST']). Use 'PAGE' for web views. Set appName to group by application.",
     inputSchema: z.object({
       appName: z
         .string()
@@ -167,11 +153,6 @@ Each asset creates a JSON file in the assets directory for tracking and analysis
         .array(z.string())
         .describe(
           "Specific pentest objectives for this asset — what a pentest agent should test (e.g., 'Test for IDOR in /api/orders/{id}')",
-        ),
-      toolCallDescription: z
-        .string()
-        .describe(
-          "A concise, human-readable description of what this tool call is doing",
         ),
     }),
     execute: async (asset) => {

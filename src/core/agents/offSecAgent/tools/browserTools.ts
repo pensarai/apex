@@ -115,19 +115,10 @@ export function createBrowserToolset(ctx: ToolContext) {
         .describe(
           "Which field to extract from the credential (e.g. 'password'). Required when credentialId is set.",
         ),
-      toolCallDescription: z
-        .string()
-        .describe("Why you are filling this field with this value"),
     }),
     execute: async (params) => {
       let { value } = params;
-      const {
-        element,
-        ref,
-        credentialId,
-        credentialField,
-        toolCallDescription,
-      } = params;
+      const { element, ref, credentialId, credentialField } = params;
 
       if (credentialId && credentialField) {
         const stored = cm.resolve(credentialId);
@@ -163,7 +154,7 @@ export function createBrowserToolset(ctx: ToolContext) {
       }
 
       return originalFill.execute!(
-        { element, ref, value, toolCallDescription },
+        { element, ref, value },
         { toolCallId: "", messages: [], abortSignal: undefined as never },
       );
     },

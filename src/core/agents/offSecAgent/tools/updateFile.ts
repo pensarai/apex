@@ -20,11 +20,6 @@ export const updateFileInputSchema = z.object({
     .describe(
       "If true, replace ALL occurrences of oldContent. Otherwise replace only the first (default: false).",
     ),
-  toolCallDescription: z
-    .string()
-    .describe(
-      "A concise, human-readable description of what this tool call is doing (e.g., 'Replacing vulnerable SQL query with parameterized version')",
-    ),
 });
 
 export type UpdateFileInput = z.infer<typeof updateFileInputSchema>;
@@ -38,17 +33,8 @@ export type UpdateFileResult = {
 
 export function updateFile(ctx: ToolContext) {
   return tool({
-    description: `Update a file by replacing exact string matches.
-
-Performs a search-and-replace on the file: finds \`oldContent\` and replaces it
-with \`newContent\`. The match is exact (character-for-character), so include
-enough surrounding context in oldContent to ensure a unique match.
-
-By default replaces only the first occurrence. Set replaceAll=true to replace
-every occurrence.
-
-Returns the number of replacements made. If oldContent is not found, the
-operation fails with an error — double-check whitespace and indentation.`,
+    description:
+      "Search-and-replace in a file. Match is exact (character-for-character). Set replaceAll=true for all occurrences. Fails if oldContent not found.",
     inputSchema: updateFileInputSchema,
     execute: async ({
       path: filePath,

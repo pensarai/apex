@@ -4,16 +4,10 @@ import { join } from "path";
 import { writeFileSync, mkdirSync, existsSync } from "fs";
 import type { ToolContext } from "./types";
 
-const MAX_INLINE = 50_000;
+const MAX_INLINE = 10_000;
 const MS_TIMEOUT_THRESHOLD = 10_000;
 
 export const executeCommandInputSchema = z.object({
-  // not actually sure if placing this above the other keys/zod values ensures that the model generates it first...
-  toolCallDescription: z
-    .string()
-    .describe(
-      "A concise, human-readable description of what this tool call is doing (e.g., 'Scanning for open ports on target')",
-    ),
   command: z.string().describe("The shell command to execute"),
   timeout: z
     .number()
@@ -94,39 +88,8 @@ function maybeSaveFullOutput(
 
 export function executeCommand(ctx: ToolContext) {
   return tool({
-    description: `Execute a shell command for penetration testing activities.
-
-The shell is persistent — environment variables, working directory (cd), and
-background processes survive across calls. You do NOT need nohup/& tricks to
-keep processes alive between calls; just background them normally with &.
-
-COMMON COMMANDS FOR BLACK BOX TESTING:
-
-RECONNAISSANCE:
-- nmap -sV -sC <target>              # Service version detection + default scripts
-- nmap -p- <target>                  # Scan all ports
-- dig <domain>                       # DNS lookup
-- whois <domain>                     # Domain registration info
-
-WEB APPLICATION TESTING:
-- curl -i <url>                      # HTTP request with headers
-- curl -X POST -d "data" <url>       # POST request
-- nikto -h <host>                    # Web server scanner
-- gobuster dir -u <url> -w <wordlist> # Directory enumeration
-- ffuf -u <url>/FUZZ -w <wordlist>   # Web fuzzer
-
-SSL/TLS TESTING:
-- openssl s_client -connect <host>:<port>
-- nmap --script ssl-enum-ciphers -p 443 <host>
-
-OUTPUT HANDLING:
-- Use 2>&1 to capture stderr
-- Use timeout command for long-running scans
-- The tool's timeout parameter is in SECONDS, not milliseconds
-- Good timeout examples: 30, 60, 120
-- Do NOT pass millisecond values like 30000 or 120000
-
-IMPORTANT: Always analyze results and adjust your approach based on findings.`,
+    description:
+      "Run a shell command. Shell is persistent across calls (env, cwd, background processes survive). Timeout is in SECONDS (not ms). Returns stdout, stderr, and exit status.",
     inputSchema: executeCommandInputSchema,
     execute: async ({ command, timeout }): Promise<ExecuteCommandResult> => {
       if (ctx.abortSignal?.aborted) {

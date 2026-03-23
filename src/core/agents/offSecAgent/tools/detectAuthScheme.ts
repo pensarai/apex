@@ -11,24 +11,10 @@ import type { ToolContext } from "./types";
  */
 export function detectAuthScheme(ctx: ToolContext) {
   return tool({
-    description: `Analyze an endpoint to detect authentication scheme.
-
-Identifies:
-- Form-based login (username/password fields)
-- HTTP Basic/Digest Auth (WWW-Authenticate header)
-- Bearer Token / JWT requirements
-- API Key authentication (X-API-Key, etc.)
-- OAuth2 flows
-- Custom authentication schemes
-
-Also detects auth barriers (CAPTCHA, MFA) that block automated auth.
-
-Returns detected scheme and required fields for authentication.`,
+    description:
+      "Analyze an endpoint to detect its auth scheme (form, basic, bearer, API key, OAuth2) and barriers (CAPTCHA, MFA). Returns detected scheme and required fields.",
     inputSchema: z.object({
       endpoint: z.string().describe("URL to analyze for auth scheme"),
-      toolCallDescription: z
-        .string()
-        .describe("A concise description of what this tool call is doing"),
     }),
     execute: async ({ endpoint }) => {
       try {

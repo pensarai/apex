@@ -17,11 +17,6 @@ export const grepInputSchema = z.object({
     .describe(
       'Additional grep flags (e.g. "-rn", "-i", "-l", "-E"). -r (recursive) is added by default when searching a directory.',
     ),
-  toolCallDescription: z
-    .string()
-    .describe(
-      "A concise, human-readable description of what this tool call is doing (e.g., 'Searching for password hashes in config files')",
-    ),
 });
 
 export type GrepInput = z.infer<typeof grepInputSchema>;
@@ -36,23 +31,8 @@ export type GrepResult = {
 
 export function grep(ctx: ToolContext) {
   return tool({
-    description: `Search file contents using grep.
-
-Runs grep with the given pattern and optional flags. When searching a
-directory, -r (recursive) is included automatically unless you explicitly
-provide flags that already contain it.
-
-USEFUL FLAG COMBOS:
-  -rn           recursive + line numbers (default for dirs)
-  -rni          recursive + line numbers + case-insensitive
-  -rl           recursive, file names only
-  -E            extended regex
-  -P            Perl-compatible regex
-  -C 3          show 3 lines of context around matches
-  --include="*.js"  restrict to certain file types
-
-Output is capped at 50 000 characters to avoid context overflow — narrow your
-search with flags or a more specific directory if results are truncated.`,
+    description:
+      "Search file contents by regex pattern. Recursive by default for directories. Output capped at 50K chars.",
     inputSchema: grepInputSchema,
     execute: async ({ pattern, directory, flags }): Promise<GrepResult> => {
       if (ctx.abortSignal?.aborted) {

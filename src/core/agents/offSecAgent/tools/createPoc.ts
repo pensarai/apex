@@ -27,11 +27,6 @@ export const createPocInputSchema = z.object({
   pocType: z.enum(["bash", "python", "javascript"]).describe("Script language"),
   pocContent: z.string().describe("The full POC script content"),
   description: z.string().describe("What this POC demonstrates"),
-  toolCallDescription: z
-    .string()
-    .describe(
-      "A concise, human-readable description of what this tool call is doing",
-    ),
 });
 
 export type CreatePocInput = z.infer<typeof createPocInputSchema>;
@@ -50,25 +45,7 @@ export function createPoc(ctx: ToolContext) {
   const pocAttempts = new Map<string, number>();
 
   return tool({
-    description: `Create and test a Proof-of-Concept script.
-
-Supported languages:
-- **Bash** (.sh) - Preferred for simple HTTP/curl-based POCs
-- **Python** (.py) - For complex scenarios with requests library
-- **JavaScript** (.js) - For Node.js-based exploitation
-
-This tool:
-1. Creates the POC file in the pocs/ directory
-2. Makes executable and runs it
-3. Returns execution output for analysis
-4. Deletes the file if execution fails
-
-POC requirements:
-- Exit 0 on success (vuln confirmed), 1 on failure
-- Print clear evidence of exploitation
-- Include rate limiting (sleep between requests)
-
-Max ${MAX_POC_ATTEMPTS} attempts per approach before pivoting.`,
+    description: `Create and execute a PoC script (bash/python/javascript). Saved to pocs/, made executable, and run. Exit 0 = vuln confirmed. Deleted on failure. Max ${MAX_POC_ATTEMPTS} attempts per approach.`,
     inputSchema: createPocInputSchema,
     execute: async (poc: CreatePocInput): Promise<CreatePocResult> => {
       const approachKey = `${poc.pocName}_${poc.description.substring(0, 30)}`;

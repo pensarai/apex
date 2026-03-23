@@ -19,15 +19,8 @@ import type { ToolContext } from "./types";
  */
 export function authenticateSession(ctx: ToolContext) {
   return tool({
-    description: `Authenticate with credentials and obtain a session cookie for subsequent authenticated requests.
-
-Use this to:
-- Test discovered credentials
-- Obtain session cookies for authenticated exploration
-- Access protected areas of the application
-
-You can either pass a credentialId (preferred when credentials are managed)
-or provide username/password directly.`,
+    description:
+      "Authenticate with credentials (credentialId or username/password) via form POST, JSON POST, or basic auth. Returns session cookie for authenticated requests.",
     inputSchema: z.object({
       loginUrl: z
         .string()
@@ -69,11 +62,6 @@ or provide username/password directly.`,
         .record(z.string(), z.string())
         .optional()
         .describe("Additional form fields (e.g., csrf tokens)"),
-      toolCallDescription: z
-        .string()
-        .describe(
-          "A concise, human-readable description of what this tool call is doing",
-        ),
     }),
     execute: async (params) => {
       try {

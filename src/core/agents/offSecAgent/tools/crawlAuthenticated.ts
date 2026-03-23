@@ -13,12 +13,8 @@ import {
  */
 export function crawlAuthenticated(_ctx: unknown) {
   return tool({
-    description: `Recursively crawl web pages starting from a URL to discover links, forms, and JavaScript endpoints.
-
-- Follows links to discover connected pages
-- Extracts form actions
-- Calls extract_js_endpoints on each discovered page
-- Returns comprehensive map of discovered pages and endpoints`,
+    description:
+      "Recursively crawl pages from a URL to discover links, forms, and JS endpoints. Returns map of discovered pages and endpoints.",
     inputSchema: z.object({
       startUrl: z.string().describe("Starting URL (e.g., /dashboard)"),
       sessionCookie: z
@@ -26,11 +22,6 @@ export function crawlAuthenticated(_ctx: unknown) {
         .describe("Session cookie from authenticate_session"),
       maxDepth: z.number().default(3).describe("Maximum crawl depth"),
       maxPages: z.number().default(50).describe("Maximum pages to visit"),
-      toolCallDescription: z
-        .string()
-        .describe(
-          "A concise, human-readable description of what this tool call is doing",
-        ),
     }),
     execute: async (params) => {
       try {

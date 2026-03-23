@@ -71,6 +71,17 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
   /** AI model identifier */
   model: AIModel;
 
+  /** Cheaper model for summarization and tool repair. Defaults to main model. */
+  auxiliaryModel?: AIModel;
+
+  /** Anthropic context management — auto-prunes old tool results when context grows large. */
+  contextManagement?: {
+    enabled: boolean;
+    triggerTokens?: number;
+    keepToolUses?: number;
+    excludeTools?: string[];
+  };
+
   /**
    * Operating mode that controls which tools are available.
    *

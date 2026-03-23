@@ -295,7 +295,7 @@ async function main() {
     // 5a: browser_navigate
     log("tool", "browser_navigate → https://example.com");
     const nav = (await tools.browser_navigate.execute!(
-      { url: "https://example.com", toolCallDescription: "test" },
+      { url: "https://example.com" },
       callOpts,
     )) as { success: boolean; url?: string; title?: string; error?: string };
     if (nav.success) {
@@ -307,7 +307,7 @@ async function main() {
     // 5b: browser_evaluate
     log("tool", "browser_evaluate → document.title");
     const evalR = (await tools.browser_evaluate.execute!(
-      { script: "document.title", toolCallDescription: "test" },
+      { script: "document.title" },
       callOpts,
     )) as { success: boolean; result?: unknown; error?: string };
     if (evalR.success) {
@@ -318,10 +318,11 @@ async function main() {
 
     // 5c: browser_snapshot
     log("tool", "browser_snapshot");
-    const snap = (await tools.browser_snapshot.execute!(
-      { toolCallDescription: "test" },
-      callOpts,
-    )) as { success: boolean; snapshot?: string; error?: string };
+    const snap = (await tools.browser_snapshot.execute!({}, callOpts)) as {
+      success: boolean;
+      snapshot?: string;
+      error?: string;
+    };
     if (snap.success && snap.snapshot) {
       console.log(
         "  snapshot (first 400 chars):\n" + snap.snapshot.substring(0, 400),
@@ -334,7 +335,7 @@ async function main() {
     // 5d: browser_get_cookies
     log("tool", "browser_get_cookies");
     const cookies = (await tools.browser_get_cookies.execute!(
-      { toolCallDescription: "test" },
+      {},
       callOpts,
     )) as { success: boolean; cookies?: unknown[]; error?: string };
     if (cookies.success) {
@@ -346,7 +347,7 @@ async function main() {
     // 5e: browser_screenshot
     log("tool", "browser_screenshot");
     const ss = (await tools.browser_screenshot.execute!(
-      { filename: "test_example_com", toolCallDescription: "test" },
+      { filename: "test_example_com" },
       callOpts,
     )) as { success: boolean; path?: string; error?: string };
     if (ss.success) {
@@ -357,10 +358,11 @@ async function main() {
 
     // 5f: browser_console
     log("tool", "browser_console");
-    const cons = (await tools.browser_console.execute!(
-      { toolCallDescription: "test" },
-      callOpts,
-    )) as { success: boolean; messages?: unknown[]; error?: string };
+    const cons = (await tools.browser_console.execute!({}, callOpts)) as {
+      success: boolean;
+      messages?: unknown[];
+      error?: string;
+    };
     if (cons.success) {
       pass(`console: ${cons.messages?.length ?? 0} message(s)`);
     } else {

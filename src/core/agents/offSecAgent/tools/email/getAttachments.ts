@@ -31,11 +31,6 @@ the attachment content as base64.`,
         .describe(
           "Mailbox folder the message lives in (default INBOX). Must match the folder used when listing.",
         ),
-      toolCallDescription: z
-        .string()
-        .describe(
-          "A concise, human-readable description of what this tool call is doing",
-        ),
     }),
     execute: async ({ inboxId, messageId, attachmentId, folder }) => {
       const inboxes = ctx.session.config?.emailIntegration?.inboxes ?? [];

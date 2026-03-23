@@ -15,11 +15,6 @@ export const listFilesInputSchema = z.object({
     .boolean()
     .optional()
     .describe("If true, list files recursively (default: false)"),
-  toolCallDescription: z
-    .string()
-    .describe(
-      "A concise, human-readable description of what this tool call is doing (e.g., 'Listing files in /etc/nginx')",
-    ),
 });
 
 export type ListFilesInput = z.infer<typeof listFilesInputSchema>;
@@ -76,15 +71,7 @@ function toRelative(base: string, paths: string[]): string[] {
 
 export function listFiles(ctx: ToolContext) {
   return tool({
-    description: `List files and directories at a given path.
-
-By default lists the immediate contents of the directory. Set recursive=true
-to walk the tree. Returns paths relative to the listed directory.
-
-Recursive listings are capped at ${MAX_RECURSIVE} entries. Use grep or
-read_file for targeted exploration instead of recursive listing on large trees.
-
-Each directory entry is suffixed with "/" for easy identification.`,
+    description: `List directory contents. Set recursive=true for tree walk (capped at ${MAX_RECURSIVE} entries). Directories suffixed with "/".`,
     inputSchema: listFilesInputSchema,
     execute: async ({
       directory,

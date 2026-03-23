@@ -14,11 +14,6 @@ export const readFileInputSchema = z.object({
     .number()
     .optional()
     .describe("1-based line number to stop reading at (inclusive)"),
-  toolCallDescription: z
-    .string()
-    .describe(
-      "A concise, human-readable description of what this tool call is doing (e.g., 'Reading nginx config file')",
-    ),
 });
 
 export type ReadFileInput = z.infer<typeof readFileInputSchema>;
@@ -34,13 +29,8 @@ export type ReadFileResult = {
 
 export function readFile(ctx: ToolContext) {
   return tool({
-    description: `Read the contents of a file from the filesystem.
-
-You can read the entire file or specify a line range using startLine / endLine
-(both 1-based, inclusive). If only startLine is given, reads from that line to
-the end. If only endLine is given, reads from the beginning to that line.
-
-Output lines are prefixed with their line number for easy reference.`,
+    description:
+      "Read file contents. Supports line ranges via startLine/endLine (1-based, inclusive). Output lines are numbered.",
     inputSchema: readFileInputSchema,
     execute: async ({ path, startLine, endLine }): Promise<ReadFileResult> => {
       const resolved = isAbsolute(path) ? path : resolve(ctx.agentCwd, path);

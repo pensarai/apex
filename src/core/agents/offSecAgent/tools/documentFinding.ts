@@ -27,11 +27,6 @@ export const documentVulnerabilityInputSchema = z.object({
     .describe(
       "The class of vulnerability (e.g., sqli, xss, command-injection, idor, ssrf, path-traversal, crypto, cve)",
     ),
-  toolCallDescription: z
-    .string()
-    .describe(
-      "A concise, human-readable description of what this tool call is doing (e.g., 'Documenting SQL injection finding')",
-    ),
 });
 
 export type DocumentVulnerabilityInput = z.infer<
@@ -68,23 +63,8 @@ export function documentVulnerability(ctx: ToolContext) {
   const { session } = ctx;
 
   return tool({
-    description: `Document a CONFIRMED security vulnerability that you have successfully exploited with a working proof-of-concept.
-
-CRITICAL RULES — READ BEFORE CALLING:
-- ONLY call this tool for actual security vulnerabilities you have verified and exploited
-- You MUST have a working PoC script (created via create_poc) that reliably demonstrates the vulnerability BEFORE calling this tool
-- Do NOT use this tool for: positive/negative observations, informational notes, testing limitations, authentication issues, rate-limiting, infrastructure notes, or anything that is not a exploitable security vulnerability
-- If you could not exploit a vulnerability, do NOT document it — mention it in your final response summary instead
-- Severity is automatically determined from CVSS 4.0 scoring — you do NOT need to specify it
-
-FINDING STRUCTURE:
-- Title: Clear, concise description of the vulnerability
-- Description: Detailed technical explanation of the vulnerability
-- Impact: Business and technical consequences if exploited
-- Evidence: Commands run, responses received, proof of exploitation
-- Remediation: Specific, actionable steps to fix
-- References: CVE, CWE, OWASP, or security advisories
-- Vulnerability Class: The class of vulnerability (e.g., sqli, xss, command-injection) — improves CWE accuracy`,
+    description:
+      "Document a CONFIRMED, EXPLOITED vulnerability. Requires a working PoC (create_poc first). Severity auto-scored via CVSS 4.0. Do NOT use for unverified observations or informational notes.",
     inputSchema: documentVulnerabilityInputSchema,
     execute: async (input) => {
       try {

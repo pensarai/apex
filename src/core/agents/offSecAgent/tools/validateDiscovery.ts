@@ -9,13 +9,8 @@ import { z } from "zod";
  */
 export function validateDiscovery(_ctx: unknown) {
   return tool({
-    description: `Check discovery completeness by analyzing what has been explored.
-
-Returns a confidence score and identifies potential gaps based on:
-- Whether authentication was attempted when credentials were found
-- Coverage of authenticated areas
-- JavaScript analysis coverage
-- Resource pattern testing coverage`,
+    description:
+      "Check discovery completeness. Returns confidence score and identifies gaps in auth, JS analysis, and endpoint coverage.",
     inputSchema: z.object({
       discoveredEndpoints: z
         .array(z.string())
@@ -29,11 +24,6 @@ Returns a confidence score and identifies potential gaps based on:
       credentialsFound: z
         .boolean()
         .describe("Whether any credentials were discovered"),
-      toolCallDescription: z
-        .string()
-        .describe(
-          "A concise, human-readable description of what this tool call is doing",
-        ),
     }),
     execute: async (params) => {
       const {

@@ -99,6 +99,9 @@ export function createPensarModel(
       }
     }
 
+    // Enable prompt caching for Anthropic models
+    headers["anthropic-beta"] = "prompt-caching-2024-07-31";
+
     return headers;
   }
 
