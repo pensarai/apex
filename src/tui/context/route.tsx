@@ -21,14 +21,12 @@ export type RoutePath =
   | "disclosure"
   | "theme"
   | "auth"
-  | "credits"
-  | "skills";
+  | "credits";
 
 export interface WebCommandOptions {
   auto?: boolean;
   target?: string;
   name?: string;
-  skillSlug?: string;
   swarm?: boolean;
   mode?: "plan" | "manual" | "auto";
   requireApproval?: boolean;
@@ -67,6 +65,7 @@ export type Route =
         requireApproval?: boolean;
         target?: string;
         operatorMode?: import("../../core/operator").OperatorMode;
+        sandbox?: boolean;
       };
       /** Opaque value used to force a fresh remount (e.g. Date.now()) */
       nonce?: number;

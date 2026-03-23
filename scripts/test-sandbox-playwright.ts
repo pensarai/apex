@@ -280,6 +280,7 @@ async function main() {
         scratchpadPath: join(testDir, "scratchpad"),
         findingsPath: join(testDir, "findings"),
       } as ToolContext["session"],
+      agentCwd: testDir,
       target: "https://example.com",
       sandbox,
     };

@@ -18,10 +18,12 @@ import {
 } from "../../../core/auth";
 import type { DeviceFlowInfo, WorkspaceInfo } from "../../../core/auth";
 import { Dialog } from "../../context/dialog";
+import { DialogControls } from "../shared/dialog-controls";
 import { useTheme } from "../../theme";
 
 interface AuthFlowProps {
   onClose: () => void;
+  hideEsc?: boolean;
 }
 
 type AuthStep =
@@ -34,7 +36,7 @@ type AuthStep =
   | "success"
   | "error";
 
-export default function AuthFlow({ onClose }: AuthFlowProps) {
+export default function AuthFlow({ onClose, hideEsc }: AuthFlowProps) {
   const { colors } = useTheme();
   const appConfig = useConfig();
 
@@ -471,7 +473,7 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
   // ── Render ──────────────────────────────────────────────────────────
 
   return (
-    <Dialog size="large" onClose={goHome}>
+    <Dialog size="large" onClose={goHome} hideEsc={hideEsc}>
       <box
         flexDirection="column"
         width="100%"
@@ -500,10 +502,11 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
               </text>
             </box>
             <box marginTop={1}>
-              <text fg={colors.textMuted}>
-                <span fg={colors.primary}>[ENTER]</span> Connect ·{" "}
-                <span fg={colors.primary}>[ESC]</span> Cancel
-              </text>
+              <DialogControls
+                controls={[
+                  { key: "Enter", label: "Connect", variant: "primary" },
+                ]}
+              />
             </box>
           </box>
         )}
@@ -534,11 +537,6 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
                 {verificationUrl}
               </text>
             </box>
-            <box marginTop={1}>
-              <text fg={colors.textMuted}>
-                <span fg={colors.primary}>[ESC]</span> Cancel
-              </text>
-            </box>
           </box>
         )}
 
@@ -564,12 +562,12 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
               ))}
             </box>
             <box marginTop={1}>
-              <text fg={colors.textMuted}>
-                <span fg={colors.primary}>[↑/↓]</span> Navigate ·{" "}
-                <span fg={colors.primary}>[ENTER]</span> Select ·{" "}
-                <span fg={colors.error}>[D]</span> Disconnect ·{" "}
-                <span fg={colors.primary}>[ESC]</span> Cancel
-              </text>
+              <DialogControls
+                controls={[
+                  { key: "Enter", label: "Select", variant: "primary" },
+                  { key: "D", label: "Disconnect", variant: "danger" },
+                ]}
+              />
             </box>
           </box>
         )}
@@ -596,11 +594,6 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
               <text fg={colors.textMuted}>
                 If the browser didn't open, visit:{"\n"}
                 {consoleUrlRef.current}/create-workspace
-              </text>
-            </box>
-            <box marginTop={1}>
-              <text fg={colors.textMuted}>
-                <span fg={colors.primary}>[ESC]</span> Cancel
               </text>
             </box>
           </box>
@@ -665,12 +658,16 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
               </text>
             </box>
             <box marginTop={1}>
-              <text fg={colors.textMuted}>
-                <span fg={colors.primary}>[ENTER]</span>{" "}
-                {showBillingWarning ? "Open billing" : "Done"} ·{" "}
-                <span fg={colors.error}>[D]</span> Disconnect ·{" "}
-                <span fg={colors.primary}>[ESC]</span> Back
-              </text>
+              <DialogControls
+                controls={[
+                  {
+                    key: "Enter",
+                    label: showBillingWarning ? "Open Billing" : "Done",
+                    variant: "primary",
+                  },
+                  { key: "D", label: "Disconnect", variant: "danger" },
+                ]}
+              />
             </box>
           </box>
         )}
@@ -682,10 +679,11 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
               <text fg={colors.error}>{error}</text>
             </box>
             <box marginTop={1}>
-              <text fg={colors.textMuted}>
-                <span fg={colors.primary}>[ENTER]</span> Try again ·{" "}
-                <span fg={colors.primary}>[ESC]</span> Cancel
-              </text>
+              <DialogControls
+                controls={[
+                  { key: "Enter", label: "Try Again", variant: "primary" },
+                ]}
+              />
             </box>
           </box>
         )}

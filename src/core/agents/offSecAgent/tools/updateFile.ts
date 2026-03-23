@@ -58,7 +58,7 @@ operation fails with an error — double-check whitespace and indentation.`,
     }): Promise<UpdateFileResult> => {
       const resolved = isAbsolute(filePath)
         ? filePath
-        : resolve(ctx.session.rootPath, filePath);
+        : resolve(ctx.agentCwd, filePath);
       if (ctx.sandbox) {
         return executeSandboxUpdate(
           ctx,

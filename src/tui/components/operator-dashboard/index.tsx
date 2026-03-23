@@ -86,6 +86,7 @@ export default function OperatorDashboard({
     requireApproval?: boolean;
     target?: string;
     operatorMode?: OperatorMode;
+    sandbox?: boolean;
   };
 }) {
   const { colors } = useTheme();
@@ -104,6 +105,8 @@ export default function OperatorDashboard({
   } = useAgent();
   const {
     autocompleteOptions: allAutocompleteOptions,
+    commandOptionMap,
+    commandNames,
     executeCommand,
     resolveSkillContent,
     skillsRegistry,
@@ -882,7 +885,11 @@ export default function OperatorDashboard({
               initialConfig?.target,
               operatorState,
               agentMode,
-              { requireApproval, skillsCatalog },
+              {
+                requireApproval,
+                sandboxMode: !!initialConfig?.sandbox,
+                skillsCatalog,
+              },
             ),
             session,
           });
@@ -896,6 +903,7 @@ export default function OperatorDashboard({
               requireApproval,
               enableSuggestions: true,
             },
+            agentCwd: initialConfig?.sandbox ? undefined : process.cwd(),
           };
           agentResult = await runOffensiveSecurityAgent({
             ...commonInput,
@@ -903,7 +911,11 @@ export default function OperatorDashboard({
               initialConfig?.target,
               operatorState,
               agentMode,
-              { requireApproval, skillsCatalog },
+              {
+                requireApproval,
+                sandboxMode: !!initialConfig?.sandbox,
+                skillsCatalog,
+              },
             ),
             sessionConfig,
             onNameGenerated: (name: string) => {
@@ -1506,6 +1518,8 @@ export default function OperatorDashboard({
         onAutoApprove={handleAutoApprove}
         enableAutocomplete={true}
         autocompleteOptions={autocompleteOptions}
+        commandOptionMap={commandOptionMap}
+        commandNames={commandNames}
         autocompletePlacement="above"
         enableCommands={true}
         onCommandExecute={handleCommandExecute}

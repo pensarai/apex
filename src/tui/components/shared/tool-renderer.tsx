@@ -42,7 +42,7 @@ export const ToolRenderer = memo(function ToolRenderer({
   verbose = false,
   expandedLogs = false,
 }: ToolRendererProps) {
-  const { colors } = useTheme();
+  const { colors, mode } = useTheme();
   const [showOutput, setShowOutput] = useState(false);
 
   // Type guard ensures we have a tool message
@@ -62,7 +62,9 @@ export const ToolRenderer = memo(function ToolRenderer({
 
   // Get result summary for completed tools
   const resultDisplay: ResultSummary | null =
-    isCompleted || isError ? getResultSummary(result, toolName, args) : null;
+    isCompleted || isError
+      ? getResultSummary(result, toolName, args, mode)
+      : null;
 
   // Determine border color based on status
   const borderColor = isError
