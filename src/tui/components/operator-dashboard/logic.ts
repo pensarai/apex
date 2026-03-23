@@ -141,10 +141,7 @@ export function resolveKeyboardShortcut(
   if (key.meta && key.shift && key.name === "d")
     return { type: "show-directory" };
 
-  // Option+Shift+Tab — toggle approval
-  if (key.name === "tab" && key.shift && key.meta)
-    return { type: "toggle-approval" };
-  // Shift+Tab — cycle operator mode (approvals-on → approvals-off → plan)
+  // Shift+Tab or Option+Shift+Tab — cycle operator mode (approvals-on → approvals-off → plan)
   if (key.name === "tab" && key.shift) return { type: "cycle-mode" };
 
   // Y to approve
