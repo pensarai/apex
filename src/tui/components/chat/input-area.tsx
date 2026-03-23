@@ -71,6 +71,13 @@ export interface InputAreaProps {
   autocompletePlacement?: "above" | "below";
   /** Highlight /slash-command patterns in the input text */
   highlightSlashCommands?: boolean;
+  /** Map from command name/alias → autocomplete options for --flags */
+  commandOptionMap?: Map<
+    string,
+    import("../shared/prompt-input").AutocompleteOption[]
+  >;
+  /** Set of known command names for option detection */
+  commandNames?: Set<string>;
 }
 
 /**
@@ -193,6 +200,8 @@ function NormalInputAreaInner({
   disableHistoryNavigation = false,
   autocompletePlacement = "below",
   highlightSlashCommands = false,
+  commandOptionMap,
+  commandNames,
 }: Omit<
   InputAreaProps,
   "pendingApproval" | "onApprove" | "onAutoApprove" | "lastDeclineNote"
@@ -266,6 +275,8 @@ function NormalInputAreaInner({
           disableHistoryNavigation={disableHistoryNavigation}
           autocompletePlacement={autocompletePlacement}
           highlightSlashCommands={highlightSlashCommands}
+          commandOptionMap={commandOptionMap}
+          commandNames={commandNames}
         />
       </box>
 
