@@ -1,15 +1,13 @@
-import { useRef, useMemo, useCallback } from "react";
+import { useRef, useMemo } from "react";
 import { useKeyboard } from "@opentui/react";
-import {
-  Renderable,
-  ScrollBoxRenderable,
-  type CodeRenderable,
-} from "@opentui/core";
-import type { Token } from "marked";
+import { ScrollBoxRenderable } from "@opentui/core";
 import { useTheme } from "../theme";
 import { Dialog } from "../context/dialog";
 import DialogLayout from "./dialog-layout";
-import { useMarkdownSyntaxStyle } from "./shared/markdown-viewer";
+import {
+  useMarkdownSyntaxStyle,
+  useMarkdownRenderNode,
+} from "./shared/markdown-viewer";
 
 interface ReportViewerDialogProps {
   content: string;
@@ -27,26 +25,7 @@ export default function ReportViewerDialog({
   const { colors } = useTheme();
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const syntaxStyle = useMarkdownSyntaxStyle();
-
-  // Override code block rendering to set theme-aware fg color.
-  // Without this, CodeRenderable defaults to white text (opentui default),
-  // which is invisible on light backgrounds.
-  const renderNode = useCallback(
-    (
-      token: Token,
-      ctx: { defaultRender: () => Renderable | null },
-    ): Renderable | undefined | null => {
-      if (token.type === "code") {
-        const renderable = ctx.defaultRender();
-        if (renderable) {
-          (renderable as CodeRenderable).fg = colors.markdownCode;
-        }
-        return renderable;
-      }
-      return undefined;
-    },
-    [colors.markdownCode],
-  );
+  const renderNode = useMarkdownRenderNode();
 
   const lineCount = useMemo(() => content.split("\n").length, [content]);
 

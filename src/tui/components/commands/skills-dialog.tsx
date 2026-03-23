@@ -141,8 +141,7 @@ export default function SkillsDialog({
     }
   });
 
-  // Clamp index
-  const safeIndex = Math.min(selectedIndex, flatList.length - 1);
+  const safeIndex = Math.max(0, Math.min(selectedIndex, flatList.length - 1));
 
   useEffect(() => {
     scrollToIndex(

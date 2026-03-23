@@ -60,25 +60,14 @@ export function useMarkdownSyntaxStyle() {
   );
 }
 
-export function MarkdownViewer({
-  content,
-  loading = false,
-  width,
-  headerLeft,
-  headerRight,
-  beforeContent,
-  footerLeft,
-  footerRight,
-}: MarkdownViewerProps) {
+/**
+ * Shared renderNode override for code blocks — sets theme-aware fg color.
+ * Without this, CodeRenderable defaults to white text (opentui default),
+ * which is invisible on light backgrounds.
+ */
+export function useMarkdownRenderNode() {
   const { colors } = useTheme();
-  const scrollRef = useRef<ScrollBoxRenderable>(null);
-  const syntaxStyle = useMarkdownSyntaxStyle();
-  const separatorLine = "─".repeat(Math.max(0, width - 2));
-
-  // Override code block rendering to set theme-aware fg color.
-  // Without this, CodeRenderable defaults to white text (opentui default),
-  // which is invisible on light backgrounds.
-  const renderNode = useCallback(
+  return useCallback(
     (
       token: Token,
       ctx: { defaultRender: () => Renderable | null },
@@ -94,6 +83,23 @@ export function MarkdownViewer({
     },
     [colors.markdownCode],
   );
+}
+
+export function MarkdownViewer({
+  content,
+  loading = false,
+  width,
+  headerLeft,
+  headerRight,
+  beforeContent,
+  footerLeft,
+  footerRight,
+}: MarkdownViewerProps) {
+  const { colors } = useTheme();
+  const scrollRef = useRef<ScrollBoxRenderable>(null);
+  const syntaxStyle = useMarkdownSyntaxStyle();
+  const renderNode = useMarkdownRenderNode();
+  const separatorLine = "─".repeat(Math.max(0, width - 2));
 
   return (
     <box flexDirection="column" width="100%">
