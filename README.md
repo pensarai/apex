@@ -1,6 +1,12 @@
 <h1 align="center">Pensar Apex</h1>
 
-<p align="center">AI-powered penetration testing tool that enables you to use an AI agent to perform comprehensive blackbox and whitebox pentesting - directly in your terminal.
+<p align="center">
+AI-powered penetration testing using autonomous agents — directly in your terminal. Run blackbox and whitebox pentests that explore, reason, and surface real vulnerabilities.
+
+</p>
+
+<p align="center">
+Want to run from the cloud or integrate it with your CI/CD? See <a href="https://docs.pensar.dev/console">Pensar Console</a>.
 </p>
 
 <p align="center">
@@ -12,50 +18,43 @@
   <a href="https://discord.gg/pensar"><img src="https://img.shields.io/badge/Discord-Join%20Us-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
 </p>
 
-<p align="center">
+<!-- <p align="center">
   <img src="screenshot.png" alt="Pensar Apex Screenshot" width="800">
-</p>
+</p> -->
+
+## Use Cases
+
+### Developers
+
+- Run `/pentest` before merging a PR — catch vulnerabilities as naturally as running tests
+- Get actionable findings with severity scores, evidence, and suggested fixes — no security background needed
+- Integrate into CI/CD via headless CLI commands or Pensar Console
+
+### Security Engineers
+
+- Deploy agent-driven swarm testing across large attack surfaces
+- Use `/operator` mode for manual investigation, exploit chaining, and validation
+- Automate repetitive testing workflows with persistent memory that accumulates across engagements
+- Scale across teams and projects through Pensar Console
 
 ## Installation
 
-#### macOS / Linux (Quick Install)
-
-```bash
-curl -fsSL https://pensarai.com/install.sh | bash
-```
-
-#### Homebrew
-
-```bash
-brew tap pensarai/tap
-brew install apex
-```
-
-#### Windows (PowerShell)
-
-```powershell
-irm https://www.pensarai.com/apex.ps1 | iex
-```
-
-#### npm
-
-```bash
-npm install -g @pensar/apex
-```
+| Method                          | Command                                              |
+| ------------------------------- | ---------------------------------------------------- |
+| **Quick Install** (macOS/Linux) | `curl -fsSL https://pensarai.com/install.sh \| bash` |
+| **Homebrew**                    | `brew tap pensarai/tap && brew install apex`         |
+| **npm**                         | `npm install -g @pensar/apex`                        |
+| **Windows** (PowerShell)        | `irm https://www.pensarai.com/apex.ps1 \| iex`       |
 
 ## Usage
 
-Run Apex:
+Open the Apex TUI:
 
 ```bash
 pensar
 ```
 
-## AI Provider Support
-
-Apex supports **OpenAI**, **Anthropic**, **AWS Bedrock**, and **vLLM** (local models). **Anthropic models provide the best performance** and are recommended for optimal results.
-
-## Kali Linux Container (Recommended)
+## Kali Linux Container (Optional)
 
 For **best performance**, run Apex in the included Kali Linux container with preconfigured pentest tools:
 
@@ -72,23 +71,9 @@ Inside the container, run:
 pensar
 ```
 
-**Note:** On Linux hosts, consider using `network_mode: host` in `docker-compose.yml` for comprehensive network scanning.
-
-## vLLM Local Model Support
-
-To use a local vLLM server:
-
-1. Set the vLLM endpoint:
-
-```bash
-export LOCAL_MODEL_URL="http://localhost:8000/v1"
-```
-
-2. In the Apex Models screen, enter your model name in the "Custom local model (vLLM)" input.
-
 ---
 
 ### ⚠️ Responsible Use
 
-This repository contains tools for **authorized security testing** only.  
+This repository contains tools for **authorized security testing** only.
 Before use, please read and agree to the [Responsible Use Disclosure](./RESPONSIBLE_USE.md).

@@ -19,7 +19,7 @@ import {
   type AgentManifestEntry,
   type SessionInfo,
 } from "./persistence";
-import { getResumeMessages } from "./index";
+import { getResumeMessages, normalizeMessages } from "./index";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -647,5 +647,150 @@ describe("getResumeMessages", () => {
     ];
     expect(() => getResumeMessages(msgs)).not.toThrow();
     expect(getResumeMessages(msgs)).toEqual(msgs);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// normalizeMessages
+// ---------------------------------------------------------------------------
+
+describe("normalizeMessages", () => {
+  it("returns identical array when messages already alternate", () => {
+    const msgs: ModelMessage[] = [
+      makeMsg("user", "hello"),
+      makeMsg("assistant", "hi"),
+      makeMsg("user", "scan"),
+      makeMsg("assistant", "scanning..."),
+    ];
+    expect(normalizeMessages(msgs)).toEqual(msgs);
+  });
+
+  it("merges consecutive string user messages", () => {
+    const msgs: ModelMessage[] = [
+      makeMsg("user", "first"),
+      makeMsg("user", "second"),
+      makeMsg("user", "third"),
+    ];
+    const result = normalizeMessages(msgs);
+    expect(result).toHaveLength(1);
+    expect(result[0].role).toBe("user");
+    expect((result[0] as { content: string }).content).toBe(
+      "first\n\nsecond\n\nthird",
+    );
+  });
+
+  it("replaces consecutive structured-content user messages with the latest", () => {
+    const msgs: ModelMessage[] = [
+      makeMsg("user", [{ type: "text", text: "old" }]),
+      makeMsg("user", "new prompt"),
+    ];
+    const result = normalizeMessages(msgs);
+    expect(result).toHaveLength(1);
+    expect((result[0] as { content: string }).content).toBe("new prompt");
+  });
+
+  it("merges consecutive user messages mid-conversation", () => {
+    const msgs: ModelMessage[] = [
+      makeMsg("user", "hello"),
+      makeMsg("assistant", "hi"),
+      makeMsg("user", "retry1"),
+      makeMsg("user", "retry2"),
+      makeMsg("assistant", "ok"),
+    ];
+    const result = normalizeMessages(msgs);
+    expect(result).toHaveLength(4);
+    expect(result[0].role).toBe("user");
+    expect(result[1].role).toBe("assistant");
+    expect(result[2].role).toBe("user");
+    expect((result[2] as { content: string }).content).toBe("retry1\n\nretry2");
+    expect(result[3].role).toBe("assistant");
+  });
+
+  it("handles empty array", () => {
+    expect(normalizeMessages([])).toEqual([]);
+  });
+
+  it("handles single message", () => {
+    const msgs: ModelMessage[] = [makeMsg("user", "solo")];
+    expect(normalizeMessages(msgs)).toEqual(msgs);
+  });
+
+  it("preserves tool messages", () => {
+    const msgs: ModelMessage[] = [
+      makeMsg("user", "go"),
+      makeMsg("assistant", [
+        { type: "text", text: "scanning" },
+        {
+          type: "tool-call",
+          toolCallId: "tc-1",
+          toolName: "cmd",
+          args: {},
+        },
+      ]),
+      makeMsg("tool", [
+        {
+          type: "tool-result",
+          toolCallId: "tc-1",
+          toolName: "cmd",
+          result: "ok",
+        },
+      ]),
+      makeMsg("user", "next"),
+    ];
+    const result = normalizeMessages(msgs);
+    expect(result).toEqual(msgs);
+  });
+
+  it("upgrades raw-string tool-result output to structured format", () => {
+    const msgs: ModelMessage[] = [
+      makeMsg("user", "go"),
+      makeMsg("assistant", [
+        { type: "text", text: "running" },
+        {
+          type: "tool-call",
+          toolCallId: "tc-1",
+          toolName: "cmd",
+          input: { cmd: "ls" },
+        },
+      ]),
+      makeMsg("tool", [
+        {
+          type: "tool-result",
+          toolCallId: "tc-1",
+          toolName: "cmd",
+          output: "Cancelled by user.",
+        },
+      ]),
+    ];
+    const result = normalizeMessages(msgs);
+    const toolMsg = result.find((m) => m.role === "tool");
+    expect(toolMsg).toBeDefined();
+    const parts = (toolMsg as { content: Array<Record<string, unknown>> })
+      .content;
+    expect(parts[0].output).toEqual({
+      type: "text",
+      value: "Cancelled by user.",
+    });
+  });
+
+  it("leaves correctly structured tool-result output untouched", () => {
+    const msgs: ModelMessage[] = [
+      makeMsg("user", "go"),
+      makeMsg("tool", [
+        {
+          type: "tool-result",
+          toolCallId: "tc-1",
+          toolName: "cmd",
+          output: { type: "json", value: { ok: true } },
+        },
+      ]),
+    ];
+    const result = normalizeMessages(msgs);
+    const parts = (
+      result.find((m) => m.role === "tool") as {
+        content: Array<Record<string, unknown>>;
+      }
+    ).content;
+    expect(parts[0].output).toEqual({ type: "json", value: { ok: true } });
   });
 });

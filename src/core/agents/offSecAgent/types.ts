@@ -15,6 +15,7 @@ import type { AttackSurfaceRegistry } from "../../findings/attackSurfaceRegistry
 import type { FindingsRegistry } from "../../findings/registry";
 import type { SessionInfo, SessionConfig } from "../../session";
 import type { ApprovalGate } from "../../operator";
+import type { SkillsRegistry } from "../../skills/registry";
 import type { ToolName } from "./tools";
 import type { UnifiedSandbox } from "./tools/sandbox";
 import { z } from "zod";
@@ -199,6 +200,12 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
   responseSchema?: z.ZodSchema;
 
   /**
+   * Skills registry for on-demand skill loading.
+   * When provided, read_skill is available.
+   */
+  skillsRegistry?: SkillsRegistry;
+
+  /**
    * When provided, each tool call is gated through the approval gate.
    * The gate will pause execution until the operator approves or denies
    * the call (when `requireApproval` is enabled on the gate).
@@ -216,6 +223,15 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    * currently running shell command without killing the agent.
    */
   commandCancelHandle?: CommandCancelHandle;
+
+  /**
+   * Environment variables to inject into the agent's persistent shell.
+   * Each key-value pair is set in the shell's process environment at
+   * spawn time, so they're available to every `execute_command` call.
+   * Scoped to this agent instance — other agents on the same machine
+   * never see them.
+   */
+  environmentVariables?: Record<string, string>;
 };
 
 /**
@@ -265,6 +281,12 @@ export interface SpecializedAgentInput {
 
   /** Override the default stop condition */
   stopWhen?: StopCondition<ToolSet>;
+
+  /**
+   * Environment variables to inject into the agent's persistent shell.
+   * Forwarded to the underlying {@link OffensiveSecurityAgentInput}.
+   */
+  environmentVariables?: Record<string, string>;
 }
 
 /**

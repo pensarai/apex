@@ -1,0 +1,63 @@
+---
+title: "/themes"
+description: "Manage application themes and color modes"
+---
+
+## Overview
+
+The `/themes` command lets you customize the visual appearance of Apex. You can browse available themes, switch between them, and toggle between dark and light modes.
+
+## Usage
+
+```bash
+/themes
+```
+
+**Alias**: `/theme`
+
+## Subcommands
+
+### Open Theme Picker
+
+```bash
+/themes
+```
+
+Opens an interactive theme picker where you can browse and select from all available themes.
+
+### Switch Directly to a Theme
+
+```bash
+/themes <name>
+```
+
+Switch directly to a named theme without opening the picker. The theme name is case-insensitive.
+
+### Toggle or Set Color Mode
+
+```bash
+/themes mode          # Toggle between dark and light
+/themes mode dark     # Switch to dark mode
+/themes mode light    # Switch to light mode
+/themes mode auto     # Use system preference
+```
+
+## Configuration
+
+Theme settings are stored in `~/.pensar/config.json` and persist across sessions. The following config values are managed:
+
+| Config Key  | Description                                     |
+| ----------- | ----------------------------------------------- |
+| `theme`     | Name of the active theme                        |
+| `themeMode` | Color mode: `dark`, `light`, or `auto`          |
+
+## Related Commands
+
+<CardGroup cols={2}>
+  <Card title="/config" icon="gear" href="/apex/commands/config">
+    View all configuration options
+  </Card>
+  <Card title="/help" icon="circle-question" href="/apex/commands/help">
+    View all available commands
+  </Card>
+</CardGroup>

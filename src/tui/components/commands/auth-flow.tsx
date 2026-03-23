@@ -18,10 +18,12 @@ import {
 } from "../../../core/auth";
 import type { DeviceFlowInfo, WorkspaceInfo } from "../../../core/auth";
 import { Dialog } from "../../context/dialog";
+import { DialogControls } from "../shared/dialog-controls";
 import { useTheme } from "../../theme";
 
 interface AuthFlowProps {
   onClose: () => void;
+  hideEsc?: boolean;
 }
 
 type AuthStep =
@@ -34,14 +36,17 @@ type AuthStep =
   | "success"
   | "error";
 
-export default function AuthFlow({ onClose }: AuthFlowProps) {
+export default function AuthFlow({ onClose, hideEsc }: AuthFlowProps) {
   const { colors } = useTheme();
   const appConfig = useConfig();
 
   const alreadyConnected = isConnected(appConfig.data);
+  const hasWorkspace = !!appConfig.data.workspaceId;
+  const needsWorkspace =
+    alreadyConnected && !hasWorkspace && !!appConfig.data.accessToken;
 
   const [step, setStep] = useState<AuthStep>(
-    alreadyConnected ? "success" : "start",
+    needsWorkspace ? "requesting" : alreadyConnected ? "success" : "start",
   );
   const [error, setError] = useState<string | null>(null);
   const [flowInfo, setFlowInfo] = useState<DeviceFlowInfo | null>(null);
@@ -51,6 +56,11 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [billingUrl, setBillingUrl] = useState<string | null>(null);
   const [balance, setBalance] = useState<number | null>(null);
+  const [billingStatus, setBillingStatus] = useState<{
+    confirmed: boolean;
+    ready: boolean;
+    hasPaymentMethod: boolean;
+  } | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
 
@@ -222,6 +232,7 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
           : null,
       );
       setBalance(data.credits?.balance ?? null);
+      setBillingStatus(null);
       setStep("success");
     } catch (err) {
       if (ac.signal.aborted) return;
@@ -324,6 +335,11 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
       appConfig.reload();
 
       setBalance(data.billing.balance);
+      setBillingStatus({
+        confirmed: data.confirmed,
+        ready: data.billing.ready,
+        hasPaymentMethod: data.billing.hasPaymentMethod,
+      });
 
       if (!data.confirmed && data.billingUrl) {
         setBillingUrl(data.billingUrl);
@@ -339,6 +355,14 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
     }
   };
 
+  useEffect(() => {
+    if (!needsWorkspace) return;
+    const ac = new AbortController();
+    abortRef.current = ac;
+    const apiUrl = getPensarApiUrl();
+    handleFetchWorkspaces(apiUrl, appConfig.data.accessToken!, ac);
+  }, []);
+
   // ── Disconnect ──────────────────────────────────────────────────────
 
   const handleDisconnect = async () => {
@@ -348,10 +372,14 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
     setSelectedWorkspace(null);
     setBalance(null);
     setBillingUrl(null);
+    setBillingStatus(null);
     setStep("start");
   };
 
   const hasLowBalance = balance !== null && balance < 1;
+  const needsBillingSetup =
+    billingStatus !== null && !billingStatus.ready && (balance ?? 0) <= 0;
+  const showBillingWarning = hasLowBalance || needsBillingSetup;
 
   const effectiveBillingUrl =
     billingUrl ||
@@ -417,6 +445,9 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
           ac,
         );
       }
+      if (key.raw === "d" || key.raw === "D") {
+        handleDisconnect();
+      }
     }
 
     if (step === "error") {
@@ -427,7 +458,7 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
 
     if (step === "success") {
       if (key.name === "return") {
-        if (hasLowBalance || billingUrl) {
+        if (showBillingWarning) {
           openBillingPage();
         } else {
           goHome();
@@ -442,7 +473,7 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
   // ── Render ──────────────────────────────────────────────────────────
 
   return (
-    <Dialog size="large" onClose={goHome}>
+    <Dialog size="large" onClose={goHome} hideEsc={hideEsc}>
       <box
         flexDirection="column"
         width="100%"
@@ -471,10 +502,11 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
               </text>
             </box>
             <box marginTop={1}>
-              <text fg={colors.textMuted}>
-                <span fg={colors.primary}>[ENTER]</span> Connect ·{" "}
-                <span fg={colors.primary}>[ESC]</span> Cancel
-              </text>
+              <DialogControls
+                controls={[
+                  { key: "Enter", label: "Connect", variant: "primary" },
+                ]}
+              />
             </box>
           </box>
         )}
@@ -505,11 +537,6 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
                 {verificationUrl}
               </text>
             </box>
-            <box marginTop={1}>
-              <text fg={colors.textMuted}>
-                <span fg={colors.primary}>[ESC]</span> Cancel
-              </text>
-            </box>
           </box>
         )}
 
@@ -535,11 +562,12 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
               ))}
             </box>
             <box marginTop={1}>
-              <text fg={colors.textMuted}>
-                <span fg={colors.primary}>[↑/↓]</span> Navigate ·{" "}
-                <span fg={colors.primary}>[ENTER]</span> Select ·{" "}
-                <span fg={colors.primary}>[ESC]</span> Cancel
-              </text>
+              <DialogControls
+                controls={[
+                  { key: "Enter", label: "Select", variant: "primary" },
+                  { key: "D", label: "Disconnect", variant: "danger" },
+                ]}
+              />
             </box>
           </box>
         )}
@@ -566,11 +594,6 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
               <text fg={colors.textMuted}>
                 If the browser didn't open, visit:{"\n"}
                 {consoleUrlRef.current}/create-workspace
-              </text>
-            </box>
-            <box marginTop={1}>
-              <text fg={colors.textMuted}>
-                <span fg={colors.primary}>[ESC]</span> Cancel
               </text>
             </box>
           </box>
@@ -607,15 +630,15 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
                 )}
               </box>
             )}
-            {(hasLowBalance || billingUrl) && (
+            {showBillingWarning && (
               <box marginTop={1}>
                 <text fg={colors.warning}>
-                  {billingUrl
-                    ? "Your workspace needs credits to use Apex CLI."
+                  {needsBillingSetup
+                    ? "Your workspace billing setup is not ready yet."
                     : "Your credit balance is very low. We recommend at least $30 to run"}
                   {"\n"}
-                  {billingUrl
-                    ? "Press ENTER to open billing and add credits."
+                  {needsBillingSetup
+                    ? "Press ENTER to open billing and finish setup."
                     : "pentests without interruptions. Press ENTER to open billing."}
                 </text>
               </box>
@@ -635,12 +658,16 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
               </text>
             </box>
             <box marginTop={1}>
-              <text fg={colors.textMuted}>
-                <span fg={colors.primary}>[ENTER]</span>{" "}
-                {hasLowBalance || billingUrl ? "Open billing" : "Done"} ·{" "}
-                <span fg={colors.error}>[D]</span> Disconnect ·{" "}
-                <span fg={colors.primary}>[ESC]</span> Back
-              </text>
+              <DialogControls
+                controls={[
+                  {
+                    key: "Enter",
+                    label: showBillingWarning ? "Open Billing" : "Done",
+                    variant: "primary",
+                  },
+                  { key: "D", label: "Disconnect", variant: "danger" },
+                ]}
+              />
             </box>
           </box>
         )}
@@ -652,10 +679,11 @@ export default function AuthFlow({ onClose }: AuthFlowProps) {
               <text fg={colors.error}>{error}</text>
             </box>
             <box marginTop={1}>
-              <text fg={colors.textMuted}>
-                <span fg={colors.primary}>[ENTER]</span> Try again ·{" "}
-                <span fg={colors.primary}>[ESC]</span> Cancel
-              </text>
+              <DialogControls
+                controls={[
+                  { key: "Enter", label: "Try Again", variant: "primary" },
+                ]}
+              />
             </box>
           </box>
         )}

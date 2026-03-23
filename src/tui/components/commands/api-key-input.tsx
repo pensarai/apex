@@ -1,8 +1,12 @@
 import { useKeyboard } from "@opentui/react";
 import { useState } from "react";
 import Input from "../input";
-import { type ProviderType } from "../../../core/providers";
+import { type ProviderType, verifyApiKey } from "../../../core/providers";
 import { useTheme } from "../../theme";
+import { Dialog } from "../../context/dialog";
+import { DialogControls } from "../shared/dialog-controls";
+
+type VerifyState = "idle" | "verifying" | "error";
 
 interface APIKeyInputProps {
   provider: ProviderType;
@@ -19,14 +23,34 @@ export default function APIKeyInput({
 }: APIKeyInputProps) {
   const { colors } = useTheme();
   const [apiKey, setApiKey] = useState("");
+  const [verifyState, setVerifyState] = useState<VerifyState>("idle");
+  const [errorMessage, setErrorMessage] = useState("");
 
   useKeyboard((key) => {
-    // Escape - Cancel
     if (key.name === "escape") {
+      key.preventDefault();
+      if (verifyState === "verifying") return;
       onCancel();
       return;
     }
   });
+
+  const handleSubmit = async () => {
+    const key = apiKey.trim();
+    if (!key || verifyState === "verifying") return;
+
+    setVerifyState("verifying");
+    setErrorMessage("");
+
+    const result = await verifyApiKey(provider, key);
+
+    if (result.valid) {
+      onSubmit(key);
+    } else {
+      setVerifyState("error");
+      setErrorMessage(result.error ?? "Invalid API key");
+    }
+  };
 
   const getProviderInstructions = (provider: ProviderType): string => {
     switch (provider) {
@@ -40,55 +64,29 @@ export default function APIKeyInput({
         return "Get your API key from openrouter.ai/keys";
       case "bedrock":
         return "Enter your AWS Access Key ID (configure region separately) or AWS Bedrock API Key";
-      case "pensar":
-        return "Get your API key from console.pensar.dev/connect (or run /auth)";
       default:
         return "Enter your API key";
     }
   };
 
   return (
-    <box
-      position="absolute"
-      top={0}
-      left={0}
-      zIndex={1001}
-      width="100%"
-      height="100%"
-      justifyContent="center"
-      alignItems="center"
-      backgroundColor={colors.backgroundOverlay}
-    >
-      <box
-        width={70}
-        border={true}
-        borderColor={colors.primary}
-        backgroundColor={colors.backgroundPanel}
-        flexDirection="column"
-        padding={2}
-      >
+    <Dialog size="large" onClose={onCancel}>
+      <box flexDirection="column" padding={1} width="100%">
         {/* Header */}
-        <box
-          flexDirection="row"
-          justifyContent="space-between"
-          marginBottom={2}
-        >
-          <text fg={colors.primary}>Connect {providerName}</text>
-          <text fg={colors.textMuted}>esc</text>
-        </box>
+        <text fg={colors.primary}>Connect {providerName}</text>
 
         {/* Instructions */}
-        <box marginBottom={2}>
+        <box marginTop={1} marginBottom={1}>
           <text fg={colors.textMuted}>{getProviderInstructions(provider)}</text>
         </box>
 
         {/* Input */}
-        <box marginBottom={2}>
+        <box marginBottom={1}>
           <Input
             label="API Key"
             description="Your API key will be stored locally in ~/.pensar/config.json"
             value={apiKey}
-            focused={true}
+            focused={verifyState !== "verifying"}
             onChange={(value) =>
               setApiKey(typeof value === "string" ? value : "")
             }
@@ -96,23 +94,28 @@ export default function APIKeyInput({
               const cleaned = String(event.text);
               setApiKey((prev) => `${prev}${cleaned}`);
             }}
-            onSubmit={() => {
-              const key = apiKey.trim();
-              if (key) {
-                onSubmit(key);
-              }
-            }}
+            onSubmit={handleSubmit}
           />
         </box>
 
-        {/* Footer help text */}
-        <box marginTop={1}>
-          <text fg={colors.textMuted}>
-            <span fg={colors.primary}>[ENTER]</span> Save ·{" "}
-            <span fg={colors.primary}>[ESC]</span> Cancel
-          </text>
-        </box>
+        {/* Verification status */}
+        {verifyState === "verifying" && (
+          <box marginBottom={1}>
+            <text fg={colors.textMuted}>Verifying API key...</text>
+          </box>
+        )}
+
+        {verifyState === "error" && (
+          <box marginBottom={1}>
+            <text fg={colors.error}>✗ {errorMessage}</text>
+          </box>
+        )}
+
+        {/* Footer */}
+        <DialogControls
+          controls={[{ key: "Enter", label: "Save", variant: "primary" }]}
+        />
       </box>
-    </box>
+    </Dialog>
   );
 }

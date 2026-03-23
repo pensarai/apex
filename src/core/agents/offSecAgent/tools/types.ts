@@ -4,6 +4,7 @@ import type { CredentialManager } from "../../../credentials";
 import type { AttackSurfaceRegistry } from "../../../findings/attackSurfaceRegistry";
 import type { FindingsRegistry } from "../../../findings/registry";
 import type { SessionInfo } from "../../../session";
+import type { SkillsRegistry } from "../../../skills/registry";
 
 import type { ConsumeCallbacks, SubagentConsumeCallbacks } from "../types";
 import type { PersistentShell } from "./persistentShell";
@@ -19,6 +20,9 @@ import type { UnifiedSandbox } from "./sandbox";
 export type ToolContext = {
   /** Session providing paths for findings, POCs, logs, scratchpad, etc. */
   session: SessionInfo;
+
+  /** The agent's operational working directory. Defaults to session.rootPath. */
+  agentCwd: string;
 
   /** The target URL / host — needed by browser tools for context */
   target?: string;
@@ -72,4 +76,10 @@ export type ToolContext = {
    * execute_command back to the TUI while the command is still running.
    */
   onCommandOutput?: (data: string) => void;
+
+  /**
+   * Skills registry for on-demand skill loading.
+   * When present, read_skill is available.
+   */
+  skillsRegistry?: SkillsRegistry;
 };

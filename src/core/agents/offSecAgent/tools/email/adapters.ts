@@ -66,6 +66,7 @@ export function createEmailAdapter(inbox: EmailInboxConfig): EmailAdapter {
         inbox.refreshToken,
         inbox.clientId,
         inbox.clientSecret,
+        inbox.tokenExpiry,
       );
     case "outlook":
       return new OutlookAdapter(
@@ -127,11 +128,13 @@ class GmailAdapter implements EmailAdapter {
     refreshToken: string,
     clientId?: string,
     clientSecret?: string,
+    tokenExpiry?: number,
   ) {
     const oauth2 = new gauth.OAuth2(clientId, clientSecret);
     oauth2.setCredentials({
       access_token: accessToken,
       refresh_token: refreshToken,
+      expiry_date: tokenExpiry,
     });
     this.client = new gmail_v1.Gmail({ auth: oauth2 });
   }

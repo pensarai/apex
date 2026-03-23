@@ -5,19 +5,21 @@ import { writeFileSync, mkdirSync, existsSync } from "fs";
 import type { ToolContext } from "./types";
 
 const MAX_INLINE = 50_000;
+const MS_TIMEOUT_THRESHOLD = 10_000;
 
 export const executeCommandInputSchema = z.object({
+  // not actually sure if placing this above the other keys/zod values ensures that the model generates it first...
+  toolCallDescription: z
+    .string()
+    .describe(
+      "A concise, human-readable description of what this tool call is doing (e.g., 'Scanning for open ports on target')",
+    ),
   command: z.string().describe("The shell command to execute"),
   timeout: z
     .number()
     .optional()
     .describe(
       "Timeout in seconds. If omitted, the command runs until completion or abort.",
-    ),
-  toolCallDescription: z
-    .string()
-    .describe(
-      "A concise, human-readable description of what this tool call is doing (e.g., 'Scanning for open ports on target')",
     ),
 });
 
@@ -31,6 +33,27 @@ export type ExecuteCommandResult = {
   command: string;
   outputFile?: string;
 };
+
+/**
+ * Defensively normalize obviously-millisecond timeout values into seconds.
+ *
+ * The tool contract is seconds, but models sometimes emit JavaScript-style
+ * millisecond values like 30000 or 120000. Without normalization, those become
+ * multi-hour hangs instead of 30s / 120s command limits.
+ */
+export function normalizeExecuteCommandTimeout(
+  timeout?: number,
+): number | undefined {
+  if (timeout == null || !Number.isFinite(timeout) || timeout <= 0) {
+    return undefined;
+  }
+
+  if (timeout >= MS_TIMEOUT_THRESHOLD) {
+    return Math.max(1, Math.ceil(timeout / 1_000));
+  }
+
+  return timeout;
+}
 
 /**
  * If `raw` exceeds the inline limit, save the full text to a file under
@@ -99,6 +122,9 @@ SSL/TLS TESTING:
 OUTPUT HANDLING:
 - Use 2>&1 to capture stderr
 - Use timeout command for long-running scans
+- The tool's timeout parameter is in SECONDS, not milliseconds
+- Good timeout examples: 30, 60, 120
+- Do NOT pass millisecond values like 30000 or 120000
 
 IMPORTANT: Always analyze results and adjust your approach based on findings.`,
     inputSchema: executeCommandInputSchema,
@@ -117,8 +143,9 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
       if (ctx.sandbox) {
         try {
           const ssmOpts: { timeout?: number } = {};
-          if (timeout != null) {
-            ssmOpts.timeout = timeout;
+          const normalizedTimeout = normalizeExecuteCommandTimeout(timeout);
+          if (normalizedTimeout != null) {
+            ssmOpts.timeout = normalizedTimeout;
           }
           const result = await ctx.sandbox.execute(command, ssmOpts);
           const { text: stdout, file: outputFile } = maybeSaveFullOutput(
@@ -148,9 +175,10 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
       // Local mode: use the persistent shell
       if (ctx.persistentShell) {
         try {
+          const normalizedTimeout = normalizeExecuteCommandTimeout(timeout);
           const result = await ctx.persistentShell.execute(
             command,
-            timeout,
+            normalizedTimeout,
             ctx.onCommandOutput,
             ctx.abortSignal,
           );

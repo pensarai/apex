@@ -98,6 +98,7 @@ const EmailInboxConfigObject = z.discriminatedUnion("provider", [
     refreshToken: z.string(),
     clientId: z.string().optional(),
     clientSecret: z.string().optional(),
+    tokenExpiry: z.number().optional(),
   }),
   z.object({
     provider: z.literal("outlook"),
@@ -108,6 +109,7 @@ const EmailInboxConfigObject = z.discriminatedUnion("provider", [
     refreshToken: z.string(),
     clientId: z.string().optional(),
     clientSecret: z.string().optional(),
+    tokenExpiry: z.number().optional(),
   }),
   z.object({
     provider: z.literal("imap"),
@@ -149,11 +151,13 @@ const SessionConfigObject = z.object({
   /** Whether to enumerate subdomains during attack surface discovery (default: false) */
   enumerateSubdomains: z.boolean().optional(),
   /** Local codebase path for whitebox analysis (source code access) */
-  cwd: z.string().optional(),
+  codebasePath: z.string().optional(),
   /** Email inboxes available to the agent for monitoring/reading email */
   emailIntegration: EmailIntegrationConfigObject.optional(),
   /** Enable exfiltration mode — allows internal pivoting and flag extraction through confirmed vulnerabilities */
   exfilMode: z.boolean().optional(),
+  /** Agent working directory — resolved to process.cwd() by default, undefined in sandbox mode */
+  agentCwd: z.string().optional(),
 });
 
 export type SessionConfig = z.infer<typeof SessionConfigObject>;
@@ -702,6 +706,84 @@ export function getResumeMessages(
   }
 
   return messages.slice(cutIndex);
+}
+
+/**
+ * Sanitize a model-message array so it conforms to the ModelMessage[] schema
+ * required by the AI SDK.
+ *
+ * Specifically this:
+ *  1. Merges consecutive `user` messages into a single message (joins with
+ *     newlines) so the conversation never has back-to-back user turns.
+ *  2. Fixes tool-result `output` fields that are raw strings — the AI SDK's
+ *     `outputSchema` requires a discriminated-union object like
+ *     `{ type: "text", value: "..." }`.  Raw strings were produced by older
+ *     abort-recovery code and cause "The messages do not match the
+ *     ModelMessage[] schema" errors on resume.
+ *
+ * This is intentionally a best-effort safety-net.
+ */
+export function normalizeMessages(messages: ModelMessage[]): ModelMessage[] {
+  if (messages.length <= 1) return fixToolOutputs(messages);
+
+  const result: ModelMessage[] = [];
+
+  for (const msg of messages) {
+    const prev = result[result.length - 1];
+
+    if (
+      prev &&
+      prev.role === "user" &&
+      msg.role === "user" &&
+      typeof prev.content === "string" &&
+      typeof msg.content === "string"
+    ) {
+      // Merge consecutive user messages
+      result[result.length - 1] = {
+        ...prev,
+        content: `${prev.content}\n\n${msg.content}`,
+      };
+    } else if (prev && prev.role === "user" && msg.role === "user") {
+      // One or both have structured content — replace with the latest
+      result[result.length - 1] = msg;
+    } else {
+      result.push(msg);
+    }
+  }
+
+  return fixToolOutputs(result);
+}
+
+/**
+ * Walk through messages and upgrade any tool-result parts whose `output` is a
+ * raw string to the structured `{ type: "text", value: string }` format
+ * expected by the AI SDK v6 `outputSchema`.
+ */
+function fixToolOutputs(messages: ModelMessage[]): ModelMessage[] {
+  let changed = false;
+
+  const fixed = messages.map((msg) => {
+    if (msg.role !== "tool" || !Array.isArray(msg.content)) return msg;
+
+    let partChanged = false;
+    const fixedContent = (msg.content as Array<Record<string, unknown>>).map(
+      (part) => {
+        if (part.type === "tool-result" && typeof part.output === "string") {
+          partChanged = true;
+          return { ...part, output: { type: "text", value: part.output } };
+        }
+        return part;
+      },
+    );
+
+    if (partChanged) {
+      changed = true;
+      return { ...msg, content: fixedContent } as ModelMessage;
+    }
+    return msg;
+  });
+
+  return changed ? fixed : messages;
 }
 
 // ============================================================================

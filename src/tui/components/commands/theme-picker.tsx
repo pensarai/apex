@@ -12,6 +12,7 @@ import { useDimensions } from "../../context/dimensions";
 import { useTheme } from "../../theme";
 import { config } from "../../../core/config";
 import { Dialog } from "../../context/dialog";
+import { DialogControls } from "../shared/dialog-controls";
 
 interface ThemePickerProps {
   onClose: () => void;
@@ -155,9 +156,12 @@ export default function ThemePicker({ onClose }: ThemePickerProps) {
 
         {/* Footer */}
         <box width="100%" flexDirection="row">
-          <text fg={colors.textMuted}>
-            [↑↓] browse [enter] select [m] toggle mode [esc] cancel
-          </text>
+          <DialogControls
+            controls={[
+              { key: "Enter", label: "Select", variant: "primary" },
+              { key: "M", label: "Toggle Mode" },
+            ]}
+          />
         </box>
       </box>
     </Dialog>

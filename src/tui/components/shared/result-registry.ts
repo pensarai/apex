@@ -5,8 +5,9 @@
  * Handles HTTP status, errors, collections, browser results, etc.
  */
 
-import type { StyledText } from "@opentui/core";
+import { RGBA, StyledText, type TextChunk } from "@opentui/core";
 import { highlightCode } from "./syntax-highlight";
+import type { ColorMode } from "../../theme/types";
 
 export interface ResultSummary {
   text: string;
@@ -25,12 +26,14 @@ export interface ResultSummary {
  * @param result - The raw tool result
  * @param toolName - Optional tool name for tool-specific summaries
  * @param args - Optional tool args (used by file tools to show content previews)
+ * @param mode - Color mode for syntax highlighting ("dark" or "light")
  * @returns Summary object with text and error flag, or null if no summary available
  */
 export function getResultSummary(
   result: unknown,
   toolName?: string,
   args?: Record<string, unknown>,
+  mode: ColorMode = "dark",
 ): ResultSummary | null {
   if (result === null || result === undefined) {
     return null;
@@ -65,7 +68,7 @@ export function getResultSummary(
               isError: false,
               label: `${totalLines} lines`,
               styledText:
-                highlightCode(preview + suffix, filePath) ?? undefined,
+                highlightCode(preview + suffix, filePath, mode) ?? undefined,
               fullText:
                 content.length > 400 ? content.slice(0, 2000) : undefined,
             };
@@ -87,6 +90,66 @@ export function getResultSummary(
           return {
             text: lines > 0 ? `Found ${lines} lines` : "No matches",
             isError: false,
+          };
+        }
+        break;
+      }
+      case "grep": {
+        if (typeof result === "object" && result !== null) {
+          const obj = result as Record<string, unknown>;
+          if (obj.success === false) {
+            return {
+              text: String(obj.error || "grep failed")
+                .split("\n")[0]
+                .slice(0, 120),
+              isError: true,
+            };
+          }
+          const output = typeof obj.output === "string" ? obj.output : "";
+          const matchCount = Number(obj.matchCount || 0);
+          if (matchCount === 0 || output === "(no matches)") {
+            return { text: "No matches", isError: false };
+          }
+          const outputLines = output.split("\n").filter((l) => l.length > 0);
+          const preview = outputLines.slice(0, 5).join("\n");
+          const suffix =
+            outputLines.length > 5 ? `\n… (${matchCount} matches)` : "";
+          return {
+            text: `${matchCount} match${matchCount !== 1 ? "es" : ""}`,
+            isError: false,
+            fullText: preview + suffix,
+          };
+        }
+        break;
+      }
+      case "web_search": {
+        if (typeof result === "object" && result !== null) {
+          const obj = result as Record<string, unknown>;
+          if (obj.success === false) {
+            return {
+              text: String(obj.error || "Search failed")
+                .split("\n")[0]
+                .slice(0, 120),
+              isError: true,
+            };
+          }
+          const results = Array.isArray(obj.results)
+            ? (obj.results as Array<Record<string, unknown>>)
+            : [];
+          if (results.length === 0) {
+            return { text: "No results", isError: false };
+          }
+          const shown = results.slice(0, 5);
+          const styledChunks = buildWebSearchStyledText(
+            shown,
+            results.length > 5 ? results.length : undefined,
+            mode,
+          );
+          return {
+            text: `${results.length} result${results.length !== 1 ? "s" : ""}`,
+            isError: false,
+            label: `${results.length} result${results.length !== 1 ? "s" : ""}`,
+            styledText: styledChunks,
           };
         }
         break;
@@ -135,7 +198,7 @@ export function getResultSummary(
               text: preview + suffix,
               isError: false,
               styledText:
-                highlightCode(preview + suffix, filePath) ?? undefined,
+                highlightCode(preview + suffix, filePath, mode) ?? undefined,
               fullText:
                 content.length > 400 ? content.slice(0, 2000) : undefined,
             };
@@ -167,7 +230,8 @@ export function getResultSummary(
               text: `${n} replacement${n !== 1 ? "s" : ""}\n${codePreview}`,
               isError: false,
               label: `${n} replacement${n !== 1 ? "s" : ""}`,
-              styledText: highlightCode(codePreview, filePath) ?? undefined,
+              styledText:
+                highlightCode(codePreview, filePath, mode) ?? undefined,
               fullText:
                 newContent.length > 400 ? newContent.slice(0, 2000) : undefined,
             };
@@ -652,6 +716,65 @@ export function getResultSummary(
   }
 
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// Web search styled text helpers
+// ---------------------------------------------------------------------------
+
+const WS_COLORS: Record<
+  ColorMode,
+  { globe: RGBA; domain: RGBA; title: RGBA; snippet: RGBA }
+> = {
+  dark: {
+    globe: RGBA.fromInts(106, 115, 125, 255), // gray
+    domain: RGBA.fromInts(86, 182, 194, 255), // cyan
+    title: RGBA.fromInts(97, 175, 239, 255), // blue
+    snippet: RGBA.fromInts(140, 148, 160, 255), // muted
+  },
+  light: {
+    globe: RGBA.fromInts(106, 115, 125, 255), // gray
+    domain: RGBA.fromInts(28, 120, 134, 255), // darker cyan
+    title: RGBA.fromInts(30, 100, 200, 255), // darker blue
+    snippet: RGBA.fromInts(100, 108, 120, 255), // darker muted
+  },
+};
+
+function chunk(text: string, fg?: RGBA): TextChunk {
+  return { __isChunk: true, text, fg, attributes: 0 };
+}
+
+function extractDomain(url: string): string {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, "");
+    return host;
+  } catch {
+    return url.split("/")[2]?.replace(/^www\./, "") || url.slice(0, 30);
+  }
+}
+
+function buildWebSearchStyledText(
+  results: Array<Record<string, unknown>>,
+  totalCount?: number,
+  mode: ColorMode = "dark",
+): StyledText {
+  const wsColors = WS_COLORS[mode];
+  const chunks: TextChunk[] = [];
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    const domain = extractDomain(String(r.url || ""));
+    const title = String(r.title || "").slice(0, 70);
+
+    if (i > 0) chunks.push(chunk("\n"));
+    chunks.push(chunk("🌐 ", wsColors.globe));
+    chunks.push(chunk(domain, wsColors.domain));
+    chunks.push(chunk(" — ", wsColors.globe));
+    chunks.push(chunk(title, wsColors.title));
+  }
+  if (totalCount && totalCount > results.length) {
+    chunks.push(chunk(`\n… (${totalCount} total)`, wsColors.snippet));
+  }
+  return new StyledText(chunks);
 }
 
 /**

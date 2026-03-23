@@ -13,6 +13,7 @@ import {
   getAutoPopulatedHosts,
   getAutoPopulatedPorts,
 } from "../../../util/url";
+import { DialogControls } from "../shared/dialog-controls";
 
 // Wizard step types
 type WizardStep = "target" | "configure" | "creating";
@@ -312,7 +313,7 @@ export default function WebWizard({
 
       // Source code access (whitebox mode)
       if (state.sourceCodeAccess && state.cwd.trim()) {
-        sessionConfig.cwd = state.cwd.trim();
+        sessionConfig.codebasePath = state.cwd.trim();
       }
 
       // Headers config
@@ -732,25 +733,17 @@ export default function WebWizard({
             )}
           </box>
 
-          <box flexDirection="column" gap={0} marginTop={1}>
-            <text>
-              <span fg={colors.primary}>█ </span>
-              <span fg={colors.textMuted}>Press </span>
-              <span fg={colors.text}>[Enter]</span>
-              <span fg={colors.textMuted}> to start immediately</span>
-            </text>
-            <text>
-              <span fg={colors.primary}>█ </span>
-              <span fg={colors.textMuted}>Press </span>
-              <span fg={colors.text}>[Tab]</span>
-              <span fg={colors.textMuted}> to configure options</span>
-            </text>
-            <text>
-              <span fg={colors.primary}>█ </span>
-              <span fg={colors.textMuted}>Press </span>
-              <span fg={colors.text}>[ESC]</span>
-              <span fg={colors.textMuted}> to cancel</span>
-            </text>
+          <box marginTop={1}>
+            <DialogControls
+              controls={[
+                {
+                  key: "Enter",
+                  label: "Start Immediately",
+                  variant: "primary",
+                },
+                { key: "Tab", label: "Configure Options" },
+              ]}
+            />
           </box>
         </box>
       </Dialog>
@@ -1110,25 +1103,17 @@ export default function WebWizard({
           )}
         </box>
 
-        <box flexDirection="column" gap={0} marginTop={1}>
-          <text>
-            <span fg={colors.primary}>█ </span>
-            <span fg={colors.textMuted}>Press </span>
-            <span fg={colors.text}>[Enter]</span>
-            <span fg={colors.textMuted}> to start pentest ({modeLabel})</span>
-          </text>
-          <text>
-            <span fg={colors.primary}>█ </span>
-            <span fg={colors.textMuted}>Press </span>
-            <span fg={colors.text}>[Tab]</span>
-            <span fg={colors.textMuted}> to navigate fields</span>
-          </text>
-          <text>
-            <span fg={colors.primary}>█ </span>
-            <span fg={colors.textMuted}>Press </span>
-            <span fg={colors.text}>[ESC]</span>
-            <span fg={colors.textMuted}> to go back</span>
-          </text>
+        <box marginTop={1}>
+          <DialogControls
+            controls={[
+              {
+                key: "Enter",
+                label: `Start Pentest (${modeLabel})`,
+                variant: "primary",
+              },
+              { key: "Tab", label: "Navigate Fields" },
+            ]}
+          />
         </box>
       </box>
     </Dialog>

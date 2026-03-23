@@ -9,13 +9,25 @@ The `/auth` command connects your Apex CLI to [Pensar Console](https://console.p
 
 ## Usage
 
+Inside the TUI:
+
 ```bash
 /auth
 ```
 
+From the command line (headless):
+
+```bash
+pensar auth login      # Start the login flow
+pensar auth status     # Show current connection status
+pensar auth logout     # Disconnect from Pensar Console
+```
+
+`pensar auth status` displays your auth type (WorkOS or API key) and current workspace. When using API key auth, the command resolves your workspace from the server if it isn't already stored locally.
+
 ## How It Works
 
-The `/auth` command uses a **device authorization flow** — similar to how you link a streaming device to your account. Apex displays a code, you verify it in your browser, and the CLI is automatically authenticated.
+Both the TUI `/auth` command and the CLI `pensar auth` command use a **device authorization flow** — similar to how you link a streaming device to your account. Apex displays a code, you verify it in your browser, and the CLI is automatically authenticated.
 
 <Steps>
   <Step title="Start Auth Flow">
@@ -115,6 +127,8 @@ Authentication state is stored in your local Apex configuration at `~/.pensar/`.
 | `refreshToken` | Long-lived token used to refresh the access token |
 | `workspaceId` | Selected workspace ID |
 | `workspaceSlug` | Selected workspace slug |
+| `signingKey` | HMAC signing key for authenticated gateway inference requests |
+| `gatewayUrl` | Inference gateway URL (defaults to gateway.pensar.dev) |
 
 Tokens are automatically refreshed when they expire. You do not need to re-run `/auth` unless you want to switch workspaces or have explicitly disconnected.
 

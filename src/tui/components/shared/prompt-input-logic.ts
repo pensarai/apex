@@ -1,44 +1,6 @@
 import type { AutocompleteOption } from "./prompt-input";
 
 // ---------------------------------------------------------------------------
-// Autocomplete filtering
-// ---------------------------------------------------------------------------
-
-export function filterSuggestions(
-  inputValue: string,
-  options: AutocompleteOption[],
-  maxSuggestions: number,
-): AutocompleteOption[] {
-  if (!options.length || !inputValue) return [];
-  const input = inputValue.toLowerCase().trim();
-  if (!input.startsWith("/")) return [];
-
-  return options
-    .filter(
-      (opt) =>
-        opt.value.toLowerCase().includes(input) ||
-        opt.label.toLowerCase().includes(input),
-    )
-    .slice(0, maxSuggestions);
-}
-
-// ---------------------------------------------------------------------------
-// Submit value resolution
-// ---------------------------------------------------------------------------
-
-export function resolveSubmitValue(
-  rawText: string,
-  suggestions: AutocompleteOption[],
-  selectedIndex: number,
-): string {
-  if (suggestions.length > 0 && selectedIndex >= 0) {
-    const selected = suggestions[selectedIndex];
-    if (selected) return selected.value;
-  }
-  return rawText.trim();
-}
-
-// ---------------------------------------------------------------------------
 // Keyboard navigation state helpers
 //
 // Each function returns the next state (or null when the key should be
@@ -216,6 +178,162 @@ export function computeTab(
 }
 
 // ---------------------------------------------------------------------------
+// Inline slash detection (for mid-text autocomplete)
+// ---------------------------------------------------------------------------
+
+export interface InlineSlashContext {
+  /** The partial /token text (e.g. "/v" or "/") */
+  token: string;
+  /** Character offset where the / starts */
+  start: number;
+  /** Character offset at the cursor (end of the partial token) */
+  end: number;
+}
+
+/**
+ * Detect a /slug token at the cursor position.
+ * Returns null when the cursor is not immediately after a /partial-slug.
+ */
+export function detectInlineSlash(
+  text: string,
+  cursorOffset: number,
+): InlineSlashContext | null {
+  if (cursorOffset <= 0 || cursorOffset > text.length) return null;
+
+  // Walk backwards from cursor through slug chars
+  let i = cursorOffset - 1;
+  while (i >= 0 && /[a-zA-Z0-9-]/.test(text[i]!)) i--;
+
+  // Must land on a /
+  if (i < 0 || text[i] !== "/") return null;
+
+  // The / must be at the start of text or preceded by whitespace
+  if (i > 0 && !/\s/.test(text[i - 1]!)) return null;
+
+  return { token: text.slice(i, cursorOffset), start: i, end: cursorOffset };
+}
+
+/**
+ * Filter autocomplete options against a partial /token.
+ * Returns [] for exact matches (already completed — no suggestions needed).
+ */
+export function filterInlineSuggestions(
+  token: string,
+  options: AutocompleteOption[],
+  maxSuggestions: number,
+): AutocompleteOption[] {
+  if (!options.length || !token.startsWith("/")) return [];
+  const lower = token.toLowerCase();
+
+  // Don't show suggestions when the token exactly matches an option
+  if (options.some((opt) => opt.value.toLowerCase() === lower)) return [];
+
+  return options
+    .filter((opt) => opt.value.toLowerCase().startsWith(lower))
+    .slice(0, maxSuggestions);
+}
+
+/**
+ * Compute the new text and cursor position after accepting an inline completion.
+ */
+export function computeInlineCompletion(
+  text: string,
+  ctx: InlineSlashContext,
+  acceptedValue: string,
+): { newText: string; cursorOffset: number } {
+  const before = text.slice(0, ctx.start);
+  const after = text.slice(ctx.end);
+  const newText = before + acceptedValue + after;
+  return { newText, cursorOffset: before.length + acceptedValue.length };
+}
+
+// ---------------------------------------------------------------------------
+// Inline option detection (for --flag autocomplete after a /command)
+// ---------------------------------------------------------------------------
+
+export interface InlineOptionContext {
+  /** The resolved command name (e.g., "pentest") */
+  commandName: string;
+  /** The partial --token text (e.g., "--tar" or "--") */
+  token: string;
+  /** Character offset where the "--" starts */
+  start: number;
+  /** Character offset at the cursor */
+  end: number;
+}
+
+/**
+ * Detect a --flag token at the cursor position, only when the input starts
+ * with a known /command. Returns null when no option is being typed.
+ */
+export function detectInlineOption(
+  text: string,
+  cursorOffset: number,
+  knownCommands: Set<string>,
+): InlineOptionContext | null {
+  if (cursorOffset <= 0 || cursorOffset > text.length) return null;
+
+  // Walk backwards from cursor through valid option characters (including -)
+  let i = cursorOffset - 1;
+  while (i >= 0 && /[a-zA-Z0-9-]/.test(text[i]!)) i--;
+
+  // i is now just before the token start. The token must begin with "--"
+  const tokenStart = i + 1;
+  const token = text.slice(tokenStart, cursorOffset);
+  if (!token.startsWith("--")) return null;
+
+  // The "--" must be preceded by whitespace
+  if (tokenStart > 0 && !/\s/.test(text[tokenStart - 1]!)) return null;
+
+  // Extract the leading /command from the text
+  const cmdMatch = text.match(/^\/([a-zA-Z0-9][-a-zA-Z0-9]*)/);
+  if (!cmdMatch) return null;
+
+  const commandName = cmdMatch[1]!;
+  if (!knownCommands.has(commandName)) return null;
+
+  return {
+    commandName,
+    token,
+    start: tokenStart,
+    end: cursorOffset,
+  };
+}
+
+/**
+ * Filter command option suggestions against a partial --token.
+ * Excludes options already present in the full input text.
+ */
+export function filterInlineOptionSuggestions(
+  token: string,
+  options: AutocompleteOption[],
+  fullText: string,
+  maxSuggestions: number,
+): AutocompleteOption[] {
+  if (!options.length || !token.startsWith("--")) return [];
+  const lower = token.toLowerCase();
+
+  // Don't show suggestions for exact matches
+  if (options.some((opt) => opt.value.toLowerCase() === lower)) return [];
+
+  // Find all --flags already used in the input
+  const usedFlags = new Set<string>();
+  const flagPattern = /--[a-zA-Z][-a-zA-Z0-9]*/g;
+  let match: RegExpExecArray | null;
+  while ((match = flagPattern.exec(fullText)) !== null) {
+    usedFlags.add(match[0].toLowerCase());
+  }
+
+  return options
+    .filter((opt) => {
+      const optLower = opt.value.toLowerCase();
+      if (usedFlags.has(optLower) && optLower !== lower) return false;
+      return optLower.startsWith(lower);
+    })
+    .slice(0, maxSuggestions);
+}
+
+// ---------------------------------------------------------------------------
 // Content change — should we reset history browsing?
 // ---------------------------------------------------------------------------
 
@@ -224,4 +342,79 @@ export function shouldResetHistory(
   isNavigatingHistory: boolean,
 ): boolean {
   return historyIndex !== -1 && !isNavigatingHistory;
+}
+
+// ---------------------------------------------------------------------------
+// Windowed suggestions — limit visible suggestions for small terminals
+// ---------------------------------------------------------------------------
+
+export interface WindowedSuggestions {
+  /** Start index of the visible window in the full suggestions array */
+  start: number;
+  /** End index (exclusive) of the visible window */
+  end: number;
+  /** Subset of suggestions to display */
+  visibleSuggestions: AutocompleteOption[];
+  /** Whether there are more suggestions above the visible window */
+  hasMore: boolean;
+  /** Whether there are more suggestions below the visible window */
+  hasMoreBelow: boolean;
+}
+
+/**
+ * Compute a windowed view of suggestions centered around the selected index.
+ * This prevents visual overflow on small terminals while maintaining the full
+ * suggestion list for navigation.
+ *
+ * @param suggestions Full list of filtered suggestions
+ * @param selectedIndex Currently selected suggestion index (-1 if none)
+ * @param maxVisible Maximum number of suggestions to show at once
+ * @returns Windowed view with start/end indices and visible suggestions
+ */
+export function computeVisibleWindow(
+  suggestions: AutocompleteOption[],
+  selectedIndex: number,
+  maxVisible: number,
+): WindowedSuggestions {
+  if (suggestions.length === 0) {
+    return {
+      start: 0,
+      end: 0,
+      visibleSuggestions: [],
+      hasMore: false,
+      hasMoreBelow: false,
+    };
+  }
+
+  // If we have fewer suggestions than maxVisible, show all
+  if (suggestions.length <= maxVisible) {
+    return {
+      start: 0,
+      end: suggestions.length,
+      visibleSuggestions: suggestions,
+      hasMore: false,
+      hasMoreBelow: false,
+    };
+  }
+
+  // Compute window centered on selected index
+  const safeSelectedIndex = Math.max(0, selectedIndex);
+
+  // Try to center the selected item in the window
+  let start = Math.max(0, safeSelectedIndex - Math.floor(maxVisible / 2));
+  let end = start + maxVisible;
+
+  // Adjust if window extends past the end
+  if (end > suggestions.length) {
+    end = suggestions.length;
+    start = Math.max(0, end - maxVisible);
+  }
+
+  return {
+    start,
+    end,
+    visibleSuggestions: suggestions.slice(start, end),
+    hasMore: start > 0,
+    hasMoreBelow: end < suggestions.length,
+  };
 }
