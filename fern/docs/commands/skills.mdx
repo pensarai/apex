@@ -1,0 +1,103 @@
+---
+title: "/skills"
+description: "Browse and manage installed operator skills"
+---
+
+## Overview
+
+The `/skills` command opens a dialog overlay listing all installed operator skills. Skills are reusable instruction sets (written in SKILL.md format) that teach the AI agent specialized testing techniques or workflows tailored to your environment.
+
+## Usage
+
+```bash
+/skills
+```
+
+Open a specific skill's detail view directly:
+
+```bash
+/skills <slug>
+```
+
+## What Are Skills?
+
+Skills are Markdown-based instruction files (`SKILL.md`) with rich frontmatter. Each skill defines:
+
+- **Name** — a human-readable name
+- **Description** — what the skill does
+- **Tags** — categorization labels
+- **Version** — optional version string
+- **Instructions** — detailed instructions the AI agent follows when the skill is invoked
+- **Scripts** — optional shell scripts bundled with the skill
+
+Skills are loaded from two sources:
+
+| Source    | Location                  | Description                          |
+| --------- | ------------------------- | ------------------------------------ |
+| **Project** | `.pensar/skills/` in your project directory | Shared with your team via version control |
+| **User**    | `~/.pensar/skills/`       | Personal skills available across all projects |
+
+## Skills Dialog
+
+The skills dialog shows all installed skills grouped by source (Project skills, User skills) with approximate token counts. Use arrow keys to navigate and press `Enter` to view a skill's full details.
+
+### List View
+
+| Key       | Action                    |
+| --------- | ------------------------- |
+| `↑` / `↓` | Navigate skills          |
+| `Enter`   | Open skill detail view    |
+| `Esc`     | Close dialog              |
+
+### Detail View
+
+The detail view renders the skill's full instructions using a Markdown viewer, along with metadata (tags, source path, scripts).
+
+| Key   | Action                          |
+| ----- | ------------------------------- |
+| `E`   | Open skill file in your editor  |
+| `Esc` | Return to list view             |
+
+## Using Skills in Operator Mode
+
+Skills also appear as dynamic slash commands. Once a skill is installed, you can invoke it directly from an operator session:
+
+```bash
+/your-skill-slug
+```
+
+When invoked in operator mode, the skill's instructions are fed to the agent, which applies them to the current session context.
+
+<Callout intent="info">
+  Skills only work in operator sessions (`/operator`). They are not available in autonomous pentest mode (`/pentest`).
+</Callout>
+
+## Creating Skills
+
+Create a `SKILL.md` file in either `.pensar/skills/` (project) or `~/.pensar/skills/` (user). The file uses frontmatter for metadata and Markdown for instructions:
+
+```markdown
+---
+name: SQL Injection Test
+description: Comprehensive SQL injection testing methodology
+tags: [injection, database]
+version: 1.0.0
+---
+
+## Instructions
+
+Test all input parameters for SQL injection vulnerabilities...
+```
+
+The skill slug is derived from the filename (e.g., `sql-injection-test.skill.md` becomes `/sql-injection-test`).
+
+## Related Commands
+
+<CardGroup cols={2}>
+  <Card title="/operator" icon="terminal" href="/apex/commands/operator">
+    Start an operator session to use skills
+  </Card>
+  <Card title="/help" icon="circle-question" href="/apex/commands/help">
+    View all available commands including dynamic skills
+  </Card>
+</CardGroup>

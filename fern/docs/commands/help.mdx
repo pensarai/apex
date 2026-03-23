@@ -19,7 +19,7 @@ When you run `/help`, you'll see a dialog showing:
 
 - **Command List**: All available commands with their names and aliases
 - **Descriptions**: Brief explanation of what each command does
-- **Categories**: Commands grouped by Pentesting, General, and Skills
+- **Categories**: Commands grouped by Pentesting, Configuration, and General
 
 ## Available Commands
 
@@ -36,16 +36,19 @@ When you run `/help`, you'll see a dialog showing:
   <Card title="/sessions" icon="clock-rotate-left">
     Browse and resume previous sessions. Alias: `/s`
   </Card>
+  <Card title="/new" icon="plus">
+    Start a new operator session
+  </Card>
 </CardGroup>
 
-### General
+### Configuration
 
 <CardGroup cols={2}>
-  <Card title="/help" icon="circle-question">
-    Display this help information with all available commands
+  <Card title="/auth" icon="shield-check" href="/apex/commands/auth">
+    Connect to Pensar Console for managed inference
   </Card>
-  <Card title="/config" icon="gear">
-    Show configuration dialog
+  <Card title="/credits" icon="credit-card" href="/apex/commands/credits">
+    Buy credits or check your balance. Alias: `/buy`
   </Card>
   <Card title="/models" icon="microchip">
     View and select AI models from configured providers
@@ -53,44 +56,41 @@ When you run `/help`, you'll see a dialog showing:
   <Card title="/providers" icon="plug">
     Manage AI providers and configure API keys
   </Card>
-  <Card title="/auth" icon="shield-check" href="/apex/commands/auth">
-    Connect to Pensar Console for managed inference
-  </Card>
-  <Card title="/credits" icon="credit-card" href="/apex/commands/credits">
-    Buy credits or check your balance
-  </Card>
   <Card title="/themes" icon="palette">
     Manage application themes. Alias: `/theme`
+  </Card>
+</CardGroup>
+
+### General
+
+<CardGroup cols={2}>
+  <Card title="/skills" icon="book-open" href="/apex/commands/skills">
+    Browse installed operator skills
+  </Card>
+  <Card title="/help" icon="circle-question">
+    Display this help information with all available commands
   </Card>
   <Card title="/exit" icon="right-from-bracket">
     Exit the application. Aliases: `/quit`, `/q`
   </Card>
 </CardGroup>
 
-### Skills
-
-<CardGroup cols={2}>
-  <Card title="/create-skill" icon="wand-magic-sparkles">
-    Create a new operator skill
-  </Card>
-</CardGroup>
-
 ## Command Details
 
-| Command         | Aliases            | Description                                     |
-| --------------- | ------------------ | ----------------------------------------------- |
-| `/pentest`      | `/p`, `/web`, `/w` | Start autonomous pentest swarm                  |
-| `/operator`     | `/o`               | Start interactive operator session              |
-| `/sessions`     | `/s`               | Browse previous sessions                        |
-| `/help`         |                    | Show help dialog                                |
-| `/config`       |                    | Show config dialog                              |
-| `/models`       |                    | Show available AI models                        |
-| `/providers`    |                    | Manage AI providers and API keys                |
-| `/auth`         |                    | Connect to Pensar Console for managed inference |
-| `/credits`      | `/buy`             | Buy credits / check balance                     |
-| `/themes`       | `/theme`           | Manage application themes                       |
-| `/create-skill` |                    | Create a new operator skill                     |
-| `/exit`         | `/quit`, `/q`      | Exit the application                            |
+| Command    | Aliases            | Category      | Description                                     |
+| ---------- | ------------------ | ------------- | ----------------------------------------------- |
+| `/pentest`   | `/p`, `/web`, `/w` | Pentesting    | Start autonomous pentest swarm                  |
+| `/operator`  | `/o`               | Pentesting    | Start interactive operator session              |
+| `/sessions`  | `/s`               | Pentesting    | Browse previous sessions                        |
+| `/new`       |                    | Pentesting    | Start a new operator session                    |
+| `/auth`      |                    | Configuration | Connect to Pensar Console for managed inference |
+| `/credits`   | `/buy`             | Configuration | Buy credits / check balance                     |
+| `/models`    |                    | Configuration | Show available AI models                        |
+| `/providers` |                    | Configuration | Manage AI providers and API keys                |
+| `/themes`    | `/theme`           | Configuration | Manage application themes                       |
+| `/skills`    |                    | General       | Browse installed operator skills                |
+| `/help`      |                    | General       | Show help dialog                                |
+| `/exit`      | `/quit`, `/q`      | General       | Exit the application                            |
 
 ## Getting Started Flow
 
@@ -138,6 +138,10 @@ For new users, here's the recommended order of commands:
 
 When typing a `/` command, Apex displays a windowed suggestions dropdown with up to 6 visible entries at a time. Commands are sorted by priority — `/pentest`, `/operator`, `/auth`, `/models`, `/sessions`, `/themes`, `/help` appear first, followed by the rest alphabetically. Scroll indicators (`↑`/`↓`) appear when more suggestions exist outside the visible window.
 
+## Flag Autocomplete
+
+Commands that accept `--` flags (such as `/pentest` and `/operator`) support inline flag autocomplete. When you type `--` after a command name, Apex shows a filtered list of available flags. Flags already present in your input are automatically excluded from suggestions. Selecting a flag appends it (with a trailing space) so you can continue typing the value.
+
 ## CLI Commands
 
 In addition to the TUI slash commands above, Apex provides headless CLI commands for pentesting, Console API access, and system management. See the [CLI Commands](/apex/cli/pentest) section in the sidebar for full documentation.
@@ -160,16 +164,16 @@ In addition to the TUI slash commands above, Apex provides headless CLI commands
   <Card title="/pentest" icon="play" href="/apex/commands/pentest">
     Start a penetration test
   </Card>
+  <Card title="/operator" icon="terminal" href="/apex/commands/operator">
+    Start an interactive operator session
+  </Card>
   <Card title="/models" icon="microchip" href="/apex/commands/models">
     Select AI model
   </Card>
   <Card title="/providers" icon="plug" href="/apex/commands/providers">
     Configure AI providers
   </Card>
-  <Card title="/auth" icon="shield-check" href="/apex/commands/auth">
-    Connect to Pensar Console
-  </Card>
-  <Card title="/credits" icon="credit-card" href="/apex/commands/credits">
-    Check balance or buy credits
+  <Card title="/skills" icon="book-open" href="/apex/commands/skills">
+    Browse installed skills
   </Card>
 </CardGroup>
