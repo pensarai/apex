@@ -24,6 +24,7 @@ export type {
 export {
   PERMISSION_TIERS,
   OPERATOR_MODES,
+  OPERATOR_MODE_CYCLE,
   OPERATOR_STAGES,
   getStagesInOrder,
   getNextStage,

@@ -81,27 +81,33 @@ export async function get(): Promise<Config> {
   return {
     ...parsedConfig,
     version: version,
-    openAiAPIKey: process.env.OPENAI_API_KEY ?? parsedConfig.openAiAPIKey,
+    openAiAPIKey: parsedConfig.openAiAPIKey ?? process.env.OPENAI_API_KEY,
     anthropicAPIKey:
-      process.env.ANTHROPIC_API_KEY ?? parsedConfig.anthropicAPIKey,
+      parsedConfig.anthropicAPIKey ?? process.env.ANTHROPIC_API_KEY,
     googleAPIKey:
-      process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? parsedConfig.googleAPIKey,
+      parsedConfig.googleAPIKey ?? process.env.GOOGLE_GENERATIVE_AI_API_KEY,
     openRouterAPIKey:
-      process.env.OPENROUTER_API_KEY ?? parsedConfig.openRouterAPIKey,
+      parsedConfig.openRouterAPIKey ?? process.env.OPENROUTER_API_KEY,
     inceptionAPIKey:
-      process.env.INCEPTION_API_KEY ?? parsedConfig.inceptionAPIKey,
-    bedrockAPIKey: process.env.BEDROCK_API_KEY ?? parsedConfig.bedrockAPIKey,
-    pensarAPIKey: process.env.PENSAR_API_KEY ?? parsedConfig.pensarAPIKey,
-    daytonaAPIKey: process.env.DAYTONA_API_KEY ?? parsedConfig.daytonaAPIKey,
-    daytonaOrgId: process.env.DAYTONA_ORG_ID ?? parsedConfig.daytonaOrgId,
-    runloopAPIKey: process.env.RUNLOOP_API_KEY ?? parsedConfig.runloopAPIKey,
+      parsedConfig.inceptionAPIKey ?? process.env.INCEPTION_API_KEY,
+    bedrockAPIKey: parsedConfig.bedrockAPIKey ?? process.env.BEDROCK_API_KEY,
+    pensarAPIKey: parsedConfig.pensarAPIKey ?? process.env.PENSAR_API_KEY,
+    daytonaAPIKey: parsedConfig.daytonaAPIKey ?? process.env.DAYTONA_API_KEY,
+    daytonaOrgId: parsedConfig.daytonaOrgId ?? process.env.DAYTONA_ORG_ID,
+    runloopAPIKey: parsedConfig.runloopAPIKey ?? process.env.RUNLOOP_API_KEY,
   };
 }
 
 export async function update(config: Partial<Config>) {
-  const currentConfig = await get();
-  const newConfig = { ...currentConfig, ...config };
   const folder = path.join(os.homedir(), ".pensar");
   const file = path.join(folder, "config.json");
+  const exists = await fs
+    .access(file)
+    .then(() => true)
+    .catch(() => false);
+  const currentConfig = exists
+    ? JSON.parse(await fs.readFile(file, "utf8"))
+    : DEFAULT_CONFIG;
+  const newConfig = { ...currentConfig, ...config };
   await fs.writeFile(file, JSON.stringify(newConfig));
 }

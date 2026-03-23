@@ -7,6 +7,23 @@ import {
   type ProviderType,
 } from "./types";
 
+const PROVIDER_PREFERENCE_ORDER: ProviderType[] = [
+  "pensar",
+  "anthropic",
+  "openai",
+  "google",
+  "openrouter",
+  "bedrock",
+];
+
+const PREFERRED_MODEL_BY_PROVIDER: Record<string, string> = {
+  pensar: "pensar:anthropic.claude-opus-4-6-v1",
+  anthropic: "claude-opus-4-6",
+  openai: "gpt-5.2-pro",
+  google: "gemini-3.1-pro-preview",
+  openrouter: "anthropic/claude-opus-4.6",
+};
+
 export function getConfiguredProviders(config: Config): ConfiguredProvider[] {
   return AVAILABLE_PROVIDERS.map((provider) => {
     const configured = isProviderConfigured(provider.id, config);
@@ -82,4 +99,37 @@ export function getAvailableModels(config: Config): ModelInfo[] {
   }
 
   return models;
+}
+
+/**
+ * Dynamically select the best default model based on which providers are
+ * configured.  Priority order: Pensar → Anthropic → OpenAI → Google →
+ * OpenRouter → Bedrock.  Within each provider the preferred model is an
+ * opus-class / flagship model; falls back to the first available model for
+ * that provider if the preferred one isn't found.
+ */
+export function getDefaultModelForConfig(config: Config): ModelInfo | null {
+  const available = getAvailableModels(config);
+  if (available.length === 0) return null;
+
+  const byProvider = new Map<string, ModelInfo[]>();
+  for (const m of available) {
+    const list = byProvider.get(m.provider) || [];
+    list.push(m);
+    byProvider.set(m.provider, list);
+  }
+
+  for (const provider of PROVIDER_PREFERENCE_ORDER) {
+    const models = byProvider.get(provider);
+    if (!models || models.length === 0) continue;
+
+    const preferredId = PREFERRED_MODEL_BY_PROVIDER[provider];
+    if (preferredId) {
+      const preferred = models.find((m) => m.id === preferredId);
+      if (preferred) return preferred;
+    }
+    return models[0]!;
+  }
+
+  return available[0] ?? null;
 }

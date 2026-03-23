@@ -98,17 +98,23 @@ export function httpRequest(ctx: ToolContext) {
 
 USAGE GUIDANCE:
 - Always check response headers for security misconfigurations
-- Look for: X-Frame-Options, X-XSS-Protection, CSP, HSTS, X-Content-Type-Options
+- Look for: X-Frame-Options, CSP, HSTS, X-Content-Type-Options, Permissions-Policy, Cross-Origin-Embedder-Policy, Cross-Origin-Opener-Policy
 - Analyze cookies for HttpOnly, Secure, SameSite flags
 - Check for verbose error messages that leak information
 - Test for common web vulnerabilities (SQL injection, XSS, IDOR)
 - Monitor response times for blind injection attacks
 - Test different HTTP methods (GET, POST, PUT, DELETE, PATCH, OPTIONS)
 
+CORS TESTING (per Fetch specification browser enforcement rules):
+- Access-Control-Allow-Origin: * with NO credentials flag = any site can read non-authenticated responses. Usually LOW impact unless the response itself contains sensitive data.
+- Access-Control-Allow-Origin: * with Access-Control-Allow-Credentials: true = BROWSERS BLOCK THIS per the Fetch spec. The headers contradict each other. This is a server misconfiguration but NOT exploitable as a credential-stealing CORS bypass. Severity: LOW (misconfiguration only).
+- Reflected Origin + Access-Control-Allow-Credentials: true = ACTUAL HIGH SEVERITY. The server echoes back whatever Origin the attacker sends, allowing any site to make credentialed cross-origin requests. To test: send a request with header "Origin: https://evil.example.com" and check if Access-Control-Allow-Origin in the response reflects that exact value.
+- Access-Control-Allow-Origin: null + Access-Control-Allow-Credentials: true = exploitable from sandboxed iframes (data: URIs, sandboxed frames). Severity: MEDIUM-HIGH.
+- ALWAYS actively test for origin reflection: send an OPTIONS or GET request with "Origin: https://evil.example.com" header and inspect whether Access-Control-Allow-Origin echoes it back. This is the most dangerous CORS pattern.
+
 COMMON TESTING PATTERNS:
 - Test with/without authentication
 - Try different user agents
-- Test for CORS misconfigurations
 - Check for API endpoints (/api/, /v1/, /graphql)
 - Look for admin panels (/admin, /administrator, /wp-admin)
 - Test for backup files (.bak, .old, ~, .swp)`,

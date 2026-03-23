@@ -37,7 +37,11 @@ const TOOL_SUMMARY_MAP: Record<string, ToolSummaryFn> = {
   create_poc: (args) => `poc ${args.pocName || ""}`,
   Edit: (args) => `edit ${args.file_path || args.path || ""}`,
   Grep: (args) => `grep ${args.pattern || ""}`,
+  grep: (args) => `grep ${args.pattern || ""}`,
   Glob: (args) => `glob ${args.pattern || ""}`,
+
+  // Web search
+  web_search: (args) => `search "${args.query || ""}"`,
 
   // Browser tools
   browser_navigate: (args) => `browser ${args.url || ""}`,
@@ -114,6 +118,27 @@ export function getToolSummary(
     .find((v) => v && v.length > 0);
 
   return firstArg ? `${toolName} ${String(firstArg).slice(0, 50)}` : toolName;
+}
+
+/**
+ * Get the label shown in the live tool header.
+ *
+ * Pending shell commands should prefer the model-provided human description
+ * over partial command text while the tool call is still streaming/executing.
+ */
+export function getToolDisplayLabel(
+  toolName: string,
+  args: Record<string, unknown>,
+  options: { preferDescription?: boolean } = {},
+): string {
+  if (options.preferDescription && toolName === "execute_command") {
+    const description = args.toolCallDescription;
+    if (typeof description === "string" && description.trim().length > 0) {
+      return description.trim();
+    }
+  }
+
+  return getToolSummary(toolName, args);
 }
 
 /**

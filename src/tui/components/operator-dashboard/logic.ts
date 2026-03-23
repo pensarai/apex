@@ -1,27 +1,25 @@
 import type { AutocompleteOption } from "../shared/prompt-input";
 import type { OperatorSessionState } from "../../../core/operator";
-import { BASE_SYSTEM_PROMPT } from "../../../core/agents/offSecAgent/prompt";
+import { buildBaseSystemPrompt } from "../../../core/agents/offSecAgent/prompt";
 
 // ---------------------------------------------------------------------------
 // Autocomplete option filtering for operator mode
 // ---------------------------------------------------------------------------
 
+const OPERATOR_ALLOWED_COMMANDS = new Set([
+  "/models",
+  "/auth",
+  "/themes",
+  "/new",
+  "/operator",
+  "/pentest",
+  "/skills",
+]);
+
 export function filterOperatorAutocomplete(
   allOptions: AutocompleteOption[],
-  skillSlugs: Set<string>,
 ): AutocompleteOption[] {
-  const allowedCommands = new Set([
-    "/create-skill",
-    "/models",
-    "/auth",
-    "/themes",
-    "/new",
-    "/operator",
-    "/pentest",
-  ]);
-  return allOptions.filter(
-    (opt) => allowedCommands.has(opt.value) || skillSlugs.has(opt.value),
-  );
+  return allOptions.filter((opt) => OPERATOR_ALLOWED_COMMANDS.has(opt.value));
 }
 
 // ---------------------------------------------------------------------------
@@ -54,7 +52,7 @@ export function resolveSubmit(
 
 export type CommandAction =
   | { type: "show-models" }
-  | { type: "run-skill"; content: string; autopilot: boolean }
+  | { type: "run-skill"; slug: string; autopilot: boolean }
   | { type: "execute-command"; command: string };
 
 export function routeCommand(
@@ -67,12 +65,17 @@ export function routeCommand(
     return { type: "show-models" };
   }
 
+  if (commandLower === "skills") {
+    return { type: "execute-command", command };
+  }
+
   const autopilot = command.includes("--autopilot");
   const cleanedCommand = command.replace(/\s*--autopilot\s*/g, "").trim();
-  const skillContent = resolveSkill(cleanedCommand);
 
-  if (skillContent) {
-    return { type: "run-skill", content: skillContent, autopilot };
+  if (resolveSkill(cleanedCommand)) {
+    // Reuse commandLower but take only the first word (slug without args)
+    const slug = commandLower.split(/\s+/)[0] ?? commandLower;
+    return { type: "run-skill", slug, autopilot };
   }
 
   return { type: "execute-command", command };
@@ -98,8 +101,7 @@ export type KeyboardAction =
   | { type: "escape" }
   | { type: "toggle-verbose" }
   | { type: "toggle-expanded-logs" }
-  | { type: "toggle-approval" }
-  | { type: "toggle-mode" }
+  | { type: "cycle-mode" }
   | { type: "approve" }
   | { type: "auto-approve" }
   | { type: "show-directory" };
@@ -142,9 +144,8 @@ export function resolveKeyboardShortcut(
   // Option+Shift+Tab — toggle approval
   if (key.name === "tab" && key.shift && key.meta)
     return { type: "toggle-approval" };
-
-  // Shift+Tab — toggle plan/default mode
-  if (key.name === "tab" && key.shift) return { type: "toggle-mode" };
+  // Shift+Tab — cycle operator mode (approvals-on → approvals-off → plan)
+  if (key.name === "tab" && key.shift) return { type: "cycle-mode" };
 
   // Y to approve
   if (
@@ -191,13 +192,23 @@ export function buildOperatorSystemPrompt(
   target: string | undefined,
   operatorState: OperatorSessionState,
   agentMode?: "default" | "plan",
+  opts?: {
+    requireApproval?: boolean;
+    sandboxMode?: boolean;
+    skillsCatalog?: string;
+    activeSkillInstructions?: Array<{ name: string; instructions: string }>;
+  },
 ): string {
+  const { skillsCatalog, activeSkillInstructions } = opts ?? {};
   const modeNote =
     agentMode === "plan"
       ? "\nAgent mode: PLAN — read-only tools only, no mutations allowed"
       : "";
 
-  return `${BASE_SYSTEM_PROMPT}
+  const approvalEnabled =
+    opts?.requireApproval ?? operatorState.requireApproval;
+
+  let prompt = `${buildBaseSystemPrompt({ sandboxMode: opts?.sandboxMode })}
 
 # Operator Mode
 
@@ -205,7 +216,19 @@ You are operating in interactive operator mode. The human operator will guide yo
 
 Target: ${target || "unknown"}
 Stage: ${operatorState.currentStage}
-Command approval: ${operatorState.requireApproval ? "enabled — the operator will approve each tool call" : "disabled — tool calls execute automatically"}${modeNote}`;
+Command approval: ${approvalEnabled ? "enabled — the operator will approve each tool call" : "disabled — tool calls execute automatically"}${modeNote}`;
+
+  if (skillsCatalog) {
+    prompt += `\n\n# Skills\n\n${skillsCatalog}`;
+  }
+
+  if (activeSkillInstructions && activeSkillInstructions.length > 0) {
+    for (const skill of activeSkillInstructions) {
+      prompt += `\n\n# Active Skill: ${skill.name}\n\n${skill.instructions}`;
+    }
+  }
+
+  return prompt;
 }
 
 // ---------------------------------------------------------------------------

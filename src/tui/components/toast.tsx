@@ -66,7 +66,7 @@ export function ToastContainer() {
       flexDirection="column"
       gap={0}
       alignItems="flex-end"
-      maxWidth={Math.min(60, dims.width - 4)}
+      maxWidth={Math.min(80, dims.width - 4)}
       zIndex={9999}
     >
       {toasts.map((t) => (

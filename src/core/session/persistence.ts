@@ -382,9 +382,18 @@ function convertMessagesToUI(
           const result = part.toolCallId
             ? toolResults.get(part.toolCallId)
             : undefined;
+          const resultText =
+            typeof result === "string"
+              ? result
+              : result != null &&
+                  typeof result === "object" &&
+                  "value" in (result as Record<string, unknown>) &&
+                  typeof (result as Record<string, unknown>).value === "string"
+                ? ((result as Record<string, unknown>).value as string)
+                : undefined;
           const cancelled =
-            typeof result === "string" &&
-            result.toLowerCase().includes("cancelled");
+            typeof resultText === "string" &&
+            resultText.toLowerCase().includes("cancelled");
           uiMessages.push({
             role: "tool",
             content: toolDescription,

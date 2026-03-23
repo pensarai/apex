@@ -1,29 +1,34 @@
-import { existsSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { REPORT_FILENAME_MD } from "../../core/report";
+import { openFileInDefaultApp } from "./open-file";
 
 /**
  * Open the pentest report for a session in the user's default viewer.
- * Returns an error message string, or "" on success.
+ * Returns a promise that resolves to an error message string, or "" on success.
  */
-export function openSessionReport(sessionRootPath: string): string {
+export async function openSessionReport(
+  sessionRootPath: string,
+): Promise<string> {
   const reportPath = join(sessionRootPath, REPORT_FILENAME_MD);
 
   if (!existsSync(reportPath)) {
     return "Report not found";
   }
 
+  return openFileInDefaultApp(reportPath);
+}
+
+/**
+ * Read the raw markdown content of a session's pentest report.
+ * Returns the content string or null if the report doesn't exist.
+ */
+export function readSessionReport(sessionRootPath: string): string | null {
+  const reportPath = join(sessionRootPath, REPORT_FILENAME_MD);
+  if (!existsSync(reportPath)) return null;
   try {
-    const platform = process.platform;
-    if (platform === "darwin") {
-      Bun.spawn(["open", reportPath]);
-    } else if (platform === "win32") {
-      Bun.spawn(["cmd", "/c", "start", reportPath]);
-    } else {
-      Bun.spawn(["xdg-open", reportPath]);
-    }
-    return "";
+    return readFileSync(reportPath, "utf-8");
   } catch {
-    return "Error opening report";
+    return null;
   }
 }

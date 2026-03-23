@@ -19,7 +19,7 @@ import {
 } from "./tools";
 import { createResponseTool, RESPONSE_TOOL_NAME } from "./tools/response";
 import { PersistentShell } from "./tools/persistentShell";
-import { BASE_SYSTEM_PROMPT, buildSessionWorkspaceSection } from "./prompt";
+import { buildBaseSystemPrompt, buildSessionWorkspaceSection } from "./prompt";
 import type { ApprovalGate } from "../../operator";
 import { ApprovalDeniedError } from "../../operator";
 import { create as createSession, type SessionInfo } from "../../session";
@@ -115,12 +115,16 @@ export class OffensiveSecurityAgent<TResult = void> {
     this.subagentId = input.subagentId;
     this.abortSignal = input.abortSignal;
 
+    // -- Resolve agent working directory ----------------------------------------
+    const agentCwd = input.session.config?.agentCwd ?? input.session.rootPath;
+
     // -- Persistent shell (local mode only) -----------------------------------
     // Shell survives command cancellation; only disposed in consume() after the
     // stream ends, or when the agent is fully killed.
     if (!input.sandbox) {
       this.persistentShell = new PersistentShell({
-        cwd: input.session.rootPath,
+        cwd: agentCwd,
+        env: input.environmentVariables,
       });
       if (input.commandCancelHandle) {
         const shell = this.persistentShell;
@@ -137,6 +141,7 @@ export class OffensiveSecurityAgent<TResult = void> {
 
     const builtinTools = createAllTools({
       session: input.session,
+      agentCwd,
       target: input.target,
       abortSignal: input.abortSignal,
       model: input.model,
@@ -149,6 +154,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       credentialManager,
       persistentShell: this.persistentShell,
       onCommandOutput: input.callbacks?.onCommandOutput,
+      skillsRegistry: input.skillsRegistry,
     });
 
     let tools: ToolSet = input.extraTools
@@ -232,36 +238,66 @@ export class OffensiveSecurityAgent<TResult = void> {
           ],
     };
 
+    // Debounced persistence: avoid blocking the event loop with
+    // JSON.stringify on every step when many agents run concurrently.
+    const PERSIST_INTERVAL_MS = 15_000;
+    let persistTimer: ReturnType<typeof setTimeout> | null = null;
+    let latestMessages: ModelMessage[] | null = null;
+
+    const schedulePersist = () => {
+      if (persistTimer) return;
+      persistTimer = setTimeout(() => {
+        persistTimer = null;
+        if (latestMessages) {
+          const toWrite = latestMessages;
+          latestMessages = null;
+          writeFile(messagesPath, JSON.stringify(toWrite)).catch(() => {});
+        }
+      }, PERSIST_INTERVAL_MS);
+    };
+
     // -- Stream ---------------------------------------------------------------
     this.streamResult = streamResponse({
       prompt: input.prompt,
       system:
-        (input.system ?? BASE_SYSTEM_PROMPT) +
-        buildSessionWorkspaceSection(input.session),
+        (input.system ??
+          buildBaseSystemPrompt({
+            sandboxMode: agentCwd === input.session.rootPath,
+          })) + buildSessionWorkspaceSection(input.session, agentCwd),
       model: input.model,
       messages: input.messages,
       tools,
       activeTools,
       stopWhen,
       toolChoice: "auto",
-      onStepFinish: (event) => {
-        const allMessages = [
-          ...initialMessagesRef.current,
-          ...event.response.messages,
-        ];
-        writeFile(messagesPath, JSON.stringify(allMessages, null, 2)).catch(
-          () => {
-            // Best-effort persistence — don't break the agent loop
-          },
-        );
-        input.onStepFinish?.(event);
-      },
+      onStepFinish: async (event) => {
+        latestMessages = [
+        ...initialMessagesRef.current,
+        ...event.response.messages,
+      ];
+      schedulePersist();
+      await input.onStepFinish?.(event);
+    },
       onSummarized: () => {
         // Context was reset by summarization — discard the old history so
         // subsequent onStepFinish writes only persist post-summary messages.
         initialMessagesRef.current = [];
       },
-      onFinish: input.onFinish,
+      onFinish: async (event) => {
+        // Flush any pending persistence before finishing
+        if (persistTimer) {
+          clearTimeout(persistTimer);
+          persistTimer = null;
+        }
+        const finalMessages = latestMessages ?? [
+          ...initialMessagesRef.current,
+          ...event.response.messages,
+        ];
+        await writeFile(messagesPath, JSON.stringify(finalMessages)).catch(
+          () => {},
+        );
+        await input.onFinish?.(event);
+      },
       abortSignal: input.abortSignal,
       authConfig: input.authConfig,
       silent: true,
@@ -411,16 +447,25 @@ function wrapToolsWithApprovalGate(
           args.toolCallId ??
           `tc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
+        console.error(`[approval-gate] ${name} (${toolCallId}): checking`);
         try {
           await gate.check(name, String(toolCallId), args);
         } catch (err) {
           if (err instanceof ApprovalDeniedError) {
+            console.error(`[approval-gate] ${name} (${toolCallId}): denied`);
             return { blocked: true, reason: "Denied by operator" };
           }
           throw err;
         }
+        console.error(
+          `[approval-gate] ${name} (${toolCallId}): approved, executing`,
+        );
 
-        return originalExecute(args, options);
+        const result = await originalExecute(args, options);
+        console.error(
+          `[approval-gate] ${name} (${toolCallId}): execute finished`,
+        );
+        return result;
       },
     };
   }

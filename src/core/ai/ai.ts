@@ -285,9 +285,12 @@ export function streamResponse(
     onFinish,
   } = opts;
 
-  // Wrap onStepFinish to fire usage callback for every step
-  const onStepFinish: typeof userOnStepFinish = (step) => {
-    userOnStepFinish?.(step);
+  // Wrap onStepFinish to fire usage callback for every step.
+  // Must be async so that callers returning a Promise (e.g. MessageManager
+  // persisting messages / queuing issues) are fully awaited before the
+  // AI SDK starts the next step.
+  const onStepFinish: typeof userOnStepFinish = async (step) => {
+    await userOnStepFinish?.(step);
     if (_usageCallback) {
       const inp = step.usage?.inputTokens ?? 0;
       const out = step.usage?.outputTokens ?? 0;

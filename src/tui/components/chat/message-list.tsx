@@ -131,7 +131,14 @@ export function MessageList({
             </box>
             <box flexDirection="row">
               <text fg={colors.primary}>Shift+Tab</text>
-              <text fg={colors.textMuted}> - Cycle approval on/off</text>
+              <text fg={colors.textMuted}>
+                {" "}
+                - Switch between Plan or Default mode
+              </text>
+            </box>
+            <box flexDirection="row">
+              <text fg={colors.primary}>Option+Shift+Tab</text>
+              <text fg={colors.textMuted}> - Toggle approval on/off</text>
             </box>
           </box>
         </box>
