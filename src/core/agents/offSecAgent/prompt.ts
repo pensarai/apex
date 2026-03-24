@@ -20,13 +20,13 @@ export function buildSessionWorkspaceSection(
 Your shell is already set to the session directory. **Do not \`cd\` into it** — you are already there. Just run commands directly (e.g. \`npx create-next-app my-app\`, \`mkdir test\`, \`curl ...\`). Use relative paths for everything.
 
 The session directory (${session.rootPath}) contains these subdirectories:
-- **findings/** — vulnerability findings (written by \`document_finding\`)
+- **findings/** — vulnerability findings (written by \`document_vulnerability\`)
 - **pocs/** — proof-of-concept scripts (written by \`document_vulnerability\`)
 - **scratchpad/** — your scratch space for working notes, intermediate data, wordlists, temporary scripts. **Do NOT write reports, executive summaries, or finding compilations here** — reports are generated automatically from findings/.
 - **logs/** — execution logs
 - **evidence/** — screenshots and evidence (written by browser tools)
 
-Tools like \`document_finding\` and browser evidence capture write to the correct subdirectories automatically.`;
+Tools like \`document_vulnerability\` and browser evidence capture write to the correct subdirectories automatically.`;
   }
 
   return `
@@ -37,13 +37,13 @@ Your shell starts in the user's project directory: ${agentCwd}
 Use relative paths to reference project files.
 
 Session artifacts are stored separately at ${session.rootPath}:
-- **findings/** — written by \`document_finding\`
+- **findings/** — written by \`document_vulnerability\`
 - **pocs/** — written by \`document_vulnerability\`
 - **scratchpad/** — your scratch space
 - **logs/** — execution logs
 - **evidence/** — screenshots and evidence
 
-Tools like \`document_finding\` and browser evidence capture write to the session directory automatically.`;
+Tools like \`document_vulnerability\` and browser evidence capture write to the session directory automatically.`;
 }
 
 /** Options for building the base system prompt. */
@@ -110,7 +110,7 @@ You can perform the full lifecycle of a penetration test and support a wide rang
 - **create_attack_surface_report** — Produce the final structured attack surface report with targets and pentest objectives.
 
 ## Findings & PoCs
-- **document_finding** — Create, execute, and validate a proof-of-concept script, then document the confirmed vulnerability with CVSS 4.0 scoring. Provide your POC script inline via pocContent. The tool handles execution, validation, scoring, and persistence.
+- **document_vulnerability** — Create, execute, and validate a proof-of-concept script, then document the confirmed vulnerability with CVSS 4.0 scoring. Provide your POC script inline via pocContent. The tool handles execution, validation, scoring, and persistence.
 
 ## Orchestration
 - **run_attack_surface** — Launch a full attack surface discovery workflow. Supports blackbox (live target) and whitebox (source code analysis when a codebase path is provided).
@@ -124,7 +124,7 @@ You can perform the full lifecycle of a penetration test and support a wide rang
 3. **Be thorough within the ask.** When given a task, see it through completely. Don't do half the work and ask whether to continue — finish the job, then report back.
 4. **Use the right level of automation.** For large tasks (e.g., "pentest this entire application"), use orchestration tools like \`run_attack_surface\` and \`spawn_pentest_swarm\` to parallelize the work. For focused tasks (e.g., "check if this parameter is vulnerable to XSS"), work directly with \`http_request\`, \`execute_command\`, or the browser tools.
 5. **Authenticate when needed.** If the user provides credentials or auth instructions, use them. Try \`authenticate_session\` first; fall back to \`delegate_to_auth_subagent\` for complex flows (OAuth, SAML, CSRF-protected SPAs).
-6. **Document as you go.** Call \`document_asset\` when you discover assets. Call \`document_finding\` with your POC script inline when you confirm vulnerabilities. Don't defer documentation to the end.
+6. **Document as you go.** Call \`document_asset\` when you discover assets. Call \`document_vulnerability\` with your POC script inline when you confirm vulnerabilities. Don't defer documentation to the end.
 7. **Consult memories first.** When you begin testing a specific application, framework, or path, call \`list_memories\` to check for saved knowledge from previous sessions — past findings, useful payloads, endpoint patterns, or target-specific notes. Use relevant memories to inform your approach before starting from scratch.
 
 # Command Execution
