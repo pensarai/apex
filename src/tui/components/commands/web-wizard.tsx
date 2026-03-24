@@ -9,11 +9,11 @@ import { type ModelInfo } from "../../../core/ai";
 import { getAvailableModels } from "../../../core/providers/utils";
 import { useTheme } from "../../theme";
 import { Dialog } from "../../context/dialog";
+import DialogLayout from "../dialog-layout";
 import {
   getAutoPopulatedHosts,
   getAutoPopulatedPorts,
 } from "../../../util/url";
-import { DialogControls } from "../shared/dialog-controls";
 
 // Wizard step types
 type WizardStep = "target" | "configure" | "creating";
@@ -645,19 +645,21 @@ export default function WebWizard({
   if (currentStep === "creating") {
     return (
       <Dialog size="large" onClose={onClose}>
-        <box
-          flexDirection="column"
-          width="100%"
-          height="100%"
-          alignItems="center"
-          justifyContent="center"
-          flexGrow={1}
-          gap={2}
-        >
-          <SpinnerDots label="Creating session..." fg={colors.primary} />
-          <text fg={colors.textMuted}>Target: {state.target}</text>
-          <text fg={colors.textMuted}>Mode: {modeLabel}</text>
-        </box>
+        <DialogLayout title="Creating Session" escLabel={null}>
+          <box
+            flexDirection="column"
+            width="100%"
+            height="100%"
+            alignItems="center"
+            justifyContent="center"
+            flexGrow={1}
+            gap={2}
+          >
+            <SpinnerDots label="Creating session..." fg={colors.primary} />
+            <text fg={colors.textMuted}>Target: {state.target}</text>
+            <text fg={colors.textMuted}>Mode: {modeLabel}</text>
+          </box>
+        </DialogLayout>
       </Dialog>
     );
   }
@@ -666,14 +668,14 @@ export default function WebWizard({
   if (currentStep === "target") {
     return (
       <Dialog size="large" onClose={onClose}>
-        <box
-          width="100%"
-          flexDirection="column"
-          gap={2}
-          paddingLeft={4}
-          paddingBottom={1}
+        <DialogLayout
+          title="Configure Web App Pentest"
+          escLabel="cancel"
+          footerActions={[
+            { key: "Enter", label: "start", variant: "primary" },
+            { key: "Tab", label: "configure" },
+          ]}
         >
-          <text fg={colors.text}>Configure Web App Pentest</text>
           <text fg={colors.textMuted}>{modeDescription}</text>
           <text fg={colors.textMuted}>
             Model: {model.name} [{isModelUserSelected ? "user" : "default"}]
@@ -681,29 +683,31 @@ export default function WebWizard({
 
           {error && <text fg={colors.error}>Error: {error}</text>}
 
-          <Input
-            label="Target URL"
-            description="e.g., https://example.com"
-            placeholder="https://example.com"
-            value={state.target}
-            onInput={(v) => {
-              setTargetError(null);
-              setState((prev) => ({ ...prev, target: v }));
-            }}
-            onSubmit={() => {
-              if (state.target.trim()) {
+          <box marginTop={1}>
+            <Input
+              label="Target URL"
+              description="e.g., https://example.com"
+              placeholder="https://example.com"
+              value={state.target}
+              onInput={(v) => {
                 setTargetError(null);
-                autoPopulateScopeFromTarget();
-                setCurrentStep("configure");
-              } else {
-                setTargetError("Target URL is required");
-              }
-            }}
-            focused={targetFocusedField === 0}
-          />
+                setState((prev) => ({ ...prev, target: v }));
+              }}
+              onSubmit={() => {
+                if (state.target.trim()) {
+                  setTargetError(null);
+                  autoPopulateScopeFromTarget();
+                  setCurrentStep("configure");
+                } else {
+                  setTargetError("Target URL is required");
+                }
+              }}
+              focused={targetFocusedField === 0}
+            />
+          </box>
           {targetError && <text fg={colors.error}>{targetError}</text>}
 
-          <box flexDirection="column" gap={1}>
+          <box flexDirection="column" gap={1} marginTop={1}>
             <box flexDirection="row" gap={1}>
               <text
                 fg={
@@ -732,20 +736,7 @@ export default function WebWizard({
               />
             )}
           </box>
-
-          <box marginTop={1}>
-            <DialogControls
-              controls={[
-                {
-                  key: "Enter",
-                  label: "Start Immediately",
-                  variant: "primary",
-                },
-                { key: "Tab", label: "Configure Options" },
-              ]}
-            />
-          </box>
-        </box>
+        </DialogLayout>
       </Dialog>
     );
   }
@@ -753,15 +744,15 @@ export default function WebWizard({
   // Render configure step
   return (
     <Dialog size="large" onClose={onClose}>
-      <box
-        width="100%"
-        flexDirection="column"
-        gap={2}
-        paddingLeft={4}
-        paddingBottom={1}
+      <DialogLayout
+        title={`Configure Web App Pentest - ${modeLabel}`}
+        escLabel="back"
+        footerActions={[
+          { key: "Enter", label: "start", variant: "primary" },
+          { key: "Tab", label: "navigate" },
+        ]}
       >
         <box flexDirection="column">
-          <text fg={colors.text}>Configure Web App Pentest - {modeLabel}</text>
           <text fg={colors.textMuted}>Target: {state.target}</text>
           <text fg={colors.textMuted}>
             All fields are optional - configure only what you need
@@ -769,9 +760,9 @@ export default function WebWizard({
         </box>
 
         {/* Auth Section */}
-        <box flexDirection="column" gap={1}>
+        <box flexDirection="column" gap={1} marginTop={1}>
           <text>
-            <span fg={colors.primary}>█ </span>
+            <span fg={colors.primary}>{"▸"} </span>
             <span fg={focusedSection === 0 ? colors.text : colors.textMuted}>
               Authentication
             </span>
@@ -871,9 +862,9 @@ export default function WebWizard({
         </box>
 
         {/* Scope Section */}
-        <box flexDirection="column" gap={1}>
+        <box flexDirection="column" gap={1} marginTop={1}>
           <text>
-            <span fg={colors.primary}>█ </span>
+            <span fg={colors.primary}>{"▸"} </span>
             <span fg={focusedSection === 1 ? colors.text : colors.textMuted}>
               Scope Constraints
             </span>
@@ -953,9 +944,9 @@ export default function WebWizard({
         </box>
 
         {/* Headers Section */}
-        <box flexDirection="column" gap={1}>
+        <box flexDirection="column" gap={1} marginTop={1}>
           <text>
-            <span fg={colors.primary}>█ </span>
+            <span fg={colors.primary}>{"▸"} </span>
             <span fg={focusedSection === 2 ? colors.text : colors.textMuted}>
               Request Headers
             </span>
@@ -1030,9 +1021,9 @@ export default function WebWizard({
         </box>
 
         {/* Model Section */}
-        <box flexDirection="column" gap={1}>
+        <box flexDirection="column" gap={1} marginTop={1}>
           <text>
-            <span fg={colors.primary}>█ </span>
+            <span fg={colors.primary}>{"▸"} </span>
             <span fg={focusedSection === 3 ? colors.text : colors.textMuted}>
               AI Model
             </span>
@@ -1102,20 +1093,7 @@ export default function WebWizard({
             </box>
           )}
         </box>
-
-        <box marginTop={1}>
-          <DialogControls
-            controls={[
-              {
-                key: "Enter",
-                label: `Start Pentest (${modeLabel})`,
-                variant: "primary",
-              },
-              { key: "Tab", label: "Navigate Fields" },
-            ]}
-          />
-        </box>
-      </box>
+      </DialogLayout>
     </Dialog>
   );
 }

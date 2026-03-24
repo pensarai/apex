@@ -4,7 +4,7 @@ import { useRoute } from "../../context/route";
 import { getPensarConsoleUrl } from "../../../core/api/constants";
 import { validateGateway } from "../../../core/auth";
 import { Dialog } from "../../context/dialog";
-import { DialogControls } from "../shared/dialog-controls";
+import DialogLayout, { type FooterAction } from "../dialog-layout";
 import { useTheme } from "../../theme";
 
 type CreditsStep = "loading" | "no-auth" | "display" | "browser-opened";
@@ -113,20 +113,24 @@ export default function CreditsFlow({
     }
   });
 
+  // Build dynamic footer actions per step
+  let footerActions: FooterAction[] = [];
+  if (step === "no-auth") {
+    footerActions = [{ key: "Enter", label: "run /auth", variant: "primary" }];
+  } else if (step === "display") {
+    footerActions = [
+      { key: "Enter", label: "open in browser", variant: "primary" },
+      { key: "R", label: "refresh" },
+    ];
+  } else if (step === "browser-opened") {
+    footerActions = [
+      { key: "Enter", label: "refresh balance", variant: "primary" },
+    ];
+  }
+
   return (
     <Dialog size="large" onClose={goHome}>
-      <box
-        flexDirection="column"
-        width="100%"
-        maxWidth={80}
-        alignItems="flex-start"
-        padding={1}
-      >
-        {/* Header */}
-        <box marginBottom={1}>
-          <text fg={colors.primary}>Credits</text>
-        </box>
-
+      <DialogLayout title="Credits" footerActions={footerActions}>
         {/* Loading */}
         {step === "loading" && (
           <box>
@@ -145,13 +149,6 @@ export default function CreditsFlow({
                 Run <span fg={colors.primary}>/auth</span> first to connect your
                 account.
               </text>
-            </box>
-            <box marginTop={1}>
-              <DialogControls
-                controls={[
-                  { key: "Enter", label: "Run /auth", variant: "primary" },
-                ]}
-              />
             </box>
           </box>
         )}
@@ -195,18 +192,6 @@ export default function CreditsFlow({
             <box marginTop={1}>
               <text fg={colors.textMuted}>Buy credits at: {creditsUrl}</text>
             </box>
-            <box marginTop={1}>
-              <DialogControls
-                controls={[
-                  {
-                    key: "Enter",
-                    label: "Open in Browser",
-                    variant: "primary",
-                  },
-                  { key: "R", label: "Refresh" },
-                ]}
-              />
-            </box>
           </box>
         )}
 
@@ -224,20 +209,9 @@ export default function CreditsFlow({
                 balance after purchasing.
               </text>
             </box>
-            <box marginTop={1}>
-              <DialogControls
-                controls={[
-                  {
-                    key: "Enter",
-                    label: "Refresh Balance",
-                    variant: "primary",
-                  },
-                ]}
-              />
-            </box>
           </box>
         )}
-      </box>
+      </DialogLayout>
     </Dialog>
   );
 }

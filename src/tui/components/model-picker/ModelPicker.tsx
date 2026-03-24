@@ -440,7 +440,6 @@ export function ModelPicker({
       flexDirection="column"
       gap={0}
       width="100%"
-      flexGrow={1}
       flexShrink={1}
       overflow="hidden"
     >
@@ -462,10 +461,10 @@ export function ModelPicker({
         ref={scrollBoxRef}
         style={{
           rootOptions: {
-            flexGrow: 1,
             flexShrink: 1,
             width: "100%",
             overflow: "hidden",
+            maxHeight: navigationItems.length,
           },
           contentOptions: {
             flexDirection: "column",
