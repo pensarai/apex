@@ -85,37 +85,33 @@ This tool marks the end of the authentication flow.`,
 
       let authDataPath: string | undefined;
 
-      if (
-        result.success &&
-        (result.exportedCookies || result.exportedHeaders)
-      ) {
-        try {
-          const authDir = join(ctx.session.rootPath, AUTH_DIR);
-          if (!existsSync(authDir)) {
-            mkdirSync(authDir, { recursive: true });
-          }
-
-          authDataPath = join(authDir, AUTH_DATA_FILENAME);
-
-          const authData = {
-            authenticated: true,
-            strategy: result.strategy || "unknown",
-            cookies: result.exportedCookies || "",
-            headers: result.exportedHeaders || {},
-            summary: result.summary,
-            target: ctx.target || "",
-            timestamp: new Date().toISOString(),
-          };
-
-          writeFileSync(authDataPath, JSON.stringify(authData, null, 2));
-          console.log(`Auth data persisted to ${authDataPath}`);
-        } catch (err) {
-          console.error(`Failed to persist auth data: ${err}`);
+      try {
+        const authDir = join(ctx.session.rootPath, AUTH_DIR);
+        if (!existsSync(authDir)) {
+          mkdirSync(authDir, { recursive: true });
         }
+
+        authDataPath = join(authDir, AUTH_DATA_FILENAME);
+
+        const authData = {
+          authenticated: result.success,
+          strategy: result.strategy || "unknown",
+          cookies: result.exportedCookies || "",
+          headers: result.exportedHeaders || {},
+          summary: result.summary,
+          target: ctx.target || "",
+          timestamp: new Date().toISOString(),
+          ...(result.authBarrier && { authBarrier: result.authBarrier }),
+        };
+
+        writeFileSync(authDataPath, JSON.stringify(authData, null, 2));
+        console.log(`Auth data persisted to ${authDataPath}`);
+      } catch (err) {
+        console.error(`Failed to persist auth data: ${err}`);
       }
 
       return {
-        success: true,
+        success: result.success,
         authenticated: result.success,
         summary: result.summary,
         exportedCookies: result.exportedCookies || "",
@@ -123,7 +119,9 @@ This tool marks the end of the authentication flow.`,
         strategy: result.strategy || "unknown",
         authBarrier: result.authBarrier,
         authDataPath: authDataPath || "",
-        message: "Authentication process completed.",
+        message: result.success
+          ? "Authentication succeeded."
+          : `Authentication failed.${result.authBarrier ? ` Barrier: ${result.authBarrier.type} — ${result.authBarrier.details}` : ""}`,
       };
     },
   });
