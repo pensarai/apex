@@ -120,6 +120,8 @@ export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSur
         // Core recon tools
         "execute_command",
         "document_asset",
+        "document_app",
+        "document_endpoint",
         "create_attack_surface_report",
         // Browser automation for SPAs, JS-heavy apps, and auth flows
         "browser_navigate",
