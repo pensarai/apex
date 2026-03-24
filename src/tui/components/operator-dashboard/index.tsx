@@ -70,7 +70,8 @@ import {
 import { QueuedMessages } from "./queued-messages";
 import { navigateUp, navigateDown, selectionAfterRemove } from "./queue";
 import { existsSync, readFileSync, writeFileSync } from "fs";
-import { join } from "path";
+import { isAbsolute, join, resolve } from "path";
+import { buildThreatModelPrompt } from "../../../core/skills/builtins/threatModel";
 
 /**
  * Operator Dashboard - interactive chat interface with the offensive security agent
@@ -1065,6 +1066,60 @@ export default function OperatorDashboard({
     }
   }, [loading, initialMessage]);
 
+  // Auto-submit initial skill once loading completes.
+  // When the dashboard mounts with route.initialSkill set (e.g. from the
+  // /threat-model command), load the skill content and send it to the agent
+  // just as if the user had typed /<skill-slug>.
+  const initialSkillSentRef = useRef(false);
+  useEffect(() => {
+    if (loading || initialSkillSentRef.current) return;
+    const routeData = route.data;
+    if (routeData.type !== "operator" || !routeData.initialSkill) return;
+
+    initialSkillSentRef.current = true;
+    const { slug, args } = routeData.initialSkill;
+
+    (async () => {
+      try {
+        const { content } = await skillsRegistry.readSkillContent(slug);
+
+        let fullContent: string;
+        if (slug === "threat-model") {
+          const outputPath = args?.output || "threat-model.md";
+          const resolvedPath = isAbsolute(outputPath)
+            ? outputPath
+            : resolve(process.cwd(), outputPath);
+          fullContent = buildThreatModelPrompt({
+            outputPath: resolvedPath,
+            codebasePath: process.cwd(),
+            skillContent: content,
+          });
+        } else {
+          const contextParts: string[] = [];
+          if (args) {
+            for (const [key, value] of Object.entries(args)) {
+              const resolvedValue =
+                key === "output" && !isAbsolute(value)
+                  ? resolve(process.cwd(), value)
+                  : value;
+              contextParts.push(`${key}: ${resolvedValue}`);
+            }
+          }
+          contextParts.push(`Working directory: ${process.cwd()}`);
+          const runtimeContext = contextParts.join("\n");
+          fullContent = `<skill name="${slug}">\n${runtimeContext}\n\n${content}\n</skill>`;
+        }
+
+        runAgentRef.current(fullContent);
+      } catch {
+        // Fallback: tell agent to load skill via tool
+        runAgentRef.current(
+          `Use the read_skill tool to load the "${slug}" skill and follow its instructions.`,
+        );
+      }
+    })();
+  }, [loading, route.data, skillsRegistry]);
+
   // Auto-send queued messages when agent becomes idle
   useEffect(() => {
     if (status !== "idle") return;
@@ -1101,7 +1156,19 @@ export default function OperatorDashboard({
             const { content } = await skillsRegistry.readSkillContent(
               action.slug,
             );
-            handleSubmit(`<skill name="${action.slug}">\n${content}\n</skill>`);
+            let fullContent: string;
+            if (action.slug === "threat-model") {
+              const resolvedPath = resolve(process.cwd(), "threat-model.md");
+              fullContent = buildThreatModelPrompt({
+                outputPath: resolvedPath,
+                codebasePath: process.cwd(),
+                skillContent: content,
+              });
+            } else {
+              const runtimeContext = `Working directory: ${process.cwd()}`;
+              fullContent = `<skill name="${action.slug}">\n${runtimeContext}\n\n${content}\n</skill>`;
+            }
+            handleSubmit(fullContent);
           } catch {
             // Fallback: tell the agent to load the skill via tool
             handleSubmit(

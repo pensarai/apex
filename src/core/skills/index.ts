@@ -1,6 +1,7 @@
 import { SkillsRegistry } from "./registry";
 
 export type {
+  BuiltInSkill,
   SkillEntry,
   SkillManifest,
   SkillScript,
