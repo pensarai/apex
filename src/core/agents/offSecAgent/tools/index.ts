@@ -33,6 +33,8 @@ export { updateFile } from "./updateFile";
 
 // Attack surface / recon tools
 export { documentAsset } from "./documentAsset";
+export { documentApp } from "./documentApp";
+export { documentEndpoint } from "./documentEndpoint";
 export { authenticateSession } from "./authenticateSession";
 export { delegateAuth } from "./delegateAuth";
 export { extractJsEndpoints } from "./extractJsEndpoints";
@@ -87,6 +89,8 @@ import { grep } from "./grep";
 import { createFile } from "./createFile";
 import { updateFile } from "./updateFile";
 import { documentAsset } from "./documentAsset";
+import { documentApp } from "./documentApp";
+import { documentEndpoint } from "./documentEndpoint";
 import { authenticateSession } from "./authenticateSession";
 import { delegateAuth } from "./delegateAuth";
 import { extractJsEndpoints } from "./extractJsEndpoints";
@@ -141,6 +145,8 @@ export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
 
     // Attack surface / recon tools
     document_asset: documentAsset(ctx),
+    document_app: documentApp(ctx),
+    document_endpoint: documentEndpoint(ctx),
     authenticate_session: authenticateSession(ctx),
     delegate_to_auth_subagent: delegateAuth(ctx),
     extract_js_endpoints: extractJsEndpoints(ctx),
@@ -210,6 +216,8 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "create_file",
   "update_file",
   "document_asset",
+  "document_app",
+  "document_endpoint",
   "authenticate_session",
   "delegate_to_auth_subagent",
   "create_attack_surface_report",
