@@ -75,8 +75,8 @@ export function generateAssetFingerprint(asset: AssetRecord): {
 
 /**
  * Minimal asset shape the registry needs for dedup.
- * Compatible with both `DocumentAssetInput` (tool input) and
- * `DocumentedAssetRecord` (persisted record).
+ * Compatible with `DocumentedEndpointRecord` (persisted record)
+ * and the inline records passed by `document_endpoint`.
  */
 export interface AssetRecord {
   appName?: string;

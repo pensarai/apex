@@ -16,7 +16,7 @@ import {
   type App,
   type RiskScore,
 } from "../agents/specialized/whiteboxAttackSurface/types";
-import type { DocumentedAssetRecord } from "../agents/specialized/attackSurface/schemas";
+import type { DocumentedEndpointRecord } from "../agents/specialized/attackSurface/schemas";
 import type { AIModel } from "../ai";
 import type { AIAuthConfig } from "../ai/utils";
 import type { SessionInfo } from "../session";
@@ -89,8 +89,6 @@ Use this to document each application/service you identify. Persists a JSON reco
 - **Set \`handler\`** to the handler function or component name.
 - **Set \`authRequired\`** to true/false based on middleware, guards, or decorators.
 
-## document_asset
-Fallback tool for general assets (infrastructure, cloud resources, development assets) that don't fit the app/endpoint model. Persists to the session's assets directory.
 
 ## response
 When your objective includes structured output, call \`response\` with your final results once you are done. This ends your run.
@@ -136,7 +134,7 @@ type AppsDiscoveryResult = z.infer<typeof AppsDiscoveryResultSchema>;
 const DiscoverySummarySchema = z.object({
   endpointsDocumented: z
     .number()
-    .describe("Number of endpoints documented via document_endpoint (or document_asset)"),
+    .describe("Number of endpoints documented via document_endpoint"),
   summary: z.string().describe("Brief summary of what was found"),
 });
 
@@ -473,10 +471,10 @@ export async function runWhiteboxAttackSurfaceWorkflow(
  *   assets/
  *     <app-name>/
  *       app.json          — app metadata (name, framework, description, location)
- *       asset_*.json      — endpoint assets written by document_asset/document_endpoint
+ *       asset_*.json      — endpoint assets written by document_endpoint
  *
- * Each asset file is a {@link DocumentedAssetRecord}. Endpoints are classified
- * as pages (details.method contains "PAGE") or API endpoints (everything else).
+ * Each asset file is a {@link DocumentedEndpointRecord}. Endpoints are classified
+ * as pages (method contains "PAGE") or API endpoints (everything else).
  */
 function readAppsFromAssetsDirectory(
   assetsPath: string,
@@ -526,7 +524,7 @@ function readAppsFromAssetsDirectory(
     for (const file of assetFiles) {
       try {
         const raw = readFileSync(join(entryPath, file), "utf-8");
-        const data = JSON.parse(raw) as DocumentedAssetRecord;
+        const data = JSON.parse(raw) as DocumentedEndpointRecord;
 
         const endpoint = assetRecordToEndpoint(data);
         if (!endpoint) continue;
@@ -555,26 +553,25 @@ function readAppsFromAssetsDirectory(
 }
 
 /**
- * Convert a {@link DocumentedAssetRecord} (from document_asset/document_endpoint) to an
+ * Convert a {@link DocumentedEndpointRecord} (from document_endpoint) to an
  * {@link Endpoint} (for the whitebox result schema).
  */
-function assetRecordToEndpoint(record: DocumentedAssetRecord): Endpoint | null {
-  const details = record.details ?? {};
-  const rawMethod = details.method;
+function assetRecordToEndpoint(record: DocumentedEndpointRecord): Endpoint | null {
+  const rawMethod = record.method;
   const method = Array.isArray(rawMethod)
     ? rawMethod.join(", ")
     : (rawMethod ?? "UNKNOWN");
 
-  const path = details.url ?? record.assetName;
-  const file = details.file ?? "";
+  const path = record.url ?? record.endpointName;
+  const file = record.file ?? "";
 
   const parsed = EndpointSchema.safeParse({
     method,
     path,
-    handler: details.handler,
+    handler: record.handler,
     file,
-    line: details.line,
-    authRequired: details.authRequired,
+    line: record.line,
+    authRequired: record.authRequired,
     description: record.description,
     pentestObjectives: record.pentestObjectives ?? [],
     riskScore: record.riskScore,
@@ -584,11 +581,11 @@ function assetRecordToEndpoint(record: DocumentedAssetRecord): Endpoint | null {
 }
 
 /**
- * Determine whether a documented asset record represents a web page
+ * Determine whether a documented endpoint record represents a web page
  * (as opposed to an API endpoint).
  */
-function isPageEndpoint(record: DocumentedAssetRecord): boolean {
-  const method = record.details?.method;
+function isPageEndpoint(record: DocumentedEndpointRecord): boolean {
+  const method = record.method;
   if (typeof method === "string") {
     return method.toUpperCase() === "PAGE";
   }
@@ -1051,7 +1048,7 @@ The assets directory uses app-scoped folders:
 assets/
   <app-name>/
     app.json           — app metadata (name, framework, description, location)
-    asset_*.json       — one file per endpoint (written by document_endpoint/document_asset)
+    asset_*.json       — one file per endpoint (written by document_endpoint)
 \`\`\`
 
 ## Existing Applications

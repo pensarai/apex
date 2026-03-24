@@ -12,10 +12,10 @@ function sanitizeName(name: string): string {
  * Factory for the `document_app` tool.
  *
  * Documents a discovered application during attack surface analysis —
- * writes a JSON file to the session's apps directory. Unlike `document_asset`,
- * this tool is specifically for application-level entities (web apps, APIs,
- * admin panels, services) and is designed for incremental creation via the
- * MessageManager in Console.
+ * writes a JSON file to the session's apps directory. This tool is
+ * specifically for application-level entities (web apps, APIs, admin panels,
+ * services) and is designed for incremental creation via the MessageManager
+ * in Console.
  */
 export function documentApp(ctx: ToolContext) {
   const baseAppsPath = join(ctx.session.rootPath, "apps");

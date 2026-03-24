@@ -14,9 +14,8 @@ function sanitizeName(name: string): string {
  *
  * Documents a discovered endpoint during attack surface analysis —
  * writes a JSON file to the session's endpoints directory (scoped by
- * app name). Unlike `document_asset`, this tool is specifically for
- * individual endpoints and is designed for incremental creation via
- * the MessageManager in Console.
+ * app name). This tool is specifically for individual endpoints and
+ * is designed for incremental creation via the MessageManager in Console.
  */
 export function documentEndpoint(ctx: ToolContext) {
   const baseEndpointsPath = join(ctx.session.rootPath, "endpoints");

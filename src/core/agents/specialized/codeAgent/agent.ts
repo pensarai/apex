@@ -74,7 +74,6 @@ export class CodeAgent<TResult = void> extends OffensiveSecurityAgent<TResult> {
       "list_files",
       "grep",
       "execute_command",
-      "document_asset",
       "document_app",
       "document_endpoint",
       // Web search tools — research vulnerable library versions, look up API docs
