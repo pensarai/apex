@@ -58,6 +58,8 @@ navigation:
             path: ./docs/commands/pentest.mdx
           - page: /operator
             path: ./docs/commands/operator.mdx
+          - page: /threat-model
+            path: ./docs/commands/threat-model.mdx
           - page: /auth
             path: ./docs/commands/auth.mdx
           - page: /models
@@ -82,6 +84,8 @@ navigation:
             path: ./docs/cli/pentest.mdx
           - page: pensar targeted-pentest
             path: ./docs/cli/targeted-pentest.mdx
+          - page: pensar threat-model
+            path: ./docs/cli/threat-model.mdx
           - page: pensar auth
             path: ./docs/cli/auth.mdx
           - page: pensar projects

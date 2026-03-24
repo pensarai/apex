@@ -24,11 +24,12 @@ function estimateTokens(text: string): number {
 }
 
 const GROUP_LABELS: Record<SkillSource, string> = {
+  builtin: "Built-in skills",
   project: "Project skills",
   user: "User skills",
 };
 
-const GROUP_ORDER: SkillSource[] = ["project", "user"];
+const GROUP_ORDER: SkillSource[] = ["builtin", "project", "user"];
 
 interface SkillsDialogProps {
   onClose: () => void;

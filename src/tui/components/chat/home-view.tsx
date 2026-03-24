@@ -97,18 +97,23 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
       const trimmed = command.trim();
       pushHistory(trimmed);
 
+      // Try the command registry first (handles arg parsing for registered commands)
+      const handled = await executeCommand(command);
+      if (handled) return;
+
+      // Fallback: if the slug matches a skill, launch operator with that skill
       const slug =
         trimmed.replace(/^\/+/, "").split(/\s+/)[0]?.toLowerCase() ?? "";
-
-      const entry = skillsRegistry.get(slug);
-      if (entry) {
-        // Open skills dialog with this skill's detail view
-        await executeCommand(`/skills ${slug}`);
-        return;
+      if (skillsRegistry.get(slug)) {
+        route.navigate({
+          type: "operator",
+          nonce: Date.now(),
+          initialConfig: { requireApproval: true },
+          initialSkill: { slug },
+        });
       }
-      await executeCommand(command);
     },
-    [skillsRegistry, executeCommand, pushHistory],
+    [executeCommand, pushHistory, skillsRegistry, route],
   );
 
   // Responsive layout calculations

@@ -1,0 +1,81 @@
+---
+title: "pensar threat-model"
+description: "Generate an application-centric threat model from the command line"
+---
+
+## Overview
+
+The `pensar threat-model` command generates a comprehensive threat model by analyzing the codebase in your current working directory. It runs headlessly without launching the TUI, making it suitable for CI/CD pipelines, scripting, and automated security workflows.
+
+## Usage
+
+```bash
+pensar threat-model [options]
+```
+
+## Options
+
+| Flag                    | Description                                                      |
+| ----------------------- | ---------------------------------------------------------------- |
+| `--output, -o <path>`  | Output file path (default: `./threat-model.md`)                  |
+| `--model <model>`      | AI model to use (defaults to your configured provider's default) |
+
+## Examples
+
+```bash
+# Generate threat model with defaults
+pensar threat-model
+
+# Custom output path
+pensar threat-model --output ./security/threat-model.md
+
+# Short flag for output
+pensar threat-model -o ./reports/threat-model.md
+
+# Specify a model
+pensar threat-model --model claude-opus-4-5
+```
+
+## How It Works
+
+1. Apex creates an operator session and loads the `threat-model` skill
+2. The AI agent explores the codebase — reading source files, configuration, infrastructure, and security-relevant code
+3. The agent produces a structured threat model covering application context, trust boundaries, attacker profiles, security controls, and attack paths
+4. Progress and tool calls are streamed to stdout in real time
+5. On completion, the threat model is written to the output file
+
+## Output
+
+```
+============================================================
+THREAT MODEL GENERATION
+============================================================
+Model:   claude-sonnet-4-5
+Output:  ./threat-model.md
+
+→ read_file
+✓ read_file completed
+→ list_directory
+✓ list_directory completed
+...
+
+============================================================
+COMPLETE
+============================================================
+Threat model written to: ./threat-model.md
+```
+
+## Default Model
+
+When `--model` is not provided, Apex uses the default model for your highest-priority configured provider. See [`pensar models`](/apex/commands/models#default-model-per-provider) for the priority order.
+
+## Related Commands
+
+<CardGroup cols={2}>
+  <Card title="/threat-model" icon="shield-halved" href="/apex/commands/threat-model">
+    Generate a threat model from the TUI
+  </Card>
+  <Card title="pensar pentest" icon="play" href="/apex/cli/pentest">
+    Run a full autonomous pentest from the CLI
+  </Card>
+</CardGroup>
