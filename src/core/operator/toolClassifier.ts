@@ -6,7 +6,7 @@ import type { PermissionTier } from "./types";
 const TOOL_BASE_TIERS: Record<string, PermissionTier> = {
   // Tier 1 - Passive (read-only, no network to target)
   scratchpad: 1,
-  document_finding: 4,
+  document_vulnerability: 4,
   analyze_scan: 1,
   generate_report: 1,
   store_plan: 1,
