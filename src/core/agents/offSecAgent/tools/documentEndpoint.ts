@@ -13,12 +13,12 @@ function sanitizeName(name: string): string {
  * Factory for the `document_endpoint` tool.
  *
  * Documents a discovered endpoint during attack surface analysis —
- * writes a JSON file to the session's endpoints directory (scoped by
+ * writes a JSON file to the session's assets directory (scoped by
  * app name). This tool is specifically for individual endpoints and
  * is designed for incremental creation via the MessageManager in Console.
  */
 export function documentEndpoint(ctx: ToolContext) {
-  const baseEndpointsPath = join(ctx.session.rootPath, "endpoints");
+  const baseAssetsPath = join(ctx.session.rootPath, "assets");
 
   return tool({
     description: `Document a discovered endpoint during attack surface analysis.
@@ -35,7 +35,7 @@ Use this tool to document:
 
 You MUST specify \`appName\` to associate the endpoint with its parent application (previously documented via \`document_app\`).
 
-Each endpoint creates a JSON file in the endpoints directory for tracking and analysis.`,
+Each endpoint creates a JSON file in the assets directory for tracking and analysis.`,
     inputSchema: z.object({
       appName: z
         .string()
@@ -152,7 +152,7 @@ Each endpoint creates a JSON file in the endpoints directory for tracking and an
       }
 
       const targetDir = join(
-        baseEndpointsPath,
+        baseAssetsPath,
         sanitizeName(input.appName),
       );
 
@@ -162,7 +162,7 @@ Each endpoint creates a JSON file in the endpoints directory for tracking and an
 
       const sanitizedName = sanitizeName(input.endpointName);
       const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-      const filename = `endpoint_${sanitizedName}_${timestamp}.json`;
+      const filename = `asset_${sanitizedName}_${timestamp}.json`;
       const filepath = join(targetDir, filename);
 
       const riskScore = computeBlackboxRiskScore(

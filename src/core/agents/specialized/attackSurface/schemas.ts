@@ -247,15 +247,3 @@ export type PentestTarget = z.infer<typeof PentestTargetSchema>;
 export type AttackSurfaceSummary = z.infer<typeof AttackSurfaceSummarySchema>;
 export type AttackSurfaceReport = z.infer<typeof AttackSurfaceReportSchema>;
 
-// Backwards compatibility aliases (deprecated)
-/** @deprecated Use AssetType instead */
-export type EndpointType = AssetType;
-
-/**
- * @deprecated Use DocumentedAssetRecord instead.
- * Legacy type with required endpointName/endpointType for console apex-adapter compatibility.
- */
-export type DocumentedEndpointRecord = DocumentedAssetRecord & {
-  endpointName: string;
-  endpointType: "api-endpoint" | "web-endpoint" | "asset";
-};
