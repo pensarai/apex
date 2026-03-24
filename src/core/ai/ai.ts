@@ -366,13 +366,22 @@ export function streamResponse(
       },
       onStepFinish: onCacheMetrics
         ? (stepResult) => {
-            // Extract Anthropic cache metrics from providerMetadata
+            // Extract Anthropic cache metrics from providerMetadata (direct Anthropic / Bedrock SDK)
             const meta = stepResult.providerMetadata?.anthropic as
               | Record<string, unknown>
               | undefined;
-            const cacheRead = (meta?.cacheReadInputTokens as number) ?? 0;
-            const cacheCreation =
-              (meta?.cacheCreationInputTokens as number) ?? 0;
+            let cacheRead = (meta?.cacheReadInputTokens as number) ?? 0;
+            let cacheCreation = (meta?.cacheCreationInputTokens as number) ?? 0;
+
+            // Fallback: extract from V3 usage fields (pensar provider)
+            if (cacheRead === 0 && cacheCreation === 0) {
+              const usage = stepResult.usage as
+                | { inputTokens?: { cacheRead?: number; cacheWrite?: number } }
+                | undefined;
+              cacheRead = usage?.inputTokens?.cacheRead ?? 0;
+              cacheCreation = usage?.inputTokens?.cacheWrite ?? 0;
+            }
+
             if (cacheRead > 0 || cacheCreation > 0) {
               onCacheMetrics({
                 cacheReadInputTokens: cacheRead,

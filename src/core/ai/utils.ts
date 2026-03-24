@@ -21,11 +21,13 @@ import {
 
 /**
  * Check if a model uses an Anthropic-compatible provider that supports prompt caching.
- * Both direct Anthropic and AWS Bedrock (Claude) support cache_control.
+ * Direct Anthropic, AWS Bedrock (Claude), and Pensar gateway (routes to Bedrock) all support cache_control.
  */
 export function isAnthropicProvider(model: AIModel): boolean {
   const { provider } = getModelInfo(model);
-  return provider === "anthropic" || provider === "bedrock";
+  return (
+    provider === "anthropic" || provider === "bedrock" || provider === "pensar"
+  );
 }
 
 export type AIAuthConfig = {

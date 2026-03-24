@@ -294,6 +294,8 @@ export function createPensarModel(
         async start(controller) {
           let inputTokens = 0;
           let outputTokens = 0;
+          let cacheReadTokens = 0;
+          let cacheCreationTokens = 0;
           let finishReasonUnified: LanguageModelV3FinishReason["unified"] =
             "other";
           let finishReasonRaw: string | undefined;
@@ -374,6 +376,12 @@ export function createPensarModel(
                     | undefined;
                   if (usage?.input_tokens) {
                     inputTokens = usage.input_tokens;
+                  }
+                  if (usage?.cache_read_input_tokens) {
+                    cacheReadTokens = usage.cache_read_input_tokens;
+                  }
+                  if (usage?.cache_creation_input_tokens) {
+                    cacheCreationTokens = usage.cache_creation_input_tokens;
                   }
                   break;
                 }
@@ -480,7 +488,7 @@ export function createPensarModel(
             }
 
             logInfo(
-              `  stream complete: ${finishReasonUnified}, ${inputTokens}in/${outputTokens}out (${Date.now() - startTime}ms)`,
+              `  stream complete: ${finishReasonUnified}, ${inputTokens}in/${outputTokens}out, cacheRead=${cacheReadTokens}, cacheWrite=${cacheCreationTokens} (${Date.now() - startTime}ms)`,
             );
 
             controller.enqueue({
@@ -493,8 +501,8 @@ export function createPensarModel(
                 inputTokens: {
                   total: inputTokens,
                   noCache: undefined,
-                  cacheRead: undefined,
-                  cacheWrite: undefined,
+                  cacheRead: cacheReadTokens || undefined,
+                  cacheWrite: cacheCreationTokens || undefined,
                 },
                 outputTokens: {
                   total: outputTokens,
