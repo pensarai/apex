@@ -34,7 +34,11 @@ const TOOL_SUMMARY_MAP: Record<string, ToolSummaryFn> = {
   Write: (args) => `write ${args.path || args.file_path || ""}`,
   create_file: (args) => `create ${args.path || ""}`,
   update_file: (args) => `update ${args.path || ""}`,
-  create_poc: (args) => `poc ${args.pocName || ""}`,
+  document_vulnerability: (args) => {
+    const title = args.title || args.name || "";
+    const pocName = args.pocName || "";
+    return pocName ? `finding: ${title} (poc: ${pocName})` : `finding: ${title}`;
+  },
   Edit: (args) => `edit ${args.file_path || args.path || ""}`,
   Grep: (args) => `grep ${args.pattern || ""}`,
   grep: (args) => `grep ${args.pattern || ""}`,

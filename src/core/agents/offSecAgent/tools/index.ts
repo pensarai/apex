@@ -22,7 +22,7 @@ export {
 export { executeCommand } from "./executeCommand";
 export { httpRequest } from "./httpRequest";
 export { documentVulnerability } from "./documentFinding";
-export { createPoc } from "./createPoc";
+
 
 // Filesystem / search tools
 export { readFile } from "./readFile";
@@ -80,7 +80,7 @@ import { createBrowserToolset } from "./browserTools";
 import { executeCommand } from "./executeCommand";
 import { httpRequest } from "./httpRequest";
 import { documentVulnerability } from "./documentFinding";
-import { createPoc } from "./createPoc";
+
 import { readFile } from "./readFile";
 import { listFiles } from "./listFiles";
 import { grep } from "./grep";
@@ -130,7 +130,7 @@ export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
     execute_command: executeCommand(ctx),
     http_request: httpRequest(ctx),
     document_vulnerability: documentVulnerability(ctx),
-    create_poc: createPoc(ctx),
+
 
     // Filesystem / search tools
     read_file: readFile(ctx),
@@ -202,7 +202,6 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "execute_command",
   "http_request",
   "document_vulnerability",
-  "create_poc",
   // Filesystem / search
   "read_file",
   "list_files",
@@ -238,7 +237,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
 /**
  * Tool names available in plan mode (read-only / non-mutating).
  *
- * Excludes: create_file, update_file, create_poc, document_vulnerability,
+ * Excludes: create_file, update_file, document_vulnerability,
  * document_asset. These are the mutation tools that should not be available
  * when the operator is in plan (read-only) mode.
  */

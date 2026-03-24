@@ -140,15 +140,7 @@ export const ALL_TOOLS: ToolDefinition[] = [
     category: "exploitation",
     defaultEnabled: true,
   },
-  {
-    id: "create_poc",
-    name: "Create POC",
-    description: "Build & run exploits",
-    detail:
-      "Create and execute proof-of-concept scripts in Bash, Python, or JavaScript. Automatically validates exploitation success and captures evidence.",
-    category: "exploitation",
-    defaultEnabled: true,
-  },
+
 
   // Browser tools (Playwright MCP)
   {

@@ -6,7 +6,7 @@ import type { PermissionTier } from "./types";
 const TOOL_BASE_TIERS: Record<string, PermissionTier> = {
   // Tier 1 - Passive (read-only, no network to target)
   scratchpad: 1,
-  document_finding: 1,
+  document_finding: 4,
   analyze_scan: 1,
   generate_report: 1,
   store_plan: 1,
@@ -34,8 +34,7 @@ const TOOL_BASE_TIERS: Record<string, PermissionTier> = {
   // Tier 4 - Intrusive (heavy testing, shell commands)
   execute_command: 4,
 
-  // Tier 5 - Exploit (handled dynamically)
-  create_poc: 4, // POC creation is tier 4, execution could be 5
+  // Tier 5 - Exploit (handled dynamically via content analysis)
 
   // Browser tools (Playwright MCP) - Operator mode only
   browser_navigate: 2, // T2 - Low-risk Active (navigation only)
@@ -139,9 +138,10 @@ export function classifyToolCall(
       tier = classifyFuzzingTool(args, tier);
       break;
 
-    case "create_poc": {
-      // If POC contains dangerous patterns, escalate
-      const pocContent = String(args.script || args.content || "");
+    case "document_finding":
+    case "document_vulnerability": {
+      // Merged tool now executes POC scripts — escalate if dangerous patterns
+      const pocContent = String(args.pocContent || "");
       if (containsExploitPatterns(pocContent)) {
         tier = 5;
       }

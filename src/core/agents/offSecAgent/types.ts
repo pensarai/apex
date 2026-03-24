@@ -79,7 +79,7 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    *
    * When set to `"plan"`, the agent's `activeTools` are intersected with
    * {@link PLAN_MODE_TOOL_NAMES} so that mutation tools (create_file,
-   * update_file, create_poc, document_vulnerability, document_asset)
+   * update_file, document_vulnerability, document_asset)
    * are excluded.
    *
    * @default "default"
@@ -134,7 +134,7 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
   authConfig?: AIAuthConfig;
 
   /**
-   * When set, tools like execute_command / http_request / create_poc
+   * When set, tools like execute_command / http_request / document_vulnerability
    * route execution through this sandbox instead of running locally.
    */
   sandbox?: UnifiedSandbox;
