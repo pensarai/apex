@@ -670,10 +670,18 @@ For each page, call \`document_asset\` with:
   - \`authRequired\`: Whether the page requires authentication
   - \`technology\`: Technology stack if notable
 - **riskLevel**: CRITICAL for admin/auth pages, HIGH for user data, MEDIUM for general, LOW for static/public
-- **pentestObjectives**: Specific testing goals, e.g.:
-  - "Test for XSS in user-editable fields on the profile page"
-  - "Test for authorization bypass — access admin dashboard as regular user"
-  - "Test for CSRF on the settings update form"
+- **pentestObjectives**: Specific testing goals informed by the **OWASP Top 10 (2021)** and, when AI/LLM features are present, the **OWASP Top 10 for AI/LLM Applications**. Map each objective to the relevant OWASP category. Examples:
+  - "Test for XSS in user-editable fields on the profile page (OWASP A03:2021)"
+  - "Test for authorization bypass — access admin dashboard as regular user (OWASP A01:2021)"
+  - "Test for CSRF on the settings update form (OWASP A01:2021)"
+  - "Test for sensitive data exposure in page source or client-side state (OWASP A02:2021)"
+  - "Test for missing security headers — CSP, X-Frame-Options, etc. (OWASP A05:2021)"
+
+  If the page includes AI/LLM features (e.g. chatbot, AI-powered search, content generation):
+  - "Test for prompt injection in the AI chat interface (OWASP LLM01)"
+  - "Test for sensitive information disclosure in AI-generated responses (OWASP LLM06)"
+
+  Cover all applicable OWASP Top 10 categories for each page based on its functionality and any static analysis findings from the source code (e.g. insecure patterns, missing input validation, hardcoded secrets).
 
 Be thorough — examine every route file, every page directory, every template.
 When finished, call \`response\` with a summary of how many pages you documented.`;
@@ -717,11 +725,20 @@ For each **unique route path**, call \`document_asset\` with:
   - \`authRequired\`: Whether the endpoint requires authentication (true if ANY method requires it)
   - \`technology\`: Technology stack if notable
 - **riskLevel**: CRITICAL for auth/payment/admin, HIGH for user data mutations, MEDIUM for general, LOW for read-only public
-- **pentestObjectives**: Specific testing goals covering ALL methods, e.g.:
-  - "Test for SQL injection in the 'search' query parameter (GET)"
-  - "Test for IDOR by accessing /api/orders/{id} with other users' order IDs (GET)"
-  - "Test for mass assignment by sending extra fields in the POST body"
-  - "Test for privilege escalation by calling admin-only endpoint as regular user"
+- **pentestObjectives**: Specific testing goals covering ALL methods, informed by the **OWASP Top 10 (2021)** and, when AI/LLM features are present, the **OWASP Top 10 for AI/LLM Applications**. Map each objective to the relevant OWASP category. Examples:
+  - "Test for SQL injection in the 'search' query parameter (OWASP A03:2021)"
+  - "Test for IDOR by accessing /api/orders/{id} with other users' order IDs (OWASP A01:2021)"
+  - "Test for mass assignment by sending extra fields in the POST body (OWASP A04:2021)"
+  - "Test for privilege escalation by calling admin-only endpoint as regular user (OWASP A01:2021)"
+  - "Test for SSRF via URL parameters that fetch external resources (OWASP A10:2021)"
+  - "Test for missing rate limiting on authentication endpoints (OWASP A07:2021)"
+
+  If the endpoint involves AI/LLM features (e.g. inference API, chat completion, AI-powered processing):
+  - "Test for prompt injection via user-supplied input to the LLM (OWASP LLM01)"
+  - "Test for insecure output handling — verify LLM responses are sanitized before use (OWASP LLM02)"
+  - "Test for excessive agency — verify AI cannot perform unintended actions (OWASP LLM08)"
+
+  Derive additional objectives from **static analysis of the source code**: look for insecure patterns (e.g. unsanitized inputs, missing authentication middleware, hardcoded secrets, insecure deserialization) and create targeted objectives for each finding.
 
 **CRITICAL: ONE asset per route path.** If \`/api/products\` has GET (list) and POST (create), document it as ONE asset with \`details.method: ["GET", "POST"]\`. Do NOT create two separate assets.
 

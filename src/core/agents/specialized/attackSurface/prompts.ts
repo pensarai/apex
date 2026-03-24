@@ -286,9 +286,44 @@ Map asset types to specific vulnerability classes:
 | Login / auth endpoints | SQLi bypass, credential stuffing, session fixation, 2FA bypass |
 | Encrypted session tokens | Cipher mode attacks, padding oracle, session forgery |
 
-Write objectives that are **specific**, not vague:
-- Good: \`pentestObjectives: ["Test for IDOR in /api/orders/{id} — verify whether user A can access user B's orders by manipulating the order ID"]\`
+### OWASP Framework Alignment
+
+Pentest objectives MUST be informed by the following OWASP frameworks. When documenting assets, map objectives to the relevant OWASP categories:
+
+**OWASP Top 10 (2021):**
+| ID | Category | What to test |
+|---|---|---|
+| A01:2021 | Broken Access Control | IDOR, privilege escalation, forced browsing, CORS misconfiguration, missing access controls |
+| A02:2021 | Cryptographic Failures | Sensitive data exposure, weak encryption, missing TLS, insecure tokens |
+| A03:2021 | Injection | SQL, NoSQL, OS command, LDAP, XSS, SSTI, header injection |
+| A04:2021 | Insecure Design | Business logic flaws, missing rate limiting, insufficient anti-automation |
+| A05:2021 | Security Misconfiguration | Default credentials, verbose errors, unnecessary features, missing security headers |
+| A06:2021 | Vulnerable and Outdated Components | Known CVEs in dependencies, unpatched frameworks |
+| A07:2021 | Identification and Authentication Failures | Brute force, weak passwords, session fixation, missing MFA |
+| A08:2021 | Software and Data Integrity Failures | Insecure deserialization, unsigned updates, CI/CD pipeline integrity |
+| A09:2021 | Security Logging and Monitoring Failures | Missing audit logs, unmonitored critical actions |
+| A10:2021 | Server-Side Request Forgery | SSRF via URL parameters, cloud metadata access, internal service enumeration |
+
+**OWASP Top 10 for AI/LLM Applications (apply ONLY when AI/LLM features are present):**
+| ID | Category | What to test |
+|---|---|---|
+| LLM01 | Prompt Injection | Direct and indirect prompt injection in AI/LLM features |
+| LLM02 | Insecure Output Handling | Unvalidated LLM outputs used in downstream operations |
+| LLM03 | Training Data Poisoning | Manipulation of training or fine-tuning data |
+| LLM04 | Model Denial of Service | Resource-exhausting inputs to AI features |
+| LLM05 | Supply Chain Vulnerabilities | Compromised model dependencies, plugins, or data sources |
+| LLM06 | Sensitive Information Disclosure | PII or secrets leaked through AI responses |
+| LLM07 | Insecure Plugin Design | Insufficient input validation in AI tool/plugin integrations |
+| LLM08 | Excessive Agency | AI performing actions beyond intended scope without human approval |
+| LLM09 | Overreliance | Trusting AI outputs without verification in security-critical paths |
+| LLM10 | Model Theft | Unauthorized access to proprietary AI models |
+
+Write objectives that are **specific**, not vague, and reference the OWASP category:
+- Good: \`pentestObjectives: ["Test for IDOR in /api/orders/{id} — verify whether user A can access user B's orders by manipulating the order ID (OWASP A01:2021)"]\`
+- Good: \`pentestObjectives: ["Test for prompt injection in /api/chat — attempt to override system instructions via crafted user input (OWASP LLM01)"]\`
 - Bad: \`pentestObjectives: ["Test for vulnerabilities"]\`
+
+Ensure every asset has objectives covering ALL applicable OWASP Top 10 categories for its asset type. If AI/LLM features are discovered (chatbots, AI-powered search, content generation, etc.), also include objectives from the OWASP AI Top 10.
 
 ## 5c. Include authentication info with every target
 
