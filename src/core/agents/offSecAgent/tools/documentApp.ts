@@ -102,11 +102,7 @@ Each application creates a JSON file in the apps directory for tracking and anal
         target: ctx.session.targets[0],
       };
 
-      try {
-        writeFileSync(filepath, JSON.stringify(appRecord, null, 2));
-      } catch (writeError: unknown) {
-        throw writeError;
-      }
+      writeFileSync(filepath, JSON.stringify(appRecord, null, 2));
 
       return {
         success: true,
