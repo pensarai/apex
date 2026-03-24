@@ -79,8 +79,8 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    *
    * When set to `"plan"`, the agent's `activeTools` are intersected with
    * {@link PLAN_MODE_TOOL_NAMES} so that mutation tools (create_file,
-   * update_file, create_poc, document_vulnerability, document_asset,
-   * document_app, document_endpoint) are excluded.
+   * update_file, create_poc, document_vulnerability, document_app,
+   * document_endpoint) are excluded.
    *
    * @default "default"
    */
@@ -147,7 +147,7 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
 
   /**
    * Shared attack surface registry for cross-agent asset dedup.
-   * When present, `document_asset` checks for duplicates before writing.
+   * When present, `document_endpoint` checks for duplicates before writing.
    */
   attackSurfaceRegistry?: AttackSurfaceRegistry;
 

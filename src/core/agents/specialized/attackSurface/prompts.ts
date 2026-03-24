@@ -28,7 +28,7 @@ Your job is to map the attack surface of the **target application**, not the ent
 - Third-party SaaS dependencies (e.g., Stripe, Sentry, Datadog, Analytics)
 - OAuth/OIDC provider endpoints (e.g., authkit.app, accounts.google.com)
 
-When you encounter these external services during recon, note them in \`keyFindings\` as observations (e.g., "[LOW] Application uses WorkOS for authentication via OAuth/OIDC") but do NOT call \`document_app\`, \`document_endpoint\`, or \`document_asset\` for them.
+When you encounter these external services during recon, note them in \`keyFindings\` as observations (e.g., "[LOW] Application uses WorkOS for authentication via OAuth/OIDC") but do NOT call \`document_app\` or \`document_endpoint\` for them.
 
 **Two-step documentation:** Use \`document_app\` first to register each discovered application (web app, API, admin panel), then use \`document_endpoint\` for each individual endpoint within that application. This enables incremental creation of apps and endpoints.
 
@@ -130,7 +130,7 @@ dig NS DOMAIN +short | while read ns; do dig axfr @"$ns" DOMAIN; done
 **For every discovered subdomain:**
 - Resolve it to an IP with \`dig +short SUBDOMAIN A\`
 - Check if it serves HTTP(S) with \`curl -L -I --max-time 5 https://SUBDOMAIN\` and \`curl -L -I --max-time 5 http://SUBDOMAIN\`
-- Document it using \`document_asset\`
+- Document it using \`document_app\` (for the subdomain as an application)
 
 # PHASE 3 — ENDPOINT EXTRACTION FROM JAVASCRIPT
 
@@ -270,8 +270,6 @@ For each endpoint, include:
 - Risk level (LOW / MEDIUM / HIGH / CRITICAL)
 - \`pentestObjectives\` — specific pentest objectives (see 5b below)
 
-You may also use \`document_asset\` as a fallback for general infrastructure assets that don't fit the app/endpoint model.
-
 ## 5b. Include pentest objectives with every endpoint
 
 **Every \`document_endpoint\` call MUST include a \`pentestObjectives\` array.** These objectives are passed directly to pentest agents downstream — they define exactly what each agent will test. An endpoint without objectives will not be pentested.
@@ -343,9 +341,6 @@ Record a discovered target-owned application (web app, API, admin panel, subdoma
 
 ## document_endpoint
 Record a discovered endpoint within an application. Must specify \`appName\` to link to the parent app. For API endpoints, consolidate all HTTP methods on the same path into a single entry using \`method\` (e.g., \`["GET", "POST"]\`).
-
-## document_asset
-Record a discovered target-owned asset to the session's assets directory. Use as a fallback for general infrastructure/cloud/development assets that don't fit the app/endpoint model.
 
 ## create_attack_surface_report
 Submit the final structured report. Call this ONCE at the very end with complete results. This ends the run.
