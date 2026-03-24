@@ -17,136 +17,9 @@ export type {
  */
 
 /**
- * Schema for asset details object
- */
-export const AssetDetailsSchema = z.object({
-  url: z.string().optional().describe("URL if applicable"),
-  method: z
-    .union([z.string(), z.array(z.string())])
-    .optional()
-    .describe(
-      "HTTP method(s) supported by this endpoint (e.g., 'GET', 'POST', or ['GET', 'POST', 'DELETE']). " +
-        "Use this for endpoint-type assets to list ALL methods the endpoint accepts. " +
-        "Multiple methods on the same path should be documented as a single asset with all methods listed here. " +
-        "Use 'PAGE' for web pages/views.",
-    ),
-  ip: z.string().optional().describe("IP address if known"),
-  ports: z.array(z.number()).optional().describe("Open ports"),
-  services: z
-    .array(z.string())
-    .optional()
-    .describe("Running services (e.g., 'nginx 1.18', 'SSH 8.2')"),
-  technology: z
-    .array(z.string())
-    .optional()
-    .describe("Technology stack (e.g., 'Node.js', 'Express', 'MongoDB')"),
-  endpoints: z
-    .array(z.string())
-    .optional()
-    .describe("Discovered endpoints for web apps/APIs"),
-  authentication: z
-    .string()
-    .optional()
-    .describe("Authentication type if known"),
-  status: z
-    .union([z.string(), z.number()])
-    .optional()
-    .describe("Status (active, inactive, redirect, error) or HTTP status code"),
-  file: z
-    .string()
-    .optional()
-    .describe("Source file where this asset is defined (whitebox analysis)"),
-  line: z
-    .number()
-    .optional()
-    .describe("Line number in the source file (whitebox analysis)"),
-  handler: z
-    .string()
-    .optional()
-    .describe("Handler function or component name (whitebox analysis)"),
-  authRequired: z
-    .boolean()
-    .optional()
-    .describe("Whether authentication appears to be required"),
-});
-
-/**
- * Asset types enum
- */
-export const AssetTypeEnum = z.enum([
-  "domain",
-  "subdomain",
-  "web_application",
-  "api",
-  "admin_panel",
-  "infrastructure_service",
-  "cloud_resource",
-  "development_asset",
-  "endpoint",
-]);
-
-/**
  * Risk level enum
  */
 export const RiskLevelEnum = z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]);
-
-/**
- * Schema for document_asset tool input
- */
-export const DocumentAssetSchema = z.object({
-  appName: z
-    .string()
-    .optional()
-    .describe(
-      "Application name for organizing assets into app-specific folders. " +
-        "When provided, the asset is stored under assets/<appName>/ instead of the flat assets/ directory. " +
-        "Used by whitebox analysis to group endpoints by the application they belong to.",
-    ),
-  assetName: z
-    .string()
-    .describe(
-      "Unique name for the asset (e.g., 'example.com', 'api.example.com', 'admin-panel')",
-    ),
-  assetType: AssetTypeEnum.describe("Type of asset discovered"),
-  description: z
-    .string()
-    .describe(
-      "Detailed description of the asset including what it is and why it's relevant",
-    ),
-  details: z
-    .preprocess((val) => {
-      if (typeof val === "string") {
-        try {
-          return JSON.parse(val);
-        } catch {
-          return {};
-        }
-      }
-      return val;
-    }, AssetDetailsSchema)
-    .describe("Additional details about the asset"),
-  riskLevel: z
-    .preprocess((val) => {
-      if (typeof val === "string") {
-        const upper = val.toUpperCase();
-        if (upper.includes("CRITICAL")) return "CRITICAL";
-        if (upper.includes("HIGH")) return "HIGH";
-        if (upper.includes("MEDIUM")) return "MEDIUM";
-        if (upper.includes("LOW")) return "LOW";
-      }
-      return val;
-    }, RiskLevelEnum)
-    .describe("Risk level: LOW-CRITICAL (exposed/sensitive)"),
-  notes: z
-    .string()
-    .optional()
-    .describe("Additional notes or observations about the asset"),
-  pentestObjectives: z
-    .array(z.string())
-    .describe(
-      "Specific pentest objectives for this asset (e.g., 'Test for IDOR in /api/orders/{id}')",
-    ),
-});
 
 /**
  * Schema for pentest target in attack surface report
@@ -196,29 +69,6 @@ export const AttackSurfaceReportSchema = z.object({
         "Key findings from reconnaissance. Format: '[SEVERITY] Finding description'",
       ),
   ),
-});
-
-/**
- * Schema for documented asset record (includes metadata added during documentation)
- */
-export const DocumentedAssetRecordSchema = DocumentAssetSchema.extend({
-  discoveredAt: z.string().describe("ISO timestamp when asset was discovered"),
-  sessionId: z.string().describe("Session ID where asset was discovered"),
-  target: z.string().describe("Target being analyzed when asset was found"),
-  riskScore: RiskScoreSchema.optional().describe(
-    "Computed risk score with breakdown (heuristic for blackbox, AI-scored for whitebox)",
-  ),
-
-  /** @deprecated Flattened from details.url for console backwards compatibility */
-  url: z.string().optional(),
-  /** @deprecated Flattened from details.authRequired for console backwards compatibility */
-  authRequired: z.boolean().optional(),
-  /** @deprecated Flattened from details.authentication for console backwards compatibility */
-  authentication: z.string().optional(),
-  /** @deprecated Use assetName instead */
-  endpointName: z.string().optional(),
-  /** @deprecated Use assetType instead */
-  endpointType: z.enum(["api-endpoint", "web-endpoint", "asset"]).optional(),
 });
 
 // ---------------------------------------------------------------------------
@@ -384,13 +234,9 @@ export const DocumentedEndpointRecordSchema = DocumentEndpointSchema.extend({
 });
 
 // Type exports
-export type AssetDetails = z.infer<typeof AssetDetailsSchema>;
-export type AssetType = z.infer<typeof AssetTypeEnum>;
 export type AppType = z.infer<typeof AppTypeEnum>;
 export type EndpointType = z.infer<typeof EndpointTypeEnum>;
 export type RiskLevel = z.infer<typeof RiskLevelEnum>;
-export type DocumentAssetInput = z.infer<typeof DocumentAssetSchema>;
-export type DocumentedAssetRecord = z.infer<typeof DocumentedAssetRecordSchema>;
 export type DocumentAppInput = z.infer<typeof DocumentAppSchema>;
 export type DocumentedAppRecord = z.infer<typeof DocumentedAppRecordSchema>;
 export type DocumentEndpointInput = z.infer<typeof DocumentEndpointSchema>;

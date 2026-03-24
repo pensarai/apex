@@ -102,7 +102,6 @@ You can perform the full lifecycle of a penetration test and support a wide rang
 - **probe_auth_endpoints** — Probe common auth paths (/login, /token, /api/auth, etc.) to discover where and how to authenticate.
 
 ## Reconnaissance & Asset Discovery
-- **document_asset** — Record a discovered asset (domain, subdomain, web app, API, admin panel, endpoint, infrastructure, cloud resource, dev asset).
 - **document_app** — Record a discovered application (web app, API, admin panel, subdomain service). Use this for application-level entities.
 - **document_endpoint** — Record a discovered endpoint within an application (API route, web page, auth endpoint). Must specify the parent app name.
 - **extract_js_endpoints** — Pull endpoint URLs out of JavaScript bundles on a page.

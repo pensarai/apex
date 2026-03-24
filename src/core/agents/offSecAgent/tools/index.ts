@@ -31,7 +31,6 @@ export { createFile } from "./createFile";
 export { updateFile } from "./updateFile";
 
 // Attack surface / recon tools
-export { documentAsset } from "./documentAsset";
 export { documentApp } from "./documentApp";
 export { documentEndpoint } from "./documentEndpoint";
 export { authenticateSession } from "./authenticateSession";
@@ -87,7 +86,6 @@ import { listFiles } from "./listFiles";
 import { grep } from "./grep";
 import { createFile } from "./createFile";
 import { updateFile } from "./updateFile";
-import { documentAsset } from "./documentAsset";
 import { documentApp } from "./documentApp";
 import { documentEndpoint } from "./documentEndpoint";
 import { authenticateSession } from "./authenticateSession";
@@ -142,7 +140,6 @@ export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
     update_file: updateFile(ctx),
 
     // Attack surface / recon tools
-    document_asset: documentAsset(ctx),
     document_app: documentApp(ctx),
     document_endpoint: documentEndpoint(ctx),
     authenticate_session: authenticateSession(ctx),
@@ -212,7 +209,6 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "grep",
   "create_file",
   "update_file",
-  "document_asset",
   "document_app",
   "document_endpoint",
   "authenticate_session",
@@ -244,7 +240,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
  * Tool names available in plan mode (read-only / non-mutating).
  *
  * Excludes: create_file, update_file, document_vulnerability,
- * document_asset. These are the mutation tools that should not be available
+ * document_app, document_endpoint. These are the mutation tools that should not be available
  * when the operator is in plan (read-only) mode.
  */
 export const PLAN_MODE_TOOL_NAMES: ToolName[] = [

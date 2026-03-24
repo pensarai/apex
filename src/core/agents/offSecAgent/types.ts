@@ -150,7 +150,7 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
 
   /**
    * Shared attack surface registry for cross-agent asset dedup.
-   * When present, `document_asset` checks for duplicates before writing.
+   * When present, `document_endpoint` checks for duplicates before writing.
    */
   attackSurfaceRegistry?: AttackSurfaceRegistry;
 
