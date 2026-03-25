@@ -304,6 +304,7 @@ export class OffensiveSecurityAgent<TResult = void> {
         // subsequent onStepFinish writes only persist post-summary messages.
         initialMessagesRef.current = [];
         traceWriter.markSummarized();
+        input.onSummarized?.();
       },
       onFinish: async (event) => {
         // Flush any pending persistence before finishing

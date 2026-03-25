@@ -124,6 +124,9 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
   /** Callback fired after each agent step completes */
   onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
 
+  /** Callback fired when context is summarized (context window reset) */
+  onSummarized?: () => void;
+
   /** Callback fired when the entire stream finishes */
   onFinish?: StreamTextOnFinishCallback<ToolSet>;
 
