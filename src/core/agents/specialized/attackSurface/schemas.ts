@@ -218,7 +218,7 @@ export const DocumentedAssetRecordSchema = DocumentAssetSchema.extend({
   /** @deprecated Use assetName instead */
   endpointName: z.string().optional(),
   /** @deprecated Use assetType instead */
-  endpointType: z.string().optional(),
+  endpointType: z.enum(["api-endpoint", "web-endpoint", "asset"]).optional(),
 });
 
 // Type exports
@@ -234,5 +234,12 @@ export type AttackSurfaceReport = z.infer<typeof AttackSurfaceReportSchema>;
 // Backwards compatibility aliases (deprecated)
 /** @deprecated Use AssetType instead */
 export type EndpointType = AssetType;
-/** @deprecated Use DocumentedAssetRecord instead */
-export type DocumentedEndpointRecord = DocumentedAssetRecord;
+
+/**
+ * @deprecated Use DocumentedAssetRecord instead.
+ * Legacy type with required endpointName/endpointType for console apex-adapter compatibility.
+ */
+export type DocumentedEndpointRecord = DocumentedAssetRecord & {
+  endpointName: string;
+  endpointType: "api-endpoint" | "web-endpoint" | "asset";
+};
