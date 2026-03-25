@@ -141,7 +141,6 @@ export const ALL_TOOLS: ToolDefinition[] = [
     defaultEnabled: true,
   },
 
-
   // Browser tools (Playwright MCP)
   {
     id: "browser_navigate",
@@ -200,8 +199,8 @@ export const ALL_TOOLS: ToolDefinition[] = [
 
   // Reporting tools
   {
-    id: "document_finding",
-    name: "Document Finding",
+    id: "document_vulnerability",
+    name: "Document Vulnerability",
     description: "Record vuln finding",
     detail:
       "Document a confirmed vulnerability with title, description, severity, POC path, and evidence. Calculates CVSS score automatically.",
@@ -412,7 +411,7 @@ export const TOOLSETS: ToolsetDefinition[] = [
       "browser_screenshot",
       "browser_console",
       // Reporting
-      "document_finding",
+      "document_vulnerability",
       "generate_report",
       "record_test_result",
       "update_attack_surface",
@@ -433,7 +432,7 @@ export const TOOLSETS: ToolsetDefinition[] = [
       "http_request",
       "execute_command",
       "scratchpad",
-      "document_finding",
+      "document_vulnerability",
     ],
   },
 ];

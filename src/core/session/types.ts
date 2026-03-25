@@ -87,7 +87,7 @@ export interface VulnerabilityTestResult {
 }
 
 /**
- * Zod schema for document_finding tool input
+ * Zod schema for document_vulnerability tool input
  */
 export const DocumentFindingSchema = z.object({
   title: z.string().describe("Clear, concise finding title"),
@@ -122,9 +122,8 @@ export const DocumentFindingSchema = z.object({
 
 export type DocumentFindingInput = z.infer<typeof DocumentFindingSchema>;
 
-
 /**
- * Result from document_finding tool
+ * Result from document_vulnerability tool
  */
 export interface DocumentFindingResult {
   success: boolean;

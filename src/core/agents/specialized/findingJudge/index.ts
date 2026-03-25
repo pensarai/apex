@@ -69,7 +69,9 @@ const FindingJudgeOutputSchema = z.object({
     ),
   confidence: z
     .number()
-    .describe("Confidence in the judgment, a decimal between 0.0 (no confidence) and 1.0 (certain)"),
+    .describe(
+      "Confidence in the judgment, a decimal between 0.0 (no confidence) and 1.0 (certain)",
+    ),
   reasoning: z
     .string()
     .describe(
@@ -202,9 +204,10 @@ export async function judgeFinding(
     const statusStr = statusCode != null ? ` [status=${statusCode}]` : "";
 
     const hasAuth = authConfig != null;
-    const authKeys = hasAuth && typeof authConfig === "object"
-      ? Object.keys(authConfig as Record<string, unknown>).join(",")
-      : "none";
+    const authKeys =
+      hasAuth && typeof authConfig === "object"
+        ? Object.keys(authConfig as Record<string, unknown>).join(",")
+        : "none";
 
     console.error(
       `[FindingJudge] Validation failed: model=${modelStr} type=${type}${statusStr} authConfigKeys=${authKeys} message=${message}`,
@@ -282,5 +285,3 @@ Consider:
 4. Does the demonstrated impact align with the claimed vulnerability class and severity?
 `;
 }
-
-

@@ -244,7 +244,6 @@ export function getResultSummary(
         break;
       }
 
-
       case "list_files": {
         if (typeof result === "object" && result !== null) {
           const obj = result as Record<string, unknown>;

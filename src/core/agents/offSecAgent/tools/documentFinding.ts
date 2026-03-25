@@ -29,10 +29,7 @@ export const documentVulnerabilityInputSchema = z.object({
   evidence: z.string().describe("Evidence/proof of the vulnerability"),
   endpoint: z.string().describe("The affected endpoint or URL"),
   remediation: z.string().describe("Steps to fix the issue"),
-  references: z
-    .string()
-    .optional()
-    .describe("CVE, CWE, or related references"),
+  references: z.string().optional().describe("CVE, CWE, or related references"),
   vulnerabilityClass: z
     .string()
     .optional()
@@ -45,9 +42,7 @@ export const documentVulnerabilityInputSchema = z.object({
       "A concise, human-readable description of what this tool call is doing (e.g., 'Documenting SQL injection finding')",
     ),
   pocName: z.string().describe("Short descriptive name for the POC"),
-  pocType: z
-    .enum(["bash", "python", "javascript"])
-    .describe("Script language"),
+  pocType: z.enum(["bash", "python", "javascript"]).describe("Script language"),
   pocContent: z.string().describe("The full POC script content"),
   pocDescription: z.string().describe("What this POC demonstrates"),
 });
@@ -323,6 +318,7 @@ CRITICAL RULES — READ BEFORE CALLING:
         if (ctx.findingsRegistry) {
           const check = await ctx.findingsRegistry.register(finding);
           if (check.duplicate) {
+            cleanupPocFiles(ctx, filename);
             const matchTitle = check.matchedFinding?.title ?? "unknown";
             return {
               success: false,

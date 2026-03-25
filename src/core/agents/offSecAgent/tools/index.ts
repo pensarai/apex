@@ -23,7 +23,6 @@ export { executeCommand } from "./executeCommand";
 export { httpRequest } from "./httpRequest";
 export { documentVulnerability } from "./documentFinding";
 
-
 // Filesystem / search tools
 export { readFile } from "./readFile";
 export { listFiles } from "./listFiles";
@@ -130,7 +129,6 @@ export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
     execute_command: executeCommand(ctx),
     http_request: httpRequest(ctx),
     document_vulnerability: documentVulnerability(ctx),
-
 
     // Filesystem / search tools
     read_file: readFile(ctx),
