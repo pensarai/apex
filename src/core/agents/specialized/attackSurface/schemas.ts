@@ -262,5 +262,16 @@ export type AttackSurfaceReport = z.infer<typeof AttackSurfaceReportSchema>;
 // Backwards compatibility aliases (deprecated)
 /** @deprecated Use AssetType instead */
 export type EndpointType = AssetType;
-/** @deprecated Use DocumentedAssetRecord instead */
-export type DocumentedEndpointRecord = DocumentedAssetRecord;
+
+/**
+ * @deprecated Use DocumentedAssetRecord instead
+ * Legacy type for backwards compatibility with console apex-adapter.
+ * Flattens nested properties to top level to match old schema structure.
+ */
+export type DocumentedEndpointRecord = DocumentedAssetRecord & {
+  url?: string;
+  endpointName?: string;
+  endpointType?: string;
+  authRequired?: boolean;
+  authentication?: string;
+};
