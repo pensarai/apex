@@ -33,6 +33,9 @@ When you run `/help`, you'll see a dialog showing:
   <Card title="/operator" icon="terminal">
     Start an interactive operator session with step-by-step control. Alias: `/o`
   </Card>
+  <Card title="/threat-model" icon="shield-halved">
+    Generate an application-centric threat model from source code. Alias: `/tm`
+  </Card>
   <Card title="/sessions" icon="clock-rotate-left">
     Browse and resume previous sessions. Alias: `/s`
   </Card>
@@ -77,20 +80,21 @@ When you run `/help`, you'll see a dialog showing:
 
 ## Command Details
 
-| Command         | Aliases            | Description                                     |
-| --------------- | ------------------ | ----------------------------------------------- |
-| `/pentest`      | `/p`, `/web`, `/w` | Start autonomous pentest swarm                  |
-| `/operator`     | `/o`               | Start interactive operator session              |
-| `/sessions`     | `/s`               | Browse previous sessions                        |
-| `/help`         |                    | Show help dialog                                |
-| `/config`       |                    | Show config dialog                              |
-| `/models`       |                    | Show available AI models                        |
-| `/providers`    |                    | Manage AI providers and API keys                |
-| `/auth`         |                    | Connect to Pensar Console for managed inference |
-| `/credits`      | `/buy`             | Buy credits / check balance                     |
-| `/themes`       | `/theme`           | Manage application themes                       |
-| `/create-skill` |                    | Create a new operator skill                     |
-| `/exit`         | `/quit`, `/q`      | Exit the application                            |
+| Command          | Aliases            | Description                                     |
+| ---------------- | ------------------ | ----------------------------------------------- |
+| `/pentest`       | `/p`, `/web`, `/w` | Start autonomous pentest swarm                  |
+| `/operator`      | `/o`               | Start interactive operator session              |
+| `/threat-model`  | `/tm`              | Generate application-centric threat model       |
+| `/sessions`      | `/s`               | Browse previous sessions                        |
+| `/help`          |                    | Show help dialog                                |
+| `/config`        |                    | Show config dialog                              |
+| `/models`        |                    | Show available AI models                        |
+| `/providers`     |                    | Manage AI providers and API keys                |
+| `/auth`          |                    | Connect to Pensar Console for managed inference |
+| `/credits`       | `/buy`             | Buy credits / check balance                     |
+| `/themes`        | `/theme`           | Manage application themes                       |
+| `/create-skill`  |                    | Create a new operator skill                     |
+| `/exit`          | `/quit`, `/q`      | Exit the application                            |
 
 ## Getting Started Flow
 
@@ -159,6 +163,9 @@ In addition to the TUI slash commands above, Apex provides headless CLI commands
 <CardGroup cols={2}>
   <Card title="/pentest" icon="play" href="/apex/commands/pentest">
     Start a penetration test
+  </Card>
+  <Card title="/threat-model" icon="shield-halved" href="/apex/commands/threat-model">
+    Generate a threat model from source code
   </Card>
   <Card title="/models" icon="microchip" href="/apex/commands/models">
     Select AI model

@@ -117,6 +117,7 @@ Apex also supports headless CLI commands for CI/CD and scripting:
 ```bash
 pensar pentest --target <url>               # Run a full pentest orchestration
 pensar targeted-pentest --target <url>      # Run a targeted pentest
+pensar threat-model                         # Generate an application-centric threat model
 pensar auth login                           # Connect to Pensar Console from the CLI
 pensar auth status                          # Show current auth connection status
 pensar auth logout                          # Disconnect from Pensar Console
@@ -177,6 +178,9 @@ Now that Apex is installed, here's how to get started:
   </Card>
   <Card title="/operator" icon="terminal">
     Start an interactive operator session with step-by-step control.
+  </Card>
+  <Card title="/threat-model" icon="shield-halved">
+    Generate an application-centric threat model from source code.
   </Card>
   <Card title="/providers" icon="plug">
     Connect your AI provider and configure API keys.
