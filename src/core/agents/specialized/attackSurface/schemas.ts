@@ -208,6 +208,17 @@ export const DocumentedAssetRecordSchema = DocumentAssetSchema.extend({
   riskScore: RiskScoreSchema.optional().describe(
     "Computed risk score with breakdown (heuristic for blackbox, AI-scored for whitebox)",
   ),
+
+  /** @deprecated Flattened from details.url for console backwards compatibility */
+  url: z.string().optional(),
+  /** @deprecated Flattened from details.authRequired for console backwards compatibility */
+  authRequired: z.boolean().optional(),
+  /** @deprecated Flattened from details.authentication for console backwards compatibility */
+  authentication: z.string().optional(),
+  /** @deprecated Use assetName instead */
+  endpointName: z.string().optional(),
+  /** @deprecated Use assetType instead */
+  endpointType: z.enum(["api-endpoint", "web-endpoint", "asset"]).optional(),
 });
 
 // Type exports
@@ -219,3 +230,16 @@ export type DocumentedAssetRecord = z.infer<typeof DocumentedAssetRecordSchema>;
 export type PentestTarget = z.infer<typeof PentestTargetSchema>;
 export type AttackSurfaceSummary = z.infer<typeof AttackSurfaceSummarySchema>;
 export type AttackSurfaceReport = z.infer<typeof AttackSurfaceReportSchema>;
+
+// Backwards compatibility aliases (deprecated)
+/** @deprecated Use AssetType instead */
+export type EndpointType = AssetType;
+
+/**
+ * @deprecated Use DocumentedAssetRecord instead.
+ * Legacy type with required endpointName/endpointType for console apex-adapter compatibility.
+ */
+export type DocumentedEndpointRecord = DocumentedAssetRecord & {
+  endpointName: string;
+  endpointType: "api-endpoint" | "web-endpoint" | "asset";
+};

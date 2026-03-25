@@ -21,7 +21,6 @@ const TOOLS_WITH_LOG_WINDOW = new Set([
   "spawn_pentest_swarm",
   "delegate_to_auth_subagent",
   "create_file",
-  "create_poc",
   "update_file",
   "document_vulnerability",
 ]);
