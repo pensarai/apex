@@ -208,6 +208,17 @@ export const DocumentedAssetRecordSchema = DocumentAssetSchema.extend({
   riskScore: RiskScoreSchema.optional().describe(
     "Computed risk score with breakdown (heuristic for blackbox, AI-scored for whitebox)",
   ),
+
+  /** @deprecated Flattened from details.url for console backwards compatibility */
+  url: z.string().optional(),
+  /** @deprecated Flattened from details.authRequired for console backwards compatibility */
+  authRequired: z.boolean().optional(),
+  /** @deprecated Flattened from details.authentication for console backwards compatibility */
+  authentication: z.string().optional(),
+  /** @deprecated Use assetName instead */
+  endpointName: z.string().optional(),
+  /** @deprecated Use assetType instead */
+  endpointType: z.string().optional(),
 });
 
 // Type exports
