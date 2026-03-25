@@ -51,6 +51,15 @@ function getDefaultMaxOutputTokens(modelId: string): number {
   return 4_096;
 }
 
+const EPHEMERAL_CACHE_CONTROL = { type: "ephemeral" as const };
+
+function hasCacheControl(part: Record<string, unknown>): boolean {
+  const opts = part.providerOptions as
+    | Record<string, Record<string, unknown>>
+    | undefined;
+  return !!opts?.anthropic?.cacheControl;
+}
+
 function convertToAnthropicFormat(
   modelId: string,
   options: LanguageModelV3CallOptions,
@@ -60,21 +69,37 @@ function convertToAnthropicFormat(
     content: string | Array<Record<string, unknown>>;
   }> = [];
   let systemPrompt: string | undefined;
+  let systemHasCacheControl = false;
 
   // Extract system prompt and convert messages from V2 prompt format
   if (options.prompt) {
     for (const part of options.prompt) {
       if (part.role === "system") {
         systemPrompt = part.content;
+        systemHasCacheControl = hasCacheControl(
+          part as unknown as Record<string, unknown>,
+        );
       } else if (part.role === "user") {
-        const content = (part.content as Array<LanguageModelV3TextPart>)
+        const partHasCache = hasCacheControl(
+          part as unknown as Record<string, unknown>,
+        );
+        const text = (part.content as Array<LanguageModelV3TextPart>)
           .map((c: LanguageModelV3TextPart) => {
             if (c.type === "text") return c.text;
             if (c.type === "file") return "[file]";
             return "";
           })
           .join("");
-        messages.push({ role: "user", content });
+        if (partHasCache) {
+          messages.push({
+            role: "user",
+            content: [
+              { type: "text", text, cache_control: EPHEMERAL_CACHE_CONTROL },
+            ],
+          });
+        } else {
+          messages.push({ role: "user", content: text });
+        }
       } else if (part.role === "assistant") {
         const assistantContent = part.content as Array<
           LanguageModelV3TextPart | LanguageModelV3ToolCallPart
@@ -151,7 +176,15 @@ function convertToAnthropicFormat(
   };
 
   if (systemPrompt) {
-    body.system = systemPrompt;
+    body.system = systemHasCacheControl
+      ? [
+          {
+            type: "text",
+            text: systemPrompt,
+            cache_control: EPHEMERAL_CACHE_CONTROL,
+          },
+        ]
+      : systemPrompt;
   }
 
   if (options.temperature != null) {

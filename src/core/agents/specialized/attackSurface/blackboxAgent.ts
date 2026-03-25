@@ -1,6 +1,6 @@
 import { hasToolCall, stepCountIs } from "ai";
 import { join } from "path";
-import { existsSync } from "fs";
+import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { SYSTEM as ATTACK_SURFACE_SYSTEM_PROMPT } from "./prompts";
 import { detectOSAndEnhancePrompt } from "../utils";
 import type { AttackSurfaceAnalysisResults, PentestTarget } from "./types";
@@ -75,6 +75,7 @@ export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSur
       session,
       authConfig,
       onStepFinish,
+      onCacheMetrics,
       abortSignal,
       attackSurfaceRegistry,
     } = opts;
@@ -83,6 +84,16 @@ export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSur
     const resultsPath = join(session.rootPath, "attack-surface-results.json");
     const assetsPath = join(session.rootPath, "assets");
 
+    const subagentFolder = join(
+      session.rootPath,
+      "subagents",
+      "attack-surface-agent",
+    );
+
+    if (!existsSync(subagentFolder)) {
+      mkdirSync(subagentFolder, { recursive: true });
+    }
+
     super({
       system: detectOSAndEnhancePrompt(ATTACK_SURFACE_SYSTEM_PROMPT),
       prompt: buildPrompt(target, session),
@@ -90,7 +101,17 @@ export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSur
       session,
       target,
       authConfig,
-      onStepFinish,
+      onStepFinish: (e) => {
+        onStepFinish?.(e);
+        const messages = e.response.messages;
+        if (messages !== undefined) {
+          writeFileSync(
+            join(subagentFolder, "attack-surface-agent.log"),
+            JSON.stringify(messages, null, 2),
+          );
+        }
+      },
+      onCacheMetrics,
       abortSignal,
       attackSurfaceRegistry,
       messages: opts.messages,

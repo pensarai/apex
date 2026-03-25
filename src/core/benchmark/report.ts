@@ -147,6 +147,75 @@ export function generateTextReport(result: BenchmarkSuiteResult): string {
     lines.push("");
   }
 
+  // Token usage & caching
+  if (summary.totalInputTokens > 0) {
+    lines.push("TOKEN USAGE & CACHING");
+    lines.push("─".repeat(30));
+    lines.push(
+      `Total Tokens:  ${formatTokenCount(summary.totalInputTokens)} input  |  ${formatTokenCount(summary.totalOutputTokens)} output`,
+    );
+    lines.push(
+      `Cache Read:    ${formatTokenCount(summary.totalCacheReadTokens)} (${(summary.cacheHitRate * 100).toFixed(1)}% hit rate)`,
+    );
+    lines.push(
+      `Cache Write:   ${formatTokenCount(summary.totalCacheWriteTokens)}`,
+    );
+    lines.push("");
+
+    const savings =
+      summary.totalEstimatedCostWithoutCacheUsd - summary.totalEstimatedCostUsd;
+    const savingsPct =
+      summary.totalEstimatedCostWithoutCacheUsd > 0
+        ? (savings / summary.totalEstimatedCostWithoutCacheUsd) * 100
+        : 0;
+
+    lines.push(
+      `Estimated Cost:        $${summary.totalEstimatedCostUsd.toFixed(2)}`,
+    );
+    lines.push(
+      `Cost Without Caching:  $${summary.totalEstimatedCostWithoutCacheUsd.toFixed(2)}`,
+    );
+    lines.push(
+      `Savings:               $${savings.toFixed(2)} (${savingsPct.toFixed(1)}%)`,
+    );
+    lines.push("");
+
+    // Per-benchmark token table
+    const tokenResults = results.filter((r) => r.tokenMetrics);
+    if (tokenResults.length > 0) {
+      lines.push("PER-BENCHMARK TOKEN USAGE");
+      lines.push("─".repeat(30));
+      lines.push(
+        padRight("Branch", 16) +
+          padRight("Input", 10) +
+          padRight("Cache Rd", 10) +
+          padRight("Hit%", 8) +
+          "Cost",
+      );
+
+      for (const r of tokenResults) {
+        const t = r.tokenMetrics!;
+        const hitRate =
+          t.cacheReadTokens + t.noCacheInputTokens > 0
+            ? (
+                (t.cacheReadTokens /
+                  (t.cacheReadTokens + t.noCacheInputTokens)) *
+                100
+              ).toFixed(1) + "%"
+            : "-";
+
+        lines.push(
+          padRight(r.branch, 16) +
+            padRight(formatTokenCount(t.inputTokens), 10) +
+            padRight(formatTokenCount(t.cacheReadTokens), 10) +
+            padRight(hitRate, 8) +
+            `$${t.estimatedCostUsd.toFixed(2)}`,
+        );
+      }
+      lines.push("");
+    }
+  }
+
   lines.push("═".repeat(55));
 
   return lines.join("\n");
@@ -163,6 +232,12 @@ export function generateJsonReport(result: BenchmarkSuiteResult): string {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+function formatTokenCount(n: number): string {
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+  if (n >= 1e3) return `${(n / 1e3).toFixed(0)}K`;
+  return n.toString();
+}
 
 function padRight(s: string, width: number): string {
   return s.length >= width ? s : s + " ".repeat(width - s.length);
