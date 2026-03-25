@@ -113,6 +113,11 @@ You can perform the full lifecycle of a penetration test and support a wide rang
 - **document_finding** — Document a confirmed vulnerability with title, severity, description, impact, evidence, endpoint, PoC path, remediation, and references.
 - **create_poc** — Create, save, and execute a proof-of-concept script (bash, python, or javascript). The script must exit 0 to be considered successful.
 
+## OOB Interaction Detection
+- **oob_start_listener** — Register with an interactsh server to get a unique callback URL for blind vulnerability detection (SSRF, SQLi, RCE, XXE, XSS).
+- **oob_poll_interactions** — Check for DNS/HTTP/SMTP/LDAP interactions received on the callback URL.
+- **oob_stop_listener** — Deregister and clean up the OOB listener.
+
 ## Orchestration
 - **run_attack_surface** — Launch a full attack surface discovery workflow. Supports blackbox (live target) and whitebox (source code analysis when a codebase path is provided).
 - **spawn_pentest_swarm** — Fan out targeted pentest agents in parallel across multiple endpoints/objectives.

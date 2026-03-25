@@ -1,5 +1,6 @@
 import type { BuiltInSkill } from "../types";
 import { threatModelSkill } from "./threatModel";
+import { oobDetectionSkill } from "./oobDetection";
 
 /**
  * Code-defined skills bundled with the application.
@@ -9,4 +10,7 @@ import { threatModelSkill } from "./threatModel";
  *
  * To add a built-in skill, push a BuiltInSkill object into this array.
  */
-export const BUILTIN_SKILLS: BuiltInSkill[] = [threatModelSkill];
+export const BUILTIN_SKILLS: BuiltInSkill[] = [
+  threatModelSkill,
+  oobDetectionSkill,
+];

@@ -64,6 +64,10 @@ export { getMemory } from "./getMemory";
 export { createEmailToolset, EMAIL_TOOL_NAMES } from "./email";
 export type { EmailToolName } from "./email";
 
+// OOB interaction detection tools
+export { createOobToolset, OOB_TOOL_NAMES } from "./oob";
+export type { OobToolName } from "./oob";
+
 // Web search tools (requires Pensar account)
 export { webSearch } from "./webSearch";
 export { getPage } from "./getPage";
@@ -110,6 +114,7 @@ import { emailListInboxes } from "./email/listInboxes";
 import { emailListMessages } from "./email/listMessages";
 import { emailSearchMessages } from "./email/searchMessages";
 import { emailGetMessage } from "./email/getMessage";
+import { createOobToolset } from "./oob";
 import { webSearch } from "./webSearch";
 import { getPage } from "./getPage";
 import { readSkill } from "./readSkill";
@@ -175,6 +180,9 @@ export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
     email_search_messages: emailSearchMessages(ctx),
     email_get_message: emailGetMessage(ctx),
 
+    // OOB interaction detection tools
+    ...(ctx.oobClientHolder ? createOobToolset(ctx) : {}),
+
     // Web search tools (requires Pensar account)
     web_search: webSearch(ctx),
     get_page: getPage(ctx),
@@ -230,6 +238,10 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "email_search_messages",
   "email_get_attachments",
   "email_mark_read",
+  // OOB interaction detection
+  "oob_start_listener",
+  "oob_poll_interactions",
+  "oob_stop_listener",
   // Web search (requires Pensar account)
   "web_search",
   "get_page",
@@ -279,6 +291,8 @@ export const PLAN_MODE_TOOL_NAMES: ToolName[] = [
   "email_search_messages",
   "email_get_attachments",
   "email_mark_read",
+  // OOB interaction detection (poll only — start/stop are mutating)
+  "oob_poll_interactions",
   // Web search
   "web_search",
   "get_page",

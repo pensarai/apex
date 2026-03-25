@@ -149,6 +149,33 @@ export const ALL_TOOLS: ToolDefinition[] = [
     category: "exploitation",
     defaultEnabled: true,
   },
+  {
+    id: "oob_start_listener",
+    name: "OOB Start Listener",
+    description: "Start OOB listener",
+    detail:
+      "Register with an interactsh server to generate unique callback URLs for detecting blind vulnerabilities (SSRF, SQLi, RCE, XXE, XSS). Returns a base interaction URL to embed in payloads.",
+    category: "exploitation",
+    defaultEnabled: true,
+  },
+  {
+    id: "oob_poll_interactions",
+    name: "OOB Poll Interactions",
+    description: "Check for OOB callbacks",
+    detail:
+      "Poll the interactsh server for interactions received on the callback URL. Returns protocol (DNS, HTTP, SMTP, LDAP), source address, timestamp, and raw request data for each interaction.",
+    category: "exploitation",
+    defaultEnabled: true,
+  },
+  {
+    id: "oob_stop_listener",
+    name: "OOB Stop Listener",
+    description: "Stop OOB listener",
+    detail:
+      "Deregister from the interactsh server and clean up the OOB interaction session. Always call when finished with OOB testing.",
+    category: "exploitation",
+    defaultEnabled: true,
+  },
 
   // Browser tools (Playwright MCP)
   {

@@ -75,6 +75,9 @@ export class OffensiveSecurityAgent<TResult = void> {
   /** Persistent shell for local-mode command execution; disposed on consume() completion. */
   private readonly persistentShell?: PersistentShell;
 
+  /** Mutable holder for the interactsh OOB client; cleaned up on consume() completion. */
+  private readonly oobClientHolder: { client: import("../../lib/interactsh").InteractshClient | null } = { client: null };
+
   private readonly abortSignal?: AbortSignal;
 
   /** The session this agent is operating within. */
@@ -155,6 +158,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       persistentShell: this.persistentShell,
       onCommandOutput: input.callbacks?.onCommandOutput,
       skillsRegistry: input.skillsRegistry,
+      oobClientHolder: this.oobClientHolder,
     });
 
     let tools: ToolSet = input.extraTools
@@ -398,6 +402,12 @@ export class OffensiveSecurityAgent<TResult = void> {
     }
 
     this.persistentShell?.dispose();
+
+    // Clean up any active interactsh OOB session
+    if (this.oobClientHolder.client?.isRegistered) {
+      this.oobClientHolder.client.deregister().catch(() => {});
+      this.oobClientHolder.client = null;
+    }
 
     if (this.abortSignal?.aborted) {
       throw new DOMException("Agent aborted by user", "AbortError");

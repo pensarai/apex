@@ -5,6 +5,7 @@ import type { AttackSurfaceRegistry } from "../../../findings/attackSurfaceRegis
 import type { FindingsRegistry } from "../../../findings/registry";
 import type { SessionInfo } from "../../../session";
 import type { SkillsRegistry } from "../../../skills/registry";
+import type { InteractshClient } from "../../../../lib/interactsh";
 
 import type { ConsumeCallbacks, SubagentConsumeCallbacks } from "../types";
 import type { PersistentShell } from "./persistentShell";
@@ -82,4 +83,11 @@ export type ToolContext = {
    * When present, read_skill is available.
    */
   skillsRegistry?: SkillsRegistry;
+
+  /**
+   * Mutable holder for the interactsh client used by OOB detection tools.
+   * Lazily populated by `oob_start_listener`, read by `oob_poll_interactions`
+   * and `oob_stop_listener`. Cleaned up when the agent stream ends.
+   */
+  oobClientHolder?: { client: InteractshClient | null };
 };
