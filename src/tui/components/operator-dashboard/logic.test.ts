@@ -584,7 +584,13 @@ describe("resolveInputFocused", () => {
 // ---------------------------------------------------------------------------
 
 describe("accumulateTokenUsage", () => {
-  const base = { inputTokens: 100, outputTokens: 50, totalTokens: 150 };
+  const base = {
+    inputTokens: 100,
+    outputTokens: 50,
+    totalTokens: 150,
+    cachedTokens: 10,
+    cacheWriteTokens: 5,
+  };
 
   it("accumulates input and output tokens", () => {
     const result = accumulateTokenUsage(base, 20, 10);
@@ -592,6 +598,8 @@ describe("accumulateTokenUsage", () => {
       inputTokens: 120,
       outputTokens: 60,
       totalTokens: 180,
+      cachedTokens: 10,
+      cacheWriteTokens: 5,
     });
   });
 
@@ -618,12 +626,20 @@ describe("accumulateTokenUsage", () => {
   });
 
   it("handles zero base", () => {
-    const zero = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
+    const zero = {
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+      cachedTokens: 0,
+      cacheWriteTokens: 0,
+    };
     const result = accumulateTokenUsage(zero, 10, 5);
     expect(result).toEqual({
       inputTokens: 10,
       outputTokens: 5,
       totalTokens: 15,
+      cachedTokens: 0,
+      cacheWriteTokens: 0,
     });
   });
 });

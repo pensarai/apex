@@ -8,7 +8,7 @@ import type {
   ToolChoice,
   ToolSet,
 } from "ai";
-import type { AIModel } from "../../ai";
+import type { AIModel, CacheMetrics } from "../../ai";
 import type { AIAuthConfig } from "../../ai/utils";
 import type { CredentialManager } from "../../credentials";
 import type { AttackSurfaceRegistry } from "../../findings/attackSurfaceRegistry";
@@ -126,6 +126,9 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
 
   /** Callback fired when the entire stream finishes */
   onFinish?: StreamTextOnFinishCallback<ToolSet>;
+
+  /** Called when Anthropic cache metrics are present in a step's providerMetadata */
+  onCacheMetrics?: (metrics: CacheMetrics) => void;
 
   /** AbortSignal to cancel the agent mid-run */
   abortSignal?: AbortSignal;
@@ -263,6 +266,9 @@ export interface SpecializedAgentInput {
 
   /** Callback fired after each agent step */
   onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
+
+  /** Called when Anthropic cache metrics are present in a step's providerMetadata */
+  onCacheMetrics?: (metrics: CacheMetrics) => void;
 
   /** AbortSignal to cancel the agent mid-run */
   abortSignal?: AbortSignal;

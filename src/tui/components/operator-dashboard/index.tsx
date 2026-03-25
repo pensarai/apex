@@ -17,6 +17,7 @@ import {
 } from "../../../core/session";
 import { runOffensiveSecurityAgent } from "../../../core/api/offesecAgent";
 import { buildAuthConfig } from "../../../core/ai/utils";
+import type { CacheMetrics } from "../../../core/ai";
 import {
   ALL_TOOL_NAMES,
   PLAN_MODE_TOOL_NAMES,
@@ -101,6 +102,7 @@ export default function OperatorDashboard({
     setIsExecuting,
     tokenUsage,
     addTokenUsage,
+    addCacheUsage,
     resetTokenUsage,
     setSessionCwd,
   } = useAgent();
@@ -345,7 +347,13 @@ export default function OperatorDashboard({
     if (!session) return;
 
     resetTokenUsage();
-    tokenUsageRef.current = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
+    tokenUsageRef.current = {
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+      cachedTokens: 0,
+      cacheWriteTokens: 0,
+    };
 
     const metrics = readExecutionMetrics(session.rootPath);
     const persisted = metrics?.tokenUsage;
@@ -354,7 +362,11 @@ export default function OperatorDashboard({
       (persisted.inputTokens > 0 || persisted.outputTokens > 0)
     ) {
       addTokenUsage(persisted.inputTokens, persisted.outputTokens);
-      tokenUsageRef.current = persisted;
+      tokenUsageRef.current = {
+        ...persisted,
+        cachedTokens: 0,
+        cacheWriteTokens: 0,
+      };
     }
 
     try {
@@ -866,6 +878,12 @@ export default function OperatorDashboard({
         commandCancelHandle: cancelHandleRef.current,
         skillsRegistry,
         onStepFinish,
+        onCacheMetrics: (metrics: CacheMetrics) => {
+          addCacheUsage(
+            metrics.cacheReadInputTokens,
+            metrics.cacheCreationInputTokens,
+          );
+        },
         callbacks,
         onSessionReady: (s: SessionInfo) => {
           setSessionCwd(s.rootPath);
@@ -1024,6 +1042,8 @@ export default function OperatorDashboard({
       appendLogToSubagent,
       setThinking,
       setIsExecuting,
+      addTokenUsage,
+      addCacheUsage,
     ],
   );
 
