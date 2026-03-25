@@ -243,35 +243,6 @@ export function getResultSummary(
         }
         break;
       }
-      case "create_poc": {
-        if (typeof result === "object" && result !== null) {
-          const obj = result as Record<string, unknown>;
-          if (obj.success === false) {
-            const errText = String(obj.error || obj.stderr || "POC failed");
-            return {
-              text: errText.split("\n")[0].slice(0, 120),
-              isError: true,
-              fullText:
-                typeof obj.stderr === "string"
-                  ? obj.stderr.slice(0, 2000)
-                  : undefined,
-            };
-          }
-          const stdout = typeof obj.stdout === "string" ? obj.stdout : "";
-          const pocPath = obj.pocPath ? String(obj.pocPath) : "";
-          const lines = stdout.split("\n").filter((l) => l.length > 0);
-          const preview = lines.slice(0, 3).join("\n");
-          const suffix = lines.length > 3 ? `\n… (${lines.length} lines)` : "";
-          return {
-            text: pocPath
-              ? `Saved ${pocPath}\n${preview}${suffix}`
-              : preview + suffix || "POC passed",
-            isError: false,
-            fullText: stdout.length > 400 ? stdout.slice(0, 2000) : undefined,
-          };
-        }
-        break;
-      }
 
       case "list_files": {
         if (typeof result === "object" && result !== null) {
@@ -399,6 +370,31 @@ export function getResultSummary(
       case "document_vulnerability": {
         if (typeof result === "object" && result !== null) {
           const obj = result as Record<string, unknown>;
+          // POC execution failure
+          if (obj.pocFailed) {
+            const errText = String(obj.stderr || obj.error || "POC failed");
+            return {
+              text: `POC failed (exit ${obj.exitCode}): ${errText.split("\n")[0].slice(0, 120)}`,
+              isError: true,
+              fullText:
+                typeof obj.stdout === "string"
+                  ? obj.stdout.slice(0, 2000)
+                  : undefined,
+            };
+          }
+          // Judge rejection
+          if (obj.judgeRejected) {
+            const reasoning = String(
+              obj.judgeReasoning || "Finding rejected by judge",
+            );
+            return {
+              text: reasoning.slice(0, 120),
+              isError: true,
+              fullText: Array.isArray(obj.judgeConcerns)
+                ? (obj.judgeConcerns as string[]).join("\n")
+                : undefined,
+            };
+          }
           if (obj.success === false) {
             const msg = String(obj.message || obj.error || "Failed").slice(
               0,
