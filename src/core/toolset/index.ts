@@ -410,10 +410,11 @@ export const TOOLSETS: ToolsetDefinition[] = [
       "browser_navigate",
       "browser_screenshot",
       "browser_console",
-      // Reporting
-      "document_vulnerability",
+      // Reporting (passive only — document_vulnerability excluded because it
+      // executes POC scripts, which contradicts this preset's no-exploitation promise)
       "generate_report",
       "record_test_result",
+      "record_verified_finding",
       "update_attack_surface",
       "update_endpoint_status",
       // Utility
