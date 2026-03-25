@@ -270,8 +270,8 @@ export type EndpointType = AssetType;
  */
 export type DocumentedEndpointRecord = DocumentedAssetRecord & {
   url?: string;
-  endpointName?: string;
-  endpointType?: string;
+  endpointName: string;
+  endpointType: "api-endpoint" | "web-endpoint" | "asset";
   authRequired?: boolean;
   authentication?: string;
 };
