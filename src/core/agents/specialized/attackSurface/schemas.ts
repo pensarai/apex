@@ -219,3 +219,9 @@ export type DocumentedAssetRecord = z.infer<typeof DocumentedAssetRecordSchema>;
 export type PentestTarget = z.infer<typeof PentestTargetSchema>;
 export type AttackSurfaceSummary = z.infer<typeof AttackSurfaceSummarySchema>;
 export type AttackSurfaceReport = z.infer<typeof AttackSurfaceReportSchema>;
+
+// Backwards compatibility aliases (deprecated)
+/** @deprecated Use AssetType instead */
+export type EndpointType = AssetType;
+/** @deprecated Use DocumentedAssetRecord instead */
+export type DocumentedEndpointRecord = DocumentedAssetRecord;
