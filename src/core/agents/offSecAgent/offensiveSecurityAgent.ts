@@ -300,6 +300,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       },
       abortSignal: input.abortSignal,
       authConfig: input.authConfig,
+      onCacheMetrics: input.onCacheMetrics,
       silent: true,
     });
   }

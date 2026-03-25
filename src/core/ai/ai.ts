@@ -19,8 +19,10 @@ import {
   checkIfContextLengthError,
   createSummarizationStream,
   getProviderModel,
+  isAnthropicProvider,
   type AIAuthConfig,
 } from "./utils";
+import { withCachedSystemPrompt, withCachedLastMessage } from "./caching";
 
 export type AIModel = AnthropicMessagesModelId | OpenAIChatModelId | string; // For OpenRouter and Bedrock models
 
@@ -241,6 +243,12 @@ export interface ModelInfo {
   contextLength?: number;
 }
 
+/** Cache token metrics extracted from Anthropic providerMetadata */
+export interface CacheMetrics {
+  cacheReadInputTokens: number;
+  cacheCreationInputTokens: number;
+}
+
 export interface StreamResponseOpts {
   prompt: string;
   system?: string;
@@ -264,6 +272,8 @@ export interface StreamResponseOpts {
    * new messages (not the full pre-summarization history).
    */
   onSummarized?: (summary: string) => void;
+  /** Called when Anthropic cache metrics are present in a step's providerMetadata */
+  onCacheMetrics?: (metrics: CacheMetrics) => void;
 }
 
 export function streamResponse(
@@ -283,6 +293,7 @@ export function streamResponse(
     silent,
     authConfig,
     onFinish,
+    onCacheMetrics,
   } = opts;
 
   // Wrap onStepFinish to fire usage callback for every step.
@@ -300,13 +311,29 @@ export function streamResponse(
   // Use a container object so the reference stays stable but the value can be updated
   const messagesContainer = { current: messages || [] };
   const providerModel = getProviderModel(model, authConfig);
+  const useAnthropicCaching = isAnthropicProvider(model);
+
+  // For Anthropic models, move the system prompt into messages with cache_control.
+  // This caches tools + system prompt across multi-turn conversations (~90% cost reduction on cache hits).
+  let effectiveSystem: string | undefined = system;
+  let effectiveMessages: ModelMessage[] | undefined = messages;
+
+  if (useAnthropicCaching && system) {
+    const baseMessages: ModelMessage[] = messages ?? [
+      { role: "user" as const, content: prompt },
+    ];
+    effectiveMessages = withCachedSystemPrompt(system, baseMessages);
+    effectiveSystem = undefined;
+  }
+
+  let rateLimitRetryCount = 0;
 
   try {
     // Create the appropriate provider instance
     const response = streamText({
       model: providerModel,
-      system,
-      ...(messages ? { messages } : { prompt }),
+      system: effectiveSystem,
+      ...(effectiveMessages ? { messages: effectiveMessages } : { prompt }),
       stopWhen,
       toolChoice,
       tools,
@@ -314,9 +341,56 @@ export function streamResponse(
       prepareStep: (opts) => {
         // Update the container with the latest messages
         messagesContainer.current = opts.messages;
+        // For Anthropic, add cache_control to the last message for incremental caching
+        if (useAnthropicCaching) {
+          return { messages: withCachedLastMessage(opts.messages) };
+        }
         return undefined;
       },
-      onStepFinish,
+      onError: async ({ error }: { error: unknown }) => {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        if (
+          errorMessage.toLowerCase().includes("too many tokens") ||
+          errorMessage.toLowerCase().includes("overloaded")
+        ) {
+          rateLimitRetryCount++;
+          await new Promise((resolve) =>
+            setTimeout(resolve, 1000 * rateLimitRetryCount),
+          );
+          if (rateLimitRetryCount < 20) {
+            return;
+          }
+        }
+        throw error;
+      },
+      onStepFinish: onCacheMetrics
+        ? (stepResult) => {
+            // Extract Anthropic cache metrics from providerMetadata (direct Anthropic / Bedrock SDK)
+            const meta = stepResult.providerMetadata?.anthropic as
+              | Record<string, unknown>
+              | undefined;
+            let cacheRead = (meta?.cacheReadInputTokens as number) ?? 0;
+            let cacheCreation = (meta?.cacheCreationInputTokens as number) ?? 0;
+
+            // Fallback: extract from V3 usage fields (pensar provider)
+            if (cacheRead === 0 && cacheCreation === 0) {
+              const usage = stepResult.usage as
+                | { inputTokens?: { cacheRead?: number; cacheWrite?: number } }
+                | undefined;
+              cacheRead = usage?.inputTokens?.cacheRead ?? 0;
+              cacheCreation = usage?.inputTokens?.cacheWrite ?? 0;
+            }
+
+            if (cacheRead > 0 || cacheCreation > 0) {
+              onCacheMetrics({
+                cacheReadInputTokens: cacheRead,
+                cacheCreationInputTokens: cacheCreation,
+              });
+            }
+            onStepFinish?.(stepResult);
+          }
+        : onStepFinish,
       abortSignal,
       activeTools,
       experimental_repairToolCall: async ({
