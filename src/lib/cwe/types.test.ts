@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { CweEntrySchema } from "./types";
+import { CweEntrySchema, ValidatedCweEntrySchema, hasCanonicalName } from "./types";
+import type { CweEntry, ValidatedCweEntry } from "./types";
 
 describe("CweEntrySchema", () => {
   it("accepts valid CWE entry", () => {
@@ -86,5 +87,52 @@ describe("CweEntrySchema", () => {
       reasoning: "SQL injection",
     });
     expect(result.success).toBe(false);
+  });
+});
+
+describe("ValidatedCweEntrySchema", () => {
+  it("accepts a validated entry with name", () => {
+    const result = ValidatedCweEntrySchema.safeParse({
+      id: "CWE-89",
+      name: "Improper Neutralization of Special Elements used in an SQL Command ('SQL Injection')",
+      reasoning: "SQL injection via unsanitized user input",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects entry without name", () => {
+    const result = ValidatedCweEntrySchema.safeParse({
+      id: "CWE-89",
+      reasoning: "SQL injection",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects entry with non-string name", () => {
+    const result = ValidatedCweEntrySchema.safeParse({
+      id: "CWE-89",
+      name: 123,
+      reasoning: "SQL injection",
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe("hasCanonicalName", () => {
+  it("returns true for ValidatedCweEntry", () => {
+    const entry: ValidatedCweEntry = {
+      id: "CWE-89",
+      name: "SQL Injection",
+      reasoning: "test",
+    };
+    expect(hasCanonicalName(entry)).toBe(true);
+  });
+
+  it("returns false for plain CweEntry", () => {
+    const entry: CweEntry = {
+      id: "CWE-89",
+      reasoning: "test",
+    };
+    expect(hasCanonicalName(entry)).toBe(false);
   });
 });

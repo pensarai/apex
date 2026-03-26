@@ -240,6 +240,36 @@ describe("renderMarkdown", () => {
     );
   });
 
+  it("renders canonical CWE name when present (validated entries)", () => {
+    const report = makeSampleReport({
+      findings: [
+        {
+          title: "SQL Injection in Login Form",
+          severity: "HIGH",
+          description: "SQL injection vulnerability.",
+          impact: "Full database access.",
+          evidence: "Evidence here",
+          endpoint: "/login",
+          pocPath: "pocs/poc_sqli.sh",
+          remediation: "Use parameterized queries.",
+          cwes: [
+            {
+              id: "CWE-89",
+              name: "Improper Neutralization of Special Elements used in an SQL Command ('SQL Injection')",
+              reasoning: "SQL injection via unsanitized user input",
+            },
+          ],
+        },
+      ],
+    });
+    const output = renderMarkdown(report);
+
+    expect(output).toContain("## CWE Classification");
+    expect(output).toContain(
+      "- **CWE-89**: Improper Neutralization of Special Elements used in an SQL Command ('SQL Injection') — SQL injection via unsanitized user input",
+    );
+  });
+
   it("omits CWE Classification section when cwes are absent", () => {
     const report = makeSampleReport();
     const output = renderMarkdown(report);

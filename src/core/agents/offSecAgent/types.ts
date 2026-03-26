@@ -19,7 +19,10 @@ import type { ToolName } from "./tools";
 import type { UnifiedSandbox } from "./tools/sandbox";
 import type { AgentEventBus } from "../../eventBus";
 import { z } from "zod";
-import { CweEntrySchema } from "../../../lib/cwe/types";
+import {
+  CweEntrySchema,
+  ValidatedCweEntrySchema,
+} from "../../../lib/cwe/types";
 
 // Backward-compatible Finding schema (toolCallDescription is optional for parsing old findings)
 export const ApexFindingObject = z.object({
@@ -45,7 +48,7 @@ export const ApexFindingObject = z.object({
   remediation: z.string(),
   references: z.string().optional(),
   toolCallDescription: z.string().optional(), // Optional for backward compatibility
-  cwes: z.array(CweEntrySchema).optional(),
+  cwes: z.array(ValidatedCweEntrySchema.or(CweEntrySchema)).optional(),
   rootCauseGroup: z.string().optional(),
   relatedFindings: z.array(z.string()).optional(),
 });
