@@ -306,8 +306,9 @@ export const ALL_TOOL_NAMES: ToolName[] = [
  * Tool names available in plan mode (read-only / non-mutating).
  *
  * Excludes: create_file, update_file, document_vulnerability,
- * document_app, document_endpoint. These are the mutation tools that should not be available
- * when the operator is in plan (read-only) mode.
+ * document_app, document_endpoint, spawn_pentest_swarm, spawn_coding_agent
+ * — file writes, findings, and orchestration tools that spawn autonomous
+ * sub-agents are not available in plan mode.
  */
 export const PLAN_MODE_TOOL_NAMES: ToolName[] = [
   // Browser automation (read-only navigation and inspection)

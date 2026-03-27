@@ -87,7 +87,8 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    * When set to `"plan"`, the agent's `activeTools` are intersected with
    * {@link PLAN_MODE_TOOL_NAMES} so that mutation tools (create_file,
    * update_file, document_vulnerability, document_app,
-   * document_endpoint) are excluded.
+   * document_endpoint) and orchestration tools that spawn autonomous
+   * sub-agents (spawn_pentest_swarm, spawn_coding_agent) are excluded.
    *
    * @default "default"
    */
