@@ -8,7 +8,7 @@ import type {
   ToolChoice,
   ToolSet,
 } from "ai";
-import type { AIModel } from "../../ai";
+import type { AIModel, CacheMetrics } from "../../ai";
 import type { AIAuthConfig } from "../../ai/utils";
 import type { CredentialManager } from "../../credentials";
 import type { AttackSurfaceRegistry } from "../../findings/attackSurfaceRegistry";
@@ -79,7 +79,7 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    *
    * When set to `"plan"`, the agent's `activeTools` are intersected with
    * {@link PLAN_MODE_TOOL_NAMES} so that mutation tools (create_file,
-   * update_file, create_poc, document_vulnerability, document_asset)
+   * update_file, document_vulnerability, document_asset)
    * are excluded.
    *
    * @default "default"
@@ -127,6 +127,9 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
   /** Callback fired when the entire stream finishes */
   onFinish?: StreamTextOnFinishCallback<ToolSet>;
 
+  /** Called when Anthropic cache metrics are present in a step's providerMetadata */
+  onCacheMetrics?: (metrics: CacheMetrics) => void;
+
   /** AbortSignal to cancel the agent mid-run */
   abortSignal?: AbortSignal;
 
@@ -134,7 +137,7 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
   authConfig?: AIAuthConfig;
 
   /**
-   * When set, tools like execute_command / http_request / create_poc
+   * When set, tools like execute_command / http_request / document_vulnerability
    * route execution through this sandbox instead of running locally.
    */
   sandbox?: UnifiedSandbox;
@@ -263,6 +266,9 @@ export interface SpecializedAgentInput {
 
   /** Callback fired after each agent step */
   onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
+
+  /** Called when Anthropic cache metrics are present in a step's providerMetadata */
+  onCacheMetrics?: (metrics: CacheMetrics) => void;
 
   /** AbortSignal to cancel the agent mid-run */
   abortSignal?: AbortSignal;

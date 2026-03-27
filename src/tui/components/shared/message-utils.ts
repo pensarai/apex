@@ -88,7 +88,7 @@ export function extractStreamableContent(
 ): string | null {
   // create_file
   if (typeof args.content === "string") return args.content;
-  // create_poc
+  // document_vulnerability — POC content
   if (typeof args.pocContent === "string") return args.pocContent;
   // update_file
   if (typeof args.newContent === "string") return args.newContent;

@@ -6,7 +6,7 @@ import {
   useRef,
   useMemo,
 } from "react";
-import { useKeyboard } from "@opentui/react";
+import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import {
   SyntaxStyle,
   type TextareaRenderable,
@@ -31,6 +31,53 @@ import {
   type InlineOptionContext,
 } from "./prompt-input-logic";
 import { usePasteExtmarks } from "./use-paste-extmarks";
+/** Word-wrap text and return at most `maxLines` lines, adding ellipsis if truncated. */
+function truncateToLines(
+  text: string,
+  lineWidth: number,
+  maxLines: number,
+): string {
+  if (lineWidth <= 0 || maxLines <= 0) return "";
+  const words = text.split(" ");
+  const lines: string[] = [];
+  let current = "";
+  let i = 0;
+  let wordSliced = false;
+
+  while (i < words.length && lines.length < maxLines) {
+    const word = words[i];
+    if (!current) {
+      if (word.length > lineWidth) {
+        current = word.slice(0, lineWidth);
+        wordSliced = true;
+      } else {
+        current = word;
+      }
+      i++;
+    } else if ((current + " " + word).length <= lineWidth) {
+      current += " " + word;
+      i++;
+    } else {
+      lines.push(current);
+      current = "";
+    }
+  }
+  if (current && lines.length < maxLines) {
+    lines.push(current);
+  }
+
+  // Add ellipsis if there's remaining text or a word was sliced to fit
+  if (i < words.length || wordSliced) {
+    const last = lines[lines.length - 1];
+    lines[lines.length - 1] =
+      last.length < lineWidth
+        ? last + "\u2026"
+        : last.slice(0, lineWidth - 1) + "\u2026";
+  }
+
+  return lines.join("\n");
+}
+
 export interface AutocompleteOption {
   value: string;
   label: string;
@@ -145,6 +192,7 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
     const { colors } = useTheme();
     const { inputValue, setInputValue } = useInput();
     const { registerPromptRef } = useFocus();
+    const { width: termWidth } = useTerminalDimensions();
     const textareaRef = useRef<TextareaRenderable | null>(null);
     const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(-1);
 
@@ -546,6 +594,24 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
       [suggestions, selectedSuggestionIndex, maxVisibleSuggestions],
     );
 
+    // Fixed-width label column for grid-like alignment
+    const maxLabelWidth = useMemo(
+      () => suggestions.reduce((max, s) => Math.max(max, s.label.length), 0),
+      [suggestions],
+    );
+
+    // Use the component's width prop (when numeric) since the suggestions box
+    // renders inside a width-constrained parent, not at full terminal width.
+    // When width is non-numeric (e.g. "100%"), approximate by subtracting
+    // typical parent chrome (padding + indicator + gap ≈ 6 chars).
+    const effectiveWidth =
+      typeof width === "number" ? width : Math.max(20, termWidth - 6);
+    // Description column width: total - indicator(3) - label - gap(1)
+    const descColumnWidth = Math.max(
+      10,
+      effectiveWidth - 3 - maxLabelWidth - 1,
+    );
+
     const suggestionsBox = suggestions.length > 0 && (
       <box
         flexDirection="column"
@@ -567,17 +633,22 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
         {windowedView.visibleSuggestions.map((suggestion, windowIndex) => {
           const actualIndex = windowedView.start + windowIndex;
           const isSelected = actualIndex === selectedSuggestionIndex;
+          const desc = suggestion.description
+            ? truncateToLines(suggestion.description, descColumnWidth, 2)
+            : "";
           return (
             <box key={suggestion.value} flexDirection="row" gap={1}>
-              <text fg={isSelected ? colors.primary : colors.textMuted}>
-                {isSelected ? " ▸" : "  "}
-              </text>
-              <text fg={isSelected ? colors.text : colors.textMuted}>
-                {suggestion.label}
-              </text>
-              {suggestion.description && (
-                <text fg={colors.textMuted}> {suggestion.description}</text>
-              )}
+              <box width={3 + maxLabelWidth} flexShrink={0}>
+                <text>
+                  <span fg={isSelected ? colors.primary : colors.textMuted}>
+                    {isSelected ? " \u25B8 " : "   "}
+                  </span>
+                  <span fg={isSelected ? colors.text : colors.textMuted}>
+                    {suggestion.label}
+                  </span>
+                </text>
+              </box>
+              {desc && <text fg={colors.textMuted}>{desc}</text>}
             </box>
           );
         })}

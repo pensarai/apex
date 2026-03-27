@@ -1,9 +1,13 @@
-import { useMemo } from "react";
+import { useRef, useMemo } from "react";
 import { useKeyboard } from "@opentui/react";
-import { useDimensions } from "../context/dimensions";
+import { ScrollBoxRenderable } from "@opentui/core";
 import { useTheme } from "../theme";
-import { MarkdownViewer } from "./shared/markdown-viewer";
-import { DialogControls } from "./shared/dialog-controls";
+import { Dialog } from "../context/dialog";
+import DialogLayout from "./dialog-layout";
+import {
+  useMarkdownSyntaxStyle,
+  useMarkdownRenderNode,
+} from "./shared/markdown-viewer";
 
 interface ReportViewerDialogProps {
   content: string;
@@ -19,7 +23,10 @@ export default function ReportViewerDialog({
   onOpenExternal,
 }: ReportViewerDialogProps) {
   const { colors } = useTheme();
-  const dimensions = useDimensions();
+  const scrollRef = useRef<ScrollBoxRenderable>(null);
+  const syntaxStyle = useMarkdownSyntaxStyle();
+  const renderNode = useMarkdownRenderNode();
+
   const lineCount = useMemo(() => content.split("\n").length, [content]);
 
   useKeyboard((evt) => {
@@ -40,51 +47,55 @@ export default function ReportViewerDialog({
     }
   });
 
-  const panelWidth = Math.min(120, dimensions.width - 4);
-  const panelHeight = dimensions.height - 4;
+  const title = (
+    <text>
+      <span fg={colors.primary}>Pentest Report</span>
+      <span fg={colors.textMuted}> {reportPath}</span>
+      <span fg={colors.textMuted}> ({lineCount} lines)</span>
+    </text>
+  );
+
+  const footerActions = onOpenExternal
+    ? [{ key: "E", label: "open in editor", variant: "primary" as const }]
+    : [];
 
   return (
-    <box
-      width={dimensions.width}
-      height={dimensions.height}
-      alignItems="center"
-      justifyContent="center"
-      position="absolute"
-      left={0}
-      top={0}
-      backgroundColor={colors.backgroundOverlay}
-    >
-      <box
-        width={panelWidth}
-        height={panelHeight}
-        backgroundColor={colors.backgroundPanel}
-        borderColor={colors.primary}
-        borderStyle="single"
-        flexDirection="column"
-      >
-        <MarkdownViewer
-          content={content}
-          width={panelWidth}
-          headerLeft={<text fg={colors.primary}>Pentest Report</text>}
-          headerRight={<text fg={colors.textMuted}>{reportPath}</text>}
-          footerLeft={
-            <DialogControls
-              controls={[
-                ...(onOpenExternal
-                  ? [
-                      {
-                        key: "E",
-                        label: "Open in Editor",
-                        variant: "primary" as const,
-                      },
-                    ]
-                  : []),
-              ]}
-            />
-          }
-          footerRight={<text fg={colors.textMuted}>{lineCount} lines</text>}
-        />
-      </box>
-    </box>
+    <Dialog size="xlarge" onClose={onClose}>
+      <DialogLayout title={title} footerActions={footerActions}>
+        {/* Report Content */}
+        <scrollbox
+          ref={scrollRef}
+          style={{
+            rootOptions: {
+              flexGrow: 1,
+              width: "100%",
+              overflow: "hidden",
+            },
+            contentOptions: {
+              paddingLeft: 2,
+              paddingRight: 2,
+              paddingTop: 1,
+              paddingBottom: 1,
+              flexDirection: "column",
+            },
+            scrollbarOptions: {
+              trackOptions: {
+                foregroundColor: colors.primary,
+                backgroundColor: colors.backgroundElement,
+              },
+            },
+          }}
+          stickyScroll={false}
+          focused={true}
+        >
+          <markdown
+            content={content}
+            syntaxStyle={syntaxStyle}
+            conceal={true}
+            renderNode={renderNode}
+          />
+        </scrollbox>
+      </DialogLayout>
+    </Dialog>
   );
 }

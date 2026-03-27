@@ -41,7 +41,7 @@ export type ToolContext = {
   callbacks?: ConsumeCallbacks;
 
   /**
-   * When set, tools like execute_command / http_request / create_poc
+   * When set, tools like execute_command / http_request / document_vulnerability
    * route execution through this sandbox instead of running locally.
    */
   sandbox?: UnifiedSandbox;

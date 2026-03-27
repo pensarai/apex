@@ -49,14 +49,17 @@ export class PersistentShell {
       // interactive programs from writing prompts to the TUI's TTY.
       detached: process.platform !== "win32",
       env: {
-        ...process.env,
+        PATH: process.env.PATH ?? "",
+        HOME: process.env.HOME ?? "",
+        USER: process.env.USER ?? "",
+        LANG: process.env.LANG,
+        TMPDIR: process.env.TMPDIR,
         ...this.extraEnv,
         PS1: "",
-        // Hint to CLI tools that we're non-interactive
         CI: "true",
         TERM: "dumb",
         NO_COLOR: "1",
-      },
+      } as Record<string, string | undefined> as NodeJS.ProcessEnv,
     });
 
     this.alive = true;

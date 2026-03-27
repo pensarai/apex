@@ -160,6 +160,40 @@ describe("routeCommand", () => {
       command: "/unknown-cmd",
     });
   });
+
+  it("routes /threat-model to run-skill when skill is registered", () => {
+    const resolveSkill = (cmd: string) =>
+      cmd === "/threat-model"
+        ? "Generate application-centric threat model"
+        : null;
+    const result = routeCommand("/threat-model", resolveSkill);
+    expect(result).toEqual({
+      type: "run-skill",
+      slug: "threat-model",
+      autopilot: false,
+    });
+  });
+
+  it("routes /threat-model --autopilot with autopilot flag", () => {
+    const resolveSkill = (cmd: string) =>
+      cmd === "/threat-model"
+        ? "Generate application-centric threat model"
+        : null;
+    const result = routeCommand("/threat-model --autopilot", resolveSkill);
+    expect(result).toEqual({
+      type: "run-skill",
+      slug: "threat-model",
+      autopilot: true,
+    });
+  });
+
+  it("falls back to execute-command for /threat-model when skill is not registered", () => {
+    const result = routeCommand("/threat-model", noSkill);
+    expect(result).toEqual({
+      type: "execute-command",
+      command: "/threat-model",
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -550,7 +584,13 @@ describe("resolveInputFocused", () => {
 // ---------------------------------------------------------------------------
 
 describe("accumulateTokenUsage", () => {
-  const base = { inputTokens: 100, outputTokens: 50, totalTokens: 150 };
+  const base = {
+    inputTokens: 100,
+    outputTokens: 50,
+    totalTokens: 150,
+    cachedTokens: 10,
+    cacheWriteTokens: 5,
+  };
 
   it("accumulates input and output tokens", () => {
     const result = accumulateTokenUsage(base, 20, 10);
@@ -558,6 +598,8 @@ describe("accumulateTokenUsage", () => {
       inputTokens: 120,
       outputTokens: 60,
       totalTokens: 180,
+      cachedTokens: 10,
+      cacheWriteTokens: 5,
     });
   });
 
@@ -584,12 +626,20 @@ describe("accumulateTokenUsage", () => {
   });
 
   it("handles zero base", () => {
-    const zero = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
+    const zero = {
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+      cachedTokens: 0,
+      cacheWriteTokens: 0,
+    };
     const result = accumulateTokenUsage(zero, 10, 5);
     expect(result).toEqual({
       inputTokens: 10,
       outputTokens: 5,
       totalTokens: 15,
+      cachedTokens: 0,
+      cacheWriteTokens: 0,
     });
   });
 });

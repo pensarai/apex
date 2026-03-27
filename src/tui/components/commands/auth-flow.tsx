@@ -18,7 +18,7 @@ import {
 } from "../../../core/auth";
 import type { DeviceFlowInfo, WorkspaceInfo } from "../../../core/auth";
 import { Dialog } from "../../context/dialog";
-import { DialogControls } from "../shared/dialog-controls";
+import DialogLayout, { type FooterAction } from "../dialog-layout";
 import { useTheme } from "../../theme";
 
 interface AuthFlowProps {
@@ -470,21 +470,38 @@ export default function AuthFlow({ onClose, hideEsc }: AuthFlowProps) {
     }
   });
 
+  // ── Build dynamic footer actions ──────────────────────────────────
+
+  let footerActions: FooterAction[] = [];
+  if (step === "start") {
+    footerActions = [{ key: "Enter", label: "connect", variant: "primary" }];
+  } else if (step === "select-workspace") {
+    footerActions = [
+      { key: "Enter", label: "select", variant: "primary" },
+      { key: "D", label: "disconnect", variant: "danger" },
+    ];
+  } else if (step === "error") {
+    footerActions = [{ key: "Enter", label: "try again", variant: "primary" }];
+  } else if (step === "success") {
+    footerActions = [
+      {
+        key: "Enter",
+        label: showBillingWarning ? "open billing" : "done",
+        variant: "primary",
+      },
+      { key: "D", label: "disconnect", variant: "danger" },
+    ];
+  }
+
   // ── Render ──────────────────────────────────────────────────────────
 
   return (
     <Dialog size="large" onClose={goHome} hideEsc={hideEsc}>
-      <box
-        flexDirection="column"
-        width="100%"
-        alignItems="flex-start"
-        padding={1}
+      <DialogLayout
+        title="Pensar Console — Managed Inference"
+        escLabel={hideEsc ? null : "cancel"}
+        footerActions={footerActions}
       >
-        {/* Header */}
-        <box marginBottom={1}>
-          <text fg={colors.primary}>Pensar Console — Managed Inference</text>
-        </box>
-
         <box marginBottom={1}>
           <text fg={colors.textMuted}>
             Connect to Pensar Console for usage-based AI inference.{"\n"}
@@ -500,13 +517,6 @@ export default function AuthFlow({ onClose, hideEsc }: AuthFlowProps) {
                 Press <span fg={colors.primary}>[ENTER]</span> to authorize via
                 your browser.
               </text>
-            </box>
-            <box marginTop={1}>
-              <DialogControls
-                controls={[
-                  { key: "Enter", label: "Connect", variant: "primary" },
-                ]}
-              />
             </box>
           </box>
         )}
@@ -560,14 +570,6 @@ export default function AuthFlow({ onClose, hideEsc }: AuthFlowProps) {
                   </text>
                 </box>
               ))}
-            </box>
-            <box marginTop={1}>
-              <DialogControls
-                controls={[
-                  { key: "Enter", label: "Select", variant: "primary" },
-                  { key: "D", label: "Disconnect", variant: "danger" },
-                ]}
-              />
             </box>
           </box>
         )}
@@ -657,18 +659,6 @@ export default function AuthFlow({ onClose, hideEsc }: AuthFlowProps) {
                 Pensar models are now available in the model selector.
               </text>
             </box>
-            <box marginTop={1}>
-              <DialogControls
-                controls={[
-                  {
-                    key: "Enter",
-                    label: showBillingWarning ? "Open Billing" : "Done",
-                    variant: "primary",
-                  },
-                  { key: "D", label: "Disconnect", variant: "danger" },
-                ]}
-              />
-            </box>
           </box>
         )}
 
@@ -678,16 +668,9 @@ export default function AuthFlow({ onClose, hideEsc }: AuthFlowProps) {
             <box>
               <text fg={colors.error}>{error}</text>
             </box>
-            <box marginTop={1}>
-              <DialogControls
-                controls={[
-                  { key: "Enter", label: "Try Again", variant: "primary" },
-                ]}
-              />
-            </box>
           </box>
         )}
-      </box>
+      </DialogLayout>
     </Dialog>
   );
 }

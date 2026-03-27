@@ -4,7 +4,7 @@
  * A specialized agent that analyzes vulnerability findings and their discovery context
  * to determine appropriate CVSS 4.0 metrics and calculate scores.
  *
- * This agent is spawned by the document_finding tool to provide standardized
+ * This agent is spawned by the document_vulnerability tool to provide standardized
  * severity scoring based on the CVSS 4.0 specification.
  */
 

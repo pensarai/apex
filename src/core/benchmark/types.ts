@@ -26,6 +26,18 @@ export interface BenchmarkSuiteConfig {
   cleanupTempDirs: boolean;
 }
 
+export interface TokenMetrics {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  noCacheInputTokens: number;
+  estimatedCostUsd: number;
+  estimatedCostWithoutCacheUsd: number;
+  durationMs: number;
+}
+
 export interface BenchmarkRunResult {
   branch: string;
   metadata: BenchmarkMetadata | null;
@@ -34,6 +46,7 @@ export interface BenchmarkRunResult {
   flagValue: string | null;
   findingsCount: number;
   comparisonResult: ComparisonResult | null;
+  tokenMetrics: TokenMetrics | null;
   sessionPath: string;
   duration: number;
   error?: string;
@@ -57,4 +70,11 @@ export interface BenchmarkSuiteSummary {
   avgPrecision: number;
   avgRecall: number;
   totalDurationMinutes: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCacheReadTokens: number;
+  totalCacheWriteTokens: number;
+  totalEstimatedCostUsd: number;
+  totalEstimatedCostWithoutCacheUsd: number;
+  cacheHitRate: number;
 }
