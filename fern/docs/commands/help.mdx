@@ -33,6 +33,9 @@ When you run `/help`, you'll see a dialog showing:
   <Card title="/operator" icon="terminal">
     Start an interactive operator session with step-by-step control. Alias: `/o`
   </Card>
+  <Card title="/threat-model" icon="shield-halved">
+    Generate a threat model for a target. Alias: `/tm`
+  </Card>
   <Card title="/sessions" icon="clock-rotate-left">
     Browse and resume previous sessions. Alias: `/s`
   </Card>
@@ -81,6 +84,7 @@ When you run `/help`, you'll see a dialog showing:
 | --------------- | ------------------ | ----------------------------------------------- |
 | `/pentest`      | `/p`, `/web`, `/w` | Start autonomous pentest swarm                  |
 | `/operator`     | `/o`               | Start interactive operator session              |
+| `/threat-model` | `/tm`              | Generate a threat model for a target            |
 | `/sessions`     | `/s`               | Browse previous sessions                        |
 | `/help`         |                    | Show help dialog                                |
 | `/config`       |                    | Show config dialog                              |
@@ -136,7 +140,7 @@ For new users, here's the recommended order of commands:
 
 ## Command Suggestions
 
-When typing a `/` command, Apex displays a windowed suggestions dropdown with up to 6 visible entries at a time. Commands are sorted by priority — `/pentest`, `/operator`, `/auth`, `/models`, `/sessions`, `/themes`, `/help` appear first, followed by the rest alphabetically. Scroll indicators (`↑`/`↓`) appear when more suggestions exist outside the visible window.
+When typing a `/` command, Apex displays a windowed suggestions dropdown with up to 6 visible entries at a time. Commands are sorted by priority — `/pentest`, `/operator`, `/threat-model`, `/auth`, `/models`, `/sessions`, `/themes`, `/help` appear first, followed by the rest alphabetically. Scroll indicators (`↑`/`↓`) appear when more suggestions exist outside the visible window.
 
 ## CLI Commands
 
