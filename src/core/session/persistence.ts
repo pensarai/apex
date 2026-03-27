@@ -378,10 +378,7 @@ function convertMessagesToUI(
     if (Array.isArray(msg.content)) {
       for (const part of msg.content) {
         if (part.type === "tool-result" && part.toolCallId) {
-          toolResults.set(
-            part.toolCallId,
-            unwrapAiSdkToolOutput(part.output),
-          );
+          toolResults.set(part.toolCallId, unwrapAiSdkToolOutput(part.output));
         }
       }
     }
