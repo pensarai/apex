@@ -22,6 +22,7 @@ import {
 } from "../../specialized/findingJudge";
 import type { Finding } from "../types";
 import { hasCanonicalName } from "../../../../lib/cwe/types";
+import type { EvidenceFileEntry } from "../../../../lib/evidence/types";
 
 export const documentVulnerabilityInputSchema = z.object({
   title: z.string().describe("Finding title"),
@@ -223,6 +224,15 @@ CRITICAL RULES — READ BEFORE CALLING:
           input.pocDescription,
         );
 
+        // Build structured evidence file links
+        const evidenceFiles: EvidenceFileEntry[] = [];
+
+        evidenceFiles.push({
+          path: `pocs/${filename}.output.json`,
+          type: "poc-output",
+          description: `POC execution output for ${filename}`,
+        });
+
         // Phase 3: CVSS 4.0 scoring
         const timestamp = new Date().toISOString();
 
@@ -235,15 +245,19 @@ CRITICAL RULES — READ BEFORE CALLING:
         }
 
         let evidenceForPrompt = input.evidence;
-        let evidenceFilePath: string | undefined;
 
         if (input.evidence.length > EVIDENCE_FILE_THRESHOLD) {
           const evidenceFilename = `${timestamp.split("T")[0]}-${slugify(input.title, 40)}-evidence.txt`;
-          evidenceFilePath = join(outputDir, evidenceFilename);
+          const evidenceFilePath = join(outputDir, evidenceFilename);
           writeFileSync(evidenceFilePath, input.evidence);
           evidenceForPrompt =
             input.evidence.substring(0, EVIDENCE_FILE_THRESHOLD) +
             `\n... [truncated — full output saved to ${evidenceFilename}]`;
+          evidenceFiles.push({
+            path: `findings/${evidenceFilename}`,
+            type: "raw-evidence",
+            description: `Full evidence output (${input.evidence.length} bytes)`,
+          });
         }
 
         let cvssResult: CVSSScorerResult = FALLBACK_CVSS;
@@ -340,6 +354,7 @@ CRITICAL RULES — READ BEFORE CALLING:
             vulnerabilityClass: input.vulnerabilityClass,
           }),
           severity: severity as Finding["severity"],
+          ...(evidenceFiles.length > 0 && { evidenceFiles }),
         };
 
         if (isVulnerability && ctx.findingsRegistry) {
@@ -363,7 +378,6 @@ CRITICAL RULES — READ BEFORE CALLING:
           timestamp,
           sessionId: session.id,
           target: session.targets[0],
-          ...(evidenceFilePath && { evidenceFile: evidenceFilePath }),
           pocOutput: {
             stdout: stdout || "",
             stderr: stderr || "",
@@ -419,19 +433,28 @@ CRITICAL RULES — READ BEFORE CALLING:
 ${cvssResult.cwes.map((cwe) => `- **${cwe.id}**${hasCanonicalName(cwe) ? `: ${cwe.name}` : ""} — ${cwe.reasoning}`).join("\n")}`
             : "";
 
-          const evidenceSection = evidenceFilePath
+          const hasLargeEvidence = finding.evidenceFiles?.some(
+            (ef) => ef.type === "raw-evidence",
+          );
+          const evidenceSection = hasLargeEvidence
             ? `## Evidence
 
 \`\`\`
 ${input.evidence.substring(0, 5_000)}
 \`\`\`
 
-> Full evidence output: \`${evidenceFilePath}\``
+> Full evidence output: see evidence files below`
             : `## Evidence
 
 \`\`\`
 ${finding.evidence}
 \`\`\``;
+
+          const evidenceFilesSection = finding.evidenceFiles?.length
+            ? `## Evidence Files
+
+${finding.evidenceFiles.map((ef) => `- **[${ef.type}]** \`${ef.path}\` — ${ef.description}`).join("\n")}`
+            : "";
 
           const headerLines = [
             `**Severity:** ${cvssWarning ? `${finding.severity} (estimated)` : finding.severity}`,
@@ -461,7 +484,7 @@ ${cvssSection}
 
 ${cweSection ? `${cweSection}\n\n` : ""}${evidenceSection}
 
-## POC
+${evidenceFilesSection ? `${evidenceFilesSection}\n\n` : ""}## POC
 
 Path: \`${finding.pocPath}\`
 

@@ -19,10 +19,15 @@ import type { ToolName } from "./tools";
 import type { UnifiedSandbox } from "./tools/sandbox";
 import type { AgentEventBus } from "../../eventBus";
 import { z } from "zod";
+<<<<<<< HEAD
 import {
   CweEntrySchema,
   ValidatedCweEntrySchema,
 } from "../../../lib/cwe/types";
+=======
+import { CweEntrySchema } from "../../../lib/cwe/types";
+import { EvidenceFileEntrySchema } from "../../../lib/evidence/types";
+>>>>>>> 78755d8d (feat: add structured evidence file linking to findings)
 
 // Backward-compatible Finding schema (toolCallDescription is optional for parsing old findings)
 export const ApexFindingObject = z.object({
@@ -51,6 +56,7 @@ export const ApexFindingObject = z.object({
   cwes: z.array(ValidatedCweEntrySchema.or(CweEntrySchema)).optional(),
   rootCauseGroup: z.string().optional(),
   relatedFindings: z.array(z.string()).optional(),
+  evidenceFiles: z.array(EvidenceFileEntrySchema).optional(),
 });
 
 export type Finding = z.infer<typeof ApexFindingObject>;
