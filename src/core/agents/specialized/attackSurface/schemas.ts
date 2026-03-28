@@ -84,6 +84,8 @@ export const AppTypeEnum = z.enum([
   "admin_panel",
   "domain",
   "subdomain",
+  "cloud_resource",
+  "storage",
 ]);
 
 /**
@@ -129,6 +131,13 @@ export const DocumentAppSchema = z.object({
     .optional()
     .describe("Authentication type if known"),
   notes: z.string().optional().describe("Additional notes or observations"),
+  domain: z
+    .string()
+    .optional()
+    .describe(
+      "Domain URL this application is associated with (e.g., 'https://example.com'). " +
+        "Used to map applications to monitored domains. Only set if a known domain was provided.",
+    ),
 });
 
 /**

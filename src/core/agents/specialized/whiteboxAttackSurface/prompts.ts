@@ -25,6 +25,10 @@ Your primary search tool. Use it to find route definitions, middleware, controll
 **Use this to document each application/service you identify.** Each call persists a JSON record to the session's apps directory. Document:
 - Each application/service you identify (appType: "web_application" or "api")
 - Notable subdomains hosting distinct services (appType: "subdomain")
+- Cloud resources like S3 buckets, cloud storage, CDN origins (appType: "cloud_resource" or "storage")
+  - For S3 buckets: set url to the bucket endpoint (e.g. "https://bucket-name.s3.amazonaws.com") and use appType "storage"
+  - For other cloud resources: set url to the resource endpoint and use appType "cloud_resource"
+- If known domains are provided, set the \`domain\` field to associate the app with the correct domain
 
 ## document_endpoint
 **This is your primary output tool for endpoints.** Each call persists a JSON record to the session's endpoints directory, organized by app. Document:
@@ -55,6 +59,11 @@ Call this LAST with your complete structured results. This ends your run.
    - Monorepo workspace packages with their own entry points
    - Separate service directories with their own configs
    - A single app at the root
+4. Discover cloud resources and external infrastructure referenced in the code:
+   - S3 buckets, GCS buckets, Azure Blob Storage (search for bucket names, s3://, storage URLs)
+   - CDN distributions (CloudFront, Cloudflare)
+   - Infrastructure-as-code definitions (Terraform, CloudFormation, CDK, SST, Pulumi, serverless.yml)
+   - Document each as an app with appType "cloud_resource" or "storage" and set the url to the resource endpoint
 
 ## Phase 2: APP ANALYSIS (delegate to coding agents)
 For each app you identified, spawn a coding agent with a detailed objective. The objective should instruct the agent to:
