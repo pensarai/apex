@@ -47,7 +47,7 @@ function sanitizeName(name: string): string {
 
 const WHITEBOX_CODE_AGENT_SYSTEM_PROMPT = `You are an expert source-code analyst with direct filesystem access. You will be given a specific objective — focus exclusively on completing it.
 
-Your focus is on **deployed applications and services** — APIs, web apps, microservices — that listen on a port and serve traffic. Ignore libraries, shared packages, SDKs, CLI tools, build scripts, and test suites unless they are part of a deployable service.
+Your focus is on **deployed applications and services** — APIs, web apps, microservices — that listen on a port and serve traffic, as well as **owned cloud resources** (S3 buckets, cloud storage, CDN origins, etc.) that are part of the attack surface. Ignore libraries, shared packages, SDKs, CLI tools, build scripts, and test suites unless they are part of a deployable service.
 
 # Tool Usage Guide
 
@@ -112,12 +112,18 @@ const AppInfoSchema = z.object({
   framework: z
     .string()
     .describe(
-      "Framework in use (e.g. Express, Next.js, Django, FastAPI, Rails)",
+      "Framework or cloud service (e.g. Express, Next.js, Django, FastAPI, Rails, AWS S3, CloudFront)",
     ),
   description: z.string().describe("Brief description of what this app does"),
   location: z
     .string()
-    .describe("Path to the app root relative to the repository root"),
+    .describe("Path to the app root relative to the repository root, or resource identifier for cloud resources"),
+  type: z
+    .enum(["service", "cloud_resource"])
+    .default("service")
+    .describe(
+      "Whether this is a deployable service ('service') or an owned cloud resource like an S3 bucket ('cloud_resource')",
+    ),
 });
 
 const AppsDiscoveryResultSchema = z.object({
@@ -155,6 +161,8 @@ export interface WhiteboxAttackSurfaceWorkflowInput {
   attackSurfaceRegistry?: import("../findings/attackSurfaceRegistry").AttackSurfaceRegistry;
   onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
   onCacheMetrics?: (metrics: CacheMetrics) => void;
+  /** Known domains associated with the project — agents can map discovered apps to these. */
+  domains?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -206,6 +214,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     attackSurfaceRegistry,
     onStepFinish,
     onCacheMetrics,
+    domains,
   } = input;
 
   // =========================================================================
@@ -214,7 +223,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
 
   const appsAgent = new CodeAgent<AppsDiscoveryResult>({
     codebasePath,
-    objective: buildAppsDiscoveryObjective(codebasePath),
+    objective: buildAppsDiscoveryObjective(codebasePath, domains),
     system: WHITEBOX_CODE_AGENT_SYSTEM_PROMPT,
     model,
     session,
@@ -227,6 +236,8 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     responseSchema: AppsDiscoveryResultSchema,
   });
 
+  console.log(`[whitebox-workflow] Phase 1: discovering apps in ${codebasePath}${domains?.length ? ` (${domains.length} known domains)` : ""}`);
+
   const appsResult = await appsAgent.consume({
     onTextDelta: (d) => callbacks?.onTextDelta?.(d),
     onToolCallStreaming: (d) => callbacks?.onToolCallStreaming?.(d),
@@ -236,6 +247,21 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     onError: (e) => callbacks?.onError?.(e),
     subagentCallbacks: callbacks?.subagentCallbacks,
   });
+
+  console.log(
+    `[whitebox-workflow] Phase 1 complete: ${appsResult?.apps.length ?? 0} apps discovered` +
+      (appsResult
+        ? ` (repoType=${appsResult.repoType}, packageManager=${appsResult.packageManager})`
+        : " (no result returned)"),
+  );
+
+  if (appsResult?.apps.length) {
+    for (const app of appsResult.apps) {
+      console.log(
+        `[whitebox-workflow]   app: "${app.name}" type=${app.type} framework="${app.framework}" location="${app.location}"`,
+      );
+    }
+  }
 
   if (!appsResult || appsResult.apps.length === 0) {
     return {
@@ -276,23 +302,41 @@ export async function runWhiteboxAttackSurfaceWorkflow(
 
   // =========================================================================
   // Phase 2: For each app, discover pages + API endpoints via document_endpoint
+  //          Cloud resources get a specialized objective instead of pages/API.
   // =========================================================================
 
   type AppTask = {
     appInfo: z.infer<typeof AppInfoSchema>;
-    type: "pages" | "apiEndpoints";
+    type: "pages" | "apiEndpoints" | "cloudResourceEndpoints";
   };
 
-  const tasks: AppTask[] = appsResult.apps.flatMap((app) => [
-    { appInfo: app, type: "pages" as const },
-    { appInfo: app, type: "apiEndpoints" as const },
-  ]);
+  const serviceApps = appsResult.apps.filter((app) => app.type !== "cloud_resource");
+  const cloudApps = appsResult.apps.filter((app) => app.type === "cloud_resource");
+
+  console.log(
+    `[whitebox-workflow] Phase 2: ${serviceApps.length} service apps (pages+api each), ${cloudApps.length} cloud resources → ${serviceApps.length * 2 + cloudApps.length} total tasks`,
+  );
+
+  const tasks: AppTask[] = [
+    ...serviceApps.flatMap((app) => [
+      { appInfo: app, type: "pages" as const },
+      { appInfo: app, type: "apiEndpoints" as const },
+    ]),
+    ...cloudApps.map((app) => ({
+      appInfo: app,
+      type: "cloudResourceEndpoints" as const,
+    })),
+  ];
 
   await runWithBoundedConcurrency(
     tasks,
     DEFAULT_CONCURRENCY,
     async (task, _index) => {
       const subagentId = `${task.type}-${task.appInfo.name}`;
+
+      console.log(
+        `[whitebox-workflow] Phase 2: spawning agent "${subagentId}" (app="${task.appInfo.name}", type=${task.type}, appType=${task.appInfo.type})`,
+      );
 
       callbacks?.subagentCallbacks?.onSubagentSpawn?.({
         subagentId,
@@ -303,7 +347,9 @@ export async function runWhiteboxAttackSurfaceWorkflow(
       const objective =
         task.type === "pages"
           ? buildPagesDiscoveryObjective(codebasePath, task.appInfo)
-          : buildApiEndpointsDiscoveryObjective(codebasePath, task.appInfo);
+          : task.type === "cloudResourceEndpoints"
+            ? buildCloudResourceEndpointsObjective(codebasePath, task.appInfo)
+            : buildApiEndpointsDiscoveryObjective(codebasePath, task.appInfo);
 
       const agent = new CodeAgent<DiscoverySummary>({
         codebasePath,
@@ -318,6 +364,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
         onStepFinish: (event) => onStepFinish?.(event),
         onCacheMetrics,
         responseSchema: DiscoverySummarySchema,
+        excludeTools: ["document_app"],
       });
 
       try {
@@ -355,12 +402,21 @@ export async function runWhiteboxAttackSurfaceWorkflow(
             : undefined,
         });
 
+        console.log(
+          `[whitebox-workflow] Phase 2: agent "${subagentId}" completed`,
+        );
+
         callbacks?.subagentCallbacks?.onSubagentComplete?.({
           subagentId,
           input: { app: task.appInfo.name, type: task.type },
           status: "completed",
         });
       } catch (error) {
+        console.error(
+          `[whitebox-workflow] Phase 2: agent "${subagentId}" FAILED:`,
+          error instanceof Error ? error.message : String(error),
+        );
+
         callbacks?.subagentCallbacks?.onSubagentComplete?.({
           subagentId,
           input: { app: task.appInfo.name, type: task.type },
@@ -374,11 +430,19 @@ export async function runWhiteboxAttackSurfaceWorkflow(
   // Phase 3: Read assets directory to build endpoint data
   // =========================================================================
 
+  console.log(`[whitebox-workflow] Phase 3: reading assets from ${assetsPath}`);
+
   const {
     apps: parsedApps,
     repoType,
     packageManager,
   } = readAppsFromAssetsDirectory(assetsPath, appsResult);
+
+  for (const app of parsedApps) {
+    console.log(
+      `[whitebox-workflow] Phase 3: "${app.name}" → ${app.pages.length} pages, ${app.apiEndpoints.length} API endpoints`,
+    );
+  }
 
   // =========================================================================
   // Phase 4: Risk scoring — score all endpoints in parallel
@@ -487,15 +551,20 @@ function readAppsFromAssetsDirectory(
   const packageManager = appsDiscovery?.packageManager ?? "unknown";
 
   if (!existsSync(assetsPath)) {
+    console.log(`[readAssets] Assets directory does not exist: ${assetsPath}`);
     return { apps: [], repoType, packageManager };
   }
 
   const entries = readdirSync(assetsPath);
+  console.log(`[readAssets] Found ${entries.length} entries in ${assetsPath}: [${entries.join(", ")}]`);
   const apps: App[] = [];
 
   for (const entry of entries) {
     const entryPath = join(assetsPath, entry);
-    if (!statSync(entryPath).isDirectory()) continue;
+    if (!statSync(entryPath).isDirectory()) {
+      console.log(`[readAssets] Skipping non-directory: ${entry}`);
+      continue;
+    }
 
     const appJsonPath = join(entryPath, "app.json");
     let metadata: AppMetadata;
@@ -506,10 +575,11 @@ function readAppsFromAssetsDirectory(
           readFileSync(appJsonPath, "utf-8"),
         ) as AppMetadata;
       } catch {
-        console.warn(`Skipping app folder with unreadable app.json: ${entry}`);
+        console.warn(`[readAssets] Skipping app folder with unreadable app.json: ${entry}`);
         continue;
       }
     } else {
+      console.log(`[readAssets] Skipping folder without app.json: ${entry}`);
       continue;
     }
 
@@ -520,13 +590,22 @@ function readAppsFromAssetsDirectory(
       (f) => f.endsWith(".json") && f !== "app.json",
     );
 
+    console.log(
+      `[readAssets] App "${metadata.name}" (${entry}): ${assetFiles.length} asset files`,
+    );
+
+    let parseFailed = 0;
     for (const file of assetFiles) {
       try {
         const raw = readFileSync(join(entryPath, file), "utf-8");
         const data = JSON.parse(raw) as DocumentedEndpointRecord;
 
         const endpoint = assetRecordToEndpoint(data);
-        if (!endpoint) continue;
+        if (!endpoint) {
+          console.log(`[readAssets]   ${file}: failed schema validation (assetRecordToEndpoint returned null)`);
+          parseFailed++;
+          continue;
+        }
 
         if (isPageEndpoint(data)) {
           pages.push(endpoint);
@@ -534,9 +613,14 @@ function readAppsFromAssetsDirectory(
           apiEndpoints.push(endpoint);
         }
       } catch {
-        console.warn(`Skipping unreadable asset file: ${entry}/${file}`);
+        console.warn(`[readAssets] Skipping unreadable asset file: ${entry}/${file}`);
+        parseFailed++;
       }
     }
+
+    console.log(
+      `[readAssets] App "${metadata.name}": ${pages.length} pages, ${apiEndpoints.length} API endpoints, ${parseFailed} failed`,
+    );
 
     apps.push({
       name: metadata.name,
@@ -598,23 +682,30 @@ function isPageEndpoint(record: DocumentedEndpointRecord): boolean {
 // Objective builders
 // ---------------------------------------------------------------------------
 
-function buildAppsDiscoveryObjective(codebasePath: string): string {
+function buildAppsDiscoveryObjective(codebasePath: string, domains?: string[]): string {
+  const domainSection = domains?.length
+    ? `\n## Known Domains\nThe following domains are associated with this project. When you document an application, set the \`domain\` field on \`document_app\` if you can determine which domain the app is served from:\n${domains.map((d) => `- ${d}`).join("\n")}\n`
+    : "";
+
   return `# Identify All Applications in the Repository
 
 ## Codebase
 - **Path:** ${codebasePath}
-
+${domainSection}
 ## Task
-Analyze the repository structure and identify every **deployed application or service** (APIs, web apps, microservices) defined within it.
+Analyze the repository structure and identify every **deployed application or service** (APIs, web apps, microservices) defined within it. Also discover **cloud resources and external services** referenced in the code that are owned by the target (e.g. S3 buckets, cloud storage, CDN origins, message queues).
 
-**IMPORTANT: Only include deployable apps and services.** Exclude:
+**IMPORTANT: Only include deployable apps, services, and owned cloud resources.** Exclude:
 - Libraries, SDKs, and shared packages that are consumed by other code but not deployed on their own
 - Git submodules (external dependencies)
 - Build tools, scripts, CLI utilities, and dev tooling
 - Test suites, fixtures, and test helpers
 - Documentation packages
+- Third-party SaaS services not owned by the target (e.g. Stripe, auth providers)
 
 An app/service qualifies if it **listens on a port, serves HTTP traffic, or runs as a deployed process** (e.g. an Express server, a Next.js app, a Django project, a FastAPI service, a background worker with an API).
+
+A **cloud resource** qualifies if it is an **owned infrastructure resource** referenced in the code — S3 buckets, GCS buckets, Azure Blob Storage, CloudFront distributions, Redis/ElastiCache instances, SQS queues, etc. These are part of the attack surface because they may have misconfigured permissions, public access, or sensitive data.
 
 ### Steps
 1. List the root directory and read top-level config files (package.json, requirements.txt, Cargo.toml, go.mod, etc.)
@@ -625,11 +716,21 @@ An app/service qualifies if it **listens on a port, serves HTTP traffic, or runs
    - For monorepos: look at workspace packages that have their own server entry point, Dockerfile, or deploy config — skip packages that are libraries/utilities consumed by other packages
    - For multi-service repos: look at separate service directories with their own server startup
    - For single apps: the root is the app
-6. For each app, determine:
+6. **Discover cloud resources** referenced in the codebase:
+   - Search for S3 bucket references (\`s3://\`, \`new S3Client\`, \`boto3.client('s3')\`, bucket name strings in config)
+   - Search for cloud storage URLs (e.g. \`*.s3.amazonaws.com\`, \`storage.googleapis.com\`)
+   - Search for CDN/distribution configs (CloudFront, Cloudflare, etc.)
+   - Search for message queue references (SQS, SNS, RabbitMQ, etc.)
+   - Search for cache/database endpoints (ElastiCache, Redis, DynamoDB, etc.)
+   - Check infrastructure-as-code files (Terraform, CloudFormation, CDK, Pulumi, SST, serverless.yml)
+   - Document each cloud resource as an app with \`appType: "cloud_resource"\` or \`appType: "storage"\`
+   - For S3 buckets: set the \`url\` to the bucket endpoint (e.g. \`https://bucket-name.s3.amazonaws.com\`)
+7. For each app/resource, determine:
    - **name**: the application or service name
-   - **framework**: the web framework (Express, Next.js, Django, FastAPI, Rails, Spring, etc.)
+   - **framework**: the web framework or cloud service (e.g. "AWS S3", "CloudFront", "Express")
    - **description**: brief summary of what it does
-   - **location**: path relative to the repository root
+   - **location**: path relative to the repository root (for code) or the resource identifier (for cloud resources)
+   - **type**: set to \`"cloud_resource"\` for S3 buckets, CDN distributions, message queues, etc. Set to \`"service"\` (default) for deployable apps and services.
 
 When finished, call the \`response\` tool with your structured findings.`;
 }
@@ -645,8 +746,16 @@ function buildPagesDiscoveryObjective(
 - **App location:** ${appInfo.location}
 - **Framework:** ${appInfo.framework}
 
+## Scope — CRITICAL
+**Only document pages/views that are DEFINED within this application (\`${appInfo.location}\`).** A page belongs to this app if its route definition or component file lives inside \`${appInfo.location}\`.
+
+Do NOT document:
+- Routes defined in other applications or packages (even if this app imports/calls them)
+- External URLs or cloud resource endpoints that this app links to or fetches from
+- API endpoints (those are handled separately)
+
 ## Task
-Find ALL web pages, views, and routes that render HTML or serve client-side UI in this application.
+Find ALL web pages, views, and routes that render HTML or serve client-side UI **defined in this application's source code**.
 
 ### What to look for (by framework)
 - **React/Next.js**: pages/ or app/ directory, route components, layout files
@@ -665,7 +774,7 @@ For each page, call \`document_endpoint\` with:
 - **description**: Brief description of what this page shows
 - **url**: The route path
 - **method**: \`"PAGE"\`
-- **file**: Source file where this page is defined
+- **file**: Source file where this page is defined (must be inside \`${appInfo.location}\`)
 - **line**: Line number (if determinable)
 - **handler**: Component or handler name
 - **authRequired**: Whether the page requires authentication
@@ -675,7 +784,7 @@ For each page, call \`document_endpoint\` with:
   - "Test for authorization bypass — access admin dashboard as regular user"
   - "Test for CSRF on the settings update form"
 
-Be thorough — examine every route file, every page directory, every template.
+Be thorough — examine every route file, every page directory, every template **within \`${appInfo.location}\`**.
 When finished, call \`response\` with a summary of how many pages you documented.`;
 }
 
@@ -690,8 +799,17 @@ function buildApiEndpointsDiscoveryObjective(
 - **App location:** ${appInfo.location}
 - **Framework:** ${appInfo.framework}
 
+## Scope — CRITICAL
+**Only document API routes that are DEFINED within this application (\`${appInfo.location}\`).** An endpoint belongs to this app if its route handler or route definition file lives inside \`${appInfo.location}\`.
+
+Do NOT document:
+- Routes defined in other applications or packages
+- External API calls this app makes to third-party services or other internal services
+- S3 bucket URLs, cloud resource endpoints, or CDN URLs that this app interacts with — those belong to the cloud resource, not this API
+- Web pages/views (those are handled separately)
+
 ## Task
-Find ALL API endpoints defined in this application.
+Find ALL API endpoints **whose route definitions live in this application's source code**.
 
 ### What to look for (by framework)
 - **Express**: app.get(), app.post(), router.get(), router.post(), router.put(), router.delete(), etc.
@@ -710,7 +828,7 @@ For each **unique route path**, call \`document_endpoint\` with:
 - **description**: Brief description of what this endpoint does across all its methods
 - **url**: The route path
 - **method**: Array of ALL HTTP methods this path supports (e.g., \`["GET", "POST"]\`). **Do NOT create separate entries for each method — consolidate them.**
-- **file**: Source file where the endpoint is defined
+- **file**: Source file where the endpoint is defined (must be inside \`${appInfo.location}\`)
 - **line**: Line number (if determinable)
 - **handler**: Handler function name (comma-separate if multiple handlers for different methods)
 - **authRequired**: Whether the endpoint requires authentication (true if ANY method requires it)
@@ -723,10 +841,71 @@ For each **unique route path**, call \`document_endpoint\` with:
 
 **CRITICAL: ONE entry per route path.** If \`/api/products\` has GET (list) and POST (create), document it as ONE entry with \`method: ["GET", "POST"]\`. Do NOT create two separate entries.
 
-**IMPORTANT — Method consolidation for document_endpoint:** When using the \`document_endpoint\` tool, do NOT create separate entries for different HTTP methods on the same route path. For example, if \`/api/users\` supports GET, POST, and DELETE, document it as ONE entry with \`method: ["GET", "POST", "DELETE"]\` and include pentest objectives covering all methods. However, when reporting endpoints via the \`response\` tool, you may still list each method+path combination individually for completeness — the consolidation rule applies specifically to \`document_endpoint\` calls.
+**IMPORTANT — Method consolidation for document_endpoint:** When using the \`document_endpoint\` tool, do NOT create separate entries for different HTTP methods on the same route path. For example, if \`/api/users\` supports GET, POST, and DELETE, document it as ONE entry with \`method: ["GET", "POST", "DELETE"]\` and include pentest objectives covering all methods.
 
-Be thorough — trace through all route registrations, middleware chains, and controller files.
+Be thorough — trace through all route registrations, middleware chains, and controller files **within \`${appInfo.location}\`**.
 When finished, call \`response\` with a summary of how many endpoints you documented.`;
+}
+
+function buildCloudResourceEndpointsObjective(
+  codebasePath: string,
+  appInfo: z.infer<typeof AppInfoSchema>,
+): string {
+  return `# Document Entry Points for Cloud Resource: ${appInfo.name}
+
+## Codebase
+- **Repository root:** ${codebasePath}
+- **Resource location:** ${appInfo.location}
+- **Service:** ${appInfo.framework}
+
+## Scope — CRITICAL
+You are documenting the **externally-accessible entry points of this cloud resource itself** — the URLs, ARNs, or endpoints where the resource can be reached from outside the application code.
+
+Do NOT document:
+- Code locations where the app calls/uses this resource (e.g. "line 42 of api.ts calls S3.putObject" is NOT an endpoint — that's application code, not a resource entry point)
+- API routes from other apps that happen to interact with this resource
+- Internal SDK calls or client instantiations
+
+DO document:
+- The resource's own external URLs (e.g. \`https://bucket-name.s3.amazonaws.com\`)
+- Public access endpoints (e.g. static website hosting URL, CDN distribution URL)
+- Resource identifiers that represent direct access points (queue URLs, function URLs)
+
+## Task
+Find the **externally-accessible entry points** for this cloud resource by reading infrastructure-as-code and configuration.
+
+### Where to find entry point information
+1. **Infrastructure-as-code** — Terraform (*.tf), CloudFormation (*.yaml/*.json), CDK constructs, SST components (sst.config.ts, infra/), Pulumi, serverless.yml — these define the resource and its access configuration
+2. **Configuration files** — .env files, config modules, environment variable definitions that contain resource URLs
+3. **Resource policies** — bucket policies, CORS configs, access control settings that reveal how the resource is exposed
+
+### What qualifies as an entry point (by resource type)
+- **S3 / GCS / Blob Storage**: The bucket's HTTP endpoint (e.g. \`https://bucket.s3.amazonaws.com\`), static website hosting URL, pre-signed URL patterns. One entry point per distinct access pattern (e.g. public read vs authenticated upload are separate).
+- **CloudFront / CDN**: Distribution domain (e.g. \`https://d123.cloudfront.net\`), custom domain aliases
+- **SQS / SNS / Message Queues**: Queue URL, topic ARN
+- **Lambda / Cloud Functions**: Function URL, API Gateway integration URL
+- **DynamoDB / ElastiCache / Redis**: Connection endpoint URL
+
+### How to document each entry point
+For each entry point, call \`document_endpoint\` with:
+- **appName**: \`${appInfo.name}\`
+- **endpointName**: The resource's external URL or identifier (e.g., \`https://bucket.s3.amazonaws.com\`, \`arn:aws:sqs:...\`)
+- **endpointType**: \`"asset"\`
+- **description**: What this entry point exposes (e.g., "Public static asset hosting", "User upload pre-signed URL endpoint", "Event queue ingestion")
+- **url**: The external URL or ARN of the resource itself
+- **method**: Access methods on the resource (e.g., \`["GET", "PUT"]\` for S3, \`["SendMessage", "ReceiveMessage"]\` for SQS, \`["READ", "WRITE"]\` for generic)
+- **file**: Infrastructure or config file where this resource is defined (NOT application code that calls it)
+- **line**: Line number if determinable
+- **authRequired**: Whether external access requires authentication
+- **riskLevel**: CRITICAL for publicly accessible storage with write access or sensitive data, HIGH for resources with broad IAM permissions, MEDIUM for internal resources, LOW for read-only public assets
+- **pentestObjectives**: Testing goals for the resource itself, e.g.:
+  - "Test for public bucket access — check if objects are listable without auth"
+  - "Test for bucket policy misconfiguration — attempt to write/delete objects"
+  - "Test for pre-signed URL expiration and scope"
+  - "Test for CORS misconfiguration allowing cross-origin data exfiltration"
+  - "Test for overly permissive IAM roles attached to this resource"
+
+When finished, call \`response\` with a summary of how many entry points you documented.`;
 }
 
 // ---------------------------------------------------------------------------
@@ -876,6 +1055,7 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
     diffPath,
     assetsPath,
     existingResult,
+    input.domains,
   );
 
   const agent = new CodeAgent<IncrementalResult>({
@@ -1023,6 +1203,7 @@ function buildIncrementalObjective(
   diffPath: string,
   assetsPath: string,
   existingResult: WhiteboxAttackSurfaceResult,
+  domains?: string[],
 ): string {
   const appsSummary = existingResult.apps
     .map((app) => {
@@ -1031,15 +1212,20 @@ function buildIncrementalObjective(
     })
     .join("\n");
 
+  const domainSection = domains?.length
+    ? `\n## Known Domains\nThe following domains are associated with this project. When documenting new apps, set the \`domain\` field on \`document_app\` if you can determine which domain serves the app:\n${domains.map((d) => `- ${d}`).join("\n")}\n`
+    : "";
+
   return `# Incremental Attack Surface Update
 
 ## Context
-You are updating the attack surface map for a repository after a new commit. Rather than analyzing the entire codebase, you will analyze only the **changed files** and update the existing endpoint assets accordingly.
+You are updating the attack surface map for a repository after a new commit. Rather than analyzing the entire codebase, you will analyze only the **changed files** and update the existing endpoint assets accordingly. Also check for any new cloud resources (S3 buckets, storage, CDN origins, etc.) introduced in the diff.
 
 ## Codebase
 - **Path:** ${codebasePath}
 - **Diff file:** ${diffPath} (contains \`git diff\` output between the previous and current commit)
 - **Existing assets directory:** ${assetsPath}
+${domainSection}
 
 ## Directory Structure
 The assets directory uses app-scoped folders:
