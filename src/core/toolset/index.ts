@@ -217,6 +217,15 @@ export const ALL_TOOLS: ToolDefinition[] = [
     defaultEnabled: true,
   },
   {
+    id: "run_pentest_workflow",
+    name: "Run Pentest Workflow",
+    description: "Full autonomous pentest",
+    detail:
+      "Run the complete pentest pipeline: attack surface discovery, pentest swarm, and report generation. Used by the /pentest skill.",
+    category: "exploitation",
+    defaultEnabled: true,
+  },
+  {
     id: "record_test_result",
     name: "Record Test Result",
     description: "Log test outcome",

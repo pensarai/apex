@@ -83,6 +83,10 @@ const TOOL_SUMMARY_MAP: Record<string, ToolSummaryFn> = {
     const targets = args.targets as unknown[];
     return `pentest swarm ×${targets?.length ?? "?"}`;
   },
+  run_pentest_workflow: (args) => {
+    const mode = args.cwd ? "whitebox" : "blackbox";
+    return `pentest workflow (${mode}) ${args.target || ""}`;
+  },
   delegate_to_auth_subagent: (args) =>
     `auth ${args.target || ""} — ${args.reason || ""}`,
 

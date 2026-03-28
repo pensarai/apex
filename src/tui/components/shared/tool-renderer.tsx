@@ -20,6 +20,7 @@ const TOOLS_WITH_LOG_WINDOW = new Set([
   "run_attack_surface",
   "spawn_coding_agent",
   "spawn_pentest_swarm",
+  "run_pentest_workflow",
   "delegate_to_auth_subagent",
   "create_file",
   "update_file",
@@ -95,10 +96,11 @@ export const ToolRenderer = memo(function ToolRenderer({
           )}
         </box>
 
-        {/* Swarm grid for pentest swarm tool */}
+        {/* Swarm grid for pentest swarm / workflow tools */}
         {isPending &&
           hasSubagentLogs &&
-          toolName === "spawn_pentest_swarm" && (
+          (toolName === "spawn_pentest_swarm" ||
+            toolName === "run_pentest_workflow") && (
             <SwarmGrid
               subagentLogs={subagentLogs!}
               isPending={isPending}
@@ -109,7 +111,8 @@ export const ToolRenderer = memo(function ToolRenderer({
         {/* Per-subagent output windows (non-swarm tools) */}
         {isPending &&
           hasSubagentLogs &&
-          toolName !== "spawn_pentest_swarm" && (
+          toolName !== "spawn_pentest_swarm" &&
+          toolName !== "run_pentest_workflow" && (
             <box flexDirection="column" marginLeft={0} marginTop={0}>
               {Object.entries(subagentLogs!).map(([id, entry]) => (
                 <SubagentLogWindow
