@@ -1,5 +1,19 @@
 import type { RiskScore } from "../whiteboxAttackSurface/types";
-import type { RiskLevel, AssetType, AssetDetails } from "./schemas";
+import type { RiskLevel } from "./schemas";
+
+interface EndpointDetails {
+  url?: string;
+  method?: string | string[];
+  authentication?: string;
+  authRequired?: boolean;
+  handler?: string;
+  file?: string;
+  line?: number;
+  services?: string[];
+  technology?: string[];
+  status?: string | number;
+  [key: string]: unknown;
+}
 
 /**
  * Base score mapping from risk level to total score.
@@ -40,8 +54,8 @@ const EXPOSURE_BY_RISK: Record<RiskLevel, number> = {
  */
 export function computeBlackboxRiskScore(
   riskLevel: RiskLevel,
-  assetType: AssetType,
-  details?: AssetDetails,
+  assetType: string,
+  details?: EndpointDetails,
   notes?: string,
 ): RiskScore {
   const exposure = computeExposure(riskLevel, details);
@@ -86,7 +100,7 @@ export function computeBlackboxRiskScore(
 // Dimension helpers
 // ---------------------------------------------------------------------------
 
-function computeExposure(riskLevel: RiskLevel, details?: AssetDetails): number {
+function computeExposure(riskLevel: RiskLevel, details?: EndpointDetails): number {
   let base = EXPOSURE_BY_RISK[riskLevel] ?? 1;
 
   if (details?.authentication) {
@@ -110,8 +124,8 @@ function computeExposure(riskLevel: RiskLevel, details?: AssetDetails): number {
 
 function computeDataSensitivity(
   riskLevel: RiskLevel,
-  assetType: AssetType,
-  details?: AssetDetails,
+  assetType: string,
+  details?: EndpointDetails,
 ): number {
   if (riskLevel === "CRITICAL") return 3;
 
@@ -135,8 +149,8 @@ function computeDataSensitivity(
 
 function computeFunctionCriticality(
   riskLevel: RiskLevel,
-  assetType: AssetType,
-  details?: AssetDetails,
+  assetType: string,
+  details?: EndpointDetails,
   notes?: string,
 ): number {
   if (assetType === "admin_panel") return 2;
@@ -174,7 +188,7 @@ function computeFunctionCriticality(
 
 function computeSecurityIndicators(
   riskLevel: RiskLevel,
-  details?: AssetDetails,
+  details?: EndpointDetails,
   notes?: string,
 ): number {
   if (riskLevel === "CRITICAL") return 2;
@@ -228,7 +242,7 @@ function computeSecurityIndicators(
 
 function buildExplanation(
   riskLevel: RiskLevel,
-  assetType: AssetType,
+  assetType: string,
   _baseScore: number,
   totalScore: number,
   breakdown: {
