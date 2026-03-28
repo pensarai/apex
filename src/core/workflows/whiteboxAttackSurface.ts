@@ -16,7 +16,7 @@ import {
   type App,
   type RiskScore,
 } from "../agents/specialized/whiteboxAttackSurface/types";
-import type { DocumentedAssetRecord } from "../agents/specialized/attackSurface/schemas";
+import type { DocumentedEndpointRecord } from "../agents/specialized/attackSurface/schemas";
 import type { AIModel, CacheMetrics } from "../ai";
 import type { AIAuthConfig } from "../ai/utils";
 import type { SessionInfo } from "../session";
@@ -74,18 +74,22 @@ Search file contents by pattern. This is your most powerful navigation tool.
 Run shell commands when needed.
 - Use for build tools, git operations, package managers, linters, etc.
 
-## document_asset
-**This is your primary output tool.** Use it to document every endpoint and asset you discover. Each call persists a JSON record to the session's assets directory.
+## document_app
+Use this to document each application/service you identify. Persists a JSON record to the session's apps directory.
+
+## document_endpoint
+**This is your primary output tool for endpoints.** Use it to document every endpoint you discover. Each call persists a JSON record to the session's endpoints directory, organized by app.
 
 **CRITICAL — endpoint documentation rules:**
-- **One asset per unique route path.** Do NOT create separate assets for different HTTP methods on the same path. If \`/api/users\` supports GET, POST, and DELETE, that is ONE asset with \`details.method: ["GET", "POST", "DELETE"]\`.
-- **Use \`details.method: "PAGE"\`** for web pages and views (non-API routes).
-- **Always set \`appName\`** to the application name provided in your objective. This organizes assets into the correct app folder.
-- **Always set \`details.url\`** to the route path (e.g., \`/api/users/:id\`, \`/dashboard\`).
-- **Always set \`details.file\`** to the source file where the route is defined.
-- **Set \`details.line\`** to the line number when determinable.
-- **Set \`details.handler\`** to the handler function or component name.
-- **Set \`details.authRequired\`** to true/false based on middleware, guards, or decorators.
+- **One entry per unique route path.** Do NOT create separate entries for different HTTP methods on the same path. If \`/api/users\` supports GET, POST, and DELETE, that is ONE entry with \`method: ["GET", "POST", "DELETE"]\`.
+- **Use \`method: "PAGE"\`** for web pages and views (non-API routes).
+- **Always set \`appName\`** to the application name provided in your objective.
+- **Always set \`url\`** to the route path (e.g., \`/api/users/:id\`, \`/dashboard\`).
+- **Always set \`file\`** to the source file where the route is defined.
+- **Set \`line\`** to the line number when determinable.
+- **Set \`handler\`** to the handler function or component name.
+- **Set \`authRequired\`** to true/false based on middleware, guards, or decorators.
+
 
 ## response
 When your objective includes structured output, call \`response\` with your final results once you are done. This ends your run.
@@ -94,7 +98,7 @@ When your objective includes structured output, call \`response\` with your fina
 1. **Orient first** — list files and read key entry points to understand the structure.
 2. **Ignore submodules** — check for a \`.gitmodules\` file or run \`git submodule status\`. Any directories that are git submodules are external dependencies and must be **completely excluded** from your analysis.
 3. **Search, then read** — use grep to locate what you need, then read the relevant files.
-4. **Document as you go** — call document_asset for every endpoint you discover. Don't batch them up.
+4. **Document as you go** — call document_app for apps and document_endpoint for every endpoint you discover. Don't batch them up.
 5. **Follow the trail** — trace through imports, function calls, and references to build full understanding.
 6. **Be thorough** — don't stop at the first match. Cover everything relevant to the objective.
 `;
@@ -131,7 +135,7 @@ type AppsDiscoveryResult = z.infer<typeof AppsDiscoveryResultSchema>;
 const DiscoverySummarySchema = z.object({
   endpointsDocumented: z
     .number()
-    .describe("Number of endpoints documented via document_asset"),
+    .describe("Number of endpoints documented via document_endpoint"),
   summary: z.string().describe("Brief summary of what was found"),
 });
 
@@ -184,7 +188,7 @@ interface AppMetadata {
  * Phase 1: Spawn a single CodeAgent to identify all apps in the repo.
  * Phase 1.5: Create app folders with app.json metadata.
  * Phase 2: For each app, spawn two CodeAgents in parallel — one for
- *           pages, one for API endpoints — using document_asset.
+ *           pages, one for API endpoints — using document_endpoint.
  * Phase 3: Read the assets directory to build endpoint data.
  * Phase 4: Risk scoring.
  * Phase 5: Final assembly.
@@ -271,7 +275,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
   }
 
   // =========================================================================
-  // Phase 2: For each app, discover pages + API endpoints via document_asset
+  // Phase 2: For each app, discover pages + API endpoints via document_endpoint
   // =========================================================================
 
   type AppTask = {
@@ -466,10 +470,10 @@ export async function runWhiteboxAttackSurfaceWorkflow(
  *   assets/
  *     <app-name>/
  *       app.json          — app metadata (name, framework, description, location)
- *       asset_*.json      — endpoint assets written by document_asset
+ *       asset_*.json      — endpoint assets written by document_endpoint
  *
- * Each asset file is a {@link DocumentedAssetRecord}. Endpoints are classified
- * as pages (details.method contains "PAGE") or API endpoints (everything else).
+ * Each asset file is a {@link DocumentedEndpointRecord}. Endpoints are classified
+ * as pages (method contains "PAGE") or API endpoints (everything else).
  */
 function readAppsFromAssetsDirectory(
   assetsPath: string,
@@ -519,7 +523,7 @@ function readAppsFromAssetsDirectory(
     for (const file of assetFiles) {
       try {
         const raw = readFileSync(join(entryPath, file), "utf-8");
-        const data = JSON.parse(raw) as DocumentedAssetRecord;
+        const data = JSON.parse(raw) as DocumentedEndpointRecord;
 
         const endpoint = assetRecordToEndpoint(data);
         if (!endpoint) continue;
@@ -548,26 +552,25 @@ function readAppsFromAssetsDirectory(
 }
 
 /**
- * Convert a {@link DocumentedAssetRecord} (from document_asset) to an
+ * Convert a {@link DocumentedEndpointRecord} (from document_endpoint) to an
  * {@link Endpoint} (for the whitebox result schema).
  */
-function assetRecordToEndpoint(record: DocumentedAssetRecord): Endpoint | null {
-  const details = record.details ?? {};
-  const rawMethod = details.method;
+function assetRecordToEndpoint(record: DocumentedEndpointRecord): Endpoint | null {
+  const rawMethod = record.method;
   const method = Array.isArray(rawMethod)
     ? rawMethod.join(", ")
     : (rawMethod ?? "UNKNOWN");
 
-  const path = details.url ?? record.assetName;
-  const file = details.file ?? "";
+  const path = record.url ?? record.endpointName;
+  const file = record.file ?? "";
 
   const parsed = EndpointSchema.safeParse({
     method,
     path,
-    handler: details.handler,
+    handler: record.handler,
     file,
-    line: details.line,
-    authRequired: details.authRequired,
+    line: record.line,
+    authRequired: record.authRequired,
     description: record.description,
     pentestObjectives: record.pentestObjectives ?? [],
     riskScore: record.riskScore,
@@ -577,11 +580,11 @@ function assetRecordToEndpoint(record: DocumentedAssetRecord): Endpoint | null {
 }
 
 /**
- * Determine whether a documented asset record represents a web page
+ * Determine whether a documented endpoint record represents a web page
  * (as opposed to an API endpoint).
  */
-function isPageEndpoint(record: DocumentedAssetRecord): boolean {
-  const method = record.details?.method;
+function isPageEndpoint(record: DocumentedEndpointRecord): boolean {
+  const method = record.method;
   if (typeof method === "string") {
     return method.toUpperCase() === "PAGE";
   }
@@ -655,19 +658,17 @@ Find ALL web pages, views, and routes that render HTML or serve client-side UI i
 - **Spring**: @Controller methods returning view names, Thymeleaf templates
 
 ### How to document each page
-For each page, call \`document_asset\` with:
+For each page, call \`document_endpoint\` with:
 - **appName**: \`${appInfo.name}\`
-- **assetName**: The route path (e.g., \`/dashboard\`, \`/admin\`, \`/settings\`)
-- **assetType**: \`"endpoint"\`
+- **endpointName**: The route path (e.g., \`/dashboard\`, \`/admin\`, \`/settings\`)
+- **endpointType**: \`"web-endpoint"\`
 - **description**: Brief description of what this page shows
-- **details**:
-  - \`url\`: The route path
-  - \`method\`: \`"PAGE"\`
-  - \`file\`: Source file where this page is defined
-  - \`line\`: Line number (if determinable)
-  - \`handler\`: Component or handler name
-  - \`authRequired\`: Whether the page requires authentication
-  - \`technology\`: Technology stack if notable
+- **url**: The route path
+- **method**: \`"PAGE"\`
+- **file**: Source file where this page is defined
+- **line**: Line number (if determinable)
+- **handler**: Component or handler name
+- **authRequired**: Whether the page requires authentication
 - **riskLevel**: CRITICAL for admin/auth pages, HIGH for user data, MEDIUM for general, LOW for static/public
 - **pentestObjectives**: Specific testing goals, e.g.:
   - "Test for XSS in user-editable fields on the profile page"
@@ -702,19 +703,17 @@ Find ALL API endpoints defined in this application.
 - **Go**: http.HandleFunc, mux.Handle, gin router methods
 
 ### How to document each endpoint
-For each **unique route path**, call \`document_asset\` with:
+For each **unique route path**, call \`document_endpoint\` with:
 - **appName**: \`${appInfo.name}\`
-- **assetName**: The route path (e.g., \`/api/users\`, \`/api/orders/:id\`)
-- **assetType**: \`"endpoint"\`
+- **endpointName**: The route path (e.g., \`/api/users\`, \`/api/orders/:id\`)
+- **endpointType**: \`"api-endpoint"\`
 - **description**: Brief description of what this endpoint does across all its methods
-- **details**:
-  - \`url\`: The route path
-  - \`method\`: Array of ALL HTTP methods this path supports (e.g., \`["GET", "POST"]\`). **Do NOT create separate assets for each method — consolidate them.**
-  - \`file\`: Source file where the endpoint is defined
-  - \`line\`: Line number (if determinable)
-  - \`handler\`: Handler function name (comma-separate if multiple handlers for different methods)
-  - \`authRequired\`: Whether the endpoint requires authentication (true if ANY method requires it)
-  - \`technology\`: Technology stack if notable
+- **url**: The route path
+- **method**: Array of ALL HTTP methods this path supports (e.g., \`["GET", "POST"]\`). **Do NOT create separate entries for each method — consolidate them.**
+- **file**: Source file where the endpoint is defined
+- **line**: Line number (if determinable)
+- **handler**: Handler function name (comma-separate if multiple handlers for different methods)
+- **authRequired**: Whether the endpoint requires authentication (true if ANY method requires it)
 - **riskLevel**: CRITICAL for auth/payment/admin, HIGH for user data mutations, MEDIUM for general, LOW for read-only public
 - **pentestObjectives**: Specific testing goals covering ALL methods, e.g.:
   - "Test for SQL injection in the 'search' query parameter (GET)"
@@ -722,9 +721,9 @@ For each **unique route path**, call \`document_asset\` with:
   - "Test for mass assignment by sending extra fields in the POST body"
   - "Test for privilege escalation by calling admin-only endpoint as regular user"
 
-**CRITICAL: ONE asset per route path.** If \`/api/products\` has GET (list) and POST (create), document it as ONE asset with \`details.method: ["GET", "POST"]\`. Do NOT create two separate assets.
+**CRITICAL: ONE entry per route path.** If \`/api/products\` has GET (list) and POST (create), document it as ONE entry with \`method: ["GET", "POST"]\`. Do NOT create two separate entries.
 
-**IMPORTANT — Method consolidation for document_asset:** When using the \`document_asset\` tool, do NOT create separate assets for different HTTP methods on the same route path. For example, if \`/api/users\` supports GET, POST, and DELETE, document it as ONE asset with \`details.method: ["GET", "POST", "DELETE"]\` and include pentest objectives covering all methods. However, when reporting endpoints via the \`response\` tool, you may still list each method+path combination individually for completeness — the consolidation rule applies specifically to \`document_asset\` calls.
+**IMPORTANT — Method consolidation for document_endpoint:** When using the \`document_endpoint\` tool, do NOT create separate entries for different HTTP methods on the same route path. For example, if \`/api/users\` supports GET, POST, and DELETE, document it as ONE entry with \`method: ["GET", "POST", "DELETE"]\` and include pentest objectives covering all methods. However, when reporting endpoints via the \`response\` tool, you may still list each method+path combination individually for completeness — the consolidation rule applies specifically to \`document_endpoint\` calls.
 
 Be thorough — trace through all route registrations, middleware chains, and controller files.
 When finished, call \`response\` with a summary of how many endpoints you documented.`;
@@ -1048,7 +1047,7 @@ The assets directory uses app-scoped folders:
 assets/
   <app-name>/
     app.json           — app metadata (name, framework, description, location)
-    asset_*.json       — one file per endpoint (written by document_asset)
+    asset_*.json       — one file per endpoint (written by document_endpoint)
 \`\`\`
 
 ## Existing Applications
@@ -1061,21 +1060,21 @@ Read the diff file at \`${diffPath}\`. If it's very large, read it in chunks. Id
 
 ### Step 2: Determine impact on the attack surface
 For each changed file, determine if it affects any endpoints:
-- **New route/endpoint definitions** → use \`document_asset\` with the appropriate \`appName\`
+- **New route/endpoint definitions** → use \`document_endpoint\` with the appropriate \`appName\`
 - **Modified route handlers** → read the existing asset file, then use \`execute_command\` to update it
 - **Deleted route files or endpoint definitions** → delete the corresponding asset file
 - **Non-route changes** (e.g. utility functions, configs, tests) → skip
 
 ### Step 3: Update assets
-For new endpoints, use \`document_asset\` with:
+For new endpoints, use \`document_endpoint\` with:
 - \`appName\` set to the correct application name
-- \`details.method\` as an array of ALL HTTP methods the path supports
-- \`details.file\`, \`details.line\`, \`details.handler\`, \`details.authRequired\` filled in
+- \`method\` as an array of ALL HTTP methods the path supports
+- \`file\`, \`line\`, \`handler\`, \`authRequired\` filled in
 
 For modified endpoints, update the existing JSON file via \`execute_command\`.
 For removed endpoints, delete the file via \`execute_command\`.
 
-**IMPORTANT: ONE asset per route path.** Do NOT create separate assets for different HTTP methods on the same path.
+**IMPORTANT: ONE entry per route path.** Do NOT create separate entries for different HTTP methods on the same path.
 
 ### Step 4: Report
 When finished, call the \`response\` tool with a summary of your changes.
