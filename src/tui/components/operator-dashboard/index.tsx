@@ -73,6 +73,7 @@ import { navigateUp, navigateDown, selectionAfterRemove } from "./queue";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { isAbsolute, join, resolve } from "path";
 import { buildThreatModelPrompt } from "../../../core/skills/builtins/threatModel";
+import { buildPentestPrompt } from "../../../core/skills/builtins/pentest";
 
 /**
  * Operator Dashboard - interactive chat interface with the offensive security agent
@@ -1112,6 +1113,19 @@ export default function OperatorDashboard({
           fullContent = buildThreatModelPrompt({
             outputPath: resolvedPath,
             codebasePath: process.cwd(),
+            skillContent: content,
+          });
+        } else if (slug === "pentest") {
+          fullContent = buildPentestPrompt({
+            target: args?.target || "",
+            cwd: args?.cwd,
+            authUrl: args?.["auth-url"],
+            authUser: args?.["auth-user"],
+            authPass: args?.["auth-pass"],
+            authInstructions: args?.["auth-instructions"],
+            hosts: args?.hosts?.split(",").filter(Boolean),
+            ports: args?.ports?.split(",").filter(Boolean),
+            strict: args?.strict === "true",
             skillContent: content,
           });
         } else {

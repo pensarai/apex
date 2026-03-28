@@ -13,6 +13,7 @@ import { getToolDisplayLabel } from "./tool-registry";
 import { getResultSummary, type ResultSummary } from "./result-registry";
 import { isToolMessage } from "./type-guards";
 import type { DisplayMessage, SubagentLogEntry } from "../agent-display";
+import { SwarmGrid } from "./swarm-grid";
 
 const TOOLS_WITH_LOG_WINDOW = new Set([
   "execute_command",
@@ -94,19 +95,32 @@ export const ToolRenderer = memo(function ToolRenderer({
           )}
         </box>
 
-        {/* Per-subagent output windows */}
-        {isPending && hasSubagentLogs && (
-          <box flexDirection="column" marginLeft={0} marginTop={0}>
-            {Object.entries(subagentLogs!).map(([id, entry]) => (
-              <SubagentLogWindow
-                key={id}
-                subagentId={id}
-                entry={entry}
-                expandedLogs={expandedLogs}
-              />
-            ))}
-          </box>
-        )}
+        {/* Swarm grid for pentest swarm tool */}
+        {isPending &&
+          hasSubagentLogs &&
+          toolName === "spawn_pentest_swarm" && (
+            <SwarmGrid
+              subagentLogs={subagentLogs!}
+              isPending={isPending}
+              expandedLogs={expandedLogs}
+            />
+          )}
+
+        {/* Per-subagent output windows (non-swarm tools) */}
+        {isPending &&
+          hasSubagentLogs &&
+          toolName !== "spawn_pentest_swarm" && (
+            <box flexDirection="column" marginLeft={0} marginTop={0}>
+              {Object.entries(subagentLogs!).map(([id, entry]) => (
+                <SubagentLogWindow
+                  key={id}
+                  subagentId={id}
+                  entry={entry}
+                  expandedLogs={expandedLogs}
+                />
+              ))}
+            </box>
+          )}
 
         {/* Shared log window — only when no per-subagent logs */}
         {isPending &&
