@@ -391,8 +391,7 @@ function AppContent({
     const target = targets[0] ?? "";
     const skillArgs: Record<string, string> = {};
     if (target) skillArgs.target = target;
-    if (sessionConfig.codebasePath)
-      skillArgs.cwd = sessionConfig.codebasePath;
+    if (sessionConfig.codebasePath) skillArgs.cwd = sessionConfig.codebasePath;
     const creds = sessionConfig.authCredentials
       ? Array.isArray(sessionConfig.authCredentials)
         ? sessionConfig.authCredentials[0]
@@ -402,17 +401,14 @@ function AppContent({
     if (creds?.username) skillArgs["auth-user"] = creds.username;
     if (creds?.password) skillArgs["auth-pass"] = creds.password;
     if (sessionConfig.authenticationInstructions)
-      skillArgs["auth-instructions"] =
-        sessionConfig.authenticationInstructions;
+      skillArgs["auth-instructions"] = sessionConfig.authenticationInstructions;
     if (sessionConfig.scopeConstraints?.allowedHosts?.length)
-      skillArgs.hosts =
-        sessionConfig.scopeConstraints.allowedHosts.join(",");
+      skillArgs.hosts = sessionConfig.scopeConstraints.allowedHosts.join(",");
     if (sessionConfig.scopeConstraints?.allowedPorts?.length)
       skillArgs.ports = sessionConfig.scopeConstraints.allowedPorts
         .map(String)
         .join(",");
-    if (sessionConfig.scopeConstraints?.strictScope)
-      skillArgs.strict = "true";
+    if (sessionConfig.scopeConstraints?.strictScope) skillArgs.strict = "true";
 
     route.navigate({
       type: "operator",

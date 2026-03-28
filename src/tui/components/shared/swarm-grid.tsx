@@ -34,15 +34,12 @@ export const SwarmGrid = memo(function SwarmGrid({
   const [expandedAgentId, setExpandedAgentId] = useState<string | null>(null);
 
   const entries = useMemo(
-    () =>
-      Object.entries(subagentLogs).sort(([a], [b]) => a.localeCompare(b)),
+    () => Object.entries(subagentLogs).sort(([a], [b]) => a.localeCompare(b)),
     [subagentLogs],
   );
 
   const total = entries.length;
-  const completed = entries.filter(
-    ([, e]) => e.status === "completed",
-  ).length;
+  const completed = entries.filter(([, e]) => e.status === "completed").length;
   const failed = entries.filter(([, e]) => e.status === "failed").length;
   const pending = total - completed - failed;
 
@@ -110,9 +107,7 @@ export const SwarmGrid = memo(function SwarmGrid({
             {"✓"} Swarm: {completed}/{total} complete
           </text>
         )}
-        {failed > 0 && (
-          <text fg={colors.error}>· {failed} failed</text>
-        )}
+        {failed > 0 && <text fg={colors.error}>· {failed} failed</text>}
         {pending > 0 && isPending && (
           <text fg={colors.textMuted}>· {pending} running</text>
         )}
@@ -154,13 +149,10 @@ const SwarmAgentCard = memo(function SwarmAgentCard({
         ? colors.error
         : colors.warning;
   const statusIcon =
-    entry.status === "completed"
-      ? "✓"
-      : entry.status === "failed"
-        ? "✗"
-        : "◐";
+    entry.status === "completed" ? "✓" : entry.status === "failed" ? "✗" : "◐";
   const displayLabel = entry.name ?? agentId;
-  const lastLog = entry.logs.length > 0 ? entry.logs[entry.logs.length - 1] : undefined;
+  const lastLog =
+    entry.logs.length > 0 ? entry.logs[entry.logs.length - 1] : undefined;
   const prefix = focused ? "  ├▸" : "  │ ";
 
   return (
@@ -206,11 +198,7 @@ const SwarmAgentDetail = memo(function SwarmAgentDetail({
         ? colors.error
         : colors.warning;
   const statusIcon =
-    entry.status === "completed"
-      ? "✓"
-      : entry.status === "failed"
-        ? "✗"
-        : "";
+    entry.status === "completed" ? "✓" : entry.status === "failed" ? "✗" : "";
   const displayLabel = entry.name ?? agentId;
   const visibleLogs = expandedLogs ? entry.logs : entry.logs.slice(-15);
 
