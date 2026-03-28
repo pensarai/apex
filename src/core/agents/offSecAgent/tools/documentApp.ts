@@ -30,9 +30,10 @@ Use this tool to document:
 - API services (REST APIs, GraphQL services)
 - Admin panels or management interfaces
 - Discovered subdomains hosting distinct applications
+- Cloud resources (S3 buckets, cloud storage, CDN origins, etc.)
 
 Do NOT use this for individual endpoints — use \`document_endpoint\` instead.
-Do NOT use this for external/third-party services (CDNs, auth providers, SaaS).
+Do NOT use this for external/third-party services (CDNs, auth providers, SaaS) unless they are cloud resources owned by the target.
 
 Each application creates a JSON file in the apps directory for tracking and analysis.`,
     inputSchema: z.object({
@@ -48,6 +49,8 @@ Each application creates a JSON file in the apps directory for tracking and anal
           "admin_panel",
           "domain",
           "subdomain",
+          "cloud_resource",
+          "storage",
         ])
         .describe("Type of application discovered"),
       description: z
@@ -79,6 +82,13 @@ Each application creates a JSON file in the apps directory for tracking and anal
         .string()
         .optional()
         .describe("Additional notes or observations about the application"),
+      domain: z
+        .string()
+        .optional()
+        .describe(
+          "Domain URL this application is associated with (e.g., 'https://example.com'). " +
+            "Used to map applications to monitored domains. Only set if a known domain was provided.",
+        ),
       toolCallDescription: z
         .string()
         .describe(
