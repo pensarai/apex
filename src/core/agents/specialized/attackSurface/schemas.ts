@@ -119,10 +119,7 @@ export const DocumentAppSchema = z.object({
     .describe(
       "Technology framework or stack (e.g., 'Next.js', 'Express + React', 'Django')",
     ),
-  url: z
-    .string()
-    .optional()
-    .describe("Base URL of the application"),
+  url: z.string().optional().describe("Base URL of the application"),
   technology: z
     .array(z.string())
     .optional()
@@ -242,9 +239,7 @@ export const DocumentedEndpointRecordSchema = DocumentEndpointSchema.extend({
     .string()
     .describe("ISO timestamp when endpoint was discovered"),
   sessionId: z.string().describe("Session ID where endpoint was discovered"),
-  target: z
-    .string()
-    .describe("Target being analyzed when endpoint was found"),
+  target: z.string().describe("Target being analyzed when endpoint was found"),
   riskScore: RiskScoreSchema.optional().describe(
     "Computed risk score with breakdown",
   ),
@@ -263,4 +258,3 @@ export type DocumentedEndpointRecord = z.infer<
 export type PentestTarget = z.infer<typeof PentestTargetSchema>;
 export type AttackSurfaceSummary = z.infer<typeof AttackSurfaceSummarySchema>;
 export type AttackSurfaceReport = z.infer<typeof AttackSurfaceReportSchema>;
-

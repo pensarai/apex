@@ -254,9 +254,7 @@ Model:    ${model}
 
   const threatBus = new AgentEventBus();
   threatBus.on("text-delta", (d) => process.stdout.write(d.text));
-  threatBus.on("tool-call-complete", (d) =>
-    console.log(`\n  → ${d.toolName}`),
-  );
+  threatBus.on("tool-call-complete", (d) => console.log(`\n  → ${d.toolName}`));
   threatBus.on("tool-result", (d) => console.log(`  ✓ ${d.toolName}`));
   threatBus.on("error", (d) => console.error("Error:", d.error));
 

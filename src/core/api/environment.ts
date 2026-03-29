@@ -4,7 +4,9 @@ import type { EnvironmentResult } from "../agents/specialized/environment/types"
 
 export type { EnvironmentResult, EnvironmentAgentInput };
 
-function attachDefaultEnvironmentStreamListeners(agent: EnvironmentAgent): void {
+function attachDefaultEnvironmentStreamListeners(
+  agent: EnvironmentAgent,
+): void {
   agent.eventBus.on("text-delta", (e) => {
     process.stdout.write(e.text);
   });

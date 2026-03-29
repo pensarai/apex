@@ -866,9 +866,7 @@ export default function OperatorDashboard({
           return;
         }
         console.error("Agent error:", d.error);
-        setError(
-          d.error instanceof Error ? d.error.message : "Unknown error",
-        );
+        setError(d.error instanceof Error ? d.error.message : "Unknown error");
       });
 
       eventBus.on("subagent-spawn", ({ subagentId, name }) => {
