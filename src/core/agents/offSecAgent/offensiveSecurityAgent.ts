@@ -276,6 +276,10 @@ export class OffensiveSecurityAgent<TResult = void> {
           ...event.response.messages,
         ];
         schedulePersist();
+        this.eventBus.emit("step-finish", {
+          messages: event.response.messages,
+          subagentId: this.subagentId,
+        });
         await input.onStepFinish?.(event);
       },
       onSummarized: () => {

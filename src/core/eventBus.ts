@@ -42,6 +42,10 @@ export type AgentEventMap = {
     subagentId: string;
     status: "completed" | "failed";
   };
+  "step-finish": {
+    messages: unknown[];
+    subagentId?: string;
+  };
   "command-output": { data: string; subagentId?: string };
   error: { error: unknown; subagentId?: string };
 };
