@@ -5,6 +5,7 @@ import {
   AgentEventBus,
   type AgentEventMap,
 } from "../../../eventBus";
+import { CodeAgent } from "../../specialized/codeAgent/agent";
 
 /** Default max concurrent coding agents */
 const DEFAULT_CONCURRENCY = 5;
@@ -182,8 +183,6 @@ async function runSingleCodingAgent(
   agentIndex: number,
   name: string,
 ): Promise<string> {
-  const { CodeAgent } = await import("../../specialized/codeAgent/agent");
-
   const subagentId = `coding-agent-${agentIndex}`;
 
   ctx.eventBus?.emit("subagent-spawn", {
