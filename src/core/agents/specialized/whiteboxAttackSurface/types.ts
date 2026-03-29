@@ -95,7 +95,9 @@ export const AppSchema = z.object({
       "storage",
     ])
     .default("web_application")
-    .describe("Type of application (web_application, api, full_stack, database, cloud_resource, storage, etc.)"),
+    .describe(
+      "Type of application (web_application, api, full_stack, database, cloud_resource, storage, etc.)",
+    ),
   framework: z
     .string()
     .describe(

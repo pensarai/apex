@@ -78,9 +78,7 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
       handler: z
         .string()
         .optional()
-        .describe(
-          "Handler function or component name (whitebox analysis)",
-        ),
+        .describe("Handler function or component name (whitebox analysis)"),
       file: z
         .string()
         .optional()
@@ -153,10 +151,7 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
         }
       }
 
-      const targetDir = join(
-        baseAssetsPath,
-        sanitizeName(input.appName),
-      );
+      const targetDir = join(baseAssetsPath, sanitizeName(input.appName));
 
       if (!existsSync(targetDir)) {
         mkdirSync(targetDir, { recursive: true });

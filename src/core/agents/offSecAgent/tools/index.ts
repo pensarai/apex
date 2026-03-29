@@ -72,6 +72,9 @@ export { getPage } from "./getPage";
 // Skill tools
 export { readSkill } from "./readSkill";
 
+// Observability tools
+export { checkpointState } from "./checkpointState";
+
 // ---------------------------------------------------------------------------
 // Tool registry
 // ---------------------------------------------------------------------------
@@ -116,6 +119,7 @@ import { emailGetMessage } from "./email/getMessage";
 import { webSearch } from "./webSearch";
 import { getPage } from "./getPage";
 import { readSkill } from "./readSkill";
+import { checkpointState } from "./checkpointState";
 
 /**
  * Create the full toolset for the OffensiveSecurityAgent.
@@ -185,6 +189,9 @@ export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
 
     // Skill tools (conditional — only when registry is provided)
     ...(ctx.skillsRegistry ? { read_skill: readSkill(ctx) } : {}),
+
+    // Observability tools (conditional — only when trace writer is provided)
+    ...(ctx.traceWriter ? { checkpoint_state: checkpointState(ctx) } : {}),
   } as const;
 }
 
@@ -238,6 +245,8 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   // Web search (requires Pensar account)
   "web_search",
   "get_page",
+  // Observability
+  "checkpoint_state",
 ];
 
 /**

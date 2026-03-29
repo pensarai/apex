@@ -117,7 +117,9 @@ const AppInfoSchema = z.object({
   description: z.string().describe("Brief description of what this app does"),
   location: z
     .string()
-    .describe("Path to the app root relative to the repository root, or resource identifier for cloud resources"),
+    .describe(
+      "Path to the app root relative to the repository root, or resource identifier for cloud resources",
+    ),
   type: z
     .enum([
       "web_application",
@@ -132,8 +134,8 @@ const AppInfoSchema = z.object({
     .default("web_application")
     .describe(
       "Application type — web_application for frontend apps, api for backend services, " +
-      "full_stack for frameworks like Next.js/Remix that serve both, " +
-      "database for databases, cloud_resource for owned cloud infra, storage for S3/GCS/blob storage",
+        "full_stack for frameworks like Next.js/Remix that serve both, " +
+        "database for databases, cloud_resource for owned cloud infra, storage for S3/GCS/blob storage",
     ),
 });
 
@@ -249,7 +251,9 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     responseSchema: AppsDiscoveryResultSchema,
   });
 
-  console.log(`[whitebox-workflow] Phase 1: discovering apps in ${codebasePath}${domains?.length ? ` (${domains.length} known domains)` : ""}`);
+  console.log(
+    `[whitebox-workflow] Phase 1: discovering apps in ${codebasePath}${domains?.length ? ` (${domains.length} known domains)` : ""}`,
+  );
 
   const appsResult = await appsAgent.consume();
 
@@ -317,8 +321,12 @@ export async function runWhiteboxAttackSurfaceWorkflow(
   };
 
   const NON_SERVICE_TYPES = ["cloud_resource", "storage", "database"];
-  const serviceApps = appsResult.apps.filter((app) => !NON_SERVICE_TYPES.includes(app.type));
-  const cloudApps = appsResult.apps.filter((app) => NON_SERVICE_TYPES.includes(app.type));
+  const serviceApps = appsResult.apps.filter(
+    (app) => !NON_SERVICE_TYPES.includes(app.type),
+  );
+  const cloudApps = appsResult.apps.filter((app) =>
+    NON_SERVICE_TYPES.includes(app.type),
+  );
 
   console.log(
     `[whitebox-workflow] Phase 2: ${serviceApps.length} service apps (pages+api each), ${cloudApps.length} cloud resources → ${serviceApps.length * 2 + cloudApps.length} total tasks`,
@@ -530,7 +538,9 @@ function readAppsFromAssetsDirectory(
   }
 
   const entries = readdirSync(assetsPath);
-  console.log(`[readAssets] Found ${entries.length} entries in ${assetsPath}: [${entries.join(", ")}]`);
+  console.log(
+    `[readAssets] Found ${entries.length} entries in ${assetsPath}: [${entries.join(", ")}]`,
+  );
   const apps: App[] = [];
 
   for (const entry of entries) {
@@ -549,7 +559,9 @@ function readAppsFromAssetsDirectory(
           readFileSync(appJsonPath, "utf-8"),
         ) as AppMetadata;
       } catch {
-        console.warn(`[readAssets] Skipping app folder with unreadable app.json: ${entry}`);
+        console.warn(
+          `[readAssets] Skipping app folder with unreadable app.json: ${entry}`,
+        );
         continue;
       }
     } else {
@@ -576,7 +588,9 @@ function readAppsFromAssetsDirectory(
 
         const endpoint = assetRecordToEndpoint(data);
         if (!endpoint) {
-          console.log(`[readAssets]   ${file}: failed schema validation (assetRecordToEndpoint returned null)`);
+          console.log(
+            `[readAssets]   ${file}: failed schema validation (assetRecordToEndpoint returned null)`,
+          );
           parseFailed++;
           continue;
         }
@@ -587,7 +601,9 @@ function readAppsFromAssetsDirectory(
           apiEndpoints.push(endpoint);
         }
       } catch {
-        console.warn(`[readAssets] Skipping unreadable asset file: ${entry}/${file}`);
+        console.warn(
+          `[readAssets] Skipping unreadable asset file: ${entry}/${file}`,
+        );
         parseFailed++;
       }
     }
@@ -614,7 +630,9 @@ function readAppsFromAssetsDirectory(
  * Convert a {@link DocumentedEndpointRecord} (from document_endpoint) to an
  * {@link Endpoint} (for the whitebox result schema).
  */
-function assetRecordToEndpoint(record: DocumentedEndpointRecord): Endpoint | null {
+function assetRecordToEndpoint(
+  record: DocumentedEndpointRecord,
+): Endpoint | null {
   const rawMethod = record.method;
   const method = Array.isArray(rawMethod)
     ? rawMethod.join(", ")
@@ -658,7 +676,10 @@ function isPageEndpoint(record: DocumentedEndpointRecord): boolean {
 // Objective builders
 // ---------------------------------------------------------------------------
 
-function buildAppsDiscoveryObjective(codebasePath: string, domains?: string[]): string {
+function buildAppsDiscoveryObjective(
+  codebasePath: string,
+  domains?: string[],
+): string {
   const domainSection = domains?.length
     ? `\n## Known Domains\nThe following domains are associated with this project. When you document an application, set the \`domain\` field on \`document_app\` if you can determine which domain the app is served from:\n${domains.map((d) => `- ${d}`).join("\n")}\n`
     : "";

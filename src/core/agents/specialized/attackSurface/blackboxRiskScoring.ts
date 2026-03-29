@@ -100,7 +100,10 @@ export function computeBlackboxRiskScore(
 // Dimension helpers
 // ---------------------------------------------------------------------------
 
-function computeExposure(riskLevel: RiskLevel, details?: EndpointDetails): number {
+function computeExposure(
+  riskLevel: RiskLevel,
+  details?: EndpointDetails,
+): number {
   let base = EXPOSURE_BY_RISK[riskLevel] ?? 1;
 
   if (details?.authentication) {

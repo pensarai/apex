@@ -177,8 +177,7 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
         try {
           const normalizedTimeout = normalizeExecuteCommandTimeout(timeout);
           const onData = ctx.eventBus
-            ? (data: string) =>
-                ctx.eventBus!.emit("command-output", { data })
+            ? (data: string) => ctx.eventBus!.emit("command-output", { data })
             : undefined;
           const result = await ctx.persistentShell.execute(
             command,

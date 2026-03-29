@@ -1,10 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import type { ToolContext } from "./types";
-import {
-  AgentEventBus,
-  type AgentEventMap,
-} from "../../../eventBus";
+import { AgentEventBus, type AgentEventMap } from "../../../eventBus";
 
 /** Default max concurrent coding agents */
 const DEFAULT_CONCURRENCY = 5;
