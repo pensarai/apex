@@ -141,22 +141,36 @@ export class AgentEventBus {
           subagentId,
         });
         break;
-      case "tool-call":
+      case "tool-call": {
+        const tc = chunk as {
+          toolCallId: string;
+          toolName: string;
+          input?: unknown;
+          args?: unknown;
+        };
         this.emit("tool-call-complete", {
-          toolCallId: chunk.toolCallId,
-          toolName: chunk.toolName,
-          args: chunk.args,
+          toolCallId: tc.toolCallId,
+          toolName: tc.toolName,
+          args: tc.args ?? tc.input,
           subagentId,
         });
         break;
-      case "tool-result":
+      }
+      case "tool-result": {
+        const tr = chunk as {
+          toolCallId: string;
+          toolName: string;
+          result?: unknown;
+          output?: unknown;
+        };
         this.emit("tool-result", {
-          toolCallId: chunk.toolCallId,
-          toolName: chunk.toolName,
-          result: chunk.result,
+          toolCallId: tr.toolCallId,
+          toolName: tr.toolName,
+          result: tr.result ?? tr.output,
           subagentId,
         });
         break;
+      }
       case "error":
         this.emit("error", {
           error: (chunk as { type: "error"; error: unknown }).error,

@@ -52,7 +52,6 @@ export class EnvironmentAgent extends OffensiveSecurityAgent<EnvironmentResult> 
       onStepFinish,
       abortSignal,
       eventBus,
-      callbacks,
       sandbox,
     } = opts;
 
@@ -65,7 +64,6 @@ export class EnvironmentAgent extends OffensiveSecurityAgent<EnvironmentResult> 
       onStepFinish,
       abortSignal,
       eventBus,
-      callbacks,
       sandbox,
 
       activeTools: [

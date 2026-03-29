@@ -20,7 +20,7 @@ import type { DocumentedEndpointRecord } from "../agents/specialized/attackSurfa
 import type { AIModel, CacheMetrics } from "../ai";
 import type { AIAuthConfig } from "../ai/utils";
 import type { SessionInfo } from "../session";
-import type { ConsumeCallbacks } from "../agents/offSecAgent/types";
+import type { AgentEventBus } from "../eventBus";
 import { runWithBoundedConcurrency } from "../utils/concurrency";
 import { scoreEndpoints } from "./riskScoring";
 import { execFileSync } from "child_process";
@@ -157,7 +157,7 @@ export interface WhiteboxAttackSurfaceWorkflowInput {
   session: SessionInfo;
   authConfig?: AIAuthConfig;
   abortSignal?: AbortSignal;
-  callbacks?: ConsumeCallbacks;
+  eventBus?: AgentEventBus;
   attackSurfaceRegistry?: import("../findings/attackSurfaceRegistry").AttackSurfaceRegistry;
   onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
   onCacheMetrics?: (metrics: CacheMetrics) => void;
@@ -210,7 +210,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     session,
     authConfig,
     abortSignal,
-    callbacks,
+    eventBus,
     attackSurfaceRegistry,
     onStepFinish,
     onCacheMetrics,
@@ -230,7 +230,8 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     authConfig,
     abortSignal,
     attackSurfaceRegistry,
-    callbacks,
+    eventBus,
+    subagentId: "whitebox-apps-discovery",
     onStepFinish: (event) => onStepFinish?.(event),
     onCacheMetrics,
     responseSchema: AppsDiscoveryResultSchema,
@@ -238,15 +239,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
 
   console.log(`[whitebox-workflow] Phase 1: discovering apps in ${codebasePath}${domains?.length ? ` (${domains.length} known domains)` : ""}`);
 
-  const appsResult = await appsAgent.consume({
-    onTextDelta: (d) => callbacks?.onTextDelta?.(d),
-    onToolCallStreaming: (d) => callbacks?.onToolCallStreaming?.(d),
-    onToolCallDelta: (d) => callbacks?.onToolCallDelta?.(d),
-    onToolCall: (d) => callbacks?.onToolCall?.(d),
-    onToolResult: (d) => callbacks?.onToolResult?.(d),
-    onError: (e) => callbacks?.onError?.(e),
-    subagentCallbacks: callbacks?.subagentCallbacks,
-  });
+  const appsResult = await appsAgent.consume();
 
   console.log(
     `[whitebox-workflow] Phase 1 complete: ${appsResult?.apps.length ?? 0} apps discovered` +
@@ -338,10 +331,10 @@ export async function runWhiteboxAttackSurfaceWorkflow(
         `[whitebox-workflow] Phase 2: spawning agent "${subagentId}" (app="${task.appInfo.name}", type=${task.type}, appType=${task.appInfo.type})`,
       );
 
-      callbacks?.subagentCallbacks?.onSubagentSpawn?.({
+      eventBus?.emit("subagent-spawn", {
         subagentId,
+        name: task.appInfo.name,
         input: { app: task.appInfo.name, type: task.type },
-        status: "pending",
       });
 
       const objective =
@@ -360,7 +353,8 @@ export async function runWhiteboxAttackSurfaceWorkflow(
         authConfig,
         abortSignal,
         attackSurfaceRegistry,
-        callbacks,
+        eventBus,
+        subagentId,
         onStepFinish: (event) => onStepFinish?.(event),
         onCacheMetrics,
         responseSchema: DiscoverySummarySchema,
@@ -368,47 +362,14 @@ export async function runWhiteboxAttackSurfaceWorkflow(
       });
 
       try {
-        await agent.consume({
-          onError: (e) => callbacks?.onError?.(e),
-          subagentCallbacks: callbacks?.subagentCallbacks
-            ? {
-                onTextDelta: (d) =>
-                  callbacks.subagentCallbacks!.onTextDelta?.({
-                    ...d,
-                    subagentId,
-                  }),
-                onToolCallStreaming: (d) =>
-                  callbacks.subagentCallbacks!.onToolCallStreaming?.({
-                    ...d,
-                    subagentId,
-                  }),
-                onToolCallDelta: (d) =>
-                  callbacks.subagentCallbacks!.onToolCallDelta?.({
-                    ...d,
-                    subagentId,
-                  }),
-                onToolCall: (d) =>
-                  callbacks.subagentCallbacks!.onToolCall?.({
-                    ...d,
-                    subagentId,
-                  }),
-                onToolResult: (d) =>
-                  callbacks.subagentCallbacks!.onToolResult?.({
-                    ...d,
-                    subagentId,
-                  }),
-                onError: (e) => callbacks.subagentCallbacks!.onError?.(e),
-              }
-            : undefined,
-        });
+        await agent.consume();
 
         console.log(
           `[whitebox-workflow] Phase 2: agent "${subagentId}" completed`,
         );
 
-        callbacks?.subagentCallbacks?.onSubagentComplete?.({
+        eventBus?.emit("subagent-complete", {
           subagentId,
-          input: { app: task.appInfo.name, type: task.type },
           status: "completed",
         });
       } catch (error) {
@@ -417,9 +378,8 @@ export async function runWhiteboxAttackSurfaceWorkflow(
           error instanceof Error ? error.message : String(error),
         );
 
-        callbacks?.subagentCallbacks?.onSubagentComplete?.({
+        eventBus?.emit("subagent-complete", {
           subagentId,
-          input: { app: task.appInfo.name, type: task.type },
           status: "failed",
         });
       }
@@ -466,7 +426,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
         session,
         authConfig,
         abortSignal,
-        callbacks,
+        eventBus,
       });
       console.log(
         `Risk scoring complete: ${riskScores.size}/${allEndpointsForScoring.length} endpoints scored`,
@@ -934,7 +894,7 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
     session,
     authConfig,
     abortSignal,
-    callbacks,
+    eventBus,
     attackSurfaceRegistry,
     onStepFinish,
   } = input;
@@ -1067,20 +1027,13 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
     authConfig,
     abortSignal,
     attackSurfaceRegistry,
-    callbacks,
+    eventBus,
+    subagentId: "whitebox-incremental",
     onStepFinish: (event) => onStepFinish?.(event),
     responseSchema: IncrementalResultSchema,
   });
 
-  const agentResult = await agent.consume({
-    onTextDelta: (d) => callbacks?.onTextDelta?.(d),
-    onToolCallStreaming: (d) => callbacks?.onToolCallStreaming?.(d),
-    onToolCallDelta: (d) => callbacks?.onToolCallDelta?.(d),
-    onToolCall: (d) => callbacks?.onToolCall?.(d),
-    onToolResult: (d) => callbacks?.onToolResult?.(d),
-    onError: (e) => callbacks?.onError?.(e),
-    subagentCallbacks: callbacks?.subagentCallbacks,
-  });
+  const agentResult = await agent.consume();
 
   console.log(
     `Incremental agent finished: ${agentResult?.summary ?? "no summary"}`,
@@ -1140,7 +1093,7 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
         session,
         authConfig,
         abortSignal,
-        callbacks,
+        eventBus,
       });
       console.log(
         `Incremental risk scoring complete: ${riskScores.size}/${changedEndpointsForScoring.length} scored`,

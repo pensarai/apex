@@ -60,7 +60,7 @@ export class WhiteboxAttackSurfaceAgent extends OffensiveSecurityAgent<WhiteboxA
       onStepFinish,
       abortSignal,
       eventBus,
-      callbacks,
+      subagentId,
       attackSurfaceRegistry,
       domains,
     } = opts;
@@ -90,9 +90,8 @@ This ends the agent run — make sure all data is included.`,
       onStepFinish,
       abortSignal,
       eventBus,
+      subagentId,
       attackSurfaceRegistry,
-      callbacks,
-      subagentCallbacks: callbacks?.subagentCallbacks,
 
       activeTools: [
         // Filesystem tools — for Phase 1 repo identification

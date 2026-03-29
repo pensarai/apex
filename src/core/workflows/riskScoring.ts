@@ -7,7 +7,7 @@ import {
 import type { AIModel } from "../ai";
 import type { AIAuthConfig } from "../ai/utils";
 import type { SessionInfo } from "../session";
-import type { ConsumeCallbacks } from "../agents/offSecAgent/types";
+import type { AgentEventBus } from "../eventBus";
 import { runWithBoundedConcurrency } from "../utils/concurrency";
 
 // ---------------------------------------------------------------------------
@@ -91,7 +91,7 @@ export interface RiskScoringInput {
   session: SessionInfo;
   authConfig?: AIAuthConfig;
   abortSignal?: AbortSignal;
-  callbacks?: ConsumeCallbacks;
+  eventBus?: AgentEventBus;
   concurrency?: number;
 }
 
@@ -116,7 +116,7 @@ export async function scoreEndpoints(
     session,
     authConfig,
     abortSignal,
-    callbacks,
+    eventBus,
     concurrency = DEFAULT_CONCURRENCY,
   } = input;
 
@@ -129,10 +129,10 @@ export async function scoreEndpoints(
       const key = `${ep.method}:${ep.file}:${ep.path}`;
       const subagentId = `risk-score-${ep.appName}-${ep.method}-${ep.path}`;
 
-      callbacks?.subagentCallbacks?.onSubagentSpawn?.({
+      eventBus?.emit("subagent-spawn", {
         subagentId,
+        name: ep.appName,
         input: { app: ep.appName, path: ep.path },
-        status: "pending",
       });
 
       try {
@@ -143,12 +143,12 @@ export async function scoreEndpoints(
           session,
           authConfig,
           abortSignal,
-          callbacks,
+          eventBus,
+          subagentId,
         });
 
-        callbacks?.subagentCallbacks?.onSubagentComplete?.({
+        eventBus?.emit("subagent-complete", {
           subagentId,
-          input: { app: ep.appName, path: ep.path },
           status: "completed",
         });
 
@@ -157,9 +157,8 @@ export async function scoreEndpoints(
         console.error(
           `Risk scoring failed for ${ep.path}: ${error instanceof Error ? error.message : String(error)}`,
         );
-        callbacks?.subagentCallbacks?.onSubagentComplete?.({
+        eventBus?.emit("subagent-complete", {
           subagentId,
-          input: { app: ep.appName, path: ep.path },
           status: "failed",
         });
         return null;
@@ -185,7 +184,8 @@ async function scoreEndpoint(opts: {
   session: SessionInfo;
   authConfig?: AIAuthConfig;
   abortSignal?: AbortSignal;
-  callbacks?: ConsumeCallbacks;
+  eventBus?: AgentEventBus;
+  subagentId: string;
 }): Promise<RiskScore> {
   const {
     codebasePath,
@@ -194,7 +194,8 @@ async function scoreEndpoint(opts: {
     session,
     authConfig,
     abortSignal,
-    callbacks,
+    eventBus,
+    subagentId,
   } = opts;
 
   const lineRange = ep.line ? `around line ${ep.line}` : "";
@@ -261,14 +262,12 @@ Begin by reading the source code, then call \`response\` with your assessment.`;
     session,
     authConfig,
     abortSignal,
-    callbacks,
+    eventBus,
+    subagentId,
     responseSchema: RiskScoreResultSchema,
   });
 
-  const result = await agent.consume({
-    onError: (e) => callbacks?.onError?.(e),
-    subagentCallbacks: callbacks?.subagentCallbacks,
-  });
+  const result = await agent.consume();
 
   if (!result) {
     return {

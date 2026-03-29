@@ -280,6 +280,12 @@ export interface SpecializedAgentInput {
   /** Event bus for streaming agent output */
   eventBus?: AgentEventBus;
 
+  /**
+   * When set, stream chunks emitted during {@link OffensiveSecurityAgent.consume}
+   * are tagged with this id on the event bus (for multi-agent UIs).
+   */
+  subagentId?: string;
+
   /** Shared findings registry for cross-agent dedup */
   findingsRegistry?: FindingsRegistry;
 

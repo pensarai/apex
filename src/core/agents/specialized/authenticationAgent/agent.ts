@@ -8,7 +8,6 @@ import { type SessionInfo } from "../../../session";
 import { AUTH_SUBAGENT_SYSTEM_PROMPT } from "./prompts";
 import { detectOSAndEnhancePrompt } from "../utils";
 import { OffensiveSecurityAgent } from "../../offSecAgent/offensiveSecurityAgent";
-import type { ConsumeCallbacks } from "../../offSecAgent/types";
 import type { AgentEventBus } from "../../../eventBus";
 import type { AuthBarrier } from "./types";
 
@@ -51,8 +50,8 @@ export interface AuthenticationAgentInput {
   /** Event bus for streaming agent output */
   eventBus?: AgentEventBus;
 
-  /** @deprecated Use `eventBus` instead. */
-  callbacks?: ConsumeCallbacks;
+  /** Tags stream events when this agent runs as a named subagent */
+  subagentId?: string;
 
   /**
    * Arbitrary context to include in the agent prompt (e.g. application name/description).
@@ -132,6 +131,7 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
       onStepFinish,
       abortSignal,
       eventBus,
+      subagentId,
       context,
       environmentVariables,
     } = opts;
@@ -148,6 +148,7 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
       onStepFinish,
       abortSignal,
       eventBus,
+      subagentId,
       environmentVariables,
       toolChoice: "auto",
       activeTools: [
@@ -296,15 +297,7 @@ You have credentials available via credential IDs — authenticate immediately.
 export async function runAuthenticationAgent(input: AuthenticationAgentInput) {
   const agent = new AuthenticationAgent(input);
 
-  const result = await agent.consume({
-    onTextDelta: (d) => input.callbacks?.onTextDelta?.(d),
-    onToolCallStreaming: (d) => input.callbacks?.onToolCallStreaming?.(d),
-    onToolCallDelta: (d) => input.callbacks?.onToolCallDelta?.(d),
-    onToolCall: (d) => input.callbacks?.onToolCall?.(d),
-    onToolResult: (d) => input.callbacks?.onToolResult?.(d),
-    onError: (e) => input.callbacks?.onError?.(e),
-    subagentCallbacks: input.callbacks?.subagentCallbacks,
-  });
+  const result = await agent.consume();
 
   console.log(
     `\nAuthentication ${result.success ? "succeeded" : "failed"}: ${result.summary}`,
