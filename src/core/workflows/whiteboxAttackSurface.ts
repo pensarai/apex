@@ -119,10 +119,21 @@ const AppInfoSchema = z.object({
     .string()
     .describe("Path to the app root relative to the repository root, or resource identifier for cloud resources"),
   type: z
-    .enum(["service", "cloud_resource"])
-    .default("service")
+    .enum([
+      "web_application",
+      "api",
+      "full_stack",
+      "domain",
+      "subdomain",
+      "database",
+      "cloud_resource",
+      "storage",
+    ])
+    .default("web_application")
     .describe(
-      "Whether this is a deployable service ('service') or an owned cloud resource like an S3 bucket ('cloud_resource')",
+      "Application type — web_application for frontend apps, api for backend services, " +
+      "full_stack for frameworks like Next.js/Remix that serve both, " +
+      "database for databases, cloud_resource for owned cloud infra, storage for S3/GCS/blob storage",
     ),
 });
 
@@ -181,6 +192,7 @@ export interface IncrementalWhiteboxInput extends WhiteboxAttackSurfaceWorkflowI
 
 interface AppMetadata {
   name: string;
+  type: string;
   framework: string;
   description: string;
   location: string;
@@ -282,6 +294,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     mkdirSync(appDir, { recursive: true });
     const metadata: AppMetadata = {
       name: app.name,
+      type: app.type,
       framework: app.framework,
       description: app.description,
       location: app.location,
@@ -303,8 +316,9 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     type: "pages" | "apiEndpoints" | "cloudResourceEndpoints";
   };
 
-  const serviceApps = appsResult.apps.filter((app) => app.type !== "cloud_resource");
-  const cloudApps = appsResult.apps.filter((app) => app.type === "cloud_resource");
+  const NON_SERVICE_TYPES = ["cloud_resource", "storage", "database"];
+  const serviceApps = appsResult.apps.filter((app) => !NON_SERVICE_TYPES.includes(app.type));
+  const cloudApps = appsResult.apps.filter((app) => NON_SERVICE_TYPES.includes(app.type));
 
   console.log(
     `[whitebox-workflow] Phase 2: ${serviceApps.length} service apps (pages+api each), ${cloudApps.length} cloud resources → ${serviceApps.length * 2 + cloudApps.length} total tasks`,
@@ -584,6 +598,7 @@ function readAppsFromAssetsDirectory(
 
     apps.push({
       name: metadata.name,
+      type: (metadata.type as App["type"]) ?? "web_application",
       framework: metadata.framework,
       description: metadata.description,
       location: metadata.location,
@@ -690,7 +705,7 @@ A **cloud resource** qualifies if it is an **owned infrastructure resource** ref
    - **framework**: the web framework or cloud service (e.g. "AWS S3", "CloudFront", "Express")
    - **description**: brief summary of what it does
    - **location**: path relative to the repository root (for code) or the resource identifier (for cloud resources)
-   - **type**: set to \`"cloud_resource"\` for S3 buckets, CDN distributions, message queues, etc. Set to \`"service"\` (default) for deployable apps and services.
+   - **type**: classify as \`"web_application"\` for frontend-only apps, \`"api"\` for backend API services, \`"full_stack"\` for frameworks serving both UI and API (Next.js, Remix, Nuxt, SvelteKit, Django with templates, Rails), \`"database"\` for databases, \`"cloud_resource"\` for owned cloud infra (SQS, CDN, etc.), \`"storage"\` for S3/GCS/blob storage.
 
 When finished, call the \`response\` tool with your structured findings.`;
 }
@@ -936,6 +951,7 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
     // Write app.json
     const metadata: AppMetadata = {
       name: app.name,
+      type: app.type ?? "web_application",
       framework: app.framework,
       description: app.description,
       location: app.location,

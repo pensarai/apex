@@ -81,9 +81,10 @@ export const AttackSurfaceReportSchema = z.object({
 export const AppTypeEnum = z.enum([
   "web_application",
   "api",
-  "admin_panel",
+  "full_stack",
   "domain",
   "subdomain",
+  "database",
   "cloud_resource",
   "storage",
 ]);

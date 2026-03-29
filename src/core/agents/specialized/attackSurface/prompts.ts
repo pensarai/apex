@@ -251,8 +251,9 @@ Use \`browser_get_cookies\` to document all cookies set by the application — n
 **Step 1: Document each application** using \`document_app\`:
 - \`web_application\` — the target web application (usually one per target domain)
 - \`api\` — API services hosted by the target (REST, GraphQL, WebSocket)
-- \`admin_panel\` — admin/management interfaces that are part of the target
+- \`full_stack\` — applications serving both UI and API (e.g. Next.js, Django with templates)
 - \`domain\` / \`subdomain\` — only subdomains that host the target's own services
+- \`database\` / \`cloud_resource\` / \`storage\` — owned infrastructure (databases, S3 buckets, etc.)
 
 **Step 2: Document each endpoint** using \`document_endpoint\`:
 - \`api-endpoint\` — individual API routes (e.g., /api/users, /auth/login, /graphql)
