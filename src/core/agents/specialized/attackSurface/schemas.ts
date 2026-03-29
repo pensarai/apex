@@ -173,10 +173,14 @@ export const DocumentEndpointSchema = z.object({
   description: z
     .string()
     .describe("Detailed description of the endpoint including what it does"),
-  url: z
+  routePath: z
     .string()
     .optional()
-    .describe("The route path (e.g., '/api/users', '/dashboard')"),
+    .describe(
+      "The HTTP route served by this endpoint (e.g., '/api/users', '/dashboard'). " +
+        "This is the URL path a client requests — NOT a source-file path. " +
+        "Use the separate 'file' field for the source-code location.",
+    ),
   method: z
     .union([z.string(), z.array(z.string())])
     .optional()
@@ -191,7 +195,10 @@ export const DocumentEndpointSchema = z.object({
   file: z
     .string()
     .optional()
-    .describe("Source file where this endpoint is defined (whitebox analysis)"),
+    .describe(
+      "Source-code file where this endpoint is defined, e.g. 'src/routes/users.ts'. " +
+        "This is NOT the HTTP route — use 'routePath' for that.",
+    ),
   line: z
     .number()
     .optional()
