@@ -22,7 +22,7 @@ import {
   ALL_TOOL_NAMES,
   PLAN_MODE_TOOL_NAMES,
   SKILL_TOOL_NAMES,
-  type ConsumeCallbacks,
+  AgentEventBus,
   type AgentMode,
 } from "../../../core/agents/offSecAgent";
 import {
@@ -782,83 +782,102 @@ export default function OperatorDashboard({
         }
       };
 
-      const callbacks = {
-        onTextDelta: (d) => {
-          if (gen !== generationRef.current) return;
-          setThinking(false);
-          appendText(d.text);
-        },
-        onToolCallStreaming: (d) => {
-          if (gen !== generationRef.current) return;
-          setThinking(false);
-          addStreamingToolCall(d.toolCallId, d.toolName);
-        },
-        onToolCallDelta: (d) => {
-          if (gen !== generationRef.current) return;
-          appendToolCallDelta(d.toolCallId, d.argsTextDelta);
-        },
-        onToolCall: (d) => {
-          if (gen !== generationRef.current) return;
-          setThinking(false);
-          commandCancelledRef.current = false;
-          addToolCall(
-            d.toolCallId,
-            d.toolName,
-            d.input as Record<string, unknown> | undefined,
-          );
-        },
-        onToolResult: (d) => {
-          if (gen !== generationRef.current) return;
-          flushCommandOutput();
-          if (cmdFlushTimerRef.current) {
-            clearInterval(cmdFlushTimerRef.current);
-            cmdFlushTimerRef.current = null;
-          }
-          setThinking(true);
-          updateToolResult(d.toolCallId, d.toolName, d.output);
-        },
-        onCommandOutput,
-        onError: (e) => {
-          console.error("Agent error:", e);
-          setError(e instanceof Error ? e.message : "Unknown error");
-        },
-        subagentCallbacks: {
-          onSubagentSpawn: ({ subagentId, name }) => {
-            initSubagent(subagentId, name);
-          },
-          onSubagentComplete: ({ subagentId, status }) => {
-            completeSubagent(subagentId, status);
-          },
-          onTextDelta: (_d) => {
-            // Text deltas from sub-agents are omitted from per-subagent
-            // windows — tool call summaries provide a cleaner activity log.
-          },
-          onToolCall: (d) => {
-            if (!d.subagentId) return;
-            const args =
-              ((d as Record<string, unknown>).input as Record<
-                string,
-                unknown
-              >) ?? {};
-            const summary = getToolSummary(d.toolName, args);
-            appendLogToSubagent(d.subagentId, summary);
-          },
-          onToolResult: (d) => {
-            if (!d.subagentId) return;
-            const args =
-              ((d as Record<string, unknown>).args as Record<
-                string,
-                unknown
-              >) ?? {};
-            const summary = getToolSummary(d.toolName, args);
-            appendLogToSubagent(d.subagentId, `✓ ${summary}`);
-          },
-          onError: (e) => {
-            const msg = e instanceof Error ? e.message : "subagent error";
-            appendLogToActiveTool(`✗ ${msg}`);
-          },
-        },
-      } satisfies ConsumeCallbacks;
+      const eventBus = new AgentEventBus();
+
+      eventBus.on("text-delta", (d) => {
+        if (gen !== generationRef.current) return;
+        if (d.subagentId) return;
+        setThinking(false);
+        appendText(d.text);
+      });
+
+      eventBus.on("tool-call-start", (d) => {
+        if (gen !== generationRef.current) return;
+        if (d.subagentId) return;
+        setThinking(false);
+        addStreamingToolCall(d.toolCallId, d.toolName);
+      });
+
+      eventBus.on("tool-call-delta", (d) => {
+        if (gen !== generationRef.current) return;
+        if (d.subagentId) return;
+        appendToolCallDelta(d.toolCallId, d.argsTextDelta);
+      });
+
+      eventBus.on("tool-call-complete", (d) => {
+        if (gen !== generationRef.current) return;
+        if (d.subagentId) {
+          const args =
+            d.args &&
+            typeof d.args === "object" &&
+            !Array.isArray(d.args) &&
+            d.args !== null
+              ? (d.args as Record<string, unknown>)
+              : {};
+          const summary = getToolSummary(d.toolName, args);
+          appendLogToSubagent(d.subagentId, summary);
+          return;
+        }
+        setThinking(false);
+        commandCancelledRef.current = false;
+        const args =
+          d.args &&
+          typeof d.args === "object" &&
+          !Array.isArray(d.args) &&
+          d.args !== null
+            ? (d.args as Record<string, unknown>)
+            : undefined;
+        addToolCall(d.toolCallId, d.toolName, args);
+      });
+
+      eventBus.on("tool-result", (d) => {
+        if (gen !== generationRef.current) return;
+        if (d.subagentId) {
+          const payload =
+            d.result &&
+            typeof d.result === "object" &&
+            !Array.isArray(d.result) &&
+            d.result !== null
+              ? (d.result as Record<string, unknown>)
+              : { result: d.result };
+          const summary = getToolSummary(d.toolName, payload);
+          appendLogToSubagent(d.subagentId, `✓ ${summary}`);
+          return;
+        }
+        flushCommandOutput();
+        if (cmdFlushTimerRef.current) {
+          clearInterval(cmdFlushTimerRef.current);
+          cmdFlushTimerRef.current = null;
+        }
+        setThinking(true);
+        updateToolResult(d.toolCallId, d.toolName, d.result);
+      });
+
+      eventBus.on("command-output", (d) => {
+        if (d.subagentId) return;
+        onCommandOutput(d.data);
+      });
+
+      eventBus.on("error", (d) => {
+        if (d.subagentId) {
+          const msg =
+            d.error instanceof Error ? d.error.message : "subagent error";
+          appendLogToActiveTool(`✗ ${msg}`);
+          return;
+        }
+        console.error("Agent error:", d.error);
+        setError(
+          d.error instanceof Error ? d.error.message : "Unknown error",
+        );
+      });
+
+      eventBus.on("subagent-spawn", ({ subagentId, name }) => {
+        initSubagent(subagentId, name);
+      });
+
+      eventBus.on("subagent-complete", ({ subagentId, status }) => {
+        completeSubagent(subagentId, status);
+      });
 
       const skillsCatalog = skillsRegistry.buildCatalog() || undefined;
 
@@ -885,7 +904,7 @@ export default function OperatorDashboard({
             metrics.cacheCreationInputTokens,
           );
         },
-        callbacks,
+        eventBus,
         onSessionReady: (s: SessionInfo) => {
           setSessionCwd(s.rootPath);
           // Update the ref immediately so handleAbort can access the session

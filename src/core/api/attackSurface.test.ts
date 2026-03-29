@@ -16,15 +16,6 @@ describe.skip("Attack Surface", () => {
         target: TARGET_URL,
         model: "claude-haiku-4-5",
         session,
-
-        callbacks: {
-          onToolCall: (d) =>
-            console.log(
-              `\n→ calling ${d.toolName} \n ${JSON.stringify(d.input, null, 2)}`,
-            ),
-          onToolResult: (d) => console.log(`✓ ${d.toolName} completed`),
-          onError: (e) => console.error(e),
-        },
       });
       expect(result).toBeDefined();
     },
