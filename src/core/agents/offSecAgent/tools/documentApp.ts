@@ -68,17 +68,19 @@ Each application creates a JSON file in the apps directory for tracking and anal
       url: z
         .string()
         .optional()
-        .describe("Base URL of the application (e.g., 'https://example.com', 'https://api.example.com')"),
+        .describe(
+          "Base URL of the application (e.g., 'https://example.com', 'https://api.example.com')",
+        ),
       technology: z
         .array(z.string())
         .optional()
-        .describe(
-          "Technology stack (e.g., ['Node.js', 'Express', 'MongoDB'])",
-        ),
+        .describe("Technology stack (e.g., ['Node.js', 'Express', 'MongoDB'])"),
       authentication: z
         .string()
         .optional()
-        .describe("Authentication type if known (e.g., 'OAuth2', 'JWT', 'session-based')"),
+        .describe(
+          "Authentication type if known (e.g., 'OAuth2', 'JWT', 'session-based')",
+        ),
       notes: z
         .string()
         .optional()

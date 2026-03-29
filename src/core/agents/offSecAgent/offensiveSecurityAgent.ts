@@ -7,10 +7,7 @@ import type {
   ToolSet,
 } from "ai";
 import { hasToolCall } from "ai";
-import type {
-  OffensiveSecurityAgentInput,
-  CreateAgentInput,
-} from "./types";
+import type { OffensiveSecurityAgentInput, CreateAgentInput } from "./types";
 import {
   createAllTools,
   EMAIL_TOOL_NAMES_ACTIVE,
@@ -26,6 +23,7 @@ import { AgentEventBus } from "../../eventBus";
 import { join } from "path";
 import { mkdirSync, existsSync } from "fs";
 import { writeFile } from "fs/promises";
+import { StepTraceWriter } from "./trace";
 
 /**
  * General-purpose offensive security agent harness.
@@ -137,6 +135,21 @@ export class OffensiveSecurityAgent<TResult = void> {
       }
     }
 
+    // -- Step trace (trace.jsonl) ---------------------------------------------
+    // Created before tools so the checkpoint_state tool can reference it.
+    const messagesDir = input.messagesDir ?? input.session.rootPath;
+    const tracePath = input.subagentId
+      ? join(
+          input.session.rootPath,
+          "subagents",
+          `${input.subagentId}.trace.jsonl`,
+        )
+      : join(messagesDir, "trace.jsonl");
+    const traceWriter = new StepTraceWriter({
+      tracePath,
+      agentId: input.subagentId ?? null,
+    });
+
     // -- Tools ----------------------------------------------------------------
     const credentialManager =
       input.credentialManager ?? input.session.credentialManager;
@@ -155,6 +168,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       credentialManager,
       persistentShell: this.persistentShell,
       skillsRegistry: input.skillsRegistry,
+      traceWriter,
     });
 
     let tools: ToolSet = input.extraTools
@@ -220,7 +234,6 @@ export class OffensiveSecurityAgent<TResult = void> {
     }
 
     // -- Messages persistence -------------------------------------------------
-    const messagesDir = input.messagesDir ?? input.session.rootPath;
     if (!existsSync(messagesDir)) {
       mkdirSync(messagesDir, { recursive: true });
     }
@@ -276,6 +289,10 @@ export class OffensiveSecurityAgent<TResult = void> {
           ...event.response.messages,
         ];
         schedulePersist();
+        traceWriter.recordStep(event.response.messages as ModelMessage[], {
+          inputTokens: event.usage.inputTokens ?? 0,
+          outputTokens: event.usage.outputTokens ?? 0,
+        });
         this.eventBus.emit("step-finish", {
           messages: event.response.messages,
           subagentId: this.subagentId,
@@ -286,6 +303,7 @@ export class OffensiveSecurityAgent<TResult = void> {
         // Context was reset by summarization — discard the old history so
         // subsequent onStepFinish writes only persist post-summary messages.
         initialMessagesRef.current = [];
+        traceWriter.markSummarized();
       },
       onFinish: async (event) => {
         // Flush any pending persistence before finishing

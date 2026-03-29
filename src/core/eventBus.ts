@@ -123,10 +123,7 @@ export class AgentEventBus {
    *   tool-result       → tool-result
    *   error             → error
    */
-  emitStreamPart(
-    chunk: TextStreamPart<ToolSet>,
-    subagentId?: string,
-  ): void {
+  emitStreamPart(chunk: TextStreamPart<ToolSet>, subagentId?: string): void {
     switch (chunk.type) {
       case "text-delta":
         this.emit("text-delta", { text: chunk.text, subagentId });
