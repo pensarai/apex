@@ -1,9 +1,9 @@
 /**
  * W&B Weave client wrapper.
  *
- * Thin layer over the `weave` npm package. Handles initialization,
- * authentication, and provides traced operations for recording
- * agent step and checkpoint data.
+ * Uses Weave's saveCallStart/saveCallEnd to log trace records
+ * as structured calls with top-level fields — not wrapped in
+ * a function's inputs.arg0.
  */
 
 import type { TraceRecord } from "../../agents/offSecAgent/trace";
@@ -38,65 +38,101 @@ export function resolveConfig(
 // Weave client initialization
 // ---------------------------------------------------------------------------
 
-let weaveModule: typeof import("weave") | null = null;
-let weaveInitialized = false;
+interface WeaveClient {
+  projectId: string;
+  saveCallStart(call: {
+    project_id: string;
+    id?: string | null;
+    op_name: string;
+    display_name?: string | null;
+    trace_id?: string | null;
+    parent_id?: string | null;
+    started_at: string;
+    attributes: object;
+    inputs: object;
+  }): void;
+  saveCallEnd(call: {
+    project_id: string;
+    id: string;
+    ended_at: string;
+    output?: unknown;
+    summary: Record<string, unknown>;
+  }): void;
+  waitForBatchProcessing(): Promise<void>;
+}
 
-/**
- * Lazily import and initialize the weave SDK.
- * Returns null if weave is not installed or init fails.
- */
-async function initWeave(
-  config: WandbConfig,
-): Promise<typeof import("weave") | null> {
-  if (weaveInitialized && weaveModule) return weaveModule;
+let weaveClient: WeaveClient | null = null;
 
+async function initWeave(config: WandbConfig): Promise<WeaveClient | null> {
+  if (weaveClient) return weaveClient;
+
+  let weave: typeof import("weave");
   try {
-    weaveModule = await import("weave");
+    weave = await import("weave");
   } catch {
-    // weave not installed — expected in non-W&B environments
     return null;
   }
 
   try {
-    await weaveModule.login(config.apiKey);
-    await weaveModule.init(`${config.entity}/${config.project}`);
-    weaveInitialized = true;
-    return weaveModule;
+    await weave.login(config.apiKey);
+    const client = await weave.init(`${config.entity}/${config.project}`);
+    weaveClient = client as unknown as WeaveClient;
+    return weaveClient;
   } catch (e) {
     console.error("[wandb] Weave init failed:", e);
-    weaveModule = null;
     return null;
   }
 }
 
 // ---------------------------------------------------------------------------
-// Traced operations
+// Tracer
 // ---------------------------------------------------------------------------
 
-/**
- * Create a traced function that logs a trace record to W&B Weave.
- * Returns null if Weave is not available.
- */
 export async function createWeaveTracer(config: WandbConfig): Promise<{
-  logRecord: (record: TraceRecord, sessionId: string) => Promise<void>;
+  logRecord: (record: TraceRecord, sessionId: string) => void;
   finish: () => Promise<void>;
 } | null> {
-  const weave = await initWeave(config);
-  if (!weave) return null;
-
-  const logTraceRecord = weave.op(
-    async (record: TraceRecord, sessionId: string) => {
-      return { record, sessionId };
-    },
-    { name: "apex_trace_record" },
-  );
+  const client = await initWeave(config);
+  if (!client) return null;
 
   let logErrorLogged = false;
+  let callCounter = 0;
 
   return {
-    logRecord: async (record: TraceRecord, sessionId: string) => {
+    logRecord: (record: TraceRecord, sessionId: string) => {
       try {
-        await logTraceRecord(record, sessionId);
+        const callId = `trace-${sessionId}-${callCounter++}`;
+        const now = new Date().toISOString();
+        const opName = `weave:///apex/trace/${record.type}`;
+        const displayName =
+          record.type === "init"
+            ? `init:${record.agentId ?? "orchestrator"}`
+            : record.type === "checkpoint"
+              ? `checkpoint:${record.agentId ?? "orchestrator"}:${record.stepIndex}`
+              : `step:${record.agentId ?? "orchestrator"}:${record.stepIndex}`;
+
+        client.saveCallStart({
+          project_id: client.projectId,
+          id: callId,
+          op_name: opName,
+          display_name: displayName,
+          trace_id: sessionId,
+          started_at: now,
+          attributes: {
+            sessionId,
+            agentId: record.agentId,
+            recordType: record.type,
+          },
+          inputs: record as unknown as object,
+        });
+
+        client.saveCallEnd({
+          project_id: client.projectId,
+          id: callId,
+          ended_at: now,
+          output: null,
+          summary: {},
+        });
       } catch (e) {
         if (!logErrorLogged) {
           console.error(
@@ -109,17 +145,8 @@ export async function createWeaveTracer(config: WandbConfig): Promise<{
     },
     finish: async () => {
       try {
-        // getGlobalClient is exported by weave but not in the public .d.ts (weave@0.x).
-        // Safe to call — returns null if no client is initialized.
-        const client = (
-          weave as {
-            getGlobalClient?: () => {
-              waitForBatchProcessing(): Promise<void>;
-            } | null;
-          }
-        ).getGlobalClient?.();
-        if (client) {
-          await client.waitForBatchProcessing();
+        if (weaveClient) {
+          await weaveClient.waitForBatchProcessing();
         }
       } catch (e) {
         console.error("[wandb] Flush failed:", e);

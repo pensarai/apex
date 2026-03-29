@@ -95,6 +95,7 @@
     "highlight.js": "^11.11.1",
     "ignore": "^7.0.5",
     "imapflow": "^1.2.10",
+    "jsonwebtoken": "^9.0.3",
     "mailparser": "^3.9.3",
     "marked": "^16.4.0",
     "nanoid": "^5.1.6",

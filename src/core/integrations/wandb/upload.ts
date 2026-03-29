@@ -4,16 +4,15 @@
  *
  * Usage:
  * ```ts
- * const uploader = await createWandbUploader(session);
- * if (uploader && eventBus) {
- *   eventBus.on("trace-record", (e) => uploader.onRecord(e.record));
- *   // Call uploader.finalize() after run completes
- * }
+ * const cleanup = await attachWandbToEventBus(session, eventBus);
+ * // ... run agents ...
+ * await cleanup?.();
  * ```
  */
 
 import { resolveConfig, createWeaveTracer } from "./client";
 import type { TraceRecord } from "../../agents/offSecAgent/trace";
+import type { AgentEventBus } from "../../eventBus";
 import type { SessionInfo } from "../../session";
 
 // ---------------------------------------------------------------------------
@@ -21,13 +20,10 @@ import type { SessionInfo } from "../../session";
 // ---------------------------------------------------------------------------
 
 export interface WandbUploaderHandle {
-  /** Log a trace record to W&B. Called from EventBus subscription. */
+  /** Log a trace record to W&B. Synchronous — Weave queues internally. */
   onRecord: (record: TraceRecord) => void;
 
-  /**
-   * Finalize: flush all pending records to W&B.
-   * Call after the agent run finishes.
-   */
+  /** Flush Weave's internal queue. Call after the agent run finishes. */
   finalize: () => Promise<void>;
 }
 
@@ -50,22 +46,37 @@ export async function createWandbUploader(
   const resolved = resolveConfig(opts);
   if (!resolved.available) return null;
 
-  const t = await createWeaveTracer(resolved.config);
-  if (!t) return null;
-  const logRecord = t.logRecord;
-  const finish = t.finish;
+  const tracer = await createWeaveTracer(resolved.config);
+  if (!tracer) return null;
 
-  // Chain promises so finalize() can await all in-flight records
-  let pending = Promise.resolve();
+  return {
+    onRecord: (record: TraceRecord) => tracer.logRecord(record, session.id),
+    finalize: () => tracer.finish(),
+  };
+}
 
-  function onRecord(record: TraceRecord): void {
-    pending = pending.then(() => logRecord(record, session.id));
-  }
+/**
+ * Attach a W&B uploader to an EventBus. Returns a cleanup function
+ * that unsubscribes and flushes, or null if W&B is not configured.
+ *
+ * Call this BEFORE the agent starts streaming so all trace records
+ * (including the orchestrator's init and early steps) are captured.
+ */
+export async function attachWandbToEventBus(
+  session: SessionInfo,
+  eventBus: AgentEventBus,
+  opts?: WandbUploaderOpts,
+): Promise<(() => Promise<void>) | null> {
+  const uploader = await createWandbUploader(session, opts);
+  if (!uploader) return null;
 
-  async function finalize(): Promise<void> {
-    await pending;
-    await finish();
-  }
+  const handler = (e: { record: TraceRecord }) => {
+    uploader.onRecord(e.record);
+  };
+  eventBus.on("trace-record", handler);
 
-  return { onRecord, finalize };
+  return async () => {
+    eventBus.off("trace-record", handler);
+    await uploader.finalize();
+  };
 }
