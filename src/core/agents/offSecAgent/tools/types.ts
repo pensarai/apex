@@ -9,6 +9,7 @@ import type { SkillsRegistry } from "../../../skills/registry";
 import type { AgentEventBus } from "../../../eventBus";
 import type { PersistentShell } from "./persistentShell";
 import type { UnifiedSandbox } from "./sandbox";
+import type { StepTraceWriter } from "../trace";
 
 /**
  * Shared context passed to every tool factory.
@@ -75,4 +76,10 @@ export type ToolContext = {
    * When present, read_skill is available.
    */
   skillsRegistry?: SkillsRegistry;
+
+  /**
+   * Step trace writer for appending records to trace.jsonl.
+   * When present, checkpoint_state tool is available.
+   */
+  traceWriter?: StepTraceWriter;
 };
