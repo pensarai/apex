@@ -7,8 +7,15 @@ export type {
   CreateAgentInput,
   SpecializedAgentInput,
   ConsumeCallbacks,
+  SubagentConsumeCallbacks,
   AgentMode,
 } from "./types";
+
+// ---------------------------------------------------------------------------
+// Event Bus
+// ---------------------------------------------------------------------------
+export { AgentEventBus } from "../../eventBus";
+export type { AgentEventMap } from "../../eventBus";
 
 // ---------------------------------------------------------------------------
 // Tools

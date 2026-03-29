@@ -18,6 +18,7 @@ import type { ApprovalGate } from "../../operator";
 import type { SkillsRegistry } from "../../skills/registry";
 import type { ToolName } from "./tools";
 import type { UnifiedSandbox } from "./tools/sandbox";
+import type { AgentEventBus } from "../../eventBus";
 import { z } from "zod";
 import { CweEntrySchema } from "../../../lib/cwe/types";
 
@@ -178,15 +179,30 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
   subagentId?: string;
 
   /**
-   * Callbacks for forwarding subagent stream events to the parent consumer.
+   * Event bus for streaming agent output.
    *
-   * Passed through to the tool context so orchestration tools
-   * (run_attack_surface, spawn_pentest_swarm) can forward their
-   * sub-agent events back to the top-level consumer.
+   * When provided, the agent emits all streaming events (text deltas,
+   * tool calls, tool results, errors) on this bus. Multiple consumers
+   * can subscribe independently — TUI, DB persistence, metrics, etc.
+   *
+   * The bus is also passed through to tools so orchestration tools
+   * (run_attack_surface, spawn_pentest_swarm) can emit subagent events
+   * on the same bus.
+   */
+  eventBus?: AgentEventBus;
+
+  /**
+   * @deprecated Use `eventBus` instead. Will be removed in a future release.
+   *
+   * Callbacks for forwarding subagent stream events to the parent consumer.
    */
   subagentCallbacks?: SubagentConsumeCallbacks;
 
-  /** Callbacks for persisting agent discoveries to external storage (e.g., database). */
+  /**
+   * @deprecated Use `eventBus` instead. Will be removed in a future release.
+   *
+   * Callbacks for persisting agent discoveries to external storage (e.g., database).
+   */
   callbacks?: ConsumeCallbacks;
 
   /**
@@ -273,7 +289,12 @@ export interface SpecializedAgentInput {
   /** AbortSignal to cancel the agent mid-run */
   abortSignal?: AbortSignal;
 
-  /** Callbacks for stream events and subagent forwarding */
+  /** Event bus for streaming agent output */
+  eventBus?: AgentEventBus;
+
+  /**
+   * @deprecated Use `eventBus` instead. Will be removed in a future release.
+   */
   callbacks?: ConsumeCallbacks;
 
   /** Shared findings registry for cross-agent dedup */

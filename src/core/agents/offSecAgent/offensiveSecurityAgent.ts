@@ -23,6 +23,7 @@ import { buildBaseSystemPrompt, buildSessionWorkspaceSection } from "./prompt";
 import type { ApprovalGate } from "../../operator";
 import { ApprovalDeniedError } from "../../operator";
 import { create as createSession, type SessionInfo } from "../../session";
+import { AgentEventBus } from "../../eventBus";
 import { join } from "path";
 import { mkdirSync, existsSync } from "fs";
 import { writeFile } from "fs/promises";
@@ -64,6 +65,9 @@ import { writeFile } from "fs/promises";
 export class OffensiveSecurityAgent<TResult = void> {
   /** The underlying Vercel AI SDK stream result — escape hatch for advanced use. */
   public readonly streamResult: StreamTextResult<ToolSet, never>;
+
+  /** The event bus for this agent's streaming output. */
+  public readonly eventBus: AgentEventBus;
 
   private readonly resolveResult?: (
     streamResult: StreamTextResult<ToolSet, never>,
@@ -114,6 +118,7 @@ export class OffensiveSecurityAgent<TResult = void> {
     this._session = input.session;
     this.subagentId = input.subagentId;
     this.abortSignal = input.abortSignal;
+    this.eventBus = input.eventBus ?? new AgentEventBus();
 
     // -- Resolve agent working directory ----------------------------------------
     const agentCwd = input.session.config?.agentCwd ?? input.session.rootPath;
@@ -148,6 +153,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       authConfig: input.authConfig,
       callbacks: input.callbacks,
       subagentCallbacks,
+      eventBus: this.eventBus,
       sandbox: input.sandbox,
       findingsRegistry: input.findingsRegistry,
       attackSurfaceRegistry: input.attackSurfaceRegistry,
@@ -356,15 +362,18 @@ export class OffensiveSecurityAgent<TResult = void> {
     } = callbacks;
 
     const sid = this.subagentId;
+    const bus = this.eventBus;
 
     for await (const chunk of this.streamResult.fullStream) {
       switch (chunk.type) {
         case "text-delta":
+          bus.emit("text-delta", { text: chunk.text, subagentId: sid });
           onTextDelta?.(chunk);
           subagentCallbacks?.onTextDelta?.({ ...chunk, subagentId: sid });
           break;
         case "tool-input-start": {
           const delta = { toolCallId: chunk.id, toolName: chunk.toolName };
+          bus.emit("tool-call-start", { ...delta, subagentId: sid });
           onToolCallStreaming?.(delta);
           subagentCallbacks?.onToolCallStreaming?.({
             ...delta,
@@ -374,6 +383,7 @@ export class OffensiveSecurityAgent<TResult = void> {
         }
         case "tool-input-delta": {
           const delta = { toolCallId: chunk.id, argsTextDelta: chunk.delta };
+          bus.emit("tool-call-delta", { ...delta, subagentId: sid });
           onToolCallDelta?.(delta);
           subagentCallbacks?.onToolCallDelta?.({
             ...delta,
@@ -382,19 +392,34 @@ export class OffensiveSecurityAgent<TResult = void> {
           break;
         }
         case "tool-call":
+          bus.emit("tool-call-complete", {
+            toolCallId: chunk.toolCallId,
+            toolName: chunk.toolName,
+            args: chunk.args,
+            subagentId: sid,
+          });
           onToolCall?.(chunk);
           subagentCallbacks?.onToolCall?.({ ...chunk, subagentId: sid });
           break;
         case "tool-result":
+          bus.emit("tool-result", {
+            toolCallId: chunk.toolCallId,
+            toolName: chunk.toolName,
+            result: chunk.result,
+            subagentId: sid,
+          });
           onToolResult?.(chunk);
           subagentCallbacks?.onToolResult?.({ ...chunk, subagentId: sid });
           break;
-        case "error":
+        case "error": {
+          const error = (chunk as { type: "error"; error: unknown }).error;
+          bus.emit("error", { error, subagentId: sid });
           if (onError) {
-            onError((chunk as { type: "error"; error: unknown }).error);
+            onError(error);
           }
           subagentCallbacks?.onError?.(chunk.error);
           break;
+        }
       }
     }
 

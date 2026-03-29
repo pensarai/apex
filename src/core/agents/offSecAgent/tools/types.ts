@@ -7,6 +7,7 @@ import type { SessionInfo } from "../../../session";
 import type { SkillsRegistry } from "../../../skills/registry";
 
 import type { ConsumeCallbacks, SubagentConsumeCallbacks } from "../types";
+import type { AgentEventBus } from "../../../eventBus";
 import type { PersistentShell } from "./persistentShell";
 import type { UnifiedSandbox } from "./sandbox";
 
@@ -36,8 +37,12 @@ export type ToolContext = {
   /** Per-provider API key overrides — needed by tools that spawn sub-agents */
   authConfig?: AIAuthConfig;
 
-  /** Callbacks for forwarding subagent stream events to the parent consumer */
+  /** Event bus for streaming agent output */
+  eventBus?: AgentEventBus;
+
+  /** @deprecated Use `eventBus` instead. */
   subagentCallbacks?: SubagentConsumeCallbacks;
+  /** @deprecated Use `eventBus` instead. */
   callbacks?: ConsumeCallbacks;
 
   /**
