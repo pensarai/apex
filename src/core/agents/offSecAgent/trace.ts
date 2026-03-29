@@ -417,6 +417,10 @@ export class StepTraceWriter {
 
   /** Sync append — ~1-3KB per line, sub-ms. Sync ensures crash safety. */
   private appendRecord(record: TraceRecord): void {
-    appendFileSync(this.tracePath, JSON.stringify(record) + "\n");
+    try {
+      appendFileSync(this.tracePath, JSON.stringify(record) + "\n");
+    } catch {
+      // Trace is non-critical observability — never crash the agent for it.
+    }
   }
 }
