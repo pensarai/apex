@@ -10,8 +10,10 @@
  */
 
 import { appendFileSync, mkdirSync } from "fs";
+import { createHash } from "crypto";
 import { dirname } from "path";
 import type { ModelMessage } from "ai";
+import type { AgentEventBus } from "../../eventBus";
 
 // ---------------------------------------------------------------------------
 // Shared type aliases
@@ -159,6 +161,35 @@ export interface StateCheckpoint {
   assessment: string;
 }
 
+// ---------------------------------------------------------------------------
+// InitRecord — first line in trace.jsonl, captures agent setup context
+// ---------------------------------------------------------------------------
+
+export interface InitRecord {
+  /** Discriminator */
+  type: "init";
+
+  timestamp: string;
+
+  agentId: string | null;
+
+  /** AI model identifier used for this agent */
+  model: string;
+
+  /** SHA-256 prefix (12 chars) of the system prompt — detects prompt version drift */
+  systemPromptHash: string;
+
+  /** Tool names available to this agent */
+  activeTools: string[];
+
+  sessionId: string;
+
+  target?: string;
+
+  /** For pentest agents — the testing objectives */
+  objectives?: string[];
+}
+
 /** Data fields provided by the checkpoint_state tool (metadata is filled by the writer). */
 export type CheckpointInput = Omit<
   StateCheckpoint,
@@ -166,7 +197,7 @@ export type CheckpointInput = Omit<
 >;
 
 /** Discriminated union of all trace record types. */
-export type TraceRecord = StepRecord | StateCheckpoint;
+export type TraceRecord = InitRecord | StepRecord | StateCheckpoint;
 
 // ---------------------------------------------------------------------------
 // Extraction helpers
@@ -174,6 +205,7 @@ export type TraceRecord = StepRecord | StateCheckpoint;
 
 const OUTPUT_PREVIEW_LIMIT = 2000;
 const INPUT_PREVIEW_LIMIT = 1000;
+const SYSTEM_PROMPT_HASH_PREFIX_LENGTH = 12;
 
 /**
  * Resolve ToolResultOutput to a string representation and its type tag.
@@ -239,6 +271,14 @@ export interface StepTraceWriterOpts {
 
   /** Agent identifier — null for orchestrator */
   agentId: string | null;
+
+  /**
+   * When provided, every trace record is emitted as a "trace-record"
+   * event on the bus. Enables streaming integrations (e.g., W&B) to
+   * subscribe once at the workflow level and receive records from all
+   * agents automatically.
+   */
+  eventBus?: AgentEventBus;
 }
 
 /**
@@ -251,6 +291,7 @@ export interface StepTraceWriterOpts {
 export class StepTraceWriter {
   private readonly tracePath: string;
   private readonly agentId: string | null;
+  private readonly eventBus?: AgentEventBus;
 
   private stepIndex = 0;
   private cumulativeUsage = { inputTokens: 0, outputTokens: 0 };
@@ -262,12 +303,37 @@ export class StepTraceWriter {
   constructor(opts: StepTraceWriterOpts) {
     this.tracePath = opts.tracePath;
     this.agentId = opts.agentId;
+    this.eventBus = opts.eventBus;
 
     const now = Date.now();
     this.agentStartTime = now;
     this.lastStepTime = now;
 
     mkdirSync(dirname(this.tracePath), { recursive: true });
+  }
+
+  /**
+   * Write the init record as the first line of trace.jsonl.
+   * Call once before the stream starts.
+   */
+  writeInit(
+    data: Omit<
+      InitRecord,
+      "type" | "timestamp" | "agentId" | "systemPromptHash"
+    > & { systemPrompt: string },
+  ): void {
+    const { systemPrompt, ...rest } = data;
+    const record: InitRecord = {
+      type: "init",
+      timestamp: new Date().toISOString(),
+      agentId: this.agentId,
+      systemPromptHash: createHash("sha256")
+        .update(systemPrompt)
+        .digest("hex")
+        .slice(0, SYSTEM_PROMPT_HASH_PREFIX_LENGTH),
+      ...rest,
+    };
+    this.appendRecord(record);
   }
 
   /**
@@ -421,6 +487,14 @@ export class StepTraceWriter {
       appendFileSync(this.tracePath, JSON.stringify(record) + "\n");
     } catch {
       // Trace is non-critical observability — never crash the agent for it.
+    }
+    try {
+      this.eventBus?.emit("trace-record", {
+        record,
+        subagentId: this.agentId ?? undefined,
+      });
+    } catch {
+      // Event emission failures are non-critical — never crash the agent.
     }
   }
 }

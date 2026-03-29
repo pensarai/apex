@@ -148,6 +148,7 @@ export class OffensiveSecurityAgent<TResult = void> {
     const traceWriter = new StepTraceWriter({
       tracePath,
       agentId: input.subagentId ?? null,
+      eventBus: this.eventBus,
     });
 
     // -- Tools ----------------------------------------------------------------
@@ -269,14 +270,25 @@ export class OffensiveSecurityAgent<TResult = void> {
       }, PERSIST_INTERVAL_MS);
     };
 
+    // -- Init record (trace.jsonl first line) ---------------------------------
+    const systemPrompt =
+      (input.system ??
+        buildBaseSystemPrompt({
+          sandboxMode: agentCwd === input.session.rootPath,
+        })) + buildSessionWorkspaceSection(input.session, agentCwd);
+
+    traceWriter.writeInit({
+      model: input.model,
+      systemPrompt,
+      activeTools,
+      sessionId: input.session.id,
+      target: input.target,
+    });
+
     // -- Stream ---------------------------------------------------------------
     this.streamResult = streamResponse({
       prompt: input.prompt,
-      system:
-        (input.system ??
-          buildBaseSystemPrompt({
-            sandboxMode: agentCwd === input.session.rootPath,
-          })) + buildSessionWorkspaceSection(input.session, agentCwd),
+      system: systemPrompt,
       model: input.model,
       messages: input.messages,
       tools,

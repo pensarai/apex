@@ -119,7 +119,6 @@ export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSur
       eventBus,
       subagentId,
       messages: opts.messages,
-
       activeTools: [
         // Core recon tools
         "execute_command",
