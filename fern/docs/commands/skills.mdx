@@ -1,0 +1,88 @@
+---
+title: "/skills"
+description: "View and manage installed operator skills"
+---
+
+## Overview
+
+The `/skills` command opens a dialog showing all installed skills grouped by source. Skills are reusable instruction sets stored as `SKILL.md` files that teach the AI agent specialized testing techniques or workflows tailored to your environment.
+
+## Usage
+
+```bash
+/skills
+```
+
+To jump directly to a specific skill's detail view:
+
+```bash
+/skills <slug>
+```
+
+## Skill Sources
+
+Skills are loaded from three sources in priority order:
+
+| Source        | Locations                                                    |
+| ------------- | ------------------------------------------------------------ |
+| **Project**   | `.skills/`, `.claude/skills/`, `skills/` in project root     |
+| **User**      | `~/.agents/skills/`, `~/.pensar/skills/`                     |
+| **Built-in**  | Shipped with Apex (e.g., `threat-model`)                     |
+
+Project skills take priority — if the same slug exists in multiple sources, the project-level version wins.
+
+## What You'll See
+
+The skills dialog shows:
+
+- **Grouped list** — skills organized by source (built-in, project, user) with token estimates
+- **Detail view** — press `Enter` on any skill to view its full instructions
+- **Editor shortcut** — press `E` in the detail view to open the skill file in your default editor
+
+## SKILL.md Format
+
+Each skill lives in its own directory and is defined by a `SKILL.md` file:
+
+```
+my-skill/
+  SKILL.md
+```
+
+The `SKILL.md` file uses Markdown with optional YAML frontmatter:
+
+```markdown
+---
+name: My Custom Skill
+description: A brief description of what this skill does
+---
+
+Detailed instructions for the AI agent...
+```
+
+## Keyboard Shortcuts
+
+| Key     | Action                            |
+| ------- | --------------------------------- |
+| `↑/↓`  | Navigate skill list               |
+| `Enter` | Open detail view                  |
+| `E`     | Open skill file in editor (detail view) |
+| `Esc`   | Close detail view / close dialog  |
+
+## Using Skills
+
+Once installed, skills appear as dynamic slash commands. For example, a skill with slug `sql-injection-test` becomes available as `/sql-injection-test` in operator mode.
+
+<Callout intent="info">
+  Skills only work in operator sessions (`/operator`). They are not available in autonomous pentest mode (`/pentest`).
+</Callout>
+
+## Related Commands
+
+<CardGroup cols={2}>
+  <Card title="/operator" icon="terminal" href="/apex/commands/operator">
+    Start an operator session to use skills
+  </Card>
+  <Card title="/help" icon="circle-question" href="/apex/commands/help">
+    View all available commands including dynamic skills
+  </Card>
+</CardGroup>

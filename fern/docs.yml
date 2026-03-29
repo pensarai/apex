@@ -72,10 +72,8 @@ navigation:
             path: ./docs/commands/themes.mdx
           - page: /credits
             path: ./docs/commands/credits.mdx
-          - page: /config
-            path: ./docs/commands/config.mdx
-          - page: /create-skill
-            path: ./docs/commands/create-skill.mdx
+          - page: /skills
+            path: ./docs/commands/skills.mdx
           - page: /help
             path: ./docs/commands/help.mdx
       - section: CLI Commands
