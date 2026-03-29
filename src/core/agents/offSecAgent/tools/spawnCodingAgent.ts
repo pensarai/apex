@@ -24,6 +24,7 @@ const CHILD_BUS_EVENT_KEYS = [
 function attachChildEventBus(
   localBus: AgentEventBus,
   parentBus: AgentEventBus | undefined,
+  subagentId: string,
   accumulateText: (chunk: string) => void,
 ): void {
   for (const key of CHILD_BUS_EVENT_KEYS) {
@@ -31,7 +32,10 @@ function attachChildEventBus(
       if (key === "text-delta") {
         accumulateText((payload as AgentEventMap["text-delta"]).text);
       }
-      parentBus?.emit(key, payload);
+      parentBus?.emit(key, {
+        ...payload,
+        subagentId,
+      } as AgentEventMap[typeof key]);
     });
   }
 }
@@ -196,7 +200,7 @@ async function runSingleCodingAgent(
 
   const localBus = new AgentEventBus();
   let textOutput = "";
-  attachChildEventBus(localBus, ctx.eventBus, (t) => {
+  attachChildEventBus(localBus, ctx.eventBus, subagentId, (t) => {
     textOutput += t;
   });
 
