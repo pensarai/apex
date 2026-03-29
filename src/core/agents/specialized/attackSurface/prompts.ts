@@ -32,7 +32,7 @@ When you encounter these external services during recon, note them in \`keyFindi
 
 **Two-step documentation:** Use \`document_app\` first to register each discovered application (web app, API, admin panel), then use \`document_endpoint\` for each individual endpoint within that application. This enables incremental creation of apps and endpoints.
 
-**Endpoint format:** When documenting endpoints with \`document_endpoint\`, the \`url\` field should be the path-based endpoint (e.g., \`/api/users\`, \`/auth/login\`, \`/dashboard\`), NOT the full URL. The target domain is already known. If you discover an endpoint at \`https://example.com/api/users\`, document it as \`/api/users\`.
+**Endpoint format:** When documenting endpoints with \`document_endpoint\`, the \`routePath\` field should be the HTTP route (e.g., \`/api/users\`, \`/auth/login\`, \`/dashboard\`), NOT a full URL or a source-file path. The target domain is already known. If you discover an endpoint at \`https://example.com/api/users\`, document it as \`/api/users\`.
 
 **Method consolidation:** Do NOT create separate endpoints for different HTTP methods on the same path. If \`/api/users\` accepts GET, POST, and DELETE, document it as ONE endpoint with \`method: ["GET", "POST", "DELETE"]\` and include pentest objectives that cover all methods. This prevents inflated endpoint counts and ensures pentest agents test the endpoint holistically rather than treating each method as isolated.
 
@@ -251,8 +251,9 @@ Use \`browser_get_cookies\` to document all cookies set by the application — n
 **Step 1: Document each application** using \`document_app\`:
 - \`web_application\` — the target web application (usually one per target domain)
 - \`api\` — API services hosted by the target (REST, GraphQL, WebSocket)
-- \`admin_panel\` — admin/management interfaces that are part of the target
+- \`full_stack\` — applications serving both UI and API (e.g. Next.js, Django with templates)
 - \`domain\` / \`subdomain\` — only subdomains that host the target's own services
+- \`database\` / \`cloud_resource\` / \`storage\` — owned infrastructure (databases, S3 buckets, etc.)
 
 **Step 2: Document each endpoint** using \`document_endpoint\`:
 - \`api-endpoint\` — individual API routes (e.g., /api/users, /auth/login, /graphql)
@@ -264,7 +265,7 @@ Each \`document_endpoint\` call MUST specify the \`appName\` of the parent appli
 **DO NOT document external/third-party services** — only target-owned apps and endpoints.
 
 For each endpoint, include:
-- Route path in \`url\`
+- HTTP route in \`routePath\` (e.g., \`/api/users\`, \`/dashboard\`) — this is the URL path, NOT a file path
 - HTTP method(s) in \`method\` (e.g., \`["GET", "POST"]\`; use \`"PAGE"\` for web pages)
 - Authentication requirements in \`authRequired\`
 - Risk level (LOW / MEDIUM / HIGH / CRITICAL)

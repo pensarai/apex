@@ -38,7 +38,9 @@ Your primary search tool. Use it to find route definitions, middleware, controll
 - **ONE endpoint per unique route path.** Do NOT create separate entries for different HTTP methods on the same path. If \`/api/users\` supports GET, POST, and DELETE, that is ONE entry with \`method: ["GET", "POST", "DELETE"]\`.
 - **Use \`method: "PAGE"\`** for web pages and views.
 - **Always set \`appName\`** to group endpoints under the correct application.
-- **Always set \`url\`** to the route path, \`file\` to the source file, \`handler\` to the function name, and \`authRequired\` to indicate auth requirements.
+- **Always set \`routePath\`** to the HTTP route (e.g., \`/api/users\`). This is the URL path a client requests — NOT a source-file path.
+- **Always set \`file\`** to the source-code file (e.g., \`src/routes/users.ts\`). This is NOT the HTTP route.
+- **Always set \`handler\`** to the function name, and \`authRequired\` to indicate auth requirements.
 
 Call these tools throughout your analysis as you discover apps and endpoints — don't wait until the end.
 
@@ -73,10 +75,11 @@ For each app you identified, spawn a coding agent with a detailed objective. The
 3. **Find ALL web pages** — search for page/view/route definitions and document each with \`document_endpoint\` using \`method: "PAGE"\`
 4. **Find ALL API endpoints** — search for route/endpoint definitions and document each unique path with \`document_endpoint\`, listing ALL HTTP methods in \`method\`
 5. **For each endpoint, include** in the document_endpoint call:
-   - Route path in \`url\`
+   - HTTP route in \`routePath\` (e.g., \`/api/users\`) — this is the URL path, NOT a file path
    - ALL HTTP methods in \`method\` (consolidated — one entry per path)
    - Handler function in \`handler\`
-   - Source file in \`file\` and line number in \`line\`
+   - Source-code file in \`file\` (e.g., \`src/routes/users.ts\`) — this is NOT the route
+   - Line number in \`line\`
    - Auth requirement in \`authRequired\`
    - Specific pentest objectives in \`pentestObjectives\`
 
