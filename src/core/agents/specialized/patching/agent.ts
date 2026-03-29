@@ -77,7 +77,7 @@ export class PatchingAgent extends OffensiveSecurityAgent<PatchResult> {
       authConfig,
       onStepFinish,
       abortSignal,
-      callbacks,
+      eventBus,
       sandbox,
     } = opts;
 
@@ -91,7 +91,7 @@ export class PatchingAgent extends OffensiveSecurityAgent<PatchResult> {
       authConfig,
       onStepFinish,
       abortSignal,
-      callbacks,
+      eventBus,
       sandbox,
 
       activeTools: [

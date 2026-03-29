@@ -131,8 +131,6 @@ function computeDataSensitivity(
 
   let score = riskLevel === "HIGH" ? 2 : riskLevel === "MEDIUM" ? 1 : 0;
 
-  if (assetType === "admin_panel") score = Math.max(score, 2);
-
   const techStr = (details?.technology ?? []).join(" ").toLowerCase();
   if (
     techStr.includes("database") ||
@@ -153,7 +151,6 @@ function computeFunctionCriticality(
   details?: EndpointDetails,
   notes?: string,
 ): number {
-  if (assetType === "admin_panel") return 2;
   if (riskLevel === "CRITICAL") return 2;
 
   const searchText = [

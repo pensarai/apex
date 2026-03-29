@@ -4,7 +4,6 @@ import type {
   StreamTextOnFinishCallback,
   StreamTextOnStepFinishCallback,
   StreamTextResult,
-  TextStreamPart,
   ToolChoice,
   ToolSet,
 } from "ai";
@@ -18,6 +17,7 @@ import type { ApprovalGate } from "../../operator";
 import type { SkillsRegistry } from "../../skills/registry";
 import type { ToolName } from "./tools";
 import type { UnifiedSandbox } from "./tools/sandbox";
+import type { AgentEventBus } from "../../eventBus";
 import { z } from "zod";
 import { CweEntrySchema } from "../../../lib/cwe/types";
 
@@ -178,16 +178,20 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
   subagentId?: string;
 
   /**
-   * Callbacks for forwarding subagent stream events to the parent consumer.
+   * Event bus for streaming agent output.
    *
-   * Passed through to the tool context so orchestration tools
-   * (run_attack_surface, spawn_pentest_swarm) can forward their
-   * sub-agent events back to the top-level consumer.
+   * When provided, the agent emits all streaming events (text deltas,
+   * tool calls, tool results, errors) on this bus. Multiple consumers
+   * can subscribe independently — TUI, DB persistence, metrics, etc.
+   *
+   * The bus is also passed through to tools so orchestration tools
+   * (run_attack_surface, spawn_pentest_swarm) can emit subagent events
+   * on the same bus.
+   *
+   * When omitted, a fresh bus is created internally — callers can access
+   * it via `agent.eventBus` after construction.
    */
-  subagentCallbacks?: SubagentConsumeCallbacks;
-
-  /** Callbacks for persisting agent discoveries to external storage (e.g., database). */
-  callbacks?: ConsumeCallbacks;
+  eventBus?: AgentEventBus;
 
   /**
    * Zod schema for structured output via the `response` tool.
@@ -273,8 +277,14 @@ export interface SpecializedAgentInput {
   /** AbortSignal to cancel the agent mid-run */
   abortSignal?: AbortSignal;
 
-  /** Callbacks for stream events and subagent forwarding */
-  callbacks?: ConsumeCallbacks;
+  /** Event bus for streaming agent output */
+  eventBus?: AgentEventBus;
+
+  /**
+   * When set, stream chunks emitted during {@link OffensiveSecurityAgent.consume}
+   * are tagged with this id on the event bus (for multi-agent UIs).
+   */
+  subagentId?: string;
 
   /** Shared findings registry for cross-agent dedup */
   findingsRegistry?: FindingsRegistry;
@@ -294,90 +304,6 @@ export interface SpecializedAgentInput {
    */
   environmentVariables?: Record<string, string>;
 }
-
-/**
- * Typed callbacks for consuming the agent's output stream.
- * Pass to `agent.consume()` for ergonomic stream processing.
- */
-export type ConsumeCallbacks = {
-  onTextDelta?: (
-    delta: Extract<TextStreamPart<ToolSet>, { type: "text-delta" }>,
-  ) => void;
-  /** Fired as soon as the model starts generating a tool call (tool name is known, args still streaming). */
-  onToolCallStreaming?: (delta: {
-    toolCallId: string;
-    toolName: string;
-  }) => void;
-  /** Fired as tool call arguments are being generated (partial JSON delta). */
-  onToolCallDelta?: (delta: {
-    toolCallId: string;
-    argsTextDelta: string;
-  }) => void;
-  onToolCall?: (
-    delta: Extract<TextStreamPart<ToolSet>, { type: "tool-call" }>,
-  ) => void;
-  onToolResult?: (
-    delta: Extract<TextStreamPart<ToolSet>, { type: "tool-result" }>,
-  ) => void;
-  /** Streaming stdout chunks from execute_command while it is still running. */
-  onCommandOutput?: (data: string) => void;
-  onError?: (error: unknown) => void;
-  subagentCallbacks?: SubagentConsumeCallbacks;
-};
-
-/**
- * Typed callbacks for consuming the subagent's output stream.
- * Pass to `subagent.consume()` for ergonomic stream processing.
- */
-export type SubagentConsumeCallbacks = {
-  onSubagentSpawn?: ({
-    subagentId,
-    name,
-    input,
-    status,
-  }: {
-    subagentId: string;
-    /** Short human-readable label for this sub-agent (e.g. truncated objective). */
-    name?: string;
-    input: unknown;
-    status: "pending" | "completed" | "failed";
-  }) => void;
-  onSubagentComplete?: ({
-    subagentId,
-    input,
-    status,
-  }: {
-    subagentId: string;
-    input: unknown;
-    status: "completed" | "failed";
-  }) => void;
-  onTextDelta?: (
-    delta: Extract<TextStreamPart<ToolSet>, { type: "text-delta" }> & {
-      subagentId?: string;
-    },
-  ) => void;
-  onToolCallStreaming?: (
-    delta: { toolCallId: string; toolName: string } & {
-      subagentId?: string;
-    },
-  ) => void;
-  onToolCallDelta?: (
-    delta: { toolCallId: string; argsTextDelta: string } & {
-      subagentId?: string;
-    },
-  ) => void;
-  onToolCall?: (
-    delta: Extract<TextStreamPart<ToolSet>, { type: "tool-call" }> & {
-      subagentId?: string;
-    },
-  ) => void;
-  onToolResult?: (
-    delta: Extract<TextStreamPart<ToolSet>, { type: "tool-result" }> & {
-      subagentId?: string;
-    },
-  ) => void;
-  onError?: (error: unknown) => void;
-};
 
 /**
  * Input for the `OffensiveSecurityAgent.create()` async factory.

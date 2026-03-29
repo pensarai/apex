@@ -39,7 +39,6 @@ import { ModelPickerDialog } from "./components/model-picker";
 import AuthFlow from "./components/commands/auth-flow";
 import CreditsFlow from "./components/commands/credits-flow";
 import { KeybindingProvider } from "./context/keybinding";
-import Pentest from "./components/pentest/pentest";
 import OperatorDashboard from "./components/operator-dashboard";
 import ThemePicker from "./components/commands/theme-picker";
 import SkillsDialog from "./components/commands/skills-dialog";
@@ -388,7 +387,38 @@ function AppContent({
   ) => {
     setShowPentestDialog(false);
     setPendingPentestFlags(undefined);
-    route.navigate({ type: "pentest", targets, sessionConfig });
+
+    const target = targets[0] ?? "";
+    const skillArgs: Record<string, string> = {};
+    if (target) skillArgs.target = target;
+    if (sessionConfig.codebasePath) skillArgs.cwd = sessionConfig.codebasePath;
+    const creds = sessionConfig.authCredentials
+      ? Array.isArray(sessionConfig.authCredentials)
+        ? sessionConfig.authCredentials[0]
+        : sessionConfig.authCredentials
+      : undefined;
+    if (creds?.loginUrl) skillArgs["auth-url"] = creds.loginUrl;
+    if (creds?.username) skillArgs["auth-user"] = creds.username;
+    if (creds?.password) skillArgs["auth-pass"] = creds.password;
+    if (sessionConfig.authenticationInstructions)
+      skillArgs["auth-instructions"] = sessionConfig.authenticationInstructions;
+    if (sessionConfig.scopeConstraints?.allowedHosts?.length)
+      skillArgs.hosts = sessionConfig.scopeConstraints.allowedHosts.join(",");
+    if (sessionConfig.scopeConstraints?.allowedPorts?.length)
+      skillArgs.ports = sessionConfig.scopeConstraints.allowedPorts
+        .map(String)
+        .join(",");
+    if (sessionConfig.scopeConstraints?.strictScope) skillArgs.strict = "true";
+
+    route.navigate({
+      type: "operator",
+      nonce: Date.now(),
+      initialConfig: {
+        requireApproval: false,
+        target,
+      },
+      initialSkill: { slug: "pentest", args: skillArgs },
+    });
   };
 
   // Check if we're on the home route
@@ -583,17 +613,10 @@ function CommandDisplay({
   }
 
   if (route.data.type === "pentest") {
-    // When openAsOperator is set, render operator dashboard instead of pentest
-    if (route.data.openAsOperator) {
-      return <OperatorDashboard sessionId={route.data.sessionId} />;
-    }
-    return (
-      <Pentest
-        sessionId={route.data.sessionId}
-        targets={route.data.targets}
-        sessionConfig={route.data.sessionConfig}
-      />
-    );
+    // All pentest sessions now render via operator dashboard.
+    // The dedicated pentest view has been consolidated into the operator view
+    // via the pentest skill.
+    return <OperatorDashboard sessionId={route.data.sessionId} />;
   }
 
   return null;

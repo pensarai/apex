@@ -6,9 +6,14 @@ export type {
   OffensiveSecurityAgentInput,
   CreateAgentInput,
   SpecializedAgentInput,
-  ConsumeCallbacks,
   AgentMode,
 } from "./types";
+
+// ---------------------------------------------------------------------------
+// Event Bus
+// ---------------------------------------------------------------------------
+export { AgentEventBus } from "../../eventBus";
+export type { AgentEventMap } from "../../eventBus";
 
 // ---------------------------------------------------------------------------
 // Tools

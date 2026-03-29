@@ -1,7 +1,7 @@
 import type { AIModel } from "../ai";
 import type { AIAuthConfig } from "../ai/utils";
 import type { SessionInfo } from "../session";
-import type { ConsumeCallbacks } from "../agents/offSecAgent";
+import type { AgentEventBus } from "../eventBus";
 import { ALL_TOOL_NAMES, SKILL_TOOL_NAMES } from "../agents/offSecAgent";
 import { buildBaseSystemPrompt } from "../agents/offSecAgent/prompt";
 import { runOffensiveSecurityAgent } from "../api/offesecAgent";
@@ -32,8 +32,8 @@ export interface ThreatModelWorkflowInput {
   /** AbortSignal to cancel the workflow */
   abortSignal?: AbortSignal;
 
-  /** Stream callbacks */
-  callbacks?: ConsumeCallbacks;
+  /** Optional event bus for streaming agent output */
+  eventBus?: AgentEventBus;
 }
 
 export interface ThreatModelWorkflowResult {
@@ -92,7 +92,7 @@ Working directory: ${input.codebasePath}`;
     authConfig: input.authConfig,
     abortSignal: input.abortSignal,
     skillsRegistry: registry,
-    callbacks: input.callbacks,
+    eventBus: input.eventBus,
   });
 
   return { session, outputPath: input.outputPath };

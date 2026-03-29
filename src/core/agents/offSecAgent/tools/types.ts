@@ -6,7 +6,7 @@ import type { FindingsRegistry } from "../../../findings/registry";
 import type { SessionInfo } from "../../../session";
 import type { SkillsRegistry } from "../../../skills/registry";
 
-import type { ConsumeCallbacks, SubagentConsumeCallbacks } from "../types";
+import type { AgentEventBus } from "../../../eventBus";
 import type { PersistentShell } from "./persistentShell";
 import type { UnifiedSandbox } from "./sandbox";
 
@@ -36,9 +36,8 @@ export type ToolContext = {
   /** Per-provider API key overrides — needed by tools that spawn sub-agents */
   authConfig?: AIAuthConfig;
 
-  /** Callbacks for forwarding subagent stream events to the parent consumer */
-  subagentCallbacks?: SubagentConsumeCallbacks;
-  callbacks?: ConsumeCallbacks;
+  /** Event bus for streaming agent output and subagent lifecycle events */
+  eventBus?: AgentEventBus;
 
   /**
    * When set, tools like execute_command / http_request / document_vulnerability
@@ -70,12 +69,6 @@ export type ToolContext = {
    * persist between invocations. Only used in local (non-sandbox) mode.
    */
   persistentShell?: PersistentShell;
-
-  /**
-   * Side-channel callback for streaming raw stdout chunks from
-   * execute_command back to the TUI while the command is still running.
-   */
-  onCommandOutput?: (data: string) => void;
 
   /**
    * Skills registry for on-demand skill loading.

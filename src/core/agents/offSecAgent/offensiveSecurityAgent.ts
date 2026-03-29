@@ -10,7 +10,6 @@ import { hasToolCall } from "ai";
 import type {
   OffensiveSecurityAgentInput,
   CreateAgentInput,
-  ConsumeCallbacks,
 } from "./types";
 import {
   createAllTools,
@@ -23,6 +22,7 @@ import { buildBaseSystemPrompt, buildSessionWorkspaceSection } from "./prompt";
 import type { ApprovalGate } from "../../operator";
 import { ApprovalDeniedError } from "../../operator";
 import { create as createSession, type SessionInfo } from "../../session";
+import { AgentEventBus } from "../../eventBus";
 import { join } from "path";
 import { mkdirSync, existsSync } from "fs";
 import { writeFile } from "fs/promises";
@@ -43,12 +43,13 @@ import { writeFile } from "fs/promises";
  *
  * ## Consumption (pick one — stream is single-read)
  *
- * **1. Typed callbacks via `.consume()` → `TResult`**
+ * **1. Emit to EventBus via `.consume()` → `TResult`**
  * ```ts
- * const result = await agent.consume({
- *   onTextDelta: (d) => process.stdout.write(d.text),
- *   onToolCall:  (d) => console.log(`→ ${d.toolName}`),
- * });
+ * const bus = new AgentEventBus();
+ * bus.on("text-delta", (e) => process.stdout.write(e.text));
+ * bus.on("tool-call-complete", (e) => console.log(`→ ${e.toolName}`));
+ * const agent = new OffensiveSecurityAgent({ ..., eventBus: bus });
+ * const result = await agent.consume();
  * ```
  *
  * **2. `for await` directly on the agent**
@@ -64,6 +65,9 @@ import { writeFile } from "fs/promises";
 export class OffensiveSecurityAgent<TResult = void> {
   /** The underlying Vercel AI SDK stream result — escape hatch for advanced use. */
   public readonly streamResult: StreamTextResult<ToolSet, never>;
+
+  /** The event bus for this agent's streaming output. */
+  public readonly eventBus: AgentEventBus;
 
   private readonly resolveResult?: (
     streamResult: StreamTextResult<ToolSet, never>,
@@ -114,6 +118,7 @@ export class OffensiveSecurityAgent<TResult = void> {
     this._session = input.session;
     this.subagentId = input.subagentId;
     this.abortSignal = input.abortSignal;
+    this.eventBus = input.eventBus ?? new AgentEventBus();
 
     // -- Resolve agent working directory ----------------------------------------
     const agentCwd = input.session.config?.agentCwd ?? input.session.rootPath;
@@ -136,9 +141,6 @@ export class OffensiveSecurityAgent<TResult = void> {
     const credentialManager =
       input.credentialManager ?? input.session.credentialManager;
 
-    const subagentCallbacks =
-      input.subagentCallbacks ?? input.callbacks?.subagentCallbacks;
-
     const builtinTools = createAllTools({
       session: input.session,
       agentCwd,
@@ -146,14 +148,12 @@ export class OffensiveSecurityAgent<TResult = void> {
       abortSignal: input.abortSignal,
       model: input.model,
       authConfig: input.authConfig,
-      callbacks: input.callbacks,
-      subagentCallbacks,
+      eventBus: this.eventBus,
       sandbox: input.sandbox,
       findingsRegistry: input.findingsRegistry,
       attackSurfaceRegistry: input.attackSurfaceRegistry,
       credentialManager,
       persistentShell: this.persistentShell,
-      onCommandOutput: input.callbacks?.onCommandOutput,
       skillsRegistry: input.skillsRegistry,
     });
 
@@ -276,6 +276,10 @@ export class OffensiveSecurityAgent<TResult = void> {
           ...event.response.messages,
         ];
         schedulePersist();
+        this.eventBus.emit("step-finish", {
+          messages: event.response.messages,
+          subagentId: this.subagentId,
+        });
         await input.onStepFinish?.(event);
       },
       onSummarized: () => {
@@ -336,66 +340,21 @@ export class OffensiveSecurityAgent<TResult = void> {
   // ---------------------------------------------------------------------------
 
   /**
-   * Consume the stream with typed callbacks, then resolve the final result.
+   * Consume the stream, emitting each chunk on the {@link eventBus}, then
+   * resolve the final result.
    *
-   * Dispatches each chunk to the appropriate callback, and after the stream
-   * is fully consumed, calls `resolveResult` (if provided at construction)
-   * to produce a typed return value.
+   * Each AI SDK stream part is forwarded to the bus via
+   * {@link AgentEventBus.emitStreamPart}, tagged with this agent's
+   * `subagentId` when present.
    *
    * @returns The value produced by `resolveResult`, or `void` if none was provided.
    */
-  async consume(callbacks: ConsumeCallbacks = {}): Promise<TResult> {
-    const {
-      onTextDelta,
-      onToolCallStreaming,
-      onToolCallDelta,
-      onToolCall,
-      onToolResult,
-      onError,
-      subagentCallbacks,
-    } = callbacks;
-
+  async consume(): Promise<TResult> {
     const sid = this.subagentId;
+    const bus = this.eventBus;
 
     for await (const chunk of this.streamResult.fullStream) {
-      switch (chunk.type) {
-        case "text-delta":
-          onTextDelta?.(chunk);
-          subagentCallbacks?.onTextDelta?.({ ...chunk, subagentId: sid });
-          break;
-        case "tool-input-start": {
-          const delta = { toolCallId: chunk.id, toolName: chunk.toolName };
-          onToolCallStreaming?.(delta);
-          subagentCallbacks?.onToolCallStreaming?.({
-            ...delta,
-            subagentId: sid,
-          });
-          break;
-        }
-        case "tool-input-delta": {
-          const delta = { toolCallId: chunk.id, argsTextDelta: chunk.delta };
-          onToolCallDelta?.(delta);
-          subagentCallbacks?.onToolCallDelta?.({
-            ...delta,
-            subagentId: sid,
-          });
-          break;
-        }
-        case "tool-call":
-          onToolCall?.(chunk);
-          subagentCallbacks?.onToolCall?.({ ...chunk, subagentId: sid });
-          break;
-        case "tool-result":
-          onToolResult?.(chunk);
-          subagentCallbacks?.onToolResult?.({ ...chunk, subagentId: sid });
-          break;
-        case "error":
-          if (onError) {
-            onError((chunk as { type: "error"; error: unknown }).error);
-          }
-          subagentCallbacks?.onError?.(chunk.error);
-          break;
-      }
+      bus.emitStreamPart(chunk, sid);
     }
 
     this.persistentShell?.dispose();

@@ -46,9 +46,10 @@ Each application creates a JSON file in the apps directory for tracking and anal
         .enum([
           "web_application",
           "api",
-          "admin_panel",
+          "full_stack",
           "domain",
           "subdomain",
+          "database",
           "cloud_resource",
           "storage",
         ])
