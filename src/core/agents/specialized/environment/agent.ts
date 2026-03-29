@@ -51,6 +51,7 @@ export class EnvironmentAgent extends OffensiveSecurityAgent<EnvironmentResult> 
       authConfig,
       onStepFinish,
       abortSignal,
+      eventBus,
       callbacks,
       sandbox,
     } = opts;
@@ -63,6 +64,7 @@ export class EnvironmentAgent extends OffensiveSecurityAgent<EnvironmentResult> 
       authConfig,
       onStepFinish,
       abortSignal,
+      eventBus,
       callbacks,
       sandbox,
 

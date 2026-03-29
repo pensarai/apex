@@ -6,8 +6,6 @@ export type {
   OffensiveSecurityAgentInput,
   CreateAgentInput,
   SpecializedAgentInput,
-  ConsumeCallbacks,
-  SubagentConsumeCallbacks,
   AgentMode,
 } from "./types";
 

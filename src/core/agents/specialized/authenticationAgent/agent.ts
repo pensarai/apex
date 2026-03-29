@@ -9,6 +9,7 @@ import { AUTH_SUBAGENT_SYSTEM_PROMPT } from "./prompts";
 import { detectOSAndEnhancePrompt } from "../utils";
 import { OffensiveSecurityAgent } from "../../offSecAgent/offensiveSecurityAgent";
 import type { ConsumeCallbacks } from "../../offSecAgent/types";
+import type { AgentEventBus } from "../../../eventBus";
 import type { AuthBarrier } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -47,7 +48,10 @@ export interface AuthenticationAgentInput {
   /** AbortSignal to cancel mid-run */
   abortSignal?: AbortSignal;
 
-  /** Optional persistence callbacks for external storage integration */
+  /** Event bus for streaming agent output */
+  eventBus?: AgentEventBus;
+
+  /** @deprecated Use `eventBus` instead. */
   callbacks?: ConsumeCallbacks;
 
   /**
@@ -127,6 +131,7 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
       authConfig,
       onStepFinish,
       abortSignal,
+      eventBus,
       context,
       environmentVariables,
     } = opts;
@@ -142,6 +147,7 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
       authConfig,
       onStepFinish,
       abortSignal,
+      eventBus,
       environmentVariables,
       toolChoice: "auto",
       activeTools: [

@@ -1,11 +1,13 @@
 import { EventEmitter } from "events";
+import type { TextStreamPart, ToolSet } from "ai";
 
 /**
  * Typed event map for the agent event bus.
  *
- * All streaming events carry an optional `subagentId` so consumers can
- * distinguish which agent produced a given event when multiple agents
- * share a single bus.
+ * Events mirror the AI SDK's `TextStreamPart` types with an added
+ * `subagentId` for multi-agent delineation.  Lifecycle events
+ * (`subagent-spawn`, `subagent-complete`) and side-channel events
+ * (`command-output`, `error`) round out the map.
  */
 export type AgentEventMap = {
   "text-delta": { text: string; subagentId?: string };
@@ -48,15 +50,15 @@ export type AgentEventMap = {
  * Centralized, typed event bus for agent streaming output.
  *
  * Replaces the callback-based `ConsumeCallbacks` / `SubagentConsumeCallbacks`
- * pattern with a publish-subscribe model that supports fan-out to multiple
- * consumers (TUI rendering, DB persistence, metrics, logging).
+ * pattern with a publish-subscribe model.  Multiple consumers (TUI rendering,
+ * DB persistence, metrics, logging) subscribe independently.
  *
  * Usage:
  * ```ts
  * const bus = new AgentEventBus();
  * bus.on("text-delta", (e) => process.stdout.write(e.text));
  * bus.on("tool-call-complete", (e) => console.log(`→ ${e.toolName}`));
- * const result = await agent.consume();
+ * await agent.consume();
  * ```
  */
 export class AgentEventBus {
@@ -104,5 +106,63 @@ export class AgentEventBus {
       this.emitter.removeAllListeners();
     }
     return this;
+  }
+
+  /**
+   * Emit the appropriate bus event for an AI SDK `fullStream` chunk.
+   *
+   * Maps Vercel AI SDK `TextStreamPart` types to `AgentEventMap` keys:
+   *   text-delta        → text-delta
+   *   tool-input-start  → tool-call-start
+   *   tool-input-delta  → tool-call-delta
+   *   tool-call         → tool-call-complete
+   *   tool-result       → tool-result
+   *   error             → error
+   */
+  emitStreamPart(
+    chunk: TextStreamPart<ToolSet>,
+    subagentId?: string,
+  ): void {
+    switch (chunk.type) {
+      case "text-delta":
+        this.emit("text-delta", { text: chunk.text, subagentId });
+        break;
+      case "tool-input-start":
+        this.emit("tool-call-start", {
+          toolCallId: chunk.id,
+          toolName: chunk.toolName,
+          subagentId,
+        });
+        break;
+      case "tool-input-delta":
+        this.emit("tool-call-delta", {
+          toolCallId: chunk.id,
+          argsTextDelta: chunk.delta,
+          subagentId,
+        });
+        break;
+      case "tool-call":
+        this.emit("tool-call-complete", {
+          toolCallId: chunk.toolCallId,
+          toolName: chunk.toolName,
+          args: chunk.args,
+          subagentId,
+        });
+        break;
+      case "tool-result":
+        this.emit("tool-result", {
+          toolCallId: chunk.toolCallId,
+          toolName: chunk.toolName,
+          result: chunk.result,
+          subagentId,
+        });
+        break;
+      case "error":
+        this.emit("error", {
+          error: (chunk as { type: "error"; error: unknown }).error,
+          subagentId,
+        });
+        break;
+    }
   }
 }

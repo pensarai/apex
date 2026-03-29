@@ -10,7 +10,6 @@ import { hasToolCall } from "ai";
 import type {
   OffensiveSecurityAgentInput,
   CreateAgentInput,
-  ConsumeCallbacks,
 } from "./types";
 import {
   createAllTools,
@@ -44,12 +43,13 @@ import { writeFile } from "fs/promises";
  *
  * ## Consumption (pick one — stream is single-read)
  *
- * **1. Typed callbacks via `.consume()` → `TResult`**
+ * **1. Emit to EventBus via `.consume()` → `TResult`**
  * ```ts
- * const result = await agent.consume({
- *   onTextDelta: (d) => process.stdout.write(d.text),
- *   onToolCall:  (d) => console.log(`→ ${d.toolName}`),
- * });
+ * const bus = new AgentEventBus();
+ * bus.on("text-delta", (e) => process.stdout.write(e.text));
+ * bus.on("tool-call-complete", (e) => console.log(`→ ${e.toolName}`));
+ * const agent = new OffensiveSecurityAgent({ ..., eventBus: bus });
+ * const result = await agent.consume();
  * ```
  *
  * **2. `for await` directly on the agent**
@@ -141,9 +141,6 @@ export class OffensiveSecurityAgent<TResult = void> {
     const credentialManager =
       input.credentialManager ?? input.session.credentialManager;
 
-    const subagentCallbacks =
-      input.subagentCallbacks ?? input.callbacks?.subagentCallbacks;
-
     const builtinTools = createAllTools({
       session: input.session,
       agentCwd,
@@ -151,15 +148,12 @@ export class OffensiveSecurityAgent<TResult = void> {
       abortSignal: input.abortSignal,
       model: input.model,
       authConfig: input.authConfig,
-      callbacks: input.callbacks,
-      subagentCallbacks,
       eventBus: this.eventBus,
       sandbox: input.sandbox,
       findingsRegistry: input.findingsRegistry,
       attackSurfaceRegistry: input.attackSurfaceRegistry,
       credentialManager,
       persistentShell: this.persistentShell,
-      onCommandOutput: input.callbacks?.onCommandOutput,
       skillsRegistry: input.skillsRegistry,
     });
 
@@ -342,85 +336,21 @@ export class OffensiveSecurityAgent<TResult = void> {
   // ---------------------------------------------------------------------------
 
   /**
-   * Consume the stream with typed callbacks, then resolve the final result.
+   * Consume the stream, emitting each chunk on the {@link eventBus}, then
+   * resolve the final result.
    *
-   * Dispatches each chunk to the appropriate callback, and after the stream
-   * is fully consumed, calls `resolveResult` (if provided at construction)
-   * to produce a typed return value.
+   * Each AI SDK stream part is forwarded to the bus via
+   * {@link AgentEventBus.emitStreamPart}, tagged with this agent's
+   * `subagentId` when present.
    *
    * @returns The value produced by `resolveResult`, or `void` if none was provided.
    */
-  async consume(callbacks: ConsumeCallbacks = {}): Promise<TResult> {
-    const {
-      onTextDelta,
-      onToolCallStreaming,
-      onToolCallDelta,
-      onToolCall,
-      onToolResult,
-      onError,
-      subagentCallbacks,
-    } = callbacks;
-
+  async consume(): Promise<TResult> {
     const sid = this.subagentId;
     const bus = this.eventBus;
 
     for await (const chunk of this.streamResult.fullStream) {
-      switch (chunk.type) {
-        case "text-delta":
-          bus.emit("text-delta", { text: chunk.text, subagentId: sid });
-          onTextDelta?.(chunk);
-          subagentCallbacks?.onTextDelta?.({ ...chunk, subagentId: sid });
-          break;
-        case "tool-input-start": {
-          const delta = { toolCallId: chunk.id, toolName: chunk.toolName };
-          bus.emit("tool-call-start", { ...delta, subagentId: sid });
-          onToolCallStreaming?.(delta);
-          subagentCallbacks?.onToolCallStreaming?.({
-            ...delta,
-            subagentId: sid,
-          });
-          break;
-        }
-        case "tool-input-delta": {
-          const delta = { toolCallId: chunk.id, argsTextDelta: chunk.delta };
-          bus.emit("tool-call-delta", { ...delta, subagentId: sid });
-          onToolCallDelta?.(delta);
-          subagentCallbacks?.onToolCallDelta?.({
-            ...delta,
-            subagentId: sid,
-          });
-          break;
-        }
-        case "tool-call":
-          bus.emit("tool-call-complete", {
-            toolCallId: chunk.toolCallId,
-            toolName: chunk.toolName,
-            args: chunk.args,
-            subagentId: sid,
-          });
-          onToolCall?.(chunk);
-          subagentCallbacks?.onToolCall?.({ ...chunk, subagentId: sid });
-          break;
-        case "tool-result":
-          bus.emit("tool-result", {
-            toolCallId: chunk.toolCallId,
-            toolName: chunk.toolName,
-            result: chunk.result,
-            subagentId: sid,
-          });
-          onToolResult?.(chunk);
-          subagentCallbacks?.onToolResult?.({ ...chunk, subagentId: sid });
-          break;
-        case "error": {
-          const error = (chunk as { type: "error"; error: unknown }).error;
-          bus.emit("error", { error, subagentId: sid });
-          if (onError) {
-            onError(error);
-          }
-          subagentCallbacks?.onError?.(chunk.error);
-          break;
-        }
-      }
+      bus.emitStreamPart(chunk, sid);
     }
 
     this.persistentShell?.dispose();
