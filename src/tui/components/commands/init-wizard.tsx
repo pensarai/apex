@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useKeyboard } from "@opentui/react";
 import Input from "../input";
 import { useRoute } from "../../context/route";
-import type { SessionConfig } from "../../../core/session";
+
 import { SpinnerDots } from "../sprites";
 import { DialogControls } from "../shared/dialog-controls";
 import { useTheme } from "../../theme";
@@ -107,50 +107,28 @@ export default function InitWizard() {
     setError(null);
 
     try {
-      // Build session config
-      const sessionConfig: SessionConfig = {};
-
-      // Auth config
-      if (state.auth.instructions || state.auth.username) {
-        sessionConfig.authenticationInstructions = state.auth.instructions;
-        if (state.auth.username) {
-          sessionConfig.authCredentials = {
-            username: state.auth.username,
-            password: state.auth.password,
-            loginUrl: state.auth.loginUrl || undefined,
-          };
-        }
-      }
-
-      // Scope constraints
-      if (
-        state.scope.allowedHosts.length > 0 ||
-        state.scope.allowedPorts.length > 0
-      ) {
-        sessionConfig.scopeConstraints = {
-          allowedHosts: state.scope.allowedHosts,
-          allowedPorts: state.scope.allowedPorts
-            .map((p) => parseInt(p, 10))
-            .filter((p) => !isNaN(p)),
-          strictScope: state.scope.strictScope,
-        };
-      }
-
-      // Headers config
-      if (state.headers.mode !== "default") {
-        sessionConfig.offensiveHeaders = {
-          mode: state.headers.mode,
-          headers:
-            state.headers.mode === "custom"
-              ? state.headers.customHeaders
-              : undefined,
-        };
-      }
+      const skillArgs: Record<string, string> = {
+        target: state.target,
+      };
+      if (state.auth.loginUrl) skillArgs["auth-url"] = state.auth.loginUrl;
+      if (state.auth.username) skillArgs["auth-user"] = state.auth.username;
+      if (state.auth.password) skillArgs["auth-pass"] = state.auth.password;
+      if (state.auth.instructions)
+        skillArgs["auth-instructions"] = state.auth.instructions;
+      if (state.scope.allowedHosts.length > 0)
+        skillArgs.hosts = state.scope.allowedHosts.join(",");
+      if (state.scope.allowedPorts.length > 0)
+        skillArgs.ports = state.scope.allowedPorts.join(",");
+      if (state.scope.strictScope) skillArgs.strict = "true";
 
       route.navigate({
-        type: "pentest",
-        targets: [state.target],
-        sessionConfig,
+        type: "operator",
+        nonce: Date.now(),
+        initialConfig: {
+          requireApproval: false,
+          target: state.target,
+        },
+        initialSkill: { slug: "pentest", args: skillArgs },
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to create session");

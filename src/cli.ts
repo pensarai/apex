@@ -11,6 +11,7 @@ import packageJson from "../package.json";
 import { getCurrentVersion, upgrade } from "./core/installation";
 import { buildAuthConfig } from "./core/ai/utils";
 import { resolvePentestMode } from "./core/cli/pentestMode";
+import { AgentEventBus } from "./core/eventBus";
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -42,6 +43,13 @@ function getAllArgs(flag: string, argv = args): string[] {
     }
   }
   return values;
+}
+
+function attachCliAgentStreamListeners(bus: AgentEventBus): void {
+  bus.on("text-delta", (d) => process.stdout.write(d.text));
+  bus.on("tool-call-complete", (d) => console.log(`\n→ ${d.toolName}`));
+  bus.on("tool-result", (d) => console.log(`✓ ${d.toolName} completed`));
+  bus.on("error", (d) => console.error("Error:", d.error));
 }
 
 // ---------------------------------------------------------------------------
@@ -134,6 +142,9 @@ Model:   ${model}
     },
   });
 
+  const pentestBus = new AgentEventBus();
+  attachCliAgentStreamListeners(pentestBus);
+
   const { findings, findingsPath, pocsPath, reportPath } =
     await runPentestAgent({
       target,
@@ -141,12 +152,7 @@ Model:   ${model}
       session,
       model,
       authConfig: buildAuthConfig(pensarConfig),
-      callbacks: {
-        onTextDelta: (d) => process.stdout.write(d.text),
-        onToolCall: (d) => console.log(`\n→ ${d.toolName}`),
-        onToolResult: (d) => console.log(`✓ ${d.toolName} completed`),
-        onError: (e) => console.error("Error:", e),
-      },
+      eventBus: pentestBus,
     });
 
   console.log(`
@@ -246,17 +252,20 @@ Output:   ${resolvedPath}
 Model:    ${model}
 `);
 
+  const threatBus = new AgentEventBus();
+  threatBus.on("text-delta", (d) => process.stdout.write(d.text));
+  threatBus.on("tool-call-complete", (d) =>
+    console.log(`\n  → ${d.toolName}`),
+  );
+  threatBus.on("tool-result", (d) => console.log(`  ✓ ${d.toolName}`));
+  threatBus.on("error", (d) => console.error("Error:", d.error));
+
   await runThreatModelWorkflow({
     codebasePath: process.cwd(),
     outputPath: resolvedPath,
     model,
     authConfig: buildAuthConfig(pensarConfig),
-    callbacks: {
-      onTextDelta: (d) => process.stdout.write(d.text),
-      onToolCall: (d) => console.log(`\n  → ${d.toolName}`),
-      onToolResult: (d) => console.log(`  ✓ ${d.toolName}`),
-      onError: (e) => console.error("Error:", e),
-    },
+    eventBus: threatBus,
   });
 
   console.log(

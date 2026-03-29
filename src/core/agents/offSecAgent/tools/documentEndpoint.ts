@@ -60,12 +60,13 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
         .describe(
           "Detailed description of the endpoint including what it does",
         ),
-      url: z
+      routePath: z
         .string()
         .optional()
         .describe(
-          "The route path (e.g., '/api/users', '/dashboard'). " +
-            "Use paths, not full URLs — the target domain is already known.",
+          "The HTTP route served by this endpoint (e.g., '/api/users', '/dashboard'). " +
+            "This is the URL path a client requests — NOT a source-file path. " +
+            "Use the separate 'file' field for the source-code location.",
         ),
       method: z
         .union([z.string(), z.array(z.string())])
@@ -84,7 +85,8 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
         .string()
         .optional()
         .describe(
-          "Source file where this endpoint is defined (whitebox analysis)",
+          "Source-code file where this endpoint is defined, e.g. 'src/routes/users.ts'. " +
+            "This is NOT the HTTP route — use 'routePath' for that.",
         ),
       line: z
         .number()
@@ -136,7 +138,7 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
           assetName: input.endpointName,
           assetType: "endpoint" as const,
           description: input.description,
-          details: { url: input.url },
+          details: { url: input.routePath },
         };
         const check = await ctx.attackSurfaceRegistry.register(assetRecord);
         if (check.duplicate) {
@@ -169,7 +171,7 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
         input.riskLevel,
         "endpoint",
         {
-          url: input.url,
+          url: input.routePath,
           method: input.method,
           handler: input.handler,
           file: input.file,
@@ -197,7 +199,7 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
             assetName: input.endpointName,
             assetType: "endpoint",
             description: input.description,
-            details: { url: input.url },
+            details: { url: input.routePath },
           });
         }
         throw writeError;

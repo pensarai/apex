@@ -106,15 +106,11 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
         toast("Session not found", "error");
         return;
       }
-      const isOperator =
-        currentSelection.config?.mode === "operator" ||
-        (!currentSelection.config?.mode && currentSelection.hasOperatorState);
       refocusPrompt();
       onClose();
       route.navigate({
-        type: "pentest",
+        type: "operator",
         sessionId: currentSelection.id,
-        openAsOperator: isOperator || undefined,
       });
       return;
     }
@@ -137,9 +133,8 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
       refocusPrompt();
       onClose();
       route.navigate({
-        type: "pentest",
+        type: "operator",
         sessionId: currentSelection.id,
-        openAsOperator: true,
       });
       return;
     }

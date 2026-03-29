@@ -78,6 +78,8 @@ export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSur
       onCacheMetrics,
       abortSignal,
       attackSurfaceRegistry,
+      eventBus,
+      subagentId,
     } = opts;
     const target = opts.target ?? opts.cwd!;
 
@@ -114,6 +116,8 @@ export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSur
       onCacheMetrics,
       abortSignal,
       attackSurfaceRegistry,
+      eventBus,
+      subagentId,
       messages: opts.messages,
 
       activeTools: [

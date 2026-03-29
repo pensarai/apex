@@ -20,7 +20,7 @@ import type { DocumentedEndpointRecord } from "../agents/specialized/attackSurfa
 import type { AIModel, CacheMetrics } from "../ai";
 import type { AIAuthConfig } from "../ai/utils";
 import type { SessionInfo } from "../session";
-import type { ConsumeCallbacks } from "../agents/offSecAgent/types";
+import type { AgentEventBus } from "../eventBus";
 import { runWithBoundedConcurrency } from "../utils/concurrency";
 import { scoreEndpoints } from "./riskScoring";
 import { execFileSync } from "child_process";
@@ -84,8 +84,8 @@ Use this to document each application/service you identify. Persists a JSON reco
 - **One entry per unique route path.** Do NOT create separate entries for different HTTP methods on the same path. If \`/api/users\` supports GET, POST, and DELETE, that is ONE entry with \`method: ["GET", "POST", "DELETE"]\`.
 - **Use \`method: "PAGE"\`** for web pages and views (non-API routes).
 - **Always set \`appName\`** to the application name provided in your objective.
-- **Always set \`url\`** to the route path (e.g., \`/api/users/:id\`, \`/dashboard\`).
-- **Always set \`file\`** to the source file where the route is defined.
+- **Always set \`routePath\`** to the HTTP route this endpoint serves (e.g., \`/api/users/:id\`, \`/dashboard\`). This is the URL path a client requests — NOT a source-file path.
+- **Always set \`file\`** to the source-code file where the route is defined (e.g., \`src/routes/users.ts\`). This is NOT the HTTP route.
 - **Set \`line\`** to the line number when determinable.
 - **Set \`handler\`** to the handler function or component name.
 - **Set \`authRequired\`** to true/false based on middleware, guards, or decorators.
@@ -119,10 +119,21 @@ const AppInfoSchema = z.object({
     .string()
     .describe("Path to the app root relative to the repository root, or resource identifier for cloud resources"),
   type: z
-    .enum(["service", "cloud_resource"])
-    .default("service")
+    .enum([
+      "web_application",
+      "api",
+      "full_stack",
+      "domain",
+      "subdomain",
+      "database",
+      "cloud_resource",
+      "storage",
+    ])
+    .default("web_application")
     .describe(
-      "Whether this is a deployable service ('service') or an owned cloud resource like an S3 bucket ('cloud_resource')",
+      "Application type — web_application for frontend apps, api for backend services, " +
+      "full_stack for frameworks like Next.js/Remix that serve both, " +
+      "database for databases, cloud_resource for owned cloud infra, storage for S3/GCS/blob storage",
     ),
 });
 
@@ -157,7 +168,7 @@ export interface WhiteboxAttackSurfaceWorkflowInput {
   session: SessionInfo;
   authConfig?: AIAuthConfig;
   abortSignal?: AbortSignal;
-  callbacks?: ConsumeCallbacks;
+  eventBus?: AgentEventBus;
   attackSurfaceRegistry?: import("../findings/attackSurfaceRegistry").AttackSurfaceRegistry;
   onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
   onCacheMetrics?: (metrics: CacheMetrics) => void;
@@ -181,6 +192,7 @@ export interface IncrementalWhiteboxInput extends WhiteboxAttackSurfaceWorkflowI
 
 interface AppMetadata {
   name: string;
+  type: string;
   framework: string;
   description: string;
   location: string;
@@ -210,7 +222,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     session,
     authConfig,
     abortSignal,
-    callbacks,
+    eventBus,
     attackSurfaceRegistry,
     onStepFinish,
     onCacheMetrics,
@@ -230,7 +242,8 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     authConfig,
     abortSignal,
     attackSurfaceRegistry,
-    callbacks,
+    eventBus,
+    subagentId: "whitebox-apps-discovery",
     onStepFinish: (event) => onStepFinish?.(event),
     onCacheMetrics,
     responseSchema: AppsDiscoveryResultSchema,
@@ -238,15 +251,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
 
   console.log(`[whitebox-workflow] Phase 1: discovering apps in ${codebasePath}${domains?.length ? ` (${domains.length} known domains)` : ""}`);
 
-  const appsResult = await appsAgent.consume({
-    onTextDelta: (d) => callbacks?.onTextDelta?.(d),
-    onToolCallStreaming: (d) => callbacks?.onToolCallStreaming?.(d),
-    onToolCallDelta: (d) => callbacks?.onToolCallDelta?.(d),
-    onToolCall: (d) => callbacks?.onToolCall?.(d),
-    onToolResult: (d) => callbacks?.onToolResult?.(d),
-    onError: (e) => callbacks?.onError?.(e),
-    subagentCallbacks: callbacks?.subagentCallbacks,
-  });
+  const appsResult = await appsAgent.consume();
 
   console.log(
     `[whitebox-workflow] Phase 1 complete: ${appsResult?.apps.length ?? 0} apps discovered` +
@@ -289,6 +294,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     mkdirSync(appDir, { recursive: true });
     const metadata: AppMetadata = {
       name: app.name,
+      type: app.type,
       framework: app.framework,
       description: app.description,
       location: app.location,
@@ -310,8 +316,9 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     type: "pages" | "apiEndpoints" | "cloudResourceEndpoints";
   };
 
-  const serviceApps = appsResult.apps.filter((app) => app.type !== "cloud_resource");
-  const cloudApps = appsResult.apps.filter((app) => app.type === "cloud_resource");
+  const NON_SERVICE_TYPES = ["cloud_resource", "storage", "database"];
+  const serviceApps = appsResult.apps.filter((app) => !NON_SERVICE_TYPES.includes(app.type));
+  const cloudApps = appsResult.apps.filter((app) => NON_SERVICE_TYPES.includes(app.type));
 
   console.log(
     `[whitebox-workflow] Phase 2: ${serviceApps.length} service apps (pages+api each), ${cloudApps.length} cloud resources → ${serviceApps.length * 2 + cloudApps.length} total tasks`,
@@ -338,10 +345,10 @@ export async function runWhiteboxAttackSurfaceWorkflow(
         `[whitebox-workflow] Phase 2: spawning agent "${subagentId}" (app="${task.appInfo.name}", type=${task.type}, appType=${task.appInfo.type})`,
       );
 
-      callbacks?.subagentCallbacks?.onSubagentSpawn?.({
+      eventBus?.emit("subagent-spawn", {
         subagentId,
+        name: task.appInfo.name,
         input: { app: task.appInfo.name, type: task.type },
-        status: "pending",
       });
 
       const objective =
@@ -360,7 +367,8 @@ export async function runWhiteboxAttackSurfaceWorkflow(
         authConfig,
         abortSignal,
         attackSurfaceRegistry,
-        callbacks,
+        eventBus,
+        subagentId,
         onStepFinish: (event) => onStepFinish?.(event),
         onCacheMetrics,
         responseSchema: DiscoverySummarySchema,
@@ -368,47 +376,14 @@ export async function runWhiteboxAttackSurfaceWorkflow(
       });
 
       try {
-        await agent.consume({
-          onError: (e) => callbacks?.onError?.(e),
-          subagentCallbacks: callbacks?.subagentCallbacks
-            ? {
-                onTextDelta: (d) =>
-                  callbacks.subagentCallbacks!.onTextDelta?.({
-                    ...d,
-                    subagentId,
-                  }),
-                onToolCallStreaming: (d) =>
-                  callbacks.subagentCallbacks!.onToolCallStreaming?.({
-                    ...d,
-                    subagentId,
-                  }),
-                onToolCallDelta: (d) =>
-                  callbacks.subagentCallbacks!.onToolCallDelta?.({
-                    ...d,
-                    subagentId,
-                  }),
-                onToolCall: (d) =>
-                  callbacks.subagentCallbacks!.onToolCall?.({
-                    ...d,
-                    subagentId,
-                  }),
-                onToolResult: (d) =>
-                  callbacks.subagentCallbacks!.onToolResult?.({
-                    ...d,
-                    subagentId,
-                  }),
-                onError: (e) => callbacks.subagentCallbacks!.onError?.(e),
-              }
-            : undefined,
-        });
+        await agent.consume();
 
         console.log(
           `[whitebox-workflow] Phase 2: agent "${subagentId}" completed`,
         );
 
-        callbacks?.subagentCallbacks?.onSubagentComplete?.({
+        eventBus?.emit("subagent-complete", {
           subagentId,
-          input: { app: task.appInfo.name, type: task.type },
           status: "completed",
         });
       } catch (error) {
@@ -417,9 +392,8 @@ export async function runWhiteboxAttackSurfaceWorkflow(
           error instanceof Error ? error.message : String(error),
         );
 
-        callbacks?.subagentCallbacks?.onSubagentComplete?.({
+        eventBus?.emit("subagent-complete", {
           subagentId,
-          input: { app: task.appInfo.name, type: task.type },
           status: "failed",
         });
       }
@@ -466,7 +440,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
         session,
         authConfig,
         abortSignal,
-        callbacks,
+        eventBus,
       });
       console.log(
         `Risk scoring complete: ${riskScores.size}/${allEndpointsForScoring.length} endpoints scored`,
@@ -624,6 +598,7 @@ function readAppsFromAssetsDirectory(
 
     apps.push({
       name: metadata.name,
+      type: (metadata.type as App["type"]) ?? "web_application",
       framework: metadata.framework,
       description: metadata.description,
       location: metadata.location,
@@ -645,7 +620,8 @@ function assetRecordToEndpoint(record: DocumentedEndpointRecord): Endpoint | nul
     ? rawMethod.join(", ")
     : (rawMethod ?? "UNKNOWN");
 
-  const path = record.url ?? record.endpointName;
+  const legacy = record as unknown as { url?: string };
+  const path = record.routePath ?? legacy.url ?? record.endpointName;
   const file = record.file ?? "";
 
   const parsed = EndpointSchema.safeParse({
@@ -730,7 +706,7 @@ A **cloud resource** qualifies if it is an **owned infrastructure resource** ref
    - **framework**: the web framework or cloud service (e.g. "AWS S3", "CloudFront", "Express")
    - **description**: brief summary of what it does
    - **location**: path relative to the repository root (for code) or the resource identifier (for cloud resources)
-   - **type**: set to \`"cloud_resource"\` for S3 buckets, CDN distributions, message queues, etc. Set to \`"service"\` (default) for deployable apps and services.
+   - **type**: classify as \`"web_application"\` for frontend-only apps, \`"api"\` for backend API services, \`"full_stack"\` for frameworks serving both UI and API (Next.js, Remix, Nuxt, SvelteKit, Django with templates, Rails), \`"database"\` for databases, \`"cloud_resource"\` for owned cloud infra (SQS, CDN, etc.), \`"storage"\` for S3/GCS/blob storage.
 
 When finished, call the \`response\` tool with your structured findings.`;
 }
@@ -772,9 +748,9 @@ For each page, call \`document_endpoint\` with:
 - **endpointName**: The route path (e.g., \`/dashboard\`, \`/admin\`, \`/settings\`)
 - **endpointType**: \`"web-endpoint"\`
 - **description**: Brief description of what this page shows
-- **url**: The route path
+- **routePath**: The HTTP route this page serves (e.g., \`/dashboard\`). This is the URL path, NOT a file path.
 - **method**: \`"PAGE"\`
-- **file**: Source file where this page is defined (must be inside \`${appInfo.location}\`)
+- **file**: Source-code file where this page is defined (e.g., \`src/pages/dashboard.tsx\`). Must be inside \`${appInfo.location}\`. This is NOT the route.
 - **line**: Line number (if determinable)
 - **handler**: Component or handler name
 - **authRequired**: Whether the page requires authentication
@@ -826,9 +802,9 @@ For each **unique route path**, call \`document_endpoint\` with:
 - **endpointName**: The route path (e.g., \`/api/users\`, \`/api/orders/:id\`)
 - **endpointType**: \`"api-endpoint"\`
 - **description**: Brief description of what this endpoint does across all its methods
-- **url**: The route path
+- **routePath**: The HTTP route (e.g., \`/api/users\`). This is the URL path a client requests — NOT a source-file path.
 - **method**: Array of ALL HTTP methods this path supports (e.g., \`["GET", "POST"]\`). **Do NOT create separate entries for each method — consolidate them.**
-- **file**: Source file where the endpoint is defined (must be inside \`${appInfo.location}\`)
+- **file**: Source-code file where the endpoint is defined (e.g., \`src/routes/users.ts\`). Must be inside \`${appInfo.location}\`. This is NOT the route.
 - **line**: Line number (if determinable)
 - **handler**: Handler function name (comma-separate if multiple handlers for different methods)
 - **authRequired**: Whether the endpoint requires authentication (true if ANY method requires it)
@@ -892,9 +868,9 @@ For each entry point, call \`document_endpoint\` with:
 - **endpointName**: The resource's external URL or identifier (e.g., \`https://bucket.s3.amazonaws.com\`, \`arn:aws:sqs:...\`)
 - **endpointType**: \`"asset"\`
 - **description**: What this entry point exposes (e.g., "Public static asset hosting", "User upload pre-signed URL endpoint", "Event queue ingestion")
-- **url**: The external URL or ARN of the resource itself
+- **routePath**: The external URL or ARN of the resource itself (e.g., \`https://bucket.s3.amazonaws.com\`)
 - **method**: Access methods on the resource (e.g., \`["GET", "PUT"]\` for S3, \`["SendMessage", "ReceiveMessage"]\` for SQS, \`["READ", "WRITE"]\` for generic)
-- **file**: Infrastructure or config file where this resource is defined (NOT application code that calls it)
+- **file**: Infrastructure or config file where this resource is defined (e.g., \`infra/storage.ts\`). NOT application code that calls it.
 - **line**: Line number if determinable
 - **authRequired**: Whether external access requires authentication
 - **riskLevel**: CRITICAL for publicly accessible storage with write access or sensitive data, HIGH for resources with broad IAM permissions, MEDIUM for internal resources, LOW for read-only public assets
@@ -934,7 +910,7 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
     session,
     authConfig,
     abortSignal,
-    callbacks,
+    eventBus,
     attackSurfaceRegistry,
     onStepFinish,
   } = input;
@@ -976,6 +952,7 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
     // Write app.json
     const metadata: AppMetadata = {
       name: app.name,
+      type: app.type ?? "web_application",
       framework: app.framework,
       description: app.description,
       location: app.location,
@@ -1067,20 +1044,13 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
     authConfig,
     abortSignal,
     attackSurfaceRegistry,
-    callbacks,
+    eventBus,
+    subagentId: "whitebox-incremental",
     onStepFinish: (event) => onStepFinish?.(event),
     responseSchema: IncrementalResultSchema,
   });
 
-  const agentResult = await agent.consume({
-    onTextDelta: (d) => callbacks?.onTextDelta?.(d),
-    onToolCallStreaming: (d) => callbacks?.onToolCallStreaming?.(d),
-    onToolCallDelta: (d) => callbacks?.onToolCallDelta?.(d),
-    onToolCall: (d) => callbacks?.onToolCall?.(d),
-    onToolResult: (d) => callbacks?.onToolResult?.(d),
-    onError: (e) => callbacks?.onError?.(e),
-    subagentCallbacks: callbacks?.subagentCallbacks,
-  });
+  const agentResult = await agent.consume();
 
   console.log(
     `Incremental agent finished: ${agentResult?.summary ?? "no summary"}`,
@@ -1140,7 +1110,7 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
         session,
         authConfig,
         abortSignal,
-        callbacks,
+        eventBus,
       });
       console.log(
         `Incremental risk scoring complete: ${riskScores.size}/${changedEndpointsForScoring.length} scored`,
@@ -1254,8 +1224,10 @@ For each changed file, determine if it affects any endpoints:
 ### Step 3: Update assets
 For new endpoints, use \`document_endpoint\` with:
 - \`appName\` set to the correct application name
+- \`routePath\` set to the HTTP route (e.g., \`/api/users\`) — this is NOT a file path
 - \`method\` as an array of ALL HTTP methods the path supports
-- \`file\`, \`line\`, \`handler\`, \`authRequired\` filled in
+- \`file\` set to the source-code file (e.g., \`src/routes/users.ts\`) — this is NOT the route
+- \`line\`, \`handler\`, \`authRequired\` filled in
 
 For modified endpoints, update the existing JSON file via \`execute_command\`.
 For removed endpoints, delete the file via \`execute_command\`.
