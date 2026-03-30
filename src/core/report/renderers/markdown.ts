@@ -63,8 +63,7 @@ function renderFinding(
           "## Evidence Files",
           "",
           ...finding.evidenceFiles.map(
-            (ef) =>
-              `- **[${ef.type}]** \`${ef.path}\` — ${ef.description}`,
+            (ef) => `- **[${ef.type}]** \`${ef.path}\` — ${ef.description}`,
           ),
           "",
         ]
