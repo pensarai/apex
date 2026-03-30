@@ -79,32 +79,16 @@ export async function createWeaveTracer(config: WandbConfig): Promise<{
   // weave.op() is the stable API — wraps an async function and logs
   // its inputs/output as a traced call in the Weave dashboard.
   const logTraceRecord = weave.op(
-    async (record: TraceRecord, sessionId: string) => {
-      const base = {
-        recorded: true,
-        type: record.type,
-        agentId: record.agentId,
-        sessionId,
-      };
-
+    async (record: TraceRecord, _sessionId: string) => {
+      // Output is kept minimal — the full record is in inputs.
+      // Only surface token metrics here for Weave UI visibility.
       if (record.type === "step") {
         return {
-          ...base,
-          stepIndex: record.stepIndex,
-          usage: record.usage,
-          cumulativeUsage: record.cumulativeUsage,
           inputTokens: record.usage.inputTokens,
           outputTokens: record.usage.outputTokens,
-          cumulativeInputTokens: record.cumulativeUsage.inputTokens,
-          cumulativeOutputTokens: record.cumulativeUsage.outputTokens,
-          stepDurationMs: record.stepDurationMs,
-          elapsedMs: record.elapsedMs,
-          toolsCalled: record.actions.map((a) => a.toolName),
-          summarized: record.summarized,
         };
       }
-
-      return base;
+      return null;
     },
     { name: "apex_trace_record" },
   );
