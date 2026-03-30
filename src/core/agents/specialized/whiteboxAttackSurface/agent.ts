@@ -15,6 +15,8 @@ import {
 export interface WhiteboxAttackSurfaceAgentInput extends SpecializedAgentInput {
   /** Root path of the codebase to analyze */
   codebasePath: string;
+  /** Known domains associated with the project — agents can map discovered apps to these. */
+  domains?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -57,8 +59,10 @@ export class WhiteboxAttackSurfaceAgent extends OffensiveSecurityAgent<WhiteboxA
       authConfig,
       onStepFinish,
       abortSignal,
-      callbacks,
+      eventBus,
+      subagentId,
       attackSurfaceRegistry,
+      domains,
     } = opts;
 
     // Closure variable that the response tool writes to
@@ -79,22 +83,23 @@ This ends the agent run — make sure all data is included.`,
 
     super({
       system: WHITEBOX_ATTACK_SURFACE_SYSTEM_PROMPT,
-      prompt: buildPrompt(codebasePath),
+      prompt: buildPrompt(codebasePath, domains),
       model,
       session,
       authConfig,
       onStepFinish,
       abortSignal,
+      eventBus,
+      subagentId,
       attackSurfaceRegistry,
-      callbacks,
-      subagentCallbacks: callbacks?.subagentCallbacks,
 
       activeTools: [
         // Filesystem tools — for Phase 1 repo identification
         "read_file",
         "list_files",
         "grep",
-        "document_asset",
+        "document_app",
+        "document_endpoint",
         // Orchestration — for Phase 2 app analysis
         "spawn_coding_agent",
         // Response tool (injected via extraTools)
@@ -132,18 +137,23 @@ This ends the agent run — make sure all data is included.`,
 // Prompt builder
 // ---------------------------------------------------------------------------
 
-function buildPrompt(codebasePath: string): string {
+function buildPrompt(codebasePath: string, domains?: string[]): string {
+  const domainSection = domains?.length
+    ? `\n## Known Domains\nThe following domains are associated with this project. When documenting apps, set the \`domain\` field on \`document_app\` if you can determine which domain serves the app:\n${domains.map((d) => `- ${d}`).join("\n")}\n`
+    : "";
+
   return `# Whitebox Attack Surface Analysis
 
 ## Codebase
 - **Path:** ${codebasePath}
-
+${domainSection}
 ## Task
 Analyze this codebase and produce a complete attack surface map:
 1. Identify the repo type and package manager
 2. Discover all apps/services
-3. For each app, find all web pages and API endpoints
-4. For each endpoint, generate pentest objectives
+3. Discover cloud resources and external infrastructure referenced in the code (S3 buckets, cloud storage, CDN origins, etc.) — document these as apps with the appropriate type
+4. For each app, find all web pages and API endpoints
+5. For each endpoint, generate pentest objectives
 
 Use \`spawn_coding_agent\` to delegate app-level analysis for higher fidelity.
 

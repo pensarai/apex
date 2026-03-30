@@ -6,9 +6,27 @@ export type {
   OffensiveSecurityAgentInput,
   CreateAgentInput,
   SpecializedAgentInput,
-  ConsumeCallbacks,
   AgentMode,
 } from "./types";
+
+// ---------------------------------------------------------------------------
+// Event Bus
+// ---------------------------------------------------------------------------
+export { AgentEventBus } from "../../eventBus";
+export type { AgentEventMap } from "../../eventBus";
+
+// ---------------------------------------------------------------------------
+// Trace
+// ---------------------------------------------------------------------------
+export { StepTraceWriter } from "./trace";
+export type {
+  StepRecord,
+  StateCheckpoint,
+  CheckpointInput,
+  TraceRecord,
+  ToolOutputType,
+  StepTraceWriterOpts,
+} from "./trace";
 
 // ---------------------------------------------------------------------------
 // Tools

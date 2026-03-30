@@ -33,6 +33,7 @@ const TOOL_BASE_TIERS: Record<string, PermissionTier> = {
 
   // Tier 4 - Intrusive (heavy testing, shell commands)
   execute_command: 4,
+  run_pentest_workflow: 4,
 
   // Tier 5 - Exploit (handled dynamically via content analysis)
 

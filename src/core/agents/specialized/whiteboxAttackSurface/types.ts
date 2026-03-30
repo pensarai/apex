@@ -83,6 +83,21 @@ export type Endpoint = z.infer<typeof EndpointSchema>;
 
 export const AppSchema = z.object({
   name: z.string().describe("Application or service name"),
+  type: z
+    .enum([
+      "web_application",
+      "api",
+      "full_stack",
+      "domain",
+      "subdomain",
+      "database",
+      "cloud_resource",
+      "storage",
+    ])
+    .default("web_application")
+    .describe(
+      "Type of application (web_application, api, full_stack, database, cloud_resource, storage, etc.)",
+    ),
   framework: z
     .string()
     .describe(

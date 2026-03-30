@@ -78,6 +78,8 @@ export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSur
       onCacheMetrics,
       abortSignal,
       attackSurfaceRegistry,
+      eventBus,
+      subagentId,
     } = opts;
     const target = opts.target ?? opts.cwd!;
 
@@ -114,12 +116,15 @@ export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSur
       onCacheMetrics,
       abortSignal,
       attackSurfaceRegistry,
+      eventBus,
+      subagentId,
       messages: opts.messages,
 
       activeTools: [
         // Core recon tools
         "execute_command",
-        "document_asset",
+        "document_app",
+        "document_endpoint",
         "create_attack_surface_report",
         // Browser automation for SPAs, JS-heavy apps, and auth flows
         "browser_navigate",

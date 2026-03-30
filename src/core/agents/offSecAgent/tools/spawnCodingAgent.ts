@@ -1,9 +1,37 @@
 import { tool } from "ai";
 import { z } from "zod";
 import type { ToolContext } from "./types";
+import { AgentEventBus, type AgentEventMap } from "../../../eventBus";
 
 /** Default max concurrent coding agents */
 const DEFAULT_CONCURRENCY = 5;
+
+const CHILD_BUS_EVENT_KEYS = [
+  "text-delta",
+  "tool-call-start",
+  "tool-call-delta",
+  "tool-call-complete",
+  "tool-result",
+  "subagent-spawn",
+  "subagent-complete",
+  "command-output",
+  "error",
+] as const satisfies readonly (keyof AgentEventMap)[];
+
+function attachChildEventBus(
+  localBus: AgentEventBus,
+  parentBus: AgentEventBus | undefined,
+  accumulateText: (chunk: string) => void,
+): void {
+  for (const key of CHILD_BUS_EVENT_KEYS) {
+    localBus.on(key, (payload: AgentEventMap[typeof key]) => {
+      if (key === "text-delta") {
+        accumulateText((payload as AgentEventMap["text-delta"]).text);
+      }
+      parentBus?.emit(key, payload);
+    });
+  }
+}
 
 /**
  * Factory for the `spawn_coding_agent` tool.
@@ -151,16 +179,22 @@ async function runSingleCodingAgent(
   agentIndex: number,
   name: string,
 ): Promise<string> {
-  // Dynamic import to break circular dependency
+  // Dynamic import to break circular dependency:
+  // codeAgent → offensiveSecurityAgent → tools/index → spawnCodingAgent → codeAgent
   const { CodeAgent } = await import("../../specialized/codeAgent/agent");
 
   const subagentId = `coding-agent-${agentIndex}`;
 
-  ctx.subagentCallbacks?.onSubagentSpawn?.({
+  ctx.eventBus?.emit("subagent-spawn", {
     subagentId,
     name,
     input: { codebasePath, objective },
-    status: "pending",
+  });
+
+  const localBus = new AgentEventBus();
+  let textOutput = "";
+  attachChildEventBus(localBus, ctx.eventBus, (t) => {
+    textOutput += t;
   });
 
   const agent = new CodeAgent({
@@ -170,47 +204,22 @@ async function runSingleCodingAgent(
     session: ctx.session,
     authConfig: ctx.authConfig,
     abortSignal: ctx.abortSignal,
+    eventBus: localBus,
+    subagentId,
   });
 
   try {
-    // Collect the agent's text output
-    let textOutput = "";
+    await agent.consume();
 
-    await agent.consume({
-      onTextDelta: (d) => {
-        textOutput += d.text;
-      },
-      subagentCallbacks: ctx.subagentCallbacks
-        ? {
-            onTextDelta: (d) =>
-              ctx.subagentCallbacks!.onTextDelta?.({ ...d, subagentId }),
-            onToolCallStreaming: (d) =>
-              ctx.subagentCallbacks!.onToolCallStreaming?.({
-                ...d,
-                subagentId,
-              }),
-            onToolCallDelta: (d) =>
-              ctx.subagentCallbacks!.onToolCallDelta?.({ ...d, subagentId }),
-            onToolCall: (d) =>
-              ctx.subagentCallbacks!.onToolCall?.({ ...d, subagentId }),
-            onToolResult: (d) =>
-              ctx.subagentCallbacks!.onToolResult?.({ ...d, subagentId }),
-            onError: (e) => ctx.subagentCallbacks!.onError?.(e),
-          }
-        : undefined,
-    });
-
-    ctx.subagentCallbacks?.onSubagentComplete?.({
+    ctx.eventBus?.emit("subagent-complete", {
       subagentId,
-      input: { codebasePath, objective },
       status: "completed",
     });
 
     return textOutput;
   } catch (error) {
-    ctx.subagentCallbacks?.onSubagentComplete?.({
+    ctx.eventBus?.emit("subagent-complete", {
       subagentId,
-      input: { codebasePath, objective },
       status: "failed",
     });
     throw error;

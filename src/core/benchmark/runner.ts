@@ -15,6 +15,7 @@ import {
 import { runBenchmarkInDaytona } from "../agents/specialized/benchmark/remote/daytona-wrapper";
 import * as sessions from "../session";
 import { runPentestWorkflow } from "../workflows/pentest";
+import { AgentEventBus } from "../eventBus";
 import type { CacheMetrics } from "../ai/ai";
 import type {
   BenchmarkMetadata,
@@ -353,6 +354,35 @@ export async function runSingleBenchmark(
     const cacheTotals = { cacheReadTokens: 0, cacheWriteTokens: 0 };
     const workflowStart = Date.now();
 
+    const benchBus = new AgentEventBus();
+    benchBus.on("text-delta", (d) => process.stdout.write(d.text));
+    benchBus.on("tool-call-start", (d) => {
+      const p = d.subagentId ? `[${branch}] [${d.subagentId}]` : `[${branch}]`;
+      console.log(`${p} -> ${d.toolName} (streaming)`);
+    });
+    benchBus.on("tool-call-delta", (d) => {
+      const p = d.subagentId ? `[${branch}] [${d.subagentId}]` : `[${branch}]`;
+      console.log(`${p} -> ${d.toolCallId} delta`);
+    });
+    benchBus.on("tool-call-complete", (d) => {
+      const p = d.subagentId ? `[${branch}] [${d.subagentId}]` : `[${branch}]`;
+      console.log(`${p} -> ${d.toolName}`);
+    });
+    benchBus.on("tool-result", (d) => {
+      const p = d.subagentId ? `[${branch}] [${d.subagentId}]` : `[${branch}]`;
+      console.log(`${p} <- ${d.toolName} done`);
+    });
+    benchBus.on("error", (d) => {
+      const p = d.subagentId ? `[${branch}] [subagent]` : `[${branch}]`;
+      console.error(`${p} Error:`, d.error);
+    });
+    benchBus.on("subagent-spawn", ({ subagentId }) =>
+      console.log(`[${branch}] [${subagentId}] spawned`),
+    );
+    benchBus.on("subagent-complete", ({ subagentId, status }) =>
+      console.log(`[${branch}] [${subagentId}] ${status}`),
+    );
+
     let pentestResult;
     try {
       pentestResult = await runPentestWorkflow({
@@ -360,6 +390,7 @@ export async function runSingleBenchmark(
         model: config.model,
         session,
         abortSignal: controller.signal,
+        eventBus: benchBus,
         onStepFinish: (event) => {
           const u = event.usage;
           if (u) {
@@ -372,37 +403,6 @@ export async function runSingleBenchmark(
         onCacheMetrics: (metrics: CacheMetrics) => {
           cacheTotals.cacheReadTokens += metrics.cacheReadInputTokens;
           cacheTotals.cacheWriteTokens += metrics.cacheCreationInputTokens;
-        },
-        callbacks: {
-          onTextDelta: (d) => process.stdout.write(d.text),
-          onToolCallStreaming: (d) =>
-            console.log(`[${branch}] -> ${d.toolName} (streaming)`),
-          onToolCallDelta: (d) =>
-            console.log(`[${branch}] -> ${d.toolCallId} delta`),
-          onToolCall: (d) => console.log(`[${branch}] -> ${d.toolName}`),
-          onToolResult: (d) => console.log(`[${branch}] <- ${d.toolName} done`),
-          onError: (e) => console.error(`[${branch}] Error:`, e),
-          subagentCallbacks: {
-            onSubagentSpawn: ({ subagentId }) =>
-              console.log(`[${branch}] [${subagentId}] spawned`),
-            onSubagentComplete: ({ subagentId, status }) =>
-              console.log(`[${branch}] [${subagentId}] ${status}`),
-            onToolCallStreaming: (d) =>
-              console.log(
-                `[${branch}] [${d.subagentId}] -> ${d.toolName} (streaming)`,
-              ),
-            onToolCallDelta: (d) =>
-              console.log(
-                `[${branch}] [${d.subagentId}] -> ${d.toolCallId} delta`,
-              ),
-            onToolCall: (d) =>
-              console.log(`[${branch}] [${d.subagentId}] -> ${d.toolName}`),
-            onToolResult: (d) =>
-              console.log(
-                `[${branch}] [${d.subagentId}] <- ${d.toolName} done`,
-              ),
-            onError: (e) => console.error(`[${branch}] [subagent] Error:`, e),
-          },
         },
       });
     } finally {
@@ -439,9 +439,10 @@ export async function runSingleBenchmark(
         model: comparisonModel,
         session,
       });
-      const compResult = await compAgent.consume({
-        onError: (e) => console.error(`[${branch}] Comparison error:`, e),
-      });
+      compAgent.eventBus.on("error", (d) =>
+        console.error(`[${branch}] Comparison error:`, d.error),
+      );
+      const compResult = await compAgent.consume();
       comparisonResult = compResult.comparison;
     } catch (e) {
       console.error(

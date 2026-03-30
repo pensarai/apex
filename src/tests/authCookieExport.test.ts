@@ -1,4 +1,5 @@
 import { runAuthenticationAgent } from "../core/api/authentication";
+import { AgentEventBus } from "../core/eventBus";
 import { sessions } from "../core/session";
 import { describe, it, expect } from "vitest";
 import { config } from "dotenv";
@@ -40,6 +41,27 @@ describe.skip("Authentication Agent — Cookie Export", () => {
       );
 
       const toolCalls: { name: string; input: Record<string, unknown> }[] = [];
+      const bus = new AgentEventBus();
+      bus.on("text-delta", (d) => process.stdout.write(d.text));
+      bus.on("tool-call-complete", (d) => {
+        const input =
+          d.args &&
+          typeof d.args === "object" &&
+          !Array.isArray(d.args) &&
+          d.args !== null
+            ? (d.args as Record<string, unknown>)
+            : {};
+        toolCalls.push({ name: d.toolName, input });
+        console.log(
+          `\n→ calling ${d.toolName}\n  ${JSON.stringify(d.args, null, 2)}`,
+        );
+      });
+      bus.on("tool-result", (d) => {
+        console.log(
+          `✓ ${d.toolName} completed\n  result: ${JSON.stringify(d.result, null, 2)}`,
+        );
+      });
+      bus.on("error", (d) => console.error("Agent error:", d.error));
 
       const result = await runAuthenticationAgent({
         target: TARGET_URL,
@@ -53,27 +75,7 @@ describe.skip("Authentication Agent — Cookie Export", () => {
             `https://${TARGET_URL}/dashboard`,
           ],
         },
-        callbacks: {
-          onTextDelta: (d) => process.stdout.write(d.text),
-          onToolCall: (d) => {
-            toolCalls.push({
-              name: d.toolName,
-              input: d.input as Record<string, unknown>,
-            });
-            console.log(
-              `\n→ calling ${d.toolName}\n  ${JSON.stringify(d.input, null, 2)}`,
-            );
-          },
-          onToolResult: (d) => {
-            const output =
-              (d as Record<string, unknown>).output ??
-              (d as Record<string, unknown>).result;
-            console.log(
-              `✓ ${d.toolName} completed\n  result: ${JSON.stringify(output, null, 2)}`,
-            );
-          },
-          onError: (e) => console.error("Agent error:", e),
-        },
+        eventBus: bus,
       });
 
       console.log("\n========== AUTH RESULT ==========");

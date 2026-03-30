@@ -24,6 +24,13 @@ export interface CodeAgentInput<TResult = void> extends SpecializedAgentInput {
   responseSchema?: z.ZodSchema;
 
   system?: string;
+
+  /**
+   * Tool names to exclude from the default CodeAgent toolset.
+   * Useful for scoping agents to only the tools they need (e.g.
+   * excluding `document_app` from endpoint-discovery agents).
+   */
+  excludeTools?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -63,23 +70,32 @@ export class CodeAgent<TResult = void> extends OffensiveSecurityAgent<TResult> {
       onStepFinish,
       onCacheMetrics,
       abortSignal,
-      callbacks,
+      eventBus,
+      subagentId,
       stopWhen,
       responseSchema,
       system,
       attackSurfaceRegistry,
+      excludeTools,
     } = opts;
 
-    const activeTools: string[] = [
+    let activeTools: string[] = [
       "read_file",
       "list_files",
       "grep",
       "execute_command",
-      "document_asset",
+      "http_request",
+      "document_app",
+      "document_endpoint",
       // Web search tools — research vulnerable library versions, look up API docs
       "web_search",
       "get_page",
     ];
+
+    if (excludeTools?.length) {
+      const excluded = new Set(excludeTools);
+      activeTools = activeTools.filter((t) => !excluded.has(t));
+    }
 
     if (responseSchema) {
       activeTools.push("response");
@@ -94,9 +110,9 @@ export class CodeAgent<TResult = void> extends OffensiveSecurityAgent<TResult> {
       onStepFinish,
       onCacheMetrics,
       abortSignal,
+      eventBus,
+      subagentId,
       attackSurfaceRegistry,
-      callbacks,
-      subagentCallbacks: callbacks?.subagentCallbacks,
       stopWhen: stopWhen ?? stepCountIs(10000),
       activeTools,
       responseSchema,

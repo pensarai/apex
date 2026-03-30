@@ -34,37 +34,7 @@ export default function Footer({
       ? "~/" + segments.join("/")
       : "…/" + segments.slice(-2).join("/");
   const session = useSession();
-  const route = useRoute();
   const { isInputEmpty } = useInput();
-  const isPentest = route.data.type === "pentest" && !route.data.openAsOperator;
-
-  // Pentest footer: minimal — just navigation hints
-  if (isPentest) {
-    return (
-      <box
-        flexDirection="row"
-        justifyContent="space-between"
-        width="100%"
-        maxWidth="100%"
-        height={1}
-        flexShrink={0}
-        overflow="hidden"
-      >
-        <text fg={colors.textMuted}>{displayCwd}</text>
-        <box flexDirection="row" gap={2} flexShrink={0}>
-          <box flexDirection="row" gap={1}>
-            <text fg={colors.primary}>[Tab]</text>
-            <text fg={colors.textMuted}>Navigate</text>
-          </box>
-          <box flexDirection="row" gap={1}>
-            <text fg={colors.primary}>[ESC]</text>
-            <text fg={colors.textMuted}>Back</text>
-          </box>
-        </box>
-      </box>
-    );
-  }
-
   const hotkeys = isExecuting
     ? [{ key: "Ctrl+C", label: "Stop Execution" }]
     : [

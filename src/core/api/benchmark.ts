@@ -11,12 +11,16 @@ export async function runBenchmarkComparisonAgent(
 ) {
   const agent = new BenchmarkComparisonAgent(input);
 
-  const { comparison, resultsPath } = await agent.consume({
-    onTextDelta: (d) => process.stdout.write(d.text),
-    onToolCall: (d) => console.log(`→ calling ${d.toolName}`),
-    onToolResult: (d) => console.log(`✓ ${d.toolName} completed`),
-    onError: (e) => console.error("Agent error:", e),
-  });
+  agent.eventBus.on("text-delta", (d) => process.stdout.write(d.text));
+  agent.eventBus.on("tool-call-complete", (d) =>
+    console.log(`→ calling ${d.toolName}`),
+  );
+  agent.eventBus.on("tool-result", (d) =>
+    console.log(`✓ ${d.toolName} completed`),
+  );
+  agent.eventBus.on("error", (d) => console.error("Agent error:", d.error));
+
+  const { comparison, resultsPath } = await agent.consume();
 
   if (comparison) {
     console.log(
