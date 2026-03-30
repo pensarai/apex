@@ -272,9 +272,9 @@ export const commands: CommandConfig[] = [
     },
   },
   {
-    name: "sessions",
-    aliases: ["s"],
-    description: "Browse previous sessions",
+    name: "resume",
+    aliases: ["sessions", "s"],
+    description: "Resume a previous session",
     category: "Pentesting",
     handler: async (_args, ctx) => {
       ctx.openSessionsDialog?.();
