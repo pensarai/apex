@@ -3,6 +3,7 @@ import { z } from "zod";
 import { join } from "path";
 import { writeFileSync, mkdirSync, existsSync } from "fs";
 import type { ToolContext } from "./types";
+import { truncateHeaders } from "./truncation";
 
 const MAX_INLINE_BODY = 5_000;
 
@@ -176,9 +177,9 @@ COMMON TESTING PATTERNS:
 
         clearTimeout(timeoutId);
 
-        const responseHeaders: Record<string, string> = {};
+        const rawHeaders: Record<string, string> = {};
         response.headers.forEach((value, key) => {
-          responseHeaders[key] = value;
+          rawHeaders[key] = value;
         });
 
         let responseBody = "";
@@ -194,7 +195,7 @@ COMMON TESTING PATTERNS:
           success: true,
           status: response.status,
           statusText: response.statusText,
-          headers: responseHeaders,
+          headers: truncateHeaders(rawHeaders),
           body: truncatedBody,
           url: response.url,
           redirected: response.redirected,
@@ -306,7 +307,7 @@ async function executeSandboxHttpRequest(
       success: status >= 200 && status < 400,
       status,
       statusText,
-      headers: responseHeaders,
+      headers: truncateHeaders(responseHeaders),
       body: truncatedBody,
       url,
       redirected: false,

@@ -32,6 +32,12 @@ import type {
   BrowserEvaluateResult,
   BrowserConsoleResult,
 } from "./playwrightMcp";
+import {
+  truncateToolResult,
+  truncateJsonResult,
+  MAX_SNAPSHOT_LENGTH,
+  MAX_BROWSER_RESULT_LENGTH,
+} from "./truncation";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -637,6 +643,14 @@ Example workflow:
           30,
         )) as { success: boolean; snapshot?: string; error?: string };
 
+        if (result.snapshot) {
+          result.snapshot = truncateToolResult(
+            result.snapshot,
+            MAX_SNAPSHOT_LENGTH,
+            "use browser_evaluate for targeted DOM queries",
+          );
+        }
+
         return result;
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
@@ -839,6 +853,15 @@ The JavaScript is executed in the page context and the result is returned.`,
           30,
         )) as BrowserEvaluateResult;
 
+        if (result.result !== undefined) {
+          const serialized = truncateJsonResult(
+            result.result,
+            MAX_BROWSER_RESULT_LENGTH,
+            "narrow your script to return less data",
+          );
+          result.result = serialized;
+        }
+
         return result;
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
@@ -875,6 +898,20 @@ Use this to check for:
           `,
           15,
         )) as BrowserConsoleResult;
+
+        if (result.messages) {
+          const serialized = truncateJsonResult(
+            result.messages,
+            MAX_BROWSER_RESULT_LENGTH,
+            "console messages truncated",
+          );
+          result.result = serialized;
+          if (
+            JSON.stringify(result.messages).length > MAX_BROWSER_RESULT_LENGTH
+          ) {
+            result.messages = result.messages.slice(-50);
+          }
+        }
 
         return result;
       } catch (error: unknown) {

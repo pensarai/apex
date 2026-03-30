@@ -16,6 +16,12 @@ import { createRequire } from "module";
 import { writeFileSync, mkdirSync, existsSync } from "fs";
 import { join, dirname } from "path";
 import type { Logger } from "../../../logger";
+import {
+  truncateToolResult,
+  truncateJsonResult,
+  MAX_SNAPSHOT_LENGTH,
+  MAX_BROWSER_RESULT_LENGTH,
+} from "./truncation";
 
 // Types for tool results
 export interface BrowserNavigateResult {
@@ -724,11 +730,19 @@ export function createBrowserTools(
       toolCallDescription,
     }): Promise<BrowserNavigateResult> => {
       try {
-        const result = await session.callTool(
+        const rawResult = await session.callTool(
           "browser_navigate",
           { url },
           abortSignal,
         );
+        const result =
+          rawResult != null
+            ? truncateJsonResult(
+                rawResult,
+                MAX_SNAPSHOT_LENGTH,
+                "call browser_snapshot separately for full DOM tree",
+              )
+            : undefined;
         return {
           success: true,
           url,
@@ -836,12 +850,15 @@ Example workflow:
           {},
           abortSignal,
         );
+        const raw =
+          typeof result === "string" ? result : JSON.stringify(result, null, 2);
         return {
           success: true,
-          snapshot:
-            typeof result === "string"
-              ? result
-              : JSON.stringify(result, null, 2),
+          snapshot: truncateToolResult(
+            raw,
+            MAX_SNAPSHOT_LENGTH,
+            "use browser_evaluate for targeted DOM queries",
+          ),
         };
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
@@ -866,11 +883,19 @@ Example workflow:
         if (ref) {
           args.ref = ref;
         }
-        const result = await session.callTool(
+        const rawResult = await session.callTool(
           "browser_click",
           args,
           abortSignal,
         );
+        const result =
+          rawResult != null
+            ? truncateJsonResult(
+                rawResult,
+                MAX_SNAPSHOT_LENGTH,
+                "call browser_snapshot separately for full DOM tree",
+              )
+            : undefined;
         return { success: true, element, result };
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
@@ -892,16 +917,23 @@ Example workflow:
       toolCallDescription,
     }): Promise<BrowserFillResult> => {
       try {
-        // Note: Playwright MCP uses "browser_type" for filling fields
         const args: Record<string, unknown> = { element, text: value };
         if (ref) {
           args.ref = ref;
         }
-        const result = await session.callTool(
+        const rawResult = await session.callTool(
           "browser_type",
           args,
           abortSignal,
         );
+        const result =
+          rawResult != null
+            ? truncateJsonResult(
+                rawResult,
+                MAX_SNAPSHOT_LENGTH,
+                "call browser_snapshot separately for full DOM tree",
+              )
+            : undefined;
         return { success: true, element, result };
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
@@ -921,10 +953,15 @@ Example workflow:
       try {
         const fnScript = transformScriptToFunction(script);
 
-        const result = await session.callTool(
+        const rawResult = await session.callTool(
           "browser_evaluate",
           { function: fnScript },
           abortSignal,
+        );
+        const result = truncateJsonResult(
+          rawResult,
+          MAX_BROWSER_RESULT_LENGTH,
+          "narrow your script to return less data",
         );
         return { success: true, script, result };
       } catch (error: unknown) {
@@ -958,7 +995,18 @@ Example workflow:
           messages = result as Array<{ type: string; text: string }>;
         }
 
-        return { success: true, messages, result };
+        const truncatedResult = truncateJsonResult(
+          result ?? messages ?? [],
+          MAX_BROWSER_RESULT_LENGTH,
+          "console messages truncated",
+        );
+        if (
+          messages &&
+          JSON.stringify(messages).length > MAX_BROWSER_RESULT_LENGTH
+        ) {
+          messages = messages.slice(-50);
+        }
+        return { success: true, messages, result: truncatedResult };
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         logger?.error(`browser_console failed: ${message}`);

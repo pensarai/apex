@@ -4,6 +4,7 @@ import {
   extractJavascriptEndpoints,
   type EndpointInfo,
 } from "../../specialized/attackSurface/jsExtraction";
+import { MAX_TOOL_RESULT_LENGTH } from "./truncation";
 
 /**
  * Factory for the `crawl_authenticated_area` tool.
@@ -112,15 +113,36 @@ export function crawlAuthenticated(_ctx: unknown) {
           }
         }
 
-        return {
+        const pagesForResult = pages.map((p) => ({
+          url: p.url,
+          status: p.status,
+          linkCount: p.links.length,
+          formCount: p.forms.length,
+          jsEndpointCount: p.jsEndpoints.length,
+          links: p.links.slice(0, 20),
+          forms: p.forms.slice(0, 10),
+        }));
+
+        const result = {
           success: true,
           startUrl,
           pagesVisited: visited.size,
           totalPages: pages.length,
-          pages,
+          pages: pagesForResult,
           allDiscoveredEndpoints: Array.from(allEndpoints),
           message: `Crawled ${visited.size} pages. Discovered ${allEndpoints.size} unique endpoints from JavaScript.`,
         };
+
+        const serialized = JSON.stringify(result);
+        if (serialized.length > MAX_TOOL_RESULT_LENGTH) {
+          return {
+            ...result,
+            pages: pagesForResult.slice(0, 10),
+            _note: `Page details truncated to first 10 of ${pagesForResult.length} pages`,
+          };
+        }
+
+        return result;
       } catch (error: unknown) {
         const errorMsg = error instanceof Error ? error.message : String(error);
         return {

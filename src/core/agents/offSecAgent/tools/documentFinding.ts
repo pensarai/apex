@@ -478,7 +478,19 @@ ${finding.references ? `## References\n\n${finding.references}` : ""}
 
         return {
           success: true,
-          finding: findingWithMeta,
+          finding: {
+            title: finding.title,
+            severity: finding.severity,
+            endpoint: finding.endpoint,
+            pocPath: finding.pocPath,
+            vulnerabilityClass: input.vulnerabilityClass,
+            cvss: {
+              score: cvssResult.score,
+              severity: cvssResult.severity,
+              vectorString: cvssResult.vectorString,
+            },
+            cwes: cvssResult.cwes,
+          },
           filepath: mdPath,
           message: resultMessage,
         };

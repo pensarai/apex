@@ -2,6 +2,7 @@ import { tool } from "ai";
 import { z } from "zod";
 import type { ToolContext } from "./types";
 import { AgentEventBus, type AgentEventMap } from "../../../eventBus";
+import { truncateToolResult, MAX_SUBAGENT_OUTPUT_LENGTH } from "./truncation";
 
 /** Default max concurrent coding agents */
 const DEFAULT_CONCURRENCY = 5;
@@ -157,7 +158,11 @@ Returns an array of results with the text output from each agent.`,
         results: results.map((r) => ({
           codebasePath: r.codebasePath,
           objective: r.objective,
-          output: r.output,
+          output: truncateToolResult(
+            r.output,
+            MAX_SUBAGENT_OUTPUT_LENGTH,
+            "sub-agent output truncated",
+          ),
           error: r.error,
         })),
         message: `Coding agents complete. ${total - failedTasks.length}/${total} succeeded.${
