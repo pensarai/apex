@@ -34,15 +34,27 @@ export function resolveConfig(
 }
 
 // ---------------------------------------------------------------------------
-// Weave client initialization
+// Weave client initialization (single project per process)
 // ---------------------------------------------------------------------------
 
 let weaveReady: Promise<typeof import("weave") | null> | null = null;
+let cachedConfigKey: string | null = null;
 
 async function initWeave(
   config: WandbConfig,
 ): Promise<typeof import("weave") | null> {
-  if (weaveReady) return weaveReady;
+  const configKey = `${config.entity}/${config.project}`;
+
+  if (weaveReady) {
+    if (cachedConfigKey && cachedConfigKey !== configKey) {
+      console.warn(
+        `[wandb] initWeave called with ${configKey} but already initialized with ${cachedConfigKey}. Weave supports one project per process.`,
+      );
+    }
+    return weaveReady;
+  }
+
+  cachedConfigKey = configKey;
 
   weaveReady = (async () => {
     let weave: typeof import("weave");
@@ -54,10 +66,12 @@ async function initWeave(
 
     try {
       await weave.login(config.apiKey);
-      await weave.init(`${config.entity}/${config.project}`);
+      await weave.init(configKey);
       return weave;
     } catch (e) {
       console.error("[wandb] Weave init failed:", e);
+      weaveReady = null;
+      cachedConfigKey = null;
       return null;
     }
   })();
@@ -76,16 +90,25 @@ export async function createWeaveTracer(config: WandbConfig): Promise<{
   const weave = await initWeave(config);
   if (!weave) return null;
 
-  // weave.op() is the stable API — wraps an async function and logs
-  // its inputs/output as a traced call in the Weave dashboard.
   const logTraceRecord = weave.op(
-    async (record: TraceRecord, _sessionId: string) => {
-      // Output is kept minimal — the full record is in inputs.
-      // Only surface token metrics here for Weave UI visibility.
+    async (input: { record: TraceRecord; sessionId: string }) => {
+      const { record } = input;
       if (record.type === "step") {
         return {
           inputTokens: record.usage.inputTokens,
           outputTokens: record.usage.outputTokens,
+        };
+      }
+      if (record.type === "init") {
+        return {
+          model: record.model,
+          toolCount: record.activeTools.length,
+        };
+      }
+      if (record.type === "checkpoint") {
+        return {
+          confirmedVulns: record.targetState.confirmedVulnerabilities.length,
+          blockers: record.blockers.length,
         };
       }
       return null;
@@ -97,11 +120,7 @@ export async function createWeaveTracer(config: WandbConfig): Promise<{
 
   return {
     logRecord: (record: TraceRecord, sessionId: string) => {
-      try {
-        // Fire-and-forget — weave.op returns a promise but queues internally.
-        // We don't await to avoid blocking the trace writer.
-        void logTraceRecord(record, sessionId);
-      } catch (e) {
+      logTraceRecord({ record, sessionId }).catch((e) => {
         if (!logErrorLogged) {
           console.error(
             "[wandb] Record upload failed (suppressing future warnings):",
@@ -109,20 +128,24 @@ export async function createWeaveTracer(config: WandbConfig): Promise<{
           );
           logErrorLogged = true;
         }
-      }
+      });
     },
     finish: async () => {
       try {
         const getClient = (
           weave as unknown as {
-            getGlobalClient?: () => {
-              waitForBatchProcessing(): Promise<void>;
-            } | null;
+            getGlobalClient?: () => Record<string, unknown> | null;
           }
         ).getGlobalClient;
-        const client = getClient?.();
-        if (client) {
-          await client.waitForBatchProcessing();
+        if (!getClient) {
+          console.warn(
+            "[wandb] getGlobalClient not found — flush skipped. Check weave SDK version.",
+          );
+          return;
+        }
+        const client = getClient();
+        if (client && typeof client.waitForBatchProcessing === "function") {
+          await (client.waitForBatchProcessing as () => Promise<void>)();
         }
       } catch (e) {
         console.error("[wandb] Flush failed:", e);

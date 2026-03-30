@@ -10,7 +10,7 @@
  * ```
  */
 
-import { resolveConfig, createWeaveTracer } from "./client";
+import { resolveConfig, createWeaveTracer, type WandbConfig } from "./client";
 import type { TraceRecord } from "../../agents/offSecAgent/trace";
 import type { AgentEventBus } from "../../eventBus";
 import type { SessionInfo } from "../../session";
@@ -20,17 +20,11 @@ import type { SessionInfo } from "../../session";
 // ---------------------------------------------------------------------------
 
 export interface WandbUploaderHandle {
-  /** Log a trace record to W&B. Synchronous — Weave queues internally. */
+  /** Log a trace record to W&B. Weave queues internally. */
   onRecord: (record: TraceRecord) => void;
 
   /** Flush Weave's internal queue. Call after the agent run finishes. */
   finalize: () => Promise<void>;
-}
-
-export interface WandbUploaderOpts {
-  apiKey?: string;
-  entity?: string;
-  project?: string;
 }
 
 /**
@@ -41,7 +35,7 @@ export interface WandbUploaderOpts {
  */
 export async function createWandbUploader(
   session: SessionInfo,
-  opts?: WandbUploaderOpts,
+  opts?: Partial<WandbConfig>,
 ): Promise<WandbUploaderHandle | null> {
   const resolved = resolveConfig(opts);
   if (!resolved.available) return null;
@@ -65,7 +59,7 @@ export async function createWandbUploader(
 export async function attachWandbToEventBus(
   session: SessionInfo,
   eventBus: AgentEventBus,
-  opts?: WandbUploaderOpts,
+  opts?: Partial<WandbConfig>,
 ): Promise<(() => Promise<void>) | null> {
   const uploader = await createWandbUploader(session, opts);
   if (!uploader) return null;

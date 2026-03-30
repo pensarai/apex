@@ -1293,8 +1293,9 @@ export default function OperatorDashboard({
           ]);
         }
       } finally {
-        if (typeof wandbCleanup === "function") {
-          (wandbCleanup as () => Promise<void>)().catch((e: unknown) =>
+        if (wandbCleanup) {
+          const fn = wandbCleanup as () => Promise<void>;
+          await fn().catch((e: unknown) =>
             console.error("[wandb] Flush failed:", e),
           );
         }
