@@ -19,7 +19,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "bun build src/cli.ts --outdir build --target node --format esm --splitting --external @opentui/core --external @opentui/react --external @opentui/react/* --external react --external react/jsx-runtime --external react/jsx-dev-runtime --external react-reconciler",
+    "build": "bun build src/cli.ts --outdir build --target node --format esm --splitting --external @opentui/core --external @opentui/react --external @opentui/react/* --external react --external react/jsx-runtime --external react/jsx-dev-runtime --external react-reconciler --external weave",
     "generate:ascii": "bun run scripts/generate-ascii-art.ts",
     "generate:models": "bun run scripts/generate-models.ts",
     "build:binary": "bun run generate:ascii && bun build src/cli.ts --compile --outfile pensar",
