@@ -20,7 +20,6 @@ import type {
 import {
   checkSandboxPlaywright,
   installSandboxPlaywright,
-  ensureSandboxPlaywright,
   ensureSandboxBrowser,
   createSandboxBrowserTools,
 } from "../src/core/agents/offSecAgent/tools/sandboxPlaywright";
