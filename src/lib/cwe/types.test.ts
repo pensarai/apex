@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { CweEntrySchema, ValidatedCweEntrySchema, hasCanonicalName } from "./types";
+import {
+  CweEntrySchema,
+  ValidatedCweEntrySchema,
+  hasCanonicalName,
+} from "./types";
 import type { CweEntry, ValidatedCweEntry } from "./types";
 
 describe("CweEntrySchema", () => {

@@ -8,9 +8,8 @@ describe("CWE_DATABASE", () => {
 
   it("includes all CWE IDs referenced in the CVSS scorer system prompt", () => {
     const scorerPromptCwes = [
-      89, 564, 943, 79, 80, 87, 78, 77, 94, 95, 96, 639, 284, 862, 918, 22,
-      23, 36, 611, 776, 1336, 352, 502, 601, 200, 209, 532, 287, 306, 327,
-      328, 330,
+      89, 564, 943, 79, 80, 87, 78, 77, 94, 95, 96, 639, 284, 862, 918, 22, 23,
+      36, 611, 776, 1336, 352, 502, 601, 200, 209, 532, 287, 306, 327, 328, 330,
     ];
     for (const id of scorerPromptCwes) {
       expect(CWE_DATABASE.has(id), `CWE-${id} should be in database`).toBe(

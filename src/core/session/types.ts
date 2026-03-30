@@ -1,8 +1,5 @@
 import { z } from "zod";
-import {
-  CweEntrySchema,
-  ValidatedCweEntrySchema,
-} from "../../lib/cwe/types";
+import { CweEntrySchema, ValidatedCweEntrySchema } from "../../lib/cwe/types";
 
 /**
  * Supported vulnerability classes for testing

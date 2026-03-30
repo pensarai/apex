@@ -99,7 +99,8 @@ describe("validateCweEntries", () => {
   });
 
   it("preserves original reasoning in validated entries", () => {
-    const reasoning = "SQL injection through dynamic query in /api/search endpoint";
+    const reasoning =
+      "SQL injection through dynamic query in /api/search endpoint";
     const entries: CweEntry[] = [{ id: "CWE-89", reasoning }];
 
     const result = validateCweEntries(entries);
