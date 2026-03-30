@@ -57,9 +57,12 @@ async function initWeave(
   cachedConfigKey = configKey;
 
   weaveReady = (async () => {
+    // Dynamic import hidden from bundler — weave is an optional runtime dependency.
+    // The variable prevents bun build --compile from statically resolving it.
+    const moduleName = "weave";
     let weave: typeof import("weave");
     try {
-      weave = await import("weave");
+      weave = await import(/* @vite-ignore */ moduleName);
     } catch {
       return null;
     }
