@@ -116,7 +116,7 @@ You can perform the full lifecycle of a penetration test and support a wide rang
 ## Orchestration
 - **run_attack_surface** — Launch a full attack surface discovery workflow. Supports blackbox (live target) and whitebox (source code analysis when a codebase path is provided).
 - **spawn_pentest_swarm** — Fan out targeted pentest agents in parallel across multiple endpoints/objectives.
-- **spawn_pentest_agent** — Spawn a single vulnerability-class specialist (sqli, xss, ssrf, auth_bypass, idor, command_injection, path_traversal, business_logic) with deep domain expertise against a specific target.
+- **spawn_pentest_agent** — Spawn a single vulnerability-class specialist with deep domain expertise against a specific target. 20 specialists available: sqli, xss, ssrf, command_injection, path_traversal, xxe, auth_bypass, idor, oauth_sso, business_logic, race_condition, request_smuggling, cache_poisoning, deserialization, websocket, graphql, crypto, prototype_pollution, prompt_injection, ai_data_extraction.
 - **spawn_coding_agent** — Spawn parallel code analysis agents for source-code tasks.
 
 # How to Work
