@@ -23,11 +23,17 @@ interface MessageRendererProps {
   username?: string;
 }
 
-const SKILL_TAG_RE = /^<skill\s+name="([^"]+)">/;
+const SKILL_TAG_RE = /^<skill\s+name="([^"]+)"(?:\s+target="([^"]*)")?>/;
 
-function parseSkillName(content: string): string | null {
+interface SkillTag {
+  name: string;
+  target?: string;
+}
+
+function parseSkillTag(content: string): SkillTag | null {
   const match = content.match(SKILL_TAG_RE);
-  return match ? match[1] : null;
+  if (!match) return null;
+  return { name: match[1], target: match[2] || undefined };
 }
 
 /**
@@ -68,17 +74,22 @@ export const MessageRenderer = memo(function MessageRenderer({
     );
   }
 
-  // User messages — detect <skill name="..."> wrapper and display as /command
+  // User messages — detect <skill name="..." target="..."> wrapper and display as /command
   if (message.role === "user") {
-    const skillName = parseSkillName(content);
+    const skill = parseSkillTag(content);
 
     if (variant === "chat") {
       return (
         <box flexDirection="column" marginTop={1}>
           <box flexDirection="row">
             <text fg={colors.secondary}>{"│ "}</text>
-            {skillName ? (
-              <text fg={colors.primary}>/{skillName}</text>
+            {skill ? (
+              <text fg={colors.primary}>
+                /{skill.name}
+                {skill.target ? (
+                  <span fg={colors.textMuted}>{` ${skill.target}`}</span>
+                ) : null}
+              </text>
             ) : (
               <text fg={colors.text}>{content}</text>
             )}
@@ -93,8 +104,13 @@ export const MessageRenderer = memo(function MessageRenderer({
     return (
       <box flexDirection="row" gap={1} marginTop={1}>
         <text fg={colors.primary}>{">"}</text>
-        {skillName ? (
-          <text fg={colors.primary}>/{skillName}</text>
+        {skill ? (
+          <text fg={colors.primary}>
+            /{skill.name}
+            {skill.target ? (
+              <span fg={colors.textMuted}>{` ${skill.target}`}</span>
+            ) : null}
+          </text>
         ) : (
           <text fg={colors.text}>{content}</text>
         )}
