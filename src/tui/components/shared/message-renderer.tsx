@@ -23,6 +23,13 @@ interface MessageRendererProps {
   username?: string;
 }
 
+const SKILL_TAG_RE = /^<skill\s+name="([^"]+)">/;
+
+function parseSkillName(content: string): string | null {
+  const match = content.match(SKILL_TAG_RE);
+  return match ? match[1] : null;
+}
+
 /**
  * Unified message renderer - delegates to role-specific components.
  */
@@ -61,15 +68,20 @@ export const MessageRenderer = memo(function MessageRenderer({
     );
   }
 
-  // User messages
+  // User messages — detect <skill name="..."> wrapper and display as /command
   if (message.role === "user") {
+    const skillName = parseSkillName(content);
+
     if (variant === "chat") {
-      // Chat variant - cyan bar with username
       return (
         <box flexDirection="column" marginTop={1}>
           <box flexDirection="row">
             <text fg={colors.secondary}>{"│ "}</text>
-            <text fg={colors.text}>{content}</text>
+            {skillName ? (
+              <text fg={colors.primary}>/{skillName}</text>
+            ) : (
+              <text fg={colors.text}>{content}</text>
+            )}
           </box>
           <box marginLeft={2}>
             <text fg={colors.textMuted}>{username}</text>
@@ -81,7 +93,11 @@ export const MessageRenderer = memo(function MessageRenderer({
     return (
       <box flexDirection="row" gap={1} marginTop={1}>
         <text fg={colors.primary}>{">"}</text>
-        <text fg={colors.text}>{content}</text>
+        {skillName ? (
+          <text fg={colors.primary}>/{skillName}</text>
+        ) : (
+          <text fg={colors.text}>{content}</text>
+        )}
       </box>
     );
   }
