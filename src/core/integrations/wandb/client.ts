@@ -64,6 +64,8 @@ async function initWeave(
     try {
       weave = await import(/* @vite-ignore */ moduleName);
     } catch {
+      weaveReady = null;
+      cachedConfigKey = null;
       return null;
     }
 
