@@ -271,15 +271,19 @@ export class OffensiveSecurityAgent<TResult = void> {
     };
 
     // -- Init record (trace.jsonl first line) ---------------------------------
+    // Hash only the base system prompt (excluding session workspace paths)
+    // so the hash is stable across runs with identical prompt versions.
+    const baseSystemPrompt =
+      input.system ??
+      buildBaseSystemPrompt({
+        sandboxMode: agentCwd === input.session.rootPath,
+      });
     const systemPrompt =
-      (input.system ??
-        buildBaseSystemPrompt({
-          sandboxMode: agentCwd === input.session.rootPath,
-        })) + buildSessionWorkspaceSection(input.session, agentCwd);
+      baseSystemPrompt + buildSessionWorkspaceSection(input.session, agentCwd);
 
     traceWriter.writeInit({
       model: input.model,
-      systemPrompt,
+      systemPrompt: baseSystemPrompt,
       activeTools,
       sessionId: input.session.id,
       target: input.target,
