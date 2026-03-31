@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useKeyboard } from "@opentui/react";
 import Input from "../input";
 import { useConfig } from "../../context/config";
@@ -14,6 +14,7 @@ import {
   getAutoPopulatedHosts,
   getAutoPopulatedPorts,
 } from "../../../util/url";
+import type { InputRenderable } from "@opentui/core";
 
 // Wizard step types
 type WizardStep = "target" | "configure" | "creating";
@@ -226,6 +227,18 @@ export default function WebWizard({
 
   // UI state for target step
   const [targetFocusedField, setTargetFocusedField] = useState(0); // 0=target, 1=source code access, 2=cwd (if enabled)
+  const targetUrlRef = useRef<InputRenderable | null>(null);
+
+  // Explicitly grab focus on the target URL input after mount and step transitions.
+  // The underlying prompt unfocuses via useEffect (setExternalDialogOpen), which
+  // runs after the initial render — so our focused={true} prop alone can lose the
+  // race. Re-calling .focus() on the next tick ensures we win.
+  useEffect(() => {
+    if (currentStep === "target" && targetFocusedField === 0) {
+      const timer = setTimeout(() => targetUrlRef.current?.focus(), 1);
+      return () => clearTimeout(timer);
+    }
+  }, [currentStep, targetFocusedField]);
 
   // UI state for configure step
   const [focusedSection, setFocusedSection] = useState(0); // 0=auth, 1=scope, 2=headers
@@ -330,7 +343,11 @@ export default function WebWizard({
       onStartPentest([state.target], sessionConfig);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to create session");
-      setCurrentStep(initialTarget ? "configure" : "target");
+      const fallbackStep = initialTarget ? "configure" : "target";
+      setCurrentStep(fallbackStep);
+      if (fallbackStep === "target") {
+        setTargetFocusedField(0);
+      }
     }
   }
 
@@ -349,6 +366,7 @@ export default function WebWizard({
           onClose();
         } else {
           setCurrentStep("target");
+          setTargetFocusedField(0);
           setFocusedSection(0);
           setFocusedField(0);
         }
@@ -685,6 +703,7 @@ export default function WebWizard({
 
           <box marginTop={1}>
             <Input
+              ref={targetUrlRef}
               label="Target URL"
               description="e.g., https://example.com"
               placeholder="https://example.com"

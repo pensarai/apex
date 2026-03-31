@@ -39,6 +39,42 @@ export type SubagentLogEntry = {
 };
 
 /**
+ * Workflow phase identifier.
+ */
+export type WorkflowPhase =
+  | "discovery"
+  | "pentesting"
+  | "reporting"
+  | "complete";
+
+/**
+ * All state for the pentest workflow rendered by PentestWorkflowDisplay.
+ * Lives on the `run_pentest_workflow` tool message.
+ */
+export type WorkflowData = {
+  currentPhase: WorkflowPhase;
+  discovery: {
+    label: string;
+    status: "pending" | "complete";
+    logs: string[];
+    targets?: { target: string; objectives: string[] }[];
+    cached?: boolean;
+  };
+  pentesting: {
+    label: string;
+    status: "idle" | "pending" | "complete";
+    subagents: Record<string, SubagentLogEntry>;
+  };
+  reporting: {
+    label: string;
+    status: "idle" | "pending" | "complete";
+    findingsCount?: number;
+    findingsBySeverity?: Record<string, number>;
+    reportPath?: string;
+  };
+};
+
+/**
  * Display message type - flexible type for UI display.
  *
  * For tool messages: toolCallId, toolName, args, and status are required.
@@ -58,6 +94,8 @@ export type DisplayMessage = {
   status?: ToolStatus;
   logs?: string[];
   subagentLogs?: Record<string, SubagentLogEntry>;
+  // Pentest workflow display (present for run_pentest_workflow tool)
+  workflowData?: WorkflowData;
 };
 
 function getStableKey(

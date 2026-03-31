@@ -9,6 +9,7 @@ import type {
   DisplayMessage,
   ToolStatus,
   SubagentLogEntry,
+  WorkflowData,
 } from "../agent-display";
 
 /**
@@ -26,6 +27,7 @@ export interface ToolDisplayMessage {
   status: ToolStatus;
   logs?: string[];
   subagentLogs?: Record<string, SubagentLogEntry>;
+  workflowData?: WorkflowData;
 }
 
 /**

@@ -38,9 +38,12 @@ import { useFocus } from "../../context/focus";
 import { MessageList } from "../chat/message-list";
 import { InputArea } from "../chat/input-area";
 import { useTheme } from "../../theme";
-import type { DisplayMessage } from "../agent-display";
+import type { DisplayMessage, WorkflowData } from "../agent-display";
 import { isToolMessage } from "../shared/type-guards";
-import { getToolSummary } from "../shared/tool-registry";
+import {
+  getToolSummary,
+  formatSubagentToolResult,
+} from "../shared/tool-registry";
 import {
   tryParsePartialJson,
   extractStreamableContent,
@@ -784,9 +787,88 @@ export default function OperatorDashboard({
 
       const eventBus = new AgentEventBus();
 
+      // Buffer pending tool-call-complete data for subagents so we can
+      // merge with tool-result into a single rich log line.
+      const pendingSubagentCalls = new Map<
+        string,
+        { toolName: string; args: Record<string, unknown> }
+      >();
+
+      // Discovery-phase subagents route output to workflowData on the
+      // run_pentest_workflow tool message instead of the SwarmGrid.
+      const DISCOVERY_SUBAGENT_IDS = new Set([
+        "attack-surface-agent",
+        "whitebox-apps-discovery",
+      ]);
+      const isDiscoveryAgent = (id?: string) =>
+        id !== undefined && DISCOVERY_SUBAGENT_IDS.has(id);
+
+      // Patch the workflowData on the active run_pentest_workflow tool message.
+      const updateWorkflowData = (
+        updater: (wd: WorkflowData) => WorkflowData,
+      ) => {
+        setMessages((prev) => {
+          const idx = prev.findLastIndex(
+            (m) =>
+              isToolMessage(m) &&
+              m.toolName === "run_pentest_workflow" &&
+              (m.status === "pending" || m.status === "streaming"),
+          );
+          if (idx === -1) return prev;
+          const msg = prev[idx];
+          const wd = msg.workflowData ?? {
+            currentPhase: "discovery" as const,
+            discovery: { label: "", status: "pending" as const, logs: [] },
+            pentesting: {
+              label: "",
+              status: "idle" as const,
+              subagents: {},
+            },
+            reporting: { label: "", status: "idle" as const },
+          };
+          const updated = [...prev];
+          updated[idx] = { ...msg, workflowData: updater(wd) };
+          return updated;
+        });
+      };
+
+      const appendWorkflowDiscoveryLog = (line: string) => {
+        updateWorkflowData((wd) => ({
+          ...wd,
+          discovery: {
+            ...wd.discovery,
+            logs: [...wd.discovery.logs, line].slice(-MAX_LOG_LINES),
+          },
+        }));
+      };
+
+      // Buffer partial narration text from discovery agents so we can
+      // flush complete lines to the workflow display.
+      const discoveryTextBuf: Record<string, string> = {};
+
+      const flushDiscoveryNarration = (subagentId: string) => {
+        const buf = discoveryTextBuf[subagentId];
+        if (!buf) return;
+        const lines = buf.split("\n");
+        discoveryTextBuf[subagentId] = lines.pop() ?? "";
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (trimmed.length > 0) {
+            appendWorkflowDiscoveryLog(trimmed);
+          }
+        }
+      };
+
       eventBus.on("text-delta", (d) => {
         if (gen !== generationRef.current) return;
-        if (d.subagentId) return;
+        if (d.subagentId) {
+          if (isDiscoveryAgent(d.subagentId)) {
+            discoveryTextBuf[d.subagentId] =
+              (discoveryTextBuf[d.subagentId] ?? "") + d.text;
+            flushDiscoveryNarration(d.subagentId);
+          }
+          return;
+        }
         setThinking(false);
         appendText(d.text);
       });
@@ -814,8 +896,19 @@ export default function OperatorDashboard({
             d.args !== null
               ? (d.args as Record<string, unknown>)
               : {};
-          const summary = getToolSummary(d.toolName, args);
-          appendLogToSubagent(d.subagentId, summary);
+          // Buffer the call so we can merge with tool-result for a richer line
+          pendingSubagentCalls.set(d.toolCallId, {
+            toolName: d.toolName,
+            args,
+          });
+          if (
+            isDiscoveryAgent(d.subagentId) &&
+            d.toolName === "execute_command"
+          ) {
+            const cmd = String(args.command ?? "").split("\n")[0];
+            const short = cmd.length > 60 ? cmd.slice(0, 57) + "…" : cmd;
+            appendWorkflowDiscoveryLog(`$ ${short}`);
+          }
           return;
         }
         setThinking(false);
@@ -833,15 +926,52 @@ export default function OperatorDashboard({
       eventBus.on("tool-result", (d) => {
         if (gen !== generationRef.current) return;
         if (d.subagentId) {
-          const payload =
+          const pending = pendingSubagentCalls.get(d.toolCallId);
+          pendingSubagentCalls.delete(d.toolCallId);
+          const resultObj =
             d.result &&
             typeof d.result === "object" &&
             !Array.isArray(d.result) &&
             d.result !== null
               ? (d.result as Record<string, unknown>)
               : { result: d.result };
-          const summary = getToolSummary(d.toolName, payload);
-          appendLogToSubagent(d.subagentId, `✓ ${summary}`);
+
+          // Build rich merged line when we have buffered args
+          let line: string;
+          if (pending) {
+            line = formatSubagentToolResult(
+              pending.toolName,
+              pending.args,
+              resultObj,
+            );
+          } else {
+            const summary = getToolSummary(d.toolName, resultObj);
+            line = `✓ ${summary}`;
+          }
+
+          if (isDiscoveryAgent(d.subagentId)) {
+            appendWorkflowDiscoveryLog(line);
+          } else {
+            // Mirror to workflowData swarm subagent logs
+            updateWorkflowData((wd) => {
+              const entry = wd.pentesting.subagents[d.subagentId!];
+              if (!entry) return wd;
+              let logs = [...entry.logs, line];
+              if (logs.length > MAX_LOG_LINES)
+                logs = logs.slice(-MAX_LOG_LINES);
+              return {
+                ...wd,
+                pentesting: {
+                  ...wd.pentesting,
+                  subagents: {
+                    ...wd.pentesting.subagents,
+                    [d.subagentId!]: { ...entry, logs },
+                  },
+                },
+              };
+            });
+            appendLogToSubagent(d.subagentId, line);
+          }
           return;
         }
         flushCommandOutput();
@@ -862,7 +992,11 @@ export default function OperatorDashboard({
         if (d.subagentId) {
           const msg =
             d.error instanceof Error ? d.error.message : "subagent error";
-          appendLogToActiveTool(`✗ ${msg}`);
+          if (isDiscoveryAgent(d.subagentId)) {
+            appendWorkflowDiscoveryLog(`✗ ${msg}`);
+          } else {
+            appendLogToActiveTool(`✗ ${msg}`);
+          }
           return;
         }
         console.error("Agent error:", d.error);
@@ -870,11 +1004,119 @@ export default function OperatorDashboard({
       });
 
       eventBus.on("subagent-spawn", ({ subagentId, name }) => {
+        if (isDiscoveryAgent(subagentId)) return;
+        // Pentest swarm agents → workflowData.pentesting.subagents
+        updateWorkflowData((wd) => ({
+          ...wd,
+          pentesting: {
+            ...wd.pentesting,
+            subagents: {
+              ...wd.pentesting.subagents,
+              [subagentId]: {
+                name,
+                status: "pending" as const,
+                logs: [],
+              },
+            },
+          },
+        }));
         initSubagent(subagentId, name);
       });
 
       eventBus.on("subagent-complete", ({ subagentId, status }) => {
+        const remaining = discoveryTextBuf[subagentId]?.trim();
+        if (remaining) {
+          if (isDiscoveryAgent(subagentId)) {
+            appendWorkflowDiscoveryLog(remaining);
+          } else {
+            appendLogToSubagent(subagentId, remaining);
+          }
+        }
+        delete discoveryTextBuf[subagentId];
+        if (isDiscoveryAgent(subagentId)) return;
+        // Update workflowData swarm status
+        updateWorkflowData((wd) => {
+          const entry = wd.pentesting.subagents[subagentId];
+          if (!entry) return wd;
+          return {
+            ...wd,
+            pentesting: {
+              ...wd.pentesting,
+              subagents: {
+                ...wd.pentesting.subagents,
+                [subagentId]: { ...entry, status },
+              },
+            },
+          };
+        });
         completeSubagent(subagentId, status);
+      });
+
+      // Workflow phase events → update workflowData on the tool message
+      eventBus.on("workflow-phase-start", (d) => {
+        if (gen !== generationRef.current) return;
+        textRef.current = "";
+        updateWorkflowData((wd) => {
+          const next = {
+            ...wd,
+            currentPhase: d.phase as WorkflowData["currentPhase"],
+          };
+          if (d.phase === "discovery") {
+            next.discovery = {
+              ...wd.discovery,
+              label: d.label,
+              status: "pending",
+              logs: [],
+            };
+          } else if (d.phase === "pentesting") {
+            next.pentesting = {
+              ...wd.pentesting,
+              label: d.label,
+              status: "pending",
+            };
+          } else if (d.phase === "reporting") {
+            next.reporting = {
+              ...wd.reporting,
+              label: d.label,
+              status: "pending",
+            };
+          }
+          return next;
+        });
+      });
+
+      eventBus.on("workflow-phase-complete", (d) => {
+        if (gen !== generationRef.current) return;
+        textRef.current = "";
+        updateWorkflowData((wd) => {
+          const next = { ...wd };
+          if (d.phase === "discovery") {
+            const targets = (d.summary.targets ?? []) as {
+              target: string;
+              objectives: string[];
+            }[];
+            next.discovery = {
+              ...wd.discovery,
+              status: "complete",
+              targets,
+              cached: d.summary.cached as boolean | undefined,
+            };
+          } else if (d.phase === "pentesting") {
+            next.pentesting = { ...wd.pentesting, status: "complete" };
+          } else if (d.phase === "reporting") {
+            next.reporting = {
+              ...wd.reporting,
+              status: "complete",
+              findingsCount: d.summary.findingsCount as number | undefined,
+              findingsBySeverity: d.summary.findingsBySeverity as
+                | Record<string, number>
+                | undefined,
+              reportPath: d.summary.reportPath as string | undefined,
+            };
+            next.currentPhase = "complete";
+          }
+          return next;
+        });
       });
 
       const skillsCatalog = skillsRegistry.buildCatalog() || undefined;

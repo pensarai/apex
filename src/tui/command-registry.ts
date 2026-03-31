@@ -141,6 +141,7 @@ export const commands: CommandConfig[] = [
           initialConfig: {
             requireApproval: false,
             target: flags.target,
+            sandbox: true,
           },
           initialSkill: { slug: "pentest", args: skillArgs },
         });
