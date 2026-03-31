@@ -100,6 +100,8 @@ export async function createWeaveTracer(config: WandbConfig): Promise<{
         return {
           inputTokens: record.usage.inputTokens,
           outputTokens: record.usage.outputTokens,
+          cacheReadTokens: record.usage.cacheReadTokens ?? 0,
+          cacheWriteTokens: record.usage.cacheWriteTokens ?? 0,
         };
       }
       if (record.type === "init") {

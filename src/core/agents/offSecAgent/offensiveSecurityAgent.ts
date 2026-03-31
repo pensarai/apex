@@ -286,6 +286,13 @@ export class OffensiveSecurityAgent<TResult = void> {
     });
 
     // -- Stream ---------------------------------------------------------------
+    // Mutable ref for cache metrics — onCacheMetrics fires synchronously
+    // before onStepFinish within the same step (see ai.ts:367-391).
+    let lastCacheMetrics: {
+      cacheReadTokens: number;
+      cacheWriteTokens: number;
+    } | null = null;
+
     this.streamResult = streamResponse({
       prompt: input.prompt,
       system: systemPrompt,
@@ -304,7 +311,9 @@ export class OffensiveSecurityAgent<TResult = void> {
         traceWriter.recordStep(event.response.messages as ModelMessage[], {
           inputTokens: event.usage.inputTokens ?? 0,
           outputTokens: event.usage.outputTokens ?? 0,
+          ...lastCacheMetrics,
         });
+        lastCacheMetrics = null;
         this.eventBus.emit("step-finish", {
           messages: event.response.messages,
           subagentId: this.subagentId,
@@ -334,7 +343,13 @@ export class OffensiveSecurityAgent<TResult = void> {
       },
       abortSignal: input.abortSignal,
       authConfig: input.authConfig,
-      onCacheMetrics: input.onCacheMetrics,
+      onCacheMetrics: (metrics) => {
+        lastCacheMetrics = {
+          cacheReadTokens: metrics.cacheReadInputTokens,
+          cacheWriteTokens: metrics.cacheCreationInputTokens,
+        };
+        input.onCacheMetrics?.(metrics);
+      },
       silent: true,
     });
   }

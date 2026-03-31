@@ -97,12 +97,18 @@ export interface StepRecord {
   usage: {
     inputTokens: number;
     outputTokens: number;
+    /** Anthropic cache read tokens (prompt caching). Absent for non-Anthropic models. */
+    cacheReadTokens?: number;
+    /** Anthropic cache write tokens (prompt caching). Absent for non-Anthropic models. */
+    cacheWriteTokens?: number;
   };
 
   /** Cumulative tokens across all steps so far (including this one) */
   cumulativeUsage: {
     inputTokens: number;
     outputTokens: number;
+    cacheReadTokens?: number;
+    cacheWriteTokens?: number;
   };
 
   /** Wall-clock ms from previous step's completion (or agent start) to this step's completion */
@@ -294,7 +300,10 @@ export class StepTraceWriter {
   private readonly eventBus?: AgentEventBus;
 
   private stepIndex = 0;
-  private cumulativeUsage = { inputTokens: 0, outputTokens: 0 };
+  private cumulativeUsage: StepRecord["cumulativeUsage"] = {
+    inputTokens: 0,
+    outputTokens: 0,
+  };
   private lastStepTime: number;
   private readonly agentStartTime: number;
   private summarized = false;
@@ -355,7 +364,12 @@ export class StepTraceWriter {
    */
   recordStep(
     responseMessages: ModelMessage[],
-    usage: { inputTokens: number; outputTokens: number },
+    usage: {
+      inputTokens: number;
+      outputTokens: number;
+      cacheReadTokens?: number;
+      cacheWriteTokens?: number;
+    },
   ): void {
     const now = Date.now();
     const newMessages = responseMessages.slice(this.previousMessageCount);
@@ -416,8 +430,18 @@ export class StepTraceWriter {
 
     const inputTokens = usage.inputTokens ?? 0;
     const outputTokens = usage.outputTokens ?? 0;
+    const cacheReadTokens = usage.cacheReadTokens;
+    const cacheWriteTokens = usage.cacheWriteTokens;
     this.cumulativeUsage.inputTokens += inputTokens;
     this.cumulativeUsage.outputTokens += outputTokens;
+    if (cacheReadTokens) {
+      this.cumulativeUsage.cacheReadTokens =
+        (this.cumulativeUsage.cacheReadTokens ?? 0) + cacheReadTokens;
+    }
+    if (cacheWriteTokens) {
+      this.cumulativeUsage.cacheWriteTokens =
+        (this.cumulativeUsage.cacheWriteTokens ?? 0) + cacheWriteTokens;
+    }
 
     const record: StepRecord = {
       type: "step",
@@ -436,7 +460,7 @@ export class StepTraceWriter {
       text: textParts.length > 0 ? textParts.join("") : null,
       actions,
 
-      usage: { inputTokens, outputTokens },
+      usage: { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens },
       cumulativeUsage: { ...this.cumulativeUsage },
 
       stepDurationMs: now - this.lastStepTime,
