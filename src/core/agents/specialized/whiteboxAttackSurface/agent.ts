@@ -92,7 +92,6 @@ This ends the agent run — make sure all data is included.`,
       eventBus,
       subagentId,
       attackSurfaceRegistry,
-
       activeTools: [
         // Filesystem tools — for Phase 1 repo identification
         "read_file",

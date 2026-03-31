@@ -148,6 +148,7 @@ export class OffensiveSecurityAgent<TResult = void> {
     const traceWriter = new StepTraceWriter({
       tracePath,
       agentId: input.subagentId ?? null,
+      eventBus: this.eventBus,
     });
 
     // -- Tools ----------------------------------------------------------------
@@ -269,14 +270,36 @@ export class OffensiveSecurityAgent<TResult = void> {
       }, PERSIST_INTERVAL_MS);
     };
 
+    // -- Init record (trace.jsonl first line) ---------------------------------
+    // Hash only the base system prompt (excluding session workspace paths)
+    // so the hash is stable across runs with identical prompt versions.
+    const baseSystemPrompt =
+      input.system ??
+      buildBaseSystemPrompt({
+        sandboxMode: agentCwd === input.session.rootPath,
+      });
+    const systemPrompt =
+      baseSystemPrompt + buildSessionWorkspaceSection(input.session, agentCwd);
+
+    traceWriter.writeInit({
+      model: input.model,
+      systemPrompt: baseSystemPrompt,
+      activeTools,
+      sessionId: input.session.id,
+      target: input.target,
+    });
+
     // -- Stream ---------------------------------------------------------------
+    // Mutable ref for cache metrics — onCacheMetrics fires synchronously
+    // before onStepFinish within the same step (see ai.ts:367-391).
+    let lastCacheMetrics: {
+      cacheReadTokens: number;
+      cacheWriteTokens: number;
+    } | null = null;
+
     this.streamResult = streamResponse({
       prompt: input.prompt,
-      system:
-        (input.system ??
-          buildBaseSystemPrompt({
-            sandboxMode: agentCwd === input.session.rootPath,
-          })) + buildSessionWorkspaceSection(input.session, agentCwd),
+      system: systemPrompt,
       model: input.model,
       messages: input.messages,
       tools,
@@ -292,7 +315,9 @@ export class OffensiveSecurityAgent<TResult = void> {
         traceWriter.recordStep(event.response.messages as ModelMessage[], {
           inputTokens: event.usage.inputTokens ?? 0,
           outputTokens: event.usage.outputTokens ?? 0,
+          ...lastCacheMetrics,
         });
+        lastCacheMetrics = null;
         this.eventBus.emit("step-finish", {
           messages: event.response.messages,
           subagentId: this.subagentId,
@@ -322,7 +347,13 @@ export class OffensiveSecurityAgent<TResult = void> {
       },
       abortSignal: input.abortSignal,
       authConfig: input.authConfig,
-      onCacheMetrics: input.onCacheMetrics,
+      onCacheMetrics: (metrics) => {
+        lastCacheMetrics = {
+          cacheReadTokens: metrics.cacheReadInputTokens,
+          cacheWriteTokens: metrics.cacheCreationInputTokens,
+        };
+        input.onCacheMetrics?.(metrics);
+      },
       silent: true,
     });
   }
