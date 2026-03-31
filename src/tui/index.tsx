@@ -410,12 +410,15 @@ function AppContent({
         .join(",");
     if (sessionConfig.scopeConstraints?.strictScope) skillArgs.strict = "true";
 
+    const isBlackbox = !sessionConfig.codebasePath;
+
     route.navigate({
       type: "operator",
       nonce: Date.now(),
       initialConfig: {
         requireApproval: false,
         target,
+        sandbox: isBlackbox,
       },
       initialSkill: { slug: "pentest", args: skillArgs },
     });
