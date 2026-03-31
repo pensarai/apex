@@ -3,7 +3,6 @@ export * from "./authenticationAgent";
 export * from "./benchmark";
 export * from "./pentest";
 export * from "./codeAgent";
-export * from "./pentest";
 export * from "./whiteboxAttackSurface";
 export * from "./benchmarkComparisonAgent";
 export * from "./cvssScorer";

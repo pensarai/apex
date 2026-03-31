@@ -83,6 +83,12 @@ const TOOL_SUMMARY_MAP: Record<string, ToolSummaryFn> = {
     const targets = args.targets as unknown[];
     return `pentest swarm ×${targets?.length ?? "?"}`;
   },
+  spawn_pentest_agent: (args) => {
+    const type = (args.agentType as string) || "specialist";
+    const target = (args.target as string) || "";
+    const shortTarget = target.length > 30 ? target.slice(0, 27) + "…" : target;
+    return `${type} specialist → ${shortTarget}`;
+  },
   run_pentest_workflow: (args) => {
     const mode = args.cwd ? "whitebox" : "blackbox";
     return `pentest workflow (${mode}) ${args.target || ""}`;
@@ -251,6 +257,15 @@ export function formatSubagentToolResult(
           ? ` [${args.severity}]`
           : "";
       return `+ finding: ${title}${severity}`;
+    }
+
+    case "spawn_pentest_agent": {
+      const type = String(args.agentType ?? "specialist");
+      const ok = result.success !== false;
+      const findingsCount = result.findingsCount ?? 0;
+      return ok
+        ? `${type} specialist → ${findingsCount} findings`
+        : `${type} specialist → failed`;
     }
 
     default: {
