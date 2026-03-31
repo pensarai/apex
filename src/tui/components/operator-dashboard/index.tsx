@@ -1154,10 +1154,22 @@ export default function OperatorDashboard({
         },
       };
 
-      // W&B trace upload — attach before agent starts so all records are captured.
-      // For resumed sessions, session is available now. For new sessions,
-      // onSessionReady handles it above.
+      // W&B trace upload — buffer early records so none are lost for new sessions.
+      // For resumed sessions, we attach before the agent starts.
+      // For new sessions, onSessionReady fires mid-construction; we replay
+      // any buffered records once the handler attaches.
+      type TraceEvent = {
+        record: import("../../../core/agents/offSecAgent/trace").TraceRecord;
+        subagentId?: string;
+      };
       let wandbCleanup: (() => Promise<void>) | null = null;
+      let earlyBuffer: TraceEvent[] | null = [];
+
+      const earlyBufferHandler = (e: TraceEvent) => {
+        earlyBuffer?.push(e);
+      };
+      eventBus.on("trace-record", earlyBufferHandler);
+
       const tryAttachWandb = async (s: SessionInfo) => {
         if (wandbCleanup) return;
         const cleanup = await attachWandbToEventBus(s, eventBus).catch(
@@ -1166,7 +1178,21 @@ export default function OperatorDashboard({
             return null;
           },
         );
-        if (cleanup) wandbCleanup = cleanup;
+        if (cleanup) {
+          wandbCleanup = cleanup;
+          // Replay any records captured before the handler attached
+          const buffered = earlyBuffer;
+          earlyBuffer = null;
+          eventBus.off("trace-record", earlyBufferHandler);
+          if (buffered) {
+            for (const e of buffered) {
+              eventBus.emit("trace-record", e);
+            }
+          }
+        } else {
+          earlyBuffer = null;
+          eventBus.off("trace-record", earlyBufferHandler);
+        }
       };
 
       const wandbSession = session ?? sessionRef.current;
@@ -1293,6 +1319,10 @@ export default function OperatorDashboard({
           ]);
         }
       } finally {
+        // Clean up early buffer listener on all paths (abort, error, success)
+        earlyBuffer = null;
+        eventBus.off("trace-record", earlyBufferHandler);
+
         if (wandbCleanup) {
           const fn = wandbCleanup as () => Promise<void>;
           await fn().catch((e: unknown) =>
