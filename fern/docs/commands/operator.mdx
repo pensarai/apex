@@ -172,6 +172,16 @@ Once you start an operator session:
 - Findings are reported as they're discovered
 - The session is automatically saved and can be resumed via `/sessions`
 
+### Pentest Workflow Display
+
+When you run `/pentest` from within operator mode, the session shows an inline three-phase workflow display:
+
+1. **Discovery** — live log of attack surface discovery activity (commands, HTTP requests, identified endpoints)
+2. **Pentesting** — a swarm grid showing each pentest agent's status and tool activity in real time
+3. **Reporting** — findings summary with severity breakdown and report path
+
+Use `Ctrl+L` to toggle expanded logs for more detail on agent activity within each phase.
+
 ## Related Commands
 
 <CardGroup cols={2}>
