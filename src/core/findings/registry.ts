@@ -78,11 +78,29 @@ export function extractTitleStem(title: string): string {
 }
 
 /**
- * Normalise an endpoint URL for comparison:
- * lowercase, strip trailing slash, strip query string and fragment.
+ * Normalise an endpoint for comparison:
+ * extract path from full URLs, lowercase, strip trailing slash,
+ * strip query string and fragment.
+ *
+ * Full URLs (e.g. `https://host:3020/api/products?q=1`) and bare paths
+ * (`/api/products`) both normalise to the same value (`/api/products`).
+ * This is critical because the DB stores path-only endpoints (via
+ * `extractEndpointPath`) while agents document findings with full URLs.
+ * Without path extraction, the exact-key fingerprint for an existing
+ * issue loaded from the DB would never match a new finding from an agent,
+ * causing cross-scan duplicates.
  */
 export function normalizeEndpoint(endpoint: string): string {
   let e = endpoint.trim().toLowerCase();
+
+  // Extract just the path from full URLs so that
+  // "https://host:3020/api/products" and "/api/products" match.
+  try {
+    const url = new URL(e);
+    e = url.pathname;
+  } catch {
+    // Not a valid absolute URL — treat as a bare path
+  }
 
   // Strip fragment
   const hashIdx = e.indexOf("#");
@@ -92,7 +110,7 @@ export function normalizeEndpoint(endpoint: string): string {
   const qIdx = e.indexOf("?");
   if (qIdx !== -1) e = e.substring(0, qIdx);
 
-  // Strip trailing slash (but keep bare origin like "https://host.com")
+  // Strip trailing slash (but keep bare "/" root)
   if (e.length > 1 && e.endsWith("/")) {
     e = e.replace(/\/+$/, "");
   }
@@ -521,6 +539,9 @@ export class FindingsRegistry {
   private indexFinding(finding: Finding): void {
     const { exactKey, appWideKey } = generateFingerprint(finding);
 
+    const isNew =
+      !this.exactKeys.has(exactKey) && !this.appWideKeys.has(appWideKey);
+
     if (!this.exactKeys.has(exactKey)) {
       this.exactKeys.set(exactKey, finding);
     }
@@ -528,6 +549,13 @@ export class FindingsRegistry {
       this.appWideKeys.set(appWideKey, finding);
     }
 
-    this.findings.push(finding);
+    // Only append to findings[] if the fingerprint is genuinely new.
+    // When loading existing issues from multiple scans, the same
+    // logical vulnerability may appear multiple times with identical
+    // fingerprints. Unconditionally pushing inflated size and the
+    // Tier 3 semantic dedup candidate list.
+    if (isNew) {
+      this.findings.push(finding);
+    }
   }
 }

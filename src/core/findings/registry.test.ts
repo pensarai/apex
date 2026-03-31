@@ -316,50 +316,58 @@ describe("extractTitleStem", () => {
 // ---------------------------------------------------------------------------
 
 describe("normalizeEndpoint", () => {
-  it("returns lowercase endpoints unchanged", () => {
+  it("extracts path from full URL", () => {
     expect(normalizeEndpoint("https://target.com/api/products")).toBe(
-      "https://target.com/api/products",
+      "/api/products",
     );
   });
 
   it("strips trailing slashes", () => {
     expect(normalizeEndpoint("https://target.com/api/products/")).toBe(
-      "https://target.com/api/products",
+      "/api/products",
     );
   });
 
   it("strips query parameters", () => {
     expect(
       normalizeEndpoint("https://target.com/api/products?search=test"),
-    ).toBe("https://target.com/api/products");
+    ).toBe("/api/products");
   });
 
   it("lowercases the URL", () => {
     expect(normalizeEndpoint("HTTPS://TARGET.COM/API/Products")).toBe(
-      "https://target.com/api/products",
+      "/api/products",
     );
   });
 
-  it("leaves bare origin intact", () => {
-    expect(normalizeEndpoint("https://target.com")).toBe("https://target.com");
+  it("returns root path for bare origin", () => {
+    expect(normalizeEndpoint("https://target.com")).toBe("/");
   });
 
   it("strips fragment identifiers", () => {
-    expect(normalizeEndpoint("https://target.com/page#section")).toBe(
-      "https://target.com/page",
-    );
+    expect(normalizeEndpoint("https://target.com/page#section")).toBe("/page");
   });
 
-  it("preserves port numbers", () => {
-    expect(normalizeEndpoint("https://target.com:8080/api")).toBe(
-      "https://target.com:8080/api",
-    );
+  it("extracts path regardless of port", () => {
+    expect(normalizeEndpoint("https://target.com:8080/api")).toBe("/api");
   });
 
   it("handles combined query + fragment + trailing slash", () => {
-    expect(normalizeEndpoint("https://target.com/api/?q=1#top")).toBe(
-      "https://target.com/api",
+    expect(normalizeEndpoint("https://target.com/api/?q=1#top")).toBe("/api");
+  });
+
+  it("normalises a bare path the same as a full URL path", () => {
+    expect(normalizeEndpoint("/api/products")).toBe(
+      normalizeEndpoint("https://any-host.com/api/products"),
     );
+  });
+
+  it("handles bare paths without scheme", () => {
+    expect(normalizeEndpoint("/api/products")).toBe("/api/products");
+  });
+
+  it("handles bare paths with trailing slash", () => {
+    expect(normalizeEndpoint("/api/products/")).toBe("/api/products");
   });
 });
 
@@ -537,6 +545,17 @@ describe("FindingsRegistry", () => {
       expect(registry.size).toBe(3);
     });
 
+    it("deduplicates pre-loaded findings with overlapping fingerprints", () => {
+      const registry = FindingsRegistry.fromFindings([
+        sqlInjectionProducts,
+        sqlInjectionOrders, // same title stem as sqlInjectionProducts
+        missingCspRoot,
+      ]);
+
+      expect(registry.size).toBe(2);
+      expect(registry.isDuplicate(sqlInjectionOrders).duplicate).toBe(true);
+    });
+
     it("rejects duplicates of pre-loaded findings", () => {
       const registry = FindingsRegistry.fromFindings([
         sqlInjectionProducts,
@@ -670,20 +689,34 @@ describe("FindingsRegistry", () => {
       });
       const finding2 = makeFinding({
         title: "XSS on page",
-        endpoint: "https://target.com/page",
+        endpoint: "/page",
       });
       const fp1 = generateFingerprint(finding1);
       const fp2 = generateFingerprint(finding2);
       expect(fp1.exactKey).toBe(fp2.exactKey);
     });
 
-    it("endpoint normalisation preserves port numbers", () => {
+    it("endpoint normalisation extracts path regardless of port", () => {
       const finding = makeFinding({
         title: "XSS on page",
         endpoint: "https://target.com:8080/api",
       });
       const fp = generateFingerprint(finding);
-      expect(fp.exactKey).toContain("8080");
+      expect(fp.exactKey).toContain("/api");
+    });
+
+    it("full URL and path-only endpoint produce the same fingerprint", () => {
+      const fullUrl = makeFinding({
+        title: "SQL Injection in search",
+        endpoint: "https://target.com:3020/api/products",
+      });
+      const pathOnly = makeFinding({
+        title: "SQL Injection in search",
+        endpoint: "/api/products",
+      });
+      const fp1 = generateFingerprint(fullUrl);
+      const fp2 = generateFingerprint(pathOnly);
+      expect(fp1.exactKey).toBe(fp2.exactKey);
     });
 
     it("handles unicode and special characters in title", async () => {
