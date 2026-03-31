@@ -434,11 +434,11 @@ export class StepTraceWriter {
     const cacheWriteTokens = usage.cacheWriteTokens;
     this.cumulativeUsage.inputTokens += inputTokens;
     this.cumulativeUsage.outputTokens += outputTokens;
-    if (cacheReadTokens) {
+    if (cacheReadTokens != null) {
       this.cumulativeUsage.cacheReadTokens =
         (this.cumulativeUsage.cacheReadTokens ?? 0) + cacheReadTokens;
     }
-    if (cacheWriteTokens) {
+    if (cacheWriteTokens != null) {
       this.cumulativeUsage.cacheWriteTokens =
         (this.cumulativeUsage.cacheWriteTokens ?? 0) + cacheWriteTokens;
     }
