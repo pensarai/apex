@@ -57,6 +57,10 @@ export type AgentEventMap = {
   };
   "command-output": { data: string; subagentId?: string };
   error: { error: unknown; subagentId?: string };
+  "trace-record": {
+    record: import("./agents/offSecAgent/trace").TraceRecord;
+    subagentId?: string;
+  };
 };
 
 /**

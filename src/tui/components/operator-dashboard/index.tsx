@@ -16,6 +16,7 @@ import {
   normalizeMessages,
 } from "../../../core/session";
 import { runOffensiveSecurityAgent } from "../../../core/api/offesecAgent";
+import { attachWandbToEventBus } from "../../../core/integrations/wandb/upload";
 import { buildAuthConfig } from "../../../core/ai/utils";
 import type { CacheMetrics } from "../../../core/ai";
 import {
@@ -1147,12 +1148,57 @@ export default function OperatorDashboard({
         eventBus,
         onSessionReady: (s: SessionInfo) => {
           setSessionCwd(s.rootPath);
-          // Update the ref immediately so handleAbort can access the session
-          // even before React processes the state update.
           sessionRef.current = s;
           setSession((prev) => prev ?? s);
+          tryAttachWandb(s);
         },
       };
+
+      // W&B trace upload — buffer early records so none are lost for new sessions.
+      // For resumed sessions, we attach before the agent starts.
+      // For new sessions, onSessionReady fires mid-construction; we replay
+      // any buffered records once the handler attaches.
+      type TraceEvent = {
+        record: import("../../../core/agents/offSecAgent/trace").TraceRecord;
+        subagentId?: string;
+      };
+      let wandbCleanup: (() => Promise<void>) | null = null;
+      let earlyBuffer: TraceEvent[] | null = [];
+
+      const earlyBufferHandler = (e: TraceEvent) => {
+        earlyBuffer?.push(e);
+      };
+      eventBus.on("trace-record", earlyBufferHandler);
+
+      const tryAttachWandb = async (s: SessionInfo) => {
+        if (wandbCleanup) return;
+        const cleanup = await attachWandbToEventBus(s, eventBus).catch(
+          (e: unknown) => {
+            console.error("[wandb] Attach failed:", e);
+            return null;
+          },
+        );
+        if (cleanup) {
+          wandbCleanup = cleanup;
+          // Replay any records captured before the handler attached
+          const buffered = earlyBuffer;
+          earlyBuffer = null;
+          eventBus.off("trace-record", earlyBufferHandler);
+          if (buffered) {
+            for (const e of buffered) {
+              eventBus.emit("trace-record", e);
+            }
+          }
+        } else {
+          earlyBuffer = null;
+          eventBus.off("trace-record", earlyBufferHandler);
+        }
+      };
+
+      const wandbSession = session ?? sessionRef.current;
+      if (wandbSession) {
+        await tryAttachWandb(wandbSession);
+      }
 
       try {
         let agentResult;
@@ -1273,6 +1319,16 @@ export default function OperatorDashboard({
           ]);
         }
       } finally {
+        // Clean up early buffer listener on all paths (abort, error, success)
+        earlyBuffer = null;
+        eventBus.off("trace-record", earlyBufferHandler);
+
+        if (wandbCleanup) {
+          const fn = wandbCleanup as () => Promise<void>;
+          await fn().catch((e: unknown) =>
+            console.error("[wandb] Flush failed:", e),
+          );
+        }
         if (gen === generationRef.current) {
           setStatus("idle");
           setThinking(false);
