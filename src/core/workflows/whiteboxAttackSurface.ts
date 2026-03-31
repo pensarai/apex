@@ -255,7 +255,18 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     `[whitebox-workflow] Phase 1: discovering apps in ${codebasePath}${domains?.length ? ` (${domains.length} known domains)` : ""}`,
   );
 
+  eventBus?.emit("subagent-spawn", {
+    subagentId: "whitebox-apps-discovery",
+    name: "Whitebox Apps Discovery",
+    input: { codebasePath },
+  });
+
   const appsResult = await appsAgent.consume();
+
+  eventBus?.emit("subagent-complete", {
+    subagentId: "whitebox-apps-discovery",
+    status: "completed",
+  });
 
   console.log(
     `[whitebox-workflow] Phase 1 complete: ${appsResult?.apps.length ?? 0} apps discovered` +

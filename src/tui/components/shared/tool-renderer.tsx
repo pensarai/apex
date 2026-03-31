@@ -14,6 +14,7 @@ import { getResultSummary, type ResultSummary } from "./result-registry";
 import { isToolMessage } from "./type-guards";
 import type { DisplayMessage, SubagentLogEntry } from "../agent-display";
 import { SwarmGrid } from "./swarm-grid";
+import { PentestWorkflowDisplay } from "./pentest-workflow-display";
 
 const TOOLS_WITH_LOG_WINDOW = new Set([
   "execute_command",
@@ -49,6 +50,19 @@ export const ToolRenderer = memo(function ToolRenderer({
   // Type guard ensures we have a tool message
   if (!isToolMessage(message)) {
     return null;
+  }
+
+  // Pentest workflow gets its own unified display component
+  if (message.workflowData) {
+    const wfPending =
+      message.status === "pending" || message.status === "streaming";
+    return (
+      <PentestWorkflowDisplay
+        workflowData={message.workflowData}
+        isPending={wfPending}
+        expandedLogs={expandedLogs}
+      />
+    );
   }
 
   const isStreaming = message.status === "streaming";
