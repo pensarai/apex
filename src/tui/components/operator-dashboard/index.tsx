@@ -1584,6 +1584,7 @@ export default function OperatorDashboard({
       handleSubmit,
       executeCommand,
       showModelPicker,
+      addSystemMessage,
     ],
   );
 
@@ -1856,6 +1857,11 @@ export default function OperatorDashboard({
         const planContent = sessionRef.current
           ? readPlan(sessionRef.current.rootPath)
           : null;
+        if (!planContent?.trim()) {
+          setShowPlanReview(false);
+          addSystemMessage("Plan file is missing or empty. Cannot approve.");
+          return;
+        }
         setApprovedPlanContent(planContent);
         setShowPlanReview(false);
         transitionToMode("manual");
