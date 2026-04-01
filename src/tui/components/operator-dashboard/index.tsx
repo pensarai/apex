@@ -1247,7 +1247,7 @@ export default function OperatorDashboard({
                 ? readPlan(sessionRef.current.rootPath)
                 : null,
             approvedPlanContent:
-              agentMode !== "plan" ? approvedPlanContent : null,
+              agentMode !== "plan" ? approvedPlanRef.current : null,
           },
         );
 
