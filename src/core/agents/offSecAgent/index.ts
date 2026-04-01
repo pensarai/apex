@@ -22,6 +22,7 @@ export { StepTraceWriter } from "./trace";
 export type {
   StepRecord,
   StateCheckpoint,
+  InitRecord,
   CheckpointInput,
   TraceRecord,
   ToolOutputType,
