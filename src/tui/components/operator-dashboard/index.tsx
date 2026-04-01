@@ -1517,6 +1517,13 @@ export default function OperatorDashboard({
     runAgentRef.current(next);
   }, [status]);
 
+  const addSystemMessage = useCallback((content: string) => {
+    setMessages((prev) => [
+      ...prev,
+      { role: "system" as const, content, createdAt: new Date() },
+    ]);
+  }, []);
+
   const showModelPicker = useCallback(() => {
     executeCommand("/models");
   }, [executeCommand]);
@@ -1736,13 +1743,6 @@ export default function OperatorDashboard({
       ];
     });
   }, [setThinking, setIsExecuting]);
-
-  const addSystemMessage = useCallback((content: string) => {
-    setMessages((prev) => [
-      ...prev,
-      { role: "system" as const, content, createdAt: new Date() },
-    ]);
-  }, []);
 
   // Complete a mode transition (shared by cycleMode and plan approval)
   const transitionToMode = useCallback((next: OperatorMode) => {
