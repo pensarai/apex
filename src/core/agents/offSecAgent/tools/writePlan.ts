@@ -4,7 +4,7 @@ import { writeFile } from "fs/promises";
 import type { ToolContext } from "./types";
 import { planFilePath } from "../../../plan";
 
-export const writePlanInputSchema = z.object({
+const writePlanInputSchema = z.object({
   content: z
     .string()
     .describe("The full markdown content of the pentest plan"),
@@ -14,8 +14,6 @@ export const writePlanInputSchema = z.object({
       "A concise, human-readable description of what this tool call is doing (e.g., 'Writing initial pentest plan with recon findings')",
     ),
 });
-
-type WritePlanInput = z.infer<typeof writePlanInputSchema>;
 
 type WritePlanResult = {
   success: boolean;

@@ -260,7 +260,7 @@ function buildPlanModePrompt(
 
 ## Current Plan (Refine — Do NOT Rewrite)
 
-The operator has reviewed this plan and requested changes. Read the existing plan on disk via \`read_file\`, then use \`write_plan\` to apply targeted modifications. Do NOT regenerate the plan from scratch — modify specific sections based on the operator's feedback.
+The operator has reviewed this plan and requested changes. Read the existing plan on disk via \`read_file\`, then use \`write_plan\` to apply targeted modifications. The \`write_plan\` tool overwrites the file, so include the full plan content — but only change the sections the operator requested. Do NOT regenerate the plan from scratch.
 
 <current-plan>
 ${existingPlanContent}

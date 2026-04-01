@@ -286,22 +286,25 @@ export const PLAN_MODE_TOOL_NAMES: ToolName[] = [
   "read_file",
   "list_files",
   "grep",
-  // Authentication (read-only probing)
+  // Recon (read-only probing and discovery)
   "authenticate_session",
   "delegate_to_auth_subagent",
   "complete_authentication",
+  "extract_js_endpoints",
+  "crawl_authenticated_area",
+  "detect_auth_scheme",
+  "probe_auth_endpoints",
   "provide_comparison_results",
   // Memory
   "add_memory",
   "list_memories",
   "get_memory",
-  // Email
+  // Email (read-only)
   "email_list_inboxes",
   "email_list_messages",
   "email_get_message",
   "email_search_messages",
   "email_get_attachments",
-  "email_mark_read",
   // Web search
   "web_search",
   "get_page",

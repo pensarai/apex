@@ -3,15 +3,13 @@ import { z } from "zod";
 import type { ToolContext } from "./types";
 import { readPlan, planFilePath } from "../../../plan";
 
-export const submitPlanInputSchema = z.object({
+const submitPlanInputSchema = z.object({
   toolCallDescription: z
     .string()
     .describe(
       "A concise, human-readable description of what this tool call is doing (e.g., 'Submitting pentest plan for operator review')",
     ),
 });
-
-type SubmitPlanInput = z.infer<typeof submitPlanInputSchema>;
 
 type SubmitPlanResult = {
   success: boolean;
