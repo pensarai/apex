@@ -43,7 +43,7 @@ export function PlanReviewMessage({ planContent }: PlanReviewMessageProps) {
 
       {/* Hints */}
       <box flexDirection="row" marginTop={1} marginLeft={1}>
-        <text fg={colors.textMuted}>
+        <text fg={colors.text}>
           Y approve · N reject · or type feedback to refine
         </text>
       </box>
