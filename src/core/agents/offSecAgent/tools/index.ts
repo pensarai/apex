@@ -62,6 +62,7 @@ export { runAttackSurface } from "./runAttackSurface";
 export { spawnPentestSwarm } from "./spawnPentestSwarm";
 export { spawnCodingAgent } from "./spawnCodingAgent";
 export { runPentestWorkflow } from "./runPentestWorkflow";
+export { delegateFlagExtraction } from "./delegateFlagExtraction";
 
 // Reporting / benchmark tools
 // export { generateReport } from "./generateReport";
@@ -126,6 +127,7 @@ import { runAttackSurface } from "./runAttackSurface";
 import { spawnPentestSwarm } from "./spawnPentestSwarm";
 import { spawnCodingAgent } from "./spawnCodingAgent";
 import { runPentestWorkflow } from "./runPentestWorkflow";
+import { delegateFlagExtraction } from "./delegateFlagExtraction";
 // import { generateReport } from "./generateReport";
 import { provideComparisonResults } from "./provideComparisonResults";
 import { addMemory } from "./addMemory";
@@ -191,6 +193,7 @@ export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
     spawn_pentest_swarm: spawnPentestSwarm(ctx),
     spawn_coding_agent: spawnCodingAgent(ctx),
     run_pentest_workflow: runPentestWorkflow(ctx),
+    delegate_flag_extraction: delegateFlagExtraction(ctx),
 
     // Reporting / benchmark tools
     // generate_report: generateReport(ctx),
