@@ -14,6 +14,7 @@ const OPERATOR_ALLOWED_COMMANDS = new Set([
   "/operator",
   "/pentest",
   "/skills",
+  "/plan",
 ]);
 
 export function filterOperatorAutocomplete(
@@ -52,6 +53,7 @@ export function resolveSubmit(
 
 export type CommandAction =
   | { type: "show-models" }
+  | { type: "show-plan" }
   | { type: "run-skill"; slug: string; autopilot: boolean }
   | { type: "execute-command"; command: string };
 
@@ -63,6 +65,10 @@ export function routeCommand(
 
   if (commandLower === "models" || commandLower === "model") {
     return { type: "show-models" };
+  }
+
+  if (commandLower === "plan" || commandLower.startsWith("plan ")) {
+    return { type: "show-plan" };
   }
 
   if (commandLower === "skills") {
@@ -189,16 +195,34 @@ export function buildOperatorSystemPrompt(
     sandboxMode?: boolean;
     skillsCatalog?: string;
     activeSkillInstructions?: Array<{ name: string; instructions: string }>;
+    planFilePath?: string;
+    existingPlanContent?: string | null;
+    approvedPlanContent?: string | null;
   },
 ): string {
   const { skillsCatalog, activeSkillInstructions } = opts ?? {};
-  const modeNote =
-    agentMode === "plan"
-      ? "\nAgent mode: PLAN — read-only tools only, no mutations allowed"
-      : "";
 
   const approvalEnabled =
     opts?.requireApproval ?? operatorState.requireApproval;
+
+  let modeSection = "";
+
+  if (agentMode === "plan") {
+    modeSection = buildPlanModePrompt(
+      opts?.planFilePath,
+      opts?.existingPlanContent,
+    );
+  } else if (opts?.approvedPlanContent) {
+    modeSection = `
+
+# Approved Plan
+
+The operator has approved the following pentest plan. Execute it systematically, following the prioritized attack vectors and testing methodology outlined below.
+
+<plan>
+${opts.approvedPlanContent}
+</plan>`;
+  }
 
   let prompt = `${buildBaseSystemPrompt({ sandboxMode: opts?.sandboxMode })}
 
@@ -208,7 +232,7 @@ You are operating in interactive operator mode. The human operator will guide yo
 
 Target: ${target || "unknown"}
 Stage: ${operatorState.currentStage}
-Command approval: ${approvalEnabled ? "enabled — the operator will approve each tool call" : "disabled — tool calls execute automatically"}${modeNote}`;
+Command approval: ${approvalEnabled ? "enabled — the operator will approve each tool call" : "disabled — tool calls execute automatically"}${modeSection}`;
 
   if (skillsCatalog) {
     prompt += `\n\n# Skills\n\n${skillsCatalog}`;
@@ -221,6 +245,50 @@ Command approval: ${approvalEnabled ? "enabled — the operator will approve eac
   }
 
   return prompt;
+}
+
+// ---------------------------------------------------------------------------
+// Plan mode system prompt
+// ---------------------------------------------------------------------------
+
+function buildPlanModePrompt(
+  planFilePath?: string,
+  existingPlanContent?: string | null,
+): string {
+  const refinementBlock = existingPlanContent
+    ? `
+
+## Current Plan (Refine — Do NOT Rewrite)
+
+The operator has reviewed this plan and requested changes. Read the existing plan on disk via \`read_file\`, then use \`write_plan\` to apply targeted modifications. Do NOT regenerate the plan from scratch — modify specific sections based on the operator's feedback.
+
+<current-plan>
+${existingPlanContent}
+</current-plan>
+`
+    : "";
+
+  return `
+
+# PLAN MODE — Read-Only Reconnaissance & Planning
+
+You are in PLAN MODE. This is a read-only phase for reconnaissance and pentest planning. You MUST NOT:
+- Mutate the target's state (no POST/PUT/DELETE that changes data, no account creation, no data modification)
+- Write to the filesystem except via the \`write_plan\` tool
+- Execute exploit payloads or state-changing attacks
+- Document vulnerabilities (use the plan to propose what to test)
+
+Actively reconnoiter the target using the available read-only tools before planning.
+
+## Workflow
+
+1. **Recon** — Actively reconnoiter the target. Crawl the application, fingerprint tech stack, enumerate endpoints, discover authentication mechanisms, identify input surfaces.
+2. **Analyze** — Map what you found into an attack surface. Identify which areas are most exposed and which vulnerability classes are most likely.
+3. **Plan** — Write a structured pentest plan using \`write_plan\`.${planFilePath ? ` The plan is stored at: ${planFilePath}` : ""}
+4. **Submit** — When the plan is complete, call \`submit_plan\` to present it to the operator for approval.
+
+The \`write_plan\` tool description specifies the required plan sections. Follow that structure.
+${refinementBlock}`;
 }
 
 // ---------------------------------------------------------------------------

@@ -26,6 +26,7 @@ import {
   AgentEventBus,
   type AgentMode,
 } from "../../../core/agents/offSecAgent";
+import { readPlan, hasPlan, planFilePath as getPlanFilePath } from "../../../core/plan";
 import {
   convertModelMessagesToUI,
   type UIMessage,
@@ -76,6 +77,7 @@ import { QueuedMessages } from "./queued-messages";
 import { navigateUp, navigateDown, selectionAfterRemove } from "./queue";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { isAbsolute, join, resolve } from "path";
+
 import { buildThreatModelPrompt } from "../../../core/skills/builtins/threatModel";
 import { buildPentestPrompt } from "../../../core/skills/builtins/pentest";
 
@@ -215,6 +217,20 @@ export default function OperatorDashboard({
   );
   const agentMode: AgentMode = operatorMode === "plan" ? "plan" : "default";
   const requireApproval = operatorMode === "manual";
+  // Plan mode review state
+  const [approvedPlanContent, setApprovedPlanContent] = useState<string | null>(
+    null,
+  );
+  const [showPlanReview, setShowPlanReview] = useState(false);
+  const planSubmittedRef = useRef(false);
+  const operatorModeRef = useRef(operatorMode);
+  useEffect(() => {
+    operatorModeRef.current = operatorMode;
+  }, [operatorMode]);
+  const approvedPlanRef = useRef(approvedPlanContent);
+  useEffect(() => {
+    approvedPlanRef.current = approvedPlanContent;
+  }, [approvedPlanContent]);
   const tokenUsageRef = useRef(tokenUsage);
 
   useEffect(() => {
@@ -982,6 +998,14 @@ export default function OperatorDashboard({
         }
         setThinking(true);
         updateToolResult(d.toolCallId, d.toolName, d.result);
+
+        // Track submit_plan success — review triggers after the run completes
+        if (
+          d.toolName === "submit_plan" &&
+          (d.result as Record<string, unknown> | null)?.success === true
+        ) {
+          planSubmittedRef.current = true;
+        }
       });
 
       eventBus.on("command-output", (d) => {
@@ -1203,19 +1227,30 @@ export default function OperatorDashboard({
       try {
         let agentResult;
 
+        const systemPrompt = buildOperatorSystemPrompt(
+          initialConfig?.target,
+          operatorState,
+          agentMode,
+          {
+            requireApproval,
+            sandboxMode: !!initialConfig?.sandbox,
+            skillsCatalog,
+            planFilePath: sessionRef.current
+              ? getPlanFilePath(sessionRef.current.rootPath)
+              : undefined,
+            existingPlanContent:
+              agentMode === "plan" && sessionRef.current
+                ? readPlan(sessionRef.current.rootPath)
+                : null,
+            approvedPlanContent:
+              agentMode !== "plan" ? approvedPlanContent : null,
+          },
+        );
+
         if (session) {
           agentResult = await runOffensiveSecurityAgent({
             ...commonInput,
-            system: buildOperatorSystemPrompt(
-              initialConfig?.target,
-              operatorState,
-              agentMode,
-              {
-                requireApproval,
-                sandboxMode: !!initialConfig?.sandbox,
-                skillsCatalog,
-              },
-            ),
+            system: systemPrompt,
             session,
           });
         } else {
@@ -1232,16 +1267,7 @@ export default function OperatorDashboard({
           };
           agentResult = await runOffensiveSecurityAgent({
             ...commonInput,
-            system: buildOperatorSystemPrompt(
-              initialConfig?.target,
-              operatorState,
-              agentMode,
-              {
-                requireApproval,
-                sandboxMode: !!initialConfig?.sandbox,
-                skillsCatalog,
-              },
-            ),
+            system: systemPrompt,
             sessionConfig,
             onNameGenerated: (name: string) => {
               pendingNameRef.current = name;
@@ -1334,6 +1360,12 @@ export default function OperatorDashboard({
           setThinking(false);
           setIsExecuting(false);
           abortControllerRef.current = null;
+
+          // Show plan review after the full response is rendered
+          if (planSubmittedRef.current) {
+            planSubmittedRef.current = false;
+            setShowPlanReview(true);
+          }
         }
       }
     },
@@ -1526,6 +1558,17 @@ export default function OperatorDashboard({
           }
           return;
         }
+        case "show-plan": {
+          const planContent = sessionRef.current
+            ? readPlan(sessionRef.current.rootPath)
+            : null;
+          addSystemMessage(
+            planContent
+              ? `## Current Plan\n\n${planContent}`
+              : "No plan exists yet. Switch to plan mode (Shift+Tab) to create one.",
+          );
+          return;
+        }
         case "execute-command":
           await executeCommand(action.command);
           return;
@@ -1689,22 +1732,51 @@ export default function OperatorDashboard({
     });
   }, [setThinking, setIsExecuting]);
 
-  // Cycle through operator modes: approvals-on → approvals-off → plan
-  const cycleMode = useCallback(() => {
-    setOperatorMode((prev) => {
-      const idx = OPERATOR_MODE_CYCLE.indexOf(prev);
-      const next = OPERATOR_MODE_CYCLE[(idx + 1) % OPERATOR_MODE_CYCLE.length];
-      approvalGateRef.current.updateConfig({
-        requireApproval: next === "manual",
-      });
-      setOperatorState((s) => ({
-        ...s,
-        mode: next,
-        requireApproval: next === "manual",
-      }));
-      return next;
-    });
+  const addSystemMessage = useCallback((content: string) => {
+    setMessages((prev) => [
+      ...prev,
+      { role: "system" as const, content, createdAt: new Date() },
+    ]);
   }, []);
+
+  // Complete a mode transition (shared by cycleMode and plan approval)
+  const transitionToMode = useCallback((next: OperatorMode) => {
+    approvalGateRef.current.updateConfig({
+      requireApproval: next === "manual",
+    });
+    setOperatorState((s) => ({
+      ...s,
+      mode: next,
+      requireApproval: next === "manual",
+    }));
+    setOperatorMode(next);
+  }, []);
+
+  // Cycle through operator modes: approvals-on → approvals-off → plan
+  // Reads from refs to avoid stale closures — safe for rapid keypresses.
+  const cycleMode = useCallback(() => {
+    const current = operatorModeRef.current;
+    const idx = OPERATOR_MODE_CYCLE.indexOf(current);
+    const next = OPERATOR_MODE_CYCLE[(idx + 1) % OPERATOR_MODE_CYCLE.length];
+
+    // Gate: if leaving plan mode and a plan exists but isn't approved, show review
+    if (
+      current === "plan" &&
+      sessionRef.current &&
+      hasPlan(sessionRef.current.rootPath) &&
+      !approvedPlanRef.current
+    ) {
+      setShowPlanReview(true);
+      return;
+    }
+
+    // Entering plan mode — reset approved plan
+    if (next === "plan") {
+      setApprovedPlanContent(null);
+    }
+
+    transitionToMode(next);
+  }, [transitionToMode]);
 
   // Keyboard shortcuts
   useKeyboard((key) => {
@@ -1774,6 +1846,30 @@ export default function OperatorDashboard({
       }
     }
 
+    if (showPlanReview && !inputValue.trim()) {
+      if (key.name === "y" || key.raw === "Y") {
+        key.preventDefault?.();
+        const planContent = sessionRef.current
+          ? readPlan(sessionRef.current.rootPath)
+          : null;
+        setApprovedPlanContent(planContent);
+        setShowPlanReview(false);
+        transitionToMode("manual");
+        addSystemMessage(
+          "Plan approved. Switching to manual mode for execution.",
+        );
+        return;
+      }
+      if (key.name === "n" || key.raw === "N") {
+        key.preventDefault?.();
+        setShowPlanReview(false);
+        addSystemMessage(
+          "Plan rejected. Refine the plan based on operator feedback.",
+        );
+        return;
+      }
+    }
+
     const dialogOpen = stack.length > 0 || externalDialogOpen;
     const action = resolveKeyboardShortcut(
       key,
@@ -1814,6 +1910,33 @@ export default function OperatorDashboard({
         return;
     }
   });
+
+  // Show plan review prompt when triggered.
+  // Guard ref prevents duplicate injection (e.g., React StrictMode double-fire).
+  const planReviewInjectedRef = useRef(false);
+  useEffect(() => {
+    if (!showPlanReview) {
+      planReviewInjectedRef.current = false;
+      return;
+    }
+    if (planReviewInjectedRef.current || !sessionRef.current) return;
+    const planContent = readPlan(sessionRef.current.rootPath);
+    if (!planContent) {
+      setShowPlanReview(false);
+      return;
+    }
+    planReviewInjectedRef.current = true;
+    setMessages((prev) => [
+      ...prev,
+      {
+        role: "system" as const,
+        content: "",
+        createdAt: new Date(),
+        isPlanReview: true,
+        planContent,
+      },
+    ]);
+  }, [showPlanReview]);
 
   // Loading state
   if (loading) {
@@ -1913,13 +2036,24 @@ export default function OperatorDashboard({
       <InputArea
         value={inputValue}
         onChange={setInputValue}
-        onSubmit={handleSubmit}
+        onSubmit={
+          showPlanReview
+            ? (value: string) => {
+                const trimmed = value.trim();
+                if (!trimmed) return;
+                setShowPlanReview(false);
+                handleSubmit(trimmed);
+              }
+            : handleSubmit
+        }
         placeholder={
-          status === "running"
-            ? "Queue a follow-up message..."
-            : status === "waiting"
-              ? "Type to redirect agent, or Y/A to approve..."
-              : "Enter directive or / for commands & skills..."
+          showPlanReview
+            ? "Type feedback to refine, or Y to approve, N to reject..."
+            : status === "running"
+              ? "Queue a follow-up message..."
+              : status === "waiting"
+                ? "Type to redirect agent, or Y/A to approve..."
+                : "Enter directive or / for commands & skills..."
         }
         focused={
           status === "running"
