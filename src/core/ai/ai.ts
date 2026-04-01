@@ -243,6 +243,27 @@ export interface ModelInfo {
   contextLength?: number;
 }
 
+/**
+ * Check whether a model supports extended thinking based on its ID.
+ *
+ * Thinking is available on Claude 3.7 Sonnet and all Claude 4.x+ models
+ * (Sonnet, Opus, Haiku 4.5). Works for Anthropic direct, Bedrock, and
+ * Pensar provider IDs.
+ */
+export function modelSupportsThinking(modelId: string): boolean {
+  // Normalize: strip provider prefixes so we match the base Claude model ID
+  const normalized = modelId
+    .replace(/^pensar:/, "")
+    .replace(/^(us\.|eu\.|global\.|ap\.)?anthropic\./, "");
+
+  return (
+    /^claude-3-7-sonnet/.test(normalized) ||
+    /^claude-sonnet-4/.test(normalized) ||
+    /^claude-opus-4/.test(normalized) ||
+    /^claude-haiku-4-5/.test(normalized)
+  );
+}
+
 /** Cache token metrics extracted from Anthropic providerMetadata */
 export interface CacheMetrics {
   cacheReadInputTokens: number;
@@ -274,6 +295,10 @@ export interface StreamResponseOpts {
   onSummarized?: (summary: string) => void;
   /** Called when Anthropic cache metrics are present in a step's providerMetadata */
   onCacheMetrics?: (metrics: CacheMetrics) => void;
+  /** Enable extended thinking for supported models (Anthropic Claude 3.7+) */
+  enableThinking?: boolean;
+  /** Max thinking tokens per turn. Defaults to 10_000. */
+  thinkingBudget?: number;
 }
 
 export function streamResponse(
@@ -294,6 +319,8 @@ export function streamResponse(
     authConfig,
     onFinish,
     onCacheMetrics,
+    enableThinking,
+    thinkingBudget,
   } = opts;
 
   // Wrap onStepFinish to fire usage callback for every step.
@@ -326,6 +353,25 @@ export function streamResponse(
     effectiveSystem = undefined;
   }
 
+  // Build providerOptions for extended thinking when enabled on a supported model.
+  // Caching uses message-level cache_control (withCachedSystemPrompt / withCachedLastMessage),
+  // not providerOptions, so there is no collision.
+  // Note: when thinking is enabled, temperature must not be set (Anthropic rejects it).
+  const useThinking =
+    enableThinking &&
+    isAnthropicProvider(model) &&
+    modelSupportsThinking(model);
+  const providerOptions = useThinking
+    ? {
+        anthropic: {
+          thinking: {
+            type: "enabled" as const,
+            budgetTokens: thinkingBudget ?? 10_000,
+          },
+        },
+      }
+    : undefined;
+
   let rateLimitRetryCount = 0;
 
   try {
@@ -338,6 +384,7 @@ export function streamResponse(
       toolChoice,
       tools,
       maxRetries: 3,
+      providerOptions,
       prepareStep: (opts) => {
         // Update the container with the latest messages
         messagesContainer.current = opts.messages;

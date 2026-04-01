@@ -8,7 +8,7 @@ import {
 } from "react";
 import { useKeyboard } from "@opentui/react";
 import { ScrollBoxRenderable } from "@opentui/core";
-import type { ModelInfo } from "../../../core/ai";
+import { modelSupportsThinking, type ModelInfo } from "../../../core/ai";
 import { getAvailableModels } from "../../../core/providers/utils";
 import type { Config } from "../../../core/config/config";
 import { useTheme } from "../../theme";
@@ -74,13 +74,15 @@ function PickerRow({
 type NavigationItem =
   | { type: "provider"; provider: string }
   | { type: "model"; model: ModelInfo }
-  | { type: "local-input"; field: LocalInputField };
+  | { type: "local-input"; field: LocalInputField }
+  | { type: "reasoning" };
 
 type LocalInputField = "url" | "model";
 
 function getNavItemId(item: NavigationItem): string {
   if (item.type === "provider") return `provider-${item.provider}`;
   if (item.type === "model") return `model-${item.model.id}`;
+  if (item.type === "reasoning") return "reasoning-toggle";
   return `local-input-${item.field}`;
 }
 
@@ -93,6 +95,8 @@ export interface ModelPickerProps {
   onConfigUpdate?: (update: Partial<Config>) => Promise<void>;
   focused?: boolean;
   isModelUserSelected?: boolean;
+  reasoningEnabled?: boolean;
+  onReasoningToggle?: (enabled: boolean) => void;
 }
 
 export function ModelPicker({
@@ -104,6 +108,8 @@ export function ModelPicker({
   onConfigUpdate,
   focused = true,
   isModelUserSelected = false,
+  reasoningEnabled = false,
+  onReasoningToggle,
 }: ModelPickerProps) {
   const { colors } = useTheme();
   const scrollBoxRef = useRef<ScrollBoxRenderable | null>(null);
@@ -219,8 +225,12 @@ export function ModelPicker({
         }
       }
     }
+    // Reasoning toggle — shown when the callback is provided
+    if (onReasoningToggle) {
+      items.push({ type: "reasoning" });
+    }
     return items;
-  }, [groupedModels, expandedProviders]);
+  }, [groupedModels, expandedProviders, onReasoningToggle]);
 
   // Sync focusedIndex when selected model changes (e.g. on initial load)
   useEffect(() => {
@@ -262,6 +272,10 @@ export function ModelPicker({
     setEditingLocalField(null);
     commitLocalConfig(localUrl, localModelName);
   }, [localUrl, localModelName, commitLocalConfig]);
+
+  const thinkingSupported = modelSupportsThinking(selectedModel.id);
+  const isReasoningFocused =
+    navigationItems[focusedIndex]?.type === "reasoning";
 
   // Handle keyboard navigation (most keys disabled while editing local input)
   const handleKeyboard = useCallback(
@@ -312,6 +326,16 @@ export function ModelPicker({
         }
         if (onCancel) {
           onCancel();
+          return true;
+        }
+        return false;
+      }
+
+      // Space - toggle reasoning checkbox
+      if (key.name === "space") {
+        const currentItem = navigationItems[focusedIndex];
+        if (currentItem?.type === "reasoning" && thinkingSupported) {
+          onReasoningToggle?.(!reasoningEnabled);
           return true;
         }
         return false;
@@ -400,6 +424,9 @@ export function ModelPicker({
       onConfirm,
       onCancel,
       searchQuery,
+      reasoningEnabled,
+      onReasoningToggle,
+      thinkingSupported,
     ],
   );
 
@@ -661,6 +688,27 @@ export function ModelPicker({
           return elements;
         })}
       </scrollbox>
+
+      {/* Reasoning toggle */}
+      {onReasoningToggle && (
+        <box flexShrink={0} paddingTop={1}>
+          <PickerRow id="reasoning-toggle">
+            <text
+              fg={
+                isReasoningFocused
+                  ? colors.primary
+                  : !thinkingSupported
+                    ? colors.textMuted
+                    : colors.text
+              }
+            >
+              {reasoningEnabled && thinkingSupported ? "[x]" : "[ ]"} Extended
+              Thinking
+              {!thinkingSupported ? " (not supported)" : ""}
+            </text>
+          </PickerRow>
+        </box>
+      )}
 
       {/* Help text for inline editing only — general controls are in ModelPickerDialog */}
       {editingLocalField && (

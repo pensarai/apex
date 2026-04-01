@@ -41,6 +41,9 @@ interface AgentContextValue {
   hasExecuted: boolean;
   thinking: boolean;
   setThinking: (thinking: boolean) => void;
+  /** Whether extended thinking is enabled for supported models (persisted to config). */
+  reasoningEnabled: boolean;
+  setReasoningEnabled: (enabled: boolean) => void;
   isExecuting: boolean;
   setIsExecuting: (isExecuting: boolean) => void;
   /** The agent's working directory (session rootPath), shown in footer. */
@@ -79,6 +82,9 @@ export function AgentProvider({ children }: AgentProviderProps) {
   });
   const [hasExecuted, setHasExecuted] = useState<boolean>(false);
   const [thinking, setThinking] = useState<boolean>(false);
+  const [reasoningEnabled, setReasoningEnabledInternal] = useState<boolean>(
+    () => appConfig.data?.reasoningEnabled ?? false,
+  );
   const [isExecuting, setIsExecuting] = useState<boolean>(false);
   const [sessionCwd, setSessionCwd] = useState<string | null>(null);
 
@@ -93,6 +99,13 @@ export function AgentProvider({ children }: AgentProviderProps) {
         writeErrorLog(err, "AGENT_CONTEXT");
       });
     }
+  }, []);
+
+  const setReasoningEnabled = useCallback((enabled: boolean) => {
+    setReasoningEnabledInternal(enabled);
+    updateConfig({ reasoningEnabled: enabled }).catch((err) => {
+      writeErrorLog(err, "AGENT_CONTEXT");
+    });
   }, []);
 
   // Re-evaluate the default model whenever config changes (e.g. after
@@ -162,6 +175,8 @@ export function AgentProvider({ children }: AgentProviderProps) {
       hasExecuted,
       thinking,
       setThinking,
+      reasoningEnabled,
+      setReasoningEnabled,
       isExecuting,
       setIsExecuting,
       sessionCwd,
@@ -174,6 +189,7 @@ export function AgentProvider({ children }: AgentProviderProps) {
       tokenUsage,
       hasExecuted,
       thinking,
+      reasoningEnabled,
       isExecuting,
       sessionCwd,
       addTokenUsage,

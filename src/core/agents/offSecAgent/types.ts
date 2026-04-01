@@ -239,6 +239,9 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    * never see them.
    */
   environmentVariables?: Record<string, string>;
+
+  /** Enable extended thinking (reasoning) for supported models. */
+  enableThinking?: boolean;
 };
 
 /**
@@ -303,6 +306,9 @@ export interface SpecializedAgentInput {
    * Forwarded to the underlying {@link OffensiveSecurityAgentInput}.
    */
   environmentVariables?: Record<string, string>;
+
+  /** Enable extended thinking (reasoning) for supported models. */
+  enableThinking?: boolean;
 }
 
 /**
