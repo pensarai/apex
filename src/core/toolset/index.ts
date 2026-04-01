@@ -197,6 +197,62 @@ export const ALL_TOOLS: ToolDefinition[] = [
     defaultEnabled: true,
   },
 
+  // Computer use tools (desktop automation)
+  {
+    id: "computer_screenshot",
+    name: "Screenshot",
+    description: "Capture screen",
+    detail:
+      "Take a screenshot of the current desktop. Returns a base64 PNG image and saves to the evidence directory. Used by the Computer Use agent for visual observation.",
+    category: "browser",
+    defaultEnabled: true,
+  },
+  {
+    id: "computer_mouse_click",
+    name: "Mouse Click",
+    description: "Click at coordinates",
+    detail:
+      "Click the mouse at specific (x, y) screen coordinates. Supports left, right, and middle button clicks. Used for interacting with GUI elements.",
+    category: "browser",
+    defaultEnabled: true,
+  },
+  {
+    id: "computer_type_text",
+    name: "Type Text",
+    description: "Type via keyboard",
+    detail:
+      "Type text using the keyboard as if on a physical keyboard. Use for filling in forms, entering commands in terminal emulators, or any text input in GUI applications.",
+    category: "browser",
+    defaultEnabled: true,
+  },
+  {
+    id: "computer_key_press",
+    name: "Key Press",
+    description: "Press key combo",
+    detail:
+      "Press a key or key combination (e.g. Return, ctrl+c, alt+Tab). Used for keyboard shortcuts, navigation, and special key presses in desktop applications.",
+    category: "browser",
+    defaultEnabled: true,
+  },
+  {
+    id: "computer_screen_info",
+    name: "Screen Info",
+    description: "Get screen state",
+    detail:
+      "Get screen dimensions, current mouse position, and active window title. Used to orient before desktop interaction.",
+    category: "browser",
+    defaultEnabled: true,
+  },
+  {
+    id: "delegate_to_computer_use_agent",
+    name: "Computer Use Agent",
+    description: "Delegate GUI tasks",
+    detail:
+      "Delegate tasks to the specialized Computer Use subagent for autonomous desktop GUI interaction. The agent uses screenshots and mouse/keyboard to interact with graphical applications.",
+    category: "utility",
+    defaultEnabled: true,
+  },
+
   // Reporting tools
   {
     id: "document_vulnerability",

@@ -10,6 +10,13 @@ export {
 export { createBrowserToolset, BROWSER_TOOL_NAMES } from "./browserTools";
 export type { BrowserToolName } from "./browserTools";
 
+// Computer use tools (desktop automation via xdotool / cliclick)
+export {
+  createComputerUseToolset,
+  COMPUTER_USE_TOOL_NAMES,
+} from "./computerUse";
+export type { ComputerUseToolName } from "./computerUse";
+
 // Sandbox Playwright helpers (check / install Playwright in a sandbox)
 export {
   checkSandboxPlaywright,
@@ -51,6 +58,7 @@ export { runAttackSurface } from "./runAttackSurface";
 export { spawnPentestSwarm } from "./spawnPentestSwarm";
 export { spawnCodingAgent } from "./spawnCodingAgent";
 export { runPentestWorkflow } from "./runPentestWorkflow";
+export { delegateComputerUse } from "./delegateComputerUse";
 
 // Reporting / benchmark tools
 // export { generateReport } from "./generateReport";
@@ -81,6 +89,7 @@ export { checkpointState } from "./checkpointState";
 
 import type { ToolContext } from "./types";
 import { createBrowserToolset } from "./browserTools";
+import { createComputerUseToolset } from "./computerUse";
 import { executeCommand } from "./executeCommand";
 import { httpRequest } from "./httpRequest";
 import { documentVulnerability } from "./documentFinding";
@@ -106,6 +115,7 @@ import { runAttackSurface } from "./runAttackSurface";
 import { spawnPentestSwarm } from "./spawnPentestSwarm";
 import { spawnCodingAgent } from "./spawnCodingAgent";
 import { runPentestWorkflow } from "./runPentestWorkflow";
+import { delegateComputerUse } from "./delegateComputerUse";
 // import { generateReport } from "./generateReport";
 import { provideComparisonResults } from "./provideComparisonResults";
 import { addMemory } from "./addMemory";
@@ -132,6 +142,9 @@ export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
   return {
     // Browser automation tools (8 tools from Playwright MCP)
     ...createBrowserToolset(ctx),
+
+    // Computer use tools (9 desktop automation tools via xdotool / cliclick)
+    ...createComputerUseToolset(ctx),
 
     // Core pentest tools
     execute_command: executeCommand(ctx),
@@ -166,6 +179,7 @@ export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
     spawn_pentest_swarm: spawnPentestSwarm(ctx),
     spawn_coding_agent: spawnCodingAgent(ctx),
     run_pentest_workflow: runPentestWorkflow(ctx),
+    delegate_to_computer_use_agent: delegateComputerUse(ctx),
 
     // Reporting / benchmark tools
     // generate_report: generateReport(ctx),
@@ -209,6 +223,16 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "browser_evaluate",
   "browser_console",
   "browser_get_cookies",
+  // Computer use (desktop automation)
+  "computer_screenshot",
+  "computer_mouse_click",
+  "computer_mouse_double_click",
+  "computer_mouse_move",
+  "computer_mouse_drag",
+  "computer_type_text",
+  "computer_key_press",
+  "computer_scroll",
+  "computer_screen_info",
   // Core pentest
   "execute_command",
   "http_request",
@@ -229,6 +253,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "spawn_pentest_swarm",
   "spawn_coding_agent",
   "run_pentest_workflow",
+  "delegate_to_computer_use_agent",
   // "generate_report",
   "provide_comparison_results",
   // Memory
@@ -266,6 +291,11 @@ export const PLAN_MODE_TOOL_NAMES: ToolName[] = [
   "browser_evaluate",
   "browser_console",
   "browser_get_cookies",
+  // Computer use (read-only desktop inspection)
+  "computer_screenshot",
+  "computer_mouse_move",
+  "computer_scroll",
+  "computer_screen_info",
   // Core pentest (read-only)
   "execute_command",
   "http_request",
@@ -282,6 +312,7 @@ export const PLAN_MODE_TOOL_NAMES: ToolName[] = [
   "spawn_pentest_swarm",
   "spawn_coding_agent",
   "run_pentest_workflow",
+  "delegate_to_computer_use_agent",
   "provide_comparison_results",
   // Memory
   "add_memory",
