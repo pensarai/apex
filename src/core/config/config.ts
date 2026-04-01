@@ -14,6 +14,7 @@ export interface Config {
   googleAPIKey?: string | null;
   openRouterAPIKey?: string | null;
   inceptionAPIKey?: string | null;
+  arceeAPIKey?: string | null;
   bedrockAPIKey?: string | null;
   pensarAPIKey?: string | null;
   responsibleUseAccepted: boolean;
@@ -92,6 +93,7 @@ export async function get(): Promise<Config> {
       parsedConfig.openRouterAPIKey ?? process.env.OPENROUTER_API_KEY,
     inceptionAPIKey:
       parsedConfig.inceptionAPIKey ?? process.env.INCEPTION_API_KEY,
+    arceeAPIKey: parsedConfig.arceeAPIKey ?? process.env.ARCEE_API_KEY,
     bedrockAPIKey: parsedConfig.bedrockAPIKey ?? process.env.BEDROCK_API_KEY,
     pensarAPIKey: parsedConfig.pensarAPIKey ?? process.env.PENSAR_API_KEY,
     daytonaAPIKey: parsedConfig.daytonaAPIKey ?? process.env.DAYTONA_API_KEY,

@@ -47,6 +47,7 @@ export type AIModelProvider =
   | "bedrock"
   | "pensar"
   | "inception"
+  | "arcee"
   | "local";
 
 function checkIfRateLimitError(error: unknown): boolean {

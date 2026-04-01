@@ -36,6 +36,7 @@ export type AIAuthConfig = {
   googleAPIKey?: string;
   openRouterAPIKey?: string;
   inceptionAPIKey?: string;
+  arceeAPIKey?: string;
   pensarAPIKey?: string;
   // WorkOS CLI auth
   accessToken?: string;
@@ -68,6 +69,7 @@ export function buildAuthConfig(cfg: {
   googleAPIKey?: string | null;
   openRouterAPIKey?: string | null;
   inceptionAPIKey?: string | null;
+  arceeAPIKey?: string | null;
   pensarAPIKey?: string | null;
   accessToken?: string | null;
   refreshToken?: string | null;
@@ -83,6 +85,7 @@ export function buildAuthConfig(cfg: {
     googleAPIKey: cfg.googleAPIKey ?? undefined,
     openRouterAPIKey: cfg.openRouterAPIKey ?? undefined,
     inceptionAPIKey: cfg.inceptionAPIKey ?? undefined,
+    arceeAPIKey: cfg.arceeAPIKey ?? undefined,
     pensarAPIKey: cfg.pensarAPIKey ?? undefined,
     accessToken: cfg.accessToken ?? undefined,
     refreshToken: cfg.refreshToken ?? undefined,
@@ -118,6 +121,8 @@ export function getProviderModel(
   const bedrockRegion = authConfig?.bedrock?.region || process.env.AWS_REGION;
   const inceptionApiKey =
     authConfig?.inceptionAPIKey || process.env.INCEPTION_API_KEY;
+  const arceeApiKey =
+    authConfig?.arceeAPIKey || process.env.ARCEE_API_KEY;
   const localBaseURL =
     authConfig?.local?.baseURL ||
     process.env.LOCAL_MODEL_URL ||
@@ -149,6 +154,16 @@ export function getProviderModel(
         baseURL: "https://api.inceptionlabs.ai/v1",
       });
       providerModel = inception("mercury-2");
+      break;
+    }
+
+    case "arcee": {
+      const arcee = createOpenAICompatible({
+        name: "arcee",
+        apiKey: arceeApiKey,
+        baseURL: "https://api.arcee.ai/api/v1",
+      });
+      providerModel = arcee(model);
       break;
     }
 
