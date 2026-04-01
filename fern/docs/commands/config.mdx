@@ -23,8 +23,12 @@ Apex stores all configuration at `~/.pensar/config.json`. This includes:
 - **Auth tokens** — configured via `/auth`
 - **Workspace info** — workspace ID and slug from Pensar Console
 
+Additionally, some integrations are configured via environment variables:
+
+- **W&B Weave tracing** — `WANDB_API_KEY`, `WANDB_ENTITY`, and optionally `WANDB_PROJECT` (see [W&B integration guide](/apex/integrations/wandb))
+
 <Callout intent="info">
-  Most configuration is managed through dedicated commands (`/providers`, `/models`, `/themes`, `/auth`). The `/config` dialog provides a unified view of your current settings.
+  Most configuration is managed through dedicated commands (`/providers`, `/models`, `/themes`, `/auth`). The `/config` dialog provides a unified view of your current settings. Integration-specific configuration via environment variables is documented in the respective integration guides.
 </Callout>
 
 ## Related Commands

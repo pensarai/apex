@@ -163,6 +163,14 @@ You can extend operator mode with custom skills using `/create-skill`. Skills ar
   authorization to test. Unauthorized testing is illegal.
 </Callout>
 
+## Integrations
+
+### W&B Weave Tracing
+
+Operator sessions can stream trace records to [Weights & Biases Weave](/apex/integrations/wandb) for observability and fine-tuning data collection. When `WANDB_API_KEY` and `WANDB_ENTITY` environment variables are set, tracing activates automatically — every agent step, including token usage and cache metrics, is logged to your W&B project in real time.
+
+See the [W&B Weave integration guide](/apex/integrations/wandb) for setup instructions.
+
 ## After Starting
 
 Once you start an operator session:
@@ -170,6 +178,7 @@ Once you start an operator session:
 - The AI agent begins analysis based on your chosen mode
 - You interact in real time, approving or steering actions
 - Findings are reported as they're discovered
+- If W&B is configured, trace records stream to Weave throughout the session
 - The session is automatically saved and can be resumed via `/sessions`
 
 ## Related Commands

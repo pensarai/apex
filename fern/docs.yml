@@ -78,6 +78,10 @@ navigation:
             path: ./docs/commands/create-skill.mdx
           - page: /help
             path: ./docs/commands/help.mdx
+      - section: Integrations
+        contents:
+          - page: Weights & Biases (W&B) Weave
+            path: ./docs/integrations/wandb.mdx
       - section: CLI Commands
         contents:
           - page: pensar pentest

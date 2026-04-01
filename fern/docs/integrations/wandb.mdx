@@ -1,0 +1,100 @@
+---
+title: "Weights & Biases (W&B) Weave"
+description: "Stream agent trace records to W&B Weave for observability and fine-tuning data collection"
+---
+
+## Overview
+
+Apex integrates with [Weights & Biases Weave](https://wandb.ai/site/weave) to stream agent trace records in real time. When configured, every agent step — including token usage, cache metrics, tool calls, and state checkpoints — is logged to your W&B project as structured trace data.
+
+This integration is useful for:
+
+- **Fine-tuning data collection** — capture structured input/output pairs from real penetration testing sessions
+- **Observability** — monitor agent behavior, token consumption, and prompt caching across runs
+- **Debugging** — replay and inspect individual agent steps after a session completes
+
+## Prerequisites
+
+- A [Weights & Biases](https://wandb.ai) account
+- The `weave` npm package (included as an optional dependency)
+
+## Configuration
+
+W&B tracing activates automatically when the required environment variables are set. No changes to your Apex workflow are needed — just configure the credentials and run `/operator` as usual.
+
+### Environment Variables
+
+| Variable | Required | Description |
+| --- | --- | --- |
+| `WANDB_API_KEY` | Yes | Your W&B API key from [wandb.ai/authorize](https://wandb.ai/authorize) |
+| `WANDB_ENTITY` | Yes | Your W&B team or username |
+| `WANDB_PROJECT` | No | Project name (defaults to `apex-traces`) |
+
+```bash
+export WANDB_API_KEY="your-api-key"
+export WANDB_ENTITY="your-team"
+export WANDB_PROJECT="apex-traces"   # optional
+```
+
+<Callout intent="info">
+  When running in the Kali Linux container, add these variables to your `.env` file before starting the container.
+</Callout>
+
+## What Gets Logged
+
+Each operator session streams three types of trace records to Weave:
+
+| Record Type | Description |
+| --- | --- |
+| **init** | Agent setup context — model identifier, system prompt hash, available tools, session ID, and target |
+| **step** | Per-step data — token usage (input, output, cache read/write), tool calls with arguments and results, agent text output, and timing |
+| **checkpoint** | State assessments — confirmed vulnerabilities, blockers, and the agent's current strategy |
+
+### Token & Cache Metrics
+
+Step records include Anthropic prompt caching metrics when available:
+
+- `cacheReadTokens` — tokens served from the prompt cache (reduced cost)
+- `cacheWriteTokens` — tokens written to the prompt cache
+
+These metrics help you understand caching efficiency and optimize costs across sessions.
+
+## How It Works
+
+When you start an `/operator` session with W&B credentials configured:
+
+<Steps>
+  <Step title="Auto-Detection">
+    Apex checks for `WANDB_API_KEY` and `WANDB_ENTITY` environment variables at session start.
+  </Step>
+  <Step title="Weave Initialization">
+    The Weave SDK is dynamically imported and initialized with your project configuration. Early trace records are buffered so none are lost during setup.
+  </Step>
+  <Step title="Real-Time Streaming">
+    As the agent runs, trace records are emitted via the internal event bus and streamed to W&B Weave in the background. This adds no overhead to agent execution.
+  </Step>
+  <Step title="Flush on Completion">
+    When the session ends (success, abort, or error), Apex flushes any remaining records to W&B before cleanup.
+  </Step>
+</Steps>
+
+<Callout intent="warning">
+  The `weave` package is an optional dependency. If it is not installed, W&B integration is silently skipped even when environment variables are set. Run `bun install` or `npm install` to ensure optional dependencies are available.
+</Callout>
+
+## Viewing Traces
+
+After a session completes, navigate to your W&B project to inspect traces:
+
+1. Go to [wandb.ai](https://wandb.ai) and select your project (e.g., `apex-traces`)
+2. Open the **Weave** tab to browse traced operations
+3. Each `apex_trace_record` call contains the full trace record in its inputs, with a structured summary in the output
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| No traces appear in W&B | Missing `WANDB_API_KEY` or `WANDB_ENTITY` | Verify environment variables are set and exported |
+| `[wandb] Weave init failed` in logs | Invalid API key or network issue | Check your API key at [wandb.ai/authorize](https://wandb.ai/authorize) |
+| `weave` import fails | Package not installed | Run `bun install` to install optional dependencies |
+| Traces from only some agents | Expected behavior | All agents (orchestrator + sub-agents) emit trace records through a shared event bus |
