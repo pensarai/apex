@@ -10,6 +10,7 @@
  */
 
 import {
+  execFileSync,
   execSync,
   type ExecSyncOptionsWithStringEncoding,
 } from "child_process";
@@ -129,7 +130,7 @@ export class LinuxBackend implements DesktopBackend {
   }
 
   keyPress(keys: string): void {
-    exec(`xdotool key --clearmodifiers ${keys}`);
+    execFileSync("xdotool", ["key", "--clearmodifiers", keys], EXEC_OPTS);
   }
 
   getMousePosition(): MousePosition {
@@ -214,7 +215,7 @@ export class DarwinBackend implements DesktopBackend {
   }
 
   keyPress(keys: string): void {
-    exec(`cliclick kp:${keys}`);
+    execFileSync("cliclick", [`kp:${keys}`], EXEC_OPTS);
   }
 
   getMousePosition(): MousePosition {
