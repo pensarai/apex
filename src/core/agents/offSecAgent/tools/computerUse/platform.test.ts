@@ -1,10 +1,29 @@
 import { describe, it, expect } from "vitest";
-import { detectPlatform, LinuxBackend, DarwinBackend } from "./platform";
+import {
+  detectPlatform,
+  LinuxBackend,
+  DarwinBackend,
+  WindowsBackend,
+} from "./platform";
+
+const BACKEND_METHODS = [
+  "screenshot",
+  "mouseMove",
+  "mouseClick",
+  "mouseDoubleClick",
+  "typeText",
+  "keyPress",
+  "getMousePosition",
+  "getScreenSize",
+  "mouseDrag",
+  "scroll",
+  "getActiveWindowTitle",
+] as const;
 
 describe("Computer Use platform detection", () => {
   it("should detect the current platform", () => {
     const platform = detectPlatform();
-    expect(["linux", "darwin", "unsupported"]).toContain(platform);
+    expect(["linux", "darwin", "win32", "unsupported"]).toContain(platform);
   });
 
   it("should return linux on Linux", () => {
@@ -16,40 +35,39 @@ describe("Computer Use platform detection", () => {
     if (process.platform !== "darwin") return;
     expect(detectPlatform()).toBe("darwin");
   });
+
+  it("should return win32 on Windows", () => {
+    if (process.platform !== "win32") return;
+    expect(detectPlatform()).toBe("win32");
+  });
 });
 
 describe("LinuxBackend", () => {
-  it("should be constructable", () => {
+  it("should be constructable and implement DesktopBackend", () => {
     const backend = new LinuxBackend();
     expect(backend).toBeDefined();
-    expect(typeof backend.screenshot).toBe("function");
-    expect(typeof backend.mouseMove).toBe("function");
-    expect(typeof backend.mouseClick).toBe("function");
-    expect(typeof backend.mouseDoubleClick).toBe("function");
-    expect(typeof backend.typeText).toBe("function");
-    expect(typeof backend.keyPress).toBe("function");
-    expect(typeof backend.getMousePosition).toBe("function");
-    expect(typeof backend.getScreenSize).toBe("function");
-    expect(typeof backend.mouseDrag).toBe("function");
-    expect(typeof backend.scroll).toBe("function");
-    expect(typeof backend.getActiveWindowTitle).toBe("function");
+    for (const method of BACKEND_METHODS) {
+      expect(typeof backend[method]).toBe("function");
+    }
   });
 });
 
 describe("DarwinBackend", () => {
-  it("should be constructable", () => {
+  it("should be constructable and implement DesktopBackend", () => {
     const backend = new DarwinBackend();
     expect(backend).toBeDefined();
-    expect(typeof backend.screenshot).toBe("function");
-    expect(typeof backend.mouseMove).toBe("function");
-    expect(typeof backend.mouseClick).toBe("function");
-    expect(typeof backend.mouseDoubleClick).toBe("function");
-    expect(typeof backend.typeText).toBe("function");
-    expect(typeof backend.keyPress).toBe("function");
-    expect(typeof backend.getMousePosition).toBe("function");
-    expect(typeof backend.getScreenSize).toBe("function");
-    expect(typeof backend.mouseDrag).toBe("function");
-    expect(typeof backend.scroll).toBe("function");
-    expect(typeof backend.getActiveWindowTitle).toBe("function");
+    for (const method of BACKEND_METHODS) {
+      expect(typeof backend[method]).toBe("function");
+    }
+  });
+});
+
+describe("WindowsBackend", () => {
+  it("should be constructable and implement DesktopBackend", () => {
+    const backend = new WindowsBackend();
+    expect(backend).toBeDefined();
+    for (const method of BACKEND_METHODS) {
+      expect(typeof backend[method]).toBe("function");
+    }
   });
 });

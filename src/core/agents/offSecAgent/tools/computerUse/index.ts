@@ -1,5 +1,6 @@
 /**
- * Computer Use tools — desktop automation via xdotool (Linux) and cliclick (macOS).
+ * Computer Use tools — desktop automation via xdotool (Linux), cliclick (macOS),
+ * and PowerShell/.NET (Windows).
  *
  * Provides low-level desktop interaction primitives: screenshot, mouse clicks,
  * keyboard input, scrolling, and drag operations. These tools enable agents
@@ -9,6 +10,7 @@
  * The tools are platform-aware:
  * - Linux: xdotool + scrot/ImageMagick
  * - macOS: cliclick + screencapture
+ * - Windows: PowerShell + .NET System.Windows.Forms / user32.dll
  */
 
 import type { ToolContext } from "../types";

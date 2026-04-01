@@ -1,8 +1,9 @@
 /**
  * Platform detection and desktop automation backend.
  *
- * Linux  → xdotool + scrot/import (ImageMagick)
- * macOS  → cliclick + screencapture
+ * Linux   → xdotool + scrot/import (ImageMagick)
+ * macOS   → cliclick + screencapture
+ * Windows → PowerShell + .NET System.Windows.Forms / user32.dll
  *
  * Each backend implements the same {@link DesktopBackend} interface so
  * individual tools stay platform-agnostic.
@@ -19,12 +20,13 @@ const EXEC_OPTS: ExecSyncOptionsWithStringEncoding = {
   stdio: ["pipe", "pipe", "pipe"],
 };
 
-export type Platform = "linux" | "darwin" | "unsupported";
+export type Platform = "linux" | "darwin" | "win32" | "unsupported";
 
 export function detectPlatform(): Platform {
   const p = process.platform;
   if (p === "linux") return "linux";
   if (p === "darwin") return "darwin";
+  if (p === "win32") return "win32";
   return "unsupported";
 }
 
@@ -262,6 +264,245 @@ export class DarwinBackend implements DesktopBackend {
 }
 
 // ---------------------------------------------------------------------------
+// Windows backend (PowerShell + .NET System.Windows.Forms / user32.dll)
+// ---------------------------------------------------------------------------
+
+/**
+ * Run a PowerShell snippet and return trimmed stdout.
+ *
+ * Uses `-NoProfile -NonInteractive -Command` so startup is fast and
+ * there is no profile pollution. The snippet can use any .NET class
+ * available in the default PowerShell/.NET runtime.
+ */
+function ps(script: string): string {
+  return execSync(
+    `powershell -NoProfile -NonInteractive -Command ${JSON.stringify(script)}`,
+    EXEC_OPTS,
+  ).trim();
+}
+
+/**
+ * Shared C# helper that is injected once per PowerShell call when we need
+ * mouse or keyboard simulation via `user32.dll` P/Invoke.
+ */
+const WIN32_INPUT_TYPE = `
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+public class Win32Input {
+    [DllImport("user32.dll")] public static extern bool SetCursorPos(int X, int Y);
+    [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT lpPoint);
+    [DllImport("user32.dll")] public static extern void mouse_event(uint dwFlags, int dx, int dy, int dwData, int dwExtraInfo);
+    [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll", CharSet=CharSet.Auto)] public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder lpString, int nMaxCount);
+    [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X; public int Y; }
+
+    public const uint MOUSEEVENTF_LEFTDOWN   = 0x0002;
+    public const uint MOUSEEVENTF_LEFTUP     = 0x0004;
+    public const uint MOUSEEVENTF_RIGHTDOWN  = 0x0008;
+    public const uint MOUSEEVENTF_RIGHTUP    = 0x0010;
+    public const uint MOUSEEVENTF_MIDDLEDOWN = 0x0020;
+    public const uint MOUSEEVENTF_MIDDLEUP   = 0x0040;
+    public const uint MOUSEEVENTF_WHEEL      = 0x0800;
+}
+"@
+`;
+
+export class WindowsBackend implements DesktopBackend {
+  screenshot(outputPath: string): string {
+    ps(
+      `Add-Type -AssemblyName System.Windows.Forms; ` +
+        `$bmp = New-Object System.Drawing.Bitmap([System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Width, [System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Height); ` +
+        `$g = [System.Drawing.Graphics]::FromImage($bmp); ` +
+        `$g.CopyFromScreen(0, 0, 0, 0, $bmp.Size); ` +
+        `$bmp.Save('${outputPath.replace(/'/g, "''")}'); ` +
+        `$g.Dispose(); $bmp.Dispose()`,
+    );
+    return outputPath;
+  }
+
+  mouseMove(x: number, y: number): void {
+    ps(`${WIN32_INPUT_TYPE} [Win32Input]::SetCursorPos(${x}, ${y})`);
+  }
+
+  mouseClick(
+    button: "left" | "right" | "middle" = "left",
+    x?: number,
+    y?: number,
+  ): void {
+    const downUp =
+      button === "right"
+        ? "[Win32Input]::MOUSEEVENTF_RIGHTDOWN, [Win32Input]::MOUSEEVENTF_RIGHTUP"
+        : button === "middle"
+          ? "[Win32Input]::MOUSEEVENTF_MIDDLEDOWN, [Win32Input]::MOUSEEVENTF_MIDDLEUP"
+          : "[Win32Input]::MOUSEEVENTF_LEFTDOWN, [Win32Input]::MOUSEEVENTF_LEFTUP";
+
+    const movePrefix =
+      x != null && y != null ? `[Win32Input]::SetCursorPos(${x}, ${y}); ` : "";
+
+    ps(
+      `${WIN32_INPUT_TYPE} ${movePrefix}` +
+        `$d, $u = ${downUp}; ` +
+        `[Win32Input]::mouse_event($d, 0, 0, 0, 0); ` +
+        `Start-Sleep -Milliseconds 30; ` +
+        `[Win32Input]::mouse_event($u, 0, 0, 0, 0)`,
+    );
+  }
+
+  mouseDoubleClick(x?: number, y?: number): void {
+    const movePrefix =
+      x != null && y != null ? `[Win32Input]::SetCursorPos(${x}, ${y}); ` : "";
+
+    ps(
+      `${WIN32_INPUT_TYPE} ${movePrefix}` +
+        `[Win32Input]::mouse_event([Win32Input]::MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0); ` +
+        `[Win32Input]::mouse_event([Win32Input]::MOUSEEVENTF_LEFTUP, 0, 0, 0, 0); ` +
+        `Start-Sleep -Milliseconds 80; ` +
+        `[Win32Input]::mouse_event([Win32Input]::MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0); ` +
+        `[Win32Input]::mouse_event([Win32Input]::MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)`,
+    );
+  }
+
+  typeText(text: string): void {
+    ps(
+      `Add-Type -AssemblyName System.Windows.Forms; ` +
+        `[System.Windows.Forms.SendKeys]::SendWait(${JSON.stringify(text)})`,
+    );
+  }
+
+  keyPress(keys: string): void {
+    const mapped = mapKeysToSendKeys(keys);
+    ps(
+      `Add-Type -AssemblyName System.Windows.Forms; ` +
+        `[System.Windows.Forms.SendKeys]::SendWait('${mapped}')`,
+    );
+  }
+
+  getMousePosition(): MousePosition {
+    const raw = ps(
+      `${WIN32_INPUT_TYPE} $p = New-Object Win32Input+POINT; ` +
+        `[Win32Input]::GetCursorPos([ref]$p); "$($p.X),$($p.Y)"`,
+    );
+    const [xStr, yStr] = raw.split(",");
+    return {
+      x: parseInt(xStr ?? "0", 10),
+      y: parseInt(yStr ?? "0", 10),
+    };
+  }
+
+  getScreenSize(): ScreenSize {
+    const raw = ps(
+      `Add-Type -AssemblyName System.Windows.Forms; ` +
+        `$s = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds; "$($s.Width),$($s.Height)"`,
+    );
+    const [wStr, hStr] = raw.split(",");
+    return {
+      width: parseInt(wStr ?? "0", 10),
+      height: parseInt(hStr ?? "0", 10),
+    };
+  }
+
+  mouseDrag(startX: number, startY: number, endX: number, endY: number): void {
+    ps(
+      `${WIN32_INPUT_TYPE} ` +
+        `[Win32Input]::SetCursorPos(${startX}, ${startY}); ` +
+        `[Win32Input]::mouse_event([Win32Input]::MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0); ` +
+        `Start-Sleep -Milliseconds 50; ` +
+        `[Win32Input]::SetCursorPos(${endX}, ${endY}); ` +
+        `Start-Sleep -Milliseconds 50; ` +
+        `[Win32Input]::mouse_event([Win32Input]::MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)`,
+    );
+  }
+
+  scroll(amount: number, x?: number, y?: number): void {
+    const movePrefix =
+      x != null && y != null ? `[Win32Input]::SetCursorPos(${x}, ${y}); ` : "";
+    const wheelDelta = amount > 0 ? -120 : 120;
+    const clicks = Math.abs(amount);
+
+    let script = `${WIN32_INPUT_TYPE} ${movePrefix}`;
+    for (let i = 0; i < clicks; i++) {
+      script += `[Win32Input]::mouse_event([Win32Input]::MOUSEEVENTF_WHEEL, 0, 0, ${wheelDelta}, 0); `;
+      if (i < clicks - 1) script += `Start-Sleep -Milliseconds 50; `;
+    }
+    ps(script);
+  }
+
+  getActiveWindowTitle(): string {
+    try {
+      return ps(
+        `${WIN32_INPUT_TYPE} ` +
+          `$h = [Win32Input]::GetForegroundWindow(); ` +
+          `$sb = New-Object System.Text.StringBuilder(256); ` +
+          `[Win32Input]::GetWindowText($h, $sb, 256); $sb.ToString()`,
+      );
+    } catch {
+      return "(unknown)";
+    }
+  }
+}
+
+/**
+ * Map xdotool-style key names to .NET SendKeys format.
+ *
+ * Handles modifier combos like "ctrl+c" → "^c" and named keys
+ * like "Return" → "{ENTER}".
+ */
+function mapKeysToSendKeys(keys: string): string {
+  const NAMED: Record<string, string> = {
+    return: "{ENTER}",
+    enter: "{ENTER}",
+    escape: "{ESC}",
+    tab: "{TAB}",
+    backspace: "{BACKSPACE}",
+    delete: "{DELETE}",
+    space: " ",
+    up: "{UP}",
+    down: "{DOWN}",
+    left: "{LEFT}",
+    right: "{RIGHT}",
+    home: "{HOME}",
+    end: "{END}",
+    page_up: "{PGUP}",
+    page_down: "{PGDN}",
+    f1: "{F1}",
+    f2: "{F2}",
+    f3: "{F3}",
+    f4: "{F4}",
+    f5: "{F5}",
+    f6: "{F6}",
+    f7: "{F7}",
+    f8: "{F8}",
+    f9: "{F9}",
+    f10: "{F10}",
+    f11: "{F11}",
+    f12: "{F12}",
+  };
+
+  const parts = keys.split("+");
+  let prefix = "";
+  let mainKey = "";
+
+  for (const part of parts) {
+    const lower = part.toLowerCase().trim();
+    if (lower === "ctrl" || lower === "control") {
+      prefix += "^";
+    } else if (lower === "alt") {
+      prefix += "%";
+    } else if (lower === "shift") {
+      prefix += "+";
+    } else if (lower === "super" || lower === "win") {
+      // SendKeys has no native Win key — skip (best effort)
+      prefix += "";
+    } else {
+      mainKey = NAMED[lower] ?? part;
+    }
+  }
+
+  return prefix + mainKey;
+}
+
+// ---------------------------------------------------------------------------
 // Factory
 // ---------------------------------------------------------------------------
 
@@ -278,10 +519,13 @@ export function getDesktopBackend(): DesktopBackend {
     case "darwin":
       _cached = new DarwinBackend();
       break;
+    case "win32":
+      _cached = new WindowsBackend();
+      break;
     default:
       throw new Error(
         `Computer use tools are not supported on platform: ${process.platform}. ` +
-          `Supported: linux (xdotool), macOS (cliclick).`,
+          `Supported: Linux (xdotool), macOS (cliclick), Windows (PowerShell).`,
       );
   }
   return _cached;

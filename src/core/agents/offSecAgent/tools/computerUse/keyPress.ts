@@ -9,7 +9,8 @@ export function computerKeyPress(_ctx: ToolContext) {
 
 Sends a key press event. Supports single keys and modifier combinations.
 
-Key names follow xdotool conventions on Linux, cliclick on macOS:
+Key names follow xdotool conventions on Linux, cliclick on macOS,
+and SendKeys on Windows:
 
 Single keys: Return, Escape, Tab, BackSpace, Delete, space, Up, Down, Left, Right,
   Home, End, Page_Up, Page_Down, F1-F12
