@@ -34,7 +34,8 @@ Only call this when the plan is complete and ready for review.`,
       if (!plan || !plan.trim()) {
         return {
           success: false,
-          error: "Plan file not found or empty. Write the plan first using write_plan.",
+          error:
+            "Plan file not found or empty. Write the plan first using write_plan.",
           path: planPath,
         };
       }

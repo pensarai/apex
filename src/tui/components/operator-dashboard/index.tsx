@@ -26,7 +26,11 @@ import {
   AgentEventBus,
   type AgentMode,
 } from "../../../core/agents/offSecAgent";
-import { readPlan, hasPlan, planFilePath as getPlanFilePath } from "../../../core/plan";
+import {
+  readPlan,
+  hasPlan,
+  planFilePath as getPlanFilePath,
+} from "../../../core/plan";
 import {
   convertModelMessagesToUI,
   type UIMessage,

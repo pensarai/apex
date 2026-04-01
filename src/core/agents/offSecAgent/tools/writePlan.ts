@@ -5,9 +5,7 @@ import type { ToolContext } from "./types";
 import { planFilePath } from "../../../plan";
 
 const writePlanInputSchema = z.object({
-  content: z
-    .string()
-    .describe("The full markdown content of the pentest plan"),
+  content: z.string().describe("The full markdown content of the pentest plan"),
   toolCallDescription: z
     .string()
     .describe(
