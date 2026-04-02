@@ -170,6 +170,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       persistentShell: this.persistentShell,
       skillsRegistry: input.skillsRegistry,
       traceWriter,
+      enableThinking: input.enableThinking,
     });
 
     let tools: ToolSet = input.extraTools
@@ -354,6 +355,7 @@ export class OffensiveSecurityAgent<TResult = void> {
         };
         input.onCacheMetrics?.(metrics);
       },
+      enableThinking: input.enableThinking,
       silent: true,
     });
   }

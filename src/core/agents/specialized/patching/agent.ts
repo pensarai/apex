@@ -79,6 +79,7 @@ export class PatchingAgent extends OffensiveSecurityAgent<PatchResult> {
       abortSignal,
       eventBus,
       sandbox,
+      enableThinking,
     } = opts;
 
     const agentsMd = readAgentsMd(cwd);
@@ -93,6 +94,7 @@ export class PatchingAgent extends OffensiveSecurityAgent<PatchResult> {
       abortSignal,
       eventBus,
       sandbox,
+      enableThinking,
 
       activeTools: [
         "read_file",

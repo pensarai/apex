@@ -116,6 +116,7 @@ export default function OperatorDashboard({
     addCacheUsage,
     resetTokenUsage,
     setSessionCwd,
+    reasoningEnabled,
   } = useAgent();
   const {
     autocompleteOptions: allAutocompleteOptions,
@@ -1167,6 +1168,7 @@ export default function OperatorDashboard({
         approvalGate: approvalGateRef.current,
         commandCancelHandle: cancelHandleRef.current,
         skillsRegistry,
+        enableThinking: reasoningEnabled,
         onStepFinish,
         onCacheMetrics: (metrics: CacheMetrics) => {
           addCacheUsage(

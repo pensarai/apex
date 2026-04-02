@@ -19,7 +19,13 @@ interface ModelPickerDialogProps {
 export default function ModelPickerDialog({ onClose }: ModelPickerDialogProps) {
   const { colors } = useTheme();
   const config = useConfig();
-  const { model, setModel, isModelUserSelected } = useAgent();
+  const {
+    model,
+    setModel,
+    isModelUserSelected,
+    reasoningEnabled,
+    setReasoningEnabled,
+  } = useAgent();
 
   const title = (
     <text>
@@ -53,6 +59,8 @@ export default function ModelPickerDialog({ onClose }: ModelPickerDialogProps) {
             onConfigUpdate={config.update}
             focused={true}
             isModelUserSelected={isModelUserSelected}
+            reasoningEnabled={reasoningEnabled}
+            onReasoningToggle={setReasoningEnabled}
           />
         </box>
       </DialogLayout>

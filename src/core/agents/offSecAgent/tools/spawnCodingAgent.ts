@@ -206,6 +206,7 @@ async function runSingleCodingAgent(
     abortSignal: ctx.abortSignal,
     eventBus: localBus,
     subagentId,
+    enableThinking: ctx.enableThinking,
   });
 
   try {
