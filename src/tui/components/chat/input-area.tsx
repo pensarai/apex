@@ -463,8 +463,14 @@ function ApprovalInputArea({
           width="100%"
           value={redirectInput}
           onInput={setRedirectInput}
-          onPaste={(event) => {
-            const cleaned = String(event.text).replace(/\r?\n/g, " ");
+          onPaste={(event: any) => {
+            const raw =
+              typeof event.text === "string"
+                ? event.text
+                : event.bytes instanceof Uint8Array
+                  ? new TextDecoder().decode(event.bytes)
+                  : String(event.text ?? "");
+            const cleaned = raw.replace(/\r?\n/g, " ");
             setRedirectInput(cleaned);
           }}
           focused={focusedElement === 2}
