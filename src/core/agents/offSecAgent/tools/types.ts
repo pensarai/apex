@@ -82,4 +82,7 @@ export type ToolContext = {
    * When present, checkpoint_state tool is available.
    */
   traceWriter?: StepTraceWriter;
+
+  /** Enable extended thinking for sub-agents spawned by orchestration tools. */
+  enableThinking?: boolean;
 };

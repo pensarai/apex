@@ -30,6 +30,9 @@ export interface BenchmarkComparisonAgentInput {
 
   /** AbortSignal to cancel mid-run */
   abortSignal?: AbortSignal;
+
+  /** Enable extended thinking (reasoning) for supported models. */
+  enableThinking?: boolean;
 }
 
 /** The typed result returned by `BenchmarkComparisonAgent.consume()`. */
@@ -55,8 +58,15 @@ export interface BenchmarkComparisonResult {
  */
 export class BenchmarkComparisonAgent extends OffensiveSecurityAgent<BenchmarkComparisonResult> {
   constructor(opts: BenchmarkComparisonAgentInput) {
-    const { model, repoPath, session, authConfig, onStepFinish, abortSignal } =
-      opts;
+    const {
+      model,
+      repoPath,
+      session,
+      authConfig,
+      onStepFinish,
+      abortSignal,
+      enableThinking,
+    } = opts;
 
     const expectedResults = loadExpectedResults(repoPath);
     const actualFindings = loadActualFindings(session.rootPath);
@@ -70,6 +80,7 @@ export class BenchmarkComparisonAgent extends OffensiveSecurityAgent<BenchmarkCo
       authConfig,
       onStepFinish,
       abortSignal,
+      enableThinking,
 
       activeTools: ["provide_comparison_results"],
 
