@@ -137,7 +137,13 @@ export function createPensarModel(
       };
 
       const textParts: Record<string, string> = {};
-      const reasoningParts: Record<string, { text: string; providerMetadata?: Record<string, Record<string, unknown>> }> = {};
+      const reasoningParts: Record<
+        string,
+        {
+          text: string;
+          providerMetadata?: Record<string, Record<string, unknown>>;
+        }
+      > = {};
       const toolInputParts: Record<
         string,
         { toolName: string; input: string }
@@ -452,8 +458,12 @@ export function createPensarModel(
                       id: activeReasoningId,
                       delta: (delta?.thinking as string) ?? "",
                     });
-                  } else if (deltaType === "signature_delta" && activeReasoningId) {
-                    activeReasoningSignature = (delta?.signature as string) ?? null;
+                  } else if (
+                    deltaType === "signature_delta" &&
+                    activeReasoningId
+                  ) {
+                    activeReasoningSignature =
+                      (delta?.signature as string) ?? null;
                   } else if (deltaType === "text_delta" && activeTextId) {
                     controller.enqueue({
                       type: "text-delta",

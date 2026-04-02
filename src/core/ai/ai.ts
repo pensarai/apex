@@ -297,8 +297,6 @@ export interface StreamResponseOpts {
   onCacheMetrics?: (metrics: CacheMetrics) => void;
   /** Enable extended thinking for supported models (Anthropic Claude 3.7+) */
   enableThinking?: boolean;
-  /** Max thinking tokens per turn. Defaults to 10_000. */
-  thinkingBudget?: number;
 }
 
 export function streamResponse(
@@ -320,7 +318,6 @@ export function streamResponse(
     onFinish,
     onCacheMetrics,
     enableThinking,
-    thinkingBudget,
   } = opts;
 
   // Wrap onStepFinish to fire usage callback for every step.

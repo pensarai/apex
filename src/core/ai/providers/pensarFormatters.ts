@@ -3,7 +3,6 @@ import type {
   LanguageModelV3Content,
   LanguageModelV3FinishReason,
   LanguageModelV3TextPart,
-  LanguageModelV3ToolCallPart,
   LanguageModelV3ToolResultPart,
 } from "@ai-sdk/provider";
 
@@ -101,7 +100,9 @@ function convertToAnthropicFormat(
           messages.push({ role: "user", content: text });
         }
       } else if (part.role === "assistant") {
-        const assistantContent = part.content as unknown as Array<Record<string, unknown>>;
+        const assistantContent = part.content as unknown as Array<
+          Record<string, unknown>
+        >;
         const hasStructuredParts = assistantContent.some(
           (c) => c.type === "tool-call" || c.type === "reasoning",
         );
@@ -112,7 +113,9 @@ function convertToAnthropicFormat(
           for (const c of assistantContent) {
             if (c.type === "reasoning") {
               const sig = (
-                c.providerOptions as Record<string, Record<string, unknown>> | undefined
+                c.providerOptions as
+                  | Record<string, Record<string, unknown>>
+                  | undefined
               )?.anthropic?.signature as string | undefined;
               const thinkingBlock: Record<string, unknown> = {
                 type: "thinking",
@@ -124,7 +127,9 @@ function convertToAnthropicFormat(
               content.push({ type: "text", text: c.text as string });
             } else if (c.type === "tool-call") {
               const parsedInput =
-                typeof c.input === "string" ? JSON.parse(c.input as string) : c.input;
+                typeof c.input === "string"
+                  ? JSON.parse(c.input as string)
+                  : c.input;
               content.push({
                 type: "tool_use",
                 id: c.toolCallId,

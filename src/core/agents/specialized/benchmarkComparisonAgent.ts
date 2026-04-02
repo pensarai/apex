@@ -58,8 +58,15 @@ export interface BenchmarkComparisonResult {
  */
 export class BenchmarkComparisonAgent extends OffensiveSecurityAgent<BenchmarkComparisonResult> {
   constructor(opts: BenchmarkComparisonAgentInput) {
-    const { model, repoPath, session, authConfig, onStepFinish, abortSignal, enableThinking } =
-      opts;
+    const {
+      model,
+      repoPath,
+      session,
+      authConfig,
+      onStepFinish,
+      abortSignal,
+      enableThinking,
+    } = opts;
 
     const expectedResults = loadExpectedResults(repoPath);
     const actualFindings = loadActualFindings(session.rootPath);
