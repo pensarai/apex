@@ -20,7 +20,8 @@ const pasteDecoder = new TextDecoder();
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function extractPasteText(event: any): string {
   if (typeof event.text === "string") return event.text;
-  if (event.bytes instanceof Uint8Array) return pasteDecoder.decode(event.bytes);
+  if (event.bytes instanceof Uint8Array)
+    return pasteDecoder.decode(event.bytes);
   return String(event.text ?? event.bytes ?? "");
 }
 
