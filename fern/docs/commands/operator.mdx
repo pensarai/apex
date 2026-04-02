@@ -47,12 +47,35 @@ With flags:
 | Mode        | Description                                                                 |
 | ----------- | --------------------------------------------------------------------------- |
 | **Default** | All tools are available; the agent can read, write, and mutate targets      |
-| **Plan**    | Read-only tools only — mutation tools (create_file, update_file, create_poc, document_vulnerability, document_app, document_endpoint) are excluded so the agent can only observe and plan |
+| **Plan**    | Read-only reconnaissance and planning — mutation tools are excluded so the agent can only observe, plan, and submit a structured pentest plan for your review |
 
-You can toggle between Default and Plan mode at any time during a session using `Shift+Tab`. The current mode is shown in the operator dashboard header.
+You can cycle through modes at any time using `Shift+Tab`. The current mode is shown in the operator dashboard header.
 
 <Callout intent="info">
-  **Plan mode** is useful for reviewing the agent's strategy before allowing any mutations. Start in Plan mode to understand the agent's approach, then switch to Default mode when you're ready for it to take action.
+  **Plan mode** is useful for reviewing the agent's strategy before allowing any mutations. Start in Plan mode to let the agent reconnoiter the target and draft a structured pentest plan, then review and approve it before switching to Default mode for execution.
+</Callout>
+
+### Plan Mode Workflow
+
+When the agent is in Plan mode, it follows a structured workflow:
+
+<Steps>
+  <Step title="Reconnaissance">
+    The agent actively reconnoiters the target using read-only tools — crawling the application, fingerprinting the tech stack, enumerating endpoints, and discovering authentication mechanisms.
+  </Step>
+  <Step title="Plan Creation">
+    Based on its findings, the agent writes a structured pentest plan using the `write_plan` tool. The plan includes: objectives, scope, reconnaissance findings, attack surface map, prioritized attack vectors, testing methodology, and estimated action tiers.
+  </Step>
+  <Step title="Plan Submission">
+    The agent calls `submit_plan` to present the plan for your review. A plan review prompt appears in the chat.
+  </Step>
+  <Step title="Operator Review">
+    You can **approve** (`Y`), **reject** (`N`), or **type feedback** to refine the plan. If rejected, the agent refines the plan based on your feedback. If approved, the session switches to manual mode with the approved plan guiding execution.
+  </Step>
+</Steps>
+
+<Callout intent="info">
+  If you try to leave Plan mode (via `Shift+Tab`) while a plan exists but hasn't been approved, Apex will prompt you to review and approve it first.
 </Callout>
 
 ### Approval Control
@@ -86,16 +109,17 @@ Toggle approval with `Option+Shift+Tab` (or `Alt+Shift+Tab` on Linux/Windows).
 
 ## Keyboard Shortcuts
 
-| Key                | Action                                  |
-| ------------------ | --------------------------------------- |
-| `Shift+Tab`        | Toggle between Default and Plan mode    |
-| `Option+Shift+Tab` | Toggle approval on/off                  |
-| `Ctrl+V`           | Toggle verbose output                   |
-| `Ctrl+L`           | Toggle expanded logs                    |
-| `Ctrl+C`           | Abort running agent / clear input       |
-| `Y`                | Approve pending tool call               |
-| `A`                | Auto-approve all remaining tool calls   |
-| `Escape`           | Exit operator session (when idle)       |
+| Key                | Action                                              |
+| ------------------ | --------------------------------------------------- |
+| `Shift+Tab`        | Cycle operator mode (manual → auto → plan)          |
+| `Option+Shift+Tab` | Toggle approval on/off                               |
+| `Ctrl+V`           | Toggle verbose output                                |
+| `Ctrl+L`           | Toggle expanded logs                                 |
+| `Ctrl+C`           | Abort running agent / clear input                    |
+| `Y`                | Approve pending tool call / approve plan             |
+| `N`                | Reject plan (in plan review)                         |
+| `A`                | Auto-approve all remaining tool calls                |
+| `Escape`           | Exit operator session (when idle)                    |
 
 ## When to Use /operator vs /pentest
 
@@ -170,7 +194,7 @@ Once you start an operator session:
 - The AI agent begins analysis based on your chosen mode
 - You interact in real time, approving or steering actions
 - Findings are reported as they're discovered
-- The session is automatically saved and can be resumed via `/sessions`
+- The session is automatically saved and can be resumed via `/resume`
 
 ## Related Commands
 
@@ -178,8 +202,11 @@ Once you start an operator session:
   <Card title="/pentest" icon="play" href="/apex/commands/pentest">
     Run an autonomous pentest instead
   </Card>
-  <Card title="/sessions" icon="clock-rotate-left" href="/apex/commands/help">
-    Browse and resume previous sessions
+  <Card title="/resume" icon="clock-rotate-left" href="/apex/commands/sessions">
+    Resume a previous session
+  </Card>
+  <Card title="/plan" icon="list-check" href="/apex/commands/plan">
+    View the current pentest plan
   </Card>
   <Card title="/models" icon="microchip" href="/apex/commands/models">
     Select AI model before starting

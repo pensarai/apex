@@ -1,0 +1,63 @@
+---
+title: "/plan"
+description: "View the current pentest plan for the active operator session"
+---
+
+## Overview
+
+The `/plan` command displays the current pentest plan for the active operator session. Plans are created by the AI agent during Plan mode and stored as markdown files within the session directory.
+
+## Usage
+
+```bash
+/plan
+```
+
+## How It Works
+
+When you run `/plan` in an operator session, Apex reads the plan file from the current session directory and displays it as a system message in the chat. If no plan exists yet, Apex will prompt you to switch to Plan mode to create one.
+
+## Creating a Plan
+
+Plans are created during [operator Plan mode](/apex/commands/operator#plan-mode-workflow). The agent:
+
+1. Reconnoiters the target using read-only tools
+2. Writes a structured plan with `write_plan`
+3. Submits it for your review with `submit_plan`
+
+### Plan Structure
+
+A pentest plan includes the following sections:
+
+| Section                        | Description                                                        |
+| ------------------------------ | ------------------------------------------------------------------ |
+| **Objective**                  | Engagement goals                                                    |
+| **Scope**                      | In-scope targets and exclusions                                     |
+| **Reconnaissance Findings**    | Tech stack, endpoints, auth mechanisms discovered                   |
+| **Attack Surface Map**         | Entry points ranked by exposure                                     |
+| **Prioritized Attack Vectors** | Ordered by impact — endpoint, vuln class, rationale, test approach |
+| **Testing Methodology**        | Concrete techniques/payloads per vector (OWASP categories)          |
+| **Estimated Action Tiers**     | Anticipated T1–T5 action counts for informed approval              |
+
+## Plan Review
+
+After the agent submits a plan, you can:
+
+- **Approve** (`Y`) — the session switches to manual mode and the agent executes the approved plan
+- **Reject** (`N`) — the agent refines the plan based on operator feedback
+- **Type feedback** — provide specific refinement instructions and the agent updates the plan accordingly
+
+## Plan Storage
+
+Plans are stored as `plan.md` in the session root directory (`~/.pensar/sessions/<session-name>/plan.md`). Each session has at most one plan file, which is overwritten when the agent refines it.
+
+## Related Commands
+
+<CardGroup cols={2}>
+  <Card title="/operator" icon="terminal" href="/apex/commands/operator">
+    Start an interactive operator session with plan mode
+  </Card>
+  <Card title="/resume" icon="clock-rotate-left" href="/apex/commands/sessions">
+    Resume a previous session to view its plan
+  </Card>
+</CardGroup>
