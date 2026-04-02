@@ -11,6 +11,7 @@ import { markdownToStyledText } from "./markdown";
 import { ToolRenderer } from "./tool-renderer";
 import { isToolMessage } from "./type-guards";
 import type { DisplayMessage } from "../agent-display";
+import { PlanReviewMessage } from "../chat/plan-review-message";
 
 interface MessageRendererProps {
   message: DisplayMessage;
@@ -116,6 +117,11 @@ export const MessageRenderer = memo(function MessageRenderer({
         )}
       </box>
     );
+  }
+
+  // Plan review messages
+  if (message.isPlanReview && message.planContent) {
+    return <PlanReviewMessage planContent={message.planContent} />;
   }
 
   // System messages
