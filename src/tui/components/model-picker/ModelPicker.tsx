@@ -689,9 +689,7 @@ export function ModelPicker({
       {onReasoningToggle && thinkingSupported && (
         <box flexShrink={0} paddingTop={1}>
           <PickerRow id="reasoning-toggle">
-            <text
-              fg={isReasoningFocused ? colors.primary : colors.text}
-            >
+            <text fg={isReasoningFocused ? colors.primary : colors.text}>
               {reasoningEnabled ? "[x]" : "[ ]"} Extended Thinking
               (Experimental)
             </text>
