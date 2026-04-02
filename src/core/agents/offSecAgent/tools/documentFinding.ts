@@ -23,6 +23,7 @@ import {
 import type { Finding } from "../types";
 import { hasCanonicalName } from "../../../../lib/cwe/types";
 import type { EvidenceFileEntry } from "../../../../lib/evidence/types";
+import { detectTargetEnvironment } from "../../../../util/environment";
 
 export const documentVulnerabilityInputSchema = z.object({
   title: z.string().describe("Finding title"),
@@ -264,6 +265,11 @@ CRITICAL RULES — READ BEFORE CALLING:
         let cvssResult: CVSSScorerResult = FALLBACK_CVSS;
         let cvssWarning: string | undefined;
 
+        const environmentContext = detectTargetEnvironment(
+          session.targets,
+          session.config?.environmentContext,
+        );
+
         if (!isVulnerability) {
           cvssResult = {
             score: 0,
@@ -287,6 +293,7 @@ CRITICAL RULES — READ BEFORE CALLING:
               vulnerabilityClass: input.vulnerabilityClass,
             },
             agentMessages: [],
+            environmentContext,
           };
 
           const MAX_CVSS_ATTEMPTS = 2;
@@ -379,6 +386,15 @@ CRITICAL RULES — READ BEFORE CALLING:
           timestamp,
           sessionId: session.id,
           target: session.targets[0],
+          environment: {
+            signals: environmentContext.signals,
+            isProduction: environmentContext.isProduction,
+            description: environmentContext.description,
+            ...(environmentContext.userContext && {
+              userContext: environmentContext.userContext,
+            }),
+          },
+          ...(evidenceFilePath && { evidenceFile: evidenceFilePath }),
           pocOutput: {
             stdout: stdout || "",
             stderr: stderr || "",
@@ -463,6 +479,7 @@ ${finding.evidenceFiles.map((ef) => `- **[${ef.type}]** \`${ef.path}\` — ${ef.
             ...(cvssWarning
               ? []
               : [`**Vector:** \`${cvssResult.vectorString}\``]),
+            `**Environment:** ${environmentContext.isProduction ? "Production" : "Non-Production"}${environmentContext.signals.length > 0 ? ` (${environmentContext.signals.join(", ")})` : ""}`,
             `**Target:** ${session.targets[0]}`,
             `**Endpoint:** ${finding.endpoint}`,
             `**Date:** ${timestamp}`,

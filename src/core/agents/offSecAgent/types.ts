@@ -53,6 +53,14 @@ export const ApexFindingObject = z.object({
   rootCauseGroup: z.string().optional(),
   relatedFindings: z.array(z.string()).optional(),
   evidenceFiles: z.array(EvidenceFileEntrySchema).optional(),
+  environment: z
+    .object({
+      signals: z.array(z.string()),
+      isProduction: z.boolean(),
+      description: z.string(),
+      userContext: z.string().optional(),
+    })
+    .optional(),
 });
 
 export type Finding = z.infer<typeof ApexFindingObject>;

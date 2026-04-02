@@ -164,6 +164,8 @@ const SessionConfigObject = z.object({
   taskDriven: z.boolean().optional(),
   /** When true, pentest agents run a plan phase before execution (default: false) */
   requirePlan: z.boolean().optional(),
+  /** Freeform environment context for CVSS scoring (e.g., "this is a sandbox", "testing against staging") */
+  environmentContext: z.string().optional(),
 });
 
 export type SessionConfig = z.infer<typeof SessionConfigObject>;

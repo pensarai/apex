@@ -22,6 +22,17 @@ import { validateCweEntries } from "../../../../lib/cwe/validate";
 // Types
 // =============================================================================
 
+export interface EnvironmentContext {
+  /** Auto-detected indicators from URL/target analysis */
+  signals: string[];
+  /** Human-readable summary for the LLM */
+  description: string;
+  /** Whether this appears to be a production environment */
+  isProduction: boolean;
+  /** Freeform operator-provided notes */
+  userContext?: string;
+}
+
 export interface CVSSScorerInput {
   /** The finding to score */
   finding: {
@@ -35,6 +46,8 @@ export interface CVSSScorerInput {
   };
   /** Messages from the meta testing agent's conversation (for context) */
   agentMessages: Record<string, unknown>[];
+  /** Environment context for scoring adjustments */
+  environmentContext?: EnvironmentContext;
 }
 
 export interface CVSSScorerResult {
@@ -324,7 +337,27 @@ In addition to CVSS metrics, assign one or more CWE identifiers to the finding. 
 3. Assign **1-3 CWEs** per finding. Multiple CWEs are appropriate when the vulnerability spans categories (e.g., an IDOR that also leaks PII: CWE-639 + CWE-200).
 4. Order CWEs by relevance — the primary weakness first.
 5. When the vulnerability class is provided, use it as a strong hint but verify against the evidence.
-6. For each CWE, provide a specific reasoning explaining why it applies to *this* finding — not a generic definition of the CWE.`;
+6. For each CWE, provide a specific reasoning explaining why it applies to *this* finding — not a generic definition of the CWE.
+
+## Environment Context Guidelines
+
+When environment context is provided, factor it into your scoring:
+
+### Non-Production Environments (sandbox, staging, demo, dev, test, QA, localhost)
+- **Attack Requirements (AT):** Consider P if the vulnerability relies on intentionally weakened non-production controls (disabled captcha, test credentials, relaxed rate limits).
+- **Confidentiality Impact (VC):** Downgrade if the environment contains only synthetic/test data (e.g., H→L when no real user data is at risk).
+- **Subsequent System Impact (SC/SI/SA):** Typically N — non-production environments rarely connect to production data stores or downstream services.
+- **Exploit Maturity (E):** Use U if the vulnerability is specific to the non-production implementation (e.g., hardcoded test OTP) and production does not share the same code path.
+- Public keys (pk_*) or test API keys exposed on demo/sandbox sites are expected behavior, not vulnerabilities.
+
+### Production Environments
+- Score normally using standard CVSS 4.0 methodology. No adjustments.
+
+### Ambiguous or Custom Environments
+- When operator-provided context describes a novel setup, reason about it directly.
+- Consider: Does this environment contain real user data? Is it internet-facing? Could exploitation affect production systems?
+
+Environment context is additional signal for scoring — it does not override evidence. A critical RCE in a sandbox is still a real vulnerability, but its contextual impact differs.`;
 
 // =============================================================================
 // Main Function
@@ -415,6 +448,19 @@ ${evidence}
 
 `;
 
+  // Add environment context if available
+  if (input.environmentContext) {
+    const env = input.environmentContext;
+    prompt += `## Environment Context
+
+**Classification:** ${env.isProduction ? "PRODUCTION" : "NON-PRODUCTION"}
+**Description:** ${env.description}
+${env.signals.length > 0 ? `**Detected Signals:** ${env.signals.join(", ")}` : ""}
+${env.userContext ? `**Operator Notes:** ${env.userContext}` : ""}
+
+`;
+  }
+
   // Add context from agent conversation if available
   if (agentMessages && agentMessages.length > 0) {
     prompt += `## Discovery Context
@@ -438,6 +484,7 @@ Consider:
 3. Whether user interaction is required
 4. The actual impact demonstrated in the evidence
 5. Potential for lateral movement or subsequent system compromise
+6. The target environment context and its effect on real-world impact
 
 Provide your metrics assessment and brief reasoning.
 `;
