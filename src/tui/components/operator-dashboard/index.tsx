@@ -326,6 +326,13 @@ export default function OperatorDashboard({
                   })),
                 );
               }
+
+              // Restore plan content from a prior session so the cycleMode
+              // gate doesn't force a redundant re-approval on Shift+Tab.
+              const planContent = readPlan(s.rootPath);
+              if (planContent) {
+                setApprovedPlanContent(planContent);
+              }
             }
           } else if (s.config?.operatorSettings) {
             const settings = s.config.operatorSettings;
@@ -1760,6 +1767,14 @@ export default function OperatorDashboard({
       requireApproval: next === "manual",
     }));
     setOperatorMode(next);
+
+    // Persist mode so resumed sessions start in the correct mode
+    const sid = sessionRef.current?.id;
+    if (sid) {
+      sessions
+        .updateOperatorSettings(sid, { initialMode: next })
+        .catch((e) => console.error("[operator] Failed to persist mode:", e));
+    }
   }, []);
 
   // Cycle through operator modes: approvals-on → approvals-off → plan
