@@ -210,6 +210,8 @@ CRITICAL RULES — READ BEFORE CALLING:
           };
         }
 
+        const isVulnerability = judgeResult.findingType === "vulnerability";
+
         // Write sidecar only after judge acceptance (avoid wasted I/O on rejection)
         writePocOutputSidecar(
           ctx.session.pocsPath,
@@ -223,12 +225,20 @@ CRITICAL RULES — READ BEFORE CALLING:
         // Phase 3: CVSS 4.0 scoring
         const timestamp = new Date().toISOString();
 
+        const outputDir = isVulnerability
+          ? session.findingsPath
+          : join(session.rootPath, "informational");
+
+        if (!isVulnerability) {
+          mkdirSync(outputDir, { recursive: true });
+        }
+
         let evidenceForPrompt = input.evidence;
         let evidenceFilePath: string | undefined;
 
         if (input.evidence.length > EVIDENCE_FILE_THRESHOLD) {
           const evidenceFilename = `${timestamp.split("T")[0]}-${slugify(input.title, 40)}-evidence.txt`;
-          evidenceFilePath = join(session.findingsPath, evidenceFilename);
+          evidenceFilePath = join(outputDir, evidenceFilename);
           writeFileSync(evidenceFilePath, input.evidence);
           evidenceForPrompt =
             input.evidence.substring(0, EVIDENCE_FILE_THRESHOLD) +
@@ -238,60 +248,76 @@ CRITICAL RULES — READ BEFORE CALLING:
         let cvssResult: CVSSScorerResult = FALLBACK_CVSS;
         let cvssWarning: string | undefined;
 
-        const cvssInput: CVSSScorerInput = {
-          finding: {
-            title: input.title,
-            description: input.description,
-            impact: input.impact,
-            evidence: evidenceForPrompt,
-            endpoint: input.endpoint,
-            remediation: input.remediation,
-            vulnerabilityClass: input.vulnerabilityClass,
-          },
-          agentMessages: [],
-        };
+        if (!isVulnerability) {
+          cvssResult = {
+            score: 0,
+            severity: "LOW",
+            vectorString: "",
+            metrics: FALLBACK_CVSS.metrics,
+            scoreType: "N/A",
+            reasoning: `Classified as ${judgeResult.findingType} — CVSS scoring skipped.`,
+            cwes: [],
+          };
+          cvssWarning = `Classified as ${judgeResult.findingType} — not scored.`;
+        } else {
+          const cvssInput: CVSSScorerInput = {
+            finding: {
+              title: input.title,
+              description: input.description,
+              impact: input.impact,
+              evidence: evidenceForPrompt,
+              endpoint: input.endpoint,
+              remediation: input.remediation,
+              vulnerabilityClass: input.vulnerabilityClass,
+            },
+            agentMessages: [],
+          };
 
-        const MAX_CVSS_ATTEMPTS = 2;
-        for (let attempt = 0; attempt < MAX_CVSS_ATTEMPTS; attempt++) {
-          try {
-            cvssResult = await scoreFindingWithCVSS(
-              cvssInput,
-              ctx.model!,
-              ctx.authConfig,
-              ctx.abortSignal,
-            );
-            break;
-          } catch (err: unknown) {
-            const msg = err instanceof Error ? err.message : String(err);
-
-            if (attempt >= MAX_CVSS_ATTEMPTS - 1 || ctx.abortSignal?.aborted) {
-              cvssWarning = `CVSS scoring failed after ${attempt + 1} attempt(s) (${msg}), using estimated MEDIUM severity.`;
-              cvssResult = FALLBACK_CVSS;
+          const MAX_CVSS_ATTEMPTS = 2;
+          for (let attempt = 0; attempt < MAX_CVSS_ATTEMPTS; attempt++) {
+            try {
+              cvssResult = await scoreFindingWithCVSS(
+                cvssInput,
+                ctx.model!,
+                ctx.authConfig,
+                ctx.abortSignal,
+              );
               break;
-            }
+            } catch (err: unknown) {
+              const msg = err instanceof Error ? err.message : String(err);
 
-            await new Promise<void>((resolve) => {
-              const timer = setTimeout(resolve, 2_000);
-              if (ctx.abortSignal) {
-                const onAbort = () => {
-                  clearTimeout(timer);
-                  resolve();
-                };
-                if (ctx.abortSignal.aborted) {
-                  clearTimeout(timer);
-                  resolve();
-                } else {
-                  ctx.abortSignal.addEventListener("abort", onAbort, {
-                    once: true,
-                  });
-                }
+              if (
+                attempt >= MAX_CVSS_ATTEMPTS - 1 ||
+                ctx.abortSignal?.aborted
+              ) {
+                cvssWarning = `CVSS scoring failed after ${attempt + 1} attempt(s) (${msg}), using estimated MEDIUM severity.`;
+                cvssResult = FALLBACK_CVSS;
+                break;
               }
-            });
 
-            if (ctx.abortSignal?.aborted) {
-              cvssWarning = `CVSS scoring cancelled, using estimated MEDIUM severity.`;
-              cvssResult = FALLBACK_CVSS;
-              break;
+              await new Promise<void>((resolve) => {
+                const timer = setTimeout(resolve, 2_000);
+                if (ctx.abortSignal) {
+                  const onAbort = () => {
+                    clearTimeout(timer);
+                    resolve();
+                  };
+                  if (ctx.abortSignal.aborted) {
+                    clearTimeout(timer);
+                    resolve();
+                  } else {
+                    ctx.abortSignal.addEventListener("abort", onAbort, {
+                      once: true,
+                    });
+                  }
+                }
+              });
+
+              if (ctx.abortSignal?.aborted) {
+                cvssWarning = `CVSS scoring cancelled, using estimated MEDIUM severity.`;
+                cvssResult = FALLBACK_CVSS;
+                break;
+              }
             }
           }
         }
@@ -315,7 +341,7 @@ CRITICAL RULES — READ BEFORE CALLING:
           severity: severity as Finding["severity"],
         };
 
-        if (ctx.findingsRegistry) {
+        if (isVulnerability && ctx.findingsRegistry) {
           const check = await ctx.findingsRegistry.register(finding);
           if (check.duplicate) {
             cleanupPocFiles(ctx, filename);
@@ -355,6 +381,7 @@ CRITICAL RULES — READ BEFORE CALLING:
           },
           judge: {
             valid: judgeResult.valid,
+            findingType: judgeResult.findingType,
             confidence: judgeResult.confidence,
             reasoning: judgeResult.reasoning,
             ...(judgeResult.error && { error: judgeResult.error }),
@@ -363,9 +390,9 @@ CRITICAL RULES — READ BEFORE CALLING:
 
         const findingId = `${timestamp.split("T")[0]}-${slugify(finding.title, 50)}`;
         const jsonFilename = `${findingId}.json`;
-        const jsonPath = join(session.findingsPath, jsonFilename);
         const mdFilename = `${findingId}.md`;
-        const mdPath = join(session.findingsPath, mdFilename);
+        const jsonPath = join(outputDir, jsonFilename);
+        const mdPath = join(outputDir, mdFilename);
 
         try {
           writeFileSync(jsonPath, JSON.stringify(findingWithMeta, null, 2));
@@ -450,31 +477,36 @@ ${finding.references ? `## References\n\n${finding.references}` : ""}
 
           writeFileSync(mdPath, markdown);
 
-          const summaryPath = join(session.rootPath, "findings-summary.md");
-          const cweTag = cvssResult.cwes?.length
-            ? ` (${cvssResult.cwes.map((c) => c.id).join(", ")})`
-            : "";
-          const cvssTag = cvssWarning
-            ? "(estimated)"
-            : `(CVSS ${cvssResult.score})`;
-          const summaryEntry = `- [${finding.severity}] ${cvssTag}${cweTag} ${finding.title} - \`findings/${mdFilename}\`\n`;
+          if (isVulnerability) {
+            const summaryPath = join(session.rootPath, "findings-summary.md");
+            const cweTag = cvssResult.cwes?.length
+              ? ` (${cvssResult.cwes.map((c) => c.id).join(", ")})`
+              : "";
+            const cvssTag = cvssWarning
+              ? "(estimated)"
+              : `(CVSS ${cvssResult.score})`;
+            const summaryEntry = `- [${finding.severity}] ${cvssTag}${cweTag} ${finding.title} - \`findings/${mdFilename}\`\n`;
 
-          try {
-            appendFileSync(summaryPath, summaryEntry);
-          } catch {
-            const header = `# Findings Summary\n\n**Target:** ${session.targets[0]}  \n**Session:** ${session.id}\n\n## All Findings\n\n`;
-            writeFileSync(summaryPath, header + summaryEntry);
+            try {
+              appendFileSync(summaryPath, summaryEntry);
+            } catch {
+              const header = `# Findings Summary\n\n**Target:** ${session.targets[0]}  \n**Session:** ${session.id}\n\n## All Findings\n\n`;
+              writeFileSync(summaryPath, header + summaryEntry);
+            }
           }
         } catch (writeError: unknown) {
-          if (ctx.findingsRegistry) {
+          if (isVulnerability && ctx.findingsRegistry) {
             await ctx.findingsRegistry.unregister(finding);
           }
           throw writeError;
         }
 
+        const typeTag = isVulnerability
+          ? finding.severity
+          : judgeResult.findingType.toUpperCase();
         const resultMessage = cvssWarning
-          ? `Finding documented: [${finding.severity}] ${finding.title} (${cvssWarning})`
-          : `Finding documented: [${finding.severity}] ${finding.title}`;
+          ? `Finding documented: [${typeTag}] ${finding.title} (${cvssWarning})`
+          : `Finding documented: [${typeTag}] ${finding.title}`;
 
         return {
           success: true,
