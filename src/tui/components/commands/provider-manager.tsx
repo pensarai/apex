@@ -66,6 +66,12 @@ export default function ProviderManager({
       case "bedrock":
         configUpdate.bedrockAPIKey = apiKey;
         break;
+      case "inception":
+        configUpdate.inceptionAPIKey = apiKey;
+        break;
+      case "arcee":
+        configUpdate.arceeAPIKey = apiKey;
+        break;
     }
 
     await config.update(configUpdate);

@@ -147,6 +147,33 @@ async function verifyInception(apiKey: string): Promise<VerifyResult> {
   }
 }
 
+async function verifyArcee(apiKey: string): Promise<VerifyResult> {
+  try {
+    const res = await fetchWithTimeout(
+      "https://api.arcee.ai/api/v1/models",
+      {
+        method: "GET",
+        headers: { Authorization: `Bearer ${apiKey}` },
+      },
+    );
+    if (res.ok) return { valid: true };
+    if (res.status === 401 || res.status === 403)
+      return { valid: false, error: "Invalid API key" };
+    return {
+      valid: false,
+      error: `Arcee returned HTTP ${res.status}`,
+    };
+  } catch (err) {
+    return {
+      valid: false,
+      error:
+        err instanceof DOMException && err.name === "AbortError"
+          ? "Request timed out"
+          : "Could not reach Arcee API",
+    };
+  }
+}
+
 /**
  * Verify an API key by making a lightweight request to the provider's API.
  * Providers without a simple verification endpoint (bedrock, local, pensar)
@@ -167,6 +194,8 @@ export async function verifyApiKey(
       return verifyOpenRouter(apiKey);
     case "inception":
       return verifyInception(apiKey);
+    case "arcee":
+      return verifyArcee(apiKey);
     case "bedrock":
     case "local":
     case "pensar":

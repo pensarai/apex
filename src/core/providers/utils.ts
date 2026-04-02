@@ -50,6 +50,8 @@ export function isProviderConfigured(
       return !!config.openRouterAPIKey;
     case "inception":
       return !!config.inceptionAPIKey;
+    case "arcee":
+      return !!config.arceeAPIKey;
     case "bedrock":
       return !!config.bedrockAPIKey;
     case "local":
@@ -72,6 +74,7 @@ export function hasAnyProviderConfigured(config: Config): boolean {
     !!config.googleAPIKey ||
     !!config.openRouterAPIKey ||
     !!config.inceptionAPIKey ||
+    !!config.arceeAPIKey ||
     !!config.bedrockAPIKey ||
     !!config.localModelUrl ||
     !!config.localModelName ||

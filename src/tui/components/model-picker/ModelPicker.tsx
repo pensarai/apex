@@ -21,6 +21,7 @@ const providerNames: Record<string, string> = {
   openrouter: "OpenRouter",
   bedrock: "Bedrock",
   pensar: "Pensar",
+  arcee: "Arcee AI",
   local: "Local LLM",
 };
 
@@ -29,6 +30,7 @@ const providerOrder = [
   "anthropic",
   "openai",
   "google",
+  "arcee",
   "openrouter",
   "bedrock",
   "local",

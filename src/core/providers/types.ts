@@ -5,6 +5,7 @@ export type ProviderType =
   | "bedrock"
   | "openrouter"
   | "inception"
+  | "arcee"
   | "pensar"
   | "local";
 
@@ -50,6 +51,12 @@ export const AVAILABLE_PROVIDERS: Provider[] = [
     id: "inception",
     name: "Inception",
     description: "Mercury and other Inception models",
+    requiresAPIKey: true,
+  },
+  {
+    id: "arcee",
+    name: "Arcee AI",
+    description: "Trinity reasoning models",
     requiresAPIKey: true,
   },
   {
