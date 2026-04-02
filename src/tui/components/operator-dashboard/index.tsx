@@ -329,9 +329,13 @@ export default function OperatorDashboard({
 
               // Restore plan content from a prior session so the cycleMode
               // gate doesn't force a redundant re-approval on Shift+Tab.
-              const planContent = readPlan(s.rootPath);
-              if (planContent) {
-                setApprovedPlanContent(planContent);
+              // Only mark the plan as approved if the user previously left
+              // plan mode (restoredMode !== "plan"), which signals prior approval.
+              if (restoredMode !== "plan") {
+                const planContent = readPlan(s.rootPath);
+                if (planContent) {
+                  setApprovedPlanContent(planContent);
+                }
               }
             }
           } else if (s.config?.operatorSettings) {
