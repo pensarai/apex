@@ -1,4 +1,13 @@
-import type { EnvironmentContext } from "../core/agents/specialized/cvssScorer";
+export interface EnvironmentContext {
+  /** Auto-detected indicators from URL/target analysis */
+  signals: string[];
+  /** Human-readable summary for the LLM */
+  description: string;
+  /** Whether this appears to be a production environment */
+  isProduction: boolean;
+  /** Freeform operator-provided notes */
+  userContext?: string;
+}
 
 /**
  * Patterns that indicate non-production environments.

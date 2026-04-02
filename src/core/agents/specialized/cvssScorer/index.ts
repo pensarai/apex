@@ -17,21 +17,14 @@ import {
   type ValidatedCweEntry,
 } from "../../../../lib/cwe/types";
 import { validateCweEntries } from "../../../../lib/cwe/validate";
+import type { EnvironmentContext } from "../../../../util/environment";
+
+export type { EnvironmentContext } from "../../../../util/environment";
+>>>>>>> 9072e18a (refactor: move EnvironmentContext type to util, fix prompt blank lines)
 
 // =============================================================================
 // Types
 // =============================================================================
-
-export interface EnvironmentContext {
-  /** Auto-detected indicators from URL/target analysis */
-  signals: string[];
-  /** Human-readable summary for the LLM */
-  description: string;
-  /** Whether this appears to be a production environment */
-  isProduction: boolean;
-  /** Freeform operator-provided notes */
-  userContext?: string;
-}
 
 export interface CVSSScorerInput {
   /** The finding to score */
@@ -451,14 +444,17 @@ ${evidence}
   // Add environment context if available
   if (input.environmentContext) {
     const env = input.environmentContext;
-    prompt += `## Environment Context
-
-**Classification:** ${env.isProduction ? "PRODUCTION" : "NON-PRODUCTION"}
-**Description:** ${env.description}
-${env.signals.length > 0 ? `**Detected Signals:** ${env.signals.join(", ")}` : ""}
-${env.userContext ? `**Operator Notes:** ${env.userContext}` : ""}
-
-`;
+    const lines = [
+      `**Classification:** ${env.isProduction ? "PRODUCTION" : "NON-PRODUCTION"}`,
+      `**Description:** ${env.description}`,
+    ];
+    if (env.signals.length > 0) {
+      lines.push(`**Detected Signals:** ${env.signals.join(", ")}`);
+    }
+    if (env.userContext) {
+      lines.push(`**Operator Notes:** ${env.userContext}`);
+    }
+    prompt += `## Environment Context\n\n${lines.join("\n")}\n\n`;
   }
 
   // Add context from agent conversation if available
