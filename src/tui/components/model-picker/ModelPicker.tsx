@@ -331,14 +331,10 @@ export function ModelPicker({
         return false;
       }
 
-      // Space - toggle reasoning checkbox
-      if (key.name === "space") {
-        const currentItem = navigationItems[focusedIndex];
-        if (currentItem?.type === "reasoning" && thinkingSupported) {
-          onReasoningToggle?.(!reasoningEnabled);
-          return true;
-        }
-        return false;
+      // Space - toggle reasoning checkbox from any row
+      if (key.name === "space" && onReasoningToggle && thinkingSupported) {
+        onReasoningToggle(!reasoningEnabled);
+        return true;
       }
 
       // Enter - confirm model selection, toggle provider, or start editing local input
@@ -690,21 +686,14 @@ export function ModelPicker({
       </scrollbox>
 
       {/* Reasoning toggle */}
-      {onReasoningToggle && (
+      {onReasoningToggle && thinkingSupported && (
         <box flexShrink={0} paddingTop={1}>
           <PickerRow id="reasoning-toggle">
             <text
-              fg={
-                isReasoningFocused
-                  ? colors.primary
-                  : !thinkingSupported
-                    ? colors.textMuted
-                    : colors.text
-              }
+              fg={isReasoningFocused ? colors.primary : colors.text}
             >
-              {reasoningEnabled && thinkingSupported ? "[x]" : "[ ]"} Extended
-              Thinking
-              {!thinkingSupported ? " (not supported)" : ""}
+              {reasoningEnabled ? "[x]" : "[ ]"} Extended Thinking
+              (Experimental)
             </text>
           </PickerRow>
         </box>
