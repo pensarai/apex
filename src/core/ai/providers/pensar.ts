@@ -463,7 +463,8 @@ export function createPensarModel(
                     activeReasoningId
                   ) {
                     activeReasoningSignature =
-                      (delta?.signature as string) ?? null;
+                      (activeReasoningSignature ?? "") +
+                      ((delta?.signature as string) ?? "");
                   } else if (deltaType === "text_delta" && activeTextId) {
                     controller.enqueue({
                       type: "text-delta",
