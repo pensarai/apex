@@ -368,7 +368,7 @@ export function ModelPicker({
       // Left/Right - collapse/expand provider
       if (key.name === "left" || key.name === "right") {
         const currentItem = navigationItems[focusedIndex];
-        if (!currentItem) return false;
+        if (!currentItem || currentItem.type === "reasoning") return false;
 
         const targetProvider =
           currentItem.type === "provider"
