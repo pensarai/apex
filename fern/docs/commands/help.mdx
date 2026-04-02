@@ -33,8 +33,11 @@ When you run `/help`, you'll see a dialog showing:
   <Card title="/operator" icon="terminal">
     Start an interactive operator session with step-by-step control. Alias: `/o`
   </Card>
-  <Card title="/sessions" icon="clock-rotate-left">
-    Browse and resume previous sessions. Alias: `/s`
+  <Card title="/resume" icon="clock-rotate-left">
+    Resume a previous session. Aliases: `/sessions`, `/s`
+  </Card>
+  <Card title="/plan" icon="list-check">
+    View the current pentest plan
   </Card>
 </CardGroup>
 
@@ -81,7 +84,8 @@ When you run `/help`, you'll see a dialog showing:
 | --------------- | ------------------ | ----------------------------------------------- |
 | `/pentest`      | `/p`, `/web`, `/w` | Start autonomous pentest swarm                  |
 | `/operator`     | `/o`               | Start interactive operator session              |
-| `/sessions`     | `/s`               | Browse previous sessions                        |
+| `/resume`       | `/sessions`, `/s`  | Resume a previous session                       |
+| `/plan`         |                    | Show current pentest plan                       |
 | `/help`         |                    | Show help dialog                                |
 | `/config`       |                    | Show config dialog                              |
 | `/models`       |                    | Show available AI models                        |
@@ -127,11 +131,12 @@ For new users, here's the recommended order of commands:
 
 | Key                | Action                                |
 | ------------------ | ------------------------------------- |
-| `Shift+Tab`        | Toggle Default / Plan mode            |
+| `Shift+Tab`        | Cycle mode (manual → auto → plan)     |
 | `Option+Shift+Tab` | Toggle approval on/off                |
 | `Ctrl+V`           | Toggle verbose output                 |
 | `Ctrl+L`           | Toggle expanded logs                  |
-| `Y`                | Approve pending tool call             |
+| `Y`                | Approve pending tool call / plan      |
+| `N`                | Reject plan (in plan review)          |
 | `A`                | Auto-approve all remaining tool calls |
 
 ## Command Suggestions
