@@ -225,12 +225,11 @@ export function ModelPicker({
         }
       }
     }
-    // Reasoning toggle — shown when the callback is provided
-    if (onReasoningToggle) {
+    if (onReasoningToggle && modelSupportsThinking(selectedModel.id)) {
       items.push({ type: "reasoning" });
     }
     return items;
-  }, [groupedModels, expandedProviders, onReasoningToggle]);
+  }, [groupedModels, expandedProviders, onReasoningToggle, selectedModel.id]);
 
   // Sync focusedIndex when selected model changes (e.g. on initial load)
   useEffect(() => {
@@ -347,7 +346,9 @@ export function ModelPicker({
           return true;
         }
 
-        if (currentItem.type === "provider") {
+        if (currentItem.type === "reasoning") {
+          onReasoningToggle?.(!reasoningEnabled);
+        } else if (currentItem.type === "provider") {
           const targetProvider = currentItem.provider;
           setExpandedProviders((prev) => {
             const next = new Set(prev);
