@@ -227,6 +227,7 @@ export default function OperatorDashboard({
   );
   const [showPlanReview, setShowPlanReview] = useState(false);
   const planSubmittedRef = useRef(false);
+  const planRejectedRef = useRef(false);
   const operatorModeRef = useRef(operatorMode);
   useEffect(() => {
     operatorModeRef.current = operatorMode;
@@ -1243,7 +1244,9 @@ export default function OperatorDashboard({
               ? getPlanFilePath(sessionRef.current.rootPath)
               : undefined,
             existingPlanContent:
-              agentMode === "plan" && sessionRef.current
+              agentMode === "plan" &&
+              planRejectedRef.current &&
+              sessionRef.current
                 ? readPlan(sessionRef.current.rootPath)
                 : null,
             approvedPlanContent:
@@ -1775,9 +1778,10 @@ export default function OperatorDashboard({
       return;
     }
 
-    // Entering plan mode — reset approved plan
+    // Entering plan mode — reset plan state for fresh cycle
     if (next === "plan") {
       setApprovedPlanContent(null);
+      planRejectedRef.current = false;
     }
 
     transitionToMode(next);
@@ -1872,6 +1876,7 @@ export default function OperatorDashboard({
       }
       if (key.name === "n" || key.raw === "N") {
         key.preventDefault?.();
+        planRejectedRef.current = true;
         setShowPlanReview(false);
         addSystemMessage(
           "Plan rejected. Refine the plan based on operator feedback.",
@@ -2051,6 +2056,7 @@ export default function OperatorDashboard({
             ? (value: string) => {
                 const trimmed = value.trim();
                 if (!trimmed) return;
+                planRejectedRef.current = true;
                 setShowPlanReview(false);
                 handleSubmit(trimmed);
               }
