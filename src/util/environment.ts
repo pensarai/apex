@@ -67,7 +67,12 @@ export function detectTargetEnvironment(
 
   const isProduction = signals.length === 0;
 
-  const description = buildDescription(targets, signals, isProduction, userContext);
+  const description = buildDescription(
+    targets,
+    signals,
+    isProduction,
+    userContext,
+  );
 
   return {
     signals,
