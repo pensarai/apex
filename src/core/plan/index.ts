@@ -1,0 +1,31 @@
+/**
+ * Plan File I/O Utilities
+ *
+ * Minimal sync helpers for reading/checking the pentest plan file
+ * stored in each session directory at {session.rootPath}/plan.md.
+ */
+
+import { join } from "path";
+import { existsSync, readFileSync } from "fs";
+
+const PLAN_FILENAME = "plan.md";
+
+/** Returns the absolute path to the plan file for a given session root. */
+export function planFilePath(sessionRootPath: string): string {
+  return join(sessionRootPath, PLAN_FILENAME);
+}
+
+/** Reads the plan file content. Returns null if the file doesn't exist. */
+export function readPlan(sessionRootPath: string): string | null {
+  const path = planFilePath(sessionRootPath);
+  try {
+    return readFileSync(path, "utf-8");
+  } catch {
+    return null;
+  }
+}
+
+/** Returns true if a plan file exists in the session directory. */
+export function hasPlan(sessionRootPath: string): boolean {
+  return existsSync(planFilePath(sessionRootPath));
+}

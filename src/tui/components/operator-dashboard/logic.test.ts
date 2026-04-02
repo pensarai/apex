@@ -153,6 +153,14 @@ describe("routeCommand", () => {
     expect(resolveSkill).toHaveBeenCalledWith("/my-skill");
   });
 
+  it("routes /plan to show-plan", () => {
+    expect(routeCommand("/plan", noSkill)).toEqual({ type: "show-plan" });
+  });
+
+  it("routes /plan with args to show-plan", () => {
+    expect(routeCommand("/plan open", noSkill)).toEqual({ type: "show-plan" });
+  });
+
   it("falls back to execute-command for unknown commands", () => {
     const result = routeCommand("/unknown-cmd", noSkill);
     expect(result).toEqual({
@@ -499,15 +507,32 @@ describe("buildOperatorSystemPrompt", () => {
     expect(prompt).toContain("# Tool Reference");
   });
 
-  it("includes plan mode note when agentMode is plan", () => {
+  it("includes plan mode prompt when agentMode is plan", () => {
     const prompt = buildOperatorSystemPrompt(target, state, "plan");
-    expect(prompt).toContain("Agent mode: PLAN");
-    expect(prompt).toContain("read-only tools only");
+    expect(prompt).toContain("PLAN MODE");
+    expect(prompt).toContain("write_plan");
+    expect(prompt).toContain("submit_plan");
   });
 
-  it("does not include plan mode note when agentMode is default", () => {
+  it("does not include plan mode prompt when agentMode is default", () => {
     const prompt = buildOperatorSystemPrompt(target, state, "default");
-    expect(prompt).not.toContain("Agent mode: PLAN");
+    expect(prompt).not.toContain("PLAN MODE");
+  });
+
+  it("includes approved plan content when provided outside plan mode", () => {
+    const prompt = buildOperatorSystemPrompt(target, state, "default", {
+      approvedPlanContent: "Test plan content",
+    });
+    expect(prompt).toContain("Approved Plan");
+    expect(prompt).toContain("Test plan content");
+  });
+
+  it("includes refinement block when existingPlanContent provided in plan mode", () => {
+    const prompt = buildOperatorSystemPrompt(target, state, "plan", {
+      existingPlanContent: "Old plan content",
+    });
+    expect(prompt).toContain("Do NOT Rewrite");
+    expect(prompt).toContain("Old plan content");
   });
 
   it("does not include plan mode note when agentMode is omitted", () => {

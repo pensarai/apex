@@ -229,6 +229,14 @@ export const commands: CommandConfig[] = [
     },
   },
   {
+    name: "plan",
+    description: "Show current pentest plan",
+    category: "Pentesting",
+    handler: async () => {
+      // Handled by the operator dashboard — this is a no-op for routing
+    },
+  },
+  {
     name: "threat-model",
     aliases: ["tm"],
     description: "Generate application-centric threat model",

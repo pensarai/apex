@@ -96,6 +96,9 @@ export type DisplayMessage = {
   subagentLogs?: Record<string, SubagentLogEntry>;
   // Pentest workflow display (present for run_pentest_workflow tool)
   workflowData?: WorkflowData;
+  // Plan review display (present when isPlanReview === true)
+  isPlanReview?: boolean;
+  planContent?: string;
 };
 
 function getStableKey(

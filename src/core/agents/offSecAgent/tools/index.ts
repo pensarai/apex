@@ -75,6 +75,10 @@ export { readSkill } from "./readSkill";
 // Observability tools
 export { checkpointState } from "./checkpointState";
 
+// Plan mode tools
+export { writePlan } from "./writePlan";
+export { submitPlan } from "./submitPlan";
+
 // ---------------------------------------------------------------------------
 // Tool registry
 // ---------------------------------------------------------------------------
@@ -120,6 +124,8 @@ import { webSearch } from "./webSearch";
 import { getPage } from "./getPage";
 import { readSkill } from "./readSkill";
 import { checkpointState } from "./checkpointState";
+import { writePlan } from "./writePlan";
+import { submitPlan } from "./submitPlan";
 
 /**
  * Create the full toolset for the OffensiveSecurityAgent.
@@ -192,6 +198,10 @@ export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
 
     // Observability tools (conditional — only when trace writer is provided)
     ...(ctx.traceWriter ? { checkpoint_state: checkpointState(ctx) } : {}),
+
+    // Plan mode tools
+    write_plan: writePlan(ctx),
+    submit_plan: submitPlan(ctx),
   } as const;
 }
 
@@ -247,6 +257,9 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "get_page",
   // Observability
   "checkpoint_state",
+  // Plan mode
+  "write_plan",
+  "submit_plan",
 ];
 
 /**
@@ -273,30 +286,31 @@ export const PLAN_MODE_TOOL_NAMES: ToolName[] = [
   "read_file",
   "list_files",
   "grep",
-  // Attack surface / recon
+  // Recon (read-only probing and discovery)
   "authenticate_session",
   "delegate_to_auth_subagent",
-  "create_attack_surface_report",
   "complete_authentication",
-  "run_attack_surface",
-  "spawn_pentest_swarm",
-  "spawn_coding_agent",
-  "run_pentest_workflow",
+  "extract_js_endpoints",
+  "crawl_authenticated_area",
+  "detect_auth_scheme",
+  "probe_auth_endpoints",
   "provide_comparison_results",
   // Memory
   "add_memory",
   "list_memories",
   "get_memory",
-  // Email
+  // Email (read-only)
   "email_list_inboxes",
   "email_list_messages",
   "email_get_message",
   "email_search_messages",
   "email_get_attachments",
-  "email_mark_read",
   // Web search
   "web_search",
   "get_page",
+  // Plan mode tools
+  "write_plan",
+  "submit_plan",
 ];
 
 /** Skill tool names — conditionally included when a skills registry is provided. */
