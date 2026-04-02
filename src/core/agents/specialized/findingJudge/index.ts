@@ -17,6 +17,13 @@ import { type AIAuthConfig } from "../../../ai/utils";
 // Types
 // =============================================================================
 
+export const FINDING_TYPES = [
+  "vulnerability",
+  "informational",
+  "expected-behavior",
+] as const;
+export type FindingType = (typeof FINDING_TYPES)[number];
+
 export interface FindingJudgeInput {
   /** The full POC script content */
   pocScript: string;
@@ -42,6 +49,8 @@ export interface FindingJudgeInput {
 export interface FindingJudgeResult {
   /** Whether the finding is legitimate and well-demonstrated */
   valid: boolean;
+  /** Classification of the finding */
+  findingType: FindingType;
   /** Confidence in the judgment (0.0-1.0) */
   confidence: number;
   /** Explanation of the judgment */
@@ -66,6 +75,11 @@ const FindingJudgeOutputSchema = z.object({
     .boolean()
     .describe(
       "Whether the POC legitimately demonstrates the claimed vulnerability",
+    ),
+  findingType: z
+    .enum(FINDING_TYPES)
+    .describe(
+      "Classification: 'vulnerability' for genuine security issues, 'informational' for low-risk observations worth noting, 'expected-behavior' for findings that describe intentional design decisions",
     ),
   confidence: z
     .number()
@@ -135,16 +149,36 @@ Does the demonstrated impact match the claimed vulnerability and impact?
 - Information disclosure evidence should not be described as a critical RCE
 - The endpoint tested should match the endpoint claimed in the finding
 
+### 5. Design Intent / Expected Behavior
+Is the "vulnerability" actually expected behavior for this context?
+
+Red flags for expected behavior (classify as expected-behavior or informational, not vulnerability):
+- Public API keys designed for client-side use (Stripe publishable keys \`pk_*\`, Google Maps API keys, Firebase config, reCAPTCHA site keys)
+- Sandbox/demo environments with intentionally relaxed security controls (disabled captcha, test credentials, test OTP codes)
+- Checkout/payment widgets accepting postMessages from any origin (required for cross-origin merchant embedding)
+- CORS configurations that are permissive by design for public APIs
+- Features working exactly as documented by the application
+- Security headers missing on endpoints serving only static/public content
+
+Ask: "Would a knowledgeable developer of this application consider this a bug, or an intentional design choice?"
+
 ## Decision Framework
 
-- **ACCEPT** when: The POC makes a real request to the target, receives a response that contains genuine evidence of the vulnerability, and the evidence matches the claim. Minor issues (verbose output, imperfect error handling) are acceptable.
+- **ACCEPT as vulnerability** when: The POC makes a real request to the target, receives a response containing genuine evidence of the vulnerability, the evidence matches the claim, and the behavior is clearly unintentional or exploitable beyond the application's designed functionality.
+- **ACCEPT as informational** when: The finding describes a real observation but is low-risk, describes a common default configuration, or could be intentional. Examples: missing security headers on non-sensitive endpoints, verbose error messages, permissive CORS on a public API.
+- **ACCEPT as expected-behavior** when: The finding describes behavior that is clearly by design. Examples: public API keys intended for client-side use, checkout widgets accepting cross-origin postMessages, sandbox environments with relaxed security.
 - **REJECT** when: The POC fabricates evidence, the output does not demonstrate the claimed vulnerability, the success condition is hardcoded, or there is a fundamental mismatch between what was demonstrated and what was claimed.
-- **When in doubt, ACCEPT.** False negatives (rejecting a real finding) are worse than false positives (accepting a marginal finding) because rejected findings require the agent to retry, costing time and tokens. Only reject when you have specific, articulable concerns.
+
+### Confidence calibration
+- When in doubt about exploitation legitimacy, **ACCEPT as vulnerability** — a borderline-real finding is worth documenting.
+- When in doubt about whether behavior is by-design, **classify as informational** rather than vulnerability — documenting expected behavior as a vulnerability undermines report credibility.
+- Below 0.7 confidence: always populate the concerns array explaining what makes the finding marginal.
 
 ## Output Instructions
 
 Provide your judgment as a structured assessment:
-- \`valid\`: true if the finding should be accepted, false if it should be rejected
+- \`valid\`: true if the finding should be accepted (as vulnerability, informational, or expected-behavior), false if it should be rejected
+- \`findingType\`: "vulnerability" for genuine security issues, "informational" for low-risk observations, "expected-behavior" for intentional design decisions
 - \`confidence\`: your confidence level from 0.0 to 1.0
 - \`reasoning\`: 2-4 sentences explaining your key observations
 - \`concerns\`: specific issues found (empty array if valid). Each concern should be a single actionable sentence.`;
@@ -215,6 +249,7 @@ export async function judgeFinding(
 
     return {
       valid: true,
+      findingType: "vulnerability",
       confidence: 0.5,
       reasoning: `Finding judge failed (${type}${statusStr}: ${message.substring(0, 200)}), accepting with low confidence.`,
       concerns: [],
@@ -283,5 +318,6 @@ Consider:
 2. Does the output contain genuine evidence of the vulnerability (not fabricated by the script)?
 3. Is the success condition based on real exploitation results, not hardcoded values?
 4. Does the demonstrated impact align with the claimed vulnerability class and severity?
+5. Could the observed behavior be an intentional design decision rather than a vulnerability?
 `;
 }
