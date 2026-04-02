@@ -108,6 +108,13 @@ export function AgentProvider({ children }: AgentProviderProps) {
     });
   }, []);
 
+  // Sync reasoningEnabled when config loads asynchronously
+  useEffect(() => {
+    if (appConfig.data?.reasoningEnabled != null) {
+      setReasoningEnabledInternal(appConfig.data.reasoningEnabled);
+    }
+  }, [appConfig.data?.reasoningEnabled]);
+
   // Re-evaluate the default model whenever config changes (e.g. after
   // provider setup) unless the user has explicitly picked a model.
   useEffect(() => {
