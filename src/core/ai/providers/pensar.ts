@@ -137,6 +137,7 @@ export function createPensarModel(
       };
 
       const textParts: Record<string, string> = {};
+      const reasoningParts: Record<string, { text: string; providerMetadata?: Record<string, Record<string, unknown>> }> = {};
       const toolInputParts: Record<
         string,
         { toolName: string; input: string }
@@ -149,6 +150,23 @@ export function createPensarModel(
           if (done) break;
 
           switch (value.type) {
+            case "reasoning-start":
+              reasoningParts[value.id] = { text: "" };
+              break;
+            case "reasoning-delta":
+              if (reasoningParts[value.id]) {
+                reasoningParts[value.id].text += value.delta;
+              }
+              break;
+            case "reasoning-end":
+              if (reasoningParts[value.id]) {
+                content.push({
+                  type: "reasoning",
+                  text: reasoningParts[value.id].text,
+                  providerMetadata: value.providerMetadata,
+                });
+              }
+              break;
             case "text-start":
               textParts[value.id] = "";
               break;
@@ -302,6 +320,8 @@ export function createPensarModel(
           let startEmitted = false;
           // Track active content blocks for proper id mapping
           let activeTextId: string | null = null;
+          let activeReasoningId: string | null = null;
+          let activeReasoningSignature: string | null = null;
           let activeToolId: string | null = null;
           let activeToolName: string | null = null;
           let activeToolInput = "";
@@ -395,7 +415,14 @@ export function createPensarModel(
                     | Record<string, unknown>
                     | undefined;
                   const cbType = cb?.type as string | undefined;
-                  if (cbType === "text") {
+                  if (cbType === "thinking") {
+                    activeReasoningId = `reasoning-${Date.now()}-${parsed.index}`;
+                    activeReasoningSignature = null;
+                    controller.enqueue({
+                      type: "reasoning-start",
+                      id: activeReasoningId,
+                    });
+                  } else if (cbType === "text") {
                     activeTextId = `text-${Date.now()}-${parsed.index}`;
                     controller.enqueue({
                       type: "text-start",
@@ -419,7 +446,15 @@ export function createPensarModel(
                     | Record<string, unknown>
                     | undefined;
                   const deltaType = delta?.type as string | undefined;
-                  if (deltaType === "text_delta" && activeTextId) {
+                  if (deltaType === "thinking_delta" && activeReasoningId) {
+                    controller.enqueue({
+                      type: "reasoning-delta",
+                      id: activeReasoningId,
+                      delta: (delta?.thinking as string) ?? "",
+                    });
+                  } else if (deltaType === "signature_delta" && activeReasoningId) {
+                    activeReasoningSignature = (delta?.signature as string) ?? null;
+                  } else if (deltaType === "text_delta" && activeTextId) {
                     controller.enqueue({
                       type: "text-delta",
                       id: activeTextId,
@@ -438,7 +473,19 @@ export function createPensarModel(
                 }
 
                 case "content_block_stop": {
-                  if (activeTextId) {
+                  if (activeReasoningId) {
+                    controller.enqueue({
+                      type: "reasoning-end",
+                      id: activeReasoningId,
+                      ...(activeReasoningSignature && {
+                        providerMetadata: {
+                          anthropic: { signature: activeReasoningSignature },
+                        },
+                      }),
+                    });
+                    activeReasoningId = null;
+                    activeReasoningSignature = null;
+                  } else if (activeTextId) {
                     controller.enqueue({ type: "text-end", id: activeTextId });
                     activeTextId = null;
                   } else if (activeToolId && activeToolName) {

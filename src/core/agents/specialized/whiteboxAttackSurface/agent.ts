@@ -63,6 +63,7 @@ export class WhiteboxAttackSurfaceAgent extends OffensiveSecurityAgent<WhiteboxA
       subagentId,
       attackSurfaceRegistry,
       domains,
+      enableThinking,
     } = opts;
 
     // Closure variable that the response tool writes to
@@ -92,6 +93,7 @@ This ends the agent run — make sure all data is included.`,
       eventBus,
       subagentId,
       attackSurfaceRegistry,
+      enableThinking,
       activeTools: [
         // Filesystem tools — for Phase 1 repo identification
         "read_file",

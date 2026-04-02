@@ -365,8 +365,7 @@ export function streamResponse(
     ? {
         anthropic: {
           thinking: {
-            type: "enabled" as const,
-            budgetTokens: thinkingBudget ?? 10_000,
+            type: "adaptive" as const,
           },
         },
       }
