@@ -113,7 +113,7 @@ function convertToAnthropicFormat(
           for (const c of assistantContent) {
             if (c.type === "reasoning") {
               const sig = (
-                c.providerOptions as
+                c.providerMetadata as
                   | Record<string, Record<string, unknown>>
                   | undefined
               )?.anthropic?.signature as string | undefined;
