@@ -39,14 +39,30 @@ When you open `/models`, you'll see:
 - **Selection indicator**: Current model highlighted with a bullet (●)
 - **Show more/less**: Expand to see all models if a provider has many
 
+## Extended Thinking (Experimental)
+
+When a supported model is selected, the model picker displays an **Extended Thinking** toggle at the bottom of the list. Extended thinking enables the model to use a chain-of-thought reasoning step before responding, which can improve the quality of complex security analysis.
+
+<Callout intent="info">
+  Extended Thinking is supported on **Claude 3.7 Sonnet**, **Claude Sonnet 4**, **Claude Opus 4**, and **Claude Haiku 4.5** — including Anthropic direct, AWS Bedrock, and Pensar provider variants.
+</Callout>
+
+To toggle Extended Thinking:
+
+- Press `[Space]` from any row in the model picker, or
+- Navigate to the `[ ] Extended Thinking (Experimental)` row and press `[Enter]`
+
+The setting is persisted to your config and applies to all subsequent sessions (pentest and operator).
+
 ## Keyboard Navigation
 
-| Key        | Action                   |
-| ---------- | ------------------------ |
-| `[↑/↓]`    | Navigate between models  |
-| `[Enter]`  | Select highlighted model |
-| `[Ctrl+P]` | Open provider management |
-| `[ESC]`    | Close and return home    |
+| Key        | Action                              |
+| ---------- | ----------------------------------- |
+| `[↑/↓]`    | Navigate between models             |
+| `[Enter]`  | Select highlighted model            |
+| `[Space]`  | Toggle Extended Thinking            |
+| `[Ctrl+P]` | Open provider management            |
+| `[ESC]`    | Close and return home               |
 
 ## Supported AI Providers
 
