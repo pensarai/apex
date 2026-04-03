@@ -57,6 +57,10 @@ export interface FindingJudgeResult {
   reasoning: string;
   /** Specific concerns identified (empty if valid) */
   concerns: string[];
+  /** Whether the title accurately reflects what the POC demonstrated (not theoretical impact) */
+  titleAccurate: boolean;
+  /** A corrected title if the original overclaims. Only set when titleAccurate is false. */
+  suggestedTitle?: string;
   /** Present when the judge fell back due to an error — contains diagnostics */
   error?: {
     message: string;
@@ -95,6 +99,17 @@ const FindingJudgeOutputSchema = z.object({
     .array(z.string())
     .describe(
       "Specific concerns identified. Empty array if the finding is valid.",
+    ),
+  titleAccurate: z
+    .boolean()
+    .describe(
+      "Whether the title accurately reflects what the POC demonstrated (not theoretical impact)",
+    ),
+  suggestedTitle: z
+    .string()
+    .optional()
+    .describe(
+      "A corrected title if the original overclaims. Only set when titleAccurate is false.",
     ),
 });
 
@@ -141,13 +156,22 @@ Red flags:
 - Success determination is based on the presence of a string the script itself injected into its own variables
 - Script ignores the actual response body and declares success based solely on HTTP status code when the vulnerability requires response analysis
 
-### 4. Severity Alignment
+### 4. Severity Alignment & Title Accuracy
 Does the demonstrated impact match the claimed vulnerability and impact?
 
 - A POC that only shows an error message should not claim "full database compromise"
 - A reflected XSS POC should not claim "remote code execution"
 - Information disclosure evidence should not be described as a critical RCE
 - The endpoint tested should match the endpoint claimed in the finding
+
+**Title inflation red flags:**
+- Title claims a multi-step attack (e.g., "Account Takeover", "RCE") but the POC only demonstrates an enabling condition (e.g., missing rate limiting, information disclosure)
+- Title says "Enables X" but the POC does not demonstrate X actually succeeding
+- A POC that only shows missing rate limiting should be titled "Missing Rate Limiting on [endpoint]", NOT "Account Takeover via [endpoint]" or "Missing Rate Limiting Enables Account Takeover"
+- A POC that only shows user enumeration should NOT be titled "Authentication Bypass"
+- A POC that sends requests without rate limiting should NOT claim "Brute-Force Attack" unless brute-forcing actually succeeded
+
+**The title should describe what was DEMONSTRATED, not theoretical downstream impact.** Theoretical impact belongs in the impact/description fields.
 
 ### 5. Design Intent / Expected Behavior
 Is the "vulnerability" actually expected behavior for this context?
@@ -181,7 +205,9 @@ Provide your judgment as a structured assessment:
 - \`findingType\`: "vulnerability" for genuine security issues, "informational" for low-risk observations, "expected-behavior" for intentional design decisions
 - \`confidence\`: your confidence level from 0.0 to 1.0
 - \`reasoning\`: 2-4 sentences explaining your key observations
-- \`concerns\`: specific issues found (empty array if valid). Each concern should be a single actionable sentence.`;
+- \`concerns\`: specific issues found (empty array if valid). Each concern should be a single actionable sentence.
+- \`titleAccurate\`: true if the title describes what was actually demonstrated; false if it overclaims or includes theoretical impact
+- \`suggestedTitle\`: if titleAccurate is false, provide a corrected title that describes only what the POC demonstrated. Otherwise, omit this field.`;
 
 // =============================================================================
 // Main Function
@@ -253,6 +279,7 @@ export async function judgeFinding(
       confidence: 0.5,
       reasoning: `Finding judge failed (${type}${statusStr}: ${message.substring(0, 200)}), accepting with low confidence.`,
       concerns: [],
+      titleAccurate: true,
       error: {
         message: `${message}${statusStr}`,
         type,
@@ -318,6 +345,7 @@ Consider:
 2. Does the output contain genuine evidence of the vulnerability (not fabricated by the script)?
 3. Is the success condition based on real exploitation results, not hardcoded values?
 4. Does the demonstrated impact align with the claimed vulnerability class and severity?
-5. Could the observed behavior be an intentional design decision rather than a vulnerability?
+5. Does the title accurately describe what was demonstrated, or does it overclaim by describing theoretical downstream impact?
+6. Could the observed behavior be an intentional design decision rather than a vulnerability?
 `;
 }

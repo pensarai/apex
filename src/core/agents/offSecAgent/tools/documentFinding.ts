@@ -212,6 +212,11 @@ CRITICAL RULES — READ BEFORE CALLING:
 
         const isVulnerability = judgeResult.findingType === "vulnerability";
 
+        // Apply suggested title if judge flagged title inflation
+        if (!judgeResult.titleAccurate && judgeResult.suggestedTitle) {
+          input.title = judgeResult.suggestedTitle;
+        }
+
         // Write sidecar only after judge acceptance (avoid wasted I/O on rejection)
         writePocOutputSidecar(
           ctx.session.pocsPath,
@@ -384,6 +389,10 @@ CRITICAL RULES — READ BEFORE CALLING:
             findingType: judgeResult.findingType,
             confidence: judgeResult.confidence,
             reasoning: judgeResult.reasoning,
+            titleAccurate: judgeResult.titleAccurate,
+            ...(judgeResult.suggestedTitle && {
+              suggestedTitle: judgeResult.suggestedTitle,
+            }),
             ...(judgeResult.error && { error: judgeResult.error }),
           },
         };
@@ -442,6 +451,11 @@ ${finding.evidence}
             `**Endpoint:** ${finding.endpoint}`,
             `**Date:** ${timestamp}`,
             `**Session:** ${session.id}`,
+            ...(!judgeResult.titleAccurate && judgeResult.suggestedTitle
+              ? [
+                  `\n> **Note:** Title was corrected by judge to accurately reflect demonstrated impact.`,
+                ]
+              : []),
           ];
 
           const markdown = `# ${finding.title}
