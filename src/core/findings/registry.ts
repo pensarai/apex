@@ -30,9 +30,18 @@ const VULN_CLASS_PATTERNS: [RegExp, string][] = [
     "information-disclosure",
   ],
   [/open\s*redirect/i, "open-redirect"],
-  [/missing.*rate[\s-]*limit|rate[\s-]*limit.*missing|no\s*rate[\s-]*limit/i, "missing-rate-limiting"],
-  [/user[\s-]*enumeration|account[\s-]*enumeration|email[\s-]*enumeration/i, "user-enumeration"],
-  [/hardcoded[\s-]*credential|hardcoded[\s-]*password|hardcoded[\s-]*key|exposed[\s-]*api[\s-]*key/i, "hardcoded-credentials"],
+  [
+    /missing.*rate[\s-]*limit|rate[\s-]*limit.*missing|no\s*rate[\s-]*limit/i,
+    "missing-rate-limiting",
+  ],
+  [
+    /user[\s-]*enumeration|account[\s-]*enumeration|email[\s-]*enumeration/i,
+    "user-enumeration",
+  ],
+  [
+    /hardcoded[\s-]*credential|hardcoded[\s-]*password|hardcoded[\s-]*key|exposed[\s-]*api[\s-]*key/i,
+    "hardcoded-credentials",
+  ],
   [/captcha[\s-]*bypass|missing[\s-]*captcha/i, "captcha-bypass"],
   [/missing.*header|security\s*header/i, "missing-security-header"],
 ];
