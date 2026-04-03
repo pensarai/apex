@@ -799,7 +799,9 @@ export default function WebWizard({
                   }))
                 }
                 onPaste={(event) => {
-                  const cleaned = String(event.text).replace(/\r?\n/g, " ");
+                  const cleaned = new TextDecoder()
+                    .decode(event.bytes)
+                    .replace(/\r?\n/g, " ");
                   setState((prev) => ({
                     ...prev,
                     auth: {
@@ -821,7 +823,9 @@ export default function WebWizard({
                   }))
                 }
                 onPaste={(event) => {
-                  const cleaned = String(event.text).replace(/\r?\n/g, " ");
+                  const cleaned = new TextDecoder()
+                    .decode(event.bytes)
+                    .replace(/\r?\n/g, " ");
                   setState((prev) => ({
                     ...prev,
                     auth: {
@@ -843,7 +847,9 @@ export default function WebWizard({
                   }))
                 }
                 onPaste={(event) => {
-                  const cleaned = String(event.text).replace(/\r?\n/g, " ");
+                  const cleaned = new TextDecoder()
+                    .decode(event.bytes)
+                    .replace(/\r?\n/g, " ");
                   setState((prev) => ({
                     ...prev,
                     auth: {
@@ -865,7 +871,9 @@ export default function WebWizard({
                   }))
                 }
                 onPaste={(event) => {
-                  const cleaned = String(event.text).replace(/\r?\n/g, " ");
+                  const cleaned = new TextDecoder()
+                    .decode(event.bytes)
+                    .replace(/\r?\n/g, " ");
                   setState((prev) => ({
                     ...prev,
                     auth: {

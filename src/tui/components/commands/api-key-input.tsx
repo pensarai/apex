@@ -92,7 +92,7 @@ export default function APIKeyInput({
               setApiKey(typeof value === "string" ? value : "")
             }
             onPaste={(event) => {
-              const cleaned = String(event.text);
+              const cleaned = new TextDecoder().decode(event.bytes);
               setApiKey((prev) => `${prev}${cleaned}`);
             }}
             onSubmit={handleSubmit}

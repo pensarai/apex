@@ -9,20 +9,13 @@ interface PasteEntry {
 const LARGE_PASTE_MIN_LINES = 5;
 const LARGE_PASTE_MIN_CHARS = 500;
 
+import type { PasteEvent } from "@opentui/core";
+
 const pasteDecoder = new TextDecoder();
 
-/**
- * Extract the pasted text string from a PasteEvent.
- *
- * @opentui/core ≤0.1.84 provides `event.text` (string).
- * @opentui/core ≥0.1.95 provides `event.bytes` (Uint8Array) instead.
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function extractPasteText(event: any): string {
-  if (typeof event.text === "string") return event.text;
-  if (event.bytes instanceof Uint8Array)
-    return pasteDecoder.decode(event.bytes);
-  return String(event.text ?? event.bytes ?? "");
+/** Decode a PasteEvent's bytes payload to a string. */
+function extractPasteText(event: PasteEvent): string {
+  return pasteDecoder.decode(event.bytes);
 }
 
 /**
@@ -51,8 +44,7 @@ export function usePasteExtmarks(
    * Intercepts large pastes (5+ lines or 500+ chars) and inserts a
    * virtual extmark placeholder instead.
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const handlePaste = (event: any) => {
+  const handlePaste = (event: PasteEvent) => {
     const textarea = textareaRef.current;
     if (!textarea) return;
 

@@ -548,10 +548,9 @@ export function ModelPicker({
                         setLocalUrl(typeof v === "string" ? v : "")
                       }
                       onPaste={(event) => {
-                        const cleaned = String(event.text).replace(
-                          /\r?\n/g,
-                          "",
-                        );
+                        const cleaned = new TextDecoder()
+                          .decode(event.bytes)
+                          .replace(/\r?\n/g, "");
                         setLocalUrl((prev) => `${prev}${cleaned}`);
                       }}
                       onSubmit={finishEditing}
@@ -592,10 +591,9 @@ export function ModelPicker({
                         setLocalModelName(typeof v === "string" ? v : "")
                       }
                       onPaste={(event) => {
-                        const cleaned = String(event.text).replace(
-                          /\r?\n/g,
-                          "",
-                        );
+                        const cleaned = new TextDecoder()
+                          .decode(event.bytes)
+                          .replace(/\r?\n/g, "");
                         setLocalModelName((prev) => `${prev}${cleaned}`);
                       }}
                       onSubmit={finishEditing}

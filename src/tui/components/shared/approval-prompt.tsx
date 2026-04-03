@@ -136,13 +136,8 @@ export function ApprovalInputArea({
           width="100%"
           value={redirectInput}
           onInput={setRedirectInput}
-          onPaste={(event: any) => {
-            const raw =
-              typeof event.text === "string"
-                ? event.text
-                : event.bytes instanceof Uint8Array
-                  ? new TextDecoder().decode(event.bytes)
-                  : String(event.text ?? "");
+          onPaste={(event) => {
+            const raw = new TextDecoder().decode(event.bytes);
             const cleaned = raw.replace(/\r?\n/g, " ");
             setRedirectInput(cleaned);
           }}
