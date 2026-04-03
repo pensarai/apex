@@ -63,11 +63,11 @@ fi
     console.log("Title accurate:", result.titleAccurate);
     console.log("Suggested title:", result.suggestedTitle);
     console.log("Reasoning:", result.reasoning);
-    
+
     // Verify that title accuracy field is properly populated
     expect(result.titleAccurate).toBeDefined();
     expect(typeof result.titleAccurate).toBe("boolean");
-    
+
     // If the judge flags the title as inaccurate, verify suggested title is provided
     if (!result.titleAccurate) {
       expect(result.suggestedTitle).toBeDefined();
@@ -156,16 +156,17 @@ exit 0
 `,
       pocType: "bash",
       pocOutput: {
-        stdout: "Testing invitation code endpoint...\nSent 50 requests without rate limiting",
+        stdout:
+          "Testing invitation code endpoint...\nSent 50 requests without rate limiting",
         stderr: "",
         exitCode: 0,
       },
       claim: {
-        title: "Missing Rate Limiting on Invitation Code Acceptance Enables Brute-Force",
+        title:
+          "Missing Rate Limiting on Invitation Code Acceptance Enables Brute-Force",
         description:
           "The invitation code acceptance endpoint does not implement rate limiting.",
-        impact:
-          "An attacker could brute-force valid invitation codes.",
+        impact: "An attacker could brute-force valid invitation codes.",
         evidence: "Sent 50 POST requests without receiving rate limit errors.",
         endpoint: "https://example.com/api/invite/accept",
         vulnerabilityClass: "missing-rate-limiting",
@@ -181,7 +182,7 @@ exit 0
 
     // Log result for debugging
     console.log("Judge result:", JSON.stringify(result, null, 2));
-    
+
     // The judge may accept "Enables Brute-Force" as reasonable wording for a rate limiting
     // issue since brute-forcing is a direct consequence, even if not fully demonstrated.
     // The key is that the judge is now evaluating title accuracy.
