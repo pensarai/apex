@@ -49,7 +49,7 @@ With flags:
 | **Default** | All tools are available; the agent can read, write, and mutate targets      |
 | **Plan**    | Read-only tools only — mutation tools (create_file, update_file, create_poc, document_vulnerability, document_app, document_endpoint) are excluded so the agent can only observe and plan |
 
-You can toggle between Default and Plan mode at any time during a session using `Shift+Tab`. The current mode is shown in the operator dashboard header.
+You can toggle between Default and Plan mode at any time during a session using `Shift+Tab`. The current mode is shown in the operator dashboard header. Mode changes are automatically persisted, so when you resume a session later via `/sessions`, it starts in the most recent mode you selected.
 
 <Callout intent="info">
   **Plan mode** is useful for reviewing the agent's strategy before allowing any mutations. Start in Plan mode to understand the agent's approach, then switch to Default mode when you're ready for it to take action.

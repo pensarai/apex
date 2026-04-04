@@ -36,9 +36,15 @@ When you run `/sessions`, Apex displays a scrollable list of your saved sessions
   You can also open the sessions dialog at any time using the `Ctrl+S` keyboard shortcut.
 </Callout>
 
+## Resuming Sessions
+
+When you resume a session, Apex restores the operator mode (Default, Plan, or Manual) that was active when the session was last used. This means you pick up exactly where you left off — if you were in Default mode with approvals off, the session resumes in that state.
+
+If a plan existed but was never approved before the session ended, Plan mode is preserved so you can review and approve it before the agent takes action.
+
 ## Session Storage
 
-Sessions are stored locally in `~/.pensar/sessions/`. Each session includes the full conversation history, findings, and any generated reports. Session data is preserved even when you run `pensar uninstall`.
+Sessions are stored locally in `~/.pensar/sessions/`. Each session includes the full conversation history, findings, operator mode, and any generated reports. Session data is preserved even when you run `pensar uninstall`.
 
 ## Related Commands
 
