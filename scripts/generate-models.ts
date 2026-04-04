@@ -100,6 +100,7 @@ const CONTEXT_LENGTHS: Record<string, number> = {
   "mistral.pixtral": 128000,
   "openai.gpt-oss": 8000,
   "deepseek.r1": 64000,
+  "moonshotai.kimi": 262000,
   "anthropic.claude-v2": 100000,
   "anthropic.claude-instant": 100000,
   "anthropic.claude-3": 200000,
@@ -170,6 +171,7 @@ function formatModelName(modelId: string, provider: string): string {
       ["mistral.", ""],
       ["openai.", ""],
       ["deepseek.", "DeepSeek "],
+      ["moonshotai.", "Moonshot AI "],
     ];
     for (const [prefix, label] of vendors) {
       if (id.startsWith(prefix)) {
@@ -372,6 +374,20 @@ function formatModelName(modelId: string, provider: string): string {
     return provider === "bedrock"
       ? name + (regionSuffix || " (Bedrock)")
       : name;
+  }
+
+  // --- Moonshot AI (Kimi) models ---
+  if (id.startsWith("Moonshot AI ")) {
+    let rest = id.slice("Moonshot AI ".length);
+    rest = rest
+      .split("-")
+      .map((p) => {
+        if (/^k\d/i.test(p)) return p.toUpperCase();
+        return capitalize(p);
+      })
+      .join(" ");
+    const name = `Moonshot AI ${rest}${dateSuffix}`;
+    return name + (regionSuffix || " (Bedrock)");
   }
 
   // --- Google Gemini/Gemma models ---
@@ -578,6 +594,17 @@ function main() {
   const bedrockRawIds = extractUnionMembers(bedrockDts, "BedrockChatModelId");
   // Deduplicate (SDK type has some duplicates)
   const bedrockBaseIds = [...new Set(bedrockRawIds)];
+
+  // Models available on Bedrock but not yet in the AI SDK type definitions
+  const EXTRA_BEDROCK_IDS = ["moonshotai.kimi-k2.5"];
+
+  const existingIds = new Set(bedrockBaseIds);
+  for (const id of EXTRA_BEDROCK_IDS) {
+    if (!existingIds.has(id)) {
+      bedrockBaseIds.push(id);
+    }
+  }
+
   const bedrockRegionalIds = generateBedrockRegionalVariants(bedrockBaseIds);
   const allBedrockIds = [...bedrockBaseIds, ...bedrockRegionalIds];
   const bedrockModels: ModelEntry[] = allBedrockIds.map((id) => ({
