@@ -47,12 +47,12 @@ With flags:
 | Mode        | Description                                                                 |
 | ----------- | --------------------------------------------------------------------------- |
 | **Default** | All tools are available; the agent can read, write, and mutate targets      |
-| **Plan**    | Read-only tools only — mutation tools (create_file, update_file, create_poc, document_vulnerability, document_app, document_endpoint) are excluded so the agent can only observe and plan |
+| **Plan**    | Read-only and reconnaissance tools only — the agent writes a structured pentest plan using `write_plan` and submits it for your review via `submit_plan`. Mutation tools are excluded so the agent can only observe and plan |
 
-You can toggle between Default and Plan mode at any time during a session using `Shift+Tab`. The current mode is shown in the operator dashboard header.
+You can toggle between Default and Plan mode at any time during a session using `Shift+Tab`. The current mode is shown in the operator dashboard header. Your mode selection is persisted so resumed sessions start in the correct mode.
 
 <Callout intent="info">
-  **Plan mode** is useful for reviewing the agent's strategy before allowing any mutations. Start in Plan mode to understand the agent's approach, then switch to Default mode when you're ready for it to take action.
+  **Plan mode** produces a structured pentest plan with objectives, scope, reconnaissance findings, attack surface maps, prioritized attack vectors, and estimated action tiers. You can approve, reject (sending the agent back to refine), or edit the plan before approving. Once approved, switch to Default mode to execute.
 </Callout>
 
 ### Approval Control
@@ -170,7 +170,7 @@ Once you start an operator session:
 - The AI agent begins analysis based on your chosen mode
 - You interact in real time, approving or steering actions
 - Findings are reported as they're discovered
-- The session is automatically saved and can be resumed via `/sessions`
+- The session is automatically saved and can be resumed via `/resume`
 
 ## Related Commands
 
@@ -178,7 +178,7 @@ Once you start an operator session:
   <Card title="/pentest" icon="play" href="/apex/commands/pentest">
     Run an autonomous pentest instead
   </Card>
-  <Card title="/sessions" icon="clock-rotate-left" href="/apex/commands/help">
+  <Card title="/resume" icon="clock-rotate-left" href="/apex/commands/sessions">
     Browse and resume previous sessions
   </Card>
   <Card title="/models" icon="microchip" href="/apex/commands/models">

@@ -107,6 +107,7 @@ When you open `/models`, you'll see:
     - Claude models via Bedrock
     - Amazon Nova models
     - Meta Llama models
+    - Moonshot AI Kimi K2.5 (262K context)
     - And more...
 
     <Callout intent="info">
@@ -188,6 +189,17 @@ Click "Connect provider" or press `Ctrl+P` to open the provider management inter
     Capability: Good - Cost: Lower
   </Card>
 </CardGroup>
+
+## Extended Thinking (Experimental)
+
+When a model supports extended thinking (e.g. Anthropic Claude models), the model picker displays an **Extended Thinking** toggle at the bottom of the model list. This allows the model to perform deeper reasoning before responding, which can improve results for complex security analysis.
+
+- Toggle with `[Space]` from any row, or navigate to the checkbox and press `[Enter]`
+- The setting is marked as **Experimental** and is persisted in your config
+
+<Callout intent="info">
+  Extended Thinking is only available for models that support it. The toggle will not appear for models without thinking support.
+</Callout>
 
 ## Performance Considerations
 

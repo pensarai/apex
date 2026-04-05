@@ -66,7 +66,7 @@ navigation:
             path: ./docs/commands/models.mdx
           - page: /providers
             path: ./docs/commands/providers.mdx
-          - page: /sessions
+          - page: /resume
             path: ./docs/commands/sessions.mdx
           - page: /themes
             path: ./docs/commands/themes.mdx
