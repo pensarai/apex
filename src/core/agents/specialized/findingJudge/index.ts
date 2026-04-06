@@ -121,6 +121,7 @@ Does the POC output actually demonstrate the claimed vulnerability?
 - For IDOR: Does the output show access to resources belonging to other users/accounts?
 - For authentication bypass: Does the output show access to protected resources without valid credentials?
 - For email injection / HTML injection: The PoC must show more than "server accepted HTML input." Verify: (a) the email was actually sent (success response confirming delivery), AND (b) ideally, the email was retrieved via IMAP/POP3 or confirmed via out-of-band callback. If only (a) is met, reduce confidence and note "HTML rendering in email client was not independently verified."
+- For missing rate limiting / anti-automation: Does the output show a statistically significant number of requests (minimum 50) that all succeeded without throttling? A handful of successful requests (fewer than 20) is insufficient — rate limiting may use sliding windows, IP-based quotas, or progressive delays that only trigger at higher volumes. The finding should document the exact request count and distribution.
 
 ### 2. Hallucination Detection
 Could the POC be manufacturing fake evidence rather than demonstrating real exploitation?
@@ -175,6 +176,7 @@ Ask: "Would a knowledgeable developer of this application consider this a bug, o
 - When in doubt about whether behavior is by-design, **classify as informational** rather than vulnerability — documenting expected behavior as a vulnerability undermines report credibility.
 - Email/HTML injection findings without independent rendering verification (e.g., only a 200 OK response): confidence must be < 0.7. Add a concern noting that HTML rendering in the recipient's email client was not independently verified.
 - Below 0.7 confidence: always populate the concerns array explaining what makes the finding marginal.
+- For rate-limiting / anti-automation findings: If the POC sent fewer than 50 requests, assign confidence below 0.7 and add a concern: "Insufficient test volume — only N requests were sent. Rate limiting mechanisms may use thresholds above this volume." If the finding does not state the exact number of requests sent, add a concern: "Finding does not specify the number of test requests sent."
 
 ## Output Instructions
 
