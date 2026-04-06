@@ -15,7 +15,7 @@ import {
   getAutoPopulatedHosts,
   getAutoPopulatedPorts,
 } from "../../../util/url";
-import { wrapThreatModelContent } from "../../../core/utils/prompt";
+import { createThreatModelPrompt } from "../../../core/utils/prompt";
 import { combinePromptParts } from "../../utils/command-flags";
 import { scrollToChild } from "../../utils/scroll";
 
@@ -397,7 +397,7 @@ export default function WebWizard({
       const resolvedTm = state.threatModel.trim()
         ? threatModelPreWrapped
           ? state.threatModel.trim()
-          : wrapThreatModelContent(state.threatModel.trim())
+          : createThreatModelPrompt(state.threatModel.trim())
         : undefined;
       const combinedPrompt = combinePromptParts(
         resolvedTm,

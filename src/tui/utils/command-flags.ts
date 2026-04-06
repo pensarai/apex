@@ -11,7 +11,7 @@ import type { SessionConfig } from "../../core/session";
 import type { OperatorMode } from "../../core/operator";
 import { createToolsetState } from "../../core/toolset";
 import { parseTargetUrl } from "../../util/url";
-import { wrapThreatModelContent } from "../../core/utils/prompt";
+import { createThreatModelPrompt } from "../../core/utils/prompt";
 
 /**
  * Combine resolved threat model and prompt into a single prompt string.
@@ -61,7 +61,7 @@ export function resolveFlagValue(value: string): string {
  */
 export function resolveThreatModelPrompt(value: string): string {
   const content = resolveFlagValue(value);
-  return wrapThreatModelContent(content);
+  return createThreatModelPrompt(content);
 }
 
 // ============================================================================
