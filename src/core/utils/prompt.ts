@@ -10,7 +10,7 @@
  * Wrap raw threat model content with the standard preamble that instructs
  * the pentest agent on how to use the threat model.
  */
-export function wrapThreatModelContent(content: string): string {
+export function createThreatModelPrompt(content: string): string {
   return `## Threat Model
 
 The following threat model was generated for this application. Use it to guide your pentest:
