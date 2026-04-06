@@ -26,7 +26,6 @@ import type { AuthCredentials } from "../src/core/agents/specialized/authenticat
 import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { runAuthenticationAgent } from "../src/core/api";
-import { AgentEventBus } from "../src/core/eventBus";
 import { config } from "dotenv";
 
 config();
@@ -128,20 +127,30 @@ async function runAuth(options: AuthOptions): Promise<void> {
       console.log("=".repeat(80));
       console.log();
 
-      const bus = new AgentEventBus();
-      bus.on("text-delta", (d) => process.stdout.write(d.text));
-      bus.on("tool-call-complete", (d) =>
-        console.log(`→ calling ${d.toolName}`),
-      );
-      bus.on("tool-result", (d) => console.log(`✓ ${d.toolName} completed`));
-      bus.on("error", (d) => console.error("Agent error:", d.error));
-
-      const result = await runAuthenticationAgent({
+      const run = runAuthenticationAgent({
         session,
         model: model as AIModel,
         target,
-        eventBus: bus,
       });
+
+      for await (const event of run) {
+        switch (event.type) {
+          case "text-delta":
+            process.stdout.write(event.data.text);
+            break;
+          case "tool-call-complete":
+            console.log(`→ calling ${event.data.toolName}`);
+            break;
+          case "tool-result":
+            console.log(`✓ ${event.data.toolName} completed`);
+            break;
+          case "error":
+            console.error("Agent error:", event.data.error);
+            break;
+        }
+      }
+
+      const result = await run.result;
 
       console.log();
       console.log("=".repeat(80));
@@ -180,7 +189,7 @@ async function runAuth(options: AuthOptions): Promise<void> {
       target,
       session,
       model: model as AIModel,
-    });
+    }).result;
 
     console.log();
     console.log("=".repeat(80));

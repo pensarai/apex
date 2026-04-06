@@ -16,7 +16,7 @@ describe.skip("Attack Surface", () => {
         target: TARGET_URL,
         model: "claude-haiku-4-5",
         session,
-      });
+      }).result;
       expect(result).toBeDefined();
     },
     { timeout: 300_000 },

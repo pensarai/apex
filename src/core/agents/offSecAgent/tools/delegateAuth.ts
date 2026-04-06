@@ -293,11 +293,12 @@ When to use delegate_to_auth_subagent vs authenticate_session:
         }
 
         // Dynamic import to break circular dependency:
-        // authAgent → offensiveSecurityAgent → tools/index → delegateAuth → api/authentication → authAgent
-        const { runAuthenticationAgent } =
-          await import("../../../api/authentication");
+        // authAgent → offensiveSecurityAgent → tools/index → delegateAuth → authAgent
+        const { AuthenticationAgent } = await import(
+          "../../specialized/authenticationAgent/agent"
+        );
 
-        const result = await runAuthenticationAgent({
+        const authAgent = new AuthenticationAgent({
           target,
           session: ctx.session,
           authHints,
@@ -307,6 +308,8 @@ When to use delegate_to_auth_subagent vs authenticate_session:
           eventBus: ctx.eventBus,
           subagentId,
         });
+
+        const result = await authAgent.consume();
 
         ctx.eventBus?.emit("subagent-complete", {
           subagentId,

@@ -1,3 +1,6 @@
+// ---- AgentRun ----
+export { AgentRun } from "./agentRun";
+
 // ---- Agent runners ----
 export * from "./attackSurface";
 export * from "./authentication";
@@ -43,6 +46,7 @@ export type {
   AuthenticationSubagentInput,
   AuthenticationSubagentResult,
 } from "../agents/specialized/authenticationAgent/types";
+export type { AuthenticationResult } from "../agents/specialized/authenticationAgent/agent";
 
 // ---- Agent input/result types ----
 export type { PentestAgentInput } from "../agents/specialized/pentest/agent";

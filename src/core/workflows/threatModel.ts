@@ -4,7 +4,7 @@ import type { SessionInfo } from "../session";
 import type { AgentEventBus } from "../eventBus";
 import { ALL_TOOL_NAMES, SKILL_TOOL_NAMES } from "../agents/offSecAgent";
 import { buildBaseSystemPrompt } from "../agents/offSecAgent/prompt";
-import { runOffensiveSecurityAgent } from "../api/offesecAgent";
+import { OffensiveSecurityAgent } from "../agents/offSecAgent/offensiveSecurityAgent";
 import { sessions } from "../session";
 import { createSkillsRegistry } from "../skills";
 import { buildThreatModelPrompt } from "../skills/builtins/threatModel";
@@ -83,7 +83,7 @@ You are generating an application-centric threat model from source code analysis
 Working directory: ${input.codebasePath}`;
 
   // Run the agent
-  await runOffensiveSecurityAgent({
+  const agent = new OffensiveSecurityAgent({
     system,
     prompt,
     model,
@@ -94,6 +94,7 @@ Working directory: ${input.codebasePath}`;
     skillsRegistry: registry,
     eventBus: input.eventBus,
   });
+  await agent.consume();
 
   return { session, outputPath: input.outputPath };
 }

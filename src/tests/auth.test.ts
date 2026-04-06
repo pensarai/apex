@@ -1,4 +1,7 @@
-import { runAuthenticationAgent } from "../core/api/authentication";
+import {
+  AuthenticationAgent,
+  type AuthenticationAgentInput,
+} from "../core/agents/specialized/authenticationAgent/agent";
 import { AgentEventBus } from "../core/eventBus";
 import { sessions } from "../core/session";
 import { describe, it, expect } from "vitest";
@@ -60,12 +63,13 @@ describe.skip("Authentication Agent", () => {
     bus.on("tool-result", (d) => console.log(`✓ ${d.toolName} completed`));
     bus.on("error", (d) => console.error("Agent error:", d.error));
 
-    const result = await runAuthenticationAgent({
+    const agent = new AuthenticationAgent({
       target: TARGET_URL,
       model: "claude-haiku-4-5",
       session,
       eventBus: bus,
     });
+    const result = await agent.consume();
 
     console.log(
       `\nResult: ${result.success ? "SUCCESS" : "FAILED"} — ${result.summary}`,
@@ -103,12 +107,13 @@ describe.skip("Authentication Agent", () => {
     bus2.on("tool-result", (d) => console.log(`✓ ${d.toolName} completed`));
     bus2.on("error", (d) => console.error("Agent error:", d.error));
 
-    const result = await runAuthenticationAgent({
+    const agent2 = new AuthenticationAgent({
       target: TARGET_URL,
       model: "claude-haiku-4-5",
       session,
       eventBus: bus2,
     });
+    const result = await agent2.consume();
 
     console.log(
       `\nResult: ${result.success ? "SUCCESS" : "FAILED"} — ${result.summary}`,
@@ -162,7 +167,7 @@ describe.skip("Authentication Agent", () => {
     bus3.on("tool-result", (d) => console.log(`✓ ${d.toolName} completed`));
     bus3.on("error", (d) => console.error("Agent error:", d.error));
 
-    const result = await runAuthenticationAgent({
+    const agent3 = new AuthenticationAgent({
       target: TARGET_URL,
       model: "claude-haiku-4-5",
       session,
@@ -176,6 +181,7 @@ describe.skip("Authentication Agent", () => {
       },
       eventBus: bus3,
     });
+    const result = await agent3.consume();
 
     console.log(
       `\nResult: ${result.success ? "SUCCESS" : "FAILED"} — ${result.summary}`,

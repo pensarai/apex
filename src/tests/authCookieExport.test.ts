@@ -1,4 +1,4 @@
-import { runAuthenticationAgent } from "../core/api/authentication";
+import { AuthenticationAgent } from "../core/agents/specialized/authenticationAgent/agent";
 import { AgentEventBus } from "../core/eventBus";
 import { sessions } from "../core/session";
 import { describe, it, expect } from "vitest";
@@ -63,7 +63,7 @@ describe.skip("Authentication Agent — Cookie Export", () => {
       });
       bus.on("error", (d) => console.error("Agent error:", d.error));
 
-      const result = await runAuthenticationAgent({
+      const agent = new AuthenticationAgent({
         target: TARGET_URL,
         model: "claude-haiku-4-5",
         session,
@@ -77,6 +77,7 @@ describe.skip("Authentication Agent — Cookie Export", () => {
         },
         eventBus: bus,
       });
+      const result = await agent.consume();
 
       console.log("\n========== AUTH RESULT ==========");
       console.log("success:", result.success);

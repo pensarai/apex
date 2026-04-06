@@ -1,8 +1,17 @@
 import {
-  runAuthenticationAgent as _runAuthAgent,
+  AuthenticationAgent,
   type AuthenticationAgentInput,
+  type AuthenticationResult,
 } from "../agents/specialized/authenticationAgent/agent";
+import { AgentRun } from "./agentRun";
 
-// Re-export from the canonical location
-export const runAuthenticationAgent = _runAuthAgent;
 export type { AuthenticationAgentInput };
+
+export function runAuthenticationAgent(
+  input: Omit<AuthenticationAgentInput, "eventBus">,
+): AgentRun<AuthenticationResult> {
+  return new AgentRun(async (eventBus) => {
+    const agent = new AuthenticationAgent({ ...input, eventBus });
+    return agent.consume();
+  });
+}

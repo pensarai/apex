@@ -15,7 +15,8 @@ import {
   type SessionConfig,
   normalizeMessages,
 } from "../../../core/session";
-import { runOffensiveSecurityAgent } from "../../../core/api/offesecAgent";
+import { OffensiveSecurityAgent } from "../../../core/agents/offSecAgent/offensiveSecurityAgent";
+import type { OffensiveSecurityAgentInput, CreateAgentInput } from "../../../core/agents/offSecAgent";
 import { attachWandbToEventBus } from "../../../core/integrations/wandb/upload";
 import { buildAuthConfig } from "../../../core/ai/utils";
 import type { CacheMetrics } from "../../../core/ai";
@@ -1268,11 +1269,14 @@ export default function OperatorDashboard({
         );
 
         if (session) {
-          agentResult = await runOffensiveSecurityAgent({
+          const agent = new OffensiveSecurityAgent({
             ...commonInput,
             system: systemPrompt,
             session,
-          });
+          } as OffensiveSecurityAgentInput);
+          commonInput.onSessionReady?.(agent.session);
+          await agent.consume();
+          agentResult = { streamResult: agent.streamResult, session: agent.session };
         } else {
           // First call — let the agent factory create the session
           const sessionConfig: SessionConfig = {
@@ -1285,7 +1289,7 @@ export default function OperatorDashboard({
             },
             agentCwd: initialConfig?.sandbox ? undefined : process.cwd(),
           };
-          agentResult = await runOffensiveSecurityAgent({
+          const agent = await OffensiveSecurityAgent.create({
             ...commonInput,
             system: systemPrompt,
             sessionConfig,
@@ -1293,7 +1297,10 @@ export default function OperatorDashboard({
               pendingNameRef.current = name;
               setSession((prev) => (prev ? { ...prev, name } : prev));
             },
-          });
+          } as CreateAgentInput);
+          commonInput.onSessionReady?.(agent.session);
+          await agent.consume();
+          agentResult = { streamResult: agent.streamResult, session: agent.session };
           // Apply any AI-generated name that arrived while the stream was running
           const created = agentResult.session;
           if (pendingNameRef.current) {

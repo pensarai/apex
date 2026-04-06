@@ -1,6 +1,7 @@
 import { PatchingAgent } from "../agents/specialized/patching/agent";
 import type { PatchingAgentInput } from "../agents/specialized/patching/types";
 import type { PatchResult } from "../agents/specialized/patching/types";
+import { AgentRun } from "./agentRun";
 
 export type { PatchResult, PatchingAgentInput };
 
@@ -13,9 +14,11 @@ export type { PatchResult, PatchingAgentInput };
  *
  * @returns Structured patch result with file changes and PR metadata.
  */
-export async function runPatchingAgent(
-  input: PatchingAgentInput,
-): Promise<PatchResult> {
-  const agent = new PatchingAgent(input);
-  return agent.consume();
+export function runPatchingAgent(
+  input: Omit<PatchingAgentInput, "eventBus">,
+): AgentRun<PatchResult> {
+  return new AgentRun(async (eventBus) => {
+    const agent = new PatchingAgent({ ...input, eventBus });
+    return agent.consume();
+  });
 }

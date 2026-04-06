@@ -11,7 +11,6 @@ import packageJson from "../package.json";
 import { getCurrentVersion, upgrade } from "./core/installation";
 import { buildAuthConfig } from "./core/ai/utils";
 import { resolvePentestMode } from "./core/cli/pentestMode";
-import { AgentEventBus } from "./core/eventBus";
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -43,13 +42,6 @@ function getAllArgs(flag: string, argv = args): string[] {
     }
   }
   return values;
-}
-
-function attachCliAgentStreamListeners(bus: AgentEventBus): void {
-  bus.on("text-delta", (d) => process.stdout.write(d.text));
-  bus.on("tool-call-complete", (d) => console.log(`\n→ ${d.toolName}`));
-  bus.on("tool-result", (d) => console.log(`✓ ${d.toolName} completed`));
-  bus.on("error", (d) => console.error("Error:", d.error));
 }
 
 // ---------------------------------------------------------------------------
@@ -142,18 +134,32 @@ Model:   ${model}
     },
   });
 
-  const pentestBus = new AgentEventBus();
-  attachCliAgentStreamListeners(pentestBus);
+  const run = runPentestAgent({
+    target,
+    ...(cwd ? { cwd } : {}),
+    session,
+    model,
+    authConfig: buildAuthConfig(pensarConfig),
+  });
 
-  const { findings, findingsPath, pocsPath, reportPath } =
-    await runPentestAgent({
-      target,
-      ...(cwd ? { cwd } : {}),
-      session,
-      model,
-      authConfig: buildAuthConfig(pensarConfig),
-      eventBus: pentestBus,
-    });
+  for await (const event of run) {
+    switch (event.type) {
+      case "text-delta":
+        process.stdout.write(event.data.text);
+        break;
+      case "tool-call-complete":
+        console.log(`\n→ ${event.data.toolName}`);
+        break;
+      case "tool-result":
+        console.log(`✓ ${event.data.toolName} completed`);
+        break;
+      case "error":
+        console.error("Error:", event.data.error);
+        break;
+    }
+  }
+
+  const { findings, findingsPath, pocsPath, reportPath } = await run.result;
 
   console.log(`
 ${sep}
@@ -212,7 +218,7 @@ ${objectivesList}
     session,
     model,
     authConfig: buildAuthConfig(pensarConfig),
-  });
+  }).result;
 
   console.log(`
 ${sep}
@@ -252,19 +258,31 @@ Output:   ${resolvedPath}
 Model:    ${model}
 `);
 
-  const threatBus = new AgentEventBus();
-  threatBus.on("text-delta", (d) => process.stdout.write(d.text));
-  threatBus.on("tool-call-complete", (d) => console.log(`\n  → ${d.toolName}`));
-  threatBus.on("tool-result", (d) => console.log(`  ✓ ${d.toolName}`));
-  threatBus.on("error", (d) => console.error("Error:", d.error));
-
-  await runThreatModelWorkflow({
+  const run = runThreatModelWorkflow({
     codebasePath: process.cwd(),
     outputPath: resolvedPath,
     model,
     authConfig: buildAuthConfig(pensarConfig),
-    eventBus: threatBus,
   });
+
+  for await (const event of run) {
+    switch (event.type) {
+      case "text-delta":
+        process.stdout.write(event.data.text);
+        break;
+      case "tool-call-complete":
+        console.log(`\n  → ${event.data.toolName}`);
+        break;
+      case "tool-result":
+        console.log(`  ✓ ${event.data.toolName}`);
+        break;
+      case "error":
+        console.error("Error:", event.data.error);
+        break;
+    }
+  }
+
+  await run.result;
 
   console.log(
     `\n${sep}\nCOMPLETE\n${sep}\nThreat model written to: ${resolvedPath}`,

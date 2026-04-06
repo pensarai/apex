@@ -6,11 +6,17 @@ import type { StreamTextResult, ToolSet } from "ai";
 import type { SessionInfo } from "../session";
 
 import { OffensiveSecurityAgent } from "../agents/offSecAgent/offensiveSecurityAgent";
+import { AgentRun } from "./agentRun";
 
 export interface RunAgentResult {
   streamResult: StreamTextResult<ToolSet, never>;
   session: SessionInfo;
 }
+
+type RunnerInput = (
+  | Omit<OffensiveSecurityAgentInput, "eventBus">
+  | Omit<CreateAgentInput, "eventBus">
+) & { onSessionReady?: (session: SessionInfo) => void };
 
 /**
  * Run the offensive security agent, consuming its stream to completion.
@@ -22,17 +28,18 @@ export interface RunAgentResult {
  * Returns the stream result **and** the session so callers can access a
  * session that was auto-created by the factory.
  */
-export async function runOffensiveSecurityAgent(
-  input: (OffensiveSecurityAgentInput | CreateAgentInput) & {
-    onSessionReady?: (session: SessionInfo) => void;
-  },
-): Promise<RunAgentResult> {
-  const agent = input.session
-    ? new OffensiveSecurityAgent(input as OffensiveSecurityAgentInput)
-    : await OffensiveSecurityAgent.create(input as CreateAgentInput);
+export function runOffensiveSecurityAgent(
+  input: RunnerInput,
+): AgentRun<RunAgentResult> {
+  return new AgentRun(async (eventBus) => {
+    const fullInput = { ...input, eventBus };
+    const agent = fullInput.session
+      ? new OffensiveSecurityAgent(fullInput as OffensiveSecurityAgentInput)
+      : await OffensiveSecurityAgent.create(fullInput as CreateAgentInput);
 
-  input.onSessionReady?.(agent.session);
+    input.onSessionReady?.(agent.session);
 
-  await agent.consume();
-  return { streamResult: agent.streamResult, session: agent.session };
+    await agent.consume();
+    return { streamResult: agent.streamResult, session: agent.session };
+  });
 }

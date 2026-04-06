@@ -2,16 +2,14 @@ import {
   BenchmarkComparisonAgent,
   type BenchmarkComparisonAgentInput,
 } from "../agents/specialized/benchmarkComparisonAgent";
-// ---------------------------------------------------------------------------
-// Convenience runner
-// ---------------------------------------------------------------------------
+import { AgentRun } from "./agentRun";
 
-export async function runBenchmarkComparisonAgent(
+export function runBenchmarkComparisonAgent(
   input: BenchmarkComparisonAgentInput,
 ) {
-  const agent = new BenchmarkComparisonAgent(input);
-
-  const { comparison, resultsPath } = await agent.consume();
-
-  return { comparison, resultsPath };
+  return new AgentRun(async (_eventBus) => {
+    const agent = new BenchmarkComparisonAgent(input);
+    const { comparison, resultsPath } = await agent.consume();
+    return { comparison, resultsPath };
+  });
 }

@@ -1,6 +1,7 @@
 import { EnvironmentAgent } from "../agents/specialized/environment/agent";
 import type { EnvironmentAgentInput } from "../agents/specialized/environment/types";
 import type { EnvironmentResult } from "../agents/specialized/environment/types";
+import { AgentRun } from "./agentRun";
 
 export type { EnvironmentResult, EnvironmentAgentInput };
 
@@ -14,9 +15,11 @@ export type { EnvironmentResult, EnvironmentAgentInput };
  * @returns Structured result with application URL, status, steps taken,
  *          and authentication details.
  */
-export async function runEnvironmentAgent(
-  input: EnvironmentAgentInput,
-): Promise<EnvironmentResult> {
-  const agent = new EnvironmentAgent(input);
-  return agent.consume();
+export function runEnvironmentAgent(
+  input: Omit<EnvironmentAgentInput, "eventBus">,
+): AgentRun<EnvironmentResult> {
+  return new AgentRun(async (eventBus) => {
+    const agent = new EnvironmentAgent({ ...input, eventBus });
+    return agent.consume();
+  });
 }
