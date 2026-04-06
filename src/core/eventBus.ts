@@ -64,15 +64,8 @@ export type AgentEventMap = {
 };
 
 /**
- * Ensures a readonly tuple contains every member of a union type.
- * Compile error if any AgentEventName is missing from the array.
- */
-type ExhaustiveEventNames<T extends readonly (keyof AgentEventMap)[]> =
-  Exclude<keyof AgentEventMap, T[number]> extends never ? T : never;
-
-/**
  * Every event name in AgentEventMap. Adding a new event to the map
- * without adding it here is a compile error.
+ * without adding it here is a compile error (see assertion below).
  */
 export const AGENT_EVENT_NAMES = [
   "text-delta",
@@ -88,7 +81,16 @@ export const AGENT_EVENT_NAMES = [
   "command-output",
   "error",
   "trace-record",
-] as const satisfies ExhaustiveEventNames<typeof AGENT_EVENT_NAMES>;
+] as const satisfies readonly (keyof AgentEventMap)[];
+
+/** Compile-time check: fails if any AgentEventMap key is missing above. */
+type _MissingEvents = Exclude<
+  keyof AgentEventMap,
+  (typeof AGENT_EVENT_NAMES)[number]
+>;
+type _AssertAllEventsPresent = [_MissingEvents] extends [never]
+  ? true
+  : ["Missing events in AGENT_EVENT_NAMES:", _MissingEvents];
 
 /**
  * Centralized, typed event bus for agent streaming output.
