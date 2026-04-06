@@ -241,16 +241,21 @@ export default function WebWizard({
     if (scopeManuallyEdited) return;
     const target = state.target.trim();
     if (!target) return;
-    const autoHosts = getAutoPopulatedHosts(target, []);
-    const autoPorts = getAutoPopulatedPorts(target, []);
-    setState((prev) => ({
-      ...prev,
-      scope: {
-        ...prev.scope,
-        allowedHosts: autoHosts,
-        allowedPorts: autoPorts.map(String),
-      },
-    }));
+    setState((prev) => {
+      const autoHosts = getAutoPopulatedHosts(target, prev.scope.allowedHosts);
+      const autoPorts = getAutoPopulatedPorts(
+        target,
+        prev.scope.allowedPorts.map(Number).filter((p) => !isNaN(p)),
+      );
+      return {
+        ...prev,
+        scope: {
+          ...prev.scope,
+          allowedHosts: autoHosts,
+          allowedPorts: autoPorts.map(String),
+        },
+      };
+    });
   }, [state.target]);
 
   // Create session and navigate to session route
