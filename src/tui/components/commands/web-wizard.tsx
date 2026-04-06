@@ -352,15 +352,15 @@ export default function WebWizard({
     // Don't allow navigation while creating
     if (creating) return;
 
+    // Ctrl+O — open model picker overlay
+    if (key.ctrl && key.name === "o") {
+      key.preventDefault();
+      setShowModelPicker(true);
+      return;
+    }
+
     // Enter — start pentest or add item
-    // Note: Ctrl+M sends carriage return in terminals, so we check key.ctrl
-    // to distinguish Ctrl+M (open model picker) from plain Enter (submit).
     if (key.name === "return") {
-      if (key.ctrl) {
-        key.preventDefault();
-        setShowModelPicker(true);
-        return;
-      }
       key.preventDefault();
 
       // Add host
@@ -552,7 +552,7 @@ export default function WebWizard({
             variant: "primary",
           },
           { key: "↑/↓", label: "Navigate" },
-          { key: "Ctrl+M", label: "Model" },
+          { key: "Ctrl+O", label: "Model" },
         ]}
       >
         <scrollbox
