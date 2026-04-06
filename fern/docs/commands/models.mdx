@@ -41,12 +41,24 @@ When you open `/models`, you'll see:
 
 ## Keyboard Navigation
 
-| Key        | Action                   |
-| ---------- | ------------------------ |
-| `[↑/↓]`    | Navigate between models  |
-| `[Enter]`  | Select highlighted model |
-| `[Ctrl+P]` | Open provider management |
-| `[ESC]`    | Close and return home    |
+| Key        | Action                           |
+| ---------- | -------------------------------- |
+| `[↑/↓]`    | Navigate between models          |
+| `[Enter]`  | Select highlighted model         |
+| `[Space]`  | Toggle adaptive thinking         |
+| `[←/→]`    | Navigate to reasoning toggle     |
+| `[Ctrl+P]` | Open provider management         |
+| `[ESC]`    | Close and return home            |
+
+## Adaptive Thinking
+
+Supported Claude models (Claude 3.7 Sonnet and all Claude 4.x+) can use **adaptive thinking** — an extended reasoning mode where the model thinks through complex problems step by step before responding.
+
+When a supported model is selected, a reasoning toggle appears at the bottom of the model picker. Toggle it with `[Space]` from any row, or navigate to it and press `[Enter]`.
+
+<Callout intent="info">
+  Adaptive thinking is an experimental feature marked with an `[experimental]` tag. It may increase response quality for complex security analysis at the cost of additional tokens and latency.
+</Callout>
 
 ## Supported AI Providers
 
@@ -107,6 +119,7 @@ When you open `/models`, you'll see:
     - Claude models via Bedrock
     - Amazon Nova models
     - Meta Llama models
+    - Moonshot AI Kimi K2.5
     - And more...
 
     <Callout intent="info">

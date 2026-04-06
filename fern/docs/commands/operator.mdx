@@ -47,12 +47,23 @@ With flags:
 | Mode        | Description                                                                 |
 | ----------- | --------------------------------------------------------------------------- |
 | **Default** | All tools are available; the agent can read, write, and mutate targets      |
-| **Plan**    | Read-only tools only — mutation tools (create_file, update_file, create_poc, document_vulnerability, document_app, document_endpoint) are excluded so the agent can only observe and plan |
+| **Plan**    | Read-only recon tools plus plan authoring — mutation tools are excluded so the agent can only observe and draft a plan |
 
 You can toggle between Default and Plan mode at any time during a session using `Shift+Tab`. The current mode is shown in the operator dashboard header.
 
+### Plan Review Workflow
+
+When the agent is in Plan mode, it uses the `write_plan` and `submit_plan` tools to draft and propose a structured penetration testing plan. The workflow is:
+
+1. The agent performs reconnaissance using read-only tools
+2. It drafts a plan using `write_plan`, which saves a `plan.md` file in the session directory
+3. It calls `submit_plan` to present the plan for your review
+4. You can **approve** the plan (the agent switches to Default mode and executes it) or **reject** it with feedback (the agent refines the plan)
+
+Plans persist across sessions — when you resume a session that had an unapproved plan, you'll re-enter Plan mode to review it.
+
 <Callout intent="info">
-  **Plan mode** is useful for reviewing the agent's strategy before allowing any mutations. Start in Plan mode to understand the agent's approach, then switch to Default mode when you're ready for it to take action.
+  **Plan mode** is useful for reviewing the agent's strategy before allowing any mutations. Start in Plan mode to understand the agent's approach, then approve the plan when you're ready for the agent to take action.
 </Callout>
 
 ### Approval Control
@@ -93,7 +104,8 @@ Toggle approval with `Option+Shift+Tab` (or `Alt+Shift+Tab` on Linux/Windows).
 | `Ctrl+V`           | Toggle verbose output                   |
 | `Ctrl+L`           | Toggle expanded logs                    |
 | `Ctrl+C`           | Abort running agent / clear input       |
-| `Y`                | Approve pending tool call               |
+| `Y`                | Approve pending tool call or plan       |
+| `N`                | Reject pending plan (with feedback)     |
 | `A`                | Auto-approve all remaining tool calls   |
 | `Escape`           | Exit operator session (when idle)       |
 
@@ -170,7 +182,7 @@ Once you start an operator session:
 - The AI agent begins analysis based on your chosen mode
 - You interact in real time, approving or steering actions
 - Findings are reported as they're discovered
-- The session is automatically saved and can be resumed via `/sessions`
+- The session is automatically saved and can be resumed via `/resume`
 
 ## Related Commands
 
@@ -178,7 +190,7 @@ Once you start an operator session:
   <Card title="/pentest" icon="play" href="/apex/commands/pentest">
     Run an autonomous pentest instead
   </Card>
-  <Card title="/sessions" icon="clock-rotate-left" href="/apex/commands/help">
+  <Card title="/resume" icon="clock-rotate-left" href="/apex/commands/sessions">
     Browse and resume previous sessions
   </Card>
   <Card title="/models" icon="microchip" href="/apex/commands/models">
