@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useKeyboard } from "@opentui/react";
 import { ScrollBoxRenderable } from "@opentui/core";
 import Input from "../input";
@@ -6,8 +6,6 @@ import { useConfig } from "../../context/config";
 import { useAgent } from "../../context/agent";
 import type { SessionConfig } from "../../../core/session";
 import { SpinnerDots } from "../sprites";
-import { type ModelInfo } from "../../../core/ai";
-import { getAvailableModels } from "../../../core/providers/utils";
 import { useTheme } from "../../theme";
 import { Dialog } from "../../context/dialog";
 import DialogLayout from "../dialog-layout";
@@ -18,6 +16,7 @@ import {
 import { createThreatModelPrompt } from "../../../core/utils/prompt";
 import { combinePromptParts } from "../../utils/command-flags";
 import { scrollToChild } from "../../utils/scroll";
+import { ModelPickerDialog } from "../model-picker";
 
 // Wizard state interface
 interface WizardState {
@@ -82,6 +81,10 @@ interface WebWizardProps {
   initialThreatModel?: string;
 }
 
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
 export default function WebWizard({
   onClose,
   onStartPentest,
@@ -105,96 +108,22 @@ export default function WebWizard({
   const config = useConfig();
   const { model, setModel, isModelUserSelected } = useAgent();
 
-  // Available models based on configured API keys
-  const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
-  const [selectedModelIndex, setSelectedModelIndex] = useState(0);
-
-  // Model picker state
-  const [modelSearchQuery, setModelSearchQuery] = useState("");
-  const [expandedProviders, setExpandedProviders] = useState<Set<string>>(
-    new Set(["anthropic"]),
-  );
-
-  // Provider display names
-  const providerNames: Record<string, string> = {
-    anthropic: "Claude",
-    openai: "OpenAI",
-    openrouter: "OpenRouter",
-    bedrock: "Bedrock",
-  };
-
-  // Provider order
-  const providerOrder = ["anthropic", "openai", "openrouter", "bedrock"];
-
-  // Group models by provider and filter by search
-  const groupedModels = useMemo(() => {
-    const groups: Record<string, ModelInfo[]> = {};
-    const query = modelSearchQuery.toLowerCase().trim();
-
-    for (const m of availableModels) {
-      // Fuzzy match: check if query matches model name or id
-      if (
-        query &&
-        !m.name.toLowerCase().includes(query) &&
-        !m.id.toLowerCase().includes(query)
-      ) {
-        continue;
-      }
-      if (!groups[m.provider]) {
-        groups[m.provider] = [];
-      }
-      groups[m.provider].push(m);
-    }
-    return groups;
-  }, [availableModels, modelSearchQuery]);
-
-  // Flat list of visible models for keyboard navigation
-  const visibleModels = useMemo(() => {
-    const result: ModelInfo[] = [];
-    for (const provider of providerOrder) {
-      const models = groupedModels[provider];
-      if (!models || models.length === 0) continue;
-      if (expandedProviders.has(provider)) {
-        result.push(...models);
-      }
-    }
-    return result;
-  }, [groupedModels, expandedProviders]);
-
-  // Load available models when config changes
+  // Set initial model if provided
   useEffect(() => {
-    if (config.data) {
+    if (config.data && initialModel) {
+      const { getAvailableModels } = require("../../../core/providers/utils");
       const models = getAvailableModels(config.data);
-      setAvailableModels(models);
-
-      // If initialModel was provided, try to set it
-      if (initialModel) {
-        const targetModel = models.find((m) => m.id === initialModel);
-        if (targetModel) {
-          setModel(targetModel, false);
-          const newIndex = models.findIndex((m) => m.id === targetModel.id);
-          if (newIndex >= 0) {
-            setSelectedModelIndex(newIndex);
-          }
-          setExpandedProviders(new Set([targetModel.provider]));
-          return;
-        }
-      }
-
-      // Find current model in the list
-      const currentIndex = models.findIndex((m) => m.id === model.id);
-      if (currentIndex >= 0) {
-        setSelectedModelIndex(currentIndex);
-      }
-      // Auto-expand provider of current model
-      if (models.length > 0) {
-        const currentModel = models.find((m) => m.id === model.id) || models[0];
-        if (currentModel) {
-          setExpandedProviders(new Set([currentModel.provider]));
-        }
+      const targetModel = models.find(
+        (m: { id: string }) => m.id === initialModel,
+      );
+      if (targetModel) {
+        setModel(targetModel, false);
       }
     }
-  }, [config.data, model.id, initialModel]);
+  }, [config.data, initialModel]);
+
+  // Model picker overlay state
+  const [showModelPicker, setShowModelPicker] = useState(false);
 
   // Wizard state
   const [creating, setCreating] = useState(false);
@@ -267,10 +196,9 @@ export default function WebWizard({
   //   next: Scope - Add Port
   //   next: Scope - Strict Scope toggle
   //   next: Scope - Enumerate Subdomains toggle
-  //   next: Headers - Mode
-  //   next: Headers - Header Name (only when custom)
-  //   next: Headers - Header Value (only when custom)
-  //   next: Model picker
+  //   next: Headers Mode (cycle)
+  //   next: Header Name (only when custom)
+  //   next: Header Value (only when custom)
 
   const cwdFieldIndex = state.sourceCodeAccess ? 2 : -1;
   const advancedToggleIndex = state.sourceCodeAccess ? 3 : 2;
@@ -291,13 +219,11 @@ export default function WebWizard({
     state.headers.mode === "custom" ? headersModeIndex + 1 : -1;
   const headersValueIndex =
     state.headers.mode === "custom" ? headersModeIndex + 2 : -1;
-  const modelPickerIndex =
-    state.headers.mode === "custom"
-      ? headersModeIndex + 3
-      : headersModeIndex + 1;
 
+  const lastFieldIndex =
+    state.headers.mode === "custom" ? headersValueIndex : headersModeIndex;
   const totalFields = advancedExpanded
-    ? modelPickerIndex + 1
+    ? lastFieldIndex + 1
     : advancedToggleIndex + 1;
 
   // Scroll to the focused field when it changes
@@ -306,8 +232,7 @@ export default function WebWizard({
   }, [focusedField]);
 
   // Auto-populate scope hosts/ports when the user changes the target URL.
-  // Only fires when the user hasn't manually edited the scope fields yet
-  // (i.e., the scope still matches whatever was auto-populated at init).
+  // Only fires when the user hasn't manually edited the scope fields yet.
   const [scopeManuallyEdited, setScopeManuallyEdited] = useState(false);
   useEffect(() => {
     if (scopeManuallyEdited) return;
@@ -339,7 +264,6 @@ export default function WebWizard({
     try {
       // Build session config
       const sessionConfig: SessionConfig = {
-        // Set session type and mode for web app pentesting
         sessionType: "web-app",
         mode: autoMode ? "auto" : "driver",
       };
@@ -392,8 +316,6 @@ export default function WebWizard({
       }
 
       // Operator guidance — combine threat model and prompt.
-      // Threat model values from CLI flags are already wrapped by parseWebFlags.
-      // User-typed values need wrapping with the usage preamble.
       const resolvedTm = state.threatModel.trim()
         ? threatModelPreWrapped
           ? state.threatModel.trim()
@@ -416,6 +338,9 @@ export default function WebWizard({
 
   // Keyboard handling
   useKeyboard((key) => {
+    // Don't capture keys when model picker is open
+    if (showModelPicker) return;
+
     // ESC - close
     if (key.name === "escape") {
       key.preventDefault();
@@ -426,6 +351,13 @@ export default function WebWizard({
 
     // Don't allow navigation while creating
     if (creating) return;
+
+    // Ctrl+M — open model picker overlay
+    if (key.ctrl && key.name === "m") {
+      key.preventDefault();
+      setShowModelPicker(true);
+      return;
+    }
 
     // Enter — start pentest or add item
     if (key.name === "return") {
@@ -483,7 +415,6 @@ export default function WebWizard({
         }));
         setHeaderNameInput("");
         setHeaderValueInput("");
-        // Move focus back to header name
         setFocusedField(headersNameIndex);
         return;
       }
@@ -493,34 +424,24 @@ export default function WebWizard({
       return;
     }
 
-    // Left/Right — toggle source code access
-    if ((key.name === "left" || key.name === "right") && focusedField === 1) {
+    // Shift+Tab — toggle/cycle values
+    if (key.shift && key.name === "tab") {
       key.preventDefault();
-      setState((prev) => ({
-        ...prev,
-        sourceCodeAccess: key.name === "right",
-      }));
-      return;
-    }
-
-    // Space — toggle/cycle values
-    if (key.sequence === " ") {
+      // Source code access toggle
       if (focusedField === 1) {
-        key.preventDefault();
         setState((prev) => ({
           ...prev,
           sourceCodeAccess: !prev.sourceCodeAccess,
         }));
         return;
       }
+      // Advanced toggle
       if (focusedField === advancedToggleIndex) {
-        key.preventDefault();
         setAdvancedExpanded((prev) => !prev);
         return;
       }
       // Strict scope toggle
       if (focusedField === scopeStrictIndex && advancedExpanded) {
-        key.preventDefault();
         setState((prev) => ({
           ...prev,
           scope: { ...prev.scope, strictScope: !prev.scope.strictScope },
@@ -529,7 +450,6 @@ export default function WebWizard({
       }
       // Enumerate subdomains toggle
       if (focusedField === scopeSubdomainIndex && advancedExpanded) {
-        key.preventDefault();
         setState((prev) => ({
           ...prev,
           scope: {
@@ -541,7 +461,6 @@ export default function WebWizard({
       }
       // Headers mode cycle
       if (focusedField === headersModeIndex && advancedExpanded) {
-        key.preventDefault();
         const modes = ["none", "default", "custom"] as const;
         const idx = modes.indexOf(state.headers.mode);
         const newIdx = (idx + 1) % modes.length;
@@ -551,54 +470,15 @@ export default function WebWizard({
         }));
         return;
       }
+      return;
     }
 
-    // Up/Down — navigate between fields (default behavior)
+    // Up/Down — navigate between fields
     if (key.name === "up" || key.name === "down") {
       key.preventDefault();
       const delta = key.name === "down" ? 1 : -1;
 
-      // Model picker: up/down navigates models, not fields
-      if (
-        focusedField === modelPickerIndex &&
-        advancedExpanded &&
-        visibleModels.length > 0
-      ) {
-        const currentIdx = visibleModels.findIndex((m) => m.id === model.id);
-        // If current model isn't in the visible list (filtered out by search),
-        // select the first visible model instead of escaping
-        if (currentIdx === -1) {
-          const firstModel = visibleModels[0];
-          setModel(firstModel);
-          const globalIdx = availableModels.findIndex(
-            (m) => m.id === firstModel.id,
-          );
-          if (globalIdx >= 0) setSelectedModelIndex(globalIdx);
-          return;
-        }
-        // Allow escaping the model picker by pressing up at top
-        if (key.name === "up" && currentIdx === 0) {
-          setFocusedField(focusedField - 1);
-          return;
-        }
-        if (key.name === "down" && currentIdx >= visibleModels.length - 1) {
-          // At last model, can't go further — stay here
-          return;
-        }
-        // Navigate within models
-        const newIdx = key.name === "up" ? currentIdx - 1 : currentIdx + 1;
-        const newModel = visibleModels[newIdx];
-        if (newModel) {
-          setModel(newModel);
-          const globalIdx = availableModels.findIndex(
-            (m) => m.id === newModel.id,
-          );
-          if (globalIdx >= 0) setSelectedModelIndex(globalIdx);
-        }
-        return;
-      }
-
-      // Special case: auto-expand advanced when pressing down on the toggle
+      // Auto-expand advanced when pressing down on the toggle
       if (
         focusedField === advancedToggleIndex &&
         delta > 0 &&
@@ -615,45 +495,6 @@ export default function WebWizard({
         setFocusedField(next);
       }
       return;
-    }
-
-    // Model section: handle typing for search, backspace, left/right
-    if (focusedField === modelPickerIndex && advancedExpanded) {
-      // Backspace - remove last char from search
-      if (key.name === "backspace") {
-        key.preventDefault();
-        setModelSearchQuery((prev) => prev.slice(0, -1));
-        return;
-      }
-      // Left/Right - toggle provider expansion
-      if (key.name === "left" || key.name === "right") {
-        key.preventDefault();
-        const currentProvider = model.provider;
-        if (key.name === "left") {
-          setExpandedProviders((prev) => {
-            const next = new Set(prev);
-            next.delete(currentProvider);
-            return next;
-          });
-        } else {
-          setExpandedProviders((prev) => new Set([...prev, currentProvider]));
-        }
-        return;
-      }
-      // Printable character - add to search
-      if (
-        key.sequence &&
-        key.sequence.length === 1 &&
-        /[a-zA-Z0-9\-_.]/.test(key.sequence)
-      ) {
-        key.preventDefault();
-        setModelSearchQuery((prev) => prev + key.sequence);
-        // Auto-expand all providers when searching
-        if (!modelSearchQuery) {
-          setExpandedProviders(new Set(providerOrder));
-        }
-        return;
-      }
     }
   });
 
@@ -686,6 +527,19 @@ export default function WebWizard({
     );
   }
 
+  // Section divider helper
+  const sectionDivider = (label: string) => (
+    <text fg={colors.textMuted}>
+      {"── "}
+      {label}
+      {" ──────────────────────────────"}
+    </text>
+  );
+
+  // Toggle field helper
+  const toggleHint = "(Shift+Tab to toggle)";
+  const cycleHint = "(Shift+Tab to cycle)";
+
   // Single-page wizard render
   return (
     <Dialog size="large" onClose={onClose}>
@@ -694,10 +548,11 @@ export default function WebWizard({
         footerActions={[
           {
             key: "Enter",
-            label: `Start Pentest (${modeLabel})`,
+            label: `Start Pentest`,
             variant: "primary",
           },
-          { key: "↑/↓", label: "Navigate Fields" },
+          { key: "↑/↓", label: "Navigate" },
+          { key: "Ctrl+M", label: "Model" },
         ]}
       >
         <scrollbox
@@ -757,7 +612,7 @@ export default function WebWizard({
                 {state.sourceCodeAccess ? "● Enabled" : "○ Disabled"}
               </text>
               {focusedField === 1 && (
-                <text fg={colors.textMuted}>(Space to toggle)</text>
+                <text fg={colors.textMuted}>{toggleHint}</text>
               )}
             </box>
             {state.sourceCodeAccess && (
@@ -786,7 +641,7 @@ export default function WebWizard({
               {advancedExpanded ? "▾" : "▸"} Advanced
             </text>
             {focusedField === advancedToggleIndex && (
-              <text fg={colors.textMuted}>(Space to toggle)</text>
+              <text fg={colors.textMuted}>{toggleHint}</text>
             )}
           </box>
 
@@ -834,115 +689,110 @@ export default function WebWizard({
                 />
               </box>
 
-              {/* Auth fields */}
-              <box flexDirection="column" gap={1} paddingLeft={2}>
-                <text fg={colors.textMuted}>Authentication</text>
-                <box id={`field-${authLoginUrlIndex}`}>
-                  <Input
-                    label="Login URL"
-                    placeholder="https://example.com/login"
-                    value={state.auth.loginUrl}
-                    onInput={(v) =>
-                      setState((prev) => ({
-                        ...prev,
-                        auth: { ...prev.auth, loginUrl: v },
-                      }))
-                    }
-                    onPaste={(event) => {
-                      const cleaned = String(event.text).replace(/\r?\n/g, " ");
-                      setState((prev) => ({
-                        ...prev,
-                        auth: {
-                          ...prev.auth,
-                          loginUrl: prev.auth.loginUrl + cleaned,
-                        },
-                      }));
-                    }}
-                    focused={focusedField === authLoginUrlIndex}
-                  />
-                </box>
-                <box id={`field-${authUsernameIndex}`}>
-                  <Input
-                    label="Username"
-                    placeholder="admin"
-                    value={state.auth.username}
-                    onInput={(v) =>
-                      setState((prev) => ({
-                        ...prev,
-                        auth: { ...prev.auth, username: v },
-                      }))
-                    }
-                    onPaste={(event) => {
-                      const cleaned = String(event.text).replace(/\r?\n/g, " ");
-                      setState((prev) => ({
-                        ...prev,
-                        auth: {
-                          ...prev.auth,
-                          username: prev.auth.username + cleaned,
-                        },
-                      }));
-                    }}
-                    focused={focusedField === authUsernameIndex}
-                  />
-                </box>
-                <box id={`field-${authPasswordIndex}`}>
-                  <Input
-                    label="Password"
-                    placeholder="••••••••"
-                    value={state.auth.password}
-                    onInput={(v) =>
-                      setState((prev) => ({
-                        ...prev,
-                        auth: { ...prev.auth, password: v },
-                      }))
-                    }
-                    onPaste={(event) => {
-                      const cleaned = String(event.text).replace(/\r?\n/g, " ");
-                      setState((prev) => ({
-                        ...prev,
-                        auth: {
-                          ...prev.auth,
-                          password: prev.auth.password + cleaned,
-                        },
-                      }));
-                    }}
-                    focused={focusedField === authPasswordIndex}
-                  />
-                </box>
-                <box id={`field-${authInstructionsIndex}`}>
-                  <Input
-                    label="Auth Instructions"
-                    placeholder="Use OAuth flow, extract bearer token..."
-                    value={state.auth.instructions}
-                    onInput={(v) =>
-                      setState((prev) => ({
-                        ...prev,
-                        auth: { ...prev.auth, instructions: v },
-                      }))
-                    }
-                    onPaste={(event) => {
-                      const cleaned = String(event.text).replace(/\r?\n/g, " ");
-                      setState((prev) => ({
-                        ...prev,
-                        auth: {
-                          ...prev.auth,
-                          instructions: prev.auth.instructions + cleaned,
-                        },
-                      }));
-                    }}
-                    focused={focusedField === authInstructionsIndex}
-                  />
-                </box>
+              {/* Authentication */}
+              {sectionDivider("Authentication")}
+
+              <box id={`field-${authLoginUrlIndex}`}>
+                <Input
+                  label="Login URL"
+                  placeholder="https://example.com/login"
+                  value={state.auth.loginUrl}
+                  onInput={(v) =>
+                    setState((prev) => ({
+                      ...prev,
+                      auth: { ...prev.auth, loginUrl: v },
+                    }))
+                  }
+                  onPaste={(event) => {
+                    const cleaned = String(event.text).replace(/\r?\n/g, " ");
+                    setState((prev) => ({
+                      ...prev,
+                      auth: {
+                        ...prev.auth,
+                        loginUrl: prev.auth.loginUrl + cleaned,
+                      },
+                    }));
+                  }}
+                  focused={focusedField === authLoginUrlIndex}
+                />
+              </box>
+              <box id={`field-${authUsernameIndex}`}>
+                <Input
+                  label="Username"
+                  placeholder="admin"
+                  value={state.auth.username}
+                  onInput={(v) =>
+                    setState((prev) => ({
+                      ...prev,
+                      auth: { ...prev.auth, username: v },
+                    }))
+                  }
+                  onPaste={(event) => {
+                    const cleaned = String(event.text).replace(/\r?\n/g, " ");
+                    setState((prev) => ({
+                      ...prev,
+                      auth: {
+                        ...prev.auth,
+                        username: prev.auth.username + cleaned,
+                      },
+                    }));
+                  }}
+                  focused={focusedField === authUsernameIndex}
+                />
+              </box>
+              <box id={`field-${authPasswordIndex}`}>
+                <Input
+                  label="Password"
+                  placeholder="••••••••"
+                  value={state.auth.password}
+                  onInput={(v) =>
+                    setState((prev) => ({
+                      ...prev,
+                      auth: { ...prev.auth, password: v },
+                    }))
+                  }
+                  onPaste={(event) => {
+                    const cleaned = String(event.text).replace(/\r?\n/g, " ");
+                    setState((prev) => ({
+                      ...prev,
+                      auth: {
+                        ...prev.auth,
+                        password: prev.auth.password + cleaned,
+                      },
+                    }));
+                  }}
+                  focused={focusedField === authPasswordIndex}
+                />
+              </box>
+              <box id={`field-${authInstructionsIndex}`}>
+                <Input
+                  label="Auth Instructions"
+                  placeholder="Use OAuth flow, extract bearer token..."
+                  value={state.auth.instructions}
+                  onInput={(v) =>
+                    setState((prev) => ({
+                      ...prev,
+                      auth: { ...prev.auth, instructions: v },
+                    }))
+                  }
+                  onPaste={(event) => {
+                    const cleaned = String(event.text).replace(/\r?\n/g, " ");
+                    setState((prev) => ({
+                      ...prev,
+                      auth: {
+                        ...prev.auth,
+                        instructions: prev.auth.instructions + cleaned,
+                      },
+                    }));
+                  }}
+                  focused={focusedField === authInstructionsIndex}
+                />
               </box>
 
-              {/* Scope fields */}
-              <box
-                id={`field-${scopeHostIndex}`}
-                flexDirection="column"
-                gap={1}
-                paddingLeft={2}
-              >
-                <text fg={colors.textMuted}>Scope Constraints</text>
+              {/* Scope */}
+              {sectionDivider("Scope")}
+
+              <box id={`field-${scopeHostIndex}`}>
                 <Input
                   label="Add Allowed Host"
                   description="Press Enter to add"
@@ -951,246 +801,151 @@ export default function WebWizard({
                   onInput={setHostInput}
                   focused={focusedField === scopeHostIndex}
                 />
-                {state.scope.allowedHosts.length > 0 && (
-                  <box flexDirection="column" paddingLeft={2}>
-                    {state.scope.allowedHosts.map((h, i) => (
-                      <text key={i} fg={colors.textMuted}>
-                        • {h}
-                      </text>
-                    ))}
-                  </box>
-                )}
-                <box id={`field-${scopePortIndex}`}>
-                  <Input
-                    label="Add Allowed Port"
-                    description="Press Enter to add"
-                    placeholder="443"
-                    value={portInput}
-                    onInput={setPortInput}
-                    focused={focusedField === scopePortIndex}
-                  />
+              </box>
+              {state.scope.allowedHosts.length > 0 && (
+                <box flexDirection="column" paddingLeft={2}>
+                  {state.scope.allowedHosts.map((h, i) => (
+                    <text key={i} fg={colors.textMuted}>
+                      • {h}
+                    </text>
+                  ))}
                 </box>
-                {state.scope.allowedPorts.length > 0 && (
-                  <box flexDirection="column" paddingLeft={2}>
-                    {state.scope.allowedPorts.map((p, i) => (
-                      <text key={i} fg={colors.textMuted}>
-                        • {p}
-                      </text>
-                    ))}
-                  </box>
-                )}
-                <box
-                  id={`field-${scopeStrictIndex}`}
-                  flexDirection="row"
-                  gap={1}
+              )}
+
+              <box id={`field-${scopePortIndex}`}>
+                <Input
+                  label="Add Allowed Port"
+                  description="Press Enter to add"
+                  placeholder="443"
+                  value={portInput}
+                  onInput={setPortInput}
+                  focused={focusedField === scopePortIndex}
+                />
+              </box>
+              {state.scope.allowedPorts.length > 0 && (
+                <box flexDirection="column" paddingLeft={2}>
+                  {state.scope.allowedPorts.map((p, i) => (
+                    <text key={i} fg={colors.textMuted}>
+                      • {p}
+                    </text>
+                  ))}
+                </box>
+              )}
+
+              <box id={`field-${scopeStrictIndex}`} flexDirection="row" gap={1}>
+                <text
+                  fg={
+                    focusedField === scopeStrictIndex
+                      ? colors.text
+                      : colors.textMuted
+                  }
                 >
-                  <text
-                    fg={
-                      focusedField === scopeStrictIndex
-                        ? colors.text
-                        : colors.textMuted
-                    }
-                  >
-                    Strict Scope:
-                  </text>
-                  <text
-                    fg={
-                      state.scope.strictScope
-                        ? colors.primary
-                        : colors.textMuted
-                    }
-                  >
-                    {state.scope.strictScope ? "● Enabled" : "○ Disabled"}
-                  </text>
-                  {focusedField === scopeStrictIndex && (
-                    <text fg={colors.textMuted}>(Space to toggle)</text>
-                  )}
-                </box>
-                <box
-                  id={`field-${scopeSubdomainIndex}`}
-                  flexDirection="row"
-                  gap={1}
+                  Strict Scope:
+                </text>
+                <text
+                  fg={
+                    state.scope.strictScope ? colors.primary : colors.textMuted
+                  }
                 >
-                  <text
-                    fg={
-                      focusedField === scopeSubdomainIndex
-                        ? colors.primary
-                        : colors.textMuted
-                    }
-                  >
-                    Enumerate Subdomains:
-                  </text>
-                  <text
-                    fg={
-                      state.scope.enumerateSubdomains
-                        ? colors.primary
-                        : colors.textMuted
-                    }
-                  >
-                    {state.scope.enumerateSubdomains
-                      ? "● Enabled"
-                      : "○ Disabled"}
-                  </text>
-                  {focusedField === scopeSubdomainIndex && (
-                    <text fg={colors.textMuted}>(Space to toggle)</text>
-                  )}
-                </box>
+                  {state.scope.strictScope ? "● Enabled" : "○ Disabled"}
+                </text>
+                {focusedField === scopeStrictIndex && (
+                  <text fg={colors.textMuted}>{toggleHint}</text>
+                )}
+              </box>
+
+              <box
+                id={`field-${scopeSubdomainIndex}`}
+                flexDirection="row"
+                gap={1}
+              >
+                <text
+                  fg={
+                    focusedField === scopeSubdomainIndex
+                      ? colors.primary
+                      : colors.textMuted
+                  }
+                >
+                  Enumerate Subdomains:
+                </text>
+                <text
+                  fg={
+                    state.scope.enumerateSubdomains
+                      ? colors.primary
+                      : colors.textMuted
+                  }
+                >
+                  {state.scope.enumerateSubdomains ? "● Enabled" : "○ Disabled"}
+                </text>
+                {focusedField === scopeSubdomainIndex && (
+                  <text fg={colors.textMuted}>{toggleHint}</text>
+                )}
               </box>
 
               {/* Headers */}
-              <box
-                id={`field-${headersModeIndex}`}
-                flexDirection="column"
-                gap={1}
-                paddingLeft={2}
-              >
-                <text fg={colors.textMuted}>Request Headers</text>
-                <box flexDirection="column">
-                  <text
-                    fg={
-                      state.headers.mode === "none"
-                        ? colors.primary
-                        : colors.textMuted
-                    }
-                  >
-                    {state.headers.mode === "none" ? "●" : "○"} None
-                  </text>
-                  <text
-                    fg={
-                      state.headers.mode === "default"
-                        ? colors.primary
-                        : colors.textMuted
-                    }
-                  >
-                    {state.headers.mode === "default" ? "●" : "○"} Default
-                    (User-Agent: pensar-apex)
-                  </text>
-                  <text
-                    fg={
-                      state.headers.mode === "custom"
-                        ? colors.primary
-                        : colors.textMuted
-                    }
-                  >
-                    {state.headers.mode === "custom" ? "●" : "○"} Custom
-                  </text>
-                </box>
-                {focusedField === headersModeIndex && (
-                  <text fg={colors.textMuted}>Space to cycle</text>
-                )}
+              {sectionDivider("Headers")}
 
-                {state.headers.mode === "custom" && (
-                  <box flexDirection="column" gap={1}>
-                    <box id={`field-${headersNameIndex}`}>
-                      <Input
-                        label="Header Name"
-                        placeholder="X-Custom-Header"
-                        value={headerNameInput}
-                        onInput={setHeaderNameInput}
-                        focused={focusedField === headersNameIndex}
-                      />
-                    </box>
-                    <box id={`field-${headersValueIndex}`}>
-                      <Input
-                        label="Header Value"
-                        placeholder="value"
-                        value={headerValueInput}
-                        onInput={setHeaderValueInput}
-                        focused={focusedField === headersValueIndex}
-                      />
-                    </box>
-                    {Object.keys(state.headers.customHeaders).length > 0 && (
-                      <box flexDirection="column">
-                        {Object.entries(state.headers.customHeaders).map(
-                          ([k, v]) => (
-                            <text key={k} fg={colors.textMuted}>
-                              • {k}: {v}
-                            </text>
-                          ),
-                        )}
-                      </box>
-                    )}
-                  </box>
+              <box id={`field-${headersModeIndex}`} flexDirection="row" gap={1}>
+                <text
+                  fg={
+                    focusedField === headersModeIndex
+                      ? colors.text
+                      : colors.textMuted
+                  }
+                >
+                  Headers:
+                </text>
+                <text fg={colors.primary}>
+                  {capitalize(state.headers.mode)}
+                </text>
+                {focusedField === headersModeIndex && (
+                  <text fg={colors.textMuted}>{cycleHint}</text>
                 )}
               </box>
 
-              {/* Model picker */}
-              <box
-                id={`field-${modelPickerIndex}`}
-                flexDirection="column"
-                gap={0}
-                paddingLeft={2}
-              >
-                <text fg={colors.textMuted}>
-                  AI Model ({model.name}) [
-                  {isModelUserSelected ? "user" : "default"}]
-                </text>
-
-                {focusedField === modelPickerIndex && (
-                  <>
-                    {/* Search input */}
-                    {modelSearchQuery ? (
-                      <text fg={colors.text}>Search: {modelSearchQuery}_</text>
-                    ) : (
-                      <text fg={colors.textMuted}>
-                        Type to search models...
-                      </text>
-                    )}
-                  </>
-                )}
-
-                {/* Provider groups */}
-                {providerOrder.map((provider) => {
-                  const models = groupedModels[provider];
-                  if (!models || models.length === 0) return null;
-
-                  const isExpanded = expandedProviders.has(provider);
-                  const providerName = providerNames[provider] || provider;
-
-                  return (
-                    <box key={provider} flexDirection="column" gap={0}>
-                      <text fg={isExpanded ? colors.text : colors.textMuted}>
-                        {isExpanded ? "▾" : "▸"} {providerName} ({models.length}
-                        )
-                      </text>
-
-                      {isExpanded && (
-                        <box flexDirection="column" gap={0} paddingLeft={2}>
-                          {models.map((m) => {
-                            const isSelected = m.id === model.id;
-                            const isDefault =
-                              m.id === "claude-haiku-4-5" ||
-                              m.id === "gpt-4o-mini";
-                            return (
-                              <text
-                                key={m.id}
-                                fg={
-                                  isSelected ? colors.primary : colors.textMuted
-                                }
-                              >
-                                {isSelected ? "●" : "○"} {m.name}
-                                {isDefault && !isModelUserSelected && isSelected
-                                  ? " [default]"
-                                  : ""}
-                              </text>
-                            );
-                          })}
-                        </box>
+              {state.headers.mode === "custom" && (
+                <>
+                  <box id={`field-${headersNameIndex}`}>
+                    <Input
+                      label="Header Name"
+                      placeholder="X-Custom-Header"
+                      value={headerNameInput}
+                      onInput={setHeaderNameInput}
+                      focused={focusedField === headersNameIndex}
+                    />
+                  </box>
+                  <box id={`field-${headersValueIndex}`}>
+                    <Input
+                      label="Header Value"
+                      description="Press Enter to add"
+                      placeholder="value"
+                      value={headerValueInput}
+                      onInput={setHeaderValueInput}
+                      focused={focusedField === headersValueIndex}
+                    />
+                  </box>
+                  {Object.keys(state.headers.customHeaders).length > 0 && (
+                    <box flexDirection="column" paddingLeft={2}>
+                      {Object.entries(state.headers.customHeaders).map(
+                        ([k, v]) => (
+                          <text key={k} fg={colors.textMuted}>
+                            • {k}: {v}
+                          </text>
+                        ),
                       )}
                     </box>
-                  );
-                })}
-
-                {focusedField === modelPickerIndex && (
-                  <text fg={colors.textMuted}>
-                    ↑/↓ select • Type to search • ←/→ collapse/expand
-                  </text>
-                )}
-              </box>
+                  )}
+                </>
+              )}
             </>
           )}
         </scrollbox>
       </DialogLayout>
+
+      {/* Model picker overlay */}
+      {showModelPicker && (
+        <ModelPickerDialog onClose={() => setShowModelPicker(false)} />
+      )}
     </Dialog>
   );
 }
