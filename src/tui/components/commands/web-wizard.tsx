@@ -236,26 +236,25 @@ export default function WebWizard({
 
   // Auto-populate scope hosts/ports when the user changes the target URL.
   // Only fires when the user hasn't manually edited the scope fields yet.
+  // We pass the CLI-provided initial values (not accumulated state) so each
+  // keystroke replaces the auto-populated value rather than appending.
+  const baseHosts = initialHosts || [];
+  const basePorts = initialPorts || [];
   const [scopeManuallyEdited, setScopeManuallyEdited] = useState(false);
   useEffect(() => {
     if (scopeManuallyEdited) return;
     const target = state.target.trim();
     if (!target) return;
-    setState((prev) => {
-      const autoHosts = getAutoPopulatedHosts(target, prev.scope.allowedHosts);
-      const autoPorts = getAutoPopulatedPorts(
-        target,
-        prev.scope.allowedPorts.map(Number).filter((p) => !isNaN(p)),
-      );
-      return {
-        ...prev,
-        scope: {
-          ...prev.scope,
-          allowedHosts: autoHosts,
-          allowedPorts: autoPorts.map(String),
-        },
-      };
-    });
+    const autoHosts = getAutoPopulatedHosts(target, baseHosts);
+    const autoPorts = getAutoPopulatedPorts(target, basePorts);
+    setState((prev) => ({
+      ...prev,
+      scope: {
+        ...prev.scope,
+        allowedHosts: autoHosts,
+        allowedPorts: autoPorts.map(String),
+      },
+    }));
   }, [state.target]);
 
   // Create session and navigate to session route
