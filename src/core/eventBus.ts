@@ -63,6 +63,35 @@ export type AgentEventMap = {
   };
 };
 
+/** Union of all event names on the AgentEventBus. */
+export type AgentEventName = keyof AgentEventMap;
+
+/**
+ * Discriminated union of all agent events, suitable for streaming.
+ * Each variant carries a `type` discriminator matching the event name
+ * and a `data` field with the event-specific payload.
+ */
+export type AgentEvent =
+  | { type: "text-delta"; data: AgentEventMap["text-delta"] }
+  | { type: "tool-call-start"; data: AgentEventMap["tool-call-start"] }
+  | { type: "tool-call-delta"; data: AgentEventMap["tool-call-delta"] }
+  | { type: "tool-call-complete"; data: AgentEventMap["tool-call-complete"] }
+  | { type: "tool-result"; data: AgentEventMap["tool-result"] }
+  | { type: "subagent-spawn"; data: AgentEventMap["subagent-spawn"] }
+  | { type: "subagent-complete"; data: AgentEventMap["subagent-complete"] }
+  | { type: "workflow-phase-start"; data: AgentEventMap["workflow-phase-start"] }
+  | { type: "workflow-phase-complete"; data: AgentEventMap["workflow-phase-complete"] }
+  | { type: "step-finish"; data: AgentEventMap["step-finish"] }
+  | { type: "command-output"; data: AgentEventMap["command-output"] }
+  | { type: "error"; data: AgentEventMap["error"] }
+  | { type: "trace-record"; data: AgentEventMap["trace-record"] };
+
+/**
+ * Extract the event type for a specific event name.
+ * Usage: `AgentEventOf<"text-delta">` → `{ text: string; subagentId?: string }`
+ */
+export type AgentEventOf<K extends AgentEventName> = AgentEventMap[K];
+
 /**
  * Centralized, typed event bus for agent streaming output.
  *
