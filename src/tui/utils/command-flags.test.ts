@@ -4,7 +4,6 @@ import { join } from "path";
 import { tmpdir } from "os";
 import {
   resolveFlagValue,
-  resolveThreatModelPrompt,
   buildSwarmSessionConfig,
   parseWebFlags,
 } from "./command-flags";
@@ -121,68 +120,6 @@ describe("resolveFlagValue", () => {
 });
 
 // ---------------------------------------------------------------------------
-// resolveThreatModelPrompt
-// ---------------------------------------------------------------------------
-
-describe("resolveThreatModelPrompt", () => {
-  let tempDir: string;
-
-  beforeEach(() => {
-    tempDir = mkdtempSync(join(tmpdir(), "apex-test-"));
-  });
-
-  afterEach(() => {
-    rmSync(tempDir, { recursive: true, force: true });
-  });
-
-  it("wraps inline text with preamble and threat-model tags", () => {
-    const result = resolveThreatModelPrompt("My threat model content");
-
-    expect(result).toContain("## Threat Model");
-    expect(result).toContain("<threat-model>");
-    expect(result).toContain("My threat model content");
-    expect(result).toContain("</threat-model>");
-  });
-
-  it("contains key guidance phrases in the preamble", () => {
-    const result = resolveThreatModelPrompt("content");
-
-    expect(result).toContain("Prioritize attack paths by severity");
-    expect(result).toContain("Use the pentest guidance");
-    expect(result).toContain("Check existing controls");
-    expect(result).toContain("Verify control gaps");
-    expect(result).toContain("Reference attacker profiles");
-    expect(result).toContain("Don't limit yourself");
-  });
-
-  it("wraps @file content with preamble", () => {
-    const filePath = join(tempDir, "threat-model.md");
-    writeFileSync(filePath, "SQL injection risk on /api/users");
-
-    const result = resolveThreatModelPrompt(`@${filePath}`);
-
-    expect(result).toContain("## Threat Model");
-    expect(result).toContain("<threat-model>");
-    expect(result).toContain("SQL injection risk on /api/users");
-    expect(result).toContain("</threat-model>");
-  });
-
-  it("places the content inside threat-model tags at the end", () => {
-    const result = resolveThreatModelPrompt("my content");
-
-    // Content should appear between the tags
-    const tagStart = result.indexOf("<threat-model>");
-    const tagEnd = result.indexOf("</threat-model>");
-    const contentIdx = result.indexOf("my content");
-
-    expect(tagStart).toBeGreaterThan(-1);
-    expect(tagEnd).toBeGreaterThan(tagStart);
-    expect(contentIdx).toBeGreaterThan(tagStart);
-    expect(contentIdx).toBeLessThan(tagEnd);
-  });
-});
-
-// ---------------------------------------------------------------------------
 // parseWebFlags — prompt and threatModel flags
 // ---------------------------------------------------------------------------
 
@@ -217,11 +154,7 @@ describe("parseWebFlags prompt/threatModel", () => {
 
   it("parses --threat-model with inline text", () => {
     const flags = parseWebFlags(["--threat-model", "XSS on login"]);
-
-    expect(flags.threatModel).toContain("## Threat Model");
-    expect(flags.threatModel).toContain("<threat-model>");
     expect(flags.threatModel).toContain("XSS on login");
-    expect(flags.threatModel).toContain("</threat-model>");
   });
 
   it("parses --threat-model with @file reference", () => {
@@ -229,8 +162,6 @@ describe("parseWebFlags prompt/threatModel", () => {
     writeFileSync(filePath, "IDOR on user profiles");
 
     const flags = parseWebFlags(["--threat-model", `@${filePath}`]);
-
-    expect(flags.threatModel).toContain("## Threat Model");
     expect(flags.threatModel).toContain("IDOR on user profiles");
   });
 
@@ -247,7 +178,6 @@ describe("parseWebFlags prompt/threatModel", () => {
     expect(flags.target).toBe("http://example.com");
     expect(flags.prompt).toBe("Be thorough");
     expect(flags.threatModel).toContain("SQL injection risk");
-    expect(flags.threatModel).toContain("## Threat Model");
   });
 
   it("does not set prompt or threatModel when flags are absent", () => {
