@@ -129,7 +129,11 @@ function wrapStreamWithErrorHandler(
           wrappedStream = (async function* () {
             try {
               for await (const chunk of originalStream.fullStream) {
-                if (chunk.type === "error" || "error" in chunk) {
+                // Only treat explicit error stream parts as fatal.
+                // Other chunk types (tool-call, tool-error) may carry an
+                // `error` property for informational purposes (e.g. invalid
+                // tool calls) and should be yielded normally.
+                if (chunk.type === "error") {
                   const error =
                     "error" in chunk
                       ? (chunk as unknown as { error: unknown }).error
