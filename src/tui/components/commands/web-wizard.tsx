@@ -10,7 +10,7 @@ import { type ModelInfo } from "../../../core/ai";
 import { getAvailableModels } from "../../../core/providers/utils";
 import { useTheme } from "../../theme";
 import { Dialog } from "../../context/dialog";
-import { DialogControls } from "../shared/dialog-controls";
+import DialogLayout from "../dialog-layout";
 import {
   getAutoPopulatedHosts,
   getAutoPopulatedPorts,
@@ -667,19 +667,21 @@ export default function WebWizard({
   if (creating) {
     return (
       <Dialog size="large" onClose={onClose}>
-        <box
-          flexDirection="column"
-          width="100%"
-          height="100%"
-          alignItems="center"
-          justifyContent="center"
-          flexGrow={1}
-          gap={2}
-        >
-          <SpinnerDots label="Creating session..." fg={colors.primary} />
-          <text fg={colors.textMuted}>Target: {state.target}</text>
-          <text fg={colors.textMuted}>Mode: {modeLabel}</text>
-        </box>
+        <DialogLayout title="Creating Session" escLabel={null}>
+          <box
+            flexDirection="column"
+            width="100%"
+            height="100%"
+            alignItems="center"
+            justifyContent="center"
+            flexGrow={1}
+            gap={2}
+          >
+            <SpinnerDots label="Creating session..." fg={colors.primary} />
+            <text fg={colors.textMuted}>Target: {state.target}</text>
+            <text fg={colors.textMuted}>Mode: {modeLabel}</text>
+          </box>
+        </DialogLayout>
       </Dialog>
     );
   }
@@ -687,7 +689,17 @@ export default function WebWizard({
   // Single-page wizard render
   return (
     <Dialog size="large" onClose={onClose}>
-      <box flexDirection="column" width="100%" height="100%">
+      <DialogLayout
+        title={`Configure Web App Pentest - ${modeLabel}`}
+        footerActions={[
+          {
+            key: "Enter",
+            label: `Start Pentest (${modeLabel})`,
+            variant: "primary",
+          },
+          { key: "↑/↓", label: "Navigate Fields" },
+        ]}
+      >
         <scrollbox
           ref={scrollboxRef}
           style={{
@@ -695,16 +707,12 @@ export default function WebWizard({
             contentOptions: {
               flexDirection: "column",
               gap: 1,
-              paddingLeft: 4,
               paddingBottom: 1,
             },
           }}
           stickyScroll={false}
         >
           <box flexDirection="column">
-            <text fg={colors.text}>
-              Configure Web App Pentest - {modeLabel}
-            </text>
             <text fg={colors.textMuted}>{modeDescription}</text>
             <text fg={colors.textMuted}>
               Model: {model.name} [{isModelUserSelected ? "user" : "default"}]
@@ -1182,19 +1190,7 @@ export default function WebWizard({
             </>
           )}
         </scrollbox>
-        <box marginTop={1} flexShrink={0} paddingLeft={4}>
-          <DialogControls
-            controls={[
-              {
-                key: "Enter",
-                label: `Start Pentest (${modeLabel})`,
-                variant: "primary",
-              },
-              { key: "↑/↓", label: "Navigate Fields" },
-            ]}
-          />
-        </box>
-      </box>
+      </DialogLayout>
     </Dialog>
   );
 }
