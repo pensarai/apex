@@ -305,6 +305,26 @@ export default function WebWizard({
     scrollToChild(scrollboxRef.current, `field-${focusedField}`);
   }, [focusedField]);
 
+  // Auto-populate scope hosts/ports when the user changes the target URL.
+  // Only fires when the user hasn't manually edited the scope fields yet
+  // (i.e., the scope still matches whatever was auto-populated at init).
+  const [scopeManuallyEdited, setScopeManuallyEdited] = useState(false);
+  useEffect(() => {
+    if (scopeManuallyEdited) return;
+    const target = state.target.trim();
+    if (!target) return;
+    const autoHosts = getAutoPopulatedHosts(target, []);
+    const autoPorts = getAutoPopulatedPorts(target, []);
+    setState((prev) => ({
+      ...prev,
+      scope: {
+        ...prev.scope,
+        allowedHosts: autoHosts,
+        allowedPorts: autoPorts.map(String),
+      },
+    }));
+  }, [state.target]);
+
   // Create session and navigate to session route
   async function createSessionAndNavigate() {
     if (!state.target.trim()) {
@@ -417,6 +437,7 @@ export default function WebWizard({
         hostInput.trim() &&
         advancedExpanded
       ) {
+        setScopeManuallyEdited(true);
         setState((prev) => ({
           ...prev,
           scope: {
@@ -433,6 +454,7 @@ export default function WebWizard({
         portInput.trim() &&
         advancedExpanded
       ) {
+        setScopeManuallyEdited(true);
         setState((prev) => ({
           ...prev,
           scope: {
@@ -543,8 +565,19 @@ export default function WebWizard({
         visibleModels.length > 0
       ) {
         const currentIdx = visibleModels.findIndex((m) => m.id === model.id);
-        // Allow escaping the model picker by pressing up at top or down at bottom
-        if (key.name === "up" && currentIdx <= 0) {
+        // If current model isn't in the visible list (filtered out by search),
+        // select the first visible model instead of escaping
+        if (currentIdx === -1) {
+          const firstModel = visibleModels[0];
+          setModel(firstModel);
+          const globalIdx = availableModels.findIndex(
+            (m) => m.id === firstModel.id,
+          );
+          if (globalIdx >= 0) setSelectedModelIndex(globalIdx);
+          return;
+        }
+        // Allow escaping the model picker by pressing up at top
+        if (key.name === "up" && currentIdx === 0) {
           setFocusedField(focusedField - 1);
           return;
         }
@@ -716,7 +749,7 @@ export default function WebWizard({
                 {state.sourceCodeAccess ? "● Enabled" : "○ Disabled"}
               </text>
               {focusedField === 1 && (
-                <text fg={colors.textMuted}>(←/→ to toggle)</text>
+                <text fg={colors.textMuted}>(Space to toggle)</text>
               )}
             </box>
             {state.sourceCodeAccess && (

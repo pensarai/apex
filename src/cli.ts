@@ -15,6 +15,7 @@ import { AgentEventBus } from "./core/eventBus";
 import {
   resolveFlagValue,
   resolveThreatModelPrompt,
+  combinePromptParts,
 } from "./tui/utils/command-flags";
 
 const args = process.argv.slice(2);
@@ -124,11 +125,11 @@ async function runPentest() {
   const threatModelRaw = getArg("--threat-model");
 
   // Resolve and combine threat model + prompt
-  const promptParts: string[] = [];
-  if (threatModelRaw)
-    promptParts.push(resolveThreatModelPrompt(threatModelRaw));
-  if (promptRaw) promptParts.push(resolveFlagValue(promptRaw));
-  const prompt = promptParts.length > 0 ? promptParts.join("\n\n") : undefined;
+  const resolvedTm = threatModelRaw
+    ? resolveThreatModelPrompt(threatModelRaw)
+    : undefined;
+  const resolvedPrompt = promptRaw ? resolveFlagValue(promptRaw) : undefined;
+  const prompt = combinePromptParts(resolvedTm, resolvedPrompt);
 
   const pensarConfig = await appConfig.get();
   const dynamicDefault =
