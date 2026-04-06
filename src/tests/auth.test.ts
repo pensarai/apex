@@ -1,7 +1,4 @@
-import {
-  AuthenticationAgent,
-  type AuthenticationAgentInput,
-} from "../core/agents/specialized/authenticationAgent/agent";
+import { AuthenticationAgent } from "../core/agents/specialized/authenticationAgent/agent";
 import { AgentEventBus } from "../core/eventBus";
 import { sessions } from "../core/session";
 import { describe, it, expect } from "vitest";

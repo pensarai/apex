@@ -41,8 +41,7 @@ export function runAttackSurfaceAgent(
       ...input,
       eventBus,
     } as AttackSurfaceAgentInput);
-    const { results, targets, resultsPath, assetsPath } =
-      await agent.consume();
+    const { results, targets, resultsPath, assetsPath } = await agent.consume();
     return { results, targets, resultsPath, assetsPath };
   });
 }

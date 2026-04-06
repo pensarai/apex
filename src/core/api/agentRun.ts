@@ -86,18 +86,20 @@ export class AgentRun<TResult> implements AsyncIterable<AgentEvent> {
         continue;
       }
       if (this.done) return;
-      const result = await new Promise<IteratorResult<AgentEvent>>((resolve) => {
-        // Check again after microtask — events may have arrived
-        if (this.buffer.length > 0) {
-          resolve({ value: this.buffer.shift()!, done: false });
-          return;
-        }
-        if (this.done) {
-          resolve({ value: undefined as unknown as AgentEvent, done: true });
-          return;
-        }
-        this.waiting = resolve;
-      });
+      const result = await new Promise<IteratorResult<AgentEvent>>(
+        (resolve) => {
+          // Check again after microtask — events may have arrived
+          if (this.buffer.length > 0) {
+            resolve({ value: this.buffer.shift()!, done: false });
+            return;
+          }
+          if (this.done) {
+            resolve({ value: undefined as unknown as AgentEvent, done: true });
+            return;
+          }
+          this.waiting = resolve;
+        },
+      );
       if (result.done) return;
       yield result.value;
     }

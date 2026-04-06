@@ -294,9 +294,8 @@ When to use delegate_to_auth_subagent vs authenticate_session:
 
         // Dynamic import to break circular dependency:
         // authAgent → offensiveSecurityAgent → tools/index → delegateAuth → authAgent
-        const { AuthenticationAgent } = await import(
-          "../../specialized/authenticationAgent/agent"
-        );
+        const { AuthenticationAgent } =
+          await import("../../specialized/authenticationAgent/agent");
 
         const authAgent = new AuthenticationAgent({
           target,

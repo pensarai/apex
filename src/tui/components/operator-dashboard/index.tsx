@@ -16,7 +16,10 @@ import {
   normalizeMessages,
 } from "../../../core/session";
 import { OffensiveSecurityAgent } from "../../../core/agents/offSecAgent/offensiveSecurityAgent";
-import type { OffensiveSecurityAgentInput, CreateAgentInput } from "../../../core/agents/offSecAgent";
+import type {
+  OffensiveSecurityAgentInput,
+  CreateAgentInput,
+} from "../../../core/agents/offSecAgent";
 import { attachWandbToEventBus } from "../../../core/integrations/wandb/upload";
 import { buildAuthConfig } from "../../../core/ai/utils";
 import type { CacheMetrics } from "../../../core/ai";
@@ -1276,7 +1279,10 @@ export default function OperatorDashboard({
           } as OffensiveSecurityAgentInput);
           commonInput.onSessionReady?.(agent.session);
           await agent.consume();
-          agentResult = { streamResult: agent.streamResult, session: agent.session };
+          agentResult = {
+            streamResult: agent.streamResult,
+            session: agent.session,
+          };
         } else {
           // First call — let the agent factory create the session
           const sessionConfig: SessionConfig = {
@@ -1300,7 +1306,10 @@ export default function OperatorDashboard({
           } as CreateAgentInput);
           commonInput.onSessionReady?.(agent.session);
           await agent.consume();
-          agentResult = { streamResult: agent.streamResult, session: agent.session };
+          agentResult = {
+            streamResult: agent.streamResult,
+            session: agent.session,
+          };
           // Apply any AI-generated name that arrived while the stream was running
           const created = agentResult.session;
           if (pendingNameRef.current) {

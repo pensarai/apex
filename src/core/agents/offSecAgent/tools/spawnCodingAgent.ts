@@ -166,7 +166,9 @@ async function runSingleCodingAgent(
 
   const localBus = ctx.eventBus?.child(subagentId) ?? new AgentEventBus();
   let textOutput = "";
-  localBus.on("text-delta", (e) => { textOutput += e.text; });
+  localBus.on("text-delta", (e) => {
+    textOutput += e.text;
+  });
 
   const agent = new CodeAgent({
     codebasePath,

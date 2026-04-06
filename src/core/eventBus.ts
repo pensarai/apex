@@ -79,8 +79,14 @@ export type AgentEvent =
   | { type: "tool-result"; data: AgentEventMap["tool-result"] }
   | { type: "subagent-spawn"; data: AgentEventMap["subagent-spawn"] }
   | { type: "subagent-complete"; data: AgentEventMap["subagent-complete"] }
-  | { type: "workflow-phase-start"; data: AgentEventMap["workflow-phase-start"] }
-  | { type: "workflow-phase-complete"; data: AgentEventMap["workflow-phase-complete"] }
+  | {
+      type: "workflow-phase-start";
+      data: AgentEventMap["workflow-phase-start"];
+    }
+  | {
+      type: "workflow-phase-complete";
+      data: AgentEventMap["workflow-phase-complete"];
+    }
   | { type: "step-finish"; data: AgentEventMap["step-finish"] }
   | { type: "command-output"; data: AgentEventMap["command-output"] }
   | { type: "error"; data: AgentEventMap["error"] }
