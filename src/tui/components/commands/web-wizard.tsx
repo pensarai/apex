@@ -558,9 +558,9 @@ export default function WebWizard({
       <DialogLayout
         title={`Configure Web App Pentest - ${modeLabel}`}
         footerActions={[
-          { key: "Enter", label: "Start Pentest", variant: "primary" },
-          { key: "↑/↓", label: "Navigate Fields" },
-          { key: "Ctrl+O", label: "Select Model" },
+          { key: "Enter", label: "start pentest", variant: "primary" },
+          { key: "↑/↓", label: "navigate" },
+          { key: "Ctrl+O", label: "select model" },
         ]}
       >
         <scrollbox
