@@ -112,6 +112,10 @@ export class AgentEventBus {
 
   constructor() {
     this.emitter.setMaxListeners(50);
+    // Prevent Node.js EventEmitter from throwing when "error" is emitted
+    // with no registered listeners (e.g. when API runners call consume()
+    // without attaching an external error handler).
+    this.emitter.on("error", () => {});
   }
 
   on<K extends keyof AgentEventMap>(
