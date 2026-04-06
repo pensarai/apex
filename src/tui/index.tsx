@@ -409,6 +409,7 @@ function AppContent({
         .map(String)
         .join(",");
     if (sessionConfig.scopeConstraints?.strictScope) skillArgs.strict = "true";
+    if (sessionConfig.prompt) skillArgs.prompt = sessionConfig.prompt;
 
     const isBlackbox = !sessionConfig.codebasePath;
 
