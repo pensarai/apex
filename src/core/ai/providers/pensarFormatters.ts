@@ -3,7 +3,6 @@ import type {
   LanguageModelV3Content,
   LanguageModelV3FinishReason,
   LanguageModelV3TextPart,
-  LanguageModelV3ToolCallPart,
   LanguageModelV3ToolResultPart,
 } from "@ai-sdk/provider";
 
@@ -101,22 +100,36 @@ function convertToAnthropicFormat(
           messages.push({ role: "user", content: text });
         }
       } else if (part.role === "assistant") {
-        const assistantContent = part.content as Array<
-          LanguageModelV3TextPart | LanguageModelV3ToolCallPart
+        const assistantContent = part.content as unknown as Array<
+          Record<string, unknown>
         >;
-        const hasToolCalls = assistantContent.some(
-          (c) => c.type === "tool-call",
+        const hasStructuredParts = assistantContent.some(
+          (c) => c.type === "tool-call" || c.type === "reasoning",
         );
 
-        if (hasToolCalls) {
-          // Must use structured content array so Bedrock sees tool_use blocks
+        if (hasStructuredParts) {
+          // Must use structured content array for tool_use / thinking blocks
           const content: Array<Record<string, unknown>> = [];
           for (const c of assistantContent) {
-            if (c.type === "text" && c.text) {
-              content.push({ type: "text", text: c.text });
+            if (c.type === "reasoning") {
+              const sig = (
+                c.providerOptions as
+                  | Record<string, Record<string, unknown>>
+                  | undefined
+              )?.anthropic?.signature as string | undefined;
+              const thinkingBlock: Record<string, unknown> = {
+                type: "thinking",
+                thinking: c.text as string,
+              };
+              if (sig) thinkingBlock.signature = sig;
+              content.push(thinkingBlock);
+            } else if (c.type === "text" && c.text) {
+              content.push({ type: "text", text: c.text as string });
             } else if (c.type === "tool-call") {
               const parsedInput =
-                typeof c.input === "string" ? JSON.parse(c.input) : c.input;
+                typeof c.input === "string"
+                  ? JSON.parse(c.input as string)
+                  : c.input;
               content.push({
                 type: "tool_use",
                 id: c.toolCallId,
@@ -129,7 +142,7 @@ function convertToAnthropicFormat(
         } else {
           // Text-only assistant messages can use a plain string
           const text = assistantContent
-            .map((c) => (c.type === "text" ? c.text : ""))
+            .map((c) => (c.type === "text" ? (c.text as string) : ""))
             .join("");
           messages.push({ role: "assistant", content: text });
         }
@@ -213,6 +226,27 @@ function convertToAnthropicFormat(
       }));
   }
 
+  // Extended thinking
+  const anthropicOpts = options.providerOptions?.anthropic as
+    | Record<string, unknown>
+    | undefined;
+  const thinking = anthropicOpts?.thinking as
+    | { type: string; budgetTokens?: number }
+    | undefined;
+  if (thinking?.type === "enabled") {
+    const budgetTokens = thinking.budgetTokens ?? 10_000;
+    body.thinking = { type: "enabled", budget_tokens: budgetTokens };
+    // Anthropic requires max_tokens > budget_tokens
+    if ((body.max_tokens as number) <= budgetTokens) {
+      body.max_tokens = budgetTokens + 4096;
+    }
+    // Anthropic rejects temperature when thinking is enabled
+    delete body.temperature;
+  } else if (thinking?.type === "adaptive") {
+    body.thinking = { type: "adaptive" };
+    delete body.temperature;
+  }
+
   // Convert tool choice
   if (options.toolChoice) {
     if (options.toolChoice.type === "auto") {
@@ -288,7 +322,18 @@ function parseAnthropicResponse(
 
   if (rawContent) {
     for (const block of rawContent) {
-      if (block.type === "text") {
+      if (block.type === "thinking") {
+        const reasoningPart: Record<string, unknown> = {
+          type: "reasoning",
+          text: block.thinking as string,
+        };
+        if (block.signature) {
+          reasoningPart.providerMetadata = {
+            anthropic: { signature: block.signature as string },
+          };
+        }
+        content.push(reasoningPart as LanguageModelV3Content);
+      } else if (block.type === "text") {
         content.push({
           type: "text",
           text: block.text as string,

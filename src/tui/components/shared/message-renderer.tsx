@@ -11,6 +11,7 @@ import { markdownToStyledText } from "./markdown";
 import { ToolRenderer } from "./tool-renderer";
 import { isToolMessage } from "./type-guards";
 import type { DisplayMessage } from "../agent-display";
+import { PlanReviewMessage } from "../chat/plan-review-message";
 
 interface MessageRendererProps {
   message: DisplayMessage;
@@ -21,6 +22,19 @@ interface MessageRendererProps {
   variant?: "operator" | "chat";
   /** Optional username for chat variant */
   username?: string;
+}
+
+const SKILL_TAG_RE = /^<skill\s+name="([^"]+)"(?:\s+target="([^"]*)")?>/;
+
+interface SkillTag {
+  name: string;
+  target?: string;
+}
+
+function parseSkillTag(content: string): SkillTag | null {
+  const match = content.match(SKILL_TAG_RE);
+  if (!match) return null;
+  return { name: match[1], target: match[2] || undefined };
 }
 
 /**
@@ -61,15 +75,25 @@ export const MessageRenderer = memo(function MessageRenderer({
     );
   }
 
-  // User messages
+  // User messages — detect <skill name="..." target="..."> wrapper and display as /command
   if (message.role === "user") {
+    const skill = parseSkillTag(content);
+
     if (variant === "chat") {
-      // Chat variant - cyan bar with username
       return (
         <box flexDirection="column" marginTop={1}>
           <box flexDirection="row">
             <text fg={colors.secondary}>{"│ "}</text>
-            <text fg={colors.text}>{content}</text>
+            {skill ? (
+              <text fg={colors.primary}>
+                /{skill.name}
+                {skill.target ? (
+                  <span fg={colors.textMuted}>{` ${skill.target}`}</span>
+                ) : null}
+              </text>
+            ) : (
+              <text fg={colors.text}>{content}</text>
+            )}
           </box>
           <box marginLeft={2}>
             <text fg={colors.textMuted}>{username}</text>
@@ -81,9 +105,23 @@ export const MessageRenderer = memo(function MessageRenderer({
     return (
       <box flexDirection="row" gap={1} marginTop={1}>
         <text fg={colors.primary}>{">"}</text>
-        <text fg={colors.text}>{content}</text>
+        {skill ? (
+          <text fg={colors.primary}>
+            /{skill.name}
+            {skill.target ? (
+              <span fg={colors.textMuted}>{` ${skill.target}`}</span>
+            ) : null}
+          </text>
+        ) : (
+          <text fg={colors.text}>{content}</text>
+        )}
       </box>
     );
+  }
+
+  // Plan review messages
+  if (message.isPlanReview && message.planContent) {
+    return <PlanReviewMessage planContent={message.planContent} />;
   }
 
   // System messages

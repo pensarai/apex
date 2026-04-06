@@ -16,6 +16,7 @@ import {
   normalizeMessages,
 } from "../../../core/session";
 import { runOffensiveSecurityAgent } from "../../../core/api/offesecAgent";
+import { attachWandbToEventBus } from "../../../core/integrations/wandb/upload";
 import { buildAuthConfig } from "../../../core/ai/utils";
 import type { CacheMetrics } from "../../../core/ai";
 import {
@@ -25,6 +26,11 @@ import {
   AgentEventBus,
   type AgentMode,
 } from "../../../core/agents/offSecAgent";
+import {
+  readPlan,
+  hasPlan,
+  planFilePath as getPlanFilePath,
+} from "../../../core/plan";
 import {
   convertModelMessagesToUI,
   type UIMessage,
@@ -38,9 +44,12 @@ import { useFocus } from "../../context/focus";
 import { MessageList } from "../chat/message-list";
 import { InputArea } from "../chat/input-area";
 import { useTheme } from "../../theme";
-import type { DisplayMessage } from "../agent-display";
+import type { DisplayMessage, WorkflowData } from "../agent-display";
 import { isToolMessage } from "../shared/type-guards";
-import { getToolSummary } from "../shared/tool-registry";
+import {
+  getToolSummary,
+  formatSubagentToolResult,
+} from "../shared/tool-registry";
 import {
   tryParsePartialJson,
   extractStreamableContent,
@@ -72,6 +81,7 @@ import { QueuedMessages } from "./queued-messages";
 import { navigateUp, navigateDown, selectionAfterRemove } from "./queue";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { isAbsolute, join, resolve } from "path";
+
 import { buildThreatModelPrompt } from "../../../core/skills/builtins/threatModel";
 import { buildPentestPrompt } from "../../../core/skills/builtins/pentest";
 
@@ -106,6 +116,7 @@ export default function OperatorDashboard({
     addCacheUsage,
     resetTokenUsage,
     setSessionCwd,
+    reasoningEnabled,
   } = useAgent();
   const {
     autocompleteOptions: allAutocompleteOptions,
@@ -211,6 +222,21 @@ export default function OperatorDashboard({
   );
   const agentMode: AgentMode = operatorMode === "plan" ? "plan" : "default";
   const requireApproval = operatorMode === "manual";
+  // Plan mode review state
+  const [approvedPlanContent, setApprovedPlanContent] = useState<string | null>(
+    null,
+  );
+  const [showPlanReview, setShowPlanReview] = useState(false);
+  const planSubmittedRef = useRef(false);
+  const planRejectedRef = useRef(false);
+  const operatorModeRef = useRef(operatorMode);
+  useEffect(() => {
+    operatorModeRef.current = operatorMode;
+  }, [operatorMode]);
+  const approvedPlanRef = useRef(approvedPlanContent);
+  useEffect(() => {
+    approvedPlanRef.current = approvedPlanContent;
+  }, [approvedPlanContent]);
   const tokenUsageRef = useRef(tokenUsage);
 
   useEffect(() => {
@@ -299,6 +325,17 @@ export default function OperatorDashboard({
                     status: m.status,
                   })),
                 );
+              }
+
+              // Restore plan content from a prior session so the cycleMode
+              // gate doesn't force a redundant re-approval on Shift+Tab.
+              // Only mark the plan as approved if the user previously left
+              // plan mode (restoredMode !== "plan"), which signals prior approval.
+              if (restoredMode !== "plan") {
+                const planContent = readPlan(s.rootPath);
+                if (planContent) {
+                  setApprovedPlanContent(planContent);
+                }
               }
             }
           } else if (s.config?.operatorSettings) {
@@ -784,9 +821,88 @@ export default function OperatorDashboard({
 
       const eventBus = new AgentEventBus();
 
+      // Buffer pending tool-call-complete data for subagents so we can
+      // merge with tool-result into a single rich log line.
+      const pendingSubagentCalls = new Map<
+        string,
+        { toolName: string; args: Record<string, unknown> }
+      >();
+
+      // Discovery-phase subagents route output to workflowData on the
+      // run_pentest_workflow tool message instead of the SwarmGrid.
+      const DISCOVERY_SUBAGENT_IDS = new Set([
+        "attack-surface-agent",
+        "whitebox-apps-discovery",
+      ]);
+      const isDiscoveryAgent = (id?: string) =>
+        id !== undefined && DISCOVERY_SUBAGENT_IDS.has(id);
+
+      // Patch the workflowData on the active run_pentest_workflow tool message.
+      const updateWorkflowData = (
+        updater: (wd: WorkflowData) => WorkflowData,
+      ) => {
+        setMessages((prev) => {
+          const idx = prev.findLastIndex(
+            (m) =>
+              isToolMessage(m) &&
+              m.toolName === "run_pentest_workflow" &&
+              (m.status === "pending" || m.status === "streaming"),
+          );
+          if (idx === -1) return prev;
+          const msg = prev[idx];
+          const wd = msg.workflowData ?? {
+            currentPhase: "discovery" as const,
+            discovery: { label: "", status: "pending" as const, logs: [] },
+            pentesting: {
+              label: "",
+              status: "idle" as const,
+              subagents: {},
+            },
+            reporting: { label: "", status: "idle" as const },
+          };
+          const updated = [...prev];
+          updated[idx] = { ...msg, workflowData: updater(wd) };
+          return updated;
+        });
+      };
+
+      const appendWorkflowDiscoveryLog = (line: string) => {
+        updateWorkflowData((wd) => ({
+          ...wd,
+          discovery: {
+            ...wd.discovery,
+            logs: [...wd.discovery.logs, line].slice(-MAX_LOG_LINES),
+          },
+        }));
+      };
+
+      // Buffer partial narration text from discovery agents so we can
+      // flush complete lines to the workflow display.
+      const discoveryTextBuf: Record<string, string> = {};
+
+      const flushDiscoveryNarration = (subagentId: string) => {
+        const buf = discoveryTextBuf[subagentId];
+        if (!buf) return;
+        const lines = buf.split("\n");
+        discoveryTextBuf[subagentId] = lines.pop() ?? "";
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (trimmed.length > 0) {
+            appendWorkflowDiscoveryLog(trimmed);
+          }
+        }
+      };
+
       eventBus.on("text-delta", (d) => {
         if (gen !== generationRef.current) return;
-        if (d.subagentId) return;
+        if (d.subagentId) {
+          if (isDiscoveryAgent(d.subagentId)) {
+            discoveryTextBuf[d.subagentId] =
+              (discoveryTextBuf[d.subagentId] ?? "") + d.text;
+            flushDiscoveryNarration(d.subagentId);
+          }
+          return;
+        }
         setThinking(false);
         appendText(d.text);
       });
@@ -814,8 +930,19 @@ export default function OperatorDashboard({
             d.args !== null
               ? (d.args as Record<string, unknown>)
               : {};
-          const summary = getToolSummary(d.toolName, args);
-          appendLogToSubagent(d.subagentId, summary);
+          // Buffer the call so we can merge with tool-result for a richer line
+          pendingSubagentCalls.set(d.toolCallId, {
+            toolName: d.toolName,
+            args,
+          });
+          if (
+            isDiscoveryAgent(d.subagentId) &&
+            d.toolName === "execute_command"
+          ) {
+            const cmd = String(args.command ?? "").split("\n")[0];
+            const short = cmd.length > 60 ? cmd.slice(0, 57) + "…" : cmd;
+            appendWorkflowDiscoveryLog(`$ ${short}`);
+          }
           return;
         }
         setThinking(false);
@@ -833,15 +960,52 @@ export default function OperatorDashboard({
       eventBus.on("tool-result", (d) => {
         if (gen !== generationRef.current) return;
         if (d.subagentId) {
-          const payload =
+          const pending = pendingSubagentCalls.get(d.toolCallId);
+          pendingSubagentCalls.delete(d.toolCallId);
+          const resultObj =
             d.result &&
             typeof d.result === "object" &&
             !Array.isArray(d.result) &&
             d.result !== null
               ? (d.result as Record<string, unknown>)
               : { result: d.result };
-          const summary = getToolSummary(d.toolName, payload);
-          appendLogToSubagent(d.subagentId, `✓ ${summary}`);
+
+          // Build rich merged line when we have buffered args
+          let line: string;
+          if (pending) {
+            line = formatSubagentToolResult(
+              pending.toolName,
+              pending.args,
+              resultObj,
+            );
+          } else {
+            const summary = getToolSummary(d.toolName, resultObj);
+            line = `✓ ${summary}`;
+          }
+
+          if (isDiscoveryAgent(d.subagentId)) {
+            appendWorkflowDiscoveryLog(line);
+          } else {
+            // Mirror to workflowData swarm subagent logs
+            updateWorkflowData((wd) => {
+              const entry = wd.pentesting.subagents[d.subagentId!];
+              if (!entry) return wd;
+              let logs = [...entry.logs, line];
+              if (logs.length > MAX_LOG_LINES)
+                logs = logs.slice(-MAX_LOG_LINES);
+              return {
+                ...wd,
+                pentesting: {
+                  ...wd.pentesting,
+                  subagents: {
+                    ...wd.pentesting.subagents,
+                    [d.subagentId!]: { ...entry, logs },
+                  },
+                },
+              };
+            });
+            appendLogToSubagent(d.subagentId, line);
+          }
           return;
         }
         flushCommandOutput();
@@ -851,6 +1015,14 @@ export default function OperatorDashboard({
         }
         setThinking(true);
         updateToolResult(d.toolCallId, d.toolName, d.result);
+
+        // Track submit_plan success — review triggers after the run completes
+        if (
+          d.toolName === "submit_plan" &&
+          (d.result as Record<string, unknown> | null)?.success === true
+        ) {
+          planSubmittedRef.current = true;
+        }
       });
 
       eventBus.on("command-output", (d) => {
@@ -862,7 +1034,11 @@ export default function OperatorDashboard({
         if (d.subagentId) {
           const msg =
             d.error instanceof Error ? d.error.message : "subagent error";
-          appendLogToActiveTool(`✗ ${msg}`);
+          if (isDiscoveryAgent(d.subagentId)) {
+            appendWorkflowDiscoveryLog(`✗ ${msg}`);
+          } else {
+            appendLogToActiveTool(`✗ ${msg}`);
+          }
           return;
         }
         console.error("Agent error:", d.error);
@@ -870,11 +1046,119 @@ export default function OperatorDashboard({
       });
 
       eventBus.on("subagent-spawn", ({ subagentId, name }) => {
+        if (isDiscoveryAgent(subagentId)) return;
+        // Pentest swarm agents → workflowData.pentesting.subagents
+        updateWorkflowData((wd) => ({
+          ...wd,
+          pentesting: {
+            ...wd.pentesting,
+            subagents: {
+              ...wd.pentesting.subagents,
+              [subagentId]: {
+                name,
+                status: "pending" as const,
+                logs: [],
+              },
+            },
+          },
+        }));
         initSubagent(subagentId, name);
       });
 
       eventBus.on("subagent-complete", ({ subagentId, status }) => {
+        const remaining = discoveryTextBuf[subagentId]?.trim();
+        if (remaining) {
+          if (isDiscoveryAgent(subagentId)) {
+            appendWorkflowDiscoveryLog(remaining);
+          } else {
+            appendLogToSubagent(subagentId, remaining);
+          }
+        }
+        delete discoveryTextBuf[subagentId];
+        if (isDiscoveryAgent(subagentId)) return;
+        // Update workflowData swarm status
+        updateWorkflowData((wd) => {
+          const entry = wd.pentesting.subagents[subagentId];
+          if (!entry) return wd;
+          return {
+            ...wd,
+            pentesting: {
+              ...wd.pentesting,
+              subagents: {
+                ...wd.pentesting.subagents,
+                [subagentId]: { ...entry, status },
+              },
+            },
+          };
+        });
         completeSubagent(subagentId, status);
+      });
+
+      // Workflow phase events → update workflowData on the tool message
+      eventBus.on("workflow-phase-start", (d) => {
+        if (gen !== generationRef.current) return;
+        textRef.current = "";
+        updateWorkflowData((wd) => {
+          const next = {
+            ...wd,
+            currentPhase: d.phase as WorkflowData["currentPhase"],
+          };
+          if (d.phase === "discovery") {
+            next.discovery = {
+              ...wd.discovery,
+              label: d.label,
+              status: "pending",
+              logs: [],
+            };
+          } else if (d.phase === "pentesting") {
+            next.pentesting = {
+              ...wd.pentesting,
+              label: d.label,
+              status: "pending",
+            };
+          } else if (d.phase === "reporting") {
+            next.reporting = {
+              ...wd.reporting,
+              label: d.label,
+              status: "pending",
+            };
+          }
+          return next;
+        });
+      });
+
+      eventBus.on("workflow-phase-complete", (d) => {
+        if (gen !== generationRef.current) return;
+        textRef.current = "";
+        updateWorkflowData((wd) => {
+          const next = { ...wd };
+          if (d.phase === "discovery") {
+            const targets = (d.summary.targets ?? []) as {
+              target: string;
+              objectives: string[];
+            }[];
+            next.discovery = {
+              ...wd.discovery,
+              status: "complete",
+              targets,
+              cached: d.summary.cached as boolean | undefined,
+            };
+          } else if (d.phase === "pentesting") {
+            next.pentesting = { ...wd.pentesting, status: "complete" };
+          } else if (d.phase === "reporting") {
+            next.reporting = {
+              ...wd.reporting,
+              status: "complete",
+              findingsCount: d.summary.findingsCount as number | undefined,
+              findingsBySeverity: d.summary.findingsBySeverity as
+                | Record<string, number>
+                | undefined,
+              reportPath: d.summary.reportPath as string | undefined,
+            };
+            next.currentPhase = "complete";
+          }
+          return next;
+        });
       });
 
       const skillsCatalog = skillsRegistry.buildCatalog() || undefined;
@@ -895,6 +1179,7 @@ export default function OperatorDashboard({
         approvalGate: approvalGateRef.current,
         commandCancelHandle: cancelHandleRef.current,
         skillsRegistry,
+        enableThinking: reasoningEnabled,
         onStepFinish,
         onCacheMetrics: (metrics: CacheMetrics) => {
           addCacheUsage(
@@ -905,29 +1190,87 @@ export default function OperatorDashboard({
         eventBus,
         onSessionReady: (s: SessionInfo) => {
           setSessionCwd(s.rootPath);
-          // Update the ref immediately so handleAbort can access the session
-          // even before React processes the state update.
           sessionRef.current = s;
           setSession((prev) => prev ?? s);
+          tryAttachWandb(s);
         },
       };
+
+      // W&B trace upload — buffer early records so none are lost for new sessions.
+      // For resumed sessions, we attach before the agent starts.
+      // For new sessions, onSessionReady fires mid-construction; we replay
+      // any buffered records once the handler attaches.
+      type TraceEvent = {
+        record: import("../../../core/agents/offSecAgent/trace").TraceRecord;
+        subagentId?: string;
+      };
+      let wandbCleanup: (() => Promise<void>) | null = null;
+      let earlyBuffer: TraceEvent[] | null = [];
+
+      const earlyBufferHandler = (e: TraceEvent) => {
+        earlyBuffer?.push(e);
+      };
+      eventBus.on("trace-record", earlyBufferHandler);
+
+      const tryAttachWandb = async (s: SessionInfo) => {
+        if (wandbCleanup) return;
+        const cleanup = await attachWandbToEventBus(s, eventBus).catch(
+          (e: unknown) => {
+            console.error("[wandb] Attach failed:", e);
+            return null;
+          },
+        );
+        if (cleanup) {
+          wandbCleanup = cleanup;
+          // Replay any records captured before the handler attached
+          const buffered = earlyBuffer;
+          earlyBuffer = null;
+          eventBus.off("trace-record", earlyBufferHandler);
+          if (buffered) {
+            for (const e of buffered) {
+              eventBus.emit("trace-record", e);
+            }
+          }
+        } else {
+          earlyBuffer = null;
+          eventBus.off("trace-record", earlyBufferHandler);
+        }
+      };
+
+      const wandbSession = session ?? sessionRef.current;
+      if (wandbSession) {
+        await tryAttachWandb(wandbSession);
+      }
 
       try {
         let agentResult;
 
+        const systemPrompt = buildOperatorSystemPrompt(
+          initialConfig?.target,
+          operatorState,
+          agentMode,
+          {
+            requireApproval,
+            sandboxMode: !!initialConfig?.sandbox,
+            skillsCatalog,
+            planFilePath: sessionRef.current
+              ? getPlanFilePath(sessionRef.current.rootPath)
+              : undefined,
+            existingPlanContent:
+              agentMode === "plan" &&
+              planRejectedRef.current &&
+              sessionRef.current
+                ? readPlan(sessionRef.current.rootPath)
+                : null,
+            approvedPlanContent:
+              agentMode !== "plan" ? approvedPlanRef.current : null,
+          },
+        );
+
         if (session) {
           agentResult = await runOffensiveSecurityAgent({
             ...commonInput,
-            system: buildOperatorSystemPrompt(
-              initialConfig?.target,
-              operatorState,
-              agentMode,
-              {
-                requireApproval,
-                sandboxMode: !!initialConfig?.sandbox,
-                skillsCatalog,
-              },
-            ),
+            system: systemPrompt,
             session,
           });
         } else {
@@ -944,16 +1287,7 @@ export default function OperatorDashboard({
           };
           agentResult = await runOffensiveSecurityAgent({
             ...commonInput,
-            system: buildOperatorSystemPrompt(
-              initialConfig?.target,
-              operatorState,
-              agentMode,
-              {
-                requireApproval,
-                sandboxMode: !!initialConfig?.sandbox,
-                skillsCatalog,
-              },
-            ),
+            system: systemPrompt,
             sessionConfig,
             onNameGenerated: (name: string) => {
               pendingNameRef.current = name;
@@ -1031,11 +1365,27 @@ export default function OperatorDashboard({
           ]);
         }
       } finally {
+        // Clean up early buffer listener on all paths (abort, error, success)
+        earlyBuffer = null;
+        eventBus.off("trace-record", earlyBufferHandler);
+
+        if (wandbCleanup) {
+          const fn = wandbCleanup as () => Promise<void>;
+          await fn().catch((e: unknown) =>
+            console.error("[wandb] Flush failed:", e),
+          );
+        }
         if (gen === generationRef.current) {
           setStatus("idle");
           setThinking(false);
           setIsExecuting(false);
           abortControllerRef.current = null;
+
+          // Show plan review after the full response is rendered
+          if (planSubmittedRef.current) {
+            planSubmittedRef.current = false;
+            setShowPlanReview(true);
+          }
         }
       }
     },
@@ -1183,6 +1533,13 @@ export default function OperatorDashboard({
     runAgentRef.current(next);
   }, [status]);
 
+  const addSystemMessage = useCallback((content: string) => {
+    setMessages((prev) => [
+      ...prev,
+      { role: "system" as const, content, createdAt: new Date() },
+    ]);
+  }, []);
+
   const showModelPicker = useCallback(() => {
     executeCommand("/models");
   }, [executeCommand]);
@@ -1228,6 +1585,17 @@ export default function OperatorDashboard({
           }
           return;
         }
+        case "show-plan": {
+          const planContent = sessionRef.current
+            ? readPlan(sessionRef.current.rootPath)
+            : null;
+          addSystemMessage(
+            planContent
+              ? `## Current Plan\n\n${planContent}`
+              : "No plan exists yet. Switch to plan mode (Shift+Tab) to create one.",
+          );
+          return;
+        }
         case "execute-command":
           await executeCommand(action.command);
           return;
@@ -1239,6 +1607,7 @@ export default function OperatorDashboard({
       handleSubmit,
       executeCommand,
       showModelPicker,
+      addSystemMessage,
     ],
   );
 
@@ -1391,22 +1760,53 @@ export default function OperatorDashboard({
     });
   }, [setThinking, setIsExecuting]);
 
-  // Cycle through operator modes: approvals-on → approvals-off → plan
-  const cycleMode = useCallback(() => {
-    setOperatorMode((prev) => {
-      const idx = OPERATOR_MODE_CYCLE.indexOf(prev);
-      const next = OPERATOR_MODE_CYCLE[(idx + 1) % OPERATOR_MODE_CYCLE.length];
-      approvalGateRef.current.updateConfig({
-        requireApproval: next === "manual",
-      });
-      setOperatorState((s) => ({
-        ...s,
-        mode: next,
-        requireApproval: next === "manual",
-      }));
-      return next;
+  // Complete a mode transition (shared by cycleMode and plan approval)
+  const transitionToMode = useCallback((next: OperatorMode) => {
+    approvalGateRef.current.updateConfig({
+      requireApproval: next === "manual",
     });
+    setOperatorState((s) => ({
+      ...s,
+      mode: next,
+      requireApproval: next === "manual",
+    }));
+    setOperatorMode(next);
+
+    // Persist mode so resumed sessions start in the correct mode
+    const sid = sessionRef.current?.id;
+    if (sid) {
+      sessions
+        .updateOperatorSettings(sid, { initialMode: next })
+        .catch((e) => console.error("[operator] Failed to persist mode:", e));
+    }
   }, []);
+
+  // Cycle through operator modes: approvals-on → approvals-off → plan
+  // Reads from refs to avoid stale closures — safe for rapid keypresses.
+  const cycleMode = useCallback(() => {
+    const current = operatorModeRef.current;
+    const idx = OPERATOR_MODE_CYCLE.indexOf(current);
+    const next = OPERATOR_MODE_CYCLE[(idx + 1) % OPERATOR_MODE_CYCLE.length];
+
+    // Gate: if leaving plan mode and a plan exists but isn't approved, show review
+    if (
+      current === "plan" &&
+      sessionRef.current &&
+      hasPlan(sessionRef.current.rootPath) &&
+      !approvedPlanRef.current
+    ) {
+      setShowPlanReview(true);
+      return;
+    }
+
+    // Entering plan mode — reset plan state for fresh cycle
+    if (next === "plan") {
+      setApprovedPlanContent(null);
+      planRejectedRef.current = false;
+    }
+
+    transitionToMode(next);
+  }, [transitionToMode]);
 
   // Keyboard shortcuts
   useKeyboard((key) => {
@@ -1476,6 +1876,36 @@ export default function OperatorDashboard({
       }
     }
 
+    if (showPlanReview && !inputValue.trim()) {
+      if (key.name === "y" || key.raw === "Y") {
+        key.preventDefault?.();
+        const planContent = sessionRef.current
+          ? readPlan(sessionRef.current.rootPath)
+          : null;
+        if (!planContent?.trim()) {
+          setShowPlanReview(false);
+          addSystemMessage("Plan file is missing or empty. Cannot approve.");
+          return;
+        }
+        setApprovedPlanContent(planContent);
+        setShowPlanReview(false);
+        transitionToMode("manual");
+        addSystemMessage(
+          "Plan approved. Switching to manual mode for execution.",
+        );
+        return;
+      }
+      if (key.name === "n" || key.raw === "N") {
+        key.preventDefault?.();
+        planRejectedRef.current = true;
+        setShowPlanReview(false);
+        addSystemMessage(
+          "Plan rejected. Refine the plan based on operator feedback.",
+        );
+        return;
+      }
+    }
+
     const dialogOpen = stack.length > 0 || externalDialogOpen;
     const action = resolveKeyboardShortcut(
       key,
@@ -1516,6 +1946,33 @@ export default function OperatorDashboard({
         return;
     }
   });
+
+  // Show plan review prompt when triggered.
+  // Guard ref prevents duplicate injection (e.g., React StrictMode double-fire).
+  const planReviewInjectedRef = useRef(false);
+  useEffect(() => {
+    if (!showPlanReview) {
+      planReviewInjectedRef.current = false;
+      return;
+    }
+    if (planReviewInjectedRef.current || !sessionRef.current) return;
+    const planContent = readPlan(sessionRef.current.rootPath);
+    if (!planContent) {
+      setShowPlanReview(false);
+      return;
+    }
+    planReviewInjectedRef.current = true;
+    setMessages((prev) => [
+      ...prev,
+      {
+        role: "system" as const,
+        content: "",
+        createdAt: new Date(),
+        isPlanReview: true,
+        planContent,
+      },
+    ]);
+  }, [showPlanReview]);
 
   // Loading state
   if (loading) {
@@ -1615,13 +2072,25 @@ export default function OperatorDashboard({
       <InputArea
         value={inputValue}
         onChange={setInputValue}
-        onSubmit={handleSubmit}
+        onSubmit={
+          showPlanReview
+            ? (value: string) => {
+                const trimmed = value.trim();
+                if (!trimmed) return;
+                planRejectedRef.current = true;
+                setShowPlanReview(false);
+                handleSubmit(trimmed);
+              }
+            : handleSubmit
+        }
         placeholder={
-          status === "running"
-            ? "Queue a follow-up message..."
-            : status === "waiting"
-              ? "Type to redirect agent, or Y/A to approve..."
-              : "Enter directive or / for commands & skills..."
+          showPlanReview
+            ? "Type feedback to refine, or Y to approve, N to reject..."
+            : status === "running"
+              ? "Queue a follow-up message..."
+              : status === "waiting"
+                ? "Type to redirect agent, or Y/A to approve..."
+                : "Enter directive or / for commands & skills..."
         }
         focused={
           status === "running"

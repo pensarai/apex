@@ -141,6 +141,7 @@ export const commands: CommandConfig[] = [
           initialConfig: {
             requireApproval: false,
             target: flags.target,
+            sandbox: true,
           },
           initialSkill: { slug: "pentest", args: skillArgs },
         });
@@ -228,6 +229,14 @@ export const commands: CommandConfig[] = [
     },
   },
   {
+    name: "plan",
+    description: "Show current pentest plan",
+    category: "Pentesting",
+    handler: async () => {
+      // Handled by the operator dashboard — this is a no-op for routing
+    },
+  },
+  {
     name: "threat-model",
     aliases: ["tm"],
     description: "Generate application-centric threat model",
@@ -272,9 +281,9 @@ export const commands: CommandConfig[] = [
     },
   },
   {
-    name: "sessions",
-    aliases: ["s"],
-    description: "Browse previous sessions",
+    name: "resume",
+    aliases: ["sessions", "s"],
+    description: "Resume a previous session",
     category: "Pentesting",
     handler: async (_args, ctx) => {
       ctx.openSessionsDialog?.();

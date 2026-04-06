@@ -42,12 +42,25 @@ export type AgentEventMap = {
     subagentId: string;
     status: "completed" | "failed";
   };
+  "workflow-phase-start": {
+    phase: "discovery" | "pentesting" | "reporting";
+    label: string;
+    metadata?: Record<string, unknown>;
+  };
+  "workflow-phase-complete": {
+    phase: "discovery" | "pentesting" | "reporting";
+    summary: Record<string, unknown>;
+  };
   "step-finish": {
     messages: unknown[];
     subagentId?: string;
   };
   "command-output": { data: string; subagentId?: string };
   error: { error: unknown; subagentId?: string };
+  "trace-record": {
+    record: import("./agents/offSecAgent/trace").TraceRecord;
+    subagentId?: string;
+  };
 };
 
 /**

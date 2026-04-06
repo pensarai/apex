@@ -3,12 +3,14 @@ import {
   StepTraceWriter,
   type StepRecord,
   type StateCheckpoint,
+  type InitRecord,
   type TraceRecord,
 } from "./trace";
 import { mkdtempSync, readFileSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import type { ModelMessage } from "ai";
+import { AgentEventBus } from "../../eventBus";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -607,11 +609,11 @@ describe("StepTraceWriter", () => {
     const records = readTraceRecords(tracePath);
     expect(records).toHaveLength(3);
     expect(records[0].type).toBe("step");
-    expect(records[0].stepIndex).toBe(0);
+    expect((records[0] as StepRecord).stepIndex).toBe(0);
     expect(records[1].type).toBe("checkpoint");
-    expect(records[1].stepIndex).toBe(1); // matches the step it was emitted during
+    expect((records[1] as StateCheckpoint).stepIndex).toBe(1);
     expect(records[2].type).toBe("step");
-    expect(records[2].stepIndex).toBe(1);
+    expect((records[2] as StepRecord).stepIndex).toBe(1);
   });
 
   it("checkpoints interleave with step records in trace.jsonl", () => {
@@ -670,5 +672,100 @@ describe("StepTraceWriter", () => {
     expect(writer.currentStepIndex).toBe(1);
     writer.recordStep(msgs.afterStep1, { inputTokens: 10, outputTokens: 5 });
     expect(writer.currentStepIndex).toBe(2);
+  });
+
+  // -------------------------------------------------------------------------
+  // InitRecord tests
+  // -------------------------------------------------------------------------
+
+  it("writeInit emits an init record as the first line", () => {
+    const tracePath = join(tmpDir, "trace.jsonl");
+    const writer = new StepTraceWriter({
+      tracePath,
+      agentId: "pentest-agent-1",
+    });
+
+    writer.writeInit({
+      model: "claude-sonnet-4-20250514",
+      systemPrompt: "You are a pentest agent.",
+      activeTools: ["execute_command", "http_request"],
+      sessionId: "ses_test123",
+      target: "https://example.com",
+      objectives: ["Test for SQLi"],
+    });
+
+    const records = readTraceRecords(tracePath);
+    expect(records).toHaveLength(1);
+
+    const init = records[0] as InitRecord;
+    expect(init.type).toBe("init");
+    expect(init.agentId).toBe("pentest-agent-1");
+    expect(init.model).toBe("claude-sonnet-4-20250514");
+    expect(init.systemPromptHash).toHaveLength(12);
+    expect(init.systemPromptHash).toMatch(/^[0-9a-f]{12}$/);
+    expect(init.activeTools).toEqual(["execute_command", "http_request"]);
+    expect(init.sessionId).toBe("ses_test123");
+    expect(init.target).toBe("https://example.com");
+    expect(init.objectives).toEqual(["Test for SQLi"]);
+    expect(init.timestamp).toBeTruthy();
+  });
+
+  it("init record precedes step records in trace", () => {
+    const tracePath = join(tmpDir, "trace.jsonl");
+    const writer = new StepTraceWriter({ tracePath, agentId: null });
+    const msgs = buildMessages();
+
+    writer.writeInit({
+      model: "claude-sonnet-4-20250514",
+      systemPrompt: "You are a pentest agent.",
+      activeTools: ["execute_command"],
+      sessionId: "ses_test",
+    });
+    writer.recordStep(msgs.afterStep0, { inputTokens: 100, outputTokens: 50 });
+
+    const records = readTraceRecords(tracePath);
+    expect(records.map((r) => r.type)).toEqual(["init", "step"]);
+  });
+
+  // -------------------------------------------------------------------------
+  // onRecord callback tests
+  // -------------------------------------------------------------------------
+
+  it("eventBus receives trace-record events for every record written", () => {
+    const tracePath = join(tmpDir, "trace.jsonl");
+    const bus = new AgentEventBus();
+    const received: TraceRecord[] = [];
+    bus.on("trace-record", (e: { record: TraceRecord }) =>
+      received.push(e.record),
+    );
+
+    const writer = new StepTraceWriter({
+      tracePath,
+      agentId: null,
+      eventBus: bus,
+    });
+    const msgs = buildMessages();
+
+    writer.writeInit({
+      model: "test",
+      systemPrompt: "test",
+      activeTools: [],
+      sessionId: "ses_test",
+    });
+    writer.recordStep(msgs.afterStep0, { inputTokens: 100, outputTokens: 50 });
+    writer.appendCheckpoint({
+      targetState: {
+        discoveredSurface: [],
+        credentialsObtained: [],
+        confirmedVulnerabilities: [],
+      },
+      actionsAttempted: [],
+      nextSteps: [],
+      blockers: [],
+      assessment: "test",
+    });
+
+    expect(received).toHaveLength(3);
+    expect(received.map((r) => r.type)).toEqual(["init", "step", "checkpoint"]);
   });
 });
