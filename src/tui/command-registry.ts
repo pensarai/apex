@@ -3,6 +3,7 @@ import type { Route, WebCommandOptions } from "./context/route";
 import {
   parseWebFlags,
   hasEnoughFlagsToSkipWizard,
+  combinePromptParts,
 } from "./utils/command-flags";
 import { getAllThemeNames } from "./theme";
 import { config } from "../core/config";
@@ -144,6 +145,11 @@ export const commands: CommandConfig[] = [
         if (flags.ports?.length)
           skillArgs.ports = flags.ports.map(String).join(",");
         if (flags.strict) skillArgs.strict = "true";
+        const combinedPrompt = combinePromptParts(
+          flags.threatModel,
+          flags.prompt,
+        );
+        if (combinedPrompt) skillArgs.prompt = combinedPrompt;
 
         ctx.navigate({
           type: "operator",
