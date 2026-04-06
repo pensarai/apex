@@ -342,22 +342,17 @@ function parseSubagentFilename(filename: string): {
 function unwrapAiSdkToolOutput(output: unknown): unknown {
   if (output === null || typeof output !== "object") return output;
   const o = output as Record<string, unknown>;
-  if (o.type === "json" && "value" in o) {
-    return o.value;
-  }
-  if (o.type === "text" && typeof o.value === "string") {
-    const v = o.value.trim();
-    if (
-      (v.startsWith("{") && v.endsWith("}")) ||
-      (v.startsWith("[") && v.endsWith("]"))
-    ) {
-      try {
-        return JSON.parse(o.value);
-      } catch {
-        return o.value;
-      }
-    }
-    return o.value;
+  switch (o.type) {
+    case "json":
+    case "error-json":
+      if ("value" in o) return o.value;
+      break;
+    case "text":
+    case "error-text":
+      if (typeof o.value === "string") return o.value;
+      break;
+    case "execution-denied":
+      return o.reason ?? "Tool execution denied";
   }
   return output;
 }

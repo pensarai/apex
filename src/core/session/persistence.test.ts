@@ -590,6 +590,99 @@ describe("convertModelMessagesToUI", () => {
     });
   });
 
+  it("unwraps AI SDK text-wrapped tool output without JSON-parsing", () => {
+    const modelMessages: ModelMessage[] = [
+      makeMsg("assistant", [
+        makeToolCallPart("execute_command", { cmd: "curl http://api/health" }),
+      ]),
+      makeMsg("tool", [
+        makeToolResultPart("execute_command", {
+          type: "text",
+          value: '{"status":"ok"}',
+        }),
+      ]),
+    ];
+
+    const uiMsgs = convertModelMessagesToUI(modelMessages);
+    const toolMsg = uiMsgs.find((m) => m.role === "tool");
+    // Should stay a string, not get JSON.parsed into an object
+    expect(toolMsg?.result).toBe('{"status":"ok"}');
+  });
+
+  it("unwraps AI SDK error-json-wrapped tool output", () => {
+    const modelMessages: ModelMessage[] = [
+      makeMsg("assistant", [
+        makeToolCallPart("execute_command", { cmd: "fail" }),
+      ]),
+      makeMsg("tool", [
+        makeToolResultPart("execute_command", {
+          type: "error-json",
+          value: { error: "Connection refused", code: "ECONNREFUSED" },
+        }),
+      ]),
+    ];
+
+    const uiMsgs = convertModelMessagesToUI(modelMessages);
+    const toolMsg = uiMsgs.find((m) => m.role === "tool");
+    expect(toolMsg?.result).toEqual({
+      error: "Connection refused",
+      code: "ECONNREFUSED",
+    });
+  });
+
+  it("unwraps AI SDK error-text-wrapped tool output", () => {
+    const modelMessages: ModelMessage[] = [
+      makeMsg("assistant", [
+        makeToolCallPart("read_file", { path: "/nonexistent" }),
+      ]),
+      makeMsg("tool", [
+        makeToolResultPart("read_file", {
+          type: "error-text",
+          value: "ENOENT: no such file or directory",
+        }),
+      ]),
+    ];
+
+    const uiMsgs = convertModelMessagesToUI(modelMessages);
+    const toolMsg = uiMsgs.find((m) => m.role === "tool");
+    expect(toolMsg?.result).toBe("ENOENT: no such file or directory");
+  });
+
+  it("unwraps AI SDK execution-denied tool output", () => {
+    const modelMessages: ModelMessage[] = [
+      makeMsg("assistant", [
+        makeToolCallPart("execute_command", { cmd: "rm -rf /" }),
+      ]),
+      makeMsg("tool", [
+        makeToolResultPart("execute_command", {
+          type: "execution-denied",
+          reason: "Command blocked by sandbox",
+        }),
+      ]),
+    ];
+
+    const uiMsgs = convertModelMessagesToUI(modelMessages);
+    const toolMsg = uiMsgs.find((m) => m.role === "tool");
+    expect(toolMsg?.result).toBe("Command blocked by sandbox");
+  });
+
+  it("unwraps execution-denied with no reason", () => {
+    const modelMessages: ModelMessage[] = [
+      makeMsg("assistant", [
+        makeToolCallPart("execute_command", { cmd: "bad" }),
+      ]),
+      makeMsg("tool", [
+        makeToolResultPart("execute_command", {
+          type: "execution-denied",
+        }),
+      ]),
+    ];
+
+    const uiMsgs = convertModelMessagesToUI(modelMessages);
+    const toolMsg = uiMsgs.find((m) => m.role === "tool");
+    expect(toolMsg?.result).toBe("Tool execution denied");
+  });
+
   it("returns empty array for empty input", () => {
     const uiMsgs = convertModelMessagesToUI([]);
     expect(uiMsgs).toEqual([]);
