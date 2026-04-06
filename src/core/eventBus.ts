@@ -64,6 +64,33 @@ export type AgentEventMap = {
 };
 
 /**
+ * Ensures a readonly tuple contains every member of a union type.
+ * Compile error if any AgentEventName is missing from the array.
+ */
+type ExhaustiveEventNames<T extends readonly (keyof AgentEventMap)[]> =
+  Exclude<keyof AgentEventMap, T[number]> extends never ? T : never;
+
+/**
+ * Every event name in AgentEventMap. Adding a new event to the map
+ * without adding it here is a compile error.
+ */
+export const AGENT_EVENT_NAMES = [
+  "text-delta",
+  "tool-call-start",
+  "tool-call-delta",
+  "tool-call-complete",
+  "tool-result",
+  "subagent-spawn",
+  "subagent-complete",
+  "workflow-phase-start",
+  "workflow-phase-complete",
+  "step-finish",
+  "command-output",
+  "error",
+  "trace-record",
+] as const satisfies ExhaustiveEventNames<typeof AGENT_EVENT_NAMES>;
+
+/**
  * Centralized, typed event bus for agent streaming output.
  *
  * Replaces the callback-based `ConsumeCallbacks` / `SubagentConsumeCallbacks`
@@ -123,6 +150,35 @@ export class AgentEventBus {
       this.emitter.removeAllListeners();
     }
     return this;
+  }
+
+  /**
+   * Create a child bus whose events automatically bubble to this
+   * (parent) bus with `subagentId` injected into every payload.
+   *
+   * Usage:
+   * ```ts
+   * const childBus = parentBus.child("pentest-agent-0");
+   * const agent = new TargetedPentestAgent({ ...input, eventBus: childBus });
+   * await agent.consume();
+   * // All events from the child arrive on the parent with subagentId set
+   * ```
+   */
+  child(subagentId: string): AgentEventBus {
+    const childBus = new AgentEventBus();
+
+    for (const key of AGENT_EVENT_NAMES) {
+      childBus.on(key, (payload: Record<string, unknown>) => {
+        const tagged = { ...payload };
+        // Preserve innermost subagentId for nested child-of-child buses
+        if (!("subagentId" in tagged) || tagged.subagentId == null) {
+          tagged.subagentId = subagentId;
+        }
+        this.emit(key, tagged as AgentEventMap[typeof key]);
+      });
+    }
+
+    return childBus;
   }
 
   /**
