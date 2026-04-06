@@ -2,6 +2,7 @@ import type { AnthropicMessagesModelId } from "@ai-sdk/anthropic/internal";
 import type { OpenAIChatModelId } from "@ai-sdk/openai/internal";
 import {
   generateText,
+  NoSuchToolError,
   Output,
   streamText,
   type LanguageModel,
@@ -512,16 +513,45 @@ export function streamResponse(
             }
           }
 
-          // Get the actual tool definition which contains the Zod schema
-          const tool = tools[toolCall.toolName];
-          if (!tool || !tool.inputSchema) {
-            throw new Error(
-              `Tool ${toolCall.toolName} not found or has no schema`,
+          // Get the actual tool definition which contains the Zod schema.
+          // Some models (e.g. Kimi K2.5) emit malformed tool names that
+          // include internal tokens or partial JSON. When the tool name
+          // doesn't match, try to fuzzy-match against available tools.
+          let resolvedToolName = toolCall.toolName;
+          let tool = tools[resolvedToolName];
+
+          if (!tool && NoSuchToolError.isInstance(error)) {
+            const available = Object.keys(tools);
+            // Try to find a known tool name embedded in the garbage string
+            const match = available.find(
+              (name) =>
+                toolCall.toolName.includes(name) ||
+                (toolCall.input && toolCall.input.includes(`"${name}"`)),
             );
+            if (match) {
+              resolvedToolName = match;
+              tool = tools[resolvedToolName];
+              if (!silent) {
+                console.log(
+                  `   Resolved malformed tool name "${toolCall.toolName}" -> "${resolvedToolName}"`,
+                );
+              }
+            }
+          }
+
+          if (!tool || !tool.inputSchema) {
+            // Cannot repair — return null so AI SDK marks it as an
+            // invalid tool call instead of crashing the stream.
+            if (!silent) {
+              console.error(
+                `Tool "${toolCall.toolName}" not found or has no schema, skipping repair`,
+              );
+            }
+            return null;
           }
 
           // Get JSONSchema7 for display purposes
-          const jsonSchema = inputSchema({ toolName: toolCall.toolName });
+          const jsonSchema = inputSchema({ toolName: resolvedToolName });
 
           const { output: repairedArgs, usage: repairUsage } =
             await generateText({
@@ -530,7 +560,7 @@ export function streamResponse(
                 schema: tool.inputSchema, // Use the actual Zod schema from the tool
               }),
               prompt: [
-                `The model tried to call the tool "${toolCall.toolName}"` +
+                `The model tried to call the tool "${resolvedToolName}"` +
                   ` with the following inputs:`,
                 toolCall.input,
                 `The tool accepts the following schema:`,
@@ -576,13 +606,17 @@ export function streamResponse(
             >[0]);
           }
 
-          // Return the tool call with stringified repaired arguments
+          // Return the tool call with repaired tool name and arguments
           if (repairedArgs === undefined || repairedArgs === null) {
             throw new Error(
-              `Tool call repair for "${toolCall.toolName}" produced no valid output`,
+              `Tool call repair for "${resolvedToolName}" produced no valid output`,
             );
           }
-          return { ...toolCall, input: JSON.stringify(repairedArgs) };
+          return {
+            ...toolCall,
+            toolName: resolvedToolName,
+            input: JSON.stringify(repairedArgs),
+          };
         } catch (repairError) {
           if (!silent) {
             console.error(
@@ -592,7 +626,9 @@ export function streamResponse(
                 : String(repairError),
             );
           }
-          throw repairError;
+          // Return null instead of throwing so the AI SDK gracefully
+          // marks this as an invalid tool call rather than crashing.
+          return null;
         }
       },
       onFinish,
