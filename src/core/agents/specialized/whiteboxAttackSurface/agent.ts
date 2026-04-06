@@ -138,7 +138,11 @@ This ends the agent run — make sure all data is included.`,
 // Prompt builder
 // ---------------------------------------------------------------------------
 
-function buildPrompt(codebasePath: string, domains?: string[], operatorPrompt?: string): string {
+function buildPrompt(
+  codebasePath: string,
+  domains?: string[],
+  operatorPrompt?: string,
+): string {
   const domainSection = domains?.length
     ? `\n## Known Domains\nThe following domains are associated with this project. When documenting apps, set the \`domain\` field on \`document_app\` if you can determine which domain serves the app:\n${domains.map((d) => `- ${d}`).join("\n")}\n`
     : "";
