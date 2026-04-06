@@ -54,6 +54,9 @@ export class AgentRun<TResult> implements AsyncIterable<AgentEvent> {
         throw err;
       },
     );
+
+    // Prevent unhandled rejection when only the iterator is consumed (Pattern 3)
+    this.result.catch(() => {});
   }
 
   private subscribeAll(): void {
@@ -75,7 +78,10 @@ export class AgentRun<TResult> implements AsyncIterable<AgentEvent> {
     if (this.waiting) {
       const resolve = this.waiting;
       this.waiting = null;
-      resolve({ value: undefined as unknown as AgentEvent, done: true });
+      resolve({
+        value: (this.error ?? undefined) as unknown as AgentEvent,
+        done: true,
+      });
     }
   }
 
@@ -85,7 +91,10 @@ export class AgentRun<TResult> implements AsyncIterable<AgentEvent> {
         yield this.buffer.shift()!;
         continue;
       }
-      if (this.done) return;
+      if (this.done) {
+        if (this.error) throw this.error;
+        return;
+      }
       const result = await new Promise<IteratorResult<AgentEvent>>(
         (resolve) => {
           // Check again after microtask — events may have arrived
@@ -94,13 +103,19 @@ export class AgentRun<TResult> implements AsyncIterable<AgentEvent> {
             return;
           }
           if (this.done) {
-            resolve({ value: undefined as unknown as AgentEvent, done: true });
+            resolve({
+              value: (this.error ?? undefined) as unknown as AgentEvent,
+              done: true,
+            });
             return;
           }
           this.waiting = resolve;
         },
       );
-      if (result.done) return;
+      if (result.done) {
+        if (this.error) throw this.error;
+        return;
+      }
       yield result.value;
     }
   }
