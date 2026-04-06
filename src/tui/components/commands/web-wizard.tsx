@@ -338,9 +338,6 @@ export default function WebWizard({
 
   // Keyboard handling
   useKeyboard((key) => {
-    // Don't capture keys when model picker is open
-    if (showModelPicker) return;
-
     // ESC - close
     if (key.name === "escape") {
       key.preventDefault();
@@ -539,6 +536,11 @@ export default function WebWizard({
   // Toggle field helper
   const toggleHint = "(Shift+Tab to toggle)";
   const cycleHint = "(Shift+Tab to cycle)";
+
+  // Model picker — replaces the wizard dialog, Esc returns to wizard
+  if (showModelPicker) {
+    return <ModelPickerDialog onClose={() => setShowModelPicker(false)} />;
+  }
 
   // Single-page wizard render
   return (
@@ -941,11 +943,6 @@ export default function WebWizard({
           )}
         </scrollbox>
       </DialogLayout>
-
-      {/* Model picker overlay */}
-      {showModelPicker && (
-        <ModelPickerDialog onClose={() => setShowModelPicker(false)} />
-      )}
     </Dialog>
   );
 }
