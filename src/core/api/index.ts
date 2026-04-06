@@ -12,11 +12,7 @@ export { runOffensiveSecurityAgent, type RunAgentResult } from "./offesecAgent";
 // ---- Event types ----
 // AgentEventBus class is NOT exported — it's an internal implementation
 // detail. Consumers interact with events via AgentRun<T> (Phase 3).
-export type {
-  AgentEventName,
-  AgentEvent,
-  AgentEventOf,
-} from "../eventBus";
+export type { AgentEventName, AgentEvent, AgentEventOf } from "../eventBus";
 
 // ---- Domain types — findings ----
 export { ApexFindingObject } from "../agents/offSecAgent/types";
