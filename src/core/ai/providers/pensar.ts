@@ -436,7 +436,24 @@ export function createPensarModel(
                     });
                   } else if (cbType === "tool_use") {
                     activeToolId = (cb?.id as string) ?? `tool-${Date.now()}`;
-                    activeToolName = (cb?.name as string) ?? "unknown";
+                    // Some non-Anthropic Bedrock models (e.g. Kimi K2.5)
+                    // leak internal tokens into the tool name, producing
+                    // strings like "tooluse_<id> <|token|> {\"arg...".
+                    // Sanitize to the first valid identifier segment so
+                    // the name stays within Bedrock's constraints
+                    // ([a-zA-Z0-9_-]{1,64}).
+                    const rawToolName =
+                      (cb?.name as string) ?? "unknown";
+                    const sanitized = rawToolName
+                      .split(/[\s<|{]/)[0]
+                      .replace(/[^a-zA-Z0-9_-]/g, "")
+                      .slice(0, 64);
+                    activeToolName = sanitized || "unknown_tool";
+                    if (activeToolName !== rawToolName) {
+                      logInfo(
+                        `  sanitized tool name: "${rawToolName}" -> "${activeToolName}"`,
+                      );
+                    }
                     activeToolInput = "";
                     controller.enqueue({
                       type: "tool-input-start",
