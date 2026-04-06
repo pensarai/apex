@@ -13,6 +13,11 @@ import {
   getAutoPopulatedHosts,
   getAutoPopulatedPorts,
 } from "../../../util/url";
+import { createThreatModelPrompt } from "../../../core/utils/prompt";
+import {
+  combinePromptParts,
+  resolveFlagValue,
+} from "../../utils/command-flags";
 import { scrollToChild } from "../../utils/scroll";
 import { ModelPickerDialog } from "../model-picker";
 
@@ -37,6 +42,8 @@ interface WizardState {
     mode: "none" | "default" | "custom";
     customHeaders: Record<string, string>;
   };
+  prompt: string;
+  threatModel: string;
 }
 
 // Props for the WebWizard
@@ -71,6 +78,10 @@ interface WebWizardProps {
   initialCustomHeaders?: Record<string, string>;
   /** Pre-filled model ID */
   initialModel?: string;
+  /** Operator-provided guidance for the pentest agent */
+  initialPrompt?: string;
+  /** Pre-resolved threat model content (already wrapped by parseWebFlags) */
+  initialThreatModel?: string;
 }
 
 function capitalize(s: string): string {
@@ -93,6 +104,8 @@ export default function WebWizard({
   initialHeadersMode,
   initialCustomHeaders,
   initialModel,
+  initialPrompt,
+  initialThreatModel,
 }: WebWizardProps) {
   const { colors } = useTheme();
   const config = useConfig();
@@ -146,12 +159,17 @@ export default function WebWizard({
         mode: initialHeadersMode || "default",
         customHeaders: initialCustomHeaders || {},
       },
+      prompt: initialPrompt || "",
+      threatModel: initialThreatModel || "",
     };
   });
 
   // UI state — single flat field index
   const [focusedField, setFocusedField] = useState(0);
   const [advancedExpanded, setAdvancedExpanded] = useState(false);
+  // Track whether the threat model value was pre-wrapped by CLI flag parsing
+  const [threatModelPreWrapped, setThreatModelPreWrapped] =
+    useState(!!initialThreatModel);
   const [hostInput, setHostInput] = useState("");
   const [portInput, setPortInput] = useState("");
   const [headerNameInput, setHeaderNameInput] = useState("");
@@ -171,6 +189,8 @@ export default function WebWizard({
   //   2: Cwd path (only when source code access enabled)
   //   next: Advanced toggle
   //   --- when advanced expanded ---
+  //   next: Prompt
+  //   next: Threat Model
   //   next: Auth - Login URL
   //   next: Auth - Username
   //   next: Auth - Password
@@ -187,7 +207,9 @@ export default function WebWizard({
   const advancedToggleIndex = state.sourceCodeAccess ? 3 : 2;
 
   // Advanced sub-field indices (only valid when advancedExpanded)
-  const authLoginUrlIndex = advancedToggleIndex + 1;
+  const promptFieldIndex = advancedToggleIndex + 1;
+  const threatModelFieldIndex = promptFieldIndex + 1;
+  const authLoginUrlIndex = threatModelFieldIndex + 1;
   const authUsernameIndex = authLoginUrlIndex + 1;
   const authPasswordIndex = authUsernameIndex + 1;
   const authInstructionsIndex = authPasswordIndex + 1;
@@ -299,6 +321,24 @@ export default function WebWizard({
               ? state.headers.customHeaders
               : undefined,
         };
+      }
+
+      // Operator guidance — combine threat model and prompt.
+      // Resolve @filepath references for values typed in the wizard.
+      // Values from CLI flags (threatModelPreWrapped) are already resolved.
+      const rawPrompt = state.prompt.trim();
+      const resolvedPrompt = rawPrompt
+        ? resolveFlagValue(rawPrompt)
+        : undefined;
+      const rawTm = state.threatModel.trim();
+      const resolvedTm = rawTm
+        ? threatModelPreWrapped
+          ? rawTm
+          : createThreatModelPrompt(resolveFlagValue(rawTm))
+        : undefined;
+      const combinedPrompt = combinePromptParts(resolvedTm, resolvedPrompt);
+      if (combinedPrompt) {
+        sessionConfig.prompt = combinedPrompt;
       }
 
       onStartPentest([state.target], sessionConfig);
@@ -620,6 +660,48 @@ export default function WebWizard({
 
           {advancedExpanded && (
             <>
+              {/* Prompt */}
+              <box id={`field-${promptFieldIndex}`}>
+                <Input
+                  label="Prompt"
+                  description="Guidance for the pentest agent (use @filepath to load from file)"
+                  placeholder="Focus on authentication bypass..."
+                  value={state.prompt}
+                  onInput={(v) => setState((prev) => ({ ...prev, prompt: v }))}
+                  onPaste={(event) => {
+                    const cleaned = String(event.text).replace(/\r?\n/g, " ");
+                    setState((prev) => ({
+                      ...prev,
+                      prompt: prev.prompt + cleaned,
+                    }));
+                  }}
+                  focused={focusedField === promptFieldIndex}
+                />
+              </box>
+
+              {/* Threat Model */}
+              <box id={`field-${threatModelFieldIndex}`}>
+                <Input
+                  label="Threat Model"
+                  description="Threat model content (use @filepath to load from file)"
+                  placeholder="@./threat-model.md"
+                  value={state.threatModel}
+                  onInput={(v) => {
+                    setThreatModelPreWrapped(false);
+                    setState((prev) => ({ ...prev, threatModel: v }));
+                  }}
+                  onPaste={(event) => {
+                    setThreatModelPreWrapped(false);
+                    const cleaned = String(event.text).replace(/\r?\n/g, " ");
+                    setState((prev) => ({
+                      ...prev,
+                      threatModel: prev.threatModel + cleaned,
+                    }));
+                  }}
+                  focused={focusedField === threatModelFieldIndex}
+                />
+              </box>
+
               {/* Authentication */}
               {sectionDivider("Authentication")}
 

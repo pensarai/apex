@@ -409,6 +409,7 @@ function AppContent({
         .map(String)
         .join(",");
     if (sessionConfig.scopeConstraints?.strictScope) skillArgs.strict = "true";
+    if (sessionConfig.prompt) skillArgs.prompt = sessionConfig.prompt;
 
     const isBlackbox = !sessionConfig.codebasePath;
 
@@ -512,6 +513,8 @@ function AppContent({
           initialHeadersMode={pendingPentestFlags?.headersMode}
           initialCustomHeaders={pendingPentestFlags?.customHeaders}
           initialModel={pendingPentestFlags?.model}
+          initialPrompt={pendingPentestFlags?.prompt}
+          initialThreatModel={pendingPentestFlags?.threatModel}
         />
       )}
     </box>
