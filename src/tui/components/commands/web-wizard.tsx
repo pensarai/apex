@@ -338,6 +338,9 @@ export default function WebWizard({
 
   // Keyboard handling
   useKeyboard((key) => {
+    // Don't capture keys when model picker is showing
+    if (showModelPicker) return;
+
     // ESC - close
     if (key.name === "escape") {
       key.preventDefault();
@@ -548,13 +551,9 @@ export default function WebWizard({
       <DialogLayout
         title={`Configure Web App Pentest - ${modeLabel}`}
         footerActions={[
-          {
-            key: "Enter",
-            label: `Start Pentest`,
-            variant: "primary",
-          },
-          { key: "↑/↓", label: "Navigate" },
-          { key: "Ctrl+O", label: "Model" },
+          { key: "Enter", label: "Start Pentest", variant: "primary" },
+          { key: "↑/↓", label: "Navigate Fields" },
+          { key: "Ctrl+O", label: "Select Model" },
         ]}
       >
         <scrollbox
