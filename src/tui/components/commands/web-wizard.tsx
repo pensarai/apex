@@ -14,7 +14,10 @@ import {
   getAutoPopulatedPorts,
 } from "../../../util/url";
 import { createThreatModelPrompt } from "../../../core/utils/prompt";
-import { combinePromptParts } from "../../utils/command-flags";
+import {
+  combinePromptParts,
+  resolveFlagValue,
+} from "../../utils/command-flags";
 import { scrollToChild } from "../../utils/scroll";
 import { ModelPickerDialog } from "../model-picker";
 
@@ -316,15 +319,19 @@ export default function WebWizard({
       }
 
       // Operator guidance — combine threat model and prompt.
-      const resolvedTm = state.threatModel.trim()
-        ? threatModelPreWrapped
-          ? state.threatModel.trim()
-          : createThreatModelPrompt(state.threatModel.trim())
+      // Resolve @filepath references for values typed in the wizard.
+      // Values from CLI flags (threatModelPreWrapped) are already resolved.
+      const rawPrompt = state.prompt.trim();
+      const resolvedPrompt = rawPrompt
+        ? resolveFlagValue(rawPrompt)
         : undefined;
-      const combinedPrompt = combinePromptParts(
-        resolvedTm,
-        state.prompt.trim() || undefined,
-      );
+      const rawTm = state.threatModel.trim();
+      const resolvedTm = rawTm
+        ? threatModelPreWrapped
+          ? rawTm
+          : createThreatModelPrompt(resolveFlagValue(rawTm))
+        : undefined;
+      const combinedPrompt = combinePromptParts(resolvedTm, resolvedPrompt);
       if (combinedPrompt) {
         sessionConfig.prompt = combinedPrompt;
       }
@@ -652,7 +659,7 @@ export default function WebWizard({
               <box id={`field-${promptFieldIndex}`}>
                 <Input
                   label="Prompt"
-                  description="Guidance for the pentest agent"
+                  description="Guidance for the pentest agent (use @filepath to load from file)"
                   placeholder="Focus on authentication bypass..."
                   value={state.prompt}
                   onInput={(v) => setState((prev) => ({ ...prev, prompt: v }))}
@@ -671,8 +678,8 @@ export default function WebWizard({
               <box id={`field-${threatModelFieldIndex}`}>
                 <Input
                   label="Threat Model"
-                  description="Threat model content or paste from file"
-                  placeholder="Paste threat model content here..."
+                  description="Threat model content (use @filepath to load from file)"
+                  placeholder="@./threat-model.md"
                   value={state.threatModel}
                   onInput={(v) => {
                     setThreatModelPreWrapped(false);
