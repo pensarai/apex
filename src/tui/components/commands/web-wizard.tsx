@@ -214,13 +214,15 @@ export default function WebWizard({
 
   // Auto-populate scope hosts/ports when the user changes the target URL.
   // Only fires when the user hasn't manually edited the scope fields yet.
+  // We pass the CLI-provided initial values (not accumulated state) so each
+  // keystroke replaces the auto-populated value rather than appending.
+  const baseHosts = initialHosts || [];
+  const basePorts = initialPorts || [];
   const [scopeManuallyEdited, setScopeManuallyEdited] = useState(false);
   useEffect(() => {
     if (scopeManuallyEdited) return;
     const target = state.target.trim();
     if (!target) return;
-    const baseHosts = initialHosts || [];
-    const basePorts = initialPorts || [];
     const autoHosts = getAutoPopulatedHosts(target, baseHosts);
     const autoPorts = getAutoPopulatedPorts(target, basePorts);
     setState((prev) => ({
