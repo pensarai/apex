@@ -56,6 +56,7 @@ describe("resolveConfig", () => {
   it("returns available with config when both env vars set", () => {
     process.env.WANDB_API_KEY = "test-key";
     process.env.WANDB_ENTITY = "test-entity";
+    delete process.env.WANDB_PROJECT;
     const result = resolveConfig();
     expect(result.available).toBe(true);
     if (result.available) {

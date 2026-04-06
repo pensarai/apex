@@ -64,6 +64,9 @@ export interface AuthenticationAgentInput {
    * Forwarded to the underlying {@link OffensiveSecurityAgentInput}.
    */
   environmentVariables?: Record<string, string>;
+
+  /** Enable extended thinking (reasoning) for supported models. */
+  enableThinking?: boolean;
 }
 
 /** The typed result returned by `AuthenticationAgent.consume()`. */
@@ -134,6 +137,7 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
       subagentId,
       context,
       environmentVariables,
+      enableThinking,
     } = opts;
 
     const cm = session.credentialManager;
@@ -150,6 +154,7 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
       eventBus,
       subagentId,
       environmentVariables,
+      enableThinking,
       toolChoice: "auto",
       activeTools: [
         // Auth flow tools
