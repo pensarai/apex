@@ -6,6 +6,19 @@ import type {
   LanguageModelV3ToolResultPart,
 } from "@ai-sdk/provider";
 
+/**
+ * Sanitize a tool name to satisfy Bedrock's constraints:
+ * [a-zA-Z0-9_-]{1,64}. Non-Anthropic Bedrock models (e.g. Kimi K2.5)
+ * can leak internal tokens into tool names.
+ */
+export function sanitizeToolName(raw: string): string {
+  const sanitized = raw
+    .split(/[\s<|{]/)[0]
+    .replace(/[^a-zA-Z0-9_-]/g, "")
+    .slice(0, 64);
+  return sanitized || "unknown_tool";
+}
+
 export function convertToBedrockFormat(
   modelId: string,
   options: LanguageModelV3CallOptions,
@@ -133,7 +146,7 @@ function convertToAnthropicFormat(
               content.push({
                 type: "tool_use",
                 id: c.toolCallId,
-                name: c.toolName,
+                name: sanitizeToolName(c.toolName as string),
                 input: parsedInput,
               });
             }

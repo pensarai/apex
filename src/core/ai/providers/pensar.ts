@@ -7,7 +7,7 @@ import type {
   LanguageModelV3Usage,
   SharedV3Warning,
 } from "@ai-sdk/provider";
-import { convertToBedrockFormat } from "./pensarFormatters";
+import { convertToBedrockFormat, sanitizeToolName } from "./pensarFormatters";
 import { parseSSE } from "./pensarSSE";
 import { signGatewayRequest } from "./pensarSigning";
 
@@ -436,19 +436,9 @@ export function createPensarModel(
                     });
                   } else if (cbType === "tool_use") {
                     activeToolId = (cb?.id as string) ?? `tool-${Date.now()}`;
-                    // Some non-Anthropic Bedrock models (e.g. Kimi K2.5)
-                    // leak internal tokens into the tool name, producing
-                    // strings like "tooluse_<id> <|token|> {\"arg...".
-                    // Sanitize to the first valid identifier segment so
-                    // the name stays within Bedrock's constraints
-                    // ([a-zA-Z0-9_-]{1,64}).
                     const rawToolName =
                       (cb?.name as string) ?? "unknown";
-                    const sanitized = rawToolName
-                      .split(/[\s<|{]/)[0]
-                      .replace(/[^a-zA-Z0-9_-]/g, "")
-                      .slice(0, 64);
-                    activeToolName = sanitized || "unknown_tool";
+                    activeToolName = sanitizeToolName(rawToolName);
                     if (activeToolName !== rawToolName) {
                       logInfo(
                         `  sanitized tool name: "${rawToolName}" -> "${activeToolName}"`,
