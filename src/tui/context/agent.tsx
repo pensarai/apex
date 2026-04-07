@@ -7,7 +7,7 @@ import {
   useEffect,
   type ReactNode,
 } from "react";
-import { type ModelInfo } from "../../core/ai";
+import { type ModelInfo, modelSupportsThinking } from "../../core/ai";
 import { AVAILABLE_MODELS } from "../../core/ai/models";
 import { update as updateConfig } from "../../core/config/config";
 import {
@@ -114,6 +114,13 @@ export function AgentProvider({ children }: AgentProviderProps) {
       setReasoningEnabledInternal(appConfig.data.reasoningEnabled);
     }
   }, [appConfig.data?.reasoningEnabled]);
+
+  // Auto-disable extended thinking when switching to a model that doesn't support it
+  useEffect(() => {
+    if (reasoningEnabled && !modelSupportsThinking(model.id)) {
+      setReasoningEnabled(false);
+    }
+  }, [model.id, reasoningEnabled, setReasoningEnabled]);
 
   // Re-evaluate the default model whenever config changes (e.g. after
   // provider setup) unless the user has explicitly picked a model.
