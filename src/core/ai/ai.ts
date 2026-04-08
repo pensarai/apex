@@ -506,60 +506,56 @@ export function streamResponse(
         tools,
         error,
       }) => {
-        try {
-          if (!silent) {
-            console.log(`🔧 Repairing tool call: ${toolCall.toolName}`);
-            console.log(`   Error: ${error.message || error}`);
+        if (!silent) {
+          console.log(`🔧 Repairing tool call: ${toolCall.toolName}`);
+          console.log(`   Error: ${error.message || error}`);
+        }
 
-            // Log specific details for common enum errors
-            if (
-              error.message &&
-              (error.message.includes("severity") ||
-                error.message.includes("riskLevel"))
-            ) {
-              console.log(
-                `   Note: This appears to be an enum validation error. Tool call repair will normalize the value.`,
-              );
-            }
-          }
+        // Get the actual tool definition which contains the Zod schema.
+        // Some models (e.g. Kimi K2.5) emit malformed tool names that
+        // include internal tokens or partial JSON. When the tool name
+        // doesn't match, try to fuzzy-match against available tools.
+        let resolvedToolName = toolCall.toolName;
+        let tool = tools[resolvedToolName];
 
-          // Get the actual tool definition which contains the Zod schema.
-          // Some models (e.g. Kimi K2.5) emit malformed tool names that
-          // include internal tokens or partial JSON. When the tool name
-          // doesn't match, try to fuzzy-match against available tools.
-          let resolvedToolName = toolCall.toolName;
-          let tool = tools[resolvedToolName];
-
-          if (!tool && NoSuchToolError.isInstance(error)) {
-            const available = Object.keys(tools);
-            // Try to find a known tool name embedded in the garbage string
-            const match = available.find(
-              (name) =>
-                toolCall.toolName.includes(name) ||
-                (toolCall.input && toolCall.input.includes(`"${name}"`)),
-            );
-            if (match) {
-              resolvedToolName = match;
-              tool = tools[resolvedToolName];
-              if (!silent) {
-                console.log(
-                  `   Resolved malformed tool name "${toolCall.toolName}" -> "${resolvedToolName}"`,
-                );
-              }
-            }
-          }
-
-          if (!tool || !tool.inputSchema) {
-            // Cannot repair — return null so AI SDK marks it as an
-            // invalid tool call instead of crashing the stream.
+        if (!tool && NoSuchToolError.isInstance(error)) {
+          const available = Object.keys(tools);
+          // Try to find a known tool name embedded in the garbage string
+          const match = available.find(
+            (name) =>
+              toolCall.toolName.includes(name) ||
+              (toolCall.input && toolCall.input.includes(`"${name}"`)),
+          );
+          if (match) {
+            resolvedToolName = match;
+            tool = tools[resolvedToolName];
             if (!silent) {
-              console.error(
-                `Tool "${toolCall.toolName}" not found or has no schema, skipping repair`,
+              console.log(
+                `   Resolved malformed tool name "${toolCall.toolName}" -> "${resolvedToolName}"`,
               );
             }
-            return null;
           }
+        }
 
+        if (!tool || !tool.inputSchema) {
+          // Cannot repair. Throw a descriptive error so the AI SDK
+          // surfaces it as the tool result — giving the model a clear
+          // correction signal instead of the generic NoSuchToolError.
+          const available = Object.keys(tools);
+          if (!silent) {
+            console.error(
+              `Tool "${toolCall.toolName}" not found or has no schema, skipping repair`,
+            );
+          }
+          throw new Error(
+            `INVALID TOOL CALL. "${toolCall.toolName}" is not a recognized tool. ` +
+              `You MUST use one of these exact tool names: ${available.join(", ")}. ` +
+              `Do not include tool call IDs, internal tokens like <|tool_call_argument_begin|>, or other metadata in the tool name field.`,
+          );
+        }
+
+        // Tool resolved — attempt to repair the input arguments
+        try {
           // Get JSONSchema7 for display purposes
           const jsonSchema = inputSchema({ toolName: resolvedToolName });
 
