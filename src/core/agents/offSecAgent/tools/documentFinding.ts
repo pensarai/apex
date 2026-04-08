@@ -34,7 +34,7 @@ export const documentVulnerabilityInputSchema = z.object({
     .string()
     .optional()
     .describe(
-      "The class of vulnerability (e.g., sqli, xss, command-injection, idor, ssrf, path-traversal, crypto, cve)",
+      "The class of vulnerability (e.g., sqli, xss, command-injection, idor, ssrf, path-traversal, crypto, cve, hardcoded-credentials, information-disclosure, missing-authentication)",
     ),
   toolCallDescription: z
     .string()
