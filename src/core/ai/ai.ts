@@ -21,6 +21,7 @@ import {
   createSummarizationStream,
   getProviderModel,
   isAnthropicProvider,
+  sanitizeToolNamesInMessages,
   type AIAuthConfig,
 } from "./utils";
 import { withCachedSystemPrompt, withCachedLastMessage } from "./caching";
@@ -442,11 +443,16 @@ export function streamResponse(
       prepareStep: (opts) => {
         // Update the container with the latest messages
         messagesContainer.current = opts.messages;
+        // Sanitize tool names in the message history before sending to any
+        // provider.  Non-Anthropic Bedrock models (e.g. Kimi K2.5) can leak
+        // internal tokens into tool names; the Converse API rejects names
+        // that violate [a-zA-Z0-9_-]{1,64}.
+        const messages = sanitizeToolNamesInMessages(opts.messages);
         // For Anthropic, add cache_control to the last message for incremental caching
         if (useAnthropicCaching) {
-          return { messages: withCachedLastMessage(opts.messages) };
+          return { messages: withCachedLastMessage(messages) };
         }
-        return undefined;
+        return { messages };
       },
       onError: async ({ error }: { error: unknown }) => {
         const errorMessage =
