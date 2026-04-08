@@ -28,8 +28,10 @@ jobs:
 
       - name: Detect affected agents
         id: detect
+        env:
+          BASE_REF: ${{ github.base_ref }}
         run: |
-          AGENTS=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | bun run scripts/detect-affected-agents.ts)
+          AGENTS=$(git diff --name-only origin/$BASE_REF...HEAD | bun run scripts/detect-affected-agents.ts)
           echo "agents=$AGENTS" >> $GITHUB_OUTPUT
           if [ -n "$AGENTS" ]; then
             echo "Affected agents: $AGENTS"
@@ -39,12 +41,13 @@ jobs:
 
       - name: Dispatch evalgate
         if: steps.detect.outputs.agents != ''
+        env:
+          GH_TOKEN: ${{ secrets.EVALGATE_DISPATCH_TOKEN }}
+          HEAD_REF: ${{ github.head_ref }}
         run: |
           gh workflow run eval-apex-agents.yml \
             --repo pensarai/evalgate \
             --ref main \
             -f agents="${{ steps.detect.outputs.agents }}" \
-            -f apex_branch="${{ github.head_ref }}" \
+            -f apex_branch="$HEAD_REF" \
             -f apex_pr="${{ github.event.pull_request.number }}"
-        env:
-          GH_TOKEN: ${{ secrets.EVALGATE_DISPATCH_TOKEN }}
