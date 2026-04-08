@@ -120,6 +120,7 @@ Does the POC output actually demonstrate the claimed vulnerability?
 - For path traversal: Does the output show file contents from outside the intended directory?
 - For IDOR: Does the output show access to resources belonging to other users/accounts?
 - For authentication bypass: Does the output show access to protected resources without valid credentials?
+- For email injection / HTML injection: The PoC must show more than "server accepted HTML input." Verify: (a) the email was actually sent (success response confirming delivery), AND (b) ideally, the email was retrieved via IMAP/POP3 or confirmed via out-of-band callback. If only (a) is met, reduce confidence and note "HTML rendering in email client was not independently verified."
 
 ### 2. Hallucination Detection
 Could the POC be manufacturing fake evidence rather than demonstrating real exploitation?
@@ -172,6 +173,7 @@ Ask: "Would a knowledgeable developer of this application consider this a bug, o
 ### Confidence calibration
 - When in doubt about exploitation legitimacy, **ACCEPT as vulnerability** — a borderline-real finding is worth documenting.
 - When in doubt about whether behavior is by-design, **classify as informational** rather than vulnerability — documenting expected behavior as a vulnerability undermines report credibility.
+- Email/HTML injection findings without independent rendering verification (e.g., only a 200 OK response): confidence must be < 0.7. Add a concern noting that HTML rendering in the recipient's email client was not independently verified.
 - Below 0.7 confidence: always populate the concerns array explaining what makes the finding marginal.
 
 ## Output Instructions
