@@ -70,7 +70,7 @@ export interface FindingJudgeResult {
 // Schema for AI Output
 // =============================================================================
 
-const FindingJudgeOutputSchema = z.object({
+export const FindingJudgeOutputSchema = z.object({
   valid: z
     .boolean()
     .describe(
@@ -102,7 +102,7 @@ const FindingJudgeOutputSchema = z.object({
 // System Prompt
 // =============================================================================
 
-const FINDING_JUDGE_SYSTEM_PROMPT = `You are a security finding validation specialist. Your task is to analyze a proof-of-concept (POC) script and its execution output to determine whether it legitimately demonstrates the claimed vulnerability.
+export const FINDING_JUDGE_SYSTEM_PROMPT = `You are a security finding validation specialist. Your task is to analyze a proof-of-concept (POC) script and its execution output to determine whether it legitimately demonstrates the claimed vulnerability.
 
 ## Your Role
 

@@ -54,7 +54,7 @@ export interface CVSSScorerResult {
 // Schema for AI Output
 // =============================================================================
 
-const CVSSMetricsOutputSchema = z.object({
+export const CVSSMetricsOutputSchema = z.object({
   metrics: z.object({
     // Base Metrics - Exploitability
     AV: z
@@ -140,7 +140,7 @@ const CVSSMetricsOutputSchema = z.object({
 // System Prompt
 // =============================================================================
 
-const CVSS_SCORER_SYSTEM_PROMPT = `You are a CVSS 4.0 scoring specialist. Your task is to analyze vulnerability findings and determine the appropriate CVSS 4.0 Base metrics.
+export const CVSS_SCORER_SYSTEM_PROMPT = `You are a CVSS 4.0 scoring specialist. Your task is to analyze vulnerability findings and determine the appropriate CVSS 4.0 Base metrics.
 
 ## CVSS 4.0 Metrics Guide
 

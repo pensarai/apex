@@ -1,0 +1,50 @@
+# Eval Dispatch
+# =============
+# Detects prompt changes in PRs and dispatches evalgate capability evals
+# for the affected sub-agents. Results are posted back as a PR comment.
+
+name: Eval Dispatch
+
+on:
+  pull_request:
+    paths:
+      - "src/core/agents/specialized/**/prompts.ts"
+      - "src/core/agents/specialized/pentest/agent.ts"
+      - "src/core/agents/specialized/findingJudge/**"
+      - "src/core/agents/specialized/cvssScorer/**"
+      - "src/core/agents/offSecAgent/prompt.ts"
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+
+      - run: bun install --frozen-lockfile
+
+      - name: Detect affected agents
+        id: detect
+        run: |
+          AGENTS=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | bun run scripts/detect-affected-agents.ts)
+          echo "agents=$AGENTS" >> $GITHUB_OUTPUT
+          if [ -n "$AGENTS" ]; then
+            echo "Affected agents: $AGENTS"
+          else
+            echo "No prompt files changed"
+          fi
+
+      - name: Dispatch evalgate
+        if: steps.detect.outputs.agents != ''
+        run: |
+          gh workflow run eval-apex-agents.yml \
+            --repo pensarai/evalgate \
+            --ref main \
+            -f agents="${{ steps.detect.outputs.agents }}" \
+            -f apex_branch="${{ github.head_ref }}" \
+            -f apex_pr="${{ github.event.pull_request.number }}"
+        env:
+          GH_TOKEN: ${{ secrets.EVALGATE_DISPATCH_TOKEN }}
