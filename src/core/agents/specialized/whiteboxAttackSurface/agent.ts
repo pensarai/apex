@@ -84,7 +84,7 @@ This ends the agent run — make sure all data is included.`,
 
     super({
       system: WHITEBOX_ATTACK_SURFACE_SYSTEM_PROMPT,
-      prompt: buildPrompt(codebasePath, domains),
+      prompt: buildPrompt(codebasePath, domains, session.config?.prompt),
       model,
       session,
       authConfig,
@@ -138,16 +138,23 @@ This ends the agent run — make sure all data is included.`,
 // Prompt builder
 // ---------------------------------------------------------------------------
 
-function buildPrompt(codebasePath: string, domains?: string[]): string {
+function buildPrompt(
+  codebasePath: string,
+  domains?: string[],
+  operatorPrompt?: string,
+): string {
   const domainSection = domains?.length
     ? `\n## Known Domains\nThe following domains are associated with this project. When documenting apps, set the \`domain\` field on \`document_app\` if you can determine which domain serves the app:\n${domains.map((d) => `- ${d}`).join("\n")}\n`
+    : "";
+  const operatorGuidanceBlock = operatorPrompt
+    ? `\n## Operator Guidance\n${operatorPrompt}\n`
     : "";
 
   return `# Whitebox Attack Surface Analysis
 
 ## Codebase
 - **Path:** ${codebasePath}
-${domainSection}
+${domainSection}${operatorGuidanceBlock}
 ## Task
 Analyze this codebase and produce a complete attack surface map:
 1. Identify the repo type and package manager

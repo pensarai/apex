@@ -1493,6 +1493,7 @@ export default function OperatorDashboard({
             hosts: args?.hosts?.split(",").filter(Boolean),
             ports: args?.ports?.split(",").filter(Boolean),
             strict: args?.strict === "true",
+            prompt: args?.prompt,
             skillContent: content,
           });
         } else {

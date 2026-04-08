@@ -158,6 +158,8 @@ const SessionConfigObject = z.object({
   exfilMode: z.boolean().optional(),
   /** Agent working directory — resolved to process.cwd() by default, undefined in sandbox mode */
   agentCwd: z.string().optional(),
+  /** Operator-provided guidance injected into the orchestrator/agent system prompts */
+  prompt: z.string().optional(),
 });
 
 export type SessionConfig = z.infer<typeof SessionConfigObject>;

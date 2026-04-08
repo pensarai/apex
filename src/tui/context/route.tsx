@@ -40,6 +40,8 @@ export interface WebCommandOptions {
   headersMode?: "none" | "default" | "custom";
   customHeaders?: Record<string, string>;
   model?: string;
+  prompt?: string;
+  threatModel?: string;
 }
 
 export type Route =
