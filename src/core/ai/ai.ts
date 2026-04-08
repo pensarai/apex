@@ -520,12 +520,47 @@ export function streamResponse(
 
         if (!tool && NoSuchToolError.isInstance(error)) {
           const available = Object.keys(tools);
-          // Try to find a known tool name embedded in the garbage string
-          const match = available.find(
+          // Strategy 1: tool name embedded in the garbage string or input
+          let match = available.find(
             (name) =>
               toolCall.toolName.includes(name) ||
               (toolCall.input && toolCall.input.includes(`"${name}"`)),
           );
+          // Strategy 2: match input fields against tool schemas.
+          // Kimi K2.5 often produces valid input JSON with the right
+          // fields (e.g. { command, toolCallDescription }) even when the
+          // tool name is garbage. Find the tool whose required/known
+          // fields best overlap with the input keys.
+          if (!match && toolCall.input) {
+            try {
+              const parsed = JSON.parse(toolCall.input);
+              const inputKeys = Object.keys(parsed).filter(
+                (k) => k !== "toolCallDescription",
+              );
+              if (inputKeys.length > 0) {
+                let bestName: string | undefined;
+                let bestOverlap = 0;
+                for (const name of available) {
+                  const schema = await inputSchema({ toolName: name });
+                  const schemaKeys = Object.keys(
+                    (schema as Record<string, unknown>)?.properties ?? {},
+                  ).filter((k) => k !== "toolCallDescription");
+                  const overlap = inputKeys.filter((k) =>
+                    schemaKeys.includes(k),
+                  ).length;
+                  if (overlap > bestOverlap) {
+                    bestOverlap = overlap;
+                    bestName = name;
+                  }
+                }
+                if (bestName && bestOverlap > 0) {
+                  match = bestName;
+                }
+              }
+            } catch {
+              // input isn't valid JSON — skip schema matching
+            }
+          }
           if (match) {
             resolvedToolName = match;
             tool = tools[resolvedToolName];
