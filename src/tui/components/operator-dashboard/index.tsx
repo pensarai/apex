@@ -828,14 +828,13 @@ export default function OperatorDashboard({
         { toolName: string; args: Record<string, unknown> }
       >();
 
-      // Discovery-phase subagents route output to workflowData on the
-      // run_pentest_workflow tool message instead of the SwarmGrid.
-      const DISCOVERY_SUBAGENT_IDS = new Set([
-        "attack-surface-agent",
-        "whitebox-apps-discovery",
-      ]);
+      // Only pentest swarm agents (pentest-agent-*) appear in the SwarmGrid.
+      // All other subagents (discovery agents, risk scorers, whitebox analyzers)
+      // route to the discovery log instead.
+      const isPentestAgent = (id?: string) =>
+        id !== undefined && id.startsWith("pentest-agent-");
       const isDiscoveryAgent = (id?: string) =>
-        id !== undefined && DISCOVERY_SUBAGENT_IDS.has(id);
+        id !== undefined && !isPentestAgent(id);
 
       // Patch the workflowData on the active run_pentest_workflow tool message.
       const updateWorkflowData = (
@@ -1264,6 +1263,7 @@ export default function OperatorDashboard({
                 : null,
             approvedPlanContent:
               agentMode !== "plan" ? approvedPlanRef.current : null,
+            taskDriven: session?.config?.taskDriven ?? true,
           },
         );
 
@@ -1284,6 +1284,8 @@ export default function OperatorDashboard({
               enableSuggestions: true,
             },
             agentCwd: initialConfig?.sandbox ? undefined : process.cwd(),
+            // Experimental: enable task-driven architecture in operator mode
+            taskDriven: true,
           };
           agentResult = await runOffensiveSecurityAgent({
             ...commonInput,

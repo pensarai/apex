@@ -151,6 +151,14 @@ export class OffensiveSecurityAgent<TResult = void> {
       eventBus: this.eventBus,
     });
 
+    // -- Task directory (per-agent tasks, opt-in via taskDriven config) -------
+    const taskDriven = input.session.config?.taskDriven ?? false;
+    const tasksDir = taskDriven
+      ? input.subagentId
+        ? join(input.session.rootPath, "subagents", `${input.subagentId}-tasks`)
+        : join(input.session.rootPath, "tasks")
+      : undefined;
+
     // -- Tools ----------------------------------------------------------------
     const credentialManager =
       input.credentialManager ?? input.session.credentialManager;
@@ -170,6 +178,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       persistentShell: this.persistentShell,
       skillsRegistry: input.skillsRegistry,
       traceWriter,
+      tasksDir,
       enableThinking: input.enableThinking,
       projectThreatModel: input.projectThreatModel,
     });
@@ -308,6 +317,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       activeTools,
       stopWhen,
       toolChoice: "auto",
+      sessionPath: input.session.rootPath,
       onStepFinish: async (event) => {
         latestMessages = [
           ...initialMessagesRef.current,

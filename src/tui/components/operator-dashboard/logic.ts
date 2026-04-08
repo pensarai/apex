@@ -199,6 +199,7 @@ export function buildOperatorSystemPrompt(
     planFilePath?: string;
     existingPlanContent?: string | null;
     approvedPlanContent?: string | null;
+    taskDriven?: boolean;
   },
 ): string {
   const { skillsCatalog, activeSkillInstructions } = opts ?? {};
@@ -243,6 +244,25 @@ Command approval: ${approvalEnabled ? "enabled — the operator will approve eac
     for (const skill of activeSkillInstructions) {
       prompt += `\n\n# Active Skill: ${skill.name}\n\n${skill.instructions}`;
     }
+  }
+
+  if (opts?.taskDriven && agentMode !== "plan") {
+    prompt += `
+
+# Task-Driven Testing
+
+You have task decomposition tools available. Use them to structure your work:
+
+1. **DECOMPOSE** — Before testing, call \`create_task\` for each technique × endpoint combination you plan to try. One task per atomic test.
+2. **EXECUTE** — Pick a pending task, call \`update_task\` with status="in_progress", then test it.
+3. **RECORD** — After testing, call \`update_task\` with status="completed" (found something or conclusively not vulnerable) or status="failed" (technique blocked, dead end).
+4. **ADAPT** — If a task fails, call \`create_task\` with an alternative technique.
+5. **COVERAGE** — Call \`list_tasks\` to check progress. Ensure all tasks reach a terminal state before wrapping up.
+
+CRITICAL task rules:
+- BEFORE making ANY \`http_request\` or \`execute_command\` call, you MUST call \`create_task\` first. Your first tool calls for each directive must be \`create_task\`.
+- Every operator directive should map to one or more tasks
+- Always include a result or observation when completing/failing a task`;
   }
 
   return prompt;
