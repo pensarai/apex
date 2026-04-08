@@ -5,6 +5,7 @@ import {
   useMemo,
   useCallback,
   useEffect,
+  useRef,
   type ReactNode,
 } from "react";
 import { type ModelInfo, modelSupportsThinking } from "../../core/ai";
@@ -88,6 +89,9 @@ export function AgentProvider({ children }: AgentProviderProps) {
   const [isExecuting, setIsExecuting] = useState<boolean>(false);
   const [sessionCwd, setSessionCwd] = useState<string | null>(null);
 
+  const reasoningEnabledRef = useRef(reasoningEnabled);
+  reasoningEnabledRef.current = reasoningEnabled;
+
   // Wrapper that marks model as user-selected and persists to config.
   // Pass `persist = false` for programmatic/initialization calls so the
   // user's previously saved preference is not silently overwritten.
@@ -95,7 +99,17 @@ export function AgentProvider({ children }: AgentProviderProps) {
     setModelInternal(newModel);
     if (persist) {
       setIsModelUserSelected(true);
-      updateConfig({ selectedModelId: newModel.id }).catch((err) => {
+      const configUpdate: {
+        selectedModelId: string;
+        reasoningEnabled?: boolean;
+      } = {
+        selectedModelId: newModel.id,
+      };
+      if (reasoningEnabledRef.current && !modelSupportsThinking(newModel.id)) {
+        configUpdate.reasoningEnabled = false;
+        setReasoningEnabledInternal(false);
+      }
+      updateConfig(configUpdate).catch((err) => {
         writeErrorLog(err, "AGENT_CONTEXT");
       });
     }
@@ -114,13 +128,6 @@ export function AgentProvider({ children }: AgentProviderProps) {
       setReasoningEnabledInternal(appConfig.data.reasoningEnabled);
     }
   }, [appConfig.data?.reasoningEnabled]);
-
-  // Auto-disable extended thinking when switching to a model that doesn't support it
-  useEffect(() => {
-    if (reasoningEnabled && !modelSupportsThinking(model.id)) {
-      setReasoningEnabled(false);
-    }
-  }, [model.id, reasoningEnabled, setReasoningEnabled]);
 
   // Re-evaluate the default model whenever config changes (e.g. after
   // provider setup) unless the user has explicitly picked a model.
