@@ -45,6 +45,10 @@ export interface SavedSubagentData {
   status?: string;
   error?: string;
   messages: ModelMessage[];
+  /** System prompt used for this agent run (for training data export) */
+  systemPrompt?: string;
+  /** Initial user prompt / task assignment (for training data export) */
+  userPrompt?: string;
 }
 
 /**
@@ -99,6 +103,10 @@ export interface SubagentSaveInput {
   findingsCount?: number;
   /** Raw AI SDK messages from onStepFinish (e.response.messages) */
   messages: ModelMessage[];
+  /** System prompt used for this agent (for training data export) */
+  systemPrompt?: string;
+  /** Initial user prompt / task assignment (for training data export) */
+  userPrompt?: string;
 }
 
 export function loadSubagentMessages(
@@ -151,6 +159,8 @@ export function saveSubagentData(
     status: data.status,
     error: data.error,
     messages: data.messages,
+    systemPrompt: data.systemPrompt,
+    userPrompt: data.userPrompt,
   };
 
   writeFileSync(

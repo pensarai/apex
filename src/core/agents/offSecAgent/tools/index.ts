@@ -75,6 +75,11 @@ export { readSkill } from "./readSkill";
 // Observability tools
 export { checkpointState } from "./checkpointState";
 
+// Task decomposition tools
+export { createTask } from "./createTask";
+export { updateTask } from "./updateTask";
+export { listTasksTool } from "./listTasks";
+
 // Plan mode tools
 export { writePlan } from "./writePlan";
 export { submitPlan } from "./submitPlan";
@@ -124,6 +129,9 @@ import { webSearch } from "./webSearch";
 import { getPage } from "./getPage";
 import { readSkill } from "./readSkill";
 import { checkpointState } from "./checkpointState";
+import { createTask } from "./createTask";
+import { updateTask } from "./updateTask";
+import { listTasksTool } from "./listTasks";
 import { writePlan } from "./writePlan";
 import { submitPlan } from "./submitPlan";
 
@@ -199,6 +207,15 @@ export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
     // Observability tools (conditional — only when trace writer is provided)
     ...(ctx.traceWriter ? { checkpoint_state: checkpointState(ctx) } : {}),
 
+    // Task decomposition tools (conditional — only when tasksDir is configured)
+    ...(ctx.tasksDir
+      ? {
+          create_task: createTask(ctx),
+          update_task: updateTask(ctx),
+          list_tasks: listTasksTool(ctx),
+        }
+      : {}),
+
     // Plan mode tools
     write_plan: writePlan(ctx),
     submit_plan: submitPlan(ctx),
@@ -257,6 +274,10 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "get_page",
   // Observability
   "checkpoint_state",
+  // Task decomposition
+  "create_task",
+  "update_task",
+  "list_tasks",
   // Plan mode
   "write_plan",
   "submit_plan",

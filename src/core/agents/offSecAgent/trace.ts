@@ -185,6 +185,9 @@ export interface InitRecord {
   /** SHA-256 prefix (12 chars) of the system prompt — detects prompt version drift */
   systemPromptHash: string;
 
+  /** Full system prompt text (for training data export) */
+  systemPrompt?: string;
+
   /** Tool names available to this agent */
   activeTools: string[];
 
@@ -202,8 +205,52 @@ export type CheckpointInput = Omit<
   "type" | "stepIndex" | "timestamp" | "agentId"
 >;
 
+// ---------------------------------------------------------------------------
+// TaskRecord — task lifecycle events in trace.jsonl
+// ---------------------------------------------------------------------------
+
+export interface TaskRecord {
+  /** Discriminator — distinguishes from other record types in trace.jsonl */
+  type: "task";
+
+  /** ISO 8601 timestamp when the task event occurred */
+  timestamp: string;
+
+  /** Agent identifier — null for orchestrator */
+  agentId: string | null;
+
+  /** Step index at the time of the task event */
+  stepIndex: number;
+
+  /** Whether the task was created or updated */
+  action: "created" | "updated";
+
+  /** Task ID from the task system */
+  taskId: number;
+
+  /** Task data snapshot at the time of the event */
+  data: {
+    subject: string;
+    status: "pending" | "in_progress" | "completed" | "failed";
+    objective: string;
+    technique: string;
+    result?: string;
+    observation?: string;
+  };
+}
+
+/** Data fields provided by task tools (metadata is filled by the writer). */
+export type TaskRecordInput = Omit<
+  TaskRecord,
+  "type" | "timestamp" | "agentId" | "stepIndex"
+>;
+
 /** Discriminated union of all trace record types. */
-export type TraceRecord = InitRecord | StepRecord | StateCheckpoint;
+export type TraceRecord =
+  | InitRecord
+  | StepRecord
+  | StateCheckpoint
+  | TaskRecord;
 
 // ---------------------------------------------------------------------------
 // Extraction helpers
@@ -340,6 +387,7 @@ export class StepTraceWriter {
         .update(systemPrompt)
         .digest("hex")
         .slice(0, SYSTEM_PROMPT_HASH_PREFIX_LENGTH),
+      systemPrompt,
       ...rest,
     };
     this.appendRecord(record);
@@ -500,6 +548,28 @@ export class StepTraceWriter {
       stepIndex: this.stepIndex,
       timestamp: new Date().toISOString(),
       agentId: this.agentId,
+      ...data,
+    };
+    this.appendRecord(record);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Task record support
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Append a {@link TaskRecord} to trace.jsonl.
+   *
+   * Called by task tools (create_task, update_task) during tool execution.
+   * The writer fills in metadata (type, timestamp, agentId, stepIndex);
+   * the caller provides the action and data fields.
+   */
+  appendTaskRecord(data: TaskRecordInput): void {
+    const record: TaskRecord = {
+      type: "task",
+      timestamp: new Date().toISOString(),
+      agentId: this.agentId,
+      stepIndex: this.stepIndex,
       ...data,
     };
     this.appendRecord(record);

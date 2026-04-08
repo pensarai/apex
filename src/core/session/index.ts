@@ -158,6 +158,10 @@ const SessionConfigObject = z.object({
   exfilMode: z.boolean().optional(),
   /** Agent working directory — resolved to process.cwd() by default, undefined in sandbox mode */
   agentCwd: z.string().optional(),
+  /** Enable task-driven architecture — agents decompose objectives into tracked tasks (default: false) */
+  taskDriven: z.boolean().optional(),
+  /** When true, pentest agents run a plan phase before execution (default: false) */
+  requirePlan: z.boolean().optional(),
 });
 
 export type SessionConfig = z.infer<typeof SessionConfigObject>;
