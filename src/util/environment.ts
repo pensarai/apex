@@ -10,6 +10,19 @@ export interface EnvironmentContext {
 }
 
 /**
+ * Create a default environment context for cases where no target information is available.
+ * Used when CVSS scoring is invoked without session context.
+ */
+export function createDefaultEnvironmentContext(): EnvironmentContext {
+  return {
+    signals: [],
+    description:
+      "Environment type unknown (no target information provided). Scoring assumes production-level impact.",
+    isProduction: true,
+  };
+}
+
+/**
  * Patterns that indicate non-production environments.
  * Each entry: [regex applied to the full URL or hostname, signal label].
  */

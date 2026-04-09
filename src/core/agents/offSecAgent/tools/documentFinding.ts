@@ -128,6 +128,16 @@ CRITICAL RULES — READ BEFORE CALLING:
     inputSchema: documentVulnerabilityInputSchema,
     execute: async (input) => {
       try {
+        // Validate session has targets
+        if (!session.targets || session.targets.length === 0) {
+          return {
+            success: false,
+            error: "Session has no targets defined",
+            message:
+              "Cannot document finding: session.targets is empty. Ensure the session was created with at least one target URL.",
+          };
+        }
+
         // Early dedup check — avoid POC execution + LLM calls for known vulns
         if (ctx.findingsRegistry) {
           const quickCheck = ctx.findingsRegistry.isDuplicate({

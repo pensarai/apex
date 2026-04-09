@@ -20,7 +20,7 @@ import { validateCweEntries } from "../../../../lib/cwe/validate";
 import type { EnvironmentContext } from "../../../../util/environment";
 
 export type { EnvironmentContext } from "../../../../util/environment";
->>>>>>> 9072e18a (refactor: move EnvironmentContext type to util, fix prompt blank lines)
+export { createDefaultEnvironmentContext } from "../../../../util/environment";
 
 // =============================================================================
 // Types
@@ -39,8 +39,12 @@ export interface CVSSScorerInput {
   };
   /** Messages from the meta testing agent's conversation (for context) */
   agentMessages: Record<string, unknown>[];
-  /** Environment context for scoring adjustments */
-  environmentContext?: EnvironmentContext;
+  /**
+   * Environment context for scoring adjustments.
+   * REQUIRED: All callers must provide this to ensure consistent CVSS scoring.
+   * Use createDefaultEnvironmentContext() for callers without environment info.
+   */
+  environmentContext: EnvironmentContext;
 }
 
 export interface CVSSScorerResult {
@@ -441,21 +445,19 @@ ${evidence}
 
 `;
 
-  // Add environment context if available
-  if (input.environmentContext) {
-    const env = input.environmentContext;
-    const lines = [
-      `**Classification:** ${env.isProduction ? "PRODUCTION" : "NON-PRODUCTION"}`,
-      `**Description:** ${env.description}`,
-    ];
-    if (env.signals.length > 0) {
-      lines.push(`**Detected Signals:** ${env.signals.join(", ")}`);
-    }
-    if (env.userContext) {
-      lines.push(`**Operator Notes:** ${env.userContext}`);
-    }
-    prompt += `## Environment Context\n\n${lines.join("\n")}\n\n`;
+  // Add environment context (always present)
+  const env = input.environmentContext;
+  const lines = [
+    `**Classification:** ${env.isProduction ? "PRODUCTION" : "NON-PRODUCTION"}`,
+    `**Description:** ${env.description}`,
+  ];
+  if (env.signals.length > 0) {
+    lines.push(`**Detected Signals:** ${env.signals.join(", ")}`);
   }
+  if (env.userContext) {
+    lines.push(`**Operator Notes:** ${env.userContext}`);
+  }
+  prompt += `## Environment Context\n\n${lines.join("\n")}\n\n`;
 
   // Add context from agent conversation if available
   if (agentMessages && agentMessages.length > 0) {
