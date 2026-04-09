@@ -16,7 +16,6 @@ export async function runWithBoundedConcurrency<T, R>(
 ): Promise<(R | null)[]> {
   const results: (R | null)[] = new Array(items.length).fill(null);
   let nextIdx = 0;
-  let launched = 0;
   let completed = 0;
 
   await new Promise<void>((resolve) => {
@@ -27,16 +26,16 @@ export async function runWithBoundedConcurrency<T, R>(
 
     let active = 0;
 
-    function next() {
-      // Resolve when all LAUNCHED tasks have completed.
-      // This ensures in-flight tasks are always awaited, even after abort.
-      if (completed >= launched && launched > 0 && !canLaunchMore()) {
-        resolve();
-        return;
-      }
+    function canLaunchMore(): boolean {
+      return (
+        active < concurrency && nextIdx < items.length && !abortSignal?.aborted
+      );
+    }
 
-      // Also resolve if nothing was ever launched (edge case: abort before first launch)
-      if (launched === 0 && abortSignal?.aborted) {
+    function next() {
+      // Resolve when all launched tasks have completed and no more can start.
+      // After abort, this waits for in-flight tasks instead of resolving early.
+      if (completed >= nextIdx && !canLaunchMore()) {
         resolve();
         return;
       }
@@ -44,7 +43,6 @@ export async function runWithBoundedConcurrency<T, R>(
       while (canLaunchMore()) {
         const idx = nextIdx++;
         active++;
-        launched++;
 
         fn(items[idx]!, idx)
           .then((r) => {
@@ -59,12 +57,6 @@ export async function runWithBoundedConcurrency<T, R>(
             next();
           });
       }
-    }
-
-    function canLaunchMore(): boolean {
-      return (
-        active < concurrency && nextIdx < items.length && !abortSignal?.aborted
-      );
     }
 
     next();
