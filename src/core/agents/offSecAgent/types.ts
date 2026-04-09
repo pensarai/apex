@@ -185,6 +185,13 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
   tasksDir?: string;
 
   /**
+   * Override for plan file scoping. When set, write_plan uses this ID
+   * instead of `subagentId` to derive the plan file path, allowing
+   * plan agents to write plans scoped to their corresponding execution agent.
+   */
+  planSubagentId?: string;
+
+  /**
    * Event bus for streaming agent output.
    *
    * When provided, the agent emits all streaming events (text deltas,

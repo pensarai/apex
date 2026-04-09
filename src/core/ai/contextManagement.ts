@@ -119,12 +119,13 @@ export function snipOldSteps(
   // Nothing to snip — all messages are within the recent window
   if (cutoffIdx === 0) return messages;
 
-  return messages.map((msg, idx) => {
+  let anyModified = false;
+  const result = messages.map((msg, idx) => {
     // Keep recent messages intact
     if (idx >= cutoffIdx) return msg;
     if (!Array.isArray(msg.content)) return msg;
 
-    let modified = false;
+    let msgModified = false;
     const newContent = (msg.content as unknown[]).map((part) => {
       const p = part as Record<string, unknown>;
       if (p.type !== "tool-result") return part;
@@ -141,7 +142,7 @@ export function snipOldSteps(
       if (text.startsWith(`[${toolName}] →`) && !text.includes("\n"))
         return part;
 
-      modified = true;
+      msgModified = true;
       return {
         ...p,
         output: {
@@ -151,8 +152,15 @@ export function snipOldSteps(
       };
     });
 
-    return modified ? ({ ...msg, content: newContent } as ModelMessage) : msg;
+    if (msgModified) anyModified = true;
+    return msgModified
+      ? ({ ...msg, content: newContent } as ModelMessage)
+      : msg;
   });
+
+  // Return original array when nothing was snipped so callers
+  // can use reference equality to detect changes.
+  return anyModified ? result : messages;
 }
 
 // ---------------------------------------------------------------------------

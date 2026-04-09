@@ -833,7 +833,9 @@ export default function OperatorDashboard({
       // All other subagents (discovery agents, risk scorers, whitebox analyzers)
       // route to the discovery log instead.
       const isPentestAgent = (id?: string) =>
-        id !== undefined && id.startsWith("pentest-agent-");
+        id !== undefined &&
+        id.startsWith("pentest-agent-") &&
+        !id.endsWith("-plan");
       const isDiscoveryAgent = (id?: string) =>
         id !== undefined && !isPentestAgent(id);
 
