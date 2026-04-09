@@ -100,6 +100,7 @@ export default function OperatorDashboard({
     target?: string;
     operatorMode?: OperatorMode;
     sandbox?: boolean;
+    taskDriven?: boolean;
   };
 }) {
   const { colors } = useTheme();
