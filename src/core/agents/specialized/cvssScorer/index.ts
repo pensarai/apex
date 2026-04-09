@@ -31,6 +31,14 @@ export interface CVSSScorerInput {
   };
   /** Messages from the meta testing agent's conversation (for context) */
   agentMessages: Record<string, unknown>[];
+  /** Other findings on the same endpoint for dependency-aware scoring */
+  relatedFindings?: Array<{
+    title: string;
+    severity: string;
+    endpoint: string;
+    vulnerabilityClass?: string;
+    score?: number;
+  }>;
 }
 
 export interface CVSSScorerResult {
@@ -271,6 +279,15 @@ const CVSS_SCORER_SYSTEM_PROMPT = `You are a CVSS 4.0 scoring specialist. Your t
 - If production-like or confirmed unintentional: **E:A**
 - Severity: typically **HIGH-CRITICAL** for real bypasses, **MEDIUM** for intentional test credentials in sandbox
 
+## Prerequisite & Dependency Scoring
+
+If related findings on the same endpoint are provided below, consider whether this finding ENABLES or is a PREREQUISITE for those findings.
+
+- A prerequisite finding (e.g., missing authentication that enables rate limiting abuse) MUST score at least as high as the findings it enables.
+- When the current finding provides the attack surface that makes other findings exploitable, elevate its impact metrics accordingly.
+- Example: if "Unauthenticated Access" (this finding) enables "Missing Rate Limiting" (scored CRITICAL 9.2), this finding should score >= 9.2 because without the unauthenticated access, the rate limiting issue would not be exploitable.
+- Do NOT lower scores of independent findings — only elevate prerequisites that enable higher-scored dependents.
+
 ## Analysis Instructions
 
 1. Read the finding description and evidence carefully
@@ -378,7 +395,7 @@ function truncateField(value: string, limit: number): string {
   return value.substring(0, limit) + "\n... [truncated]";
 }
 
-function buildScoringPrompt(input: CVSSScorerInput): string {
+export function buildScoringPrompt(input: CVSSScorerInput): string {
   const { finding, agentMessages } = input;
 
   const description = truncateField(finding.description, MAX_DESCRIPTION_CHARS);
@@ -405,6 +422,20 @@ ${evidence}
 \`\`\`
 
 `;
+
+  // Add related findings for dependency-aware scoring
+  if (input.relatedFindings && input.relatedFindings.length > 0) {
+    prompt += `## Related Findings on Same Endpoint
+
+The following findings exist on the same endpoint/target. Consider dependency relationships:
+
+`;
+    for (const rf of input.relatedFindings) {
+      const scoreTag = rf.score != null ? ` ${rf.score}` : "";
+      prompt += `- [${rf.severity}${scoreTag}] "${rf.title}" (class: ${rf.vulnerabilityClass || "unknown"})\n`;
+    }
+    prompt += "\n";
+  }
 
   // Add context from agent conversation if available
   if (agentMessages && agentMessages.length > 0) {

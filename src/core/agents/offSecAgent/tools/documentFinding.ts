@@ -21,6 +21,7 @@ import {
   type FindingJudgeInput,
 } from "../../specialized/findingJudge";
 import type { Finding } from "../types";
+import { normalizeEndpoint } from "../../../findings/registry";
 
 export const documentVulnerabilityInputSchema = z.object({
   title: z.string().describe("Finding title"),
@@ -260,6 +261,23 @@ CRITICAL RULES — READ BEFORE CALLING:
           };
           cvssWarning = `Classified as ${judgeResult.findingType} — not scored.`;
         } else {
+          const normalizedEndpoint = normalizeEndpoint(input.endpoint);
+          const relatedFindings =
+            ctx.findingsRegistry
+              ?.getFindings()
+              .filter(
+                (f) =>
+                  normalizeEndpoint(f.endpoint) === normalizedEndpoint &&
+                  f.title !== input.title,
+              )
+              .map((f) => ({
+                title: f.title,
+                severity: f.severity,
+                endpoint: f.endpoint,
+                vulnerabilityClass: (f as Record<string, unknown>)
+                  .vulnerabilityClass as string | undefined,
+              })) ?? [];
+
           const cvssInput: CVSSScorerInput = {
             finding: {
               title: input.title,
@@ -271,6 +289,7 @@ CRITICAL RULES — READ BEFORE CALLING:
               vulnerabilityClass: input.vulnerabilityClass,
             },
             agentMessages: [],
+            relatedFindings,
           };
 
           const MAX_CVSS_ATTEMPTS = 2;
