@@ -20,6 +20,9 @@ import { join } from "path";
 
 const DEFAULT_MAX_RESULT_CHARS = 50_000;
 
+/** Task tool results are small and critical for agent state — never snip them. */
+const TASK_TOOL_NAMES = new Set(["create_task", "update_task", "list_tasks"]);
+
 /**
  * Replace large tool results in message history with truncated previews.
  * Full results are persisted to disk at `{sessionPath}/tool-results/`.
@@ -127,6 +130,11 @@ export function snipOldSteps(
       if (p.type !== "tool-result") return part;
 
       const toolName = String(p.toolName ?? "tool");
+
+      // Preserve task tool results — they're small and the agent
+      // needs them to track task state after context compaction.
+      if (TASK_TOOL_NAMES.has(toolName)) return part;
+
       const text = stringifyToolOutput(p.output ?? p.result);
       modified = true;
       return {
