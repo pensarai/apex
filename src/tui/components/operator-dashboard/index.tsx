@@ -1263,7 +1263,8 @@ export default function OperatorDashboard({
                 : null,
             approvedPlanContent:
               agentMode !== "plan" ? approvedPlanRef.current : null,
-            taskDriven: session?.config?.taskDriven,
+            taskDriven:
+              session?.config?.taskDriven ?? initialConfig?.taskDriven,
           },
         );
 
@@ -1284,6 +1285,7 @@ export default function OperatorDashboard({
               enableSuggestions: true,
             },
             agentCwd: initialConfig?.sandbox ? undefined : process.cwd(),
+            taskDriven: initialConfig?.taskDriven,
           };
           agentResult = await runOffensiveSecurityAgent({
             ...commonInput,

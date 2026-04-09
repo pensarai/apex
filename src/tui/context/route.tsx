@@ -68,6 +68,7 @@ export type Route =
         target?: string;
         operatorMode?: import("../../core/operator").OperatorMode;
         sandbox?: boolean;
+        taskDriven?: boolean;
       };
       /** Skill to automatically submit on mount */
       initialSkill?: { slug: string; args?: Record<string, string> };

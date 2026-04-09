@@ -230,6 +230,10 @@ export const commands: CommandConfig[] = [
         name: "--sandbox",
         description: "Use isolated session directory as working directory",
       },
+      {
+        name: "--task-driven",
+        description: "Structured task tracking (experimental)",
+      },
     ],
     handler: async (args, ctx) => {
       const flags = parseWebFlags(args);
@@ -240,6 +244,7 @@ export const commands: CommandConfig[] = [
           requireApproval: flags.requireApproval ?? true,
           target: flags.target,
           sandbox: flags.sandbox,
+          taskDriven: flags.taskDriven,
         },
       });
     },

@@ -205,6 +205,9 @@ export interface WebCommandFlags {
 
   // Threat model option
   threatModel?: string;
+
+  // Task-driven mode (experimental — structured task tracking for training data)
+  taskDriven?: boolean;
 }
 
 /**
@@ -233,6 +236,7 @@ const webFlagSchema: FlagSchema = {
   sandbox: { type: "boolean" },
   prompt: { type: "string" },
   "threat-model": { type: "string" },
+  "task-driven": { type: "boolean" },
 };
 
 /**
@@ -335,6 +339,9 @@ export function parseWebFlags(args: string[]): WebCommandFlags {
   if (raw.threatModel)
     flags.threatModel = resolveThreatModelPrompt(String(raw.threatModel));
 
+  // Task-driven mode
+  if (raw.taskDriven) flags.taskDriven = true;
+
   return flags;
 }
 
@@ -416,6 +423,7 @@ export function buildOperatorSessionConfig(
   }
 
   sessionConfig.agentCwd = flags.sandbox ? undefined : process.cwd();
+  if (flags.taskDriven) sessionConfig.taskDriven = true;
 
   // Combine threat model and prompt into a single prompt field
   const combinedPrompt = combinePromptParts(flags.threatModel, flags.prompt);
