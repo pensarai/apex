@@ -136,6 +136,11 @@ export function snipOldSteps(
       if (TASK_TOOL_NAMES.has(toolName)) return part;
 
       const text = stringifyToolOutput(p.output ?? p.result);
+
+      // Already a 1-line summary from a previous compaction pass — no further reduction possible
+      if (text.startsWith(`[${toolName}] →`) && !text.includes("\n"))
+        return part;
+
       modified = true;
       return {
         ...p,
