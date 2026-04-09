@@ -130,6 +130,33 @@ export const VectorContextSchema = z.object({
 });
 
 /**
+ * A single pentest objective with optional setup instructions.
+ */
+export const PentestObjectiveSchema = z.object({
+  objective: z.string().describe("The testing goal"),
+  instructions: z
+    .string()
+    .optional()
+    .describe(
+      "Setup steps, prerequisites, and how-to context for the agent to follow this objective",
+    ),
+});
+
+/**
+ * Accepts both `string[]` (legacy) and `PentestObjective[]`.
+ * Plain strings are coerced to `{ objective: string }`.
+ */
+export const PentestObjectivesField = z.preprocess(
+  (val) => {
+    if (!Array.isArray(val)) return val;
+    return val.map((item: unknown) =>
+      typeof item === "string" ? { objective: item } : item,
+    );
+  },
+  z.array(PentestObjectiveSchema),
+);
+
+/**
  * Schema for document_app tool input
  */
 export const DocumentAppSchema = z.object({
@@ -291,6 +318,7 @@ export const DocumentedEndpointRecordSchema = DocumentEndpointSchema.extend({
 export type AppType = z.infer<typeof AppTypeEnum>;
 export type EndpointType = z.infer<typeof EndpointTypeEnum>;
 export type VectorContext = z.infer<typeof VectorContextSchema>;
+export type PentestObjective = z.infer<typeof PentestObjectiveSchema>;
 export type RiskLevel = z.infer<typeof RiskLevelEnum>;
 export type DocumentAppInput = z.infer<typeof DocumentAppSchema>;
 export type DocumentedAppRecord = z.infer<typeof DocumentedAppRecordSchema>;

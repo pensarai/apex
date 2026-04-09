@@ -209,7 +209,7 @@ export function readAgentManifest(session: SessionInfo): AgentManifestEntry[] {
 export interface SwarmTarget {
   name?: string;
   target: string;
-  objectives: string[];
+  objectives: Array<{ objective: string; instructions?: string }>;
   /** Endpoint type — used to adapt pentest methodology */
   endpointType?: string;
   /** Structured metadata for custom/infrastructure targets */
@@ -233,8 +233,8 @@ export function buildManifestEntries(
     id: `pentest-agent-${i + 1}`,
     name: `Pentest Agent ${i + 1}`,
     target: t.target,
-    vulnerabilityClass: t.objectives[0] || "general",
-    objective: t.objectives.join("; "),
+    vulnerabilityClass: t.objectives[0]?.objective || "general",
+    objective: t.objectives.map((o) => o.objective).join("; "),
     status: "running" as const,
     spawnedAt: new Date().toISOString(),
   }));

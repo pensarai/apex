@@ -133,12 +133,9 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
         .string()
         .optional()
         .describe("Additional notes or observations about the endpoint"),
-      pentestObjectives: z
-        .array(z.string())
-        .describe(
-          "Specific pentest objectives for this endpoint — what a pentest agent should test " +
-            "(e.g., 'Test for IDOR in /api/orders/{id}')",
-        ),
+      pentestObjectives: PentestObjectivesField.describe(
+        "Pentest objectives — each can be a string or { objective, instructions }",
+      ),
       vectorContext: VectorContextSchema.optional().describe(
         "Structured metadata for custom/infrastructure endpoints. Required for type 'custom'. " +
           "For custom endpoints, use routePath as namespace:component (e.g., 'stripe:webhook-handler').",
@@ -295,11 +292,11 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
 const OBJECTIVE_GENERATION_SYSTEM_PROMPT = `You are a security testing objective generator. Given an endpoint or attack surface component, produce detailed, procedural testing objectives that a penetration tester can follow step-by-step.
 
 Rules:
-- Each objective should be actionable and specific to THIS component
-- Include what to test, how to test it, and what constitutes a finding
-- For custom vectors (webhooks, integrations, SDK components): describe the interaction protocol, how to authenticate, and what attack patterns apply
-- For infrastructure (databases, queues, storage): describe access control tests, data exposure checks, and privilege escalation scenarios
-- For standard HTTP endpoints: focus on OWASP top 10 with endpoint-specific payloads
+- Each objective must have an "objective" field (the testing goal) and an "instructions" field (setup steps, prerequisites, and how-to guidance)
+- The "instructions" field should tell the agent: what to set up first, how to authenticate, what tools/protocols to use, and what constitutes a finding
+- For custom vectors (webhooks, integrations, SDK components): instructions should describe the interaction protocol, authentication mechanism, and expected payload formats
+- For infrastructure (databases, queues, storage): instructions should describe how to connect, what access patterns to test, and what misconfigurations to look for
+- For standard HTTP endpoints: instructions should describe specific payloads, parameter manipulation, and verification steps
 - Build on the seed objectives provided — refine vague ones and add missing coverage
 - Return 3-8 objectives total (don't overload)`;
 
@@ -317,13 +314,13 @@ interface ObjectiveGenerationInput {
     authRequired?: boolean;
     vectorContext?: VectorContext;
   };
-  seedObjectives: string[];
+  seedObjectives: PentestObjective[];
   abortSignal?: AbortSignal;
 }
 
 async function generateEnrichedObjectives(
   input: ObjectiveGenerationInput,
-): Promise<string[]> {
+): Promise<PentestObjective[]> {
   const { model, authConfig, endpoint, seedObjectives, abortSignal } = input;
 
   const endpointContext = [
@@ -347,28 +344,36 @@ async function generateEnrichedObjectives(
     ? `\nVector Context:\n- Component type: ${endpoint.vectorContext.componentType}\n- Interaction protocol: ${endpoint.vectorContext.interactionProtocol}\n- Prerequisites: ${endpoint.vectorContext.prerequisites.join(", ") || "None"}\n- Auth instructions: ${endpoint.vectorContext.authInstructions}\n- Additional context: ${endpoint.vectorContext.additionalContext}`
     : "";
 
+  const seedList = seedObjectives
+    .map((o, i) => {
+      let text = `${i + 1}. ${o.objective}`;
+      if (o.instructions) text += `\n   Instructions: ${o.instructions}`;
+      return text;
+    })
+    .join("\n");
+
   const prompt = `Generate detailed, procedural pentest objectives for this endpoint.
 
 ## Endpoint
 ${endpointContext}${vectorSection}
 
 ## Seed Objectives (from recon agent)
-${seedObjectives.map((o, i) => `${i + 1}. ${o}`).join("\n")}
+${seedList}
 
-Refine and expand these into step-by-step testing objectives. Each objective should tell the tester exactly what to do, what to look for, and what constitutes a finding.`;
+Refine and expand these into structured objectives. Each objective must have an "objective" field (the goal) and an "instructions" field (step-by-step setup and testing guidance).`;
 
   const result = await generateObjectResponse({
     model,
     schema: z.object({
-      objectives: z
-        .array(z.string())
-        .describe("Detailed, procedural testing objectives"),
+      objectives: z.array(PentestObjectiveSchema).describe(
+        "Detailed objectives with setup instructions",
+      ),
     }),
     prompt,
     system: OBJECTIVE_GENERATION_SYSTEM_PROMPT,
     authConfig,
     abortSignal,
-    maxTokens: 2048,
+    maxTokens: 4096,
     temperature: 0.3,
   });
 
