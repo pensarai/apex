@@ -33,11 +33,12 @@ export function applyToolResultBudget(
   const maxChars = opts.maxResultChars ?? DEFAULT_MAX_RESULT_CHARS;
   const resultsDir = join(opts.sessionPath, "tool-results");
   let dirCreated = false;
+  let anyModified = false;
 
-  return messages.map((msg) => {
+  const result = messages.map((msg) => {
     if (!Array.isArray(msg.content)) return msg;
 
-    let modified = false;
+    let msgModified = false;
     const newContent = (msg.content as unknown[]).map((part) => {
       const p = part as Record<string, unknown>;
       if (p.type !== "tool-result") return part;
@@ -59,7 +60,7 @@ export function applyToolResultBudget(
         // Non-critical — worst case, full output is lost
       }
 
-      modified = true;
+      msgModified = true;
       const preview = text.slice(0, 2000);
       return {
         ...p,
@@ -70,8 +71,15 @@ export function applyToolResultBudget(
       };
     });
 
-    return modified ? ({ ...msg, content: newContent } as ModelMessage) : msg;
+    if (msgModified) anyModified = true;
+    return msgModified
+      ? ({ ...msg, content: newContent } as ModelMessage)
+      : msg;
   });
+
+  // Return original array when nothing was truncated so callers
+  // can use reference equality to detect changes.
+  return anyModified ? result : messages;
 }
 
 // ---------------------------------------------------------------------------
