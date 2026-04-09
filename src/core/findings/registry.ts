@@ -207,6 +207,62 @@ Is the new finding a duplicate of any existing finding?`;
 }
 
 // ---------------------------------------------------------------------------
+// Root-cause grouping
+// ---------------------------------------------------------------------------
+
+export interface RootCauseGroup {
+  groupId: string;
+  findingIndices: number[];
+  rootCause: string;
+}
+
+const RootCauseGroupResultSchema = z.object({
+  groups: z.array(
+    z.object({
+      groupId: z.string().describe("Short kebab-case identifier for the group"),
+      findingIndices: z
+        .array(z.number())
+        .describe("0-based indices of findings that share this root cause"),
+      rootCause: z
+        .string()
+        .describe(
+          "Brief description of the shared underlying misconfiguration or weakness",
+        ),
+    }),
+  ),
+});
+
+const ROOT_CAUSE_GROUPING_SYSTEM = `You are a security finding analyst. Your task is to identify findings that share a common root cause.
+
+These are NOT duplicates — they are distinct findings that stem from the same underlying misconfiguration, weakness, or architectural issue. Examples:
+- "Email Enumeration via Forgot Password" and "Username Enumeration via Cognito Lockout Response" both stem from Cognito leaking user-existence information
+- "Missing Rate Limiting on Email API" and "Unauthenticated Email Sending via SES API" on the same endpoint — the unauthenticated access is the root cause that enables both
+- Multiple IDOR findings on different endpoints that all stem from missing authorization middleware
+
+Group findings when:
+1. One finding enables or is prerequisite to another
+2. Both stem from the same underlying misconfiguration (e.g. same missing middleware, same leaky service)
+3. Fixing the root cause would resolve or mitigate all findings in the group
+
+Do NOT group findings that merely share a vulnerability class (e.g. two unrelated XSS on different endpoints with different root causes).
+
+Return an empty groups array if no findings share a root cause.`;
+
+function buildRootCauseGroupingPrompt(findings: readonly Finding[]): string {
+  const list = findings
+    .map(
+      (f, i) =>
+        `${i}. [${f.severity}] "${f.title}" — endpoint: ${f.endpoint}\n   Description: ${f.description.substring(0, 200)}`,
+    )
+    .join("\n\n");
+
+  return `## Findings (${findings.length} total)
+${list}
+
+Which findings share a common root cause? Return groups using 0-based indices.`;
+}
+
+// ---------------------------------------------------------------------------
 // FindingsRegistry options
 // ---------------------------------------------------------------------------
 
@@ -509,6 +565,52 @@ export class FindingsRegistry {
         resolve();
       });
     });
+  }
+
+  // -----------------------------------------------------------------------
+  // Root-cause grouping
+  // -----------------------------------------------------------------------
+
+  /**
+   * Analyse all registered findings and group those that share a common
+   * root cause (e.g. same misconfiguration, one enables another).
+   *
+   * This is NOT deduplication — grouped findings are distinct issues that
+   * happen to stem from the same underlying weakness.
+   *
+   * Annotates findings in-place with `rootCauseGroup` and `relatedFindings`.
+   * Returns the groups array (empty when fewer than 2 findings or no model).
+   */
+  async groupByRootCause(): Promise<RootCauseGroup[]> {
+    if (!this.model || this.findings.length < 2) {
+      return [];
+    }
+
+    const prompt = buildRootCauseGroupingPrompt(this.findings);
+
+    const result = await generateObjectResponse({
+      model: this.model,
+      schema: RootCauseGroupResultSchema,
+      prompt,
+      system: ROOT_CAUSE_GROUPING_SYSTEM,
+      authConfig: this.authConfig,
+      abortSignal: this.abortSignal,
+    });
+
+    for (const group of result.groups) {
+      const validIndices = group.findingIndices.filter(
+        (i: number) => i >= 0 && i < this.findings.length,
+      );
+      const titles = validIndices.map((i: number) => this.findings[i]!.title);
+
+      for (const idx of validIndices) {
+        const finding = this.findings[idx]!;
+        finding.rootCauseGroup = group.groupId;
+        finding.relatedFindings = titles.filter((t: string) => t !== finding.title);
+      }
+    }
+
+    return result.groups;
   }
 
   // -----------------------------------------------------------------------

@@ -46,6 +46,8 @@ export const ApexFindingObject = z.object({
   references: z.string().optional(),
   toolCallDescription: z.string().optional(), // Optional for backward compatibility
   cwes: z.array(CweEntrySchema).optional(),
+  rootCauseGroup: z.string().optional(),
+  relatedFindings: z.array(z.string()).optional(),
 });
 
 export type Finding = z.infer<typeof ApexFindingObject>;
