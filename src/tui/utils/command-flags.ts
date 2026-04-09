@@ -145,6 +145,8 @@ export interface WebCommandFlags {
   _hostsExplicitlyProvided?: boolean;
   // Sandbox option
   sandbox?: boolean;
+  // Task-driven mode (experimental — structured task tracking for training data)
+  taskDriven?: boolean;
 }
 
 /**
@@ -171,6 +173,7 @@ const webFlagSchema: FlagSchema = {
   // Legacy --auto flag maps to --swarm
   auto: { type: "boolean" },
   sandbox: { type: "boolean" },
+  "task-driven": { type: "boolean" },
 };
 
 /**
@@ -266,6 +269,9 @@ export function parseWebFlags(args: string[]): WebCommandFlags {
   // Sandbox option
   if (raw.sandbox) flags.sandbox = true;
 
+  // Task-driven mode
+  if (raw.taskDriven) flags.taskDriven = true;
+
   return flags;
 }
 
@@ -347,6 +353,7 @@ export function buildOperatorSessionConfig(
   }
 
   sessionConfig.agentCwd = flags.sandbox ? undefined : process.cwd();
+  if (flags.taskDriven) sessionConfig.taskDriven = true;
 
   return {
     targets: flags.target ? [flags.target] : [],
