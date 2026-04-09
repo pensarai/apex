@@ -111,9 +111,7 @@ describe("buildScoringPrompt", () => {
     const prompt = buildScoringPrompt(input);
 
     expect(prompt).toContain("**Title:** Test Vulnerability");
-    expect(prompt).toContain(
-      "**Vulnerability Class:** information-disclosure",
-    );
+    expect(prompt).toContain("**Vulnerability Class:** information-disclosure");
     expect(prompt).toContain("**Endpoint:** https://target.com/api/test");
   });
 });
