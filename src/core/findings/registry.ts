@@ -606,7 +606,9 @@ export class FindingsRegistry {
       for (const idx of validIndices) {
         const finding = this.findings[idx]!;
         finding.rootCauseGroup = group.groupId;
-        finding.relatedFindings = titles.filter((t: string) => t !== finding.title);
+        finding.relatedFindings = titles.filter(
+          (t: string) => t !== finding.title,
+        );
       }
     }
 
