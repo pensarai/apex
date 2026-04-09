@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { VectorContextSchema } from "../attackSurface/schemas";
 
 // ---------------------------------------------------------------------------
 // Risk score schemas
@@ -54,7 +55,11 @@ export const EndpointSchema = z.object({
     .describe(
       "HTTP method (GET, POST, PUT, DELETE, etc.) or 'PAGE' for web pages",
     ),
-  path: z.string().describe("Route path (e.g. /api/users/:id, /dashboard)"),
+  path: z
+    .string()
+    .describe(
+      "Route path (e.g. /api/users/:id, /dashboard) or namespace:component for custom vectors",
+    ),
   handler: z
     .string()
     .optional()
@@ -70,9 +75,22 @@ export const EndpointSchema = z.object({
     .optional()
     .describe("Brief description of what this endpoint does"),
   pentestObjectives: z
-    .array(z.string())
+    .preprocess(
+      (val) => {
+        if (!Array.isArray(val)) return val;
+        return val.map((item: unknown) =>
+          typeof item === "string" ? { objective: item } : item,
+        );
+      },
+      z.array(
+        z.object({
+          objective: z.string(),
+          instructions: z.string().optional(),
+        }),
+      ),
+    )
     .describe(
-      "Specific pentest objectives for this endpoint (e.g. 'Test for IDOR by enumerating user IDs', 'Test for SQL injection in search parameter')",
+      "Pentest objectives — each can be a string or { objective, instructions }",
     ),
   riskScore: RiskScoreSchema.optional().describe(
     "AI-calculated risk score for prioritizing pentest efforts",
@@ -83,6 +101,22 @@ export const EndpointSchema = z.object({
     .describe(
       "Endpoint-specific threat model describing attack vectors, data sensitivity, and testing priorities",
     ),
+  endpointType: z
+    .enum(["api-endpoint", "web-endpoint", "infrastructure", "custom"])
+    .optional()
+    .describe(
+      "Endpoint type — defaults to 'api-endpoint' for API routes, 'web-endpoint' for pages",
+    ),
+  vectorContext: z
+    .object({
+      componentType: z.string(),
+      interactionProtocol: z.string(),
+      prerequisites: z.array(z.string()),
+      authInstructions: z.string(),
+      additionalContext: z.string(),
+    })
+    .optional()
+    .describe("Structured metadata for custom/infrastructure endpoints"),
 });
 
 export type Endpoint = z.infer<typeof EndpointSchema>;

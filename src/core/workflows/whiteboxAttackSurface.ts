@@ -693,6 +693,16 @@ function isPageEndpoint(record: DocumentedEndpointRecord): boolean {
 // Objective builders
 // ---------------------------------------------------------------------------
 
+const NON_HTTP_COMPONENTS_PROMPT = `
+### Non-HTTP Components
+Also discover non-HTTP components within this application:
+- Webhook receivers for third-party services (e.g., Stripe, Slack, GitHub)
+- Message queue consumers/producers
+- Cron/scheduled jobs
+- File processing pipelines
+Document these with \`endpointType: "custom"\` or \`"infrastructure"\` and fill in \`vectorContext\` (componentType, interactionProtocol, prerequisites, authInstructions, additionalContext). Use \`routePath\` as \`namespace:component\` format.
+`;
+
 function buildAppsDiscoveryObjective(
   codebasePath: string,
   domains?: string[],
@@ -738,7 +748,13 @@ A **cloud resource** qualifies if it is an **owned infrastructure resource** ref
    - Search for cache/database endpoints (ElastiCache, Redis, DynamoDB, etc.)
    - Check infrastructure-as-code files (Terraform, CloudFormation, CDK, Pulumi, SST, serverless.yml)
    - Document each cloud resource as an app with \`appType: "cloud_resource"\` or \`appType: "storage"\`
-7. For each app/resource, determine:
+7. **Discover third-party integrations and non-HTTP components**:
+   - Search for SDK imports of external services (Stripe, Slack, Twilio, SendGrid, GitHub, etc.)
+   - Find webhook receivers and event handlers
+   - Find message queue consumers/producers (SQS, SNS, RabbitMQ, Kafka, Redis pub/sub)
+   - Find scheduled/cron job definitions (\`node-cron\`, \`@nestjs/schedule\`, celery, etc.)
+   - Note these for Phase 2 coding agents to document in detail
+8. For each app/resource, determine:
    - **name**: the application or service name
    - **framework**: the web framework or cloud service (e.g. "AWS S3", "CloudFront", "Express")
    - **description**: brief summary of what it does
@@ -818,6 +834,8 @@ For each page, call \`document_endpoint\` with:
   - "Test for CSRF on the settings update form"
 
 Be thorough — examine every route file, every page directory, every template **within \`${appInfo.location}\`**.
+
+${NON_HTTP_COMPONENTS_PROMPT}
 When finished, call \`response\` with a summary of how many pages you documented.`;
 }
 
@@ -877,6 +895,8 @@ For each **unique route path**, call \`document_endpoint\` with:
 **IMPORTANT — Method consolidation for document_endpoint:** When using the \`document_endpoint\` tool, do NOT create separate entries for different HTTP methods on the same route path. For example, if \`/api/users\` supports GET, POST, and DELETE, document it as ONE entry with \`method: ["GET", "POST", "DELETE"]\` and include pentest objectives covering all methods.
 
 Be thorough — trace through all route registrations, middleware chains, and controller files **within \`${appInfo.location}\`**.
+
+${NON_HTTP_COMPONENTS_PROMPT}
 When finished, call \`response\` with a summary of how many endpoints you documented.`;
 }
 
@@ -928,7 +948,7 @@ Find the **distinct access patterns and resource identifiers** for this cloud re
 For each entry point, call \`document_endpoint\` with:
 - **appName**: \`${appInfo.name}\`
 - **endpointName**: A descriptive name for this access pattern (e.g., "Pre-signed URL access", "Bucket ARN", "Queue URL")
-- **endpointType**: \`"asset"\`
+- **endpointType**: \`"infrastructure"\`
 - **description**: What this entry point exposes (e.g., "Pre-signed HTTP URLs for temporary read access to objects", "AWS resource ARN for programmatic access through IAM policies")
 - **routePath**: The specific access pattern, path template, or ARN — NOT the base domain URL. Examples: \`/{objectKey}?X-Amz-Signature={signature}&X-Amz-Credential={credential}\`, \`arn:aws:s3:::bucket-name\`, \`https://sqs.region.amazonaws.com/account/queue-name\`
 - **method**: Access methods on the resource (e.g., \`["GET", "PUT"]\` for S3, \`["SendMessage", "ReceiveMessage"]\` for SQS, \`["READ", "WRITE"]\` for generic)

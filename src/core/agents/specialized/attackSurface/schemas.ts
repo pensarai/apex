@@ -95,8 +95,39 @@ export const AppTypeEnum = z.enum([
 export const EndpointTypeEnum = z.enum([
   "api-endpoint",
   "web-endpoint",
-  "asset",
+  "infrastructure",
+  "custom",
 ]);
+
+/**
+ * Structured metadata for custom/infrastructure endpoints.
+ * Describes how to interact with non-standard attack surfaces.
+ */
+export const VectorContextSchema = z.object({
+  componentType: z
+    .string()
+    .describe(
+      "Specific component identifier, e.g. 'stripe-webhook', 'sqs-consumer', 'oauth-flow', 'cron-job'",
+    ),
+  interactionProtocol: z
+    .string()
+    .describe(
+      "How to interact with this component, e.g. 'HTTP webhook', 'SDK API call', 'message queue', 'CLI command'",
+    ),
+  prerequisites: z
+    .array(z.string())
+    .describe(
+      "What's needed before testing, e.g. ['Stripe webhook signing secret', 'Test API key']",
+    ),
+  authInstructions: z
+    .string()
+    .describe(
+      "Free-form instructions on how authentication works for this component",
+    ),
+  additionalContext: z
+    .string()
+    .describe("Any other relevant notes about the component"),
+});
 
 /**
  * Schema for document_app tool input
@@ -165,8 +196,9 @@ export const DocumentEndpointSchema = z.object({
         "(e.g., '/api/users', '/dashboard', '/auth/login')",
     ),
   endpointType: EndpointTypeEnum.describe(
-    "Type of endpoint: 'api-endpoint' for REST/GraphQL APIs, " +
-      "'web-endpoint' for pages/views, 'asset' for other resources",
+    "Type of endpoint: 'api-endpoint' for HTTP APIs, 'web-endpoint' for pages/views, " +
+      "'infrastructure' for databases/queues/storage/cloud resources, " +
+      "'custom' for integrations/webhooks/SDK components/non-standard surfaces",
   ),
   description: z
     .string()
@@ -225,11 +257,9 @@ export const DocumentEndpointSchema = z.object({
     .string()
     .optional()
     .describe("Additional notes or observations about the endpoint"),
-  pentestObjectives: z
-    .array(z.string())
-    .describe(
-      "Specific pentest objectives for this endpoint (e.g., 'Test for IDOR in /api/orders/{id}')",
-    ),
+  pentestObjectives: PentestObjectivesField.describe(
+    "Pentest objectives for this endpoint. Each can be a string or { objective, instructions }.",
+  ),
   threatModel: z
     .string()
     .optional()
@@ -237,6 +267,10 @@ export const DocumentEndpointSchema = z.object({
       "Endpoint-specific threat model describing attack vectors, data sensitivity, " +
         "trust boundaries, risk assessment, and prioritized testing recommendations (300-600 words)",
     ),
+  vectorContext: VectorContextSchema.optional().describe(
+    "Structured metadata for custom/infrastructure endpoints. Required for type 'custom'. " +
+      "Describes how to interact with non-standard attack surfaces.",
+  ),
 });
 
 /**
@@ -256,6 +290,7 @@ export const DocumentedEndpointRecordSchema = DocumentEndpointSchema.extend({
 // Type exports
 export type AppType = z.infer<typeof AppTypeEnum>;
 export type EndpointType = z.infer<typeof EndpointTypeEnum>;
+export type VectorContext = z.infer<typeof VectorContextSchema>;
 export type RiskLevel = z.infer<typeof RiskLevelEnum>;
 export type DocumentAppInput = z.infer<typeof DocumentAppSchema>;
 export type DocumentedAppRecord = z.infer<typeof DocumentedAppRecordSchema>;

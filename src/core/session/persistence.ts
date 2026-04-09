@@ -210,6 +210,16 @@ export interface SwarmTarget {
   name?: string;
   target: string;
   objectives: string[];
+  /** Endpoint type — used to adapt pentest methodology */
+  endpointType?: string;
+  /** Structured metadata for custom/infrastructure targets */
+  vectorContext?: {
+    componentType: string;
+    interactionProtocol: string;
+    prerequisites: string[];
+    authInstructions: string;
+    additionalContext: string;
+  };
 }
 
 /**

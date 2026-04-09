@@ -5,6 +5,15 @@ import { writeFileSync, mkdirSync, existsSync } from "fs";
 import type { ToolContext } from "./types";
 import { computeBlackboxRiskScore } from "../../specialized/attackSurface/blackboxRiskScoring";
 import { generateThreatModelForEndpoint } from "./threatModelGenerator";
+import {
+  VectorContextSchema,
+  type VectorContext,
+  PentestObjectiveSchema,
+  PentestObjectivesField,
+  type PentestObjective,
+} from "../../specialized/attackSurface/schemas";
+import { generateObjectResponse, type AIModel } from "../../../ai";
+import type { AIAuthConfig } from "../../../ai/utils";
 
 function sanitizeName(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9-_.]/g, "_");
@@ -22,17 +31,19 @@ export function documentEndpoint(ctx: ToolContext) {
   const baseAssetsPath = join(ctx.session.rootPath, "assets");
 
   return tool({
-    description: `Document a discovered endpoint during attack surface analysis.
+    description: `Document a discovered endpoint or attack surface component during analysis.
 
-Endpoints are individual API routes, web pages, or functional paths within an application. Each endpoint belongs to an application (specified by appName).
+Components include API routes, web pages, infrastructure resources, and custom attack vectors. Each belongs to an application (specified by appName).
 
 Use this tool to document:
-- API endpoints (e.g., /api/users, /api/orders/:id, /graphql)
-- Web pages and views (e.g., /dashboard, /settings, /admin)
-- Authentication endpoints (e.g., /login, /auth/callback)
-- File upload endpoints, search endpoints, webhook receivers
+- API endpoints (type: "api-endpoint") — REST routes, GraphQL, webhooks, auth endpoints
+- Web pages and views (type: "web-endpoint") — dashboards, admin panels, SPAs
+- Infrastructure (type: "infrastructure") — databases, S3 buckets, message queues, CDN distributions
+- Custom vectors (type: "custom") — third-party integrations (Stripe, Slack, etc.), OAuth flows, cron jobs, file processors, SDK-based interactions
 
 **API endpoint consolidation:** Do NOT create separate entries for each HTTP method on the same path. Document each unique path ONCE and list all supported methods in \`method\` (e.g., \`["GET", "POST", "DELETE"]\`). Use \`"PAGE"\` for web pages/views.
+
+**Custom/infrastructure endpoints:** For non-HTTP components, use \`routePath\` as a namespace:component identifier (e.g., "stripe:webhook-handler", "sqs:order-consumer"). Provide \`vectorContext\` with interaction details.
 
 You MUST specify \`appName\` to associate the endpoint with its parent application (previously documented via \`document_app\`).
 
@@ -51,10 +62,11 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
             "(e.g., '/api/users', '/dashboard', '/auth/login')",
         ),
       endpointType: z
-        .enum(["api-endpoint", "web-endpoint", "asset"])
+        .enum(["api-endpoint", "web-endpoint", "infrastructure", "custom"])
         .describe(
-          "Type of endpoint: 'api-endpoint' for REST/GraphQL APIs, " +
-            "'web-endpoint' for pages/views, 'asset' for other resources",
+          "Type of endpoint: 'api-endpoint' for HTTP APIs, 'web-endpoint' for pages/views, " +
+            "'infrastructure' for databases/queues/storage/cloud resources, " +
+            "'custom' for integrations/webhooks/SDK components/non-standard surfaces",
         ),
       description: z
         .string()
@@ -127,6 +139,10 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
           "Specific pentest objectives for this endpoint — what a pentest agent should test " +
             "(e.g., 'Test for IDOR in /api/orders/{id}')",
         ),
+      vectorContext: VectorContextSchema.optional().describe(
+        "Structured metadata for custom/infrastructure endpoints. Required for type 'custom'. " +
+          "For custom endpoints, use routePath as namespace:component (e.g., 'stripe:webhook-handler').",
+      ),
       toolCallDescription: z
         .string()
         .describe(
@@ -167,6 +183,32 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
             `routePath "${input.routePath}" is a full URL. The domain is already stored on the parent application. ` +
             `Use a path or access pattern instead (e.g. "/api/users", "/{objectKey}?X-Amz-Signature={sig}", "arn:aws:s3:::bucket-name").`,
         };
+      }
+
+      // Dedicated objective generation — refine seed objectives with a focused LLM call
+      let enrichedObjectives = input.pentestObjectives;
+      if (ctx.model && ctx.authConfig) {
+        try {
+          enrichedObjectives = await generateEnrichedObjectives({
+            model: ctx.model,
+            authConfig: ctx.authConfig,
+            endpoint: {
+              name: input.endpointName,
+              type: input.endpointType,
+              description: input.description,
+              routePath: input.routePath,
+              method: input.method,
+              handler: input.handler,
+              file: input.file,
+              authRequired: input.authRequired,
+              vectorContext: input.vectorContext,
+            },
+            seedObjectives: input.pentestObjectives,
+            abortSignal: ctx.abortSignal,
+          });
+        } catch {
+          // Fall back to seed objectives on failure — non-critical
+        }
       }
 
       const targetDir = join(baseAssetsPath, sanitizeName(input.appName));
@@ -210,6 +252,7 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
 
       const endpointRecord = {
         ...input,
+        pentestObjectives: enrichedObjectives,
         discoveredAt: new Date().toISOString(),
         sessionId: ctx.session.id,
         target: ctx.session.targets[0],
@@ -243,4 +286,99 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
       };
     },
   });
+}
+
+// ---------------------------------------------------------------------------
+// Objective generation
+// ---------------------------------------------------------------------------
+
+const OBJECTIVE_GENERATION_SYSTEM_PROMPT = `You are a security testing objective generator. Given an endpoint or attack surface component, produce detailed, procedural testing objectives that a penetration tester can follow step-by-step.
+
+Rules:
+- Each objective should be actionable and specific to THIS component
+- Include what to test, how to test it, and what constitutes a finding
+- For custom vectors (webhooks, integrations, SDK components): describe the interaction protocol, how to authenticate, and what attack patterns apply
+- For infrastructure (databases, queues, storage): describe access control tests, data exposure checks, and privilege escalation scenarios
+- For standard HTTP endpoints: focus on OWASP top 10 with endpoint-specific payloads
+- Build on the seed objectives provided — refine vague ones and add missing coverage
+- Return 3-8 objectives total (don't overload)`;
+
+interface ObjectiveGenerationInput {
+  model: AIModel;
+  authConfig: AIAuthConfig;
+  endpoint: {
+    name: string;
+    type: string;
+    description: string;
+    routePath?: string;
+    method?: string | string[];
+    handler?: string;
+    file?: string;
+    authRequired?: boolean;
+    vectorContext?: VectorContext;
+  };
+  seedObjectives: string[];
+  abortSignal?: AbortSignal;
+}
+
+async function generateEnrichedObjectives(
+  input: ObjectiveGenerationInput,
+): Promise<string[]> {
+  const { model, authConfig, endpoint, seedObjectives, abortSignal } = input;
+
+  const endpointContext = [
+    `Name: ${endpoint.name}`,
+    `Type: ${endpoint.type}`,
+    `Description: ${endpoint.description}`,
+    endpoint.routePath ? `Route/Identifier: ${endpoint.routePath}` : null,
+    endpoint.method
+      ? `Method: ${Array.isArray(endpoint.method) ? endpoint.method.join(", ") : endpoint.method}`
+      : null,
+    endpoint.handler ? `Handler: ${endpoint.handler}` : null,
+    endpoint.file ? `Source file: ${endpoint.file}` : null,
+    endpoint.authRequired != null
+      ? `Auth required: ${endpoint.authRequired}`
+      : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const vectorSection = endpoint.vectorContext
+    ? `\nVector Context:\n- Component type: ${endpoint.vectorContext.componentType}\n- Interaction protocol: ${endpoint.vectorContext.interactionProtocol}\n- Prerequisites: ${endpoint.vectorContext.prerequisites.join(", ") || "None"}\n- Auth instructions: ${endpoint.vectorContext.authInstructions}\n- Additional context: ${endpoint.vectorContext.additionalContext}`
+    : "";
+
+  const prompt = `Generate detailed, procedural pentest objectives for this endpoint.
+
+## Endpoint
+${endpointContext}${vectorSection}
+
+## Seed Objectives (from recon agent)
+${seedObjectives.map((o, i) => `${i + 1}. ${o}`).join("\n")}
+
+Refine and expand these into step-by-step testing objectives. Each objective should tell the tester exactly what to do, what to look for, and what constitutes a finding.`;
+
+  const result = await generateObjectResponse({
+    model,
+    schema: z.object({
+      objectives: z
+        .array(z.string())
+        .describe("Detailed, procedural testing objectives"),
+    }),
+    prompt,
+    system: OBJECTIVE_GENERATION_SYSTEM_PROMPT,
+    authConfig,
+    abortSignal,
+    maxTokens: 2048,
+    temperature: 0.3,
+  });
+
+  if (
+    result &&
+    Array.isArray(result.objectives) &&
+    result.objectives.length > 0
+  ) {
+    return result.objectives;
+  }
+
+  return seedObjectives;
 }

@@ -44,6 +44,20 @@ Your primary search tool. Use it to find route definitions, middleware, controll
 
 Call these tools throughout your analysis as you discover apps and endpoints — don't wait until the end.
 
+## Non-Endpoint Attack Surfaces
+In addition to API endpoints and web pages, discover non-HTTP attack surfaces:
+
+- **Third-party integrations**: SDK imports like \`@slack/bolt\`, \`@octokit/rest\`, \`stripe\`, \`@aws-sdk/*\`, \`twilio\`, \`@sendgrid/mail\`. Document webhook receivers, event handlers, and SDK-driven components.
+- **Message queue consumers/producers**: SQS, SNS, RabbitMQ, Kafka, Redis pub/sub handlers.
+- **Cron/scheduled jobs**: Scheduled tasks that process data or interact with external services.
+- **File processing pipelines**: File upload handlers, image processors, PDF generators.
+- **Environment variables referencing services**: Look for vars like \`STRIPE_WEBHOOK_SECRET\`, \`SLACK_SIGNING_SECRET\`, \`*_API_KEY\`.
+
+For these, use \`document_endpoint\` with:
+- \`endpointType\`: \`"custom"\` for integrations, webhooks, and SDK components, or \`"infrastructure"\` for databases, queues, and storage
+- \`routePath\`: Use \`namespace:component\` format (e.g., \`stripe:webhook-handler\`, \`sqs:order-queue\`, \`cron:daily-report\`)
+- \`vectorContext\`: **Required** — fill in \`componentType\`, \`interactionProtocol\`, \`prerequisites\`, \`authInstructions\`, and \`additionalContext\`
+
 ## spawn_coding_agent
 **This is your key tool for scaling out analysis.** Spawn coding sub-agents to analyze individual apps in parallel for higher fidelity. Each sub-agent has full filesystem access (read_file, list_files, grep, execute_command) and the document_app/document_endpoint tools.
 
