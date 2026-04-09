@@ -94,6 +94,15 @@ Use this to document each application/service you identify. Persists a JSON reco
 ## response
 When your objective includes structured output, call \`response\` with your final results once you are done. This ends your run.
 
+# Environment Scope — CRITICAL
+**ONLY document staging, testing, development, and non-production resources and endpoints.** Production environments, production URLs, production databases, and production infrastructure must be **completely excluded**. This analysis is for penetration testing against safe, non-production targets only.
+
+When determining whether a resource is production or non-production:
+- Look at environment variables, config files, and deployment manifests for environment indicators (e.g. \`NODE_ENV\`, \`RAILS_ENV\`, \`ENVIRONMENT\`, \`.env.production\` vs \`.env.staging\`)
+- URLs/domains containing "staging", "test", "dev", "sandbox", "qa", "uat", "preprod", or "nonprod" are non-production
+- URLs/domains that are the primary/canonical domain without such qualifiers are likely production — **exclude them**
+- If a resource's environment cannot be determined, document it but flag it as "environment: unknown" so the operator can verify before testing
+
 # Working Approach
 1. **Orient first** — list files and read key entry points to understand the structure.
 2. **Ignore submodules** — check for a \`.gitmodules\` file or run \`git submodule status\`. Any directories that are git submodules are external dependencies and must be **completely excluded** from your analysis.
@@ -101,6 +110,7 @@ When your objective includes structured output, call \`response\` with your fina
 4. **Document as you go** — call document_app for apps and document_endpoint for every endpoint you discover. Don't batch them up.
 5. **Follow the trail** — trace through imports, function calls, and references to build full understanding.
 6. **Be thorough** — don't stop at the first match. Cover everything relevant to the objective.
+7. **Exclude production** — never include production resources. Only staging, testing, development, and other non-production environments are in scope.
 `;
 
 // ---------------------------------------------------------------------------
@@ -710,6 +720,7 @@ Analyze the repository structure and identify every **deployed application or se
 - Test suites, fixtures, and test helpers
 - Documentation packages
 - Third-party SaaS services not owned by the target (e.g. Stripe, auth providers)
+- **Production environments, production URLs, production databases, and production infrastructure** — ONLY staging, testing, development, and other non-production resources are in scope for testing
 
 An app/service qualifies if it **listens on a port, serves HTTP traffic, or runs as a deployed process** (e.g. an Express server, a Next.js app, a Django project, a FastAPI service, a background worker with an API).
 
@@ -740,6 +751,13 @@ A **cloud resource** qualifies if it is an **owned infrastructure resource** ref
    - **location**: path relative to the repository root (for code) or the resource identifier (for cloud resources)
    - **type**: classify as \`"web_application"\` for frontend-only apps, \`"api"\` for backend API services, \`"full_stack"\` for frameworks serving both UI and API (Next.js, Remix, Nuxt, SvelteKit, Django with templates, Rails), \`"database"\` for databases, \`"cloud_resource"\` for owned cloud infra (SQS, CDN, etc.), \`"storage"\` for S3/GCS/blob storage.
 
+### Environment Filtering — CRITICAL
+**ONLY include staging, testing, development, and non-production resources.** Exclude all production environments, production URLs, production databases, and production infrastructure.
+- Check environment config files (\`.env.production\`, \`.env.staging\`, deploy configs) to distinguish environments
+- URLs/domains containing "staging", "test", "dev", "sandbox", "qa", "uat", "preprod", or "nonprod" are in scope
+- Primary/canonical production domains and resources are **out of scope** — exclude them entirely
+- If an environment cannot be determined, include the resource but note "environment: unknown" in its description
+
 When finished, call the \`response\` tool with your structured findings.`;
 }
 
@@ -761,9 +779,10 @@ Do NOT document:
 - Routes defined in other applications or packages (even if this app imports/calls them)
 - External URLs or cloud resource endpoints that this app links to or fetches from
 - API endpoints (those are handled separately)
+- **Pages or routes that are only served in production environments** — only staging, testing, development, and non-production pages are in scope
 
 ## Task
-Find ALL web pages, views, and routes that render HTML or serve client-side UI **defined in this application's source code**.
+Find ALL web pages, views, and routes that render HTML or serve client-side UI **defined in this application's source code** that are served in **staging, testing, or development environments** (exclude production-only routes).
 
 ### What to look for (by framework)
 - **React/Next.js**: pages/ or app/ directory, route components, layout files
@@ -815,9 +834,10 @@ Do NOT document:
 - External API calls this app makes to third-party services or other internal services
 - S3 bucket URLs, cloud resource endpoints, or CDN URLs that this app interacts with — those belong to the cloud resource, not this API
 - Web pages/views (those are handled separately)
+- **API endpoints that are only deployed to production environments** — only staging, testing, development, and non-production endpoints are in scope
 
 ## Task
-Find ALL API endpoints **whose route definitions live in this application's source code**.
+Find ALL API endpoints **whose route definitions live in this application's source code** that are deployed to **staging, testing, or development environments** (exclude production-only endpoints).
 
 ### What to look for (by framework)
 - **Express**: app.get(), app.post(), router.get(), router.post(), router.put(), router.delete(), etc.
@@ -874,10 +894,12 @@ Do NOT document:
 - API routes from other apps that happen to interact with this resource
 - Internal SDK calls or client instantiations
 
-DO document:
-- The resource's own external URLs (e.g. \`https://bucket-name.s3.amazonaws.com\`)
-- Public access endpoints (e.g. static website hosting URL, CDN distribution URL)
-- Resource identifiers that represent direct access points (queue URLs, function URLs)
+DO document (non-production only):
+- The resource's own external URLs for staging/testing/dev environments (e.g. \`https://staging-bucket-name.s3.amazonaws.com\`)
+- Public access endpoints in non-production environments (e.g. staging static website hosting URL, dev CDN distribution URL)
+- Resource identifiers that represent direct access points in non-production (queue URLs, function URLs)
+
+**CRITICAL — Exclude production resources entirely.** Only document cloud resource entry points for staging, testing, development, and other non-production environments. Production bucket URLs, production CDN distributions, production queue URLs, etc. are out of scope.
 
 ## Task
 Find the **externally-accessible entry points** for this cloud resource by reading infrastructure-as-code and configuration.
@@ -1269,5 +1291,7 @@ For removed endpoints, delete the file via \`execute_command\`.
 ### Step 4: Report
 When finished, call the \`response\` tool with a summary of your changes.
 
-**IMPORTANT:** Be conservative. Only add/modify/remove endpoints that are clearly affected by the diff. Do not re-analyze the entire codebase.`;
+**IMPORTANT:** Be conservative. Only add/modify/remove endpoints that are clearly affected by the diff. Do not re-analyze the entire codebase.
+
+**CRITICAL — Exclude production resources.** Only document staging, testing, development, and non-production endpoints and resources. Production URLs, production databases, production infrastructure, and production-only endpoints must NOT be included in the attack surface map.`;
 }

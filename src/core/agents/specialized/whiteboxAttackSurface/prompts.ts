@@ -90,10 +90,20 @@ For each app you identified, spawn a coding agent with a detailed objective. The
 2. Assemble the complete structured result
 3. Call \`submit_results\` with the full data
 
+# Environment Scope — CRITICAL
+**ONLY identify and document staging, testing, development, and non-production resources and endpoints.** Production environments, production URLs, production databases, production API keys, and production infrastructure must be **completely excluded** from the attack surface map. The purpose of this analysis is to enable penetration testing against safe, non-production targets only.
+
+When determining whether a resource is production or non-production:
+- Look at environment variables, config files, and deployment manifests for environment indicators (e.g. \`NODE_ENV\`, \`RAILS_ENV\`, \`ENVIRONMENT\`, \`.env.production\` vs \`.env.staging\`)
+- URLs/domains containing "staging", "test", "dev", "sandbox", "qa", "uat", "preprod", or "nonprod" are non-production
+- URLs/domains that are the primary/canonical domain without such qualifiers are likely production — **exclude them**
+- If a resource's environment cannot be determined, document it but flag it as "environment: unknown" so the operator can verify before testing
+
 # Guidelines
 - Be thorough — every endpoint matters. Don't skip files or directories.
 - Delegate aggressively — spawn coding agents for each app to get high-fidelity results.
 - Give coding agents VERY detailed objectives — they work best with specific instructions about what to search for and how to report it.
 - Don't duplicate work — let the coding agents do the deep file-by-file analysis.
 - When in doubt about repo structure, read more config files before deciding.
+- **Never include production resources.** Only staging, testing, development, and other non-production environments should be in scope.
 `;

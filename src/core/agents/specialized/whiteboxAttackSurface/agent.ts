@@ -155,13 +155,24 @@ function buildPrompt(
 ## Codebase
 - **Path:** ${codebasePath}
 ${domainSection}${operatorGuidanceBlock}
+## Environment Scope — CRITICAL
+**ONLY identify and document staging, testing, development, and non-production resources and endpoints.** Production environments, production URLs, production databases, production API keys, and production infrastructure must be **completely excluded** from the attack surface map. The purpose of this analysis is to enable penetration testing against safe, non-production targets only.
+
+When determining environment:
+- URLs/domains containing "staging", "test", "dev", "sandbox", "qa", "uat", "preprod", or "nonprod" are in scope
+- Primary/canonical production domains and resources are **out of scope**
+- Check environment config files and deployment manifests to distinguish environments
+- If an environment cannot be determined, document the resource but flag it as "environment: unknown"
+
 ## Task
-Analyze this codebase and produce a complete attack surface map:
+Analyze this codebase and produce an attack surface map of **non-production (staging/testing/development) resources only**:
 1. Identify the repo type and package manager
-2. Discover all apps/services
-3. Discover cloud resources and external infrastructure referenced in the code (S3 buckets, cloud storage, CDN origins, etc.) — document these as apps with the appropriate type
-4. For each app, find all web pages and API endpoints
+2. Discover all apps/services deployed to staging/testing/dev environments
+3. Discover non-production cloud resources and external infrastructure referenced in the code (S3 buckets, cloud storage, CDN origins, etc.) — document these as apps with the appropriate type
+4. For each app, find all web pages and API endpoints available in non-production environments
 5. For each endpoint, generate pentest objectives
+
+**Exclude all production resources, endpoints, and infrastructure.**
 
 Use \`spawn_coding_agent\` to delegate app-level analysis for higher fidelity.
 
