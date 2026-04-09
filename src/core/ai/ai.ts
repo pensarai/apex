@@ -21,7 +21,6 @@ import {
   createSummarizationStream,
   getProviderModel,
   isAnthropicProvider,
-  sanitizeToolNamesInMessages,
   type AIAuthConfig,
 } from "./utils";
 import { withCachedSystemPrompt, withCachedLastMessage } from "./caching";
@@ -443,16 +442,11 @@ export function streamResponse(
       prepareStep: (opts) => {
         // Update the container with the latest messages
         messagesContainer.current = opts.messages;
-        // Sanitize tool names in the message history before sending to any
-        // provider.  Non-Anthropic Bedrock models (e.g. Kimi K2.5) can leak
-        // internal tokens into tool names; the Converse API rejects names
-        // that violate [a-zA-Z0-9_-]{1,64}.
-        const messages = sanitizeToolNamesInMessages(opts.messages);
         // For Anthropic, add cache_control to the last message for incremental caching
         if (useAnthropicCaching) {
-          return { messages: withCachedLastMessage(messages) };
+          return { messages: withCachedLastMessage(opts.messages) };
         }
-        return { messages };
+        return undefined;
       },
       onError: async ({ error }: { error: unknown }) => {
         const errorMessage =
@@ -506,91 +500,60 @@ export function streamResponse(
         tools,
         error,
       }) => {
-        if (!silent) {
-          console.log(`🔧 Repairing tool call: ${toolCall.toolName}`);
-          console.log(`   Error: ${error.message || error}`);
-        }
-
-        // Get the actual tool definition which contains the Zod schema.
-        // Some models (e.g. Kimi K2.5) emit malformed tool names that
-        // include internal tokens or partial JSON. When the tool name
-        // doesn't match, try to fuzzy-match against available tools.
-        let resolvedToolName = toolCall.toolName;
-        let tool = tools[resolvedToolName];
-
-        if (!tool && NoSuchToolError.isInstance(error)) {
-          const available = Object.keys(tools);
-          // Strategy 1: tool name embedded in the garbage string or input
-          let match = available.find(
-            (name) =>
-              toolCall.toolName.includes(name) ||
-              (toolCall.input && toolCall.input.includes(`"${name}"`)),
-          );
-          // Strategy 2: match input fields against tool schemas.
-          // Kimi K2.5 often produces valid input JSON with the right
-          // fields (e.g. { command, toolCallDescription }) even when the
-          // tool name is garbage. Find the tool whose required/known
-          // fields best overlap with the input keys.
-          if (!match && toolCall.input) {
-            try {
-              const parsed = JSON.parse(toolCall.input);
-              const inputKeys = Object.keys(parsed).filter(
-                (k) => k !== "toolCallDescription",
-              );
-              if (inputKeys.length > 0) {
-                let bestName: string | undefined;
-                let bestOverlap = 0;
-                for (const name of available) {
-                  const schema = await inputSchema({ toolName: name });
-                  const schemaKeys = Object.keys(
-                    (schema as Record<string, unknown>)?.properties ?? {},
-                  ).filter((k) => k !== "toolCallDescription");
-                  const overlap = inputKeys.filter((k) =>
-                    schemaKeys.includes(k),
-                  ).length;
-                  if (overlap > bestOverlap) {
-                    bestOverlap = overlap;
-                    bestName = name;
-                  }
-                }
-                if (bestName && bestOverlap > 0) {
-                  match = bestName;
-                }
-              }
-            } catch {
-              // input isn't valid JSON — skip schema matching
-            }
-          }
-          if (match) {
-            resolvedToolName = match;
-            tool = tools[resolvedToolName];
-            if (!silent) {
-              console.log(
-                `   Resolved malformed tool name "${toolCall.toolName}" -> "${resolvedToolName}"`,
-              );
-            }
-          }
-        }
-
-        if (!tool || !tool.inputSchema) {
-          // Cannot repair. Throw a descriptive error so the AI SDK
-          // surfaces it as the tool result — giving the model a clear
-          // correction signal instead of the generic NoSuchToolError.
-          const available = Object.keys(tools);
-          if (!silent) {
-            console.error(
-              `Tool "${toolCall.toolName}" not found or has no schema, skipping repair`,
-            );
-          }
-          throw new Error(
-            `INVALID TOOL CALL. "${toolCall.toolName}" is not a recognized tool. ` +
-              `You MUST use one of these exact tool names: ${available.join(", ")}. ` +
-              `Do not include tool call IDs, internal tokens like <|tool_call_argument_begin|>, or other metadata in the tool name field.`,
-          );
-        }
-
-        // Tool resolved — attempt to repair the input arguments
         try {
+          if (!silent) {
+            console.log(`🔧 Repairing tool call: ${toolCall.toolName}`);
+            console.log(`   Error: ${error.message || error}`);
+
+            // Log specific details for common enum errors
+            if (
+              error.message &&
+              (error.message.includes("severity") ||
+                error.message.includes("riskLevel"))
+            ) {
+              console.log(
+                `   Note: This appears to be an enum validation error. Tool call repair will normalize the value.`,
+              );
+            }
+          }
+
+          // Get the actual tool definition which contains the Zod schema.
+          // Some models (e.g. Kimi K2.5) emit malformed tool names that
+          // include internal tokens or partial JSON. When the tool name
+          // doesn't match, try to fuzzy-match against available tools.
+          let resolvedToolName = toolCall.toolName;
+          let tool = tools[resolvedToolName];
+
+          if (!tool && NoSuchToolError.isInstance(error)) {
+            const available = Object.keys(tools);
+            // Try to find a known tool name embedded in the garbage string
+            const match = available.find(
+              (name) =>
+                toolCall.toolName.includes(name) ||
+                (toolCall.input && toolCall.input.includes(`"${name}"`)),
+            );
+            if (match) {
+              resolvedToolName = match;
+              tool = tools[resolvedToolName];
+              if (!silent) {
+                console.log(
+                  `   Resolved malformed tool name "${toolCall.toolName}" -> "${resolvedToolName}"`,
+                );
+              }
+            }
+          }
+
+          if (!tool || !tool.inputSchema) {
+            // Cannot repair — return null so AI SDK marks it as an
+            // invalid tool call instead of crashing the stream.
+            if (!silent) {
+              console.error(
+                `Tool "${toolCall.toolName}" not found or has no schema, skipping repair`,
+              );
+            }
+            return null;
+          }
+
           // Get JSONSchema7 for display purposes
           const jsonSchema = inputSchema({ toolName: resolvedToolName });
 

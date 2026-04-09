@@ -8,7 +8,6 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { getModelInfo } from "./models";
 import { createPensarModel } from "./providers/pensar";
-import { sanitizeToolName } from "./providers/pensarFormatters";
 import { getPensarGatewayUrl } from "../api/constants";
 import { ensureValidToken } from "../auth";
 import { config } from "../config";
@@ -30,33 +29,6 @@ export function isAnthropicProvider(model: AIModel): boolean {
   return (
     provider === "anthropic" || provider === "bedrock" || provider === "pensar"
   );
-}
-
-/**
- * Sanitize tool names in a message history so providers that pass names
- * straight through (e.g. @ai-sdk/amazon-bedrock → Converse API) don't
- * hit Bedrock's [a-zA-Z0-9_-]{1,64} validation.  Non-Anthropic models
- * like Kimi K2.5 can leak internal tokens into tool call names.
- */
-export function sanitizeToolNamesInMessages(
-  messages: ModelMessage[],
-): ModelMessage[] {
-  let dirty = false;
-  const result = messages.map((msg) => {
-    if (msg.role !== "assistant" || typeof msg.content === "string") return msg;
-    const content = (msg.content as Array<Record<string, unknown>>).map(
-      (part) => {
-        if (part.type !== "tool-call") return part;
-        const raw = part.toolName as string;
-        const clean = sanitizeToolName(raw);
-        if (clean === raw) return part;
-        dirty = true;
-        return { ...part, toolName: clean };
-      },
-    );
-    return dirty ? { ...msg, content } : msg;
-  });
-  return dirty ? (result as ModelMessage[]) : messages;
 }
 
 export type AIAuthConfig = {
