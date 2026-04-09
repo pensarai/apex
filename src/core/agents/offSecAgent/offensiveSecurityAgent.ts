@@ -153,11 +153,17 @@ export class OffensiveSecurityAgent<TResult = void> {
 
     // -- Task directory (per-agent tasks, opt-in via taskDriven config) -------
     const taskDriven = input.session.config?.taskDriven ?? false;
-    const tasksDir = taskDriven
-      ? input.subagentId
-        ? join(input.session.rootPath, "subagents", `${input.subagentId}-tasks`)
-        : join(input.session.rootPath, "tasks")
-      : undefined;
+    const tasksDir =
+      input.tasksDir ??
+      (taskDriven
+        ? input.subagentId
+          ? join(
+              input.session.rootPath,
+              "subagents",
+              `${input.subagentId}-tasks`,
+            )
+          : join(input.session.rootPath, "tasks")
+        : undefined);
 
     // -- Tools ----------------------------------------------------------------
     const credentialManager =

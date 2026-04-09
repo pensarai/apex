@@ -178,6 +178,13 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
   subagentId?: string;
 
   /**
+   * Override the auto-computed task directory. When set, takes precedence
+   * over the directory derived from `subagentId`. Use this when a plan
+   * agent needs to write tasks to the execution agent's task directory.
+   */
+  tasksDir?: string;
+
+  /**
    * Event bus for streaming agent output.
    *
    * When provided, the agent emits all streaming events (text deltas,
