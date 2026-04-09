@@ -2,6 +2,11 @@
  * Run tasks with bounded concurrency.
  * Returns an array of results in the same order as items.
  * Failed tasks produce null in the results array.
+ *
+ * When abortSignal fires, no NEW tasks are launched, but all
+ * currently-running tasks are awaited to completion. This prevents
+ * orphaned promises where agents finish their work but persistence
+ * (saveSubagentData, manifest updates) never executes.
  */
 export async function runWithBoundedConcurrency<T, R>(
   items: T[],
@@ -21,22 +26,21 @@ export async function runWithBoundedConcurrency<T, R>(
 
     let active = 0;
 
+    function canLaunchMore(): boolean {
+      return (
+        active < concurrency && nextIdx < items.length && !abortSignal?.aborted
+      );
+    }
+
     function next() {
-      // Resolve when all launched tasks complete and either all items
-      // have been launched or the signal was aborted.
-      if (
-        completed >= nextIdx &&
-        (nextIdx === items.length || abortSignal?.aborted)
-      ) {
+      // Resolve when all launched tasks have completed and no more can start.
+      // After abort, this waits for in-flight tasks instead of resolving early.
+      if (completed >= nextIdx && !canLaunchMore()) {
         resolve();
         return;
       }
 
-      while (
-        active < concurrency &&
-        nextIdx < items.length &&
-        !abortSignal?.aborted
-      ) {
+      while (canLaunchMore()) {
         const idx = nextIdx++;
         active++;
 
