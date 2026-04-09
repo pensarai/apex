@@ -19,7 +19,10 @@ const VULN_CLASS_PATTERNS: [RegExp, string][] = [
     /path\s*traversal|directory\s*traversal|local\s*file\s*inclusion|\blfi\b/i,
     "path-traversal",
   ],
-  [/missing.*auth|no.*auth|unauthenticated\s+access/i, "missing-authentication"],
+  [
+    /missing.*auth|no.*auth|unauthenticated\s+access/i,
+    "missing-authentication",
+  ],
   [/\bidor\b|insecure\s*direct\s*object/i, "idor"],
   [/\bxss\b|cross[\s-]*site\s*scripting/i, "xss"],
   [/missing\s*content\s*security\s*policy|missing\s*csp\b/i, "missing-csp"],

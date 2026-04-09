@@ -201,9 +201,9 @@ describe("extractVulnClass", () => {
     expect(extractVulnClass("No Authentication Required for API")).toBe(
       "missing-authentication",
     );
-    expect(
-      extractVulnClass("Unauthenticated Access to Admin Dashboard"),
-    ).toBe("missing-authentication");
+    expect(extractVulnClass("Unauthenticated Access to Admin Dashboard")).toBe(
+      "missing-authentication",
+    );
   });
 
   it("classifies SSRF", () => {
