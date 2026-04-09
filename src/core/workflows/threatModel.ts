@@ -1,3 +1,4 @@
+import { stepCountIs } from "ai";
 import type { AIModel } from "../ai";
 import type { AIAuthConfig } from "../ai/utils";
 import type { SessionInfo } from "../session";
@@ -93,6 +94,7 @@ Working directory: ${input.codebasePath}`;
     abortSignal: input.abortSignal,
     skillsRegistry: registry,
     eventBus: input.eventBus,
+    stopWhen: stepCountIs(10000),
   });
 
   return { session, outputPath: input.outputPath };
