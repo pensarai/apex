@@ -22,8 +22,6 @@ import { computerMouseDrag } from "./mouseDrag";
 import { computerTypeText } from "./typeText";
 import { computerKeyPress } from "./keyPress";
 import { computerScroll } from "./scroll";
-import { computerScreenInfo } from "./screenInfo";
-
 export const COMPUTER_USE_TOOL_NAMES = [
   "computer_screenshot",
   "computer_mouse_click",
@@ -33,7 +31,6 @@ export const COMPUTER_USE_TOOL_NAMES = [
   "computer_type_text",
   "computer_key_press",
   "computer_scroll",
-  "computer_screen_info",
 ] as const;
 
 export type ComputerUseToolName = (typeof COMPUTER_USE_TOOL_NAMES)[number];
@@ -48,7 +45,6 @@ export function createComputerUseToolset(ctx: ToolContext) {
     computer_type_text: computerTypeText(ctx),
     computer_key_press: computerKeyPress(ctx),
     computer_scroll: computerScroll(ctx),
-    computer_screen_info: computerScreenInfo(ctx),
   } as const;
 }
 
@@ -61,7 +57,6 @@ export {
   computerTypeText,
   computerKeyPress,
   computerScroll,
-  computerScreenInfo,
 };
 
 export { type DesktopBackend, type Platform, detectPlatform } from "./platform";

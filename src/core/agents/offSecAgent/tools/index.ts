@@ -232,7 +232,6 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "computer_type_text",
   "computer_key_press",
   "computer_scroll",
-  "computer_screen_info",
   // Core pentest
   "execute_command",
   "http_request",
@@ -295,7 +294,6 @@ export const PLAN_MODE_TOOL_NAMES: ToolName[] = [
   "computer_screenshot",
   "computer_mouse_move",
   "computer_scroll",
-  "computer_screen_info",
   // Core pentest (read-only)
   "execute_command",
   "http_request",

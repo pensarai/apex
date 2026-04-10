@@ -80,9 +80,8 @@ ${context}`;
 
 ## Instructions
 1. Start by taking a screenshot to see the current desktop state.
-2. Get screen info to understand dimensions and active window.
-3. Work through the objective step by step, verifying each action with screenshots.
-4. Report what you accomplished when done.
+2. Work through the objective step by step, verifying each action with screenshots.
+3. Report what you accomplished when done.
 
 Begin now.`;
 

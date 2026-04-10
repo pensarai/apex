@@ -235,15 +235,6 @@ export const ALL_TOOLS: ToolDefinition[] = [
     defaultEnabled: true,
   },
   {
-    id: "computer_screen_info",
-    name: "Screen Info",
-    description: "Get screen state",
-    detail:
-      "Get screen dimensions, current mouse position, and active window title. Used to orient before desktop interaction.",
-    category: "browser",
-    defaultEnabled: true,
-  },
-  {
     id: "delegate_to_computer_use_agent",
     name: "Computer Use Agent",
     description: "Delegate GUI tasks",

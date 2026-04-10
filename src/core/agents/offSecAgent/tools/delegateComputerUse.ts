@@ -53,7 +53,6 @@ The computer use agent can:
 2. Click, double-click, and drag with the mouse
 3. Type text and press key combinations
 4. Scroll and navigate within applications
-5. Get screen dimensions and active window info
 
 Provide a clear, specific objective describing what the agent should accomplish
 on the desktop. The agent will use screenshots to orient itself and perform

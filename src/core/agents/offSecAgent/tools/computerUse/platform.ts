@@ -228,14 +228,15 @@ export class DarwinBackend implements DesktopBackend {
   }
 
   getScreenSize(): ScreenSize {
+    // system_profiler SPDisplaysDataType is extremely slow (5-15s) because it
+    // enumerates GPU hardware. Use NSScreen via JXA instead (sub-second).
+    // Returns logical (point) dimensions which match the coordinate system
+    // used by cliclick and other interaction tools.
     const raw = exec(
-      `system_profiler SPDisplaysDataType | grep Resolution | head -1`,
+      `osascript -l JavaScript -e 'ObjC.import("AppKit"); var f = $.NSScreen.mainScreen.frame; f.size.width + " " + f.size.height'`,
     );
-    const match = raw.match(/(\d+)\s*x\s*(\d+)/);
-    return {
-      width: match ? parseInt(match[1]!, 10) : 0,
-      height: match ? parseInt(match[2]!, 10) : 0,
-    };
+    const [w, h] = raw.split(" ").map(Number);
+    return { width: w ?? 0, height: h ?? 0 };
   }
 
   mouseDrag(startX: number, startY: number, endX: number, endY: number): void {

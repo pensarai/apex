@@ -16,11 +16,6 @@ Take a screenshot to observe the current desktop state. Always start with this.
 - Returns a base64-encoded PNG and saves to the evidence directory.
 - Use frequently to verify actions succeeded.
 
-## computer_screen_info
-Get screen dimensions, mouse position, and active window title.
-- Use at the start to understand the display setup.
-- Helpful for calculating coordinates relative to screen edges.
-
 ## computer_mouse_click
 Click at specific (x, y) coordinates.
 - Default is left-click. Use button="right" for context menus.
