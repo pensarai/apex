@@ -18,12 +18,14 @@ const DEFAULT_CONCURRENCY = 5;
 // ---------------------------------------------------------------------------
 
 const ThreatModelResultSchema = z.object({
-  threatModel: z.string().describe(
-    "A focused threat model for this specific endpoint. Include: " +
-      "attack vectors relevant to this endpoint, data sensitivity assessment, " +
-      "authentication/authorization risks, input validation concerns, " +
-      "business logic risks, and prioritized testing recommendations.",
-  ),
+  threatModel: z
+    .string()
+    .describe(
+      "A focused threat model for this specific endpoint. Include: " +
+        "attack vectors relevant to this endpoint, data sensitivity assessment, " +
+        "authentication/authorization risks, input validation concerns, " +
+        "business logic risks, and prioritized testing recommendations.",
+    ),
 });
 
 type ThreatModelResult = z.infer<typeof ThreatModelResultSchema>;
