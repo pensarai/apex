@@ -47,6 +47,26 @@ grep -Poi 'pattern' file.txt`;
       expect(warnings[0]).toContain("grep -P or grep -oP");
     });
 
+    it("detects grep with separate flag groups (grep -i -P)", () => {
+      const script = `#!/bin/bash
+curl -s http://target.com | grep -i -P '(?<=id":)[0-9]+'`;
+
+      const warnings = validatePocPortability(script, "bash");
+
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain("grep -P or grep -oP");
+    });
+
+    it("detects grep with multiple separate flags (grep -o -P)", () => {
+      const script = `#!/bin/bash
+grep -o -P 'pattern' file.txt`;
+
+      const warnings = validatePocPortability(script, "bash");
+
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain("grep -P or grep -oP");
+    });
+
     it("detects bc usage (piped)", () => {
       const script = `#!/bin/bash
 result=$(echo "scale=2; 10 / 3" | bc)
@@ -63,6 +83,28 @@ echo "Result: $result"`;
       const script = `#!/bin/bash
 echo "1+1" > calc.txt
 bc < calc.txt`;
+
+      const warnings = validatePocPortability(script, "bash");
+
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain("bc command detected");
+    });
+
+    it("detects bc in command substitution $(bc ...)", () => {
+      const script = `#!/bin/bash
+result=$(bc <<< "scale=2; 10/3")
+echo "$result"`;
+
+      const warnings = validatePocPortability(script, "bash");
+
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain("bc command detected");
+    });
+
+    it("detects bc in backtick command substitution", () => {
+      const script = `#!/bin/bash
+result=\`bc -l <<< "sqrt(2)"\`
+echo "$result"`;
 
       const warnings = validatePocPortability(script, "bash");
 

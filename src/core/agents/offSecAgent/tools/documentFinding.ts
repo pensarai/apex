@@ -671,17 +671,20 @@ export function validatePocPortability(
   }
 
   // Check for grep -P or grep -oP (Perl regex - not portable)
-  // Match -P anywhere in the flag group (e.g., -P, -oP, -Po, -Poi, etc.)
-  if (/grep\s+(-[a-zA-Z]*P[a-zA-Z]*|--perl-regexp)\b/.test(content)) {
+  // Match -P anywhere after grep (e.g., -P, -oP, -Po, grep -i -P, etc.)
+  if (
+    /grep\s+.*?-[a-zA-Z]*P[a-zA-Z]*\b/.test(content) ||
+    /grep\s+.*?--perl-regexp\b/.test(content)
+  ) {
     warnings.push(
       "Non-portable: grep -P or grep -oP (Perl regex) detected. Use grep -E (extended regex) or grep -o instead for macOS/BusyBox compatibility.",
     );
   }
 
   // Check for bare bc usage (not installed in sandbox)
-  // Match bc as a standalone command (piped or standalone)
+  // Match bc as a standalone command (piped, standalone, or in command substitution)
   if (
-    /(\|\s*bc\b|^\s*bc\b)/m.test(content) &&
+    /(\|\s*bc\b|^\s*bc\b|\$\(\s*bc\b|`\s*bc\b)/m.test(content) &&
     !/which\s+bc|command\s+-v\s+bc/.test(content)
   ) {
     warnings.push(
