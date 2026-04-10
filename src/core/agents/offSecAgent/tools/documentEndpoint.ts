@@ -9,7 +9,6 @@ function sanitizeName(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9-_.]/g, "_");
 }
 
-
 /**
  * Factory for the `document_endpoint` tool.
  *
@@ -155,7 +154,7 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
         }
       }
 
-       if (
+      if (
         input.routePath &&
         (input.routePath.startsWith("https://") ||
           input.routePath.startsWith("http://"))
