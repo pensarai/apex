@@ -103,6 +103,8 @@ This ends the agent run — make sure all data is included.`,
         "document_endpoint",
         // Orchestration — for Phase 2 app analysis
         "spawn_coding_agent",
+        // Cloud provider tools — resolve cloud resource references to domains/URLs
+        "cloud_resource_lookup",
         // Response tool (injected via extraTools)
         "submit_results",
       ],

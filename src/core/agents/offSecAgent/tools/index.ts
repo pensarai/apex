@@ -69,6 +69,10 @@ export type { EmailToolName } from "./email";
 export { webSearch } from "./webSearch";
 export { getPage } from "./getPage";
 
+// Cloud provider tools
+export { cloudResourceLookup } from "./cloud";
+export type { CloudResource, CloudLookupResult } from "./cloud";
+
 // Skill tools
 export { readSkill } from "./readSkill";
 
@@ -126,6 +130,7 @@ import { readSkill } from "./readSkill";
 import { checkpointState } from "./checkpointState";
 import { writePlan } from "./writePlan";
 import { submitPlan } from "./submitPlan";
+import { cloudResourceLookup } from "./cloud";
 
 /**
  * Create the full toolset for the OffensiveSecurityAgent.
@@ -193,6 +198,11 @@ export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
     web_search: webSearch(ctx),
     get_page: getPage(ctx),
 
+    // Cloud provider tools (conditional — only when cloud providers are configured)
+    ...(ctx.session.config?.cloudProviders?.providers?.length
+      ? { cloud_resource_lookup: cloudResourceLookup(ctx) }
+      : {}),
+
     // Skill tools (conditional — only when registry is provided)
     ...(ctx.skillsRegistry ? { read_skill: readSkill(ctx) } : {}),
 
@@ -255,6 +265,8 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   // Web search (requires Pensar account)
   "web_search",
   "get_page",
+  // Cloud provider tools
+  "cloud_resource_lookup",
   // Observability
   "checkpoint_state",
   // Plan mode
@@ -308,6 +320,8 @@ export const PLAN_MODE_TOOL_NAMES: ToolName[] = [
   // Web search
   "web_search",
   "get_page",
+  // Cloud provider tools
+  "cloud_resource_lookup",
   // Plan mode tools
   "write_plan",
   "submit_plan",

@@ -144,6 +144,8 @@ export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSur
         // Web search tools — research target technologies, find known vulnerabilities
         "web_search",
         "get_page",
+        // Cloud provider tools — resolve cloud resource references to domains/URLs
+        "cloud_resource_lookup",
       ],
 
       stopWhen: [

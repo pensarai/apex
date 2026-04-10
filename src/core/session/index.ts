@@ -154,6 +154,30 @@ const SessionConfigObject = z.object({
   codebasePath: z.string().optional(),
   /** Email inboxes available to the agent for monitoring/reading email */
   emailIntegration: EmailIntegrationConfigObject.optional(),
+  /** Cloud provider integrations for resource enumeration */
+  cloudProviders: z
+    .object({
+      providers: z.array(
+        z.discriminatedUnion("provider", [
+          z.object({
+            provider: z.literal("aws"),
+            id: z.string(),
+            name: z.string(),
+            accessKeyId: z.string(),
+            secretAccessKey: z.string(),
+            region: z.string(),
+          }),
+          z.object({
+            provider: z.literal("gcp"),
+            id: z.string(),
+            name: z.string(),
+            projectId: z.string(),
+            serviceAccountKey: z.string(),
+          }),
+        ]),
+      ),
+    })
+    .optional(),
   /** Enable exfiltration mode — allows internal pivoting and flag extraction through confirmed vulnerabilities */
   exfilMode: z.boolean().optional(),
   /** Agent working directory — resolved to process.cwd() by default, undefined in sandbox mode */
