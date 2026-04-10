@@ -70,7 +70,7 @@ export const SubagentStatusBar = memo(function SubagentStatusBar({
       </box>
 
       {/* Right side: keyboard shortcut hint */}
-      <text fg={colors.textMuted} content="[S] view agents" />
+      <text fg={colors.textMuted} content="Ctrl+A view agents" />
     </box>
   );
 });
