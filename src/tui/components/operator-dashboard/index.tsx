@@ -83,7 +83,8 @@ import {
 } from "./subagent-state";
 import { QueuedMessages } from "./queued-messages";
 import { SubagentStatusBar } from "./subagent-status-bar";
-import { SubagentHub, type SubagentOverlayState } from "./subagent-hub";
+import { SubagentHub, type SubagentOverlayState, sortSessions } from "./subagent-hub";
+import { SubagentDetailView } from "./subagent-detail-view";
 import { navigateUp, navigateDown, selectionAfterRemove } from "./queue";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { isAbsolute, join, resolve } from "path";
@@ -2091,7 +2092,39 @@ export default function OperatorDashboard({
       flexGrow={1}
       overflow="hidden"
     >
-      {subagentOverlay.view !== "closed" ? (
+      {subagentOverlay.view === "detail" ? (
+        (() => {
+          const sorted = sortSessions(Array.from(subagentSessions.values()));
+          const selectedId = subagentOverlay.selectedId;
+          const selectedSession = subagentSessions.get(selectedId);
+
+          // Fall back to hub if session no longer exists
+          if (!selectedSession || sorted.length === 0) {
+            setSubagentOverlay({ view: "hub" });
+            return null;
+          }
+
+          const currentIdx = sorted.findIndex((s) => s.id === selectedId);
+          const safeIdx = currentIdx === -1 ? 0 : currentIdx;
+
+          return (
+            <SubagentDetailView
+              session={selectedSession}
+              index={safeIdx + 1}
+              total={sorted.length}
+              onPrev={() => {
+                const prevIdx = safeIdx === 0 ? sorted.length - 1 : safeIdx - 1;
+                setSubagentOverlay({ view: "detail", selectedId: sorted[prevIdx].id });
+              }}
+              onNext={() => {
+                const nextIdx = safeIdx === sorted.length - 1 ? 0 : safeIdx + 1;
+                setSubagentOverlay({ view: "detail", selectedId: sorted[nextIdx].id });
+              }}
+              onBack={() => setSubagentOverlay({ view: "hub" })}
+            />
+          );
+        })()
+      ) : subagentOverlay.view === "hub" ? (
         <SubagentHub
           sessions={subagentSessions}
           onSelect={(id) => setSubagentOverlay({ view: "detail", selectedId: id })}
