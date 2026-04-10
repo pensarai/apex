@@ -586,7 +586,10 @@ export class FindingsRegistry {
       return [];
     }
 
-    const prompt = buildRootCauseGroupingPrompt(this.findings);
+    // Snapshot findings before the (potentially slow) LLM call so that
+    // concurrent register/unregister calls don't shift indices.
+    const snapshot = [...this.findings];
+    const prompt = buildRootCauseGroupingPrompt(snapshot);
 
     const result = await generateObjectResponse({
       model: this.model,
@@ -597,22 +600,38 @@ export class FindingsRegistry {
       abortSignal: this.abortSignal,
     });
 
-    for (const group of result.groups) {
-      const validIndices = group.findingIndices.filter(
-        (i: number) => i >= 0 && i < this.findings.length,
-      );
-      const titles = validIndices.map((i: number) => this.findings[i]!.title);
+    // Sanitise groups: filter out-of-bounds indices and apply annotations
+    // inside the mutex to avoid racing with register/unregister.
+    const sanitised: RootCauseGroup[] = [];
 
-      for (const idx of validIndices) {
-        const finding = this.findings[idx]!;
-        finding.rootCauseGroup = group.groupId;
-        finding.relatedFindings = titles.filter(
-          (t: string) => t !== finding.title,
-        );
-      }
-    }
+    await new Promise<void>((resolve) => {
+      this.mutex = this.mutex.then(() => {
+        for (const group of result.groups) {
+          const validIndices = group.findingIndices.filter(
+            (i: number) => i >= 0 && i < snapshot.length,
+          );
+          if (validIndices.length < 2) continue;
 
-    return result.groups;
+          sanitised.push({
+            groupId: group.groupId,
+            findingIndices: validIndices,
+            rootCause: group.rootCause,
+          });
+
+          for (const idx of validIndices) {
+            const finding = snapshot[idx]!;
+            finding.rootCauseGroup = group.groupId;
+            // Use index-based exclusion so same-titled findings are handled correctly
+            finding.relatedFindings = validIndices
+              .filter((i: number) => i !== idx)
+              .map((i: number) => snapshot[i]!.title);
+          }
+        }
+        resolve();
+      });
+    });
+
+    return sanitised;
   }
 
   // -----------------------------------------------------------------------

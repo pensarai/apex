@@ -1319,4 +1319,83 @@ describe("groupByRootCause", () => {
     expect(groups).toEqual([]);
     expect(mockedGenerate).not.toHaveBeenCalled();
   });
+
+  it("sanitises out-of-bounds indices in returned groups", async () => {
+    mockedGenerate.mockResolvedValueOnce({
+      groups: [
+        {
+          groupId: "test-group",
+          findingIndices: [0, 1, 999, -1],
+          rootCause: "Shared root cause",
+        },
+      ],
+    });
+
+    const findings = [
+      makeFinding({
+        title: "Finding A",
+        endpoint: "https://target.com/a",
+      }),
+      makeFinding({
+        title: "Finding B",
+        endpoint: "https://target.com/b",
+      }),
+    ];
+    const registry = FindingsRegistry.fromFindings(findings, {
+      model: "test-model",
+    });
+
+    const groups = await registry.groupByRootCause();
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0]!.findingIndices).toEqual([0, 1]);
+  });
+
+  it("uses index-based exclusion for relatedFindings (handles same-titled findings)", async () => {
+    mockedGenerate.mockResolvedValueOnce({
+      groups: [
+        {
+          groupId: "same-title-group",
+          findingIndices: [0, 1, 2],
+          rootCause: "Shared root cause across endpoints",
+        },
+      ],
+    });
+
+    const findings = [
+      makeFinding({
+        title: "User Enumeration",
+        endpoint: "https://target.com/login",
+      }),
+      makeFinding({
+        title: "User Enumeration",
+        endpoint: "https://target.com/register",
+      }),
+      makeFinding({
+        title: "Different Finding",
+        endpoint: "https://target.com/api",
+      }),
+    ];
+    const registry = FindingsRegistry.fromFindings(findings, {
+      model: "test-model",
+    });
+
+    const groups = await registry.groupByRootCause();
+
+    const allFindings = registry.getFindings();
+    // Index 0 should see indices 1 and 2 as related (even though idx 1 has same title)
+    expect(allFindings[0]!.relatedFindings).toEqual([
+      "User Enumeration",
+      "Different Finding",
+    ]);
+    expect(allFindings[1]!.relatedFindings).toEqual([
+      "User Enumeration",
+      "Different Finding",
+    ]);
+    expect(allFindings[2]!.relatedFindings).toEqual([
+      "User Enumeration",
+      "User Enumeration",
+    ]);
+    expect(groups).toHaveLength(1);
+  });
 });
