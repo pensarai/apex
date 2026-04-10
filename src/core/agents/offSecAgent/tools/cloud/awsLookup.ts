@@ -135,7 +135,7 @@ async function lookupCloudFront(
   creds: AWSCredentials,
 ): Promise<CloudResource[]> {
   const { CloudFrontClient, ListDistributionsCommand } = await import(
-    // @ts-expect-error dynamic import
+
     "@aws-sdk/client-cloudfront"
   );
   const client = new CloudFrontClient({
@@ -192,7 +192,7 @@ async function lookupAPIGateway(
   // REST APIs (v1)
   try {
     const { APIGatewayClient, GetRestApisCommand } = await import(
-      // @ts-expect-error dynamic import
+  
       "@aws-sdk/client-api-gateway"
     );
     const client = new APIGatewayClient({
@@ -230,7 +230,7 @@ async function lookupAPIGateway(
   // HTTP APIs (v2)
   try {
     const { ApiGatewayV2Client, GetApisCommand } = await import(
-      // @ts-expect-error dynamic import
+  
       "@aws-sdk/client-apigatewayv2"
     );
     const client = new ApiGatewayV2Client({
@@ -282,7 +282,7 @@ async function lookupLoadBalancer(
     ElasticLoadBalancingV2Client,
     DescribeLoadBalancersCommand,
   } = await import(
-    // @ts-expect-error dynamic import
+
     "@aws-sdk/client-elastic-load-balancing-v2"
   );
   const client = new ElasticLoadBalancingV2Client({
@@ -451,7 +451,7 @@ async function lookupRoute53(
     ListHostedZonesCommand,
     ListResourceRecordSetsCommand,
   } = await import(
-    // @ts-expect-error dynamic import
+
     "@aws-sdk/client-route-53"
   );
   const client = new Route53Client({
