@@ -146,15 +146,12 @@ export const PentestObjectiveSchema = z.object({
  * Accepts both `string[]` (legacy) and `PentestObjective[]`.
  * Plain strings are coerced to `{ objective: string }`.
  */
-export const PentestObjectivesField = z.preprocess(
-  (val) => {
-    if (!Array.isArray(val)) return val;
-    return val.map((item: unknown) =>
-      typeof item === "string" ? { objective: item } : item,
-    );
-  },
-  z.array(PentestObjectiveSchema),
-);
+export const PentestObjectivesField = z.preprocess((val) => {
+  if (!Array.isArray(val)) return val;
+  return val.map((item: unknown) =>
+    typeof item === "string" ? { objective: item } : item,
+  );
+}, z.array(PentestObjectiveSchema));
 
 /**
  * Schema for document_app tool input

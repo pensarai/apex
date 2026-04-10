@@ -365,9 +365,9 @@ Refine and expand these into structured objectives. Each objective must have an 
   const result = await generateObjectResponse({
     model,
     schema: z.object({
-      objectives: z.array(PentestObjectiveSchema).describe(
-        "Detailed objectives with setup instructions",
-      ),
+      objectives: z
+        .array(PentestObjectiveSchema)
+        .describe("Detailed objectives with setup instructions"),
     }),
     prompt,
     system: OBJECTIVE_GENERATION_SYSTEM_PROMPT,
