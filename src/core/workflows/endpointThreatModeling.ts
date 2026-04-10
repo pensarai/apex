@@ -7,15 +7,7 @@ import type { SessionInfo } from "../session";
 import type { AgentEventBus } from "../eventBus";
 import { runWithBoundedConcurrency } from "../utils/concurrency";
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
 const DEFAULT_CONCURRENCY = 5;
-
-// ---------------------------------------------------------------------------
-// Structured output schema
-// ---------------------------------------------------------------------------
 
 const ThreatModelResultSchema = z.object({
   threatModel: z
@@ -30,10 +22,6 @@ const ThreatModelResultSchema = z.object({
 
 type ThreatModelResult = z.infer<typeof ThreatModelResultSchema>;
 
-// ---------------------------------------------------------------------------
-// System prompt
-// ---------------------------------------------------------------------------
-
 const THREAT_MODEL_SYSTEM_PROMPT = `You are an Endpoint Threat Modeling Agent. Your task is to analyze a specific API endpoint or web page and produce a focused threat model that describes the security risks, attack vectors, and testing priorities for that exact endpoint.
 
 Read the source code at the specified location. Analyze the endpoint's:
@@ -45,10 +33,6 @@ Read the source code at the specified location. Analyze the endpoint's:
 - Dependencies and trust boundaries
 
 Produce a concise, actionable threat model that a penetration tester can use to prioritize their testing approach for this endpoint.`;
-
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
 
 export interface EndpointThreatModelingInput {
   codebasePath: string;
@@ -136,10 +120,6 @@ export async function generateEndpointThreatModels(
   return results;
 }
 
-// ---------------------------------------------------------------------------
-// Single endpoint threat model generation
-// ---------------------------------------------------------------------------
-
 async function generateSingleThreatModel(opts: {
   codebasePath: string;
   endpoint: Endpoint & { appName: string };
@@ -186,10 +166,6 @@ async function generateSingleThreatModel(opts: {
 
   return result.threatModel;
 }
-
-// ---------------------------------------------------------------------------
-// Objective builder
-// ---------------------------------------------------------------------------
 
 function buildThreatModelObjective(
   endpoint: Endpoint & { appName: string },
