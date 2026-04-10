@@ -231,8 +231,12 @@ function wrapStreamWithErrorHandler(
                       yield chunk;
                     }
                     return;
-                  } catch {
-                    // Compaction wasn't enough — fall through to full summarization
+                  } catch (retryError) {
+                    // Only fall through to full summarization for context length errors.
+                    // Other errors (auth failures, model errors) must propagate.
+                    if (!checkIfContextLengthError(retryError)) {
+                      throw retryError;
+                    }
                   }
                 }
 

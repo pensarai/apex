@@ -188,6 +188,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       enableThinking: input.enableThinking,
       projectThreatModel: input.projectThreatModel,
       planSubagentId: input.planSubagentId,
+      subagentId: input.subagentId,
     });
 
     let tools: ToolSet = input.extraTools
