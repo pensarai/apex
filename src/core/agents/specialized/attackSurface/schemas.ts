@@ -119,7 +119,6 @@ export const DocumentAppSchema = z.object({
     .describe(
       "Technology framework or stack (e.g., 'Next.js', 'Express + React', 'Django')",
     ),
-  url: z.string().optional().describe("Base URL of the application"),
   technology: z
     .array(z.string())
     .optional()
@@ -133,8 +132,10 @@ export const DocumentAppSchema = z.object({
     .string()
     .optional()
     .describe(
-      "Domain URL this application is associated with (e.g., 'https://example.com'). " +
-        "Used to map applications to monitored domains. Only set if a known domain was provided.",
+      "Base URL / domain this application is associated with (e.g., 'https://example.com'). " +
+        "Used to map applications to monitored domains. " +
+        "For cloud resources set this to the canonical resource URL " +
+        "(e.g., 'https://bucket-name.s3.amazonaws.com').",
     ),
 });
 

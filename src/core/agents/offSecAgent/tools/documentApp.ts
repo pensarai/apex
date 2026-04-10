@@ -65,12 +65,6 @@ Each application creates a JSON file in the apps directory for tracking and anal
         .describe(
           "Technology framework or stack (e.g., 'Next.js', 'Express + React', 'Django')",
         ),
-      url: z
-        .string()
-        .optional()
-        .describe(
-          "Base URL of the application (e.g., 'https://example.com', 'https://api.example.com')",
-        ),
       technology: z
         .array(z.string())
         .optional()
@@ -89,8 +83,10 @@ Each application creates a JSON file in the apps directory for tracking and anal
         .string()
         .optional()
         .describe(
-          "Domain URL this application is associated with (e.g., 'https://example.com'). " +
-            "Used to map applications to monitored domains. Only set if a known domain was provided.",
+          "Base URL / domain this application is associated with (e.g., 'https://example.com'). " +
+            "Used to map applications to monitored domains. " +
+            "For cloud resources set this to the canonical resource URL " +
+            "(e.g., 'https://bucket-name.s3.amazonaws.com').",
         ),
       toolCallDescription: z
         .string()
