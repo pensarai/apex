@@ -47,7 +47,7 @@ grep -Poi 'pattern' file.txt`;
       expect(warnings[0]).toContain("grep -P or grep -oP");
     });
 
-    it("detects bc usage", () => {
+    it("detects bc usage (piped)", () => {
       const script = `#!/bin/bash
 result=$(echo "scale=2; 10 / 3" | bc)
 echo "Result: $result"`;
@@ -57,6 +57,17 @@ echo "Result: $result"`;
       expect(warnings).toHaveLength(1);
       expect(warnings[0]).toContain("bc command detected");
       expect(warnings[0]).toContain("$(( ))");
+    });
+
+    it("detects standalone bc usage on any line", () => {
+      const script = `#!/bin/bash
+echo "1+1" > calc.txt
+bc < calc.txt`;
+
+      const warnings = validatePocPortability(script, "bash");
+
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain("bc command detected");
     });
 
     it("does not warn about bc if it's checked first", () => {

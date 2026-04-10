@@ -679,9 +679,9 @@ export function validatePocPortability(
   }
 
   // Check for bare bc usage (not installed in sandbox)
-  // Match bc as a standalone command, typically piped to (e.g., "| bc")
+  // Match bc as a standalone command (piped or standalone)
   if (
-    /(\|\s*bc\b|^\s*bc\b|\becho\s+.*\|\s*bc\b)/.test(content) &&
+    /(\|\s*bc\b|^\s*bc\b)/m.test(content) &&
     !/which\s+bc|command\s+-v\s+bc/.test(content)
   ) {
     warnings.push(
