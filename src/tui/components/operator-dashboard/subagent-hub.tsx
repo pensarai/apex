@@ -1,8 +1,8 @@
 /**
- * Subagent Hub Overlay
+ * Subagent Hub Dialog
  *
- * Full-screen overlay showing all subagent sessions in a scrollable,
- * keyboard-navigable list. Replaces the main chat content when open.
+ * Dialog showing all subagent sessions in a scrollable,
+ * keyboard-navigable list. Uses the standard Dialog + DialogLayout pattern.
  */
 
 import React, { useState, useEffect, useRef, memo, useMemo } from "react";
@@ -10,25 +10,9 @@ import { useKeyboard } from "@opentui/react";
 import { ScrollBoxRenderable } from "@opentui/core";
 
 import { useTheme } from "../../theme";
-import { useDimensions } from "../../context/dimensions";
 import { AsciiSpinner } from "../shared/ascii-spinner";
 import { scrollToIndex } from "../../utils/scroll";
 import type { SubagentSession } from "./subagent-state";
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-export type SubagentOverlayState =
-  | { view: "closed" }
-  | { view: "hub" }
-  | { view: "detail"; selectedId: string };
-
-export interface SubagentHubProps {
-  sessions: Map<string, SubagentSession>;
-  onSelect: (id: string) => void;
-  onClose: () => void;
-}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -77,7 +61,9 @@ const SubagentHubCard = memo(function SubagentHubCard({
 
   const toolCalls = countToolCalls(session);
   const now = Date.now();
-  const elapsed = (session.completedAt ?? new Date(now)).getTime() - session.spawnedAt.getTime();
+  const elapsed =
+    (session.completedAt ?? new Date(now)).getTime() -
+    session.spawnedAt.getTime();
 
   const prefix = focused ? "\u25b8 " : "  ";
   const nameColor = focused ? colors.primary : colors.text;
@@ -103,7 +89,7 @@ const SubagentHubCard = memo(function SubagentHubCard({
   const toolLabel = `${toolCalls} tool call${toolCalls !== 1 ? "s" : ""}`;
 
   return (
-    <box flexDirection="column" paddingLeft={2} paddingRight={2}>
+    <box flexDirection="column">
       {/* Line 1: prefix + status icon + name */}
       <box flexDirection="row">
         <text content={prefix} />
@@ -113,7 +99,10 @@ const SubagentHubCard = memo(function SubagentHubCard({
 
       {/* Line 2: indented stats */}
       <box flexDirection="row" paddingLeft={4}>
-        <text fg={colors.textMuted} content={`${toolLabel} \u00b7 ${timeLabel}`} />
+        <text
+          fg={colors.textMuted}
+          content={`${toolLabel} \u00b7 ${timeLabel}`}
+        />
       </box>
     </box>
   );
@@ -123,13 +112,18 @@ const SubagentHubCard = memo(function SubagentHubCard({
 // SubagentHub
 // ---------------------------------------------------------------------------
 
+export interface SubagentHubProps {
+  sessions: Map<string, SubagentSession>;
+  onSelect: (id: string) => void;
+  onClose: () => void;
+}
+
 export const SubagentHub = memo(function SubagentHub({
   sessions,
   onSelect,
   onClose,
 }: SubagentHubProps) {
   const { colors } = useTheme();
-  const { width: termWidth } = useDimensions();
 
   const sorted = useMemo(
     () => sortSessions(Array.from(sessions.values())),
@@ -185,35 +179,11 @@ export const SubagentHub = memo(function SubagentHub({
     }
   });
 
-  const separatorLine = "\u2500".repeat(Math.max(0, termWidth - 4));
-
   return (
-    <box flexDirection="column" width="100%" height="100%" flexGrow={1}>
-      {/* Header */}
-      <box
-        flexDirection="row"
-        justifyContent="space-between"
-        paddingLeft={2}
-        paddingRight={2}
-        paddingTop={1}
-        flexShrink={0}
-      >
-        <text fg={colors.primary} content={`Agents (${sessions.size})`} />
-        <text fg={colors.textMuted} content="[Esc] close" />
-      </box>
-
-      {/* Separator */}
-      <box paddingLeft={2} paddingRight={2} flexShrink={0}>
-        <text fg={colors.textMuted} content={separatorLine} />
-      </box>
-
+    <box flexDirection="column" width="100%" flexGrow={1}>
       {/* Card list */}
       {sorted.length === 0 ? (
-        <box
-          flexGrow={1}
-          alignItems="center"
-          justifyContent="center"
-        >
+        <box flexGrow={1} alignItems="center" justifyContent="center">
           <text fg={colors.textMuted} content="No agents yet" />
         </box>
       ) : (
@@ -241,14 +211,6 @@ export const SubagentHub = memo(function SubagentHub({
           ))}
         </scrollbox>
       )}
-
-      {/* Footer */}
-      <box paddingLeft={2} paddingRight={2} paddingBottom={1} flexShrink={0}>
-        <text
-          fg={colors.textMuted}
-          content={"\u2191\u2193 navigate \u00b7 Enter view \u00b7 Esc close"}
-        />
-      </box>
     </box>
   );
 });
