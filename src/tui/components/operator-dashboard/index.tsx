@@ -655,80 +655,6 @@ export default function OperatorDashboard({
     });
   }, []);
 
-  // ---------------------------------------------------------------------------
-  // Per-subagent log management
-  // ---------------------------------------------------------------------------
-
-  const initSubagent = useCallback((subagentId: string, name?: string) => {
-    setMessages((prev) => {
-      const idx = prev.findLastIndex(
-        (m) =>
-          isToolMessage(m) &&
-          (m.status === "pending" || m.status === "streaming"),
-      );
-      if (idx === -1) return prev;
-      const msg = prev[idx];
-      const subagentLogs = {
-        ...(msg.subagentLogs ?? {}),
-        [subagentId]: { name, status: "pending" as const, logs: [] },
-      };
-      const updated = [...prev];
-      updated[idx] = { ...msg, subagentLogs };
-      return updated;
-    });
-  }, []);
-
-  const completeSubagent = useCallback(
-    (subagentId: string, status: "completed" | "failed") => {
-      setMessages((prev) => {
-        const idx = prev.findLastIndex(
-          (m) =>
-            isToolMessage(m) &&
-            (m.status === "pending" || m.status === "streaming"),
-        );
-        if (idx === -1) return prev;
-        const msg = prev[idx];
-        const entry = msg.subagentLogs?.[subagentId];
-        if (!entry) return prev;
-        const subagentLogs = {
-          ...(msg.subagentLogs ?? {}),
-          [subagentId]: { ...entry, status },
-        };
-        const updated = [...prev];
-        updated[idx] = { ...msg, subagentLogs };
-        return updated;
-      });
-    },
-    [],
-  );
-
-  const appendLogToSubagent = useCallback(
-    (subagentId: string, line: string) => {
-      setMessages((prev) => {
-        const idx = prev.findLastIndex(
-          (m) =>
-            isToolMessage(m) &&
-            (m.status === "pending" || m.status === "streaming"),
-        );
-        if (idx === -1) return prev;
-        const msg = prev[idx];
-        const entry = msg.subagentLogs?.[subagentId];
-        if (!entry) return prev;
-        let logs = [...entry.logs, line];
-        if (logs.length > MAX_LOG_LINES) {
-          logs = logs.slice(-MAX_LOG_LINES);
-        }
-        const subagentLogs = {
-          ...(msg.subagentLogs ?? {}),
-          [subagentId]: { ...entry, logs },
-        };
-        const updated = [...prev];
-        updated[idx] = { ...msg, subagentLogs };
-        return updated;
-      });
-    },
-    [],
-  );
 
   // ---------------------------------------------------------------------------
   // Approval handlers
@@ -1032,26 +958,6 @@ export default function OperatorDashboard({
 
           if (isDiscoveryAgent(d.subagentId)) {
             appendWorkflowDiscoveryLog(line);
-          } else {
-            // Mirror to workflowData swarm subagent logs
-            updateWorkflowData((wd) => {
-              const entry = wd.pentesting.subagents[d.subagentId!];
-              if (!entry) return wd;
-              let logs = [...entry.logs, line];
-              if (logs.length > MAX_LOG_LINES)
-                logs = logs.slice(-MAX_LOG_LINES);
-              return {
-                ...wd,
-                pentesting: {
-                  ...wd.pentesting,
-                  subagents: {
-                    ...wd.pentesting.subagents,
-                    [d.subagentId!]: { ...entry, logs },
-                  },
-                },
-              };
-            });
-            appendLogToSubagent(d.subagentId, line);
           }
           return;
         }
@@ -1110,7 +1016,6 @@ export default function OperatorDashboard({
             },
           },
         }));
-        initSubagent(subagentId, name);
       });
 
       eventBus.on("subagent-complete", ({ subagentId, status }) => {
@@ -1119,8 +1024,6 @@ export default function OperatorDashboard({
         if (remaining) {
           if (isDiscoveryAgent(subagentId)) {
             appendWorkflowDiscoveryLog(remaining);
-          } else {
-            appendLogToSubagent(subagentId, remaining);
           }
         }
         delete discoveryTextBuf[subagentId];
@@ -1140,7 +1043,6 @@ export default function OperatorDashboard({
             },
           };
         });
-        completeSubagent(subagentId, status);
       });
 
       // Workflow phase events → update workflowData on the tool message
@@ -1457,9 +1359,6 @@ export default function OperatorDashboard({
       flushCommandOutput,
       onCommandOutput,
       appendLogToActiveTool,
-      initSubagent,
-      completeSubagent,
-      appendLogToSubagent,
       subagentHelpers,
       setThinking,
       setIsExecuting,
@@ -1968,12 +1867,11 @@ export default function OperatorDashboard({
       }
     }
 
-    // Shift+S to open subagent overlay (only when not typing)
+    // Ctrl+A to open subagent overlay
     if (
-      key.name === "S" &&
-      !inputValue.trim() &&
-      subagentSessions.size > 0 &&
-      (status === "running" || status === "waiting")
+      key.ctrl &&
+      key.name === "a" &&
+      subagentSessions.size > 0
     ) {
       key.preventDefault?.();
       setSubagentOverlay({ view: "hub" });
