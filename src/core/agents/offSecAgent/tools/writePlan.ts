@@ -21,9 +21,7 @@ type WritePlanResult = {
   path: string;
 };
 
-export function writePlan(
-  ctx: ToolContext & { subagentId?: string },
-) {
+export function writePlan(ctx: ToolContext & { subagentId?: string }) {
   return tool({
     description: `Write or update the pentest plan file for this session.
 

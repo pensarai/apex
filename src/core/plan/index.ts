@@ -39,9 +39,6 @@ export function readPlan(
 }
 
 /** Returns true if a plan file exists in the session directory. */
-export function hasPlan(
-  sessionRootPath: string,
-  subagentId?: string,
-): boolean {
+export function hasPlan(sessionRootPath: string, subagentId?: string): boolean {
   return existsSync(planFilePath(sessionRootPath, subagentId));
 }

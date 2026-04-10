@@ -46,6 +46,10 @@ export function applyToolResultBudget(
       const p = part as Record<string, unknown>;
       if (p.type !== "tool-result") return part;
 
+      // Task tool results are small and critical for agent state — never truncate them.
+      const toolName = String(p.toolName ?? "tool");
+      if (TASK_TOOL_NAMES.has(toolName)) return part;
+
       const text = stringifyToolOutput(p.output ?? p.result);
       if (text.length <= maxChars) return part;
 
