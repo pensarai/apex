@@ -40,7 +40,7 @@ const STATUS_ORDER: Record<SubagentSession["status"], number> = {
   failed: 2,
 };
 
-function sortSessions(sessions: SubagentSession[]): SubagentSession[] {
+export function sortSessions(sessions: SubagentSession[]): SubagentSession[] {
   return [...sessions].sort((a, b) => {
     const statusDiff = STATUS_ORDER[a.status] - STATUS_ORDER[b.status];
     if (statusDiff !== 0) return statusDiff;
