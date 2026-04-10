@@ -1,0 +1,254 @@
+/**
+ * Subagent Hub Overlay
+ *
+ * Full-screen overlay showing all subagent sessions in a scrollable,
+ * keyboard-navigable list. Replaces the main chat content when open.
+ */
+
+import React, { useState, useEffect, useRef, memo, useMemo } from "react";
+import { useKeyboard } from "@opentui/react";
+import { ScrollBoxRenderable } from "@opentui/core";
+
+import { useTheme } from "../../theme";
+import { useDimensions } from "../../context/dimensions";
+import { AsciiSpinner } from "../shared/ascii-spinner";
+import { scrollToIndex } from "../../utils/scroll";
+import type { SubagentSession } from "./subagent-state";
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export type SubagentOverlayState =
+  | { view: "closed" }
+  | { view: "hub" }
+  | { view: "detail"; selectedId: string };
+
+export interface SubagentHubProps {
+  sessions: Map<string, SubagentSession>;
+  onSelect: (id: string) => void;
+  onClose: () => void;
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+const STATUS_ORDER: Record<SubagentSession["status"], number> = {
+  running: 0,
+  completed: 1,
+  failed: 2,
+};
+
+function sortSessions(sessions: SubagentSession[]): SubagentSession[] {
+  return [...sessions].sort((a, b) => {
+    const statusDiff = STATUS_ORDER[a.status] - STATUS_ORDER[b.status];
+    if (statusDiff !== 0) return statusDiff;
+    return a.spawnedAt.getTime() - b.spawnedAt.getTime();
+  });
+}
+
+function formatElapsed(ms: number): string {
+  const totalSeconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes > 0) return `${minutes}m ${seconds}s`;
+  return `${seconds}s`;
+}
+
+function countToolCalls(session: SubagentSession): number {
+  return session.messages.filter((m) => m.role === "tool").length;
+}
+
+// ---------------------------------------------------------------------------
+// SubagentHubCard
+// ---------------------------------------------------------------------------
+
+interface SubagentHubCardProps {
+  session: SubagentSession;
+  focused: boolean;
+}
+
+const SubagentHubCard = memo(function SubagentHubCard({
+  session,
+  focused,
+}: SubagentHubCardProps) {
+  const { colors } = useTheme();
+
+  const toolCalls = countToolCalls(session);
+  const now = Date.now();
+  const elapsed = (session.completedAt ?? new Date(now)).getTime() - session.spawnedAt.getTime();
+
+  const prefix = focused ? "\u25b8 " : "  ";
+  const nameColor = focused ? colors.primary : colors.text;
+
+  // Status-dependent rendering
+  let statusIcon: React.ReactNode;
+  let timeLabel: string;
+  switch (session.status) {
+    case "running":
+      statusIcon = <AsciiSpinner label="" fg={colors.warning} />;
+      timeLabel = `running ${formatElapsed(now - session.spawnedAt.getTime())}`;
+      break;
+    case "completed":
+      statusIcon = <text fg={colors.success} content={"\u2713 "} />;
+      timeLabel = `completed in ${formatElapsed(elapsed)}`;
+      break;
+    case "failed":
+      statusIcon = <text fg={colors.error} content={"\u2717 "} />;
+      timeLabel = `failed after ${formatElapsed(elapsed)}`;
+      break;
+  }
+
+  const toolLabel = `${toolCalls} tool call${toolCalls !== 1 ? "s" : ""}`;
+
+  return (
+    <box flexDirection="column" paddingLeft={2} paddingRight={2}>
+      {/* Line 1: prefix + status icon + name */}
+      <box flexDirection="row">
+        <text content={prefix} />
+        {statusIcon}
+        <text fg={nameColor} content={session.name} />
+      </box>
+
+      {/* Line 2: indented stats */}
+      <box flexDirection="row" paddingLeft={4}>
+        <text fg={colors.textMuted} content={`${toolLabel} \u00b7 ${timeLabel}`} />
+      </box>
+    </box>
+  );
+});
+
+// ---------------------------------------------------------------------------
+// SubagentHub
+// ---------------------------------------------------------------------------
+
+export const SubagentHub = memo(function SubagentHub({
+  sessions,
+  onSelect,
+  onClose,
+}: SubagentHubProps) {
+  const { colors } = useTheme();
+  const { width: termWidth } = useDimensions();
+
+  const sorted = useMemo(
+    () => sortSessions(Array.from(sessions.values())),
+    [sessions],
+  );
+
+  const [focusedIndex, setFocusedIndex] = useState(0);
+  const scrollboxRef = useRef<ScrollBoxRenderable | null>(null);
+
+  // Clamp focused index when list changes
+  useEffect(() => {
+    if (sorted.length === 0) {
+      setFocusedIndex(0);
+    } else if (focusedIndex >= sorted.length) {
+      setFocusedIndex(sorted.length - 1);
+    }
+  }, [sorted.length, focusedIndex]);
+
+  // Keep focused card visible in scrollbox
+  useEffect(() => {
+    scrollToIndex(scrollboxRef.current, focusedIndex, sorted, (s) => s.id);
+  }, [focusedIndex, sorted]);
+
+  // Keyboard navigation
+  useKeyboard((key) => {
+    if (key.name === "escape") {
+      key.preventDefault?.();
+      onClose();
+      return;
+    }
+
+    if (sorted.length === 0) return;
+
+    if (key.name === "up" || key.raw === "k") {
+      key.preventDefault?.();
+      setFocusedIndex((prev) => Math.max(0, prev - 1));
+      return;
+    }
+
+    if (key.name === "down" || key.raw === "j") {
+      key.preventDefault?.();
+      setFocusedIndex((prev) => Math.min(sorted.length - 1, prev + 1));
+      return;
+    }
+
+    if (key.name === "return") {
+      key.preventDefault?.();
+      const session = sorted[focusedIndex];
+      if (session) {
+        onSelect(session.id);
+      }
+      return;
+    }
+  });
+
+  const separatorLine = "\u2500".repeat(Math.max(0, termWidth - 4));
+
+  return (
+    <box flexDirection="column" width="100%" height="100%" flexGrow={1}>
+      {/* Header */}
+      <box
+        flexDirection="row"
+        justifyContent="space-between"
+        paddingLeft={2}
+        paddingRight={2}
+        paddingTop={1}
+        flexShrink={0}
+      >
+        <text fg={colors.primary} content={`Agents (${sessions.size})`} />
+        <text fg={colors.textMuted} content="[Esc] close" />
+      </box>
+
+      {/* Separator */}
+      <box paddingLeft={2} paddingRight={2} flexShrink={0}>
+        <text fg={colors.textMuted} content={separatorLine} />
+      </box>
+
+      {/* Card list */}
+      {sorted.length === 0 ? (
+        <box
+          flexGrow={1}
+          alignItems="center"
+          justifyContent="center"
+        >
+          <text fg={colors.textMuted} content="No agents yet" />
+        </box>
+      ) : (
+        <scrollbox
+          ref={scrollboxRef}
+          style={{
+            rootOptions: { flexGrow: 1, width: "100%" },
+            contentOptions: {
+              flexDirection: "column",
+              gap: 1,
+              paddingTop: 1,
+              paddingBottom: 1,
+            },
+          }}
+          stickyScroll={false}
+          focused={true}
+        >
+          {sorted.map((session, idx) => (
+            <box key={session.id} id={session.id}>
+              <SubagentHubCard
+                session={session}
+                focused={idx === focusedIndex}
+              />
+            </box>
+          ))}
+        </scrollbox>
+      )}
+
+      {/* Footer */}
+      <box paddingLeft={2} paddingRight={2} paddingBottom={1} flexShrink={0}>
+        <text
+          fg={colors.textMuted}
+          content={"\u2191\u2193 navigate \u00b7 Enter view \u00b7 Esc close"}
+        />
+      </box>
+    </box>
+  );
+});

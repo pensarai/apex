@@ -83,6 +83,7 @@ import {
 } from "./subagent-state";
 import { QueuedMessages } from "./queued-messages";
 import { SubagentStatusBar } from "./subagent-status-bar";
+import { SubagentHub, type SubagentOverlayState } from "./subagent-hub";
 import { navigateUp, navigateDown, selectionAfterRemove } from "./queue";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { isAbsolute, join, resolve } from "path";
@@ -181,7 +182,7 @@ export default function OperatorDashboard({
     () => createSubagentSessionHelpers(setSubagentSessions),
     [],
   );
-  const [subagentOverlayOpen, setSubagentOverlayOpen] = useState(false);
+  const [subagentOverlay, setSubagentOverlay] = useState<SubagentOverlayState>({ view: "closed" });
 
   // Messages — same pattern as pentest component
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
@@ -1974,7 +1975,7 @@ export default function OperatorDashboard({
       (status === "running" || status === "waiting")
     ) {
       key.preventDefault?.();
-      setSubagentOverlayOpen(true);
+      setSubagentOverlay({ view: "hub" });
       return;
     }
 
@@ -2090,109 +2091,119 @@ export default function OperatorDashboard({
       flexGrow={1}
       overflow="hidden"
     >
-      {/* Header bar */}
-      <box
-        flexDirection="row"
-        justifyContent="space-between"
-        paddingLeft={2}
-        paddingRight={2}
-        paddingTop={1}
-        paddingBottom={1}
-        flexShrink={0}
-      >
-        <box flexDirection="row" gap={2}>
-          <text fg={colors.primary}>Operator</text>
-          <text fg={colors.textMuted}>•</text>
-          <text fg={colors.text}>{session?.name ?? "New Session"}</text>
-          {(session?.targets[0] || initialConfig?.target) && (
-            <>
+      {subagentOverlay.view !== "closed" ? (
+        <SubagentHub
+          sessions={subagentSessions}
+          onSelect={(id) => setSubagentOverlay({ view: "detail", selectedId: id })}
+          onClose={() => setSubagentOverlay({ view: "closed" })}
+        />
+      ) : (
+        <>
+          {/* Header bar */}
+          <box
+            flexDirection="row"
+            justifyContent="space-between"
+            paddingLeft={2}
+            paddingRight={2}
+            paddingTop={1}
+            paddingBottom={1}
+            flexShrink={0}
+          >
+            <box flexDirection="row" gap={2}>
+              <text fg={colors.primary}>Operator</text>
               <text fg={colors.textMuted}>•</text>
-              <text fg={colors.textMuted}>
-                {session?.targets[0] || initialConfig?.target}
-              </text>
-            </>
+              <text fg={colors.text}>{session?.name ?? "New Session"}</text>
+              {(session?.targets[0] || initialConfig?.target) && (
+                <>
+                  <text fg={colors.textMuted}>•</text>
+                  <text fg={colors.textMuted}>
+                    {session?.targets[0] || initialConfig?.target}
+                  </text>
+                </>
+              )}
+            </box>
+          </box>
+
+          {/* Error banner */}
+          {error && (
+            <box paddingLeft={2} paddingRight={2} flexShrink={0}>
+              <text fg={colors.error}>{error}</text>
+            </box>
           )}
-        </box>
-      </box>
 
-      {/* Error banner */}
-      {error && (
-        <box paddingLeft={2} paddingRight={2} flexShrink={0}>
-          <text fg={colors.error}>{error}</text>
-        </box>
+          {/* Message display */}
+          <MessageList
+            messages={messages}
+            isRunning={status === "running" || status === "waiting"}
+            variant="operator"
+            focused={true}
+            verbose={verboseMode}
+            expandedLogs={expandedLogs}
+            pendingApprovals={pendingApprovals}
+            lastApprovedAction={lastApprovedAction}
+          />
+
+          {/* Subagent status bar */}
+          <SubagentStatusBar
+            sessions={subagentSessions}
+            onOpen={() => setSubagentOverlay({ view: "hub" })}
+          />
+
+          {/* Queued follow-up messages */}
+          <QueuedMessages
+            messages={queuedMessages}
+            selectedIndex={selectedQueueIndex}
+          />
+
+          {/* Input area */}
+          <InputArea
+            value={inputValue}
+            onChange={setInputValue}
+            onSubmit={
+              showPlanReview
+                ? (value: string) => {
+                    const trimmed = value.trim();
+                    if (!trimmed) return;
+                    planRejectedRef.current = true;
+                    setShowPlanReview(false);
+                    handleSubmit(trimmed);
+                  }
+                : handleSubmit
+            }
+            placeholder={
+              showPlanReview
+                ? "Type feedback to refine, or Y to approve, N to reject..."
+                : status === "running"
+                  ? "Queue a follow-up message..."
+                  : status === "waiting"
+                    ? "Type to redirect agent, or Y/A to approve..."
+                    : "Enter directive or / for commands & skills..."
+            }
+            focused={
+              status === "running"
+                ? selectedQueueIndex < 0
+                : resolveInputFocused(status, stack.length, externalDialogOpen)
+            }
+            status={status === "waiting" ? "running" : status}
+            mode="operator"
+            operatorMode={operatorMode}
+            pendingApproval={currentPending}
+            onApprove={handleApprove}
+            onAutoApprove={handleAutoApprove}
+            enableAutocomplete={true}
+            autocompleteOptions={autocompleteOptions}
+            commandOptionMap={commandOptionMap}
+            commandNames={commandNames}
+            autocompletePlacement="above"
+            enableCommands={true}
+            onCommandExecute={handleCommandExecute}
+            highlightSlashCommands={true}
+            disableHistoryNavigation={
+              status === "running" && queuedMessages.length > 0
+            }
+          />
+        </>
       )}
-
-      {/* Message display */}
-      <MessageList
-        messages={messages}
-        isRunning={status === "running" || status === "waiting"}
-        variant="operator"
-        focused={true}
-        verbose={verboseMode}
-        expandedLogs={expandedLogs}
-        pendingApprovals={pendingApprovals}
-        lastApprovedAction={lastApprovedAction}
-      />
-
-      {/* Subagent status bar */}
-      <SubagentStatusBar
-        sessions={subagentSessions}
-        onOpen={() => setSubagentOverlayOpen(true)}
-      />
-
-      {/* Queued follow-up messages */}
-      <QueuedMessages
-        messages={queuedMessages}
-        selectedIndex={selectedQueueIndex}
-      />
-
-      {/* Input area */}
-      <InputArea
-        value={inputValue}
-        onChange={setInputValue}
-        onSubmit={
-          showPlanReview
-            ? (value: string) => {
-                const trimmed = value.trim();
-                if (!trimmed) return;
-                planRejectedRef.current = true;
-                setShowPlanReview(false);
-                handleSubmit(trimmed);
-              }
-            : handleSubmit
-        }
-        placeholder={
-          showPlanReview
-            ? "Type feedback to refine, or Y to approve, N to reject..."
-            : status === "running"
-              ? "Queue a follow-up message..."
-              : status === "waiting"
-                ? "Type to redirect agent, or Y/A to approve..."
-                : "Enter directive or / for commands & skills..."
-        }
-        focused={
-          status === "running"
-            ? selectedQueueIndex < 0
-            : resolveInputFocused(status, stack.length, externalDialogOpen)
-        }
-        status={status === "waiting" ? "running" : status}
-        mode="operator"
-        operatorMode={operatorMode}
-        pendingApproval={currentPending}
-        onApprove={handleApprove}
-        onAutoApprove={handleAutoApprove}
-        enableAutocomplete={true}
-        autocompleteOptions={autocompleteOptions}
-        commandOptionMap={commandOptionMap}
-        commandNames={commandNames}
-        autocompletePlacement="above"
-        enableCommands={true}
-        onCommandExecute={handleCommandExecute}
-        highlightSlashCommands={true}
-        disableHistoryNavigation={
-          status === "running" && queuedMessages.length > 0
-        }
-      />
     </box>
   );
 }
