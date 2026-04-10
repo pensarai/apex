@@ -215,7 +215,8 @@ export class DarwinBackend implements DesktopBackend {
   }
 
   keyPress(keys: string): void {
-    execFileSync("cliclick", [`kp:${keys}`], EXEC_OPTS);
+    const args = mapKeysToClichClick(keys);
+    execFileSync("cliclick", args, EXEC_OPTS);
   }
 
   getMousePosition(): MousePosition {
@@ -442,6 +443,85 @@ export class WindowsBackend implements DesktopBackend {
       return "(unknown)";
     }
   }
+}
+
+/**
+ * Map xdotool-style key combo strings to cliclick command arguments.
+ *
+ * cliclick's `kp:` only accepts single key names. Modifier combos like
+ * "ctrl+c" must be expressed as separate `kd:` (key down), `kp:` (tap),
+ * and `ku:` (key up) arguments.
+ */
+function mapKeysToClichClick(keys: string): string[] {
+  const NAMED: Record<string, string> = {
+    return: "return",
+    enter: "return",
+    escape: "esc",
+    esc: "esc",
+    tab: "tab",
+    backspace: "delete",
+    delete: "fwd-delete",
+    space: "space",
+    up: "arrow-up",
+    down: "arrow-down",
+    left: "arrow-left",
+    right: "arrow-right",
+    home: "home",
+    end: "end",
+    page_up: "page-up",
+    page_down: "page-down",
+    f1: "f1",
+    f2: "f2",
+    f3: "f3",
+    f4: "f4",
+    f5: "f5",
+    f6: "f6",
+    f7: "f7",
+    f8: "f8",
+    f9: "f9",
+    f10: "f10",
+    f11: "f11",
+    f12: "f12",
+  };
+
+  const MODIFIERS: Record<string, string> = {
+    ctrl: "ctrl",
+    control: "ctrl",
+    alt: "alt",
+    shift: "shift",
+    super: "cmd",
+    win: "cmd",
+    cmd: "cmd",
+    command: "cmd",
+  };
+
+  const parts = keys.split("+");
+  const modifiers: string[] = [];
+  let mainKey = "";
+
+  for (const part of parts) {
+    const lower = part.toLowerCase().trim();
+    const mod = MODIFIERS[lower];
+    if (mod) {
+      modifiers.push(mod);
+    } else {
+      mainKey = NAMED[lower] ?? part;
+    }
+  }
+
+  if (modifiers.length === 0) {
+    return [`kp:${mainKey}`];
+  }
+
+  const args: string[] = [];
+  for (const mod of modifiers) {
+    args.push(`kd:${mod}`);
+  }
+  args.push(`kp:${mainKey}`);
+  for (const mod of [...modifiers].reverse()) {
+    args.push(`ku:${mod}`);
+  }
+  return args;
 }
 
 /**
