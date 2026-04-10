@@ -270,13 +270,19 @@ CRITICAL RULES — READ BEFORE CALLING:
                   normalizeEndpoint(f.endpoint) === normalizedEndpoint &&
                   f.title !== input.title,
               )
-              .map((f) => ({
-                title: f.title,
-                severity: f.severity,
-                endpoint: f.endpoint,
-                vulnerabilityClass: (f as Record<string, unknown>)
-                  .vulnerabilityClass as string | undefined,
-              })) ?? [];
+              .map((f) => {
+                const raw = f as Record<string, unknown>;
+                const cvss = raw.cvss as { score?: number } | undefined;
+                return {
+                  title: f.title,
+                  severity: f.severity,
+                  endpoint: f.endpoint,
+                  vulnerabilityClass: raw.vulnerabilityClass as
+                    | string
+                    | undefined,
+                  score: cvss?.score,
+                };
+              }) ?? [];
 
           const cvssInput: CVSSScorerInput = {
             finding: {
