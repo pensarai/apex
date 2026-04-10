@@ -26,8 +26,8 @@ Your primary search tool. Use it to find route definitions, middleware, controll
 - Each application/service you identify (appType: "web_application" or "api")
 - Notable subdomains hosting distinct services (appType: "subdomain")
 - Cloud resources like S3 buckets, cloud storage, CDN origins (appType: "cloud_resource" or "storage")
-  - For S3 buckets: set url to the bucket endpoint (e.g. "https://bucket-name.s3.amazonaws.com") and use appType "storage"
-  - For other cloud resources: set url to the resource endpoint and use appType "cloud_resource"
+  - For S3 buckets: set \`domain\` to the **canonical virtual-hosted-style** endpoint (e.g. "https://bucket-name.s3.amazonaws.com") and use appType "storage". Do NOT use path-style URLs (e.g. "https://s3.amazonaws.com/bucket-name").
+  - For other cloud resources: set \`domain\` to the primary/canonical resource endpoint and use appType "cloud_resource"
 - If known domains are provided, set the \`domain\` field to associate the app with the correct domain
 
 ## document_endpoint
@@ -65,7 +65,9 @@ Call this LAST with your complete structured results. This ends your run.
    - S3 buckets, GCS buckets, Azure Blob Storage (search for bucket names, s3://, storage URLs)
    - CDN distributions (CloudFront, Cloudflare)
    - Infrastructure-as-code definitions (Terraform, CloudFormation, CDK, SST, Pulumi, serverless.yml)
-   - Document each as an app with appType "cloud_resource" or "storage" and set the url to the resource endpoint
+   - Document each as an app with appType "cloud_resource" or "storage" and set the \`domain\` to the **canonical** resource endpoint
+   - **S3 canonical URL:** Always use virtual-hosted-style "https://bucket-name.s3.amazonaws.com" (or with region: "https://bucket-name.s3.us-east-1.amazonaws.com"). Never use path-style "https://s3.amazonaws.com/bucket-name".
+   - **Do NOT document alternative URL formats** as separate endpoints — only document the canonical/primary URL and any distinct functional paths under it
 
 ## Phase 2: APP ANALYSIS (delegate to coding agents)
 For each app you identified, spawn a coding agent with a detailed objective. The objective should instruct the agent to:
