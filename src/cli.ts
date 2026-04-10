@@ -225,7 +225,7 @@ ${objectivesList}
 
   const { findings, findingsPath, pocsPath } = await runTargetedPentestAgent({
     target,
-    objectives,
+    objectives: objectives.map((o) => ({ objective: o })),
     session,
     model,
     authConfig: buildAuthConfig(pensarConfig),
