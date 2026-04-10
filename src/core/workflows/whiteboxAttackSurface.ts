@@ -23,6 +23,7 @@ import type { SessionInfo } from "../session";
 import type { AgentEventBus } from "../eventBus";
 import { runWithBoundedConcurrency } from "../utils/concurrency";
 import { scoreEndpoints } from "./riskScoring";
+import { generateEndpointThreatModels } from "./endpointThreatModeling";
 import { execFileSync } from "child_process";
 import { createHash } from "crypto";
 import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
@@ -176,6 +177,8 @@ export interface WhiteboxAttackSurfaceWorkflowInput {
   onCacheMetrics?: (metrics: CacheMetrics) => void;
   /** Known domains associated with the project — agents can map discovered apps to these. */
   domains?: string[];
+  /** Content from user's threat model file (e.g. .pensar/threat_model.md), if found */
+  userThreatModel?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -229,6 +232,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     onStepFinish,
     onCacheMetrics,
     domains,
+    userThreatModel,
   } = input;
 
   // =========================================================================
@@ -438,7 +442,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
   }
 
   // =========================================================================
-  // Phase 4: Risk scoring — score all endpoints in parallel
+  // Phase 4: Risk scoring + threat model generation (parallel)
   // =========================================================================
 
   const allEndpointsForScoring = parsedApps.flatMap((app) =>
@@ -449,10 +453,11 @@ export async function runWhiteboxAttackSurfaceWorkflow(
   );
 
   let riskScores = new Map<string, RiskScore>();
+  let threatModels = new Map<string, string>();
 
   if (allEndpointsForScoring.length > 0) {
-    try {
-      riskScores = await scoreEndpoints({
+    const [riskResult, threatResult] = await Promise.allSettled([
+      scoreEndpoints({
         codebasePath,
         endpoints: allEndpointsForScoring,
         model,
@@ -460,32 +465,64 @@ export async function runWhiteboxAttackSurfaceWorkflow(
         authConfig,
         abortSignal,
         eventBus,
-      });
+      }),
+      generateEndpointThreatModels({
+        codebasePath,
+        endpoints: allEndpointsForScoring,
+        model,
+        session,
+        authConfig,
+        abortSignal,
+        eventBus,
+        concurrency: 5,
+        userThreatModel,
+      }),
+    ]);
+
+    if (riskResult.status === "fulfilled") {
+      riskScores = riskResult.value;
       console.log(
         `Risk scoring complete: ${riskScores.size}/${allEndpointsForScoring.length} endpoints scored`,
       );
-    } catch (error) {
+    } else {
       console.error(
         "Risk scoring phase failed, continuing without scores:",
-        error,
+        riskResult.reason,
+      );
+    }
+
+    if (threatResult.status === "fulfilled") {
+      threatModels = threatResult.value;
+      console.log(
+        `Threat model generation complete: ${threatModels.size}/${allEndpointsForScoring.length} endpoints analyzed`,
+      );
+    } else {
+      console.error(
+        "Threat model generation failed, continuing without threat models:",
+        threatResult.reason,
       );
     }
   }
 
   // =========================================================================
-  // Phase 5: Final assembly with risk scores attached
+  // Phase 5: Final assembly with risk scores and threat models attached
   // =========================================================================
 
-  function attachRiskScore(ep: Endpoint): Endpoint {
+  function attachMetadata(ep: Endpoint): Endpoint {
     const key = `${ep.method}:${ep.file}:${ep.path}`;
     const score = riskScores.get(key);
-    return score ? { ...ep, riskScore: score } : ep;
+    const tm = threatModels.get(key);
+    return {
+      ...ep,
+      ...(score ? { riskScore: score } : {}),
+      ...(tm ? { threatModel: tm } : {}),
+    };
   }
 
   const apps: App[] = parsedApps.map((app) => ({
     ...app,
-    pages: app.pages.map(attachRiskScore),
-    apiEndpoints: app.apiEndpoints.map(attachRiskScore),
+    pages: app.pages.map(attachMetadata),
+    apiEndpoints: app.apiEndpoints.map(attachMetadata),
   }));
 
   const totalPages = apps.reduce((sum, a) => sum + a.pages.length, 0);

@@ -14,3 +14,8 @@ export {
   type ThreatModelWorkflowInput,
   type ThreatModelWorkflowResult,
 } from "./threatModel";
+
+export {
+  generateEndpointThreatModels,
+  type EndpointThreatModelingInput,
+} from "./endpointThreatModeling";
