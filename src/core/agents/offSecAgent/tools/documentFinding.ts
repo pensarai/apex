@@ -671,8 +671,8 @@ export function validatePocPortability(
   }
 
   // Check for grep -P or grep -oP (Perl regex - not portable)
-  // Match -P as standalone or in combination with other flags, but NOT when followed by a letter
-  if (/grep\s+(-[a-zA-Z]*P(?![a-zA-Z])|--perl-regexp)\b/.test(content)) {
+  // Match -P anywhere in the flag group (e.g., -P, -oP, -Po, -Poi, etc.)
+  if (/grep\s+(-[a-zA-Z]*P[a-zA-Z]*|--perl-regexp)\b/.test(content)) {
     warnings.push(
       "Non-portable: grep -P or grep -oP (Perl regex) detected. Use grep -E (extended regex) or grep -o instead for macOS/BusyBox compatibility.",
     );
@@ -689,15 +689,15 @@ export function validatePocPortability(
     );
   }
 
-  // Check for GNU stat with -c flag
-  if (/stat\s+-c/.test(content)) {
+  // Check for GNU stat with -c flag (with word boundary to avoid matching netstat, vmstat, etc.)
+  if (/\bstat\s+-c/.test(content)) {
     warnings.push(
       "Non-portable: stat -c is GNU-specific. Use stat -f on BSD/macOS or portable alternatives.",
     );
   }
 
-  // Check for GNU date with --rfc-3339 or similar
-  if (/date\s+--[a-z]/.test(content)) {
+  // Check for GNU date with --rfc-3339 or similar (with word boundary to avoid matching update, etc.)
+  if (/\bdate\s+--[a-z]/.test(content)) {
     warnings.push(
       "Non-portable: GNU date long options (--rfc-3339, etc.) may not work on BSD/macOS. Use date with standard format strings instead.",
     );

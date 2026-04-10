@@ -27,6 +27,26 @@ grep -P 'pattern' file.txt`;
       expect(warnings[0]).toContain("grep -P or grep -oP");
     });
 
+    it("detects grep -Po (flag ordering variant)", () => {
+      const script = `#!/bin/bash
+curl -s http://target.com | grep -Po '(?<=id":)[0-9]+'`;
+
+      const warnings = validatePocPortability(script, "bash");
+
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain("grep -P or grep -oP");
+    });
+
+    it("detects grep -Poi (multiple flags with P)", () => {
+      const script = `#!/bin/bash
+grep -Poi 'pattern' file.txt`;
+
+      const warnings = validatePocPortability(script, "bash");
+
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain("grep -P or grep -oP");
+    });
+
     it("detects bc usage", () => {
       const script = `#!/bin/bash
 result=$(echo "scale=2; 10 / 3" | bc)
@@ -132,6 +152,36 @@ done
 
 echo "Success: exploited endpoint with ID $id"
 exit 0`;
+
+      const warnings = validatePocPortability(script, "bash");
+
+      expect(warnings).toHaveLength(0);
+    });
+
+    it("does not flag netstat -c (not the same as stat -c)", () => {
+      const script = `#!/bin/bash
+# Monitor network connections continuously
+netstat -c`;
+
+      const warnings = validatePocPortability(script, "bash");
+
+      expect(warnings).toHaveLength(0);
+    });
+
+    it("does not flag vmstat or other *stat commands", () => {
+      const script = `#!/bin/bash
+vmstat -c 5
+iostat -c 10`;
+
+      const warnings = validatePocPortability(script, "bash");
+
+      expect(warnings).toHaveLength(0);
+    });
+
+    it("does not flag update --fix-broken or similar date substrings", () => {
+      const script = `#!/bin/bash
+apt-get update --fix-broken
+candidate --list`;
 
       const warnings = validatePocPortability(script, "bash");
 
