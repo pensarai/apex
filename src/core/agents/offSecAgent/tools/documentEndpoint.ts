@@ -9,6 +9,7 @@ function sanitizeName(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9-_.]/g, "_");
 }
 
+
 /**
  * Factory for the `document_endpoint` tool.
  *
@@ -64,9 +65,12 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
         .string()
         .optional()
         .describe(
-          "The HTTP route served by this endpoint (e.g., '/api/users', '/dashboard'). " +
+          "The HTTP route or access path served by this endpoint (e.g., '/api/users', '/dashboard'). " +
             "This is the URL path a client requests — NOT a source-file path. " +
-            "Use the separate 'file' field for the source-code location.",
+            "Use the separate 'file' field for the source-code location. " +
+            "For cloud resource endpoints (endpointType 'asset'), use the specific access pattern " +
+            "or path — NOT the base domain URL, which is already stored on the parent application. " +
+            "Examples: '/{objectKey}?X-Amz-Signature=...', '/index.html', 'arn:aws:s3:::bucket-name'.",
         ),
       method: z
         .union([z.string(), z.array(z.string())])
@@ -149,6 +153,20 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
             message: `Duplicate endpoint (${check.matchType}): already documented as "${matchName}". Skipping.`,
           };
         }
+      }
+
+       if (
+        input.routePath &&
+        (input.routePath.startsWith("https://") ||
+          input.routePath.startsWith("http://"))
+      ) {
+        return {
+          success: false,
+          error: "routePath_is_url",
+          message:
+            `routePath "${input.routePath}" is a full URL. The domain is already stored on the parent application. ` +
+            `Use a path or access pattern instead (e.g. "/api/users", "/{objectKey}?X-Amz-Signature={sig}", "arn:aws:s3:::bucket-name").`,
+        };
       }
 
       const targetDir = join(baseAssetsPath, sanitizeName(input.appName));
