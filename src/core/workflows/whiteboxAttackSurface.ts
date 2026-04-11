@@ -23,7 +23,6 @@ import type { SessionInfo } from "../session";
 import type { AgentEventBus } from "../eventBus";
 import { runWithBoundedConcurrency } from "../utils/concurrency";
 import { scoreEndpoints } from "./riskScoring";
-import { generateEndpointThreatModels } from "./endpointThreatModeling";
 import { execFileSync } from "child_process";
 import { createHash } from "crypto";
 import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
@@ -214,6 +213,7 @@ interface AppMetadata {
  * Phase 1.5: Create app folders with app.json metadata.
  * Phase 2: For each app, spawn two CodeAgents in parallel — one for
  *           pages, one for API endpoints — using document_endpoint.
+ *           Threat models are generated inline during this phase.
  * Phase 3: Read the assets directory to build endpoint data.
  * Phase 4: Risk scoring.
  * Phase 5: Final assembly.
@@ -376,10 +376,22 @@ export async function runWhiteboxAttackSurfaceWorkflow(
 
       const objective =
         task.type === "pages"
-          ? buildPagesDiscoveryObjective(codebasePath, task.appInfo)
+          ? buildPagesDiscoveryObjective(
+              codebasePath,
+              task.appInfo,
+              userThreatModel,
+            )
           : task.type === "cloudResourceEndpoints"
-            ? buildCloudResourceEndpointsObjective(codebasePath, task.appInfo)
-            : buildApiEndpointsDiscoveryObjective(codebasePath, task.appInfo);
+            ? buildCloudResourceEndpointsObjective(
+                codebasePath,
+                task.appInfo,
+                userThreatModel,
+              )
+            : buildApiEndpointsDiscoveryObjective(
+                codebasePath,
+                task.appInfo,
+                userThreatModel,
+              );
 
       const agent = new CodeAgent<DiscoverySummary>({
         codebasePath,
@@ -442,7 +454,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
   }
 
   // =========================================================================
-  // Phase 4: Risk scoring + threat model generation (parallel)
+  // Phase 4: Risk scoring
   // =========================================================================
 
   const allEndpointsForScoring = parsedApps.flatMap((app) =>
@@ -453,11 +465,10 @@ export async function runWhiteboxAttackSurfaceWorkflow(
   );
 
   let riskScores = new Map<string, RiskScore>();
-  let threatModels = new Map<string, string>();
 
   if (allEndpointsForScoring.length > 0) {
-    const [riskResult, threatResult] = await Promise.allSettled([
-      scoreEndpoints({
+    try {
+      riskScores = await scoreEndpoints({
         codebasePath,
         endpoints: allEndpointsForScoring,
         model,
@@ -465,64 +476,32 @@ export async function runWhiteboxAttackSurfaceWorkflow(
         authConfig,
         abortSignal,
         eventBus,
-      }),
-      generateEndpointThreatModels({
-        codebasePath,
-        endpoints: allEndpointsForScoring,
-        model,
-        session,
-        authConfig,
-        abortSignal,
-        eventBus,
-        concurrency: 5,
-        userThreatModel,
-      }),
-    ]);
-
-    if (riskResult.status === "fulfilled") {
-      riskScores = riskResult.value;
+      });
       console.log(
         `Risk scoring complete: ${riskScores.size}/${allEndpointsForScoring.length} endpoints scored`,
       );
-    } else {
+    } catch (error) {
       console.error(
         "Risk scoring phase failed, continuing without scores:",
-        riskResult.reason,
-      );
-    }
-
-    if (threatResult.status === "fulfilled") {
-      threatModels = threatResult.value;
-      console.log(
-        `Threat model generation complete: ${threatModels.size}/${allEndpointsForScoring.length} endpoints analyzed`,
-      );
-    } else {
-      console.error(
-        "Threat model generation failed, continuing without threat models:",
-        threatResult.reason,
+        error,
       );
     }
   }
 
   // =========================================================================
-  // Phase 5: Final assembly with risk scores and threat models attached
+  // Phase 5: Final assembly with risk scores attached
   // =========================================================================
 
-  function attachMetadata(ep: Endpoint): Endpoint {
+  function attachRiskScore(ep: Endpoint): Endpoint {
     const key = `${ep.method}:${ep.file}:${ep.path}`;
     const score = riskScores.get(key);
-    const tm = threatModels.get(key);
-    return {
-      ...ep,
-      ...(score ? { riskScore: score } : {}),
-      ...(tm ? { threatModel: tm } : {}),
-    };
+    return score ? { ...ep, riskScore: score } : ep;
   }
 
   const apps: App[] = parsedApps.map((app) => ({
     ...app,
-    pages: app.pages.map(attachMetadata),
-    apiEndpoints: app.apiEndpoints.map(attachMetadata),
+    pages: app.pages.map(attachRiskScore),
+    apiEndpoints: app.apiEndpoints.map(attachRiskScore),
   }));
 
   const totalPages = apps.reduce((sum, a) => sum + a.pages.length, 0);
@@ -700,6 +679,7 @@ function assetRecordToEndpoint(
     description: record.description,
     pentestObjectives: record.pentestObjectives ?? [],
     riskScore: record.riskScore,
+    threatModel: record.threatModel,
   });
 
   return parsed.success ? parsed.data : null;
@@ -802,8 +782,9 @@ When finished, call the \`response\` tool with your structured findings.`;
 function buildPagesDiscoveryObjective(
   codebasePath: string,
   appInfo: z.infer<typeof AppInfoSchema>,
+  userThreatModel?: string,
 ): string {
-  return `# Find All Web Pages in ${appInfo.name}
+  let objective = `# Find All Web Pages in ${appInfo.name}
 
 ## Codebase
 - **Repository root:** ${codebasePath}
@@ -847,16 +828,31 @@ For each page, call \`document_endpoint\` with:
   - "Test for XSS in user-editable fields on the profile page"
   - "Test for authorization bypass — access admin dashboard as regular user"
   - "Test for CSRF on the settings update form"
+- **threatModel**: A focused threat model (300-600 words) covering attack vectors, data sensitivity, trust boundaries, risk assessment, and testing priorities specific to this page. Read the source code before writing the threat model — reference actual parameters, data flows, and code patterns you observe.
 
 Be thorough — examine every route file, every page directory, every template **within \`${appInfo.location}\`**.
 When finished, call \`response\` with a summary of how many pages you documented.`;
+
+  if (userThreatModel) {
+    objective += `
+
+## Additional Context (User-Provided Threat Model)
+The repository owner has provided the following threat model context. Use it to inform your threat model assessments — it may contain deployment details, compliance requirements, or known concerns:
+
+<user-threat-model>
+${userThreatModel}
+</user-threat-model>`;
+  }
+
+  return objective;
 }
 
 function buildApiEndpointsDiscoveryObjective(
   codebasePath: string,
   appInfo: z.infer<typeof AppInfoSchema>,
+  userThreatModel?: string,
 ): string {
-  return `# Find All API Endpoints in ${appInfo.name}
+  let objective = `# Find All API Endpoints in ${appInfo.name}
 
 ## Codebase
 - **Repository root:** ${codebasePath}
@@ -902,6 +898,7 @@ For each **unique route path**, call \`document_endpoint\` with:
   - "Test for IDOR by accessing /api/orders/{id} with other users' order IDs (GET)"
   - "Test for mass assignment by sending extra fields in the POST body"
   - "Test for privilege escalation by calling admin-only endpoint as regular user"
+- **threatModel**: A focused threat model (300-600 words) covering attack vectors, data sensitivity, trust boundaries, risk assessment, and testing priorities specific to this endpoint. Read the source code before writing the threat model — reference actual parameters, data flows, and code patterns you observe.
 
 **CRITICAL: ONE entry per route path.** If \`/api/products\` has GET (list) and POST (create), document it as ONE entry with \`method: ["GET", "POST"]\`. Do NOT create two separate entries.
 
@@ -909,13 +906,27 @@ For each **unique route path**, call \`document_endpoint\` with:
 
 Be thorough — trace through all route registrations, middleware chains, and controller files **within \`${appInfo.location}\`**.
 When finished, call \`response\` with a summary of how many endpoints you documented.`;
+
+  if (userThreatModel) {
+    objective += `
+
+## Additional Context (User-Provided Threat Model)
+The repository owner has provided the following threat model context. Use it to inform your threat model assessments — it may contain deployment details, compliance requirements, or known concerns:
+
+<user-threat-model>
+${userThreatModel}
+</user-threat-model>`;
+  }
+
+  return objective;
 }
 
 function buildCloudResourceEndpointsObjective(
   codebasePath: string,
   appInfo: z.infer<typeof AppInfoSchema>,
+  userThreatModel?: string,
 ): string {
-  return `# Document Entry Points for Cloud Resource: ${appInfo.name}
+  let objective = `# Document Entry Points for Cloud Resource: ${appInfo.name}
 
 ## Codebase
 - **Repository root:** ${codebasePath}
@@ -973,8 +984,22 @@ For each entry point, call \`document_endpoint\` with:
   - "Test for pre-signed URL expiration and scope"
   - "Test for CORS misconfiguration allowing cross-origin data exfiltration"
   - "Test for overly permissive IAM roles attached to this resource"
+- **threatModel**: A focused threat model (300-600 words) covering attack vectors, data sensitivity, trust boundaries, risk assessment, and testing priorities specific to this resource. Reference actual infrastructure configuration and access patterns you observe.
 
 When finished, call \`response\` with a summary of how many entry points you documented.`;
+
+  if (userThreatModel) {
+    objective += `
+
+## Additional Context (User-Provided Threat Model)
+The repository owner has provided the following threat model context. Use it to inform your threat model assessments — it may contain deployment details, compliance requirements, or known concerns:
+
+<user-threat-model>
+${userThreatModel}
+</user-threat-model>`;
+  }
+
+  return objective;
 }
 
 // ---------------------------------------------------------------------------

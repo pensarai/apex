@@ -126,6 +126,13 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
           "Specific pentest objectives for this endpoint — what a pentest agent should test " +
             "(e.g., 'Test for IDOR in /api/orders/{id}')",
         ),
+      threatModel: z
+        .string()
+        .optional()
+        .describe(
+          "Endpoint-specific threat model describing attack vectors, data sensitivity, " +
+            "trust boundaries, risk assessment, and prioritized testing recommendations (300-600 words)",
+        ),
       toolCallDescription: z
         .string()
         .describe(
