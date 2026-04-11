@@ -376,22 +376,10 @@ export async function runWhiteboxAttackSurfaceWorkflow(
 
       const objective =
         task.type === "pages"
-          ? buildPagesDiscoveryObjective(
-              codebasePath,
-              task.appInfo,
-              userThreatModel,
-            )
+          ? buildPagesDiscoveryObjective(codebasePath, task.appInfo)
           : task.type === "cloudResourceEndpoints"
-            ? buildCloudResourceEndpointsObjective(
-                codebasePath,
-                task.appInfo,
-                userThreatModel,
-              )
-            : buildApiEndpointsDiscoveryObjective(
-                codebasePath,
-                task.appInfo,
-                userThreatModel,
-              );
+            ? buildCloudResourceEndpointsObjective(codebasePath, task.appInfo)
+            : buildApiEndpointsDiscoveryObjective(codebasePath, task.appInfo);
 
       const agent = new CodeAgent<DiscoverySummary>({
         codebasePath,
@@ -408,6 +396,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
         onCacheMetrics,
         responseSchema: DiscoverySummarySchema,
         excludeTools: ["document_app"],
+        userThreatModel,
       });
 
       try {
@@ -782,9 +771,8 @@ When finished, call the \`response\` tool with your structured findings.`;
 function buildPagesDiscoveryObjective(
   codebasePath: string,
   appInfo: z.infer<typeof AppInfoSchema>,
-  userThreatModel?: string,
 ): string {
-  let objective = `# Find All Web Pages in ${appInfo.name}
+  return `# Find All Web Pages in ${appInfo.name}
 
 ## Codebase
 - **Repository root:** ${codebasePath}
@@ -828,31 +816,18 @@ For each page, call \`document_endpoint\` with:
   - "Test for XSS in user-editable fields on the profile page"
   - "Test for authorization bypass — access admin dashboard as regular user"
   - "Test for CSRF on the settings update form"
-- **threatModel**: A focused threat model (300-600 words) covering attack vectors, data sensitivity, trust boundaries, risk assessment, and testing priorities specific to this page. Read the source code before writing the threat model — reference actual parameters, data flows, and code patterns you observe.
+
+Note: A dedicated threat model for each page is generated automatically by the \`document_endpoint\` tool — you do not need to write one yourself.
 
 Be thorough — examine every route file, every page directory, every template **within \`${appInfo.location}\`**.
 When finished, call \`response\` with a summary of how many pages you documented.`;
-
-  if (userThreatModel) {
-    objective += `
-
-## Additional Context (User-Provided Threat Model)
-The repository owner has provided the following threat model context. Use it to inform your threat model assessments — it may contain deployment details, compliance requirements, or known concerns:
-
-<user-threat-model>
-${userThreatModel}
-</user-threat-model>`;
-  }
-
-  return objective;
 }
 
 function buildApiEndpointsDiscoveryObjective(
   codebasePath: string,
   appInfo: z.infer<typeof AppInfoSchema>,
-  userThreatModel?: string,
 ): string {
-  let objective = `# Find All API Endpoints in ${appInfo.name}
+  return `# Find All API Endpoints in ${appInfo.name}
 
 ## Codebase
 - **Repository root:** ${codebasePath}
@@ -898,7 +873,8 @@ For each **unique route path**, call \`document_endpoint\` with:
   - "Test for IDOR by accessing /api/orders/{id} with other users' order IDs (GET)"
   - "Test for mass assignment by sending extra fields in the POST body"
   - "Test for privilege escalation by calling admin-only endpoint as regular user"
-- **threatModel**: A focused threat model (300-600 words) covering attack vectors, data sensitivity, trust boundaries, risk assessment, and testing priorities specific to this endpoint. Read the source code before writing the threat model — reference actual parameters, data flows, and code patterns you observe.
+
+Note: A dedicated threat model for each endpoint is generated automatically by the \`document_endpoint\` tool — you do not need to write one yourself.
 
 **CRITICAL: ONE entry per route path.** If \`/api/products\` has GET (list) and POST (create), document it as ONE entry with \`method: ["GET", "POST"]\`. Do NOT create two separate entries.
 
@@ -906,27 +882,13 @@ For each **unique route path**, call \`document_endpoint\` with:
 
 Be thorough — trace through all route registrations, middleware chains, and controller files **within \`${appInfo.location}\`**.
 When finished, call \`response\` with a summary of how many endpoints you documented.`;
-
-  if (userThreatModel) {
-    objective += `
-
-## Additional Context (User-Provided Threat Model)
-The repository owner has provided the following threat model context. Use it to inform your threat model assessments — it may contain deployment details, compliance requirements, or known concerns:
-
-<user-threat-model>
-${userThreatModel}
-</user-threat-model>`;
-  }
-
-  return objective;
 }
 
 function buildCloudResourceEndpointsObjective(
   codebasePath: string,
   appInfo: z.infer<typeof AppInfoSchema>,
-  userThreatModel?: string,
 ): string {
-  let objective = `# Document Entry Points for Cloud Resource: ${appInfo.name}
+  return `# Document Entry Points for Cloud Resource: ${appInfo.name}
 
 ## Codebase
 - **Repository root:** ${codebasePath}
@@ -984,22 +946,10 @@ For each entry point, call \`document_endpoint\` with:
   - "Test for pre-signed URL expiration and scope"
   - "Test for CORS misconfiguration allowing cross-origin data exfiltration"
   - "Test for overly permissive IAM roles attached to this resource"
-- **threatModel**: A focused threat model (300-600 words) covering attack vectors, data sensitivity, trust boundaries, risk assessment, and testing priorities specific to this resource. Reference actual infrastructure configuration and access patterns you observe.
+
+Note: A dedicated threat model for each entry point is generated automatically by the \`document_endpoint\` tool — you do not need to write one yourself.
 
 When finished, call \`response\` with a summary of how many entry points you documented.`;
-
-  if (userThreatModel) {
-    objective += `
-
-## Additional Context (User-Provided Threat Model)
-The repository owner has provided the following threat model context. Use it to inform your threat model assessments — it may contain deployment details, compliance requirements, or known concerns:
-
-<user-threat-model>
-${userThreatModel}
-</user-threat-model>`;
-  }
-
-  return objective;
 }
 
 // ---------------------------------------------------------------------------
@@ -1153,7 +1103,6 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
     assetsPath,
     existingResult,
     input.domains,
-    userThreatModel,
   );
 
   const agent = new CodeAgent<IncrementalResult>({
@@ -1169,6 +1118,7 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
     subagentId: "whitebox-incremental",
     onStepFinish: (event) => onStepFinish?.(event),
     responseSchema: IncrementalResultSchema,
+    userThreatModel,
   });
 
   const agentResult = await agent.consume();
@@ -1295,7 +1245,6 @@ function buildIncrementalObjective(
   assetsPath: string,
   existingResult: WhiteboxAttackSurfaceResult,
   domains?: string[],
-  userThreatModel?: string,
 ): string {
   const appsSummary = existingResult.apps
     .map((app) => {
@@ -1308,7 +1257,7 @@ function buildIncrementalObjective(
     ? `\n## Known Domains\nThe following domains are associated with this project. When documenting new apps, set the \`domain\` field on \`document_app\` if you can determine which domain serves the app:\n${domains.map((d) => `- ${d}`).join("\n")}\n`
     : "";
 
-  let objective = `# Incremental Attack Surface Update
+  return `# Incremental Attack Surface Update
 
 ## Context
 You are updating the attack surface map for a repository after a new commit. Rather than analyzing the entire codebase, you will analyze only the **changed files** and update the existing endpoint assets accordingly. Also check for any new cloud resources (S3 buckets, storage, CDN origins, etc.) introduced in the diff.
@@ -1350,7 +1299,8 @@ For new endpoints, use \`document_endpoint\` with:
 - \`method\` as an array of ALL HTTP methods the path supports
 - \`file\` set to the source-code file (e.g., \`src/routes/users.ts\`) — this is NOT the route
 - \`line\`, \`handler\`, \`authRequired\` filled in
-- \`threatModel\`: A focused threat model (300-600 words) covering attack vectors, data sensitivity, trust boundaries, risk assessment, and testing priorities specific to this endpoint
+
+A dedicated threat model for each new endpoint is generated automatically by the \`document_endpoint\` tool — you do not need to write one yourself.
 
 For modified endpoints, update the existing JSON file via \`execute_command\`.
 For removed endpoints, delete the file via \`execute_command\`.
@@ -1361,17 +1311,4 @@ For removed endpoints, delete the file via \`execute_command\`.
 When finished, call the \`response\` tool with a summary of your changes.
 
 **IMPORTANT:** Be conservative. Only add/modify/remove endpoints that are clearly affected by the diff. Do not re-analyze the entire codebase.`;
-
-  if (userThreatModel) {
-    objective += `
-
-## Additional Context (User-Provided Threat Model)
-The repository owner has provided the following threat model context. Use it to inform your threat model assessments — it may contain deployment details, compliance requirements, or known concerns:
-
-<user-threat-model>
-${userThreatModel}
-</user-threat-model>`;
-  }
-
-  return objective;
 }

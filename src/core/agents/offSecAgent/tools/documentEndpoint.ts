@@ -4,6 +4,7 @@ import { join } from "path";
 import { writeFileSync, mkdirSync, existsSync } from "fs";
 import type { ToolContext } from "./types";
 import { computeBlackboxRiskScore } from "../../specialized/attackSurface/blackboxRiskScoring";
+import { generateThreatModelForEndpoint } from "./threatModelGenerator";
 
 function sanitizeName(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9-_.]/g, "_");
@@ -126,13 +127,6 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
           "Specific pentest objectives for this endpoint — what a pentest agent should test " +
             "(e.g., 'Test for IDOR in /api/orders/{id}')",
         ),
-      threatModel: z
-        .string()
-        .optional()
-        .describe(
-          "Endpoint-specific threat model describing attack vectors, data sensitivity, " +
-            "trust boundaries, risk assessment, and prioritized testing recommendations (300-600 words)",
-        ),
       toolCallDescription: z
         .string()
         .describe(
@@ -201,12 +195,26 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
         input.notes,
       );
 
+      const threatModel = await generateThreatModelForEndpoint(ctx, {
+        appName: input.appName,
+        endpointName: input.endpointName,
+        routePath: input.routePath,
+        method: input.method,
+        file: input.file,
+        line: input.line,
+        handler: input.handler,
+        authRequired: input.authRequired,
+        description: input.description,
+        pentestObjectives: input.pentestObjectives,
+      });
+
       const endpointRecord = {
         ...input,
         discoveredAt: new Date().toISOString(),
         sessionId: ctx.session.id,
         target: ctx.session.targets[0],
         riskScore,
+        ...(threatModel ? { threatModel } : {}),
       };
 
       try {
