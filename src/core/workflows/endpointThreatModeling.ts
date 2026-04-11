@@ -14,7 +14,8 @@ const ThreatModelResultSchema = z.object({
     .string()
     .describe(
       "A focused threat model for this specific endpoint. Include: " +
-        "attack vectors relevant to this endpoint, data sensitivity assessment, " +
+        "attacker profiles relevant to this endpoint, attack vectors those " +
+        "attackers could exploit, data sensitivity assessment, " +
         "authentication/authorization risks, input validation concerns, " +
         "business logic risks, and prioritized testing recommendations.",
     ),
@@ -22,7 +23,7 @@ const ThreatModelResultSchema = z.object({
 
 type ThreatModelResult = z.infer<typeof ThreatModelResultSchema>;
 
-const THREAT_MODEL_SYSTEM_PROMPT = `You are an Endpoint Threat Modeling Agent. Your task is to analyze a specific API endpoint or web page and produce a focused threat model that describes the security risks, attack vectors, and testing priorities for that exact endpoint.
+const THREAT_MODEL_SYSTEM_PROMPT = `You are an Endpoint Threat Modeling Agent. Your task is to analyze a specific API endpoint or web page and produce a focused threat model that describes the relevant attackers, security risks, attack vectors, and testing priorities for that exact endpoint.
 
 Read the source code at the specified location. Analyze the endpoint's:
 - Input handling and validation
@@ -31,6 +32,8 @@ Read the source code at the specified location. Analyze the endpoint's:
 - Business logic and state transitions
 - Error handling and information disclosure
 - Dependencies and trust boundaries
+
+Think in terms of concrete attackers — not abstract threat categories. For this endpoint, identify the realistic attacker profiles that would actually target it, then ground every attack vector and testing priority in what a specific attacker would do. Attacker profiles should reflect the application's domain, the endpoint's exposure, and the data it handles.
 
 Produce a concise, actionable threat model that a penetration tester can use to prioritize their testing approach for this endpoint.`;
 
@@ -190,15 +193,22 @@ function buildThreatModelObjective(
 
 ## Instructions
 1. Read the source file at \`${endpoint.file}\` ${lineRange ? `(${lineRange})` : ""} to understand the implementation.
-2. Analyze the endpoint implementation thoroughly.
-3. Produce a threat model covering:
-   - **Attack Vectors**: Specific attacks relevant to this endpoint (e.g., injection, auth bypass, IDOR, business logic flaws). Be concrete — reference actual parameters, data flows, and code patterns you observe.
+2. If helpful, briefly explore surrounding files (auth middleware, shared handlers, type definitions) to ground your analysis — but stay focused on this endpoint.
+3. Analyze the endpoint implementation thoroughly.
+4. Produce a threat model covering:
+   - **Attacker Profiles**: 2-4 realistic attackers who would target THIS endpoint. For each profile include:
+     - A descriptive name and 1-2 sentence motivation grounded in the application's domain and what this endpoint does
+     - Skill level (Low / Medium / High / Expert)
+     - What the attacker controls (network position, accounts, API keys, authenticated session, insider access, etc.)
+     - What the attacker wants to achieve *via this endpoint specifically* (data theft, privilege escalation, account takeover, service disruption, etc.)
+     Include a mix — e.g. an opportunistic external attacker, an authenticated user abusing legitimate access, and at least one more sophisticated or insider profile when relevant. Skip profiles that are not realistic for this endpoint (e.g. don't invent an "insider threat" if the endpoint is unauthenticated and has no insider access surface).
+   - **Attack Vectors**: Specific attacks relevant to this endpoint (e.g., injection, auth bypass, IDOR, business logic flaws). Be concrete — reference actual parameters, data flows, and code patterns you observe. Tie each vector back to one of the attacker profiles you defined above ("A [Profile Name] could ...").
    - **Data Sensitivity**: What data does this endpoint handle? PII, credentials, financial data, etc.
    - **Trust Boundaries**: Where does external input enter? What internal services does it call?
    - **Risk Assessment**: What's the worst-case impact of a successful attack on this endpoint?
-   - **Testing Priorities**: Ordered list of what a pentester should test first and why.
+   - **Testing Priorities**: Ordered list of what a pentester should test first and why. Reference the attacker profile each test is simulating.
 
-Keep the threat model concise (300-600 words). Focus on what's specific to THIS endpoint — not generic web security advice.`;
+Keep the threat model concise (400-800 words). Focus on what's specific to THIS endpoint — not generic web security advice. Every attacker profile and attack vector must be grounded in code you actually read.`;
 
   if (userThreatModel) {
     objective += `
