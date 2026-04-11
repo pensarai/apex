@@ -171,7 +171,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       skillsRegistry: input.skillsRegistry,
       traceWriter,
       enableThinking: input.enableThinking,
-      userThreatModel: input.userThreatModel,
+      projectThreatModel: input.projectThreatModel,
     });
 
     let tools: ToolSet = input.extraTools

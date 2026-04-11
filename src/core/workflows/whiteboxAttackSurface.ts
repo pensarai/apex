@@ -176,8 +176,8 @@ export interface WhiteboxAttackSurfaceWorkflowInput {
   onCacheMetrics?: (metrics: CacheMetrics) => void;
   /** Known domains associated with the project — agents can map discovered apps to these. */
   domains?: string[];
-  /** Content from user's threat model file (e.g. .pensar/threat_model.md), if found */
-  userThreatModel?: string;
+  /** Project-level threat model content (e.g. from .pensar/threat_model.md), if found */
+  projectThreatModel?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -232,7 +232,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     onStepFinish,
     onCacheMetrics,
     domains,
-    userThreatModel,
+    projectThreatModel,
   } = input;
 
   // =========================================================================
@@ -396,7 +396,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
         onCacheMetrics,
         responseSchema: DiscoverySummarySchema,
         excludeTools: ["document_app"],
-        userThreatModel,
+        projectThreatModel,
       });
 
       try {
@@ -817,8 +817,6 @@ For each page, call \`document_endpoint\` with:
   - "Test for authorization bypass — access admin dashboard as regular user"
   - "Test for CSRF on the settings update form"
 
-Note: A dedicated threat model for each page is generated automatically by the \`document_endpoint\` tool — you do not need to write one yourself.
-
 Be thorough — examine every route file, every page directory, every template **within \`${appInfo.location}\`**.
 When finished, call \`response\` with a summary of how many pages you documented.`;
 }
@@ -873,8 +871,6 @@ For each **unique route path**, call \`document_endpoint\` with:
   - "Test for IDOR by accessing /api/orders/{id} with other users' order IDs (GET)"
   - "Test for mass assignment by sending extra fields in the POST body"
   - "Test for privilege escalation by calling admin-only endpoint as regular user"
-
-Note: A dedicated threat model for each endpoint is generated automatically by the \`document_endpoint\` tool — you do not need to write one yourself.
 
 **CRITICAL: ONE entry per route path.** If \`/api/products\` has GET (list) and POST (create), document it as ONE entry with \`method: ["GET", "POST"]\`. Do NOT create two separate entries.
 
@@ -947,8 +943,6 @@ For each entry point, call \`document_endpoint\` with:
   - "Test for CORS misconfiguration allowing cross-origin data exfiltration"
   - "Test for overly permissive IAM roles attached to this resource"
 
-Note: A dedicated threat model for each entry point is generated automatically by the \`document_endpoint\` tool — you do not need to write one yourself.
-
 When finished, call \`response\` with a summary of how many entry points you documented.`;
 }
 
@@ -981,7 +975,7 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
     eventBus,
     attackSurfaceRegistry,
     onStepFinish,
-    userThreatModel,
+    projectThreatModel,
   } = input;
 
   // =========================================================================
@@ -1118,7 +1112,7 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
     subagentId: "whitebox-incremental",
     onStepFinish: (event) => onStepFinish?.(event),
     responseSchema: IncrementalResultSchema,
-    userThreatModel,
+    projectThreatModel,
   });
 
   const agentResult = await agent.consume();
@@ -1299,8 +1293,6 @@ For new endpoints, use \`document_endpoint\` with:
 - \`method\` as an array of ALL HTTP methods the path supports
 - \`file\` set to the source-code file (e.g., \`src/routes/users.ts\`) — this is NOT the route
 - \`line\`, \`handler\`, \`authRequired\` filled in
-
-A dedicated threat model for each new endpoint is generated automatically by the \`document_endpoint\` tool — you do not need to write one yourself.
 
 For modified endpoints, update the existing JSON file via \`execute_command\`.
 For removed endpoints, delete the file via \`execute_command\`.

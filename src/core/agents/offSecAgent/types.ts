@@ -244,11 +244,12 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
   enableThinking?: boolean;
 
   /**
-   * User-provided threat model content (e.g. from `.pensar/threat_model.md`).
+   * Project-level threat model content (e.g. from `.pensar/threat_model.md`).
    * Forwarded into the {@link ToolContext} so tools that spawn dedicated
-   * threat-model sub-agents can include this as additional grounding context.
+   * per-endpoint threat-model sub-agents can include this as additional
+   * grounding context.
    */
-  userThreatModel?: string;
+  projectThreatModel?: string;
 };
 
 /**
@@ -318,10 +319,10 @@ export interface SpecializedAgentInput {
   enableThinking?: boolean;
 
   /**
-   * User-provided threat model content. Forwarded into {@link ToolContext}
+   * Project-level threat model content. Forwarded into {@link ToolContext}
    * so per-endpoint threat-model sub-agents can incorporate it as grounding.
    */
-  userThreatModel?: string;
+  projectThreatModel?: string;
 }
 
 /**

@@ -46,11 +46,6 @@ export interface GenerateThreatModelInput {
  * endpoint. Called from inside the `document_endpoint` tool's execute function
  * so that each documented endpoint gets its own analysis pass instead of
  * relying on the parent discovery agent to write the threat model inline.
- *
- * Mirrors the lifecycle pattern in `spawnCodingAgent.ts`: emits subagent
- * spawn/complete events on the parent bus, attaches a child bus to forward
- * streaming events, and uses a dynamic import of CodeAgent to break the
- * circular dependency between codeAgent → offSecAgent → tools → codeAgent.
  */
 export async function generateThreatModelForEndpoint(
   ctx: ToolContext,
@@ -71,11 +66,11 @@ export async function generateThreatModelForEndpoint(
   const localBus = new AgentEventBus();
   attachChildEventBus(localBus, ctx.eventBus);
 
-  const objective = buildThreatModelObjective(input, ctx.userThreatModel);
+  const prompt = buildThreatModelPrompt(input, ctx.projectThreatModel);
 
   const agent = new CodeAgent<{ threatModel: string }>({
     codebasePath: ctx.agentCwd,
-    objective,
+    objective: prompt,
     system: THREAT_MODEL_SYSTEM_PROMPT,
     model: ctx.model,
     session: ctx.session,
@@ -106,9 +101,9 @@ export async function generateThreatModelForEndpoint(
   }
 }
 
-function buildThreatModelObjective(
+function buildThreatModelPrompt(
   input: GenerateThreatModelInput,
-  userThreatModel?: string,
+  projectThreatModel?: string,
 ): string {
   const lineRange = input.line ? `around line ${input.line}` : "";
   const authInfo = input.authRequired
@@ -118,7 +113,7 @@ function buildThreatModelObjective(
     ? input.method.join(", ")
     : (input.method ?? "unknown");
 
-  let objective = `# Endpoint Threat Model Assessment
+  let prompt = `# Endpoint Threat Model Assessment
 
 ## Target Endpoint
 - **Application**: ${input.appName}
@@ -149,22 +144,22 @@ function buildThreatModelObjective(
 
 Keep the threat model concise (400-800 words). Focus on what's specific to THIS endpoint — not generic web security advice. Every attacker profile and attack vector must be grounded in code you actually read.`;
 
-  if (userThreatModel) {
-    objective += `
+  if (projectThreatModel) {
+    prompt += `
 
-## Additional Context (User-Provided Threat Model)
-The repository owner has provided the following threat model context. Use it to inform your assessment — it may contain deployment details, compliance requirements, or known concerns relevant to this endpoint:
+## Additional Context (Project-Level Threat Model)
+The repository owner has provided a project-level threat model. Use it to inform your assessment — it may contain deployment details, compliance requirements, or known concerns relevant to this endpoint:
 
-<user-threat-model>
-${userThreatModel}
-</user-threat-model>`;
+<project-threat-model>
+${projectThreatModel}
+</project-threat-model>`;
   }
 
-  objective += `
+  prompt += `
 
 Call the \`response\` tool with your threat model.`;
 
-  return objective;
+  return prompt;
 }
 
 function sanitize(s: string): string {
