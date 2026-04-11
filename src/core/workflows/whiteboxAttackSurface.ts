@@ -1031,6 +1031,7 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
     eventBus,
     attackSurfaceRegistry,
     onStepFinish,
+    userThreatModel,
   } = input;
 
   // =========================================================================
@@ -1092,7 +1093,7 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
       const sanitizedPath = sanitizeName(ep.path);
       const filename = `asset_${sanitizedPath}_${hash}.json`;
 
-      const { riskScore: _staleScore, ...epWithoutScore } = ep;
+      const { riskScore: _staleScore, threatModel, ...epWithoutMeta } = ep;
       const assetData: Record<string, unknown> = {
         assetName: ep.path,
         assetType: "endpoint",
@@ -1107,7 +1108,8 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
           authRequired: ep.authRequired,
         },
         riskLevel: "MEDIUM",
-        pentestObjectives: epWithoutScore.pentestObjectives ?? [],
+        pentestObjectives: epWithoutMeta.pentestObjectives ?? [],
+        ...(threatModel ? { threatModel } : {}),
         discoveredAt: new Date().toISOString(),
         sessionId: session.id,
         target: "",
@@ -1151,6 +1153,7 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
     assetsPath,
     existingResult,
     input.domains,
+    userThreatModel,
   );
 
   const agent = new CodeAgent<IncrementalResult>({
@@ -1292,6 +1295,7 @@ function buildIncrementalObjective(
   assetsPath: string,
   existingResult: WhiteboxAttackSurfaceResult,
   domains?: string[],
+  userThreatModel?: string,
 ): string {
   const appsSummary = existingResult.apps
     .map((app) => {
@@ -1304,7 +1308,7 @@ function buildIncrementalObjective(
     ? `\n## Known Domains\nThe following domains are associated with this project. When documenting new apps, set the \`domain\` field on \`document_app\` if you can determine which domain serves the app:\n${domains.map((d) => `- ${d}`).join("\n")}\n`
     : "";
 
-  return `# Incremental Attack Surface Update
+  let objective = `# Incremental Attack Surface Update
 
 ## Context
 You are updating the attack surface map for a repository after a new commit. Rather than analyzing the entire codebase, you will analyze only the **changed files** and update the existing endpoint assets accordingly. Also check for any new cloud resources (S3 buckets, storage, CDN origins, etc.) introduced in the diff.
@@ -1346,6 +1350,7 @@ For new endpoints, use \`document_endpoint\` with:
 - \`method\` as an array of ALL HTTP methods the path supports
 - \`file\` set to the source-code file (e.g., \`src/routes/users.ts\`) — this is NOT the route
 - \`line\`, \`handler\`, \`authRequired\` filled in
+- \`threatModel\`: A focused threat model (300-600 words) covering attack vectors, data sensitivity, trust boundaries, risk assessment, and testing priorities specific to this endpoint
 
 For modified endpoints, update the existing JSON file via \`execute_command\`.
 For removed endpoints, delete the file via \`execute_command\`.
@@ -1356,4 +1361,17 @@ For removed endpoints, delete the file via \`execute_command\`.
 When finished, call the \`response\` tool with a summary of your changes.
 
 **IMPORTANT:** Be conservative. Only add/modify/remove endpoints that are clearly affected by the diff. Do not re-analyze the entire codebase.`;
+
+  if (userThreatModel) {
+    objective += `
+
+## Additional Context (User-Provided Threat Model)
+The repository owner has provided the following threat model context. Use it to inform your threat model assessments — it may contain deployment details, compliance requirements, or known concerns:
+
+<user-threat-model>
+${userThreatModel}
+</user-threat-model>`;
+  }
+
+  return objective;
 }
