@@ -147,14 +147,8 @@ export const SubagentHub = memo(function SubagentHub({
     scrollToIndex(scrollboxRef.current, focusedIndex, sorted, (s) => s.id);
   }, [focusedIndex, sorted]);
 
-  // Keyboard navigation
+  // Keyboard navigation (Escape is handled by DialogProvider / SubagentDialog)
   useKeyboard((key) => {
-    if (key.name === "escape") {
-      key.preventDefault?.();
-      onClose();
-      return;
-    }
-
     if (sorted.length === 0) return;
 
     if (key.name === "up" || key.raw === "k") {

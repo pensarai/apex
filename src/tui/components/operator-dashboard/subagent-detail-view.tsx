@@ -56,15 +56,10 @@ export const SubagentDetailView = memo(function SubagentDetailView({
       break;
   }
 
-  // Keyboard: Esc to go back, left/[ for prev, right/] for next.
-  // Do NOT capture up/down — they propagate to the MessageList scrollbox.
+  // Left/right to cycle between subagents.
+  // Escape is handled by SubagentDialog (parent).
+  // Up/down are NOT captured — they propagate to the MessageList scrollbox.
   useKeyboard((key) => {
-    if (key.name === "escape") {
-      key.preventDefault?.();
-      onBack();
-      return;
-    }
-
     if (key.name === "left" || key.raw === "[") {
       key.preventDefault?.();
       onPrev();
