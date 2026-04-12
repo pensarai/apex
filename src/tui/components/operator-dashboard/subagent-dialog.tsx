@@ -104,8 +104,8 @@ export default function SubagentDialog({ sessionsRef }: SubagentDialogProps) {
     <DialogLayout
       title={`Agents (${sessions.size})`}
       footerActions={[
-        { key: "\u2191\u2193", label: "navigate" },
         { key: "Enter", label: "view", variant: "primary" },
+        { key: "\u2191\u2193", label: "navigate" },
       ]}
     >
       <SubagentHub
