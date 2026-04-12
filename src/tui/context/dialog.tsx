@@ -139,7 +139,7 @@ export function DialogProvider({ children }: { children: ReactNode }) {
   );
 
   useKeyboard((evt) => {
-    if (evt.name === "escape" && stack.length > 0) {
+    if (evt.name === "escape" && stack.length > 0 && !evt.defaultPrevented) {
       const current = stack[stack.length - 1];
       current?.onClose?.();
       setStack(stack.slice(0, -1));
