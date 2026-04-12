@@ -10,8 +10,10 @@ import { useKeyboard } from "@opentui/react";
 import { ScrollBoxRenderable } from "@opentui/core";
 
 import { useTheme } from "../../theme";
+import { useDimensions } from "../../context/dimensions";
 import { AsciiSpinner } from "../shared/ascii-spinner";
 import { scrollToIndex } from "../../utils/scroll";
+import { getToolDisplayLabel } from "../shared/tool-registry";
 import type { SubagentSession } from "./subagent-state";
 
 // ---------------------------------------------------------------------------
@@ -44,6 +46,33 @@ function countToolCalls(session: SubagentSession): number {
   return session.messages.filter((m) => m.role === "tool").length;
 }
 
+/** Extract a one-line summary of the most recent activity. */
+function getLastActivity(session: SubagentSession, maxLen: number): string {
+  const msgs = session.messages;
+  if (msgs.length === 0) return "";
+
+  // Walk backwards to find the most recent meaningful content
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const m = msgs[i];
+    if (m.role === "tool" && m.toolName) {
+      const isPending = m.status === "pending" || m.status === "streaming";
+      const icon = isPending ? "\u25cb" : m.status === "error" ? "\u2717" : "\u2713";
+      const label = getToolDisplayLabel(m.toolName, (m.args as Record<string, unknown>) ?? {});
+      const line = `${icon} ${label}`;
+      return line.length > maxLen ? line.slice(0, maxLen - 1) + "\u2026" : line;
+    }
+    if (m.role === "assistant" && typeof m.content === "string" && m.content.trim()) {
+      // Get the last non-empty line
+      const lines = m.content.trim().split("\n");
+      const last = lines[lines.length - 1].trim();
+      if (last) {
+        return last.length > maxLen ? last.slice(0, maxLen - 1) + "\u2026" : last;
+      }
+    }
+  }
+  return "";
+}
+
 // ---------------------------------------------------------------------------
 // SubagentHubCard
 // ---------------------------------------------------------------------------
@@ -58,6 +87,7 @@ const SubagentHubCard = memo(function SubagentHubCard({
   focused,
 }: SubagentHubCardProps) {
   const { colors } = useTheme();
+  const { width: termWidth } = useDimensions();
 
   const toolCalls = countToolCalls(session);
   const now = Date.now();
@@ -87,6 +117,9 @@ const SubagentHubCard = memo(function SubagentHubCard({
   }
 
   const toolLabel = `${toolCalls} tool call${toolCalls !== 1 ? "s" : ""}`;
+  // Max width for the activity line: dialog width minus padding/indent
+  const activityMaxLen = Math.max(30, termWidth - 16);
+  const lastActivity = getLastActivity(session, activityMaxLen);
 
   return (
     <box flexDirection="column">
@@ -104,6 +137,13 @@ const SubagentHubCard = memo(function SubagentHubCard({
           content={`${toolLabel} \u00b7 ${timeLabel}`}
         />
       </box>
+
+      {/* Line 3: last activity */}
+      {lastActivity !== "" && (
+        <box flexDirection="row" paddingLeft={4}>
+          <text fg={colors.textMuted} content={lastActivity} />
+        </box>
+      )}
     </box>
   );
 });
