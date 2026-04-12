@@ -74,11 +74,19 @@ export function Dialog({
 interface DialogStackItem {
   element: ReactNode;
   onClose?: () => void;
+  /** When true, the dialog content handles Escape itself; the provider skips its handler. */
+  selfHandlesEscape?: boolean;
+}
+
+interface ReplaceOptions {
+  onClose?: () => void;
+  /** When true, the dialog content handles Escape itself; the provider skips its handler. */
+  selfHandlesEscape?: boolean;
 }
 
 interface DialogContextValue {
   clear: () => void;
-  replace: (element: ReactNode, onClose?: () => void) => void;
+  replace: (element: ReactNode, options?: ReplaceOptions) => void;
   stack: DialogStackItem[];
   size: "medium" | "large" | "xlarge";
   setSize: (size: "medium" | "large" | "xlarge") => void;
@@ -125,7 +133,7 @@ export function DialogProvider({ children }: { children: ReactNode }) {
   }, [stack, refocus]);
 
   const replace = useCallback(
-    (element: ReactNode, onClose?: () => void) => {
+    (element: ReactNode, options?: ReplaceOptions) => {
       if (stack.length === 0) {
         focusRef.current = renderer.currentFocusedRenderable;
       }
@@ -133,14 +141,19 @@ export function DialogProvider({ children }: { children: ReactNode }) {
         if (item.onClose) item.onClose();
       }
       setSize("medium");
-      setStack([{ element, onClose }]);
+      setStack([{
+        element,
+        onClose: options?.onClose,
+        selfHandlesEscape: options?.selfHandlesEscape,
+      }]);
     },
     [stack, renderer],
   );
 
   useKeyboard((evt) => {
-    if (evt.name === "escape" && stack.length > 0 && !evt.defaultPrevented) {
+    if (evt.name === "escape" && stack.length > 0) {
       const current = stack[stack.length - 1];
+      if (current?.selfHandlesEscape) return;
       current?.onClose?.();
       setStack(stack.slice(0, -1));
       evt.preventDefault();
