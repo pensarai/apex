@@ -2,7 +2,9 @@
  * Subagent Status Bar
  *
  * Compact, single-line status bar showing active subagent counts.
- * Appears between MessageList and QueuedMessages when any subagents exist.
+ * Appears between MessageList and QueuedMessages when subagents are
+ * actively relevant (running, or recently completed while agent is busy).
+ * Hides when all subagents are done and the agent is idle.
  */
 
 import { memo } from "react";
@@ -12,11 +14,13 @@ import type { SubagentSession } from "./subagent-state";
 
 interface SubagentStatusBarProps {
   sessions: Map<string, SubagentSession>;
+  agentStatus: string;
   onOpen: () => void;
 }
 
 export const SubagentStatusBar = memo(function SubagentStatusBar({
   sessions,
+  agentStatus,
   onOpen,
 }: SubagentStatusBarProps) {
   const { colors } = useTheme();
@@ -33,8 +37,13 @@ export const SubagentStatusBar = memo(function SubagentStatusBar({
     else if (session.status === "failed") failed++;
   }
 
-  const total = sessions.size;
   const allDone = running === 0;
+
+  // Hide the bar when all subagents are done and the agent is idle —
+  // the subagents are historical at that point. User can still use Ctrl+A.
+  if (allDone && agentStatus === "idle") return null;
+
+  const total = sessions.size;
 
   // Build the count segments — omit categories with 0 count
   const parts: Array<{ label: string; color: typeof colors.warning }> = [];

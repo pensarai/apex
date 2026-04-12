@@ -4,6 +4,7 @@ import {
   tryParsePartialJson,
   extractStreamableContent,
 } from "../shared/message-utils";
+import { loadSubagents, type UISubagent } from "../../../core/session/persistence";
 
 export interface SubagentSession {
   id: string;
@@ -14,6 +15,59 @@ export interface SubagentSession {
   input: unknown;
   messages: DisplayMessage[];
   parentToolCallId?: string;
+}
+
+/**
+ * Load subagent sessions from disk for a resumed session.
+ * Reads subagents/*.json + agent-manifest.json and converts to SubagentSession entries.
+ */
+export function loadSubagentSessionsFromDisk(
+  rootPath: string,
+): Map<string, SubagentSession> {
+  const uiSubagents = loadSubagents(rootPath);
+  const map = new Map<string, SubagentSession>();
+
+  for (const sub of uiSubagents) {
+    // Map UISubagent status to SubagentSession status
+    let status: SubagentSession["status"];
+    switch (sub.status) {
+      case "completed":
+        status = "completed";
+        break;
+      case "failed":
+      case "canceled":
+        status = "failed";
+        break;
+      case "pending":
+      case "paused":
+      default:
+        status = "running";
+        break;
+    }
+
+    // Convert UIMessage[] to DisplayMessage[] (same shape, just need createdAt)
+    const messages: DisplayMessage[] = sub.messages.map((m) => ({
+      role: m.role,
+      content: m.content,
+      createdAt: m.createdAt,
+      toolCallId: m.toolCallId,
+      toolName: m.toolName,
+      args: m.args,
+      result: m.result,
+      status: m.status,
+    }));
+
+    map.set(sub.id, {
+      id: sub.id,
+      name: sub.name,
+      status,
+      spawnedAt: sub.createdAt,
+      input: { target: sub.target },
+      messages,
+    });
+  }
+
+  return map;
 }
 
 type SetState = Dispatch<SetStateAction<Map<string, SubagentSession>>>;
