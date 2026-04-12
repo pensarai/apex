@@ -138,12 +138,10 @@ const SubagentHubCard = memo(function SubagentHubCard({
         />
       </box>
 
-      {/* Line 3: last activity */}
-      {lastActivity !== "" && (
-        <box flexDirection="row" paddingLeft={4}>
-          <text fg={colors.textMuted} content={lastActivity} />
-        </box>
-      )}
+      {/* Line 3: last activity (always rendered to keep card height stable) */}
+      <box flexDirection="row" paddingLeft={4} height={1} overflow="hidden">
+        <text fg={colors.textMuted} content={lastActivity || " "} />
+      </box>
     </box>
   );
 });
