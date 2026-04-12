@@ -1536,6 +1536,42 @@ export default function OperatorDashboard({
     setThinking(false);
     setIsExecuting(false);
 
+    // Mark any in-flight tool messages as interrupted so spinners stop
+    setMessages((prev) =>
+      prev.map((m) =>
+        isToolMessage(m) && (m.status === "pending" || m.status === "streaming")
+          ? { ...m, status: "error" as const, result: "Interrupted" }
+          : m,
+      ),
+    );
+
+    // Mark any in-flight subagent tool messages as interrupted too
+    setSubagentSessions((prev) => {
+      let changed = false;
+      const next = new Map(prev);
+      for (const [id, session] of next) {
+        const hasInFlight = session.messages.some(
+          (m) =>
+            m.role === "tool" &&
+            (m.status === "pending" || m.status === "streaming"),
+        );
+        if (hasInFlight || session.status === "running") {
+          changed = true;
+          next.set(id, {
+            ...session,
+            status: session.status === "running" ? "failed" : session.status,
+            messages: session.messages.map((m) =>
+              m.role === "tool" &&
+              (m.status === "pending" || m.status === "streaming")
+                ? { ...m, status: "error" as const, result: "Interrupted" }
+                : m,
+            ),
+          });
+        }
+      }
+      return changed ? next : prev;
+    });
+
     // Read back persisted messages so the next run has full context.
     // Only keep a recent subset to avoid blowing the context window.
     // Use sessionRef (not the `session` state) so we see the session even
