@@ -77,6 +77,7 @@ import {
 } from "./logic";
 import {
   createSubagentSessionHelpers,
+  loadSubagentSessionsFromDisk,
   type SubagentSession,
 } from "./subagent-state";
 import { QueuedMessages } from "./queued-messages";
@@ -347,6 +348,16 @@ export default function OperatorDashboard({
                     status: m.status,
                   })),
                 );
+              }
+
+              // Restore subagent sessions from disk so Ctrl+A shows history
+              try {
+                const restored = loadSubagentSessionsFromDisk(s.rootPath);
+                if (restored.size > 0) {
+                  setSubagentSessions(restored);
+                }
+              } catch {
+                // Best-effort — subagent files may not exist
               }
 
               // Restore plan content from a prior session so the cycleMode
@@ -955,6 +966,11 @@ export default function OperatorDashboard({
       eventBus.on("workflow-phase-start", (d) => {
         if (gen !== generationRef.current) return;
         textRef.current = "";
+        // New workflow run — clear old subagent sessions so the hub
+        // shows only the current batch.
+        if (d.phase === "discovery") {
+          setSubagentSessions(new Map());
+        }
         updateWorkflowData((wd) => {
           const next = {
             ...wd,
@@ -1943,6 +1959,7 @@ export default function OperatorDashboard({
       {/* Subagent status bar */}
       <SubagentStatusBar
         sessions={subagentSessions}
+        agentStatus={status}
         onOpen={openSubagentDialog}
       />
 
