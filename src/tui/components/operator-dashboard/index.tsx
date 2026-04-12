@@ -185,7 +185,7 @@ export default function OperatorDashboard({
 
   const openSubagentDialog = useCallback(() => {
     setDialogSize("large");
-    replaceDialog(<SubagentDialog sessionsRef={subagentSessionsRef} />);
+    replaceDialog(<SubagentDialog sessionsRef={subagentSessionsRef} />, { selfHandlesEscape: true });
   }, [setDialogSize, replaceDialog]);
 
   // Messages — same pattern as pentest component
