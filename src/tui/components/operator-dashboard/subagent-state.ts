@@ -259,11 +259,20 @@ export function createSubagentSessionHelpers(setState: SetState) {
       const session = prev.get(id);
       if (!session) return prev;
 
+      // Mark any in-flight tool messages as completed/error so spinners stop
+      const messages = session.messages.map((m) =>
+        m.role === "tool" &&
+        (m.status === "pending" || m.status === "streaming")
+          ? { ...m, status: (status === "failed" ? "error" : "completed") as "error" | "completed" }
+          : m,
+      );
+
       const next = new Map(prev);
       next.set(id, {
         ...session,
         status,
         completedAt: new Date(),
+        messages,
       });
       return next;
     });
