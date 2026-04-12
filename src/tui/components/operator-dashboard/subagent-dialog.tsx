@@ -47,14 +47,17 @@ export default function SubagentDialog({ sessionsRef }: SubagentDialogProps) {
     [sessions],
   );
 
-  // Keyboard: in detail view, Escape goes back to hub (preventDefault stops
-  // DialogProvider from closing). In hub view, we don't handle Escape here —
-  // SubagentHub calls onClose which calls clear(), and the DialogProvider's
-  // own Escape handler also works as a fallback.
+  // Handle Escape for both views ourselves so execution order with the
+  // DialogProvider's handler doesn't matter — we always preventDefault.
+  // Detail: back to hub.  Hub: close the dialog.
   useKeyboard((key) => {
-    if (key.name === "escape" && viewRef.current.type === "detail") {
+    if (key.name === "escape") {
       key.preventDefault?.();
-      setView({ type: "hub" });
+      if (viewRef.current.type === "detail") {
+        setView({ type: "hub" });
+      } else {
+        clear();
+      }
       return;
     }
   });
