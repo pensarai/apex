@@ -3,6 +3,7 @@ import { z } from "zod";
 import { join } from "path";
 import { writeFileSync, mkdirSync, existsSync } from "fs";
 import type { ToolContext } from "./types";
+import { assertUrlInScope, ScopeViolationError } from "./scopeGuard";
 
 const MAX_INLINE_BODY = 5_000;
 
@@ -128,6 +129,25 @@ COMMON TESTING PATTERNS:
       followRedirects,
       timeout,
     }): Promise<HttpRequestResult> => {
+      try {
+        assertUrlInScope(url, ctx);
+      } catch (e) {
+        if (e instanceof ScopeViolationError) {
+          return {
+            success: false,
+            error: e.message,
+            url,
+            method,
+            status: 0,
+            statusText: "",
+            headers: {},
+            body: "",
+            redirected: false,
+          };
+        }
+        throw e;
+      }
+
       const headers = parseHeaders(rawHeaders);
 
       // Sandbox mode: build a curl command and run it inside the sandbox

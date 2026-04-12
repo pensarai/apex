@@ -23,6 +23,11 @@ import { join } from "path";
 import { createBrowserTools } from "./playwrightMcp";
 import { createSandboxBrowserTools } from "./sandboxPlaywright";
 import type { ToolContext } from "./types";
+import {
+  assertUrlInScope,
+  ScopeViolationError,
+} from "./scopeGuard";
+import type { BrowserNavigateResult } from "./playwrightMcp";
 
 /**
  * All browser tool names that get registered in the harness.
@@ -55,7 +60,7 @@ export type BrowserToolName = (typeof BROWSER_TOOL_NAMES)[number];
  */
 export function createBrowserToolset(ctx: ToolContext) {
   // Sandbox mode: use direct Playwright execution inside the sandbox
-  const tools = ctx.sandbox
+  let tools = ctx.sandbox
     ? createSandboxBrowserTools(ctx)
     : createBrowserTools(
         ctx.target ?? "",
@@ -64,6 +69,41 @@ export function createBrowserToolset(ctx: ToolContext) {
         undefined,
         ctx.abortSignal,
       );
+
+  // Wrap browser_navigate with scope guard (sandbox mode is handled in sandboxPlaywright.ts)
+  if (!ctx.sandbox) {
+    const originalNavigate = tools.browser_navigate;
+    const scopedNavigate = tool({
+      description: originalNavigate.description!,
+      inputSchema: z.object({
+        url: z.string().describe("Full URL to navigate to"),
+        toolCallDescription: z
+          .string()
+          .describe("Why you are navigating to this URL"),
+      }),
+      execute: async (
+        params,
+      ): Promise<BrowserNavigateResult> => {
+        try {
+          assertUrlInScope(params.url, ctx);
+        } catch (e) {
+          if (e instanceof ScopeViolationError) {
+            return { success: false, url: params.url, error: e.message };
+          }
+          throw e;
+        }
+        return originalNavigate.execute!(params, {
+          toolCallId: "",
+          messages: [],
+          abortSignal: undefined as never,
+        }) as Promise<BrowserNavigateResult>;
+      },
+    });
+    tools = {
+      ...tools,
+      browser_navigate: scopedNavigate as typeof tools.browser_navigate,
+    };
+  }
 
   if (!ctx.credentialManager) {
     return tools;

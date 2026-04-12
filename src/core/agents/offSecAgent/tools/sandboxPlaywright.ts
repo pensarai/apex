@@ -24,6 +24,7 @@ import { join, dirname } from "path";
 import { mkdirSync, existsSync, writeFileSync } from "fs";
 import type { UnifiedSandbox } from "./sandbox";
 import type { ToolContext } from "./types";
+import { assertUrlInScope, ScopeViolationError } from "./scopeGuard";
 import type {
   BrowserNavigateResult,
   BrowserScreenshotResult,
@@ -445,6 +446,15 @@ The page will be fully loaded and JavaScript executed before returning.
 Target base URL: ${targetUrl}`,
     inputSchema: BrowserNavigateInput,
     execute: async ({ url }): Promise<BrowserNavigateResult> => {
+      try {
+        assertUrlInScope(url, ctx);
+      } catch (e) {
+        if (e instanceof ScopeViolationError) {
+          return { success: false, url, error: e.message };
+        }
+        throw e;
+      }
+
       try {
         await setup();
         const result = (await runPlaywrightScript(
