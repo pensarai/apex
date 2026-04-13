@@ -14,7 +14,6 @@ import {
   type WhiteboxAttackSurfaceResult,
   type Endpoint,
   type App,
-  type RiskScore,
 } from "../agents/specialized/whiteboxAttackSurface/types";
 import type { DocumentedEndpointRecord } from "../agents/specialized/attackSurface/schemas";
 import type { AIModel, CacheMetrics } from "../ai";
@@ -22,7 +21,6 @@ import type { AIAuthConfig } from "../ai/utils";
 import type { SessionInfo } from "../session";
 import type { AgentEventBus } from "../eventBus";
 import { runWithBoundedConcurrency } from "../utils/concurrency";
-import { scoreEndpoints } from "./riskScoring";
 import { execFileSync } from "child_process";
 import { createHash } from "crypto";
 import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
@@ -213,10 +211,10 @@ interface AppMetadata {
  * Phase 1.5: Create app folders with app.json metadata.
  * Phase 2: For each app, spawn two CodeAgents in parallel — one for
  *           pages, one for API endpoints — using document_endpoint.
- *           Threat models are generated inline during this phase.
+ *           Threat models and risk scores are generated inline during
+ *           this phase (inside document_endpoint).
  * Phase 3: Read the assets directory to build endpoint data.
- * Phase 4: Risk scoring.
- * Phase 5: Final assembly.
+ * Phase 4: Final assembly.
  */
 export async function runWhiteboxAttackSurfaceWorkflow(
   input: WhiteboxAttackSurfaceWorkflowInput,
@@ -443,55 +441,11 @@ export async function runWhiteboxAttackSurfaceWorkflow(
   }
 
   // =========================================================================
-  // Phase 4: Risk scoring
+  // Phase 4: Final assembly (risk scores are already attached inline
+  //          by document_endpoint during Phase 2)
   // =========================================================================
 
-  const allEndpointsForScoring = parsedApps.flatMap((app) =>
-    [...app.pages, ...app.apiEndpoints].map((ep) => ({
-      ...ep,
-      appName: app.name,
-    })),
-  );
-
-  let riskScores = new Map<string, RiskScore>();
-
-  if (allEndpointsForScoring.length > 0) {
-    try {
-      riskScores = await scoreEndpoints({
-        codebasePath,
-        endpoints: allEndpointsForScoring,
-        model,
-        session,
-        authConfig,
-        abortSignal,
-        eventBus,
-      });
-      console.log(
-        `Risk scoring complete: ${riskScores.size}/${allEndpointsForScoring.length} endpoints scored`,
-      );
-    } catch (error) {
-      console.error(
-        "Risk scoring phase failed, continuing without scores:",
-        error,
-      );
-    }
-  }
-
-  // =========================================================================
-  // Phase 5: Final assembly with risk scores attached
-  // =========================================================================
-
-  function attachRiskScore(ep: Endpoint): Endpoint {
-    const key = `${ep.method}:${ep.file}:${ep.path}`;
-    const score = riskScores.get(key);
-    return score ? { ...ep, riskScore: score } : ep;
-  }
-
-  const apps: App[] = parsedApps.map((app) => ({
-    ...app,
-    pages: app.pages.map(attachRiskScore),
-    apiEndpoints: app.apiEndpoints.map(attachRiskScore),
-  }));
+  const apps: App[] = parsedApps;
 
   const totalPages = apps.reduce((sum, a) => sum + a.pages.length, 0);
   const totalApiEndpoints = apps.reduce(
@@ -957,8 +911,9 @@ When finished, call \`response\` with a summary of how many entry points you doc
  * 1. Run `git diff` between the two commits and write the output to a file.
  * 2. Serialize existing assets into the session's assets directory (app folder structure).
  * 3. Spawn a CodeAgent to analyze the diff and update assets in-place.
- * 4. Re-score only changed/new endpoints.
- * 5. Assemble the final result from the updated assets directory.
+ *    New endpoints get risk scores inline via document_endpoint.
+ * 4. Read the final assets directory and reconstruct the result.
+ * 5. Carry forward existing risk scores for unchanged endpoints.
  */
 export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
   input: IncrementalWhiteboxInput,
@@ -1128,10 +1083,11 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
   const { apps: parsedApps } = readAppsFromAssetsDirectory(assetsPath);
 
   // =========================================================================
-  // Phase 5: Re-score changed/new endpoints
+  // Phase 5: Carry forward existing risk scores for endpoints that were
+  //          not re-created via document_endpoint (i.e. modified via
+  //          execute_command or unchanged). New endpoints already have
+  //          inline risk scores from document_endpoint.
   // =========================================================================
-
-  const changedEndpointsForScoring: Array<Endpoint & { appName: string }> = [];
 
   const existingEndpointMap = new Map<string, Endpoint>();
   for (const existingApp of existingResult.apps) {
@@ -1140,65 +1096,17 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
     }
   }
 
-  for (const app of parsedApps) {
-    for (const ep of [...app.pages, ...app.apiEndpoints]) {
-      const key = `${ep.method}:${ep.file}:${ep.path}`;
-      const existing = existingEndpointMap.get(key);
-
-      const isNew = !existing;
-      const hasNoScore = existing && !existing.riskScore;
-      const isModified =
-        existing &&
-        (existing.handler !== ep.handler ||
-          existing.authRequired !== ep.authRequired ||
-          existing.description !== ep.description ||
-          existing.line !== ep.line ||
-          JSON.stringify(existing.pentestObjectives) !==
-            JSON.stringify(ep.pentestObjectives));
-
-      if (isNew || hasNoScore || isModified) {
-        changedEndpointsForScoring.push({ ...ep, appName: app.name });
-      } else if (existing?.riskScore) {
-        ep.riskScore = existing.riskScore;
-      }
-    }
-  }
-
-  let riskScores = new Map<string, RiskScore>();
-
-  if (changedEndpointsForScoring.length > 0) {
-    try {
-      riskScores = await scoreEndpoints({
-        codebasePath,
-        endpoints: changedEndpointsForScoring,
-        model,
-        session,
-        authConfig,
-        abortSignal,
-        eventBus,
-      });
-      console.log(
-        `Incremental risk scoring complete: ${riskScores.size}/${changedEndpointsForScoring.length} scored`,
-      );
-    } catch (error) {
-      console.error("Risk scoring failed during incremental recon:", error);
-    }
-  }
-
-  // =========================================================================
-  // Phase 6: Final assembly with risk scores
-  // =========================================================================
-
-  function attachRiskScore(ep: Endpoint): Endpoint {
+  function carryForwardRiskScore(ep: Endpoint): Endpoint {
+    if (ep.riskScore) return ep;
     const key = `${ep.method}:${ep.file}:${ep.path}`;
-    const score = riskScores.get(key);
-    return score ? { ...ep, riskScore: score } : ep;
+    const existing = existingEndpointMap.get(key);
+    return existing?.riskScore ? { ...ep, riskScore: existing.riskScore } : ep;
   }
 
   const apps: App[] = parsedApps.map((app) => ({
     ...app,
-    pages: app.pages.map(attachRiskScore),
-    apiEndpoints: app.apiEndpoints.map(attachRiskScore),
+    pages: app.pages.map(carryForwardRiskScore),
+    apiEndpoints: app.apiEndpoints.map(carryForwardRiskScore),
   }));
 
   const totalPages = apps.reduce((sum, a) => sum + a.pages.length, 0);
