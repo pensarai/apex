@@ -95,7 +95,7 @@ export const SubagentDetailView = memo(function SubagentDetailView({
       <MessageList
         messages={session.messages}
         isRunning={session.status === "running"}
-        variant="operator"
+        variant="subagent"
         focused={true}
       />
     </box>
