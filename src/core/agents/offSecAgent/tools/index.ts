@@ -6,6 +6,17 @@ export {
   type SandboxExecutionResult,
 } from "./sandbox";
 
+// Scope guard utilities
+export {
+  ScopeViolationError,
+  getAllowedHosts,
+  isHostAllowed,
+  extractHostname,
+  assertUrlInScope,
+  assertCommandInScope,
+  extractHostsFromCommand,
+} from "./scopeGuard";
+
 // Browser automation tools
 export { createBrowserToolset, BROWSER_TOOL_NAMES } from "./browserTools";
 export type { BrowserToolName } from "./browserTools";

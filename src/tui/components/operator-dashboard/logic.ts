@@ -15,6 +15,7 @@ const OPERATOR_ALLOWED_COMMANDS = new Set([
   "/pentest",
   "/skills",
   "/plan",
+  "/help",
 ]);
 
 export function filterOperatorAutocomplete(

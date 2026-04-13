@@ -1,6 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import type { ToolContext } from "./types";
+import { assertUrlInScope, ScopeViolationError } from "./scopeGuard";
 
 const AUTH_ENDPOINT_PATTERNS = {
   login: [
@@ -89,6 +90,19 @@ Returns discovered endpoints and recommended login approach.`,
         .describe("A concise description of what this tool call is doing"),
     }),
     execute: async ({ baseUrl }) => {
+      try {
+        assertUrlInScope(baseUrl, ctx);
+      } catch (e) {
+        if (e instanceof ScopeViolationError) {
+          return {
+            success: false,
+            endpoints: [],
+            message: e.message,
+          };
+        }
+        throw e;
+      }
+
       const discoveredEndpoints: Array<{
         path: string;
         methods: string[];
