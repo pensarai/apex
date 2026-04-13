@@ -64,7 +64,7 @@ export interface MessageListProps {
   /** Is agent currently running */
   isRunning?: boolean;
   /** Display variant */
-  variant?: "chat" | "operator";
+  variant?: "chat" | "operator" | "subagent";
   /** Username for chat variant */
   username?: string;
   /** Empty state message */
@@ -155,6 +155,15 @@ export function MessageList({
         </box>
       )}
 
+      {/* Empty state - Subagent mode (minimal, no tips) */}
+      {!hasMessages && variant === "subagent" && (
+        <box marginTop={2}>
+          <text fg={colors.textMuted}>
+            {emptyMessage || "No messages from this agent yet."}
+          </text>
+        </box>
+      )}
+
       {/* Empty state - Chat mode */}
       {!hasMessages && variant === "chat" && (
         <box flexDirection="column" gap={1} marginTop={2}>
@@ -191,7 +200,7 @@ export function MessageList({
           isStreaming={isRunning && idx === streamingMessageIndex}
           verbose={verbose}
           expandedLogs={expandedLogs}
-          variant={variant}
+          variant={variant === "subagent" ? "operator" : variant}
           username={username}
         />
       ))}
