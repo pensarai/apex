@@ -46,8 +46,7 @@ import { InputArea } from "../chat/input-area";
 import { useTheme } from "../../theme";
 import type { DisplayMessage, WorkflowData } from "../agent-display";
 import { isToolMessage } from "../shared/type-guards";
-import {
-} from "../shared/tool-registry";
+import {} from "../shared/tool-registry";
 import {
   tryParsePartialJson,
   extractStreamableContent,
@@ -133,7 +132,12 @@ export default function OperatorDashboard({
     skillsRegistry,
     skillsVersion,
   } = useCommand();
-  const { stack, externalDialogOpen, replace: replaceDialog, setSize: setDialogSize } = useDialog();
+  const {
+    stack,
+    externalDialogOpen,
+    replace: replaceDialog,
+    setSize: setDialogSize,
+  } = useDialog();
   const { refocusPrompt } = useFocus();
 
   const autocompleteOptions = useMemo(() => {
@@ -186,7 +190,9 @@ export default function OperatorDashboard({
 
   const openSubagentDialog = useCallback(() => {
     setDialogSize("large");
-    replaceDialog(<SubagentDialog sessionsRef={subagentSessionsRef} />, { selfHandlesEscape: true });
+    replaceDialog(<SubagentDialog sessionsRef={subagentSessionsRef} />, {
+      selfHandlesEscape: true,
+    });
   }, [setDialogSize, replaceDialog]);
 
   // Messages — same pattern as pentest component
@@ -668,7 +674,6 @@ export default function OperatorDashboard({
       return updated;
     });
   }, []);
-
 
   // ---------------------------------------------------------------------------
   // Approval handlers
@@ -1826,11 +1831,7 @@ export default function OperatorDashboard({
     }
 
     // Ctrl+A to open subagent dialog
-    if (
-      key.ctrl &&
-      key.name === "a" &&
-      subagentSessions.size > 0
-    ) {
+    if (key.ctrl && key.name === "a" && subagentSessions.size > 0) {
       key.preventDefault?.();
       openSubagentDialog();
       return;

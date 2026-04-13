@@ -47,9 +47,12 @@ export const SubagentStatusBar = memo(function SubagentStatusBar({
 
   // Build the count segments — omit categories with 0 count
   const parts: Array<{ label: string; color: typeof colors.warning }> = [];
-  if (running > 0) parts.push({ label: `${running} running`, color: colors.warning });
-  if (completed > 0) parts.push({ label: `${completed} complete`, color: colors.success });
-  if (failed > 0) parts.push({ label: `${failed} failed`, color: colors.error });
+  if (running > 0)
+    parts.push({ label: `${running} running`, color: colors.warning });
+  if (completed > 0)
+    parts.push({ label: `${completed} complete`, color: colors.success });
+  if (failed > 0)
+    parts.push({ label: `${failed} failed`, color: colors.error });
 
   return (
     <box
@@ -67,9 +70,7 @@ export const SubagentStatusBar = memo(function SubagentStatusBar({
         ) : (
           <AsciiSpinner label={`${total} agents`} />
         )}
-        {parts.length > 0 && (
-          <text fg={colors.textMuted} content="  " />
-        )}
+        {parts.length > 0 && <text fg={colors.textMuted} content="  " />}
         {parts.map((part, i) => (
           <box key={part.label} flexDirection="row">
             {i > 0 && <text fg={colors.textMuted} content=" \u00b7 " />}

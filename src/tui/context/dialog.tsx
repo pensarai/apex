@@ -141,11 +141,13 @@ export function DialogProvider({ children }: { children: ReactNode }) {
         if (item.onClose) item.onClose();
       }
       setSize("medium");
-      setStack([{
-        element,
-        onClose: options?.onClose,
-        selfHandlesEscape: options?.selfHandlesEscape,
-      }]);
+      setStack([
+        {
+          element,
+          onClose: options?.onClose,
+          selfHandlesEscape: options?.selfHandlesEscape,
+        },
+      ]);
     },
     [stack, renderer],
   );

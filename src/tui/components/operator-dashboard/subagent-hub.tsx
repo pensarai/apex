@@ -56,17 +56,30 @@ function getLastActivity(session: SubagentSession, maxLen: number): string {
     const m = msgs[i];
     if (m.role === "tool" && m.toolName) {
       const isPending = m.status === "pending" || m.status === "streaming";
-      const icon = isPending ? "\u25cb" : m.status === "error" ? "\u2717" : "\u2713";
-      const label = getToolDisplayLabel(m.toolName, (m.args as Record<string, unknown>) ?? {});
+      const icon = isPending
+        ? "\u25cb"
+        : m.status === "error"
+          ? "\u2717"
+          : "\u2713";
+      const label = getToolDisplayLabel(
+        m.toolName,
+        (m.args as Record<string, unknown>) ?? {},
+      );
       const line = `${icon} ${label}`;
       return line.length > maxLen ? line.slice(0, maxLen - 1) + "\u2026" : line;
     }
-    if (m.role === "assistant" && typeof m.content === "string" && m.content.trim()) {
+    if (
+      m.role === "assistant" &&
+      typeof m.content === "string" &&
+      m.content.trim()
+    ) {
       // Get the last non-empty line
       const lines = m.content.trim().split("\n");
       const last = lines[lines.length - 1].trim();
       if (last) {
-        return last.length > maxLen ? last.slice(0, maxLen - 1) + "\u2026" : last;
+        return last.length > maxLen
+          ? last.slice(0, maxLen - 1) + "\u2026"
+          : last;
       }
     }
   }
