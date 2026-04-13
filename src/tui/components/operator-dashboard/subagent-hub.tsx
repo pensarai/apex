@@ -23,7 +23,8 @@ import type { SubagentSession } from "./subagent-state";
 const STATUS_ORDER: Record<SubagentSession["status"], number> = {
   running: 0,
   completed: 1,
-  failed: 2,
+  cancelled: 2,
+  failed: 3,
 };
 
 export function sortSessions(sessions: SubagentSession[]): SubagentSession[] {
@@ -126,6 +127,10 @@ const SubagentHubCard = memo(function SubagentHubCard({
     case "failed":
       statusIcon = <text fg={colors.error} content={"\u2717 "} />;
       timeLabel = `failed after ${formatElapsed(elapsed)}`;
+      break;
+    case "cancelled":
+      statusIcon = <text fg={colors.textMuted} content={"\u25cb "} />;
+      timeLabel = `cancelled after ${formatElapsed(elapsed)}`;
       break;
   }
 

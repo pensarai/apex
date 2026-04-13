@@ -9,7 +9,7 @@ import { loadSubagents } from "../../../core/session/persistence";
 export interface SubagentSession {
   id: string;
   name: string;
-  status: "running" | "completed" | "failed";
+  status: "running" | "completed" | "failed" | "cancelled";
   spawnedAt: Date;
   completedAt?: Date;
   input: unknown;
@@ -34,28 +34,42 @@ export function loadSubagentSessionsFromDisk(
       case "completed":
         status = "completed";
         break;
-      case "failed":
       case "canceled":
+        status = "cancelled";
+        break;
+      case "failed":
         status = "failed";
         break;
       case "pending":
       case "paused":
       default:
-        status = "failed";
+        // Paused/pending on disk means the agent was interrupted
+        status = "cancelled";
         break;
     }
 
-    // Convert UIMessage[] to DisplayMessage[] (same shape, just need createdAt)
-    const messages: DisplayMessage[] = sub.messages.map((m) => ({
-      role: m.role,
-      content: m.content,
-      createdAt: m.createdAt,
-      toolCallId: m.toolCallId,
-      toolName: m.toolName,
-      args: m.args,
-      result: m.result,
-      status: m.status,
-    }));
+    // Convert UIMessage[] to DisplayMessage[] — mark any in-flight
+    // tool messages as errored since the subagent is no longer running
+    const messages: DisplayMessage[] = sub.messages.map((m) => {
+      if (m.role === "tool" && m.status === "pending") {
+        return {
+          ...m,
+          createdAt: m.createdAt,
+          status: "error" as const,
+          result: "Interrupted",
+        };
+      }
+      return {
+        role: m.role,
+        content: m.content,
+        createdAt: m.createdAt,
+        toolCallId: m.toolCallId,
+        toolName: m.toolName,
+        args: m.args,
+        result: m.result,
+        status: m.status,
+      };
+    });
 
     map.set(sub.id, {
       id: sub.id,

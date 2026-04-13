@@ -54,6 +54,9 @@ export const SubagentDetailView = memo(function SubagentDetailView({
     case "failed":
       statusNode = <text fg={colors.error} content={"\u2717 failed"} />;
       break;
+    case "cancelled":
+      statusNode = <text fg={colors.textMuted} content={"\u25cb cancelled"} />;
+      break;
   }
 
   // Left/right to cycle between subagents.

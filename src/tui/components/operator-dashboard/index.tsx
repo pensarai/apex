@@ -1562,7 +1562,7 @@ export default function OperatorDashboard({
           changed = true;
           next.set(id, {
             ...session,
-            status: session.status === "running" ? "failed" : session.status,
+            status: session.status === "running" ? "cancelled" : session.status,
             messages: session.messages.map((m) =>
               m.role === "tool" &&
               (m.status === "pending" || m.status === "streaming")

@@ -30,11 +30,13 @@ export const SubagentStatusBar = memo(function SubagentStatusBar({
   let running = 0;
   let completed = 0;
   let failed = 0;
+  let cancelled = 0;
 
   for (const session of sessions.values()) {
     if (session.status === "running") running++;
     else if (session.status === "completed") completed++;
     else if (session.status === "failed") failed++;
+    else if (session.status === "cancelled") cancelled++;
   }
 
   const allDone = running === 0;
@@ -53,6 +55,8 @@ export const SubagentStatusBar = memo(function SubagentStatusBar({
     parts.push({ label: `${completed} complete`, color: colors.success });
   if (failed > 0)
     parts.push({ label: `${failed} failed`, color: colors.error });
+  if (cancelled > 0)
+    parts.push({ label: `${cancelled} cancelled`, color: colors.textMuted });
 
   return (
     <box
