@@ -207,6 +207,11 @@ function wrapStreamWithErrorHandler(
                   : currentMessages;
                 const compacted = snipOldSteps(afterBudget);
 
+                // Update the container so any nested retry reads
+                // already-compacted messages instead of the original
+                // pre-compaction ones (prevents unbounded retry loops).
+                messagesContainer.current = compacted;
+
                 // snipOldSteps returns the input array unchanged when nothing was modified
                 if (compacted !== currentMessages) {
                   if (!silent) {
