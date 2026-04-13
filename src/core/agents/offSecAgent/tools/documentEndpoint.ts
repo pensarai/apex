@@ -4,11 +4,11 @@ import { join } from "path";
 import { writeFileSync, mkdirSync, existsSync } from "fs";
 import type { ToolContext } from "./types";
 import { computeBlackboxRiskScore } from "../../specialized/attackSurface/blackboxRiskScoring";
+import { generateThreatModelForEndpoint } from "./threatModelGenerator";
 
 function sanitizeName(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9-_.]/g, "_");
 }
-
 
 /**
  * Factory for the `document_endpoint` tool.
@@ -155,7 +155,7 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
         }
       }
 
-       if (
+      if (
         input.routePath &&
         (input.routePath.startsWith("https://") ||
           input.routePath.startsWith("http://"))
@@ -195,12 +195,26 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
         input.notes,
       );
 
+      const threatModel = await generateThreatModelForEndpoint(ctx, {
+        appName: input.appName,
+        endpointName: input.endpointName,
+        routePath: input.routePath,
+        method: input.method,
+        file: input.file,
+        line: input.line,
+        handler: input.handler,
+        authRequired: input.authRequired,
+        description: input.description,
+        pentestObjectives: input.pentestObjectives,
+      });
+
       const endpointRecord = {
         ...input,
         discoveredAt: new Date().toISOString(),
         sessionId: ctx.session.id,
         target: ctx.session.targets[0],
         riskScore,
+        ...(threatModel ? { threatModel } : {}),
       };
 
       try {

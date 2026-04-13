@@ -176,6 +176,8 @@ export interface WhiteboxAttackSurfaceWorkflowInput {
   onCacheMetrics?: (metrics: CacheMetrics) => void;
   /** Known domains associated with the project — agents can map discovered apps to these. */
   domains?: string[];
+  /** Project-level threat model content (e.g. from .pensar/threat_model.md), if found */
+  projectThreatModel?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -211,6 +213,7 @@ interface AppMetadata {
  * Phase 1.5: Create app folders with app.json metadata.
  * Phase 2: For each app, spawn two CodeAgents in parallel — one for
  *           pages, one for API endpoints — using document_endpoint.
+ *           Threat models are generated inline during this phase.
  * Phase 3: Read the assets directory to build endpoint data.
  * Phase 4: Risk scoring.
  * Phase 5: Final assembly.
@@ -229,6 +232,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     onStepFinish,
     onCacheMetrics,
     domains,
+    projectThreatModel,
   } = input;
 
   // =========================================================================
@@ -392,6 +396,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
         onCacheMetrics,
         responseSchema: DiscoverySummarySchema,
         excludeTools: ["document_app"],
+        projectThreatModel,
       });
 
       try {
@@ -438,7 +443,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
   }
 
   // =========================================================================
-  // Phase 4: Risk scoring — score all endpoints in parallel
+  // Phase 4: Risk scoring
   // =========================================================================
 
   const allEndpointsForScoring = parsedApps.flatMap((app) =>
@@ -663,6 +668,7 @@ function assetRecordToEndpoint(
     description: record.description,
     pentestObjectives: record.pentestObjectives ?? [],
     riskScore: record.riskScore,
+    threatModel: record.threatModel,
   });
 
   return parsed.success ? parsed.data : null;
@@ -969,6 +975,7 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
     eventBus,
     attackSurfaceRegistry,
     onStepFinish,
+    projectThreatModel,
   } = input;
 
   // =========================================================================
@@ -1030,7 +1037,7 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
       const sanitizedPath = sanitizeName(ep.path);
       const filename = `asset_${sanitizedPath}_${hash}.json`;
 
-      const { riskScore: _staleScore, ...epWithoutScore } = ep;
+      const { riskScore: _staleScore, threatModel, ...epWithoutMeta } = ep;
       const assetData: Record<string, unknown> = {
         assetName: ep.path,
         assetType: "endpoint",
@@ -1045,7 +1052,8 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
           authRequired: ep.authRequired,
         },
         riskLevel: "MEDIUM",
-        pentestObjectives: epWithoutScore.pentestObjectives ?? [],
+        pentestObjectives: epWithoutMeta.pentestObjectives ?? [],
+        ...(threatModel ? { threatModel } : {}),
         discoveredAt: new Date().toISOString(),
         sessionId: session.id,
         target: "",
@@ -1104,6 +1112,7 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
     subagentId: "whitebox-incremental",
     onStepFinish: (event) => onStepFinish?.(event),
     responseSchema: IncrementalResultSchema,
+    projectThreatModel,
   });
 
   const agentResult = await agent.consume();
