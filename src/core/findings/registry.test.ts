@@ -1398,4 +1398,29 @@ describe("groupByRootCause", () => {
     ]);
     expect(groups).toHaveLength(1);
   });
+
+  it("returns empty array and logs when LLM call fails", async () => {
+    mockedGenerate.mockRejectedValueOnce(new Error("API rate limit exceeded"));
+
+    const findings = [
+      makeFinding({
+        title: "Finding A",
+        endpoint: "https://target.com/a",
+      }),
+      makeFinding({
+        title: "Finding B",
+        endpoint: "https://target.com/b",
+      }),
+    ];
+    const registry = FindingsRegistry.fromFindings(findings, {
+      model: "test-model",
+    });
+
+    const groups = await registry.groupByRootCause();
+
+    expect(groups).toEqual([]);
+    const allFindings = registry.getFindings();
+    expect(allFindings[0]!.rootCauseGroup).toBeUndefined();
+    expect(allFindings[1]!.rootCauseGroup).toBeUndefined();
+  });
 });

@@ -591,14 +591,22 @@ export class FindingsRegistry {
     const snapshot = [...this.findings];
     const prompt = buildRootCauseGroupingPrompt(snapshot);
 
-    const result = await generateObjectResponse({
-      model: this.model,
-      schema: RootCauseGroupResultSchema,
-      prompt,
-      system: ROOT_CAUSE_GROUPING_SYSTEM,
-      authConfig: this.authConfig,
-      abortSignal: this.abortSignal,
-    });
+    let result: z.infer<typeof RootCauseGroupResultSchema>;
+    try {
+      result = await generateObjectResponse({
+        model: this.model,
+        schema: RootCauseGroupResultSchema,
+        prompt,
+        system: ROOT_CAUSE_GROUPING_SYSTEM,
+        authConfig: this.authConfig,
+        abortSignal: this.abortSignal,
+      });
+    } catch {
+      console.log(
+        `[FindingsRegistry.groupByRootCause] LLM error — skipping root-cause grouping`,
+      );
+      return [];
+    }
 
     // Sanitise groups: filter out-of-bounds indices and apply annotations
     // inside the mutex to avoid racing with register/unregister.
