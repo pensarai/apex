@@ -519,10 +519,8 @@ export default function WebWizard({
           <box
             flexDirection="column"
             width="100%"
-            height="100%"
             alignItems="center"
             justifyContent="center"
-            flexGrow={1}
             gap={2}
           >
             <SpinnerDots label="Creating session..." fg={colors.primary} />

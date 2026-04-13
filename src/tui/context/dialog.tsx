@@ -60,7 +60,7 @@ export function Dialog({
         width={DIALOG_WIDTHS[size] ?? 60}
         maxWidth={dimensions.width - 2}
         maxHeight={dimensions.height - 4}
-        overflow="hidden"
+        overflow="scroll"
         backgroundColor={themeColors.backgroundElement}
         flexDirection="column"
         flexGrow={0}
