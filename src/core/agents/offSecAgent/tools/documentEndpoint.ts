@@ -5,6 +5,7 @@ import { writeFileSync, mkdirSync, existsSync } from "fs";
 import type { ToolContext } from "./types";
 import { computeBlackboxRiskScore } from "../../specialized/attackSurface/blackboxRiskScoring";
 import { generateThreatModelForEndpoint } from "./threatModelGenerator";
+import { generateRiskScoreForEndpoint } from "./riskScoreGenerator";
 
 function sanitizeName(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9-_.]/g, "_");
@@ -180,7 +181,7 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
       const filename = `asset_${sanitizedName}_${timestamp}.json`;
       const filepath = join(targetDir, filename);
 
-      const riskScore = computeBlackboxRiskScore(
+      const heuristicRiskScore = computeBlackboxRiskScore(
         input.riskLevel,
         "endpoint",
         {
@@ -195,7 +196,7 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
         input.notes,
       );
 
-      const threatModel = await generateThreatModelForEndpoint(ctx, {
+      const subagentInput = {
         appName: input.appName,
         endpointName: input.endpointName,
         routePath: input.routePath,
@@ -206,7 +207,14 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
         authRequired: input.authRequired,
         description: input.description,
         pentestObjectives: input.pentestObjectives,
-      });
+      };
+
+      const [threatModel, llmRiskScore] = await Promise.all([
+        generateThreatModelForEndpoint(ctx, subagentInput),
+        generateRiskScoreForEndpoint(ctx, subagentInput),
+      ]);
+
+      const riskScore = llmRiskScore ?? heuristicRiskScore;
 
       const endpointRecord = {
         ...input,
