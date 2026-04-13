@@ -1,7 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
 import type { ToolContext } from "./types";
-import { assertUrlInScope, ScopeViolationError } from "./scopeGuard";
 
 const MAX_CONTENT_LENGTH = 50_000;
 const REQUEST_TIMEOUT = 30_000;
@@ -86,15 +85,6 @@ BEST PRACTICES:
 - If content is truncated, the important information is usually near the beginning`,
     inputSchema: getPageInputSchema,
     execute: async ({ url }): Promise<GetPageResponse> => {
-      try {
-        assertUrlInScope(url, ctx);
-      } catch (e) {
-        if (e instanceof ScopeViolationError) {
-          return { success: false, url, error: e.message };
-        }
-        throw e;
-      }
-
       try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
