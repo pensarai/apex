@@ -4,7 +4,7 @@ import {
   tryParsePartialJson,
   extractStreamableContent,
 } from "../shared/message-utils";
-import { loadSubagents, type UISubagent } from "../../../core/session/persistence";
+import { loadSubagents } from "../../../core/session/persistence";
 
 export interface SubagentSession {
   id: string;
