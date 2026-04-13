@@ -176,6 +176,7 @@ const CHILD_BUS_EVENT_KEYS = [
   "subagent-complete",
   "command-output",
   "error",
+  "step-finish",
 ] as const satisfies readonly (keyof AgentEventMap)[];
 
 function attachChildEventBus(
