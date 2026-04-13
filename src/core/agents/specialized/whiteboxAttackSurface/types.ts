@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { VectorContextSchema } from "../attackSurface/schemas";
 
 // ---------------------------------------------------------------------------
 // Risk score schemas
