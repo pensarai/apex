@@ -246,14 +246,15 @@ function wrapStreamWithErrorHandler(
                 }
 
                 // Layer 3: Full summarization (existing behavior)
+                const messagesForSummary = messagesContainer.current;
                 if (!silent) {
                   console.warn(
-                    `Context length error — summarizing ${currentMessages.length} messages`,
+                    `Context length error — summarizing ${messagesForSummary.length} messages`,
                   );
                 }
 
                 const summarizationStream = createSummarizationStream(
-                  currentMessages,
+                  messagesForSummary,
                   opts,
                   model,
                 );
