@@ -82,6 +82,8 @@ interface ReplaceOptions {
   onClose?: () => void;
   /** When true, the dialog content handles Escape itself; the provider skips its handler. */
   selfHandlesEscape?: boolean;
+  /** Override the dialog size for this replacement (defaults to "medium"). */
+  size?: "medium" | "large" | "xlarge";
 }
 
 interface DialogContextValue {
@@ -140,7 +142,7 @@ export function DialogProvider({ children }: { children: ReactNode }) {
       for (const item of stack) {
         if (item.onClose) item.onClose();
       }
-      setSize("medium");
+      setSize(options?.size ?? "medium");
       setStack([
         {
           element,

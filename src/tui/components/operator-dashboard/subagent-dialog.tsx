@@ -109,7 +109,6 @@ export default function SubagentDialog({ sessionsRef }: SubagentDialogProps) {
       <SubagentHub
         sessions={sessions}
         onSelect={(id) => setView({ type: "detail", id })}
-        onClose={() => clear()}
       />
     </DialogLayout>
   );
