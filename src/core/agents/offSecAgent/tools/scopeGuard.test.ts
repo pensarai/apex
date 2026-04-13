@@ -111,6 +111,11 @@ describe("isHostAllowed", () => {
     expect(isHostAllowed("API.EXAMPLE.COM", ["example.com"])).toBe(true);
   });
 
+  it("is case-insensitive on allowedHosts side", () => {
+    expect(isHostAllowed("api.example.com", ["EXAMPLE.COM"])).toBe(true);
+    expect(isHostAllowed("example.com", ["Example.Com"])).toBe(true);
+  });
+
   it("matches IP addresses exactly", () => {
     expect(isHostAllowed("192.168.1.1", ["192.168.1.1"])).toBe(true);
     expect(isHostAllowed("192.168.1.2", ["192.168.1.1"])).toBe(false);
@@ -190,6 +195,17 @@ describe("assertUrlInScope", () => {
     expect(() => assertUrlInScope("evil.com", ctx)).toThrow(
       ScopeViolationError,
     );
+  });
+
+  it("blocks unparseable URLs when scope is active (fail-closed)", () => {
+    const ctx = makeCtx({ target: "https://example.com" });
+    expect(() => assertUrlInScope("", ctx)).toThrow(ScopeViolationError);
+    expect(() => assertUrlInScope("   ", ctx)).toThrow(ScopeViolationError);
+  });
+
+  it("allows unparseable URLs when no scope is configured (no-op)", () => {
+    expect(() => assertUrlInScope("", makeCtx())).not.toThrow();
+    expect(() => assertUrlInScope("   ", makeCtx())).not.toThrow();
   });
 });
 
@@ -274,6 +290,47 @@ describe("extractHostsFromCommand", () => {
 
   it("extracts host with port from bare hostname", () => {
     const hosts = extractHostsFromCommand("nc target.com:8080");
+    expect(hosts).toContain("target.com");
+  });
+
+  it("does not treat output filenames as hostnames (nmap -oN)", () => {
+    const hosts = extractHostsFromCommand("nmap -oN output.txt target.com");
+    expect(hosts).toContain("target.com");
+    expect(hosts).not.toContain("output.txt");
+  });
+
+  it("does not treat output filenames as hostnames (nmap -oX)", () => {
+    const hosts = extractHostsFromCommand("nmap -sV -oX report.xml target.com");
+    expect(hosts).toContain("target.com");
+    expect(hosts).not.toContain("report.xml");
+  });
+
+  it("does not treat output filenames as hostnames (curl -o)", () => {
+    const hosts = extractHostsFromCommand(
+      "curl -o results.html https://target.com",
+    );
+    expect(hosts).toContain("target.com");
+    expect(hosts).not.toContain("results.html");
+  });
+
+  it("does not treat script names as hostnames (nmap --script)", () => {
+    const hosts = extractHostsFromCommand(
+      "nmap --script ssl-enum-ciphers.nse -p 443 target.com",
+    );
+    expect(hosts).toContain("target.com");
+    expect(hosts).not.toContain("ssl-enum-ciphers.nse");
+  });
+
+  it("does not treat wordlist paths as hostnames (gobuster -w)", () => {
+    const hosts = extractHostsFromCommand(
+      "gobuster dir -u https://target.com -w wordlist.txt",
+    );
+    expect(hosts).toContain("target.com");
+    expect(hosts).not.toContain("wordlist.txt");
+  });
+
+  it("handles --flag=value without skipping the next token", () => {
+    const hosts = extractHostsFromCommand("nmap --script=vuln target.com");
     expect(hosts).toContain("target.com");
   });
 });

@@ -67,6 +67,7 @@ export function getAllowedHosts(ctx: ToolContext): string[] {
  *  - Exact match: `example.com` matches `example.com`
  *  - Subdomain match: `api.example.com` matches allowed `example.com`
  *  - IP addresses: matched exactly (no subdomain logic)
+ *  - Case-insensitive on both sides
  */
 export function isHostAllowed(
   hostname: string,
@@ -77,8 +78,9 @@ export function isHostAllowed(
   const lower = hostname.toLowerCase();
 
   for (const allowed of allowedHosts) {
-    if (lower === allowed) return true;
-    if (lower.endsWith(`.${allowed}`)) return true;
+    const allowedLower = allowed.toLowerCase();
+    if (lower === allowedLower) return true;
+    if (lower.endsWith(`.${allowedLower}`)) return true;
   }
 
   return false;
@@ -94,7 +96,7 @@ export function extractHostname(url: string): string | null {
 
 /**
  * Assert that a URL targets an allowed domain. Throws `ScopeViolationError`
- * if the hostname is out of scope.
+ * if the hostname is out of scope or the URL is unparseable (fail-closed).
  *
  * No-op when no scope is configured (no target, no allowedHosts).
  */
@@ -103,7 +105,9 @@ export function assertUrlInScope(url: string, ctx: ToolContext): void {
   if (allowedHosts.length === 0) return;
 
   const hostname = extractHostname(url);
-  if (!hostname) return;
+  if (!hostname) {
+    throw new ScopeViolationError(url, allowedHosts);
+  }
 
   if (!isHostAllowed(hostname, allowedHosts)) {
     throw new ScopeViolationError(hostname, allowedHosts);
@@ -169,14 +173,75 @@ export function extractHostsFromCommand(command: string): string[] {
     "gi",
   );
 
+  // Flags whose next token is a non-host value (file path, script name,
+  // wordlist, output file, etc.) and should be skipped during extraction.
+  const flagsWithValueArg = new Set([
+    "-o",
+    "-oN",
+    "-oX",
+    "-oG",
+    "-oA",
+    "--output",
+    "-w",
+    "--wordlist",
+    "--script",
+    "-iL",
+    "-iR",
+    "--excludefile",
+    "--exclude",
+    "-e",
+    "--extensions",
+    "-x",
+    "-b",
+    "--cookie",
+    "-d",
+    "--data",
+    "-H",
+    "--header",
+    "-A",
+    "--user-agent",
+    "-T",
+    "--upload-file",
+    "-F",
+    "--form",
+    "-u",
+    "--user",
+    "--proxy",
+    "-L",
+    "--log",
+    "--rate",
+    "-t",
+    "--threads",
+    "-c",
+    "--config",
+    "-r",
+    "--report",
+    "-D",
+    "--delay",
+    "--timeout",
+  ]);
+
   for (const match of command.matchAll(toolPattern)) {
     const argsStr = match[1];
-    // Split the args portion and find bare hostnames / IPs
     const tokens = argsStr.split(/\s+/);
+    let skipNext = false;
     for (const token of tokens) {
-      if (token.startsWith("-")) continue;
-      if (token.startsWith("/")) continue;
       if (!token) continue;
+
+      if (skipNext) {
+        skipNext = false;
+        continue;
+      }
+
+      // Check if this flag takes a value argument (skip the next token)
+      if (token.startsWith("-")) {
+        // Handle --flag=value (no skip needed, value is attached)
+        if (!token.includes("=") && flagsWithValueArg.has(token)) {
+          skipNext = true;
+        }
+        continue;
+      }
+      if (token.startsWith("/")) continue;
 
       // Could be a URL
       if (token.match(/^https?:\/\//i)) {
