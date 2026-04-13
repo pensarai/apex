@@ -247,6 +247,7 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
         endpointType: input.endpointType,
         riskLevel: input.riskLevel,
         filepath,
+        threatModel: threatModel ?? undefined,
         message: `Endpoint '${input.endpointName}' documented successfully under app '${input.appName}'`,
       };
     },
