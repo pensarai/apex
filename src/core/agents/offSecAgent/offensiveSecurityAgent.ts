@@ -79,6 +79,9 @@ export class OffensiveSecurityAgent<TResult = void> {
 
   private readonly abortSignal?: AbortSignal;
 
+  /** The user-facing prompt passed to the model. */
+  public readonly userPrompt: string;
+
   /** The session this agent is operating within. */
   private readonly _session: SessionInfo;
 
@@ -116,6 +119,7 @@ export class OffensiveSecurityAgent<TResult = void> {
     this._session = input.session;
     this.subagentId = input.subagentId;
     this.abortSignal = input.abortSignal;
+    this.userPrompt = input.prompt;
     this.eventBus = input.eventBus ?? new AgentEventBus();
 
     // -- Resolve agent working directory ----------------------------------------
@@ -151,6 +155,20 @@ export class OffensiveSecurityAgent<TResult = void> {
       eventBus: this.eventBus,
     });
 
+    // -- Task directory (per-agent tasks, opt-in via taskDriven config) -------
+    const taskDriven = input.session.config?.taskDriven ?? false;
+    const tasksDir =
+      input.tasksDir ??
+      (taskDriven
+        ? input.subagentId
+          ? join(
+              input.session.rootPath,
+              "subagents",
+              `${input.subagentId}-tasks`,
+            )
+          : join(input.session.rootPath, "tasks")
+        : undefined);
+
     // -- Tools ----------------------------------------------------------------
     const credentialManager =
       input.credentialManager ?? input.session.credentialManager;
@@ -170,8 +188,11 @@ export class OffensiveSecurityAgent<TResult = void> {
       persistentShell: this.persistentShell,
       skillsRegistry: input.skillsRegistry,
       traceWriter,
+      tasksDir,
       enableThinking: input.enableThinking,
       projectThreatModel: input.projectThreatModel,
+      planSubagentId: input.planSubagentId,
+      subagentId: input.subagentId,
     });
 
     let tools: ToolSet = input.extraTools
@@ -308,6 +329,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       activeTools,
       stopWhen,
       toolChoice: "auto",
+      sessionPath: input.session.rootPath,
       onStepFinish: async (event) => {
         latestMessages = [
           ...initialMessagesRef.current,

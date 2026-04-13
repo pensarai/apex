@@ -70,6 +70,18 @@ const TOOL_SUMMARY_MAP: Record<string, ToolSummaryFn> = {
   Task: (args) => (args.description as string) || "Task",
   task: (args) => (args.description as string) || "task",
 
+  // Task decomposition tools — labels are minimal, icons on results only
+  create_task: (args) => {
+    const subject = (args.subject as string) || "task";
+    return subject;
+  },
+  update_task: (args) => {
+    const id = args.taskId ?? "?";
+    const status = (args.status as string) || "";
+    return `task #${id} → ${status}`;
+  },
+  list_tasks: () => "tasks",
+
   // Subagent-spawning tools
   run_attack_surface: (args) => {
     const mode = args.cwd ? "whitebox" : "blackbox";

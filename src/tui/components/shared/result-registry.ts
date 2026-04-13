@@ -587,6 +587,79 @@ export function getResultSummary(
         break;
       }
 
+      // Task decomposition tools — quiet results like Claude Code
+      case "create_task": {
+        if (typeof result === "object" && result !== null) {
+          const obj = result as Record<string, unknown>;
+          if (obj.success === false) {
+            return {
+              text: String(obj.error || "Failed to create task").slice(0, 120),
+              isError: true,
+            };
+          }
+          const task = obj.task as Record<string, unknown> | undefined;
+          const id = task?.id ?? "?";
+          const subject = String(task?.subject || args?.subject || "");
+          return {
+            text: `Task #${id} created: ${subject}`,
+            isError: false,
+          };
+        }
+        break;
+      }
+      case "update_task": {
+        if (typeof result === "object" && result !== null) {
+          const obj = result as Record<string, unknown>;
+          if (obj.success === false) {
+            return {
+              text: String(obj.error || "Failed to update task").slice(0, 120),
+              isError: true,
+            };
+          }
+          const task = obj.task as Record<string, unknown> | undefined;
+          const id = task?.id ?? args?.taskId ?? "?";
+          const status = String(task?.status || args?.status || "");
+          return {
+            text: `Updated task #${id} ${status}`,
+            isError: false,
+          };
+        }
+        break;
+      }
+      case "list_tasks": {
+        if (typeof result === "object" && result !== null) {
+          const obj = result as Record<string, unknown>;
+          if (obj.success === false) {
+            return {
+              text: String(obj.error || "Failed to list tasks").slice(0, 120),
+              isError: true,
+            };
+          }
+          const summary = obj.summary as Record<string, number> | undefined;
+          const tasks = Array.isArray(obj.tasks)
+            ? (obj.tasks as Array<Record<string, unknown>>)
+            : [];
+          if (summary) {
+            const header = `${summary.total ?? 0} tasks: ${summary.completed ?? 0} done, ${summary.in_progress ?? 0} in progress, ${summary.pending ?? 0} pending`;
+            const lines = tasks.map((t) => {
+              const status = String(t.status || "pending");
+              const subject = String(t.subject || "").slice(0, 50);
+              return `#${t.id} [${status}] ${subject}`;
+            });
+            return {
+              text: header,
+              isError: false,
+              fullText: lines.join("\n"),
+            };
+          }
+          return {
+            text: `${tasks.length} task${tasks.length !== 1 ? "s" : ""}`,
+            isError: false,
+          };
+        }
+        break;
+      }
+
       // Utility tools
       case "scratchpad": {
         return { text: "Note saved", isError: false };

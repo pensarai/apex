@@ -1,6 +1,8 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { mkdirSync } from "fs";
 import { writeFile } from "fs/promises";
+import { dirname } from "path";
 import type { ToolContext } from "./types";
 import { planFilePath } from "../../../plan";
 
@@ -19,7 +21,7 @@ type WritePlanResult = {
   path: string;
 };
 
-export function writePlan(ctx: ToolContext) {
+export function writePlan(ctx: ToolContext & { subagentId?: string }) {
   return tool({
     description: `Write or update the pentest plan file for this session.
 
@@ -36,7 +38,9 @@ Required plan sections:
 - **Estimated Action Tiers** — anticipated T1-T5 action counts so the operator can make an informed approval`,
     inputSchema: writePlanInputSchema,
     execute: async ({ content }): Promise<WritePlanResult> => {
-      const planPath = planFilePath(ctx.session.rootPath);
+      const scopeId = ctx.planSubagentId ?? ctx.subagentId;
+      const planPath = planFilePath(ctx.session.rootPath, scopeId);
+      mkdirSync(dirname(planPath), { recursive: true });
       console.error(
         `[write_plan] enter: contentLen=${content.length}, path=${planPath}`,
       );

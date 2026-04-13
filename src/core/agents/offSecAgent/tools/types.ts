@@ -83,6 +83,14 @@ export type ToolContext = {
    */
   traceWriter?: StepTraceWriter;
 
+  /**
+   * Per-agent task directory for structured task decomposition.
+   * When present, task tools (create_task, update_task, list_tasks) are available.
+   * Set to `{session.rootPath}/subagents/{subagentId}-tasks/` for subagents.
+   * Only populated when `SessionConfig.taskDriven` is enabled.
+   */
+  tasksDir?: string;
+
   /** Enable extended thinking for sub-agents spawned by orchestration tools. */
   enableThinking?: boolean;
 
@@ -93,4 +101,11 @@ export type ToolContext = {
    * requirements, or known concerns when analyzing each endpoint.
    */
   projectThreatModel?: string;
+
+  /**
+   * Override for plan file scoping. When set, write_plan uses this ID
+   * instead of `subagentId` to derive the plan file path, allowing
+   * plan agents to write plans scoped to their corresponding execution agent.
+   */
+  planSubagentId?: string;
 };
