@@ -654,6 +654,71 @@ function sanitizeFilename(str: string): string {
     .substring(0, 50);
 }
 
+/**
+ * Validates PoC script for POSIX portability issues.
+ * Returns array of warning messages for non-portable patterns.
+ */
+export function validatePocPortability(
+  content: string,
+  pocType: PocType,
+): string[] {
+  const warnings: string[] = [];
+
+  // Only validate shell scripts (bash) for now
+  // Python and JavaScript have their own portable runtimes
+  if (pocType !== "bash") {
+    return warnings;
+  }
+
+  // Check for grep -P or grep -oP (Perl regex - not portable)
+  // Match -P anywhere after grep (e.g., -P, -oP, -Po, grep -i -P, etc.)
+  if (
+    /grep\s+.*?-[a-zA-Z]*P[a-zA-Z]*\b/.test(content) ||
+    /grep\s+.*?--perl-regexp\b/.test(content)
+  ) {
+    warnings.push(
+      "Non-portable: grep -P or grep -oP (Perl regex) detected. Use grep -E (extended regex) or grep -o instead for macOS/BusyBox compatibility.",
+    );
+  }
+
+  // Check for bare bc usage (not installed in sandbox)
+  // Match bc as a standalone command (piped, standalone, or in command substitution)
+  if (
+    /(\|\s*bc\b|^\s*bc\b|\$\(\s*bc\b|`\s*bc\b)/m.test(content) &&
+    !/which\s+bc|command\s+-v\s+bc/.test(content)
+  ) {
+    warnings.push(
+      "Non-portable: bc command detected but not installed in sandbox. Use $(( )) shell arithmetic, awk, or python3 -c instead.",
+    );
+  }
+
+  // Check for GNU stat with -c flag (with word boundary to avoid matching netstat, vmstat, etc.)
+  if (/\bstat\s+-c/.test(content)) {
+    warnings.push(
+      "Non-portable: stat -c is GNU-specific. Use stat -f on BSD/macOS or portable alternatives.",
+    );
+  }
+
+  // Check for GNU date with --rfc-3339 or similar (with word boundary to avoid matching update, etc.)
+  if (/\bdate\s+--[a-z]/.test(content)) {
+    warnings.push(
+      "Non-portable: GNU date long options (--rfc-3339, etc.) may not work on BSD/macOS. Use date with standard format strings instead.",
+    );
+  }
+
+  // Check for seq without command check
+  if (
+    /\bseq\b/.test(content) &&
+    !/which\s+seq|command\s+-v\s+seq/.test(content)
+  ) {
+    warnings.push(
+      "Potentially non-portable: seq may not be available. Consider using for i in $(seq ...) with a fallback or brace expansion {1..N}.",
+    );
+  }
+
+  return warnings;
+}
+
 function preparePoc(input: {
   pocName: string;
   pocType: PocType;
@@ -664,6 +729,14 @@ function preparePoc(input: {
   const filename = `poc_${sanitizedName}${POC_EXTENSIONS[input.pocType]}`;
 
   let pocContent = input.pocContent.trim();
+
+  // Validate portability before preparing the script
+  const portabilityWarnings = validatePocPortability(pocContent, input.pocType);
+  if (portabilityWarnings.length > 0) {
+    console.warn(
+      `[PoC Portability] Warnings for ${filename}:\n  ${portabilityWarnings.join("\n  ")}`,
+    );
+  }
 
   if (!pocContent.startsWith("#!")) {
     const shebangs: Record<string, string> = {
