@@ -23,6 +23,7 @@ import {
   type AIAuthConfig,
 } from "./utils";
 import { withCachedSystemPrompt, withCachedLastMessage } from "./caching";
+import { applyToolResultBudget, snipOldSteps } from "./contextManagement";
 
 export type AIModel = AnthropicMessagesModelId | OpenAIChatModelId | string; // For OpenRouter and Bedrock models
 
@@ -195,15 +196,65 @@ function wrapStreamWithErrorHandler(
                 } catch {
                   // Fall back to container messages if response is not available
                 }
+
+                // Layer 1+2: Try lightweight compaction before full summarization.
+                // applyToolResultBudget truncates large tool results to previews;
+                // snipOldSteps replaces old tool results with 1-line summaries.
+                const afterBudget = opts.sessionPath
+                  ? applyToolResultBudget(currentMessages, {
+                      sessionPath: opts.sessionPath,
+                    })
+                  : currentMessages;
+                const compacted = snipOldSteps(afterBudget);
+
+                // Update the container so any nested retry reads
+                // already-compacted messages instead of the original
+                // pre-compaction ones (prevents unbounded retry loops).
+                messagesContainer.current = compacted;
+
+                // snipOldSteps returns the input array unchanged when nothing was modified
+                if (compacted !== currentMessages) {
+                  if (!silent) {
+                    console.warn(
+                      `Context length error — trying lightweight compaction on ${currentMessages.length} messages`,
+                    );
+                  }
+                  try {
+                    const retried = streamResponse({
+                      ...opts,
+                      messages: compacted,
+                    });
+                    const wrappedRetry = wrapStreamWithErrorHandler(
+                      retried,
+                      messagesContainer,
+                      opts,
+                      model,
+                      silent,
+                      rateLimitRetryCount,
+                    );
+                    for await (const chunk of wrappedRetry.fullStream) {
+                      yield chunk;
+                    }
+                    return;
+                  } catch (retryError) {
+                    // Only fall through to full summarization for context length errors.
+                    // Other errors (auth failures, model errors) must propagate.
+                    if (!checkIfContextLengthError(retryError)) {
+                      throw retryError;
+                    }
+                  }
+                }
+
+                // Layer 3: Full summarization (existing behavior)
+                const messagesForSummary = messagesContainer.current;
                 if (!silent) {
                   console.warn(
-                    `Context length error in wrapper, summarizing ${messagesContainer.current.length} messages: `,
-                    errorMessage,
+                    `Context length error — summarizing ${messagesForSummary.length} messages`,
                   );
                 }
 
                 const summarizationStream = createSummarizationStream(
-                  currentMessages,
+                  messagesForSummary,
                   opts,
                   model,
                 );
@@ -297,6 +348,8 @@ export interface StreamResponseOpts {
   onCacheMetrics?: (metrics: CacheMetrics) => void;
   /** Enable extended thinking for supported models (Anthropic Claude 3.7+) */
   enableThinking?: boolean;
+  /** Session root path — used by context management layers to persist truncated tool results */
+  sessionPath?: string;
 }
 
 export function streamResponse(

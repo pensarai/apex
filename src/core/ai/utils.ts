@@ -1,5 +1,6 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import { streamResponse, type AIModel, type StreamResponseOpts } from "./ai";
+import { extractTaskSummaryFromMessages } from "./contextManagement";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { createAmazonBedrock } from "@ai-sdk/amazon-bedrock";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
@@ -361,13 +362,20 @@ export async function summarizeConversation(
     } as unknown as Parameters<NonNullable<typeof opts.onStepFinish>>[0]);
   }
 
+  // Preserve task state through summarization so the agent doesn't lose
+  // track of its task progress after context compaction.
+  const taskSummary = extractTaskSummaryFromMessages(messages);
+  const summaryWithTasks = taskSummary
+    ? `${summary}\n\nCurrent task state: ${taskSummary}`
+    : summary;
+
   // For very long prompts, replace with just the summary instead of appending
   const originalLength =
     typeof opts.prompt === "string" ? opts.prompt.length : 0;
   const enhancedPrompt =
     originalLength > 100000
-      ? `Context: The previous conversation contained very long content that was summarized.\n\nSummary: ${summary}\n\nOriginal task: Please respond based on this summary.`
-      : `${opts.prompt}\n\nThe previous agent has summarized the conversation to pass to you to continue the task. Here is the summary: ${summary}`;
+      ? `Context: The previous conversation contained very long content that was summarized.\n\nSummary: ${summaryWithTasks}\n\nOriginal task: Please respond based on this summary.`
+      : `${opts.prompt}\n\nThe previous agent has summarized the conversation to pass to you to continue the task. Here is the summary: ${summaryWithTasks}`;
 
   // Notify callers that context was reset so they can discard stale history.
   opts.onSummarized?.(summary);

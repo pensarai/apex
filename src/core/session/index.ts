@@ -160,6 +160,10 @@ const SessionConfigObject = z.object({
   agentCwd: z.string().optional(),
   /** Operator-provided guidance injected into the orchestrator/agent system prompts */
   prompt: z.string().optional(),
+  /** Enable task-driven architecture — agents decompose objectives into tracked tasks (default: false) */
+  taskDriven: z.boolean().optional(),
+  /** When true, pentest agents run a plan phase before execution (default: false) */
+  requirePlan: z.boolean().optional(),
 });
 
 export type SessionConfig = z.infer<typeof SessionConfigObject>;
