@@ -344,6 +344,8 @@ export const PLAN_MODE_TOOL_NAMES: ToolName[] = [
   "write_plan",
   "submit_plan",
   "create_task",
+  "update_task",
+  "list_tasks",
 ];
 
 /** Skill tool names — conditionally included when a skills registry is provided. */
