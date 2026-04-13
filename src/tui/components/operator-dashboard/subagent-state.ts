@@ -41,7 +41,7 @@ export function loadSubagentSessionsFromDisk(
       case "pending":
       case "paused":
       default:
-        status = "running";
+        status = "failed";
         break;
     }
 

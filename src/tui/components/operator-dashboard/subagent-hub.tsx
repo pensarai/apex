@@ -166,13 +166,11 @@ const SubagentHubCard = memo(function SubagentHubCard({
 export interface SubagentHubProps {
   sessions: Map<string, SubagentSession>;
   onSelect: (id: string) => void;
-  onClose: () => void;
 }
 
 export const SubagentHub = memo(function SubagentHub({
   sessions,
   onSelect,
-  onClose,
 }: SubagentHubProps) {
   const { colors } = useTheme();
 

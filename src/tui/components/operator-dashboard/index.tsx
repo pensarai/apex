@@ -46,7 +46,6 @@ import { InputArea } from "../chat/input-area";
 import { useTheme } from "../../theme";
 import type { DisplayMessage, WorkflowData } from "../agent-display";
 import { isToolMessage } from "../shared/type-guards";
-import {} from "../shared/tool-registry";
 import {
   tryParsePartialJson,
   extractStreamableContent,
@@ -132,12 +131,7 @@ export default function OperatorDashboard({
     skillsRegistry,
     skillsVersion,
   } = useCommand();
-  const {
-    stack,
-    externalDialogOpen,
-    replace: replaceDialog,
-    setSize: setDialogSize,
-  } = useDialog();
+  const { stack, externalDialogOpen, replace: replaceDialog } = useDialog();
   const { refocusPrompt } = useFocus();
 
   const autocompleteOptions = useMemo(() => {
@@ -189,11 +183,11 @@ export default function OperatorDashboard({
   subagentSessionsRef.current = subagentSessions;
 
   const openSubagentDialog = useCallback(() => {
-    setDialogSize("large");
     replaceDialog(<SubagentDialog sessionsRef={subagentSessionsRef} />, {
       selfHandlesEscape: true,
+      size: "large",
     });
-  }, [setDialogSize, replaceDialog]);
+  }, [replaceDialog]);
 
   // Messages — same pattern as pentest component
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
@@ -1294,7 +1288,6 @@ export default function OperatorDashboard({
       subagentHelpers,
       setThinking,
       setIsExecuting,
-      addTokenUsage,
       addCacheUsage,
     ],
   );
