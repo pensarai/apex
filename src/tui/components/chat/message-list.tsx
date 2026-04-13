@@ -199,9 +199,10 @@ export function MessageList({
       {/* Loading indicator - show when running but not when there's a pending approval */}
       {isRunning && !hasPendingApproval && hasMessages && (() => {
         const pendingTool = getPendingToolName(messages);
+        const effectiveHasPendingTool = hasPendingTool || pendingTool !== null;
         return (
           <LoadingIndicator
-            state={getLoadingState(messages, hasPendingTool, isLastAssistant, pendingTool)}
+            state={getLoadingState(messages, effectiveHasPendingTool, isLastAssistant, pendingTool)}
             action={lastApprovedAction}
             toolName={pendingTool}
           />
