@@ -79,6 +79,9 @@ export class OffensiveSecurityAgent<TResult = void> {
 
   private readonly abortSignal?: AbortSignal;
 
+  /** The user-facing prompt passed to the model. */
+  public readonly userPrompt: string;
+
   /** The session this agent is operating within. */
   private readonly _session: SessionInfo;
 
@@ -116,6 +119,7 @@ export class OffensiveSecurityAgent<TResult = void> {
     this._session = input.session;
     this.subagentId = input.subagentId;
     this.abortSignal = input.abortSignal;
+    this.userPrompt = input.prompt;
     this.eventBus = input.eventBus ?? new AgentEventBus();
 
     // -- Resolve agent working directory ----------------------------------------
