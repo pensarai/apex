@@ -301,9 +301,9 @@ describe("assertCommandInScope", () => {
 
   it("blocks out-of-scope commands", () => {
     const ctx = makeCtx({ target: "https://example.com" });
-    expect(() =>
-      assertCommandInScope("nmap -sV evil.com", ctx),
-    ).toThrow(ScopeViolationError);
+    expect(() => assertCommandInScope("nmap -sV evil.com", ctx)).toThrow(
+      ScopeViolationError,
+    );
   });
 
   it("blocks mixed-scope commands (one host out of scope)", () => {
@@ -318,9 +318,7 @@ describe("assertCommandInScope", () => {
 
   it("allows commands with no network targets", () => {
     const ctx = makeCtx({ target: "https://example.com" });
-    expect(() =>
-      assertCommandInScope("cat /etc/passwd", ctx),
-    ).not.toThrow();
+    expect(() => assertCommandInScope("cat /etc/passwd", ctx)).not.toThrow();
     expect(() =>
       assertCommandInScope("echo hello && ls -la", ctx),
     ).not.toThrow();

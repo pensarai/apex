@@ -206,10 +206,7 @@ export function extractHostsFromCommand(command: string): string[] {
  *
  * No-op when no scope is configured.
  */
-export function assertCommandInScope(
-  command: string,
-  ctx: ToolContext,
-): void {
+export function assertCommandInScope(command: string, ctx: ToolContext): void {
   const allowedHosts = getAllowedHosts(ctx);
   if (allowedHosts.length === 0) return;
 
