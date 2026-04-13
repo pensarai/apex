@@ -922,7 +922,12 @@ export default function OperatorDashboard({
       });
 
       eventBus.on("error", (d) => {
-        if (d.subagentId) return;
+        if (d.subagentId) {
+          const errMsg =
+            d.error instanceof Error ? d.error.message : "Unknown error";
+          subagentHelpers.appendText(d.subagentId, `\nError: ${errMsg}\n`);
+          return;
+        }
         console.error("Agent error:", d.error);
         setError(d.error instanceof Error ? d.error.message : "Unknown error");
       });
