@@ -176,6 +176,8 @@ export interface WhiteboxAttackSurfaceWorkflowInput {
   onCacheMetrics?: (metrics: CacheMetrics) => void;
   /** Known domains associated with the project — agents can map discovered apps to these. */
   domains?: string[];
+  /** Project-level threat model content (e.g. from .pensar/threat_model.md), if found */
+  projectThreatModel?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -211,6 +213,7 @@ interface AppMetadata {
  * Phase 1.5: Create app folders with app.json metadata.
  * Phase 2: For each app, spawn two CodeAgents in parallel — one for
  *           pages, one for API endpoints — using document_endpoint.
+ *           Threat models are generated inline during this phase.
  * Phase 3: Read the assets directory to build endpoint data.
  * Phase 4: Risk scoring.
  * Phase 5: Final assembly.
@@ -229,6 +232,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     onStepFinish,
     onCacheMetrics,
     domains,
+    projectThreatModel,
   } = input;
 
   // =========================================================================
@@ -392,6 +396,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
         onCacheMetrics,
         responseSchema: DiscoverySummarySchema,
         excludeTools: ["document_app"],
+        projectThreatModel,
       });
 
       try {
@@ -438,7 +443,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
   }
 
   // =========================================================================
-  // Phase 4: Risk scoring — score all endpoints in parallel
+  // Phase 4: Risk scoring
   // =========================================================================
 
   const allEndpointsForScoring = parsedApps.flatMap((app) =>
@@ -663,6 +668,7 @@ function assetRecordToEndpoint(
     description: record.description,
     pentestObjectives: record.pentestObjectives ?? [],
     riskScore: record.riskScore,
+    threatModel: record.threatModel,
   });
 
   return parsed.success ? parsed.data : null;
@@ -732,13 +738,32 @@ A **cloud resource** qualifies if it is an **owned infrastructure resource** ref
    - Search for cache/database endpoints (ElastiCache, Redis, DynamoDB, etc.)
    - Check infrastructure-as-code files (Terraform, CloudFormation, CDK, Pulumi, SST, serverless.yml)
    - Document each cloud resource as an app with \`appType: "cloud_resource"\` or \`appType: "storage"\`
-   - For S3 buckets: set the \`url\` to the bucket endpoint (e.g. \`https://bucket-name.s3.amazonaws.com\`)
 7. For each app/resource, determine:
    - **name**: the application or service name
    - **framework**: the web framework or cloud service (e.g. "AWS S3", "CloudFront", "Express")
    - **description**: brief summary of what it does
    - **location**: path relative to the repository root (for code) or the resource identifier (for cloud resources)
    - **type**: classify as \`"web_application"\` for frontend-only apps, \`"api"\` for backend API services, \`"full_stack"\` for frameworks serving both UI and API (Next.js, Remix, Nuxt, SvelteKit, Django with templates, Rails), \`"database"\` for databases, \`"cloud_resource"\` for owned cloud infra (SQS, CDN, etc.), \`"storage"\` for S3/GCS/blob storage.
+
+### Setting the \`domain\` field on \`document_app\` — CRITICAL
+
+Every app and cloud resource MUST have a **unique, resource-specific** domain. This is used to map the resource to the attack surface. **Never reuse a generic domain or another application's domain.**
+
+**For web apps and API services:** Use the public-facing URL from the Known Domains list, route configuration, or infrastructure definition (e.g., \`https://console.pensar.dev\`, \`https://api.example.com\`).
+
+**For S3 / GCS / blob storage buckets:** You MUST derive the **actual bucket name** from the infrastructure-as-code. The bucket name is defined in the IaC resource definition (e.g., SST \`new sst.aws.Bucket("ProjectData")\` produces a bucket with a name like \`console-staging-projectdata-abc123\`). Set domain to \`https://{actual-bucket-name}.s3.amazonaws.com\`. If the exact runtime name includes a random suffix you can't determine, use the logical name pattern: \`https://{stage}-{logicalName}.s3.amazonaws.com\`. **NEVER use \`https://s3.amazonaws.com\`** — that is the S3 service, not a bucket.
+
+**For databases (RDS, Aurora, DynamoDB):** Use the cluster/instance endpoint from IaC (e.g., \`https://{cluster-name}.cluster-{id}.{region}.rds.amazonaws.com\`). If the exact endpoint isn't determinable, use the logical resource name pattern.
+
+**For Redis / ElastiCache:** Use the cache cluster endpoint (e.g., \`https://{cluster-id}.{region}.cache.amazonaws.com\`).
+
+**For SQS queues:** Use \`https://sqs.{region}.amazonaws.com/{account}/{queue-name}\`. If account/region aren't determinable, use the queue's logical name: \`https://sqs.amazonaws.com/{logical-queue-name}\`.
+
+**For Lambda functions:** Use the Lambda Function URL or the API Gateway route that invokes it — NOT the generic API domain shared by all functions. If the Lambda is only invoked by SQS/EventBridge (no HTTP endpoint), set domain to \`https://lambda.{region}.amazonaws.com/functions/{function-name}\`.
+
+**For CloudFront / CDN:** Use the distribution domain (e.g., \`https://{distribution-id}.cloudfront.net\`) or the custom domain alias.
+
+**For WebSocket APIs:** Use the WebSocket endpoint URL (e.g., \`wss://{api-id}.execute-api.{region}.amazonaws.com/{stage}\`).
 
 When finished, call the \`response\` tool with your structured findings.`;
 }
@@ -866,21 +891,26 @@ function buildCloudResourceEndpointsObjective(
 - **Resource location:** ${appInfo.location}
 - **Service:** ${appInfo.framework}
 
+## Context — Application Domain
+The parent application for this cloud resource already has a domain/URL associated with it (set via \`document_app\`). **Do NOT create endpoints that simply repeat the base domain URL.** The domain is already stored on the application record — endpoints should document **distinct access patterns** that go beyond the base domain.
+
 ## Scope — CRITICAL
-You are documenting the **externally-accessible entry points of this cloud resource itself** — the URLs, ARNs, or endpoints where the resource can be reached from outside the application code.
+You are documenting the **distinct access patterns and resource identifiers** for this cloud resource — specific ways the resource can be accessed that are NOT just its base domain URL.
 
 Do NOT document:
-- Code locations where the app calls/uses this resource (e.g. "line 42 of api.ts calls S3.putObject" is NOT an endpoint — that's application code, not a resource entry point)
+- The base domain URL of the resource (e.g. \`https://bucket-name.s3.amazonaws.com\`) — this is already the application's domain
+- Code locations where the app calls/uses this resource (e.g. "line 42 of api.ts calls S3.putObject" is NOT an endpoint)
 - API routes from other apps that happen to interact with this resource
 - Internal SDK calls or client instantiations
 
 DO document:
-- The resource's own external URLs (e.g. \`https://bucket-name.s3.amazonaws.com\`)
-- Public access endpoints (e.g. static website hosting URL, CDN distribution URL)
-- Resource identifiers that represent direct access points (queue URLs, function URLs)
+- **Specific access patterns** beyond the base domain (e.g. pre-signed URL patterns, static website hosting paths, object key patterns)
+- **Resource ARNs** that represent programmatic access points (e.g. \`arn:aws:s3:::bucket-name\`, \`arn:aws:sqs:region:account:queue-name\`)
+- **Alternative access URLs** (e.g. CDN distribution URL, static website hosting URL, regional endpoint variants)
+- **Queue/topic URLs** for message-based resources
 
 ## Task
-Find the **externally-accessible entry points** for this cloud resource by reading infrastructure-as-code and configuration.
+Find the **distinct access patterns and resource identifiers** for this cloud resource by reading infrastructure-as-code and configuration.
 
 ### Where to find entry point information
 1. **Infrastructure-as-code** — Terraform (*.tf), CloudFormation (*.yaml/*.json), CDK constructs, SST components (sst.config.ts, infra/), Pulumi, serverless.yml — these define the resource and its access configuration
@@ -888,19 +918,19 @@ Find the **externally-accessible entry points** for this cloud resource by readi
 3. **Resource policies** — bucket policies, CORS configs, access control settings that reveal how the resource is exposed
 
 ### What qualifies as an entry point (by resource type)
-- **S3 / GCS / Blob Storage**: The bucket's HTTP endpoint (e.g. \`https://bucket.s3.amazonaws.com\`), static website hosting URL, pre-signed URL patterns. One entry point per distinct access pattern (e.g. public read vs authenticated upload are separate).
-- **CloudFront / CDN**: Distribution domain (e.g. \`https://d123.cloudfront.net\`), custom domain aliases
+- **S3 / GCS / Blob Storage**: Pre-signed URL patterns (e.g. \`/{objectKey}?X-Amz-Signature={sig}\`), static website hosting URL, ARN. Do NOT include the plain bucket HTTPS endpoint — that's the app domain.
+- **CloudFront / CDN**: Custom domain aliases, origin access patterns
 - **SQS / SNS / Message Queues**: Queue URL, topic ARN
 - **Lambda / Cloud Functions**: Function URL, API Gateway integration URL
-- **DynamoDB / ElastiCache / Redis**: Connection endpoint URL
+- **DynamoDB / ElastiCache / Redis**: Connection endpoint URL, ARN
 
 ### How to document each entry point
 For each entry point, call \`document_endpoint\` with:
 - **appName**: \`${appInfo.name}\`
-- **endpointName**: The resource's external URL or identifier (e.g., \`https://bucket.s3.amazonaws.com\`, \`arn:aws:sqs:...\`)
+- **endpointName**: A descriptive name for this access pattern (e.g., "Pre-signed URL access", "Bucket ARN", "Queue URL")
 - **endpointType**: \`"asset"\`
-- **description**: What this entry point exposes (e.g., "Public static asset hosting", "User upload pre-signed URL endpoint", "Event queue ingestion")
-- **routePath**: The external URL or ARN of the resource itself (e.g., \`https://bucket.s3.amazonaws.com\`)
+- **description**: What this entry point exposes (e.g., "Pre-signed HTTP URLs for temporary read access to objects", "AWS resource ARN for programmatic access through IAM policies")
+- **routePath**: The specific access pattern, path template, or ARN — NOT the base domain URL. Examples: \`/{objectKey}?X-Amz-Signature={signature}&X-Amz-Credential={credential}\`, \`arn:aws:s3:::bucket-name\`, \`https://sqs.region.amazonaws.com/account/queue-name\`
 - **method**: Access methods on the resource (e.g., \`["GET", "PUT"]\` for S3, \`["SendMessage", "ReceiveMessage"]\` for SQS, \`["READ", "WRITE"]\` for generic)
 - **file**: Infrastructure or config file where this resource is defined (e.g., \`infra/storage.ts\`). NOT application code that calls it.
 - **line**: Line number if determinable
@@ -945,6 +975,7 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
     eventBus,
     attackSurfaceRegistry,
     onStepFinish,
+    projectThreatModel,
   } = input;
 
   // =========================================================================
@@ -1006,7 +1037,7 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
       const sanitizedPath = sanitizeName(ep.path);
       const filename = `asset_${sanitizedPath}_${hash}.json`;
 
-      const { riskScore: _staleScore, ...epWithoutScore } = ep;
+      const { riskScore: _staleScore, threatModel, ...epWithoutMeta } = ep;
       const assetData: Record<string, unknown> = {
         assetName: ep.path,
         assetType: "endpoint",
@@ -1021,7 +1052,8 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
           authRequired: ep.authRequired,
         },
         riskLevel: "MEDIUM",
-        pentestObjectives: epWithoutScore.pentestObjectives ?? [],
+        pentestObjectives: epWithoutMeta.pentestObjectives ?? [],
+        ...(threatModel ? { threatModel } : {}),
         discoveredAt: new Date().toISOString(),
         sessionId: session.id,
         target: "",
@@ -1080,6 +1112,7 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
     subagentId: "whitebox-incremental",
     onStepFinish: (event) => onStepFinish?.(event),
     responseSchema: IncrementalResultSchema,
+    projectThreatModel,
   });
 
   const agentResult = await agent.consume();

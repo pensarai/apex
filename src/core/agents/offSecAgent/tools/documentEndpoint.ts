@@ -4,6 +4,7 @@ import { join } from "path";
 import { writeFileSync, mkdirSync, existsSync } from "fs";
 import type { ToolContext } from "./types";
 import { computeBlackboxRiskScore } from "../../specialized/attackSurface/blackboxRiskScoring";
+import { generateThreatModelForEndpoint } from "./threatModelGenerator";
 
 function sanitizeName(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9-_.]/g, "_");
@@ -64,9 +65,12 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
         .string()
         .optional()
         .describe(
-          "The HTTP route served by this endpoint (e.g., '/api/users', '/dashboard'). " +
+          "The HTTP route or access path served by this endpoint (e.g., '/api/users', '/dashboard'). " +
             "This is the URL path a client requests — NOT a source-file path. " +
-            "Use the separate 'file' field for the source-code location.",
+            "Use the separate 'file' field for the source-code location. " +
+            "For cloud resource endpoints (endpointType 'asset'), use the specific access pattern " +
+            "or path — NOT the base domain URL, which is already stored on the parent application. " +
+            "Examples: '/{objectKey}?X-Amz-Signature=...', '/index.html', 'arn:aws:s3:::bucket-name'.",
         ),
       method: z
         .union([z.string(), z.array(z.string())])
@@ -151,6 +155,20 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
         }
       }
 
+      if (
+        input.routePath &&
+        (input.routePath.startsWith("https://") ||
+          input.routePath.startsWith("http://"))
+      ) {
+        return {
+          success: false,
+          error: "routePath_is_url",
+          message:
+            `routePath "${input.routePath}" is a full URL. The domain is already stored on the parent application. ` +
+            `Use a path or access pattern instead (e.g. "/api/users", "/{objectKey}?X-Amz-Signature={sig}", "arn:aws:s3:::bucket-name").`,
+        };
+      }
+
       const targetDir = join(baseAssetsPath, sanitizeName(input.appName));
 
       if (!existsSync(targetDir)) {
@@ -177,12 +195,26 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
         input.notes,
       );
 
+      const threatModel = await generateThreatModelForEndpoint(ctx, {
+        appName: input.appName,
+        endpointName: input.endpointName,
+        routePath: input.routePath,
+        method: input.method,
+        file: input.file,
+        line: input.line,
+        handler: input.handler,
+        authRequired: input.authRequired,
+        description: input.description,
+        pentestObjectives: input.pentestObjectives,
+      });
+
       const endpointRecord = {
         ...input,
         discoveredAt: new Date().toISOString(),
         sessionId: ctx.session.id,
         target: ctx.session.targets[0],
         riskScore,
+        ...(threatModel ? { threatModel } : {}),
       };
 
       try {

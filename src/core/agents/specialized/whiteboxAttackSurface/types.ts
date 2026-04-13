@@ -77,6 +77,12 @@ export const EndpointSchema = z.object({
   riskScore: RiskScoreSchema.optional().describe(
     "AI-calculated risk score for prioritizing pentest efforts",
   ),
+  threatModel: z
+    .string()
+    .optional()
+    .describe(
+      "Endpoint-specific threat model describing attack vectors, data sensitivity, and testing priorities",
+    ),
 });
 
 export type Endpoint = z.infer<typeof EndpointSchema>;

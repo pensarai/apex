@@ -9,6 +9,57 @@ function sanitizeName(name: string): string {
 }
 
 /**
+ * Validates that a domain string is a well-formed URL with scheme + host.
+ * Returns a normalized origin string or null if invalid.
+ */
+function validateDomainUrl(value: string): {
+  valid: boolean;
+  origin: string | null;
+  error: string | null;
+} {
+  const trimmed = value.trim();
+
+  if (!trimmed.includes("://")) {
+    return {
+      valid: false,
+      origin: null,
+      error:
+        `Domain "${trimmed}" is missing a URL scheme. ` +
+        `Use a full URL with scheme (e.g., "https://${trimmed}" instead of "${trimmed}").`,
+    };
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return {
+        valid: false,
+        origin: null,
+        error:
+          `Domain "${trimmed}" has an unsupported scheme "${parsed.protocol}". ` +
+          `Use "https://" or "http://".`,
+      };
+    }
+    if (!parsed.hostname) {
+      return {
+        valid: false,
+        origin: null,
+        error: `Domain "${trimmed}" has no hostname.`,
+      };
+    }
+    return { valid: true, origin: parsed.origin, error: null };
+  } catch {
+    return {
+      valid: false,
+      origin: null,
+      error:
+        `Domain "${trimmed}" is not a valid URL. ` +
+        `Provide a full URL (e.g., "https://example.com", "https://bucket.s3.amazonaws.com").`,
+    };
+  }
+}
+
+/**
  * Factory for the `document_app` tool.
  *
  * Documents a discovered application during attack surface analysis —
@@ -47,8 +98,6 @@ Each application creates a JSON file in the apps directory for tracking and anal
           "web_application",
           "api",
           "full_stack",
-          "domain",
-          "subdomain",
           "database",
           "cloud_resource",
           "storage",
@@ -81,12 +130,16 @@ Each application creates a JSON file in the apps directory for tracking and anal
         .describe("Additional notes or observations about the application"),
       domain: z
         .string()
-        .optional()
         .describe(
-          "Base URL / domain this application is associated with (e.g., 'https://example.com'). " +
-            "Used to map applications to monitored domains. " +
-            "For cloud resources set this to the canonical resource URL " +
-            "(e.g., 'https://bucket-name.s3.amazonaws.com').",
+          "Base URL / domain this application is associated with. Must be a full URL with scheme. " +
+            "For web apps/APIs: the public URL (e.g., 'https://api.example.com'). " +
+            "For S3 buckets: 'https://{ACTUAL-BUCKET-NAME}.s3.amazonaws.com' — you MUST include the real bucket name from IaC, NOT 'https://s3.amazonaws.com'. " +
+            "For databases (RDS/Aurora): 'https://{cluster-endpoint}.rds.amazonaws.com'. " +
+            "For Redis/ElastiCache: 'https://{cluster-id}.cache.amazonaws.com'. " +
+            "For SQS queues: 'https://sqs.{region}.amazonaws.com/{account}/{queue-name}'. " +
+            "For Lambda functions: use the API Gateway or Function URL that routes to them, NOT a generic API domain. " +
+            "For CDN/CloudFront: 'https://{distribution-id}.cloudfront.net'. " +
+            "CRITICAL: each resource must have its OWN unique domain derived from its infrastructure definition — never reuse the console or API domain for unrelated resources.",
         ),
       toolCallDescription: z
         .string()
@@ -95,6 +148,18 @@ Each application creates a JSON file in the apps directory for tracking and anal
         ),
     }),
     execute: async (input) => {
+      if (input.domain) {
+        const domainCheck = validateDomainUrl(input.domain);
+        if (!domainCheck.valid) {
+          return {
+            success: false,
+            error: "invalid_domain",
+            message: domainCheck.error!,
+          };
+        }
+        input = { ...input, domain: domainCheck.origin! };
+      }
+
       if (!existsSync(baseAppsPath)) {
         mkdirSync(baseAppsPath, { recursive: true });
       }
@@ -117,6 +182,7 @@ Each application creates a JSON file in the apps directory for tracking and anal
         success: true,
         appName: input.appName,
         appType: input.appType,
+        domain: input.domain,
         filepath,
         message: `Application '${input.appName}' documented successfully`,
       };
