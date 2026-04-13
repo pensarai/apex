@@ -85,4 +85,12 @@ export type ToolContext = {
 
   /** Enable extended thinking for sub-agents spawned by orchestration tools. */
   enableThinking?: boolean;
+
+  /**
+   * Project-level threat model content (e.g. from `.pensar/threat_model.md`).
+   * Passed to spawned per-endpoint threat-model sub-agents as additional
+   * context so they can incorporate deployment details, compliance
+   * requirements, or known concerns when analyzing each endpoint.
+   */
+  projectThreatModel?: string;
 };
