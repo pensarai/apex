@@ -175,7 +175,7 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
       onSubmit,
       enableAutocomplete = false,
       autocompleteOptions = [],
-      maxSuggestions = 10,
+      maxSuggestions = 50,
       maxVisibleSuggestions = 6,
       enableCommands = false,
       onCommandExecute,
