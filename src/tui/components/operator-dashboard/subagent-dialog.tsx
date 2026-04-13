@@ -85,13 +85,11 @@ export default function SubagentDialog({ sessionsRef }: SubagentDialogProps) {
           index={safeIdx + 1}
           total={sorted.length}
           onPrev={() => {
-            const prevIdx =
-              safeIdx === 0 ? sorted.length - 1 : safeIdx - 1;
+            const prevIdx = safeIdx === 0 ? sorted.length - 1 : safeIdx - 1;
             setView({ type: "detail", id: sorted[prevIdx].id });
           }}
           onNext={() => {
-            const nextIdx =
-              safeIdx === sorted.length - 1 ? 0 : safeIdx + 1;
+            const nextIdx = safeIdx === sorted.length - 1 ? 0 : safeIdx + 1;
             setView({ type: "detail", id: sorted[nextIdx].id });
           }}
           onBack={() => setView({ type: "hub" })}

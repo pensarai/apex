@@ -76,11 +76,7 @@ export const SubagentDetailView = memo(function SubagentDetailView({
   return (
     <box flexDirection="column" width="100%" flexGrow={1}>
       {/* Sub-header: name + position + status */}
-      <box
-        flexDirection="row"
-        justifyContent="space-between"
-        flexShrink={0}
-      >
+      <box flexDirection="row" justifyContent="space-between" flexShrink={0}>
         {/* Left: name */}
         <text fg={colors.primary} content={session.name} />
 

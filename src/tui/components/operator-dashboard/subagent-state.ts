@@ -165,8 +165,8 @@ export function createSubagentSessionHelpers(setState: SetState) {
       const msg = session.messages[idx];
       // Accumulate the args text. We store partial JSON in args.__raw if
       // present, otherwise start fresh.
-      const existingRaw =
-        (msg.args as Record<string, unknown> | undefined)?.__raw;
+      const existingRaw = (msg.args as Record<string, unknown> | undefined)
+        ?.__raw;
       const accumulated =
         (typeof existingRaw === "string" ? existingRaw : "") + argsTextDelta;
 
@@ -263,7 +263,12 @@ export function createSubagentSessionHelpers(setState: SetState) {
       const messages = session.messages.map((m) =>
         m.role === "tool" &&
         (m.status === "pending" || m.status === "streaming")
-          ? { ...m, status: (status === "failed" ? "error" : "completed") as "error" | "completed" }
+          ? {
+              ...m,
+              status: (status === "failed" ? "error" : "completed") as
+                | "error"
+                | "completed",
+            }
           : m,
       );
 
