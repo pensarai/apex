@@ -191,6 +191,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       credentialManager,
       persistentShell: this.persistentShell,
       skillsRegistry: input.skillsRegistry,
+      askUserQuestionsEnabled: input.askUserQuestionsEnabled,
       traceWriter,
       tasksDir,
       enableThinking: input.enableThinking,
