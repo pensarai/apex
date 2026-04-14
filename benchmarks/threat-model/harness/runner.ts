@@ -64,10 +64,10 @@ async function runApp(
   config: BenchmarkConfig,
   runId: string,
 ): Promise<AppResult> {
-  const appDir = path.join(config.appsDir, appId);
-  const codebasePath = path.join(appDir, "src");
-  const appResultsDir = path.join(config.resultsDir, runId, appId);
-  const outputPath = path.join(appResultsDir, "output.md");
+  const appDir = path.resolve(config.appsDir, appId);
+  const codebasePath = path.resolve(appDir, "src");
+  const appResultsDir = path.resolve(config.resultsDir, runId, appId);
+  const outputPath = path.resolve(appResultsDir, "output.md");
 
   console.log(`\n${"=".repeat(60)}`);
   console.log(`Running: ${appId}`);

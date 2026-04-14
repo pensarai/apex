@@ -92,8 +92,8 @@ export function parseConfig(argv: string[]): BenchmarkConfig {
     process.exit(0);
   }
 
-  const appsDir = getArg(argv, "--apps-dir") ?? defaultAppsDir();
-  const resultsDir = getArg(argv, "--results-dir") ?? defaultResultsDir();
+  const appsDir = path.resolve(getArg(argv, "--apps-dir") ?? defaultAppsDir());
+  const resultsDir = path.resolve(getArg(argv, "--results-dir") ?? defaultResultsDir());
 
   let apps: string[];
   const appsArg = getArg(argv, "--apps");
