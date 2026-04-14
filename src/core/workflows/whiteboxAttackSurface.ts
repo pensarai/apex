@@ -675,7 +675,7 @@ function buildAppsDiscoveryObjective(
 
 **For each environment** (${environments.join(", ")}), create an app entry with:
 - **name**: \`<environment>-<resource-name>\` (e.g. \`${environments[0]}-data-bucket\`)
-- **domain**: The environment-specific URL/ARN (e.g. \`https://${environments[0]}-api.example.com\`, \`https://${environments[0]}-data.s3.amazonaws.com\`)
+- **domain**: Substitute the environment name into the IaC naming pattern to derive the environment-specific URL (e.g. IaC has \`\${stage}-data\` → \`https://${environments[0]}-data.s3.amazonaws.com\`). Omit if no naming pattern exists in the code.
 
 **Shared resources:** If a resource is clearly shared across all environments (e.g. a single CDN distribution, a shared auth service), document it once without an environment prefix.\n`
     : "";
@@ -726,23 +726,25 @@ A **cloud resource** qualifies if it is an **owned infrastructure resource** ref
 
 ### Setting the \`domain\` field on \`document_app\` — CRITICAL
 
-Every app and cloud resource MUST have a **unique, resource-specific** domain. This is used to map the resource to the attack surface. **Never reuse a generic domain or another application's domain.**
+**Only set \`domain\` when you can deterministically derive it from evidence** — Known Domains list, IaC resource definitions, configuration files, environment variables, or route definitions. Substituting a known environment/stage name into an IaC naming pattern IS deterministic (e.g. IaC defines \`\${stage}-bucket\` and the target environments include "production" → \`https://production-bucket.s3.amazonaws.com\` is valid). However, do NOT invent domains with no supporting evidence — if no domain can be derived from the source, **omit the \`domain\` field entirely**. A missing domain is far better than a hallucinated one.
+
+When you CAN determine the domain, each resource must have its OWN unique, resource-specific domain. Never reuse a generic domain or another application's domain.
 
 **For web apps and API services:** Use the public-facing URL from the Known Domains list, route configuration, or infrastructure definition (e.g., \`https://console.pensar.dev\`, \`https://api.example.com\`).
 
-**For S3 / GCS / blob storage buckets:** You MUST derive the **actual bucket name** from the infrastructure-as-code. The bucket name is defined in the IaC resource definition (e.g., SST \`new sst.aws.Bucket("ProjectData")\` produces a bucket with a name like \`console-staging-projectdata-abc123\`). Set domain to \`https://{actual-bucket-name}.s3.amazonaws.com\`. If the exact runtime name includes a random suffix you can't determine, use the logical name pattern: \`https://{stage}-{logicalName}.s3.amazonaws.com\`. **NEVER use \`https://s3.amazonaws.com\`** — that is the S3 service, not a bucket.
+**For S3 / GCS / blob storage buckets:** Derive the **actual bucket name** from the infrastructure-as-code. The bucket name is defined in the IaC resource definition (e.g., SST \`new sst.aws.Bucket("ProjectData")\` produces a bucket with a name like \`console-staging-projectdata-abc123\`). Set domain to \`https://{actual-bucket-name}.s3.amazonaws.com\`. If the IaC uses a stage/environment variable in the name, substitute the known environment name (e.g. \`\${stage}-projectdata\` with environment "production" → \`https://production-projectdata.s3.amazonaws.com\`). **NEVER use \`https://s3.amazonaws.com\`** — that is the S3 service, not a bucket. If you cannot determine the bucket name at all, omit the domain.
 
-**For databases (RDS, Aurora, DynamoDB):** Use the cluster/instance endpoint from IaC (e.g., \`https://{cluster-name}.cluster-{id}.{region}.rds.amazonaws.com\`). If the exact endpoint isn't determinable, use the logical resource name pattern.
+**For databases (RDS, Aurora, DynamoDB):** Use the cluster/instance endpoint from IaC. If the exact endpoint isn't determinable, omit the domain.
 
-**For Redis / ElastiCache:** Use the cache cluster endpoint (e.g., \`https://{cluster-id}.{region}.cache.amazonaws.com\`).
+**For Redis / ElastiCache:** Use the cache cluster endpoint if determinable, otherwise omit.
 
-**For SQS queues:** Use \`https://sqs.{region}.amazonaws.com/{account}/{queue-name}\`. If account/region aren't determinable, use the queue's logical name: \`https://sqs.amazonaws.com/{logical-queue-name}\`.
+**For SQS queues:** Use \`https://sqs.{region}.amazonaws.com/{account}/{queue-name}\` if determinable, otherwise omit.
 
-**For Lambda functions:** Use the Lambda Function URL or the API Gateway route that invokes it — NOT the generic API domain shared by all functions. If the Lambda is only invoked by SQS/EventBridge (no HTTP endpoint), set domain to \`https://lambda.{region}.amazonaws.com/functions/{function-name}\`.
+**For Lambda functions:** Use the Lambda Function URL or the API Gateway route — NOT a generic API domain shared by all functions. If no concrete URL is determinable, omit.
 
-**For CloudFront / CDN:** Use the distribution domain (e.g., \`https://{distribution-id}.cloudfront.net\`) or the custom domain alias.
+**For CloudFront / CDN:** Use the distribution domain or custom domain alias if determinable, otherwise omit.
 
-**For WebSocket APIs:** Use the WebSocket endpoint URL (e.g., \`wss://{api-id}.execute-api.{region}.amazonaws.com/{stage}\`).
+**For WebSocket APIs:** Use the WebSocket endpoint URL if determinable, otherwise omit.
 
 When finished, call the \`response\` tool with your structured findings.`;
 }
