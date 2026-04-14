@@ -51,6 +51,11 @@ export type AgentEventMap = {
     phase: "discovery" | "pentesting" | "reporting";
     summary: Record<string, unknown>;
   };
+  "app-analysis-progress": {
+    totalApps: number;
+    completedApps: number;
+    appName?: string;
+  };
   "step-finish": {
     messages: unknown[];
     subagentId?: string;
